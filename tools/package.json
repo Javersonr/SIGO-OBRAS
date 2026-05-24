@@ -4,11 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "export:base44": "node export-base44.mjs"
+    "export:base44": "node export-base44.mjs",
+    "seed:from-xlsx": "node seed-from-xlsx.mjs"
   },
   "dependencies": {
     "@base44/sdk": "^0.8.30",
+    "@supabase/supabase-js": "^2.45.0",
     "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
     "node-fetch": "^3.3.2"
   }
 }
