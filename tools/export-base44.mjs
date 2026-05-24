@@ -71,47 +71,135 @@ async function discoverEntities() {
     return BASE44_ENTITIES.split(",").map((s) => s.trim()).filter(Boolean);
   }
 
-  // Lista conhecida a partir do snapshot. Adicione mais aqui se descobrir via UI.
-  // Para descoberta automática, o SDK Base44 não expõe um /entities listing
-  // confiável, então mantemos a lista manual. EDITE conforme novos nomes
-  // aparecerem.
+  // Lista COMPLETA das 100 entidades — extraída do schema oficial da API Base44
+  // (ver legacy/base44/SCHEMA-COMPLETO-API.md). Ordem segue dependências:
+  // tenants → catálogos → entidades de domínio → filhas/atualizações.
   return [
-    // Documentadas no snapshot
-    "Ferramenta",
-    "HistoricoDocumentoAssinado",
-    "Oportunidade",
-    "ReservaMaterial",
-    "SolicitacaoCompra",
-
-    // Referenciadas no código (loginCustom, components, etc.)
+    // --- Multi-tenant / Auth (base) ---
+    "GrupoEmpresarial",
+    "Empresa",
     "UsuarioCustom",
     "UsuarioEmpresa",
     "ClientePortalUsuario",
-    "Empresa",
-    "GrupoEmpresarial",
-    "Material",
-    "Almoxarifado",
-    "Projeto",
-    "Funcionario",
-    "Fornecedor",
+    "FornecedorAcesso",
+    "User",
+
+    // --- Permissões / Auditoria ---
+    "PermissaoDetalhada",
+    "PerfilPermissao",
+    "NivelAprovacao",
+    "RegraAprovacao",
+    "GestorAprovacao",
+    "AprovacaoSolicitacao",
+    "AuditLog",
+
+    // --- Cadastros gerais ---
     "Cliente",
+    "Fornecedor",
+    "Etiqueta",
     "Caminhao",
     "CaminhaoCampoObrigatorio",
-    "Etiqueta",
-    "TransacaoFinanceira",
-    "PreLancamento",
-    "ContaFinanceira",
-    "BoletoBancario",
+
+    // --- Catálogos ---
+    "CategoriaMaterial",
+    "UnidadeMedida",
+    "CategoriaMaoDeObra",
+    "CategoriaFinanceira",
+    "CentroCusto",
+
+    // --- CRM / Oportunidades ---
+    "StatusOportunidade",
+    "OrigemOportunidade",
+    "TemplateOportunidade",
+    "Oportunidade",
+    "OportunidadeAtualizacao",
+    "ArquivoOportunidade",
+    "TokenClienteOportunidade",
+
+    // --- Projetos ---
+    "Projeto",
+    "TarefaProjeto",
+    "CronogramaEtapa",
+    "DiarioObra",
+    "OrcamentoColunaConfig",
+    "OrcamentoItem",
+    "MaoDeObra",
+
+    // --- Estoque ---
+    "Material",
+    "Almoxarifado",
+    "AlmoxarifadoLocal",
+    "EstoqueMovimento",
+    "EstoqueSaldo",
+    "RetiradaEstoque",
+    "RetiradaEstoqueItem",
+    "ReservaMaterial",
+    "Kit",
+    "KitItem",
+
+    // --- Compras ---
+    "SolicitacaoCompra",
+    "SolicitacaoCompraItem",
     "Cotacao",
     "CotacaoFornecedor",
+    "CotacaoItem",
     "CotacaoResposta",
+    "ArquivoCotacaoFornecedor",
     "PedidoCompra",
-    "NotificacaoEmail",
-    "Notificacao",
-    "AuditLog",
+    "PedidoCompraItem",
+
+    // --- Ferramental / EPI / Inspeções ---
+    "Ferramenta",
+    "Ferramental",
+    "EPI",
+    "MovimentacaoFerramenta",
+    "EntregaFerramental",
+    "LaudoFerramenta",
+    "ManutencaoFerramenta",
+    "FerramentaNota",
+    "ChecklistInspecaoCampo",
+    "InspecaoCampo",
+    "InspecaoFerramenta",
+    "InspecaoFerramental",
+    "InspecaoCaminhao",
+    "InspecaoHistorico",
+    "InventarioHistorico",
+
+    // --- RH / Segurança do Trabalho ---
+    "Funcao",
     "Treinamento",
-    "Certificado",
-    "Inspecao",
+    "Funcionario",
+    "HistoricoDocumentoAssinado",
+    "DocumentoEmpresa",
+    "Vencimento",
+
+    // --- Financeiro ---
+    "ContaFinanceira",
+    "IntegracaoBancaria",
+    "TransacaoFinanceira",
+    "TransacaoAnexo",
+    "TransacaoTransferencia",
+    "TransacaoRecorrente",
+    "UploadOFX",
+    "ExtratoBancario",
+    "RegraConciliacao",
+    "PreLancamento",
+    "FechamentoCaixa",
+    "BoletoBancario",
+    "NotaFiscalDevolucao",
+
+    // --- SaaS comercial ---
+    "Plano",
+    "PropostaComercial",
+    "Assinatura",
+    "Pagamento",
+
+    // --- Notificações / Chat / Relatórios ---
+    "Notificacao",
+    "PreferenciaNotificacao",
+    "CanalChat",
+    "MensagemChat",
+    "RelatorioCustomizado",
   ];
 }
 
