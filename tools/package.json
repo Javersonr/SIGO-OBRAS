@@ -1,0 +1,14 @@
+{
+  "name": "@sigoobras/tools",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "export:base44": "node export-base44.mjs"
+  },
+  "dependencies": {
+    "@base44/sdk": "^0.8.30",
+    "dotenv": "^16.4.5",
+    "node-fetch": "^3.3.2"
+  }
+}

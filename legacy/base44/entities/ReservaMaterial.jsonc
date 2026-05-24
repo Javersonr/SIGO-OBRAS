@@ -1,0 +1,93 @@
+{
+  "name": "ReservaMaterial",
+  "type": "object",
+  "properties": {
+    "empresa_id": {
+      "type": "string",
+      "description": "ID da empresa"
+    },
+    "numero": {
+      "type": "string",
+      "description": "N\u00famero da reserva (ex: RES-001)"
+    },
+    "grupo_id": {
+      "type": "string",
+      "description": "ID do grupo de reserva (agrupa m\u00faltiplos materiais da mesma reserva)"
+    },
+    "material_id": {
+      "type": "string",
+      "description": "ID do material"
+    },
+    "material_codigo": {
+      "type": "string"
+    },
+    "material_descricao": {
+      "type": "string"
+    },
+    "almoxarifado_id": {
+      "type": "string"
+    },
+    "almoxarifado_nome": {
+      "type": "string"
+    },
+    "projeto_id": {
+      "type": "string",
+      "description": "ID do projeto"
+    },
+    "projeto_nome": {
+      "type": "string"
+    },
+    "caminhao_id": {
+      "type": "string"
+    },
+    "caminhao_placa": {
+      "type": "string"
+    },
+    "tipo_reserva": {
+      "type": "string",
+      "enum": [
+        "Projeto",
+        "Caminh\u00e3o"
+      ],
+      "default": "Projeto"
+    },
+    "quantidade_reservada": {
+      "type": "number"
+    },
+    "unidade": {
+      "type": "string"
+    },
+    "data_reserva": {
+      "type": "string",
+      "format": "date"
+    },
+    "data_necessidade": {
+      "type": "string",
+      "format": "date"
+    },
+    "solicitante_id": {
+      "type": "string"
+    },
+    "solicitante_nome": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Ativa",
+        "Utilizada",
+        "Cancelada"
+      ],
+      "default": "Ativa"
+    },
+    "observacoes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "empresa_id",
+    "material_id",
+    "almoxarifado_id",
+    "quantidade_reservada"
+  ]
+}

@@ -1,0 +1,129 @@
+{
+  "name": "Oportunidade",
+  "type": "object",
+  "properties": {
+    "empresa_id": {
+      "type": "string",
+      "description": "ID da empresa"
+    },
+    "nome": {
+      "type": "string",
+      "description": "Nome da oportunidade"
+    },
+    "cliente_id": {
+      "type": "string"
+    },
+    "cliente_nome": {
+      "type": "string"
+    },
+    "status_id": {
+      "type": "string"
+    },
+    "status_nome": {
+      "type": "string"
+    },
+    "origem_id": {
+      "type": "string"
+    },
+    "origem_nome": {
+      "type": "string"
+    },
+    "valor_estimado": {
+      "type": "number",
+      "default": 0
+    },
+    "probabilidade": {
+      "type": "number",
+      "default": 50
+    },
+    "data_fechamento_prevista": {
+      "type": "string",
+      "format": "date"
+    },
+    "descricao": {
+      "type": "string"
+    },
+    "observacoes": {
+      "type": "string"
+    },
+    "responsavel_id": {
+      "type": "string"
+    },
+    "responsavel_nome": {
+      "type": "string"
+    },
+    "responsavel_email": {
+      "type": "string"
+    },
+    "responsaveis_ids": {
+      "type": "string",
+      "description": "JSON com array de IDs dos respons\u00e1veis"
+    },
+    "licitacao_modalidade": {
+      "type": "string",
+      "description": "Modalidade da licita\u00e7\u00e3o"
+    },
+    "licitacao_data": {
+      "type": "string",
+      "format": "date",
+      "description": "Data da licita\u00e7\u00e3o"
+    },
+    "licitacao_horario": {
+      "type": "string",
+      "description": "Hor\u00e1rio da licita\u00e7\u00e3o"
+    },
+    "licitacao_data_impugnacao": {
+      "type": "string",
+      "format": "date",
+      "description": "Data limite de impugna\u00e7\u00e3o"
+    },
+    "licitacao_data_proposta": {
+      "type": "string",
+      "format": "date",
+      "description": "Data limite para envio da proposta"
+    },
+    "licitacao_horario_proposta": {
+      "type": "string",
+      "description": "Hor\u00e1rio limite da proposta"
+    },
+    "licitacao_garantia_proposta": {
+      "type": "boolean",
+      "default": false,
+      "description": "Necessidade de garantia de proposta"
+    },
+    "cep": {
+      "type": "string"
+    },
+    "endereco": {
+      "type": "string"
+    },
+    "numero": {
+      "type": "string"
+    },
+    "complemento": {
+      "type": "string"
+    },
+    "bairro": {
+      "type": "string"
+    },
+    "cidade": {
+      "type": "string"
+    },
+    "estado": {
+      "type": "string"
+    },
+    "etiquetas_ids": {
+      "type": "string",
+      "description": "JSON com array de IDs das etiquetas"
+    },
+    "arquivado": {
+      "type": "boolean",
+      "default": false,
+      "description": "Se a oportunidade est\u00e1 arquivada"
+    }
+  },
+  "required": [
+    "empresa_id",
+    "nome"
+  ]
+}

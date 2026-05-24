@@ -1,0 +1,178 @@
+{
+  "name": "Ferramenta",
+  "type": "object",
+  "properties": {
+    "empresa_id": {
+      "type": "string",
+      "description": "ID da empresa"
+    },
+    "descricao": {
+      "type": "string",
+      "description": "Descri\u00e7\u00e3o da ferramenta"
+    },
+    "codigo": {
+      "type": "string",
+      "description": "C\u00f3digo \u00fanico da ferramenta"
+    },
+    "codigo_secundario": {
+      "type": "string",
+      "description": "C\u00f3digo secund\u00e1rio ou subc\u00f3digo da ferramenta"
+    },
+    "tipo": {
+      "type": "string",
+      "enum": [
+        "Ferramenta",
+        "EPI"
+      ],
+      "default": "Ferramenta",
+      "description": "Tipo do item"
+    },
+    "marca": {
+      "type": "string",
+      "description": "Marca da ferramenta"
+    },
+    "modelo": {
+      "type": "string",
+      "description": "Modelo da ferramenta"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Dispon\u00edvel",
+        "Em Uso",
+        "Em Manuten\u00e7\u00e3o",
+        "Danificado",
+        "Inativo",
+        "Sucata"
+      ],
+      "default": "Dispon\u00edvel",
+      "description": "Status atual da ferramenta"
+    },
+    "localizacao": {
+      "type": "string",
+      "description": "Localiza\u00e7\u00e3o f\u00edsica da ferramenta (Almoxarifado, Caminh\u00e3o, etc)"
+    },
+    "campo_obrigatorio_id": {
+      "type": "string",
+      "description": "ID do CaminhaoCampoObrigatorio ao qual esta ferramenta est\u00e1 vinculada"
+    },
+    "funcionario_id": {
+      "type": "string",
+      "description": "ID do funcion\u00e1rio (quando status 'Em Uso')"
+    },
+    "funcionario_nome": {
+      "type": "string",
+      "description": "Nome do funcion\u00e1rio"
+    },
+    "fornecedor_id": {
+      "type": "string",
+      "description": "ID do fornecedor (quando status 'Em Manuten\u00e7\u00e3o')"
+    },
+    "fornecedor_nome": {
+      "type": "string",
+      "description": "Nome do fornecedor"
+    },
+    "valor_unitario": {
+      "type": "number",
+      "default": 0,
+      "description": "\u00daltimo valor de compra unit\u00e1rio"
+    },
+    "quantidade_estoque": {
+      "type": "number",
+      "default": 1,
+      "description": "Quantidade em estoque (para itens sem controle individual)"
+    },
+    "quantidade_minima": {
+      "type": "number",
+      "default": 0,
+      "description": "Quantidade m\u00ednima antes de alertar"
+    },
+    "controle_individual": {
+      "type": "boolean",
+      "default": false,
+      "description": "Se true, cada unidade \u00e9 um registro separado. Se false, usa campo quantidade_estoque."
+    },
+    "numero_serie": {
+      "type": "string",
+      "description": "N\u00famero de s\u00e9rie da ferramenta"
+    },
+    "numero": {
+      "type": "string",
+      "description": "N\u00famero do EPI (apenas para EPIs)"
+    },
+    "ca": {
+      "type": "string",
+      "description": "Certificado de Aprova\u00e7\u00e3o (CA) - para EPIs"
+    },
+    "numero_laudo": {
+      "type": "string",
+      "description": "N\u00famero do laudo de conformidade"
+    },
+    "data_vencimento_laudo": {
+      "type": "string",
+      "format": "date",
+      "description": "Data de vencimento do laudo"
+    },
+    "laudo_url": {
+      "type": "string",
+      "description": "URL do arquivo do laudo (PDF ou imagem)"
+    },
+    "laudo_obrigatorio": {
+      "type": "boolean",
+      "default": false,
+      "description": "Se esta ferramenta exige laudo t\u00e9cnico obrigat\u00f3rio"
+    },
+    "observacoes": {
+      "type": "string",
+      "description": "Observa\u00e7\u00f5es gerais sobre a ferramenta"
+    },
+    "foto_url": {
+      "type": "string",
+      "description": "URL da foto da ferramenta"
+    },
+    "qrcode_data": {
+      "type": "string",
+      "description": "Dados do QR Code (c\u00f3digo da ferramenta)"
+    },
+    "intervalo_manutencao_dias": {
+      "type": "number",
+      "default": 0,
+      "description": "Intervalo de manuten\u00e7\u00e3o em dias (0 = sem manuten\u00e7\u00e3o programada)"
+    },
+    "intervalo_manutencao_horas": {
+      "type": "number",
+      "default": 0,
+      "description": "Intervalo de manuten\u00e7\u00e3o por horas de uso (0 = sem controle por horas)"
+    },
+    "ultima_manutencao": {
+      "type": "string",
+      "format": "date",
+      "description": "Data da \u00faltima manuten\u00e7\u00e3o realizada"
+    },
+    "proxima_manutencao": {
+      "type": "string",
+      "format": "date",
+      "description": "Data prevista da pr\u00f3xima manuten\u00e7\u00e3o"
+    },
+    "horas_uso": {
+      "type": "number",
+      "default": 0,
+      "description": "Total de horas de uso da ferramenta"
+    },
+    "alerta_manutencao": {
+      "type": "boolean",
+      "default": false,
+      "description": "Se h\u00e1 alerta de manuten\u00e7\u00e3o pendente"
+    },
+    "ativo": {
+      "type": "boolean",
+      "default": true,
+      "description": "Se a ferramenta est\u00e1 ativa"
+    }
+  },
+  "required": [
+    "empresa_id",
+    "codigo",
+    "descricao"
+  ]
+}

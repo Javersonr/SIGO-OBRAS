@@ -1,0 +1,562 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* ============================================ */
+  /* CORES PRIMÁRIAS - AZUL ESCURO */
+  /* ============================================ */
+  --cor-primaria: #1e293b;
+  --cor-primaria-hover: #0f172a;
+  --cor-primaria-active: #020617;
+  --cor-primaria-light: #334155;
+  --cor-primaria-lighter: #475569;
+  
+  /* ============================================ */
+  /* CORES SECUNDÁRIAS */
+  /* ============================================ */
+  --cor-secundaria: #10b981;
+  --cor-secundaria-hover: #059669;
+  --cor-secundaria-active: #047857;
+  --cor-secundaria-light: #d1fae5;
+  --cor-secundaria-lighter: #ecfdf5;
+  
+  /* ============================================ */
+  /* CORES DE FUNDO */
+  /* ============================================ */
+  --bg-principal: #0f172a;
+  --bg-secundario: #1a2332;
+  --bg-terciario: #2d3a52;
+  --bg-hover: #1a2332;
+  --bg-active: #2d3a52;
+  
+  /* ============================================ */
+  /* CORES DE TEXTO */
+  /* ============================================ */
+  --texto-principal: #f1f5f9;
+  --texto-secundario: #cbd5e1;
+  --texto-terciario: #94a3b8;
+  --texto-hover: #ffffff;
+  
+  /* ============================================ */
+  /* CORES DE ESTADO */
+  /* ============================================ */
+  --cor-sucesso: #10b981;
+  --cor-erro: #ef4444;
+  --cor-aviso: #f59e0b;
+  --cor-info: #3b82f6;
+  
+  /* ============================================ */
+  /* SOMBRAS E BORDAS */
+  /* ============================================ */
+  --sombra-leve: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --sombra-media: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --sombra-forte: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --borda-cor: #e2e8f0;
+}
+
+/* ============================================ */
+/* CORES PRIMÁRIAS - BACKGROUNDS */
+/* ============================================ */
+
+.bg-amber-50 {
+  background-color: #1a2332 !important;
+}
+
+.bg-amber-100 {
+  background-color: #2d3a52 !important;
+}
+
+.bg-amber-200 {
+  background-color: #334155 !important;
+}
+
+.bg-amber-300 {
+  background-color: #475569 !important;
+}
+
+.bg-amber-400 {
+  background-color: #64748b !important;
+}
+
+.bg-amber-500 {
+  background-color: var(--cor-primaria) !important;
+}
+
+.bg-amber-600 {
+  background-color: var(--cor-primaria-hover) !important;
+}
+
+.bg-amber-700 {
+  background-color: var(--cor-primaria-active) !important;
+}
+
+/* ============================================ */
+/* CORES PRIMÁRIAS - HOVER STATES */
+/* ============================================ */
+
+.hover\:bg-amber-50:hover {
+  background-color: color-mix(in srgb, var(--cor-primaria) 10%, white) !important;
+}
+
+.hover\:bg-amber-100:hover {
+  background-color: color-mix(in srgb, var(--cor-primaria) 20%, white) !important;
+}
+
+.hover\:bg-amber-500:hover {
+  background-color: var(--cor-primaria) !important;
+}
+
+.hover\:bg-amber-600:hover {
+  background-color: var(--cor-primaria-hover) !important;
+}
+
+.hover\:bg-amber-700:hover {
+  background-color: var(--cor-primaria-active) !important;
+}
+
+/* ============================================ */
+/* CORES PRIMÁRIAS - ACTIVE/CLICK STATES */
+/* ============================================ */
+
+.active\:bg-amber-600:active {
+  background-color: var(--cor-primaria-hover) !important;
+}
+
+.active\:bg-amber-700:active {
+  background-color: var(--cor-primaria-active) !important;
+}
+
+/* ============================================ */
+/* CORES PRIMÁRIAS - TEXTO */
+/* ============================================ */
+
+.text-amber-500 {
+  color: #f1f5f9 !important;
+}
+
+.text-amber-600 {
+  color: #cbd5e1 !important;
+}
+
+.text-amber-700 {
+  color: #94a3b8 !important;
+}
+
+.text-amber-800 {
+  color: #64748b !important;
+}
+
+.hover\:text-amber-600:hover {
+  color: #f1f5f9 !important;
+}
+
+.hover\:text-amber-700:hover {
+  color: #cbd5e1 !important;
+}
+
+/* ============================================ */
+/* CORES PRIMÁRIAS - BORDAS */
+/* ============================================ */
+
+.border-amber-200 {
+  border-color: #334155 !important;
+}
+
+.border-amber-300 {
+  border-color: #475569 !important;
+}
+
+.border-amber-400 {
+  border-color: #64748b !important;
+}
+
+.border-amber-500 {
+  border-color: #cbd5e1 !important;
+}
+
+.hover\:border-amber-400:hover {
+  border-color: #64748b !important;
+}
+
+.hover\:border-amber-500:hover {
+  border-color: #cbd5e1 !important;
+}
+
+.border-slate-200 {
+  border-color: #334155 !important;
+}
+
+.border-slate-300 {
+  border-color: #475569 !important;
+}
+
+/* ============================================ */
+/* CORES PRIMÁRIAS - GRADIENTES */
+/* ============================================ */
+
+.from-amber-500 {
+  --tw-gradient-from: var(--cor-primaria) !important;
+  --tw-gradient-to: rgb(245 158 11 / 0) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+
+.to-amber-600 {
+  --tw-gradient-to: var(--cor-primaria-hover) !important;
+}
+
+.to-orange-600 {
+  --tw-gradient-to: var(--cor-primaria-hover) !important;
+}
+
+/* ============================================ */
+/* CORES SECUNDÁRIAS - BACKGROUNDS */
+/* ============================================ */
+
+.bg-green-50 {
+  background-color: #0a3f2b !important;
+}
+
+.bg-green-100 {
+  background-color: #134e36 !important;
+}
+
+.bg-green-200 {
+  background-color: #1a5f41 !important;
+}
+
+.bg-green-500 {
+  background-color: var(--cor-secundaria) !important;
+}
+
+.bg-green-600 {
+  background-color: var(--cor-secundaria-hover) !important;
+}
+
+/* ============================================ */
+/* CORES SECUNDÁRIAS - HOVER STATES */
+/* ============================================ */
+
+.hover\:bg-green-50:hover {
+  background-color: #0a3f2b !important;
+}
+
+.hover\:bg-green-600:hover {
+  background-color: var(--cor-secundaria-hover) !important;
+}
+
+.hover\:bg-green-700:hover {
+  background-color: var(--cor-secundaria-active) !important;
+}
+
+/* ============================================ */
+/* CORES SECUNDÁRIAS - TEXTO */
+/* ============================================ */
+
+.text-green-500 {
+  color: var(--cor-secundaria) !important;
+}
+
+.text-green-600 {
+  color: var(--cor-secundaria) !important;
+}
+
+.text-green-700 {
+  color: var(--cor-secundaria-hover) !important;
+}
+
+.text-green-800 {
+  color: var(--cor-secundaria-active) !important;
+}
+
+/* ============================================ */
+/* CORES SECUNDÁRIAS - BORDAS */
+/* ============================================ */
+
+.border-green-200 {
+  border-color: #1a5f41 !important;
+}
+
+.border-green-500 {
+  border-color: var(--cor-secundaria) !important;
+}
+
+/* ============================================ */
+/* SCROLLBARS E LAYERS */
+/* ============================================ */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background-color: #1a2332 !important;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #475569 !important;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #64748b !important;
+}
+
+/* ============================================ */
+/* INPUTS E CAMPOS DE FORMULÁRIO */
+/* ============================================ */
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="date"],
+input[type="time"],
+input[type="search"],
+textarea,
+select {
+  background-color: #1a2332 !important;
+  border-color: #334155 !important;
+  color: #f1f5f9 !important;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+input[type="date"]:focus,
+input[type="time"]:focus,
+input[type="search"]:focus,
+textarea:focus,
+select:focus {
+  background-color: #2d3a52 !important;
+  border-color: #64748b !important;
+  box-shadow: 0 0 0 3px rgba(203, 213, 225, 0.1) !important;
+}
+
+input[type="text"]::placeholder,
+input[type="email"]::placeholder,
+input[type="password"]::placeholder,
+input[type="number"]::placeholder,
+input[type="search"]::placeholder,
+textarea::placeholder {
+  color: #64748b !important;
+}
+
+input[type="text"]:disabled,
+input[type="email"]:disabled,
+input[type="password"]:disabled,
+textarea:disabled,
+select:disabled {
+  background-color: #0f172a !important;
+  color: #475569 !important;
+  opacity: 0.6 !important;
+}
+
+/* ============================================ */
+/* TAILWIND CUSTOMIZADO */
+/* ============================================ */
+
+@media (min-width: 640px) {
+  .sm\:max-w-7\.5xl {
+    max-width: 92rem; /* 7.5xl = 92rem */
+  }
+  .sm\:max-w-7\.2xl {
+    max-width: 88.8rem; /* 7.2xl = 88.8rem */
+  }
+}
+
+/* ============================================ */
+/* BOTÕES PERSONALIZADOS */
+/* ============================================ */
+
+/* Botões primários com estados completos */
+button.bg-amber-500,
+.btn-primary {
+  background-color: #1e293b !important;
+  color: #f1f5f9 !important;
+  transition: all 0.2s ease;
+  border: 1px solid #334155 !important;
+}
+
+button.bg-amber-500:hover:not(:disabled),
+.btn-primary:hover:not(:disabled) {
+  background-color: #334155 !important;
+  border-color: #475569 !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+}
+
+button.bg-amber-500:active:not(:disabled),
+.btn-primary:active:not(:disabled) {
+  background-color: #0f172a !important;
+  border-color: #1e293b !important;
+  transform: scale(0.98);
+}
+
+button.bg-amber-500:disabled,
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Botões outline com cor primária */
+button[class*="border-amber"],
+button[class*="text-amber"] {
+  border-color: #475569 !important;
+  color: #cbd5e1 !important;
+  background-color: transparent !important;
+  transition: all 0.2s ease;
+}
+
+button[class*="border-amber"]:hover:not(:disabled),
+button[class*="text-amber"]:hover:not(:disabled) {
+  background-color: #1a2332 !important;
+  border-color: #64748b !important;
+  color: #f1f5f9 !important;
+}
+
+button[class*="border-amber"]:active:not(:disabled) {
+  background-color: #0f172a !important;
+  border-color: #334155 !important;
+  transform: scale(0.98);
+}
+
+/* Botões ghost */
+button.hover\:bg-amber-50:hover:not(:disabled),
+button.hover\:bg-amber-100:hover:not(:disabled) {
+  background-color: #1a2332 !important;
+  color: #f1f5f9 !important;
+}
+
+/* ============================================ */
+/* BADGES E TAGS */
+/* ============================================ */
+
+.badge,
+[class*="badge"] {
+  background-color: #2d3a52 !important;
+  color: #f1f5f9 !important;
+  border: 1px solid #475569 !important;
+}
+
+.badge:hover {
+  background-color: #334155 !important;
+  border-color: #64748b !important;
+}
+
+/* ============================================ */
+/* MODAIS E OVERLAYS */
+/* ============================================ */
+
+[data-radix-dialog-overlay],
+[data-radix-sheet-overlay] {
+  background-color: rgba(0, 0, 0, 0.7) !important;
+}
+
+[data-radix-dialog-content],
+[data-radix-sheet-content] {
+  background-color: #0f172a !important;
+  border: 1px solid #334155 !important;
+}
+
+/* Fundos gerais customizáveis */
+.bg-slate-50 {
+  background-color: #1a2332 !important;
+}
+
+.bg-slate-100 {
+  background-color: #2d3a52 !important;
+}
+
+.bg-slate-200 {
+  background-color: #334155 !important;
+}
+
+.bg-white {
+  background-color: #0f172a !important;
+}
+
+.bg-slate-800 {
+  background-color: #0f172a !important;
+}
+
+.bg-slate-900 {
+  background-color: #020617 !important;
+}
+
+/* ============================================ */
+/* CORES DE TEXTO - ADICIONAIS */
+/* ============================================ */
+
+.text-slate-50 {
+  color: #f1f5f9 !important;
+}
+
+.text-slate-100 {
+  color: #e2e8f0 !important;
+}
+
+.text-slate-200 {
+  color: #cbd5e1 !important;
+}
+
+.text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+.text-slate-600 {
+  color: #64748b !important;
+}
+
+.text-slate-800 {
+  color: #334155 !important;
+}
+
+.text-slate-900 {
+  color: #1e293b !important;
+}
+
+/* ============================================ */
+/* CORES DE FUNDO - ADICIONAIS */
+/* ============================================ */
+
+.bg-slate-400 {
+  background-color: #64748b !important;
+}
+
+.bg-slate-500 {
+  background-color: #475569 !important;
+}
+
+.bg-slate-600 {
+  background-color: #334155 !important;
+}
+
+.bg-slate-700 {
+  background-color: #1a2332 !important;
+}
+
+/* ============================================ */
+/* CARDS E CONTAINERS */
+/* ============================================ */
+
+[class*="Card"],
+[role="region"] {
+  background-color: #1a2332 !important;
+  border-color: #334155 !important;
+}
+
+/* ============================================ */
+/* BACKGROUND GERAL */
+/* ============================================ */
+
+body,
+html,
+main {
+  background-color: #0f172a !important;
+}
+
+.min-h-screen {
+  background-color: #0f172a !important;
+}

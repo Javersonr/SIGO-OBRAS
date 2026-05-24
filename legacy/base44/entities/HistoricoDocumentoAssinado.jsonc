@@ -1,0 +1,53 @@
+{
+  "name": "HistoricoDocumentoAssinado",
+  "type": "object",
+  "properties": {
+    "empresa_id": {
+      "type": "string",
+      "description": "ID da empresa"
+    },
+    "funcionario_id": {
+      "type": "string",
+      "description": "ID do funcion\u00e1rio"
+    },
+    "funcionario_nome": {
+      "type": "string",
+      "description": "Nome do funcion\u00e1rio"
+    },
+    "tipo_documento": {
+      "type": "string",
+      "description": "Chave do campo (ex: ferramentais_anexos)"
+    },
+    "label_documento": {
+      "type": "string",
+      "description": "Nome leg\u00edvel do documento (ex: Lista de Ferramentas)"
+    },
+    "nome_arquivo": {
+      "type": "string",
+      "description": "Nome do arquivo"
+    },
+    "url": {
+      "type": "string",
+      "description": "URL do arquivo"
+    },
+    "data_upload": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Data/hora do upload"
+    },
+    "usuario_email": {
+      "type": "string",
+      "description": "E-mail de quem fez o upload"
+    },
+    "usuario_nome": {
+      "type": "string",
+      "description": "Nome de quem fez o upload"
+    }
+  },
+  "required": [
+    "empresa_id",
+    "funcionario_id",
+    "tipo_documento",
+    "url"
+  ]
+}

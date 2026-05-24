@@ -1,0 +1,88 @@
+{
+  "name": "SolicitacaoCompra",
+  "type": "object",
+  "properties": {
+    "empresa_id": {
+      "type": "string",
+      "description": "ID da empresa"
+    },
+    "numero": {
+      "type": "string",
+      "description": "N\u00famero da solicita\u00e7\u00e3o"
+    },
+    "projeto_id": {
+      "type": "string"
+    },
+    "projeto_nome": {
+      "type": "string"
+    },
+    "projetos_ids": {
+      "type": "string",
+      "description": "JSON array com IDs dos projetos vinculados (quando agrupando m\u00faltiplos projetos)"
+    },
+    "projetos_nomes": {
+      "type": "string",
+      "description": "JSON array com nomes dos projetos vinculados"
+    },
+    "oportunidade_id": {
+      "type": "string"
+    },
+    "oportunidade_nome": {
+      "type": "string"
+    },
+    "solicitante_id": {
+      "type": "string"
+    },
+    "solicitante_nome": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Pendente Aprova\u00e7\u00e3o",
+        "Aprovada",
+        "Em Cota\u00e7\u00e3o",
+        "Cota\u00e7\u00e3o Aprovada",
+        "Pedido Gerado",
+        "Cancelada",
+        "Rejeitada"
+      ],
+      "default": "Pendente Aprova\u00e7\u00e3o"
+    },
+    "prioridade": {
+      "type": "string",
+      "enum": [
+        "Baixa",
+        "Normal",
+        "Alta",
+        "Urgente"
+      ],
+      "default": "Normal"
+    },
+    "origem": {
+      "type": "string",
+      "enum": [
+        "Manual",
+        "Orcamento",
+        "Estoque"
+      ],
+      "default": "Manual",
+      "description": "Origem da solicita\u00e7\u00e3o: manual, a partir do or\u00e7amento ou por estoque m\u00ednimo"
+    },
+    "data_necessidade": {
+      "type": "string",
+      "format": "date"
+    },
+    "observacoes": {
+      "type": "string"
+    },
+    "total_itens": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "empresa_id",
+    "status"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "name": "sigoobras",
+  "private": true,
+  "version": "0.0.0",
+  "description": "SIGO Obras — ERP de gestão de obras. Monorepo: frontend (apps/web), backend Supabase (supabase/), workers (workers/), shared (shared/)",
+  "workspaces": [
+    "apps/*",
+    "workers/*",
+    "shared/*",
+    "tools"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspace=apps/web",
+    "lint": "npm run lint --workspace=apps/web",
+    "supabase:start": "supabase start",
+    "supabase:db:reset": "supabase db reset",
+    "supabase:functions:serve": "supabase functions serve",
+    "export:base44": "node tools/export-base44.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
