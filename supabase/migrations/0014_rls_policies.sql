@@ -71,7 +71,19 @@ $$;
 -- ============================================================================
 
 -- 0001 — Auth
-select apply_tenant_rls('empresa');
+-- ATENÇÃO: empresa NÃO tem coluna empresa_id (é a própria tabela tenant) —
+-- aplicar RLS especial usando id = current_empresa_id().
+alter table public.empresa enable row level security;
+create policy empresa_super_admin on public.empresa
+  for all to authenticated
+  using (public.current_user_is_super_admin())
+  with check (public.current_user_is_super_admin());
+create policy empresa_tenant on public.empresa
+  for select to authenticated
+  using (id = public.current_empresa_id());
+-- Usuários comuns NÃO podem criar/editar/deletar a própria empresa via RLS
+-- (essas operações passam por Edge Function com service role).
+
 select apply_tenant_rls('usuario_custom');
 select apply_tenant_rls('usuario_empresa');
 select apply_tenant_rls('cliente_portal_usuario');
