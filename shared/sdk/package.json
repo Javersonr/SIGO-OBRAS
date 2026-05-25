@@ -1,0 +1,17 @@
+{
+  "name": "@sigoobras/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Wrapper compatível com @base44/sdk falando com Supabase. Permite migração gradual sem reescrever centenas de chamadas.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  }
+}
