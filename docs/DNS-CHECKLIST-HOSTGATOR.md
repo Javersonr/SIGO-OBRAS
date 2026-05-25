@@ -60,26 +60,17 @@ Esses registros são de SERVIÇOS DE TERCEIROS (Resend, Brevo, SendGrid, AWS SES
 
 (Usado pra envio de email autenticado via AWS SES vindo de `email@send.sigoobras.com.br`.)
 
-### B.3 — MX adicional (SES inbound + bounces SES)
+### B.3 — MX (recebimento de email)
 
-> ⚠ **Atenção crítica.** O Hostgator vai criar um MX prio 0 apontando pro servidor dele (Titan). Você tem 2 caminhos:
+> **Decisão tomada: Caminho 1 — Hostgator/Titan recebe.** Email chega no webmail.sigoobras.com.br normalmente.
 
-**Caminho 1 (recomendado): manter Hostgator como recebedor principal**
-- Hostgator cria MX prio 0 → seu servidor (Titan)
-- Adicionar MX prio 20 → `mx2.titan.email` (backup já existe)
-- **NÃO usar SES inbound** — só envio
-- Remover o MX prio 0 do SES (que tinha antes no Cloudflare)
+| Tipo | Nome | Prioridade | Destino | Ação |
+|---|---|---|---|---|
+| MX | `sigoobras.com.br` | 0 | mail server do Hostgator (cPanel cria) | **Não fazer nada** — cPanel cria automático |
+| MX | `sigoobras.com.br` | 20 | `mx2.titan.email` | **Adicionar manual** (backup) |
+| MX | `send.sigoobras.com.br` | 10 | `feedback-smtp.sa-east-1.amazonses.com` | **Adicionar manual** (bounces do envio SES) |
 
-**Caminho 2 (manter SES inbound como atualmente está)**
-- Você precisa CONFIGURAR no Hostgator pra `sigoobras.com.br` usar **roteamento de email "Remote Mail Exchanger"** em cPanel → Email Routing (senão Hostgator vai capturar localmente e ignorar o MX)
-- Setar MX prio 0 → `inbound-smtp.sa-east-1.amazonaws.com`
-- Setar MX prio 20 → `mx2.titan.email`
-
-| Tipo | Nome | Prioridade | Destino |
-|---|---|---|---|
-| MX | `sigoobras.com.br` | 0 | **(Caminho 1)** mail do Hostgator (default cPanel) **OU (Caminho 2)** `inbound-smtp.sa-east-1.amazonaws.com` |
-| MX | `sigoobras.com.br` | 20 | `mx2.titan.email` |
-| MX | `send.sigoobras.com.br` | 10 | `feedback-smtp.sa-east-1.amazonses.com` (bounces SES) |
+**Importante:** em cPanel → **Email Routing**, deixar como **"Local Mail Exchanger"** (ou "Automatic Detection" que vai escolher local sozinho). Não escolher Remote.
 
 ### B.4 — CNAMEs SendGrid (link tracking)
 
@@ -212,15 +203,15 @@ nslookup -type=MX sigoobras.com.br
 ## ✅ Checklist antes de trocar NS
 
 - [ ] `sigoobras.com.br` adicionado como Addon Domain (Passo 1)
-- [ ] Decidi entre Caminho 1 (Hostgator recebe) ou Caminho 2 (SES recebe)
+- [x] ~~Decidir caminho~~ — **Caminho 1 (Hostgator/Titan recebe)** já decidido
 - [ ] 6 DKIMs adicionados (B.1)
 - [ ] SPF do send adicionado (B.2)
-- [ ] MX configurados (B.3)
-- [ ] CNAMEs SendGrid (B.4) — opcional, se ainda usa SendGrid
-- [ ] TXT verificação Brevo (B.5) — se ainda usa Brevo
+- [ ] MX prio 20 (`mx2.titan.email`) e MX prio 10 do `send` adicionados (B.3)
+- [ ] CNAMEs SendGrid (B.4) — **só se ainda usar SendGrid** (Resend já parece suficiente)
+- [ ] TXT verificação Brevo (B.5) — só se ainda usar Brevo
 - [ ] DMARC (B.6)
 - [ ] Build do frontend já está em `public_html/sigoobras/` (pra evitar página default no apex)
-- [ ] Avisado clientes/usuários sobre janela de instabilidade de DNS (horários, ~2h)
-- [ ] Backup de email recente (caso precise) — opcional
+- [ ] Email Routing setado como "Local Mail Exchanger" (cPanel → Email Routing)
+- [ ] Avisado clientes/usuários sobre janela de instabilidade de DNS (~2h)
 
 Quando todos os ✓ estiverem marcados, **aí sim** vai no Passo 3 e troca os nameservers.
