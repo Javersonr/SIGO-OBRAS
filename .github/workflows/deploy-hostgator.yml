@@ -1,0 +1,84 @@
+name: Deploy frontend to Hostgator
+
+# Quando dispara:
+#   - push em master tocando apps/web/** (build do site)
+#   - dispatch manual no Actions UI (botão "Run workflow")
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'apps/web/**'
+      - 'shared/sdk/**'
+      - '.github/workflows/deploy-hostgator.yml'
+  workflow_dispatch:
+
+# Cancela builds antigos se nova mudança chega
+concurrency:
+  group: deploy-hostgator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            apps/web/package-lock.json
+            shared/sdk/package-lock.json
+
+      - name: Install web deps
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Install sdk deps
+        working-directory: shared/sdk
+        run: npm ci
+
+      - name: Build Vite (production)
+        working-directory: apps/web
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_APP_BASE_URL: https://sigoobras.com.br
+          VITE_APP_NAME: SIGO Obras
+          VITE_DATA_BACKEND: supabase
+        run: npm run build
+
+      - name: Verify build artifacts
+        run: |
+          ls -la apps/web/dist
+          test -f apps/web/dist/index.html || (echo "::error::dist/index.html ausente"; exit 1)
+          test -f apps/web/dist/.htaccess || (echo "::error::dist/.htaccess ausente (esqueceu public/.htaccess?)"; exit 1)
+
+      - name: Deploy via FTP to Hostgator
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.HOSTGATOR_FTP_HOST }}        # ex: ftp.sigoobras.com.br
+          username: ${{ secrets.HOSTGATOR_FTP_USER }}
+          password: ${{ secrets.HOSTGATOR_FTP_PASS }}
+          server-dir: ${{ secrets.HOSTGATOR_FTP_DIR }}     # ex: /public_html/  ou  /public_html/sigoobras/
+          local-dir: apps/web/dist/
+          dangerous-clean-slate: false                      # NÃO apaga tudo da pasta destino (preserva outros arquivos)
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            **/*.map
+
+      - name: Notify result
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "::notice::Deploy concluído. Site: https://sigoobras.com.br"
+          else
+            echo "::error::Deploy falhou — ver logs acima"
+          fi

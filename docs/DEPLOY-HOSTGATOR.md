@@ -1,14 +1,10 @@
-# Deploy do frontend no Hostgator (`sigoobras.com.br`) — ARQUIVADO
+# Deploy do frontend no Hostgator (`sigoobras.com.br`) — ROTEIRO OFICIAL
 
-> ⚠️ **Esse roteiro está arquivado.** A decisão (2026-05-25) foi usar **Cloudflare Pages** em vez do Hostgator, porque o domínio já está atrás do Cloudflare e o Pages oferece build automático, CDN global e SSL nativo sem custo.
+> **Decisão (2026-05-25):** o domínio foi registrado via Hostgator e o usuário já paga a hospedagem.
+> Estratégia: aproveitar a Hostgator (sem novo SaaS, sem dependência do Cloudflare).
+> A migração começa com o frontend lá. Quando o Mocha for desligado, trocamos os nameservers ou os A records para apontar para o Hostgator.
 >
-> **Use [`DEPLOY-CLOUDFLARE-PAGES.md`](./DEPLOY-CLOUDFLARE-PAGES.md) como roteiro oficial.**
->
-> Este arquivo fica como referência caso, no futuro, queiramos migrar o frontend pro Hostgator (cenário improvável, mas documentado).
-
----
-
-# Deploy do frontend no Hostgator (`sigoobras.com.br`) — roteiro de referência
+> Alternativa documentada caso queira mudar depois: [`DEPLOY-CLOUDFLARE-PAGES.md`](./DEPLOY-CLOUDFLARE-PAGES.md).
 
 Roteiro operacional para colocar o frontend (`apps/web`) rodando em produção no domínio `sigoobras.com.br` via Hostgator (shared hosting).
 

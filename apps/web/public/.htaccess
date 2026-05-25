@@ -1,0 +1,98 @@
+# SIGO Obras — SPA fallback + cache + segurança
+# Vite copia public/* para dist/ automaticamente; este .htaccess vai junto.
+# Roda no Apache do Hostgator shared hosting.
+
+# ============================================================================
+# 1. SPA fallback — qualquer rota não-arquivo cai no index.html
+#    (sem isso, refresh em /financeiro dá 404)
+# ============================================================================
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # 1a. Força HTTPS (caso SSL não force no nível do cPanel)
+  RewriteCond %{HTTPS} off
+  RewriteCond %{HTTP:X-Forwarded-Proto} !https
+  RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+  # 1b. SPA fallback
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>
+
+# ============================================================================
+# 2. Cache: assets versionados (hash no nome) cacheam para sempre,
+#    index.html nunca cacheia
+# ============================================================================
+<IfModule mod_expires.c>
+  ExpiresActive On
+
+  # Assets imutáveis (Vite gera index-<hash>.js, index-<hash>.css)
+  ExpiresByType text/css "access plus 1 year"
+  ExpiresByType application/javascript "access plus 1 year"
+  ExpiresByType text/javascript "access plus 1 year"
+  ExpiresByType image/svg+xml "access plus 1 month"
+  ExpiresByType image/png "access plus 1 month"
+  ExpiresByType image/jpeg "access plus 1 month"
+  ExpiresByType image/webp "access plus 1 month"
+  ExpiresByType image/x-icon "access plus 1 month"
+  ExpiresByType font/woff2 "access plus 1 year"
+  ExpiresByType font/woff "access plus 1 year"
+  ExpiresByType application/font-woff2 "access plus 1 year"
+</IfModule>
+
+<IfModule mod_headers.c>
+  # Assets em /assets/* (Vite default) — cache eterno, imutável
+  <FilesMatch "\.(js|css|woff|woff2|ttf|otf|eot|svg|png|jpg|jpeg|gif|webp|ico)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+
+  # index.html SEMPRE re-valida (pra mudança aparecer rápido)
+  <Files "index.html">
+    Header set Cache-Control "public, max-age=0, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </Files>
+
+  # manifest.json e service worker também não cacheiam
+  <FilesMatch "(manifest\.json|sw\.js|service-worker\.js)$">
+    Header set Cache-Control "public, max-age=0, must-revalidate"
+  </FilesMatch>
+</IfModule>
+
+# ============================================================================
+# 3. Headers de segurança
+# ============================================================================
+<IfModule mod_headers.c>
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "camera=(self), microphone=(), geolocation=(self), payment=()"
+  # HSTS — só ative quando tiver certeza que HTTPS está estável e renovando
+  # Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+</IfModule>
+
+# ============================================================================
+# 4. Compressão (Gzip)
+# ============================================================================
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json application/xml image/svg+xml font/woff font/woff2
+</IfModule>
+
+# ============================================================================
+# 5. MIME types extras (precaução)
+# ============================================================================
+<IfModule mod_mime.c>
+  AddType application/javascript .mjs
+  AddType font/woff2 .woff2
+  AddType application/manifest+json .webmanifest
+</IfModule>
+
+# ============================================================================
+# 6. Negar acesso a arquivos sensíveis
+# ============================================================================
+<FilesMatch "(^\.env|^\.git|composer\.json|package\.json|package-lock\.json|vite\.config\.js|tsconfig\.json)$">
+  Require all denied
+</FilesMatch>

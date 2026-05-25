@@ -1,3 +1,11 @@
+# Deploy do frontend no Cloudflare Pages — ALTERNATIVA (arquivado)
+
+> ⚠️ **Esse roteiro virou alternativa**, não o caminho oficial. A decisão atual (2026-05-25) é usar **Hostgator** (ver [`DEPLOY-HOSTGATOR.md`](./DEPLOY-HOSTGATOR.md)) porque o usuário já paga e o domínio também é registrado lá.
+>
+> Mantemos este doc como referência para o caso de querer mover o frontend pro Cloudflare no futuro (custo zero, CDN global, melhor performance).
+
+---
+
 # Deploy do frontend no Cloudflare Pages
 
 Roteiro para colocar o frontend (`apps/web`) rodando em `https://sigoobras.com.br` via **Cloudflare Pages** (não Hostgator).
