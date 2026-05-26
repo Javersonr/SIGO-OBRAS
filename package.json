@@ -1,8 +1,18 @@
 {
   "name": "sigoobras",
   "private": true,
-  "version": "0.0.0",
-  "description": "SIGO Obras — ERP de gestão de obras. Monorepo: frontend (apps/web), backend Supabase (supabase/), workers (workers/), shared (shared/)",
+  "version": "0.1.0",
+  "description": "SIGO Obras — ERP de gestão de obras. Monorepo: frontend (apps/web), backend Supabase (supabase/), workers (workers/), shared SDK (shared/sdk).",
+  "license": "UNLICENSED",
+  "author": "Javerson Rodrigues <javersonr@gmail.com>",
+  "homepage": "https://sigoobras.com.br",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Javersonr/SIGO-OBRAS.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Javersonr/SIGO-OBRAS/issues"
+  },
   "workspaces": [
     "apps/*",
     "workers/*",
@@ -12,13 +22,35 @@
   "scripts": {
     "dev": "npm run dev --workspace=apps/web",
     "build": "npm run build --workspace=apps/web",
+    "preview": "npm run preview --workspace=apps/web",
     "lint": "npm run lint --workspace=apps/web",
+    "lint:fix": "npm run lint:fix --workspace=apps/web",
+    "typecheck": "npm run typecheck --workspace=apps/web",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,mjs,cjs,json,md,yml,yaml,css,html}\" --ignore-unknown",
+    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,mjs,cjs,json,md,yml,yaml,css,html}\" --ignore-unknown",
     "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:status": "supabase status",
     "supabase:db:reset": "supabase db reset",
+    "supabase:db:push": "supabase db push --linked",
     "supabase:functions:serve": "supabase functions serve",
-    "export:base44": "node tools/export-base44.mjs"
+    "supabase:functions:deploy": "supabase functions deploy",
+    "supabase:types": "supabase gen types typescript --linked > shared/types/database.ts",
+    "export:base44": "node tools/export-base44.mjs",
+    "seed:from-xlsx": "node tools/seed-from-xlsx.mjs",
+    "sdk:test": "node shared/sdk/smoke-test.mjs",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.5.0",
+    "@commitlint/config-conventional": "^19.5.0",
+    "husky": "^9.1.6",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.3.3"
   },
   "engines": {
-    "node": ">=20"
-  }
+    "node": ">=20",
+    "npm": ">=10"
+  },
+  "packageManager": "npm@10.9.0"
 }

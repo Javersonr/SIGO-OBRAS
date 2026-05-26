@@ -1,0 +1,6 @@
+{
+  "*.{js,jsx,ts,tsx,mjs,cjs}": ["prettier --write"],
+  "*.{json,jsonc,md,mdx,yml,yaml,css,html}": ["prettier --write"],
+  "apps/web/src/**/*.{js,jsx,ts,tsx}": ["prettier --write"],
+  "shared/sdk/src/**/*.{js,mjs}": ["prettier --write"]
+}
