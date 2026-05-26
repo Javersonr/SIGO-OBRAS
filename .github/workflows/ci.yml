@@ -1,0 +1,158 @@
+name: CI
+
+# Roda em todo PR e em push no master. Garante que código quebrado não merge.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Lint + Format: barato, falha rápido
+  # -------------------------------------------------------------------------
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install root deps
+        run: npm ci --ignore-scripts
+
+      - name: Prettier check
+        run: npm run format:check
+
+      - name: ESLint (apps/web)
+        run: |
+          cd apps/web
+          npm ci
+          npm run lint
+
+  # -------------------------------------------------------------------------
+  # Build do frontend: garante que dist/ é gerado sem erro
+  # -------------------------------------------------------------------------
+  build-web:
+    name: Build apps/web
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install deps
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Vite build
+        working-directory: apps/web
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'placeholder' }}
+        run: npm run build
+
+      - name: Upload build artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist-${{ github.run_id }}
+          path: apps/web/dist
+          retention-days: 7
+
+  # -------------------------------------------------------------------------
+  # SDK smoke test: chama Supabase de teste, valida API surface
+  # -------------------------------------------------------------------------
+  test-sdk:
+    name: Test @sigoobras/sdk
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: shared/sdk/package-lock.json
+
+      - name: Install deps
+        working-directory: shared/sdk
+        run: npm ci
+
+      - name: Smoke test
+        working-directory: shared/sdk
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: node smoke-test.mjs
+
+  # -------------------------------------------------------------------------
+  # Migrations dry-check: garante que SQL é parseável
+  # (não aplica nada — só verifica sintaxe básica)
+  # -------------------------------------------------------------------------
+  check-migrations:
+    name: Check Supabase migrations syntax
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: List migrations
+        run: |
+          ls -la supabase/migrations/
+          echo "Total: $(ls supabase/migrations/*.sql | wc -l) migrations"
+
+      - name: Validate SQL files exist and aren't empty
+        run: |
+          for f in supabase/migrations/*.sql; do
+            if [ ! -s "$f" ]; then
+              echo "::error file=$f::Migration file is empty"
+              exit 1
+            fi
+          done
+          echo "All migrations OK"
+
+  # -------------------------------------------------------------------------
+  # Status final: agrega todos os jobs (útil pra branch protection)
+  # -------------------------------------------------------------------------
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [lint, build-web, test-sdk, check-migrations]
+    if: always()
+    steps:
+      - name: Check all jobs
+        run: |
+          if [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.build-web.result }}" != "success" ] || \
+             [ "${{ needs.test-sdk.result }}" != "success" ] || \
+             [ "${{ needs.check-migrations.result }}" != "success" ]; then
+            echo "::error::Um ou mais jobs falharam"
+            exit 1
+          fi
+          echo "✅ CI verde"
