@@ -7,9 +7,9 @@ on:
   push:
     branches: [master]
     paths:
-      - 'apps/web/**'
-      - 'shared/sdk/**'
-      - '.github/workflows/deploy-hostgator.yml'
+      - "apps/web/**"
+      - "shared/sdk/**"
+      - ".github/workflows/deploy-hostgator.yml"
   workflow_dispatch:
 
 # Cancela builds antigos se nova mudança chega
@@ -29,8 +29,8 @@ jobs:
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: |
             apps/web/package-lock.json
             shared/sdk/package-lock.json
@@ -62,12 +62,12 @@ jobs:
       - name: Deploy via FTP to Hostgator
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.HOSTGATOR_FTP_HOST }}        # ex: ftp.sigoobras.com.br
+          server: ${{ secrets.HOSTGATOR_FTP_HOST }} # ex: ftp.sigoobras.com.br
           username: ${{ secrets.HOSTGATOR_FTP_USER }}
           password: ${{ secrets.HOSTGATOR_FTP_PASS }}
-          server-dir: ${{ secrets.HOSTGATOR_FTP_DIR }}     # ex: /public_html/  ou  /public_html/sigoobras/
+          server-dir: ${{ secrets.HOSTGATOR_FTP_DIR }} # ex: /public_html/  ou  /public_html/sigoobras/
           local-dir: apps/web/dist/
-          dangerous-clean-slate: false                      # NÃO apaga tudo da pasta destino (preserva outros arquivos)
+          dangerous-clean-slate: false # NÃO apaga tudo da pasta destino (preserva outros arquivos)
           exclude: |
             **/.git*
             **/.git*/**
