@@ -1,9 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { X } from 'lucide-react';
+import React, { useEffect, useState } from "react";
+import { base44 } from "@/api/base44Client";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 
 export default function VisualizarMaterialModal({ open, onOpenChange, solicitacaoItemId }) {
   const [material, setMaterial] = useState(null);
@@ -18,18 +17,18 @@ export default function VisualizarMaterialModal({ open, onOpenChange, solicitaca
   const loadMaterial = async () => {
     setLoading(true);
     try {
-      const solicitacaoItem = await base44.entities.SolicitacaoCompraItem.filter({ 
-        id: solicitacaoItemId 
+      const solicitacaoItem = await base44.entities.SolicitacaoCompraItem.filter({
+        id: solicitacaoItemId,
       });
-      
+
       if (solicitacaoItem.length > 0 && solicitacaoItem[0].material_id) {
-        const materiais = await base44.entities.Material.filter({ 
-          id: solicitacaoItem[0].material_id 
+        const materiais = await base44.entities.Material.filter({
+          id: solicitacaoItem[0].material_id,
         });
         setMaterial(materiais[0] || null);
       }
     } catch (error) {
-      console.error('Erro ao carregar material:', error);
+      console.error("Erro ao carregar material:", error);
     } finally {
       setLoading(false);
     }
@@ -51,8 +50,8 @@ export default function VisualizarMaterialModal({ open, onOpenChange, solicitaca
             {material.foto_url && (
               <Card>
                 <CardContent className="p-4">
-                  <img 
-                    src={material.foto_url} 
+                  <img
+                    src={material.foto_url}
                     alt={material.nome}
                     className="w-full h-64 object-cover rounded"
                   />
@@ -64,7 +63,7 @@ export default function VisualizarMaterialModal({ open, onOpenChange, solicitaca
               <CardContent className="p-4 space-y-3">
                 <div>
                   <p className="text-xs text-slate-500">Código</p>
-                  <p className="font-semibold text-slate-800">{material.codigo || '-'}</p>
+                  <p className="font-semibold text-slate-800">{material.codigo || "-"}</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-500">Nome</p>
@@ -72,7 +71,7 @@ export default function VisualizarMaterialModal({ open, onOpenChange, solicitaca
                 </div>
                 <div>
                   <p className="text-xs text-slate-500">Categoria</p>
-                  <p className="font-semibold text-slate-800">{material.categoria || '-'}</p>
+                  <p className="font-semibold text-slate-800">{material.categoria || "-"}</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-500">Unidade</p>
@@ -81,7 +80,9 @@ export default function VisualizarMaterialModal({ open, onOpenChange, solicitaca
                 <div>
                   <p className="text-xs text-slate-500">Preço de Referência</p>
                   <p className="font-semibold text-slate-800">
-                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(material.preco || 0)}
+                    {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+                      material.preco || 0
+                    )}
                   </p>
                 </div>
                 {material.estoque !== undefined && (

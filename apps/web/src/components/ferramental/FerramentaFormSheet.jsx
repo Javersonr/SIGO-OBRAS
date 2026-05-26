@@ -1,14 +1,17 @@
-import React from 'react';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
-import { base44 } from '@/api/base44Client';
-import { toast } from 'sonner';
-import { Upload, Download, FileText, Trash2 } from 'lucide-react';
-import SheetModalComponent from '@/components/ui/sheet-modal';
-import QRCodeGenerator from './QRCodeGenerator';
+import React from "react";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import SheetModalComponent from "@/components/ui/sheet-modal";
+import QRCodeGenerator from "./QRCodeGenerator";
 
 export default function FerramentaFormSheet({
   open,
@@ -25,22 +28,24 @@ export default function FerramentaFormSheet({
   caminhoes,
   funcionarios,
   empresaAtiva,
-  onSave
+  onSave,
 }) {
   return (
     <SheetModalComponent
       open={open}
       onOpenChange={onOpenChange}
-      title={selectedItem ? 'Editar Ferramenta' : 'Nova Ferramenta'}
+      title={selectedItem ? "Editar Ferramenta" : "Nova Ferramenta"}
       footer={
         <div className="flex justify-end gap-3">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button 
-            onClick={onSave} 
-            disabled={saving || !formData.descricao || (formData.tipo === 'EPI' && !formData.ca)} 
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={onSave}
+            disabled={saving || !formData.descricao || (formData.tipo === "EPI" && !formData.ca)}
             className="bg-amber-500 hover:bg-amber-600"
           >
-            {saving ? 'Salvando...' : 'Salvar'}
+            {saving ? "Salvando..." : "Salvar"}
           </Button>
         </div>
       }
@@ -49,7 +54,7 @@ export default function FerramentaFormSheet({
         <div className="grid grid-cols-2 gap-4">
           <div>
             <Label className="flex items-center gap-2">
-              Código 
+              Código
               <span className="text-xs text-green-600 font-normal">(opcional)</span>
             </Label>
             <Input
@@ -60,7 +65,10 @@ export default function FerramentaFormSheet({
           </div>
           <div>
             <Label>Tipo *</Label>
-            <Select value={formData.tipo} onValueChange={(v) => setFormData({ ...formData, tipo: v })}>
+            <Select
+              value={formData.tipo}
+              onValueChange={(v) => setFormData({ ...formData, tipo: v })}
+            >
               <SelectTrigger className="mt-1.5">
                 <SelectValue />
               </SelectTrigger>
@@ -74,7 +82,10 @@ export default function FerramentaFormSheet({
 
         <div>
           <Label>Status</Label>
-          <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v })}>
+          <Select
+            value={formData.status}
+            onValueChange={(v) => setFormData({ ...formData, status: v })}
+          >
             <SelectTrigger className="mt-1.5">
               <SelectValue />
             </SelectTrigger>
@@ -89,7 +100,7 @@ export default function FerramentaFormSheet({
           </Select>
         </div>
 
-        {formData.tipo === 'EPI' && (
+        {formData.tipo === "EPI" && (
           <div>
             <Label>CA (Certificado de Aprovação) *</Label>
             <Input
@@ -166,7 +177,9 @@ export default function FerramentaFormSheet({
             step="0.01"
             min="0"
             value={formData.valor_unitario}
-            onChange={(e) => setFormData({ ...formData, valor_unitario: parseFloat(e.target.value) || 0 })}
+            onChange={(e) =>
+              setFormData({ ...formData, valor_unitario: parseFloat(e.target.value) || 0 })
+            }
             className="mt-1.5"
             placeholder="0.00"
           />
@@ -179,7 +192,9 @@ export default function FerramentaFormSheet({
               type="number"
               min="0"
               value={formData.quantidade_estoque}
-              onChange={(e) => setFormData({ ...formData, quantidade_estoque: parseInt(e.target.value) || 0 })}
+              onChange={(e) =>
+                setFormData({ ...formData, quantidade_estoque: parseInt(e.target.value) || 0 })
+              }
               className="mt-1.5"
             />
           </div>
@@ -189,7 +204,9 @@ export default function FerramentaFormSheet({
               type="number"
               min="0"
               value={formData.quantidade_minima || 0}
-              onChange={(e) => setFormData({ ...formData, quantidade_minima: parseInt(e.target.value) || 0 })}
+              onChange={(e) =>
+                setFormData({ ...formData, quantidade_minima: parseInt(e.target.value) || 0 })
+              }
               className="mt-1.5"
             />
           </div>
@@ -199,10 +216,18 @@ export default function FerramentaFormSheet({
           <Label className="text-base font-semibold">Localização</Label>
           <div>
             <Label>Tipo de Localização</Label>
-            <Select value={tipoLocalizacao} onValueChange={(v) => {
-              setTipoLocalizacao(v);
-              setFormData({ ...formData, localizacao: '', funcionario_id: '', funcionario_nome: '' });
-            }}>
+            <Select
+              value={tipoLocalizacao}
+              onValueChange={(v) => {
+                setTipoLocalizacao(v);
+                setFormData({
+                  ...formData,
+                  localizacao: "",
+                  funcionario_id: "",
+                  funcionario_nome: "",
+                });
+              }}
+            >
               <SelectTrigger className="mt-1.5">
                 <SelectValue />
               </SelectTrigger>
@@ -214,55 +239,77 @@ export default function FerramentaFormSheet({
             </Select>
           </div>
 
-          {tipoLocalizacao === 'almoxarifado' && (
+          {tipoLocalizacao === "almoxarifado" && (
             <div>
               <Label>Local</Label>
-              <Select value={formData.localizacao} onValueChange={(v) => setFormData({ ...formData, localizacao: v })}>
+              <Select
+                value={formData.localizacao}
+                onValueChange={(v) => setFormData({ ...formData, localizacao: v })}
+              >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue placeholder="Selecione o local" />
                 </SelectTrigger>
                 <SelectContent>
-                  {almoxarifados.map(local => (
-                    <SelectItem key={local} value={local}>{local}</SelectItem>
+                  {almoxarifados.map((local) => (
+                    <SelectItem key={local} value={local}>
+                      {local}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           )}
 
-          {tipoLocalizacao === 'caminhao' && (
+          {tipoLocalizacao === "caminhao" && (
             <div>
               <Label>Caminhão</Label>
-              <Select value={formData.caminhao_id || ''} onValueChange={(v) => {
-                const caminhao = caminhoes.find(c => c.id === v);
-                setFormData({ ...formData, caminhao_id: v, localizacao: caminhao?.placa || '' });
-              }}>
+              <Select
+                value={formData.caminhao_id || ""}
+                onValueChange={(v) => {
+                  const caminhao = caminhoes.find((c) => c.id === v);
+                  setFormData({ ...formData, caminhao_id: v, localizacao: caminhao?.placa || "" });
+                }}
+              >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue placeholder="Selecione o caminhão" />
                 </SelectTrigger>
                 <SelectContent>
-                  {caminhoes.map(cam => (
-                    <SelectItem key={cam.id} value={cam.id}>{cam.placa} {cam.modelo ? `- ${cam.modelo}` : ''}</SelectItem>
+                  {caminhoes.map((cam) => (
+                    <SelectItem key={cam.id} value={cam.id}>
+                      {cam.placa} {cam.modelo ? `- ${cam.modelo}` : ""}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           )}
 
-          {tipoLocalizacao === 'funcionario' && (
+          {tipoLocalizacao === "funcionario" && (
             <div>
               <Label>Funcionário</Label>
-              <Select value={formData.funcionario_id} onValueChange={(v) => {
-                const func = funcionarios.find(f => f.id === v);
-                setFormData({ ...formData, funcionario_id: v, funcionario_nome: func?.nome_completo || '', localizacao: `Funcionário - ${func?.nome_completo || ''}` });
-              }}>
+              <Select
+                value={formData.funcionario_id}
+                onValueChange={(v) => {
+                  const func = funcionarios.find((f) => f.id === v);
+                  setFormData({
+                    ...formData,
+                    funcionario_id: v,
+                    funcionario_nome: func?.nome_completo || "",
+                    localizacao: `Funcionário - ${func?.nome_completo || ""}`,
+                  });
+                }}
+              >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue placeholder="Selecione o funcionário" />
                 </SelectTrigger>
                 <SelectContent>
-                  {[...funcionarios].sort((a, b) => (a.nome_completo || '').localeCompare(b.nome_completo || '')).map(func => (
-                    <SelectItem key={func.id} value={func.id}>{func.nome_completo}</SelectItem>
-                  ))}
+                  {[...funcionarios]
+                    .sort((a, b) => (a.nome_completo || "").localeCompare(b.nome_completo || ""))
+                    .map((func) => (
+                      <SelectItem key={func.id} value={func.id}>
+                        {func.nome_completo}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>

@@ -1,28 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Badge } from '@/components/ui/badge';
-import { Plus, Edit, Trash2, Settings } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import React, { useState, useEffect } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Plus, Edit, Trash2, Settings } from "lucide-react";
+import { base44 } from "@/api/base44Client";
 
 export default function RegrasConciliacao({ empresaAtiva }) {
   const [regras, setRegras] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [selectedRegra, setSelectedRegra] = useState(null);
   const [form, setForm] = useState({
-    nome: '',
-    tipo_match: 'contem',
+    nome: "",
+    tipo_match: "contem",
     tolerancia_valor: 0,
     tolerancia_dias: 3,
     ignorar_descricao: false,
-    palavras_chave: '',
+    palavras_chave: "",
     prioridade: 1,
-    ativo: true
+    ativo: true,
   });
 
   useEffect(() => {
@@ -39,26 +45,26 @@ export default function RegrasConciliacao({ empresaAtiva }) {
   const handleOpen = (regra = null) => {
     if (regra) {
       setForm({
-        nome: regra.nome || '',
-        tipo_match: regra.tipo_match || 'contem',
+        nome: regra.nome || "",
+        tipo_match: regra.tipo_match || "contem",
         tolerancia_valor: regra.tolerancia_valor || 0,
         tolerancia_dias: regra.tolerancia_dias || 3,
         ignorar_descricao: regra.ignorar_descricao || false,
-        palavras_chave: regra.palavras_chave ? JSON.parse(regra.palavras_chave).join(', ') : '',
+        palavras_chave: regra.palavras_chave ? JSON.parse(regra.palavras_chave).join(", ") : "",
         prioridade: regra.prioridade || 1,
-        ativo: regra.ativo !== false
+        ativo: regra.ativo !== false,
       });
       setSelectedRegra(regra);
     } else {
       setForm({
-        nome: '',
-        tipo_match: 'contem',
+        nome: "",
+        tipo_match: "contem",
         tolerancia_valor: 0,
         tolerancia_dias: 3,
         ignorar_descricao: false,
-        palavras_chave: '',
+        palavras_chave: "",
         prioridade: regras.length + 1,
-        ativo: true
+        ativo: true,
       });
       setSelectedRegra(null);
     }
@@ -67,7 +73,7 @@ export default function RegrasConciliacao({ empresaAtiva }) {
 
   const handleSave = async () => {
     if (!form.nome) {
-      alert('Por favor, preencha o nome da regra');
+      alert("Por favor, preencha o nome da regra");
       return;
     }
 
@@ -78,11 +84,16 @@ export default function RegrasConciliacao({ empresaAtiva }) {
       tolerancia_valor: parseFloat(form.tolerancia_valor) || 0,
       tolerancia_dias: parseInt(form.tolerancia_dias) || 0,
       ignorar_descricao: form.ignorar_descricao,
-      palavras_chave: form.palavras_chave 
-        ? JSON.stringify(form.palavras_chave.split(',').map(p => p.trim()).filter(p => p))
+      palavras_chave: form.palavras_chave
+        ? JSON.stringify(
+            form.palavras_chave
+              .split(",")
+              .map((p) => p.trim())
+              .filter((p) => p)
+          )
         : null,
       prioridade: parseInt(form.prioridade) || 1,
-      ativo: form.ativo
+      ativo: form.ativo,
     };
 
     if (selectedRegra) {
@@ -96,7 +107,7 @@ export default function RegrasConciliacao({ empresaAtiva }) {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Excluir esta regra?')) return;
+    if (!confirm("Excluir esta regra?")) return;
     await base44.entities.RegraConciliacao.delete(id);
     loadRegras();
   };
@@ -120,26 +131,33 @@ export default function RegrasConciliacao({ empresaAtiva }) {
       </div>
 
       <div className="space-y-2">
-        {regras.map(regra => (
-          <Card key={regra.id} className={!regra.ativo ? 'opacity-50' : ''}>
+        {regras.map((regra) => (
+          <Card key={regra.id} className={!regra.ativo ? "opacity-50" : ""}>
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <h4 className="font-semibold text-slate-800">{regra.nome}</h4>
-                    <Badge variant={regra.ativo ? 'default' : 'outline'}>
-                      {regra.ativo ? 'Ativa' : 'Inativa'}
+                    <Badge variant={regra.ativo ? "default" : "outline"}>
+                      {regra.ativo ? "Ativa" : "Inativa"}
                     </Badge>
                     <Badge variant="outline" className="text-xs">
                       Prioridade: {regra.prioridade}
                     </Badge>
                   </div>
                   <div className="flex gap-4 text-xs text-slate-600">
-                    <span>Match: {regra.tipo_match === 'exato' ? 'Exato' : regra.tipo_match === 'contem' ? 'Contém' : 'Palavra-chave'}</span>
+                    <span>
+                      Match:{" "}
+                      {regra.tipo_match === "exato"
+                        ? "Exato"
+                        : regra.tipo_match === "contem"
+                          ? "Contém"
+                          : "Palavra-chave"}
+                    </span>
                     <span>Valor: ±R$ {regra.tolerancia_valor?.toFixed(2)}</span>
                     <span>Data: ±{regra.tolerancia_dias} dias</span>
                     {regra.palavras_chave && (
-                      <span>Palavras: {JSON.parse(regra.palavras_chave).join(', ')}</span>
+                      <span>Palavras: {JSON.parse(regra.palavras_chave).join(", ")}</span>
                     )}
                   </div>
                 </div>
@@ -178,7 +196,7 @@ export default function RegrasConciliacao({ empresaAtiva }) {
       <Sheet open={showModal} onOpenChange={setShowModal}>
         <SheetContent>
           <SheetHeader>
-            <SheetTitle>{selectedRegra ? 'Editar Regra' : 'Nova Regra'}</SheetTitle>
+            <SheetTitle>{selectedRegra ? "Editar Regra" : "Nova Regra"}</SheetTitle>
           </SheetHeader>
 
           <div className="space-y-4 py-6">
@@ -194,7 +212,10 @@ export default function RegrasConciliacao({ empresaAtiva }) {
 
             <div>
               <Label>Tipo de Match</Label>
-              <Select value={form.tipo_match} onValueChange={(v) => setForm({ ...form, tipo_match: v })}>
+              <Select
+                value={form.tipo_match}
+                onValueChange={(v) => setForm({ ...form, tipo_match: v })}
+              >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue />
                 </SelectTrigger>
@@ -206,7 +227,7 @@ export default function RegrasConciliacao({ empresaAtiva }) {
               </Select>
             </div>
 
-            {form.tipo_match === 'palavra_chave' && (
+            {form.tipo_match === "palavra_chave" && (
               <div>
                 <Label>Palavras-chave (separadas por vírgula)</Label>
                 <Input
@@ -251,7 +272,9 @@ export default function RegrasConciliacao({ empresaAtiva }) {
                 className="mt-1.5"
                 min="1"
               />
-              <p className="text-xs text-slate-500 mt-1">Regras com prioridade menor são executadas primeiro</p>
+              <p className="text-xs text-slate-500 mt-1">
+                Regras com prioridade menor são executadas primeiro
+              </p>
             </div>
 
             <div className="flex items-center gap-2">
@@ -278,7 +301,9 @@ export default function RegrasConciliacao({ empresaAtiva }) {
           </div>
 
           <div className="flex justify-end gap-3">
-            <Button variant="outline" onClick={() => setShowModal(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => setShowModal(false)}>
+              Cancelar
+            </Button>
             <Button onClick={handleSave}>Salvar Regra</Button>
           </div>
         </SheetContent>

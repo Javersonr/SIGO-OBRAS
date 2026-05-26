@@ -1,12 +1,21 @@
-import React, { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '../../../Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Target, TrendingUp, TrendingDown, Clock, CheckCircle, XCircle, DollarSign } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import React, { useEffect, useState } from "react";
+import { base44 } from "@/api/base44Client";
+import { useEmpresa } from "../../../Layout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Target, TrendingUp, CheckCircle, XCircle } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
 
-const COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4'];
+const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
 
 export default function WidgetDashOportunidades({ onDadosCarregados }) {
   const { empresaAtiva } = useEmpresa();
@@ -22,48 +31,59 @@ export default function WidgetDashOportunidades({ onDadosCarregados }) {
     try {
       const [oportunidades, status] = await Promise.all([
         base44.entities.Oportunidade.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.StatusOportunidade.filter({ empresa_id: empresaAtiva.id })
+        base44.entities.StatusOportunidade.filter({ empresa_id: empresaAtiva.id }),
       ]);
 
-      const abertas = oportunidades.filter(o => {
-        const s = status.find(s => s.id === o.status_id);
-        return s?.tipo === 'aberto';
+      const abertas = oportunidades.filter((o) => {
+        const s = status.find((s) => s.id === o.status_id);
+        return s?.tipo === "aberto";
       });
-      const ganhas = oportunidades.filter(o => {
-        const s = status.find(s => s.id === o.status_id);
-        return s?.tipo === 'ganho';
+      const ganhas = oportunidades.filter((o) => {
+        const s = status.find((s) => s.id === o.status_id);
+        return s?.tipo === "ganho";
       });
-      const perdidas = oportunidades.filter(o => {
-        const s = status.find(s => s.id === o.status_id);
-        return s?.tipo === 'perdido';
+      const perdidas = oportunidades.filter((o) => {
+        const s = status.find((s) => s.id === o.status_id);
+        return s?.tipo === "perdido";
       });
 
       const valorTotal = abertas.reduce((acc, o) => acc + (o.valor || 0), 0);
       const valorGanho = ganhas.reduce((acc, o) => acc + (o.valor || 0), 0);
 
       // Por status
-      const porStatus = status.map(s => ({
-        name: s.nome,
-        value: oportunidades.filter(o => o.status_id === s.id).length,
-        cor: s.cor || '#64748b'
-      })).filter(s => s.value > 0);
+      const porStatus = status
+        .map((s) => ({
+          name: s.nome,
+          value: oportunidades.filter((o) => o.status_id === s.id).length,
+          cor: s.cor || "#64748b",
+        }))
+        .filter((s) => s.value > 0);
 
       // Últimos 6 meses
       const meses = [];
       for (let i = 5; i >= 0; i--) {
         const d = new Date();
         d.setMonth(d.getMonth() - i);
-        const label = d.toLocaleString('pt-BR', { month: 'short' });
+        const label = d.toLocaleString("pt-BR", { month: "short" });
         const mes = d.getMonth();
         const ano = d.getFullYear();
-        const count = oportunidades.filter(o => {
+        const count = oportunidades.filter((o) => {
           const dt = new Date(o.created_date);
           return dt.getMonth() === mes && dt.getFullYear() === ano;
         }).length;
         meses.push({ label, count });
       }
 
-      const d = { abertas: abertas.length, ganhas: ganhas.length, perdidas: perdidas.length, valorTotal, valorGanho, porStatus, meses, total: oportunidades.length };
+      const d = {
+        abertas: abertas.length,
+        ganhas: ganhas.length,
+        perdidas: perdidas.length,
+        valorTotal,
+        valorGanho,
+        porStatus,
+        meses,
+        total: oportunidades.length,
+      };
       setData(d);
       onDadosCarregados?.(d);
     } catch (e) {
@@ -73,12 +93,18 @@ export default function WidgetDashOportunidades({ onDadosCarregados }) {
     }
   };
 
-  const fmt = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact' }).format(v);
+  const fmt = (v) =>
+    new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+      notation: "compact",
+    }).format(v);
 
   if (loading) return <div className="h-48 bg-slate-100 rounded-xl animate-pulse" />;
   if (!data) return null;
 
-  const taxa = data.total > 0 ? ((data.ganhas / (data.ganhas + data.perdidas || 1)) * 100).toFixed(0) : 0;
+  const taxa =
+    data.total > 0 ? ((data.ganhas / (data.ganhas + data.perdidas || 1)) * 100).toFixed(0) : 0;
 
   return (
     <div className="space-y-3">
@@ -149,7 +175,7 @@ export default function WidgetDashOportunidades({ onDadosCarregados }) {
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                 <Tooltip />
-                <Bar dataKey="count" fill="#3b82f6" radius={[4,4,0,0]} />
+                <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -162,7 +188,17 @@ export default function WidgetDashOportunidades({ onDadosCarregados }) {
           <CardContent className="pb-3">
             <ResponsiveContainer width="100%" height={160}>
               <PieChart>
-                <Pie data={data.porStatus} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} label={({ name, value }) => `${name}: ${value}`} labelLine={false} fontSize={10}>
+                <Pie
+                  data={data.porStatus}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={60}
+                  label={({ name, value }) => `${name}: ${value}`}
+                  labelLine={false}
+                  fontSize={10}
+                >
                   {data.porStatus.map((entry, i) => (
                     <Cell key={i} fill={entry.cor || COLORS[i % COLORS.length]} />
                   ))}

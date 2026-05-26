@@ -1,20 +1,26 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Plus, DollarSign, Calendar, CheckCircle2, AlertCircle } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
+import React from "react";
+import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Plus, DollarSign, Calendar, CheckCircle2, AlertCircle } from "lucide-react";
+import { base44 } from "@/api/base44Client";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 export default function ReceitasTab({ oportunidadeId, empresaAtiva }) {
   const navigate = useNavigate();
   const [receitas, setReceitas] = React.useState([]);
-  const [filtroStatus, setFiltroStatus] = React.useState('all');
-  const [dataInicio, setDataInicio] = React.useState('');
-  const [dataFim, setDataFim] = React.useState('');
+  const [filtroStatus, setFiltroStatus] = React.useState("all");
+  const [dataInicio, setDataInicio] = React.useState("");
+  const [dataFim, setDataFim] = React.useState("");
 
   React.useEffect(() => {
     if (oportunidadeId) loadReceitas();
@@ -24,40 +30,45 @@ export default function ReceitasTab({ oportunidadeId, empresaAtiva }) {
     const transacoes = await base44.entities.TransacaoFinanceira.filter({
       empresa_id: empresaAtiva.id,
       projeto_id: oportunidadeId,
-      tipo: 'receita'
+      tipo: "receita",
     });
-    setReceitas(transacoes.sort((a, b) => new Date(b.data_vencimento) - new Date(a.data_vencimento)));
+    setReceitas(
+      transacoes.sort((a, b) => new Date(b.data_vencimento) - new Date(a.data_vencimento))
+    );
   };
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+      value || 0
+    );
   };
 
   const calcularTotais = (status) => {
     return receitas
-      .filter(r => status === 'all' || r.status === status)
+      .filter((r) => status === "all" || r.status === status)
       .reduce((sum, r) => sum + (r.valor || 0), 0);
   };
 
-  const receitasFiltradas = receitas.filter(r => {
-    const matchStatus = filtroStatus === 'all' || r.status === filtroStatus;
+  const receitasFiltradas = receitas.filter((r) => {
+    const matchStatus = filtroStatus === "all" || r.status === filtroStatus;
     const matchDataInicio = !dataInicio || r.data_vencimento >= dataInicio;
     const matchDataFim = !dataFim || r.data_vencimento <= dataFim;
     return matchStatus && matchDataInicio && matchDataFim;
   });
 
-  const totalEmAberto = calcularTotais('em_aberto');
-  const totalVencido = receitas.filter(r => r.status === 'em_aberto' && r.data_vencimento < new Date().toISOString().split('T')[0]).reduce((s, r) => s + (r.valor || 0), 0);
-  const totalRecebido = calcularTotais('pago');
+  const totalEmAberto = calcularTotais("em_aberto");
+  const totalVencido = receitas
+    .filter(
+      (r) => r.status === "em_aberto" && r.data_vencimento < new Date().toISOString().split("T")[0]
+    )
+    .reduce((s, r) => s + (r.valor || 0), 0);
+  const totalRecebido = calcularTotais("pago");
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="font-semibold text-slate-800">Receitas do Projeto</h3>
-        <Button 
-          onClick={() => navigate(createPageUrl('Financeiro'))}
-          className="gap-2"
-        >
+        <Button onClick={() => navigate(createPageUrl("Financeiro"))} className="gap-2">
           <Plus className="w-4 h-4" />
           Nova Receita
         </Button>
@@ -68,7 +79,9 @@ export default function ReceitasTab({ oportunidadeId, empresaAtiva }) {
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-slate-500">Em aberto</span>
-              <Badge className="bg-blue-100 text-blue-700">{receitas.filter(r => r.status === 'em_aberto').length}</Badge>
+              <Badge className="bg-blue-100 text-blue-700">
+                {receitas.filter((r) => r.status === "em_aberto").length}
+              </Badge>
             </div>
             <p className="text-2xl font-bold text-slate-800">{formatCurrency(totalEmAberto)}</p>
           </CardContent>
@@ -79,7 +92,13 @@ export default function ReceitasTab({ oportunidadeId, empresaAtiva }) {
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-red-700">Vencido</span>
               <Badge className="bg-red-100 text-red-700">
-                {receitas.filter(r => r.status === 'em_aberto' && r.data_vencimento < new Date().toISOString().split('T')[0]).length}
+                {
+                  receitas.filter(
+                    (r) =>
+                      r.status === "em_aberto" &&
+                      r.data_vencimento < new Date().toISOString().split("T")[0]
+                  ).length
+                }
               </Badge>
             </div>
             <p className="text-2xl font-bold text-red-700">{formatCurrency(totalVencido)}</p>
@@ -90,7 +109,9 @@ export default function ReceitasTab({ oportunidadeId, empresaAtiva }) {
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-green-700">Recebido</span>
-              <Badge className="bg-green-100 text-green-700">{receitas.filter(r => r.status === 'pago').length}</Badge>
+              <Badge className="bg-green-100 text-green-700">
+                {receitas.filter((r) => r.status === "pago").length}
+              </Badge>
             </div>
             <p className="text-2xl font-bold text-green-700">{formatCurrency(totalRecebido)}</p>
           </CardContent>
@@ -129,34 +150,42 @@ export default function ReceitasTab({ oportunidadeId, empresaAtiva }) {
         <table className="w-full">
           <thead className="bg-slate-100 border-b">
             <tr>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-slate-700">Descrição</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-slate-700">Vencimento</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-slate-700">
+                Descrição
+              </th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-slate-700">
+                Vencimento
+              </th>
               <th className="text-left px-4 py-3 text-sm font-semibold text-slate-700">Valor</th>
               <th className="text-left px-4 py-3 text-sm font-semibold text-slate-700">Status</th>
               <th className="text-left px-4 py-3 text-sm font-semibold text-slate-700">Conta</th>
             </tr>
           </thead>
           <tbody>
-            {receitasFiltradas.map(receita => {
-              const isVencido = receita.status === 'em_aberto' && receita.data_vencimento < new Date().toISOString().split('T')[0];
+            {receitasFiltradas.map((receita) => {
+              const isVencido =
+                receita.status === "em_aberto" &&
+                receita.data_vencimento < new Date().toISOString().split("T")[0];
               return (
-                <tr 
-                  key={receita.id} 
+                <tr
+                  key={receita.id}
                   className="border-b hover:bg-slate-50 cursor-pointer"
-                  onClick={() => navigate(createPageUrl('Financeiro') + `?tab=receitas&id=${receita.id}`)}
+                  onClick={() =>
+                    navigate(createPageUrl("Financeiro") + `?tab=receitas&id=${receita.id}`)
+                  }
                 >
                   <td className="px-4 py-3 text-sm text-slate-800">{receita.descricao}</td>
                   <td className="px-4 py-3 text-sm text-slate-600">
                     <div className="flex items-center gap-1">
                       <Calendar className="w-3 h-3" />
-                      {new Date(receita.data_vencimento).toLocaleDateString('pt-BR')}
+                      {new Date(receita.data_vencimento).toLocaleDateString("pt-BR")}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm font-semibold text-green-600">
                     {formatCurrency(receita.valor)}
                   </td>
                   <td className="px-4 py-3">
-                    {receita.status === 'pago' ? (
+                    {receita.status === "pago" ? (
                       <Badge className="bg-green-100 text-green-700">
                         <CheckCircle2 className="w-3 h-3 mr-1" />
                         Recebido
@@ -167,12 +196,10 @@ export default function ReceitasTab({ oportunidadeId, empresaAtiva }) {
                         Vencido
                       </Badge>
                     ) : (
-                      <Badge className="bg-blue-100 text-blue-700">
-                        Em aberto
-                      </Badge>
+                      <Badge className="bg-blue-100 text-blue-700">Em aberto</Badge>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm text-slate-600">{receita.conta_nome || '-'}</td>
+                  <td className="px-4 py-3 text-sm text-slate-600">{receita.conta_nome || "-"}</td>
                 </tr>
               );
             })}

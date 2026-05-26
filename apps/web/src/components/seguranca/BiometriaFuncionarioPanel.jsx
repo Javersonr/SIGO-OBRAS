@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Fingerprint, Loader2, CheckCircle2, AlertCircle, Trash2, RefreshCw } from 'lucide-react';
-import { toast } from 'sonner';
-import { base44 } from '@/api/base44Client';
-import NitgenCapture from '@/components/ferramental/NitgenCapture';
-import { format } from 'date-fns';
+import React, { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Fingerprint, Loader2, CheckCircle2, Trash2, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
+import { base44 } from "@/api/base44Client";
+import NitgenCapture from "@/components/ferramental/NitgenCapture";
+import { format } from "date-fns";
 
 export default function BiometriaFuncionarioPanel({
   funcionarioForm,
@@ -14,7 +14,7 @@ export default function BiometriaFuncionarioPanel({
   selectedFuncionario,
   empresaAtiva,
   uploadingDoc,
-  setUploadingDoc
+  setUploadingDoc,
 }) {
   const [showCapturador, setShowCapturador] = useState(false);
   const [capturando, setCapturando] = useState(false);
@@ -23,12 +23,12 @@ export default function BiometriaFuncionarioPanel({
   // Carregar biometria ao abrir funcionário
   useEffect(() => {
     if (selectedFuncionario?.biometria_template) {
-      const biometria = JSON.parse(selectedFuncionario.biometria_template || 'null');
+      const biometria = JSON.parse(selectedFuncionario.biometria_template || "null");
       if (biometria) {
         setBiometriaCarregada({
           template: biometria.template,
           data_captura: biometria.data_captura,
-          qualidade: biometria.qualidade
+          qualidade: biometria.qualidade,
         });
       }
     } else {
@@ -38,7 +38,7 @@ export default function BiometriaFuncionarioPanel({
 
   const handleCapturarBiometria = async (biometryData) => {
     if (!biometryData || !biometryData.template) {
-      toast.error('Erro ao capturar biometria. Tente novamente.');
+      toast.error("Erro ao capturar biometria. Tente novamente.");
       return;
     }
 
@@ -47,14 +47,14 @@ export default function BiometriaFuncionarioPanel({
       const novaBiometria = {
         template: biometryData.template,
         data_captura: new Date().toISOString(),
-        qualidade: biometryData.quality || 'Boa'
+        qualidade: biometryData.quality || "Boa",
       };
 
       // Atualizar o formulário com a nova biometria
       const novoForm = {
         ...funcionarioForm,
         biometria_capturada: true,
-        biometria_template: JSON.stringify(novaBiometria)
+        biometria_template: JSON.stringify(novaBiometria),
       };
       setFuncionarioForm(novoForm);
       setBiometriaCarregada(novaBiometria);
@@ -63,28 +63,28 @@ export default function BiometriaFuncionarioPanel({
       if (selectedFuncionario?.id) {
         await base44.entities.Funcionario.update(selectedFuncionario.id, {
           biometria_capturada: true,
-          biometria_template: JSON.stringify(novaBiometria)
+          biometria_template: JSON.stringify(novaBiometria),
         });
       }
 
-      toast.success('Biometria capturada com sucesso!');
+      toast.success("Biometria capturada com sucesso!");
       setShowCapturador(false);
     } catch (error) {
-      console.error('Erro ao salvar biometria:', error);
-      toast.error('Erro ao salvar biometria');
+      console.error("Erro ao salvar biometria:", error);
+      toast.error("Erro ao salvar biometria");
     } finally {
       setCapturando(false);
     }
   };
 
   const handleRemoverBiometria = async () => {
-    if (!confirm('Deseja remover a biometria capturada?')) return;
+    if (!confirm("Deseja remover a biometria capturada?")) return;
 
     try {
       const novoForm = {
         ...funcionarioForm,
         biometria_capturada: false,
-        biometria_template: null
+        biometria_template: null,
       };
       setFuncionarioForm(novoForm);
       setBiometriaCarregada(null);
@@ -92,14 +92,14 @@ export default function BiometriaFuncionarioPanel({
       if (selectedFuncionario?.id) {
         await base44.entities.Funcionario.update(selectedFuncionario.id, {
           biometria_capturada: false,
-          biometria_template: null
+          biometria_template: null,
         });
       }
 
-      toast.success('Biometria removida com sucesso');
+      toast.success("Biometria removida com sucesso");
     } catch (error) {
-      console.error('Erro ao remover biometria:', error);
-      toast.error('Erro ao remover biometria');
+      console.error("Erro ao remover biometria:", error);
+      toast.error("Erro ao remover biometria");
     }
   };
 
@@ -114,13 +114,13 @@ export default function BiometriaFuncionarioPanel({
               </div>
               <div>
                 <CardTitle className="text-base text-amber-900">Cadastro de Biometria</CardTitle>
-                <p className="text-xs text-amber-700 mt-1">Necessária para assinatura digital de documentos</p>
+                <p className="text-xs text-amber-700 mt-1">
+                  Necessária para assinatura digital de documentos
+                </p>
               </div>
             </div>
             {biometriaCarregada && (
-              <Badge className="bg-green-100 text-green-700 border-green-300">
-                ✓ Capturada
-              </Badge>
+              <Badge className="bg-green-100 text-green-700 border-green-300">✓ Capturada</Badge>
             )}
           </div>
         </CardHeader>
@@ -134,8 +134,8 @@ export default function BiometriaFuncionarioPanel({
                 </div>
                 <div className="text-sm text-slate-600 space-y-1 ml-7">
                   <p>
-                    <span className="font-medium">Data de captura:</span>{' '}
-                    {format(new Date(biometriaCarregada.data_captura), 'dd/MM/yyyy HH:mm')}
+                    <span className="font-medium">Data de captura:</span>{" "}
+                    {format(new Date(biometriaCarregada.data_captura), "dd/MM/yyyy HH:mm")}
                   </p>
                   <p>
                     <span className="font-medium">Qualidade:</span> {biometriaCarregada.qualidade}
@@ -169,9 +169,7 @@ export default function BiometriaFuncionarioPanel({
             <div className="space-y-3">
               <div className="bg-white rounded-lg p-4 border-2 border-dashed border-amber-300 text-center">
                 <Fingerprint className="w-8 h-8 text-amber-600 mx-auto mb-2" />
-                <p className="text-sm text-slate-600">
-                  Nenhuma biometria capturada ainda.
-                </p>
+                <p className="text-sm text-slate-600">Nenhuma biometria capturada ainda.</p>
                 <p className="text-xs text-slate-500 mt-1">
                   Clique em "Capturar Biometria" para registrar a digital do funcionário.
                 </p>

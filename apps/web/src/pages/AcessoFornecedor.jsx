@@ -1,15 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
-import { base44 } from '@/api/base44Client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { Building2, Calendar, Package, Check, AlertCircle, Paperclip, Eye, X, Upload, ArrowLeft } from 'lucide-react';
-import { toast } from 'sonner';
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+import { base44 } from "@/api/base44Client";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Building2, Calendar, Package, Check, AlertCircle, ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
 
 export default function AcessoFornecedor() {
   const navigate = useNavigate();
@@ -22,8 +21,8 @@ export default function AcessoFornecedor() {
   const [enviando, setEnviando] = useState(false);
   const [enviado, setEnviado] = useState(false);
   const [cotacaoFornecedor, setCotacaoFornecedor] = useState(null);
-  const [motivoRecusa, setMotivoRecusa] = useState('');
-  const [responsavel, setResponsavel] = useState('');
+  const [motivoRecusa, setMotivoRecusa] = useState("");
+  const [responsavel, setResponsavel] = useState("");
   const [arquivosAnexados, setArquivosAnexados] = useState([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [token, setToken] = useState(null);
@@ -32,25 +31,51 @@ export default function AcessoFornecedor() {
     // Pegar token da query param: ?token=xxx
     // Com hash routing (#/AcessoFornecedor?token=xxx), os params ficam no hash
     const hash = window.location.hash; // ex: "#/AcessoFornecedor?token=abc123"
-    const queryString = hash.includes('?') ? hash.split('?')[1] : window.location.search;
+    const queryString = hash.includes("?") ? hash.split("?")[1] : window.location.search;
     const urlParams = new URLSearchParams(queryString);
-    const t = urlParams.get('token');
+    const t = urlParams.get("token");
 
     if (!t) {
       // Em desenvolvimento, carregar dados mock para preview
       if (import.meta.env.DEV) {
-        setCotacao({ numero: 'COT2026-0001', projeto_nome: 'Projeto Teste', data_limite: '2026-03-31', observacoes: 'Cotação de teste para desenvolvimento' });
-        setEmpresa({ razao_social: 'Empresa Teste Ltda', nome_fantasia: 'Empresa Teste' });
+        setCotacao({
+          numero: "COT2026-0001",
+          projeto_nome: "Projeto Teste",
+          data_limite: "2026-03-31",
+          observacoes: "Cotação de teste para desenvolvimento",
+        });
+        setEmpresa({ razao_social: "Empresa Teste Ltda", nome_fantasia: "Empresa Teste" });
         setItens([
-          { id: '1', descricao: 'Terminal de pressão/compressão para cabo', codigo: 'EL-001', especificacoes: 'Para cabo de 6 a 10mm²', quantidade: 4, unidade: 'UN' },
-          { id: '2', descricao: 'Tuxa Phdomar', codigo: 'EL-002', especificacoes: '', quantidade: 1, unidade: 'UN' },
-          { id: '3', descricao: 'Cabo de cobre flexível 70mm² AZUL', codigo: 'EL-003', especificacoes: 'Isolamento 0,6/1kV - voltagem HEPR 90°C', quantidade: 100, unidade: 'M' },
+          {
+            id: "1",
+            descricao: "Terminal de pressão/compressão para cabo",
+            codigo: "EL-001",
+            especificacoes: "Para cabo de 6 a 10mm²",
+            quantidade: 4,
+            unidade: "UN",
+          },
+          {
+            id: "2",
+            descricao: "Tuxa Phdomar",
+            codigo: "EL-002",
+            especificacoes: "",
+            quantidade: 1,
+            unidade: "UN",
+          },
+          {
+            id: "3",
+            descricao: "Cabo de cobre flexível 70mm² AZUL",
+            codigo: "EL-003",
+            especificacoes: "Isolamento 0,6/1kV - voltagem HEPR 90°C",
+            quantidade: 100,
+            unidade: "M",
+          },
         ]);
-        setCotacaoFornecedor({ status: 'Visualizada' });
+        setCotacaoFornecedor({ status: "Visualizada" });
         setLoading(false);
         return;
       }
-      setError('Token não informado. Verifique o link recebido.');
+      setError("Token não informado. Verifique o link recebido.");
       setLoading(false);
       return;
     }
@@ -61,34 +86,38 @@ export default function AcessoFornecedor() {
 
   const loadCotacao = async (t) => {
     try {
-      const result = await base44.functions.invoke('carregarCotacaoFornecedor', { token: t });
+      const result = await base44.functions.invoke("carregarCotacaoFornecedor", { token: t });
       const data = result.data;
 
       if (!data || data.error) {
-        setError(data?.error || 'Cotação não encontrada');
+        setError(data?.error || "Cotação não encontrada");
         setLoading(false);
         return;
       }
 
       setCotacao(data.cotacao);
       setEmpresa(data.empresa);
-      setItens((data.itens || []).sort((a, b) => a.descricao?.localeCompare(b.descricao, 'pt-BR')));
+      setItens((data.itens || []).sort((a, b) => a.descricao?.localeCompare(b.descricao, "pt-BR")));
       setCotacaoFornecedor(data.cotacaoFornecedor);
 
       // Mapear respostas já existentes
       const respostasMap = {};
-      (data.respostas || []).forEach(resp => {
+      (data.respostas || []).forEach((resp) => {
         respostasMap[resp.item_id] = {
           valor_unitario: resp.valor_unitario,
           prazo_entrega: resp.prazo_entrega_dias,
-          observacoes: resp.observacoes
+          observacoes: resp.observacoes,
         };
       });
       setRespostas(respostasMap);
 
       // Verificar se já respondeu (status "Enviada" = reaberto pelo admin, pode editar novamente)
-      const statusJaRespondido = ['Respondida Totalmente', 'Respondida Parcialmente', 'Impossível Responder'];
-      const foiReaberto = data.cotacaoFornecedor?.status === 'Enviada';
+      const statusJaRespondido = [
+        "Respondida Totalmente",
+        "Respondida Parcialmente",
+        "Impossível Responder",
+      ];
+      const foiReaberto = data.cotacaoFornecedor?.status === "Enviada";
       if (statusJaRespondido.includes(data.cotacaoFornecedor?.status) && !foiReaberto) {
         setEnviado(true);
       } else {
@@ -96,27 +125,29 @@ export default function AcessoFornecedor() {
       }
 
       // Marcar como visualizada
-      if (data.cotacaoFornecedor?.status === 'Enviada') {
-        await base44.functions.invoke('carregarCotacaoFornecedor', { token: t, marcar_visualizada: true });
+      if (data.cotacaoFornecedor?.status === "Enviada") {
+        await base44.functions.invoke("carregarCotacaoFornecedor", {
+          token: t,
+          marcar_visualizada: true,
+        });
       }
-
     } catch (err) {
       console.error(err);
-      setError('Erro ao carregar cotação. Tente novamente.');
+      setError("Erro ao carregar cotação. Tente novamente.");
     } finally {
       setLoading(false);
     }
   };
 
   const handleRespostaChange = (itemId, campo, valor) => {
-    setRespostas(prev => ({
+    setRespostas((prev) => ({
       ...prev,
       [itemId]: {
-        valor_unitario: prev[itemId]?.valor_unitario || '',
-        prazo_entrega: prev[itemId]?.prazo_entrega || '',
-        observacoes: prev[itemId]?.observacoes || '',
-        [campo]: valor
-      }
+        valor_unitario: prev[itemId]?.valor_unitario || "",
+        prazo_entrega: prev[itemId]?.prazo_entrega || "",
+        observacoes: prev[itemId]?.observacoes || "",
+        [campo]: valor,
+      },
     }));
   };
 
@@ -128,23 +159,23 @@ export default function AcessoFornecedor() {
     try {
       for (const file of files) {
         const { file_url } = await base44.integrations.Core.UploadFile({ file });
-        const arquivo = await base44.functions.invoke('salvarRespostaFornecedor', {
+        const arquivo = await base44.functions.invoke("salvarRespostaFornecedor", {
           token,
-          action: 'upload_arquivo',
+          action: "upload_arquivo",
           arquivo: {
             nome_arquivo: file.name,
             url_arquivo: file_url,
             tamanho: file.size,
-            tipo: file.type
-          }
+            tipo: file.type,
+          },
         });
         if (arquivo?.data?.arquivo) {
-          setArquivosAnexados(prev => [...prev, arquivo.data.arquivo]);
+          setArquivosAnexados((prev) => [...prev, arquivo.data.arquivo]);
         }
       }
       toast.success(`${files.length} arquivo(s) anexado(s)!`);
     } catch (err) {
-      toast.error('Erro ao anexar arquivos');
+      toast.error("Erro ao anexar arquivos");
     } finally {
       setUploadingFiles(false);
     }
@@ -152,58 +183,67 @@ export default function AcessoFornecedor() {
 
   const handleMarcarImpossivel = async () => {
     if (!motivoRecusa.trim()) {
-      toast.error('Por favor, informe o motivo');
+      toast.error("Por favor, informe o motivo");
       return;
     }
     setEnviando(true);
     try {
-      const result = await base44.functions.invoke('salvarRespostaFornecedor', {
+      const result = await base44.functions.invoke("salvarRespostaFornecedor", {
         token,
-        action: 'impossivel',
-        motivo_recusa: motivoRecusa
+        action: "impossivel",
+        motivo_recusa: motivoRecusa,
       });
       if (result.data?.success) {
         setEnviado(true);
-        setCotacaoFornecedor(prev => ({ ...prev, status: 'Impossível Responder', motivo_recusa: motivoRecusa }));
-        toast.success('Status atualizado');
+        setCotacaoFornecedor((prev) => ({
+          ...prev,
+          status: "Impossível Responder",
+          motivo_recusa: motivoRecusa,
+        }));
+        toast.success("Status atualizado");
       } else {
-        toast.error(result.data?.error || 'Erro ao atualizar');
+        toast.error(result.data?.error || "Erro ao atualizar");
       }
     } catch (err) {
-      toast.error('Erro ao enviar');
+      toast.error("Erro ao enviar");
     } finally {
       setEnviando(false);
     }
   };
 
   const handleEnviarResposta = async () => {
-    const itensComResposta = itens.filter(item => respostas[item.id]?.valor_unitario);
+    const itensComResposta = itens.filter((item) => respostas[item.id]?.valor_unitario);
     if (itensComResposta.length === 0) {
-      toast.error('Preencha pelo menos um item');
+      toast.error("Preencha pelo menos um item");
       return;
     }
     if (!responsavel.trim()) {
-      toast.error('Informe o responsável pela cotação');
+      toast.error("Informe o responsável pela cotação");
       return;
     }
 
     setEnviando(true);
     try {
-      const result = await base44.functions.invoke('salvarRespostaFornecedor', {
+      const result = await base44.functions.invoke("salvarRespostaFornecedor", {
         token,
-        action: 'responder',
+        action: "responder",
         respostas,
         responsavel,
-        itens: itens.map(i => ({ id: i.id, descricao: i.descricao, quantidade: i.quantidade, unidade: i.unidade }))
+        itens: itens.map((i) => ({
+          id: i.id,
+          descricao: i.descricao,
+          quantidade: i.quantidade,
+          unidade: i.unidade,
+        })),
       });
       if (result.data?.success) {
         setEnviado(true);
-        toast.success('Cotação enviada com sucesso!');
+        toast.success("Cotação enviada com sucesso!");
       } else {
-        toast.error(result.data?.error || 'Erro ao enviar');
+        toast.error(result.data?.error || "Erro ao enviar");
       }
     } catch (err) {
-      toast.error('Erro ao enviar cotação');
+      toast.error("Erro ao enviar cotação");
     } finally {
       setEnviando(false);
     }
@@ -240,7 +280,7 @@ export default function AcessoFornecedor() {
       <div className="sticky top-0 z-10 border-b bg-white shadow-sm">
         <div className="w-full px-4 py-3 flex items-center gap-3">
           <button
-            onClick={() => navigate(createPageUrl('HistoricoCotacoes'))}
+            onClick={() => navigate(createPageUrl("HistoricoCotacoes"))}
             className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0"
             title="Voltar ao histórico"
           >
@@ -251,7 +291,7 @@ export default function AcessoFornecedor() {
           </div>
           <div>
             <h1 className="text-base font-bold text-slate-800">
-              {empresa?.nome_fantasia || empresa?.razao_social || 'Cotação'}
+              {empresa?.nome_fantasia || empresa?.razao_social || "Cotação"}
             </h1>
             <p className="text-xs text-slate-500">Cotação {cotacao?.numero}</p>
           </div>
@@ -268,13 +308,18 @@ export default function AcessoFornecedor() {
             {cotacao?.projeto_nome && (
               <div className="flex items-center gap-2 text-sm">
                 <Package className="w-4 h-4 text-slate-400" />
-                <span>Projeto: <strong>{cotacao.projeto_nome}</strong></span>
+                <span>
+                  Projeto: <strong>{cotacao.projeto_nome}</strong>
+                </span>
               </div>
             )}
             {cotacao?.data_limite && (
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="w-4 h-4 text-slate-400" />
-                <span>Prazo: <strong>{new Date(cotacao.data_limite).toLocaleDateString('pt-BR')}</strong></span>
+                <span>
+                  Prazo:{" "}
+                  <strong>{new Date(cotacao.data_limite).toLocaleDateString("pt-BR")}</strong>
+                </span>
               </div>
             )}
             {cotacao?.observacoes && (
@@ -287,7 +332,7 @@ export default function AcessoFornecedor() {
         </Card>
 
         {/* Status de envio */}
-        {enviado && cotacaoFornecedor?.status === 'Impossível Responder' && (
+        {enviado && cotacaoFornecedor?.status === "Impossível Responder" && (
           <Card className="border-amber-200 bg-amber-50">
             <CardContent className="p-4 flex items-center gap-3">
               <AlertCircle className="w-6 h-6 text-amber-600" />
@@ -298,7 +343,7 @@ export default function AcessoFornecedor() {
             </CardContent>
           </Card>
         )}
-        {enviado && cotacaoFornecedor?.status !== 'Impossível Responder' && (
+        {enviado && cotacaoFornecedor?.status !== "Impossível Responder" && (
           <Card className="border-green-200 bg-green-50">
             <CardContent className="p-4 flex items-center gap-3">
               <Check className="w-6 h-6 text-green-600" />
@@ -329,7 +374,10 @@ export default function AcessoFornecedor() {
             </div>
 
             {itens.map((item, idx) => (
-              <div key={item.id} className={`border-b last:border-b-0 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+              <div
+                key={item.id}
+                className={`border-b last:border-b-0 ${idx % 2 === 0 ? "bg-white" : "bg-slate-50"}`}
+              >
                 {/* Layout Desktop - linha única */}
                 <div className="hidden sm:grid grid-cols-12 gap-2 px-4 py-3 items-center">
                   <div className="col-span-1 text-center">
@@ -338,22 +386,32 @@ export default function AcessoFornecedor() {
                     </span>
                   </div>
                   <div className="col-span-1 text-center">
-                    <p className="text-xs font-semibold text-blue-600">{item.codigo || '-'}</p>
+                    <p className="text-xs font-semibold text-blue-600">{item.codigo || "-"}</p>
                   </div>
                   <div className="col-span-3 min-w-0">
-                    <p className="text-sm font-medium text-slate-900 leading-snug">{item.descricao}</p>
-                    {item.especificacoes && <p className="text-xs text-slate-400 italic truncate">{item.especificacoes}</p>}
+                    <p className="text-sm font-medium text-slate-900 leading-snug">
+                      {item.descricao}
+                    </p>
+                    {item.especificacoes && (
+                      <p className="text-xs text-slate-400 italic truncate">
+                        {item.especificacoes}
+                      </p>
+                    )}
                   </div>
                   <div className="col-span-1 text-center text-sm font-medium text-slate-700">
-                    {item.quantidade}<br/><span className="text-xs text-slate-400">{item.unidade}</span>
+                    {item.quantidade}
+                    <br />
+                    <span className="text-xs text-slate-400">{item.unidade}</span>
                   </div>
                   <div className="col-span-2">
                     <Input
                       type="number"
                       step="0.01"
                       placeholder="0,00"
-                      value={respostas[item.id]?.valor_unitario || ''}
-                      onChange={(e) => handleRespostaChange(item.id, 'valor_unitario', e.target.value)}
+                      value={respostas[item.id]?.valor_unitario || ""}
+                      onChange={(e) =>
+                        handleRespostaChange(item.id, "valor_unitario", e.target.value)
+                      }
                       disabled={enviado}
                       className="h-8 text-sm text-center"
                     />
@@ -362,8 +420,10 @@ export default function AcessoFornecedor() {
                     <Input
                       type="text"
                       placeholder="15"
-                      value={respostas[item.id]?.prazo_entrega || ''}
-                      onChange={(e) => handleRespostaChange(item.id, 'prazo_entrega', e.target.value)}
+                      value={respostas[item.id]?.prazo_entrega || ""}
+                      onChange={(e) =>
+                        handleRespostaChange(item.id, "prazo_entrega", e.target.value)
+                      }
                       disabled={enviado}
                       className="h-8 text-sm text-center"
                     />
@@ -372,15 +432,15 @@ export default function AcessoFornecedor() {
                     <span className="text-sm font-semibold text-green-700">
                       {respostas[item.id]?.valor_unitario
                         ? `R$ ${(parseFloat(respostas[item.id].valor_unitario) * item.quantidade).toFixed(2)}`
-                        : 'R$ 0,00'}
+                        : "R$ 0,00"}
                     </span>
                   </div>
                   <div className="col-span-1">
                     <Input
                       type="text"
                       placeholder="..."
-                      value={respostas[item.id]?.observacoes || ''}
-                      onChange={(e) => handleRespostaChange(item.id, 'observacoes', e.target.value)}
+                      value={respostas[item.id]?.observacoes || ""}
+                      onChange={(e) => handleRespostaChange(item.id, "observacoes", e.target.value)}
                       disabled={enviado}
                       className="h-8 text-xs"
                       title="Observações"
@@ -396,38 +456,67 @@ export default function AcessoFornecedor() {
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-900">{item.descricao}</p>
-                      {item.codigo && <p className="text-xs font-semibold text-blue-600">Cód: {item.codigo}</p>}
-                      {item.especificacoes && <p className="text-xs text-slate-400 italic">{item.especificacoes}</p>}
-                      <p className="text-xs text-slate-600 mt-0.5">Qtd: <strong>{item.quantidade} {item.unidade}</strong></p>
+                      {item.codigo && (
+                        <p className="text-xs font-semibold text-blue-600">Cód: {item.codigo}</p>
+                      )}
+                      {item.especificacoes && (
+                        <p className="text-xs text-slate-400 italic">{item.especificacoes}</p>
+                      )}
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        Qtd:{" "}
+                        <strong>
+                          {item.quantidade} {item.unidade}
+                        </strong>
+                      </p>
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-2">
                     <div>
                       <Label className="text-xs text-slate-500">Vlr Unit (R$) *</Label>
-                      <Input type="number" step="0.01" placeholder="0,00"
-                        value={respostas[item.id]?.valor_unitario || ''}
-                        onChange={(e) => handleRespostaChange(item.id, 'valor_unitario', e.target.value)}
-                        disabled={enviado} className="mt-1 h-8 text-sm" />
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="0,00"
+                        value={respostas[item.id]?.valor_unitario || ""}
+                        onChange={(e) =>
+                          handleRespostaChange(item.id, "valor_unitario", e.target.value)
+                        }
+                        disabled={enviado}
+                        className="mt-1 h-8 text-sm"
+                      />
                     </div>
                     <div>
                       <Label className="text-xs text-slate-500">Prazo (dias)</Label>
-                      <Input type="text" placeholder="15"
-                        value={respostas[item.id]?.prazo_entrega || ''}
-                        onChange={(e) => handleRespostaChange(item.id, 'prazo_entrega', e.target.value)}
-                        disabled={enviado} className="mt-1 h-8 text-sm" />
+                      <Input
+                        type="text"
+                        placeholder="15"
+                        value={respostas[item.id]?.prazo_entrega || ""}
+                        onChange={(e) =>
+                          handleRespostaChange(item.id, "prazo_entrega", e.target.value)
+                        }
+                        disabled={enviado}
+                        className="mt-1 h-8 text-sm"
+                      />
                     </div>
                     <div>
                       <Label className="text-xs text-slate-500">Obs</Label>
-                      <Input type="text" placeholder="..."
-                        value={respostas[item.id]?.observacoes || ''}
-                        onChange={(e) => handleRespostaChange(item.id, 'observacoes', e.target.value)}
-                        disabled={enviado} className="mt-1 h-8 text-xs" />
+                      <Input
+                        type="text"
+                        placeholder="..."
+                        value={respostas[item.id]?.observacoes || ""}
+                        onChange={(e) =>
+                          handleRespostaChange(item.id, "observacoes", e.target.value)
+                        }
+                        disabled={enviado}
+                        className="mt-1 h-8 text-xs"
+                      />
                     </div>
                   </div>
                   <p className="text-xs font-semibold text-green-700">
-                    Total: {respostas[item.id]?.valor_unitario
+                    Total:{" "}
+                    {respostas[item.id]?.valor_unitario
                       ? `R$ ${(parseFloat(respostas[item.id].valor_unitario) * item.quantidade).toFixed(2)}`
-                      : 'R$ 0,00'}
+                      : "R$ 0,00"}
                   </p>
                 </div>
               </div>
@@ -487,7 +576,7 @@ export default function AcessoFornecedor() {
             disabled={enviando}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white h-12 text-base"
           >
-            {enviando ? 'Enviando...' : 'Enviar Cotação'}
+            {enviando ? "Enviando..." : "Enviar Cotação"}
           </Button>
         </div>
       )}

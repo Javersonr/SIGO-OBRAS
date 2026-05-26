@@ -1,29 +1,33 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { 
-  Shield, Users, Eye, Edit, Search, Filter, 
-  CheckCircle2, XCircle, AlertCircle 
-} from 'lucide-react';
-import { 
-  Select, SelectContent, SelectItem, 
-  SelectTrigger, SelectValue 
-} from '@/components/ui/select';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Shield, Users, Edit, Search, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
 import {
-  Table, TableBody, TableCell, 
-  TableHead, TableHeader, TableRow 
-} from '@/components/ui/table';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterPerfil, setFilterPerfil] = useState('all');
-  const [filterModulo, setFilterModulo] = useState('all');
-  const [viewMode, setViewMode] = useState('resumo'); // 'resumo' ou 'detalhado'
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterPerfil, setFilterPerfil] = useState("all");
+  const [filterModulo, setFilterModulo] = useState("all");
+  const [viewMode, setViewMode] = useState("resumo"); // 'resumo' ou 'detalhado'
 
   useEffect(() => {
     if (empresaAtiva?.id) {
@@ -34,25 +38,25 @@ export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
   const loadUsuarios = async () => {
     setLoading(true);
     try {
-      const vinculos = await base44.entities.UsuarioEmpresa.filter({ 
-        empresa_id: empresaAtiva.id, 
-        ativo: true 
+      const vinculos = await base44.entities.UsuarioEmpresa.filter({
+        empresa_id: empresaAtiva.id,
+        ativo: true,
       });
       setUsuarios(vinculos);
     } catch (error) {
-      console.error('Erro ao carregar usuários:', error);
+      console.error("Erro ao carregar usuários:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const analisarPermissoes = (usuario) => {
-    if (usuario.perfil === 'Admin') {
-      return { total: 'Todas', modulos: ['Todos'], abas: ['Todas'], funcoes: ['Todas'] };
+    if (usuario.perfil === "Admin") {
+      return { total: "Todas", modulos: ["Todos"], abas: ["Todas"], funcoes: ["Todas"] };
     }
 
-    if (usuario.perfil === 'Cliente') {
-      return { total: 'Portal Cliente', modulos: ['Portal Cliente'], abas: [], funcoes: [] };
+    if (usuario.perfil === "Cliente") {
+      return { total: "Portal Cliente", modulos: ["Portal Cliente"], abas: [], funcoes: [] };
     }
 
     try {
@@ -61,11 +65,11 @@ export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
       let totalFuncoes = 0;
       const todasAbas = [];
 
-      modulos.forEach(modulo => {
-        if (typeof perms[modulo] === 'object') {
-          Object.keys(perms[modulo]).forEach(aba => {
+      modulos.forEach((modulo) => {
+        if (typeof perms[modulo] === "object") {
+          Object.keys(perms[modulo]).forEach((aba) => {
             todasAbas.push(`${modulo} → ${aba}`);
-            if (typeof perms[modulo][aba] === 'object') {
+            if (typeof perms[modulo][aba] === "object") {
               totalFuncoes += Object.keys(perms[modulo][aba]).length;
             }
           });
@@ -76,63 +80,92 @@ export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
         total: totalFuncoes,
         modulos,
         abas: todasAbas,
-        funcoes: totalFuncoes
+        funcoes: totalFuncoes,
       };
     } catch (error) {
-      console.error('Erro ao analisar permissões:', error);
+      console.error("Erro ao analisar permissões:", error);
       return { total: 0, modulos: [], abas: [], funcoes: 0 };
     }
   };
 
   const verificarPermissaoModulo = (usuario, modulo) => {
-    if (usuario.perfil === 'Admin') return 'total';
-    
+    if (usuario.perfil === "Admin") return "total";
+
     try {
       const perms = usuario.permissoes ? JSON.parse(usuario.permissoes) : {};
-      if (!perms[modulo]) return 'nenhuma';
-      
+      if (!perms[modulo]) return "nenhuma";
+
       const moduloPerms = perms[modulo];
-      if (typeof moduloPerms !== 'object') return 'nenhuma';
-      
+      if (typeof moduloPerms !== "object") return "nenhuma";
+
       const totalAbas = Object.keys(moduloPerms).length;
-      if (totalAbas === 0) return 'nenhuma';
-      
+      if (totalAbas === 0) return "nenhuma";
+
       // Verificar se tem todas as abas
       const estrutura = ESTRUTURA_PERMISSOES[modulo];
       if (estrutura && Object.keys(estrutura.abas).length === totalAbas) {
-        return 'total';
+        return "total";
       }
-      
-      return 'parcial';
+
+      return "parcial";
     } catch (error) {
-      return 'nenhuma';
+      return "nenhuma";
     }
   };
 
   const ESTRUTURA_PERMISSOES = {
-    'Dashboard': { abas: { 'Visualização': {} } },
-    'Oportunidades': { abas: { 'Lista': {}, 'Orçamento': {}, 'Cronograma': {}, 'Arquivos': {}, 'Cliente': {} } },
-    'Projetos': { abas: { 'Lista': {}, 'Orçamento': {}, 'Cronograma': {}, 'Diário de Obra': {}, 'Financeiro': {}, 'Arquivos': {} } },
-    'Compras': { abas: { 'Solicitações': {}, 'Cotações': {}, 'Pedidos': {}, 'Histórico': {} } },
-    'Estoque': { abas: { 'Materiais': {}, 'Movimentações': {}, 'Retiradas': {}, 'Inventário': {} } },
-    'Ferramental e EPI': { abas: { 'Ferramentas': {}, 'EPIs': {}, 'Empréstimos': {} } },
-    'Segurança do Trabalho': { abas: { 'Funcionários': {}, 'Inspeções de Campo': {}, 'Inspeção de Ferramental': {}, 'Inspeção de Caminhão': {}, 'Treinamentos': {} } },
-    'Financeiro': { abas: { 'Resumo': {}, 'Receitas': {}, 'Despesas': {}, 'Transferências': {}, 'Contas': {}, 'Relatórios': {} } },
-    'Contabilidade': { abas: { 'DRE': {}, 'Balanço': {}, 'Conciliação': {} } }
+    Dashboard: { abas: { Visualização: {} } },
+    Oportunidades: {
+      abas: { Lista: {}, Orçamento: {}, Cronograma: {}, Arquivos: {}, Cliente: {} },
+    },
+    Projetos: {
+      abas: {
+        Lista: {},
+        Orçamento: {},
+        Cronograma: {},
+        "Diário de Obra": {},
+        Financeiro: {},
+        Arquivos: {},
+      },
+    },
+    Compras: { abas: { Solicitações: {}, Cotações: {}, Pedidos: {}, Histórico: {} } },
+    Estoque: { abas: { Materiais: {}, Movimentações: {}, Retiradas: {}, Inventário: {} } },
+    "Ferramental e EPI": { abas: { Ferramentas: {}, EPIs: {}, Empréstimos: {} } },
+    "Segurança do Trabalho": {
+      abas: {
+        Funcionários: {},
+        "Inspeções de Campo": {},
+        "Inspeção de Ferramental": {},
+        "Inspeção de Caminhão": {},
+        Treinamentos: {},
+      },
+    },
+    Financeiro: {
+      abas: {
+        Resumo: {},
+        Receitas: {},
+        Despesas: {},
+        Transferências: {},
+        Contas: {},
+        Relatórios: {},
+      },
+    },
+    Contabilidade: { abas: { DRE: {}, Balanço: {}, Conciliação: {} } },
   };
 
   const modulos = Object.keys(ESTRUTURA_PERMISSOES);
 
-  const filteredUsuarios = usuarios.filter(u => {
-    const matchSearch = !searchTerm || 
+  const filteredUsuarios = usuarios.filter((u) => {
+    const matchSearch =
+      !searchTerm ||
       u.nome_completo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       u.usuario_email?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchPerfil = filterPerfil === 'all' || u.perfil === filterPerfil;
-    
+    const matchPerfil = filterPerfil === "all" || u.perfil === filterPerfil;
+
     let matchModulo = true;
-    if (filterModulo !== 'all') {
+    if (filterModulo !== "all") {
       const status = verificarPermissaoModulo(u, filterModulo);
-      matchModulo = status !== 'nenhuma';
+      matchModulo = status !== "nenhuma";
     }
 
     return matchSearch && matchPerfil && matchModulo;
@@ -140,10 +173,10 @@ export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
 
   const estatisticas = {
     totalUsuarios: usuarios.length,
-    admins: usuarios.filter(u => u.perfil === 'Admin').length,
-    clientes: usuarios.filter(u => u.perfil === 'Cliente').length,
-    comPermissoes: usuarios.filter(u => {
-      if (u.perfil === 'Admin' || u.perfil === 'Cliente') return false;
+    admins: usuarios.filter((u) => u.perfil === "Admin").length,
+    clientes: usuarios.filter((u) => u.perfil === "Cliente").length,
+    comPermissoes: usuarios.filter((u) => {
+      if (u.perfil === "Admin" || u.perfil === "Cliente") return false;
       try {
         const perms = u.permissoes ? JSON.parse(u.permissoes) : {};
         return Object.keys(perms).length > 0;
@@ -151,15 +184,15 @@ export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
         return false;
       }
     }).length,
-    semPermissoes: usuarios.filter(u => {
-      if (u.perfil === 'Admin' || u.perfil === 'Cliente') return false;
+    semPermissoes: usuarios.filter((u) => {
+      if (u.perfil === "Admin" || u.perfil === "Cliente") return false;
       try {
         const perms = u.permissoes ? JSON.parse(u.permissoes) : {};
         return Object.keys(perms).length === 0;
       } catch {
         return true;
       }
-    }).length
+    }).length,
   };
 
   if (loading) {
@@ -268,23 +301,25 @@ export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos os módulos</SelectItem>
-                {modulos.map(m => (
-                  <SelectItem key={m} value={m}>{m}</SelectItem>
+                {modulos.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {m}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <div className="flex gap-2">
               <Button
-                variant={viewMode === 'resumo' ? 'default' : 'outline'}
+                variant={viewMode === "resumo" ? "default" : "outline"}
                 size="sm"
-                onClick={() => setViewMode('resumo')}
+                onClick={() => setViewMode("resumo")}
               >
                 Resumo
               </Button>
               <Button
-                variant={viewMode === 'detalhado' ? 'default' : 'outline'}
+                variant={viewMode === "detalhado" ? "default" : "outline"}
                 size="sm"
-                onClick={() => setViewMode('detalhado')}
+                onClick={() => setViewMode("detalhado")}
               >
                 Detalhado
               </Button>
@@ -294,7 +329,7 @@ export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
       </Card>
 
       {/* Tabela de Permissões */}
-      {viewMode === 'resumo' ? (
+      {viewMode === "resumo" ? (
         <Card>
           <CardHeader>
             <CardTitle>Permissões por Usuário</CardTitle>
@@ -311,38 +346,42 @@ export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredUsuarios.map(u => {
+                {filteredUsuarios.map((u) => {
                   const analise = analisarPermissoes(u);
                   return (
                     <TableRow key={u.id}>
                       <TableCell>
                         <div>
-                          <p className="font-medium text-slate-800">{u.nome_completo || '-'}</p>
+                          <p className="font-medium text-slate-800">{u.nome_completo || "-"}</p>
                           <p className="text-xs text-slate-500">{u.usuario_email}</p>
-                          {u.perfil === 'Cliente' && u.projeto_nome && (
+                          {u.perfil === "Cliente" && u.projeto_nome && (
                             <p className="text-xs text-blue-600 mt-1">Projeto: {u.projeto_nome}</p>
                           )}
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge 
+                        <Badge
                           variant="secondary"
                           className={
-                            u.perfil === 'Admin' ? 'bg-green-100 text-green-700' :
-                            u.perfil === 'Cliente' ? 'bg-blue-100 text-blue-700' :
-                            'bg-slate-100 text-slate-700'
+                            u.perfil === "Admin"
+                              ? "bg-green-100 text-green-700"
+                              : u.perfil === "Cliente"
+                                ? "bg-blue-100 text-blue-700"
+                                : "bg-slate-100 text-slate-700"
                           }
                         >
                           {u.perfil}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {typeof analise.modulos === 'string' ? (
+                        {typeof analise.modulos === "string" ? (
                           <Badge className="bg-green-100 text-green-700">{analise.modulos}</Badge>
                         ) : analise.modulos.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
-                            {analise.modulos.slice(0, 2).map(m => (
-                              <Badge key={m} variant="outline" className="text-xs">{m}</Badge>
+                            {analise.modulos.slice(0, 2).map((m) => (
+                              <Badge key={m} variant="outline" className="text-xs">
+                                {m}
+                              </Badge>
                             ))}
                             {analise.modulos.length > 2 && (
                               <Badge variant="outline" className="text-xs">
@@ -355,18 +394,20 @@ export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
                         )}
                       </TableCell>
                       <TableCell>
-                        {typeof analise.total === 'string' ? (
+                        {typeof analise.total === "string" ? (
                           <Badge className="bg-green-100 text-green-700">{analise.total}</Badge>
                         ) : analise.total > 0 ? (
-                          <Badge className="bg-amber-100 text-amber-700">{analise.total} funções</Badge>
+                          <Badge className="bg-amber-100 text-amber-700">
+                            {analise.total} funções
+                          </Badge>
                         ) : (
                           <Badge className="bg-red-100 text-red-700">Sem permissões</Badge>
                         )}
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-2">
-                          <Button 
-                            variant="ghost" 
+                          <Button
+                            variant="ghost"
                             size="icon"
                             onClick={() => onEditUsuario(u)}
                             title="Editar permissões"
@@ -392,32 +433,49 @@ export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="sticky left-0 bg-white z-10 min-w-[200px]">Usuário</TableHead>
-                    {modulos.map(m => (
-                      <TableHead key={m} className="text-center min-w-[120px]">{m}</TableHead>
+                    <TableHead className="sticky left-0 bg-white z-10 min-w-[200px]">
+                      Usuário
+                    </TableHead>
+                    {modulos.map((m) => (
+                      <TableHead key={m} className="text-center min-w-[120px]">
+                        {m}
+                      </TableHead>
                     ))}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredUsuarios.map(u => (
+                  {filteredUsuarios.map((u) => (
                     <TableRow key={u.id}>
                       <TableCell className="sticky left-0 bg-white z-10">
                         <div>
-                          <p className="font-medium text-sm text-slate-800">{u.nome_completo || '-'}</p>
+                          <p className="font-medium text-sm text-slate-800">
+                            {u.nome_completo || "-"}
+                          </p>
                           <p className="text-xs text-slate-500">{u.usuario_email}</p>
-                          <Badge variant="secondary" className="mt-1 text-xs">{u.perfil}</Badge>
+                          <Badge variant="secondary" className="mt-1 text-xs">
+                            {u.perfil}
+                          </Badge>
                         </div>
                       </TableCell>
-                      {modulos.map(m => {
+                      {modulos.map((m) => {
                         const status = verificarPermissaoModulo(u, m);
                         return (
                           <TableCell key={m} className="text-center">
-                            {status === 'total' ? (
-                              <CheckCircle2 className="w-5 h-5 text-green-600 mx-auto" title="Acesso total" />
-                            ) : status === 'parcial' ? (
-                              <AlertCircle className="w-5 h-5 text-amber-600 mx-auto" title="Acesso parcial" />
+                            {status === "total" ? (
+                              <CheckCircle2
+                                className="w-5 h-5 text-green-600 mx-auto"
+                                title="Acesso total"
+                              />
+                            ) : status === "parcial" ? (
+                              <AlertCircle
+                                className="w-5 h-5 text-amber-600 mx-auto"
+                                title="Acesso parcial"
+                              />
                             ) : (
-                              <XCircle className="w-5 h-5 text-slate-300 mx-auto" title="Sem acesso" />
+                              <XCircle
+                                className="w-5 h-5 text-slate-300 mx-auto"
+                                title="Sem acesso"
+                              />
                             )}
                           </TableCell>
                         );
@@ -432,7 +490,7 @@ export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
       )}
 
       {/* Legenda */}
-      {viewMode === 'detalhado' && (
+      {viewMode === "detalhado" && (
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-6 text-sm">

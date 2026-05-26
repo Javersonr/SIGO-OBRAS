@@ -1,18 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '../../Layout';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Star, Trash2, Eye, Users, Lock } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useEmpresa } from "../../Layout";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Star, Trash2, Eye, Users, Lock } from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function RelatoriosCustomizados({ onCarregarTemplate }) {
   const { empresaAtiva, user } = useEmpresa();
@@ -29,20 +29,18 @@ export default function RelatoriosCustomizados({ onCarregarTemplate }) {
   const loadTemplates = async () => {
     setLoading(true);
     try {
-      const result = await base44.entities.RelatorioCustomizado.filter({ 
-        empresa_id: empresaAtiva.id 
+      const result = await base44.entities.RelatorioCustomizado.filter({
+        empresa_id: empresaAtiva.id,
       });
-      
+
       // Mostrar públicos e do usuário
-      const meusTemplates = result.filter(t => 
-        t.publico || t.usuario_id === user?.id
+      const meusTemplates = result.filter((t) => t.publico || t.usuario_id === user?.id);
+
+      setTemplates(
+        meusTemplates.sort((a, b) => new Date(b.created_date) - new Date(a.created_date))
       );
-      
-      setTemplates(meusTemplates.sort((a, b) => 
-        new Date(b.created_date) - new Date(a.created_date)
-      ));
     } catch (error) {
-      console.error('Erro ao carregar templates:', error);
+      console.error("Erro ao carregar templates:", error);
     } finally {
       setLoading(false);
     }
@@ -51,22 +49,22 @@ export default function RelatoriosCustomizados({ onCarregarTemplate }) {
   const handleToggleFavorito = async (template) => {
     try {
       await base44.entities.RelatorioCustomizado.update(template.id, {
-        favorito: !template.favorito
+        favorito: !template.favorito,
       });
       loadTemplates();
     } catch (error) {
-      console.error('Erro:', error);
+      console.error("Erro:", error);
     }
   };
 
   const handleExcluir = async (template) => {
-    if (!confirm('Excluir este template?')) return;
-    
+    if (!confirm("Excluir este template?")) return;
+
     try {
       await base44.entities.RelatorioCustomizado.delete(template.id);
       loadTemplates();
     } catch (error) {
-      console.error('Erro:', error);
+      console.error("Erro:", error);
     }
   };
 
@@ -76,16 +74,12 @@ export default function RelatoriosCustomizados({ onCarregarTemplate }) {
     setShowDialog(false);
   };
 
-  const favoritos = templates.filter(t => t.favorito);
-  const outros = templates.filter(t => !t.favorito);
+  const favoritos = templates.filter((t) => t.favorito);
+  const outros = templates.filter((t) => !t.favorito);
 
   return (
     <>
-      <Button 
-        variant="outline" 
-        size="sm" 
-        onClick={() => setShowDialog(true)}
-      >
+      <Button variant="outline" size="sm" onClick={() => setShowDialog(true)}>
         <Eye className="w-4 h-4 mr-2" />
         Meus Templates ({templates.length})
       </Button>
@@ -107,7 +101,9 @@ export default function RelatoriosCustomizados({ onCarregarTemplate }) {
             ) : templates.length === 0 ? (
               <div className="text-center py-8 text-slate-500">
                 <p>Nenhum template salvo ainda</p>
-                <p className="text-sm mt-2">Use o botão "Salvar Filtros" para criar seu primeiro template</p>
+                <p className="text-sm mt-2">
+                  Use o botão "Salvar Filtros" para criar seu primeiro template
+                </p>
               </div>
             ) : (
               <div className="space-y-6">
@@ -118,9 +114,9 @@ export default function RelatoriosCustomizados({ onCarregarTemplate }) {
                       Favoritos
                     </h4>
                     <div className="space-y-2">
-                      {favoritos.map(template => (
-                        <TemplateCard 
-                          key={template.id} 
+                      {favoritos.map((template) => (
+                        <TemplateCard
+                          key={template.id}
                           template={template}
                           onCarregar={handleCarregar}
                           onFavorito={handleToggleFavorito}
@@ -138,9 +134,9 @@ export default function RelatoriosCustomizados({ onCarregarTemplate }) {
                       Todos os Templates
                     </h4>
                     <div className="space-y-2">
-                      {outros.map(template => (
-                        <TemplateCard 
-                          key={template.id} 
+                      {outros.map((template) => (
+                        <TemplateCard
+                          key={template.id}
                           template={template}
                           onCarregar={handleCarregar}
                           onFavorito={handleToggleFavorito}
@@ -171,26 +167,29 @@ function TemplateCard({ template, onCarregar, onFavorito, onExcluir, user }) {
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
               <h5 className="font-semibold text-slate-800">{template.nome}</h5>
-              <Badge variant="outline" className="text-xs">{template.tipo}</Badge>
+              <Badge variant="outline" className="text-xs">
+                {template.tipo}
+              </Badge>
               {template.publico ? (
                 <Users className="w-3 h-3 text-blue-600" />
               ) : (
                 <Lock className="w-3 h-3 text-slate-400" />
               )}
             </div>
-            
+
             <div className="flex flex-wrap gap-2 text-xs text-slate-600">
               {filtros.dataInicio && (
                 <span className="bg-slate-100 px-2 py-0.5 rounded">
-                  {new Date(filtros.dataInicio).toLocaleDateString('pt-BR')} - {filtros.dataFim ? new Date(filtros.dataFim).toLocaleDateString('pt-BR') : 'Hoje'}
+                  {new Date(filtros.dataInicio).toLocaleDateString("pt-BR")} -{" "}
+                  {filtros.dataFim ? new Date(filtros.dataFim).toLocaleDateString("pt-BR") : "Hoje"}
                 </span>
               )}
-              {filtros.categoriaId && filtros.categoriaId !== 'all' && (
+              {filtros.categoriaId && filtros.categoriaId !== "all" && (
                 <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
                   Categoria filtrada
                 </span>
               )}
-              {filtros.centroCustoId && filtros.centroCustoId !== 'all' && (
+              {filtros.centroCustoId && filtros.centroCustoId !== "all" && (
                 <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
                   Centro de Custo
                 </span>
@@ -205,7 +204,9 @@ function TemplateCard({ template, onCarregar, onFavorito, onExcluir, user }) {
               className="h-8 w-8"
               onClick={() => onFavorito(template)}
             >
-              <Star className={`w-4 h-4 ${template.favorito ? 'fill-amber-500 text-amber-500' : 'text-slate-400'}`} />
+              <Star
+                className={`w-4 h-4 ${template.favorito ? "fill-amber-500 text-amber-500" : "text-slate-400"}`}
+              />
             </Button>
             <Button
               variant="ghost"

@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '@/Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useEmpresa } from "@/Layout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -12,30 +12,28 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { 
-  Wrench, Search, Plus, Edit, Trash2, Image as ImageIcon, Filter, X
-} from 'lucide-react';
-import { toast } from 'sonner';
-import FerramentaModal from '@/components/ferramental/FerramentaModal';
+} from "@/components/ui/select";
+import { Wrench, Search, Plus, Edit, Trash2, Image as ImageIcon, Filter } from "lucide-react";
+import { toast } from "sonner";
+import FerramentaModal from "@/components/ferramental/FerramentaModal";
 
 export default function CadastroFerramentas() {
   const { empresaAtiva } = useEmpresa();
   const [ferramentas, setFerramentas] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editingFerramenta, setEditingFerramenta] = useState(null);
   const [filtros, setFiltros] = useState({
-    tipo: 'todos',
-    status: 'todos'
+    tipo: "todos",
+    status: "todos",
   });
   const [showFilters, setShowFilters] = useState(false);
 
@@ -49,20 +47,20 @@ export default function CadastroFerramentas() {
     try {
       setLoading(true);
       const filtro = { empresa_id: empresaAtiva.id, ativo: true };
-      
-      if (filtros.tipo !== 'todos') {
+
+      if (filtros.tipo !== "todos") {
         filtro.tipo = filtros.tipo;
       }
-      
-      if (filtros.status !== 'todos') {
+
+      if (filtros.status !== "todos") {
         filtro.status = filtros.status;
       }
-      
-      const data = await base44.entities.Ferramenta.filter(filtro, '-created_date');
+
+      const data = await base44.entities.Ferramenta.filter(filtro, "-created_date");
       setFerramentas(data);
     } catch (error) {
-      console.error('Erro ao carregar ferramentas:', error);
-      toast.error('Erro ao carregar ferramentas');
+      console.error("Erro ao carregar ferramentas:", error);
+      toast.error("Erro ao carregar ferramentas");
     } finally {
       setLoading(false);
     }
@@ -79,31 +77,32 @@ export default function CadastroFerramentas() {
 
     try {
       await base44.entities.Ferramenta.update(ferramenta.id, { ativo: false });
-      toast.success('Ferramenta excluída com sucesso!');
+      toast.success("Ferramenta excluída com sucesso!");
       loadFerramentas();
     } catch (error) {
-      console.error('Erro ao excluir ferramenta:', error);
-      toast.error('Erro ao excluir ferramenta');
+      console.error("Erro ao excluir ferramenta:", error);
+      toast.error("Erro ao excluir ferramenta");
     }
   };
 
-  const filteredFerramentas = ferramentas.filter(f => 
-    f.codigo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    f.descricao?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    f.marca?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    f.modelo?.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredFerramentas = ferramentas.filter(
+    (f) =>
+      f.codigo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      f.descricao?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      f.marca?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      f.modelo?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getStatusBadge = (status) => {
     const config = {
-      'Disponível': 'bg-green-100 text-green-700',
-      'Em Uso': 'bg-blue-100 text-blue-700',
-      'Em Manutenção': 'bg-amber-100 text-amber-700',
-      'Danificado': 'bg-red-100 text-red-700',
-      'Inativo': 'bg-slate-100 text-slate-700',
-      'Sucata': 'bg-slate-100 text-slate-700'
+      Disponível: "bg-green-100 text-green-700",
+      "Em Uso": "bg-blue-100 text-blue-700",
+      "Em Manutenção": "bg-amber-100 text-amber-700",
+      Danificado: "bg-red-100 text-red-700",
+      Inativo: "bg-slate-100 text-slate-700",
+      Sucata: "bg-slate-100 text-slate-700",
     };
-    return config[status] || 'bg-slate-100 text-slate-700';
+    return config[status] || "bg-slate-100 text-slate-700";
   };
 
   if (loading && ferramentas.length === 0) {
@@ -161,7 +160,7 @@ export default function CadastroFerramentas() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setFiltros({ tipo: 'todos', status: 'todos' })}
+                onClick={() => setFiltros({ tipo: "todos", status: "todos" })}
               >
                 Limpar
               </Button>
@@ -227,7 +226,7 @@ export default function CadastroFerramentas() {
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold text-blue-600">
-              {ferramentas.filter(f => f.tipo === 'Ferramenta').length}
+              {ferramentas.filter((f) => f.tipo === "Ferramenta").length}
             </p>
           </CardContent>
         </Card>
@@ -238,7 +237,7 @@ export default function CadastroFerramentas() {
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold text-green-600">
-              {ferramentas.filter(f => f.tipo === 'EPI').length}
+              {ferramentas.filter((f) => f.tipo === "EPI").length}
             </p>
           </CardContent>
         </Card>
@@ -249,7 +248,7 @@ export default function CadastroFerramentas() {
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold text-green-600">
-              {ferramentas.filter(f => f.status === 'Disponível').length}
+              {ferramentas.filter((f) => f.status === "Disponível").length}
             </p>
           </CardContent>
         </Card>
@@ -273,10 +272,12 @@ export default function CadastroFerramentas() {
             <div className="p-12 text-center">
               <Wrench className="w-16 h-16 text-slate-300 mx-auto mb-4" />
               <p className="text-slate-600 text-lg font-medium mb-2">
-                {searchTerm ? 'Nenhuma ferramenta encontrada' : 'Nenhuma ferramenta cadastrada'}
+                {searchTerm ? "Nenhuma ferramenta encontrada" : "Nenhuma ferramenta cadastrada"}
               </p>
               <p className="text-slate-500 text-sm">
-                {searchTerm ? 'Tente outro termo de busca' : 'Clique em "Nova Ferramenta" para começar'}
+                {searchTerm
+                  ? "Tente outro termo de busca"
+                  : 'Clique em "Nova Ferramenta" para começar'}
               </p>
             </div>
           ) : (
@@ -300,8 +301,8 @@ export default function CadastroFerramentas() {
                       <TableCell>
                         {ferramenta.foto_url ? (
                           <div className="w-10 h-10 bg-slate-100 rounded flex items-center justify-center overflow-hidden">
-                            <img 
-                              src={ferramenta.foto_url} 
+                            <img
+                              src={ferramenta.foto_url}
                               alt={ferramenta.descricao}
                               className="w-full h-full object-cover"
                             />
@@ -322,9 +323,9 @@ export default function CadastroFerramentas() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm text-slate-600">
-                        {ferramenta.marca && ferramenta.modelo 
+                        {ferramenta.marca && ferramenta.modelo
                           ? `${ferramenta.marca} ${ferramenta.modelo}`
-                          : ferramenta.marca || ferramenta.modelo || '-'}
+                          : ferramenta.marca || ferramenta.modelo || "-"}
                       </TableCell>
                       <TableCell>
                         <Badge className={getStatusBadge(ferramenta.status)}>
@@ -332,7 +333,7 @@ export default function CadastroFerramentas() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm text-slate-600">
-                        {ferramenta.localizacao || '-'}
+                        {ferramenta.localizacao || "-"}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">

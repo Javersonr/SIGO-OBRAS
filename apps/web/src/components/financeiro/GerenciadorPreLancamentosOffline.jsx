@@ -1,23 +1,22 @@
-import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import React, { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription
-} from '@/components/ui/dialog';
-import { CloudOff, RefreshCw, Trash2, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { CloudOff, RefreshCw, Trash2, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 
-export default function GerenciadorPreLancamentosOffline({ 
-  itemsPendentes, 
-  online, 
-  sincronizando, 
+export default function GerenciadorPreLancamentosOffline({
+  itemsPendentes,
+  online,
+  sincronizando,
   onSincronizar,
-  onDeletar
+  onDeletar,
 }) {
   const [mostrarDetalhes, setMostrarDetalhes] = useState(false);
   const [itemSelecionado, setItemSelecionado] = useState(null);
@@ -25,7 +24,7 @@ export default function GerenciadorPreLancamentosOffline({
 
   const handleSincronizar = async () => {
     if (itemsPendentes.length === 0) {
-      setMensagem('Nenhum item para sincronizar');
+      setMensagem("Nenhum item para sincronizar");
       return;
     }
 
@@ -40,10 +39,10 @@ export default function GerenciadorPreLancamentosOffline({
   };
 
   const handleDeletar = async (id) => {
-    if (confirm('Tem certeza que deseja deletar este pré-lançamento?')) {
+    if (confirm("Tem certeza que deseja deletar este pré-lançamento?")) {
       await onDeletar(id);
       setMostrarDetalhes(false);
-      setMensagem('Pré-lançamento deletado');
+      setMensagem("Pré-lançamento deletado");
       setTimeout(() => setMensagem(null), 2000);
     }
   };
@@ -69,7 +68,7 @@ export default function GerenciadorPreLancamentosOffline({
         <CardContent className="space-y-3">
           <p className="text-sm text-amber-800">
             Você tem {itemsPendentes.length} pré-lançamento(s) aguardando sincronização.
-            {online ? ' Sincronize agora!' : ' Será sincronizado quando conectar à internet.'}
+            {online ? " Sincronize agora!" : " Será sincronizado quando conectar à internet."}
           </p>
 
           {!online && (
@@ -115,9 +114,7 @@ export default function GerenciadorPreLancamentosOffline({
           {mensagem && (
             <Alert className="border-green-200 bg-green-50">
               <CheckCircle2 className="w-4 h-4 text-green-600" />
-              <AlertDescription className="text-green-800 text-sm">
-                {mensagem}
-              </AlertDescription>
+              <AlertDescription className="text-green-800 text-sm">{mensagem}</AlertDescription>
             </Alert>
           )}
         </CardContent>
@@ -135,9 +132,10 @@ export default function GerenciadorPreLancamentosOffline({
 
           <div className="space-y-3 max-h-96 overflow-y-auto">
             {itemsPendentes.map((item) => {
-              const dados = typeof item.dados_extraidos === 'string' 
-                ? JSON.parse(item.dados_extraidos) 
-                : item.dados_extraidos;
+              const dados =
+                typeof item.dados_extraidos === "string"
+                  ? JSON.parse(item.dados_extraidos)
+                  : item.dados_extraidos;
 
               return (
                 <Card key={item.id} className="bg-slate-50">
@@ -146,7 +144,7 @@ export default function GerenciadorPreLancamentosOffline({
                       <div className="flex justify-between items-start">
                         <div>
                           <p className="font-medium text-slate-900">
-                            {dados.fornecedor || 'Fornecedor não informado'}
+                            {dados.fornecedor || "Fornecedor não informado"}
                           </p>
                           <p className="text-sm text-slate-600">
                             R$ {parseFloat(dados.valor || 0).toFixed(2)}
@@ -162,13 +160,11 @@ export default function GerenciadorPreLancamentosOffline({
                         </Button>
                       </div>
                       {item.projeto_nome && (
-                        <p className="text-xs text-slate-500">
-                          Projeto: {item.projeto_nome}
-                        </p>
+                        <p className="text-xs text-slate-500">Projeto: {item.projeto_nome}</p>
                       )}
                       {item.dataCriacao && (
                         <p className="text-xs text-slate-500">
-                          {new Date(item.dataCriacao).toLocaleString('pt-BR')}
+                          {new Date(item.dataCriacao).toLocaleString("pt-BR")}
                         </p>
                       )}
                     </div>

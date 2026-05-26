@@ -1,31 +1,36 @@
-import React, { useState, useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { TrendingUp, TrendingDown, Calendar } from 'lucide-react';
+import React, { useState, useMemo } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { TrendingUp, TrendingDown } from "lucide-react";
 
-export default function EvolucaoDespesas({ transacoes, categorias, versao = 'real' }) {
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
-  const [categoriaFiltro, setCategoriaFiltro] = useState('todas');
+export default function EvolucaoDespesas({ transacoes, categorias, versao = "real" }) {
+  const [dataInicio, setDataInicio] = useState("");
+  const [dataFim, setDataFim] = useState("");
+  const [categoriaFiltro, setCategoriaFiltro] = useState("todas");
 
   const dadosFiltrados = useMemo(() => {
-    let filtradas = transacoes.filter(t => 
-      t.tipo === 'despesa' && 
-      t.status === 'pago' &&
-      (versao === 'real' || t.numero_documento)
+    let filtradas = transacoes.filter(
+      (t) =>
+        t.tipo === "despesa" && t.status === "pago" && (versao === "real" || t.numero_documento)
     );
 
     if (dataInicio) {
-      filtradas = filtradas.filter(t => new Date(t.data) >= new Date(dataInicio));
+      filtradas = filtradas.filter((t) => new Date(t.data) >= new Date(dataInicio));
     }
     if (dataFim) {
-      filtradas = filtradas.filter(t => new Date(t.data) <= new Date(dataFim));
+      filtradas = filtradas.filter((t) => new Date(t.data) <= new Date(dataFim));
     }
-    if (categoriaFiltro !== 'todas') {
-      filtradas = filtradas.filter(t => t.categoria_id === categoriaFiltro);
+    if (categoriaFiltro !== "todas") {
+      filtradas = filtradas.filter((t) => t.categoria_id === categoriaFiltro);
     }
 
     return filtradas;
@@ -34,13 +39,13 @@ export default function EvolucaoDespesas({ transacoes, categorias, versao = 'rea
   // Agrupar por mês
   const despesasPorMes = useMemo(() => {
     const grupos = {};
-    dadosFiltrados.forEach(t => {
-      const mes = new Date(t.data).toLocaleDateString('pt-BR', { year: 'numeric', month: 'short' });
+    dadosFiltrados.forEach((t) => {
+      const mes = new Date(t.data).toLocaleDateString("pt-BR", { year: "numeric", month: "short" });
       grupos[mes] = (grupos[mes] || 0) + (t.valor || 0);
     });
     return Object.entries(grupos).sort((a, b) => {
-      const [mesA] = a[0].split(' ');
-      const [mesB] = b[0].split(' ');
+      const [mesA] = a[0].split(" ");
+      const [mesB] = b[0].split(" ");
       return new Date(a[0]) - new Date(b[0]);
     });
   }, [dadosFiltrados]);
@@ -48,8 +53,8 @@ export default function EvolucaoDespesas({ transacoes, categorias, versao = 'rea
   // Agrupar por categoria
   const despesasPorCategoria = useMemo(() => {
     const grupos = {};
-    dadosFiltrados.forEach(t => {
-      const cat = t.categoria_nome || 'Sem categoria';
+    dadosFiltrados.forEach((t) => {
+      const cat = t.categoria_nome || "Sem categoria";
       grupos[cat] = (grupos[cat] || 0) + (t.valor || 0);
     });
     return Object.entries(grupos).sort((a, b) => b[1] - a[1]);
@@ -57,13 +62,19 @@ export default function EvolucaoDespesas({ transacoes, categorias, versao = 'rea
 
   const totalDespesas = dadosFiltrados.reduce((sum, t) => sum + (t.valor || 0), 0);
   const mediaMensal = despesasPorMes.length > 0 ? totalDespesas / despesasPorMes.length : 0;
-  
-  const variacao = despesasPorMes.length >= 2 
-    ? ((despesasPorMes[despesasPorMes.length - 1][1] - despesasPorMes[despesasPorMes.length - 2][1]) / despesasPorMes[despesasPorMes.length - 2][1]) * 100
-    : 0;
+
+  const variacao =
+    despesasPorMes.length >= 2
+      ? ((despesasPorMes[despesasPorMes.length - 1][1] -
+          despesasPorMes[despesasPorMes.length - 2][1]) /
+          despesasPorMes[despesasPorMes.length - 2][1]) *
+        100
+      : 0;
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+      value || 0
+    );
   };
 
   const maxValor = Math.max(...despesasPorMes.map(([_, v]) => v), 1);
@@ -73,8 +84,8 @@ export default function EvolucaoDespesas({ transacoes, categorias, versao = 'rea
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>Evolução de Despesas</CardTitle>
-          <Badge variant={versao === 'real' ? 'default' : 'outline'}>
-            {versao === 'real' ? 'Regime Real' : 'Regime Contábil (NF-e)'}
+          <Badge variant={versao === "real" ? "default" : "outline"}>
+            {versao === "real" ? "Regime Real" : "Regime Contábil (NF-e)"}
           </Badge>
         </div>
       </CardHeader>
@@ -107,9 +118,13 @@ export default function EvolucaoDespesas({ transacoes, categorias, versao = 'rea
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todas">Todas</SelectItem>
-                {categorias.filter(c => c.tipo === 'Despesa').map(c => (
-                  <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
-                ))}
+                {categorias
+                  .filter((c) => c.tipo === "Despesa")
+                  .map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.nome}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </div>
@@ -125,12 +140,18 @@ export default function EvolucaoDespesas({ transacoes, categorias, versao = 'rea
             <p className="text-xs text-blue-600 mb-1">Média Mensal</p>
             <p className="text-2xl font-bold text-blue-700">{formatCurrency(mediaMensal)}</p>
           </div>
-          <div className={`p-4 rounded-lg ${variacao > 0 ? 'bg-orange-50' : 'bg-green-50'}`}>
-            <p className={`text-xs mb-1 ${variacao > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+          <div className={`p-4 rounded-lg ${variacao > 0 ? "bg-orange-50" : "bg-green-50"}`}>
+            <p className={`text-xs mb-1 ${variacao > 0 ? "text-orange-600" : "text-green-600"}`}>
               Variação Mensal
             </p>
-            <p className={`text-2xl font-bold flex items-center gap-2 ${variacao > 0 ? 'text-orange-700' : 'text-green-700'}`}>
-              {variacao > 0 ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
+            <p
+              className={`text-2xl font-bold flex items-center gap-2 ${variacao > 0 ? "text-orange-700" : "text-green-700"}`}
+            >
+              {variacao > 0 ? (
+                <TrendingUp className="w-5 h-5" />
+              ) : (
+                <TrendingDown className="w-5 h-5" />
+              )}
               {Math.abs(variacao).toFixed(1)}%
             </p>
           </div>
@@ -164,7 +185,10 @@ export default function EvolucaoDespesas({ transacoes, categorias, versao = 'rea
             {despesasPorCategoria.map(([categoria, valor]) => {
               const percentual = (valor / totalDespesas) * 100;
               return (
-                <div key={categoria} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                <div
+                  key={categoria}
+                  className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
+                >
                   <div className="flex-1">
                     <p className="font-medium text-slate-800">{categoria}</p>
                     <p className="text-xs text-slate-500">{percentual.toFixed(1)}% do total</p>

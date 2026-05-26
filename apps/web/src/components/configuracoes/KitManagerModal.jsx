@@ -1,24 +1,30 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { Loader2, Plus, Trash2, X } from 'lucide-react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { Loader2, Plus, Trash2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function KitManagerModal({ open, onOpenChange, empresaId }) {
   const [kits, setKits] = useState([]);
   const [materiais, setMateriais] = useState([]);
   const [carregando, setCarregando] = useState(false);
   const [editandoKit, setEditandoKit] = useState(null);
-  const [nome, setNome] = useState('');
-  const [codigo, setCodigo] = useState('');
-  const [descricao, setDescricao] = useState('');
+  const [nome, setNome] = useState("");
+  const [codigo, setCodigo] = useState("");
+  const [descricao, setDescricao] = useState("");
   const [itens, setItens] = useState([]);
-  const [materialSelecionado, setMaterialSelecionado] = useState('');
-  const [quantidade, setQuantidade] = useState('1');
+  const [materialSelecionado, setMaterialSelecionado] = useState("");
+  const [quantidade, setQuantidade] = useState("1");
 
   useEffect(() => {
     if (open) {
@@ -31,12 +37,12 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
     try {
       const [kitsData, materiaisData] = await Promise.all([
         base44.entities.Kit.filter({ empresa_id: empresaId, ativo: true }),
-        base44.entities.Material.filter({ empresa_id: empresaId, ativo: true })
+        base44.entities.Material.filter({ empresa_id: empresaId, ativo: true }),
       ]);
       setKits(kitsData || []);
       setMateriais(materiaisData || []);
     } catch (err) {
-      console.error('Erro ao carregar dados:', err);
+      console.error("Erro ao carregar dados:", err);
     } finally {
       setCarregando(false);
     }
@@ -44,43 +50,43 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
 
   const handleNovoKit = () => {
     setEditandoKit(null);
-    setNome('');
-    setCodigo('');
-    setDescricao('');
+    setNome("");
+    setCodigo("");
+    setDescricao("");
     setItens([]);
   };
 
   const handleEditarKit = async (kit) => {
     setEditandoKit(kit);
     setNome(kit.nome);
-    setCodigo(kit.codigo || '');
-    setDescricao(kit.descricao || '');
+    setCodigo(kit.codigo || "");
+    setDescricao(kit.descricao || "");
     try {
       const itemsData = await base44.entities.KitItem.filter({ kit_id: kit.id });
       setItens(itemsData || []);
     } catch (err) {
-      console.error('Erro ao carregar itens:', err);
+      console.error("Erro ao carregar itens:", err);
     }
   };
 
   const handleAdicionarMaterial = () => {
     if (!materialSelecionado || !quantidade) return;
-    const material = materiais.find(m => m.id === materialSelecionado);
+    const material = materiais.find((m) => m.id === materialSelecionado);
     if (!material) return;
 
     const novoItem = {
-      id: 'new_' + Date.now(),
+      id: "new_" + Date.now(),
       material_id: material.id,
       material_nome: material.nome,
       material_codigo: material.codigo,
       material_unidade: material.unidade,
       quantidade: parseFloat(quantidade),
-      preco_unitario: material.preco || 0
+      preco_unitario: material.preco || 0,
     };
 
     setItens([...itens, novoItem]);
-    setMaterialSelecionado('');
-    setQuantidade('1');
+    setMaterialSelecionado("");
+    setQuantidade("1");
   };
 
   const handleRemoverMaterial = (index) => {
@@ -89,7 +95,7 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
 
   const handleSalvarKit = async () => {
     if (!nome || itens.length === 0) {
-      alert('Preencha o nome e adicione pelo menos um material');
+      alert("Preencha o nome e adicione pelo menos um material");
       return;
     }
 
@@ -104,7 +110,7 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
           codigo,
           descricao,
           total_itens: itens.length,
-          ativo: true
+          ativo: true,
         });
         kitId = novoKit.id;
       } else {
@@ -112,7 +118,7 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
           nome,
           codigo,
           descricao,
-          total_itens: itens.length
+          total_itens: itens.length,
         });
       }
 
@@ -126,7 +132,7 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
 
       // Criar novos itens
       for (const item of itens) {
-        if (item.id.startsWith('new_')) {
+        if (item.id.startsWith("new_")) {
           await base44.entities.KitItem.create({
             empresa_id: empresaId,
             kit_id: kitId,
@@ -135,31 +141,31 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
             material_codigo: item.material_codigo,
             material_unidade: item.material_unidade,
             quantidade: item.quantidade,
-            preco_unitario: item.preco_unitario
+            preco_unitario: item.preco_unitario,
           });
         }
       }
 
       await carregarDados();
       setEditandoKit(null);
-      setNome('');
-      setCodigo('');
-      setDescricao('');
+      setNome("");
+      setCodigo("");
+      setDescricao("");
       setItens([]);
     } catch (err) {
-      alert('Erro ao salvar kit: ' + err.message);
+      alert("Erro ao salvar kit: " + err.message);
     } finally {
       setCarregando(false);
     }
   };
 
   const handleDeletarKit = async (kitId) => {
-    if (!window.confirm('Deseja excluir este kit?')) return;
+    if (!window.confirm("Deseja excluir este kit?")) return;
     try {
       await base44.entities.Kit.delete(kitId);
       await carregarDados();
     } catch (err) {
-      alert('Erro ao deletar: ' + err.message);
+      alert("Erro ao deletar: " + err.message);
     }
   };
 
@@ -174,21 +180,33 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
           <div className="flex justify-center py-8">
             <Loader2 className="w-6 h-6 animate-spin" />
           </div>
-        ) : editandoKit || !nome && codigo === '' ? (
+        ) : editandoKit || (!nome && codigo === "") ? (
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium">Nome do KIT</label>
-              <Input value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Kit Escavação Básica" />
+              <Input
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                placeholder="Ex: Kit Escavação Básica"
+              />
             </div>
 
             <div>
               <label className="text-sm font-medium">Código (opcional)</label>
-              <Input value={codigo} onChange={e => setCodigo(e.target.value)} placeholder="KIT-001" />
+              <Input
+                value={codigo}
+                onChange={(e) => setCodigo(e.target.value)}
+                placeholder="KIT-001"
+              />
             </div>
 
             <div>
               <label className="text-sm font-medium">Descrição (opcional)</label>
-              <Input value={descricao} onChange={e => setDescricao(e.target.value)} placeholder="Descrição do kit..." />
+              <Input
+                value={descricao}
+                onChange={(e) => setDescricao(e.target.value)}
+                placeholder="Descrição do kit..."
+              />
             </div>
 
             <div className="border-t pt-4">
@@ -200,7 +218,7 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
                     <SelectValue placeholder="Selecionar material..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {materiais.map(m => (
+                    {materiais.map((m) => (
                       <SelectItem key={m.id} value={m.id}>
                         {m.nome} ({m.codigo})
                       </SelectItem>
@@ -212,7 +230,7 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
                   min="0.1"
                   step="0.1"
                   value={quantidade}
-                  onChange={e => setQuantidade(e.target.value)}
+                  onChange={(e) => setQuantidade(e.target.value)}
                   placeholder="Qtd"
                   className="w-20"
                 />
@@ -227,7 +245,9 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
                     <div className="flex items-center justify-between text-sm">
                       <div className="flex-1">
                         <p className="font-medium">{item.material_nome}</p>
-                        <p className="text-xs text-slate-500">{item.quantidade} {item.material_unidade}</p>
+                        <p className="text-xs text-slate-500">
+                          {item.quantidade} {item.material_unidade}
+                        </p>
                       </div>
                       <Button
                         size="sm"
@@ -248,9 +268,9 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
                 variant="outline"
                 onClick={() => {
                   setEditandoKit(null);
-                  setNome('');
-                  setCodigo('');
-                  setDescricao('');
+                  setNome("");
+                  setCodigo("");
+                  setDescricao("");
                   setItens([]);
                 }}
               >
@@ -267,13 +287,15 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
               <Plus className="w-4 h-4" /> Novo KIT
             </Button>
 
-            {kits.map(kit => (
+            {kits.map((kit) => (
               <Card key={kit.id} className="p-4">
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1">
                     <h4 className="font-semibold">{kit.nome}</h4>
                     {kit.codigo && <p className="text-xs text-slate-500">Código: {kit.codigo}</p>}
-                    {kit.descricao && <p className="text-xs text-slate-600 mt-1">{kit.descricao}</p>}
+                    {kit.descricao && (
+                      <p className="text-xs text-slate-600 mt-1">{kit.descricao}</p>
+                    )}
                   </div>
                   <Badge variant="outline">{kit.total_itens} itens</Badge>
                 </div>

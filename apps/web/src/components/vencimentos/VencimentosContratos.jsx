@@ -1,12 +1,23 @@
-import React, { useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Download, AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import * as XLSX from 'xlsx';
+import React, { useMemo } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Download, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
+import * as XLSX from "xlsx";
 
-const CORES = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6'];
+const CORES = ["#ef4444", "#f59e0b", "#10b981", "#3b82f6"];
 
 export default function VencimentosContratos({ projetos = [] }) {
   const hoje = new Date();
@@ -14,36 +25,38 @@ export default function VencimentosContratos({ projetos = [] }) {
 
   // Filtrar projetos com contrato e data de vencimento
   const projetosComContrato = useMemo(() => {
-    return projetos.filter(p => p.numero_contrato && p.data_vencimento_contrato);
+    return projetos.filter((p) => p.numero_contrato && p.data_vencimento_contrato);
   }, [projetos]);
 
   // Classificar por status de vencimento
   const vencimentos = useMemo(() => {
-    return projetosComContrato.map(p => {
-      const dataVenc = new Date(p.data_vencimento_contrato);
-      dataVenc.setHours(0, 0, 0, 0);
-      const diasRestantes = Math.ceil((dataVenc - hoje) / (1000 * 60 * 60 * 24));
+    return projetosComContrato
+      .map((p) => {
+        const dataVenc = new Date(p.data_vencimento_contrato);
+        dataVenc.setHours(0, 0, 0, 0);
+        const diasRestantes = Math.ceil((dataVenc - hoje) / (1000 * 60 * 60 * 24));
 
-      let status = 'vigente';
-      if (diasRestantes < 0) status = 'vencido';
-      else if (diasRestantes <= 30) status = 'alerta';
-      else if (diasRestantes <= 90) status = 'aviso';
+        let status = "vigente";
+        if (diasRestantes < 0) status = "vencido";
+        else if (diasRestantes <= 30) status = "alerta";
+        else if (diasRestantes <= 90) status = "aviso";
 
-      return {
-        ...p,
-        dataVenc,
-        diasRestantes,
-        status
-      };
-    }).sort((a, b) => a.dataVenc - b.dataVenc);
+        return {
+          ...p,
+          dataVenc,
+          diasRestantes,
+          status,
+        };
+      })
+      .sort((a, b) => a.dataVenc - b.dataVenc);
   }, [projetosComContrato, hoje]);
 
   // KPIs
   const kpis = useMemo(() => {
-    const vencido = vencimentos.filter(v => v.status === 'vencido').length;
-    const alerta = vencimentos.filter(v => v.status === 'alerta').length;
-    const aviso = vencimentos.filter(v => v.status === 'aviso').length;
-    const vigente = vencimentos.filter(v => v.status === 'vigente').length;
+    const vencido = vencimentos.filter((v) => v.status === "vencido").length;
+    const alerta = vencimentos.filter((v) => v.status === "alerta").length;
+    const aviso = vencimentos.filter((v) => v.status === "aviso").length;
+    const vigente = vencimentos.filter((v) => v.status === "vigente").length;
 
     return { vencido, alerta, aviso, vigente, total: vencimentos.length };
   }, [vencimentos]);
@@ -51,22 +64,22 @@ export default function VencimentosContratos({ projetos = [] }) {
   // Gráfico: Distribuição de status
   const dadosStatus = useMemo(() => {
     const map = { vencido: 0, alerta: 0, aviso: 0, vigente: 0 };
-    vencimentos.forEach(v => {
+    vencimentos.forEach((v) => {
       map[v.status]++;
     });
     return [
-      { name: 'Vencido', value: map.vencido, color: '#ef4444' },
-      { name: 'Alerta (0-30 dias)', value: map.alerta, color: '#f59e0b' },
-      { name: 'Aviso (31-90 dias)', value: map.aviso, color: '#fbbf24' },
-      { name: 'Vigente', value: map.vigente, color: '#10b981' }
-    ].filter(d => d.value > 0);
+      { name: "Vencido", value: map.vencido, color: "#ef4444" },
+      { name: "Alerta (0-30 dias)", value: map.alerta, color: "#f59e0b" },
+      { name: "Aviso (31-90 dias)", value: map.aviso, color: "#fbbf24" },
+      { name: "Vigente", value: map.vigente, color: "#10b981" },
+    ].filter((d) => d.value > 0);
   }, [vencimentos]);
 
   // Gráfico: Vencimentos por mês
   const dadosMeses = useMemo(() => {
     const meses = {};
-    vencimentos.forEach(v => {
-      const key = v.dataVenc.toLocaleDateString('pt-BR', { month: '2-digit', year: 'numeric' });
+    vencimentos.forEach((v) => {
+      const key = v.dataVenc.toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" });
       if (!meses[key]) meses[key] = 0;
       meses[key]++;
     });
@@ -75,45 +88,51 @@ export default function VencimentosContratos({ projetos = [] }) {
 
   // Exportar Excel
   const exportarExcel = () => {
-    const rows = vencimentos.map(v => ({
-      'Contrato': v.numero_contrato,
-      'Projeto': v.nome,
-      'Cliente': v.cliente_nome || '-',
-      'Data Vencimento': v.dataVenc.toLocaleDateString('pt-BR'),
-      'Dias Restantes': v.diasRestantes >= 0 ? v.diasRestantes : `(Vencido há ${Math.abs(v.diasRestantes)} dias)`,
-      'Status': { vencido: 'Vencido', alerta: 'Alerta', aviso: 'Aviso', vigente: 'Vigente' }[v.status]
+    const rows = vencimentos.map((v) => ({
+      Contrato: v.numero_contrato,
+      Projeto: v.nome,
+      Cliente: v.cliente_nome || "-",
+      "Data Vencimento": v.dataVenc.toLocaleDateString("pt-BR"),
+      "Dias Restantes":
+        v.diasRestantes >= 0 ? v.diasRestantes : `(Vencido há ${Math.abs(v.diasRestantes)} dias)`,
+      Status: { vencido: "Vencido", alerta: "Alerta", aviso: "Aviso", vigente: "Vigente" }[
+        v.status
+      ],
     }));
 
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Vencimentos');
+    XLSX.utils.book_append_sheet(wb, ws, "Vencimentos");
 
     // Resumo
     const resumoRows = [
-      { Métrica: 'Total de Contratos', Valor: kpis.total },
-      { Métrica: 'Vencidos', Valor: kpis.vencido },
-      { Métrica: 'Alerta (0-30 dias)', Valor: kpis.alerta },
-      { Métrica: 'Aviso (31-90 dias)', Valor: kpis.aviso },
-      { Métrica: 'Vigentes', Valor: kpis.vigente }
+      { Métrica: "Total de Contratos", Valor: kpis.total },
+      { Métrica: "Vencidos", Valor: kpis.vencido },
+      { Métrica: "Alerta (0-30 dias)", Valor: kpis.alerta },
+      { Métrica: "Aviso (31-90 dias)", Valor: kpis.aviso },
+      { Métrica: "Vigentes", Valor: kpis.vigente },
     ];
     const wsResumo = XLSX.utils.json_to_sheet(resumoRows);
-    XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo');
+    XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo");
 
-    XLSX.writeFile(wb, `Vencimentos_Contratos_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.xlsx`);
+    XLSX.writeFile(
+      wb,
+      `Vencimentos_Contratos_${new Date().toLocaleDateString("pt-BR").replace(/\//g, "-")}.xlsx`
+    );
   };
 
   const getStatusBadge = (status) => {
     const styles = {
-      vencido: 'bg-red-100 text-red-700 border-red-300',
-      alerta: 'bg-orange-100 text-orange-700 border-orange-300',
-      aviso: 'bg-amber-100 text-amber-700 border-amber-300',
-      vigente: 'bg-green-100 text-green-700 border-green-300'
+      vencido: "bg-red-100 text-red-700 border-red-300",
+      alerta: "bg-orange-100 text-orange-700 border-orange-300",
+      aviso: "bg-amber-100 text-amber-700 border-amber-300",
+      vigente: "bg-green-100 text-green-700 border-green-300",
     };
     const labels = {
-      vencido: '⚠ Vencido',
-      alerta: '⏰ Alerta',
-      aviso: '📌 Aviso',
-      vigente: '✓ Vigente'
+      vencido: "⚠ Vencido",
+      alerta: "⏰ Alerta",
+      aviso: "📌 Aviso",
+      vigente: "✓ Vigente",
     };
     return <Badge className={styles[status]}>{labels[status]}</Badge>;
   };
@@ -189,8 +208,18 @@ export default function VencimentosContratos({ projetos = [] }) {
             <CardContent>
               <ResponsiveContainer width="100%" height={200}>
                 <PieChart>
-                  <Pie data={dadosStatus} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={65} label={({ name, value }) => `${name}: ${value}`}>
-                    {dadosStatus.map((d, i) => <Cell key={i} fill={d.color} />)}
+                  <Pie
+                    data={dadosStatus}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={65}
+                    label={({ name, value }) => `${name}: ${value}`}
+                  >
+                    {dadosStatus.map((d, i) => (
+                      <Cell key={i} fill={d.color} />
+                    ))}
                   </Pie>
                   <Tooltip />
                 </PieChart>
@@ -211,7 +240,12 @@ export default function VencimentosContratos({ projetos = [] }) {
                   <XAxis dataKey="mes" tick={{ fontSize: 10 }} />
                   <YAxis tick={{ fontSize: 10 }} />
                   <Tooltip />
-                  <Bar dataKey="quantidade" fill="#3b82f6" name="Quantidade" radius={[4, 4, 0, 0]} />
+                  <Bar
+                    dataKey="quantidade"
+                    fill="#3b82f6"
+                    name="Quantidade"
+                    radius={[4, 4, 0, 0]}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -248,22 +282,38 @@ export default function VencimentosContratos({ projetos = [] }) {
                 </tr>
               </thead>
               <tbody>
-                {vencimentos.map(v => (
+                {vencimentos.map((v) => (
                   <tr key={v.id} className="border-b hover:bg-slate-50 transition-colors">
-                    <td className="p-3 font-mono font-semibold text-slate-700">{v.numero_contrato}</td>
+                    <td className="p-3 font-mono font-semibold text-slate-700">
+                      {v.numero_contrato}
+                    </td>
                     <td className="p-3 max-w-xs truncate text-slate-700">{v.nome}</td>
-                    <td className="p-3 text-slate-600">{v.cliente_nome || '-'}</td>
-                    <td className="p-3 font-medium">{v.dataVenc.toLocaleDateString('pt-BR')}</td>
-                    <td className="p-3 text-center font-bold" style={{
-                      color: v.status === 'vencido' ? '#dc2626' : v.status === 'alerta' ? '#ea580c' : v.status === 'aviso' ? '#b45309' : '#16a34a'
-                    }}>
+                    <td className="p-3 text-slate-600">{v.cliente_nome || "-"}</td>
+                    <td className="p-3 font-medium">{v.dataVenc.toLocaleDateString("pt-BR")}</td>
+                    <td
+                      className="p-3 text-center font-bold"
+                      style={{
+                        color:
+                          v.status === "vencido"
+                            ? "#dc2626"
+                            : v.status === "alerta"
+                              ? "#ea580c"
+                              : v.status === "aviso"
+                                ? "#b45309"
+                                : "#16a34a",
+                      }}
+                    >
                       {v.diasRestantes >= 0 ? v.diasRestantes : `(${Math.abs(v.diasRestantes)})`}
                     </td>
                     <td className="p-3">{getStatusBadge(v.status)}</td>
                   </tr>
                 ))}
                 {vencimentos.length === 0 && (
-                  <tr><td colSpan={6} className="p-8 text-center text-slate-400">Nenhum contrato registrado</td></tr>
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-slate-400">
+                      Nenhum contrato registrado
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>

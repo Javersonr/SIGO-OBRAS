@@ -1,23 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Download, Loader2, CheckCircle2 } from 'lucide-react';
-import { toast } from 'sonner';
-import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
-import { gerarCertificadoDoc } from './certificadoLayout';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Download, Loader2, CheckCircle2 } from "lucide-react";
+import { toast } from "sonner";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
+import { gerarCertificadoDoc } from "./certificadoLayout";
 
-export default function ExportacaoMassaModal({ open, onOpenChange, funcionariosSelecionados, empresaAtiva }) {
+export default function ExportacaoMassaModal({
+  open,
+  onOpenChange,
+  funcionariosSelecionados,
+  empresaAtiva,
+}) {
   const [loading, setLoading] = useState(false);
-  const [progresso, setProgresso] = useState('');
+  const [progresso, setProgresso] = useState("");
   const [todosTreinamentos, setTodosTreinamentos] = useState([]);
 
   useEffect(() => {
@@ -28,38 +27,46 @@ export default function ExportacaoMassaModal({ open, onOpenChange, funcionariosS
 
   const loadTreinamentos = async () => {
     try {
-      const data = await base44.entities.Treinamento.filter({ empresa_id: empresaAtiva.id, ativo: true });
+      const data = await base44.entities.Treinamento.filter({
+        empresa_id: empresaAtiva.id,
+        ativo: true,
+      });
       setTodosTreinamentos(data);
     } catch (error) {
-      console.error('Erro ao carregar treinamentos:', error);
+      console.error("Erro ao carregar treinamentos:", error);
     }
   };
 
-
-
-
-
   const gerarCertificadoPDF = async (_jsPDF, funcionario, treinamento) => {
     const doc = await gerarCertificadoDoc({ treinamento, funcionario, empresaAtiva });
-    return doc.output('blob');
+    return doc.output("blob");
   };
 
   // Gera PDF de lista de presença para um funcionário com todos seus treinamentos
   const gerarListaPresencaPDF = async (jsPDF, funcionario, treinamentosFunc) => {
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth();
 
-    const nomeEmpresa = empresaAtiva.razao_social || empresaAtiva.nome_fantasia || empresaAtiva.nome;
+    const nomeEmpresa =
+      empresaAtiva.razao_social || empresaAtiva.nome_fantasia || empresaAtiva.nome;
 
-    doc.setFontSize(14); doc.setFont(undefined, 'bold'); doc.setTextColor(0, 0, 0);
-    doc.text('LISTA DE PRESENÇA - TREINAMENTOS', pageWidth / 2, 20, { align: 'center' });
+    doc.setFontSize(14);
+    doc.setFont(undefined, "bold");
+    doc.setTextColor(0, 0, 0);
+    doc.text("LISTA DE PRESENÇA - TREINAMENTOS", pageWidth / 2, 20, { align: "center" });
 
-    doc.setFontSize(10); doc.setFont(undefined, 'normal'); doc.setTextColor(60, 60, 60);
+    doc.setFontSize(10);
+    doc.setFont(undefined, "normal");
+    doc.setTextColor(60, 60, 60);
     doc.text(`Empresa: ${nomeEmpresa}`, 14, 30);
     doc.text(`Funcionário: ${funcionario.nome_completo}`, 14, 37);
-    doc.text(`CPF: ${funcionario.cpf || '-'}`, 14, 44);
-    doc.text(`Função: ${funcionario.funcao_nome || '-'}`, 14, 51);
-    doc.text(`Data de Admissão: ${funcionario.data_admissao ? funcionario.data_admissao.split('-').reverse().join('/') : '-'}`, 14, 58);
+    doc.text(`CPF: ${funcionario.cpf || "-"}`, 14, 44);
+    doc.text(`Função: ${funcionario.funcao_nome || "-"}`, 14, 51);
+    doc.text(
+      `Data de Admissão: ${funcionario.data_admissao ? funcionario.data_admissao.split("-").reverse().join("/") : "-"}`,
+      14,
+      58
+    );
 
     // Linha separadora
     doc.setDrawColor(200, 200, 200);
@@ -68,27 +75,37 @@ export default function ExportacaoMassaModal({ open, onOpenChange, funcionariosS
     // Cabeçalho da tabela
     let y = 72;
     doc.setFillColor(240, 240, 240);
-    doc.rect(14, y - 5, pageWidth - 28, 8, 'F');
-    doc.setFontSize(9); doc.setFont(undefined, 'bold'); doc.setTextColor(0, 0, 0);
-    doc.text('Treinamento', 16, y);
-    doc.text('Cód.', 105, y);
-    doc.text('Carga', 125, y);
-    doc.text('Período', 145, y);
-    doc.text('Assinatura', 175, y);
+    doc.rect(14, y - 5, pageWidth - 28, 8, "F");
+    doc.setFontSize(9);
+    doc.setFont(undefined, "bold");
+    doc.setTextColor(0, 0, 0);
+    doc.text("Treinamento", 16, y);
+    doc.text("Cód.", 105, y);
+    doc.text("Carga", 125, y);
+    doc.text("Período", 145, y);
+    doc.text("Assinatura", 175, y);
     y += 8;
 
-    doc.setFont(undefined, 'normal'); doc.setFontSize(8);
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(8);
     treinamentosFunc.forEach((t, i) => {
-      if (y > 270) { doc.addPage(); y = 20; }
-      if (i % 2 === 0) { doc.setFillColor(250, 250, 250); doc.rect(14, y - 4, pageWidth - 28, 8, 'F'); }
+      if (y > 270) {
+        doc.addPage();
+        y = 20;
+      }
+      if (i % 2 === 0) {
+        doc.setFillColor(250, 250, 250);
+        doc.rect(14, y - 4, pageWidth - 28, 8, "F");
+      }
       doc.setTextColor(40, 40, 40);
       const nomeT = doc.splitTextToSize(t.nome, 85);
       doc.text(nomeT[0], 16, y);
-      doc.text(t.codigo || '-', 105, y);
-      doc.text(t.carga_horaria ? `${t.carga_horaria}h` : '-', 125, y);
-      const periodo = t.data_inicio && t.data_fim
-        ? `${t.data_inicio.split('-').reverse().join('/')} a ${t.data_fim.split('-').reverse().join('/')}`
-        : '-';
+      doc.text(t.codigo || "-", 105, y);
+      doc.text(t.carga_horaria ? `${t.carga_horaria}h` : "-", 125, y);
+      const periodo =
+        t.data_inicio && t.data_fim
+          ? `${t.data_inicio.split("-").reverse().join("/")} a ${t.data_fim.split("-").reverse().join("/")}`
+          : "-";
       doc.text(periodo, 145, y);
       // Linha para assinatura
       doc.setDrawColor(150, 150, 150);
@@ -98,27 +115,34 @@ export default function ExportacaoMassaModal({ open, onOpenChange, funcionariosS
 
     // Rodapé com assinatura do funcionário
     y += 10;
-    if (y > 260) { doc.addPage(); y = 20; }
+    if (y > 260) {
+      doc.addPage();
+      y = 20;
+    }
     doc.setDrawColor(0, 0, 0);
     doc.line(14, y + 15, 90, y + 15);
-    doc.setFontSize(8); doc.setFont(undefined, 'normal'); doc.setTextColor(80, 80, 80);
-    doc.text('Assinatura do Funcionário', 52, y + 20, { align: 'center' });
-    doc.text(funcionario.nome_completo, 52, y + 25, { align: 'center' });
+    doc.setFontSize(8);
+    doc.setFont(undefined, "normal");
+    doc.setTextColor(80, 80, 80);
+    doc.text("Assinatura do Funcionário", 52, y + 20, { align: "center" });
+    doc.text(funcionario.nome_completo, 52, y + 25, { align: "center" });
 
-    doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - 14, y + 25, { align: 'right' });
+    doc.text(`Gerado em: ${new Date().toLocaleDateString("pt-BR")}`, pageWidth - 14, y + 25, {
+      align: "right",
+    });
 
-    return doc.output('blob');
+    return doc.output("blob");
   };
 
   const handleExportarMassa = async () => {
     if (!funcionariosSelecionados || funcionariosSelecionados.length === 0) {
-      toast.error('Nenhum funcionário selecionado');
+      toast.error("Nenhum funcionário selecionado");
       return;
     }
 
     setLoading(true);
     try {
-      const { jsPDF } = await import('jspdf');
+      const { jsPDF } = await import("jspdf");
       const zip = new JSZip();
       let totalCertificados = 0;
       let totalFuncionarios = 0;
@@ -127,24 +151,30 @@ export default function ExportacaoMassaModal({ open, onOpenChange, funcionariosS
         setProgresso(`Processando ${funcionario.nome_completo}...`);
 
         // Buscar treinamentos da função do funcionário
-        let treinamentosFunc = todosTreinamentos.filter(t => t.funcao_id === funcionario.funcao_id);
+        let treinamentosFunc = todosTreinamentos.filter(
+          (t) => t.funcao_id === funcionario.funcao_id
+        );
         if (treinamentosFunc.length === 0 && funcionario.funcao_id) {
           // Buscar direto do banco caso não tenha carregado ainda
           try {
-            treinamentosFunc = await base44.entities.Treinamento.filter({ empresa_id: empresaAtiva.id, funcao_id: funcionario.funcao_id, ativo: true });
+            treinamentosFunc = await base44.entities.Treinamento.filter({
+              empresa_id: empresaAtiva.id,
+              funcao_id: funcionario.funcao_id,
+              ativo: true,
+            });
           } catch {}
         }
 
         if (treinamentosFunc.length === 0) continue;
 
-        const nomePasta = funcionario.nome_completo.replace(/[^a-z0-9 ]/gi, '_').trim();
+        const nomePasta = funcionario.nome_completo.replace(/[^a-z0-9 ]/gi, "_").trim();
         const pasta = zip.folder(nomePasta);
 
         // Gerar um certificado PDF por treinamento
         for (const treinamento of treinamentosFunc) {
           try {
             const pdfBlob = await gerarCertificadoPDF(jsPDF, funcionario, treinamento);
-            const nomeTreinamento = treinamento.nome.replace(/[^a-z0-9 ]/gi, '_').trim();
+            const nomeTreinamento = treinamento.nome.replace(/[^a-z0-9 ]/gi, "_").trim();
             pasta.file(`Certificado_${nomeTreinamento}.pdf`, pdfBlob);
             totalCertificados++;
           } catch (err) {
@@ -164,30 +194,29 @@ export default function ExportacaoMassaModal({ open, onOpenChange, funcionariosS
       }
 
       if (totalFuncionarios === 0) {
-        toast.error('Nenhum funcionário com treinamentos encontrados.');
+        toast.error("Nenhum funcionário com treinamentos encontrados.");
         return;
       }
 
-      setProgresso('Gerando arquivo ZIP...');
-      const conteudo = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-      saveAs(conteudo, `treinamentos_${new Date().toISOString().split('T')[0]}.zip`);
-      toast.success(`✅ ${totalFuncionarios} funcionário(s) exportados com ${totalCertificados} certificados`);
+      setProgresso("Gerando arquivo ZIP...");
+      const conteudo = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+      saveAs(conteudo, `treinamentos_${new Date().toISOString().split("T")[0]}.zip`);
+      toast.success(
+        `✅ ${totalFuncionarios} funcionário(s) exportados com ${totalCertificados} certificados`
+      );
       onOpenChange(false);
     } catch (error) {
-      console.error('Erro ao exportar:', error);
-      toast.error('Erro ao exportar: ' + error.message);
+      console.error("Erro ao exportar:", error);
+      toast.error("Erro ao exportar: " + error.message);
     } finally {
       setLoading(false);
-      setProgresso('');
+      setProgresso("");
     }
   };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="p-0 flex flex-col w-full"
-      >
+      <SheetContent side="right" className="p-0 flex flex-col w-full">
         <SheetHeader className="p-6 border-b sticky top-0 bg-white z-10">
           <SheetTitle className="flex items-center gap-2">
             <Download className="w-5 h-5" />
@@ -203,12 +232,14 @@ export default function ExportacaoMassaModal({ open, onOpenChange, funcionariosS
                 Funcionários Selecionados ({(funcionariosSelecionados || []).length})
               </h4>
               <div className="space-y-2 max-h-48 overflow-y-auto">
-                {(funcionariosSelecionados || []).map(f => (
+                {(funcionariosSelecionados || []).map((f) => (
                   <div key={f.id} className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg">
                     <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
                     <div>
                       <p className="text-sm font-medium">{f.nome_completo}</p>
-                      <p className="text-xs text-slate-500">{f.funcao_nome || 'Sem função definida'}</p>
+                      <p className="text-xs text-slate-500">
+                        {f.funcao_nome || "Sem função definida"}
+                      </p>
                     </div>
                   </div>
                 ))}

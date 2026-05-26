@@ -1,34 +1,43 @@
-import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { ShoppingCart } from 'lucide-react';
+import React from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ResponsiveContainer,
+  Tooltip,
+  Legend,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+} from "recharts";
+import { ShoppingCart } from "lucide-react";
 
 export default function StatusCompras({ dados, expandido = false }) {
   const solicitacoesPorStatus = dados.solicitacoes.reduce((acc, sol) => {
-    const status = sol.status || 'Sem Status';
+    const status = sol.status || "Sem Status";
     acc[status] = (acc[status] || 0) + 1;
     return acc;
   }, {});
 
   const cotacoesPorStatus = dados.cotacoes.reduce((acc, cot) => {
-    const status = cot.status || 'Sem Status';
+    const status = cot.status || "Sem Status";
     acc[status] = (acc[status] || 0) + 1;
     return acc;
   }, {});
 
   const pedidosPorStatus = dados.pedidos.reduce((acc, ped) => {
-    const status = ped.status || 'Sem Status';
+    const status = ped.status || "Sem Status";
     acc[status] = (acc[status] || 0) + 1;
     return acc;
   }, {});
 
   const dadosConsolidados = [
-    { tipo: 'Solicitações', quantidade: dados.solicitacoes.length },
-    { tipo: 'Cotações', quantidade: dados.cotacoes.length },
-    { tipo: 'Pedidos', quantidade: dados.pedidos.length }
+    { tipo: "Solicitações", quantidade: dados.solicitacoes.length },
+    { tipo: "Cotações", quantidade: dados.cotacoes.length },
+    { tipo: "Pedidos", quantidade: dados.pedidos.length },
   ];
 
-  const CORES = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+  const CORES = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
 
   return (
     <Card>
@@ -39,7 +48,7 @@ export default function StatusCompras({ dados, expandido = false }) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {dadosConsolidados.some(d => d.quantidade > 0) ? (
+        {dadosConsolidados.some((d) => d.quantidade > 0) ? (
           <div className="space-y-6">
             <ResponsiveContainer width="100%" height={expandido ? 350 : 250}>
               <BarChart data={dadosConsolidados}>

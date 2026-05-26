@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '@/Layout';
-import VencimentosContratos from '@/components/vencimentos/VencimentosContratos';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { AlertTriangle } from 'lucide-react';
+import React, { useEffect, useState } from "react";
+import { base44 } from "@/api/base44Client";
+import { useEmpresa } from "@/Layout";
+import VencimentosContratos from "@/components/vencimentos/VencimentosContratos";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { AlertTriangle } from "lucide-react";
 
 export default function RelatorioVencimentos() {
   const { empresaAtiva } = useEmpresa();
@@ -19,7 +19,7 @@ export default function RelatorioVencimentos() {
         const projetosData = await base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id });
         setProjetos(projetosData);
       } catch (error) {
-        console.error('Erro ao carregar projetos:', error);
+        console.error("Erro ao carregar projetos:", error);
       } finally {
         setLoading(false);
       }
@@ -40,7 +40,9 @@ export default function RelatorioVencimentos() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-slate-800 mb-2">Relatório de Vencimentos de Contratos</h1>
+        <h1 className="text-3xl font-bold text-slate-800 mb-2">
+          Relatório de Vencimentos de Contratos
+        </h1>
         <p className="text-slate-600">Acompanhe o vencimento de todos os contratos dos projetos</p>
       </div>
 
@@ -50,7 +52,9 @@ export default function RelatorioVencimentos() {
             <AlertTriangle className="w-10 h-10 text-amber-600 flex-shrink-0" />
             <div>
               <h3 className="font-semibold text-amber-900">Nenhum projeto registrado</h3>
-              <p className="text-sm text-amber-700">Crie projetos com dados de contrato para visualizar este relatório</p>
+              <p className="text-sm text-amber-700">
+                Crie projetos com dados de contrato para visualizar este relatório
+              </p>
             </div>
           </CardContent>
         </Card>

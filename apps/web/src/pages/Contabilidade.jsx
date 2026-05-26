@@ -1,12 +1,18 @@
-import React, { useState } from 'react';
-import { useEmpresa } from '../Layout';
-import { 
-  Calculator, FileText, Calendar, Building2, Users,
-  AlertCircle, CheckCircle2, Clock
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import React from "react";
+import { useEmpresa } from "../Layout";
+import {
+  Calculator,
+  FileText,
+  Calendar,
+  Building2,
+  Users,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 export default function Contabilidade() {
   const { empresaAtiva, perfil, temPermissao } = useEmpresa();
@@ -14,17 +20,22 @@ export default function Contabilidade() {
   if (!empresaAtiva) return null;
 
   const rotinas = [
-    { nome: 'Apuração de Impostos', status: 'Pendente', vencimento: '2024-02-10', icon: Calculator },
-    { nome: 'Conciliação Bancária', status: 'Concluído', vencimento: '2024-02-05', icon: FileText },
-    { nome: 'Balancete Mensal', status: 'Em Andamento', vencimento: '2024-02-15', icon: Calendar },
-    { nome: 'DCTF', status: 'Pendente', vencimento: '2024-02-20', icon: FileText },
-    { nome: 'EFD Contribuições', status: 'Pendente', vencimento: '2024-02-25', icon: FileText },
+    {
+      nome: "Apuração de Impostos",
+      status: "Pendente",
+      vencimento: "2024-02-10",
+      icon: Calculator,
+    },
+    { nome: "Conciliação Bancária", status: "Concluído", vencimento: "2024-02-05", icon: FileText },
+    { nome: "Balancete Mensal", status: "Em Andamento", vencimento: "2024-02-15", icon: Calendar },
+    { nome: "DCTF", status: "Pendente", vencimento: "2024-02-20", icon: FileText },
+    { nome: "EFD Contribuições", status: "Pendente", vencimento: "2024-02-25", icon: FileText },
   ];
 
   const statusColors = {
-    'Pendente': 'bg-amber-100 text-amber-700',
-    'Em Andamento': 'bg-blue-100 text-blue-700',
-    'Concluído': 'bg-green-100 text-green-700',
+    Pendente: "bg-amber-100 text-amber-700",
+    "Em Andamento": "bg-blue-100 text-blue-700",
+    Concluído: "bg-green-100 text-green-700",
   };
 
   return (
@@ -74,7 +85,10 @@ export default function Contabilidade() {
         <CardContent>
           <div className="space-y-3">
             {rotinas.map((rotina, index) => (
-              <div key={index} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
+              <div
+                key={index}
+                className="flex items-center justify-between p-4 bg-slate-50 rounded-lg"
+              >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-sm">
                     <rotina.icon className="w-5 h-5 text-slate-500" />
@@ -82,7 +96,7 @@ export default function Contabilidade() {
                   <div>
                     <p className="font-medium text-slate-800">{rotina.nome}</p>
                     <p className="text-sm text-slate-500">
-                      Vencimento: {new Date(rotina.vencimento).toLocaleDateString('pt-BR')}
+                      Vencimento: {new Date(rotina.vencimento).toLocaleDateString("pt-BR")}
                     </p>
                   </div>
                 </div>
@@ -102,10 +116,10 @@ export default function Contabilidade() {
           <div className="text-center py-8">
             <Building2 className="w-12 h-12 mx-auto text-slate-300 mb-4" />
             <h3 className="text-lg font-medium text-slate-800 mb-2">Configure seu Contador</h3>
-            <p className="text-slate-500 mb-4">Vincule seu escritório de contabilidade para facilitar a gestão</p>
-            <Button variant="outline">
-              Configurar Contador
-            </Button>
+            <p className="text-slate-500 mb-4">
+              Vincule seu escritório de contabilidade para facilitar a gestão
+            </p>
+            <Button variant="outline">Configurar Contador</Button>
           </div>
         </CardContent>
       </Card>

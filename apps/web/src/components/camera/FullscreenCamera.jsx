@@ -1,21 +1,20 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { Camera, Upload, X, Loader, RotateCcw, ChevronLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { toast } from 'sonner';
+import React, { useRef, useState, useEffect } from "react";
+import { Camera, Upload, X, Loader, RotateCcw, ChevronLeft } from "lucide-react";
+import { toast } from "sonner";
 
-export default function FullscreenCamera({ 
-  onCaptura, 
+export default function FullscreenCamera({
+  onCaptura,
   onCancel,
   loading,
   title = "Câmera",
   subtitle,
   showUpload = true,
   fileAccept = "image/*,.pdf",
-  extraAction = null  // { label, onClick }
+  extraAction = null, // { label, onClick }
 }) {
   const videoRef = useRef(null);
   const fileInputRef = useRef(null);
-  const [step, setStep] = useState('camera'); // 'camera' | 'preview'
+  const [step, setStep] = useState("camera"); // 'camera' | 'preview'
   const [cameraAtiva, setCameraAtiva] = useState(false);
   const [fotoCapturada, setFotoCapturada] = useState(null);
   const [videoAspect, setVideoAspect] = useState(null);
@@ -29,42 +28,65 @@ export default function FullscreenCamera({
     try {
       setCameraAtiva(false);
       if (videoRef.current?.srcObject) {
-        videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+        videoRef.current.srcObject.getTracks().forEach((t) => t.stop());
       }
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 100));
 
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error('Câmera não suportada');
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error("Câmera não suportada");
 
       let stream;
       const constraints = [
-        { video: { facingMode: { exact: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
-        { video: { facingMode: 'environment' }, audio: false },
-        { video: true, audio: false }
+        {
+          video: {
+            facingMode: { exact: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          audio: false,
+        },
+        { video: { facingMode: "environment" }, audio: false },
+        { video: true, audio: false },
       ];
 
       for (const c of constraints) {
-        try { stream = await navigator.mediaDevices.getUserMedia(c); break; }
-        catch (e) { /* continuar */ }
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(c);
+          break;
+        } catch (e) {
+          /* continuar */
+        }
       }
 
-      if (!stream) throw new Error('Nenhuma câmera encontrada');
+      if (!stream) throw new Error("Nenhuma câmera encontrada");
 
       videoRef.current.srcObject = stream;
       await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Timeout câmera')), 8000);
-        if (videoRef.current.readyState >= 1) { clearTimeout(timeout); resolve(); return; }
-        videoRef.current.addEventListener('loadedmetadata', () => { clearTimeout(timeout); resolve(); }, { once: true });
+        const timeout = setTimeout(() => reject(new Error("Timeout câmera")), 8000);
+        if (videoRef.current.readyState >= 1) {
+          clearTimeout(timeout);
+          resolve();
+          return;
+        }
+        videoRef.current.addEventListener(
+          "loadedmetadata",
+          () => {
+            clearTimeout(timeout);
+            resolve();
+          },
+          { once: true }
+        );
       });
       await videoRef.current.play();
       const vw = videoRef.current.videoWidth;
       const vh = videoRef.current.videoHeight;
-      if (vw && vh) setVideoAspect(vh / vw * 100);
+      if (vw && vh) setVideoAspect((vh / vw) * 100);
       setCameraAtiva(true);
     } catch (error) {
-      let msg = 'Erro ao acessar câmera';
-      if (error.name === 'NotAllowedError') msg = 'Permissão negada — autorize a câmera no navegador';
-      else if (error.name === 'NotFoundError') msg = 'Nenhuma câmera encontrada';
-      else if (error.name === 'NotReadableError') msg = 'Câmera em uso por outro app';
+      let msg = "Erro ao acessar câmera";
+      if (error.name === "NotAllowedError")
+        msg = "Permissão negada — autorize a câmera no navegador";
+      else if (error.name === "NotFoundError") msg = "Nenhuma câmera encontrada";
+      else if (error.name === "NotReadableError") msg = "Câmera em uso por outro app";
       else msg = error.message || msg;
       toast.error(msg);
       onCancel?.();
@@ -73,22 +95,25 @@ export default function FullscreenCamera({
 
   const pararCamera = () => {
     if (videoRef.current?.srcObject) {
-      videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+      videoRef.current.srcObject.getTracks().forEach((t) => t.stop());
     }
     setCameraAtiva(false);
   };
 
   const capturarFoto = () => {
     const video = videoRef.current;
-    if (!video || video.videoWidth === 0) { toast.error('Câmera não está pronta'); return; }
-    const canvas = document.createElement('canvas');
+    if (!video || video.videoWidth === 0) {
+      toast.error("Câmera não está pronta");
+      return;
+    }
+    const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
     pararCamera();
     setFotoCapturada(dataUrl);
-    setStep('preview');
+    setStep("preview");
   };
 
   const handleUpload = async (e) => {
@@ -96,23 +121,23 @@ export default function FullscreenCamera({
     if (!file) return;
 
     // PDFs: upload direto sem passar pelo preview de imagem
-    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+    if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
       try {
         pararCamera();
-        toast.loading('Fazendo upload do PDF...', { id: 'camera-upload' });
-        const { base44 } = await import('@/api/base44Client');
+        toast.loading("Fazendo upload do PDF...", { id: "camera-upload" });
+        const { base44 } = await import("@/api/base44Client");
         const result = await base44.integrations.Core.UploadFile({ file });
-        toast.dismiss('camera-upload');
-        if (!result?.file_url) throw new Error('Falha no upload');
-        toast.success('PDF enviado com sucesso!');
+        toast.dismiss("camera-upload");
+        if (!result?.file_url) throw new Error("Falha no upload");
+        toast.success("PDF enviado com sucesso!");
         onCaptura(result.file_url);
         onCancel?.();
       } catch (err) {
-        toast.dismiss('camera-upload');
-        toast.error('Erro ao enviar PDF: ' + err.message);
+        toast.dismiss("camera-upload");
+        toast.error("Erro ao enviar PDF: " + err.message);
         iniciarCamera();
       }
-      e.target.value = '';
+      e.target.value = "";
       return;
     }
 
@@ -120,52 +145,54 @@ export default function FullscreenCamera({
     const reader = new FileReader();
     reader.onload = (ev) => {
       setFotoCapturada(ev.target.result);
-      setStep('preview');
+      setStep("preview");
     };
     reader.readAsDataURL(file);
-    e.target.value = '';
+    e.target.value = "";
   };
 
   const refazer = () => {
     setFotoCapturada(null);
-    setStep('camera');
+    setStep("camera");
     iniciarCamera();
   };
 
   const voltar = () => {
     setFotoCapturada(null);
-    setStep('camera');
+    setStep("camera");
     onCancel?.();
   };
 
   const handleConfirm = async () => {
     if (!fotoCapturada) return;
     try {
-      toast.loading('Processando imagem...', { id: 'camera-upload' });
-      const blob = await fetch(fotoCapturada).then(r => r.blob());
-      const { base44 } = await import('@/api/base44Client');
-      const result = await base44.integrations.Core.UploadFile({ file: new File([blob], 'captura.jpg', { type: 'image/jpeg' }) });
-      toast.dismiss('camera-upload');
-      if (!result?.file_url) throw new Error('Falha no upload');
-      toast.success('Imagem enviada com sucesso!');
+      toast.loading("Processando imagem...", { id: "camera-upload" });
+      const blob = await fetch(fotoCapturada).then((r) => r.blob());
+      const { base44 } = await import("@/api/base44Client");
+      const result = await base44.integrations.Core.UploadFile({
+        file: new File([blob], "captura.jpg", { type: "image/jpeg" }),
+      });
+      toast.dismiss("camera-upload");
+      if (!result?.file_url) throw new Error("Falha no upload");
+      toast.success("Imagem enviada com sucesso!");
       // Voltar para câmera para permitir múltiplas fotos
       setFotoCapturada(null);
-      setStep('camera');
+      setStep("camera");
       iniciarCamera();
       onCaptura(result.file_url);
     } catch (err) {
-      toast.dismiss('camera-upload');
-      toast.error('Erro ao enviar: ' + err.message);
+      toast.dismiss("camera-upload");
+      toast.error("Erro ao enviar: " + err.message);
     }
   };
 
   // TELA INTEIRA - Câmera
-  if (step === 'camera') {
+  if (step === "camera") {
     return (
       <div className="fixed inset-0 bg-black z-[9999] flex flex-col">
         {/* Header */}
         <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/60 to-transparent p-4 z-10 flex items-center justify-between">
-          <button 
+          <button
             onClick={voltar}
             className="p-2 rounded-full bg-black/40 hover:bg-black/60 transition-colors"
           >
@@ -187,7 +214,7 @@ export default function FullscreenCamera({
             muted
             className="absolute inset-0 w-full h-full object-cover"
           />
-          
+
           {!cameraAtiva && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/60">
               <div className="text-center text-white">
@@ -251,13 +278,13 @@ export default function FullscreenCamera({
   }
 
   // PREVIEW - Tela cheia
-  if (step === 'preview' && fotoCapturada) {
+  if (step === "preview" && fotoCapturada) {
     return (
       <div className="fixed inset-0 bg-black z-[9999] flex flex-col">
         {/* Header */}
         <div className="bg-gradient-to-b from-black/60 to-transparent p-4 flex items-center justify-between">
           <h2 className="text-white font-semibold">{title} — Preview</h2>
-          <button 
+          <button
             onClick={voltar}
             className="p-2 rounded-full bg-black/40 hover:bg-black/60 transition-colors"
           >
@@ -267,11 +294,7 @@ export default function FullscreenCamera({
 
         {/* Imagem */}
         <div className="flex-1 flex items-center justify-center overflow-auto">
-          <img
-            src={fotoCapturada}
-            alt="Preview"
-            className="max-w-full max-h-full object-contain"
-          />
+          <img src={fotoCapturada} alt="Preview" className="max-w-full max-h-full object-contain" />
         </div>
 
         {/* Botões */}
@@ -289,12 +312,8 @@ export default function FullscreenCamera({
             disabled={loading}
             className="flex-1 py-3 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            {loading ? (
-              <Loader className="w-4 h-4 animate-spin" />
-            ) : (
-              '✓'
-            )}
-            {loading ? 'Processando...' : 'Confirmar'}
+            {loading ? <Loader className="w-4 h-4 animate-spin" /> : "✓"}
+            {loading ? "Processando..." : "Confirmar"}
           </button>
         </div>
       </div>

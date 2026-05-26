@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import SheetModalComponent from '@/components/ui/sheet-modal';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card } from '@/components/ui/card';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import SheetModalComponent from "@/components/ui/sheet-modal";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -11,13 +11,21 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { 
-  CheckCircle2, XCircle, Clock, Calendar, User, Truck, FileText, Download, Image as ImageIcon, X
-} from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { toast } from 'sonner';
+} from "@/components/ui/table";
+import {
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Calendar,
+  User,
+  Truck,
+  Download,
+  Image as ImageIcon,
+  X,
+} from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { toast } from "sonner";
 
 export default function InspecaoDetalheHistoricoModal({ open, onOpenChange, inspecao }) {
   const [ferramentas, setFerramentas] = useState([]);
@@ -34,34 +42,34 @@ export default function InspecaoDetalheHistoricoModal({ open, onOpenChange, insp
   const loadFerramentas = async () => {
     try {
       setLoading(true);
-      
+
       // Buscar ferramentas do caminhão
       const ferramentasData = await base44.entities.Ferramenta.filter({
         empresa_id: inspecao.empresa_id,
-        localizacao: inspecao.caminhao_placa
+        localizacao: inspecao.caminhao_placa,
       });
 
       // Buscar dados de inspeção
       const inspecoesFerramental = await base44.entities.InspecaoFerramental.filter({
         empresa_id: inspecao.empresa_id,
-        inspecao_id: inspecao.id
+        inspecao_id: inspecao.id,
       });
 
       // Combinar dados
-      const ferramentasComInspecao = ferramentasData.map(ferramenta => {
+      const ferramentasComInspecao = ferramentasData.map((ferramenta) => {
         const inspecaoFerramenta = inspecoesFerramental.find(
-          i => i.ferramenta_id === ferramenta.id
+          (i) => i.ferramenta_id === ferramenta.id
         );
         return {
           ...ferramenta,
-          inspecao: inspecaoFerramenta
+          inspecao: inspecaoFerramenta,
         };
       });
 
       setFerramentas(ferramentasComInspecao);
     } catch (error) {
-      console.error('Erro ao carregar ferramentas:', error);
-      toast.error('Erro ao carregar detalhes');
+      console.error("Erro ao carregar ferramentas:", error);
+      toast.error("Erro ao carregar detalhes");
     } finally {
       setLoading(false);
     }
@@ -70,24 +78,24 @@ export default function InspecaoDetalheHistoricoModal({ open, onOpenChange, insp
   const handleGerarPDF = async () => {
     setGerandoPDF(true);
     try {
-      const response = await base44.functions.invoke('gerarRelatorioInspecao', {
-        inspecao_id: inspecao.id
+      const response = await base44.functions.invoke("gerarRelatorioInspecao", {
+        inspecao_id: inspecao.id,
       });
 
-      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const blob = new Blob([response.data], { type: "application/pdf" });
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = `inspecao_${inspecao.caminhao_placa}_${new Date(inspecao.data_inspecao).toISOString().split('T')[0]}.pdf`;
+      a.download = `inspecao_${inspecao.caminhao_placa}_${new Date(inspecao.data_inspecao).toISOString().split("T")[0]}.pdf`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       a.remove();
 
-      toast.success('Relatório gerado com sucesso!');
+      toast.success("Relatório gerado com sucesso!");
     } catch (error) {
-      console.error('Erro ao gerar PDF:', error);
-      toast.error('Erro ao gerar relatório');
+      console.error("Erro ao gerar PDF:", error);
+      toast.error("Erro ao gerar relatório");
     } finally {
       setGerandoPDF(false);
     }
@@ -95,16 +103,18 @@ export default function InspecaoDetalheHistoricoModal({ open, onOpenChange, insp
 
   if (!inspecao) return null;
 
-  const statusConfig = 
-    inspecao.status === 'concluida' ? { label: 'Concluída', color: 'bg-green-100 text-green-700', icon: CheckCircle2 } :
-    inspecao.status === 'reprovada' ? { label: 'Reprovada', color: 'bg-red-100 text-red-700', icon: XCircle } :
-    { label: 'Em Andamento', color: 'bg-amber-100 text-amber-700', icon: Clock };
+  const statusConfig =
+    inspecao.status === "concluida"
+      ? { label: "Concluída", color: "bg-green-100 text-green-700", icon: CheckCircle2 }
+      : inspecao.status === "reprovada"
+        ? { label: "Reprovada", color: "bg-red-100 text-red-700", icon: XCircle }
+        : { label: "Em Andamento", color: "bg-amber-100 text-amber-700", icon: Clock };
 
   const StatusIcon = statusConfig.icon;
 
-  const aprovadas = ferramentas.filter(f => f.inspecao?.status_validacao === 'aprovada').length;
-  const reprovadas = ferramentas.filter(f => f.inspecao?.status_validacao === 'reprovada').length;
-  const pendentes = ferramentas.filter(f => !f.inspecao).length;
+  const aprovadas = ferramentas.filter((f) => f.inspecao?.status_validacao === "aprovada").length;
+  const reprovadas = ferramentas.filter((f) => f.inspecao?.status_validacao === "reprovada").length;
+  const pendentes = ferramentas.filter((f) => !f.inspecao).length;
 
   return (
     <>
@@ -150,7 +160,9 @@ export default function InspecaoDetalheHistoricoModal({ open, onOpenChange, insp
                   Data da Inspeção
                 </div>
                 <p className="font-semibold text-slate-800">
-                  {format(new Date(inspecao.data_inspecao), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                  {format(new Date(inspecao.data_inspecao), "dd 'de' MMMM 'de' yyyy", {
+                    locale: ptBR,
+                  })}
                 </p>
               </div>
 
@@ -246,12 +258,12 @@ export default function InspecaoDetalheHistoricoModal({ open, onOpenChange, insp
                         <TableCell className="font-mono text-sm">{ferramenta.codigo}</TableCell>
                         <TableCell className="text-sm">{ferramenta.descricao}</TableCell>
                         <TableCell>
-                          {ferramenta.inspecao?.status_validacao === 'aprovada' ? (
+                          {ferramenta.inspecao?.status_validacao === "aprovada" ? (
                             <Badge className="bg-green-100 text-green-700">
                               <CheckCircle2 className="w-3 h-3 mr-1" />
                               Aprovada
                             </Badge>
-                          ) : ferramenta.inspecao?.status_validacao === 'reprovada' ? (
+                          ) : ferramenta.inspecao?.status_validacao === "reprovada" ? (
                             <Badge className="bg-red-100 text-red-700">
                               <XCircle className="w-3 h-3 mr-1" />
                               Reprovada
@@ -287,13 +299,13 @@ export default function InspecaoDetalheHistoricoModal({ open, onOpenChange, insp
 
       {/* Foto Expandida */}
       {fotoExpandida && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4"
           onClick={() => setFotoExpandida(null)}
         >
           <div className="relative max-w-4xl max-h-[90vh] w-full h-full">
-            <img 
-              src={fotoExpandida} 
+            <img
+              src={fotoExpandida}
               alt="Foto da ferramenta"
               className="w-full h-full object-contain"
             />

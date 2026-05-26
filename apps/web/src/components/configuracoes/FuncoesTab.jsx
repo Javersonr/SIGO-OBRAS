@@ -1,26 +1,35 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Plus, Edit, Trash2, GraduationCap, FileText, Download, Upload, Copy, Eye } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Plus,
+  Edit,
+  Trash2,
+  GraduationCap,
+  FileText,
+  Download,
+  Upload,
+  Copy,
+  Eye,
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import FuncaoModal from './FuncaoModal';
-import TreinamentoModal from './TreinamentoModal';
-import VisualizarTreinamentoModal from './VisualizarTreinamentoModal';
-import { toast } from 'sonner';
+} from "@/components/ui/dropdown-menu";
+import FuncaoModal from "./FuncaoModal";
+import TreinamentoModal from "./TreinamentoModal";
+import VisualizarTreinamentoModal from "./VisualizarTreinamentoModal";
+import { toast } from "sonner";
 
 export default function FuncoesTab({ empresaAtiva }) {
   const [funcoes, setFuncoes] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [selectedFuncao, setSelectedFuncao] = useState(null);
   const [showTreinamentoModal, setShowTreinamentoModal] = useState(false);
@@ -34,12 +43,12 @@ export default function FuncoesTab({ empresaAtiva }) {
     setLoading(true);
     try {
       const result = await base44.entities.Funcao.filter({
-        empresa_id: empresaAtiva.id
+        empresa_id: empresaAtiva.id,
       });
       // Mostrar todas as funções, independente do status ativo
       setFuncoes(result.sort((a, b) => a.nome.localeCompare(b.nome)));
     } catch (error) {
-      console.error('Erro ao carregar funções:', error);
+      console.error("Erro ao carregar funções:", error);
     } finally {
       setLoading(false);
     }
@@ -51,22 +60,24 @@ export default function FuncoesTab({ empresaAtiva }) {
       // Buscar todos os treinamentos marcados como modelo
       const result = await base44.entities.Treinamento.filter({
         empresa_id: empresaAtiva.id,
-        usar_como_modelo: true
+        usar_como_modelo: true,
       });
-      
+
       // Filtrar apenas ativos (true ou não definido) e remover duplicatas
-      const treinamentosAtivos = result.filter(t => t.ativo !== false);
+      const treinamentosAtivos = result.filter((t) => t.ativo !== false);
       const treinamentosUnicos = treinamentosAtivos.reduce((acc, t) => {
-        const chave = `${t.nome}_${t.codigo || ''}`;
+        const chave = `${t.nome}_${t.codigo || ""}`;
         if (!acc.has(chave)) {
           acc.set(chave, t);
         }
         return acc;
       }, new Map());
-      
-      setTreinamentos(Array.from(treinamentosUnicos.values()).sort((a, b) => a.nome.localeCompare(b.nome)));
+
+      setTreinamentos(
+        Array.from(treinamentosUnicos.values()).sort((a, b) => a.nome.localeCompare(b.nome))
+      );
     } catch (error) {
-      console.error('Erro ao carregar treinamentos:', error);
+      console.error("Erro ao carregar treinamentos:", error);
     }
   }, [empresaAtiva?.id]);
 
@@ -82,15 +93,15 @@ export default function FuncoesTab({ empresaAtiva }) {
       } else {
         await base44.entities.Funcao.create({
           ...formData,
-          empresa_id: empresaAtiva.id
+          empresa_id: empresaAtiva.id,
         });
       }
       loadFuncoes();
       setShowModal(false);
       setSelectedFuncao(null);
     } catch (error) {
-      console.error('Erro ao salvar função:', error);
-      alert('Erro ao salvar função');
+      console.error("Erro ao salvar função:", error);
+      alert("Erro ao salvar função");
     }
   };
 
@@ -100,13 +111,13 @@ export default function FuncoesTab({ empresaAtiva }) {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Deseja excluir esta função?')) return;
+    if (!confirm("Deseja excluir esta função?")) return;
     try {
       await base44.entities.Funcao.delete(id);
       loadFuncoes();
     } catch (error) {
-      console.error('Erro ao excluir função:', error);
-      alert('Erro ao excluir função');
+      console.error("Erro ao excluir função:", error);
+      alert("Erro ao excluir função");
     }
   };
 
@@ -124,24 +135,24 @@ export default function FuncoesTab({ empresaAtiva }) {
         modelo_ferramentas: funcao.modelo_ferramentas,
         modelo_autorizacao_formal: funcao.modelo_autorizacao_formal,
         modelo_direito_recusa: funcao.modelo_direito_recusa,
-        modelo_ordem_servicos: funcao.modelo_ordem_servicos
+        modelo_ordem_servicos: funcao.modelo_ordem_servicos,
       };
       const [funcaoCriada, treinamentos] = await Promise.all([
         base44.entities.Funcao.create(novaFuncao),
-        base44.entities.Treinamento.filter({ empresa_id: empresaAtiva.id, funcao_id: funcao.id })
+        base44.entities.Treinamento.filter({ empresa_id: empresaAtiva.id, funcao_id: funcao.id }),
       ]);
-      
+
       // Duplicar treinamentos para a nova função
       if (treinamentos.length > 0) {
-        const treinamentosDuplicados = treinamentos.map(t => {
+        const treinamentosDuplicados = treinamentos.map((t) => {
           // Garantir que a assinatura do instrutor seja propagada corretamente
-          let instrutorAssinaturaUrl = t.instrutor_assinatura_url || '';
+          let instrutorAssinaturaUrl = t.instrutor_assinatura_url || "";
           try {
             const instrutoresParsed = JSON.parse(t.instrutor_nome);
             if (Array.isArray(instrutoresParsed)) {
-              const assinaturas = instrutoresParsed.map(i => i.assinatura_url).filter(Boolean);
+              const assinaturas = instrutoresParsed.map((i) => i.assinatura_url).filter(Boolean);
               if (assinaturas.length > 0 && !instrutorAssinaturaUrl) {
-                instrutorAssinaturaUrl = assinaturas.join('|');
+                instrutorAssinaturaUrl = assinaturas.join("|");
               }
             }
           } catch {}
@@ -171,17 +182,17 @@ export default function FuncoesTab({ empresaAtiva }) {
             conteudo_programatico: t.conteudo_programatico,
             aproveitamento: t.aproveitamento,
             local: t.local,
-            ativo: t.ativo
+            ativo: t.ativo,
           };
         });
         await base44.entities.Treinamento.bulkCreate(treinamentosDuplicados);
       }
-      
-      toast.success('Função duplicada com tudo!');
+
+      toast.success("Função duplicada com tudo!");
       loadFuncoes();
     } catch (error) {
-      console.error('Erro ao duplicar função:', error);
-      toast.error('Erro ao duplicar função');
+      console.error("Erro ao duplicar função:", error);
+      toast.error("Erro ao duplicar função");
     }
   };
 
@@ -191,201 +202,210 @@ export default function FuncoesTab({ empresaAtiva }) {
   };
 
   const handleExportarFuncoes = () => {
-    const dados = funcoes.map(f => [
-      f.nome || '',
-      f.descricao || '',
-      f.categoria || '',
+    const dados = funcoes.map((f) => [
+      f.nome || "",
+      f.descricao || "",
+      f.categoria || "",
       f.salario || 0,
-      f.ativo ? 'Sim' : 'Não'
+      f.ativo ? "Sim" : "Não",
     ]);
 
-    const headers = ['Nome', 'Descrição', 'Categoria', 'Salário', 'Ativo'];
+    const headers = ["Nome", "Descrição", "Categoria", "Salário", "Ativo"];
     const linhas = [headers, ...dados];
-    const csv = linhas.map(row => row.map(cell => {
-      const cellStr = String(cell).replace(/"/g, '""');
-      return cellStr.includes(';') || cellStr.includes('\n') || cellStr.includes('"') ? `"${cellStr}"` : cellStr;
-    }).join(';')).join('\n');
-    
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
+    const csv = linhas
+      .map((row) =>
+        row
+          .map((cell) => {
+            const cellStr = String(cell).replace(/"/g, '""');
+            return cellStr.includes(";") || cellStr.includes("\n") || cellStr.includes('"')
+              ? `"${cellStr}"`
+              : cellStr;
+          })
+          .join(";")
+      )
+      .join("\n");
+
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `funcoes_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `funcoes_${new Date().toISOString().split("T")[0]}.csv`;
     link.click();
-    
+
     toast.success(`✅ ${funcoes.length} funções exportadas`);
   };
 
   const handleImportarFuncoes = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     const fileName = file.name.toLowerCase();
-    const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
-    const isCsv = fileName.endsWith('.csv');
-    
+    const isExcel = fileName.endsWith(".xlsx") || fileName.endsWith(".xls");
+    const isCsv = fileName.endsWith(".csv");
+
     if (!isExcel && !isCsv) {
-      toast.error('❌ Formato inválido. Use .xlsx, .xls ou .csv');
-      e.target.value = '';
+      toast.error("❌ Formato inválido. Use .xlsx, .xls ou .csv");
+      e.target.value = "";
       return;
     }
-    
+
     if (isExcel) {
       // Importar Excel como CSV (ler como texto)
       const reader = new FileReader();
-      
+
       reader.onload = async (event) => {
         try {
           let text = event.target.result;
-          
-          if (text.charCodeAt(0) === 0xFEFF) {
+
+          if (text.charCodeAt(0) === 0xfeff) {
             text = text.slice(1);
           }
-          
-          const lines = text.split(/\r?\n/).filter(l => l.trim());
-          
+
+          const lines = text.split(/\r?\n/).filter((l) => l.trim());
+
           if (lines.length <= 1) {
-            toast.error('❌ Arquivo vazio ou sem dados válidos');
+            toast.error("❌ Arquivo vazio ou sem dados válidos");
             return;
           }
-          
+
           const funcoesImportadas = [];
-          
+
           for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
-            
+
             const values = [];
-            let currentValue = '';
+            let currentValue = "";
             let insideQuotes = false;
-            
+
             for (let j = 0; j < line.length; j++) {
               const char = line[j];
               const nextChar = line[j + 1];
-              
+
               if (char === '"' && nextChar === '"' && insideQuotes) {
                 currentValue += '"';
                 j++;
               } else if (char === '"') {
                 insideQuotes = !insideQuotes;
-              } else if (char === ',' && !insideQuotes) {
+              } else if (char === "," && !insideQuotes) {
                 values.push(currentValue.trim());
-                currentValue = '';
+                currentValue = "";
               } else {
                 currentValue += char;
               }
             }
             values.push(currentValue.trim());
-            
+
             const nome = values[0]?.trim();
             if (!nome) continue;
-            
+
             funcoesImportadas.push({
               empresa_id: empresaAtiva.id,
               nome: nome,
-              descricao: values[1]?.trim() || '',
-              categoria: values[2]?.trim() || '',
+              descricao: values[1]?.trim() || "",
+              categoria: values[2]?.trim() || "",
               salario: parseFloat(values[3]) || 0,
-              ativo: values[4]?.toLowerCase() !== 'não'
+              ativo: values[4]?.toLowerCase() !== "não",
             });
           }
-          
+
           if (funcoesImportadas.length === 0) {
-            toast.error('❌ Nenhuma função válida encontrada');
+            toast.error("❌ Nenhuma função válida encontrada");
             return;
           }
-          
+
           await base44.entities.Funcao.bulkCreate(funcoesImportadas);
           toast.success(`✅ ${funcoesImportadas.length} funções importadas`);
           loadFuncoes();
         } catch (error) {
-          console.error('Erro ao importar Excel:', error);
-          toast.error('❌ Erro ao importar: ' + error.message);
+          console.error("Erro ao importar Excel:", error);
+          toast.error("❌ Erro ao importar: " + error.message);
         }
       };
-      
-      reader.readAsText(file, 'UTF-8');
+
+      reader.readAsText(file, "UTF-8");
     } else {
       // Importar CSV
       const reader = new FileReader();
       reader.onload = async (event) => {
         try {
           let text = event.target.result;
-          
-          if (text.charCodeAt(0) === 0xFEFF) {
+
+          if (text.charCodeAt(0) === 0xfeff) {
             text = text.slice(1);
           }
-          
-          const lines = text.split(/\r?\n/).filter(l => l.trim());
-          
+
+          const lines = text.split(/\r?\n/).filter((l) => l.trim());
+
           if (lines.length <= 1) {
-            toast.error('❌ Arquivo vazio ou sem dados válidos');
+            toast.error("❌ Arquivo vazio ou sem dados válidos");
             return;
           }
-          
+
           const funcoesImportadas = [];
-          
+
           for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
-            
+
             const values = [];
-            let currentValue = '';
+            let currentValue = "";
             let insideQuotes = false;
-            
+
             for (let j = 0; j < line.length; j++) {
               const char = line[j];
               const nextChar = line[j + 1];
-              
+
               if (char === '"' && nextChar === '"' && insideQuotes) {
                 currentValue += '"';
                 j++;
               } else if (char === '"') {
                 insideQuotes = !insideQuotes;
-              } else if (char === ';' && !insideQuotes) {
+              } else if (char === ";" && !insideQuotes) {
                 values.push(currentValue.trim());
-                currentValue = '';
+                currentValue = "";
               } else {
                 currentValue += char;
               }
             }
             values.push(currentValue.trim());
-            
+
             const nome = values[0]?.trim();
             if (!nome) continue;
-            
+
             funcoesImportadas.push({
               empresa_id: empresaAtiva.id,
               nome: nome,
-              descricao: values[1]?.trim() || '',
-              categoria: values[2]?.trim() || '',
+              descricao: values[1]?.trim() || "",
+              categoria: values[2]?.trim() || "",
               salario: parseFloat(values[3]) || 0,
-              ativo: values[4]?.toLowerCase() !== 'não'
+              ativo: values[4]?.toLowerCase() !== "não",
             });
           }
-          
+
           if (funcoesImportadas.length === 0) {
-            toast.error('❌ Nenhuma função válida encontrada');
+            toast.error("❌ Nenhuma função válida encontrada");
             return;
           }
-          
+
           await base44.entities.Funcao.bulkCreate(funcoesImportadas);
           toast.success(`✅ ${funcoesImportadas.length} funções importadas`);
           loadFuncoes();
         } catch (error) {
-          console.error('Erro ao importar CSV:', error);
-          toast.error('❌ Erro ao importar: ' + error.message);
+          console.error("Erro ao importar CSV:", error);
+          toast.error("❌ Erro ao importar: " + error.message);
         }
       };
-      
-      reader.readAsText(file, 'UTF-8');
+
+      reader.readAsText(file, "UTF-8");
     }
-    
-    e.target.value = '';
+
+    e.target.value = "";
   };
 
-  const filteredFuncoes = funcoes.filter(f => 
-    f.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (f.descricao && f.descricao.toLowerCase().includes(searchTerm.toLowerCase()))
+  const filteredFuncoes = funcoes.filter(
+    (f) =>
+      f.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (f.descricao && f.descricao.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   return (
@@ -413,13 +433,15 @@ export default function FuncoesTab({ empresaAtiva }) {
                 <Download className="w-4 h-4 mr-2" />
                 Exportar Funções
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => document.getElementById('importFuncoesInput')?.click()}>
+              <DropdownMenuItem
+                onClick={() => document.getElementById("importFuncoesInput")?.click()}
+              >
                 <Upload className="w-4 h-4 mr-2" />
                 Importar Funções
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button 
+          <Button
             onClick={() => {
               setSelectedTreinamento(null);
               setShowTreinamentoModal(true);
@@ -430,7 +452,7 @@ export default function FuncoesTab({ empresaAtiva }) {
             <GraduationCap className="w-4 h-4" />
             Novo Treinamento
           </Button>
-          <Button 
+          <Button
             onClick={() => setShowModal(true)}
             className="bg-amber-500 hover:bg-amber-600 gap-2 whitespace-nowrap"
           >
@@ -440,12 +462,12 @@ export default function FuncoesTab({ empresaAtiva }) {
         </div>
       </div>
 
-      <input 
+      <input
         id="importFuncoesInput"
-        type="file" 
-        className="hidden" 
-        accept=".csv,.xlsx,.xls" 
-        onChange={handleImportarFuncoes} 
+        type="file"
+        className="hidden"
+        accept=".csv,.xlsx,.xls"
+        onChange={handleImportarFuncoes}
       />
 
       {/* Lista de Treinamentos Cadastrados */}
@@ -465,18 +487,20 @@ export default function FuncoesTab({ empresaAtiva }) {
                     // Buscar todos os treinamentos vinculados a funções
                     const treinamentosVinculados = await base44.entities.Treinamento.filter({
                       empresa_id: empresaAtiva.id,
-                      usar_como_modelo: true
+                      usar_como_modelo: true,
                     });
-                    
-                    const treinamentosParaMigrar = treinamentosVinculados.filter(t => t.funcao_id);
-                    
+
+                    const treinamentosParaMigrar = treinamentosVinculados.filter(
+                      (t) => t.funcao_id
+                    );
+
                     if (treinamentosParaMigrar.length === 0) {
-                      toast.error('Nenhum treinamento vinculado a funções encontrado');
+                      toast.error("Nenhum treinamento vinculado a funções encontrado");
                       return;
                     }
-                    
+
                     // Copiar para modelos genéricos
-                    const novosModelos = treinamentosParaMigrar.map(t => ({
+                    const novosModelos = treinamentosParaMigrar.map((t) => ({
                       empresa_id: empresaAtiva.id,
                       funcao_id: null,
                       nome: t.nome,
@@ -486,15 +510,15 @@ export default function FuncoesTab({ empresaAtiva }) {
                       validade_meses: t.validade_meses || 12,
                       obrigatorio: t.obrigatorio !== false,
                       usar_como_modelo: true,
-                      ativo: true
+                      ativo: true,
                     }));
-                    
+
                     await base44.entities.Treinamento.bulkCreate(novosModelos);
                     loadTreinamentos();
                     toast.success(`✅ ${novosModelos.length} treinamentos migrados para modelos`);
                   } catch (error) {
-                    console.error('Erro ao migrar:', error);
-                    toast.error('Erro ao migrar treinamentos');
+                    console.error("Erro ao migrar:", error);
+                    toast.error("Erro ao migrar treinamentos");
                   }
                 }}
                 className="gap-2 text-xs"
@@ -502,23 +526,30 @@ export default function FuncoesTab({ empresaAtiva }) {
                 <Download className="w-3 h-3" />
                 Importar das Funções
               </Button>
-              <Badge variant="outline">{treinamentos.length} treinamento{treinamentos.length !== 1 ? 's' : ''}</Badge>
+              <Badge variant="outline">
+                {treinamentos.length} treinamento{treinamentos.length !== 1 ? "s" : ""}
+              </Badge>
             </div>
           </div>
-          
+
           {treinamentos.length === 0 ? (
             <div className="text-center py-6 text-slate-400 text-sm">
               Nenhum treinamento cadastrado ainda
             </div>
           ) : (
             <div className="grid gap-2">
-              {treinamentos.map(t => (
-                <div key={t.id} className="flex items-start justify-between p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
+              {treinamentos.map((t) => (
+                <div
+                  key={t.id}
+                  className="flex items-start justify-between p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+                >
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <h5 className="font-medium text-sm">{t.nome}</h5>
                       {t.codigo && (
-                        <Badge variant="outline" className="text-xs">{t.codigo}</Badge>
+                        <Badge variant="outline" className="text-xs">
+                          {t.codigo}
+                        </Badge>
                       )}
                       {t.obrigatorio && (
                         <Badge className="bg-red-100 text-red-700 text-xs">Obrigatório</Badge>
@@ -559,13 +590,13 @@ export default function FuncoesTab({ empresaAtiva }) {
                       size="icon"
                       className="h-7 w-7"
                       onClick={async () => {
-                        if (!confirm('Excluir este treinamento?')) return;
+                        if (!confirm("Excluir este treinamento?")) return;
                         try {
                           await base44.entities.Treinamento.delete(t.id);
                           loadTreinamentos();
-                          toast.success('Treinamento excluído');
+                          toast.success("Treinamento excluído");
                         } catch (error) {
-                          toast.error('Erro ao excluir treinamento');
+                          toast.error("Erro ao excluir treinamento");
                         }
                       }}
                       title="Excluir"
@@ -582,20 +613,15 @@ export default function FuncoesTab({ empresaAtiva }) {
 
       {/* Lista de funções */}
       {loading ? (
-        <div className="text-center py-12 text-slate-500">
-          Carregando funções...
-        </div>
+        <div className="text-center py-12 text-slate-500">Carregando funções...</div>
       ) : filteredFuncoes.length === 0 ? (
         <div className="text-center py-12">
           <GraduationCap className="w-16 h-16 text-slate-300 mx-auto mb-4" />
           <p className="text-slate-500 mb-4">
-            {searchTerm ? 'Nenhuma função encontrada' : 'Nenhuma função cadastrada'}
+            {searchTerm ? "Nenhuma função encontrada" : "Nenhuma função cadastrada"}
           </p>
           {!searchTerm && (
-            <Button 
-              onClick={() => setShowModal(true)}
-              variant="outline"
-            >
+            <Button onClick={() => setShowModal(true)} variant="outline">
               <Plus className="w-4 h-4 mr-2" />
               Cadastrar Primeira Função
             </Button>
@@ -603,7 +629,7 @@ export default function FuncoesTab({ empresaAtiva }) {
         </div>
       ) : (
         <div className="grid gap-3">
-          {filteredFuncoes.map(funcao => (
+          {filteredFuncoes.map((funcao) => (
             <Card key={funcao.id} className="hover:shadow-md transition-all">
               <CardContent className="p-4">
                 <div className="flex items-start justify-between">
@@ -611,7 +637,10 @@ export default function FuncoesTab({ empresaAtiva }) {
                     <div className="flex items-center gap-2 mb-2">
                       <h4 className="font-semibold text-slate-800">{funcao.nome}</h4>
                       {funcao.ativo ? (
-                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                        <Badge
+                          variant="outline"
+                          className="bg-green-50 text-green-700 border-green-200"
+                        >
                           Ativa
                         </Badge>
                       ) : (
@@ -628,7 +657,11 @@ export default function FuncoesTab({ empresaAtiva }) {
                       )}
                       {funcao.salario && (
                         <p className="text-xs text-slate-500">
-                          <span className="font-medium">Salário:</span> R$ {funcao.salario.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <span className="font-medium">Salário:</span> R${" "}
+                          {funcao.salario.toLocaleString("pt-BR", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
                         </p>
                       )}
                       {funcao.descricao && (

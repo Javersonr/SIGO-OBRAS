@@ -1,15 +1,23 @@
-import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import CapturaComprovanteCamera from './CapturaComprovanteCamera';
-import ConfirmacaoDadosExtraidos from './ConfirmacaoDadosExtraidos';
-import SelecionarProjetoeConta from './SelecionarProjetoeConta.jsx';
-import { CheckCircle2, Loader2, X } from 'lucide-react';
+import React, { useState } from "react";
+import { base44 } from "@/api/base44Client";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import CapturaComprovanteCamera from "./CapturaComprovanteCamera";
+import ConfirmacaoDadosExtraidos from "./ConfirmacaoDadosExtraidos";
+import SelecionarProjetoeConta from "./SelecionarProjetoeConta.jsx";
+import { CheckCircle2, Loader2, X } from "lucide-react";
 
-export default function NovoPreLancamentoModal({ open, onOpenChange, empresaId, onSucesso, usuarioEmail, verTodos, isAdmin }) {
-  const [etapa, setEtapa] = useState('captura'); // 'captura' | 'confirmacao' | 'selecao' | 'sucesso'
+export default function NovoPreLancamentoModal({
+  open,
+  onOpenChange,
+  empresaId,
+  onSucesso,
+  usuarioEmail,
+  verTodos,
+  isAdmin,
+}) {
+  const [etapa, setEtapa] = useState("captura"); // 'captura' | 'confirmacao' | 'selecao' | 'sucesso'
   const [comprovanteUrl, setComprovanteUrl] = useState(null);
   const [dadosExtraidos, setDadosExtraidos] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -21,20 +29,20 @@ export default function NovoPreLancamentoModal({ open, onOpenChange, empresaId, 
     setErro(null);
 
     try {
-      const response = await base44.functions.invoke('extrairDadosComprovante', {
-        file_url: fileUrl
+      const response = await base44.functions.invoke("extrairDadosComprovante", {
+        file_url: fileUrl,
       });
 
       if (response.data.sucesso) {
         setComprovanteUrl(fileUrl);
         setDadosExtraidos(response.data.dados);
-        setEtapa('confirmacao');
+        setEtapa("confirmacao");
       } else {
-        setErro(response.data.error || 'Erro ao extrair dados');
+        setErro(response.data.error || "Erro ao extrair dados");
       }
     } catch (err) {
-      setErro('Erro ao processar comprovante: ' + err.message);
-      console.error('Erro:', err);
+      setErro("Erro ao processar comprovante: " + err.message);
+      console.error("Erro:", err);
     } finally {
       setLoading(false);
     }
@@ -42,7 +50,7 @@ export default function NovoPreLancamentoModal({ open, onOpenChange, empresaId, 
 
   const handleConfirmacao = (dadosEditados) => {
     setDadosExtraidos(dadosEditados);
-    setEtapa('selecao');
+    setEtapa("selecao");
   };
 
   const handleSelecao = async (dadosSelecao) => {
@@ -50,19 +58,19 @@ export default function NovoPreLancamentoModal({ open, onOpenChange, empresaId, 
     setErro(null);
 
     try {
-      const response = await base44.functions.invoke('criarPreLancamento', {
+      const response = await base44.functions.invoke("criarPreLancamento", {
         empresa_id: empresaId,
         comprovante_url: comprovanteUrl,
         dados_extraidos: dadosExtraidos,
         projeto_id: dadosSelecao.projeto_id,
         projeto_nome: dadosSelecao.projeto_nome,
         conta_financeira_id: dadosSelecao.conta_financeira_id,
-        usuario_email_override: usuarioEmail
+        usuario_email_override: usuarioEmail,
       });
 
       if (response.data.sucesso) {
         setPreLancamentoCriado(response.data.preLancamento);
-        setEtapa('sucesso');
+        setEtapa("sucesso");
         setTimeout(() => {
           fechar();
           if (onSucesso) {
@@ -73,23 +81,23 @@ export default function NovoPreLancamentoModal({ open, onOpenChange, empresaId, 
         setErro(response.data.error);
       }
     } catch (err) {
-      setErro('Erro ao criar pré-lançamento: ' + err.message);
-      console.error('Erro:', err);
+      setErro("Erro ao criar pré-lançamento: " + err.message);
+      console.error("Erro:", err);
     } finally {
       setLoading(false);
     }
   };
 
   const voltar = () => {
-    if (etapa === 'confirmacao') {
-      setEtapa('captura');
-    } else if (etapa === 'selecao') {
-      setEtapa('confirmacao');
+    if (etapa === "confirmacao") {
+      setEtapa("captura");
+    } else if (etapa === "selecao") {
+      setEtapa("confirmacao");
     }
   };
 
   const fechar = () => {
-    setEtapa('captura');
+    setEtapa("captura");
     setComprovanteUrl(null);
     setDadosExtraidos(null);
     setErro(null);
@@ -103,10 +111,10 @@ export default function NovoPreLancamentoModal({ open, onOpenChange, empresaId, 
         {/* Header fixo com X */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white sticky top-0 z-10">
           <h2 className="text-base font-semibold text-slate-900">
-            {etapa === 'captura' && 'Novo Pré-Lançamento'}
-            {etapa === 'confirmacao' && 'Confirmar Dados'}
-            {etapa === 'selecao' && 'Selecionar Projeto'}
-            {etapa === 'sucesso' && 'Sucesso!'}
+            {etapa === "captura" && "Novo Pré-Lançamento"}
+            {etapa === "confirmacao" && "Confirmar Dados"}
+            {etapa === "selecao" && "Selecionar Projeto"}
+            {etapa === "sucesso" && "Sucesso!"}
           </h2>
           <Button variant="ghost" size="icon" onClick={fechar} className="h-8 w-8">
             <X className="w-4 h-4" />
@@ -120,14 +128,11 @@ export default function NovoPreLancamentoModal({ open, onOpenChange, empresaId, 
             </Alert>
           )}
 
-          {etapa === 'captura' && (
-            <CapturaComprovanteCamera
-              onCaptura={handleCaptura}
-              loading={loading}
-            />
+          {etapa === "captura" && (
+            <CapturaComprovanteCamera onCaptura={handleCaptura} loading={loading} />
           )}
 
-          {etapa === 'confirmacao' && (
+          {etapa === "confirmacao" && (
             <ConfirmacaoDadosExtraidos
               dados={dadosExtraidos}
               comprovanteUrl={comprovanteUrl}
@@ -137,7 +142,7 @@ export default function NovoPreLancamentoModal({ open, onOpenChange, empresaId, 
             />
           )}
 
-          {etapa === 'selecao' && (
+          {etapa === "selecao" && (
             <SelecionarProjetoeConta
               empresaId={empresaId}
               dados={dadosExtraidos}
@@ -151,7 +156,7 @@ export default function NovoPreLancamentoModal({ open, onOpenChange, empresaId, 
             />
           )}
 
-          {etapa === 'sucesso' && preLancamentoCriado && (
+          {etapa === "sucesso" && preLancamentoCriado && (
             <div className="text-center space-y-4 py-8">
               <div className="flex justify-center">
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
@@ -160,9 +165,7 @@ export default function NovoPreLancamentoModal({ open, onOpenChange, empresaId, 
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">Pré-Lançamento Criado!</h3>
-                <p className="text-slate-600 mt-2">
-                  ID: {preLancamentoCriado.id}
-                </p>
+                <p className="text-slate-600 mt-2">ID: {preLancamentoCriado.id}</p>
                 <p className="text-slate-600">
                   Valor: R$ {parseFloat(preLancamentoCriado.valor).toFixed(2)}
                 </p>

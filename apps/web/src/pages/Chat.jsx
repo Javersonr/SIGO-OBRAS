@@ -1,19 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '../Layout';
-import { MessageSquare, Plus, Search, Hash, Lock, Users } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import ChannelList from '../components/chat/ChannelList';
-import ChatWindow from '../components/chat/ChatWindow';
-import NovoCanal from '../components/chat/NovoCanal';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useEmpresa } from "../Layout";
+import { MessageSquare, Plus, Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import ChannelList from "../components/chat/ChannelList";
+import ChatWindow from "../components/chat/ChatWindow";
+import NovoCanal from "../components/chat/NovoCanal";
 
 export default function Chat() {
   const { empresaAtiva, user } = useEmpresa();
   const [canais, setCanais] = useState([]);
   const [canalSelecionado, setCanalSelecionado] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [showNovoCanal, setShowNovoCanal] = useState(false);
   const [usuariosEmpresa, setUsuariosEmpresa] = useState([]);
 
@@ -27,23 +27,26 @@ export default function Chat() {
     setLoading(true);
     try {
       const [canaisData, usuarios] = await Promise.all([
-        base44.entities.CanalChat.filter({ 
+        base44.entities.CanalChat.filter(
+          {
+            empresa_id: empresaAtiva.id,
+            ativo: true,
+          },
+          "-ultima_mensagem_data"
+        ),
+        base44.entities.UsuarioEmpresa.filter({
           empresa_id: empresaAtiva.id,
-          ativo: true 
-        }, '-ultima_mensagem_data'),
-        base44.entities.UsuarioEmpresa.filter({ 
-          empresa_id: empresaAtiva.id, 
-          ativo: true 
-        })
+          ativo: true,
+        }),
       ]);
 
       // Filtrar apenas canais que o usuário participa
-      const meusCanais = canaisData.filter(canal => {
+      const meusCanais = canaisData.filter((canal) => {
         try {
           const participantes = canal.participantes ? JSON.parse(canal.participantes) : [];
-          return participantes.includes(user.id) || canal.tipo === 'Geral';
+          return participantes.includes(user.id) || canal.tipo === "Geral";
         } catch {
-          return canal.tipo === 'Geral';
+          return canal.tipo === "Geral";
         }
       });
 
@@ -55,7 +58,7 @@ export default function Chat() {
         setCanalSelecionado(meusCanais[0]);
       }
     } catch (error) {
-      console.error('Erro ao carregar dados:', error);
+      console.error("Erro ao carregar dados:", error);
     } finally {
       setLoading(false);
     }
@@ -69,7 +72,7 @@ export default function Chat() {
     return canal;
   };
 
-  const filteredCanais = canais.filter(canal => 
+  const filteredCanais = canais.filter((canal) =>
     canal.nome?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -85,11 +88,7 @@ export default function Chat() {
               <MessageSquare className="w-5 h-5" />
               Chat
             </h2>
-            <Button 
-              size="icon" 
-              variant="ghost"
-              onClick={() => setShowNovoCanal(true)}
-            >
+            <Button size="icon" variant="ghost" onClick={() => setShowNovoCanal(true)}>
               <Plus className="w-4 h-4" />
             </Button>
           </div>

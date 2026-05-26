@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '../../../Layout';
-import { Link } from 'react-router-dom';
-import { createPageUrl } from '../../../utils';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { FolderKanban } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useEmpresa } from "../../../Layout";
+import { Link } from "react-router-dom";
+import { createPageUrl } from "../../../utils";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FolderKanban } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export default function WidgetProjetosAtivos() {
   const { empresaAtiva, user, perfil, vinculo } = useEmpresa();
@@ -17,9 +16,10 @@ export default function WidgetProjetosAtivos() {
   // Verificar se tem permissões granulares
   const permissoes = vinculo?.permissoes ? JSON.parse(vinculo.permissoes) : {};
   const temPermissoesGranulares = Object.keys(permissoes).length > 0;
-  
+
   // Verificar se pode ver projetos: Admin OU acesso total (sem granular) a Projetos
-  const podeVerProjetos = perfil === 'Admin' || (!temPermissoesGranulares && vinculo?.perfil !== 'Cliente');
+  const podeVerProjetos =
+    perfil === "Admin" || (!temPermissoesGranulares && vinculo?.perfil !== "Cliente");
 
   useEffect(() => {
     if (empresaAtiva?.id && podeVerProjetos) {
@@ -32,32 +32,32 @@ export default function WidgetProjetosAtivos() {
   const loadProjetos = async () => {
     try {
       const [projs, usuarios] = await Promise.all([
-        base44.entities.Projeto.filter(
-          { empresa_id: empresaAtiva.id },
-          '-created_date',
-          50
-        ),
-        base44.entities.UsuarioEmpresa.filter(
-          { empresa_id: empresaAtiva.id, usuario_email: user?.email, ativo: true }
-        )
+        base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id }, "-created_date", 50),
+        base44.entities.UsuarioEmpresa.filter({
+          empresa_id: empresaAtiva.id,
+          usuario_email: user?.email,
+          ativo: true,
+        }),
       ]);
-      
+
       setUsuariosEmpresa(usuarios);
-      
+
       // Filtrar apenas projetos onde o usuário é responsável
-      const filtradas = projs.filter(proj => {
-        try {
-          const ids = JSON.parse(proj.responsaveis_ids || '[]');
-          const vinculoId = usuarios.length > 0 ? usuarios[0].id : null;
-          return vinculoId && ids.includes(vinculoId);
-        } catch {
-          return false;
-        }
-      }).slice(0, 5);
-      
+      const filtradas = projs
+        .filter((proj) => {
+          try {
+            const ids = JSON.parse(proj.responsaveis_ids || "[]");
+            const vinculoId = usuarios.length > 0 ? usuarios[0].id : null;
+            return vinculoId && ids.includes(vinculoId);
+          } catch {
+            return false;
+          }
+        })
+        .slice(0, 5);
+
       setProjetos(filtradas);
     } catch (error) {
-      console.error('Erro:', error);
+      console.error("Erro:", error);
     } finally {
       setLoading(false);
     }
@@ -86,9 +86,7 @@ export default function WidgetProjetosAtivos() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-slate-500 text-center py-4">
-            Acesso restrito
-          </p>
+          <p className="text-sm text-slate-500 text-center py-4">Acesso restrito</p>
         </CardContent>
       </Card>
     );
@@ -102,7 +100,7 @@ export default function WidgetProjetosAtivos() {
             <FolderKanban className="w-5 h-5 text-indigo-600" />
             Projetos Ativos
           </div>
-          <Link to={createPageUrl('Projetos')}>
+          <Link to={createPageUrl("Projetos")}>
             <Button variant="ghost" size="sm" className="text-xs">
               Ver todos
             </Button>
@@ -111,12 +109,13 @@ export default function WidgetProjetosAtivos() {
       </CardHeader>
       <CardContent className="space-y-2">
         {projetos.length === 0 ? (
-          <p className="text-sm text-slate-500 text-center py-4">
-            Nenhum projeto ativo
-          </p>
+          <p className="text-sm text-slate-500 text-center py-4">Nenhum projeto ativo</p>
         ) : (
-          projetos.map(proj => (
-            <div key={proj.id} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded">
+          projetos.map((proj) => (
+            <div
+              key={proj.id}
+              className="flex items-center justify-between p-2 hover:bg-slate-50 rounded"
+            >
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-slate-800 truncate">{proj.nome}</p>
                 <p className="text-xs text-slate-500">{proj.cliente_nome}</p>

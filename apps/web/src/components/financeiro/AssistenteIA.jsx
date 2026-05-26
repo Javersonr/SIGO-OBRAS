@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { base44 } from '@/api/base44Client';
-import { Sparkles, Send, Loader2, AlertTriangle, TrendingUp, Lightbulb } from 'lucide-react';
+import React, { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { base44 } from "@/api/base44Client";
+import { Sparkles, Send, Loader2, Lightbulb } from "lucide-react";
 
 export default function AssistenteIA({ transacoes, onAplicarFiltros, categorias, centrosCusto }) {
-  const [prompt, setPrompt] = useState('');
+  const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [resultado, setResultado] = useState(null);
 
@@ -16,7 +16,7 @@ export default function AssistenteIA({ transacoes, onAplicarFiltros, categorias,
     "Comparar receitas do mês atual vs. mês anterior",
     "Identificar despesas que cresceram mais de 20% no último mês",
     "Mostrar fluxo de caixa projetado para os próximos 3 meses",
-    "Listar maiores fornecedores por valor total pago"
+    "Listar maiores fornecedores por valor total pago",
   ];
 
   const handleConsulta = async () => {
@@ -35,24 +35,24 @@ export default function AssistenteIA({ transacoes, onAplicarFiltros, categorias,
         Solicitação do usuário: "${prompt}"
         
         Período disponível: últimos 12 meses
-        Categorias disponíveis: ${categorias.map(c => c.nome).join(', ')}
-        Centros de custo disponíveis: ${centrosCusto?.map(c => c.nome).join(', ') || 'Nenhum'}`,
+        Categorias disponíveis: ${categorias.map((c) => c.nome).join(", ")}
+        Centros de custo disponíveis: ${centrosCusto?.map((c) => c.nome).join(", ") || "Nenhum"}`,
         response_json_schema: {
-          type: 'object',
+          type: "object",
           properties: {
-            tipo: { type: 'string' },
-            filtros: { type: 'object' },
-            visualizacao: { type: 'string' },
-            explicacao: { type: 'string' },
-            metricas_sugeridas: { type: 'array', items: { type: 'string' } }
-          }
-        }
+            tipo: { type: "string" },
+            filtros: { type: "object" },
+            visualizacao: { type: "string" },
+            explicacao: { type: "string" },
+            metricas_sugeridas: { type: "array", items: { type: "string" } },
+          },
+        },
       });
 
       setResultado(resultado);
     } catch (error) {
-      console.error('Erro ao processar consulta:', error);
-      alert('Erro ao processar sua solicitação. Tente reformular.');
+      console.error("Erro ao processar consulta:", error);
+      alert("Erro ao processar sua solicitação. Tente reformular.");
     } finally {
       setLoading(false);
     }
@@ -62,7 +62,7 @@ export default function AssistenteIA({ transacoes, onAplicarFiltros, categorias,
     if (resultado?.filtros) {
       onAplicarFiltros(resultado.filtros, resultado.tipo);
       setResultado(null);
-      setPrompt('');
+      setPrompt("");
     }
   };
 
@@ -86,19 +86,15 @@ export default function AssistenteIA({ transacoes, onAplicarFiltros, categorias,
             placeholder="Ex: Mostre as despesas do último trimestre por categoria..."
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleConsulta()}
+            onKeyPress={(e) => e.key === "Enter" && handleConsulta()}
             className="flex-1"
           />
-          <Button 
-            onClick={handleConsulta} 
+          <Button
+            onClick={handleConsulta}
             disabled={loading || !prompt.trim()}
             className="bg-purple-600 hover:bg-purple-700"
           >
-            {loading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </Button>
         </div>
 
@@ -137,7 +133,9 @@ export default function AssistenteIA({ transacoes, onAplicarFiltros, categorias,
                 <p className="text-xs text-slate-500 mb-2">Métricas sugeridas:</p>
                 <div className="flex flex-wrap gap-2">
                   {resultado.metricas_sugeridas.map((metrica, idx) => (
-                    <Badge key={idx} variant="secondary">{metrica}</Badge>
+                    <Badge key={idx} variant="secondary">
+                      {metrica}
+                    </Badge>
                   ))}
                 </div>
               </div>
@@ -153,16 +151,10 @@ export default function AssistenteIA({ transacoes, onAplicarFiltros, categorias,
             </div>
 
             <div className="flex gap-2">
-              <Button 
-                onClick={handleAplicar}
-                className="flex-1 bg-purple-600 hover:bg-purple-700"
-              >
+              <Button onClick={handleAplicar} className="flex-1 bg-purple-600 hover:bg-purple-700">
                 Aplicar Filtros
               </Button>
-              <Button 
-                variant="outline"
-                onClick={() => setResultado(null)}
-              >
+              <Button variant="outline" onClick={() => setResultado(null)}>
                 Cancelar
               </Button>
             </div>

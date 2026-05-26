@@ -1,10 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Hash, User, Settings, Users } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import MessageList from './MessageList';
-import MessageInput from './MessageInput';
+import React, { useState, useEffect, useRef } from "react";
+import { base44 } from "@/api/base44Client";
+import { Hash, User, Users } from "lucide-react";
+import MessageList from "./MessageList";
+import MessageInput from "./MessageInput";
 
 export default function ChatWindow({ canal, user, empresaAtiva, usuariosEmpresa, onUpdateCanal }) {
   const [mensagens, setMensagens] = useState([]);
@@ -14,7 +12,7 @@ export default function ChatWindow({ canal, user, empresaAtiva, usuariosEmpresa,
   useEffect(() => {
     if (canal?.id) {
       loadMensagens();
-      
+
       // Polling para novas mensagens a cada 3 segundos
       const interval = setInterval(loadMensagens, 3000);
       return () => clearInterval(interval);
@@ -32,14 +30,14 @@ export default function ChatWindow({ canal, user, empresaAtiva, usuariosEmpresa,
     try {
       const msgs = await base44.entities.MensagemChat.filter(
         { canal_id: canal.id },
-        'created_date',
+        "created_date",
         100
       );
       setMensagens(msgs);
       setLoading(false);
 
       // Marcar mensagens como lidas
-      const naoLidas = msgs.filter(m => {
+      const naoLidas = msgs.filter((m) => {
         try {
           const lidaPor = m.lida_por ? JSON.parse(m.lida_por) : [];
           return !lidaPor.includes(user.id) && m.usuario_id !== user.id;
@@ -52,12 +50,12 @@ export default function ChatWindow({ canal, user, empresaAtiva, usuariosEmpresa,
         const lidaPor = msg.lida_por ? JSON.parse(msg.lida_por) : [];
         if (!lidaPor.includes(user.id)) {
           await base44.entities.MensagemChat.update(msg.id, {
-            lida_por: JSON.stringify([...lidaPor, user.id])
+            lida_por: JSON.stringify([...lidaPor, user.id]),
           });
         }
       }
     } catch (error) {
-      console.error('Erro ao carregar mensagens:', error);
+      console.error("Erro ao carregar mensagens:", error);
       setLoading(false);
     }
   };
@@ -75,55 +73,55 @@ export default function ChatWindow({ canal, user, empresaAtiva, usuariosEmpresa,
         arquivo_url: arquivo?.url || null,
         arquivo_nome: arquivo?.nome || null,
         arquivo_tipo: arquivo?.tipo || null,
-        lida_por: JSON.stringify([user.id])
+        lida_por: JSON.stringify([user.id]),
       };
 
       const msg = await base44.entities.MensagemChat.create(novaMensagem);
-      
+
       // Atualizar última mensagem do canal
       await base44.entities.CanalChat.update(canal.id, {
         ultima_mensagem: mensagem.substring(0, 100),
-        ultima_mensagem_data: new Date().toISOString()
+        ultima_mensagem_data: new Date().toISOString(),
       });
 
       setMensagens([...mensagens, msg]);
-      
+
       // Criar notificações para usuários mencionados
       for (const usuarioId of mencoes) {
-        const usuarioMencionado = usuariosEmpresa.find(u => (u.usuario_id || u.id) === usuarioId);
+        const usuarioMencionado = usuariosEmpresa.find((u) => (u.usuario_id || u.id) === usuarioId);
         if (usuarioMencionado && usuarioMencionado.usuario_email !== user.email) {
           await base44.entities.Notificacao.create({
             empresa_id: empresaAtiva.id,
             usuario_email: usuarioMencionado.usuario_email,
-            tipo: 'Sistema',
+            tipo: "Sistema",
             titulo: `${user.full_name} mencionou você`,
             mensagem: `No canal "${canal.nome}": ${mensagem.substring(0, 100)}`,
-            link: '#/Chat',
-            prioridade: 'Normal',
-            icone: 'MessageSquare'
+            link: "#/Chat",
+            prioridade: "Normal",
+            icone: "MessageSquare",
           });
         }
       }
 
       if (onUpdateCanal) onUpdateCanal();
     } catch (error) {
-      console.error('Erro ao enviar mensagem:', error);
+      console.error("Erro ao enviar mensagem:", error);
     }
   };
 
   const getIconeCanal = () => {
     switch (canal.tipo) {
-      case 'Direto':
+      case "Direto":
         return <User className="w-5 h-5 text-purple-600" />;
-      case 'Geral':
+      case "Geral":
         return <Users className="w-5 h-5 text-amber-600" />;
-      case 'Projeto':
+      case "Projeto":
         return <Hash className="w-5 h-5 text-blue-600" />;
-      case 'Oportunidade':
+      case "Oportunidade":
         return <Hash className="w-5 h-5 text-green-600" />;
-      case 'Solicitacao':
+      case "Solicitacao":
         return <Hash className="w-5 h-5 text-orange-600" />;
-      case 'Tarefa':
+      case "Tarefa":
         return <Hash className="w-5 h-5 text-cyan-600" />;
       default:
         return <Hash className="w-5 h-5 text-blue-600" />;
@@ -143,10 +141,7 @@ export default function ChatWindow({ canal, user, empresaAtiva, usuariosEmpresa,
       </div>
 
       {/* Input */}
-      <MessageInput
-        onEnviar={handleEnviarMensagem}
-        usuariosEmpresa={usuariosEmpresa}
-      />
+      <MessageInput onEnviar={handleEnviarMensagem} usuariosEmpresa={usuariosEmpresa} />
     </div>
   );
 }

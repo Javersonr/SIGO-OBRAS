@@ -1,51 +1,48 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Html5QrcodeScanner } from 'html5-qrcode';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { 
-  Camera, X, CheckCircle2, AlertCircle, Package, 
-  ArrowRight, User, MapPin, Wrench, Eye 
-} from 'lucide-react';
+import React, { useState, useEffect, useRef } from "react";
+import { Html5QrcodeScanner } from "html5-qrcode";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Camera, CheckCircle2, AlertCircle, ArrowRight, MapPin, Eye } from "lucide-react";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { toast } from 'sonner';
-import { base44 } from '@/api/base44Client';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
+import { base44 } from "@/api/base44Client";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-export default function ScannerCodigoBarras({ 
-  open, 
-  onClose, 
-  empresaAtiva, 
+export default function ScannerCodigoBarras({
+  open,
+  onClose,
+  empresaAtiva,
   user,
   onFerramentaScaneada,
   ferramentas,
   funcionarios = [],
   projetos = [],
-  almoxarifados = []
+  almoxarifados = [],
 }) {
-  const [codigoScaneado, setCodigoScaneado] = useState('');
+  const [codigoScaneado, setCodigoScaneado] = useState("");
   const [ferramentaEncontrada, setFerramentaEncontrada] = useState(null);
   const [ferramentasEncontradas, setFerramentasEncontradas] = useState([]);
   const [scanning, setScanning] = useState(false);
-  const [acao, setAcao] = useState(''); // 'consultar', 'movimentar', 'entrada'
-  const [tipoMovimentacao, setTipoMovimentacao] = useState('Entrega para Funcionário');
+  const [acao, setAcao] = useState(""); // 'consultar', 'movimentar', 'entrada'
+  const [tipoMovimentacao, setTipoMovimentacao] = useState("Entrega para Funcionário");
   const [formMovimentacao, setFormMovimentacao] = useState({
-    funcionario_id: '',
-    funcionario_nome: '',
-    projeto_id: '',
-    projeto_nome: '',
-    destino: '',
-    observacoes: '',
-    data_movimentacao: new Date().toISOString().split('T')[0]
+    funcionario_id: "",
+    funcionario_nome: "",
+    projeto_id: "",
+    projeto_nome: "",
+    destino: "",
+    observacoes: "",
+    data_movimentacao: new Date().toISOString().split("T")[0],
   });
 
   const scannerRef = useRef(null);
@@ -71,14 +68,10 @@ export default function ScannerCodigoBarras({
       fps: 10,
       qrbox: { width: 250, height: 250 },
       aspectRatio: 1.0,
-      rememberLastUsedCamera: true
+      rememberLastUsedCamera: true,
     };
 
-    html5QrcodeScannerRef.current = new Html5QrcodeScanner(
-      "qr-reader",
-      config,
-      false
-    );
+    html5QrcodeScannerRef.current = new Html5QrcodeScanner("qr-reader", config, false);
 
     html5QrcodeScannerRef.current.render(onScanSuccess, onScanError);
   };
@@ -86,7 +79,7 @@ export default function ScannerCodigoBarras({
   const onScanSuccess = (decodedText) => {
     setCodigoScaneado(decodedText);
     buscarFerramentaPorCodigo(decodedText);
-    
+
     // Parar o scanner
     if (html5QrcodeScannerRef.current) {
       html5QrcodeScannerRef.current.clear().catch(console.error);
@@ -102,13 +95,14 @@ export default function ScannerCodigoBarras({
   const buscarFerramentaPorCodigo = async (codigo) => {
     try {
       // Buscar por código exato ou número de série
-      const ferramentasPorCodigo = ferramentas.filter(f => 
-        f.codigo?.toLowerCase() === codigo.toLowerCase() ||
-        f.numero_serie?.toLowerCase() === codigo.toLowerCase()
+      const ferramentasPorCodigo = ferramentas.filter(
+        (f) =>
+          f.codigo?.toLowerCase() === codigo.toLowerCase() ||
+          f.numero_serie?.toLowerCase() === codigo.toLowerCase()
       );
 
       if (ferramentasPorCodigo.length === 0) {
-        toast.error('Nenhuma ferramenta encontrada com este código');
+        toast.error("Nenhuma ferramenta encontrada com este código");
         setFerramentaEncontrada(null);
         setFerramentasEncontradas([]);
         return;
@@ -117,7 +111,7 @@ export default function ScannerCodigoBarras({
       if (ferramentasPorCodigo.length === 1) {
         setFerramentaEncontrada(ferramentasPorCodigo[0]);
         setFerramentasEncontradas([]);
-        toast.success('Ferramenta encontrada!');
+        toast.success("Ferramenta encontrada!");
       } else {
         // Múltiplas ferramentas com mesmo código (unidades diferentes)
         setFerramentasEncontradas(ferramentasPorCodigo);
@@ -125,17 +119,17 @@ export default function ScannerCodigoBarras({
         toast.success(`${ferramentasPorCodigo.length} unidades encontradas`);
       }
     } catch (error) {
-      console.error('Erro ao buscar ferramenta:', error);
-      toast.error('Erro ao buscar ferramenta');
+      console.error("Erro ao buscar ferramenta:", error);
+      toast.error("Erro ao buscar ferramenta");
     }
   };
 
   const handleIniciarScanner = () => {
     setScanning(true);
-    setCodigoScaneado('');
+    setCodigoScaneado("");
     setFerramentaEncontrada(null);
     setFerramentasEncontradas([]);
-    setAcao('');
+    setAcao("");
   };
 
   const handleMovimentar = async (ferramentaSelecionada) => {
@@ -155,10 +149,10 @@ export default function ScannerCodigoBarras({
         funcionario_nome: formMovimentacao.funcionario_nome || null,
         projeto_id: formMovimentacao.projeto_id || null,
         projeto_nome: formMovimentacao.projeto_nome || null,
-        destino: formMovimentacao.destino || formMovimentacao.funcionario_nome || '',
-        observacoes: formMovimentacao.observacoes || '',
+        destino: formMovimentacao.destino || formMovimentacao.funcionario_nome || "",
+        observacoes: formMovimentacao.observacoes || "",
         data_movimentacao: formMovimentacao.data_movimentacao,
-        status: 'Realizada'
+        status: "Realizada",
       };
 
       await base44.entities.MovimentacaoFerramenta.create(dadosMovimentacao);
@@ -167,55 +161,55 @@ export default function ScannerCodigoBarras({
       let novoStatus = ferramentaSelecionada.status;
       let novosDados = {};
 
-      if (tipoMovimentacao === 'Entrega para Funcionário') {
-        novoStatus = 'Em Uso';
+      if (tipoMovimentacao === "Entrega para Funcionário") {
+        novoStatus = "Em Uso";
         novosDados = {
           status: novoStatus,
           funcionario_id: formMovimentacao.funcionario_id,
           funcionario_nome: formMovimentacao.funcionario_nome,
-          localizacao: formMovimentacao.funcionario_nome
+          localizacao: formMovimentacao.funcionario_nome,
         };
-      } else if (tipoMovimentacao === 'Devolução') {
-        novoStatus = 'Disponível';
+      } else if (tipoMovimentacao === "Devolução") {
+        novoStatus = "Disponível";
         novosDados = {
           status: novoStatus,
           funcionario_id: null,
           funcionario_nome: null,
-          localizacao: formMovimentacao.destino || 'Almoxarifado'
+          localizacao: formMovimentacao.destino || "Almoxarifado",
         };
-      } else if (tipoMovimentacao === 'Manutenção') {
-        novoStatus = 'Em Manutenção';
+      } else if (tipoMovimentacao === "Manutenção") {
+        novoStatus = "Em Manutenção";
         novosDados = {
           status: novoStatus,
-          localizacao: 'Em Manutenção'
+          localizacao: "Em Manutenção",
         };
       }
 
       await base44.entities.Ferramenta.update(ferramentaSelecionada.id, novosDados);
 
-      toast.success('Movimentação registrada com sucesso!');
-      
+      toast.success("Movimentação registrada com sucesso!");
+
       // Reset
       setFerramentaEncontrada(null);
       setFerramentasEncontradas([]);
-      setAcao('');
-      setCodigoScaneado('');
+      setAcao("");
+      setCodigoScaneado("");
       setFormMovimentacao({
-        funcionario_id: '',
-        funcionario_nome: '',
-        projeto_id: '',
-        projeto_nome: '',
-        destino: '',
-        observacoes: '',
-        data_movimentacao: new Date().toISOString().split('T')[0]
+        funcionario_id: "",
+        funcionario_nome: "",
+        projeto_id: "",
+        projeto_nome: "",
+        destino: "",
+        observacoes: "",
+        data_movimentacao: new Date().toISOString().split("T")[0],
       });
 
       if (onFerramentaScaneada) {
         onFerramentaScaneada();
       }
     } catch (error) {
-      console.error('Erro ao movimentar:', error);
-      toast.error('Erro ao registrar movimentação');
+      console.error("Erro ao movimentar:", error);
+      toast.error("Erro ao registrar movimentação");
     }
   };
 
@@ -232,20 +226,20 @@ export default function ScannerCodigoBarras({
       html5QrcodeScannerRef.current = null;
     }
     setScanning(false);
-    setCodigoScaneado('');
+    setCodigoScaneado("");
     setFerramentaEncontrada(null);
     setFerramentasEncontradas([]);
-    setAcao('');
+    setAcao("");
     onClose();
   };
 
   const statusColors = {
-    'Disponível': 'bg-green-100 text-green-700',
-    'Em Uso': 'bg-blue-100 text-blue-700',
-    'Em Manutenção': 'bg-orange-100 text-orange-700',
-    'Danificado': 'bg-red-100 text-red-700',
-    'Inativo': 'bg-slate-100 text-slate-700',
-    'Sucata': 'bg-red-100 text-red-700',
+    Disponível: "bg-green-100 text-green-700",
+    "Em Uso": "bg-blue-100 text-blue-700",
+    "Em Manutenção": "bg-orange-100 text-orange-700",
+    Danificado: "bg-red-100 text-red-700",
+    Inativo: "bg-slate-100 text-slate-700",
+    Sucata: "bg-red-100 text-red-700",
   };
 
   return (
@@ -266,7 +260,7 @@ export default function ScannerCodigoBarras({
               <p className="text-slate-600 mb-4">
                 Escaneie o código de barras ou QR code de uma ferramenta
               </p>
-              <Button 
+              <Button
                 onClick={handleIniciarScanner}
                 className="bg-amber-500 hover:bg-amber-600 gap-2"
               >
@@ -284,7 +278,7 @@ export default function ScannerCodigoBarras({
                   <div id="qr-reader" ref={scannerRef}></div>
                 </CardContent>
               </Card>
-              <Button 
+              <Button
                 onClick={() => {
                   if (html5QrcodeScannerRef.current) {
                     html5QrcodeScannerRef.current.clear().catch(console.error);
@@ -337,7 +331,7 @@ export default function ScannerCodigoBarras({
                       <p className="text-xs text-slate-500">Localização</p>
                       <p className="text-sm font-medium flex items-center gap-1">
                         <MapPin className="w-3 h-3" />
-                        {ferramentaEncontrada.localizacao || '-'}
+                        {ferramentaEncontrada.localizacao || "-"}
                       </p>
                     </div>
                     {ferramentaEncontrada.marca && (
@@ -352,7 +346,7 @@ export default function ScannerCodigoBarras({
 
               {/* Ações */}
               <div className="grid grid-cols-1 gap-3">
-                <Button 
+                <Button
                   onClick={() => handleConsultarDetalhes(ferramentaEncontrada)}
                   className="gap-2"
                   variant="outline"
@@ -360,8 +354,8 @@ export default function ScannerCodigoBarras({
                   <Eye className="w-4 h-4" />
                   Consultar Detalhes
                 </Button>
-                <Button 
-                  onClick={() => setAcao('movimentar')}
+                <Button
+                  onClick={() => setAcao("movimentar")}
                   className="bg-amber-500 hover:bg-amber-600 gap-2"
                 >
                   <ArrowRight className="w-4 h-4" />
@@ -369,11 +363,7 @@ export default function ScannerCodigoBarras({
                 </Button>
               </div>
 
-              <Button 
-                onClick={handleIniciarScanner}
-                variant="outline"
-                className="w-full"
-              >
+              <Button onClick={handleIniciarScanner} variant="outline" className="w-full">
                 <Camera className="w-4 h-4 mr-2" />
                 Escanear Outro
               </Button>
@@ -386,23 +376,27 @@ export default function ScannerCodigoBarras({
               <div className="flex items-start gap-2 text-amber-600 bg-amber-50 p-3 rounded-lg">
                 <AlertCircle className="w-5 h-5 mt-0.5" />
                 <div>
-                  <p className="font-semibold">{ferramentasEncontradas.length} unidades encontradas</p>
+                  <p className="font-semibold">
+                    {ferramentasEncontradas.length} unidades encontradas
+                  </p>
                   <p className="text-sm">Código: {codigoScaneado}</p>
                 </div>
               </div>
 
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {ferramentasEncontradas.map((ferr, idx) => (
-                  <Card key={ferr.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => {
-                    setFerramentaEncontrada(ferr);
-                    setFerramentasEncontradas([]);
-                  }}>
+                  <Card
+                    key={ferr.id}
+                    className="hover:bg-slate-50 cursor-pointer"
+                    onClick={() => {
+                      setFerramentaEncontrada(ferr);
+                      setFerramentasEncontradas([]);
+                    }}
+                  >
                     <CardContent className="p-3">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="font-medium text-slate-800">
-                            Unidade #{idx + 1}
-                          </p>
+                          <p className="font-medium text-slate-800">Unidade #{idx + 1}</p>
                           <div className="flex items-center gap-2 mt-1">
                             <Badge className={statusColors[ferr.status]} variant="outline">
                               {ferr.status}
@@ -415,7 +409,7 @@ export default function ScannerCodigoBarras({
                           </div>
                           <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
                             <MapPin className="w-3 h-3" />
-                            {ferr.localizacao || '-'}
+                            {ferr.localizacao || "-"}
                           </p>
                         </div>
                         <ArrowRight className="w-5 h-5 text-slate-400" />
@@ -425,11 +419,7 @@ export default function ScannerCodigoBarras({
                 ))}
               </div>
 
-              <Button 
-                onClick={handleIniciarScanner}
-                variant="outline"
-                className="w-full"
-              >
+              <Button onClick={handleIniciarScanner} variant="outline" className="w-full">
                 <Camera className="w-4 h-4 mr-2" />
                 Escanear Outro
               </Button>
@@ -437,27 +427,27 @@ export default function ScannerCodigoBarras({
           )}
 
           {/* Formulário de Movimentação */}
-          {acao === 'movimentar' && ferramentaEncontrada && (
+          {acao === "movimentar" && ferramentaEncontrada && (
             <div className="space-y-4">
               <Card className="bg-slate-50">
                 <CardContent className="p-3">
                   <p className="text-sm text-slate-600">
-                    <strong>{ferramentaEncontrada.codigo}</strong> - {ferramentaEncontrada.descricao}
+                    <strong>{ferramentaEncontrada.codigo}</strong> -{" "}
+                    {ferramentaEncontrada.descricao}
                   </p>
                 </CardContent>
               </Card>
 
               <div>
                 <Label>Tipo de Movimentação *</Label>
-                <Select
-                  value={tipoMovimentacao}
-                  onValueChange={setTipoMovimentacao}
-                >
+                <Select value={tipoMovimentacao} onValueChange={setTipoMovimentacao}>
                   <SelectTrigger className="mt-1.5">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Entrega para Funcionário">Entrega para Funcionário</SelectItem>
+                    <SelectItem value="Entrega para Funcionário">
+                      Entrega para Funcionário
+                    </SelectItem>
                     <SelectItem value="Devolução">Devolução</SelectItem>
                     <SelectItem value="Empréstimo">Empréstimo</SelectItem>
                     <SelectItem value="Manutenção">Manutenção</SelectItem>
@@ -466,17 +456,17 @@ export default function ScannerCodigoBarras({
                 </Select>
               </div>
 
-              {tipoMovimentacao === 'Entrega para Funcionário' && (
+              {tipoMovimentacao === "Entrega para Funcionário" && (
                 <div>
                   <Label>Funcionário *</Label>
                   <Select
                     value={formMovimentacao.funcionario_id}
                     onValueChange={(v) => {
-                      const func = funcionarios.find(f => f.id === v);
+                      const func = funcionarios.find((f) => f.id === v);
                       setFormMovimentacao({
                         ...formMovimentacao,
                         funcionario_id: v,
-                        funcionario_nome: func?.nome || ''
+                        funcionario_nome: func?.nome || "",
                       });
                     }}
                   >
@@ -484,15 +474,17 @@ export default function ScannerCodigoBarras({
                       <SelectValue placeholder="Selecione o funcionário" />
                     </SelectTrigger>
                     <SelectContent>
-                      {funcionarios.map(f => (
-                        <SelectItem key={f.id} value={f.id}>{f.nome}</SelectItem>
+                      {funcionarios.map((f) => (
+                        <SelectItem key={f.id} value={f.id}>
+                          {f.nome}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
               )}
 
-              {(tipoMovimentacao === 'Devolução' || tipoMovimentacao === 'Empréstimo') && (
+              {(tipoMovimentacao === "Devolução" || tipoMovimentacao === "Empréstimo") && (
                 <div>
                   <Label>Destino</Label>
                   <Select
@@ -503,8 +495,10 @@ export default function ScannerCodigoBarras({
                       <SelectValue placeholder="Selecione o local" />
                     </SelectTrigger>
                     <SelectContent>
-                      {almoxarifados.map(local => (
-                        <SelectItem key={local} value={local}>{local}</SelectItem>
+                      {almoxarifados.map((local) => (
+                        <SelectItem key={local} value={local}>
+                          {local}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -516,11 +510,11 @@ export default function ScannerCodigoBarras({
                 <Select
                   value={formMovimentacao.projeto_id}
                   onValueChange={(v) => {
-                    const proj = projetos.find(p => p.id === v);
+                    const proj = projetos.find((p) => p.id === v);
                     setFormMovimentacao({
                       ...formMovimentacao,
                       projeto_id: v,
-                      projeto_nome: proj?.nome || ''
+                      projeto_nome: proj?.nome || "",
                     });
                   }}
                 >
@@ -528,8 +522,10 @@ export default function ScannerCodigoBarras({
                     <SelectValue placeholder="Selecione o projeto" />
                   </SelectTrigger>
                   <SelectContent>
-                    {projetos.map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+                    {projetos.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.nome}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -540,7 +536,9 @@ export default function ScannerCodigoBarras({
                 <Input
                   type="date"
                   value={formMovimentacao.data_movimentacao}
-                  onChange={(e) => setFormMovimentacao({ ...formMovimentacao, data_movimentacao: e.target.value })}
+                  onChange={(e) =>
+                    setFormMovimentacao({ ...formMovimentacao, data_movimentacao: e.target.value })
+                  }
                   className="mt-1.5"
                 />
               </div>
@@ -549,7 +547,9 @@ export default function ScannerCodigoBarras({
                 <Label>Observações</Label>
                 <Textarea
                   value={formMovimentacao.observacoes}
-                  onChange={(e) => setFormMovimentacao({ ...formMovimentacao, observacoes: e.target.value })}
+                  onChange={(e) =>
+                    setFormMovimentacao({ ...formMovimentacao, observacoes: e.target.value })
+                  }
                   placeholder="Informações adicionais..."
                   className="mt-1.5"
                   rows={2}
@@ -557,17 +557,16 @@ export default function ScannerCodigoBarras({
               </div>
 
               <div className="flex gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => setAcao('')}
-                  className="flex-1"
-                >
+                <Button variant="outline" onClick={() => setAcao("")} className="flex-1">
                   Voltar
                 </Button>
                 <Button
                   onClick={() => handleMovimentar(ferramentaEncontrada)}
                   className="bg-amber-500 hover:bg-amber-600 flex-1"
-                  disabled={tipoMovimentacao === 'Entrega para Funcionário' && !formMovimentacao.funcionario_id}
+                  disabled={
+                    tipoMovimentacao === "Entrega para Funcionário" &&
+                    !formMovimentacao.funcionario_id
+                  }
                 >
                   Confirmar Movimentação
                 </Button>

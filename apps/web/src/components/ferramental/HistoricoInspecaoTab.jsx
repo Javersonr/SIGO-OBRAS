@@ -1,39 +1,88 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { 
-  Camera, Check, X, Edit, AlertCircle, FileText, Calendar, User, Loader, Eye 
-} from 'lucide-react';
-import { format, isWithinInterval, startOfDay, endOfDay, parseISO } from 'date-fns';
-import { toast } from 'sonner';
+} from "@/components/ui/select";
+import {
+  Camera,
+  Check,
+  X,
+  Edit,
+  AlertCircle,
+  FileText,
+  Calendar,
+  User,
+  Loader,
+  Eye,
+} from "lucide-react";
+import { format, startOfDay, endOfDay, parseISO } from "date-fns";
+import { toast } from "sonner";
 
 const tipoAcaoConfig = {
-  inspecao_iniciada: { icon: Calendar, cor: 'bg-blue-50 border-blue-200', texto: 'Inspeção Iniciada', textoCor: 'text-blue-700' },
-  foto_capturada: { icon: Camera, cor: 'bg-amber-50 border-amber-200', texto: 'Foto Capturada', textoCor: 'text-amber-700' },
-  foto_validada: { icon: Check, cor: 'bg-green-50 border-green-200', texto: 'Foto Validada', textoCor: 'text-green-700' },
-  foto_rejeitada: { icon: X, cor: 'bg-red-50 border-red-200', texto: 'Foto Rejeitada', textoCor: 'text-red-700' },
-  confirmacao_desfeita: { icon: Edit, cor: 'bg-purple-50 border-purple-200', texto: 'Confirmação Desfeita', textoCor: 'text-purple-700' },
-  inspecao_concluida: { icon: Check, cor: 'bg-green-50 border-green-200', texto: 'Inspeção Concluída', textoCor: 'text-green-700' },
-  inspecao_cancelada: { icon: X, cor: 'bg-slate-50 border-slate-200', texto: 'Inspeção Cancelada', textoCor: 'text-slate-700' },
-  observacao_adicionada: { icon: FileText, cor: 'bg-cyan-50 border-cyan-200', texto: 'Observação Adicionada', textoCor: 'text-cyan-700' }
+  inspecao_iniciada: {
+    icon: Calendar,
+    cor: "bg-blue-50 border-blue-200",
+    texto: "Inspeção Iniciada",
+    textoCor: "text-blue-700",
+  },
+  foto_capturada: {
+    icon: Camera,
+    cor: "bg-amber-50 border-amber-200",
+    texto: "Foto Capturada",
+    textoCor: "text-amber-700",
+  },
+  foto_validada: {
+    icon: Check,
+    cor: "bg-green-50 border-green-200",
+    texto: "Foto Validada",
+    textoCor: "text-green-700",
+  },
+  foto_rejeitada: {
+    icon: X,
+    cor: "bg-red-50 border-red-200",
+    texto: "Foto Rejeitada",
+    textoCor: "text-red-700",
+  },
+  confirmacao_desfeita: {
+    icon: Edit,
+    cor: "bg-purple-50 border-purple-200",
+    texto: "Confirmação Desfeita",
+    textoCor: "text-purple-700",
+  },
+  inspecao_concluida: {
+    icon: Check,
+    cor: "bg-green-50 border-green-200",
+    texto: "Inspeção Concluída",
+    textoCor: "text-green-700",
+  },
+  inspecao_cancelada: {
+    icon: X,
+    cor: "bg-slate-50 border-slate-200",
+    texto: "Inspeção Cancelada",
+    textoCor: "text-slate-700",
+  },
+  observacao_adicionada: {
+    icon: FileText,
+    cor: "bg-cyan-50 border-cyan-200",
+    texto: "Observação Adicionada",
+    textoCor: "text-cyan-700",
+  },
 };
 
 export default function HistoricoInspecaoTab({ inspecaoId, empresaId }) {
   const [historico, setHistorico] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filtroTipo, setFiltroTipo] = useState('');
-  const [filtroDataInicio, setFiltroDataInicio] = useState('');
-  const [filtroDataFim, setFiltroDataFim] = useState('');
+  const [filtroTipo, setFiltroTipo] = useState("");
+  const [filtroDataInicio, setFiltroDataInicio] = useState("");
+  const [filtroDataFim, setFiltroDataFim] = useState("");
   const [fotoSelecionada, setFotoSelecionada] = useState(null);
 
   useEffect(() => {
@@ -43,22 +92,26 @@ export default function HistoricoInspecaoTab({ inspecaoId, empresaId }) {
   const loadHistorico = async () => {
     setLoading(true);
     try {
-      const dados = await base44.entities.InspecaoHistorico.filter({
-        empresa_id: empresaId,
-        inspecao_id: inspecaoId
-      }, 'timestamp', 100);
+      const dados = await base44.entities.InspecaoHistorico.filter(
+        {
+          empresa_id: empresaId,
+          inspecao_id: inspecaoId,
+        },
+        "timestamp",
+        100
+      );
       setHistorico(dados);
     } catch (error) {
-      console.error('Erro ao carregar histórico:', error);
-      toast.error('Erro ao carregar histórico');
+      console.error("Erro ao carregar histórico:", error);
+      toast.error("Erro ao carregar histórico");
     } finally {
       setLoading(false);
     }
   };
 
-  const historicoFiltrado = historico.filter(item => {
+  const historicoFiltrado = historico.filter((item) => {
     if (filtroTipo && item.tipo_acao !== filtroTipo) return false;
-    
+
     if (filtroDataInicio) {
       const dataInicio = startOfDay(parseISO(filtroDataInicio));
       const dataItem = parseISO(item.timestamp);
@@ -87,9 +140,7 @@ export default function HistoricoInspecaoTab({ inspecaoId, empresaId }) {
       {/* Filtros */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
-          <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
-            Tipo de Ação
-          </label>
+          <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Tipo de Ação</label>
           <Select value={filtroTipo} onValueChange={setFiltroTipo}>
             <SelectTrigger className="h-9">
               <SelectValue placeholder="Todos" />
@@ -106,9 +157,7 @@ export default function HistoricoInspecaoTab({ inspecaoId, empresaId }) {
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
-            De:
-          </label>
+          <label className="text-xs font-semibold text-slate-700 mb-1.5 block">De:</label>
           <Input
             type="date"
             value={filtroDataInicio}
@@ -118,9 +167,7 @@ export default function HistoricoInspecaoTab({ inspecaoId, empresaId }) {
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
-            Até:
-          </label>
+          <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Até:</label>
           <Input
             type="date"
             value={filtroDataFim}
@@ -141,7 +188,7 @@ export default function HistoricoInspecaoTab({ inspecaoId, empresaId }) {
           {historicoFiltrado.map((item, idx) => {
             const config = tipoAcaoConfig[item.tipo_acao] || tipoAcaoConfig.observacao_adicionada;
             const Icon = config.icon;
-            
+
             return (
               <Card key={item.id} className={`p-3 sm:p-4 border ${config.cor}`}>
                 <div className="space-y-2">
@@ -149,24 +196,24 @@ export default function HistoricoInspecaoTab({ inspecaoId, empresaId }) {
                     <div className="flex items-start gap-3 flex-1 min-w-0">
                       <Icon className={`w-5 h-5 ${config.textoCor} flex-shrink-0 mt-0.5`} />
                       <div className="flex-1 min-w-0">
-                        <p className={`font-semibold text-sm ${config.textoCor}`}>
-                          {config.texto}
-                        </p>
+                        <p className={`font-semibold text-sm ${config.textoCor}`}>{config.texto}</p>
                         <p className="text-xs text-slate-600 mt-0.5 break-words">
                           {item.descricao}
                         </p>
-                        
+
                         {item.ferramenta_descricao && (
                           <p className="text-xs text-slate-500 mt-1">
-                            <strong>Ferramenta:</strong> {item.ferramenta_descricao} ({item.ferramenta_codigo})
+                            <strong>Ferramenta:</strong> {item.ferramenta_descricao} (
+                            {item.ferramenta_codigo})
                           </p>
                         )}
 
-                        {item.confianca_validacao !== undefined && item.confianca_validacao !== null && (
-                          <Badge className="mt-2 text-xs">
-                            Confiança: {item.confianca_validacao}%
-                          </Badge>
-                        )}
+                        {item.confianca_validacao !== undefined &&
+                          item.confianca_validacao !== null && (
+                            <Badge className="mt-2 text-xs">
+                              Confiança: {item.confianca_validacao}%
+                            </Badge>
+                          )}
                       </div>
                     </div>
                   </div>
@@ -174,7 +221,7 @@ export default function HistoricoInspecaoTab({ inspecaoId, empresaId }) {
                   <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                     <span className="flex items-center gap-1">
                       <Calendar className="w-3 h-3" />
-                      {format(parseISO(item.timestamp), 'dd/MM/yyyy HH:mm:ss')}
+                      {format(parseISO(item.timestamp), "dd/MM/yyyy HH:mm:ss")}
                     </span>
                     {item.usuario_nome && (
                       <span className="flex items-center gap-1">
@@ -218,11 +265,7 @@ export default function HistoricoInspecaoTab({ inspecaoId, empresaId }) {
                   ✕
                 </Button>
               </div>
-              <img
-                src={fotoSelecionada}
-                alt="Foto do histórico"
-                className="w-full rounded-lg"
-              />
+              <img src={fotoSelecionada} alt="Foto do histórico" className="w-full rounded-lg" />
             </div>
           </Card>
         </div>

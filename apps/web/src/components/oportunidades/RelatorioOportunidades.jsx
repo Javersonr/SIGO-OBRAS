@@ -1,12 +1,23 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '@/Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Download, Filter } from 'lucide-react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
+import React, { useState, useMemo, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useEmpresa } from "@/Layout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Download } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
+import { format } from "date-fns";
 
 export default function RelatorioOportunidades() {
   const { empresaAtiva } = useEmpresa();
@@ -15,9 +26,9 @@ export default function RelatorioOportunidades() {
   const [dateStart, setDateStart] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 12);
-    return format(d, 'yyyy-MM-dd');
+    return format(d, "yyyy-MM-dd");
   });
-  const [dateEnd, setDateEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [dateEnd, setDateEnd] = useState(format(new Date(), "yyyy-MM-dd"));
 
   useEffect(() => {
     const loadData = async () => {
@@ -25,11 +36,11 @@ export default function RelatorioOportunidades() {
       try {
         setLoading(true);
         const data = await base44.entities.Oportunidade.filter({
-          empresa_id: empresaAtiva.id
+          empresa_id: empresaAtiva.id,
         });
         setOportunidades(data);
       } catch (error) {
-        console.error('Erro ao carregar oportunidades:', error);
+        console.error("Erro ao carregar oportunidades:", error);
       } finally {
         setLoading(false);
       }
@@ -43,7 +54,7 @@ export default function RelatorioOportunidades() {
     const end = new Date(dateEnd);
     end.setHours(23, 59, 59, 999);
 
-    return oportunidades.filter(opp => {
+    return oportunidades.filter((opp) => {
       const oppDate = opp.created_date ? new Date(opp.created_date) : null;
       return oppDate && oppDate >= start && oppDate <= end;
     });
@@ -53,10 +64,10 @@ export default function RelatorioOportunidades() {
   const monthlyData = useMemo(() => {
     const grouped = {};
 
-    filteredData.forEach(opp => {
+    filteredData.forEach((opp) => {
       const date = new Date(opp.created_date);
-      const monthKey = format(date, 'yyyy-MM');
-      const monthLabel = format(date, 'MMM/yy');
+      const monthKey = format(date, "yyyy-MM");
+      const monthLabel = format(date, "MMM/yy");
 
       if (!grouped[monthKey]) {
         grouped[monthKey] = {
@@ -73,7 +84,7 @@ export default function RelatorioOportunidades() {
       grouped[monthKey].criadas += 1;
       grouped[monthKey].valores.push(opp.valor_estimado || 0);
 
-      if (opp.status_nome === 'Ganho' || opp.status_nome === 'Ganha') {
+      if (opp.status_nome === "Ganho" || opp.status_nome === "Ganha") {
         grouped[monthKey].ganhas += 1;
       }
       if (opp.arquivado) {
@@ -85,31 +96,31 @@ export default function RelatorioOportunidades() {
 
     return Object.values(grouped)
       .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
-      .map(item => ({
+      .map((item) => ({
         ...item,
-        ticketMedio: item.valores.length > 0 
-          ? Math.round(item.totalValor / item.valores.length)
-          : 0,
+        ticketMedio:
+          item.valores.length > 0 ? Math.round(item.totalValor / item.valores.length) : 0,
       }));
   }, [filteredData]);
 
   // Cards de resumo
   const stats = useMemo(() => {
     const ganhas = filteredData.filter(
-      opp => opp.status_nome === 'Ganho' || opp.status_nome === 'Ganha'
+      (opp) => opp.status_nome === "Ganho" || opp.status_nome === "Ganha"
     ).length;
-    const arquivadas = filteredData.filter(opp => opp.arquivado).length;
-    const abertas = filteredData.filter(opp => !opp.arquivado && opp.status_nome !== 'Ganho' && opp.status_nome !== 'Ganha').length;
+    const arquivadas = filteredData.filter((opp) => opp.arquivado).length;
+    const abertas = filteredData.filter(
+      (opp) => !opp.arquivado && opp.status_nome !== "Ganho" && opp.status_nome !== "Ganha"
+    ).length;
 
     const totalValor = filteredData.reduce((sum, opp) => sum + (opp.valor_estimado || 0), 0);
     const valorGanho = filteredData
-      .filter(opp => opp.status_nome === 'Ganho' || opp.status_nome === 'Ganha')
+      .filter((opp) => opp.status_nome === "Ganho" || opp.status_nome === "Ganha")
       .reduce((sum, opp) => sum + (opp.valor_estimado || 0), 0);
 
-    const conversao = filteredData.length > 0 ? Math.round((ganhas / filteredData.length) * 100) : 0;
-    const ticketMedio = filteredData.length > 0 
-      ? Math.round(totalValor / filteredData.length) 
-      : 0;
+    const conversao =
+      filteredData.length > 0 ? Math.round((ganhas / filteredData.length) * 100) : 0;
+    const ticketMedio = filteredData.length > 0 ? Math.round(totalValor / filteredData.length) : 0;
 
     return {
       total: filteredData.length,
@@ -124,7 +135,7 @@ export default function RelatorioOportunidades() {
   }, [filteredData]);
 
   const handleExportPDF = () => {
-    alert('Funcionalidade de exportação em desenvolvimento.');
+    alert("Funcionalidade de exportação em desenvolvimento.");
   };
 
   if (loading) {
@@ -170,7 +181,9 @@ export default function RelatorioOportunidades() {
             <div className="text-center">
               <p className="text-3xl font-bold text-slate-800">{stats.abertas}</p>
               <p className="text-sm text-slate-500 mt-2">Oportunidades em aberto</p>
-              <p className="text-sm font-medium text-amber-600 mt-2">R$ {(stats.totalValor / 1000000).toFixed(1)}M</p>
+              <p className="text-sm font-medium text-amber-600 mt-2">
+                R$ {(stats.totalValor / 1000000).toFixed(1)}M
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -180,7 +193,9 @@ export default function RelatorioOportunidades() {
             <div className="text-center">
               <p className="text-3xl font-bold text-slate-800">{stats.ganhas}</p>
               <p className="text-sm text-slate-500 mt-2">Oportunidades ganhas</p>
-              <p className="text-sm font-medium text-green-600 mt-2">R$ {(stats.valorGanho / 1000000).toFixed(1)}M</p>
+              <p className="text-sm font-medium text-green-600 mt-2">
+                R$ {(stats.valorGanho / 1000000).toFixed(1)}M
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -206,7 +221,9 @@ export default function RelatorioOportunidades() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-center">
-              <p className="text-2xl font-bold text-slate-800">R$ {(stats.ticketMedio / 1000).toFixed(0)}K</p>
+              <p className="text-2xl font-bold text-slate-800">
+                R$ {(stats.ticketMedio / 1000).toFixed(0)}K
+              </p>
               <p className="text-sm text-slate-500 mt-2">Ticket médio</p>
             </div>
           </CardContent>
@@ -269,11 +286,11 @@ export default function RelatorioOportunidades() {
                 <YAxis yAxisId="right" orientation="right" />
                 <Tooltip />
                 <Legend />
-                <Line 
+                <Line
                   yAxisId="left"
-                  type="monotone" 
-                  dataKey="ticketMedio" 
-                  stroke="#f59e0b" 
+                  type="monotone"
+                  dataKey="ticketMedio"
+                  stroke="#f59e0b"
                   name="Ticket Médio (R$)"
                 />
               </LineChart>

@@ -1,15 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
-import { Plus, X } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Plus } from "lucide-react";
 
 export default function SeletorKitOrcamento({ empresaId, onAdicionarKit }) {
   const [kits, setKits] = useState([]);
-  const [kitSelecionado, setKitSelecionado] = useState('');
-  const [quantidade, setQuantidade] = useState('1');
+  const [kitSelecionado, setKitSelecionado] = useState("");
+  const [quantidade, setQuantidade] = useState("1");
   const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
@@ -22,7 +27,7 @@ export default function SeletorKitOrcamento({ empresaId, onAdicionarKit }) {
       const data = await base44.entities.Kit.filter({ empresa_id: empresaId, ativo: true });
       setKits(data || []);
     } catch (err) {
-      console.error('Erro ao carregar kits:', err);
+      console.error("Erro ao carregar kits:", err);
     } finally {
       setCarregando(false);
     }
@@ -30,17 +35,17 @@ export default function SeletorKitOrcamento({ empresaId, onAdicionarKit }) {
 
   const handleAdicionar = () => {
     if (!kitSelecionado) return;
-    const kit = kits.find(k => k.id === kitSelecionado);
+    const kit = kits.find((k) => k.id === kitSelecionado);
     if (!kit) return;
 
     onAdicionarKit({
       kit_id: kit.id,
       kit_nome: kit.nome,
-      quantidade: parseFloat(quantidade) || 1
+      quantidade: parseFloat(quantidade) || 1,
     });
 
-    setKitSelecionado('');
-    setQuantidade('1');
+    setKitSelecionado("");
+    setQuantidade("1");
   };
 
   return (
@@ -54,7 +59,7 @@ export default function SeletorKitOrcamento({ empresaId, onAdicionarKit }) {
               <SelectValue placeholder={carregando ? "Carregando..." : "Escolha um kit..."} />
             </SelectTrigger>
             <SelectContent>
-              {kits.map(kit => (
+              {kits.map((kit) => (
                 <SelectItem key={kit.id} value={kit.id}>
                   {kit.nome} ({kit.total_itens} itens)
                 </SelectItem>
@@ -69,7 +74,7 @@ export default function SeletorKitOrcamento({ empresaId, onAdicionarKit }) {
             min="0.1"
             step="0.1"
             value={quantidade}
-            onChange={e => setQuantidade(e.target.value)}
+            onChange={(e) => setQuantidade(e.target.value)}
             className="h-9"
           />
         </div>

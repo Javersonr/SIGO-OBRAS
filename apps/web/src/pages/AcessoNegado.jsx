@@ -1,10 +1,8 @@
-import React from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { AlertCircle, HardHat, Mail, Home } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
-import { createPageUrl } from '../utils';
-import { Link } from 'react-router-dom';
+import React from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { AlertCircle, HardHat, Mail, Home } from "lucide-react";
+import { base44 } from "@/api/base44Client";
 export default function AcessoNegado() {
   const [user, setUser] = React.useState(null);
 
@@ -14,7 +12,7 @@ export default function AcessoNegado() {
         const userData = await base44.auth.me();
         setUser(userData);
       } catch (error) {
-        console.error('Erro ao carregar usuário:', error);
+        console.error("Erro ao carregar usuário:", error);
       }
     };
     loadUser();
@@ -41,17 +39,17 @@ export default function AcessoNegado() {
 
             {/* Mensagem */}
             <div>
-              <h1 className="text-3xl font-bold text-slate-800 mb-3">
-                Acesso Pendente
-              </h1>
+              <h1 className="text-3xl font-bold text-slate-800 mb-3">Acesso Pendente</h1>
               <p className="text-slate-600 mb-6">
-                Olá, <strong>{user?.full_name || 'Usuário'}</strong>!
+                Olá, <strong>{user?.full_name || "Usuário"}</strong>!
               </p>
               <p className="text-slate-600 mb-2">
-                Seu cadastro foi realizado com sucesso, mas você ainda não está vinculado a nenhuma empresa no sistema.
+                Seu cadastro foi realizado com sucesso, mas você ainda não está vinculado a nenhuma
+                empresa no sistema.
               </p>
               <p className="text-slate-600">
-                Para acessar o SIGO OBRAS, você precisa ser convidado por um administrador de uma empresa.
+                Para acessar o SIGO OBRAS, você precisa ser convidado por um administrador de uma
+                empresa.
               </p>
             </div>
 
@@ -63,7 +61,9 @@ export default function AcessoNegado() {
                   <p className="font-medium text-blue-900 mb-2">Como obter acesso?</p>
                   <ul className="text-sm text-blue-700 space-y-2">
                     <li>• Entre em contato com o administrador da sua empresa</li>
-                    <li>• Solicite um convite para o email: <strong>{user?.email}</strong></li>
+                    <li>
+                      • Solicite um convite para o email: <strong>{user?.email}</strong>
+                    </li>
                     <li>• Após o convite, você terá acesso imediato ao sistema</li>
                   </ul>
                 </div>
@@ -72,11 +72,7 @@ export default function AcessoNegado() {
 
             {/* Ações */}
             <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
-              <Button
-                variant="outline"
-                onClick={handleLogout}
-                className="gap-2"
-              >
+              <Button variant="outline" onClick={handleLogout} className="gap-2">
                 <Home className="w-4 h-4" />
                 Fazer Logout
               </Button>

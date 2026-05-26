@@ -1,13 +1,19 @@
-import React, { useState } from 'react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
-import { Building2 } from 'lucide-react';
+import React from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Building2 } from "lucide-react";
 
-export default function FiltroHoldingOportunidades({ 
-  empresas, 
-  empresaSelecionada, 
+export default function FiltroHoldingOportunidades({
+  empresas,
+  empresaSelecionada,
   onEmpresaChange,
-  isHoldingMode 
+  isHoldingMode,
 }) {
   if (!isHoldingMode || !empresas || empresas.length <= 1) {
     return null;
@@ -26,14 +32,14 @@ export default function FiltroHoldingOportunidades({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="todas">📊 Todas as Empresas (Consolidado)</SelectItem>
-            {empresas.map(emp => (
+            {empresas.map((emp) => (
               <SelectItem key={emp.id} value={emp.id}>
                 {emp.razao_social || emp.nome}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <Button variant="outline" size="sm" onClick={() => onEmpresaChange('todas')}>
+        <Button variant="outline" size="sm" onClick={() => onEmpresaChange("todas")}>
           Reset
         </Button>
       </div>

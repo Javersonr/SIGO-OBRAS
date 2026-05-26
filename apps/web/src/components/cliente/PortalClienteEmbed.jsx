@@ -1,23 +1,26 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { 
-  Calendar, DollarSign, AlertCircle, 
-  LayoutDashboard, FileText, MessageSquare, Folder, StickyNote,
-  BookOpen, Upload, Download
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import RelatorioObra from '@/components/cliente/RelatorioObra';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Calendar,
+  LayoutDashboard,
+  FileText,
+  Folder,
+  StickyNote,
+  BookOpen,
+  Download,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import RelatorioObra from "@/components/cliente/RelatorioObra";
 
 export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
   const [loading, setLoading] = useState(true);
   const [oportunidade, setOportunidade] = useState(null);
   const [orcamentoItens, setOrcamentoItens] = useState([]);
   const [cronogramaEtapas, setCronogramaEtapas] = useState([]);
-  const [activeTab, setActiveTab] = useState('obra');
+  const [activeTab, setActiveTab] = useState("obra");
   const [arquivos, setArquivos] = useState([]);
   const [anotacoes, setAnotacoes] = useState([]);
   const [diarios, setDiarios] = useState([]);
@@ -34,7 +37,7 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
       // Tentar carregar como Projeto primeiro, se não encontrar, busca como Oportunidade
       let projeto = await base44.entities.Projeto.filter({ id: projetoId });
       let oportunidadeData = null;
-      
+
       if (projeto.length > 0) {
         oportunidadeData = projeto[0];
       } else {
@@ -49,43 +52,43 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
       setOportunidade(oportunidadeData);
 
       // Carregar orçamento
-      let itens = await base44.entities.OrcamentoItem.filter({ 
-        empresa_id: empresaAtiva.id, 
-        projeto_id: projetoId 
+      let itens = await base44.entities.OrcamentoItem.filter({
+        empresa_id: empresaAtiva.id,
+        projeto_id: projetoId,
       });
-      
+
       if (itens.length === 0) {
-        itens = await base44.entities.OrcamentoItem.filter({ 
-          empresa_id: empresaAtiva.id, 
-          oportunidade_id: projetoId 
+        itens = await base44.entities.OrcamentoItem.filter({
+          empresa_id: empresaAtiva.id,
+          oportunidade_id: projetoId,
         });
       }
       setOrcamentoItens(itens.sort((a, b) => a.ordem - b.ordem));
 
       // Carregar cronograma
-      let etapas = await base44.entities.CronogramaEtapa.filter({ 
-        empresa_id: empresaAtiva.id, 
-        projeto_id: projetoId 
+      let etapas = await base44.entities.CronogramaEtapa.filter({
+        empresa_id: empresaAtiva.id,
+        projeto_id: projetoId,
       });
-      
+
       if (etapas.length === 0) {
-        etapas = await base44.entities.CronogramaEtapa.filter({ 
-          empresa_id: empresaAtiva.id, 
-          oportunidade_id: projetoId 
+        etapas = await base44.entities.CronogramaEtapa.filter({
+          empresa_id: empresaAtiva.id,
+          oportunidade_id: projetoId,
         });
       }
       setCronogramaEtapas(etapas.sort((a, b) => a.ordem - b.ordem));
 
       // Carregar arquivos
-      let arqs = await base44.entities.ArquivoOportunidade.filter({ 
-        empresa_id: empresaAtiva.id, 
-        projeto_id: projetoId 
+      let arqs = await base44.entities.ArquivoOportunidade.filter({
+        empresa_id: empresaAtiva.id,
+        projeto_id: projetoId,
       });
-      
+
       if (arqs.length === 0) {
-        arqs = await base44.entities.ArquivoOportunidade.filter({ 
-          empresa_id: empresaAtiva.id, 
-          oportunidade_id: projetoId 
+        arqs = await base44.entities.ArquivoOportunidade.filter({
+          empresa_id: empresaAtiva.id,
+          oportunidade_id: projetoId,
         });
       }
       setArquivos(arqs.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
@@ -94,14 +97,14 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
       let notas = await base44.entities.OportunidadeAtualizacao.filter({
         empresa_id: empresaAtiva.id,
         projeto_id: projetoId,
-        tipo: 'Nota'
+        tipo: "Nota",
       });
-      
+
       if (notas.length === 0) {
         notas = await base44.entities.OportunidadeAtualizacao.filter({
           empresa_id: empresaAtiva.id,
           oportunidade_id: projetoId,
-          tipo: 'Nota'
+          tipo: "Nota",
         });
       }
       setAnotacoes(notas.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
@@ -109,37 +112,38 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
       // Carregar diários de obra
       const diario = await base44.entities.DiarioObra.filter({
         empresa_id: empresaAtiva.id,
-        projeto_id: projetoId
+        projeto_id: projetoId,
       });
       setDiarios(diario.sort((a, b) => new Date(b.data) - new Date(a.data)));
-
     } catch (error) {
-      console.error('Erro ao carregar dados:', error);
+      console.error("Erro ao carregar dados:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+      value || 0
+    );
   };
 
   const getClimaIcon = (clima) => {
     const emojis = {
-      'Sol': '☀️',
-      'Nublado': '☁️',
-      'Chuva': '🌧️',
-      'Vento': '💨'
+      Sol: "☀️",
+      Nublado: "☁️",
+      Chuva: "🌧️",
+      Vento: "💨",
     };
-    return emojis[clima] || '☀️';
+    return emojis[clima] || "☀️";
   };
 
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'obra', label: 'Obra', icon: Calendar },
-    { id: 'diario', label: 'Diário de Obra', icon: BookOpen },
-    { id: 'arquivos', label: 'Arquivos', icon: Folder },
-    { id: 'anotacoes', label: 'Anotações', icon: StickyNote }
+    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "obra", label: "Obra", icon: Calendar },
+    { id: "diario", label: "Diário de Obra", icon: BookOpen },
+    { id: "arquivos", label: "Arquivos", icon: Folder },
+    { id: "anotacoes", label: "Anotações", icon: StickyNote },
   ];
 
   if (loading) {
@@ -163,18 +167,23 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
         </div>
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {menuItems.map(item => (
+          {menuItems.map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-left text-sm",
-                activeTab === item.id 
-                  ? "bg-blue-50 text-blue-700 font-medium" 
+                activeTab === item.id
+                  ? "bg-blue-50 text-blue-700 font-medium"
                   : "text-slate-600 hover:bg-slate-50"
               )}
             >
-              <item.icon className={cn("w-4 h-4", activeTab === item.id ? "text-blue-600" : "text-slate-400")} />
+              <item.icon
+                className={cn(
+                  "w-4 h-4",
+                  activeTab === item.id ? "text-blue-600" : "text-slate-400"
+                )}
+              />
               {item.label}
             </button>
           ))}
@@ -185,16 +194,16 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
       <main className="flex-1 flex flex-col overflow-hidden">
         <header className="bg-white border-b px-6 py-4">
           <h2 className="text-lg font-semibold text-slate-800">
-            {activeTab === 'dashboard' && 'Dashboard'}
-            {activeTab === 'obra' && 'Obra'}
-            {activeTab === 'diario' && 'Diário de Obra'}
-            {activeTab === 'arquivos' && 'Arquivos'}
-            {activeTab === 'anotacoes' && 'Anotações'}
+            {activeTab === "dashboard" && "Dashboard"}
+            {activeTab === "obra" && "Obra"}
+            {activeTab === "diario" && "Diário de Obra"}
+            {activeTab === "arquivos" && "Arquivos"}
+            {activeTab === "anotacoes" && "Anotações"}
           </h2>
         </header>
 
         <div className="flex-1 p-6 overflow-auto">
-          {activeTab === 'dashboard' && (
+          {activeTab === "dashboard" && (
             <div className="space-y-6">
               <div className="grid grid-cols-3 gap-4">
                 <Card>
@@ -209,7 +218,8 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
                   <CardContent className="p-6">
                     <p className="text-sm text-slate-500 mb-2">Etapas Concluídas</p>
                     <p className="text-2xl font-bold text-blue-600">
-                      {cronogramaEtapas.filter(e => e.status === 'Concluída').length} / {cronogramaEtapas.length}
+                      {cronogramaEtapas.filter((e) => e.status === "Concluída").length} /{" "}
+                      {cronogramaEtapas.length}
                     </p>
                   </CardContent>
                 </Card>
@@ -217,9 +227,15 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
                   <CardContent className="p-6">
                     <p className="text-sm text-slate-500 mb-2">Progresso Geral</p>
                     <p className="text-2xl font-bold text-amber-600">
-                      {cronogramaEtapas.length > 0 
-                        ? Math.round(cronogramaEtapas.reduce((s, e) => s + (e.percentual_conclusao || 0), 0) / cronogramaEtapas.length)
-                        : 0}%
+                      {cronogramaEtapas.length > 0
+                        ? Math.round(
+                            cronogramaEtapas.reduce(
+                              (s, e) => s + (e.percentual_conclusao || 0),
+                              0
+                            ) / cronogramaEtapas.length
+                          )
+                        : 0}
+                      %
                     </p>
                   </CardContent>
                 </Card>
@@ -227,17 +243,17 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
             </div>
           )}
 
-          {activeTab === 'obra' && (
-            <RelatorioObra 
-              etapas={cronogramaEtapas} 
+          {activeTab === "obra" && (
+            <RelatorioObra
+              etapas={cronogramaEtapas}
               oportunidade={oportunidade}
               empresa={empresaAtiva}
             />
           )}
 
-          {activeTab === 'diario' && (
+          {activeTab === "diario" && (
             <div className="space-y-4">
-              {diarios.map(diario => {
+              {diarios.map((diario) => {
                 const fotosData = diario.fotos ? JSON.parse(diario.fotos) : [];
                 const maoDeObraData = diario.mao_de_obra ? JSON.parse(diario.mao_de_obra) : [];
 
@@ -250,11 +266,11 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
                         </div>
                         <div className="flex-1">
                           <h4 className="font-semibold text-slate-800">
-                            {new Date(diario.data).toLocaleDateString('pt-BR', { 
-                              weekday: 'long', 
-                              year: 'numeric', 
-                              month: 'long', 
-                              day: 'numeric' 
+                            {new Date(diario.data).toLocaleDateString("pt-BR", {
+                              weekday: "long",
+                              year: "numeric",
+                              month: "long",
+                              day: "numeric",
                             })}
                           </h4>
                           <div className="flex items-center gap-2 mt-1">
@@ -269,7 +285,9 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
 
                       <div className="space-y-3">
                         <div>
-                          <p className="text-sm font-medium text-slate-600 mb-1">Atividades Realizadas</p>
+                          <p className="text-sm font-medium text-slate-600 mb-1">
+                            Atividades Realizadas
+                          </p>
                           <p className="text-slate-800 whitespace-pre-wrap">{diario.atividades}</p>
                         </div>
 
@@ -286,7 +304,8 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
                             <div className="flex flex-wrap gap-2">
                               {maoDeObraData.map((m, idx) => (
                                 <Badge key={idx} variant="outline" className="bg-blue-50">
-                                  {m.nome} - {m.quantidade} {m.quantidade > 1 ? 'pessoas' : 'pessoa'}
+                                  {m.nome} - {m.quantidade}{" "}
+                                  {m.quantidade > 1 ? "pessoas" : "pessoa"}
                                 </Badge>
                               ))}
                             </div>
@@ -303,7 +322,7 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
                                   src={foto}
                                   alt={`Foto ${idx + 1}`}
                                   className="w-full h-32 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
-                                  onClick={() => window.open(foto, '_blank')}
+                                  onClick={() => window.open(foto, "_blank")}
                                 />
                               ))}
                             </div>
@@ -326,9 +345,9 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
             </div>
           )}
 
-          {activeTab === 'arquivos' && (
+          {activeTab === "arquivos" && (
             <div className="grid grid-cols-1 gap-3">
-              {arquivos.map(arquivo => (
+              {arquivos.map((arquivo) => (
                 <Card key={arquivo.id} className="hover:shadow-md transition-shadow">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
@@ -339,12 +358,17 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
                         <div>
                           <p className="font-medium text-slate-800">{arquivo.nome}</p>
                           <p className="text-xs text-slate-500">
-                            {arquivo.usuario_nome} • {new Date(arquivo.created_date).toLocaleDateString('pt-BR')}
+                            {arquivo.usuario_nome} •{" "}
+                            {new Date(arquivo.created_date).toLocaleDateString("pt-BR")}
                           </p>
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => window.open(arquivo.url, '_blank')}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => window.open(arquivo.url, "_blank")}
+                        >
                           <Download className="w-4 h-4" />
                         </Button>
                       </div>
@@ -364,14 +388,19 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
             </div>
           )}
 
-          {activeTab === 'anotacoes' && (
+          {activeTab === "anotacoes" && (
             <div className="space-y-3">
-              {anotacoes.map(nota => (
+              {anotacoes.map((nota) => (
                 <Card key={nota.id} className="bg-yellow-50 border-yellow-200">
                   <CardContent className="p-4">
                     <p className="text-slate-800 whitespace-pre-wrap">{nota.descricao}</p>
                     <p className="text-xs text-slate-500 mt-2">
-                      {nota.usuario_nome} • {new Date(nota.created_date).toLocaleDateString('pt-BR')} às {new Date(nota.created_date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      {nota.usuario_nome} •{" "}
+                      {new Date(nota.created_date).toLocaleDateString("pt-BR")} às{" "}
+                      {new Date(nota.created_date).toLocaleTimeString("pt-BR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
                     </p>
                   </CardContent>
                 </Card>

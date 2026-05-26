@@ -1,10 +1,17 @@
-import React from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Download, Upload, X, FileSpreadsheet, AlertCircle, CheckCircle2, AlertTriangle } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import React from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  Download,
+  Upload,
+  FileSpreadsheet,
+  AlertCircle,
+  CheckCircle2,
+  AlertTriangle,
+} from "lucide-react";
+import * as XLSX from "xlsx";
 
 export default function ImportarItensSolicitacao({ onImportar, onClose, materiais = [] }) {
   const [arquivo, setArquivo] = React.useState(null);
@@ -15,17 +22,17 @@ export default function ImportarItensSolicitacao({ onImportar, onClose, materiai
 
   const baixarModelo = () => {
     const ws = XLSX.utils.aoa_to_sheet([
-      ['Código *', 'Descrição', 'Quantidade *', 'Unidade', 'Observações'],
-      ['MAT-001', 'Cabo elétrico 2,5mm', '100', 'M', ''],
-      ['MAT-002', 'Disjuntor 20A', '5', 'UN', 'Marca Schneider'],
-      ['MAT-003', 'Cimento CP-II 50kg', '20', 'SC', ''],
+      ["Código *", "Descrição", "Quantidade *", "Unidade", "Observações"],
+      ["MAT-001", "Cabo elétrico 2,5mm", "100", "M", ""],
+      ["MAT-002", "Disjuntor 20A", "5", "UN", "Marca Schneider"],
+      ["MAT-003", "Cimento CP-II 50kg", "20", "SC", ""],
     ]);
 
-    ws['!cols'] = [{ wch: 15 }, { wch: 40 }, { wch: 15 }, { wch: 12 }, { wch: 30 }];
+    ws["!cols"] = [{ wch: 15 }, { wch: 40 }, { wch: 15 }, { wch: 12 }, { wch: 30 }];
 
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Itens');
-    XLSX.writeFile(wb, 'modelo_solicitacao_compra.xlsx');
+    XLSX.utils.book_append_sheet(wb, ws, "Itens");
+    XLSX.writeFile(wb, "modelo_solicitacao_compra.xlsx");
   };
 
   const processarArquivo = (file) => {
@@ -37,38 +44,41 @@ export default function ImportarItensSolicitacao({ onImportar, onClose, materiai
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const wb = XLSX.read(e.target.result, { type: 'binary' });
+        const wb = XLSX.read(e.target.result, { type: "binary" });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const dados = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
         // Ignorar cabeçalho (linha 0)
-        const linhas = dados.slice(1).filter(row => row.some(c => c !== undefined && c !== ''));
+        const linhas = dados.slice(1).filter((row) => row.some((c) => c !== undefined && c !== ""));
 
         const novosErros = [];
         const novosAvisos = [];
         const itens = [];
 
         linhas.forEach((row, i) => {
-          const codigo = String(row[0] || '').trim();
-          const descricaoLinha = String(row[1] || '').trim();
+          const codigo = String(row[0] || "").trim();
+          const descricaoLinha = String(row[1] || "").trim();
           const quantidadeRaw = row[2];
-          const unidade = String(row[3] || 'UN').trim().toUpperCase() || 'UN';
-          const observacoes = String(row[4] || '').trim();
+          const unidade =
+            String(row[3] || "UN")
+              .trim()
+              .toUpperCase() || "UN";
+          const observacoes = String(row[4] || "").trim();
 
           if (!codigo) {
             novosErros.push(`Linha ${i + 2}: Código obrigatório`);
             return;
           }
 
-          const quantidade = parseFloat(String(quantidadeRaw).replace(',', '.'));
+          const quantidade = parseFloat(String(quantidadeRaw).replace(",", "."));
           if (!quantidadeRaw || isNaN(quantidade) || quantidade <= 0) {
             novosErros.push(`Linha ${i + 2} (${codigo}): Quantidade inválida`);
             return;
           }
 
           // Buscar material pelo código
-          const materialEncontrado = materiais.find(m => 
-            m.codigo && m.codigo.toLowerCase() === codigo.toLowerCase()
+          const materialEncontrado = materiais.find(
+            (m) => m.codigo && m.codigo.toLowerCase() === codigo.toLowerCase()
           );
 
           if (!materialEncontrado) {
@@ -77,17 +87,22 @@ export default function ImportarItensSolicitacao({ onImportar, onClose, materiai
           }
 
           // Verificar se a descrição bate (se foi informada)
-          if (descricaoLinha && materialEncontrado.nome.toLowerCase() !== descricaoLinha.toLowerCase()) {
-            novosAvisos.push(`Linha ${i + 2} (${codigo}): Descrição "${descricaoLinha}" difere do cadastro "${materialEncontrado.nome}" — usando descrição do cadastro`);
+          if (
+            descricaoLinha &&
+            materialEncontrado.nome.toLowerCase() !== descricaoLinha.toLowerCase()
+          ) {
+            novosAvisos.push(
+              `Linha ${i + 2} (${codigo}): Descrição "${descricaoLinha}" difere do cadastro "${materialEncontrado.nome}" — usando descrição do cadastro`
+            );
           }
 
           itens.push({
             descricao: materialEncontrado.nome,
             quantidade,
-            unidade: unidade || materialEncontrado.unidade || 'UN',
+            unidade: unidade || materialEncontrado.unidade || "UN",
             observacoes,
             ultimo_preco: materialEncontrado.preco || null,
-            material_id: materialEncontrado.tipo === 'Material' ? materialEncontrado.id : null,
+            material_id: materialEncontrado.tipo === "Material" ? materialEncontrado.id : null,
             material_codigo: materialEncontrado.codigo || codigo,
           });
         });
@@ -96,7 +111,7 @@ export default function ImportarItensSolicitacao({ onImportar, onClose, materiai
         setErros(novosErros);
         setAvisos(novosAvisos);
       } catch (err) {
-        setErros(['Erro ao ler o arquivo. Verifique se é um arquivo Excel válido.']);
+        setErros(["Erro ao ler o arquivo. Verifique se é um arquivo Excel válido."]);
       } finally {
         setProcessando(false);
       }
@@ -119,7 +134,12 @@ export default function ImportarItensSolicitacao({ onImportar, onClose, materiai
   };
 
   return (
-    <Sheet open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Sheet
+      open={true}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
       <SheetContent side="right" className="h-full p-0 flex flex-col" data-fullscreen-modal>
         <div className="sticky top-0 bg-white border-b p-6 z-10 flex-shrink-0">
           <SheetHeader>
@@ -145,11 +165,13 @@ export default function ImportarItensSolicitacao({ onImportar, onClose, materiai
 
           {/* Upload */}
           <div>
-            <Label className="text-sm font-medium text-slate-700 mb-2 block">Selecionar arquivo Excel</Label>
+            <Label className="text-sm font-medium text-slate-700 mb-2 block">
+              Selecionar arquivo Excel
+            </Label>
             <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
               <Upload className="w-6 h-6 text-slate-400 mb-1" />
               <span className="text-sm text-slate-500">
-                {arquivo ? arquivo.name : 'Clique para selecionar (.xlsx, .xls)'}
+                {arquivo ? arquivo.name : "Clique para selecionar (.xlsx, .xls)"}
               </span>
               <Input
                 type="file"
@@ -163,7 +185,9 @@ export default function ImportarItensSolicitacao({ onImportar, onClose, materiai
           {/* Erros */}
           {erros.length > 0 && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg space-y-1">
-              <p className="text-xs font-semibold text-red-700 mb-1">Erros ({erros.length}) — linhas ignoradas:</p>
+              <p className="text-xs font-semibold text-red-700 mb-1">
+                Erros ({erros.length}) — linhas ignoradas:
+              </p>
               {erros.map((e, i) => (
                 <div key={i} className="flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
@@ -176,7 +200,9 @@ export default function ImportarItensSolicitacao({ onImportar, onClose, materiai
           {/* Avisos */}
           {avisos.length > 0 && (
             <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg space-y-1">
-              <p className="text-xs font-semibold text-yellow-800 mb-1">Avisos ({avisos.length}) — itens importados com ajuste:</p>
+              <p className="text-xs font-semibold text-yellow-800 mb-1">
+                Avisos ({avisos.length}) — itens importados com ajuste:
+              </p>
               {avisos.map((a, i) => (
                 <div key={i} className="flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
@@ -191,7 +217,9 @@ export default function ImportarItensSolicitacao({ onImportar, onClose, materiai
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <CheckCircle2 className="w-4 h-4 text-green-600" />
-                <span className="text-sm font-medium text-slate-700">{preview.length} itens prontos para importar</span>
+                <span className="text-sm font-medium text-slate-700">
+                  {preview.length} itens prontos para importar
+                </span>
               </div>
               <div className="max-h-96 overflow-y-auto border border-slate-200 rounded-lg">
                 <table className="w-full text-xs">
@@ -220,14 +248,16 @@ export default function ImportarItensSolicitacao({ onImportar, onClose, materiai
         </div>
 
         <div className="bg-white border-t p-6 flex justify-end gap-3 flex-shrink-0">
-          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
           <Button
             onClick={handleImportar}
             disabled={preview.length === 0 || processando}
             className="bg-amber-500 hover:bg-amber-600 gap-2"
           >
             <Upload className="w-4 h-4" />
-            Importar {preview.length > 0 ? `${preview.length} itens` : ''}
+            Importar {preview.length > 0 ? `${preview.length} itens` : ""}
           </Button>
         </div>
       </SheetContent>

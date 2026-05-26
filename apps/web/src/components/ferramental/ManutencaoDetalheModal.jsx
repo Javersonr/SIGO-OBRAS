@@ -1,28 +1,19 @@
-import React from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { 
-  Calendar, 
-  Clock, 
-  DollarSign, 
-  User, 
-  Building2, 
-  FileText,
-  Wrench,
-  Edit
-} from 'lucide-react';
+import React from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Calendar, Clock, DollarSign, Building2, FileText, Wrench, Edit } from "lucide-react";
 
 export default function ManutencaoDetalheModal({ open, onOpenChange, manutencao, onEdit }) {
   const getStatusColor = (status) => {
     const colors = {
-      'Agendada': 'bg-blue-100 text-blue-800',
-      'Em Andamento': 'bg-yellow-100 text-yellow-800',
-      'Concluída': 'bg-green-100 text-green-800',
-      'Cancelada': 'bg-red-100 text-red-800'
+      Agendada: "bg-blue-100 text-blue-800",
+      "Em Andamento": "bg-yellow-100 text-yellow-800",
+      Concluída: "bg-green-100 text-green-800",
+      Cancelada: "bg-red-100 text-red-800",
     };
-    return colors[status] || 'bg-gray-100 text-gray-800';
+    return colors[status] || "bg-gray-100 text-gray-800";
   };
 
   return (
@@ -73,9 +64,7 @@ export default function ManutencaoDetalheModal({ open, onOpenChange, manutencao,
 
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm text-slate-600">
-                  <Badge className={getStatusColor(manutencao.status)}>
-                    {manutencao.status}
-                  </Badge>
+                  <Badge className={getStatusColor(manutencao.status)}>{manutencao.status}</Badge>
                 </div>
               </div>
 
@@ -85,9 +74,9 @@ export default function ManutencaoDetalheModal({ open, onOpenChange, manutencao,
                   <span>Data Prevista:</span>
                 </div>
                 <p className="text-sm font-medium pl-6">
-                  {manutencao.data_prevista 
-                    ? new Date(manutencao.data_prevista).toLocaleDateString('pt-BR')
-                    : '-'}
+                  {manutencao.data_prevista
+                    ? new Date(manutencao.data_prevista).toLocaleDateString("pt-BR")
+                    : "-"}
                 </p>
               </div>
 
@@ -97,9 +86,9 @@ export default function ManutencaoDetalheModal({ open, onOpenChange, manutencao,
                   <span>Data Realizada:</span>
                 </div>
                 <p className="text-sm font-medium pl-6">
-                  {manutencao.data_manutencao 
-                    ? new Date(manutencao.data_manutencao).toLocaleDateString('pt-BR')
-                    : '-'}
+                  {manutencao.data_manutencao
+                    ? new Date(manutencao.data_manutencao).toLocaleDateString("pt-BR")
+                    : "-"}
                 </p>
               </div>
 
@@ -108,9 +97,7 @@ export default function ManutencaoDetalheModal({ open, onOpenChange, manutencao,
                   <Clock className="w-4 h-4" />
                   <span>Horas de Uso:</span>
                 </div>
-                <p className="text-sm font-medium pl-6">
-                  {manutencao.horas_uso_no_momento || 0}h
-                </p>
+                <p className="text-sm font-medium pl-6">{manutencao.horas_uso_no_momento || 0}h</p>
               </div>
 
               <div className="space-y-2">
@@ -119,7 +106,7 @@ export default function ManutencaoDetalheModal({ open, onOpenChange, manutencao,
                   <span>Custo:</span>
                 </div>
                 <p className="text-sm font-medium pl-6">
-                  {manutencao.custo > 0 ? `R$ ${manutencao.custo.toFixed(2)}` : '-'}
+                  {manutencao.custo > 0 ? `R$ ${manutencao.custo.toFixed(2)}` : "-"}
                 </p>
               </div>
             </div>
@@ -145,9 +132,7 @@ export default function ManutencaoDetalheModal({ open, onOpenChange, manutencao,
               <Separator />
               <div>
                 <h3 className="text-sm font-medium text-slate-700 mb-3">Descrição dos Serviços</h3>
-                <p className="text-sm text-slate-600 whitespace-pre-wrap">
-                  {manutencao.descricao}
-                </p>
+                <p className="text-sm text-slate-600 whitespace-pre-wrap">{manutencao.descricao}</p>
               </div>
             </>
           )}
@@ -174,7 +159,7 @@ export default function ManutencaoDetalheModal({ open, onOpenChange, manutencao,
                   <Calendar className="w-4 h-4" />
                   <span className="text-sm font-medium">Próxima Manutenção Prevista:</span>
                   <span className="text-sm font-bold">
-                    {new Date(manutencao.proxima_manutencao_prevista).toLocaleDateString('pt-BR')}
+                    {new Date(manutencao.proxima_manutencao_prevista).toLocaleDateString("pt-BR")}
                   </span>
                 </div>
               </div>

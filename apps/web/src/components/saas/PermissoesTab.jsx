@@ -1,116 +1,125 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Edit, Trash2, Shield, ChevronRight, ChevronDown, Copy, Eye } from 'lucide-react';
-import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Plus, Edit, Trash2, ChevronRight, ChevronDown, Copy } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 // ESTRUTURA CANÔNICA — idêntica a UsuarioEditModal e PermissoesGranularesEditor
 const ESTRUTURA_PERMISSOES = {
-  'Oportunidades': {
+  Oportunidades: {
     abas: {
-      'Geral': { funcoes: ['visualizar', 'criar', 'editar', 'deletar', 'aprovar'] },
-      'Orçamento': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Obra': { funcoes: ['visualizar', 'editar'] },
-      'Arquivos': { funcoes: ['visualizar', 'criar', 'deletar'] },
-      'Anotações': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Chat': { funcoes: ['visualizar', 'enviar'] }
-    }
+      Geral: { funcoes: ["visualizar", "criar", "editar", "deletar", "aprovar"] },
+      Orçamento: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Obra: { funcoes: ["visualizar", "editar"] },
+      Arquivos: { funcoes: ["visualizar", "criar", "deletar"] },
+      Anotações: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Chat: { funcoes: ["visualizar", "enviar"] },
+    },
   },
-  'Projetos': {
+  Projetos: {
     abas: {
-      'Geral': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Orçamento': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Obra': { funcoes: ['visualizar', 'editar'] },
-      'Financeiro': { funcoes: ['visualizar', 'editar'] },
-      'Diário da Obra': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Arquivos': { funcoes: ['visualizar', 'criar', 'deletar'] },
-      'Anotações': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Chat': { funcoes: ['visualizar', 'enviar'] }
-    }
+      Geral: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Orçamento: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Obra: { funcoes: ["visualizar", "editar"] },
+      Financeiro: { funcoes: ["visualizar", "editar"] },
+      "Diário da Obra": { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Arquivos: { funcoes: ["visualizar", "criar", "deletar"] },
+      Anotações: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Chat: { funcoes: ["visualizar", "enviar"] },
+    },
   },
-  'Compras': {
+  Compras: {
     abas: {
-      'Solicitações': { funcoes: ['visualizar', 'criar', 'editar', 'deletar', 'aprovar'] },
-      'Cotações': { funcoes: ['visualizar', 'criar', 'editar'] },
-      'Pedidos': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Fornecedores': { funcoes: ['visualizar', 'criar', 'editar'] }
-    }
+      Solicitações: { funcoes: ["visualizar", "criar", "editar", "deletar", "aprovar"] },
+      Cotações: { funcoes: ["visualizar", "criar", "editar"] },
+      Pedidos: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Fornecedores: { funcoes: ["visualizar", "criar", "editar"] },
+    },
   },
-  'Estoque': {
+  Estoque: {
     abas: {
-      'Materiais': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Movimento': { funcoes: ['visualizar', 'criar', 'editar'] },
-      'Almoxarifados': { funcoes: ['visualizar', 'criar', 'editar'] },
-      'Retiradas': { funcoes: ['visualizar', 'criar', 'editar'] }
-    }
+      Materiais: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Movimento: { funcoes: ["visualizar", "criar", "editar"] },
+      Almoxarifados: { funcoes: ["visualizar", "criar", "editar"] },
+      Retiradas: { funcoes: ["visualizar", "criar", "editar"] },
+    },
   },
-  'Ferramental e EPI': {
+  "Ferramental e EPI": {
     abas: {
-      'Ferramental': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Inspeção': { funcoes: ['visualizar', 'criar', 'editar'] }
-    }
+      Ferramental: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Inspeção: { funcoes: ["visualizar", "criar", "editar"] },
+    },
   },
-  'Segurança do Trabalho': {
+  "Segurança do Trabalho": {
     abas: {
-      'Funcionários': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Dados Pessoais': { funcoes: ['visualizar', 'editar'] },
-      'Documentação': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Dados Bancários': { funcoes: ['visualizar', 'editar'] },
-      'RH': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'TST': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Inspeção de Campo': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Inspeção de Ferramental': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Inspeção de Caminhão': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Documentação da Empresa': { funcoes: ['visualizar', 'criar', 'editar', 'deletar', 'alertas', 'exportar'] }
-    }
+      Funcionários: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      "Dados Pessoais": { funcoes: ["visualizar", "editar"] },
+      Documentação: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      "Dados Bancários": { funcoes: ["visualizar", "editar"] },
+      RH: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      TST: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      "Inspeção de Campo": { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      "Inspeção de Ferramental": { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      "Inspeção de Caminhão": { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      "Documentação da Empresa": {
+        funcoes: ["visualizar", "criar", "editar", "deletar", "alertas", "exportar"],
+      },
+    },
   },
-  'Financeiro': {
+  Financeiro: {
     abas: {
-      'Resumo': { funcoes: ['visualizar'] },
-      'Receitas': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Despesas': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Recorrentes': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Pré-Lançamentos': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Transferências': { funcoes: ['visualizar', 'criar', 'editar'] },
-      'Contas e Extratos': { funcoes: ['visualizar', 'editar'] },
-      'Relatórios': { funcoes: ['visualizar', 'exportar'] }
-    }
+      Resumo: { funcoes: ["visualizar"] },
+      Receitas: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Despesas: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Recorrentes: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      "Pré-Lançamentos": { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Transferências: { funcoes: ["visualizar", "criar", "editar"] },
+      "Contas e Extratos": { funcoes: ["visualizar", "editar"] },
+      Relatórios: { funcoes: ["visualizar", "exportar"] },
+    },
   },
-  'Contabilidade': {
+  Contabilidade: {
     abas: {
-      'Plano de Contas': { funcoes: ['visualizar', 'criar', 'editar'] },
-      'Lançamentos': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Relatórios': { funcoes: ['visualizar', 'exportar'] }
-    }
+      "Plano de Contas": { funcoes: ["visualizar", "criar", "editar"] },
+      Lançamentos: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Relatórios: { funcoes: ["visualizar", "exportar"] },
+    },
   },
-  'Relatórios': {
+  Relatórios: {
     abas: {
-      'Oportunidades': { funcoes: ['visualizar', 'exportar'] },
-      'Projetos': { funcoes: ['visualizar', 'exportar'] },
-      'Compras': { funcoes: ['visualizar', 'exportar'] },
-      'Estoque': { funcoes: ['visualizar', 'exportar'] }
-    }
+      Oportunidades: { funcoes: ["visualizar", "exportar"] },
+      Projetos: { funcoes: ["visualizar", "exportar"] },
+      Compras: { funcoes: ["visualizar", "exportar"] },
+      Estoque: { funcoes: ["visualizar", "exportar"] },
+    },
   },
-  'Configurações': {
+  Configurações: {
     abas: {
-      'Empresa': { funcoes: ['visualizar', 'editar'] },
-      'Usuários': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Clientes': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Fornecedores': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Materiais': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Mão de Obra': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] },
-      'Categorias': { funcoes: ['visualizar', 'criar', 'editar', 'deletar'] }
-    }
-  }
+      Empresa: { funcoes: ["visualizar", "editar"] },
+      Usuários: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Clientes: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Fornecedores: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Materiais: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      "Mão de Obra": { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      Categorias: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+    },
+  },
 };
 
 export default function PermissoesTab() {
@@ -119,11 +128,11 @@ export default function PermissoesTab() {
   const [showPerfilModal, setShowPerfilModal] = useState(false);
   const [selectedPerfil, setSelectedPerfil] = useState(null);
   const [perfilForm, setPerfilForm] = useState({
-    nome: '',
-    descricao: '',
-    tipo: 'Global',
+    nome: "",
+    descricao: "",
+    tipo: "Global",
     permissoes: {},
-    nivel_hierarquico: 5
+    nivel_hierarquico: 5,
   });
   const [expandedModulos, setExpandedModulos] = useState({});
   const [expandedAbas, setExpandedAbas] = useState({});
@@ -135,45 +144,45 @@ export default function PermissoesTab() {
   const loadData = async () => {
     const [perfisList, permList] = await Promise.all([
       base44.entities.PerfilPermissao.list(),
-      base44.entities.PermissaoDetalhada.list()
+      base44.entities.PermissaoDetalhada.list(),
     ]);
     setPerfis(perfisList);
     setPermissoes(permList);
   };
 
   const handleOpenPerfilModal = (perfil = null) => {
-   if (perfil) {
-     try {
-       const perms = perfil.permissoes ? JSON.parse(perfil.permissoes) : {};
-       setPerfilForm({
-         nome: perfil.nome,
-         descricao: perfil.descricao || '',
-         tipo: perfil.tipo || 'Global',
-         permissoes: typeof perms === 'object' ? perms : {},
-         nivel_hierarquico: perfil.nivel_hierarquico || 5
-       });
-     } catch (e) {
-       console.error('Erro ao parsear permissões:', e);
-       setPerfilForm({
-         nome: perfil.nome,
-         descricao: perfil.descricao || '',
-         tipo: perfil.tipo || 'Global',
-         permissoes: {},
-         nivel_hierarquico: perfil.nivel_hierarquico || 5
-       });
-     }
-     setSelectedPerfil(perfil);
-   } else {
-     setPerfilForm({
-       nome: '',
-       descricao: '',
-       tipo: 'Global',
-       permissoes: {},
-       nivel_hierarquico: 5
-     });
-     setSelectedPerfil(null);
-   }
-   setShowPerfilModal(true);
+    if (perfil) {
+      try {
+        const perms = perfil.permissoes ? JSON.parse(perfil.permissoes) : {};
+        setPerfilForm({
+          nome: perfil.nome,
+          descricao: perfil.descricao || "",
+          tipo: perfil.tipo || "Global",
+          permissoes: typeof perms === "object" ? perms : {},
+          nivel_hierarquico: perfil.nivel_hierarquico || 5,
+        });
+      } catch (e) {
+        console.error("Erro ao parsear permissões:", e);
+        setPerfilForm({
+          nome: perfil.nome,
+          descricao: perfil.descricao || "",
+          tipo: perfil.tipo || "Global",
+          permissoes: {},
+          nivel_hierarquico: perfil.nivel_hierarquico || 5,
+        });
+      }
+      setSelectedPerfil(perfil);
+    } else {
+      setPerfilForm({
+        nome: "",
+        descricao: "",
+        tipo: "Global",
+        permissoes: {},
+        nivel_hierarquico: 5,
+      });
+      setSelectedPerfil(null);
+    }
+    setShowPerfilModal(true);
   };
 
   const handleSavePerfil = async () => {
@@ -183,10 +192,10 @@ export default function PermissoesTab() {
       nome: perfilForm.nome,
       descricao: perfilForm.descricao,
       tipo: perfilForm.tipo,
-      empresa_id: perfilForm.tipo === 'Customizado' ? null : null,
+      empresa_id: perfilForm.tipo === "Customizado" ? null : null,
       permissoes: JSON.stringify(perfilForm.permissoes),
       nivel_hierarquico: perfilForm.nivel_hierarquico,
-      ativo: true
+      ativo: true,
     };
 
     if (selectedPerfil) {
@@ -200,65 +209,65 @@ export default function PermissoesTab() {
   };
 
   const handleCopiarPerfil = async (perfil) => {
-   try {
-     const perms = perfil.permissoes ? JSON.parse(perfil.permissoes) : {};
-     await base44.entities.PerfilPermissao.create({
-       nome: `${perfil.nome} (Cópia)`,
-       descricao: perfil.descricao,
-       tipo: 'Customizado',
-       permissoes: JSON.stringify(perms),
-       nivel_hierarquico: perfil.nivel_hierarquico,
-       ativo: true
-     });
-     loadData();
-   } catch (error) {
-     console.error('Erro ao copiar perfil:', error);
-   }
+    try {
+      const perms = perfil.permissoes ? JSON.parse(perfil.permissoes) : {};
+      await base44.entities.PerfilPermissao.create({
+        nome: `${perfil.nome} (Cópia)`,
+        descricao: perfil.descricao,
+        tipo: "Customizado",
+        permissoes: JSON.stringify(perms),
+        nivel_hierarquico: perfil.nivel_hierarquico,
+        ativo: true,
+      });
+      loadData();
+    } catch (error) {
+      console.error("Erro ao copiar perfil:", error);
+    }
   };
 
   const handleDeletePerfil = async (perfil) => {
-    if (!confirm('Excluir este perfil?')) return;
+    if (!confirm("Excluir este perfil?")) return;
     await base44.entities.PerfilPermissao.delete(perfil.id);
     loadData();
   };
 
   const toggleModulo = (modulo) => {
-    setExpandedModulos(prev => ({ ...prev, [modulo]: !prev[modulo] }));
+    setExpandedModulos((prev) => ({ ...prev, [modulo]: !prev[modulo] }));
   };
 
   const toggleAba = (modulo, aba) => {
     const key = `${modulo}_${aba}`;
-    setExpandedAbas(prev => ({ ...prev, [key]: !prev[key] }));
+    setExpandedAbas((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const handleToggleModulo = (modulo, enabled) => {
     const newPerms = { ...perfilForm.permissoes };
-    
+
     if (enabled) {
       newPerms[modulo] = {};
-      Object.keys(ESTRUTURA_PERMISSOES[modulo].abas).forEach(aba => {
+      Object.keys(ESTRUTURA_PERMISSOES[modulo].abas).forEach((aba) => {
         newPerms[modulo][aba] = {};
-        ESTRUTURA_PERMISSOES[modulo].abas[aba].funcoes.forEach(funcao => {
+        ESTRUTURA_PERMISSOES[modulo].abas[aba].funcoes.forEach((funcao) => {
           newPerms[modulo][aba][funcao] = true;
         });
       });
     } else {
       delete newPerms[modulo];
     }
-    
+
     setPerfilForm({ ...perfilForm, permissoes: newPerms });
   };
 
   const handleToggleAba = (modulo, aba, enabled) => {
     const newPerms = { ...perfilForm.permissoes };
-    
-    if (!newPerms[modulo] || typeof newPerms[modulo] !== 'object') {
+
+    if (!newPerms[modulo] || typeof newPerms[modulo] !== "object") {
       newPerms[modulo] = {};
     }
-    
+
     if (enabled) {
       newPerms[modulo][aba] = {};
-      ESTRUTURA_PERMISSOES[modulo].abas[aba].funcoes.forEach(funcao => {
+      ESTRUTURA_PERMISSOES[modulo].abas[aba].funcoes.forEach((funcao) => {
         newPerms[modulo][aba][funcao] = true;
       });
     } else {
@@ -267,34 +276,34 @@ export default function PermissoesTab() {
         delete newPerms[modulo];
       }
     }
-    
+
     setPerfilForm({ ...perfilForm, permissoes: newPerms });
   };
 
   const handleToggleFuncao = (modulo, aba, funcao, enabled) => {
     const newPerms = { ...perfilForm.permissoes };
-    
-    if (!newPerms[modulo] || typeof newPerms[modulo] !== 'object') {
+
+    if (!newPerms[modulo] || typeof newPerms[modulo] !== "object") {
       newPerms[modulo] = {};
     }
-    if (!newPerms[modulo][aba] || typeof newPerms[modulo][aba] !== 'object') {
+    if (!newPerms[modulo][aba] || typeof newPerms[modulo][aba] !== "object") {
       newPerms[modulo][aba] = {};
     }
-    
+
     if (enabled) {
       newPerms[modulo][aba][funcao] = true;
     } else {
       delete newPerms[modulo][aba][funcao];
-      
+
       if (Object.keys(newPerms[modulo][aba]).length === 0) {
         delete newPerms[modulo][aba];
       }
-      
+
       if (Object.keys(newPerms[modulo]).length === 0) {
         delete newPerms[modulo];
       }
     }
-    
+
     setPerfilForm({ ...perfilForm, permissoes: newPerms });
   };
 
@@ -303,7 +312,10 @@ export default function PermissoesTab() {
   };
 
   const isAbaHabilitada = (modulo, aba) => {
-    return perfilForm.permissoes[modulo]?.[aba] && Object.keys(perfilForm.permissoes[modulo][aba]).length > 0;
+    return (
+      perfilForm.permissoes[modulo]?.[aba] &&
+      Object.keys(perfilForm.permissoes[modulo][aba]).length > 0
+    );
   };
 
   const isFuncaoHabilitada = (modulo, aba, funcao) => {
@@ -311,15 +323,15 @@ export default function PermissoesTab() {
   };
 
   const formatarNomeFuncao = (funcao) => {
-    return funcao.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    return funcao.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
   };
 
   const contarFuncoesHabilitadas = (modulo) => {
     const moduloPerms = perfilForm.permissoes[modulo];
-    if (!moduloPerms || typeof moduloPerms !== 'object') return 0;
+    if (!moduloPerms || typeof moduloPerms !== "object") return 0;
     let count = 0;
-    Object.values(moduloPerms).forEach(aba => {
-      if (typeof aba === 'object') {
+    Object.values(moduloPerms).forEach((aba) => {
+      if (typeof aba === "object") {
         count += Object.keys(aba).length;
       }
     });
@@ -331,7 +343,10 @@ export default function PermissoesTab() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Perfis de Permissão</CardTitle>
-          <Button onClick={() => handleOpenPerfilModal()} className="bg-amber-500 hover:bg-amber-600">
+          <Button
+            onClick={() => handleOpenPerfilModal()}
+            className="bg-amber-500 hover:bg-amber-600"
+          >
             <Plus className="w-4 h-4 mr-2" /> Novo Perfil
           </Button>
         </CardHeader>
@@ -347,21 +362,21 @@ export default function PermissoesTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {perfis.map(perfil => {
+              {perfis.map((perfil) => {
                 let perms = {};
                 try {
                   perms = perfil.permissoes ? JSON.parse(perfil.permissoes) : {};
                 } catch (e) {
-                  console.error('Erro ao parsear:', e);
+                  console.error("Erro ao parsear:", e);
                 }
 
                 const contarPermissoes = () => {
                   let count = 0;
-                  if (typeof perms === 'object') {
-                    Object.values(perms).forEach(modulo => {
-                      if (typeof modulo === 'object') {
-                        Object.values(modulo).forEach(aba => {
-                          if (typeof aba === 'object') {
+                  if (typeof perms === "object") {
+                    Object.values(perms).forEach((modulo) => {
+                      if (typeof modulo === "object") {
+                        Object.values(modulo).forEach((aba) => {
+                          if (typeof aba === "object") {
                             count += Object.keys(aba).length;
                           }
                         });
@@ -375,7 +390,7 @@ export default function PermissoesTab() {
                   <TableRow key={perfil.id}>
                     <TableCell className="font-medium">{perfil.nome}</TableCell>
                     <TableCell>
-                      <Badge variant={perfil.tipo === 'Global' ? 'default' : 'secondary'}>
+                      <Badge variant={perfil.tipo === "Global" ? "default" : "secondary"}>
                         {perfil.tipo}
                       </Badge>
                     </TableCell>
@@ -402,7 +417,7 @@ export default function PermissoesTab() {
                         >
                           <Copy className="w-4 h-4" />
                         </Button>
-                        {perfil.tipo !== 'Global' && (
+                        {perfil.tipo !== "Global" && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -423,10 +438,15 @@ export default function PermissoesTab() {
 
       {/* Modal Perfil */}
       <Sheet open={showPerfilModal} onOpenChange={setShowPerfilModal}>
-        <SheetContent side="right" className="!w-full !max-w-none overflow-y-auto p-0 flex flex-col h-screen">
+        <SheetContent
+          side="right"
+          className="!w-full !max-w-none overflow-y-auto p-0 flex flex-col h-screen"
+        >
           <div className="sticky top-0 bg-white border-b p-6 z-10">
             <SheetHeader>
-              <SheetTitle>{selectedPerfil ? 'Editar Perfil' : 'Novo Perfil de Permissão'}</SheetTitle>
+              <SheetTitle>
+                {selectedPerfil ? "Editar Perfil" : "Novo Perfil de Permissão"}
+              </SheetTitle>
             </SheetHeader>
           </div>
 
@@ -466,7 +486,12 @@ export default function PermissoesTab() {
                     min="1"
                     max="10"
                     value={perfilForm.nivel_hierarquico}
-                    onChange={(e) => setPerfilForm({ ...perfilForm, nivel_hierarquico: parseInt(e.target.value) || 5 })}
+                    onChange={(e) =>
+                      setPerfilForm({
+                        ...perfilForm,
+                        nivel_hierarquico: parseInt(e.target.value) || 5,
+                      })
+                    }
                     className="mt-1.5"
                   />
                   <p className="text-xs text-slate-500 mt-1">1 = mais alto, 10 = mais baixo</p>
@@ -480,10 +505,13 @@ export default function PermissoesTab() {
                     const moduloExpanded = expandedModulos[modulo];
 
                     return (
-                      <Card key={modulo} className={cn(
-                        "transition-all border-2",
-                        moduloHabilitado ? "border-amber-200 bg-amber-50/30" : "border-slate-200"
-                      )}>
+                      <Card
+                        key={modulo}
+                        className={cn(
+                          "transition-all border-2",
+                          moduloHabilitado ? "border-amber-200 bg-amber-50/30" : "border-slate-200"
+                        )}
+                      >
                         <CardContent className="p-3">
                           <div className="flex items-center justify-between mb-2">
                             <button
@@ -521,10 +549,15 @@ export default function PermissoesTab() {
                                 const abaExpanded = expandedAbas[abaKey];
 
                                 return (
-                                  <div key={aba} className={cn(
-                                    "border rounded-lg p-2",
-                                    abaHabilitada ? "border-green-200 bg-green-50/30" : "border-slate-200"
-                                  )}>
+                                  <div
+                                    key={aba}
+                                    className={cn(
+                                      "border rounded-lg p-2",
+                                      abaHabilitada
+                                        ? "border-green-200 bg-green-50/30"
+                                        : "border-slate-200"
+                                    )}
+                                  >
                                     <div className="flex items-center justify-between">
                                       <button
                                         onClick={() => toggleAba(modulo, aba)}
@@ -535,21 +568,29 @@ export default function PermissoesTab() {
                                         ) : (
                                           <ChevronRight className="w-3 h-3 text-slate-400" />
                                         )}
-                                        <span className="font-medium text-slate-800 text-xs">{aba}</span>
+                                        <span className="font-medium text-slate-800 text-xs">
+                                          {aba}
+                                        </span>
                                         <Badge variant="outline" className="ml-2 text-xs">
                                           {abaConfig.funcoes.length} funções
                                         </Badge>
                                       </button>
                                       <Switch
                                         checked={abaHabilitada}
-                                        onCheckedChange={(checked) => handleToggleAba(modulo, aba, checked)}
+                                        onCheckedChange={(checked) =>
+                                          handleToggleAba(modulo, aba, checked)
+                                        }
                                       />
                                     </div>
 
                                     {abaExpanded && (
                                       <div className="ml-5 space-y-1 mt-2">
-                                        {abaConfig.funcoes.map(funcao => {
-                                          const funcaoHabilitada = isFuncaoHabilitada(modulo, aba, funcao);
+                                        {abaConfig.funcoes.map((funcao) => {
+                                          const funcaoHabilitada = isFuncaoHabilitada(
+                                            modulo,
+                                            aba,
+                                            funcao
+                                          );
 
                                           return (
                                             <div
@@ -561,7 +602,9 @@ export default function PermissoesTab() {
                                               </span>
                                               <Switch
                                                 checked={funcaoHabilitada}
-                                                onCheckedChange={(checked) => handleToggleFuncao(modulo, aba, funcao, checked)}
+                                                onCheckedChange={(checked) =>
+                                                  handleToggleFuncao(modulo, aba, funcao, checked)
+                                                }
                                               />
                                             </div>
                                           );
@@ -583,7 +626,9 @@ export default function PermissoesTab() {
           </div>
 
           <div className="sticky bottom-0 bg-white border-t p-6 flex justify-end gap-3">
-            <Button variant="outline" onClick={() => setShowPerfilModal(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => setShowPerfilModal(false)}>
+              Cancelar
+            </Button>
             <Button onClick={handleSavePerfil} className="bg-amber-500 hover:bg-amber-600">
               Salvar Perfil
             </Button>

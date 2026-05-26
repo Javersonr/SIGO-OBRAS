@@ -1,47 +1,57 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '@/Layout';
-import { createPageUrl } from '../utils';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { base44 } from "@/api/base44Client";
+import { useEmpresa } from "@/Layout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { 
-  ClipboardCheck, Search, Calendar, User, MapPin, 
-  CheckCircle2, AlertCircle, Clock, ChevronRight, Filter, FileText, Download, Mail, Send, X
-} from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { toast } from 'sonner';
-import InspecaoDetalheHistoricoModal from '@/components/ferramental/InspecaoDetalheHistoricoModal';
+} from "@/components/ui/select";
+import {
+  ClipboardCheck,
+  Search,
+  Calendar,
+  User,
+  MapPin,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  ChevronRight,
+  Filter,
+  FileText,
+  Download,
+  Send,
+} from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { toast } from "sonner";
+import InspecaoDetalheHistoricoModal from "@/components/ferramental/InspecaoDetalheHistoricoModal";
 
 export default function HistoricoInspecoes() {
   const navigate = useNavigate();
   const { empresaAtiva } = useEmpresa();
   const [inspecoes, setInspecoes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [caminhoes, setCaminhoes] = useState([]);
   const [filtros, setFiltros] = useState({
-    status: 'todos',
-    caminhao: 'todos',
-    data_inicio: '',
-    data_fim: ''
+    status: "todos",
+    caminhao: "todos",
+    data_inicio: "",
+    data_fim: "",
   });
   const [showFilters, setShowFilters] = useState(false);
   const [selectedInspecao, setSelectedInspecao] = useState(null);
   const [showDetalheModal, setShowDetalheModal] = useState(false);
   const [showRelatorioDialog, setShowRelatorioDialog] = useState(false);
-  const [emailsDestino, setEmailsDestino] = useState('');
+  const [emailsDestino, setEmailsDestino] = useState("");
   const [gerandoRelatorio, setGerandoRelatorio] = useState(false);
 
   useEffect(() => {
@@ -53,12 +63,13 @@ export default function HistoricoInspecoes() {
 
   const loadCaminhoes = async () => {
     try {
-      const data = await base44.entities.Caminhao.filter(
-        { empresa_id: empresaAtiva.id, ativo: true }
-      );
+      const data = await base44.entities.Caminhao.filter({
+        empresa_id: empresaAtiva.id,
+        ativo: true,
+      });
       setCaminhoes(data);
     } catch (error) {
-      console.error('Erro ao carregar caminhões:', error);
+      console.error("Erro ao carregar caminhões:", error);
     }
   };
 
@@ -66,33 +77,30 @@ export default function HistoricoInspecoes() {
     try {
       setLoading(true);
       const filtro = { empresa_id: empresaAtiva.id };
-      
-      if (filtros.status !== 'todos') {
+
+      if (filtros.status !== "todos") {
         filtro.status = filtros.status;
       }
-      
-      if (filtros.caminhao !== 'todos') {
+
+      if (filtros.caminhao !== "todos") {
         filtro.caminhao_id = filtros.caminhao;
       }
-      
+
       if (filtros.data_inicio) {
         filtro.data_inspecao = { $gte: filtros.data_inicio };
       }
-      
+
       if (filtros.data_fim) {
-        filtro.data_inspecao = { 
-          ...filtro.data_inspecao, 
-          $lte: filtros.data_fim 
+        filtro.data_inspecao = {
+          ...filtro.data_inspecao,
+          $lte: filtros.data_fim,
         };
       }
-      
-      const data = await base44.entities.InspecaoCaminhao.filter(
-        filtro,
-        '-data_inspecao'
-      );
+
+      const data = await base44.entities.InspecaoCaminhao.filter(filtro, "-data_inspecao");
       setInspecoes(data);
     } catch (error) {
-      console.error('Erro ao carregar inspeções:', error);
+      console.error("Erro ao carregar inspeções:", error);
     } finally {
       setLoading(false);
     }
@@ -100,34 +108,34 @@ export default function HistoricoInspecoes() {
 
   const handleGerarRelatorio = async () => {
     if (!filtros.data_inicio || !filtros.data_fim) {
-      toast.error('Selecione o período para o relatório');
+      toast.error("Selecione o período para o relatório");
       return;
     }
 
     setGerandoRelatorio(true);
     try {
-      const response = await base44.functions.invoke('gerarRelatorioConsolidado', {
+      const response = await base44.functions.invoke("gerarRelatorioConsolidado", {
         empresa_id: empresaAtiva.id,
         data_inicio: filtros.data_inicio,
         data_fim: filtros.data_fim,
-        caminhao_id: filtros.caminhao !== 'todos' ? filtros.caminhao : null,
-        status: filtros.status !== 'todos' ? filtros.status : null
+        caminhao_id: filtros.caminhao !== "todos" ? filtros.caminhao : null,
+        status: filtros.status !== "todos" ? filtros.status : null,
       });
 
-      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const blob = new Blob([response.data], { type: "application/pdf" });
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = `relatorio_consolidado_${new Date().toISOString().split('T')[0]}.pdf`;
+      a.download = `relatorio_consolidado_${new Date().toISOString().split("T")[0]}.pdf`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       a.remove();
 
-      toast.success('Relatório gerado com sucesso!');
+      toast.success("Relatório gerado com sucesso!");
     } catch (error) {
-      console.error('Erro ao gerar relatório:', error);
-      toast.error('Erro ao gerar relatório');
+      console.error("Erro ao gerar relatório:", error);
+      toast.error("Erro ao gerar relatório");
     } finally {
       setGerandoRelatorio(false);
     }
@@ -135,43 +143,46 @@ export default function HistoricoInspecoes() {
 
   const handleEnviarRelatorio = async () => {
     if (!filtros.data_inicio || !filtros.data_fim) {
-      toast.error('Selecione o período para o relatório');
+      toast.error("Selecione o período para o relatório");
       return;
     }
 
     if (!emailsDestino.trim()) {
-      toast.error('Informe pelo menos um email');
+      toast.error("Informe pelo menos um email");
       return;
     }
 
-    const emails = emailsDestino.split(',').map(e => e.trim()).filter(e => e);
+    const emails = emailsDestino
+      .split(",")
+      .map((e) => e.trim())
+      .filter((e) => e);
     if (emails.length === 0) {
-      toast.error('Informe emails válidos');
+      toast.error("Informe emails válidos");
       return;
     }
 
     setGerandoRelatorio(true);
     try {
-      const response = await base44.functions.invoke('gerarRelatorioConsolidado', {
+      const response = await base44.functions.invoke("gerarRelatorioConsolidado", {
         empresa_id: empresaAtiva.id,
         data_inicio: filtros.data_inicio,
         data_fim: filtros.data_fim,
-        caminhao_id: filtros.caminhao !== 'todos' ? filtros.caminhao : null,
-        status: filtros.status !== 'todos' ? filtros.status : null,
+        caminhao_id: filtros.caminhao !== "todos" ? filtros.caminhao : null,
+        status: filtros.status !== "todos" ? filtros.status : null,
         enviar_email: true,
-        emails_destino: emails
+        emails_destino: emails,
       });
 
       if (response.data.success) {
         toast.success(`Relatório enviado para ${response.data.emails_enviados} email(s)!`);
         setShowRelatorioDialog(false);
-        setEmailsDestino('');
+        setEmailsDestino("");
       } else {
-        toast.error('Erro ao enviar emails');
+        toast.error("Erro ao enviar emails");
       }
     } catch (error) {
-      console.error('Erro ao enviar relatório:', error);
-      toast.error('Erro ao enviar relatório por email');
+      console.error("Erro ao enviar relatório:", error);
+      toast.error("Erro ao enviar relatório por email");
     } finally {
       setGerandoRelatorio(false);
     }
@@ -184,42 +195,43 @@ export default function HistoricoInspecoes() {
   }, [filtros]);
 
   const getStatusInfo = (inspecao) => {
-    const ferramentas = JSON.parse(inspecao.ferramentas_inspecionadas || '[]');
+    const ferramentas = JSON.parse(inspecao.ferramentas_inspecionadas || "[]");
     const totalItens = ferramentas.reduce((sum, f) => sum + f.itens.length, 0);
     const concluidos = ferramentas.reduce(
-      (sum, f) => sum + f.itens.filter(i => i.status_foto === 'concluida').length,
+      (sum, f) => sum + f.itens.filter((i) => i.status_foto === "concluida").length,
       0
     );
     const falhados = ferramentas.reduce(
-      (sum, f) => sum + f.itens.filter(i => i.status_foto === 'falhou').length,
+      (sum, f) => sum + f.itens.filter((i) => i.status_foto === "falhou").length,
       0
     );
 
     if (falhados > 0) {
-      return { 
-        label: 'Com Pendências', 
-        color: 'bg-amber-100 text-amber-700',
-        icon: AlertCircle 
+      return {
+        label: "Com Pendências",
+        color: "bg-amber-100 text-amber-700",
+        icon: AlertCircle,
       };
     }
     if (concluidos === totalItens) {
-      return { 
-        label: 'Concluída', 
-        color: 'bg-green-100 text-green-700',
-        icon: CheckCircle2 
+      return {
+        label: "Concluída",
+        color: "bg-green-100 text-green-700",
+        icon: CheckCircle2,
       };
     }
-    return { 
-      label: 'Incompleta', 
-      color: 'bg-slate-100 text-slate-700',
-      icon: Clock 
+    return {
+      label: "Incompleta",
+      color: "bg-slate-100 text-slate-700",
+      icon: Clock,
     };
   };
 
-  const filteredInspecoes = inspecoes.filter(insp => 
-    insp.usuario_nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    insp.caminhao_placa?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    insp.caminhao_modelo?.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredInspecoes = inspecoes.filter(
+    (insp) =>
+      insp.usuario_nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      insp.caminhao_placa?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      insp.caminhao_modelo?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (loading) {
@@ -277,10 +289,10 @@ export default function HistoricoInspecoes() {
                 size="sm"
                 onClick={() => {
                   setFiltros({
-                    status: 'todos',
-                    caminhao: 'todos',
-                    data_inicio: '',
-                    data_fim: ''
+                    status: "todos",
+                    caminhao: "todos",
+                    data_inicio: "",
+                    data_fim: "",
                   });
                 }}
               >
@@ -369,7 +381,7 @@ export default function HistoricoInspecoes() {
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold text-green-600">
-              {inspecoes.filter(i => i.status === 'concluida').length}
+              {inspecoes.filter((i) => i.status === "concluida").length}
             </p>
           </CardContent>
         </Card>
@@ -380,7 +392,7 @@ export default function HistoricoInspecoes() {
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold text-red-600">
-              {inspecoes.filter(i => i.status === 'reprovada').length}
+              {inspecoes.filter((i) => i.status === "reprovada").length}
             </p>
           </CardContent>
         </Card>
@@ -391,7 +403,7 @@ export default function HistoricoInspecoes() {
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold text-amber-600">
-              {inspecoes.filter(i => i.status === 'em_andamento').length}
+              {inspecoes.filter((i) => i.status === "em_andamento").length}
             </p>
           </CardContent>
         </Card>
@@ -413,25 +425,27 @@ export default function HistoricoInspecoes() {
         <Card className="p-12 text-center">
           <ClipboardCheck className="w-16 h-16 text-slate-300 mx-auto mb-4" />
           <p className="text-slate-600 text-lg font-medium mb-2">
-            {searchTerm ? 'Nenhuma inspeção encontrada' : 'Nenhuma inspeção concluída'}
+            {searchTerm ? "Nenhuma inspeção encontrada" : "Nenhuma inspeção concluída"}
           </p>
           <p className="text-slate-500 text-sm">
-            {searchTerm ? 'Tente outro termo de busca' : 'As inspeções concluídas aparecerão aqui'}
+            {searchTerm ? "Tente outro termo de busca" : "As inspeções concluídas aparecerão aqui"}
           </p>
         </Card>
       ) : (
         <div className="space-y-3">
           {filteredInspecoes.map((inspecao) => {
-            const statusConfig = 
-              inspecao.status === 'concluida' ? { label: 'Concluída', color: 'bg-green-100 text-green-700', icon: CheckCircle2 } :
-              inspecao.status === 'reprovada' ? { label: 'Reprovada', color: 'bg-red-100 text-red-700', icon: AlertCircle } :
-              { label: 'Em Andamento', color: 'bg-amber-100 text-amber-700', icon: Clock };
-            
+            const statusConfig =
+              inspecao.status === "concluida"
+                ? { label: "Concluída", color: "bg-green-100 text-green-700", icon: CheckCircle2 }
+                : inspecao.status === "reprovada"
+                  ? { label: "Reprovada", color: "bg-red-100 text-red-700", icon: AlertCircle }
+                  : { label: "Em Andamento", color: "bg-amber-100 text-amber-700", icon: Clock };
+
             const StatusIcon = statusConfig.icon;
 
             return (
-              <Card 
-                key={inspecao.id} 
+              <Card
+                key={inspecao.id}
                 className="hover:shadow-md transition-shadow cursor-pointer"
                 onClick={() => {
                   setSelectedInspecao(inspecao);
@@ -457,7 +471,9 @@ export default function HistoricoInspecoes() {
                       <div className="flex items-center gap-4 flex-wrap text-sm text-slate-600">
                         <div className="flex items-center gap-1.5">
                           <Calendar className="w-4 h-4" />
-                          {format(new Date(inspecao.data_inspecao), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                          {format(new Date(inspecao.data_inspecao), "dd 'de' MMMM 'de' yyyy", {
+                            locale: ptBR,
+                          })}
                         </div>
                         <div className="flex items-center gap-1.5">
                           <MapPin className="w-4 h-4" />
@@ -467,10 +483,14 @@ export default function HistoricoInspecoes() {
 
                       <div className="flex items-center gap-3 text-sm">
                         <span className="text-slate-600">
-                          <span className="font-semibold text-slate-800">{inspecao.ferramentas_inspecionadas}</span>
-                          {' '}de{' '}
-                          <span className="font-semibold text-slate-800">{inspecao.total_ferramentas}</span>
-                          {' '}ferramentas inspecionadas
+                          <span className="font-semibold text-slate-800">
+                            {inspecao.ferramentas_inspecionadas}
+                          </span>{" "}
+                          de{" "}
+                          <span className="font-semibold text-slate-800">
+                            {inspecao.total_ferramentas}
+                          </span>{" "}
+                          ferramentas inspecionadas
                         </span>
                       </div>
                     </div>
@@ -490,21 +510,21 @@ export default function HistoricoInspecoes() {
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6 border-b border-slate-200">
               <h3 className="text-lg font-semibold text-slate-900">Gerar Relatório Consolidado</h3>
-              <p className="text-sm text-slate-500 mt-1">
-                Escolha como deseja receber o relatório
-              </p>
+              <p className="text-sm text-slate-500 mt-1">Escolha como deseja receber o relatório</p>
             </div>
-            
+
             <div className="p-6 space-y-4">
               <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
                 <p className="text-sm text-blue-800">
-                  <strong>Período:</strong> {filtros.data_inicio && filtros.data_fim ? 
-                    `${new Date(filtros.data_inicio).toLocaleDateString('pt-BR')} a ${new Date(filtros.data_fim).toLocaleDateString('pt-BR')}` : 
-                    'Não definido'}
+                  <strong>Período:</strong>{" "}
+                  {filtros.data_inicio && filtros.data_fim
+                    ? `${new Date(filtros.data_inicio).toLocaleDateString("pt-BR")} a ${new Date(filtros.data_fim).toLocaleDateString("pt-BR")}`
+                    : "Não definido"}
                 </p>
-                {filtros.caminhao !== 'todos' && (
+                {filtros.caminhao !== "todos" && (
                   <p className="text-sm text-blue-800 mt-1">
-                    <strong>Caminhão:</strong> {caminhoes.find(c => c.id === filtros.caminhao)?.placa}
+                    <strong>Caminhão:</strong>{" "}
+                    {caminhoes.find((c) => c.id === filtros.caminhao)?.placa}
                   </p>
                 )}
               </div>
@@ -527,13 +547,13 @@ export default function HistoricoInspecoes() {
                 variant="outline"
                 onClick={() => {
                   setShowRelatorioDialog(false);
-                  setEmailsDestino('');
+                  setEmailsDestino("");
                 }}
                 disabled={gerandoRelatorio}
               >
                 Cancelar
               </Button>
-              
+
               {emailsDestino.trim() ? (
                 <Button
                   onClick={handleEnviarRelatorio}

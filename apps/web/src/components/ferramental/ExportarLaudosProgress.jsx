@@ -1,6 +1,6 @@
-import React from 'react';
-import { Progress } from '@/components/ui/progress';
-import { FileDown, X } from 'lucide-react';
+import React from "react";
+import { Progress } from "@/components/ui/progress";
+import { FileDown } from "lucide-react";
 
 export default function ExportarLaudosProgress({ progresso, total, atual, fase }) {
   if (!progresso && progresso !== 0) return null;
@@ -20,7 +20,7 @@ export default function ExportarLaudosProgress({ progresso, total, atual, fase }
       </div>
       <Progress value={percentual} className="h-2 mb-1" />
       <p className="text-xs text-slate-500 text-right">
-        {fase === 'Compactando...' ? 'Compactando...' : `${atual} de ${total} arquivos`}
+        {fase === "Compactando..." ? "Compactando..." : `${atual} de ${total} arquivos`}
       </p>
     </div>
   );

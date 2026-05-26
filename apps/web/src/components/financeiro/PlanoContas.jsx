@@ -1,26 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
-import { base44 } from '@/api/base44Client';
-import { Plus, ChevronRight, ChevronDown, FolderTree, Edit, Trash2, FileText } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import React, { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { base44 } from "@/api/base44Client";
+import { Plus, ChevronRight, ChevronDown, FolderTree, Edit, Trash2, FileText } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export default function PlanoContas({ empresaAtiva, contas, onReload }) {
   const [expandedNodes, setExpandedNodes] = useState(new Set());
   const [showModal, setShowModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [form, setForm] = useState({
-    nome: '',
-    codigo_contabil: '',
-    tipo: 'Banco',
-    tipo_natureza: 'Ativo',
+    nome: "",
+    codigo_contabil: "",
+    tipo: "Banco",
+    tipo_natureza: "Ativo",
     conta_pai_id: null,
-    nivel: 1
+    nivel: 1,
   });
 
   const toggleNode = (id) => {
@@ -36,22 +42,22 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
   const handleOpen = (conta = null, contaPai = null) => {
     if (conta) {
       setForm({
-        nome: conta.nome || '',
-        codigo_contabil: conta.codigo_contabil || '',
-        tipo: conta.tipo || 'Banco',
-        tipo_natureza: conta.tipo_natureza || 'Ativo',
+        nome: conta.nome || "",
+        codigo_contabil: conta.codigo_contabil || "",
+        tipo: conta.tipo || "Banco",
+        tipo_natureza: conta.tipo_natureza || "Ativo",
         conta_pai_id: conta.conta_pai_id || null,
-        nivel: conta.nivel || 1
+        nivel: conta.nivel || 1,
       });
       setSelectedItem(conta);
     } else {
       setForm({
-        nome: '',
-        codigo_contabil: '',
-        tipo: 'Banco',
-        tipo_natureza: contaPai?.tipo_natureza || 'Ativo',
+        nome: "",
+        codigo_contabil: "",
+        tipo: "Banco",
+        tipo_natureza: contaPai?.tipo_natureza || "Ativo",
         conta_pai_id: contaPai?.id || null,
-        nivel: contaPai ? (contaPai.nivel || 1) + 1 : 1
+        nivel: contaPai ? (contaPai.nivel || 1) + 1 : 1,
       });
       setSelectedItem(null);
     }
@@ -60,7 +66,7 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
 
   const handleSave = async () => {
     if (!form.nome) {
-      alert('Preencha o nome da conta');
+      alert("Preencha o nome da conta");
       return;
     }
 
@@ -69,7 +75,7 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
       ...form,
       saldo_inicial: 0,
       saldo_atual: 0,
-      ativo: true
+      ativo: true,
     };
 
     if (selectedItem) {
@@ -84,9 +90,9 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
 
   const handleDelete = async (conta) => {
     // Verificar se tem subcontas
-    const subcontas = contas.filter(c => c.conta_pai_id === conta.id);
+    const subcontas = contas.filter((c) => c.conta_pai_id === conta.id);
     if (subcontas.length > 0) {
-      alert('Esta conta possui subcontas. Exclua as subcontas primeiro.');
+      alert("Esta conta possui subcontas. Exclua as subcontas primeiro.");
       return;
     }
 
@@ -99,22 +105,30 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
   // Organizar contas em hierarquia
   const buildTree = (parentId = null) => {
     return contas
-      .filter(c => c.conta_pai_id === parentId)
-      .sort((a, b) => (a.codigo_contabil || '').localeCompare(b.codigo_contabil || ''));
+      .filter((c) => c.conta_pai_id === parentId)
+      .sort((a, b) => (a.codigo_contabil || "").localeCompare(b.codigo_contabil || ""));
   };
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+      value || 0
+    );
   };
 
   const getNaturezaColor = (natureza) => {
     switch (natureza) {
-      case 'Ativo': return 'bg-blue-100 text-blue-700';
-      case 'Passivo': return 'bg-red-100 text-red-700';
-      case 'Receita': return 'bg-green-100 text-green-700';
-      case 'Despesa': return 'bg-orange-100 text-orange-700';
-      case 'Patrimônio Líquido': return 'bg-purple-100 text-purple-700';
-      default: return 'bg-slate-100 text-slate-700';
+      case "Ativo":
+        return "bg-blue-100 text-blue-700";
+      case "Passivo":
+        return "bg-red-100 text-red-700";
+      case "Receita":
+        return "bg-green-100 text-green-700";
+      case "Despesa":
+        return "bg-orange-100 text-orange-700";
+      case "Patrimônio Líquido":
+        return "bg-purple-100 text-purple-700";
+      default:
+        return "bg-slate-100 text-slate-700";
     }
   };
 
@@ -145,9 +159,11 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
           )}
 
           <div className="flex-1 flex items-center gap-3">
-            <div className={`w-8 h-8 rounded flex items-center justify-center ${
-              hasChildren ? 'bg-amber-100' : 'bg-blue-100'
-            }`}>
+            <div
+              className={`w-8 h-8 rounded flex items-center justify-center ${
+                hasChildren ? "bg-amber-100" : "bg-blue-100"
+              }`}
+            >
               {hasChildren ? (
                 <FolderTree className="w-4 h-4 text-amber-600" />
               ) : (
@@ -167,9 +183,7 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
                   </Badge>
                 )}
               </div>
-              {!hasChildren && (
-                <span className="text-sm text-slate-500">{conta.tipo}</span>
-              )}
+              {!hasChildren && <span className="text-sm text-slate-500">{conta.tipo}</span>}
             </div>
 
             {!hasChildren && (
@@ -181,25 +195,13 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
             )}
 
             <div className="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => handleOpen(null, conta)}
-              >
+              <Button size="sm" variant="ghost" onClick={() => handleOpen(null, conta)}>
                 <Plus className="w-4 h-4" />
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => handleOpen(conta)}
-              >
+              <Button size="sm" variant="ghost" onClick={() => handleOpen(conta)}>
                 <Edit className="w-4 h-4" />
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => handleDelete(conta)}
-              >
+              <Button size="sm" variant="ghost" onClick={() => handleDelete(conta)}>
                 <Trash2 className="w-4 h-4 text-red-500" />
               </Button>
             </div>
@@ -207,9 +209,7 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
         </div>
 
         {isExpanded && hasChildren && (
-          <div>
-            {subcontas.map(subconta => renderConta(subconta, depth + 1))}
-          </div>
+          <div>{subcontas.map((subconta) => renderConta(subconta, depth + 1))}</div>
         )}
       </div>
     );
@@ -247,9 +247,7 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
       ) : (
         <Card>
           <CardContent className="p-4">
-            <div className="space-y-1">
-              {contasRaiz.map(conta => renderConta(conta))}
-            </div>
+            <div className="space-y-1">{contasRaiz.map((conta) => renderConta(conta))}</div>
           </CardContent>
         </Card>
       )}
@@ -258,9 +256,7 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              {selectedItem ? 'Editar Conta' : 'Nova Conta'}
-            </DialogTitle>
+            <DialogTitle>{selectedItem ? "Editar Conta" : "Nova Conta"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
@@ -275,12 +271,7 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
               </div>
               <div>
                 <Label>Nível</Label>
-                <Input
-                  type="number"
-                  value={form.nivel}
-                  disabled
-                  className="mt-1.5"
-                />
+                <Input type="number" value={form.nivel} disabled className="mt-1.5" />
               </div>
             </div>
 
@@ -312,7 +303,10 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
 
               <div>
                 <Label>Natureza Contábil</Label>
-                <Select value={form.tipo_natureza} onValueChange={(v) => setForm({ ...form, tipo_natureza: v })}>
+                <Select
+                  value={form.tipo_natureza}
+                  onValueChange={(v) => setForm({ ...form, tipo_natureza: v })}
+                >
                   <SelectTrigger className="mt-1.5">
                     <SelectValue />
                   </SelectTrigger>

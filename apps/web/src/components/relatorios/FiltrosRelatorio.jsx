@@ -1,16 +1,15 @@
-import React from 'react';
-import { Filter, Download, FileSpreadsheet } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent } from '@/components/ui/card';
+import React from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 
 export default function FiltrosRelatorio({ filtros, onFiltrosChange }) {
   return (
@@ -37,7 +36,10 @@ export default function FiltrosRelatorio({ filtros, onFiltrosChange }) {
           </div>
           <div>
             <Label className="text-xs text-slate-600">Tipo</Label>
-            <Select value={filtros.tipo} onValueChange={(v) => onFiltrosChange({ ...filtros, tipo: v })}>
+            <Select
+              value={filtros.tipo}
+              onValueChange={(v) => onFiltrosChange({ ...filtros, tipo: v })}
+            >
               <SelectTrigger className="mt-1.5">
                 <SelectValue />
               </SelectTrigger>
@@ -52,16 +54,18 @@ export default function FiltrosRelatorio({ filtros, onFiltrosChange }) {
             </Select>
           </div>
           <div className="flex items-end gap-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               className="flex-1"
-              onClick={() => onFiltrosChange({
-                dataInicio: '',
-                dataFim: '',
-                usuario: 'all',
-                status: 'all',
-                tipo: 'all'
-              })}
+              onClick={() =>
+                onFiltrosChange({
+                  dataInicio: "",
+                  dataFim: "",
+                  usuario: "all",
+                  status: "all",
+                  tipo: "all",
+                })
+              }
             >
               Limpar
             </Button>

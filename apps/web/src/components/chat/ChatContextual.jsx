@@ -1,16 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { MessageSquare, Plus, Send } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Textarea } from '@/components/ui/textarea';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { MessageSquare, Send } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 
 /**
  * Componente de Chat Contextual para usar dentro de detalhes de Projetos, Oportunidades, Solicitações e Tarefas/Pedidos
- * 
+ *
  * @param {string} tipo - Tipo do contexto: 'Projeto', 'Oportunidade', 'Solicitacao', 'Tarefa'
  * @param {string} contextoId - ID do projeto/oportunidade/solicitacao/pedido
  * @param {string} contextoNome - Nome do projeto/oportunidade/solicitacao/pedido
@@ -20,7 +20,7 @@ import { Badge } from '@/components/ui/badge';
 export default function ChatContextual({ tipo, contextoId, contextoNome, empresaAtiva, user }) {
   const [canal, setCanal] = useState(null);
   const [mensagens, setMensagens] = useState([]);
-  const [novaMensagem, setNovaMensagem] = useState('');
+  const [novaMensagem, setNovaMensagem] = useState("");
   const [loading, setLoading] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const scrollRef = React.useRef(null);
@@ -28,12 +28,12 @@ export default function ChatContextual({ tipo, contextoId, contextoNome, empresa
   useEffect(() => {
     if (contextoId && empresaAtiva?.id) {
       initChat();
-      
+
       // Polling para novas mensagens
       const interval = setInterval(() => {
         if (canal?.id) loadMensagens();
       }, 5000);
-      
+
       return () => clearInterval(interval);
     }
   }, [contextoId, empresaAtiva?.id]);
@@ -52,13 +52,13 @@ export default function ChatContextual({ tipo, contextoId, contextoNome, empresa
       const filtro = {
         empresa_id: empresaAtiva.id,
         tipo,
-        ativo: true
+        ativo: true,
       };
 
-      if (tipo === 'Projeto') filtro.projeto_id = contextoId;
-      if (tipo === 'Oportunidade') filtro.oportunidade_id = contextoId;
-      if (tipo === 'Solicitacao') filtro.solicitacao_id = contextoId;
-      if (tipo === 'Tarefa') filtro.pedido_id = contextoId;
+      if (tipo === "Projeto") filtro.projeto_id = contextoId;
+      if (tipo === "Oportunidade") filtro.oportunidade_id = contextoId;
+      if (tipo === "Solicitacao") filtro.solicitacao_id = contextoId;
+      if (tipo === "Tarefa") filtro.pedido_id = contextoId;
 
       const canais = await base44.entities.CanalChat.filter(filtro);
 
@@ -71,7 +71,7 @@ export default function ChatContextual({ tipo, contextoId, contextoNome, empresa
         setCanal(novoCanal);
       }
     } catch (error) {
-      console.error('Erro ao inicializar chat:', error);
+      console.error("Erro ao inicializar chat:", error);
     } finally {
       setLoading(false);
     }
@@ -81,14 +81,14 @@ export default function ChatContextual({ tipo, contextoId, contextoNome, empresa
     const data = {
       empresa_id: empresaAtiva.id,
       tipo,
-      nome: `Chat - ${contextoNome || 'Sem nome'}`,
-      projeto_id: tipo === 'Projeto' ? contextoId : null,
-      oportunidade_id: tipo === 'Oportunidade' ? contextoId : null,
-      solicitacao_id: tipo === 'Solicitacao' ? contextoId : null,
-      pedido_id: tipo === 'Tarefa' ? contextoId : null,
+      nome: `Chat - ${contextoNome || "Sem nome"}`,
+      projeto_id: tipo === "Projeto" ? contextoId : null,
+      oportunidade_id: tipo === "Oportunidade" ? contextoId : null,
+      solicitacao_id: tipo === "Solicitacao" ? contextoId : null,
+      pedido_id: tipo === "Tarefa" ? contextoId : null,
       participantes: JSON.stringify([user.id]),
       participantes_emails: JSON.stringify([user.email]),
-      ativo: true
+      ativo: true,
     };
 
     return await base44.entities.CanalChat.create(data);
@@ -96,16 +96,16 @@ export default function ChatContextual({ tipo, contextoId, contextoNome, empresa
 
   const loadMensagens = async (canalId = canal?.id) => {
     if (!canalId) return;
-    
+
     try {
       const msgs = await base44.entities.MensagemChat.filter(
         { canal_id: canalId },
-        'created_date',
+        "created_date",
         50
       );
       setMensagens(msgs);
     } catch (error) {
-      console.error('Erro ao carregar mensagens:', error);
+      console.error("Erro ao carregar mensagens:", error);
     }
   };
 
@@ -121,26 +121,26 @@ export default function ChatContextual({ tipo, contextoId, contextoNome, empresa
         usuario_email: user.email,
         usuario_nome: user.full_name,
         mensagem: novaMensagem,
-        lida_por: JSON.stringify([user.id])
+        lida_por: JSON.stringify([user.id]),
       });
 
       // Atualizar última mensagem do canal
       await base44.entities.CanalChat.update(canal.id, {
         ultima_mensagem: novaMensagem.substring(0, 100),
-        ultima_mensagem_data: new Date().toISOString()
+        ultima_mensagem_data: new Date().toISOString(),
       });
 
       setMensagens([...mensagens, msg]);
-      setNovaMensagem('');
+      setNovaMensagem("");
     } catch (error) {
-      console.error('Erro ao enviar mensagem:', error);
+      console.error("Erro ao enviar mensagem:", error);
     } finally {
       setEnviando(false);
     }
   };
 
   const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleEnviar();
     }
@@ -181,15 +181,18 @@ export default function ChatContextual({ tipo, contextoId, contextoNome, empresa
           <div className="space-y-3">
             {mensagens.map((msg, idx) => {
               const isOwn = msg.usuario_email === user.email;
-              const showAvatar = idx === 0 || mensagens[idx - 1].usuario_email !== msg.usuario_email;
+              const showAvatar =
+                idx === 0 || mensagens[idx - 1].usuario_email !== msg.usuario_email;
 
               return (
-                <div key={msg.id} className={`flex gap-2 ${isOwn ? 'flex-row-reverse' : ''}`}>
+                <div key={msg.id} className={`flex gap-2 ${isOwn ? "flex-row-reverse" : ""}`}>
                   {showAvatar ? (
                     <Avatar className="w-8 h-8 flex-shrink-0">
-                      <AvatarFallback className={`text-xs ${
-                        isOwn ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
-                      }`}>
+                      <AvatarFallback
+                        className={`text-xs ${
+                          isOwn ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"
+                        }`}
+                      >
                         {msg.usuario_nome?.substring(0, 2).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
@@ -197,28 +200,26 @@ export default function ChatContextual({ tipo, contextoId, contextoNome, empresa
                     <div className="w-8 flex-shrink-0" />
                   )}
 
-                  <div className={`max-w-[80%] ${isOwn ? 'items-end' : ''}`}>
+                  <div className={`max-w-[80%] ${isOwn ? "items-end" : ""}`}>
                     {showAvatar && (
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-medium text-slate-600">
                           {msg.usuario_nome}
                         </span>
                         <span className="text-xs text-slate-400">
-                          {new Date(msg.created_date).toLocaleTimeString('pt-BR', {
-                            hour: '2-digit',
-                            minute: '2-digit'
+                          {new Date(msg.created_date).toLocaleTimeString("pt-BR", {
+                            hour: "2-digit",
+                            minute: "2-digit",
                           })}
                         </span>
                       </div>
                     )}
-                    <div className={`rounded-lg p-3 ${
-                      isOwn 
-                        ? 'bg-amber-500 text-white' 
-                        : 'bg-slate-100 text-slate-800'
-                    }`}>
-                      <p className="text-sm whitespace-pre-wrap break-words">
-                        {msg.mensagem}
-                      </p>
+                    <div
+                      className={`rounded-lg p-3 ${
+                        isOwn ? "bg-amber-500 text-white" : "bg-slate-100 text-slate-800"
+                      }`}
+                    >
+                      <p className="text-sm whitespace-pre-wrap break-words">{msg.mensagem}</p>
                     </div>
                   </div>
                 </div>
@@ -252,9 +253,7 @@ export default function ChatContextual({ tipo, contextoId, contextoNome, empresa
             <Send className="w-4 h-4" />
           </Button>
         </div>
-        <p className="text-xs text-slate-400">
-          Enter para enviar, Shift+Enter para nova linha
-        </p>
+        <p className="text-xs text-slate-400">Enter para enviar, Shift+Enter para nova linha</p>
       </CardContent>
     </Card>
   );

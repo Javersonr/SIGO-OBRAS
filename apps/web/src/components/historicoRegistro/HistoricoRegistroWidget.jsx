@@ -1,24 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Eye, AlertCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Eye } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 const tipoAcaoColors = {
-  criar: 'bg-green-100 text-green-800',
-  editar: 'bg-blue-100 text-blue-800',
-  deletar: 'bg-red-100 text-red-800',
-  arquivar: 'bg-yellow-100 text-yellow-800',
+  criar: "bg-green-100 text-green-800",
+  editar: "bg-blue-100 text-blue-800",
+  deletar: "bg-red-100 text-red-800",
+  arquivar: "bg-yellow-100 text-yellow-800",
 };
 
-export default function HistoricoRegistroWidget({ entidade, entidadeId, nomeCurto = 'Registro' }) {
+export default function HistoricoRegistroWidget({ entidade, entidadeId, nomeCurto = "Registro" }) {
   const [historico, setHistorico] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedLog, setSelectedLog] = useState(null);
@@ -34,12 +29,12 @@ export default function HistoricoRegistroWidget({ entidade, entidadeId, nomeCurt
     try {
       const logs = await base44.entities.AuditLog.filter(
         { entidade, entidade_id: entidadeId },
-        '-created_date',
+        "-created_date",
         50
       );
       setHistorico(logs);
     } catch (error) {
-      console.error('Erro ao carregar histórico:', error);
+      console.error("Erro ao carregar histórico:", error);
     } finally {
       setLoading(false);
     }
@@ -65,7 +60,7 @@ export default function HistoricoRegistroWidget({ entidade, entidadeId, nomeCurt
     );
   }
 
-  const criacao = historico.find(h => h.tipo_acao === 'criar');
+  const criacao = historico.find((h) => h.tipo_acao === "criar");
   const ultimaModificacao = historico[0];
 
   return (
@@ -83,22 +78,23 @@ export default function HistoricoRegistroWidget({ entidade, entidadeId, nomeCurt
                     ✅ Criado por <span className="text-green-700">{criacao.usuario_nome}</span>
                   </p>
                   <p className="text-xs text-slate-600 mt-0.5">
-                    {new Date(criacao.created_date).toLocaleString('pt-BR')}
+                    {new Date(criacao.created_date).toLocaleString("pt-BR")}
                   </p>
                 </div>
               </div>
             </div>
           )}
 
-          {ultimaModificacao.tipo_acao !== 'criar' && (
+          {ultimaModificacao.tipo_acao !== "criar" && (
             <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
               <div className="flex items-center justify-between">
                 <div className="text-sm">
                   <p className="font-medium text-slate-700">
-                    ✏️ Modificado por <span className="text-blue-700">{ultimaModificacao.usuario_nome}</span>
+                    ✏️ Modificado por{" "}
+                    <span className="text-blue-700">{ultimaModificacao.usuario_nome}</span>
                   </p>
                   <p className="text-xs text-slate-600 mt-0.5">
-                    {new Date(ultimaModificacao.created_date).toLocaleString('pt-BR')}
+                    {new Date(ultimaModificacao.created_date).toLocaleString("pt-BR")}
                   </p>
                 </div>
                 <Button
@@ -135,21 +131,23 @@ export default function HistoricoRegistroWidget({ entidade, entidadeId, nomeCurt
               <div className="space-y-4 py-6">
                 <div>
                   <label className="text-xs text-slate-500 font-medium">Tipo de Ação</label>
-                  <Badge className={tipoAcaoColors[selectedLog.tipo_acao] + ' mt-2'}>
+                  <Badge className={tipoAcaoColors[selectedLog.tipo_acao] + " mt-2"}>
                     {selectedLog.tipo_acao}
                   </Badge>
                 </div>
 
                 <div>
                   <label className="text-xs text-slate-500 font-medium">Usuário</label>
-                  <p className="text-sm font-medium text-slate-800 mt-1">{selectedLog.usuario_nome}</p>
+                  <p className="text-sm font-medium text-slate-800 mt-1">
+                    {selectedLog.usuario_nome}
+                  </p>
                   <p className="text-xs text-slate-600">{selectedLog.usuario_email}</p>
                 </div>
 
                 <div>
                   <label className="text-xs text-slate-500 font-medium">Data/Hora</label>
                   <p className="text-sm text-slate-700 mt-1">
-                    {new Date(selectedLog.created_date).toLocaleString('pt-BR')}
+                    {new Date(selectedLog.created_date).toLocaleString("pt-BR")}
                   </p>
                 </div>
 

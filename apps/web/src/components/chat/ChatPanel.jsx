@@ -1,22 +1,21 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { base44 } from '@/api/base44Client';
-import { MessageSquare, Plus, Search, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import ChannelList from './ChannelList';
-import ChatWindow from './ChatWindow';
-import NovoCanal from './NovoCanal';
+import React, { useState, useEffect, useMemo } from "react";
+import { base44 } from "@/api/base44Client";
+import { MessageSquare, Plus, Search, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import ChatWindow from "./ChatWindow";
+import NovoCanal from "./NovoCanal";
 
 export default function ChatPanel({ open, onOpenChange, empresaAtiva, user }) {
   const [canais, setCanais] = useState([]);
   const [canalSelecionado, setCanalSelecionado] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [showNovoCanal, setShowNovoCanal] = useState(false);
   const [usuariosEmpresa, setUsuariosEmpresa] = useState([]);
-  const [activeTab, setActiveTab] = useState('canais');
+  const [activeTab, setActiveTab] = useState("canais");
 
   useEffect(() => {
     if (open && empresaAtiva?.id && user?.email) {
@@ -28,30 +27,33 @@ export default function ChatPanel({ open, onOpenChange, empresaAtiva, user }) {
     setLoading(true);
     try {
       const [canaisData, usuarios] = await Promise.all([
-        base44.entities.CanalChat.filter({ 
+        base44.entities.CanalChat.filter(
+          {
+            empresa_id: empresaAtiva.id,
+            ativo: true,
+          },
+          "-ultima_mensagem_data"
+        ),
+        base44.entities.UsuarioEmpresa.filter({
           empresa_id: empresaAtiva.id,
-          ativo: true 
-        }, '-ultima_mensagem_data'),
-        base44.entities.UsuarioEmpresa.filter({ 
-          empresa_id: empresaAtiva.id, 
-          ativo: true 
-        })
+          ativo: true,
+        }),
       ]);
 
       // Filtrar apenas canais que o usuário participa
-      const meusCanais = canaisData.filter(canal => {
+      const meusCanais = canaisData.filter((canal) => {
         try {
           const participantes = canal.participantes ? JSON.parse(canal.participantes) : [];
-          return participantes.includes(user.id) || canal.tipo === 'Geral';
+          return participantes.includes(user.id) || canal.tipo === "Geral";
         } catch {
-          return canal.tipo === 'Geral';
+          return canal.tipo === "Geral";
         }
       });
 
       setCanais(meusCanais);
       setUsuariosEmpresa(usuarios);
     } catch (error) {
-      console.error('Erro ao carregar dados:', error);
+      console.error("Erro ao carregar dados:", error);
     } finally {
       setLoading(false);
     }
@@ -62,12 +64,12 @@ export default function ChatPanel({ open, onOpenChange, empresaAtiva, user }) {
     setCanais([canal, ...canais]);
     setCanalSelecionado(canal);
     setShowNovoCanal(false);
-    setActiveTab('conversa');
+    setActiveTab("conversa");
     return canal;
   };
 
-  const filteredCanais = useMemo(() => 
-    canais.filter(canal => canal.nome?.toLowerCase().includes(searchTerm.toLowerCase())),
+  const filteredCanais = useMemo(
+    () => canais.filter((canal) => canal.nome?.toLowerCase().includes(searchTerm.toLowerCase())),
     [canais, searchTerm]
   );
 
@@ -81,11 +83,7 @@ export default function ChatPanel({ open, onOpenChange, empresaAtiva, user }) {
                 <MessageSquare className="w-5 h-5" />
                 Chat
               </SheetTitle>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setShowNovoCanal(true)}
-              >
+              <Button variant="ghost" size="icon" onClick={() => setShowNovoCanal(true)}>
                 <Plus className="w-4 h-4" />
               </Button>
             </div>
@@ -93,7 +91,9 @@ export default function ChatPanel({ open, onOpenChange, empresaAtiva, user }) {
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
             <TabsList className="mx-4 mt-2">
-              <TabsTrigger value="canais" className="flex-1">Canais</TabsTrigger>
+              <TabsTrigger value="canais" className="flex-1">
+                Canais
+              </TabsTrigger>
               <TabsTrigger value="conversa" className="flex-1" disabled={!canalSelecionado}>
                 Conversa
               </TabsTrigger>
@@ -113,12 +113,12 @@ export default function ChatPanel({ open, onOpenChange, empresaAtiva, user }) {
               </div>
 
               <div className="space-y-2">
-                {filteredCanais.map(canal => (
+                {filteredCanais.map((canal) => (
                   <button
                     key={canal.id}
                     onClick={() => {
                       setCanalSelecionado(canal);
-                      setActiveTab('conversa');
+                      setActiveTab("conversa");
                     }}
                     className="w-full p-3 rounded-lg text-left hover:bg-slate-50 border border-slate-200 transition-all"
                   >
@@ -133,9 +133,9 @@ export default function ChatPanel({ open, onOpenChange, empresaAtiva, user }) {
                       </div>
                       {canal.ultima_mensagem_data && (
                         <span className="text-xs text-slate-400">
-                          {new Date(canal.ultima_mensagem_data).toLocaleTimeString('pt-BR', {
-                            hour: '2-digit',
-                            minute: '2-digit'
+                          {new Date(canal.ultima_mensagem_data).toLocaleTimeString("pt-BR", {
+                            hour: "2-digit",
+                            minute: "2-digit",
                           })}
                         </span>
                       )}
@@ -167,14 +167,12 @@ export default function ChatPanel({ open, onOpenChange, empresaAtiva, user }) {
                     <div>
                       <h3 className="font-semibold text-slate-800">{canalSelecionado.nome}</h3>
                       <p className="text-xs text-slate-500">
-                        {canalSelecionado.tipo === 'Direto' ? 'Mensagem direta' : `Canal ${canalSelecionado.tipo}`}
+                        {canalSelecionado.tipo === "Direto"
+                          ? "Mensagem direta"
+                          : `Canal ${canalSelecionado.tipo}`}
                       </p>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setActiveTab('canais')}
-                    >
+                    <Button variant="ghost" size="icon" onClick={() => setActiveTab("canais")}>
                       <X className="w-4 h-4" />
                     </Button>
                   </div>

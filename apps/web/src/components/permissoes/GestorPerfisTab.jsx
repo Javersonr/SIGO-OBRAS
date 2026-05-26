@@ -1,30 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Plus, Edit, Trash2, Copy } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import PermissoesGranularesEditor from '@/components/shared/PermissoesGranularesEditor';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { Plus, Edit, Trash2, Copy } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import PermissoesGranularesEditor from "@/components/shared/PermissoesGranularesEditor";
 
 export default function GestorPerfisTab({ empresaAtiva, user }) {
   const [perfis, setPerfis] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingPerfil, setEditingPerfil] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [formData, setFormData] = useState({
-    nome: '',
-    descricao: '',
+    nome: "",
+    descricao: "",
     permissoes_json: {},
   });
 
@@ -37,11 +30,11 @@ export default function GestorPerfisTab({ empresaAtiva, user }) {
     setLoading(true);
     try {
       const dados = await base44.entities.PerfilPermissao.filter({
-        empresa_id: empresaAtiva.id
+        empresa_id: empresaAtiva.id,
       });
       setPerfis(dados);
     } catch (error) {
-      console.error('Erro ao carregar perfis:', error);
+      console.error("Erro ao carregar perfis:", error);
     } finally {
       setLoading(false);
     }
@@ -52,14 +45,14 @@ export default function GestorPerfisTab({ empresaAtiva, user }) {
       setEditingPerfil(perfil);
       setFormData({
         nome: perfil.nome,
-        descricao: perfil.descricao || '',
+        descricao: perfil.descricao || "",
         permissoes_json: perfil.permissoes_json ? JSON.parse(perfil.permissoes_json) : {},
       });
     } else {
       setEditingPerfil(null);
       setFormData({
-        nome: '',
-        descricao: '',
+        nome: "",
+        descricao: "",
         permissoes_json: {},
       });
     }
@@ -75,7 +68,7 @@ export default function GestorPerfisTab({ empresaAtiva, user }) {
         nome: formData.nome,
         descricao: formData.descricao,
         permissoes_json: JSON.stringify(formData.permissoes_json),
-        tipo: 'Customizado',
+        tipo: "Customizado",
         modificado_por: user?.email,
       };
 
@@ -89,18 +82,18 @@ export default function GestorPerfisTab({ empresaAtiva, user }) {
       setShowModal(false);
       await loadPerfis();
     } catch (error) {
-      console.error('Erro ao salvar perfil:', error);
-      alert('Erro ao salvar perfil');
+      console.error("Erro ao salvar perfil:", error);
+      alert("Erro ao salvar perfil");
     }
   };
 
   const handleDelete = async (perfil) => {
-    if (!confirm('Excluir este perfil?')) return;
+    if (!confirm("Excluir este perfil?")) return;
     try {
       await base44.entities.PerfilPermissao.delete(perfil.id);
       await loadPerfis();
     } catch (error) {
-      console.error('Erro ao deletar:', error);
+      console.error("Erro ao deletar:", error);
     }
   };
 
@@ -111,18 +104,19 @@ export default function GestorPerfisTab({ empresaAtiva, user }) {
         nome: `${perfil.nome} (cópia)`,
         descricao: perfil.descricao,
         permissoes_json: perfil.permissoes_json,
-        tipo: 'Customizado',
+        tipo: "Customizado",
         criado_por: user?.email,
       });
       await loadPerfis();
     } catch (error) {
-      console.error('Erro ao duplicar:', error);
+      console.error("Erro ao duplicar:", error);
     }
   };
 
-  const filteredPerfis = perfis.filter(p =>
-    p.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.descricao?.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredPerfis = perfis.filter(
+    (p) =>
+      p.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.descricao?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (loading) return <div className="text-center py-12">Carregando perfis...</div>;
@@ -150,7 +144,7 @@ export default function GestorPerfisTab({ empresaAtiva, user }) {
             </CardContent>
           </Card>
         ) : (
-          filteredPerfis.map(perfil => (
+          filteredPerfis.map((perfil) => (
             <Card key={perfil.id} className="hover:shadow-md transition-all">
               <CardContent className="p-6">
                 <div className="flex items-start justify-between">
@@ -161,31 +155,17 @@ export default function GestorPerfisTab({ empresaAtiva, user }) {
                     )}
                     <div className="text-xs text-slate-500 mt-3 space-y-1">
                       <p>👤 Criado por: {perfil.criado_por}</p>
-                      {perfil.modificado_por && (
-                        <p>✏️ Modificado por: {perfil.modificado_por}</p>
-                      )}
+                      {perfil.modificado_por && <p>✏️ Modificado por: {perfil.modificado_por}</p>}
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDuplicate(perfil)}
-                    >
+                    <Button variant="ghost" size="icon" onClick={() => handleDuplicate(perfil)}>
                       <Copy className="w-4 h-4" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleOpenModal(perfil)}
-                    >
+                    <Button variant="ghost" size="icon" onClick={() => handleOpenModal(perfil)}>
                       <Edit className="w-4 h-4" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDelete(perfil)}
-                    >
+                    <Button variant="ghost" size="icon" onClick={() => handleDelete(perfil)}>
                       <Trash2 className="w-4 h-4 text-red-500" />
                     </Button>
                   </div>
@@ -199,9 +179,7 @@ export default function GestorPerfisTab({ empresaAtiva, user }) {
       <Sheet open={showModal} onOpenChange={setShowModal}>
         <SheetContent className="overflow-y-auto max-w-2xl">
           <SheetHeader>
-            <SheetTitle>
-              {editingPerfil ? 'Editar Perfil' : 'Novo Perfil'}
-            </SheetTitle>
+            <SheetTitle>{editingPerfil ? "Editar Perfil" : "Novo Perfil"}</SheetTitle>
           </SheetHeader>
 
           <div className="space-y-6 py-6">
@@ -230,7 +208,7 @@ export default function GestorPerfisTab({ empresaAtiva, user }) {
               <Label className="mb-3 block">Permissões por Módulo</Label>
               <PermissoesGranularesEditor
                 permissoes={formData.permissoes_json}
-                onPermissoesChange={(novasPermissoes) => 
+                onPermissoesChange={(novasPermissoes) =>
                   setFormData({ ...formData, permissoes_json: novasPermissoes })
                 }
               />
@@ -240,7 +218,7 @@ export default function GestorPerfisTab({ empresaAtiva, user }) {
               <Button variant="outline" onClick={() => setShowModal(false)}>
                 Cancelar
               </Button>
-              <Button 
+              <Button
                 onClick={handleSave}
                 disabled={!formData.nome}
                 className="bg-amber-500 hover:bg-amber-600"

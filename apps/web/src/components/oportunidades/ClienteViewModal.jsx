@@ -1,51 +1,45 @@
-import React, { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Badge } from '@/components/ui/badge';
-import { Mail, Copy, Calendar, Eye, Send, CheckCircle2, DollarSign } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import React, { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Copy, Calendar, Eye, Send, CheckCircle2, DollarSign } from "lucide-react";
+import { base44 } from "@/api/base44Client";
 
-export default function ClienteViewModal({ 
-  open, 
-  onOpenChange, 
-  oportunidade,
-  empresaAtiva 
-}) {
-  const [emailCliente, setEmailCliente] = useState('');
+export default function ClienteViewModal({ open, onOpenChange, oportunidade, empresaAtiva }) {
+  const [emailCliente, setEmailCliente] = useState("");
   const [abasLiberadas, setAbasLiberadas] = useState({
     orcamento: true,
-    obra: true
+    obra: true,
   });
   const [enviando, setEnviando] = useState(false);
-  const [linkGerado, setLinkGerado] = useState('');
+  const [linkGerado, setLinkGerado] = useState("");
   const [enviado, setEnviado] = useState(false);
 
   const handleGerarLink = async () => {
     if (!emailCliente || !oportunidade) return;
-    
+
     setEnviando(true);
     try {
       const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
       const expiraEm = new Date();
       expiraEm.setDate(expiraEm.getDate() + 30);
-      
+
       await base44.entities.TokenClienteOportunidade.create({
         empresa_id: empresaAtiva.id,
         oportunidade_id: oportunidade.id,
         token: token,
         email_cliente: emailCliente,
-        expira_em: expiraEm.toISOString().split('T')[0],
+        expira_em: expiraEm.toISOString().split("T")[0],
         abas_liberadas: JSON.stringify(abasLiberadas),
-        ativo: true
+        ativo: true,
       });
-      
+
       const linkCompleto = `${window.location.origin}${window.location.pathname}#/ClientePortal?token=${token}`;
       setLinkGerado(linkCompleto);
     } catch (error) {
-      console.error('Erro ao gerar link:', error);
-      alert('Erro ao gerar link');
+      console.error("Erro ao gerar link:", error);
+      alert("Erro ao gerar link");
     } finally {
       setEnviando(false);
     }
@@ -53,7 +47,7 @@ export default function ClienteViewModal({
 
   const handleEnviarEmail = async () => {
     if (!linkGerado || !emailCliente) return;
-    
+
     setEnviando(true);
     try {
       await base44.integrations.Core.SendEmail({
@@ -67,19 +61,19 @@ export default function ClienteViewModal({
           <p style="color: #666; font-size: 12px;">Este link expira em 30 dias.</p>
           <br>
           <p>Atenciosamente,<br>${empresaAtiva.nome}</p>
-        `
+        `,
       });
-      
+
       setEnviado(true);
       setTimeout(() => {
         setEnviado(false);
         onOpenChange(false);
-        setLinkGerado('');
-        setEmailCliente('');
+        setLinkGerado("");
+        setEmailCliente("");
       }, 2000);
     } catch (error) {
-      console.error('Erro ao enviar email:', error);
-      alert('Erro ao enviar email');
+      console.error("Erro ao enviar email:", error);
+      alert("Erro ao enviar email");
     } finally {
       setEnviando(false);
     }
@@ -87,19 +81,23 @@ export default function ClienteViewModal({
 
   const handleCopiarLink = () => {
     navigator.clipboard.writeText(linkGerado);
-    alert('Link copiado!');
+    alert("Link copiado!");
   };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-3/4 sm:max-w-sm lg:left-64 lg:w-[calc(100%-256px)] h-full overflow-y-auto">
+      <SheetContent
+        side="right"
+        className="w-3/4 sm:max-w-sm lg:left-64 lg:w-[calc(100%-256px)] h-full overflow-y-auto"
+      >
         <SheetHeader>
           <SheetTitle>Compartilhar com Cliente</SheetTitle>
         </SheetHeader>
         <div className="space-y-6 py-6">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <p className="text-sm text-blue-800">
-              Gere um link seguro para que o cliente possa acompanhar o orçamento e cronograma da obra em tempo real.
+              Gere um link seguro para que o cliente possa acompanhar o orçamento e cronograma da
+              obra em tempo real.
             </p>
           </div>
 
@@ -132,7 +130,9 @@ export default function ClienteViewModal({
                     <input
                       type="checkbox"
                       checked={abasLiberadas.orcamento}
-                      onChange={(e) => setAbasLiberadas({ ...abasLiberadas, orcamento: e.target.checked })}
+                      onChange={(e) =>
+                        setAbasLiberadas({ ...abasLiberadas, orcamento: e.target.checked })
+                      }
                       className="w-4 h-4 text-teal-600 rounded border-slate-300"
                     />
                   </div>
@@ -150,20 +150,22 @@ export default function ClienteViewModal({
                     <input
                       type="checkbox"
                       checked={abasLiberadas.obra}
-                      onChange={(e) => setAbasLiberadas({ ...abasLiberadas, obra: e.target.checked })}
+                      onChange={(e) =>
+                        setAbasLiberadas({ ...abasLiberadas, obra: e.target.checked })
+                      }
                       className="w-4 h-4 text-teal-600 rounded border-slate-300"
                     />
                   </div>
                 </div>
               </div>
 
-              <Button 
+              <Button
                 onClick={handleGerarLink}
                 disabled={enviando || !emailCliente}
                 className="w-full bg-blue-600 hover:bg-blue-700 gap-2"
               >
                 <Eye className="w-4 h-4" />
-                {enviando ? 'Gerando...' : 'Gerar Link de Acesso'}
+                {enviando ? "Gerando..." : "Gerar Link de Acesso"}
               </Button>
             </>
           ) : (
@@ -174,18 +176,15 @@ export default function ClienteViewModal({
                   <p className="font-medium text-green-800">Link gerado com sucesso!</p>
                 </div>
                 <p className="text-sm text-green-700">
-                  Válido até {new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR')}
+                  Válido até{" "}
+                  {new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString("pt-BR")}
                 </p>
               </div>
 
               <div>
                 <Label>Link de Acesso</Label>
                 <div className="flex gap-2 mt-1.5">
-                  <Input
-                    value={linkGerado}
-                    readOnly
-                    className="font-mono text-xs"
-                  />
+                  <Input value={linkGerado} readOnly className="font-mono text-xs" />
                   <Button onClick={handleCopiarLink} variant="outline" size="icon">
                     <Copy className="w-4 h-4" />
                   </Button>
@@ -193,13 +192,13 @@ export default function ClienteViewModal({
               </div>
 
               {!enviado ? (
-                <Button 
+                <Button
                   onClick={handleEnviarEmail}
                   disabled={enviando}
                   className="w-full bg-green-600 hover:bg-green-700 gap-2"
                 >
                   <Send className="w-4 h-4" />
-                  {enviando ? 'Enviando...' : `Enviar por Email para ${emailCliente}`}
+                  {enviando ? "Enviando..." : `Enviar por Email para ${emailCliente}`}
                 </Button>
               ) : (
                 <div className="bg-green-100 border border-green-300 rounded-lg p-4 text-center">
@@ -208,11 +207,11 @@ export default function ClienteViewModal({
                 </div>
               )}
 
-              <Button 
+              <Button
                 variant="outline"
                 onClick={() => {
-                  setLinkGerado('');
-                  setEmailCliente('');
+                  setLinkGerado("");
+                  setEmailCliente("");
                 }}
                 className="w-full"
               >

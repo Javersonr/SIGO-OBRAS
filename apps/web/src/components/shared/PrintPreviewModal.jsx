@@ -1,19 +1,19 @@
-import React, { useRef, useState } from 'react';
-import { Button } from '../ui/button';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../ui/sheet';
-import { Download } from 'lucide-react';
+import React, { useRef } from "react";
+import { Button } from "../ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../ui/sheet";
+import { Download } from "lucide-react";
 
-export default function PrintPreviewModal({ 
-  open, 
-  onOpenChange, 
+export default function PrintPreviewModal({
+  open,
+  onOpenChange,
   contentId,
-  title = "Visualização de Impressão"
+  title = "Visualização de Impressão",
 }) {
   const printRef = useRef(null);
 
   const handleImprimir = () => {
     const printContent = document.getElementById(contentId);
-    const printWindow = window.open('', '', 'height=800,width=1200');
+    const printWindow = window.open("", "", "height=800,width=1200");
 
     printWindow.document.write(`
       <html>
@@ -67,7 +67,7 @@ export default function PrintPreviewModal({
         printWindow.close();
       }, 500);
     } else {
-      Array.from(images).forEach(img => {
+      Array.from(images).forEach((img) => {
         if (img.complete) {
           loadedImages++;
         } else {
@@ -110,33 +110,32 @@ export default function PrintPreviewModal({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="h-full overflow-hidden p-0 flex flex-row" style={{ inset: 'auto 0 0 256px', width: 'calc(100% - 256px)', maxWidth: 'none' }}>
+      <SheetContent
+        side="right"
+        className="h-full overflow-hidden p-0 flex flex-row"
+        style={{ inset: "auto 0 0 256px", width: "calc(100% - 256px)", maxWidth: "none" }}
+      >
         <div className="flex-1 flex flex-col overflow-hidden">
           <SheetHeader className="px-6 py-4 border-b flex flex-row items-center justify-between sticky top-0 bg-white">
             <SheetTitle>{title}</SheetTitle>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={handleImprimir}
-              className="gap-2"
-            >
+            <Button variant="outline" size="sm" onClick={handleImprimir} className="gap-2">
               <Download className="w-4 h-4" />
               Imprimir
             </Button>
           </SheetHeader>
 
           <div className="flex-1 overflow-auto p-6">
-            <div 
+            <div
               id={contentId}
-              ref={printRef} 
+              ref={printRef}
               className="bg-white"
-              style={{ 
-                fontFamily: 'Arial, sans-serif',
-                width: '210mm',
-                margin: '20px auto',
-                padding: '20mm 18mm 20mm 5mm',
-                backgroundColor: 'white',
-                boxSizing: 'border-box'
+              style={{
+                fontFamily: "Arial, sans-serif",
+                width: "210mm",
+                margin: "20px auto",
+                padding: "20mm 18mm 20mm 5mm",
+                backgroundColor: "white",
+                boxSizing: "border-box",
               }}
             />
           </div>

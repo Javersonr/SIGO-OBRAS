@@ -1,35 +1,34 @@
-import React, { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ChevronLeft, Download, Printer, X } from 'lucide-react';
-import AnexoViewer from '@/components/shared/AnexoViewer';
-import { gerarRelatorioDiarioPDF, imprimirDiario } from './RelatorioPDFDiario';
+import React, { useState } from "react";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Printer } from "lucide-react";
+import AnexoViewer from "@/components/shared/AnexoViewer";
+import { gerarRelatorioDiarioPDF } from "./RelatorioPDFDiario";
 
 export default function VisualizarDiarioModal({ diario, open, onOpenChange, empresaAtiva }) {
   const [anexoViewer, setAnexoViewer] = useState({ open: false, anexo: null });
 
   const handlePrint = () => {
-    const dataFormatada = new Date(diario.data).toLocaleDateString('pt-BR');
-    const diaS = new Date(diario.data).toLocaleDateString('pt-BR', { weekday: 'long' });
+    const dataFormatada = new Date(diario.data).toLocaleDateString("pt-BR");
+    const diaS = new Date(diario.data).toLocaleDateString("pt-BR", { weekday: "long" });
 
-    let maoDeObraHTML = '';
+    let maoDeObraHTML = "";
     if (maoDeObraData.length > 0) {
       maoDeObraHTML = `
         <tr><td colspan="2" style="background:#fbbf24;font-weight:bold;padding:6px 10px;border:1px solid #ccc;">Mão de Obra Utilizada (${maoDeObraData.length})</td></tr>
         <tr><th style="background:#f3f4f6;border:1px solid #ccc;padding:6px 10px;text-align:left;">Função</th><th style="background:#f3f4f6;border:1px solid #ccc;padding:6px 10px;text-align:center;">Quantidade</th></tr>
-        ${maoDeObraData.map(m => `<tr><td style="border:1px solid #ccc;padding:6px 10px;">${m.nome}</td><td style="border:1px solid #ccc;padding:6px 10px;text-align:center;">${m.quantidade}</td></tr>`).join('')}
+        ${maoDeObraData.map((m) => `<tr><td style="border:1px solid #ccc;padding:6px 10px;">${m.nome}</td><td style="border:1px solid #ccc;padding:6px 10px;text-align:center;">${m.quantidade}</td></tr>`).join("")}
       `;
     }
 
-    let fotosHTML = '';
+    let fotosHTML = "";
     if (fotosData.length > 0) {
       fotosHTML = `
         <tr><td colspan="2" style="background:#fbbf24;font-weight:bold;padding:6px 10px;border:1px solid #ccc;">Fotos (${fotosData.length})</td></tr>
         <tr><td colspan="2" style="border:1px solid #ccc;padding:10px;">
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-            ${fotosData.map((foto, idx) => `<div style="page-break-inside:avoid;"><img src="${foto}" alt="Foto ${idx+1}" style="width:100%;height:auto;display:block;border:1px solid #ddd;border-radius:4px;" /></div>`).join('')}
+            ${fotosData.map((foto, idx) => `<div style="page-break-inside:avoid;"><img src="${foto}" alt="Foto ${idx + 1}" style="width:100%;height:auto;display:block;border:1px solid #ddd;border-radius:4px;" /></div>`).join("")}
           </div>
         </td></tr>
       `;
@@ -37,7 +36,7 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
 
     const logoHTML = empresaAtiva?.logo_url
       ? `<img src="${empresaAtiva.logo_url}" alt="Logo" style="max-height:80px;max-width:200px;" />`
-      : `<div style="font-size:22px;font-weight:bold;color:#1e3a8a;">${empresaAtiva?.nome_fantasia || empresaAtiva?.nome || ''}</div>`;
+      : `<div style="font-size:22px;font-weight:bold;color:#1e3a8a;">${empresaAtiva?.nome_fantasia || empresaAtiva?.nome || ""}</div>`;
 
     const html = `<!DOCTYPE html>
 <html>
@@ -77,18 +76,18 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
                 <tr><td class="label" style="width:45%;border:1px solid #ccc;">Relatório nº</td><td style="border:1px solid #ccc;">1</td></tr>
                 <tr><td class="label" style="border:1px solid #ccc;">Data do relatório</td><td style="color:#2563eb;border:1px solid #ccc;">${dataFormatada}</td></tr>
                 <tr><td class="label" style="border:1px solid #ccc;">Dia da semana</td><td style="color:#2563eb;border:1px solid #ccc;">${diaS}</td></tr>
-                <tr><td class="label" style="border:1px solid #ccc;">Contrato</td><td style="border:1px solid #ccc;">${diario.numero_contrato || '-'}</td></tr>
+                <tr><td class="label" style="border:1px solid #ccc;">Contrato</td><td style="border:1px solid #ccc;">${diario.numero_contrato || "-"}</td></tr>
                 <tr><td class="label" style="border:1px solid #ccc;">Prazo contratual</td><td style="border:1px solid #ccc;">-</td></tr>
-                <tr><td class="label" style="border:1px solid #ccc;">Prazo decorrido</td><td style="border:1px solid #ccc;">${diario.prazo_decorrido || '-'}</td></tr>
+                <tr><td class="label" style="border:1px solid #ccc;">Prazo decorrido</td><td style="border:1px solid #ccc;">${diario.prazo_decorrido || "-"}</td></tr>
                 <tr><td class="label" style="border:1px solid #ccc;">Prazo à vencer</td><td style="border:1px solid #ccc;">-</td></tr>
               </table>
             </td>
           </tr>
         </table>
         <table style="margin-bottom:8px;">
-          <tr><td class="label" style="width:22%;">Obra</td><td style="color:#2563eb;">${diario.obra_nome || '-'}</td></tr>
-          <tr><td class="label">Local</td><td style="color:#2563eb;">${diario.obra_local || '-'}</td></tr>
-          <tr><td class="label">Contratante</td><td>${diario.contratante_nome || '-'}</td></tr>
+          <tr><td class="label" style="width:22%;">Obra</td><td style="color:#2563eb;">${diario.obra_nome || "-"}</td></tr>
+          <tr><td class="label">Local</td><td style="color:#2563eb;">${diario.obra_local || "-"}</td></tr>
+          <tr><td class="label">Contratante</td><td>${diario.contratante_nome || "-"}</td></tr>
         </table>
         <table style="margin-bottom:8px;">
           <tr>
@@ -98,13 +97,13 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
           </tr>
           <tr>
             <td>Manhã</td>
-            <td>★ ${diario.clima_manha || diario.clima || 'Sol'}</td>
-            <td>${diario.condicao_manha || 'Praticável'}</td>
+            <td>★ ${diario.clima_manha || diario.clima || "Sol"}</td>
+            <td>${diario.condicao_manha || "Praticável"}</td>
           </tr>
           <tr>
             <td>Tarde</td>
-            <td>★ ${diario.clima_tarde || diario.clima || 'Sol'}</td>
-            <td>${diario.condicao_tarde || 'Praticável'}</td>
+            <td>★ ${diario.clima_tarde || diario.clima || "Sol"}</td>
+            <td>${diario.condicao_tarde || "Praticável"}</td>
           </tr>
         </table>
       </td>
@@ -117,29 +116,43 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
         <!-- Atividades -->
         <table style="margin-bottom:8px;" class="no-break">
           <tr><td class="amber">Atividades Realizadas</td></tr>
-          <tr><td style="white-space:pre-wrap;line-height:1.6;padding:8px;">${diario.atividades || '-'}</td></tr>
+          <tr><td style="white-space:pre-wrap;line-height:1.6;padding:8px;">${diario.atividades || "-"}</td></tr>
         </table>
 
-        ${diario.observacoes ? `
+        ${
+          diario.observacoes
+            ? `
         <table style="margin-bottom:8px;" class="no-break">
           <tr><td class="amber">Observações</td></tr>
           <tr><td style="padding:8px;">${diario.observacoes}</td></tr>
-        </table>` : ''}
+        </table>`
+            : ""
+        }
 
-        ${diario.problemas ? `
+        ${
+          diario.problemas
+            ? `
         <table style="margin-bottom:8px;" class="no-break">
           <tr><td class="red-header">Problemas / Ocorrências</td></tr>
           <tr><td style="padding:8px;color:#7f1d1d;">${diario.problemas}</td></tr>
-        </table>` : ''}
+        </table>`
+            : ""
+        }
 
-        ${maoDeObraData.length > 0 ? `
+        ${
+          maoDeObraData.length > 0
+            ? `
         <table style="margin-bottom:8px;" class="no-break">
           <tr><td colspan="2" class="amber">Mão de Obra Utilizada (${maoDeObraData.length})</td></tr>
           <tr><th class="label">Função</th><th class="label" style="text-align:center;">Quantidade</th></tr>
-          ${maoDeObraData.map(m => `<tr><td>${m.nome}</td><td style="text-align:center;">${m.quantidade}</td></tr>`).join('')}
-        </table>` : ''}
+          ${maoDeObraData.map((m) => `<tr><td>${m.nome}</td><td style="text-align:center;">${m.quantidade}</td></tr>`).join("")}
+        </table>`
+            : ""
+        }
 
-        ${fotosData.length > 0 ? `
+        ${
+          fotosData.length > 0
+            ? `
         <table style="margin-bottom:8px;width:100%;border-collapse:collapse;">
           <thead>
             <tr><th class="amber" style="text-align:left;padding:5px 8px;border:1px solid #ccc;">Fotos (${fotosData.length})</th></tr>
@@ -153,25 +166,27 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
                 const f2 = fotosData[i + 1];
                 rows.push(`<tr style="page-break-inside:avoid;">
                   <td style="border:1px solid #ccc;padding:6px;vertical-align:top;">
-                    <img src="${f1}" alt="Foto ${i+1}" style="width:80%;height:auto;display:block;border:1px solid #ddd;border-radius:4px;" />
+                    <img src="${f1}" alt="Foto ${i + 1}" style="width:80%;height:auto;display:block;border:1px solid #ddd;border-radius:4px;" />
                   </td>
                   <td style="border:1px solid #ccc;padding:6px;vertical-align:top;width:50%;">
-                    ${f2 ? `<img src="${f2}" alt="Foto ${i+2}" style="width:80%;height:auto;display:block;border:1px solid #ddd;border-radius:4px;" />` : ''}
+                    ${f2 ? `<img src="${f2}" alt="Foto ${i + 2}" style="width:80%;height:auto;display:block;border:1px solid #ddd;border-radius:4px;" />` : ""}
                   </td>
                 </tr>`);
               }
-              return rows.join('');
+              return rows.join("");
             })()}
           </tbody>
-        </table>` : ''}
+        </table>`
+            : ""
+        }
 
         <!-- Assinatura -->
         <div style="margin-top:24px;text-align:center;">
           <div style="border-top:2px solid #333;width:180px;margin:0 auto 6px;"></div>
-          <div style="font-size:10px;color:#555;">${diario.responsavel || 'Responsável pela Obra'}</div>
+          <div style="font-size:10px;color:#555;">${diario.responsavel || "Responsável pela Obra"}</div>
         </div>
         <div style="margin-top:14px;padding-top:8px;border-top:1px solid #ccc;font-size:10px;color:#888;">
-          Criado por: ${diario.created_by || '-'} | ${new Date(diario.created_date).toLocaleDateString('pt-BR')}
+          Criado por: ${diario.created_by || "-"} | ${new Date(diario.created_date).toLocaleDateString("pt-BR")}
         </div>
 
       </td>
@@ -182,10 +197,12 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
 </body>
 </html>`;
 
-    const janela = window.open('', '_blank');
+    const janela = window.open("", "_blank");
     janela.document.write(html);
     janela.document.close();
-    setTimeout(() => { janela.print(); }, 800);
+    setTimeout(() => {
+      janela.print();
+    }, 800);
   };
   const handleExportPDF = () => gerarRelatorioDiarioPDF(diario, empresaAtiva);
 
@@ -197,14 +214,16 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
       const parsed = JSON.parse(diario.mao_de_obra);
       if (Array.isArray(parsed)) maoDeObraData.push(...parsed);
     }
-  } catch (e) { console.error('Erro ao parsear mao_de_obra', e); }
+  } catch (e) {
+    console.error("Erro ao parsear mao_de_obra", e);
+  }
 
   const fotosData = diario.fotos ? JSON.parse(diario.fotos) : [];
 
-  const dataFormatada = new Date(diario.data).toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
+  const dataFormatada = new Date(diario.data).toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
   });
 
   return (
@@ -214,7 +233,7 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
         <div className="bg-white">
           {/* Cabeçalho Navegação - Apenas Imprimir */}
           <div className="flex items-center justify-between p-4 border-b border-slate-300 bg-slate-50">
-            <button 
+            <button
               onClick={() => onOpenChange(false)}
               className="text-slate-700 text-sm font-medium"
             >
@@ -252,35 +271,53 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
                 <table className="w-full border-collapse text-sm">
                   <tbody>
                     <tr>
-                      <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100 w-1/2">Relatório nº</td>
+                      <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100 w-1/2">
+                        Relatório nº
+                      </td>
                       <td className="border border-slate-300 px-3 py-2">1</td>
                     </tr>
                     <tr>
-                      <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100">Data do relatório</td>
+                      <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100">
+                        Data do relatório
+                      </td>
                       <td className="border border-slate-300 px-3 py-2">{dataFormatada}</td>
                     </tr>
                     <tr>
-                      <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100">Dia da semana</td>
+                      <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100">
+                        Dia da semana
+                      </td>
                       <td className="border border-slate-300 px-3 py-2">
-                        {new Date(diario.data).toLocaleDateString('pt-BR', { weekday: 'long' })}
+                        {new Date(diario.data).toLocaleDateString("pt-BR", { weekday: "long" })}
                       </td>
                     </tr>
                     <tr>
-                       <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100">Contrato</td>
-                       <td className="border border-slate-300 px-3 py-2">{diario.numero_contrato || '-'}</td>
-                     </tr>
-                     <tr>
-                       <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100">Prazo contratual</td>
-                       <td className="border border-slate-300 px-3 py-2">-</td>
-                     </tr>
-                     <tr>
-                       <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100">Prazo decorrido</td>
-                       <td className="border border-slate-300 px-3 py-2">{diario.prazo_decorrido || '-'}</td>
-                     </tr>
-                     <tr>
-                       <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100">Prazo à vencer</td>
-                       <td className="border border-slate-300 px-3 py-2">-</td>
-                     </tr>
+                      <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100">
+                        Contrato
+                      </td>
+                      <td className="border border-slate-300 px-3 py-2">
+                        {diario.numero_contrato || "-"}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100">
+                        Prazo contratual
+                      </td>
+                      <td className="border border-slate-300 px-3 py-2">-</td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100">
+                        Prazo decorrido
+                      </td>
+                      <td className="border border-slate-300 px-3 py-2">
+                        {diario.prazo_decorrido || "-"}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100">
+                        Prazo à vencer
+                      </td>
+                      <td className="border border-slate-300 px-3 py-2">-</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -290,17 +327,27 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
             <table className="w-full border-collapse text-sm mb-6">
               <tbody>
                 <tr>
-                  <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100 w-24">Obra</td>
-                  <td className="border border-slate-300 px-3 py-2 flex-1">{diario.obra_nome || '-'}</td>
+                  <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100 w-24">
+                    Obra
+                  </td>
+                  <td className="border border-slate-300 px-3 py-2 flex-1">
+                    {diario.obra_nome || "-"}
+                  </td>
                 </tr>
                 <tr>
-                  <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100">Local</td>
-                  <td className="border border-slate-300 px-3 py-2">{diario.obra_local || '-'}</td>
+                  <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100">
+                    Local
+                  </td>
+                  <td className="border border-slate-300 px-3 py-2">{diario.obra_local || "-"}</td>
                 </tr>
                 <tr>
-                   <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100 w-24">Contratante</td>
-                   <td className="border border-slate-300 px-3 py-2 flex-1">{diario.contratante_nome || '-'}</td>
-                 </tr>
+                  <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100 w-24">
+                    Contratante
+                  </td>
+                  <td className="border border-slate-300 px-3 py-2 flex-1">
+                    {diario.contratante_nome || "-"}
+                  </td>
+                </tr>
               </tbody>
             </table>
 
@@ -308,34 +355,40 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
             <table className="w-full border-collapse text-sm mb-6">
               <tbody>
                 <tr>
-                  <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100 w-1/3">Condição climática</td>
-                  <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100 w-1/3">Tempo</td>
-                  <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100 w-1/3">Condição</td>
+                  <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100 w-1/3">
+                    Condição climática
+                  </td>
+                  <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100 w-1/3">
+                    Tempo
+                  </td>
+                  <td className="border border-slate-300 px-3 py-2 font-semibold bg-slate-100 w-1/3">
+                    Condição
+                  </td>
                 </tr>
                 <tr>
                   <td className="border border-slate-300 px-3 py-2">Manhã</td>
-                  <td className="border border-slate-300 px-3 py-2">★ {diario.clima || 'Sol'}</td>
+                  <td className="border border-slate-300 px-3 py-2">★ {diario.clima || "Sol"}</td>
                   <td className="border border-slate-300 px-3 py-2">Praticável</td>
                 </tr>
                 <tr>
                   <td className="border border-slate-300 px-3 py-2">Tarde</td>
-                  <td className="border border-slate-300 px-3 py-2">★ {diario.clima || 'Sol'}</td>
+                  <td className="border border-slate-300 px-3 py-2">★ {diario.clima || "Sol"}</td>
                   <td className="border border-slate-300 px-3 py-2">Praticável</td>
                 </tr>
               </tbody>
             </table>
 
-              {/* Seção de Atividades */}
+            {/* Seção de Atividades */}
             <div className="mb-6">
-            <div className="bg-amber-400 text-slate-800 px-3 py-1 font-bold text-sm inline-block mb-3 rounded">
-              Atividades Realizadas
+              <div className="bg-amber-400 text-slate-800 px-3 py-1 font-bold text-sm inline-block mb-3 rounded">
+                Atividades Realizadas
+              </div>
+              <div className="bg-slate-50 border border-slate-200 rounded p-4 min-h-32">
+                <p className="text-slate-800 whitespace-pre-wrap text-sm leading-relaxed">
+                  {diario.atividades}
+                </p>
+              </div>
             </div>
-            <div className="bg-slate-50 border border-slate-200 rounded p-4 min-h-32">
-              <p className="text-slate-800 whitespace-pre-wrap text-sm leading-relaxed">
-                {diario.atividades}
-              </p>
-            </div>
-          </div>
 
             {/* Observações */}
             {diario.observacoes && (
@@ -370,15 +423,21 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-slate-100">
-                      <th className="border border-slate-300 px-3 py-2 text-left text-xs font-semibold">Função</th>
-                      <th className="border border-slate-300 px-3 py-2 text-center text-xs font-semibold">Quantidade</th>
+                      <th className="border border-slate-300 px-3 py-2 text-left text-xs font-semibold">
+                        Função
+                      </th>
+                      <th className="border border-slate-300 px-3 py-2 text-center text-xs font-semibold">
+                        Quantidade
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {maoDeObraData.map((m, index) => (
                       <tr key={index} className="hover:bg-slate-50">
                         <td className="border border-slate-300 px-3 py-2 text-sm">{m.nome}</td>
-                        <td className="border border-slate-300 px-3 py-2 text-center text-sm">{m.quantidade}</td>
+                        <td className="border border-slate-300 px-3 py-2 text-center text-sm">
+                          {m.quantidade}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -397,7 +456,12 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
                     <div
                       key={index}
                       className="aspect-square overflow-hidden rounded border border-slate-300 cursor-pointer hover:border-amber-500 transition-colors"
-                      onClick={() => setAnexoViewer({ open: true, anexo: { url: foto, nome: `Foto ${index + 1}`, tipo: 'image' } })}
+                      onClick={() =>
+                        setAnexoViewer({
+                          open: true,
+                          anexo: { url: foto, nome: `Foto ${index + 1}`, tipo: "image" },
+                        })
+                      }
                     >
                       <img
                         src={foto}
@@ -415,25 +479,28 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
               <div className="flex justify-center">
                 <div className="text-center">
                   <div className="border-t-2 border-slate-800 w-48 mb-2"></div>
-                  <p className="text-xs text-slate-600 font-medium">{diario.responsavel || 'Responsável pela Obra'}</p>
+                  <p className="text-xs text-slate-600 font-medium">
+                    {diario.responsavel || "Responsável pela Obra"}
+                  </p>
                 </div>
               </div>
             </div>
 
             {/* Rodapé */}
-              <div className="border-t-2 border-slate-300 mt-8 pt-6 flex justify-between items-center">
-                <div className="text-xs text-slate-500">
-                  Criado por: {diario.created_by} | {new Date(diario.created_date).toLocaleDateString('pt-BR')}
-                </div>
-                <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
-                  Fechar
-                </Button>
+            <div className="border-t-2 border-slate-300 mt-8 pt-6 flex justify-between items-center">
+              <div className="text-xs text-slate-500">
+                Criado por: {diario.created_by} |{" "}
+                {new Date(diario.created_date).toLocaleDateString("pt-BR")}
               </div>
+              <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
+                Fechar
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>
 
-      <AnexoViewer 
+      <AnexoViewer
         anexo={anexoViewer.anexo}
         open={anexoViewer.open}
         onOpenChange={(open) => setAnexoViewer({ open, anexo: null })}

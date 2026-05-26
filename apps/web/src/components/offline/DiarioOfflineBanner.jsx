@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { WifiOff, Upload, Loader, CheckCircle2, Wifi } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
-import { toast } from 'sonner';
-import { useDiarioOffline } from './useDiarioOffline';
+import React, { useState } from "react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { WifiOff, Upload, Loader, Wifi } from "lucide-react";
+import { base44 } from "@/api/base44Client";
+import { toast } from "sonner";
+import { useDiarioOffline } from "./useDiarioOffline";
 
 export default function DiarioOfflineBanner({ empresaAtiva, onSincronizado }) {
   const { isOnline, entradasPendentes, marcarSincronizado, carregarPendentes } = useDiarioOffline();
@@ -22,7 +21,7 @@ export default function DiarioOfflineBanner({ empresaAtiva, onSincronizado }) {
         if (entrada.fotos_offline && entrada.fotos_offline.length > 0) {
           for (const dataUrl of entrada.fotos_offline) {
             const blob = await (await fetch(dataUrl)).blob();
-            const file = new File([blob], 'foto_obra.jpg', { type: 'image/jpeg' });
+            const file = new File([blob], "foto_obra.jpg", { type: "image/jpeg" });
             const { file_url } = await base44.integrations.Core.UploadFile({ file });
             fotosUrls.push(file_url);
           }
@@ -33,15 +32,15 @@ export default function DiarioOfflineBanner({ empresaAtiva, onSincronizado }) {
           empresa_id: entrada.empresa_id,
           projeto_id: entrada.projeto_id,
           data: entrada.data,
-          horario_inicio: entrada.horario_inicio || '',
-          horario_fim: entrada.horario_fim || '',
-          clima: entrada.clima || 'Sol',
-          temperatura: entrada.temperatura || '',
+          horario_inicio: entrada.horario_inicio || "",
+          horario_fim: entrada.horario_fim || "",
+          clima: entrada.clima || "Sol",
+          temperatura: entrada.temperatura || "",
           atividades: entrada.atividades,
-          observacoes: entrada.observacoes || '',
-          problemas: entrada.problemas || '',
-          mao_de_obra: entrada.mao_de_obra || '[]',
-          fotos: JSON.stringify(fotosUrls)
+          observacoes: entrada.observacoes || "",
+          problemas: entrada.problemas || "",
+          mao_de_obra: entrada.mao_de_obra || "[]",
+          fotos: JSON.stringify(fotosUrls),
         });
 
         await marcarSincronizado(entrada.id);
@@ -50,8 +49,8 @@ export default function DiarioOfflineBanner({ empresaAtiva, onSincronizado }) {
       toast.success(`✅ ${ok} registro(s) do diário sincronizado(s)!`);
       onSincronizado?.();
     } catch (err) {
-      console.error('Erro ao sincronizar diário:', err);
-      toast.error('Erro ao sincronizar. Tente novamente.');
+      console.error("Erro ao sincronizar diário:", err);
+      toast.error("Erro ao sincronizar. Tente novamente.");
     } finally {
       setSincronizando(false);
       carregarPendentes();
@@ -61,9 +60,11 @@ export default function DiarioOfflineBanner({ empresaAtiva, onSincronizado }) {
   // Mostrar indicador de status online/offline sempre visível
   if (entradasPendentes.length === 0) {
     return (
-      <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium ${isOnline ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'}`}>
+      <div
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium ${isOnline ? "bg-green-50 text-green-700" : "bg-orange-50 text-orange-700"}`}
+      >
         {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-        {isOnline ? 'Online' : 'Offline — registros salvos localmente'}
+        {isOnline ? "Online" : "Offline — registros salvos localmente"}
       </div>
     );
   }
@@ -86,8 +87,12 @@ export default function DiarioOfflineBanner({ empresaAtiva, onSincronizado }) {
           disabled={!isOnline || sincronizando}
           className="bg-orange-500 hover:bg-orange-600 gap-1 shrink-0"
         >
-          {sincronizando ? <Loader className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-          {sincronizando ? 'Enviando...' : isOnline ? 'Sincronizar' : 'Aguardando internet'}
+          {sincronizando ? (
+            <Loader className="w-3 h-3 animate-spin" />
+          ) : (
+            <Upload className="w-3 h-3" />
+          )}
+          {sincronizando ? "Enviando..." : isOnline ? "Sincronizar" : "Aguardando internet"}
         </Button>
       </div>
     </Card>

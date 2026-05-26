@@ -1,12 +1,24 @@
-import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Upload, Loader2, CheckCircle2, AlertCircle, FileText } from 'lucide-react';
-import { toast } from 'sonner';
-import { Badge } from '@/components/ui/badge';
+import React, { useState } from "react";
+import { base44 } from "@/api/base44Client";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Upload, Loader2, AlertCircle } from "lucide-react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 
-export default function UploadDocumentosRHZip({ open, onOpenChange, funcionarioId, empresaId, onSuccess }) {
+export default function UploadDocumentosRHZip({
+  open,
+  onOpenChange,
+  funcionarioId,
+  empresaId,
+  onSuccess,
+}) {
   const [arquivo, setArquivo] = useState(null);
   const [loading, setLoading] = useState(false);
   const [resultado, setResultado] = useState(null);
@@ -15,8 +27,8 @@ export default function UploadDocumentosRHZip({ open, onOpenChange, funcionarioI
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.name.toLowerCase().endsWith('.zip')) {
-      toast.error('Por favor, selecione um arquivo ZIP');
+    if (!file.name.toLowerCase().endsWith(".zip")) {
+      toast.error("Por favor, selecione um arquivo ZIP");
       return;
     }
 
@@ -29,10 +41,10 @@ export default function UploadDocumentosRHZip({ open, onOpenChange, funcionarioI
       const { file_url } = await base44.integrations.Core.UploadFile({ file });
 
       // Processar com IA
-      const response = await base44.functions.invoke('verificarDocumentosRH', {
+      const response = await base44.functions.invoke("verificarDocumentosRH", {
         zipUrl: file_url,
         funcionarioId,
-        empresaId
+        empresaId,
       });
 
       setResultado(response.data);
@@ -41,8 +53,8 @@ export default function UploadDocumentosRHZip({ open, onOpenChange, funcionarioI
         toast.success(`${response.data.total_processados} documento(s) analisado(s)`);
       }
     } catch (error) {
-      console.error('Erro:', error);
-      toast.error('Erro ao processar documentos');
+      console.error("Erro:", error);
+      toast.error("Erro ao processar documentos");
     } finally {
       setLoading(false);
     }
@@ -51,7 +63,7 @@ export default function UploadDocumentosRHZip({ open, onOpenChange, funcionarioI
   const handleAnexar = (tipoDocumento, docs) => {
     onSuccess({
       tipo: tipoDocumento,
-      documentos: docs
+      documentos: docs,
     });
   };
 
@@ -76,9 +88,14 @@ export default function UploadDocumentosRHZip({ open, onOpenChange, funcionarioI
             </div>
 
             <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center hover:border-blue-400 transition">
-              <label htmlFor="zip-upload" className="cursor-pointer flex flex-col items-center gap-2">
+              <label
+                htmlFor="zip-upload"
+                className="cursor-pointer flex flex-col items-center gap-2"
+              >
                 <Upload className="w-8 h-8 text-slate-400" />
-                <span className="text-sm font-medium text-slate-700">Clique ou arraste o ZIP aqui</span>
+                <span className="text-sm font-medium text-slate-700">
+                  Clique ou arraste o ZIP aqui
+                </span>
                 <span className="text-xs text-slate-500">Máximo: 100MB</span>
                 <input
                   id="zip-upload"
@@ -112,7 +129,10 @@ export default function UploadDocumentosRHZip({ open, onOpenChange, funcionarioI
                 <h3 className="font-medium mb-3">ASO - Atestado de Saúde Ocupacional</h3>
                 <div className="space-y-2">
                   {resultado.documentos.aso.map((doc, idx) => (
-                    <div key={idx} className="p-2 bg-slate-50 rounded border flex items-start justify-between">
+                    <div
+                      key={idx}
+                      className="p-2 bg-slate-50 rounded border flex items-start justify-between"
+                    >
                       <div className="flex-1">
                         <p className="text-sm font-medium text-slate-700">{doc.arquivo}</p>
                         <div className="flex gap-2 mt-1 flex-wrap">
@@ -126,18 +146,24 @@ export default function UploadDocumentosRHZip({ open, onOpenChange, funcionarioI
                               Validade: {doc.analise.data_validade}
                             </Badge>
                           )}
-                          <Badge className={`text-xs ${doc.analise.confianca === 'Alto' ? 'bg-green-100 text-green-800' : doc.analise.confianca === 'Médio' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                          <Badge
+                            className={`text-xs ${doc.analise.confianca === "Alto" ? "bg-green-100 text-green-800" : doc.analise.confianca === "Médio" ? "bg-yellow-100 text-yellow-800" : "bg-red-100 text-red-800"}`}
+                          >
                             {doc.analise.confianca}
                           </Badge>
                         </div>
                         {doc.analise.inconsistencias.length > 0 && (
                           <div className="mt-2 text-xs text-red-600">
                             <AlertCircle className="w-3 h-3 inline mr-1" />
-                            {doc.analise.inconsistencias.join(', ')}
+                            {doc.analise.inconsistencias.join(", ")}
                           </div>
                         )}
                       </div>
-                      <Button size="sm" variant="outline" onClick={() => handleAnexar('aso', [doc])}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleAnexar("aso", [doc])}
+                      >
                         Anexar
                       </Button>
                     </div>
@@ -152,7 +178,10 @@ export default function UploadDocumentosRHZip({ open, onOpenChange, funcionarioI
                 <h3 className="font-medium mb-3">Exames Médicos</h3>
                 <div className="space-y-2">
                   {resultado.documentos.exames.map((doc, idx) => (
-                    <div key={idx} className="p-2 bg-slate-50 rounded border flex items-start justify-between">
+                    <div
+                      key={idx}
+                      className="p-2 bg-slate-50 rounded border flex items-start justify-between"
+                    >
                       <div className="flex-1">
                         <p className="text-sm font-medium text-slate-700">{doc.arquivo}</p>
                         <div className="flex gap-2 mt-1 flex-wrap">
@@ -161,18 +190,24 @@ export default function UploadDocumentosRHZip({ open, onOpenChange, funcionarioI
                               Data: {doc.analise.data_documento}
                             </Badge>
                           )}
-                          <Badge className={`text-xs ${doc.analise.confianca === 'Alto' ? 'bg-green-100 text-green-800' : doc.analise.confianca === 'Médio' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                          <Badge
+                            className={`text-xs ${doc.analise.confianca === "Alto" ? "bg-green-100 text-green-800" : doc.analise.confianca === "Médio" ? "bg-yellow-100 text-yellow-800" : "bg-red-100 text-red-800"}`}
+                          >
                             {doc.analise.confianca}
                           </Badge>
                         </div>
                         {doc.analise.inconsistencias.length > 0 && (
                           <div className="mt-2 text-xs text-red-600">
                             <AlertCircle className="w-3 h-3 inline mr-1" />
-                            {doc.analise.inconsistencias.join(', ')}
+                            {doc.analise.inconsistencias.join(", ")}
                           </div>
                         )}
                       </div>
-                      <Button size="sm" variant="outline" onClick={() => handleAnexar('exames', [doc])}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleAnexar("exames", [doc])}
+                      >
                         Anexar
                       </Button>
                     </div>
@@ -187,7 +222,10 @@ export default function UploadDocumentosRHZip({ open, onOpenChange, funcionarioI
                 <h3 className="font-medium mb-3">Registro de Empregado</h3>
                 <div className="space-y-2">
                   {resultado.documentos.registro.map((doc, idx) => (
-                    <div key={idx} className="p-2 bg-slate-50 rounded border flex items-start justify-between">
+                    <div
+                      key={idx}
+                      className="p-2 bg-slate-50 rounded border flex items-start justify-between"
+                    >
                       <div className="flex-1">
                         <p className="text-sm font-medium text-slate-700">{doc.arquivo}</p>
                         <div className="flex gap-2 mt-1 flex-wrap">
@@ -196,18 +234,24 @@ export default function UploadDocumentosRHZip({ open, onOpenChange, funcionarioI
                               Data: {doc.analise.data_documento}
                             </Badge>
                           )}
-                          <Badge className={`text-xs ${doc.analise.confianca === 'Alto' ? 'bg-green-100 text-green-800' : doc.analise.confianca === 'Médio' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                          <Badge
+                            className={`text-xs ${doc.analise.confianca === "Alto" ? "bg-green-100 text-green-800" : doc.analise.confianca === "Médio" ? "bg-yellow-100 text-yellow-800" : "bg-red-100 text-red-800"}`}
+                          >
                             {doc.analise.confianca}
                           </Badge>
                         </div>
                         {doc.analise.inconsistencias.length > 0 && (
                           <div className="mt-2 text-xs text-red-600">
                             <AlertCircle className="w-3 h-3 inline mr-1" />
-                            {doc.analise.inconsistencias.join(', ')}
+                            {doc.analise.inconsistencias.join(", ")}
                           </div>
                         )}
                       </div>
-                      <Button size="sm" variant="outline" onClick={() => handleAnexar('registro', [doc])}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleAnexar("registro", [doc])}
+                      >
                         Anexar
                       </Button>
                     </div>
@@ -228,11 +272,14 @@ export default function UploadDocumentosRHZip({ open, onOpenChange, funcionarioI
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => {
-            onOpenChange(false);
-            setResultado(null);
-            setArquivo(null);
-          }}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              onOpenChange(false);
+              setResultado(null);
+              setArquivo(null);
+            }}
+          >
             Fechar
           </Button>
         </DialogFooter>

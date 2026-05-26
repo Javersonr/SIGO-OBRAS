@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '../Layout';
-import { Plus, Trash2, Edit, Search, MoreHorizontal, CheckCircle2, AlertCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import SheetModalComponent from '@/components/ui/sheet-modal';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useEmpresa } from "../Layout";
+import { Plus, Trash2, Edit, Search, MoreHorizontal } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import SheetModalComponent from "@/components/ui/sheet-modal";
 import {
   Table,
   TableBody,
@@ -16,30 +16,30 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { toast } from 'sonner';
+} from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
 
 const inspecaoSchema = {
-  empresa_id: '',
-  data_inspecao: new Date().toISOString().split('T')[0],
-  placa: '',
-  modelo: '',
-  km_atual: '',
-  motorista: '',
-  responsavel_nome: '',
-  status: 'Aprovado',
-  itens_inspecao: '[]',
-  observacoes: '',
-  proxima_inspecao: '',
-  anexos: '[]',
-  ativo: true
+  empresa_id: "",
+  data_inspecao: new Date().toISOString().split("T")[0],
+  placa: "",
+  modelo: "",
+  km_atual: "",
+  motorista: "",
+  responsavel_nome: "",
+  status: "Aprovado",
+  itens_inspecao: "[]",
+  observacoes: "",
+  proxima_inspecao: "",
+  anexos: "[]",
+  ativo: true,
 };
 
 export default function InspecaoFerramenta() {
@@ -47,7 +47,7 @@ export default function InspecaoFerramenta() {
   const [inspecoes, setInspecoes] = useState([]);
   const [ferramentas, setFerramentas] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [selectedInspecao, setSelectedInspecao] = useState(null);
   const [formData, setFormData] = useState(inspecaoSchema);
@@ -65,13 +65,13 @@ export default function InspecaoFerramenta() {
     try {
       const [insp, ferrs] = await Promise.all([
         base44.entities.InspecaoCaminhao.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true })
+        base44.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ]);
       setInspecoes(insp.sort((a, b) => new Date(b.data_inspecao) - new Date(a.data_inspecao)));
       setFerramentas(ferrs);
     } catch (error) {
-      console.error('Erro:', error);
-      toast.error('Erro ao carregar dados');
+      console.error("Erro:", error);
+      toast.error("Erro ao carregar dados");
     } finally {
       setLoading(false);
     }
@@ -80,34 +80,39 @@ export default function InspecaoFerramenta() {
   const handleOpenModal = (insp = null) => {
     if (insp) {
       setFormData({ ...insp });
-      setItensInspecao(JSON.parse(insp.itens_inspecao || '[]'));
+      setItensInspecao(JSON.parse(insp.itens_inspecao || "[]"));
       setSelectedInspecao(insp);
     } else {
       setFormData({ ...inspecaoSchema, empresa_id: empresaAtiva.id });
-      setItensInspecao(ferramentas.map(f => ({
-        ferramenta_id: f.id,
-        ferramenta_codigo: f.codigo,
-        ferramenta_descricao: f.descricao,
-        quantidade: f.quantidade_estoque || 1,
-        tem_laudo: false,
-        status: 'OK',
-        observacao: ''
-      })));
+      setItensInspecao(
+        ferramentas.map((f) => ({
+          ferramenta_id: f.id,
+          ferramenta_codigo: f.codigo,
+          ferramenta_descricao: f.descricao,
+          quantidade: f.quantidade_estoque || 1,
+          tem_laudo: false,
+          status: "OK",
+          observacao: "",
+        }))
+      );
       setSelectedInspecao(null);
     }
     setShowModal(true);
   };
 
   const handleAddItem = () => {
-    setItensInspecao([...itensInspecao, {
-      ferramenta_id: '',
-      ferramenta_codigo: '',
-      ferramenta_descricao: '',
-      quantidade: 1,
-      tem_laudo: false,
-      status: 'OK',
-      observacao: ''
-    }]);
+    setItensInspecao([
+      ...itensInspecao,
+      {
+        ferramenta_id: "",
+        ferramenta_codigo: "",
+        ferramenta_descricao: "",
+        quantidade: 1,
+        tem_laudo: false,
+        status: "OK",
+        observacao: "",
+      },
+    ]);
   };
 
   const handleRemoveItem = (index) => {
@@ -117,76 +122,77 @@ export default function InspecaoFerramenta() {
   const handleItemChange = (index, field, value) => {
     const updated = [...itensInspecao];
     updated[index] = { ...updated[index], [field]: value };
-    
-    if (field === 'ferramenta_id') {
-      const ferr = ferramentas.find(f => f.id === value);
+
+    if (field === "ferramenta_id") {
+      const ferr = ferramentas.find((f) => f.id === value);
       if (ferr) {
         updated[index].ferramenta_codigo = ferr.codigo;
         updated[index].ferramenta_descricao = ferr.descricao;
         updated[index].quantidade = ferr.quantidade_estoque || 1;
       }
     }
-    
+
     setItensInspecao(updated);
   };
 
   const handleSave = async () => {
     if (!formData.placa || !formData.data_inspecao) {
-      toast.error('Preencha placa e data da inspeção');
+      toast.error("Preencha placa e data da inspeção");
       return;
     }
 
     if (itensInspecao.length === 0) {
-      toast.error('Adicione pelo menos um item à inspeção');
+      toast.error("Adicione pelo menos um item à inspeção");
       return;
     }
 
     const dataToSave = {
       ...formData,
-      itens_inspecao: JSON.stringify(itensInspecao)
+      itens_inspecao: JSON.stringify(itensInspecao),
     };
 
     setSaving(true);
     try {
       if (selectedInspecao) {
         await base44.entities.InspecaoCaminhao.update(selectedInspecao.id, dataToSave);
-        toast.success('Inspeção atualizada');
+        toast.success("Inspeção atualizada");
       } else {
         await base44.entities.InspecaoCaminhao.create(dataToSave);
-        toast.success('Inspeção criada');
+        toast.success("Inspeção criada");
       }
       setShowModal(false);
       loadData();
     } catch (error) {
-      console.error('Erro:', error);
-      toast.error('Erro ao salvar inspeção');
+      console.error("Erro:", error);
+      toast.error("Erro ao salvar inspeção");
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Deseja deletar esta inspeção?')) return;
+    if (!confirm("Deseja deletar esta inspeção?")) return;
     try {
       await base44.entities.InspecaoCaminhao.delete(id);
-      toast.success('Inspeção deletada');
+      toast.success("Inspeção deletada");
       loadData();
     } catch (error) {
-      console.error('Erro:', error);
-      toast.error('Erro ao deletar');
+      console.error("Erro:", error);
+      toast.error("Erro ao deletar");
     }
   };
 
-  const filteredInspecoes = inspecoes.filter(i =>
-    i.placa?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    i.modelo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    i.motorista?.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredInspecoes = inspecoes.filter(
+    (i) =>
+      i.placa?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      i.modelo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      i.motorista?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const statusColors = {
-    'Aprovado': 'bg-green-100 text-green-700',
-    'Reprovado': 'bg-red-100 text-red-700',
-    'Atenção': 'bg-yellow-100 text-yellow-700'
+    Aprovado: "bg-green-100 text-green-700",
+    Reprovado: "bg-red-100 text-red-700",
+    Atenção: "bg-yellow-100 text-yellow-700",
   };
 
   if (!empresaAtiva) return null;
@@ -198,8 +204,11 @@ export default function InspecaoFerramenta() {
           <h1 className="text-2xl font-bold text-slate-800">Inspeção de Ferramental</h1>
           <p className="text-slate-500">Controle de ferramental nos caminhões</p>
         </div>
-        {['Admin', 'Gestor'].includes(perfil) && (
-          <Button onClick={() => handleOpenModal()} className="bg-amber-500 hover:bg-amber-600 gap-2">
+        {["Admin", "Gestor"].includes(perfil) && (
+          <Button
+            onClick={() => handleOpenModal()}
+            className="bg-amber-500 hover:bg-amber-600 gap-2"
+          >
             <Plus className="w-4 h-4" />
             Nova Inspeção
           </Button>
@@ -234,7 +243,9 @@ export default function InspecaoFerramenta() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8">Carregando...</TableCell>
+                <TableCell colSpan={7} className="text-center py-8">
+                  Carregando...
+                </TableCell>
               </TableRow>
             ) : filteredInspecoes.length === 0 ? (
               <TableRow>
@@ -243,13 +254,13 @@ export default function InspecaoFerramenta() {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredInspecoes.map(insp => (
+              filteredInspecoes.map((insp) => (
                 <TableRow key={insp.id}>
                   <TableCell>{new Date(insp.data_inspecao).toLocaleDateString()}</TableCell>
                   <TableCell className="font-mono font-bold">{insp.placa}</TableCell>
                   <TableCell>{insp.modelo}</TableCell>
-                  <TableCell>{insp.motorista || '-'}</TableCell>
-                  <TableCell>{insp.responsavel_nome || '-'}</TableCell>
+                  <TableCell>{insp.motorista || "-"}</TableCell>
+                  <TableCell>{insp.responsavel_nome || "-"}</TableCell>
                   <TableCell>
                     <Badge className={statusColors[insp.status]}>{insp.status}</Badge>
                   </TableCell>
@@ -265,7 +276,10 @@ export default function InspecaoFerramenta() {
                           <Edit className="w-4 h-4 mr-2" /> Editar
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => handleDelete(insp.id)} className="text-red-600">
+                        <DropdownMenuItem
+                          onClick={() => handleDelete(insp.id)}
+                          className="text-red-600"
+                        >
                           <Trash2 className="w-4 h-4 mr-2" /> Deletar
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -282,12 +296,18 @@ export default function InspecaoFerramenta() {
       <SheetModalComponent
         open={showModal}
         onOpenChange={setShowModal}
-        title={selectedInspecao ? 'Editar Inspeção' : 'Nova Inspeção'}
+        title={selectedInspecao ? "Editar Inspeção" : "Nova Inspeção"}
         footer={
           <div className="flex justify-end gap-3">
-            <Button variant="outline" onClick={() => setShowModal(false)}>Cancelar</Button>
-            <Button onClick={handleSave} disabled={saving} className="bg-amber-500 hover:bg-amber-600">
-              {saving ? 'Salvando...' : 'Salvar'}
+            <Button variant="outline" onClick={() => setShowModal(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={saving}
+              className="bg-amber-500 hover:bg-amber-600"
+            >
+              {saving ? "Salvando..." : "Salvar"}
             </Button>
           </div>
         }
@@ -301,7 +321,9 @@ export default function InspecaoFerramenta() {
                 <Label>Placa *</Label>
                 <Input
                   value={formData.placa}
-                  onChange={(e) => setFormData({ ...formData, placa: e.target.value.toUpperCase() })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, placa: e.target.value.toUpperCase() })
+                  }
                   placeholder="ABC-1234"
                   className="mt-1.5"
                 />
@@ -382,11 +404,11 @@ export default function InspecaoFerramenta() {
                       <Label className="text-xs">Ferramenta</Label>
                       <select
                         value={item.ferramenta_id}
-                        onChange={(e) => handleItemChange(idx, 'ferramenta_id', e.target.value)}
+                        onChange={(e) => handleItemChange(idx, "ferramenta_id", e.target.value)}
                         className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-md text-sm"
                       >
                         <option value="">Selecione...</option>
-                        {ferramentas.map(f => (
+                        {ferramentas.map((f) => (
                           <option key={f.id} value={f.id}>
                             {f.codigo} - {f.descricao}
                           </option>
@@ -399,7 +421,9 @@ export default function InspecaoFerramenta() {
                         type="number"
                         min="1"
                         value={item.quantidade}
-                        onChange={(e) => handleItemChange(idx, 'quantidade', parseInt(e.target.value) || 1)}
+                        onChange={(e) =>
+                          handleItemChange(idx, "quantidade", parseInt(e.target.value) || 1)
+                        }
                         className="mt-1 text-sm"
                       />
                     </div>
@@ -410,7 +434,7 @@ export default function InspecaoFerramenta() {
                       <Label className="text-xs">Status</Label>
                       <select
                         value={item.status}
-                        onChange={(e) => handleItemChange(idx, 'status', e.target.value)}
+                        onChange={(e) => handleItemChange(idx, "status", e.target.value)}
                         className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-md text-sm"
                       >
                         <option value="OK">OK</option>
@@ -423,7 +447,7 @@ export default function InspecaoFerramenta() {
                         <input
                           type="checkbox"
                           checked={item.tem_laudo}
-                          onChange={(e) => handleItemChange(idx, 'tem_laudo', e.target.checked)}
+                          onChange={(e) => handleItemChange(idx, "tem_laudo", e.target.checked)}
                           className="w-4 h-4"
                         />
                         <span className="text-xs">Tem Laudo</span>
@@ -435,7 +459,7 @@ export default function InspecaoFerramenta() {
                     <Label className="text-xs">Observação</Label>
                     <Input
                       value={item.observacao}
-                      onChange={(e) => handleItemChange(idx, 'observacao', e.target.value)}
+                      onChange={(e) => handleItemChange(idx, "observacao", e.target.value)}
                       placeholder="Observações sobre este item..."
                       className="mt-1 text-sm"
                     />

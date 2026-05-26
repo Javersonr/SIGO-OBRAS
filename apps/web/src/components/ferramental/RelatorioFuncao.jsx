@@ -1,25 +1,22 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { format } from 'date-fns';
-import { base44 } from '@/api/base44Client';
-import { Download, Printer, Filter, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { Printer, Filter, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { toast } from 'sonner';
+} from "@/components/ui/select";
+import { toast } from "sonner";
 
 export default function RelatorioFuncao({ empresaAtiva }) {
   const [funcionarios, setFuncionarios] = useState([]);
   const [funcoes, setFuncoes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filterFuncionario, setFilterFuncionario] = useState('all');
-
+  const [filterFuncionario, setFilterFuncionario] = useState("all");
 
   useEffect(() => {
     loadData();
@@ -32,11 +29,13 @@ export default function RelatorioFuncao({ empresaAtiva }) {
         base44.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }),
         base44.entities.Funcao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ]);
-      setFuncionarios(funcs.sort((a, b) => (a.nome_completo || '').localeCompare(b.nome_completo || '')));
+      setFuncionarios(
+        funcs.sort((a, b) => (a.nome_completo || "").localeCompare(b.nome_completo || ""))
+      );
       setFuncoes(funcoesData);
     } catch (error) {
-      console.error('Erro ao carregar dados:', error);
-      toast.error('Erro ao carregar dados');
+      console.error("Erro ao carregar dados:", error);
+      toast.error("Erro ao carregar dados");
     } finally {
       setLoading(false);
     }
@@ -45,13 +44,17 @@ export default function RelatorioFuncao({ empresaAtiva }) {
   // Montar lista: cada funcionário com os itens do modelo_ferramentas + modelo_epi da sua função
   const funcionariosComItens = React.useMemo(() => {
     return funcionarios
-      .map(func => {
-        const funcao = funcoes.find(f => f.id === func.funcao_id);
+      .map((func) => {
+        const funcao = funcoes.find((f) => f.id === func.funcao_id);
         if (!funcao) return null;
 
         const itens = (() => {
-          try { return JSON.parse(funcao.modelo_ferramentas || '[]'); } catch { return []; }
-        })().map(f => ({ ...f, tipo: 'Ferramenta' }));
+          try {
+            return JSON.parse(funcao.modelo_ferramentas || "[]");
+          } catch {
+            return [];
+          }
+        })().map((f) => ({ ...f, tipo: "Ferramenta" }));
         if (itens.length === 0) return null;
 
         return {
@@ -71,35 +74,42 @@ export default function RelatorioFuncao({ empresaAtiva }) {
 
   // Aplicar filtros
   const funcionariosFiltered = funcionariosComItens
-    .filter(f => filterFuncionario === 'all' || f.id === filterFuncionario)
-    .filter(f => f.itens.length > 0);
+    .filter((f) => filterFuncionario === "all" || f.id === filterFuncionario)
+    .filter((f) => f.itens.length > 0);
 
   const stats = {
     totalFuncionarios: funcionariosFiltered.length,
     totalItens: funcionariosFiltered.reduce((sum, f) => sum + f.itens.length, 0),
-
   };
 
   const handleImprimirFicha = (funcionario) => {
-    const funcaoObj = funcoes.find(f => f.id === funcionario.funcao_id);
-    const logoUrl = empresaAtiva?.logo_url || '';
+    const funcaoObj = funcoes.find((f) => f.id === funcionario.funcao_id);
+    const logoUrl = empresaAtiva?.logo_url || "";
 
-    const itensFiltrados = [...funcionario.itens].sort((a, b) => (a.ferramenta || a.descricao || '').localeCompare(b.ferramenta || b.descricao || ''));
+    const itensFiltrados = [...funcionario.itens].sort((a, b) =>
+      (a.ferramenta || a.descricao || "").localeCompare(b.ferramenta || b.descricao || "")
+    );
     const linhasVazias = Math.max(0, 45 - itensFiltrados.length);
 
-    const rowsHtml = itensFiltrados.map(item => `
+    const rowsHtml = itensFiltrados
+      .map(
+        (item) => `
       <tr style="height:20px">
         <td style="border:1px solid #000;padding:4px">__/__/____</td>
         <td style="border:1px solid #000;padding:4px">__/__/____</td>
         <td style="border:1px solid #000;padding:4px;text-align:center">${item.quantidade || 1}</td>
-        <td style="border:1px solid #000;padding:4px;font-size:10px">${item.ferramenta || item.descricao || ''}</td>
-        <td style="border:1px solid #000;padding:4px;font-size:10px">${item.numero_serie || ''}</td>
+        <td style="border:1px solid #000;padding:4px;font-size:10px">${item.ferramenta || item.descricao || ""}</td>
+        <td style="border:1px solid #000;padding:4px;font-size:10px">${item.numero_serie || ""}</td>
         <td style="border:1px solid #000;padding:4px"></td>
         <td style="border:1px solid #000;padding:4px"></td>
       </tr>
-    `).join('');
+    `
+      )
+      .join("");
 
-    const emptyRowsHtml = Array(linhasVazias).fill(`
+    const emptyRowsHtml = Array(linhasVazias)
+      .fill(
+        `
       <tr style="height:20px">
         <td style="border:1px solid #000;padding:4px">__/__/____</td>
         <td style="border:1px solid #000;padding:4px">__/__/____</td>
@@ -109,13 +119,15 @@ export default function RelatorioFuncao({ empresaAtiva }) {
         <td style="border:1px solid #000;padding:4px"></td>
         <td style="border:1px solid #000;padding:4px"></td>
       </tr>
-    `).join('');
+    `
+      )
+      .join("");
 
     const dataAdmissao = funcionario.data_admissao
-      ? funcionario.data_admissao.split('-').reverse().join('/')
-      : '';
+      ? funcionario.data_admissao.split("-").reverse().join("/")
+      : "";
 
-    const printWindow = window.open('', '', 'height=800,width=1200');
+    const printWindow = window.open("", "", "height=800,width=1200");
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
@@ -139,7 +151,7 @@ export default function RelatorioFuncao({ empresaAtiva }) {
           <!-- Cabeçalho com logo -->
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:12px;border-bottom:3px solid #000;gap:20px">
             <div style="min-width:80px">
-              ${logoUrl ? `<img src="${logoUrl}" alt="Logo" style="max-height:70px;max-width:200px;object-fit:contain" />` : ''}
+              ${logoUrl ? `<img src="${logoUrl}" alt="Logo" style="max-height:70px;max-width:200px;object-fit:contain" />` : ""}
             </div>
             <div style="text-align:center;flex:1">
               <h1 style="margin:0">FICHA DE CONTROLE DE ENTREGA DE FERRAMENTAS</h1>
@@ -155,7 +167,7 @@ export default function RelatorioFuncao({ empresaAtiva }) {
               </div>
               <div style="border-bottom:1px solid #000;padding-bottom:2px;padding-left:20px">
                 <strong>Nº DE REGISTRO:</strong>
-                <div style="margin-top:2px">${funcionario.numero_registro || funcionario.cpf || ''}</div>
+                <div style="margin-top:2px">${funcionario.numero_registro || funcionario.cpf || ""}</div>
               </div>
               <div style="border-bottom:1px solid #000;padding-bottom:2px;padding-left:20px">
                 <strong>DATA DE ADMISSÃO:</strong>
@@ -224,14 +236,35 @@ export default function RelatorioFuncao({ empresaAtiva }) {
 
     const images = printWindow.document.images;
     if (images.length === 0) {
-      setTimeout(() => { printWindow.focus(); printWindow.print(); printWindow.close(); }, 500);
+      setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+        printWindow.close();
+      }, 500);
     } else {
       let loaded = 0;
-      Array.from(images).forEach(img => {
-        const done = () => { loaded++; if (loaded === images.length) { printWindow.focus(); printWindow.print(); printWindow.close(); } };
-        if (img.complete) done(); else { img.onload = done; img.onerror = done; }
+      Array.from(images).forEach((img) => {
+        const done = () => {
+          loaded++;
+          if (loaded === images.length) {
+            printWindow.focus();
+            printWindow.print();
+            printWindow.close();
+          }
+        };
+        if (img.complete) done();
+        else {
+          img.onload = done;
+          img.onerror = done;
+        }
       });
-      setTimeout(() => { if (loaded < images.length) { printWindow.focus(); printWindow.print(); printWindow.close(); } }, 3000);
+      setTimeout(() => {
+        if (loaded < images.length) {
+          printWindow.focus();
+          printWindow.print();
+          printWindow.close();
+        }
+      }, 3000);
     }
   };
 
@@ -252,7 +285,7 @@ export default function RelatorioFuncao({ empresaAtiva }) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos os funcionários</SelectItem>
-              {funcionariosComItens.map(f => (
+              {funcionariosComItens.map((f) => (
                 <SelectItem key={f.id} value={f.id}>
                   {f.nome} ({f.itens.length})
                 </SelectItem>
@@ -260,8 +293,13 @@ export default function RelatorioFuncao({ empresaAtiva }) {
             </SelectContent>
           </Select>
 
-          {filterFuncionario !== 'all' && (
-            <Button onClick={() => setFilterFuncionario('all')} variant="ghost" size="sm" className="gap-1">
+          {filterFuncionario !== "all" && (
+            <Button
+              onClick={() => setFilterFuncionario("all")}
+              variant="ghost"
+              size="sm"
+              className="gap-1"
+            >
               <X className="w-4 h-4" />
               Limpar
             </Button>
@@ -271,28 +309,44 @@ export default function RelatorioFuncao({ empresaAtiva }) {
         {/* Estatísticas */}
         {funcionariosFiltered.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Card><CardContent className="pt-6"><div className="text-center"><p className="text-sm text-slate-600 mb-1">Funcionários</p><p className="text-2xl font-bold text-slate-800">{stats.totalFuncionarios}</p></div></CardContent></Card>
-            <Card><CardContent className="pt-6"><div className="text-center"><p className="text-sm text-slate-600 mb-1">Total de Ferramentas</p><p className="text-2xl font-bold text-slate-800">{stats.totalItens}</p></div></CardContent></Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-center">
+                  <p className="text-sm text-slate-600 mb-1">Funcionários</p>
+                  <p className="text-2xl font-bold text-slate-800">{stats.totalFuncionarios}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-center">
+                  <p className="text-sm text-slate-600 mb-1">Total de Ferramentas</p>
+                  <p className="text-2xl font-bold text-slate-800">{stats.totalItens}</p>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
       </div>
 
       {/* Lista */}
       {loading ? (
-        <div className="text-center py-8"><p className="text-slate-600">Carregando...</p></div>
+        <div className="text-center py-8">
+          <p className="text-slate-600">Carregando...</p>
+        </div>
       ) : funcionariosFiltered.length === 0 ? (
         <Card>
           <CardContent className="pt-6 text-center py-8">
             <p className="text-slate-500">
               {funcionariosComItens.length === 0
-                ? 'Nenhum funcionário com função que possua modelo de ferramentas/EPIs cadastrado'
-                : 'Nenhum resultado com os filtros aplicados'}
+                ? "Nenhum funcionário com função que possua modelo de ferramentas/EPIs cadastrado"
+                : "Nenhum resultado com os filtros aplicados"}
             </p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-6">
-          {funcionariosFiltered.map(funcionario => (
+          {funcionariosFiltered.map((funcionario) => (
             <Card key={funcionario.id} className="overflow-hidden">
               <div className="bg-slate-100 px-6 py-4 border-b border-slate-200">
                 <h3 className="font-bold text-slate-800">{funcionario.nome}</h3>
@@ -305,23 +359,42 @@ export default function RelatorioFuncao({ empresaAtiva }) {
                   <table className="w-full">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200">
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Descrição</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Nº Série</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">
+                          Descrição
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">
+                          Nº Série
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {[...funcionario.itens].sort((a, b) => (a.ferramenta || a.descricao || '').localeCompare(b.ferramenta || b.descricao || '')).map((item, idx) => (
-                        <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                          <td className="px-4 py-3 text-sm text-slate-800">{item.ferramenta || item.descricao || ''}</td>
-                          <td className="px-4 py-3 text-sm text-slate-600">{item.numero_serie || '-'}</td>
-                        </tr>
-                      ))}
+                      {[...funcionario.itens]
+                        .sort((a, b) =>
+                          (a.ferramenta || a.descricao || "").localeCompare(
+                            b.ferramenta || b.descricao || ""
+                          )
+                        )
+                        .map((item, idx) => (
+                          <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+                            <td className="px-4 py-3 text-sm text-slate-800">
+                              {item.ferramenta || item.descricao || ""}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-600">
+                              {item.numero_serie || "-"}
+                            </td>
+                          </tr>
+                        ))}
                     </tbody>
                   </table>
                 </div>
 
                 <div className="p-4 border-t border-slate-200 flex justify-end">
-                  <Button onClick={() => handleImprimirFicha(funcionario)} variant="outline" size="sm" className="gap-2">
+                  <Button
+                    onClick={() => handleImprimirFicha(funcionario)}
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                  >
                     <Printer className="w-4 h-4" />
                     Imprimir Ficha TST
                   </Button>

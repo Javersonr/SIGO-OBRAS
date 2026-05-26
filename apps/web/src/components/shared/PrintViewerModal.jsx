@@ -1,24 +1,24 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { Button } from '../ui/button';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../ui/sheet';
-import { Download, Settings } from 'lucide-react';
+import React, { useRef, useState } from "react";
+import { Button } from "../ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../ui/sheet";
+import { Download, Settings } from "lucide-react";
 
-export default function PrintViewerModal({ 
-  open, 
-  onOpenChange, 
-  title, 
+export default function PrintViewerModal({
+  open,
+  onOpenChange,
+  title,
   contentId,
   renderContent,
   EditorPanel,
   settings,
-  onSettingsChange
+  onSettingsChange,
 }) {
   const printRef = useRef(null);
   const [showEditor, setShowEditor] = useState(false);
 
   const handleImprimir = () => {
     const printContent = document.getElementById(contentId);
-    const printWindow = window.open('', '', 'height=800,width=1200');
+    const printWindow = window.open("", "", "height=800,width=1200");
 
     printWindow.document.write(`
       <html>
@@ -72,7 +72,7 @@ export default function PrintViewerModal({
         printWindow.close();
       }, 500);
     } else {
-      Array.from(images).forEach(img => {
+      Array.from(images).forEach((img) => {
         if (img.complete) {
           loadedImages++;
         } else {
@@ -115,28 +115,27 @@ export default function PrintViewerModal({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="h-full overflow-hidden p-0 flex flex-row" style={{ inset: 'auto 0 0 256px', width: 'calc(100% - 256px)', maxWidth: 'none' }}>
+      <SheetContent
+        side="right"
+        className="h-full overflow-hidden p-0 flex flex-row"
+        style={{ inset: "auto 0 0 256px", width: "calc(100% - 256px)", maxWidth: "none" }}
+      >
         <div className="flex-1 flex flex-col overflow-hidden">
           <SheetHeader className="px-6 py-4 border-b flex flex-row items-center justify-between sticky top-0 bg-white">
             <SheetTitle>{title}</SheetTitle>
             <div className="flex gap-2">
               {EditorPanel && (
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => setShowEditor(!showEditor)}
                   className="gap-2"
                 >
                   <Settings className="w-4 h-4" />
-                  {showEditor ? 'Fechar' : 'Editar'}
+                  {showEditor ? "Fechar" : "Editar"}
                 </Button>
               )}
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={handleImprimir}
-                className="gap-2"
-              >
+              <Button variant="outline" size="sm" onClick={handleImprimir} className="gap-2">
                 <Download className="w-4 h-4" />
                 Imprimir
               </Button>
@@ -144,17 +143,17 @@ export default function PrintViewerModal({
           </SheetHeader>
 
           <div className="flex-1 overflow-auto p-6" key={JSON.stringify(settings)}>
-            <div 
+            <div
               id={contentId}
-              ref={printRef} 
+              ref={printRef}
               className="bg-white"
-              style={{ 
-                fontFamily: 'Arial, sans-serif',
-                width: '210mm',
-                margin: '20px auto',
-                padding: '20mm 18mm 20mm 5mm',
-                backgroundColor: 'white',
-                boxSizing: 'border-box'
+              style={{
+                fontFamily: "Arial, sans-serif",
+                width: "210mm",
+                margin: "20px auto",
+                padding: "20mm 18mm 20mm 5mm",
+                backgroundColor: "white",
+                boxSizing: "border-box",
               }}
             >
               {renderContent()}

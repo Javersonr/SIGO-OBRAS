@@ -1,43 +1,46 @@
-import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '../../Layout';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import DRERelatorio from './DRERelatorio';
-import BalancoPatrimonial from './BalancoPatrimonial';
-import EvolucaoDespesas from './EvolucaoDespesas';
-import ApuracaoResultados from './ApuracaoResultados';
-import IndicesFinanceiros from './IndicesFinanceiros';
-import FluxoCaixaRelatorio from './FluxoCaixaRelatorio';
-import FiltrosAvancados from './FiltrosAvancados';
-import GraficosComparativos from './GraficosComparativos';
-import RelatoriosCustomizados from './RelatoriosCustomizados';
-import AssistenteIA from './AssistenteIA';
-import InsightsIA from './InsightsIA';
-import SugestoesVisualizacao from './SugestoesVisualizacao';
+import React, { useState } from "react";
+import { base44 } from "@/api/base44Client";
+import { useEmpresa } from "../../Layout";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import DRERelatorio from "./DRERelatorio";
+import BalancoPatrimonial from "./BalancoPatrimonial";
+import EvolucaoDespesas from "./EvolucaoDespesas";
+import ApuracaoResultados from "./ApuracaoResultados";
+import IndicesFinanceiros from "./IndicesFinanceiros";
+import FluxoCaixaRelatorio from "./FluxoCaixaRelatorio";
+import FiltrosAvancados from "./FiltrosAvancados";
+import GraficosComparativos from "./GraficosComparativos";
+import RelatoriosCustomizados from "./RelatoriosCustomizados";
+import AssistenteIA from "./AssistenteIA";
+import InsightsIA from "./InsightsIA";
+import SugestoesVisualizacao from "./SugestoesVisualizacao";
 
 export default function RelatoriosTab({ transacoes, contas, categorias }) {
   const { empresaAtiva, user } = useEmpresa();
   const [filtros, setFiltros] = useState({
-    dataInicio: '',
-    dataFim: '',
-    categoriaId: 'all',
-    centroCustoId: 'all',
-    contaId: 'all',
-    projetoId: 'all',
-    versao: 'real'
+    dataInicio: "",
+    dataFim: "",
+    categoriaId: "all",
+    centroCustoId: "all",
+    contaId: "all",
+    projetoId: "all",
+    versao: "real",
   });
-  const [tipoRelatorio, setTipoRelatorio] = useState('dre');
+  const [tipoRelatorio, setTipoRelatorio] = useState("dre");
   const [centrosCusto, setCentrosCusto] = useState([]);
 
   React.useEffect(() => {
     if (!empresaAtiva?.id) return;
     let cancelled = false;
     base44.entities.CentroCusto.filter({ empresa_id: empresaAtiva.id })
-      .then(data => { if (!cancelled) setCentrosCusto(data); })
+      .then((data) => {
+        if (!cancelled) setCentrosCusto(data);
+      })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [empresaAtiva?.id]);
 
   const handleAplicarFiltrosIA = (novosFiltros, tipo) => {
@@ -47,7 +50,7 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
 
   const handleAplicarSugestao = (sugestao) => {
     // Aplicar sugestão de visualização
-    console.log('Aplicando sugestão:', sugestao);
+    console.log("Aplicando sugestão:", sugestao);
   };
 
   const handleSalvarTemplate = async (nome) => {
@@ -56,15 +59,15 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
         empresa_id: empresaAtiva.id,
         usuario_id: user?.id,
         nome,
-        tipo: 'Personalizado',
+        tipo: "Personalizado",
         filtros: JSON.stringify(filtros),
         publico: false,
-        favorito: false
+        favorito: false,
       });
-      alert('Template salvo com sucesso!');
+      alert("Template salvo com sucesso!");
     } catch (error) {
-      console.error('Erro ao salvar template:', error);
-      alert('Erro ao salvar template');
+      console.error("Erro ao salvar template:", error);
+      alert("Erro ao salvar template");
     }
   };
 
@@ -73,14 +76,15 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
   };
 
   // Filtrar transações
-  const transacoesFiltradas = transacoes.filter(t => {
+  const transacoesFiltradas = transacoes.filter((t) => {
     const data = t.data_vencimento || t.created_date;
     if (filtros.dataInicio && data < filtros.dataInicio) return false;
     if (filtros.dataFim && data > filtros.dataFim) return false;
-    if (filtros.categoriaId !== 'all' && t.categoria_id !== filtros.categoriaId) return false;
-    if (filtros.centroCustoId !== 'all' && t.centro_custo_id !== filtros.centroCustoId) return false;
-    if (filtros.contaId !== 'all' && t.conta_id !== filtros.contaId) return false;
-    if (filtros.projetoId !== 'all' && t.projeto_id !== filtros.projetoId) return false;
+    if (filtros.categoriaId !== "all" && t.categoria_id !== filtros.categoriaId) return false;
+    if (filtros.centroCustoId !== "all" && t.centro_custo_id !== filtros.centroCustoId)
+      return false;
+    if (filtros.contaId !== "all" && t.conta_id !== filtros.contaId) return false;
+    if (filtros.projetoId !== "all" && t.projeto_id !== filtros.projetoId) return false;
     return true;
   });
 
@@ -98,7 +102,7 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
       </div>
 
       {/* Assistente IA */}
-      <AssistenteIA 
+      <AssistenteIA
         transacoes={transacoesFiltradas}
         onAplicarFiltros={handleAplicarFiltrosIA}
         categorias={categorias}
@@ -106,7 +110,7 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
       />
 
       {/* Filtros Avançados */}
-      <FiltrosAvancados 
+      <FiltrosAvancados
         filtros={filtros}
         onFiltrosChange={setFiltros}
         categorias={categorias}
@@ -114,14 +118,10 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
       />
 
       {/* Insights IA */}
-      <InsightsIA 
-        transacoes={transacoesFiltradas}
-        categorias={categorias}
-        tipo={tipoRelatorio}
-      />
+      <InsightsIA transacoes={transacoesFiltradas} categorias={categorias} tipo={tipoRelatorio} />
 
       {/* Sugestões de Visualização */}
-      <SugestoesVisualizacao 
+      <SugestoesVisualizacao
         transacoes={transacoesFiltradas}
         tipo={tipoRelatorio}
         onAplicarSugestao={handleAplicarSugestao}
@@ -129,23 +129,11 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
 
       {/* Gráficos Comparativos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <GraficosComparativos 
-          transacoes={transacoesFiltradas} 
-          filtros={filtros}
-          tipo="dre"
-        />
-        <GraficosComparativos 
-          transacoes={transacoesFiltradas} 
-          filtros={filtros}
-          tipo="fluxo"
-        />
+        <GraficosComparativos transacoes={transacoesFiltradas} filtros={filtros} tipo="dre" />
+        <GraficosComparativos transacoes={transacoesFiltradas} filtros={filtros} tipo="fluxo" />
       </div>
 
-      <GraficosComparativos 
-        transacoes={transacoesFiltradas} 
-        filtros={filtros}
-        tipo="margens"
-      />
+      <GraficosComparativos transacoes={transacoesFiltradas} filtros={filtros} tipo="margens" />
 
       <Tabs defaultValue="dre" className="w-full" onValueChange={setTipoRelatorio}>
         <TabsList className="grid w-full grid-cols-6 bg-slate-100">
@@ -158,35 +146,66 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
         </TabsList>
 
         <TabsContent value="dre" className="space-y-4">
-          <DRERelatorio transacoes={transacoesFiltradas} versao={filtros.versao} dataInicio={filtros.dataInicio} dataFim={filtros.dataFim} categorias={categorias} />
+          <DRERelatorio
+            transacoes={transacoesFiltradas}
+            versao={filtros.versao}
+            dataInicio={filtros.dataInicio}
+            dataFim={filtros.dataFim}
+            categorias={categorias}
+          />
         </TabsContent>
 
         <TabsContent value="balanco" className="space-y-4">
-          <BalancoPatrimonial transacoes={transacoesFiltradas} contas={contas} versao={filtros.versao} dataInicio={filtros.dataInicio} dataFim={filtros.dataFim} />
+          <BalancoPatrimonial
+            transacoes={transacoesFiltradas}
+            contas={contas}
+            versao={filtros.versao}
+            dataInicio={filtros.dataInicio}
+            dataFim={filtros.dataFim}
+          />
         </TabsContent>
 
         <TabsContent value="fluxo" className="space-y-4">
-          <FluxoCaixaRelatorio transacoes={transacoesFiltradas} contas={contas} versao={filtros.versao} dataInicio={filtros.dataInicio} dataFim={filtros.dataFim} />
+          <FluxoCaixaRelatorio
+            transacoes={transacoesFiltradas}
+            contas={contas}
+            versao={filtros.versao}
+            dataInicio={filtros.dataInicio}
+            dataFim={filtros.dataFim}
+          />
         </TabsContent>
 
         <TabsContent value="indices" className="space-y-4">
-          <IndicesFinanceiros transacoes={transacoesFiltradas} contas={contas} versao={filtros.versao} />
+          <IndicesFinanceiros
+            transacoes={transacoesFiltradas}
+            contas={contas}
+            versao={filtros.versao}
+          />
         </TabsContent>
 
         <TabsContent value="evolucao" className="space-y-4">
-          <EvolucaoDespesas transacoes={transacoesFiltradas} categorias={categorias} versao={filtros.versao} />
+          <EvolucaoDespesas
+            transacoes={transacoesFiltradas}
+            categorias={categorias}
+            versao={filtros.versao}
+          />
         </TabsContent>
 
         <TabsContent value="apuracao" className="space-y-4">
-          <ApuracaoResultados transacoes={transacoesFiltradas} categorias={categorias} versao={filtros.versao} />
+          <ApuracaoResultados
+            transacoes={transacoesFiltradas}
+            categorias={categorias}
+            versao={filtros.versao}
+          />
         </TabsContent>
       </Tabs>
 
-      {filtros.versao === 'contabil' && (
+      {filtros.versao === "contabil" && (
         <Card className="border-amber-200 bg-amber-50">
           <CardContent className="p-4">
             <p className="text-sm text-amber-800">
-              <strong>Regime Contábil:</strong> Mostra apenas transações com nota fiscal (NF-e) para conformidade contábil.
+              <strong>Regime Contábil:</strong> Mostra apenas transações com nota fiscal (NF-e) para
+              conformidade contábil.
             </p>
           </CardContent>
         </Card>

@@ -1,16 +1,14 @@
-import React, { useState, useMemo } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import React, { useState, useMemo } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -18,27 +16,42 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Download, TrendingUp, TrendingDown, Package, DollarSign } from 'lucide-react';
-import { toast } from 'sonner';
-import jsPDF from 'jspdf';
-import { utils, write } from 'xlsx';
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
+import { Download, TrendingUp, TrendingDown, Package, DollarSign } from "lucide-react";
+import { toast } from "sonner";
+import jsPDF from "jspdf";
+import { utils, write } from "xlsx";
 
-export default function RelatorioInventario({ ferramentas = [], movimentacoes = [], empresaAtiva }) {
-  const [filtroLocalizacao, setFiltroLocalizacao] = useState('');
-  const [filtroStatus, setFiltroStatus] = useState('');
-  const [tipoRelatorio, setTipoRelatorio] = useState('resumo'); // resumo, quantidade, movimentacao
+export default function RelatorioInventario({
+  ferramentas = [],
+  movimentacoes = [],
+  empresaAtiva,
+}) {
+  const [filtroLocalizacao, setFiltroLocalizacao] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("");
+  const [tipoRelatorio, setTipoRelatorio] = useState("resumo"); // resumo, quantidade, movimentacao
 
   // Extrair localizações únicas
   const localizacoes = useMemo(() => {
-    return [...new Set(ferramentas.map(f => f.localizacao).filter(Boolean))];
+    return [...new Set(ferramentas.map((f) => f.localizacao).filter(Boolean))];
   }, [ferramentas]);
 
   // Filtrar ferramentas
   const ferramentasFiltradas = useMemo(() => {
-    return ferramentas.filter(f => {
+    return ferramentas.filter((f) => {
       if (filtroLocalizacao && f.localizacao !== filtroLocalizacao) return false;
       if (filtroStatus && f.status !== filtroStatus) return false;
       return true;
@@ -47,42 +60,64 @@ export default function RelatorioInventario({ ferramentas = [], movimentacoes = 
 
   // Cálculos gerais
   const calculos = useMemo(() => {
-    const totalValor = ferramentasFiltradas.reduce((sum, f) => sum + ((f.valor_unitario || 0) * (f.quantidade_estoque || 0)), 0);
-    const totalItens = ferramentasFiltradas.reduce((sum, f) => sum + (f.quantidade_estoque || 0), 0);
+    const totalValor = ferramentasFiltradas.reduce(
+      (sum, f) => sum + (f.valor_unitario || 0) * (f.quantidade_estoque || 0),
+      0
+    );
+    const totalItens = ferramentasFiltradas.reduce(
+      (sum, f) => sum + (f.quantidade_estoque || 0),
+      0
+    );
     const totalFerramentas = ferramentasFiltradas.length;
 
     // Itens com maior quantidade
-    const maiorQuantidade = [...ferramentasFiltradas].sort((a, b) => (b.quantidade_estoque || 0) - (a.quantidade_estoque || 0)).slice(0, 5);
+    const maiorQuantidade = [...ferramentasFiltradas]
+      .sort((a, b) => (b.quantidade_estoque || 0) - (a.quantidade_estoque || 0))
+      .slice(0, 5);
 
     // Itens com menor quantidade
     const menorQuantidade = ferramentasFiltradas
-      .filter(f => f.quantidade_estoque && f.quantidade_estoque > 0)
+      .filter((f) => f.quantidade_estoque && f.quantidade_estoque > 0)
       .sort((a, b) => (a.quantidade_estoque || 0) - (b.quantidade_estoque || 0))
       .slice(0, 5);
 
     // Ferramentas que mais movimentaram
     const movPorFerramenta = {};
-    movimentacoes.forEach(mov => {
+    movimentacoes.forEach((mov) => {
       if (!movPorFerramenta[mov.ferramenta_id]) {
-        movPorFerramenta[mov.ferramenta_id] = { id: mov.ferramenta_id, codigo: mov.ferramenta_codigo, descricao: mov.ferramenta_descricao, movimentacoes: 0 };
+        movPorFerramenta[mov.ferramenta_id] = {
+          id: mov.ferramenta_id,
+          codigo: mov.ferramenta_codigo,
+          descricao: mov.ferramenta_descricao,
+          movimentacoes: 0,
+        };
       }
       movPorFerramenta[mov.ferramenta_id].movimentacoes += 1;
     });
-    const maiorMovimentacao = Object.values(movPorFerramenta).sort((a, b) => b.movimentacoes - a.movimentacoes).slice(0, 5);
+    const maiorMovimentacao = Object.values(movPorFerramenta)
+      .sort((a, b) => b.movimentacoes - a.movimentacoes)
+      .slice(0, 5);
 
     // Distribuição por status
     const distribuicaoStatus = {};
-    ferramentasFiltradas.forEach(f => {
+    ferramentasFiltradas.forEach((f) => {
       distribuicaoStatus[f.status] = (distribuicaoStatus[f.status] || 0) + 1;
     });
-    const statusChartData = Object.entries(distribuicaoStatus).map(([status, count]) => ({ status, count }));
+    const statusChartData = Object.entries(distribuicaoStatus).map(([status, count]) => ({
+      status,
+      count,
+    }));
 
     // Distribuição por localização
     const distribuicaoLocal = {};
-    ferramentasFiltradas.forEach(f => {
-      distribuicaoLocal[f.localizacao || 'Sem localização'] = (distribuicaoLocal[f.localizacao || 'Sem localização'] || 0) + 1;
+    ferramentasFiltradas.forEach((f) => {
+      distribuicaoLocal[f.localizacao || "Sem localização"] =
+        (distribuicaoLocal[f.localizacao || "Sem localização"] || 0) + 1;
     });
-    const localChartData = Object.entries(distribuicaoLocal).map(([local, count]) => ({ local, count }));
+    const localChartData = Object.entries(distribuicaoLocal).map(([local, count]) => ({
+      local,
+      count,
+    }));
 
     return {
       totalValor,
@@ -98,23 +133,23 @@ export default function RelatorioInventario({ ferramentas = [], movimentacoes = 
 
   // Função para exportar como CSV
   const exportarCSV = () => {
-    const dados = ferramentasFiltradas.map(f => ({
+    const dados = ferramentasFiltradas.map((f) => ({
       Código: f.codigo,
       Descrição: f.descricao,
-      Marca: f.marca || '',
-      Modelo: f.modelo || '',
+      Marca: f.marca || "",
+      Modelo: f.modelo || "",
       Status: f.status,
-      Localização: f.localizacao || '',
+      Localização: f.localizacao || "",
       Quantidade: f.quantidade_estoque || 0,
-      'Valor Unitário': f.valor_unitario || 0,
-      'Valor Total': (f.valor_unitario || 0) * (f.quantidade_estoque || 0),
+      "Valor Unitário": f.valor_unitario || 0,
+      "Valor Total": (f.valor_unitario || 0) * (f.quantidade_estoque || 0),
     }));
 
     const ws = utils.json_to_sheet(dados);
     const wb = utils.book_new();
-    utils.book_append_sheet(wb, ws, 'Inventário');
-    write(wb, { bookType: 'csv', type: 'binary', fileName: 'relatorio-inventario.csv' });
-    toast.success('✓ Relatório exportado como CSV');
+    utils.book_append_sheet(wb, ws, "Inventário");
+    write(wb, { bookType: "csv", type: "binary", fileName: "relatorio-inventario.csv" });
+    toast.success("✓ Relatório exportado como CSV");
   };
 
   // Função para exportar como PDF
@@ -122,25 +157,25 @@ export default function RelatorioInventario({ ferramentas = [], movimentacoes = 
     try {
       const doc = new jsPDF();
       doc.setFontSize(16);
-      doc.text('Relatório de Inventário', 20, 20);
+      doc.text("Relatório de Inventário", 20, 20);
 
       doc.setFontSize(10);
-      doc.text(`Empresa: ${empresaAtiva?.nome || 'N/A'}`, 20, 30);
-      doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, 20, 37);
+      doc.text(`Empresa: ${empresaAtiva?.nome || "N/A"}`, 20, 30);
+      doc.text(`Data: ${new Date().toLocaleDateString("pt-BR")}`, 20, 37);
 
       // Resumo
       doc.setFontSize(12);
-      doc.text('Resumo Executivo', 20, 50);
+      doc.text("Resumo Executivo", 20, 50);
 
       const resumoDados = [
-        ['Total de Ferramentas', calculos.totalFerramentas.toString()],
-        ['Total de Itens', calculos.totalItens.toString()],
-        ['Valor Total', `R$ ${calculos.totalValor.toFixed(2)}`],
+        ["Total de Ferramentas", calculos.totalFerramentas.toString()],
+        ["Total de Itens", calculos.totalItens.toString()],
+        ["Valor Total", `R$ ${calculos.totalValor.toFixed(2)}`],
       ];
 
       doc.autoTable({
         startY: 55,
-        head: [['Métrica', 'Valor']],
+        head: [["Métrica", "Valor"]],
         body: resumoDados,
         margin: { left: 20, right: 20 },
       });
@@ -148,9 +183,9 @@ export default function RelatorioInventario({ ferramentas = [], movimentacoes = 
       // Itens com maior quantidade
       const startYMaior = doc.lastAutoTable.finalY + 10;
       doc.setFontSize(12);
-      doc.text('Itens com Maior Quantidade', 20, startYMaior);
+      doc.text("Itens com Maior Quantidade", 20, startYMaior);
 
-      const maiorDados = calculos.maiorQuantidade.map(item => [
+      const maiorDados = calculos.maiorQuantidade.map((item) => [
         item.codigo,
         item.descricao,
         item.quantidade_estoque || 0,
@@ -158,7 +193,7 @@ export default function RelatorioInventario({ ferramentas = [], movimentacoes = 
 
       doc.autoTable({
         startY: startYMaior + 5,
-        head: [['Código', 'Descrição', 'Quantidade']],
+        head: [["Código", "Descrição", "Quantidade"]],
         body: maiorDados,
         margin: { left: 20, right: 20 },
       });
@@ -167,9 +202,9 @@ export default function RelatorioInventario({ ferramentas = [], movimentacoes = 
       const startYMov = doc.lastAutoTable.finalY + 10;
       if (calculos.maiorMovimentacao.length > 0) {
         doc.setFontSize(12);
-        doc.text('Ferramentas com Maior Movimentação', 20, startYMov);
+        doc.text("Ferramentas com Maior Movimentação", 20, startYMov);
 
-        const movDados = calculos.maiorMovimentacao.map(item => [
+        const movDados = calculos.maiorMovimentacao.map((item) => [
           item.codigo,
           item.descricao,
           item.movimentacoes.toString(),
@@ -177,21 +212,21 @@ export default function RelatorioInventario({ ferramentas = [], movimentacoes = 
 
         doc.autoTable({
           startY: startYMov + 5,
-          head: [['Código', 'Descrição', 'Movimentações']],
+          head: [["Código", "Descrição", "Movimentações"]],
           body: movDados,
           margin: { left: 20, right: 20 },
         });
       }
 
-      doc.save('relatorio-inventario.pdf');
-      toast.success('✓ Relatório exportado como PDF');
+      doc.save("relatorio-inventario.pdf");
+      toast.success("✓ Relatório exportado como PDF");
     } catch (error) {
-      toast.error('Erro ao exportar PDF');
+      toast.error("Erro ao exportar PDF");
       console.error(error);
     }
   };
 
-  const COLORS = ['#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#8b5cf6', '#ec4899'];
+  const COLORS = ["#f59e0b", "#10b981", "#3b82f6", "#ef4444", "#8b5cf6", "#ec4899"];
 
   return (
     <div className="space-y-6">
@@ -210,8 +245,10 @@ export default function RelatorioInventario({ ferramentas = [], movimentacoes = 
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={null}>Todas</SelectItem>
-                  {localizacoes.map(local => (
-                    <SelectItem key={local} value={local}>{local}</SelectItem>
+                  {localizacoes.map((local) => (
+                    <SelectItem key={local} value={local}>
+                      {local}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -283,7 +320,9 @@ export default function RelatorioInventario({ ferramentas = [], movimentacoes = 
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-slate-600">Valor Total</p>
-                <p className="text-2xl font-bold text-slate-800">R$ {(calculos.totalValor / 1000).toFixed(1)}k</p>
+                <p className="text-2xl font-bold text-slate-800">
+                  R$ {(calculos.totalValor / 1000).toFixed(1)}k
+                </p>
               </div>
               <DollarSign className="w-10 h-10 text-amber-500 opacity-20" />
             </div>
@@ -304,7 +343,7 @@ export default function RelatorioInventario({ ferramentas = [], movimentacoes = 
       </div>
 
       {/* Relatório Resumo */}
-      {tipoRelatorio === 'resumo' && (
+      {tipoRelatorio === "resumo" && (
         <>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Distribuição por Status */}
@@ -360,7 +399,7 @@ export default function RelatorioInventario({ ferramentas = [], movimentacoes = 
       )}
 
       {/* Relatório Quantidade */}
-      {tipoRelatorio === 'quantidade' && (
+      {tipoRelatorio === "quantidade" && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Maior Quantidade */}
           <Card>
@@ -373,12 +412,17 @@ export default function RelatorioInventario({ ferramentas = [], movimentacoes = 
             <CardContent>
               <div className="space-y-3">
                 {calculos.maiorQuantidade.map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border">
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border"
+                  >
                     <div>
                       <p className="font-semibold text-sm text-slate-800">{item.codigo}</p>
                       <p className="text-xs text-slate-600">{item.descricao}</p>
                     </div>
-                    <Badge className="bg-green-100 text-green-800">{item.quantidade_estoque || 0}</Badge>
+                    <Badge className="bg-green-100 text-green-800">
+                      {item.quantidade_estoque || 0}
+                    </Badge>
                   </div>
                 ))}
               </div>
@@ -396,12 +440,17 @@ export default function RelatorioInventario({ ferramentas = [], movimentacoes = 
             <CardContent>
               <div className="space-y-3">
                 {calculos.menorQuantidade.map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border">
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border"
+                  >
                     <div>
                       <p className="font-semibold text-sm text-slate-800">{item.codigo}</p>
                       <p className="text-xs text-slate-600">{item.descricao}</p>
                     </div>
-                    <Badge className="bg-orange-100 text-orange-800">{item.quantidade_estoque || 0}</Badge>
+                    <Badge className="bg-orange-100 text-orange-800">
+                      {item.quantidade_estoque || 0}
+                    </Badge>
                   </div>
                 ))}
               </div>
@@ -411,7 +460,7 @@ export default function RelatorioInventario({ ferramentas = [], movimentacoes = 
       )}
 
       {/* Relatório Movimentação */}
-      {tipoRelatorio === 'movimentacao' && (
+      {tipoRelatorio === "movimentacao" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Ferramentas com Maior Movimentação</CardTitle>
@@ -454,16 +503,24 @@ export default function RelatorioInventario({ ferramentas = [], movimentacoes = 
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {ferramentasFiltradas.slice(0, 20).map(item => (
+                {ferramentasFiltradas.slice(0, 20).map((item) => (
                   <TableRow key={item.id} className="hover:bg-slate-50">
                     <TableCell className="font-mono text-sm">{item.codigo}</TableCell>
                     <TableCell className="text-sm">{item.descricao}</TableCell>
-                    <TableCell className="text-right font-semibold">{item.quantidade_estoque || 0}</TableCell>
-                    <TableCell className="text-right">R$ {(item.valor_unitario || 0).toFixed(2)}</TableCell>
-                    <TableCell className="text-right font-semibold">R$ {((item.valor_unitario || 0) * (item.quantidade_estoque || 0)).toFixed(2)}</TableCell>
-                    <TableCell className="text-sm">{item.localizacao || '-'}</TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {item.quantidade_estoque || 0}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      R$ {(item.valor_unitario || 0).toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      R$ {((item.valor_unitario || 0) * (item.quantidade_estoque || 0)).toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-sm">{item.localizacao || "-"}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="text-xs">{item.status}</Badge>
+                      <Badge variant="outline" className="text-xs">
+                        {item.status}
+                      </Badge>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -471,7 +528,9 @@ export default function RelatorioInventario({ ferramentas = [], movimentacoes = 
             </Table>
           </div>
           {ferramentasFiltradas.length > 20 && (
-            <p className="text-xs text-slate-500 mt-2">Exibindo 20 de {ferramentasFiltradas.length} itens</p>
+            <p className="text-xs text-slate-500 mt-2">
+              Exibindo 20 de {ferramentasFiltradas.length} itens
+            </p>
           )}
         </CardContent>
       </Card>

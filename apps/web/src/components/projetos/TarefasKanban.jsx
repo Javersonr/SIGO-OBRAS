@@ -1,31 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { base44 } from '@/api/base44Client';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { 
-  Plus, CheckCircle2, Clock, AlertCircle, Users, Link2, 
-  ChevronRight, Calendar, Timer, Paperclip, FileText, Download 
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import EditarTarefas from './EditarTarefas';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import React, { useState, useEffect } from "react";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { base44 } from "@/api/base44Client";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Plus, CheckCircle2, AlertCircle, Calendar, Timer, Paperclip } from "lucide-react";
+import { cn } from "@/lib/utils";
+import EditarTarefas from "./EditarTarefas";
 
 const COLUNAS = [
-  { id: 'A Fazer', titulo: 'A Fazer', cor: 'bg-slate-100 border-slate-300' },
-  { id: 'Em Andamento', titulo: 'Em Andamento', cor: 'bg-blue-100 border-blue-300' },
-  { id: 'Em Revisão', titulo: 'Em Revisão', cor: 'bg-yellow-100 border-yellow-300' },
-  { id: 'Concluída', titulo: 'Concluída', cor: 'bg-green-100 border-green-300' },
-  { id: 'Bloqueada', titulo: 'Bloqueada', cor: 'bg-red-100 border-red-300' }
+  { id: "A Fazer", titulo: "A Fazer", cor: "bg-slate-100 border-slate-300" },
+  { id: "Em Andamento", titulo: "Em Andamento", cor: "bg-blue-100 border-blue-300" },
+  { id: "Em Revisão", titulo: "Em Revisão", cor: "bg-yellow-100 border-yellow-300" },
+  { id: "Concluída", titulo: "Concluída", cor: "bg-green-100 border-green-300" },
+  { id: "Bloqueada", titulo: "Bloqueada", cor: "bg-red-100 border-red-300" },
 ];
 
 const CORES_PRIORIDADE = {
-  'Baixa': 'bg-slate-100 text-slate-700 border-slate-300',
-  'Normal': 'bg-blue-100 text-blue-700 border-blue-300',
-  'Alta': 'bg-orange-100 text-orange-700 border-orange-300',
-  'Urgente': 'bg-red-100 text-red-700 border-red-300'
+  Baixa: "bg-slate-100 text-slate-700 border-slate-300",
+  Normal: "bg-blue-100 text-blue-700 border-blue-300",
+  Alta: "bg-orange-100 text-orange-700 border-orange-300",
+  Urgente: "bg-red-100 text-red-700 border-red-300",
 };
 
 export default function TarefasKanban({ projetoId, empresaAtiva, usuariosEmpresa }) {
@@ -44,11 +40,11 @@ export default function TarefasKanban({ projetoId, empresaAtiva, usuariosEmpresa
     try {
       const result = await base44.entities.TarefaProjeto.filter({
         empresa_id: empresaAtiva.id,
-        projeto_id: projetoId
+        projeto_id: projetoId,
       });
       setTarefas(result.sort((a, b) => a.ordem - b.ordem));
     } catch (error) {
-      console.error('Erro ao carregar tarefas:', error);
+      console.error("Erro ao carregar tarefas:", error);
     } finally {
       setLoading(false);
     }
@@ -59,34 +55,38 @@ export default function TarefasKanban({ projetoId, empresaAtiva, usuariosEmpresa
 
     const { draggableId, destination } = result;
     const novoStatus = destination.droppableId;
-    const tarefa = tarefas.find(t => t.id === draggableId);
+    const tarefa = tarefas.find((t) => t.id === draggableId);
 
     if (tarefa.status === novoStatus) return;
 
     // Verificar dependências
-    if (novoStatus === 'Em Andamento' || novoStatus === 'Concluída') {
+    if (novoStatus === "Em Andamento" || novoStatus === "Concluída") {
       let dependencias = [];
-      try { dependencias = tarefa.dependencias ? JSON.parse(tarefa.dependencias) : []; } catch {}
-      const tarefasBloqueadas = tarefas.filter(t => 
-        dependencias.includes(t.id) && t.status !== 'Concluída'
+      try {
+        dependencias = tarefa.dependencias ? JSON.parse(tarefa.dependencias) : [];
+      } catch {}
+      const tarefasBloqueadas = tarefas.filter(
+        (t) => dependencias.includes(t.id) && t.status !== "Concluída"
       );
 
       if (tarefasBloqueadas.length > 0) {
-        alert('Esta tarefa possui dependências não concluídas:\n' + 
-          tarefasBloqueadas.map(t => `- ${t.titulo}`).join('\n'));
+        alert(
+          "Esta tarefa possui dependências não concluídas:\n" +
+            tarefasBloqueadas.map((t) => `- ${t.titulo}`).join("\n")
+        );
         return;
       }
     }
 
     try {
-      await base44.entities.TarefaProjeto.update(draggableId, { 
+      await base44.entities.TarefaProjeto.update(draggableId, {
         status: novoStatus,
-        data_conclusao: novoStatus === 'Concluída' ? new Date().toISOString().split('T')[0] : null,
-        progresso: novoStatus === 'Concluída' ? 100 : tarefa.progresso
+        data_conclusao: novoStatus === "Concluída" ? new Date().toISOString().split("T")[0] : null,
+        progresso: novoStatus === "Concluída" ? 100 : tarefa.progresso,
       });
       loadTarefas();
     } catch (error) {
-      console.error('Erro ao atualizar status:', error);
+      console.error("Erro ao atualizar status:", error);
     }
   };
 
@@ -105,101 +105,122 @@ export default function TarefasKanban({ projetoId, empresaAtiva, usuariosEmpresa
 
   const getTarefasPorStatus = (status) => {
     return tarefas
-      .filter(t => t.status === status && !t.tarefa_pai_id)
+      .filter((t) => t.status === status && !t.tarefa_pai_id)
       .sort((a, b) => new Date(a.created_date) - new Date(b.created_date));
   };
 
   const getSubtarefas = (tarefaId) => {
-    return tarefas.filter(t => t.tarefa_pai_id === tarefaId);
+    return tarefas.filter((t) => t.tarefa_pai_id === tarefaId);
   };
 
   const temDependenciasBloqueadas = (tarefa) => {
     try {
       const dependencias = tarefa.dependencias ? JSON.parse(tarefa.dependencias) : [];
-      return tarefas.some(t => dependencias.includes(t.id) && t.status !== 'Concluída');
-    } catch { return false; }
+      return tarefas.some((t) => dependencias.includes(t.id) && t.status !== "Concluída");
+    } catch {
+      return false;
+    }
   };
 
   const handleExportarExcel = () => {
     const dados = tarefas.map((tarefa, idx) => [
       idx + 1,
-      tarefa.titulo || '',
-      tarefa.descricao || '',
-      tarefa.status || '',
-      tarefa.prioridade || '',
-      tarefa.responsavel_principal_nome || '',
-      tarefa.data_inicio || '',
-      tarefa.data_fim || '',
+      tarefa.titulo || "",
+      tarefa.descricao || "",
+      tarefa.status || "",
+      tarefa.prioridade || "",
+      tarefa.responsavel_principal_nome || "",
+      tarefa.data_inicio || "",
+      tarefa.data_fim || "",
       tarefa.progresso || 0,
-      tarefa.observacoes || ''
+      tarefa.observacoes || "",
     ]);
 
-    const headers = ['Nº', 'Título', 'Descrição', 'Status', 'Prioridade', 'Responsável', 'Data Início', 'Data Fim', 'Progresso %', 'Observações'];
+    const headers = [
+      "Nº",
+      "Título",
+      "Descrição",
+      "Status",
+      "Prioridade",
+      "Responsável",
+      "Data Início",
+      "Data Fim",
+      "Progresso %",
+      "Observações",
+    ];
     const linhas = [headers, ...dados];
-    const csv = linhas.map(row => row.map(cell => {
-      const cellStr = String(cell).replace(/"/g, '""');
-      return cellStr.includes(';') || cellStr.includes('\n') || cellStr.includes('"') ? `"${cellStr}"` : cellStr;
-    }).join(';')).join('\n');
-    
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
+    const csv = linhas
+      .map((row) =>
+        row
+          .map((cell) => {
+            const cellStr = String(cell).replace(/"/g, '""');
+            return cellStr.includes(";") || cellStr.includes("\n") || cellStr.includes('"')
+              ? `"${cellStr}"`
+              : cellStr;
+          })
+          .join(";")
+      )
+      .join("\n");
+
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `tarefas_kanban_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `tarefas_kanban_${new Date().toISOString().split("T")[0]}.csv`;
     link.click();
   };
 
   const handleExportarPDF = async () => {
-    const { jsPDF } = await import('jspdf');
+    const { jsPDF } = await import("jspdf");
     const doc = new jsPDF();
-    
+
     doc.setFontSize(16);
-    doc.setFont(undefined, 'bold');
-    doc.text('TAREFAS - KANBAN', 14, 20);
-    
+    doc.setFont(undefined, "bold");
+    doc.text("TAREFAS - KANBAN", 14, 20);
+
     doc.setFontSize(10);
-    doc.setFont(undefined, 'normal');
-    doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 28);
-    
+    doc.setFont(undefined, "normal");
+    doc.text(`Gerado em: ${new Date().toLocaleDateString("pt-BR")}`, 14, 28);
+
     let y = 40;
-    COLUNAS.forEach(coluna => {
+    COLUNAS.forEach((coluna) => {
       const tarefasColuna = getTarefasPorStatus(coluna.id);
       if (tarefasColuna.length === 0) return;
-      
+
       doc.setFontSize(12);
-      doc.setFont(undefined, 'bold');
+      doc.setFont(undefined, "bold");
       doc.text(`${coluna.titulo} (${tarefasColuna.length})`, 14, y);
       y += 8;
-      
+
       doc.setFontSize(9);
-      doc.setFont(undefined, 'normal');
-      
+      doc.setFont(undefined, "normal");
+
       tarefasColuna.forEach((tarefa, idx) => {
         if (y > 270) {
           doc.addPage();
           y = 20;
         }
-        
+
         doc.text(`${idx + 1}. ${tarefa.titulo}`, 18, y);
         y += 5;
-        
+
         if (tarefa.descricao) {
           const desc = doc.splitTextToSize(`   ${tarefa.descricao}`, 170);
           doc.text(desc, 18, y);
           y += desc.length * 4;
         }
-        
-        doc.text(`   Responsável: ${tarefa.responsavel_principal_nome || '-'}`, 18, y);
+
+        doc.text(`   Responsável: ${tarefa.responsavel_principal_nome || "-"}`, 18, y);
         y += 4;
-        doc.text(`   Datas: ${tarefa.data_inicio || '-'} até ${tarefa.data_fim || '-'}`, 18, y);
+        doc.text(`   Datas: ${tarefa.data_inicio || "-"} até ${tarefa.data_fim || "-"}`, 18, y);
         y += 4;
         doc.text(`   Progresso: ${tarefa.progresso || 0}%`, 18, y);
         y += 8;
       });
-      
+
       y += 5;
     });
-    
-    doc.save(`tarefas_kanban_${new Date().toISOString().split('T')[0]}.pdf`);
+
+    doc.save(`tarefas_kanban_${new Date().toISOString().split("T")[0]}.pdf`);
   };
 
   if (loading) {
@@ -214,18 +235,15 @@ export default function TarefasKanban({ projetoId, empresaAtiva, usuariosEmpresa
     <div className="space-y-4">
       <button data-kanban-export="pdf" onClick={handleExportarPDF} className="hidden" />
       <button data-kanban-export="excel" onClick={handleExportarExcel} className="hidden" />
-      
+
       <DragDropContext onDragEnd={handleDragEnd}>
         <div className="flex gap-4 overflow-x-auto pb-4" style={{ minHeight: 0 }}>
-          {COLUNAS.map(coluna => {
+          {COLUNAS.map((coluna) => {
             const tarefasColuna = getTarefasPorStatus(coluna.id);
 
             return (
               <div key={coluna.id} className="flex flex-col flex-shrink-0 w-72">
-                <div className={cn(
-                  "p-3 rounded-t-lg border-t-4 border-l border-r",
-                  coluna.cor
-                )}>
+                <div className={cn("p-3 rounded-t-lg border-t-4 border-l border-r", coluna.cor)}>
                   <div className="flex items-center justify-between">
                     <h3 className="font-semibold text-slate-800">{coluna.titulo}</h3>
                     <Badge variant="secondary" className="bg-white">
@@ -250,17 +268,23 @@ export default function TarefasKanban({ projetoId, empresaAtiva, usuariosEmpresa
                       {...provided.droppableProps}
                       className={cn(
                         "flex-1 p-2 border-l border-r border-b rounded-b-lg space-y-2 min-h-[200px]",
-                        coluna.cor.replace('100', '50'),
+                        coluna.cor.replace("100", "50"),
                         snapshot.isDraggingOver && "bg-blue-100/50"
                       )}
                     >
                       {tarefasColuna.map((tarefa, index) => {
                         const subtarefas = getSubtarefas(tarefa.id);
                         let responsaveis = [];
-                        try { responsaveis = tarefa.responsaveis_nomes ? JSON.parse(tarefa.responsaveis_nomes) : []; } catch {}
+                        try {
+                          responsaveis = tarefa.responsaveis_nomes
+                            ? JSON.parse(tarefa.responsaveis_nomes)
+                            : [];
+                        } catch {}
                         const dependenciasBloqueadas = temDependenciasBloqueadas(tarefa);
                         let anexos = [];
-                        try { anexos = tarefa.anexos ? JSON.parse(tarefa.anexos) : []; } catch {}
+                        try {
+                          anexos = tarefa.anexos ? JSON.parse(tarefa.anexos) : [];
+                        } catch {}
 
                         return (
                           <Draggable key={tarefa.id} draggableId={tarefa.id} index={index}>
@@ -283,11 +307,13 @@ export default function TarefasKanban({ projetoId, empresaAtiva, usuariosEmpresa
                                       <h4 className="text-sm font-medium text-slate-800 flex-1">
                                         {tarefa.titulo}
                                       </h4>
-                                      {tarefa.prioridade !== 'Normal' && (
-                                        <Badge className={cn(
-                                          "text-xs border",
-                                          CORES_PRIORIDADE[tarefa.prioridade]
-                                        )}>
+                                      {tarefa.prioridade !== "Normal" && (
+                                        <Badge
+                                          className={cn(
+                                            "text-xs border",
+                                            CORES_PRIORIDADE[tarefa.prioridade]
+                                          )}
+                                        >
                                           {tarefa.prioridade}
                                         </Badge>
                                       )}
@@ -304,10 +330,14 @@ export default function TarefasKanban({ projetoId, empresaAtiva, usuariosEmpresa
                                       {subtarefas.length > 0 && (
                                         <div className="flex items-center gap-1">
                                           <CheckCircle2 className="w-3 h-3" />
-                                          {subtarefas.filter(s => s.status === 'Concluída').length}/{subtarefas.length}
+                                          {
+                                            subtarefas.filter((s) => s.status === "Concluída")
+                                              .length
+                                          }
+                                          /{subtarefas.length}
                                         </div>
                                       )}
-                                      
+
                                       {dependenciasBloqueadas && (
                                         <div className="flex items-center gap-1 text-red-600">
                                           <AlertCircle className="w-3 h-3" />
@@ -318,7 +348,10 @@ export default function TarefasKanban({ projetoId, empresaAtiva, usuariosEmpresa
                                       {tarefa.data_fim && (
                                         <div className="flex items-center gap-1">
                                           <Calendar className="w-3 h-3" />
-                                          {new Date(tarefa.data_fim).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                                          {new Date(tarefa.data_fim).toLocaleDateString("pt-BR", {
+                                            day: "2-digit",
+                                            month: "2-digit",
+                                          })}
                                         </div>
                                       )}
 
@@ -341,7 +374,10 @@ export default function TarefasKanban({ projetoId, empresaAtiva, usuariosEmpresa
                                     {responsaveis.length > 0 && (
                                       <div className="flex items-center gap-1 -space-x-2">
                                         {responsaveis.slice(0, 3).map((nome, idx) => (
-                                          <Avatar key={idx} className="w-6 h-6 border-2 border-white">
+                                          <Avatar
+                                            key={idx}
+                                            className="w-6 h-6 border-2 border-white"
+                                          >
                                             <AvatarFallback className="text-xs bg-blue-100 text-blue-700">
                                               {nome.substring(0, 2).toUpperCase()}
                                             </AvatarFallback>
@@ -349,14 +385,16 @@ export default function TarefasKanban({ projetoId, empresaAtiva, usuariosEmpresa
                                         ))}
                                         {responsaveis.length > 3 && (
                                           <div className="w-6 h-6 rounded-full bg-slate-200 border-2 border-white flex items-center justify-center">
-                                            <span className="text-xs text-slate-600">+{responsaveis.length - 3}</span>
+                                            <span className="text-xs text-slate-600">
+                                              +{responsaveis.length - 3}
+                                            </span>
                                           </div>
                                         )}
                                       </div>
                                     )}
 
                                     {/* Barra de Progresso */}
-                                    {tarefa.progresso > 0 && tarefa.status !== 'Concluída' && (
+                                    {tarefa.progresso > 0 && tarefa.status !== "Concluída" && (
                                       <div className="w-full bg-slate-200 rounded-full h-1.5">
                                         <div
                                           className="bg-blue-600 h-1.5 rounded-full transition-all"

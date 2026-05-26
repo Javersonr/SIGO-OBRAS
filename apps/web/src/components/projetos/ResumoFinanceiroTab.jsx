@@ -1,16 +1,23 @@
-import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { DollarSign, TrendingUp, AlertCircle, CheckCircle, TrendingDown } from 'lucide-react';
+import React from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { DollarSign, TrendingUp, AlertCircle, CheckCircle, TrendingDown } from "lucide-react";
 
-export default function ResumoFinanceiroTab({ projetoId, empresaAtiva, orcamentoItens, transacoes = [] }) {
+export default function ResumoFinanceiroTab({
+  projetoId,
+  empresaAtiva,
+  orcamentoItens,
+  transacoes = [],
+}) {
   // Usar transacoes passadas pelo pai (já filtradas por projeto_id)
   // Comparação case-insensitive pois o tipo pode ser 'receita' ou 'Receita'
-  const despesas = transacoes.filter(t => t.tipo?.toLowerCase() === 'despesa');
-  const receitas = transacoes.filter(t => t.tipo?.toLowerCase() === 'receita');
+  const despesas = transacoes.filter((t) => t.tipo?.toLowerCase() === "despesa");
+  const receitas = transacoes.filter((t) => t.tipo?.toLowerCase() === "receita");
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+      value || 0
+    );
   };
 
   // Calcular orçado (soma dos itens de orçamento)
@@ -28,25 +35,25 @@ export default function ResumoFinanceiroTab({ projetoId, empresaAtiva, orcamento
   // Dados para o gráfico comparativo
   const dadosComparativo = [
     {
-      nome: 'Orçado',
-      valor: orcado
+      nome: "Orçado",
+      valor: orcado,
     },
     {
-      nome: 'Realizado',
-      valor: realizado
-    }
+      nome: "Realizado",
+      valor: realizado,
+    },
   ];
 
   // Despesas por categoria
   const despesasPorCategoria = {};
-  despesas.forEach(desp => {
-    const categoria = desp.categoria_nome || 'Sem categoria';
+  despesas.forEach((desp) => {
+    const categoria = desp.categoria_nome || "Sem categoria";
     despesasPorCategoria[categoria] = (despesasPorCategoria[categoria] || 0) + (desp.valor || 0);
   });
 
   const dadosCategorias = Object.entries(despesasPorCategoria).map(([categoria, valor]) => ({
     categoria,
-    valor
+    valor,
   }));
 
   const percentualGasto = orcado > 0 ? ((realizado / orcado) * 100).toFixed(2) : 0;
@@ -98,7 +105,9 @@ export default function ResumoFinanceiroTab({ projetoId, empresaAtiva, orcamento
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-slate-500 mb-1">Resultado</p>
-                <p className={`text-2xl font-bold ${resultado >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                <p
+                  className={`text-2xl font-bold ${resultado >= 0 ? "text-green-600" : "text-red-600"}`}
+                >
                   {formatCurrency(resultado)}
                 </p>
               </div>
@@ -119,8 +128,9 @@ export default function ResumoFinanceiroTab({ projetoId, empresaAtiva, orcamento
           <p className="text-sm text-slate-500 mt-1">
             Gasto: <span className="font-bold">{percentualGasto}%</span> do orçado
             {variacao !== 0 && (
-              <span className={variacao > 0 ? 'text-green-600 ml-4' : 'text-red-600 ml-4'}>
-                {variacao > 0 ? '+' : ''}{formatCurrency(variacao)}
+              <span className={variacao > 0 ? "text-green-600 ml-4" : "text-red-600 ml-4"}>
+                {variacao > 0 ? "+" : ""}
+                {formatCurrency(variacao)}
               </span>
             )}
           </p>
@@ -131,9 +141,9 @@ export default function ResumoFinanceiroTab({ projetoId, empresaAtiva, orcamento
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="nome" />
               <YAxis />
-              <Tooltip 
+              <Tooltip
                 formatter={(value) => formatCurrency(value)}
-                contentStyle={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}
+                contentStyle={{ backgroundColor: "#f8fafc", border: "1px solid #e2e8f0" }}
               />
               <Bar dataKey="valor" fill="#3b82f6" radius={[8, 8, 0, 0]} />
             </BarChart>
@@ -149,13 +159,17 @@ export default function ResumoFinanceiroTab({ projetoId, empresaAtiva, orcamento
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={dadosCategorias} margin={{ top: 20, right: 30, left: 0, bottom: 60 }} layout="vertical">
+              <BarChart
+                data={dadosCategorias}
+                margin={{ top: 20, right: 30, left: 0, bottom: 60 }}
+                layout="vertical"
+              >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis type="number" />
                 <YAxis dataKey="categoria" type="category" width={150} />
-                <Tooltip 
+                <Tooltip
                   formatter={(value) => formatCurrency(value)}
-                  contentStyle={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}
+                  contentStyle={{ backgroundColor: "#f8fafc", border: "1px solid #e2e8f0" }}
                 />
                 <Bar dataKey="valor" fill="#ef4444" radius={[0, 8, 8, 0]} />
               </BarChart>
@@ -181,19 +195,24 @@ export default function ResumoFinanceiroTab({ projetoId, empresaAtiva, orcamento
             </div>
             <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
               <span className="text-slate-600">Variação:</span>
-              <span className={`font-bold ${variacao > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {variacao > 0 ? '+' : ''}{formatCurrency(variacao)} ({variacao_percent}%)
+              <span className={`font-bold ${variacao > 0 ? "text-green-600" : "text-red-600"}`}>
+                {variacao > 0 ? "+" : ""}
+                {formatCurrency(variacao)} ({variacao_percent}%)
               </span>
             </div>
             <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg border border-green-200">
               <span className="text-green-700 font-medium">Receitas:</span>
               <span className="font-bold text-green-700">{formatCurrency(totalReceitas)}</span>
             </div>
-            <div className={`flex justify-between items-center p-3 rounded-lg border ${resultado >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-              <span className={`font-medium ${resultado >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+            <div
+              className={`flex justify-between items-center p-3 rounded-lg border ${resultado >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}
+            >
+              <span className={`font-medium ${resultado >= 0 ? "text-green-700" : "text-red-700"}`}>
                 Resultado Líquido:
               </span>
-              <span className={`font-bold text-lg ${resultado >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+              <span
+                className={`font-bold text-lg ${resultado >= 0 ? "text-green-700" : "text-red-700"}`}
+              >
                 {formatCurrency(resultado)}
               </span>
             </div>

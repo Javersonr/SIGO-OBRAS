@@ -1,7 +1,6 @@
-import React from 'react';
-import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
-import PermissionGate from '../PermissionGate';
+import React from "react";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
 
 export default function ComprasHeader({ onOpenSolicitacao }) {
   return (

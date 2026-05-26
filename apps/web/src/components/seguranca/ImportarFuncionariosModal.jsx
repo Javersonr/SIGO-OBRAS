@@ -1,112 +1,121 @@
-import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import * as XLSX from 'xlsx';
-import { Upload, Download, X, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import React, { useState } from "react";
+import { base44 } from "@/api/base44Client";
+import * as XLSX from "xlsx";
+import { Upload, Download, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from '@/components/ui/dialog';
-import { toast } from 'sonner';
+} from "@/components/ui/dialog";
+import { toast } from "sonner";
 
 // Colunas da planilha modelo (campos simples, sem JSON)
 const COLUNAS = [
-  { key: 'nome_completo', label: 'Nome Completo *', obrigatorio: true },
-  { key: 'cpf', label: 'CPF *', obrigatorio: true },
-  { key: 'data_admissao', label: 'Data de Admissão (AAAA-MM-DD)' },
-  { key: 'funcao_nome', label: 'Função (Nome)' },
-  { key: 'aso_vencimento', label: 'ASO Vencimento (AAAA-MM-DD)' },
-  { key: 'email', label: 'Email' },
-  { key: 'telefone', label: 'Telefone' },
-  { key: 'numero_registro', label: 'Número de Registro' },
-  { key: 'rg', label: 'RG' },
-  { key: 'rg_data_expedicao', label: 'RG Data de Expedição (AAAA-MM-DD)' },
-  { key: 'rg_uf', label: 'RG UF' },
-  { key: 'pis', label: 'PIS' },
-  { key: 'data_nascimento', label: 'Data de Nascimento (AAAA-MM-DD)' },
-  { key: 'naturalidade', label: 'Naturalidade' },
-  { key: 'nome_mae', label: 'Nome da Mãe' },
-  { key: 'nome_pai', label: 'Nome do Pai' },
-  { key: 'titulo_eleitor', label: 'Título de Eleitor' },
-  { key: 'titulo_eleitor_zona', label: 'Zona Eleitoral' },
-  { key: 'titulo_eleitor_secao', label: 'Seção Eleitoral' },
-  { key: 'reservista', label: 'Reservista' },
-  { key: 'estado_civil', label: 'Estado Civil (Solteiro/Casado/Divorciado/Viúvo/União Estável/Outros)' },
-  { key: 'raca_cor', label: 'Raça/Cor (Indígena/Branca/Negra/Amarela/Parda/Outros)' },
-  { key: 'grau_instrucao', label: 'Grau de Instrução' },
-  { key: 'cep', label: 'CEP' },
-  { key: 'endereco', label: 'Endereço' },
-  { key: 'numero', label: 'Número' },
-  { key: 'complemento', label: 'Complemento' },
-  { key: 'bairro', label: 'Bairro' },
-  { key: 'cidade', label: 'Cidade' },
-  { key: 'estado', label: 'Estado (UF)' },
-  { key: 'banco_codigo', label: 'Banco Código' },
-  { key: 'banco_tipo_conta', label: 'Banco Tipo Conta (Conta Corrente/Conta Poupança)' },
-  { key: 'banco_agencia', label: 'Agência' },
-  { key: 'banco_conta', label: 'Número da Conta' },
-  { key: 'observacoes', label: 'Observações' },
+  { key: "nome_completo", label: "Nome Completo *", obrigatorio: true },
+  { key: "cpf", label: "CPF *", obrigatorio: true },
+  { key: "data_admissao", label: "Data de Admissão (AAAA-MM-DD)" },
+  { key: "funcao_nome", label: "Função (Nome)" },
+  { key: "aso_vencimento", label: "ASO Vencimento (AAAA-MM-DD)" },
+  { key: "email", label: "Email" },
+  { key: "telefone", label: "Telefone" },
+  { key: "numero_registro", label: "Número de Registro" },
+  { key: "rg", label: "RG" },
+  { key: "rg_data_expedicao", label: "RG Data de Expedição (AAAA-MM-DD)" },
+  { key: "rg_uf", label: "RG UF" },
+  { key: "pis", label: "PIS" },
+  { key: "data_nascimento", label: "Data de Nascimento (AAAA-MM-DD)" },
+  { key: "naturalidade", label: "Naturalidade" },
+  { key: "nome_mae", label: "Nome da Mãe" },
+  { key: "nome_pai", label: "Nome do Pai" },
+  { key: "titulo_eleitor", label: "Título de Eleitor" },
+  { key: "titulo_eleitor_zona", label: "Zona Eleitoral" },
+  { key: "titulo_eleitor_secao", label: "Seção Eleitoral" },
+  { key: "reservista", label: "Reservista" },
+  {
+    key: "estado_civil",
+    label: "Estado Civil (Solteiro/Casado/Divorciado/Viúvo/União Estável/Outros)",
+  },
+  { key: "raca_cor", label: "Raça/Cor (Indígena/Branca/Negra/Amarela/Parda/Outros)" },
+  { key: "grau_instrucao", label: "Grau de Instrução" },
+  { key: "cep", label: "CEP" },
+  { key: "endereco", label: "Endereço" },
+  { key: "numero", label: "Número" },
+  { key: "complemento", label: "Complemento" },
+  { key: "bairro", label: "Bairro" },
+  { key: "cidade", label: "Cidade" },
+  { key: "estado", label: "Estado (UF)" },
+  { key: "banco_codigo", label: "Banco Código" },
+  { key: "banco_tipo_conta", label: "Banco Tipo Conta (Conta Corrente/Conta Poupança)" },
+  { key: "banco_agencia", label: "Agência" },
+  { key: "banco_conta", label: "Número da Conta" },
+  { key: "observacoes", label: "Observações" },
 ];
 
 function baixarPlanilhaModelo() {
   const wb = XLSX.utils.book_new();
 
   // Cabeçalhos
-  const cabecalhos = COLUNAS.map(c => c.label);
+  const cabecalhos = COLUNAS.map((c) => c.label);
 
   // Linha de exemplo
   const exemplo = [
-    'João da Silva',            // nome_completo
-    '123.456.789-00',           // cpf
-    '2024-01-15',               // data_admissao
-    'Eletricista',              // funcao_nome
-    '2025-01-15',               // aso_vencimento
-    'joao@email.com',           // email
-    '(31) 99999-0000',          // telefone
-    'REG001',                   // numero_registro
-    '1.234.567',                // rg
-    '2010-03-20',               // rg_data_expedicao
-    'MG',                       // rg_uf
-    '123.45678.90-0',           // pis
-    '1990-05-10',               // data_nascimento
-    'Belo Horizonte - MG',      // naturalidade
-    'Maria da Silva',           // nome_mae
-    'José da Silva',            // nome_pai
-    '1234567890',               // titulo_eleitor
-    '148',                      // titulo_eleitor_zona
-    '0292',                     // titulo_eleitor_secao
-    '',                         // reservista
-    'Casado',                   // estado_civil
-    'Parda',                    // raca_cor
-    'Ensino Médio Completo',    // grau_instrucao
-    '30000-000',                // cep
-    'Rua das Flores',           // endereco
-    '100',                      // numero
-    'Apto 1',                   // complemento
-    'Centro',                   // bairro
-    'Belo Horizonte',           // cidade
-    'MG',                       // estado
-    '237',                      // banco_codigo
-    'Conta Corrente',           // banco_tipo_conta
-    '1234',                     // banco_agencia
-    '12345-6',                  // banco_conta
-    '',                         // observacoes
+    "João da Silva", // nome_completo
+    "123.456.789-00", // cpf
+    "2024-01-15", // data_admissao
+    "Eletricista", // funcao_nome
+    "2025-01-15", // aso_vencimento
+    "joao@email.com", // email
+    "(31) 99999-0000", // telefone
+    "REG001", // numero_registro
+    "1.234.567", // rg
+    "2010-03-20", // rg_data_expedicao
+    "MG", // rg_uf
+    "123.45678.90-0", // pis
+    "1990-05-10", // data_nascimento
+    "Belo Horizonte - MG", // naturalidade
+    "Maria da Silva", // nome_mae
+    "José da Silva", // nome_pai
+    "1234567890", // titulo_eleitor
+    "148", // titulo_eleitor_zona
+    "0292", // titulo_eleitor_secao
+    "", // reservista
+    "Casado", // estado_civil
+    "Parda", // raca_cor
+    "Ensino Médio Completo", // grau_instrucao
+    "30000-000", // cep
+    "Rua das Flores", // endereco
+    "100", // numero
+    "Apto 1", // complemento
+    "Centro", // bairro
+    "Belo Horizonte", // cidade
+    "MG", // estado
+    "237", // banco_codigo
+    "Conta Corrente", // banco_tipo_conta
+    "1234", // banco_agencia
+    "12345-6", // banco_conta
+    "", // observacoes
   ];
 
   const dados = [cabecalhos, exemplo];
   const ws = XLSX.utils.aoa_to_sheet(dados);
 
   // Largura das colunas
-  ws['!cols'] = COLUNAS.map(() => ({ wch: 30 }));
+  ws["!cols"] = COLUNAS.map(() => ({ wch: 30 }));
 
-  XLSX.utils.book_append_sheet(wb, ws, 'Funcionários');
-  XLSX.writeFile(wb, 'modelo_importacao_funcionarios.xlsx');
+  XLSX.utils.book_append_sheet(wb, ws, "Funcionários");
+  XLSX.writeFile(wb, "modelo_importacao_funcionarios.xlsx");
 }
 
-export default function ImportarFuncionariosModal({ open, onOpenChange, empresaAtiva, funcoes = [], onSuccess }) {
+export default function ImportarFuncionariosModal({
+  open,
+  onOpenChange,
+  empresaAtiva,
+  funcoes = [],
+  onSuccess,
+}) {
   const [arquivo, setArquivo] = useState(null);
   const [preview, setPreview] = useState([]);
   const [erros, setErros] = useState([]);
@@ -122,12 +131,12 @@ export default function ImportarFuncionariosModal({ open, onOpenChange, empresaA
 
     const reader = new FileReader();
     reader.onload = (evt) => {
-      const wb = XLSX.read(evt.target.result, { type: 'array' });
+      const wb = XLSX.read(evt.target.result, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
 
       if (rows.length < 2) {
-        setErros(['Planilha vazia ou sem dados além do cabeçalho.']);
+        setErros(["Planilha vazia ou sem dados além do cabeçalho."]);
         setPreview([]);
         return;
       }
@@ -138,10 +147,12 @@ export default function ImportarFuncionariosModal({ open, onOpenChange, empresaA
 
       // Mapear colunas pelo label
       const colMap = {};
-      COLUNAS.forEach(col => {
-        const idx = cabecalho.findIndex(h =>
-          String(h).toLowerCase().trim().startsWith(col.key) ||
-          String(h).toLowerCase().trim() === col.label.toLowerCase().split(' (')[0].replace(' *', '').trim().toLowerCase()
+      COLUNAS.forEach((col) => {
+        const idx = cabecalho.findIndex(
+          (h) =>
+            String(h).toLowerCase().trim().startsWith(col.key) ||
+            String(h).toLowerCase().trim() ===
+              col.label.toLowerCase().split(" (")[0].replace(" *", "").trim().toLowerCase()
         );
         if (idx >= 0) colMap[col.key] = idx;
       });
@@ -156,13 +167,13 @@ export default function ImportarFuncionariosModal({ open, onOpenChange, empresaA
       for (let r = 1; r < rows.length; r++) {
         const row = rows[r];
         // Ignorar linhas completamente vazias
-        if (row.every(c => c === '' || c === null || c === undefined)) continue;
+        if (row.every((c) => c === "" || c === null || c === undefined)) continue;
 
         const obj = {};
-        COLUNAS.forEach(col => {
+        COLUNAS.forEach((col) => {
           const idx = colMap[col.key];
-          const val = idx !== undefined ? String(row[idx] ?? '').trim() : '';
-          if (val !== '') obj[col.key] = val;
+          const val = idx !== undefined ? String(row[idx] ?? "").trim() : "";
+          if (val !== "") obj[col.key] = val;
         });
 
         // Validar obrigatórios
@@ -180,13 +191,13 @@ export default function ImportarFuncionariosModal({ open, onOpenChange, empresaA
       setPreview(dadosParseados);
     };
     reader.readAsArrayBuffer(file);
-    e.target.value = '';
+    e.target.value = "";
   };
 
   const handleImportar = async () => {
     if (preview.length === 0) return;
     if (erros.length > 0) {
-      toast.error('Corrija os erros antes de importar');
+      toast.error("Corrija os erros antes de importar");
       return;
     }
 
@@ -196,13 +207,16 @@ export default function ImportarFuncionariosModal({ open, onOpenChange, empresaA
 
     for (const row of preview) {
       // Ignorar linha se faltam obrigatórios
-      if (!row.nome_completo || !row.cpf) { falhas++; continue; }
+      if (!row.nome_completo || !row.cpf) {
+        falhas++;
+        continue;
+      }
 
       // Resolver funcao_id se veio funcao_nome
-      let funcao_id = '';
+      let funcao_id = "";
       if (row.funcao_nome && funcoes.length > 0) {
-        const fMatch = funcoes.find(f =>
-          f.nome?.toLowerCase().trim() === row.funcao_nome.toLowerCase().trim()
+        const fMatch = funcoes.find(
+          (f) => f.nome?.toLowerCase().trim() === row.funcao_nome.toLowerCase().trim()
         );
         if (fMatch) funcao_id = fMatch.id;
       }
@@ -212,47 +226,135 @@ export default function ImportarFuncionariosModal({ open, onOpenChange, empresaA
       const dados = {
         empresa_id: empresaAtiva.id,
         ativo: true,
-        dependentes: '[]',
-        documentos_pessoais: '[]',
+        dependentes: "[]",
+        documentos_pessoais: "[]",
         documentos_rh_estruturados: JSON.stringify([
-          { nome: 'ASO - Atestado de Saúde Ocupacional *', anexado: false, url: '', data_upload: '', anexos: [] },
-          { nome: 'Exames Médicos', anexado: false, url: '', data_upload: '', anexos: [] },
-          { nome: 'Registro de Empregado', anexado: false, url: '', data_upload: '', anexos: [] },
+          {
+            nome: "ASO - Atestado de Saúde Ocupacional *",
+            anexado: false,
+            url: "",
+            data_upload: "",
+            anexos: [],
+          },
+          { nome: "Exames Médicos", anexado: false, url: "", data_upload: "", anexos: [] },
+          { nome: "Registro de Empregado", anexado: false, url: "", data_upload: "", anexos: [] },
         ]),
         documentos_demissionais: JSON.stringify([
-          { nome: 'Aviso Prévio', anexado: false, url: '', data_upload: '', anexos: [] },
-          { nome: 'Comprovante de Acordo Judicial', anexado: false, url: '', data_upload: '', anexos: [] },
-          { nome: 'Declaração de Empregado Desligado do Contrato', anexado: false, url: '', data_upload: '', anexos: [] },
-          { nome: 'Declaração de Pedido de Demissão', anexado: false, url: '', data_upload: '', anexos: [] },
-          { nome: 'Demonstrativo do Trabalhador de Recolhimento FGTS Rescisório', anexado: false, url: '', data_upload: '', anexos: [] },
-          { nome: 'Exame Demissional', anexado: false, url: '', data_upload: '', anexos: [] },
-          { nome: 'GRRF - Guia de Recolhimento Rescisório do FGTS e Comprovante de Pagamento', anexado: false, url: '', data_upload: '', anexos: [] },
-          { nome: 'PPP - Perfil Profissiográfico Previdenciário', anexado: false, url: '', data_upload: '', anexos: [] },
-          { nome: 'TRCT - Termo de Rescisão de Contrato de Trabalho', anexado: false, url: '', data_upload: '', anexos: [] },
+          { nome: "Aviso Prévio", anexado: false, url: "", data_upload: "", anexos: [] },
+          {
+            nome: "Comprovante de Acordo Judicial",
+            anexado: false,
+            url: "",
+            data_upload: "",
+            anexos: [],
+          },
+          {
+            nome: "Declaração de Empregado Desligado do Contrato",
+            anexado: false,
+            url: "",
+            data_upload: "",
+            anexos: [],
+          },
+          {
+            nome: "Declaração de Pedido de Demissão",
+            anexado: false,
+            url: "",
+            data_upload: "",
+            anexos: [],
+          },
+          {
+            nome: "Demonstrativo do Trabalhador de Recolhimento FGTS Rescisório",
+            anexado: false,
+            url: "",
+            data_upload: "",
+            anexos: [],
+          },
+          { nome: "Exame Demissional", anexado: false, url: "", data_upload: "", anexos: [] },
+          {
+            nome: "GRRF - Guia de Recolhimento Rescisório do FGTS e Comprovante de Pagamento",
+            anexado: false,
+            url: "",
+            data_upload: "",
+            anexos: [],
+          },
+          {
+            nome: "PPP - Perfil Profissiográfico Previdenciário",
+            anexado: false,
+            url: "",
+            data_upload: "",
+            anexos: [],
+          },
+          {
+            nome: "TRCT - Termo de Rescisão de Contrato de Trabalho",
+            anexado: false,
+            url: "",
+            data_upload: "",
+            anexos: [],
+          },
         ]),
         documentos_obrigatorios: JSON.stringify([
-          { nome: 'Cópia do CPF *', anexado: false, url: '', data_upload: '' },
-          { nome: 'Cópia do PIS *', anexado: false, url: '', data_upload: '' },
-          { nome: 'Cópia da Cédula de Identidade *', anexado: false, url: '', data_upload: '' },
-          { nome: 'Cópia do Título de Eleitor *', anexado: false, url: '', data_upload: '' },
-          { nome: '1 Foto 3x4 recente para crachá', anexado: false, url: '', data_upload: '' },
-          { nome: 'Cópia da Certidão de Casamento ou Declaração de Convívio Marital', anexado: false, url: '', data_upload: '' },
-          { nome: 'Cópia da Certidão de Nascimento dos filhos', anexado: false, url: '', data_upload: '' },
-          { nome: 'Cópia da Caderneta de vacinação dos filhos menores de 7 anos', anexado: false, url: '', data_upload: '' },
-          { nome: 'Cópia da declaração de frequência escolar menores de 14 anos', anexado: false, url: '', data_upload: '' },
-          { nome: 'Cópia do Certificado de Reservista (Masculino)', anexado: false, url: '', data_upload: '' },
-          { nome: 'Cópia do Comprovante de Residência atualizado *', anexado: false, url: '', data_upload: '' },
-          { nome: 'Certidão de Antecedentes Criminais *', anexado: false, url: '', data_upload: '' },
-          { nome: 'Cópia do cartão da conta para portabilidade', anexado: false, url: '', data_upload: '' },
-          { nome: 'Cópia da Carteira de Trabalho *', anexado: false, url: '', data_upload: '' },
+          { nome: "Cópia do CPF *", anexado: false, url: "", data_upload: "" },
+          { nome: "Cópia do PIS *", anexado: false, url: "", data_upload: "" },
+          { nome: "Cópia da Cédula de Identidade *", anexado: false, url: "", data_upload: "" },
+          { nome: "Cópia do Título de Eleitor *", anexado: false, url: "", data_upload: "" },
+          { nome: "1 Foto 3x4 recente para crachá", anexado: false, url: "", data_upload: "" },
+          {
+            nome: "Cópia da Certidão de Casamento ou Declaração de Convívio Marital",
+            anexado: false,
+            url: "",
+            data_upload: "",
+          },
+          {
+            nome: "Cópia da Certidão de Nascimento dos filhos",
+            anexado: false,
+            url: "",
+            data_upload: "",
+          },
+          {
+            nome: "Cópia da Caderneta de vacinação dos filhos menores de 7 anos",
+            anexado: false,
+            url: "",
+            data_upload: "",
+          },
+          {
+            nome: "Cópia da declaração de frequência escolar menores de 14 anos",
+            anexado: false,
+            url: "",
+            data_upload: "",
+          },
+          {
+            nome: "Cópia do Certificado de Reservista (Masculino)",
+            anexado: false,
+            url: "",
+            data_upload: "",
+          },
+          {
+            nome: "Cópia do Comprovante de Residência atualizado *",
+            anexado: false,
+            url: "",
+            data_upload: "",
+          },
+          {
+            nome: "Certidão de Antecedentes Criminais *",
+            anexado: false,
+            url: "",
+            data_upload: "",
+          },
+          {
+            nome: "Cópia do cartão da conta para portabilidade",
+            anexado: false,
+            url: "",
+            data_upload: "",
+          },
+          { nome: "Cópia da Carteira de Trabalho *", anexado: false, url: "", data_upload: "" },
         ]),
-        treinamentos_anexos: '[]',
-        ferramentais_anexos: '[]',
-        epis_anexos: '[]',
-        documentos_rh_anexos: '[]',
-        autorizacao_formal_anexos: '[]',
-        direito_recusa_anexos: '[]',
-        ordem_servicos_anexos: '[]',
+        treinamentos_anexos: "[]",
+        ferramentais_anexos: "[]",
+        epis_anexos: "[]",
+        documentos_rh_anexos: "[]",
+        autorizacao_formal_anexos: "[]",
+        direito_recusa_anexos: "[]",
+        ordem_servicos_anexos: "[]",
         ...campos,
         ...(funcao_id ? { funcao_id, funcao_nome } : funcao_nome ? { funcao_nome } : {}),
       };
@@ -261,7 +363,7 @@ export default function ImportarFuncionariosModal({ open, onOpenChange, empresaA
         await base44.entities.Funcionario.create(dados);
         importados++;
       } catch (e) {
-        console.error('Erro ao importar linha', linha, e);
+        console.error("Erro ao importar linha", linha, e);
         falhas++;
       }
     }
@@ -297,9 +399,16 @@ export default function ImportarFuncionariosModal({ open, onOpenChange, empresaA
           <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-blue-800">1. Baixe a planilha modelo</p>
-              <p className="text-xs text-blue-600 mt-0.5">Preencha os dados e faça o upload abaixo. Células em branco serão ignoradas.</p>
+              <p className="text-xs text-blue-600 mt-0.5">
+                Preencha os dados e faça o upload abaixo. Células em branco serão ignoradas.
+              </p>
             </div>
-            <Button variant="outline" size="sm" onClick={baixarPlanilhaModelo} className="border-blue-400 text-blue-700 hover:bg-blue-100 gap-2 whitespace-nowrap">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={baixarPlanilhaModelo}
+              className="border-blue-400 text-blue-700 hover:bg-blue-100 gap-2 whitespace-nowrap"
+            >
               <Download className="w-4 h-4" />
               Baixar Modelo
             </Button>
@@ -307,11 +416,15 @@ export default function ImportarFuncionariosModal({ open, onOpenChange, empresaA
 
           {/* Upload */}
           <div>
-            <p className="text-sm font-medium text-slate-700 mb-2">2. Envie a planilha preenchida</p>
+            <p className="text-sm font-medium text-slate-700 mb-2">
+              2. Envie a planilha preenchida
+            </p>
             <label className="flex items-center justify-center w-full h-24 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-amber-400 hover:bg-amber-50 transition-colors">
               <div className="text-center">
                 <Upload className="w-6 h-6 text-slate-400 mx-auto mb-1" />
-                <p className="text-sm text-slate-500">{arquivo ? arquivo.name : 'Clique para selecionar .xlsx ou .xls'}</p>
+                <p className="text-sm text-slate-500">
+                  {arquivo ? arquivo.name : "Clique para selecionar .xlsx ou .xls"}
+                </p>
               </div>
               <input type="file" className="hidden" accept=".xlsx,.xls" onChange={handleArquivo} />
             </label>
@@ -325,7 +438,9 @@ export default function ImportarFuncionariosModal({ open, onOpenChange, empresaA
               </p>
               <ul className="space-y-0.5">
                 {erros.map((e, i) => (
-                  <li key={i} className="text-xs text-red-600">• {e}</li>
+                  <li key={i} className="text-xs text-red-600">
+                    • {e}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -335,7 +450,9 @@ export default function ImportarFuncionariosModal({ open, onOpenChange, empresaA
           {preview.length > 0 && erros.length === 0 && !resultado && (
             <div className="border rounded-lg overflow-hidden">
               <div className="p-3 bg-slate-50 border-b flex items-center justify-between">
-                <p className="text-sm font-medium text-slate-700">{preview.length} funcionário(s) encontrado(s)</p>
+                <p className="text-sm font-medium text-slate-700">
+                  {preview.length} funcionário(s) encontrado(s)
+                </p>
               </div>
               <div className="max-h-60 overflow-y-auto">
                 <table className="w-full text-xs">
@@ -350,10 +467,10 @@ export default function ImportarFuncionariosModal({ open, onOpenChange, empresaA
                   <tbody>
                     {preview.map((row, i) => (
                       <tr key={i} className="border-t hover:bg-slate-50">
-                        <td className="px-3 py-2">{row.nome_completo || '-'}</td>
-                        <td className="px-3 py-2">{row.cpf || '-'}</td>
-                        <td className="px-3 py-2">{row.funcao_nome || '-'}</td>
-                        <td className="px-3 py-2">{row.data_admissao || '-'}</td>
+                        <td className="px-3 py-2">{row.nome_completo || "-"}</td>
+                        <td className="px-3 py-2">{row.cpf || "-"}</td>
+                        <td className="px-3 py-2">{row.funcao_nome || "-"}</td>
+                        <td className="px-3 py-2">{row.data_admissao || "-"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -378,14 +495,23 @@ export default function ImportarFuncionariosModal({ open, onOpenChange, empresaA
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleFechar}>Fechar</Button>
+          <Button variant="outline" onClick={handleFechar}>
+            Fechar
+          </Button>
           {preview.length > 0 && erros.length === 0 && !resultado && (
             <Button
               onClick={handleImportar}
               disabled={importando}
               className="bg-amber-500 hover:bg-amber-600 gap-2"
             >
-              {importando ? <><Loader2 className="w-4 h-4 animate-spin" />Importando...</> : `Importar ${preview.length} funcionário(s)`}
+              {importando ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Importando...
+                </>
+              ) : (
+                `Importar ${preview.length} funcionário(s)`
+              )}
             </Button>
           )}
         </DialogFooter>

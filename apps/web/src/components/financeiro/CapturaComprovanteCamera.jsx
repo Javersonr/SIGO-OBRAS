@@ -1,18 +1,17 @@
-import React, { useState } from 'react';
-import { Camera, Upload, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { toast } from 'sonner';
-import FullscreenCamera from '../camera/FullscreenCamera';
+import React, { useState } from "react";
+import { Camera, Upload } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import FullscreenCamera from "../camera/FullscreenCamera";
 
 export default function CapturaComprovanteCamera({ onCaptura, loading }) {
-  const [step, setStep] = useState('opcoes'); // 'opcoes' | 'camera'
+  const [step, setStep] = useState("opcoes"); // 'opcoes' | 'camera'
   const [enviando, setEnviando] = useState(false);
   const fileInputRef = React.useRef(null);
 
   const handleCameraCaptura = (fileUrl) => {
     onCaptura(fileUrl);
-    setStep('opcoes');
+    setStep("opcoes");
   };
 
   const handleUpload = async (e) => {
@@ -20,29 +19,29 @@ export default function CapturaComprovanteCamera({ onCaptura, loading }) {
     if (!file) return;
     try {
       setEnviando(true);
-      toast.loading('Fazendo upload do comprovante...', { id: 'upload' });
-      const { base44 } = await import('@/api/base44Client');
+      toast.loading("Fazendo upload do comprovante...", { id: "upload" });
+      const { base44 } = await import("@/api/base44Client");
       const result = await base44.integrations.Core.UploadFile({ file });
-      toast.dismiss('upload');
-      if (!result?.file_url) throw new Error('Falha no upload');
-      toast.success('Comprovante enviado! Extraindo dados com IA...');
+      toast.dismiss("upload");
+      if (!result?.file_url) throw new Error("Falha no upload");
+      toast.success("Comprovante enviado! Extraindo dados com IA...");
       onCaptura(result.file_url);
     } catch (err) {
-      toast.dismiss('upload');
-      toast.error('Erro ao enviar: ' + err.message);
+      toast.dismiss("upload");
+      toast.error("Erro ao enviar: " + err.message);
     } finally {
       setEnviando(false);
-      e.target.value = '';
+      e.target.value = "";
     }
   };
 
   return (
     <>
       {/* Seleção de modo */}
-      {step === 'opcoes' && (
+      {step === "opcoes" && (
         <div className="space-y-3 pt-2">
           <Button
-            onClick={() => setStep('camera')}
+            onClick={() => setStep("camera")}
             className="w-full gap-2 h-14 text-base bg-amber-600 hover:bg-amber-700"
             disabled={loading}
           >
@@ -69,10 +68,10 @@ export default function CapturaComprovanteCamera({ onCaptura, loading }) {
       )}
 
       {/* Câmera Fullscreen */}
-      {step === 'camera' && (
+      {step === "camera" && (
         <FullscreenCamera
           onCaptura={handleCameraCaptura}
-          onCancel={() => setStep('opcoes')}
+          onCancel={() => setStep("opcoes")}
           loading={loading}
           title="Comprovante"
           subtitle="Tire uma foto ou selecione da galeria"

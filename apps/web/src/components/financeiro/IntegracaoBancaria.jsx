@@ -1,25 +1,30 @@
-import React, { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
-import { base44 } from '@/api/base44Client';
-import { Link2, CheckCircle2, AlertCircle, RefreshCw, Clock, Play, Trash2, Settings } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { base44 } from "@/api/base44Client";
+import { Link2, RefreshCw, Trash2 } from "lucide-react";
 
 const bancosList = [
-  { codigo: '001', nome: 'Banco do Brasil', suportaOpenFinance: true },
-  { codigo: '237', nome: 'Bradesco', suportaOpenFinance: true },
-  { codigo: '341', nome: 'Itaú', suportaOpenFinance: true },
-  { codigo: '033', nome: 'Santander', suportaOpenFinance: true },
-  { codigo: '104', nome: 'Caixa Econômica', suportaOpenFinance: true },
-  { codigo: '077', nome: 'Inter', suportaOpenFinance: true },
-  { codigo: '260', nome: 'Nu Pagamentos (Nubank)', suportaOpenFinance: true },
-  { codigo: '290', nome: 'PagSeguro', suportaOpenFinance: false },
-  { codigo: '336', nome: 'C6 Bank', suportaOpenFinance: true }
+  { codigo: "001", nome: "Banco do Brasil", suportaOpenFinance: true },
+  { codigo: "237", nome: "Bradesco", suportaOpenFinance: true },
+  { codigo: "341", nome: "Itaú", suportaOpenFinance: true },
+  { codigo: "033", nome: "Santander", suportaOpenFinance: true },
+  { codigo: "104", nome: "Caixa Econômica", suportaOpenFinance: true },
+  { codigo: "077", nome: "Inter", suportaOpenFinance: true },
+  { codigo: "260", nome: "Nu Pagamentos (Nubank)", suportaOpenFinance: true },
+  { codigo: "290", nome: "PagSeguro", suportaOpenFinance: false },
+  { codigo: "336", nome: "C6 Bank", suportaOpenFinance: true },
 ];
 
 export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
@@ -29,11 +34,11 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
   const [selectedConta, setSelectedConta] = useState(null);
   const [syncing, setSyncing] = useState({});
   const [form, setForm] = useState({
-    conta_id: '',
-    banco: '',
-    tipo_integracao: 'Open Finance',
-    frequencia_sincronizacao: 'Diária',
-    sincronizar_automaticamente: true
+    conta_id: "",
+    banco: "",
+    tipo_integracao: "Open Finance",
+    frequencia_sincronizacao: "Diária",
+    sincronizar_automaticamente: true,
   });
 
   useEffect(() => {
@@ -48,7 +53,7 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
       const data = await base44.entities.IntegracaoBancaria.filter({ empresa_id: empresaAtiva.id });
       setIntegracoes(data);
     } catch (error) {
-      console.error('Erro ao carregar integrações:', error);
+      console.error("Erro ao carregar integrações:", error);
     } finally {
       setLoading(false);
     }
@@ -58,78 +63,83 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
     setSelectedConta(conta);
     setForm({
       conta_id: conta.id,
-      banco: conta.banco || '',
-      tipo_integracao: 'Open Finance',
-      frequencia_sincronizacao: 'Diária',
-      sincronizar_automaticamente: true
+      banco: conta.banco || "",
+      tipo_integracao: "Open Finance",
+      frequencia_sincronizacao: "Diária",
+      sincronizar_automaticamente: true,
     });
     setShowModal(true);
   };
 
   const handleSave = async () => {
     try {
-      const banco = bancosList.find(b => b.nome === form.banco);
-      
+      const banco = bancosList.find((b) => b.nome === form.banco);
+
       await base44.entities.IntegracaoBancaria.create({
         empresa_id: empresaAtiva.id,
         conta_id: form.conta_id,
         banco: form.banco,
         tipo_integracao: form.tipo_integracao,
-        status: 'Pendente Autorização',
+        status: "Pendente Autorização",
         frequencia_sincronizacao: form.frequencia_sincronizacao,
         sincronizar_automaticamente: form.sincronizar_automaticamente,
         transacoes_importadas: 0,
-        config: JSON.stringify({ codigo_banco: banco?.codigo })
+        config: JSON.stringify({ codigo_banco: banco?.codigo }),
       });
 
       // Atualizar conta
       await base44.entities.ContaFinanceira.update(form.conta_id, {
         integracao_bancaria: true,
-        codigo_banco: banco?.codigo
+        codigo_banco: banco?.codigo,
       });
 
-      alert('Integração criada! Em produção, você seria redirecionado para autorizar o acesso via Open Finance.');
+      alert(
+        "Integração criada! Em produção, você seria redirecionado para autorizar o acesso via Open Finance."
+      );
       setShowModal(false);
       loadIntegracoes();
       onReload();
     } catch (error) {
-      console.error('Erro ao salvar integração:', error);
-      alert('Erro ao criar integração');
+      console.error("Erro ao salvar integração:", error);
+      alert("Erro ao criar integração");
     }
   };
 
   const handleSincronizar = async (integracao) => {
     setSyncing({ ...syncing, [integracao.id]: true });
-    
+
     try {
       // Simular sincronização - em produção, chamaria API do banco
-      const resultado = await base44.functions.invoke('sincronizarContaBancaria', {
-        integracao_id: integracao.id
+      const resultado = await base44.functions.invoke("sincronizarContaBancaria", {
+        integracao_id: integracao.id,
       });
 
       await base44.entities.IntegracaoBancaria.update(integracao.id, {
-        status: 'Ativa',
+        status: "Ativa",
         ultima_sincronizacao: new Date().toISOString(),
-        transacoes_importadas: (integracao.transacoes_importadas || 0) + (resultado.novasTransacoes || 0)
+        transacoes_importadas:
+          (integracao.transacoes_importadas || 0) + (resultado.novasTransacoes || 0),
       });
 
-      alert(`Sincronização concluída! ${resultado.novasTransacoes || 0} novas transações importadas.`);
+      alert(
+        `Sincronização concluída! ${resultado.novasTransacoes || 0} novas transações importadas.`
+      );
       loadIntegracoes();
       onReload();
     } catch (error) {
-      console.error('Erro ao sincronizar:', error);
-      alert('Erro ao sincronizar conta');
+      console.error("Erro ao sincronizar:", error);
+      alert("Erro ao sincronizar conta");
     } finally {
       setSyncing({ ...syncing, [integracao.id]: false });
     }
   };
 
   const handleDesconectar = async (integracao) => {
-    if (!confirm('Desconectar esta integração bancária?')) return;
+    if (!confirm("Desconectar esta integração bancária?")) return;
 
     await base44.entities.IntegracaoBancaria.delete(integracao.id);
     await base44.entities.ContaFinanceira.update(integracao.conta_id, {
-      integracao_bancaria: false
+      integracao_bancaria: false,
     });
 
     loadIntegracoes();
@@ -138,16 +148,21 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'Ativa': return 'bg-green-100 text-green-700';
-      case 'Inativa': return 'bg-slate-100 text-slate-700';
-      case 'Erro': return 'bg-red-100 text-red-700';
-      case 'Pendente Autorização': return 'bg-amber-100 text-amber-700';
-      default: return 'bg-slate-100 text-slate-700';
+      case "Ativa":
+        return "bg-green-100 text-green-700";
+      case "Inativa":
+        return "bg-slate-100 text-slate-700";
+      case "Erro":
+        return "bg-red-100 text-red-700";
+      case "Pendente Autorização":
+        return "bg-amber-100 text-amber-700";
+      default:
+        return "bg-slate-100 text-slate-700";
     }
   };
 
-  const contasSemIntegracao = contas.filter(c => 
-    c.tipo === 'Banco' && !integracoes.some(i => i.conta_id === c.id)
+  const contasSemIntegracao = contas.filter(
+    (c) => c.tipo === "Banco" && !integracoes.some((i) => i.conta_id === c.id)
   );
 
   return (
@@ -155,7 +170,9 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-xl font-semibold text-slate-800">Integração Bancária</h2>
-          <p className="text-sm text-slate-500">Conecte suas contas via Open Finance para importação automática</p>
+          <p className="text-sm text-slate-500">
+            Conecte suas contas via Open Finance para importação automática
+          </p>
         </div>
       </div>
 
@@ -164,8 +181,8 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
         <div className="space-y-4">
           <h3 className="font-medium text-slate-700">Contas Conectadas</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {integracoes.map(int => {
-              const conta = contas.find(c => c.id === int.conta_id);
+            {integracoes.map((int) => {
+              const conta = contas.find((c) => c.id === int.conta_id);
               return (
                 <Card key={int.id}>
                   <CardContent className="p-4">
@@ -179,9 +196,7 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
                           <p className="text-sm text-slate-500">{int.banco}</p>
                         </div>
                       </div>
-                      <Badge className={getStatusColor(int.status)}>
-                        {int.status}
-                      </Badge>
+                      <Badge className={getStatusColor(int.status)}>{int.status}</Badge>
                     </div>
 
                     <div className="space-y-2 text-sm mb-3">
@@ -197,7 +212,7 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
                         <div className="flex justify-between">
                           <span className="text-slate-500">Última sync:</span>
                           <span className="font-medium">
-                            {new Date(int.ultima_sincronizacao).toLocaleDateString('pt-BR')}
+                            {new Date(int.ultima_sincronizacao).toLocaleDateString("pt-BR")}
                           </span>
                         </div>
                       )}
@@ -223,11 +238,7 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
                           </>
                         )}
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleDesconectar(int)}
-                      >
+                      <Button size="sm" variant="outline" onClick={() => handleDesconectar(int)}>
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
@@ -244,7 +255,7 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
         <div className="space-y-4">
           <h3 className="font-medium text-slate-700">Conectar Novas Contas</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {contasSemIntegracao.map(conta => (
+            {contasSemIntegracao.map((conta) => (
               <Card key={conta.id} className="cursor-pointer hover:shadow-lg transition-shadow">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between mb-2">
@@ -253,12 +264,10 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
                       <Link2 className="w-4 h-4 text-slate-400" />
                     </div>
                   </div>
-                  <p className="text-sm text-slate-500 mb-3">{conta.banco || 'Banco não especificado'}</p>
-                  <Button
-                    size="sm"
-                    className="w-full"
-                    onClick={() => handleOpenModal(conta)}
-                  >
+                  <p className="text-sm text-slate-500 mb-3">
+                    {conta.banco || "Banco não especificado"}
+                  </p>
+                  <Button size="sm" className="w-full" onClick={() => handleOpenModal(conta)}>
                     <Link2 className="w-4 h-4 mr-1" />
                     Conectar
                   </Button>
@@ -295,11 +304,13 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
                   <SelectValue placeholder="Selecione o banco" />
                 </SelectTrigger>
                 <SelectContent>
-                  {bancosList.map(banco => (
+                  {bancosList.map((banco) => (
                     <SelectItem key={banco.codigo} value={banco.nome}>
                       {banco.nome}
                       {banco.suportaOpenFinance && (
-                        <Badge variant="outline" className="ml-2 text-xs">Open Finance</Badge>
+                        <Badge variant="outline" className="ml-2 text-xs">
+                          Open Finance
+                        </Badge>
                       )}
                     </SelectItem>
                   ))}
@@ -309,7 +320,10 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
 
             <div>
               <Label>Tipo de Integração</Label>
-              <Select value={form.tipo_integracao} onValueChange={(v) => setForm({ ...form, tipo_integracao: v })}>
+              <Select
+                value={form.tipo_integracao}
+                onValueChange={(v) => setForm({ ...form, tipo_integracao: v })}
+              >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue />
                 </SelectTrigger>
@@ -323,7 +337,10 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
 
             <div>
               <Label>Frequência de Sincronização</Label>
-              <Select value={form.frequencia_sincronizacao} onValueChange={(v) => setForm({ ...form, frequencia_sincronizacao: v })}>
+              <Select
+                value={form.frequencia_sincronizacao}
+                onValueChange={(v) => setForm({ ...form, frequencia_sincronizacao: v })}
+              >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue />
                 </SelectTrigger>
@@ -341,14 +358,16 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
               <Label>Sincronização Automática</Label>
               <Switch
                 checked={form.sincronizar_automaticamente}
-                onCheckedChange={(checked) => setForm({ ...form, sincronizar_automaticamente: checked })}
+                onCheckedChange={(checked) =>
+                  setForm({ ...form, sincronizar_automaticamente: checked })
+                }
               />
             </div>
 
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
               <p className="text-sm text-blue-700">
-                💡 Com Open Finance, você autoriza o acesso seguro aos seus dados bancários.
-                Suas credenciais nunca são armazenadas.
+                💡 Com Open Finance, você autoriza o acesso seguro aos seus dados bancários. Suas
+                credenciais nunca são armazenadas.
               </p>
             </div>
           </div>

@@ -1,10 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '../../../Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FolderKanban, CheckCircle, Clock, AlertCircle, DollarSign, TrendingUp } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Badge } from '@/components/ui/badge';
+import React, { useEffect, useState } from "react";
+import { base44 } from "@/api/base44Client";
+import { useEmpresa } from "../../../Layout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FolderKanban, CheckCircle, Clock, AlertCircle } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
 export default function WidgetDashProjetos({ onDadosCarregados }) {
   const { empresaAtiva } = useEmpresa();
@@ -20,10 +19,12 @@ export default function WidgetDashProjetos({ onDadosCarregados }) {
     try {
       const projetos = await base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id });
 
-      const ativos = projetos.filter(p => p.status === 'Em Andamento' || p.status === 'Ativo');
-      const concluidos = projetos.filter(p => p.status === 'Concluído' || p.status === 'Finalizado');
-      const pausados = projetos.filter(p => p.status === 'Pausado' || p.status === 'Suspenso');
-      const atrasados = ativos.filter(p => {
+      const ativos = projetos.filter((p) => p.status === "Em Andamento" || p.status === "Ativo");
+      const concluidos = projetos.filter(
+        (p) => p.status === "Concluído" || p.status === "Finalizado"
+      );
+      const pausados = projetos.filter((p) => p.status === "Pausado" || p.status === "Suspenso");
+      const atrasados = ativos.filter((p) => {
         if (!p.data_fim_prevista) return false;
         return new Date(p.data_fim_prevista) < new Date();
       });
@@ -33,14 +34,24 @@ export default function WidgetDashProjetos({ onDadosCarregados }) {
 
       // Por status para gráfico
       const statusMap = {};
-      projetos.forEach(p => {
-        const s = p.status || 'Indefinido';
+      projetos.forEach((p) => {
+        const s = p.status || "Indefinido";
         statusMap[s] = (statusMap[s] || 0) + 1;
       });
       const porStatus = Object.entries(statusMap).map(([name, value]) => ({ name, value }));
 
-      const d = { total: projetos.length, ativos: ativos.length, concluidos: concluidos.length, pausados: pausados.length, atrasados: atrasados.length, valorTotal, valorAtivos, porStatus };
-      setData(d); onDadosCarregados?.(d);
+      const d = {
+        total: projetos.length,
+        ativos: ativos.length,
+        concluidos: concluidos.length,
+        pausados: pausados.length,
+        atrasados: atrasados.length,
+        valorTotal,
+        valorAtivos,
+        porStatus,
+      };
+      setData(d);
+      onDadosCarregados?.(d);
     } catch (e) {
       console.error(e);
     } finally {
@@ -48,8 +59,13 @@ export default function WidgetDashProjetos({ onDadosCarregados }) {
     }
   };
 
-  const fmt = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact' }).format(v);
-  const COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6'];
+  const fmt = (v) =>
+    new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+      notation: "compact",
+    }).format(v);
+  const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
 
   if (loading) return <div className="h-48 bg-slate-100 rounded-xl animate-pulse" />;
   if (!data) return null;
@@ -121,8 +137,10 @@ export default function WidgetDashProjetos({ onDadosCarregados }) {
                 <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
                 <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} width={80} />
                 <Tooltip />
-                <Bar dataKey="value" radius={[0,4,4,0]}>
-                  {data.porStatus.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                  {data.porStatus.map((_, i) => (
+                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                  ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>

@@ -1,11 +1,11 @@
-import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { DollarSign, TrendingUp, Wallet } from 'lucide-react';
-import { formatCurrency } from './utils';
+import React from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Wallet } from "lucide-react";
+import { formatCurrency } from "./utils";
 
 export default function ResumoTab({ empresaAtiva, transacoes, contas }) {
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = new Date().toISOString().split("T")[0];
 
   // Calcular tudo em uma única passagem
   const resumo = React.useMemo(() => {
@@ -22,33 +22,33 @@ export default function ResumoTab({ empresaAtiva, transacoes, contas }) {
         receitasRecebidasCount: 0,
         despesasEmAbertoCount: 0,
         despesasVencidasCount: 0,
-        despesasPagasCount: 0
-      }
+        despesasPagasCount: 0,
+      },
     };
 
-    transacoes.forEach(t => {
+    transacoes.forEach((t) => {
       const valor = t.valor || 0;
-      if (t.tipo === 'receita') {
-        if (t.status === 'em_aberto') {
+      if (t.tipo === "receita") {
+        if (t.status === "em_aberto") {
           result.receitasEmAberto += valor;
           result.contagens.receitasEmAbertoCount++;
           if (t.data_vencimento < hoje) {
             result.receitasVencidas += valor;
             result.contagens.receitasVencidasCount++;
           }
-        } else if (t.status === 'pago') {
+        } else if (t.status === "pago") {
           result.receitasRecebidas += valor;
           result.contagens.receitasRecebidasCount++;
         }
-      } else if (t.tipo === 'despesa') {
-        if (t.status === 'em_aberto') {
+      } else if (t.tipo === "despesa") {
+        if (t.status === "em_aberto") {
           result.despesasEmAberto += valor;
           result.contagens.despesasEmAbertoCount++;
           if (t.data_vencimento < hoje) {
             result.despesasVencidas += valor;
             result.contagens.despesasVencidasCount++;
           }
-        } else if (t.status === 'pago') {
+        } else if (t.status === "pago") {
           result.despesasPagas += valor;
           result.contagens.despesasPagasCount++;
         }
@@ -75,7 +75,9 @@ export default function ResumoTab({ empresaAtiva, transacoes, contas }) {
                 {resumo.contagens.receitasEmAbertoCount}
               </Badge>
             </div>
-            <p className="text-xl md:text-2xl font-bold text-slate-800">{formatCurrency(resumo.receitasEmAberto)}</p>
+            <p className="text-xl md:text-2xl font-bold text-slate-800">
+              {formatCurrency(resumo.receitasEmAberto)}
+            </p>
 
             <div className="border-t pt-2 md:pt-3 space-y-2 md:space-y-3">
               <div className="flex items-center justify-between">
@@ -84,7 +86,9 @@ export default function ResumoTab({ empresaAtiva, transacoes, contas }) {
                   {resumo.contagens.receitasVencidasCount}
                 </Badge>
               </div>
-              <p className="text-lg md:text-xl font-bold text-red-600">{formatCurrency(resumo.receitasVencidas)}</p>
+              <p className="text-lg md:text-xl font-bold text-red-600">
+                {formatCurrency(resumo.receitasVencidas)}
+              </p>
             </div>
 
             <div className="border-t pt-2 md:pt-3 space-y-2 md:space-y-3">
@@ -94,7 +98,9 @@ export default function ResumoTab({ empresaAtiva, transacoes, contas }) {
                   {resumo.contagens.receitasRecebidasCount}
                 </Badge>
               </div>
-              <p className="text-lg md:text-xl font-bold text-green-600">{formatCurrency(resumo.receitasRecebidas)}</p>
+              <p className="text-lg md:text-xl font-bold text-green-600">
+                {formatCurrency(resumo.receitasRecebidas)}
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -111,7 +117,9 @@ export default function ResumoTab({ empresaAtiva, transacoes, contas }) {
                 {resumo.contagens.despesasEmAbertoCount}
               </Badge>
             </div>
-            <p className="text-xl md:text-2xl font-bold text-slate-800">{formatCurrency(resumo.despesasEmAberto)}</p>
+            <p className="text-xl md:text-2xl font-bold text-slate-800">
+              {formatCurrency(resumo.despesasEmAberto)}
+            </p>
 
             <div className="border-t pt-2 md:pt-3 space-y-2 md:space-y-3">
               <div className="flex items-center justify-between">
@@ -120,7 +128,9 @@ export default function ResumoTab({ empresaAtiva, transacoes, contas }) {
                   {resumo.contagens.despesasVencidasCount}
                 </Badge>
               </div>
-              <p className="text-lg md:text-xl font-bold text-red-600">{formatCurrency(resumo.despesasVencidas)}</p>
+              <p className="text-lg md:text-xl font-bold text-red-600">
+                {formatCurrency(resumo.despesasVencidas)}
+              </p>
             </div>
 
             <div className="border-t pt-2 md:pt-3 space-y-2 md:space-y-3">
@@ -130,20 +140,28 @@ export default function ResumoTab({ empresaAtiva, transacoes, contas }) {
                   {resumo.contagens.despesasPagasCount}
                 </Badge>
               </div>
-              <p className="text-lg md:text-xl font-bold text-green-600">{formatCurrency(resumo.despesasPagas)}</p>
+              <p className="text-lg md:text-xl font-bold text-green-600">
+                {formatCurrency(resumo.despesasPagas)}
+              </p>
             </div>
           </CardContent>
         </Card>
 
         {/* Resultado */}
-        <Card className={balancoPeriodo >= 0 ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}>
+        <Card
+          className={
+            balancoPeriodo >= 0 ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"
+          }
+        >
           <CardHeader>
             <CardTitle className="text-base md:text-lg">Resultado</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 md:space-y-4">
             <div>
               <span className="text-xs md:text-sm text-slate-600">Balanço do Período</span>
-              <p className={`text-2xl md:text-3xl font-bold mt-2 ${balancoPeriodo >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <p
+                className={`text-2xl md:text-3xl font-bold mt-2 ${balancoPeriodo >= 0 ? "text-green-600" : "text-red-600"}`}
+              >
                 {formatCurrency(balancoPeriodo)}
               </p>
             </div>
@@ -155,9 +173,11 @@ export default function ResumoTab({ empresaAtiva, transacoes, contas }) {
                   <span className="text-xs md:text-sm text-slate-600">RECEITAS</span>
                 </div>
                 <div className="h-6 md:h-8 bg-slate-200 rounded-lg overflow-hidden">
-                  <div 
+                  <div
                     className="h-full bg-green-500"
-                    style={{ width: `${resumo.receitasRecebidas > 0 && resumo.despesasPagas > 0 ? (resumo.receitasRecebidas / (resumo.receitasRecebidas + resumo.despesasPagas)) * 100 : resumo.receitasRecebidas > 0 ? 100 : 0}%` }}
+                    style={{
+                      width: `${resumo.receitasRecebidas > 0 && resumo.despesasPagas > 0 ? (resumo.receitasRecebidas / (resumo.receitasRecebidas + resumo.despesasPagas)) * 100 : resumo.receitasRecebidas > 0 ? 100 : 0}%`,
+                    }}
                   />
                 </div>
               </div>
@@ -173,13 +193,17 @@ export default function ResumoTab({ empresaAtiva, transacoes, contas }) {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-            {contas.map(conta => (
+            {contas.map((conta) => (
               <div key={conta.id} className="p-3 md:p-4 bg-slate-50 rounded-lg">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="font-medium text-slate-800 text-sm md:text-base truncate">{conta.nome}</p>
+                  <p className="font-medium text-slate-800 text-sm md:text-base truncate">
+                    {conta.nome}
+                  </p>
                   <Wallet className="w-4 h-4 text-slate-400 flex-shrink-0" />
                 </div>
-                <p className="text-lg md:text-2xl font-bold text-slate-800">{formatCurrency(conta.saldo_atual || conta.saldo_inicial || 0)}</p>
+                <p className="text-lg md:text-2xl font-bold text-slate-800">
+                  {formatCurrency(conta.saldo_atual || conta.saldo_inicial || 0)}
+                </p>
                 <p className="text-xs text-slate-500 mt-1">{conta.banco || conta.tipo}</p>
               </div>
             ))}

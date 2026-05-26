@@ -1,37 +1,46 @@
-import React, { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Wallet, CreditCard, Edit, Upload, GitCompare, Link2, FolderTree, TrendingUp, Trash2 } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
-import ConciliacaoBancaria from './ConciliacaoBancaria';
-import RegrasConciliacao from './RegrasConciliacao';
-import IntegracaoBancaria from './IntegracaoBancaria';
-import PlanoContas from './PlanoContas';
-import FluxoContaDetalhado from './FluxoContaDetalhado';
+import React, { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Plus, Wallet, CreditCard, Link2, FolderTree, TrendingUp, Trash2 } from "lucide-react";
+import { base44 } from "@/api/base44Client";
+import ConciliacaoBancaria from "./ConciliacaoBancaria";
+import RegrasConciliacao from "./RegrasConciliacao";
+import IntegracaoBancaria from "./IntegracaoBancaria";
+import PlanoContas from "./PlanoContas";
+import FluxoContaDetalhado from "./FluxoContaDetalhado";
 
 export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
   const [showModal, setShowModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [usuarios, setUsuarios] = useState([]);
   const [form, setForm] = useState({
-    nome: '',
-    tipo: 'Banco',
-    banco: '',
-    agencia: '',
-    numero_conta: '',
+    nome: "",
+    tipo: "Banco",
+    banco: "",
+    agencia: "",
+    numero_conta: "",
     saldo_inicial: 0,
-    responsavel_email: ''
+    responsavel_email: "",
   });
 
   const handleOpen = async (conta = null) => {
     // Carregar usuários da empresa para vínculo Fundo Fixo
     try {
-      const usrs = await base44.entities.UsuarioEmpresa.filter({ empresa_id: empresaAtiva.id, ativo: true });
+      const usrs = await base44.entities.UsuarioEmpresa.filter({
+        empresa_id: empresaAtiva.id,
+        ativo: true,
+      });
       setUsuarios(usrs);
     } catch (e) {
       setUsuarios([]);
@@ -39,24 +48,24 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
 
     if (conta) {
       setForm({
-        nome: conta.nome || '',
-        tipo: conta.tipo || 'Banco',
-        banco: conta.banco || '',
-        agencia: conta.agencia || '',
-        numero_conta: conta.numero_conta || '',
+        nome: conta.nome || "",
+        tipo: conta.tipo || "Banco",
+        banco: conta.banco || "",
+        agencia: conta.agencia || "",
+        numero_conta: conta.numero_conta || "",
         saldo_inicial: conta.saldo_inicial || 0,
-        responsavel_email: conta.responsavel_email || ''
+        responsavel_email: conta.responsavel_email || "",
       });
       setSelectedItem(conta);
     } else {
       setForm({
-        nome: '',
-        tipo: 'Banco',
-        banco: '',
-        agencia: '',
-        numero_conta: '',
+        nome: "",
+        tipo: "Banco",
+        banco: "",
+        agencia: "",
+        numero_conta: "",
         saldo_inicial: 0,
-        responsavel_email: ''
+        responsavel_email: "",
       });
       setSelectedItem(null);
     }
@@ -70,7 +79,7 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
       empresa_id: empresaAtiva.id,
       ...form,
       saldo_atual: form.saldo_inicial,
-      ativo: true
+      ativo: true,
     };
 
     if (selectedItem) {
@@ -85,15 +94,18 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
 
   const handleDelete = async () => {
     if (!selectedItem) return;
-    if (!confirm('Tem certeza que deseja excluir esta conta? Esta ação não pode ser desfeita.')) return;
-    
+    if (!confirm("Tem certeza que deseja excluir esta conta? Esta ação não pode ser desfeita."))
+      return;
+
     await base44.entities.ContaFinanceira.delete(selectedItem.id);
     setShowModal(false);
     onReload();
   };
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+      value || 0
+    );
   };
 
   return (
@@ -101,9 +113,18 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
       <Tabs defaultValue="contas">
         <TabsList>
           <TabsTrigger value="contas">Contas</TabsTrigger>
-          <TabsTrigger value="integracao"><Link2 className="w-4 h-4 mr-1" />Integração Bancária</TabsTrigger>
-          <TabsTrigger value="plano"><FolderTree className="w-4 h-4 mr-1" />Plano de Contas</TabsTrigger>
-          <TabsTrigger value="fluxo"><TrendingUp className="w-4 h-4 mr-1" />Fluxo Detalhado</TabsTrigger>
+          <TabsTrigger value="integracao">
+            <Link2 className="w-4 h-4 mr-1" />
+            Integração Bancária
+          </TabsTrigger>
+          <TabsTrigger value="plano">
+            <FolderTree className="w-4 h-4 mr-1" />
+            Plano de Contas
+          </TabsTrigger>
+          <TabsTrigger value="fluxo">
+            <TrendingUp className="w-4 h-4 mr-1" />
+            Fluxo Detalhado
+          </TabsTrigger>
           <TabsTrigger value="conciliacao">Conciliação</TabsTrigger>
           <TabsTrigger value="regras">Regras</TabsTrigger>
         </TabsList>
@@ -118,24 +139,39 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
           </div>
 
           <div className="grid grid-cols-3 gap-4">
-            {contas.map(conta => (
-              <Card key={conta.id} className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => handleOpen(conta)}>
+            {contas.map((conta) => (
+              <Card
+                key={conta.id}
+                className="cursor-pointer hover:shadow-lg transition-shadow"
+                onClick={() => handleOpen(conta)}
+              >
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between mb-4">
-                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                      conta.tipo === 'Banco' ? 'bg-blue-100' :
-                      conta.tipo === 'Caixa' ? 'bg-green-100' :
-                      conta.tipo === 'Cartão' ? 'bg-purple-100' : 'bg-amber-100'
-                    }`}>
-                      {conta.tipo === 'Banco' || conta.tipo === 'Cartão' ? 
-                        <CreditCard className={`w-6 h-6 ${conta.tipo === 'Banco' ? 'text-blue-600' : 'text-purple-600'}`} /> :
+                    <div
+                      className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                        conta.tipo === "Banco"
+                          ? "bg-blue-100"
+                          : conta.tipo === "Caixa"
+                            ? "bg-green-100"
+                            : conta.tipo === "Cartão"
+                              ? "bg-purple-100"
+                              : "bg-amber-100"
+                      }`}
+                    >
+                      {conta.tipo === "Banco" || conta.tipo === "Cartão" ? (
+                        <CreditCard
+                          className={`w-6 h-6 ${conta.tipo === "Banco" ? "text-blue-600" : "text-purple-600"}`}
+                        />
+                      ) : (
                         <Wallet className="w-6 h-6 text-green-600" />
-                      }
+                      )}
                     </div>
                   </div>
                   <h3 className="font-semibold text-slate-800 mb-1">{conta.nome}</h3>
                   <p className="text-sm text-slate-500 mb-3">{conta.banco || conta.tipo}</p>
-                  <p className="text-2xl font-bold text-slate-800">{formatCurrency(conta.saldo_atual || conta.saldo_inicial || 0)}</p>
+                  <p className="text-2xl font-bold text-slate-800">
+                    {formatCurrency(conta.saldo_atual || conta.saldo_inicial || 0)}
+                  </p>
                 </CardContent>
               </Card>
             ))}
@@ -164,9 +200,11 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
       </Tabs>
 
       <Sheet open={showModal} onOpenChange={setShowModal}>
-        <SheetContent style={{ inset: 'auto 0 0 256px', width: 'calc(100% - 256px)', maxWidth: 'none' }}>
+        <SheetContent
+          style={{ inset: "auto 0 0 256px", width: "calc(100% - 256px)", maxWidth: "none" }}
+        >
           <SheetHeader>
-            <SheetTitle>{selectedItem ? 'Editar Conta' : 'Nova Conta'}</SheetTitle>
+            <SheetTitle>{selectedItem ? "Editar Conta" : "Nova Conta"}</SheetTitle>
           </SheetHeader>
           <div className="space-y-4 py-4">
             <div>
@@ -193,7 +231,7 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
                 </SelectContent>
               </Select>
             </div>
-            {form.tipo === 'Fundo Fixo' && (
+            {form.tipo === "Fundo Fixo" && (
               <div>
                 <Label>Responsável (Usuário)</Label>
                 {usuarios.length > 0 ? (
@@ -203,7 +241,7 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
                     className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 mt-1.5"
                   >
                     <option value="">-- Selecione um usuário --</option>
-                    {usuarios.map(u => (
+                    {usuarios.map((u) => (
                       <option key={u.id} value={u.usuario_email}>
                         {u.nome_completo || u.usuario_email} ({u.usuario_email})
                       </option>
@@ -254,7 +292,9 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
               <Input
                 type="number"
                 value={form.saldo_inicial}
-                onChange={(e) => setForm({ ...form, saldo_inicial: parseFloat(e.target.value) || 0 })}
+                onChange={(e) =>
+                  setForm({ ...form, saldo_inicial: parseFloat(e.target.value) || 0 })
+                }
                 className="mt-1.5"
               />
             </div>
@@ -267,8 +307,12 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
               </Button>
             )}
             <div className="flex gap-3 ml-auto">
-              <Button variant="outline" onClick={() => setShowModal(false)}>Cancelar</Button>
-              <Button onClick={handleSave} disabled={!form.nome}>Salvar</Button>
+              <Button variant="outline" onClick={() => setShowModal(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleSave} disabled={!form.nome}>
+                Salvar
+              </Button>
             </div>
           </div>
         </SheetContent>

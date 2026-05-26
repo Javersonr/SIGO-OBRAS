@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '../../../Layout';
-import { Link } from 'react-router-dom';
-import { createPageUrl } from '../../../utils';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Package, AlertTriangle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useEmpresa } from "../../../Layout";
+import { Link } from "react-router-dom";
+import { createPageUrl } from "../../../utils";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export default function WidgetEstoqueBaixo() {
   const { empresaAtiva } = useEmpresa();
@@ -22,16 +22,16 @@ export default function WidgetEstoqueBaixo() {
     try {
       const mats = await base44.entities.Material.filter({
         empresa_id: empresaAtiva.id,
-        ativo: true
+        ativo: true,
       });
-      
-      const estoqueBaixo = mats.filter(m => 
-        (m.estoque || 0) <= (m.estoque_minimo || 0)
-      ).slice(0, 5);
-      
+
+      const estoqueBaixo = mats
+        .filter((m) => (m.estoque || 0) <= (m.estoque_minimo || 0))
+        .slice(0, 5);
+
       setMateriais(estoqueBaixo);
     } catch (error) {
-      console.error('Erro:', error);
+      console.error("Erro:", error);
     } finally {
       setLoading(false);
     }
@@ -58,7 +58,7 @@ export default function WidgetEstoqueBaixo() {
             <AlertTriangle className="w-5 h-5 text-red-600" />
             Estoque Baixo
           </div>
-          <Link to={createPageUrl('Estoque')}>
+          <Link to={createPageUrl("Estoque")}>
             <Button variant="ghost" size="sm" className="text-xs">
               Ver todos
             </Button>
@@ -71,14 +71,19 @@ export default function WidgetEstoqueBaixo() {
             ✓ Todos os materiais em níveis adequados
           </p>
         ) : (
-          materiais.map(mat => (
-            <div key={mat.id} className="flex items-center justify-between p-2 bg-white rounded border border-red-100">
+          materiais.map((mat) => (
+            <div
+              key={mat.id}
+              className="flex items-center justify-between p-2 bg-white rounded border border-red-100"
+            >
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-slate-800 truncate">{mat.nome}</p>
                 <p className="text-xs text-slate-500">{mat.categoria}</p>
               </div>
               <div className="text-right ml-2">
-                <p className="text-xs font-semibold text-red-600">{mat.estoque || 0} {mat.unidade}</p>
+                <p className="text-xs font-semibold text-red-600">
+                  {mat.estoque || 0} {mat.unidade}
+                </p>
                 <p className="text-xs text-slate-500">Mín: {mat.estoque_minimo || 0}</p>
               </div>
             </div>

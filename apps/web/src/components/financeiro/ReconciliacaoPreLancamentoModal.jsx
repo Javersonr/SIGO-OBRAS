@@ -1,43 +1,37 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, CheckCircle2, X } from 'lucide-react';
+import React, { useState } from "react";
+import { base44 } from "@/api/base44Client";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2, CheckCircle2, X } from "lucide-react";
 
 export default function ReconciliacaoPreLancamentoModal({
   open,
   onOpenChange,
   preLancamento,
-  onReconciliado
+  onReconciliado,
 }) {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
   const [sucesso, setSucesso] = useState(false);
-  const [observacoes, setObservacoes] = useState('');
+  const [observacoes, setObservacoes] = useState("");
 
-  const dados = typeof preLancamento.dados_extraidos === 'string'
-    ? JSON.parse(preLancamento.dados_extraidos)
-    : preLancamento.dados_extraidos;
+  const dados =
+    typeof preLancamento.dados_extraidos === "string"
+      ? JSON.parse(preLancamento.dados_extraidos)
+      : preLancamento.dados_extraidos;
 
   const handleReconciliar = async () => {
     setCarregando(true);
     setErro(null);
 
     try {
-      const response = await base44.functions.invoke('reconciliarPreLancamento', {
+      const response = await base44.functions.invoke("reconciliarPreLancamento", {
         preLancamentoId: preLancamento.id,
         empresaId: preLancamento.empresa_id,
-        observacoes
+        observacoes,
       });
 
       if (response.data.sucesso) {
@@ -45,15 +39,15 @@ export default function ReconciliacaoPreLancamentoModal({
         setTimeout(() => {
           onOpenChange(false);
           setSucesso(false);
-          setObservacoes('');
+          setObservacoes("");
           onReconciliado();
         }, 2000);
       } else {
         setErro(response.data.error);
       }
     } catch (err) {
-      setErro('Erro ao reconciliar: ' + err.message);
-      console.error('Erro:', err);
+      setErro("Erro ao reconciliar: " + err.message);
+      console.error("Erro:", err);
     } finally {
       setCarregando(false);
     }
@@ -65,7 +59,12 @@ export default function ReconciliacaoPreLancamentoModal({
         <DialogContent className="sm:max-w-md w-full h-full sm:h-auto rounded-none sm:rounded-lg p-0">
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
             <span className="font-semibold text-slate-900">Reconciliar</span>
-            <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)} className="h-8 w-8">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onOpenChange(false)}
+              className="h-8 w-8"
+            >
               <X className="w-4 h-4" />
             </Button>
           </div>
@@ -92,9 +91,16 @@ export default function ReconciliacaoPreLancamentoModal({
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white sticky top-0 z-10">
           <div>
             <h2 className="text-base font-semibold text-slate-900">Reconciliar Pré-Lançamento</h2>
-            <p className="text-xs text-slate-500">Confirme os dados antes de converter em despesa formal</p>
+            <p className="text-xs text-slate-500">
+              Confirme os dados antes de converter em despesa formal
+            </p>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)} className="h-8 w-8">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onOpenChange(false)}
+            className="h-8 w-8"
+          >
             <X className="w-4 h-4" />
           </Button>
         </div>
@@ -185,7 +191,7 @@ export default function ReconciliacaoPreLancamentoModal({
                   Reconciliando...
                 </>
               ) : (
-                'Reconciliar Agora'
+                "Reconciliar Agora"
               )}
             </Button>
             <Button

@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { base44 } from '@/api/base44Client';
-import { BarChart3, PieChart, TrendingUp, Layers, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { base44 } from "@/api/base44Client";
+import { BarChart3, PieChart, TrendingUp, Layers, Loader2 } from "lucide-react";
 
 export default function SugestoesVisualizacao({ transacoes, tipo, onAplicarSugestao }) {
   const [sugestoes, setSugestoes] = useState([]);
@@ -17,12 +16,12 @@ export default function SugestoesVisualizacao({ transacoes, tipo, onAplicarSuges
     setLoading(true);
     try {
       // Análise dos dados
-      const receitas = transacoes.filter(t => t.tipo === 'Receita' && t.status === 'Pago');
-      const despesas = transacoes.filter(t => t.tipo === 'Despesa' && t.status === 'Pago');
-      
-      const temCategorias = new Set(transacoes.map(t => t.categoria_id)).size > 1;
-      const temCentrosCusto = transacoes.some(t => t.centro_custo_id);
-      const temProjetos = transacoes.some(t => t.projeto_id);
+      const receitas = transacoes.filter((t) => t.tipo === "Receita" && t.status === "Pago");
+      const despesas = transacoes.filter((t) => t.tipo === "Despesa" && t.status === "Pago");
+
+      const temCategorias = new Set(transacoes.map((t) => t.categoria_id)).size > 1;
+      const temCentrosCusto = transacoes.some((t) => t.centro_custo_id);
+      const temProjetos = transacoes.some((t) => t.projeto_id);
       const temPeriodos = transacoes.length > 30;
 
       const resultado = await base44.integrations.Core.InvokeLLM({
@@ -44,29 +43,29 @@ export default function SugestoesVisualizacao({ transacoes, tipo, onAplicarSuges
         - prioridade: 'alta', 'media', 'baixa'
         - motivo: por que essa visualização é relevante`,
         response_json_schema: {
-          type: 'object',
+          type: "object",
           properties: {
             sugestoes: {
-              type: 'array',
+              type: "array",
               items: {
-                type: 'object',
+                type: "object",
                 properties: {
-                  titulo: { type: 'string' },
-                  descricao: { type: 'string' },
-                  tipo_grafico: { type: 'string' },
-                  metricas: { type: 'array', items: { type: 'string' } },
-                  prioridade: { type: 'string' },
-                  motivo: { type: 'string' }
-                }
-              }
-            }
-          }
-        }
+                  titulo: { type: "string" },
+                  descricao: { type: "string" },
+                  tipo_grafico: { type: "string" },
+                  metricas: { type: "array", items: { type: "string" } },
+                  prioridade: { type: "string" },
+                  motivo: { type: "string" },
+                },
+              },
+            },
+          },
+        },
       });
 
       setSugestoes(resultado.sugestoes || []);
     } catch (error) {
-      console.error('Erro ao gerar sugestões:', error);
+      console.error("Erro ao gerar sugestões:", error);
     } finally {
       setLoading(false);
     }
@@ -74,19 +73,27 @@ export default function SugestoesVisualizacao({ transacoes, tipo, onAplicarSuges
 
   const getIconByTipo = (tipoGrafico) => {
     switch (tipoGrafico) {
-      case 'barras': return <BarChart3 className="w-4 h-4" />;
-      case 'pizza': return <PieChart className="w-4 h-4" />;
-      case 'linha': return <TrendingUp className="w-4 h-4" />;
-      default: return <Layers className="w-4 h-4" />;
+      case "barras":
+        return <BarChart3 className="w-4 h-4" />;
+      case "pizza":
+        return <PieChart className="w-4 h-4" />;
+      case "linha":
+        return <TrendingUp className="w-4 h-4" />;
+      default:
+        return <Layers className="w-4 h-4" />;
     }
   };
 
   const getPrioridadeColor = (prioridade) => {
     switch (prioridade) {
-      case 'alta': return 'bg-red-100 text-red-700';
-      case 'media': return 'bg-amber-100 text-amber-700';
-      case 'baixa': return 'bg-blue-100 text-blue-700';
-      default: return 'bg-slate-100 text-slate-700';
+      case "alta":
+        return "bg-red-100 text-red-700";
+      case "media":
+        return "bg-amber-100 text-amber-700";
+      case "baixa":
+        return "bg-blue-100 text-blue-700";
+      default:
+        return "bg-slate-100 text-slate-700";
     }
   };
 
@@ -131,9 +138,9 @@ export default function SugestoesVisualizacao({ transacoes, tipo, onAplicarSuges
                   {sugestao.prioridade}
                 </Badge>
               </div>
-              
+
               <p className="text-sm text-slate-600 mb-3">{sugestao.descricao}</p>
-              
+
               {sugestao.metricas && sugestao.metricas.length > 0 && (
                 <div className="flex flex-wrap gap-1 mb-2">
                   {sugestao.metricas.map((metrica, i) => (
@@ -143,7 +150,7 @@ export default function SugestoesVisualizacao({ transacoes, tipo, onAplicarSuges
                   ))}
                 </div>
               )}
-              
+
               <p className="text-xs text-slate-500 italic">{sugestao.motivo}</p>
             </div>
           ))}

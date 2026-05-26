@@ -1,33 +1,33 @@
-import React from 'react';
-import { useEmpresa } from '../Layout';
-import { Shield, Lock } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import React from "react";
+import { useEmpresa } from "../Layout";
+import { Lock } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 /**
  * Componente para controlar acesso baseado em permissões
- * 
+ *
  * Uso:
  * <PermissionGate modulo="Financeiro" aba="Despesas" funcao="criar">
  *   <Button>Criar Despesa</Button>
  * </PermissionGate>
- * 
+ *
  * Ou para verificar apenas módulo:
  * <PermissionGate modulo="Financeiro">
  *   <div>Conteúdo do módulo financeiro</div>
  * </PermissionGate>
  */
-export default function PermissionGate({ 
-  children, 
-  modulo, 
-  aba = null, 
+export default function PermissionGate({
+  children,
+  modulo,
+  aba = null,
   funcao = null,
   fallback = null,
-  showAlert = false 
+  showAlert = false,
 }) {
   const { temPermissao, perfil } = useEmpresa();
 
   // Admin sempre tem acesso
-  if (perfil === 'Admin') {
+  if (perfil === "Admin") {
     return <>{children}</>;
   }
 
@@ -40,7 +40,7 @@ export default function PermissionGate({
           <Lock className="h-4 w-4" />
           <AlertDescription>
             Você não tem permissão para acessar esta funcionalidade.
-            {aba && ` (Módulo: ${modulo} → ${aba}${funcao ? ` → ${funcao}` : ''})`}
+            {aba && ` (Módulo: ${modulo} → ${aba}${funcao ? ` → ${funcao}` : ""})`}
           </AlertDescription>
         </Alert>
       );
@@ -56,12 +56,12 @@ export default function PermissionGate({
  */
 export function usePermission() {
   const { temPermissao, perfil } = useEmpresa();
-  
+
   return {
     can: (modulo, aba = null, funcao = null) => {
-      if (perfil === 'Admin') return true;
+      if (perfil === "Admin") return true;
       return temPermissao(modulo, aba, funcao);
     },
-    isAdmin: perfil === 'Admin'
+    isAdmin: perfil === "Admin",
   };
 }

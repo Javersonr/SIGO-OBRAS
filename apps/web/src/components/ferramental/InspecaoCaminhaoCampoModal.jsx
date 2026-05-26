@@ -1,32 +1,29 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import SheetModalComponent from '@/components/ui/sheet-modal';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Camera, History, AlertCircle, CheckCircle2, Package, ChevronRight, ArrowLeft, Image as ImageIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import React, { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import SheetModalComponent from "@/components/ui/sheet-modal";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-export default function InspecaoCaminhaoCampoModal({ 
-  open, 
-  onOpenChange, 
+import {
+  Camera,
+  History,
+  AlertCircle,
+  CheckCircle2,
+  Package,
+  ChevronRight,
+  ArrowLeft,
+  Image as ImageIcon,
+} from "lucide-react";
+import { toast } from "sonner";
+
+export default function InspecaoCaminhaoCampoModal({
+  open,
+  onOpenChange,
   caminhao,
   user,
-  empresaAtiva
+  empresaAtiva,
 }) {
   const [campos, setCampos] = useState([]);
   const [ferramentas, setFerramentas] = useState([]);
@@ -50,36 +47,44 @@ export default function InspecaoCaminhaoCampoModal({
         base44.entities.CaminhaoCampoObrigatorio.filter({
           empresa_id: empresaAtiva.id,
           caminhao_id: caminhao.id,
-          ativo: true
+          ativo: true,
         }),
-        base44.entities.Ferramenta.filter({
-          empresa_id: empresaAtiva.id,
-          ativo: true
-        }, '-descricao', 1000),
-        base44.entities.InspecaoCaminhao.filter({
-          empresa_id: empresaAtiva.id,
-          caminhao_id: caminhao.id
-        }, '-data_inspecao', 50)
+        base44.entities.Ferramenta.filter(
+          {
+            empresa_id: empresaAtiva.id,
+            ativo: true,
+          },
+          "-descricao",
+          1000
+        ),
+        base44.entities.InspecaoCaminhao.filter(
+          {
+            empresa_id: empresaAtiva.id,
+            caminhao_id: caminhao.id,
+          },
+          "-data_inspecao",
+          50
+        ),
       ]);
 
       // Coletar todos os IDs de ferramentas configuradas como obrigatórias nos campos
       const idsObrigatorios = new Set();
-      camposDb.forEach(campo => {
+      camposDb.forEach((campo) => {
         try {
-          const ids = JSON.parse(campo.ferramenta_ids || '[]');
-          ids.forEach(id => idsObrigatorios.add(id));
+          const ids = JSON.parse(campo.ferramenta_ids || "[]");
+          ids.forEach((id) => idsObrigatorios.add(id));
         } catch {}
       });
 
       // Filtrar apenas as ferramentas que estão marcadas como obrigatórias nos campos
-      const ferramentasFiltradas = ferramentasDb.filter(f => idsObrigatorios.has(f.id));
+      const ferramentasFiltradas = ferramentasDb.filter((f) => idsObrigatorios.has(f.id));
 
       setCampos(camposDb.sort((a, b) => a.nome_campo.localeCompare(b.nome_campo)));
       setFerramentas(ferramentasFiltradas);
       setInspecoes(inspecoesDb);
     } catch (error) {
-      console.error('Erro ao carregar dados:', error);
-      toast.error('Erro ao carregar dados do caminhão');
+      console.error("Erro ao carregar dados:", error);
+      toast.error("Erro ao carregar dados do caminhão");
     } finally {
       setLoading(false);
     }
@@ -87,7 +92,7 @@ export default function InspecaoCaminhaoCampoModal({
 
   const handleNovaInspecao = async () => {
     if (campos.length === 0) {
-      toast.error('Nenhum campo obrigatório encontrado neste caminhão');
+      toast.error("Nenhum campo obrigatório encontrado neste caminhão");
       return;
     }
 
@@ -97,29 +102,29 @@ export default function InspecaoCaminhaoCampoModal({
         caminhao_id: caminhao.id,
         caminhao_placa: caminhao.placa,
         caminhao_modelo: caminhao.modelo,
-        data_inspecao: new Date().toISOString().split('T')[0],
+        data_inspecao: new Date().toISOString().split("T")[0],
         usuario_nome: user.full_name,
         usuario_email: user.email,
         total_campos: campos.length,
         campos_inspecionados: 0,
-        observacoes: '',
-        status: 'em_andamento'
+        observacoes: "",
+        status: "em_andamento",
       });
 
       setInspecaoAtiva(novaInspecao);
       setEmInspecao(true);
       setCampoAtual(campos[0]);
-      toast.success('Inspeção iniciada!');
+      toast.success("Inspeção iniciada!");
     } catch (error) {
-      console.error('Erro:', error);
-      toast.error('Erro ao iniciar inspeção');
+      console.error("Erro:", error);
+      toast.error("Erro ao iniciar inspeção");
     }
   };
 
   const getFerramentasDoaCampo = (campo) => {
     try {
-      const ids = JSON.parse(campo.ferramenta_ids || '[]');
-      return ferramentas.filter(f => ids.includes(f.id));
+      const ids = JSON.parse(campo.ferramenta_ids || "[]");
+      return ferramentas.filter((f) => ids.includes(f.id));
     } catch {
       return [];
     }
@@ -129,12 +134,12 @@ export default function InspecaoCaminhaoCampoModal({
     if (!campoAtual || !inspecaoAtiva) return;
 
     try {
-      const indexAtual = campos.findIndex(c => c.id === campoAtual.id);
+      const indexAtual = campos.findIndex((c) => c.id === campoAtual.id);
       const proximoIndex = indexAtual + 1;
 
       // Atualizar contagem de campos inspecionados
       await base44.entities.InspecaoCaminhao.update(inspecaoAtiva.id, {
-        campos_inspecionados: proximoIndex
+        campos_inspecionados: proximoIndex,
       });
 
       if (proximoIndex < campos.length) {
@@ -143,40 +148,40 @@ export default function InspecaoCaminhaoCampoModal({
       } else {
         // Inspeção concluída
         await base44.entities.InspecaoCaminhao.update(inspecaoAtiva.id, {
-          status: 'concluida'
+          status: "concluida",
         });
-        toast.success('Inspeção concluída com sucesso!');
+        toast.success("Inspeção concluída com sucesso!");
         setEmInspecao(false);
         setCampoAtual(null);
         setInspecaoAtiva(null);
         loadData();
       }
     } catch (error) {
-      console.error('Erro:', error);
-      toast.error('Erro ao atualizar inspeção');
+      console.error("Erro:", error);
+      toast.error("Erro ao atualizar inspeção");
     }
   };
 
   const statusColors = {
-    'Disponível': 'bg-green-100 text-green-700',
-    'Em Uso': 'bg-blue-100 text-blue-700',
-    'Em Manutenção': 'bg-orange-100 text-orange-700',
-    'Danificado': 'bg-red-100 text-red-700',
-    'Inativo': 'bg-slate-100 text-slate-700',
-    'Sucata': 'bg-red-100 text-red-700',
+    Disponível: "bg-green-100 text-green-700",
+    "Em Uso": "bg-blue-100 text-blue-700",
+    "Em Manutenção": "bg-orange-100 text-orange-700",
+    Danificado: "bg-red-100 text-red-700",
+    Inativo: "bg-slate-100 text-slate-700",
+    Sucata: "bg-red-100 text-red-700",
   };
 
   // Tela de inspeção em andamento
   if (emInspecao && campoAtual) {
     const ferramentasDoCampo = getFerramentasDoaCampo(campoAtual);
-    const indexAtual = campos.findIndex(c => c.id === campoAtual.id);
-    const progresso = Math.round(((indexAtual) / campos.length) * 100);
+    const indexAtual = campos.findIndex((c) => c.id === campoAtual.id);
+    const progresso = Math.round((indexAtual / campos.length) * 100);
 
     return (
       <SheetModalComponent
         open={open}
         onOpenChange={() => {
-          if (confirm('Cancelar inspeção em andamento?')) {
+          if (confirm("Cancelar inspeção em andamento?")) {
             setEmInspecao(false);
             setCampoAtual(null);
             setInspecaoAtiva(null);
@@ -184,11 +189,11 @@ export default function InspecaoCaminhaoCampoModal({
             onOpenChange(false);
           }
         }}
-        title={`Inspeção: ${caminhao?.placa || ''}`}
+        title={`Inspeção: ${caminhao?.placa || ""}`}
         footer={
           <div className="flex justify-between gap-3">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => {
                 setEmInspecao(false);
                 setCampoAtual(null);
@@ -204,7 +209,7 @@ export default function InspecaoCaminhaoCampoModal({
               className="bg-green-600 hover:bg-green-700 gap-2"
             >
               <CheckCircle2 className="w-4 h-4" />
-              {indexAtual === campos.length - 1 ? 'Concluir Inspeção' : 'Próximo Campo'}
+              {indexAtual === campos.length - 1 ? "Concluir Inspeção" : "Próximo Campo"}
             </Button>
           </div>
         }
@@ -214,7 +219,9 @@ export default function InspecaoCaminhaoCampoModal({
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-semibold text-slate-600">Progresso</span>
-              <span className="text-sm font-bold text-slate-800">{indexAtual + 1}/{campos.length}</span>
+              <span className="text-sm font-bold text-slate-800">
+                {indexAtual + 1}/{campos.length}
+              </span>
             </div>
             <div className="w-full bg-slate-200 rounded-full h-2">
               <div
@@ -242,7 +249,7 @@ export default function InspecaoCaminhaoCampoModal({
                 Ferramentas vinculadas ({ferramentasDoCampo.length}):
               </p>
               <div className="space-y-2">
-                {ferramentasDoCampo.map(f => (
+                {ferramentasDoCampo.map((f) => (
                   <Card key={f.id} className="p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
@@ -252,7 +259,9 @@ export default function InspecaoCaminhaoCampoModal({
                           {f.numero_serie && (
                             <span className="text-xs text-slate-500">Série: {f.numero_serie}</span>
                           )}
-                          <Badge className={statusColors[f.status] || 'bg-slate-100 text-slate-700'}>
+                          <Badge
+                            className={statusColors[f.status] || "bg-slate-100 text-slate-700"}
+                          >
                             {f.status}
                           </Badge>
                         </div>
@@ -293,10 +302,12 @@ export default function InspecaoCaminhaoCampoModal({
                     ✕
                   </Button>
                 </div>
-              ) : ferramentasDoCampo.some(f => f.foto_url) ? (
+              ) : ferramentasDoCampo.some((f) => f.foto_url) ? (
                 <div className="text-slate-500">
                   <ImageIcon className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-                  <p className="text-sm">Clique em uma ferramenta acima para usar como referência</p>
+                  <p className="text-sm">
+                    Clique em uma ferramenta acima para usar como referência
+                  </p>
                 </div>
               ) : (
                 <div className="text-slate-400">
@@ -310,7 +321,8 @@ export default function InspecaoCaminhaoCampoModal({
           {/* Confirmação */}
           <Card className="border-blue-200 bg-blue-50 p-3">
             <p className="text-sm text-blue-900">
-              ✓ Confirme que o campo obrigatório <strong>{campoAtual.nome_campo}</strong> está presente no caminhão e clique em "Próximo Campo"
+              ✓ Confirme que o campo obrigatório <strong>{campoAtual.nome_campo}</strong> está
+              presente no caminhão e clique em "Próximo Campo"
             </p>
           </Card>
         </div>
@@ -322,8 +334,8 @@ export default function InspecaoCaminhaoCampoModal({
     <SheetModalComponent
       open={open}
       onOpenChange={onOpenChange}
-      title={`Inspeção: ${caminhao?.placa || ''}`}
-      subtitle={caminhao?.modelo || ''}
+      title={`Inspeção: ${caminhao?.placa || ""}`}
+      subtitle={caminhao?.modelo || ""}
       footer={
         <div className="flex justify-end gap-3">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -361,7 +373,9 @@ export default function InspecaoCaminhaoCampoModal({
                 <div className="text-center text-slate-500">
                   <AlertCircle className="w-12 h-12 mx-auto mb-3 text-slate-300" />
                   <p>Nenhum campo obrigatório configurado para este caminhão</p>
-                  <p className="text-sm mt-2">Configure os campos em <strong>Configurações → Caminhões</strong></p>
+                  <p className="text-sm mt-2">
+                    Configure os campos em <strong>Configurações → Caminhões</strong>
+                  </p>
                 </div>
               </Card>
             ) : (
@@ -380,7 +394,9 @@ export default function InspecaoCaminhaoCampoModal({
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-800">{idx + 1}. {campo.nome_campo}</span>
+                            <span className="font-bold text-slate-800">
+                              {idx + 1}. {campo.nome_campo}
+                            </span>
                             <Badge className="bg-blue-100 text-blue-700 text-xs">
                               {ferramentasDoCampo.length}/{campo.quantidade_obrigatoria}
                             </Badge>
@@ -390,7 +406,7 @@ export default function InspecaoCaminhaoCampoModal({
                           )}
                           {ferramentasDoCampo.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-2">
-                              {ferramentasDoCampo.map(f => (
+                              {ferramentasDoCampo.map((f) => (
                                 <Badge key={f.id} variant="outline" className="text-xs">
                                   {f.codigo}
                                 </Badge>
@@ -423,12 +439,12 @@ export default function InspecaoCaminhaoCampoModal({
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="font-semibold text-slate-800">
-                            {new Date(insp.data_inspecao).toLocaleDateString('pt-BR')}
+                            {new Date(insp.data_inspecao).toLocaleDateString("pt-BR")}
                           </p>
                           <p className="text-sm text-slate-500">Por: {insp.usuario_nome}</p>
                         </div>
                         <div className="flex items-center gap-2">
-                          {insp.status === 'em_andamento' ? (
+                          {insp.status === "em_andamento" ? (
                             <Badge className="bg-blue-100 text-blue-700">Em andamento</Badge>
                           ) : (
                             <Badge className="bg-green-100 text-green-700">
@@ -442,9 +458,10 @@ export default function InspecaoCaminhaoCampoModal({
                         <div
                           className="bg-green-600 h-2 rounded-full transition-all"
                           style={{
-                            width: insp.total_campos > 0
-                              ? `${(insp.campos_inspecionados / insp.total_campos) * 100}%`
-                              : '0%'
+                            width:
+                              insp.total_campos > 0
+                                ? `${(insp.campos_inspecionados / insp.total_campos) * 100}%`
+                                : "0%",
                           }}
                         />
                       </div>

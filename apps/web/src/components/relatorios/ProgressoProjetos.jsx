@@ -1,12 +1,23 @@
-import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { TrendingUp, Download, FileText } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import React from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+} from "recharts";
+import { TrendingUp, Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export default function ProgressoProjetos({ dados, expandido = false }) {
   const statusAgrupado = dados.reduce((acc, proj) => {
-    const status = proj.status_nome || 'Sem Status';
+    const status = proj.status_nome || "Sem Status";
     if (!acc[status]) {
       acc[status] = { nome: status, quantidade: 0, valor: 0 };
     }
@@ -19,7 +30,10 @@ export default function ProgressoProjetos({ dados, expandido = false }) {
 
   // Dados de evolução temporal
   const projetosPorMes = dados.reduce((acc, proj) => {
-    const mes = new Date(proj.created_date).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+    const mes = new Date(proj.created_date).toLocaleDateString("pt-BR", {
+      month: "short",
+      year: "2-digit",
+    });
     if (!acc[mes]) acc[mes] = { mes, quantidade: 0 };
     acc[mes].quantidade += 1;
     return acc;
@@ -28,30 +42,30 @@ export default function ProgressoProjetos({ dados, expandido = false }) {
   const evolucao = Object.values(projetosPorMes).sort((a, b) => a.mes.localeCompare(b.mes));
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', { 
-      style: 'currency', 
-      currency: 'BRL',
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
       minimumFractionDigits: 0,
-      maximumFractionDigits: 0
+      maximumFractionDigits: 0,
     }).format(value);
   };
 
   const exportarPDF = async () => {
-    const { jsPDF } = await import('jspdf');
+    const { jsPDF } = await import("jspdf");
     const doc = new jsPDF();
-    
+
     doc.setFontSize(16);
-    doc.text('Progresso de Projetos', 14, 15);
+    doc.text("Progresso de Projetos", 14, 15);
     doc.setFontSize(10);
-    doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 22);
-    
+    doc.text(`Gerado em: ${new Date().toLocaleDateString("pt-BR")}`, 14, 22);
+
     let y = 35;
-    dadosGrafico.forEach(item => {
+    dadosGrafico.forEach((item) => {
       doc.text(`${item.nome}: ${item.quantidade} projetos - ${formatCurrency(item.valor)}`, 14, y);
       y += 7;
     });
-    
-    doc.save(`projetos_${new Date().toISOString().split('T')[0]}.pdf`);
+
+    doc.save(`projetos_${new Date().toISOString().split("T")[0]}.pdf`);
   };
 
   return (
@@ -92,7 +106,13 @@ export default function ProgressoProjetos({ dados, expandido = false }) {
                     <YAxis />
                     <Tooltip />
                     <Legend />
-                    <Line type="monotone" dataKey="quantidade" stroke="#3b82f6" name="Projetos" strokeWidth={2} />
+                    <Line
+                      type="monotone"
+                      dataKey="quantidade"
+                      stroke="#3b82f6"
+                      name="Projetos"
+                      strokeWidth={2}
+                    />
                   </LineChart>
                 </ResponsiveContainer>
               </>

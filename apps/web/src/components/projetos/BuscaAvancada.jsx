@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Filter, MapPin, DollarSign, Calendar, User } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import React, { useState, useEffect, useRef } from "react";
+import { Search, X, Filter } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 export default function BuscaAvancada({ projetos, onResultsChange, statusList, usuarios }) {
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchHistory, setSearchHistory] = useState([]);
@@ -15,7 +15,7 @@ export default function BuscaAvancada({ projetos, onResultsChange, statusList, u
 
   // Carregar histórico do localStorage
   useEffect(() => {
-    const history = localStorage.getItem('projetos_search_history');
+    const history = localStorage.getItem("projetos_search_history");
     if (history) {
       setSearchHistory(JSON.parse(history));
     }
@@ -24,9 +24,9 @@ export default function BuscaAvancada({ projetos, onResultsChange, statusList, u
   // Salvar busca no histórico
   const saveToHistory = (term) => {
     if (!term.trim()) return;
-    const newHistory = [term, ...searchHistory.filter(h => h !== term)].slice(0, 5);
+    const newHistory = [term, ...searchHistory.filter((h) => h !== term)].slice(0, 5);
     setSearchHistory(newHistory);
-    localStorage.setItem('projetos_search_history', JSON.stringify(newHistory));
+    localStorage.setItem("projetos_search_history", JSON.stringify(newHistory));
   };
 
   // Busca em múltiplos campos
@@ -36,43 +36,56 @@ export default function BuscaAvancada({ projetos, onResultsChange, statusList, u
     }
 
     const lowerTerm = term.toLowerCase();
-    return projetos.filter(proj => {
+    return projetos.filter((proj) => {
       // Buscar em nome/título
       const matchNome = (proj.nome || proj.titulo)?.toLowerCase().includes(lowerTerm);
-      
+
       // Buscar em cliente
       const matchCliente = proj.cliente_nome?.toLowerCase().includes(lowerTerm);
-      
+
       // Buscar em status
       const matchStatus = proj.status_nome?.toLowerCase().includes(lowerTerm);
-      
+
       // Buscar em cidade
       const matchCidade = proj.cidade?.toLowerCase().includes(lowerTerm);
-      
+
       // Buscar em valor (se for número)
       const matchValor = proj.valor_estimado?.toString().includes(term);
-      
+
       // Buscar em modalidade
       const matchModalidade = proj.licitacao_modalidade?.toLowerCase().includes(lowerTerm);
-      
+
       // Buscar em responsáveis (campo correto: responsaveis_emails)
       let matchResponsavel = false;
       if (proj.responsaveis_emails) {
         try {
           const emails = JSON.parse(proj.responsaveis_emails);
-          matchResponsavel = emails.some(email => email?.toLowerCase().includes(lowerTerm)) ||
-            usuarios.some(u => emails.includes(u.usuario_email) && u.nome_completo?.toLowerCase().includes(lowerTerm));
+          matchResponsavel =
+            emails.some((email) => email?.toLowerCase().includes(lowerTerm)) ||
+            usuarios.some(
+              (u) =>
+                emails.includes(u.usuario_email) &&
+                u.nome_completo?.toLowerCase().includes(lowerTerm)
+            );
         } catch {}
       }
 
-      return matchNome || matchCliente || matchStatus || matchCidade || matchValor || matchModalidade || matchResponsavel;
+      return (
+        matchNome ||
+        matchCliente ||
+        matchStatus ||
+        matchCidade ||
+        matchValor ||
+        matchModalidade ||
+        matchResponsavel
+      );
     });
   };
 
   // Gerar sugestões inteligentes
   const generateSuggestions = (term) => {
     if (!term.trim()) {
-      return searchHistory.map(h => ({ text: h, type: 'history' }));
+      return searchHistory.map((h) => ({ text: h, type: "history" }));
     }
 
     const results = searchProjects(term);
@@ -80,15 +93,15 @@ export default function BuscaAvancada({ projetos, onResultsChange, statusList, u
     const lowerTerm = term.toLowerCase();
 
     // Sugestões de projetos apenas
-    results.slice(0, 10).forEach(proj => {
+    results.slice(0, 10).forEach((proj) => {
       const nome = proj.nome || proj.titulo;
       if (nome?.toLowerCase().includes(lowerTerm)) {
         suggestions.push({
           text: nome,
-          type: 'projeto',
-          icon: 'folder',
-          subtitle: proj.cliente_nome || 'Sem cliente',
-          value: nome
+          type: "projeto",
+          icon: "folder",
+          subtitle: proj.cliente_nome || "Sem cliente",
+          value: nome,
         });
       }
     });
@@ -106,16 +119,16 @@ export default function BuscaAvancada({ projetos, onResultsChange, statusList, u
 
   // Navegação por teclado
   const handleKeyDown = (e) => {
-    if (e.key === 'ArrowDown') {
+    if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelectedIndex(prev => Math.min(prev + 1, suggestions.length - 1));
-    } else if (e.key === 'ArrowUp') {
+      setSelectedIndex((prev) => Math.min(prev + 1, suggestions.length - 1));
+    } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setSelectedIndex(prev => Math.max(prev - 1, 0));
-    } else if (e.key === 'Enter' && suggestions[selectedIndex]) {
+      setSelectedIndex((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === "Enter" && suggestions[selectedIndex]) {
       e.preventDefault();
       handleSelectSuggestion(suggestions[selectedIndex]);
-    } else if (e.key === 'Escape') {
+    } else if (e.key === "Escape") {
       setShowSuggestions(false);
     }
   };
@@ -130,7 +143,7 @@ export default function BuscaAvancada({ projetos, onResultsChange, statusList, u
 
   // Limpar busca
   const handleClear = () => {
-    setSearchTerm('');
+    setSearchTerm("");
     setShowSuggestions(false);
     setSelectedIndex(0);
     inputRef.current?.focus();
@@ -139,12 +152,18 @@ export default function BuscaAvancada({ projetos, onResultsChange, statusList, u
   // Ícones por tipo
   const getIcon = (type) => {
     switch (type) {
-      case 'projeto': return '📁';
-      case 'cliente': return '🏢';
-      case 'cidade': return '📍';
-      case 'status': return '🏷️';
-      case 'history': return '🕒';
-      default: return '🔍';
+      case "projeto":
+        return "📁";
+      case "cliente":
+        return "🏢";
+      case "cidade":
+        return "📍";
+      case "status":
+        return "🏷️";
+      case "history":
+        return "🕒";
+      default:
+        return "🔍";
     }
   };
 
@@ -178,11 +197,11 @@ export default function BuscaAvancada({ projetos, onResultsChange, statusList, u
       {/* Sugestões */}
       {showSuggestions && suggestions.length > 0 && (
         <>
-          <div 
-            className="fixed inset-0 z-40" 
-            onClick={() => setShowSuggestions(false)}
-          />
-          <Card className="absolute top-full mt-2 w-full z-50 shadow-xl border-2" ref={suggestionsRef}>
+          <div className="fixed inset-0 z-40" onClick={() => setShowSuggestions(false)} />
+          <Card
+            className="absolute top-full mt-2 w-full z-50 shadow-xl border-2"
+            ref={suggestionsRef}
+          >
             <CardContent className="p-0">
               <div className="max-h-[400px] overflow-y-auto">
                 {!searchTerm && searchHistory.length > 0 && (
@@ -204,27 +223,28 @@ export default function BuscaAvancada({ projetos, onResultsChange, statusList, u
                       <span className="text-lg">{getIcon(suggestion.type)}</span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="font-medium text-slate-800 truncate">
-                            {suggestion.text}
-                          </p>
+                          <p className="font-medium text-slate-800 truncate">{suggestion.text}</p>
                           {suggestion.color && (
-                            <div 
+                            <div
                               className="w-3 h-3 rounded-full flex-shrink-0"
                               style={{ backgroundColor: suggestion.color }}
                             />
                           )}
                         </div>
                         {suggestion.subtitle && (
-                          <p className="text-xs text-slate-500 mt-0.5">
-                            {suggestion.subtitle}
-                          </p>
+                          <p className="text-xs text-slate-500 mt-0.5">{suggestion.subtitle}</p>
                         )}
                       </div>
                       <Badge variant="outline" className="text-xs flex-shrink-0">
-                        {suggestion.type === 'history' ? 'Histórico' : 
-                         suggestion.type === 'projeto' ? 'Projeto' :
-                         suggestion.type === 'cliente' ? 'Cliente' :
-                         suggestion.type === 'cidade' ? 'Cidade' : 'Status'}
+                        {suggestion.type === "history"
+                          ? "Histórico"
+                          : suggestion.type === "projeto"
+                            ? "Projeto"
+                            : suggestion.type === "cliente"
+                              ? "Cliente"
+                              : suggestion.type === "cidade"
+                                ? "Cidade"
+                                : "Status"}
                       </Badge>
                     </div>
                   </div>
@@ -236,17 +256,19 @@ export default function BuscaAvancada({ projetos, onResultsChange, statusList, u
       )}
 
       {/* Indicador de resultados */}
-      {searchTerm && (() => {
-        const resultCount = searchProjects(searchTerm).length;
-        return (
-          <div className="mt-2 flex items-center gap-2 text-sm text-slate-600">
-            <Filter className="w-4 h-4" />
-            <span>
-              {resultCount} {resultCount === 1 ? 'resultado encontrado' : 'resultados encontrados'}
-            </span>
-          </div>
-        );
-      })()}
+      {searchTerm &&
+        (() => {
+          const resultCount = searchProjects(searchTerm).length;
+          return (
+            <div className="mt-2 flex items-center gap-2 text-sm text-slate-600">
+              <Filter className="w-4 h-4" />
+              <span>
+                {resultCount}{" "}
+                {resultCount === 1 ? "resultado encontrado" : "resultados encontrados"}
+              </span>
+            </div>
+          );
+        })()}
     </div>
   );
 }

@@ -1,17 +1,33 @@
-import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ArrowUpCircle, ArrowDownCircle, DollarSign, FileDown } from 'lucide-react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import React from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ArrowUpCircle, ArrowDownCircle, DollarSign, FileDown } from "lucide-react";
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 
-export default function FluxoCaixaRelatorio({ transacoes, contas, versao = 'real', dataInicio, dataFim }) {
-  const transacoesFiltradas = versao === 'contabil' 
-    ? transacoes.filter(t => t.numero_documento)
-    : transacoes;
+export default function FluxoCaixaRelatorio({
+  transacoes,
+  contas,
+  versao = "real",
+  dataInicio,
+  dataFim,
+}) {
+  const transacoesFiltradas =
+    versao === "contabil" ? transacoes.filter((t) => t.numero_documento) : transacoes;
 
   // Filtrar por período
-  const transacoesPeriodo = transacoesFiltradas.filter(t => {
+  const transacoesPeriodo = transacoesFiltradas.filter((t) => {
     const data = t.data_vencimento || t.created_date;
     if (!data) return false;
     if (dataInicio && data < dataInicio) return false;
@@ -21,17 +37,17 @@ export default function FluxoCaixaRelatorio({ transacoes, contas, versao = 'real
 
   // Agrupar por mês
   const fluxoPorMes = {};
-  transacoesPeriodo.forEach(t => {
+  transacoesPeriodo.forEach((t) => {
     const mes = (t.data_vencimento || t.created_date)?.slice(0, 7);
     if (!mes) return;
-    
+
     if (!fluxoPorMes[mes]) {
       fluxoPorMes[mes] = { mes, entradas: 0, saidas: 0, saldo: 0 };
     }
-    
-    if (t.tipo === 'Receita' && t.status === 'Pago') {
+
+    if (t.tipo === "Receita" && t.status === "Pago") {
       fluxoPorMes[mes].entradas += t.valor || 0;
-    } else if (t.tipo === 'Despesa' && t.status === 'Pago') {
+    } else if (t.tipo === "Despesa" && t.status === "Pago") {
       fluxoPorMes[mes].saidas += t.valor || 0;
     }
   });
@@ -41,14 +57,19 @@ export default function FluxoCaixaRelatorio({ transacoes, contas, versao = 'real
     .sort((a, b) => a.mes.localeCompare(b.mes))
     .map((item, idx, arr) => {
       const saldoMes = item.entradas - item.saidas;
-      const saldoAcumulado = arr.slice(0, idx + 1).reduce((sum, i) => sum + (i.entradas - i.saidas), 0);
-      
+      const saldoAcumulado = arr
+        .slice(0, idx + 1)
+        .reduce((sum, i) => sum + (i.entradas - i.saidas), 0);
+
       return {
-        mes: new Date(item.mes + '-01').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }),
+        mes: new Date(item.mes + "-01").toLocaleDateString("pt-BR", {
+          month: "short",
+          year: "numeric",
+        }),
         entradas: item.entradas,
         saidas: item.saidas,
         saldo: saldoMes,
-        saldoAcumulado
+        saldoAcumulado,
       };
     });
 
@@ -57,45 +78,47 @@ export default function FluxoCaixaRelatorio({ transacoes, contas, versao = 'real
   const saldoFinal = totalEntradas - totalSaidas;
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+      value || 0
+    );
   };
 
   const handleExportarPDF = async () => {
-    const { jsPDF } = await import('jspdf');
+    const { jsPDF } = await import("jspdf");
     const doc = new jsPDF();
-    
+
     doc.setFontSize(18);
-    doc.text('Fluxo de Caixa', 14, 20);
+    doc.text("Fluxo de Caixa", 14, 20);
     doc.setFontSize(10);
-    doc.text(`Período: ${dataInicio || 'Início'} a ${dataFim || 'Hoje'}`, 14, 28);
-    
+    doc.text(`Período: ${dataInicio || "Início"} a ${dataFim || "Hoje"}`, 14, 28);
+
     let y = 40;
     doc.setFontSize(12);
-    doc.text('Mês', 14, y);
-    doc.text('Entradas', 60, y);
-    doc.text('Saídas', 110, y);
-    doc.text('Saldo', 160, y);
-    
+    doc.text("Mês", 14, y);
+    doc.text("Entradas", 60, y);
+    doc.text("Saídas", 110, y);
+    doc.text("Saldo", 160, y);
+
     y += 8;
     doc.setFontSize(10);
-    
-    dadosFluxo.forEach(item => {
+
+    dadosFluxo.forEach((item) => {
       if (y > 270) {
         doc.addPage();
         y = 20;
       }
-      
+
       doc.text(item.mes, 14, y);
       doc.text(formatCurrency(item.entradas), 60, y);
       doc.text(formatCurrency(item.saidas), 110, y);
       doc.setTextColor(item.saldo >= 0 ? 0 : 255, 0, 0);
       doc.text(formatCurrency(item.saldo), 160, y);
       doc.setTextColor(0, 0, 0);
-      
+
       y += 7;
     });
-    
-    doc.save(`fluxo_caixa_${new Date().toISOString().split('T')[0]}.pdf`);
+
+    doc.save(`fluxo_caixa_${new Date().toISOString().split("T")[0]}.pdf`);
   };
 
   return (
@@ -111,8 +134,8 @@ export default function FluxoCaixaRelatorio({ transacoes, contas, versao = 'real
               <FileDown className="w-4 h-4 mr-2" />
               Exportar PDF
             </Button>
-            <Badge variant={versao === 'real' ? 'default' : 'outline'}>
-              {versao === 'real' ? 'Regime Real' : 'Regime Contábil (NF-e)'}
+            <Badge variant={versao === "real" ? "default" : "outline"}>
+              {versao === "real" ? "Regime Real" : "Regime Contábil (NF-e)"}
             </Badge>
           </div>
         </div>
@@ -127,7 +150,7 @@ export default function FluxoCaixaRelatorio({ transacoes, contas, versao = 'real
             </div>
             <p className="text-2xl font-bold text-green-700">{formatCurrency(totalEntradas)}</p>
           </div>
-          
+
           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
             <div className="flex items-center gap-2 mb-2">
               <ArrowDownCircle className="w-5 h-5 text-red-600" />
@@ -135,13 +158,23 @@ export default function FluxoCaixaRelatorio({ transacoes, contas, versao = 'real
             </div>
             <p className="text-2xl font-bold text-red-700">{formatCurrency(totalSaidas)}</p>
           </div>
-          
-          <div className={`border rounded-lg p-4 ${saldoFinal >= 0 ? 'bg-blue-50 border-blue-200' : 'bg-orange-50 border-orange-200'}`}>
+
+          <div
+            className={`border rounded-lg p-4 ${saldoFinal >= 0 ? "bg-blue-50 border-blue-200" : "bg-orange-50 border-orange-200"}`}
+          >
             <div className="flex items-center gap-2 mb-2">
-              <DollarSign className={`w-5 h-5 ${saldoFinal >= 0 ? 'text-blue-600' : 'text-orange-600'}`} />
-              <span className={`text-sm font-medium ${saldoFinal >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>Saldo</span>
+              <DollarSign
+                className={`w-5 h-5 ${saldoFinal >= 0 ? "text-blue-600" : "text-orange-600"}`}
+              />
+              <span
+                className={`text-sm font-medium ${saldoFinal >= 0 ? "text-blue-700" : "text-orange-700"}`}
+              >
+                Saldo
+              </span>
             </div>
-            <p className={`text-2xl font-bold ${saldoFinal >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>
+            <p
+              className={`text-2xl font-bold ${saldoFinal >= 0 ? "text-blue-700" : "text-orange-700"}`}
+            >
               {formatCurrency(saldoFinal)}
             </p>
           </div>
@@ -155,15 +188,15 @@ export default function FluxoCaixaRelatorio({ transacoes, contas, versao = 'real
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="mes" />
               <YAxis />
-              <Tooltip 
+              <Tooltip
                 formatter={(value) => formatCurrency(value)}
-                labelStyle={{ color: '#1e293b' }}
+                labelStyle={{ color: "#1e293b" }}
               />
               <Legend />
-              <Line 
-                type="monotone" 
-                dataKey="saldoAcumulado" 
-                stroke="#f59e0b" 
+              <Line
+                type="monotone"
+                dataKey="saldoAcumulado"
+                stroke="#f59e0b"
                 strokeWidth={2}
                 name="Saldo Acumulado"
               />
@@ -179,9 +212,9 @@ export default function FluxoCaixaRelatorio({ transacoes, contas, versao = 'real
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="mes" />
               <YAxis />
-              <Tooltip 
+              <Tooltip
                 formatter={(value) => formatCurrency(value)}
-                labelStyle={{ color: '#1e293b' }}
+                labelStyle={{ color: "#1e293b" }}
               />
               <Legend />
               <Bar dataKey="entradas" fill="#10b981" name="Entradas" />
