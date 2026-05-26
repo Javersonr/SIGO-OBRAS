@@ -1,0 +1,38 @@
+# Build outputs
+**/dist/
+**/build/
+**/.next/
+**/.turbo/
+**/coverage/
+
+# Dependencies
+**/node_modules/
+**/package-lock.json
+**/pnpm-lock.yaml
+**/yarn.lock
+
+# Generated
+**/*.min.js
+**/*.min.css
+**/.cache/
+
+# Legacy code — preserva formatação original do Base44
+legacy/
+
+# Snapshots e dumps (dados produtivos)
+tools/dump/
+tools/dump-archive/
+
+# Específicos
+*.lock
+*.log
+.env
+.env.*
+!.env.example
+
+# Supabase
+supabase/.branches/
+supabase/.temp/
+
+# Por workspace
+apps/web/src/components/ui/
