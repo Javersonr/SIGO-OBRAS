@@ -2,22 +2,28 @@
 /**
  * export-base44.mjs
  *
- * Exporta TODAS as entidades + dados + arquivos do Base44 para a pasta local.
+ * Exporta TODAS as entidades + dados + arquivos da plataforma anterior
+ * (Base44 REST API) usando fetch direto com header `api_key`.
+ *
+ * O SDK oficial ignora silenciosamente o api_key passado via `headers`
+ * (retorna [] em vez de erro), então usamos a REST API direto. Endpoint:
+ *
+ *   GET https://base44.app/api/apps/<APP_ID>/entities/<EntityName>?limit=N&skip=N
+ *   Headers: { api_key: <ADMIN_KEY> }
  *
  * Uso:
- *   cp .env.example .env  # preencha BASE44_APP_ID, BASE44_API_KEY, BASE44_APP_BASE_URL
+ *   cp .env.example .env  # preencha BASE44_APP_ID, BASE44_API_KEY
  *   npm install
  *   npm run export:base44
  *
  * Saída:
- *   dump/_meta.json                 — metadados da execução (lista de entities, contagens)
+ *   dump/_meta.json                 — metadados (lista de entities, contagens, falhas)
  *   dump/<entidade>.json            — 1 arquivo por entidade, array completo
- *   dump/_files/<entidade>/<id>/... — arquivos baixados (foto_url, laudo_url, etc.)
+ *   dump/_files/<entidade>/<id>/... — arquivos baixados de URLs em campos *_url
  *
  * IMPORTANTE: dump/ está no .gitignore — não commitar dados produtivos.
  */
 
-import { createClient } from "@base44/sdk";
 import dotenv from "dotenv";
 import fs from "fs/promises";
 import path from "path";
@@ -28,54 +34,54 @@ dotenv.config();
 
 const {
   BASE44_APP_ID,
-  BASE44_APP_BASE_URL,
   BASE44_API_KEY,
+  BASE44_SERVER_URL = "https://base44.app",
   BASE44_ENTITIES,
   DUMP_DIR = "./dump",
   DOWNLOAD_FILES = "true",
+  CONCURRENCY = "4",
+  RATE_DELAY_MS = "350", // delay entre requests pra entidades (evita 429)
+  RESUME = "true", // pula entidades cujo .json já existe
+  MAX_RETRIES = "6", // tentativas em 429 com backoff
 } = process.env;
 
-if (!BASE44_APP_ID || !BASE44_API_KEY || !BASE44_APP_BASE_URL) {
-  console.error("✗ Faltam vars no .env: BASE44_APP_ID, BASE44_API_KEY, BASE44_APP_BASE_URL");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+if (!BASE44_APP_ID || !BASE44_API_KEY) {
+  console.error("✗ Faltam vars no .env: BASE44_APP_ID e BASE44_API_KEY são obrigatórios");
   process.exit(1);
 }
 
 const PAGE_SIZE = 200;
 const downloadFiles = DOWNLOAD_FILES === "true";
+const fileConcurrency = Math.max(1, Number(CONCURRENCY) || 4);
 const dumpDir = path.resolve(DUMP_DIR);
 const filesDir = path.join(dumpDir, "_files");
 
 await fs.mkdir(dumpDir, { recursive: true });
 if (downloadFiles) await fs.mkdir(filesDir, { recursive: true });
 
-console.log("=== Base44 Export ===");
+console.log("=== Export da plataforma anterior ===");
 console.log("App ID:    ", BASE44_APP_ID);
-console.log("Base URL:  ", BASE44_APP_BASE_URL);
+console.log("Server URL:", BASE44_SERVER_URL);
 console.log("Dump dir:  ", dumpDir);
-console.log("Files:     ", downloadFiles ? "ON" : "OFF");
+console.log("Files:     ", downloadFiles ? `ON (concurrency=${fileConcurrency})` : "OFF");
 console.log("");
 
-const base44 = createClient({
-  appId: BASE44_APP_ID,
-  token: BASE44_API_KEY,
-  appBaseUrl: BASE44_APP_BASE_URL,
-  requiresAuth: false,
-});
+const apiBase = `${BASE44_SERVER_URL}/api/apps/${BASE44_APP_ID}/entities`;
+const headers = { api_key: BASE44_API_KEY };
 
 // ---------------------------------------------------------------------------
-// 1. Descobrir lista de entidades
+// 1. Lista de entidades (100 oficiais do schema)
 // ---------------------------------------------------------------------------
-
-async function discoverEntities() {
+function getEntitiesList() {
   if (BASE44_ENTITIES) {
-    return BASE44_ENTITIES.split(",").map((s) => s.trim()).filter(Boolean);
+    return BASE44_ENTITIES.split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
   }
-
-  // Lista COMPLETA das 100 entidades — extraída do schema oficial da API Base44
-  // (ver legacy/base44/SCHEMA-COMPLETO-API.md). Ordem segue dependências:
-  // tenants → catálogos → entidades de domínio → filhas/atualizações.
   return [
-    // --- Multi-tenant / Auth (base) ---
+    // Multi-tenant / Auth
     "GrupoEmpresarial",
     "Empresa",
     "UsuarioCustom",
@@ -83,8 +89,7 @@ async function discoverEntities() {
     "ClientePortalUsuario",
     "FornecedorAcesso",
     "User",
-
-    // --- Permissões / Auditoria ---
+    // Permissões / Auditoria
     "PermissaoDetalhada",
     "PerfilPermissao",
     "NivelAprovacao",
@@ -92,22 +97,19 @@ async function discoverEntities() {
     "GestorAprovacao",
     "AprovacaoSolicitacao",
     "AuditLog",
-
-    // --- Cadastros gerais ---
+    // Cadastros gerais
     "Cliente",
     "Fornecedor",
     "Etiqueta",
     "Caminhao",
     "CaminhaoCampoObrigatorio",
-
-    // --- Catálogos ---
+    // Catálogos
     "CategoriaMaterial",
     "UnidadeMedida",
     "CategoriaMaoDeObra",
     "CategoriaFinanceira",
     "CentroCusto",
-
-    // --- CRM / Oportunidades ---
+    // CRM / Oportunidades
     "StatusOportunidade",
     "OrigemOportunidade",
     "TemplateOportunidade",
@@ -115,8 +117,7 @@ async function discoverEntities() {
     "OportunidadeAtualizacao",
     "ArquivoOportunidade",
     "TokenClienteOportunidade",
-
-    // --- Projetos ---
+    // Projetos
     "Projeto",
     "TarefaProjeto",
     "CronogramaEtapa",
@@ -124,8 +125,7 @@ async function discoverEntities() {
     "OrcamentoColunaConfig",
     "OrcamentoItem",
     "MaoDeObra",
-
-    // --- Estoque ---
+    // Estoque
     "Material",
     "Almoxarifado",
     "AlmoxarifadoLocal",
@@ -136,8 +136,7 @@ async function discoverEntities() {
     "ReservaMaterial",
     "Kit",
     "KitItem",
-
-    // --- Compras ---
+    // Compras
     "SolicitacaoCompra",
     "SolicitacaoCompraItem",
     "Cotacao",
@@ -147,8 +146,7 @@ async function discoverEntities() {
     "ArquivoCotacaoFornecedor",
     "PedidoCompra",
     "PedidoCompraItem",
-
-    // --- Ferramental / EPI / Inspeções ---
+    // Ferramental / Inspeções
     "Ferramenta",
     "Ferramental",
     "EPI",
@@ -164,16 +162,14 @@ async function discoverEntities() {
     "InspecaoCaminhao",
     "InspecaoHistorico",
     "InventarioHistorico",
-
-    // --- RH / Segurança do Trabalho ---
+    // RH / Segurança do Trabalho
     "Funcao",
     "Treinamento",
     "Funcionario",
     "HistoricoDocumentoAssinado",
     "DocumentoEmpresa",
     "Vencimento",
-
-    // --- Financeiro ---
+    // Financeiro
     "ContaFinanceira",
     "IntegracaoBancaria",
     "TransacaoFinanceira",
@@ -187,14 +183,12 @@ async function discoverEntities() {
     "FechamentoCaixa",
     "BoletoBancario",
     "NotaFiscalDevolucao",
-
-    // --- SaaS comercial ---
+    // SaaS comercial
     "Plano",
     "PropostaComercial",
     "Assinatura",
     "Pagamento",
-
-    // --- Notificações / Chat / Relatórios ---
+    // Notificações / Chat / Relatórios
     "Notificacao",
     "PreferenciaNotificacao",
     "CanalChat",
@@ -204,59 +198,116 @@ async function discoverEntities() {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Paginar entidade até esgotar
+// 2. Fetch paginado de uma entidade
 // ---------------------------------------------------------------------------
+async function fetchPage(name, skip, limit) {
+  const url = `${apiBase}/${encodeURIComponent(name)}?limit=${limit}&skip=${skip}`;
+  const maxRetries = Number(MAX_RETRIES) || 6;
+  let attempt = 0;
+  while (true) {
+    const r = await fetch(url, { headers });
+    if (r.ok) {
+      // Throttle bem suave entre requests pra evitar 429
+      if (Number(RATE_DELAY_MS) > 0) await sleep(Number(RATE_DELAY_MS));
+      return r.json();
+    }
+    if (r.status === 429 && attempt < maxRetries) {
+      attempt += 1;
+      // Backoff exponencial: 2, 4, 8, 16, 32, 60 s
+      const wait = Math.min(60_000, 2000 * 2 ** (attempt - 1));
+      process.stdout.write(
+        `\n  ⏳ ${name}: 429, aguardando ${wait / 1000}s (tentativa ${attempt}/${maxRetries})...\n`
+      );
+      await sleep(wait);
+      continue;
+    }
+    const body = await r.text().catch(() => "");
+    throw new Error(`HTTP ${r.status} ${r.statusText} :: ${body.slice(0, 200)}`);
+  }
+}
 
 async function dumpEntity(name) {
-  const entity = base44.asServiceRole.entities[name];
-  if (!entity) {
-    console.warn(`  ⚠ Entity ${name} não existe no SDK (talvez não exista no app)`);
-    return { name, count: 0, skipped: true };
+  // Modo resume: se já tem o .json salvo (e não está vazio array []), pula
+  const outPath = path.join(dumpDir, `${name}.json`);
+  if (RESUME === "true") {
+    try {
+      const existing = await fs.readFile(outPath, "utf8");
+      const parsed = JSON.parse(existing);
+      if (Array.isArray(parsed)) {
+        console.log(
+          `  ↩ ${name.padEnd(35)} ${String(parsed.length).padStart(6)} registros (cached, pulado)`
+        );
+        return { name, count: parsed.length, cached: true };
+      }
+    } catch {
+      /* arquivo não existe, segue */
+    }
   }
 
   const all = [];
-  let cursor = null;
-  let page = 0;
+  let skip = 0;
 
-  while (true) {
-    page += 1;
+  for (let page = 0; ; page += 1) {
     let chunk;
     try {
-      // Base44 SDK aceita filter() com paginação via skip/limit em algumas versões
-      // ou cursor em outras. Tentamos a mais comum.
-      chunk = await entity.list({ limit: PAGE_SIZE, skip: (page - 1) * PAGE_SIZE });
+      chunk = await fetchPage(name, skip, PAGE_SIZE);
     } catch (err) {
-      console.warn(`  ⚠ Erro paginando ${name}:`, err.message);
-      break;
+      // Se a entidade não existe, a API costuma devolver 404 ou 400.
+      // Aborta esta entidade mas não pra o export inteiro.
+      if (/HTTP 4(00|04)/.test(err.message)) {
+        return { name, count: 0, skipped: true, reason: err.message.split("::")[0].trim() };
+      }
+      throw err;
     }
 
-    if (!Array.isArray(chunk) || chunk.length === 0) break;
+    if (!Array.isArray(chunk)) {
+      // API pode devolver { data: [...], total: N } em algumas versões
+      if (chunk && Array.isArray(chunk.data)) chunk = chunk.data;
+      else break;
+    }
+    if (chunk.length === 0) break;
+
     all.push(...chunk);
     process.stdout.write(`  ${name}: ${all.length} registros\r`);
 
     if (chunk.length < PAGE_SIZE) break;
+    skip += PAGE_SIZE;
     if (page > 1000) {
       console.warn(`\n  ⚠ Stopping ${name} after 1000 pages (>200k records) for safety`);
       break;
     }
   }
 
-  const outPath = path.join(dumpDir, `${name}.json`);
   await fs.writeFile(outPath, JSON.stringify(all, null, 2), "utf8");
-  console.log(`  ✓ ${name}: ${all.length} registros → ${path.relative(process.cwd(), outPath)}`);
-
+  console.log(`  ✓ ${name.padEnd(35)} ${String(all.length).padStart(6)} registros`);
   return { name, count: all.length };
 }
 
 // ---------------------------------------------------------------------------
-// 3. Baixar arquivos referenciados em campos *_url
+// 3. Download de arquivos (campos *_url, *_arquivo, *_foto, etc.)
 // ---------------------------------------------------------------------------
-
 const URL_FIELD_REGEX = /(url|arquivo|anexo|foto|laudo|documento|comprovante)/i;
+
+async function downloadOne(entityName, id, field, value) {
+  if (typeof value !== "string" || !/^https?:\/\//i.test(value)) return false;
+  try {
+    const resp = await fetch(value);
+    if (!resp.ok) return false;
+    const recDir = path.join(filesDir, entityName, String(id));
+    await fs.mkdir(recDir, { recursive: true });
+    const filename = path.basename(new URL(value).pathname) || `${field}.bin`;
+    const outFile = path.join(recDir, `${field}__${filename}`);
+    const fh = await fs.open(outFile, "w");
+    await pipeline(Readable.fromWeb(resp.body), fh.createWriteStream());
+    await fh.close().catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 async function downloadFilesForEntity(name) {
   if (!downloadFiles) return 0;
-
   const dumpPath = path.join(dumpDir, `${name}.json`);
   let records;
   try {
@@ -265,86 +316,110 @@ async function downloadFilesForEntity(name) {
     return 0;
   }
 
-  let downloaded = 0;
+  // Coleta todos os jobs primeiro
+  const jobs = [];
   for (const rec of records) {
     if (!rec || typeof rec !== "object") continue;
     const id = rec.id || rec._id;
     if (!id) continue;
-
-    const recDir = path.join(filesDir, name, String(id));
-
     for (const [field, value] of Object.entries(rec)) {
       if (!URL_FIELD_REGEX.test(field)) continue;
-      if (typeof value !== "string") continue;
-      if (!/^https?:\/\//i.test(value)) continue;
-
-      try {
-        const resp = await fetch(value);
-        if (!resp.ok) {
-          console.warn(`    ✗ ${name}/${id}/${field}: HTTP ${resp.status}`);
-          continue;
+      if (typeof value === "string") jobs.push({ id, field, value });
+      else if (Array.isArray(value)) {
+        for (let i = 0; i < value.length; i++) {
+          if (typeof value[i] === "string")
+            jobs.push({ id, field: `${field}_${i}`, value: value[i] });
         }
-        await fs.mkdir(recDir, { recursive: true });
-        const filename = path.basename(new URL(value).pathname) || `${field}.bin`;
-        const outFile = path.join(recDir, `${field}__${filename}`);
-        await pipeline(Readable.fromWeb(resp.body), (await fs.open(outFile, "w")).createWriteStream());
-        downloaded += 1;
-      } catch (err) {
-        console.warn(`    ✗ ${name}/${id}/${field}:`, err.message);
       }
     }
   }
-  if (downloaded) console.log(`  ⬇ ${name}: ${downloaded} arquivos baixados`);
+  if (jobs.length === 0) return 0;
+
+  // Pool de concorrência
+  let done = 0;
+  let downloaded = 0;
+  let idx = 0;
+  async function worker() {
+    while (idx < jobs.length) {
+      const my = idx++;
+      const j = jobs[my];
+      const ok = await downloadOne(name, j.id, j.field, j.value);
+      if (ok) downloaded++;
+      done++;
+      if (done % 10 === 0)
+        process.stdout.write(`  ⬇ ${name}: ${downloaded}/${done}/${jobs.length}\r`);
+    }
+  }
+  const workers = Array.from({ length: fileConcurrency }, worker);
+  await Promise.all(workers);
+
+  if (downloaded)
+    console.log(
+      `  ⬇ ${name.padEnd(35)} ${String(downloaded).padStart(4)} arquivos baixados (de ${jobs.length})`
+    );
   return downloaded;
 }
 
 // ---------------------------------------------------------------------------
 // MAIN
 // ---------------------------------------------------------------------------
+const t0 = Date.now();
+const entities = getEntitiesList();
+console.log(`Tentando exportar ${entities.length} entidades...\n`);
 
-(async () => {
-  const entities = await discoverEntities();
-  console.log(`Vou tentar exportar ${entities.length} entidades:\n  ${entities.join(", ")}\n`);
-
-  const results = [];
-  for (const name of entities) {
-    try {
-      const r = await dumpEntity(name);
-      results.push(r);
-    } catch (err) {
-      console.error(`  ✗ ${name}: ${err.message}`);
-      results.push({ name, error: err.message });
-    }
+const results = [];
+for (const name of entities) {
+  try {
+    const r = await dumpEntity(name);
+    results.push(r);
+  } catch (err) {
+    console.error(`  ✗ ${name.padEnd(35)} ERRO: ${err.message}`);
+    results.push({ name, error: err.message });
   }
+}
 
-  if (downloadFiles) {
-    console.log("\n=== Baixando arquivos ===");
-    let totalFiles = 0;
-    for (const r of results) {
-      if (r.error || r.skipped) continue;
-      totalFiles += await downloadFilesForEntity(r.name);
-    }
-    console.log(`\nTotal arquivos baixados: ${totalFiles}`);
+if (downloadFiles) {
+  console.log("\n=== Baixando arquivos referenciados ===");
+  let totalFiles = 0;
+  for (const r of results) {
+    if (r.error || r.skipped) continue;
+    if (!r.count) continue;
+    totalFiles += await downloadFilesForEntity(r.name);
   }
+  console.log(`\nTotal arquivos baixados: ${totalFiles}`);
+}
 
-  const meta = {
-    exportedAt: new Date().toISOString(),
-    appId: BASE44_APP_ID,
-    entities: results,
-    totalRecords: results.reduce((acc, r) => acc + (r.count || 0), 0),
-  };
-  await fs.writeFile(path.join(dumpDir, "_meta.json"), JSON.stringify(meta, null, 2), "utf8");
+const meta = {
+  exportedAt: new Date().toISOString(),
+  appId: BASE44_APP_ID,
+  serverUrl: BASE44_SERVER_URL,
+  durationMs: Date.now() - t0,
+  totalEntities: results.length,
+  totalRecords: results.reduce((acc, r) => acc + (r.count || 0), 0),
+  entities: results,
+};
+await fs.writeFile(path.join(dumpDir, "_meta.json"), JSON.stringify(meta, null, 2), "utf8");
 
-  console.log("\n=== RESUMO ===");
-  console.log(`Entidades processadas: ${results.length}`);
-  console.log(`Registros totais:      ${meta.totalRecords}`);
-  const failed = results.filter((r) => r.error);
-  if (failed.length) {
-    console.log(`Falhas:                ${failed.length}`);
-    for (const f of failed) console.log(`  - ${f.name}: ${f.error}`);
-  }
-  console.log(`\nVeja: ${path.relative(process.cwd(), path.join(dumpDir, "_meta.json"))}`);
-})().catch((err) => {
-  console.error("FATAL:", err);
-  process.exit(1);
-});
+console.log("\n=== RESUMO ===");
+console.log(`Entidades processadas:  ${results.length}`);
+console.log(`Registros totais:       ${meta.totalRecords.toLocaleString("pt-BR")}`);
+console.log(`Duração:                ${(meta.durationMs / 1000).toFixed(1)}s`);
+
+const erros = results.filter((r) => r.error);
+const vazios = results.filter((r) => !r.error && !r.skipped && (r.count || 0) === 0);
+const skipados = results.filter((r) => r.skipped);
+
+if (erros.length) {
+  console.log(`\nFalhas: ${erros.length}`);
+  for (const f of erros) console.log(`  ✗ ${f.name}: ${f.error}`);
+}
+if (skipados.length) {
+  console.log(`\nNão existem no app (404/400): ${skipados.length}`);
+  for (const f of skipados) console.log(`  - ${f.name} (${f.reason || "skipped"})`);
+}
+if (vazios.length) {
+  console.log(`\nVazios (0 registros): ${vazios.length}`);
+  for (const f of vazios) console.log(`  - ${f.name}`);
+}
+
+console.log(`\nVeja: ${path.relative(process.cwd(), path.join(dumpDir, "_meta.json"))}`);
