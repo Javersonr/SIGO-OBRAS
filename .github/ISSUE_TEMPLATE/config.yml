@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Vulnerabilidade de Segurança
+    url: https://github.com/Javersonr/SIGO-OBRAS/blob/master/SECURITY.md
+    about: NÃO abra issue pública. Leia SECURITY.md e envie email privado.
+  - name: 💬 Dúvidas / Discussão
+    url: https://github.com/Javersonr/SIGO-OBRAS/discussions
+    about: Perguntas, propostas de design, conversas abertas.
+  - name: 📧 Suporte direto
+    url: mailto:javersonr@gmail.com
+    about: Para questões comerciais ou suporte direto.

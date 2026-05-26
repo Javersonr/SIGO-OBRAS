@@ -1,0 +1,62 @@
+name: ✨ Feature Request
+description: Sugira uma nova funcionalidade ou melhoria
+title: "[Feature]: "
+labels: ["enhancement", "triagem"]
+
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qual problema você quer resolver?
+      description: Foque na DOR, não na solução ainda.
+      placeholder: "Hoje, ao fazer X, sou obrigado a... Isso me custa tempo/dinheiro/risco porque..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposta
+    attributes:
+      label: Solução proposta
+      description: Como você imagina que ficaria? (Pode ser texto, esboço, fluxo)
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas consideradas
+      description: Outras formas de resolver que você descartou e por quê?
+
+  - type: dropdown
+    id: prioridade
+    attributes:
+      label: Prioridade de negócio
+      options:
+        - "🔴 Crítico — bloqueia uso atual"
+        - "🟠 Alto — usuários reclamam frequentemente"
+        - "🟡 Médio — melhora workflow, mas tem workaround"
+        - "🟢 Nice to have — ideia para o futuro"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: modulo
+    attributes:
+      label: Módulo
+      options:
+        - Financeiro
+        - Compras
+        - Estoque
+        - Ferramental / EPI
+        - RH / Segurança do Trabalho
+        - Oportunidades / CRM
+        - Projetos
+        - Relatórios
+        - Configurações
+        - Outro / Novo módulo
+
+  - type: textarea
+    id: usuarios
+    attributes:
+      label: Quem se beneficia?
+      description: Qual perfil de usuário (Admin, Gestor, Compras, etc.)?

@@ -1,0 +1,24 @@
+# CODEOWNERS — quem deve revisar PRs que tocam cada área
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/customizing-your-repository/about-code-owners
+
+# Default: tudo cai pra Javersonr
+*                                @Javersonr
+
+# Áreas específicas (preparado pra quando o time crescer)
+/apps/web/                       @Javersonr
+/supabase/migrations/            @Javersonr
+/supabase/functions/             @Javersonr
+/shared/sdk/                     @Javersonr
+/workers/                        @Javersonr
+/docs/                           @Javersonr
+
+# CI/CD e configs precisam revisão mais cuidadosa
+/.github/workflows/              @Javersonr
+/.husky/                         @Javersonr
+/.claude/                        @Javersonr
+package.json                     @Javersonr
+commitlint.config.cjs            @Javersonr
+
+# Segurança crítica
+/supabase/migrations/0014_rls_policies.sql   @Javersonr
+SECURITY.md                                  @Javersonr

@@ -1,0 +1,114 @@
+version: 2
+
+updates:
+  # ============================================================================
+  # GitHub Actions: atualiza workflows automaticamente
+  # ============================================================================
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+
+  # ============================================================================
+  # Frontend npm (apps/web)
+  # ============================================================================
+  - package-ecosystem: "npm"
+    directory: "/apps/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "frontend"
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+    groups:
+      # Agrupa radix-ui em 1 PR (são muitos pacotes relacionados)
+      radix-ui:
+        patterns:
+          - "@radix-ui/*"
+      # Agrupa eslint stack
+      eslint:
+        patterns:
+          - "eslint"
+          - "eslint-*"
+          - "@eslint/*"
+      # Agrupa tipos @types/*
+      types:
+        patterns:
+          - "@types/*"
+    ignore:
+      # Ignora major updates de React enquanto não testamos manualmente
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+
+  # ============================================================================
+  # SDK (shared/sdk)
+  # ============================================================================
+  - package-ecosystem: "npm"
+    directory: "/shared/sdk"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "sdk"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # ============================================================================
+  # Tools (tools/)
+  # ============================================================================
+  - package-ecosystem: "npm"
+    directory: "/tools"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 2
+    labels:
+      - "dependencies"
+      - "tools"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # ============================================================================
+  # Root devDependencies (raiz)
+  # ============================================================================
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 2
+    labels:
+      - "dependencies"
+      - "tooling"
+    commit-message:
+      prefix: "chore"
+      include: "scope"

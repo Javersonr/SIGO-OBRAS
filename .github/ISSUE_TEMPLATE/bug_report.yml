@@ -1,0 +1,99 @@
+name: 🐛 Bug Report
+description: Relate um problema com o sistema (frontend, backend, deploy, dados)
+title: "[Bug]: "
+labels: ["bug", "triagem"]
+assignees: ["Javersonr"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por reportar! Preencha com o máximo de detalhes possível.
+        ⚠ Se for **vulnerabilidade de segurança**, não abra aqui — leia `SECURITY.md`.
+
+  - type: textarea
+    id: descricao
+    attributes:
+      label: Descrição do bug
+      description: O que aconteceu? O que deveria ter acontecido?
+      placeholder: Ao clicar em X, esperava Y mas vi Z.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproducao
+    attributes:
+      label: Passos para reproduzir
+      placeholder: |
+        1. Vou na tela X
+        2. Clico no botão Y
+        3. Vejo erro Z
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: esperado
+    attributes:
+      label: Comportamento esperado
+    validations:
+      required: true
+
+  - type: textarea
+    id: capturas
+    attributes:
+      label: Screenshots / vídeo
+      description: Arraste imagens diretamente aqui. Mostre console do navegador se for erro JS.
+
+  - type: dropdown
+    id: ambiente
+    attributes:
+      label: Ambiente
+      options:
+        - Produção (sigoobras.com.br)
+        - Staging
+        - Local (dev)
+        - Não sei
+    validations:
+      required: true
+
+  - type: dropdown
+    id: navegador
+    attributes:
+      label: Navegador
+      options:
+        - Chrome
+        - Edge
+        - Firefox
+        - Safari
+        - Mobile (Chrome Android)
+        - Mobile (Safari iOS)
+        - Outro
+    validations:
+      required: true
+
+  - type: input
+    id: empresa
+    attributes:
+      label: Empresa afetada
+      description: Nome da empresa SIGO Obras onde o problema apareceu (se aplicável)
+      placeholder: ex. Sinergia Construções
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Contexto adicional
+      description: User logado? Horário? IP? Outras informações relevantes.
+
+  - type: checkboxes
+    id: termos
+    attributes:
+      label: Confirmações
+      options:
+        - label: Pesquisei issues abertas/fechadas e este bug ainda não foi reportado
+          required: true
+        - label: Concordo em ser contactado para esclarecimentos
+          required: true
