@@ -2,14 +2,14 @@
 
 ## `shared/sdk/`
 
-Wrapper que vai substituir `@base44/sdk` no frontend. Estratégia:
+SDK do frontend (`@sigoobras/sdk`) que conversa com Supabase preservando a superfície de API do cliente legado. Estratégia:
 
-1. Exporta um objeto `base44` com a MESMA superfície de API (`base44.entities.X.filter()`, `base44.functions.X.invoke()`, etc.)
-2. Por baixo, fala com Supabase via `@supabase/supabase-js`
+1. Exporta um objeto `sigo` com a MESMA superfície (`sigo.entities.X.filter()`, `sigo.functions.X.invoke()`, etc.) usada pelo frontend hoje.
+2. Por baixo, fala com Supabase via `@supabase/supabase-js`.
 3. Frontend muda apenas 1 linha de import:
    ```diff
    - import { base44 } from '@/api/base44Client'
-   + import { base44 } from '@sigoobras/sdk'
+   + import { sigo }   from '@sigoobras/sdk'
    ```
 
 Isso permite migração GRADUAL (uma entidade de cada vez) sem reescrever centenas de chamadas.

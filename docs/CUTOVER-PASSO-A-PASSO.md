@@ -1,6 +1,6 @@
 # Passo a passo do cutover — SIGO Obras
 
-Guia operacional pra publicar o novo SIGO Obras em `https://sigoobras.com.br` sem quebrar o email nem o Mocha atual. **Siga na ordem.**
+Guia operacional pra publicar o novo SIGO Obras em `https://sigoobras.com.br` sem quebrar o email nem a plataforma anterior. **Siga na ordem.**
 
 **Tempo total estimado:** 1h-2h de ação + 1h-24h de propagação DNS.
 
@@ -482,7 +482,7 @@ http://<IP-servidor>/~<seu-usuario-cpanel>/sigoobras/
 
 ## C.2 — Aguardar propagação (1h-24h, geralmente 1-2h)
 
-Enquanto propaga, **o site ainda mostra o Mocha pra alguns usuários, e o novo SIGO pra outros** (dependendo do servidor DNS de cada um). Isso é normal.
+Enquanto propaga, **o site ainda mostra a plataforma anterior pra alguns usuários, e o novo SIGO pra outros** (dependendo do servidor DNS de cada um). Isso é normal.
 
 ### Como acompanhar a propagação:
 
@@ -525,7 +525,7 @@ Depois que a propagação DNS chegar (verifica acima), o cPanel pode emitir SSL 
 2. Acessa `https://sigoobras.com.br`
 3. Deve mostrar:
    - ✓ Cadeado verde de SSL ao lado da URL
-   - ✓ Tela de login do SIGO Obras (não mais o Mocha)
+   - ✓ Tela de login do SIGO Obras (não mais a plataforma anterior)
    - ✓ Header com logo / título "SIGO OBRAS"
 
 ### Teste de SPA fallback (refresh em rota interna):
@@ -575,12 +575,12 @@ Use https://mxtoolbox.com/SuperTool.aspx (gratuito, sem login) pra confirmar:
 
 # 🧹 Limpeza pós-cutover (depois de tudo OK)
 
-## Avisar suporte Mocha
+## Avisar suporte da plataforma anterior
 
-Mande email/ticket pra suporte do Mocha (`support@mocha.app` ou pelo chat do `sigoobras2.mocha.app`):
+Mande email/ticket pra suporte da plataforma anterior (`support@mocha.app` ou pelo chat do `sigoobras2.mocha.app`):
 
 ```
-Olá, equipe Mocha.
+Olá, equipe de suporte.
 
 Estou descontinuando o uso do app sigoobras2.mocha.app e migrando para um
 sistema próprio em https://sigoobras.com.br. Solicito a REMOÇÃO do custom
@@ -590,12 +590,12 @@ possível) para evitar conflitos de roteamento.
 Aguardo confirmação. Obrigado.
 ```
 
-## Atualizar o bot WhatsApp (SIGO-WHATSAPP-BOT)
+## Atualizar o bot WhatsApp
 
-O bot em `C:\Users\javer\SIGO-WHATSAPP-BOT\` está apontando pra Mocha:
+O bot em `C:\Users\javer\SIGO-WHATSAPP-BOT\` aponta para a plataforma anterior:
 
 ```
-MOCHA_OCR_URL=https://sigoobras2.mocha.app/api/ocr-receber-arquivo
+LEGACY_OCR_URL=https://sigoobras2.mocha.app/api/ocr-receber-arquivo
 ```
 
 Vai precisar atualizar pra apontar pra uma Edge Function do Supabase quando ela for criada. Fica como pendência da próxima fase.
@@ -604,16 +604,16 @@ Vai precisar atualizar pra apontar pra uma Edge Function do Supabase quando ela 
 
 # 🆘 Se algo der errado
 
-| Sintoma                                         | Diagnóstico rápido                            | Solução                                                                                |
-| ----------------------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `sigoobras.com.br` mostra "Default Page cPanel" | Build não chegou ao servidor                  | Confere se workflow GitHub passou; arquivo `index.html` em `public_html/sigoobras/`?   |
-| Erro de SSL `ERR_CERT_AUTHORITY_INVALID`        | Let's Encrypt ainda não emitiu                | Espera 30 min, ou força em SSL/TLS Status                                              |
-| Refresh em `/financeiro` dá 404                 | `.htaccess` ausente ou `mod_rewrite` off      | Confere `.htaccess` no `public_html/sigoobras/`; cPanel → Apache Modules → mod_rewrite |
-| Email não chega                                 | Email Routing errado, ou MX errado, ou Spam   | Confere A.5 (Local Mail Exchanger), mxtoolbox                                          |
-| Email chega mas SPF/DKIM FAIL                   | Registros DKIM/SPF errados                    | Revisa A.4 — tab da Zona Avançada                                                      |
-| Login no app falha mesmo com dados certos       | Edge Function `login-custom` ainda não existe | Esperado por enquanto. Próxima fase                                                    |
-| `Mocha continua aparecendo em vez do novo site` | DNS ainda propagando                          | Espera mais; testa em aba anônima; testa em outro dispositivo/rede                     |
-| `Login_FAILED` no FTP do workflow GH            | Senha errada nos secrets                      | Reseta FTP pwd em cPanel → atualiza secret                                             |
+| Sintoma                                                         | Diagnóstico rápido                            | Solução                                                                                |
+| --------------------------------------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `sigoobras.com.br` mostra "Default Page cPanel"                 | Build não chegou ao servidor                  | Confere se workflow GitHub passou; arquivo `index.html` em `public_html/sigoobras/`?   |
+| Erro de SSL `ERR_CERT_AUTHORITY_INVALID`                        | Let's Encrypt ainda não emitiu                | Espera 30 min, ou força em SSL/TLS Status                                              |
+| Refresh em `/financeiro` dá 404                                 | `.htaccess` ausente ou `mod_rewrite` off      | Confere `.htaccess` no `public_html/sigoobras/`; cPanel → Apache Modules → mod_rewrite |
+| Email não chega                                                 | Email Routing errado, ou MX errado, ou Spam   | Confere A.5 (Local Mail Exchanger), mxtoolbox                                          |
+| Email chega mas SPF/DKIM FAIL                                   | Registros DKIM/SPF errados                    | Revisa A.4 — tab da Zona Avançada                                                      |
+| Login no app falha mesmo com dados certos                       | Edge Function `login-custom` ainda não existe | Esperado por enquanto. Próxima fase                                                    |
+| `A plataforma anterior continua aparecendo em vez do novo site` | DNS ainda propagando                          | Espera mais; testa em aba anônima; testa em outro dispositivo/rede                     |
+| `Login_FAILED` no FTP do workflow GH                            | Senha errada nos secrets                      | Reseta FTP pwd em cPanel → atualiza secret                                             |
 
 ---
 
@@ -621,14 +621,14 @@ Vai precisar atualizar pra apontar pra uma Edge Function do Supabase quando ela 
 
 Quando todos esses estiverem ✅, o cutover está completo:
 
-- [ ] sigoobras.com.br responde com o novo site (não mais Mocha)
+- [ ] sigoobras.com.br responde com o novo site (não mais a plataforma anterior)
 - [ ] SSL Let's Encrypt válido
 - [ ] Refresh em rotas internas funciona (sem 404)
 - [ ] Email entra normalmente
 - [ ] Email sai com SPF/DKIM/DMARC PASS
 - [ ] Webmail acessível em `webmail.sigoobras.com.br`
 - [ ] cPanel acessível em `cpanel.sigoobras.com.br`
-- [ ] Suporte Mocha avisado pra remover custom hostname
+- [ ] Suporte da plataforma anterior avisado pra remover custom hostname
 - [ ] Próxima task: criar Edge Function `login-custom` no Supabase pra fluxo de login funcionar
 
 ---

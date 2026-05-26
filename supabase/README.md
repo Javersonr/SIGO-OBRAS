@@ -1,6 +1,6 @@
 # Supabase — backend novo do SIGO Obras
 
-Aqui vive o novo backend: schema Postgres (em `migrations/`) e Edge Functions Deno (em `functions/`) que substituem as 83 functions do Base44.
+Aqui vive o backend do SIGO Obras: schema Postgres (em `migrations/`) e Edge Functions Deno (em `functions/`), que substituem as 83 functions Deno da plataforma anterior.
 
 ## Pré-requisitos
 
@@ -27,7 +27,7 @@ supabase db push
 
 ## Status das migrations
 
-- `0001_entities_conhecidas.sql` — 5 entities que temos no snapshot Base44 (Ferramenta, HistoricoDocumentoAssinado, Oportunidade, ReservaMaterial, SolicitacaoCompra). Cobertura PARCIAL — precisa rodar `export:base44` para descobrir as outras.
+- `0001_entities_conhecidas.sql` — 5 entities cobertas pelo snapshot inicial da plataforma anterior (Ferramenta, HistoricoDocumentoAssinado, Oportunidade, ReservaMaterial, SolicitacaoCompra). Cobertura parcial — as demais entram via `export:base44` + migrations subsequentes.
 
 ## Edge Functions
 
@@ -40,6 +40,7 @@ functions/
 ```
 
 Deploy:
+
 ```bash
 supabase functions deploy login-custom
 ```

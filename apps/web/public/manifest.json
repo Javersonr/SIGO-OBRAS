@@ -1,0 +1,17 @@
+{
+  "name": "SIGO Obras",
+  "short_name": "SIGO",
+  "description": "Sistema integrado de gestão de obras",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -200,12 +200,12 @@ npm install
 npm run seed:from-xlsx
 ```
 
-Opção B: do export Base44 live (`tools/export-base44.mjs` + script de import a criar):
+Opção B: do export ao vivo da plataforma anterior (`tools/export-base44.mjs` + script de import a criar):
 
 ```bash
-# 1. exporta tudo do Base44
+# 1. exporta tudo da plataforma anterior
 npm run export:base44
-# 2. import (TODO: criar script seed-from-base44-dump.mjs)
+# 2. import (TODO: criar script seed-from-dump.mjs)
 ```
 
 ---

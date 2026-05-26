@@ -22,7 +22,7 @@
 
 1. [../CONTRIBUTING.md](../CONTRIBUTING.md) — setup, Conventional Commits, PRs
 2. [../SECURITY.md](../SECURITY.md) — política de segurança
-3. [../legacy/base44/SCHEMA-COMPLETO-API.md](../legacy/base44/SCHEMA-COMPLETO-API.md) — schema das 100 entidades Base44 (referência)
+3. [../legacy/base44/SCHEMA-COMPLETO-API.md](../legacy/base44/SCHEMA-COMPLETO-API.md) — schema das 100 entidades da plataforma anterior (referência arquivada)
 
 ## 📂 Documentos por categoria
 
@@ -52,11 +52,13 @@
 
 ### Referências técnicas (em `legacy/`)
 
-| Documento                                                         | Descrição                                            |
-| ----------------------------------------------------------------- | ---------------------------------------------------- |
-| [SCHEMA-COMPLETO-API.md](../legacy/base44/SCHEMA-COMPLETO-API.md) | Schema oficial das 100 entidades (Base44 API export) |
-| [Functions Base44](../legacy/base44/functions/)                   | 83 functions Deno originais (referência para portar) |
-| [Entities Base44](../legacy/base44/entities/)                     | 5 entities documentadas no zip (subset)              |
+Snapshot da plataforma anterior preservado apenas para consulta histórica durante a migração. Será removido após a estabilização do ambiente próprio.
+
+| Documento                                                         | Descrição                                               |
+| ----------------------------------------------------------------- | ------------------------------------------------------- |
+| [SCHEMA-COMPLETO-API.md](../legacy/base44/SCHEMA-COMPLETO-API.md) | Schema oficial das 100 entidades (export da API legada) |
+| [Functions legadas](../legacy/base44/functions/)                  | 83 functions Deno originais (referência para portar)    |
+| [Entities legadas](../legacy/base44/entities/)                    | 5 entities documentadas no zip (subset)                 |
 
 ## 🔄 Convenções
 

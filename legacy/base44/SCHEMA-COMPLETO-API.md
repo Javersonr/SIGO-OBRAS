@@ -1,8 +1,12 @@
-# Schema completo da API Base44 — SIGO Obras
+# Schema da API da plataforma anterior — SIGO Obras
 
-**Fonte:** Documentação oficial da API Base44 do app, fornecida pelo usuário em 2026-05-24.
+> **Status:** ARQUIVADO — referência histórica.
+>
+> Este documento descreve o modelo de dados da plataforma low-code anterior, da qual o SIGO Obras está sendo migrado. Está aqui apenas como fonte de verdade do comportamento esperado enquanto a migração não termina. Será removido junto com `legacy/` após a estabilização do novo ambiente.
 
-Este documento é a **fonte da verdade** sobre o modelo de dados atual do SIGO Obras hospedado no Base44. Total: **100 entidades**.
+**Fonte:** export da documentação oficial da API da plataforma anterior, capturado em 2026-05-24.
+
+Total: **100 entidades**.
 
 Use este arquivo como referência ao escrever:
 - Migrations Postgres em `supabase/migrations/`

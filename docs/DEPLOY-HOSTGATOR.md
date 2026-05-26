@@ -2,7 +2,7 @@
 
 > **Decisão (2026-05-25):** o domínio foi registrado via Hostgator e o usuário já paga a hospedagem.
 > Estratégia: aproveitar a Hostgator (sem novo SaaS, sem dependência do Cloudflare).
-> A migração começa com o frontend lá. Quando o Mocha for desligado, trocamos os nameservers ou os A records para apontar para o Hostgator.
+> A migração começa com o frontend lá. Quando a plataforma anterior for desligada, trocamos os nameservers ou os A records para apontar para o Hostgator.
 >
 > Alternativa documentada caso queira mudar depois: [`DEPLOY-CLOUDFLARE-PAGES.md`](./DEPLOY-CLOUDFLARE-PAGES.md).
 

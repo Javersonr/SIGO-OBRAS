@@ -1,6 +1,6 @@
 # Roadmap de migração — SIGO Obras
 
-**Origem:** App Base44 em produção (Vite/React + 83 functions Deno + entidades + auth + storage proprietários)
+**Origem:** App em produção em plataforma low-code proprietária (Vite/React + 83 functions Deno + entidades + auth + storage).
 **Destino:** Frontend em Hostgator (`sigoobras.com.br`), backend em Supabase (DB + Auth + Storage + Edge Functions), workers pesados em Railway.
 
 ## Estimativa total
@@ -18,9 +18,9 @@
 
 ### Fase 1 — Schema completo + dados
 
-**Bloqueador:** exportar tudo do Base44.
+**Bloqueador:** exportar tudo da plataforma de origem.
 
-- [ ] Rodar `tools/export-base44.mjs` (precisa de admin Base44)
+- [ ] Rodar `tools/export-base44.mjs` (precisa de credenciais admin da plataforma de origem)
 - [ ] Inferir schema completo a partir do dump (~30 entities)
 - [ ] Escrever migrations Supabase em ordem topológica
 - [ ] Habilitar RLS em todas as tabelas, filtrando por `empresa_id` do JWT
@@ -40,13 +40,13 @@ Migrar auth customizado (`UsuarioCustom` + `UsuarioEmpresa` + `ClientePortalUsua
 - [ ] Frontend: componente `MudarSenhaProvisoria` + `ProtectedRoute` que detecta `must_change_password`
 - [ ] Frontend: refazer `EsqueciSenha.jsx` como tela informativa (sem fluxo de reset)
 - [ ] Manter hierarquia super_admin → GrupoEmpresarial (holding) → Empresa → UsuarioEmpresa → ClientePortalUsuario
-- [ ] Política de hash: bcrypt no Supabase. Durante migração de dados Base44, rehash transparente no primeiro login (SHA-256 → bcrypt)
+- [ ] Política de hash: bcrypt no Supabase. Durante migração dos dados legados, rehash transparente no primeiro login (SHA-256 → bcrypt)
 - [ ] ~~Recriar fluxo de tokens de reset por email~~ — **DESCARTADO**
 - [ ] ~~Provisionar provider de email transacional (Resend/SES)~~ — **DESCARTADO** (não necessário pro auth)
 
 ### Fase 3 — Wrapper SDK (`shared/sdk`)
 
-Wrapper compatível com `@base44/sdk` falando com Supabase. Permite migração gradual.
+Wrapper `@sigoobras/sdk` que mantém a mesma superfície de API do SDK legado, mas conversa com Supabase. Permite migração gradual sem reescrita de tela.
 
 - [ ] Implementar `base44.entities.<X>.filter/find/create/update/delete`
 - [ ] Implementar `base44.entities.<X>.list` com paginação
@@ -56,7 +56,7 @@ Wrapper compatível com `@base44/sdk` falando com Supabase. Permite migração g
 
 ### Fase 4 — Edge Functions leves (~60)
 
-Portar functions Deno do Base44 para Supabase Edge Functions (também Deno → mudança mínima).
+Portar as functions Deno legadas para Supabase Edge Functions (também Deno → mudança mínima).
 
 - [ ] 18 functions de auth (loginCustom, alterarSenha, etc.)
 - [ ] ~20 functions CRUD/RPC (criarPreLancamento, conciliarLancamento, etc.)
@@ -76,7 +76,7 @@ Implementação: `pg_cron` chamando Edge Functions.
 
 ### Fase 6 — Workers pesados (~12)
 
-Deploy no Railway (aproveita o `SIGO-WHATSAPP-BOT` existente como base).
+Deploy no Railway (aproveita o bot WhatsApp existente como infraestrutura base).
 
 - [ ] Tabela `worker_jobs` no Supabase
 - [ ] `processarPDFsComGemini`, `processarCertificadosComIA`, `importarCertificadosFuncionario`
@@ -97,12 +97,12 @@ Deploy no Railway (aproveita o `SIGO-WHATSAPP-BOT` existente como base).
 
 Estratégia: **dual-write** durante ~1 semana.
 
-- [ ] Wrapper SDK passa a escrever em Base44 E Supabase
+- [ ] Wrapper SDK passa a escrever na plataforma legada E no Supabase
 - [ ] Job de reconciliação compara os dois lados, loga divergências
 - [ ] Cutover de LEITURA: frontend lê do Supabase, escreve nos dois
-- [ ] Cutover de ESCRITA: para de escrever no Base44
+- [ ] Cutover de ESCRITA: para de escrever na plataforma legada
 - [ ] Janela de monitoramento de 1 semana
-- [ ] Desliga Base44
+- [ ] Desliga ambiente legado
 
 ### Fase 9 — Pós-cutover
 
@@ -113,10 +113,10 @@ Estratégia: **dual-write** durante ~1 semana.
 
 ## Riscos principais
 
-| Risco                                       | Mitigação                                                             |
-| ------------------------------------------- | --------------------------------------------------------------------- |
-| Entities não documentadas no zip            | Fase 1 bloqueante: rodar `tools/export-base44.mjs` com admin Base44   |
-| Storage Base44 (comprovantes, certificados) | Script de export baixa todos os arquivos referenciados                |
-| Senha dual-write (SHA-256 vs bcrypt)        | Fase 2: rehash transparente no próximo login                          |
-| Limites Hostgator shared                    | Tudo dinâmico vai pro Supabase/Railway — Hostgator só serve estáticos |
-| CORS / cookies cross-domain                 | Configurar Allowed Origins no Supabase desde a Fase 0                 |
+| Risco                                       | Mitigação                                                                                     |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Entities não documentadas no zip            | Fase 1 bloqueante: rodar `tools/export-base44.mjs` com credenciais admin da plataforma legada |
+| Storage legado (comprovantes, certificados) | Script de export baixa todos os arquivos referenciados                                        |
+| Senha dual-write (SHA-256 vs bcrypt)        | Fase 2: rehash transparente no próximo login                                                  |
+| Limites Hostgator shared                    | Tudo dinâmico vai pro Supabase/Railway — Hostgator só serve estáticos                         |
+| CORS / cookies cross-domain                 | Configurar Allowed Origins no Supabase desde a Fase 0                                         |

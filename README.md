@@ -18,7 +18,7 @@ ERP multi-tenant para gestão completa de obras: financeiro, compras, estoque, f
 
 ## 🎯 Visão geral
 
-SIGO Obras é um ERP em produção atendendo 13+ empresas do setor de construção e serviços. Está sendo migrado de uma plataforma proprietária (Base44/Mocha) para arquitetura própria com:
+SIGO Obras é um ERP em produção atendendo 13+ empresas do setor de construção e serviços. Está sendo migrado de uma plataforma low-code proprietária para arquitetura própria, com:
 
 - **Frontend**: Vite + React 18 + Tailwind + Radix UI
 - **Backend**: Supabase (Postgres 17 + Auth + Storage + Edge Functions)
@@ -61,13 +61,12 @@ sigoobras-base/
 │   ├── config.toml
 │   └── README.md
 ├── shared/
-│   ├── sdk/                  # @sigoobras/sdk — wrapper compatível @base44/sdk
+│   ├── sdk/                  # @sigoobras/sdk — cliente unificado contra Supabase
 │   └── types/                # TypeScript types gerados do schema (futuro)
 ├── workers/                  # Workers Railway (OCR pesado, IA batch)
-├── legacy/
-│   └── base44/               # Código original Base44 (REFERÊNCIA, não rode)
+├── legacy/                   # Snapshot da plataforma anterior (somente referência)
 ├── tools/                    # Scripts utilitários
-│   ├── export-base44.mjs     # Exporta todas as 100 entidades do Base44
+│   ├── export-base44.mjs     # Export do dump da plataforma anterior (100 entidades)
 │   └── seed-from-xlsx.mjs    # Seed do backup multi-empresa
 ├── docs/                     # Documentação operacional → ver docs/README.md
 ├── .github/
@@ -168,7 +167,7 @@ npm run supabase:types    # gera TS types a partir do schema
 npm run sdk:test          # smoke test do @sigoobras/sdk
 
 # Data
-npm run export:base44     # exporta todas as 100 entidades do Base44
+npm run export:base44     # exporta todas as 100 entidades da plataforma anterior
 npm run seed:from-xlsx    # importa backup_todas_empresas.xlsx
 ```
 
@@ -188,10 +187,10 @@ Vulnerabilidades: **NÃO** abra issue pública. Leia [SECURITY.md](./SECURITY.md
 ## 📊 Status do projeto
 
 - ✅ Backend Supabase: 100 tabelas + RLS + 19 buckets
-- ✅ Wrapper SDK compatível com Base44
+- ✅ SDK unificado (`@sigoobras/sdk`) com a API esperada pelo frontend
 - ✅ CI/CD configurado
 - 🔄 Edge Function `login-custom` (em construção)
-- 🔄 Cutover DNS Mocha → Hostgator (em planejamento)
+- 🔄 Cutover de DNS para Hostgator (em planejamento)
 - 🔄 Importação dos dados produtivos (aguardando)
 
 Ver [ROADMAP.md](./docs/ROADMAP.md) para detalhes.

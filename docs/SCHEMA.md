@@ -1,6 +1,6 @@
 # Schema — modelo de dados do SIGO Obras
 
-**Fonte da verdade:** [`legacy/base44/SCHEMA-COMPLETO-API.md`](../legacy/base44/SCHEMA-COMPLETO-API.md) (100 entidades, copiado direto da API doc oficial do Base44 em 2026-05-24).
+**Fonte da verdade:** [`legacy/base44/SCHEMA-COMPLETO-API.md`](../legacy/base44/SCHEMA-COMPLETO-API.md) (100 entidades, derivado do export oficial da API da plataforma anterior em 2026-05-24).
 
 **Implementação alvo:** `supabase/migrations/*.sql`.
 
@@ -33,21 +33,21 @@
 2. **`empresa_id uuid not null`** em todas EXCETO: `User`, `Plano`, `PermissaoDetalhada`, `PerfilPermissao` (quando global), `GrupoEmpresarial`, `PropostaComercial` (lado SaaS), `BoletoBancario` (lado SaaS).
 3. **`created_at`, `updated_at`** automáticos. Trigger `set_updated_at()`.
 4. **`deleted_at timestamptz`** + view `*_active` em vez de DELETE físico (preserva o `/restore`).
-5. **Arrays JSON do Base44** (ex: `responsaveis_ids`, `etiquetas_ids`) viram `jsonb` ou `uuid[]`.
+5. **Arrays JSON legados** (ex: `responsaveis_ids`, `etiquetas_ids`) viram `jsonb` ou `uuid[]`.
 6. **Enums** (ex: `tipo_pessoa`, `status_*`) viram CHECK constraints com a lista exata documentada.
 7. **Denormalização** (`*_nome` ao lado de `*_id`) via trigger que copia o nome quando o `_id` muda.
 8. **RLS por `empresa_id`** habilitada após bootstrap (ver Fase 2).
 
 ## Pontos de atenção que precisam decisão
 
-| Tema                              | Pergunta                                                                                                                                     | Sugestão                                                                                                                           |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| **`User` Base44**                 | É a entidade nativa do Base44 (sem `empresa_id`, com `role`, `dashboard_config`). Substituir por Supabase Auth (`auth.users`)?               | Sim. Migrar `dashboard_config` e `telefone` para tabela `public.profiles` ligada a `auth.users.id`.                                |
-| **`Ferramenta` vs `Ferramental`** | Existem 2 entidades. `Ferramenta` é completa (manutenção, laudo, QR); `Ferramental` é um catálogo simples (categoria+estoque). Confundem-se. | Confirmar no app: `Ferramental` pode ser legado/duplicado. Provavelmente migra só `Ferramenta`.                                    |
-| **4 entidades de Inspeção**       | `InspecaoCampo`, `InspecaoFerramenta`, `InspecaoFerramental`, `InspecaoCaminhao` — uso distinto?                                             | Cada uma tem propósito separado (checklist EPI, ferramentas individuais, ferramental geral, ferramentas no caminhão). Manter as 4. |
-| **Senhas plain-text em campos**   | `senha_acesso` em `FornecedorAcesso` é descrito como "senha gerada automaticamente". Está em plain?                                          | Migrar para hash bcrypt no cutover; nunca expor via RLS.                                                                           |
-| **Tokens de integração**          | `token_acesso` em `ContaFinanceira` e `IntegracaoBancaria`                                                                                   | Mover para Vault do Supabase (`vault.secrets`) em vez de coluna comum.                                                             |
-| **`SolicitacaoCompra.origem`**    | Doc diz `Manual, Orcamento, Estoque` (sem cedilha). Snapshot tinha `Orçamento`.                                                              | Conferir no banco real (export) qual valor está em uso.                                                                            |
+| Tema                              | Pergunta                                                                                                                                           | Sugestão                                                                                                                           |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **Entidade `User` legada**        | É a entidade `User` nativa da plataforma anterior (sem `empresa_id`, com `role`, `dashboard_config`). Substituir por Supabase Auth (`auth.users`)? | Sim. Migrar `dashboard_config` e `telefone` para tabela `public.profiles` ligada a `auth.users.id`.                                |
+| **`Ferramenta` vs `Ferramental`** | Existem 2 entidades. `Ferramenta` é completa (manutenção, laudo, QR); `Ferramental` é um catálogo simples (categoria+estoque). Confundem-se.       | Confirmar no app: `Ferramental` pode ser legado/duplicado. Provavelmente migra só `Ferramenta`.                                    |
+| **4 entidades de Inspeção**       | `InspecaoCampo`, `InspecaoFerramenta`, `InspecaoFerramental`, `InspecaoCaminhao` — uso distinto?                                                   | Cada uma tem propósito separado (checklist EPI, ferramentas individuais, ferramental geral, ferramentas no caminhão). Manter as 4. |
+| **Senhas plain-text em campos**   | `senha_acesso` em `FornecedorAcesso` é descrito como "senha gerada automaticamente". Está em plain?                                                | Migrar para hash bcrypt no cutover; nunca expor via RLS.                                                                           |
+| **Tokens de integração**          | `token_acesso` em `ContaFinanceira` e `IntegracaoBancaria`                                                                                         | Mover para Vault do Supabase (`vault.secrets`) em vez de coluna comum.                                                             |
+| **`SolicitacaoCompra.origem`**    | Doc diz `Manual, Orcamento, Estoque` (sem cedilha). Snapshot tinha `Orçamento`.                                                                    | Conferir no banco real (export) qual valor está em uso.                                                                            |
 
 ## Status das migrations
 

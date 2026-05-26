@@ -60,7 +60,7 @@ Mensagens de commit DEVEM seguir [Conventional Commits 1.0.0](https://www.conven
 ```
 feat(financeiro): adiciona conciliação automática de extratos OFX
 fix(auth): corrige expiração do token de convite
-docs(deploy): atualiza checklist DNS após cutover Mocha → Hostgator
+docs(deploy): atualiza checklist DNS após cutover para Hostgator
 refactor(sdk): extrai query builder em módulo separado
 chore(deps): atualiza supabase-js para 2.46.0
 ```
@@ -92,9 +92,9 @@ npm run lint          # ESLint em apps/web
 sigoobras-base/
 ├── apps/web/         # Frontend Vite + React (produção)
 ├── supabase/         # Backend: migrations SQL + Edge Functions
-├── shared/sdk/       # @sigoobras/sdk — wrapper compatível com @base44/sdk
+├── shared/sdk/       # @sigoobras/sdk — cliente unificado contra Supabase
 ├── workers/          # Workers de longa duração (Railway)
-├── legacy/base44/    # Código original Base44 — REFERÊNCIA, não rode
+├── legacy/           # Snapshot da plataforma anterior — REFERÊNCIA, não rode
 ├── tools/            # Scripts utilitários (export, seed)
 ├── docs/             # Documentação operacional
 └── .github/          # CI/CD, templates, dependabot

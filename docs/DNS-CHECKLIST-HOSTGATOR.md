@@ -126,17 +126,17 @@ cPanel → **Email Routing** → escolher entre:
 
 ## ⚫ Categoria D — Descartar (não precisa migrar)
 
-Registros que SÓ faziam sentido com o Cloudflare/Mocha:
+Registros que SÓ faziam sentido com o setup Cloudflare da plataforma anterior:
 
-| Tipo  | Nome                         | Valor antigo                     | Motivo de descartar                                          |
-| ----- | ---------------------------- | -------------------------------- | ------------------------------------------------------------ |
-| A     | `sigoobras.com.br`           | `104.19.163.13`, `104.19.162.13` | Cloudflare → não usamos mais                                 |
-| TXT   | `_cf-custom-hostname`        | UUIDs `5c72ddba…` e `d2a5f293…`  | Cloudflare for SaaS (Mocha) — irrelevante fora do Cloudflare |
-| CNAME | `_acme-challenge`            | `…dcv.cloudflare.com`            | ACME via Cloudflare — Hostgator usa o próprio Let's Encrypt  |
-| TXT   | `_acme-challenge.webmail`    | `wcBy-9eT…`                      | Idem (ACME desafios antigos)                                 |
-| TXT   | `_acme-challenge.www`        | `MopsCZG…`                       | Idem                                                         |
-| TXT   | `_acme-challenge.cpanel`     | `NCl0zVz…`                       | Idem                                                         |
-| A     | `localhost.sigoobras.com.br` | `127.0.0.1`                      | Default Hostgator antigo, sem uso                            |
+| Tipo  | Nome                         | Valor antigo                     | Motivo de descartar                                                        |
+| ----- | ---------------------------- | -------------------------------- | -------------------------------------------------------------------------- |
+| A     | `sigoobras.com.br`           | `104.19.163.13`, `104.19.162.13` | Cloudflare → não usamos mais                                               |
+| TXT   | `_cf-custom-hostname`        | UUIDs `5c72ddba…` e `d2a5f293…`  | Cloudflare for SaaS (plataforma anterior) — irrelevante fora do Cloudflare |
+| CNAME | `_acme-challenge`            | `…dcv.cloudflare.com`            | ACME via Cloudflare — Hostgator usa o próprio Let's Encrypt                |
+| TXT   | `_acme-challenge.webmail`    | `wcBy-9eT…`                      | Idem (ACME desafios antigos)                                               |
+| TXT   | `_acme-challenge.www`        | `MopsCZG…`                       | Idem                                                                       |
+| TXT   | `_acme-challenge.cpanel`     | `NCl0zVz…`                       | Idem                                                                       |
+| A     | `localhost.sigoobras.com.br` | `127.0.0.1`                      | Default Hostgator antigo, sem uso                                          |
 
 ---
 
@@ -190,7 +190,7 @@ nslookup -type=MX sigoobras.com.br
 - Email enviado: enviar via Resend/Brevo/etc., conferir headers (DKIM=pass, SPF=pass, DMARC=pass)
 - Webmail: `https://webmail.sigoobras.com.br`
 
-### Passo 7 — Avisar suporte Mocha
+### Passo 7 — Avisar suporte da plataforma anterior
 
 - Pedir pra remover `sigoobras.com.br` do Custom Hostnames deles (pra liberar a entrada lá)
 

@@ -23,7 +23,7 @@
 --   1. Adiciona coluna senha_provisoria boolean (default true) em usuario_custom
 --   2. Mesmo em cliente_portal_usuario e fornecedor_acesso
 --   3. Comenta colunas reset_token / reset_token_expira (não removemos pra
---      preservar compatibilidade com dados migrados do Base44)
+--      preservar compatibilidade com dados migrados da plataforma anterior)
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -37,10 +37,10 @@ comment on column public.usuario_custom.senha_provisoria is
 
 -- Marca colunas legadas de reset (ainda existem mas não são mais usadas)
 comment on column public.usuario_custom.reset_token is
-  '⚠ LEGADO Base44. Não usado no fluxo atual (sem reset por email). Mantido só para compatibilidade com dados migrados. Pode ser sempre NULL em registros novos.';
+  'LEGADO. Não usado no fluxo atual (sem reset por email). Mantido só para compatibilidade com dados migrados da plataforma anterior. Sempre NULL em registros novos.';
 
 comment on column public.usuario_custom.reset_token_expira is
-  '⚠ LEGADO Base44. Não usado no fluxo atual. Ver coluna reset_token.';
+  'LEGADO. Não usado no fluxo atual. Ver coluna reset_token.';
 
 -- ---------------------------------------------------------------------------
 -- 2. cliente_portal_usuario (cliente externo do portal)

@@ -86,7 +86,7 @@ Valor:
 
 ### Colunas LEGADO (não usadas no fluxo atual)
 
-Mantidas em `usuario_custom` apenas para compatibilidade com dados migrados:
+Mantidas em `usuario_custom` apenas para compatibilidade com dados migrados da plataforma anterior:
 
 - `reset_token` — sempre NULL em registros novos
 - `reset_token_expira` — sempre NULL em registros novos
@@ -158,7 +158,7 @@ export function MudarSenhaProvisoria() {
     if (novaSenha !== confirmar) return toast.error("Senhas não conferem");
     if (novaSenha.length < 8) return toast.error("Mínimo 8 caracteres");
 
-    await base44.functions.invoke("alterar-senha", { nova_senha: novaSenha });
+    await sigo.functions.invoke("alterar-senha", { nova_senha: novaSenha });
     await refreshSession();
     toast.success("Senha alterada!");
     // useAuth detecta must_change_password=false → libera o dashboard
@@ -196,11 +196,11 @@ Vira tela informativa:
 </div>
 ```
 
-## Functions Base44 descartadas
+## Functions legadas descartadas
 
 Não precisam ser portadas para Edge Functions Supabase:
 
-| Function legacy                     | Status        |
+| Function legada                     | Status        |
 | ----------------------------------- | ------------- |
 | `solicitarResetSenha`               | ❌ DESCARTADO |
 | `redefinirSenha` (via token email)  | ❌ DESCARTADO |

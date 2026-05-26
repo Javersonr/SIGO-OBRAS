@@ -10,11 +10,10 @@ export default defineConfig(({ mode }) => ({
   logLevel: "error", // Suppress warnings, only show errors
 
   plugins: [
+    // Plugin do SDK legado (resolve aliases @/integrations, @/entities, etc.).
+    // Será removido na migração para @sigoobras/sdk (Fase 3 do roadmap).
     base44({
-      // Suporte a imports legacy do Base44 (@/integrations, @/entities, etc.)
-      // Manter ligado enquanto o frontend ainda usa o SDK Base44.
-      // Quando migrar pra @sigoobras/sdk, remover.
-      legacySDKImports: process.env.BASE44_LEGACY_SDK_IMPORTS === "true",
+      legacySDKImports: process.env.LEGACY_SDK_IMPORTS === "true",
       hmrNotifier: true,
       navigationNotifier: true,
       visualEditAgent: true,

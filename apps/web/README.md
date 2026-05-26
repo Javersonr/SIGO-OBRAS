@@ -1,39 +1,72 @@
-**Welcome to your Base44 project** 
+# @sigoobras/web
 
-**About**
+Frontend SIGO Obras — SPA Vite + React 18 servida em `https://sigoobras.com.br`.
 
-View and Edit  your app on [Base44.com](http://Base44.com) 
+## Stack
 
-This project contains everything you need to run your app locally.
+- Vite 6 + React 18 + react-router-dom 6
+- Tailwind CSS + Radix UI + lucide-react
+- `@tanstack/react-query` para cache de dados
+- Wrapper SDK `@sigoobras/sdk` (Supabase por baixo) — em rollout gradual
 
-**Edit the code in your local development environment**
+## Setup local
 
-Any change pushed to the repo will also be reflected in the Base44 Builder.
+```bash
+# da raiz do monorepo
+npm install --workspaces
 
-**Prerequisites:** 
+# variáveis de ambiente
+cp apps/web/.env.example apps/web/.env.local
+# preencha VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY
 
-1. Clone the repository using the project's Git URL 
-2. Navigate to the project directory
-3. Install dependencies: `npm install`
-4. Create an `.env.local` file and set the right environment variables
-
-```
-VITE_BASE44_APP_ID=your_app_id
-VITE_BASE44_APP_BASE_URL=your_backend_url
-
-e.g.
-VITE_BASE44_APP_ID=cbef744a8545c389ef439ea6
-VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app
+# dev server em http://localhost:5173
+npm run dev
 ```
 
-Run the app: `npm run dev`
+## Scripts
 
-**Publish your changes**
+| Script              | O que faz                            |
+| ------------------- | ------------------------------------ |
+| `npm run dev`       | Vite dev server com HMR              |
+| `npm run build`     | Build de produção (gera `dist/`)     |
+| `npm run preview`   | Servidor estático servindo o `dist/` |
+| `npm run lint`      | ESLint (quiet)                       |
+| `npm run lint:fix`  | ESLint com auto-fix                  |
+| `npm run typecheck` | `tsc -p ./jsconfig.json`             |
 
-Open [Base44.com](http://Base44.com) and click on Publish.
+## Build de produção
 
-**Docs & Support**
+```bash
+npm run build
+# dist/ é o que sobe pro Hostgator (ver docs/DEPLOY-HOSTGATOR.md)
+```
 
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
+- Minify: Terser, removendo `console.log/info/debug` em produção (mantém `error` e `warn`).
+- Source maps: gerados em dev/staging, omitidos em produção.
+- Aviso de chunk: 600 KB (Radix UI faz estourar o default de 500).
 
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+## Roteamento e SPA fallback
+
+App é SPA com `react-router-dom`. O `public/.htaccess` redireciona todas as rotas inexistentes para `index.html` (sem isso, F5 numa rota interna retorna 404 no Hostgator).
+
+## Estrutura
+
+```
+apps/web/
+├── public/
+│   ├── .htaccess        # SPA fallback + HTTPS + cache + headers
+│   ├── favicon.svg
+│   └── manifest.json
+├── src/
+│   ├── api/             # Cliente SDK (em transição p/ @sigoobras/sdk)
+│   ├── components/      # Componentes por domínio (financeiro/, ferramental/, ...)
+│   ├── pages/           # Rotas top-level
+│   ├── lib/             # Helpers
+│   ├── Layout.jsx       # Shell autenticado
+│   └── main.jsx
+├── index.html
+├── vite.config.js
+└── package.json
+```
+
+Mais contexto: [`../../docs/`](../../docs/README.md).

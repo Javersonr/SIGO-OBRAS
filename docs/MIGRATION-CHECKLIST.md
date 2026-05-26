@@ -4,7 +4,7 @@ Lista de coisas práticas — credenciais, contas, decisões — que precisam es
 
 ## Contas / acessos
 
-- [ ] Login admin Base44 (para rodar `tools/export-base44.mjs` e cutover)
+- [ ] Login admin da plataforma anterior (para rodar `tools/export-base44.mjs` e cutover)
 - [ ] Projeto Supabase criado (região recomendada: **São Paulo** para latência BR)
 - [ ] Service Role Key do Supabase guardada em local seguro (1Password / cofre)
 - [ ] Conta Hostgator com plano que suporte:
@@ -39,7 +39,7 @@ Lista de coisas práticas — credenciais, contas, decisões — que precisam es
 
 ### Fase 1
 
-- [ ] Backup completo do Base44 (snapshot além do export do script)
+- [ ] Backup completo da plataforma anterior (snapshot além do export do script)
 - [ ] Confirmar que `tools/dump/` não vai pro git (já está no `.gitignore`)
 
 ### Fase 7 (deploy Hostgator)
@@ -51,4 +51,4 @@ Lista de coisas práticas — credenciais, contas, decisões — que precisam es
 ### Fase 8 (cutover)
 
 - [ ] Avisar usuários sobre janela de instabilidade
-- [ ] Ter rollback documentado (DNS pode voltar pra Base44 em <5min)
+- [ ] Ter rollback documentado (DNS pode voltar para a plataforma anterior em <5min)
