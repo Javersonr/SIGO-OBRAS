@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { AlertCircle, ExternalLink } from 'lucide-react';
-import { Button } from '../ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
+import React, { useState, useEffect, useRef } from "react";
+import { AlertCircle, ExternalLink } from "lucide-react";
+import { Button } from "../ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 
 export default function VisualizadorPDF({ fileUrl, fileName, onClose, onDownload }) {
   const [iframeError, setIframeError] = useState(false);
@@ -11,7 +11,7 @@ export default function VisualizadorPDF({ fileUrl, fileName, onClose, onDownload
   useEffect(() => {
     setIframeError(false);
     setIframeLoaded(false);
-    if (!fileUrl || typeof fileUrl !== 'string') {
+    if (!fileUrl || typeof fileUrl !== "string") {
       setIframeError(true);
     }
   }, [fileUrl]);
@@ -38,8 +38,18 @@ export default function VisualizadorPDF({ fileUrl, fileName, onClose, onDownload
               className="p-2 hover:bg-slate-100 rounded-lg"
               title="Baixar arquivo"
             >
-              <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19m0 0l-6-6m6 6l6-6m-6 6V5" />
+              <svg
+                className="w-4 h-4 text-slate-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 19m0 0l-6-6m6 6l6-6m-6 6V5"
+                />
               </svg>
             </button>
           </div>
@@ -70,16 +80,26 @@ export default function VisualizadorPDF({ fileUrl, fileName, onClose, onDownload
               <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
               <h3 className="text-lg font-semibold text-slate-800 mb-2">Erro ao exibir arquivo</h3>
               <p className="text-slate-600 text-center mb-6 max-w-sm">
-                O navegador não conseguiu exibir este arquivo. Tente abrir em uma nova aba ou fazer o download.
+                O navegador não conseguiu exibir este arquivo. Tente abrir em uma nova aba ou fazer
+                o download.
               </p>
               <div className="flex gap-3">
                 <Button onClick={onDownload} className="gap-2">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19m0 0l-6-6m6 6l6-6m-6 6V5" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 19m0 0l-6-6m6 6l6-6m-6 6V5"
+                    />
                   </svg>
                   Baixar arquivo
                 </Button>
-                <Button variant="outline" onClick={() => window.open(fileUrl, '_blank')} className="gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => window.open(fileUrl, "_blank")}
+                  className="gap-2"
+                >
                   <ExternalLink className="w-4 h-4" />
                   Abrir em nova aba
                 </Button>

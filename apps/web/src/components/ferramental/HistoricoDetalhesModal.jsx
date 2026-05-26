@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
-import SheetModal from '@/components/ui/sheet-modal';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, User, MapPin, Camera, Zap, Hash, Eye } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import React, { useState } from "react";
+import SheetModal from "@/components/ui/sheet-modal";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Calendar, User, MapPin, Camera, Zap, Hash, Eye } from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 export default function HistoricoDetalhesModal({ open, onOpenChange, item }) {
   const [fotoExpandida, setFotoExpandida] = useState(false);
@@ -14,9 +14,9 @@ export default function HistoricoDetalhesModal({ open, onOpenChange, item }) {
   if (!item) return null;
 
   const statusConfianca = (confianca) => {
-    if (confianca >= 80) return { cor: 'bg-green-100 text-green-800', label: 'Alta' };
-    if (confianca >= 60) return { cor: 'bg-yellow-100 text-yellow-800', label: 'Média' };
-    return { cor: 'bg-red-100 text-red-800', label: 'Baixa' };
+    if (confianca >= 80) return { cor: "bg-green-100 text-green-800", label: "Alta" };
+    if (confianca >= 60) return { cor: "bg-yellow-100 text-yellow-800", label: "Média" };
+    return { cor: "bg-red-100 text-red-800", label: "Baixa" };
   };
 
   const confiancaStyle = statusConfianca(item.confianca_ia || 0);
@@ -27,7 +27,7 @@ export default function HistoricoDetalhesModal({ open, onOpenChange, item }) {
         open={open}
         onOpenChange={onOpenChange}
         title="Detalhes do Histórico"
-        subtitle={`${item.ferramenta_descricao} - ${format(new Date(item.timestamp), 'd MMM yyyy HH:mm', { locale: ptBR })}`}
+        subtitle={`${item.ferramenta_descricao} - ${format(new Date(item.timestamp), "d MMM yyyy HH:mm", { locale: ptBR })}`}
       >
         <div className="space-y-4">
           {/* Informações Principais */}
@@ -41,9 +41,7 @@ export default function HistoricoDetalhesModal({ open, onOpenChange, item }) {
                   </p>
                   <p className="text-xs text-slate-600">Código: {item.ferramenta_codigo}</p>
                 </div>
-                <Badge className="bg-blue-100 text-blue-800 text-xs">
-                  {item.tipo_operacao}
-                </Badge>
+                <Badge className="bg-blue-100 text-blue-800 text-xs">{item.tipo_operacao}</Badge>
               </div>
 
               <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-200">
@@ -72,7 +70,7 @@ export default function HistoricoDetalhesModal({ open, onOpenChange, item }) {
             <div className="flex items-center gap-2 text-sm">
               <Calendar className="w-4 h-4 text-slate-400" />
               <span className="text-slate-600">
-                {format(new Date(item.timestamp), 'd MMM yyyy HH:mm', { locale: ptBR })}
+                {format(new Date(item.timestamp), "d MMM yyyy HH:mm", { locale: ptBR })}
               </span>
             </div>
           </Card>
@@ -117,14 +115,18 @@ export default function HistoricoDetalhesModal({ open, onOpenChange, item }) {
           {/* Tabs de Foto e Observações */}
           <Tabs defaultValue="foto" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
-              {item.foto_url && <TabsTrigger value="foto" className="gap-1.5">
-                <Camera className="w-3.5 h-3.5" />
-                Foto
-              </TabsTrigger>}
-              {item.observacoes && <TabsTrigger value="observacoes" className="gap-1.5">
-                <Zap className="w-3.5 h-3.5" />
-                Observações
-              </TabsTrigger>}
+              {item.foto_url && (
+                <TabsTrigger value="foto" className="gap-1.5">
+                  <Camera className="w-3.5 h-3.5" />
+                  Foto
+                </TabsTrigger>
+              )}
+              {item.observacoes && (
+                <TabsTrigger value="observacoes" className="gap-1.5">
+                  <Zap className="w-3.5 h-3.5" />
+                  Observações
+                </TabsTrigger>
+              )}
             </TabsList>
 
             {item.foto_url && (
@@ -152,9 +154,7 @@ export default function HistoricoDetalhesModal({ open, onOpenChange, item }) {
             {item.observacoes && (
               <TabsContent value="observacoes" className="space-y-3">
                 <Card className="p-3 bg-slate-50 border-slate-200">
-                  <p className="text-sm text-slate-700 whitespace-pre-wrap">
-                    {item.observacoes}
-                  </p>
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{item.observacoes}</p>
                 </Card>
               </TabsContent>
             )}

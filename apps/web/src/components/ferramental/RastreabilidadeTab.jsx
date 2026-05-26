@@ -1,27 +1,31 @@
-import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Truck, User, Search, Printer } from 'lucide-react';
+import React, { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Truck, User, Search, Printer } from "lucide-react";
 
 export default function RastreabilidadeTab({ ferramentas = [] }) {
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Agrupar por funcionário e caminhão
   const grupos = {
     caminhoes: {},
     funcionarios: {},
-    almoxarifado: []
+    almoxarifado: [],
   };
 
-  ferramentas.forEach(ferr => {
+  ferramentas.forEach((ferr) => {
     if (ferr.funcionario_id && ferr.funcionario_nome) {
       if (!grupos.funcionarios[ferr.funcionario_nome]) {
         grupos.funcionarios[ferr.funcionario_nome] = [];
       }
       grupos.funcionarios[ferr.funcionario_nome].push(ferr);
-    } else if (ferr.localizacao && ferr.localizacao.trim() && !['Almoxarifado', 'almoxarifado'].includes(ferr.localizacao)) {
+    } else if (
+      ferr.localizacao &&
+      ferr.localizacao.trim() &&
+      !["Almoxarifado", "almoxarifado"].includes(ferr.localizacao)
+    ) {
       if (!grupos.caminhoes[ferr.localizacao]) {
         grupos.caminhoes[ferr.localizacao] = [];
       }
@@ -34,17 +38,19 @@ export default function RastreabilidadeTab({ ferramentas = [] }) {
   // Filtrar por busca
   const filtrados = {};
   Object.entries(grupos).forEach(([key, value]) => {
-    if (key === 'almoxarifado') {
-      filtrados[key] = value.filter(f => 
-        f.codigo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        f.descricao?.toLowerCase().includes(searchTerm.toLowerCase())
+    if (key === "almoxarifado") {
+      filtrados[key] = value.filter(
+        (f) =>
+          f.codigo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          f.descricao?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     } else {
       filtrados[key] = {};
       Object.entries(value).forEach(([nome, ferrs]) => {
-        const filtered = ferrs.filter(f =>
-          f.codigo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          f.descricao?.toLowerCase().includes(searchTerm.toLowerCase())
+        const filtered = ferrs.filter(
+          (f) =>
+            f.codigo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            f.descricao?.toLowerCase().includes(searchTerm.toLowerCase())
         );
         if (filtered.length > 0) {
           filtrados[key][nome] = filtered;
@@ -54,9 +60,9 @@ export default function RastreabilidadeTab({ ferramentas = [] }) {
   });
 
   const imprimirLista = (titulo, ferramentas) => {
-    const janela = window.open('', '_blank');
+    const janela = window.open("", "_blank");
     if (!janela) return;
-    
+
     const html = `
       <!DOCTYPE html>
       <html>
@@ -74,7 +80,7 @@ export default function RastreabilidadeTab({ ferramentas = [] }) {
       </head>
       <body>
         <h1>${titulo}</h1>
-        <p><strong>Data:</strong> ${new Date().toLocaleDateString('pt-BR')}</p>
+        <p><strong>Data:</strong> ${new Date().toLocaleDateString("pt-BR")}</p>
         <table>
           <thead>
             <tr>
@@ -86,15 +92,19 @@ export default function RastreabilidadeTab({ ferramentas = [] }) {
             </tr>
           </thead>
           <tbody>
-            ${ferramentas.map(f => `
+            ${ferramentas
+              .map(
+                (f) => `
               <tr>
-                <td>${f.codigo || '-'}</td>
-                <td>${f.descricao || '-'}</td>
-                <td>${f.marca || '-'}</td>
-                <td>${f.status || '-'}</td>
-                <td>${f.numero_serie || '-'}</td>
+                <td>${f.codigo || "-"}</td>
+                <td>${f.descricao || "-"}</td>
+                <td>${f.marca || "-"}</td>
+                <td>${f.status || "-"}</td>
+                <td>${f.numero_serie || "-"}</td>
               </tr>
-            `).join('')}
+            `
+              )
+              .join("")}
           </tbody>
         </table>
         <div class="footer">
@@ -109,10 +119,10 @@ export default function RastreabilidadeTab({ ferramentas = [] }) {
   };
 
   const statusColors = {
-    'Disponível': 'bg-green-100 text-green-700',
-    'Em Uso': 'bg-blue-100 text-blue-700',
-    'Em Manutenção': 'bg-orange-100 text-orange-700',
-    'Danificado': 'bg-red-100 text-red-700',
+    Disponível: "bg-green-100 text-green-700",
+    "Em Uso": "bg-blue-100 text-blue-700",
+    "Em Manutenção": "bg-orange-100 text-orange-700",
+    Danificado: "bg-red-100 text-red-700",
   };
 
   return (
@@ -183,14 +193,19 @@ export default function RastreabilidadeTab({ ferramentas = [] }) {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {ferrs.map(f => (
-                    <div key={f.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                  {ferrs.map((f) => (
+                    <div
+                      key={f.id}
+                      className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
+                    >
                       <div>
-                        <p className="font-medium text-sm">{f.codigo} - {f.descricao}</p>
-                        <p className="text-xs text-slate-500">Série: {f.numero_serie || '-'}</p>
+                        <p className="font-medium text-sm">
+                          {f.codigo} - {f.descricao}
+                        </p>
+                        <p className="text-xs text-slate-500">Série: {f.numero_serie || "-"}</p>
                       </div>
-                      <Badge className={statusColors[f.status] || 'bg-slate-100'}>
-                        {f.status || 'N/A'}
+                      <Badge className={statusColors[f.status] || "bg-slate-100"}>
+                        {f.status || "N/A"}
                       </Badge>
                     </div>
                   ))}
@@ -225,14 +240,19 @@ export default function RastreabilidadeTab({ ferramentas = [] }) {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {ferrs.map(f => (
-                    <div key={f.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                  {ferrs.map((f) => (
+                    <div
+                      key={f.id}
+                      className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
+                    >
                       <div>
-                        <p className="font-medium text-sm">{f.codigo} - {f.descricao}</p>
-                        <p className="text-xs text-slate-500">Série: {f.numero_serie || '-'}</p>
+                        <p className="font-medium text-sm">
+                          {f.codigo} - {f.descricao}
+                        </p>
+                        <p className="text-xs text-slate-500">Série: {f.numero_serie || "-"}</p>
                       </div>
-                      <Badge className={statusColors[f.status] || 'bg-slate-100'}>
-                        {f.status || 'N/A'}
+                      <Badge className={statusColors[f.status] || "bg-slate-100"}>
+                        {f.status || "N/A"}
                       </Badge>
                     </div>
                   ))}
@@ -252,7 +272,7 @@ export default function RastreabilidadeTab({ ferramentas = [] }) {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => imprimirLista('Ferramentas - Almoxarifado', filtrados.almoxarifado)}
+                onClick={() => imprimirLista("Ferramentas - Almoxarifado", filtrados.almoxarifado)}
                 className="gap-2"
               >
                 <Printer className="w-4 h-4" />
@@ -262,14 +282,19 @@ export default function RastreabilidadeTab({ ferramentas = [] }) {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {filtrados.almoxarifado.map(f => (
-                <div key={f.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+              {filtrados.almoxarifado.map((f) => (
+                <div
+                  key={f.id}
+                  className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
+                >
                   <div>
-                    <p className="font-medium text-sm">{f.codigo} - {f.descricao}</p>
-                    <p className="text-xs text-slate-500">Série: {f.numero_serie || '-'}</p>
+                    <p className="font-medium text-sm">
+                      {f.codigo} - {f.descricao}
+                    </p>
+                    <p className="text-xs text-slate-500">Série: {f.numero_serie || "-"}</p>
                   </div>
-                  <Badge className={statusColors[f.status] || 'bg-slate-100'}>
-                    {f.status || 'N/A'}
+                  <Badge className={statusColors[f.status] || "bg-slate-100"}>
+                    {f.status || "N/A"}
                   </Badge>
                 </div>
               ))}
@@ -281,12 +306,12 @@ export default function RastreabilidadeTab({ ferramentas = [] }) {
       {Object.keys(filtrados.caminhoes).length === 0 &&
         Object.keys(filtrados.funcionarios).length === 0 &&
         filtrados.almoxarifado.length === 0 && (
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-center text-slate-500">Nenhuma ferramenta encontrada</p>
-          </CardContent>
-        </Card>
-      )}
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-center text-slate-500">Nenhuma ferramenta encontrada</p>
+            </CardContent>
+          </Card>
+        )}
     </div>
   );
 }

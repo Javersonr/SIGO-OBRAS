@@ -1,26 +1,39 @@
-import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { DollarSign } from 'lucide-react';
+import React from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
+import { DollarSign } from "lucide-react";
 
 export default function ValorTransacionado({ dados }) {
-  const calcularTotal = (items) => items.reduce((sum, item) => sum + (item.valor_estimado || item.total || 0), 0);
+  const calcularTotal = (items) =>
+    items.reduce((sum, item) => sum + (item.valor_estimado || item.total || 0), 0);
 
   const valorOportunidades = calcularTotal(dados.oportunidades);
   const valorProjetos = calcularTotal(dados.projetos);
   const valorPedidos = calcularTotal(dados.pedidos);
 
   const dadosGrafico = [
-    { categoria: 'Oportunidades', valor: valorOportunidades },
-    { categoria: 'Projetos', valor: valorProjetos },
-    { categoria: 'Pedidos', valor: valorPedidos }
+    { categoria: "Oportunidades", valor: valorOportunidades },
+    { categoria: "Projetos", valor: valorProjetos },
+    { categoria: "Pedidos", valor: valorPedidos },
   ];
 
   // Evolução ao longo do tempo
   const meses = {};
-  
-  [...dados.oportunidades, ...dados.projetos].forEach(item => {
-    const mes = new Date(item.created_date).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+
+  [...dados.oportunidades, ...dados.projetos].forEach((item) => {
+    const mes = new Date(item.created_date).toLocaleDateString("pt-BR", {
+      month: "short",
+      year: "2-digit",
+    });
     if (!meses[mes]) meses[mes] = { mes, valor: 0 };
     meses[mes].valor += item.valor_estimado || 0;
   });
@@ -28,11 +41,11 @@ export default function ValorTransacionado({ dados }) {
   const evolucao = Object.values(meses).sort((a, b) => a.mes.localeCompare(b.mes));
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', { 
-      style: 'currency', 
-      currency: 'BRL',
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
       minimumFractionDigits: 0,
-      maximumFractionDigits: 0
+      maximumFractionDigits: 0,
     }).format(value);
   };
 
@@ -77,7 +90,13 @@ export default function ValorTransacionado({ dados }) {
                 <YAxis />
                 <Tooltip formatter={(value) => formatCurrency(value)} />
                 <Legend />
-                <Line type="monotone" dataKey="valor" stroke="#10b981" strokeWidth={2} name="Valor Total" />
+                <Line
+                  type="monotone"
+                  dataKey="valor"
+                  stroke="#10b981"
+                  strokeWidth={2}
+                  name="Valor Total"
+                />
               </LineChart>
             </ResponsiveContainer>
           )}

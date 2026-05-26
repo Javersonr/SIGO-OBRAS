@@ -1,24 +1,30 @@
-import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import React, { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 
-export default function ConfirmacaoDadosExtraidos({ dados, comprovanteUrl, onConfirm, onCancel, loading }) {
+export default function ConfirmacaoDadosExtraidos({
+  dados,
+  comprovanteUrl,
+  onConfirm,
+  onCancel,
+  loading,
+}) {
   const [dadosEditados, setDadosEditados] = useState(dados || {});
   const [erros, setErros] = useState({});
 
   const validar = () => {
     const novosErros = {};
-    
+
     if (!dadosEditados.valor || parseFloat(dadosEditados.valor) <= 0) {
-      novosErros.valor = 'Valor deve ser maior que zero';
+      novosErros.valor = "Valor deve ser maior que zero";
     }
     if (!dadosEditados.fornecedor?.trim()) {
-      novosErros.fornecedor = 'Fornecedor é obrigatório';
+      novosErros.fornecedor = "Fornecedor é obrigatório";
     }
 
     setErros(novosErros);
@@ -29,18 +35,18 @@ export default function ConfirmacaoDadosExtraidos({ dados, comprovanteUrl, onCon
     if (validar()) {
       onConfirm({
         ...dadosEditados,
-        valor: parseFloat(dadosEditados.valor)
+        valor: parseFloat(dadosEditados.valor),
       });
     }
   };
 
   const handleChange = (field, value) => {
-    setDadosEditados(prev => ({
+    setDadosEditados((prev) => ({
       ...prev,
-      [field]: value
+      [field]: value,
     }));
     if (erros[field]) {
-      setErros(prev => {
+      setErros((prev) => {
         const novoErros = { ...prev };
         delete novoErros[field];
         return novoErros;
@@ -57,14 +63,13 @@ export default function ConfirmacaoDadosExtraidos({ dados, comprovanteUrl, onCon
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        
         {/* Preview do Comprovante */}
         {comprovanteUrl && (
           <div>
             <Label className="text-sm text-slate-600 mb-2 block">Comprovante</Label>
-            <img 
-              src={comprovanteUrl} 
-              alt="Comprovante" 
+            <img
+              src={comprovanteUrl}
+              alt="Comprovante"
               className="w-full rounded-lg max-h-48 object-cover border border-slate-200"
             />
           </div>
@@ -72,7 +77,6 @@ export default function ConfirmacaoDadosExtraidos({ dados, comprovanteUrl, onCon
 
         {/* Dados Extraídos para Edição */}
         <div className="space-y-4">
-          
           {/* Valor */}
           <div>
             <Label htmlFor="valor" className="text-sm font-medium">
@@ -83,14 +87,12 @@ export default function ConfirmacaoDadosExtraidos({ dados, comprovanteUrl, onCon
               type="number"
               step="0.01"
               min="0"
-              value={dadosEditados.valor || ''}
-              onChange={(e) => handleChange('valor', e.target.value)}
-              className={erros.valor ? 'border-red-500' : ''}
+              value={dadosEditados.valor || ""}
+              onChange={(e) => handleChange("valor", e.target.value)}
+              className={erros.valor ? "border-red-500" : ""}
               placeholder="0.00"
             />
-            {erros.valor && (
-              <p className="text-red-500 text-xs mt-1">{erros.valor}</p>
-            )}
+            {erros.valor && <p className="text-red-500 text-xs mt-1">{erros.valor}</p>}
           </div>
 
           {/* Fornecedor */}
@@ -100,14 +102,12 @@ export default function ConfirmacaoDadosExtraidos({ dados, comprovanteUrl, onCon
             </Label>
             <Input
               id="fornecedor"
-              value={dadosEditados.fornecedor || ''}
-              onChange={(e) => handleChange('fornecedor', e.target.value)}
-              className={erros.fornecedor ? 'border-red-500' : ''}
+              value={dadosEditados.fornecedor || ""}
+              onChange={(e) => handleChange("fornecedor", e.target.value)}
+              className={erros.fornecedor ? "border-red-500" : ""}
               placeholder="Nome do fornecedor"
             />
-            {erros.fornecedor && (
-              <p className="text-red-500 text-xs mt-1">{erros.fornecedor}</p>
-            )}
+            {erros.fornecedor && <p className="text-red-500 text-xs mt-1">{erros.fornecedor}</p>}
           </div>
 
           {/* CNPJ */}
@@ -117,8 +117,8 @@ export default function ConfirmacaoDadosExtraidos({ dados, comprovanteUrl, onCon
             </Label>
             <Input
               id="cnpj"
-              value={dadosEditados.cnpj || ''}
-              onChange={(e) => handleChange('cnpj', e.target.value)}
+              value={dadosEditados.cnpj || ""}
+              onChange={(e) => handleChange("cnpj", e.target.value)}
               placeholder="00.000.000/0000-00"
             />
           </div>
@@ -130,8 +130,8 @@ export default function ConfirmacaoDadosExtraidos({ dados, comprovanteUrl, onCon
             </Label>
             <Input
               id="endereco"
-              value={dadosEditados.endereco || ''}
-              onChange={(e) => handleChange('endereco', e.target.value)}
+              value={dadosEditados.endereco || ""}
+              onChange={(e) => handleChange("endereco", e.target.value)}
               placeholder="Rua, número, complemento"
             />
           </div>
@@ -143,8 +143,8 @@ export default function ConfirmacaoDadosExtraidos({ dados, comprovanteUrl, onCon
             </Label>
             <Input
               id="telefone"
-              value={dadosEditados.telefone || ''}
-              onChange={(e) => handleChange('telefone', e.target.value)}
+              value={dadosEditados.telefone || ""}
+              onChange={(e) => handleChange("telefone", e.target.value)}
               placeholder="(XX) XXXXX-XXXX"
             />
           </div>
@@ -156,8 +156,8 @@ export default function ConfirmacaoDadosExtraidos({ dados, comprovanteUrl, onCon
             </Label>
             <Textarea
               id="descricao"
-              value={dadosEditados.descricao || ''}
-              onChange={(e) => handleChange('descricao', e.target.value)}
+              value={dadosEditados.descricao || ""}
+              onChange={(e) => handleChange("descricao", e.target.value)}
               placeholder="Descrição dos itens ou serviços"
               rows={3}
             />
@@ -171,8 +171,8 @@ export default function ConfirmacaoDadosExtraidos({ dados, comprovanteUrl, onCon
             <Input
               id="data"
               type="date"
-              value={dadosEditados.data || ''}
-              onChange={(e) => handleChange('data', e.target.value)}
+              value={dadosEditados.data || ""}
+              onChange={(e) => handleChange("data", e.target.value)}
             />
           </div>
         </div>
@@ -181,7 +181,8 @@ export default function ConfirmacaoDadosExtraidos({ dados, comprovanteUrl, onCon
         <Alert className="border-amber-200 bg-amber-50">
           <AlertTriangle className="w-4 h-4 text-amber-600" />
           <AlertDescription className="text-amber-800 text-sm">
-            Revise os dados extraídos. Você poderá ajustá-los após confirmação durante a seleção de projeto e lançamento.
+            Revise os dados extraídos. Você poderá ajustá-los após confirmação durante a seleção de
+            projeto e lançamento.
           </AlertDescription>
         </Alert>
 
@@ -192,14 +193,9 @@ export default function ConfirmacaoDadosExtraidos({ dados, comprovanteUrl, onCon
             className="flex-1 bg-green-600 hover:bg-green-700"
             disabled={loading}
           >
-            {loading ? 'Processando...' : 'Confirmar e Continuar'}
+            {loading ? "Processando..." : "Confirmar e Continuar"}
           </Button>
-          <Button
-            onClick={onCancel}
-            variant="outline"
-            className="flex-1"
-            disabled={loading}
-          >
+          <Button onClick={onCancel} variant="outline" className="flex-1" disabled={loading}>
             Cancelar
           </Button>
         </div>

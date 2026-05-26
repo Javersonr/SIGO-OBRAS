@@ -1,16 +1,16 @@
-import React from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import React from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
 
-export default function BarraProgressoImportacao({ 
-  ativo, 
-  total, 
-  processados, 
+export default function BarraProgressoImportacao({
+  ativo,
+  total,
+  processados,
   erros,
-  titulo = 'Importando...' 
+  titulo = "Importando...",
 }) {
   const percentual = total > 0 ? Math.round((processados / total) * 100) : 0;
-  
+
   if (!ativo) return null;
 
   return (
@@ -20,21 +20,25 @@ export default function BarraProgressoImportacao({
           <span className="font-medium text-amber-800">{titulo}</span>
           <span className="text-sm text-amber-700">{percentual}%</span>
         </div>
-        
+
         <div className="w-full bg-amber-200 rounded-full h-2.5">
-          <div 
+          <div
             className="bg-amber-500 h-2.5 rounded-full transition-all duration-300"
             style={{ width: `${percentual}%` }}
           />
         </div>
 
         <div className="flex items-center justify-between text-sm text-amber-700">
-          <span>{processados} de {total} itens</span>
+          <span>
+            {processados} de {total} itens
+          </span>
           <div className="flex gap-4">
             {erros > 0 && (
               <div className="flex items-center gap-1 text-red-600">
                 <AlertCircle className="w-4 h-4" />
-                <span>{erros} erro{erros !== 1 ? 's' : ''}</span>
+                <span>
+                  {erros} erro{erros !== 1 ? "s" : ""}
+                </span>
               </div>
             )}
             {percentual === 100 && (

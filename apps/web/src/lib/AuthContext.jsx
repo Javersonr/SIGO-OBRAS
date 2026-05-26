@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect } from "react";
 
 const AuthContext = createContext();
 
@@ -8,21 +8,23 @@ export const AuthProvider = ({ children }) => {
   const [authError] = useState(null);
 
   const navigateToLogin = () => {
-    window.location.href = '/EntrarSistema';
+    window.location.href = "/EntrarSistema";
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user: null,
-      isAuthenticated: false,
-      isLoadingAuth,
-      isLoadingPublicSettings,
-      authError,
-      appPublicSettings: null,
-      logout: () => {},
-      navigateToLogin,
-      checkAppState: () => {}
-    }}>
+    <AuthContext.Provider
+      value={{
+        user: null,
+        isAuthenticated: false,
+        isLoadingAuth,
+        isLoadingPublicSettings,
+        authError,
+        appPublicSettings: null,
+        logout: () => {},
+        navigateToLogin,
+        checkAppState: () => {},
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -31,7 +33,7 @@ export const AuthProvider = ({ children }) => {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };

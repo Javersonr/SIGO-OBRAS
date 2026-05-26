@@ -11,7 +11,7 @@
   --cor-primaria-active: #020617;
   --cor-primaria-light: #334155;
   --cor-primaria-lighter: #475569;
-  
+
   /* ============================================ */
   /* CORES SECUNDÁRIAS */
   /* ============================================ */
@@ -20,7 +20,7 @@
   --cor-secundaria-active: #047857;
   --cor-secundaria-light: #d1fae5;
   --cor-secundaria-lighter: #ecfdf5;
-  
+
   /* ============================================ */
   /* CORES DE FUNDO */
   /* ============================================ */
@@ -29,7 +29,7 @@
   --bg-terciario: #2d3a52;
   --bg-hover: #1a2332;
   --bg-active: #2d3a52;
-  
+
   /* ============================================ */
   /* CORES DE TEXTO */
   /* ============================================ */
@@ -37,7 +37,7 @@
   --texto-secundario: #cbd5e1;
   --texto-terciario: #94a3b8;
   --texto-hover: #ffffff;
-  
+
   /* ============================================ */
   /* CORES DE ESTADO */
   /* ============================================ */
@@ -45,7 +45,7 @@
   --cor-erro: #ef4444;
   --cor-aviso: #f59e0b;
   --cor-info: #3b82f6;
-  
+
   /* ============================================ */
   /* SOMBRAS E BORDAS */
   /* ============================================ */
@@ -384,7 +384,9 @@ button.bg-amber-500:hover:not(:disabled),
 .btn-primary:hover:not(:disabled) {
   background-color: #334155 !important;
   border-color: #475569 !important;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.3),
+    0 2px 4px -1px rgba(0, 0, 0, 0.2);
 }
 
 button.bg-amber-500:active:not(:disabled),

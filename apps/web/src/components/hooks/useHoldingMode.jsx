@@ -1,10 +1,10 @@
-import { useEmpresa } from '@/Layout';
+import { useEmpresa } from "@/Layout";
 
 export const useHoldingMode = () => {
   const { empresaAtiva, user, empresas, vinculo } = useEmpresa();
 
   const isHoldingMode = () => {
-    return vinculo?.perfil === 'Admin Holding';
+    return vinculo?.perfil === "Admin Holding";
   };
 
   const getEmpresasAcesso = () => {
@@ -12,7 +12,7 @@ export const useHoldingMode = () => {
   };
 
   const getEmpresaIds = () => {
-    return getEmpresasAcesso().map(e => e.id);
+    return getEmpresasAcesso().map((e) => e.id);
   };
 
   return {
@@ -21,6 +21,6 @@ export const useHoldingMode = () => {
     empresaIds: getEmpresaIds(),
     empresaAtiva,
     user,
-    vinculo
+    vinculo,
   };
 };

@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import React, { useState } from "react";
+import { ChevronDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export default function OrdemServicoEditorPanel({ settings, onSettingsChange }) {
-  const [expandedSection, setExpandedSection] = useState('fontes');
+  const [expandedSection, setExpandedSection] = useState("fontes");
 
   const updateSetting = (key, value) => {
     onSettingsChange({ ...settings, [key]: value });
@@ -16,12 +16,12 @@ export default function OrdemServicoEditorPanel({ settings, onSettingsChange }) 
         className="w-full flex items-center justify-between p-3 hover:bg-slate-50"
       >
         <span className="font-medium text-sm">{title}</span>
-        <ChevronDown className={`w-4 h-4 transition-transform ${expandedSection === id ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          className={`w-4 h-4 transition-transform ${expandedSection === id ? "rotate-180" : ""}`}
+        />
       </button>
       {expandedSection === id && (
-        <div className="p-3 border-t border-slate-200 space-y-3 bg-slate-50">
-          {children}
-        </div>
+        <div className="p-3 border-t border-slate-200 space-y-3 bg-slate-50">{children}</div>
       )}
     </div>
   );
@@ -58,21 +58,21 @@ export default function OrdemServicoEditorPanel({ settings, onSettingsChange }) 
           value={settings.fontSizeTitulo || 14}
           min={10}
           max={24}
-          onChange={(v) => updateSetting('fontSizeTitulo', v)}
+          onChange={(v) => updateSetting("fontSizeTitulo", v)}
         />
         <SliderControl
           label="Tamanho - Labels"
           value={settings.fontSizeLabels || 10}
           min={8}
           max={14}
-          onChange={(v) => updateSetting('fontSizeLabels', v)}
+          onChange={(v) => updateSetting("fontSizeLabels", v)}
         />
         <SliderControl
           label="Tamanho - Dados"
           value={settings.fontSizeDados || 10}
           min={8}
           max={14}
-          onChange={(v) => updateSetting('fontSizeDados', v)}
+          onChange={(v) => updateSetting("fontSizeDados", v)}
         />
       </Section>
 
@@ -82,28 +82,28 @@ export default function OrdemServicoEditorPanel({ settings, onSettingsChange }) 
           value={settings.margemSuperior || 10}
           min={5}
           max={30}
-          onChange={(v) => updateSetting('margemSuperior', v)}
+          onChange={(v) => updateSetting("margemSuperior", v)}
         />
         <SliderControl
           label="Margem Inferior (px)"
           value={settings.margemInferior || 10}
           min={5}
           max={30}
-          onChange={(v) => updateSetting('margemInferior', v)}
+          onChange={(v) => updateSetting("margemInferior", v)}
         />
         <SliderControl
           label="Padding Célula (px)"
           value={settings.paddingCelula || 8}
           min={2}
           max={12}
-          onChange={(v) => updateSetting('paddingCelula', v)}
+          onChange={(v) => updateSetting("paddingCelula", v)}
         />
         <SliderControl
           label="Espaço Dados (px)"
           value={settings.espacoDados || 8}
           min={2}
           max={20}
-          onChange={(v) => updateSetting('espacoDados', v)}
+          onChange={(v) => updateSetting("espacoDados", v)}
         />
       </Section>
 
@@ -113,14 +113,14 @@ export default function OrdemServicoEditorPanel({ settings, onSettingsChange }) 
           value={settings.alturaLogo || 70}
           min={40}
           max={150}
-          onChange={(v) => updateSetting('alturaLogo', v)}
+          onChange={(v) => updateSetting("alturaLogo", v)}
         />
         <SliderControl
           label="Espaço Inferior Cabeçalho (px)"
           value={settings.espacoInferiorCabecalho || 12}
           min={5}
           max={25}
-          onChange={(v) => updateSetting('espacoInferiorCabecalho', v)}
+          onChange={(v) => updateSetting("espacoInferiorCabecalho", v)}
         />
       </Section>
 
@@ -128,18 +128,20 @@ export default function OrdemServicoEditorPanel({ settings, onSettingsChange }) 
         variant="outline"
         size="sm"
         className="w-full"
-        onClick={() => onSettingsChange({
-          fontSizeTitulo: 14,
-          fontSizeDados: 10,
-          margemSuperior: 10,
-          margemInferior: 10,
-          paddingCelula: 8,
-          alturaLogo: 70,
-          margemLogo: 20,
-          espacoInferiorCabecalho: 12,
-          espacoDados: 8,
-          fontSizeLabels: 10,
-        })}
+        onClick={() =>
+          onSettingsChange({
+            fontSizeTitulo: 14,
+            fontSizeDados: 10,
+            margemSuperior: 10,
+            margemInferior: 10,
+            paddingCelula: 8,
+            alturaLogo: 70,
+            margemLogo: 20,
+            espacoInferiorCabecalho: 12,
+            espacoDados: 8,
+            fontSizeLabels: 10,
+          })
+        }
       >
         Restaurar Padrão
       </Button>

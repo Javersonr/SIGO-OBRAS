@@ -1,6 +1,6 @@
-import React from 'react';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import React from "react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function SalarioInput({ value, onChange, ...props }) {
   return (
@@ -8,12 +8,12 @@ export default function SalarioInput({ value, onChange, ...props }) {
       <Label>Salário</Label>
       <Input
         type="number"
-        value={value || ''}
+        value={value || ""}
         onChange={(e) => {
           const val = e.target.value;
           // Permitir vazio ou número válido
-          if (val === '' || !isNaN(parseFloat(val))) {
-            onChange(val === '' ? '' : parseFloat(val));
+          if (val === "" || !isNaN(parseFloat(val))) {
+            onChange(val === "" ? "" : parseFloat(val));
           }
         }}
         placeholder="Ex: 2500.00"

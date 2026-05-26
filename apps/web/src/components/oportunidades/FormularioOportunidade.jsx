@@ -1,12 +1,18 @@
-import React from 'react';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import RichTextEditor from '../shared/RichTextEditor';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Shield } from 'lucide-react';
-import ResponsaveisSelect from '../shared/ResponsaveisSelect';
+import React from "react";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import RichTextEditor from "../shared/RichTextEditor";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Plus, Shield } from "lucide-react";
+import ResponsaveisSelect from "../shared/ResponsaveisSelect";
 
 export default function FormularioOportunidade({
   formData,
@@ -18,21 +24,28 @@ export default function FormularioOportunidade({
   onNovoCliente,
   onNovaOrigem,
   buscandoCep,
-  handleBuscarCep
+  handleBuscarCep,
 }) {
   const [showNovaOrigem, setShowNovaOrigem] = React.useState(false);
-  const [novaOrigem, setNovaOrigem] = React.useState('');
+  const [novaOrigem, setNovaOrigem] = React.useState("");
 
   const formatarMoeda = (valor) => {
-    const num = typeof valor === 'number' ? valor : parseFloat(String(valor).replace(/[^\d,]/g, '').replace(',', '.')) || 0;
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
+    const num =
+      typeof valor === "number"
+        ? valor
+        : parseFloat(
+            String(valor)
+              .replace(/[^\d,]/g, "")
+              .replace(",", ".")
+          ) || 0;
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(num);
   };
 
   const parseMoeda = (str) => {
     // Remove tudo exceto dígitos e vírgula, trata vírgula como separador decimal
-    const s = String(str || '');
+    const s = String(str || "");
     // Se vier como float string com ponto (ex: "28308471.5"), converter ponto para vírgula primeiro
-    const normalized = s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s;
+    const normalized = s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : s;
     return parseFloat(normalized) || 0;
   };
 
@@ -52,22 +65,22 @@ export default function FormularioOportunidade({
       <div>
         <Label>Cliente</Label>
         <div className="flex gap-2 mt-1.5">
-          <Select value={formData.cliente_id} onValueChange={(v) => setFormData({ ...formData, cliente_id: v })}>
+          <Select
+            value={formData.cliente_id}
+            onValueChange={(v) => setFormData({ ...formData, cliente_id: v })}
+          >
             <SelectTrigger>
               <SelectValue placeholder="Selecione um cliente" />
             </SelectTrigger>
             <SelectContent>
-              {clientes.map(c => (
-                <SelectItem key={c.id} value={c.id}>{c.nome_razao}</SelectItem>
+              {clientes.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.nome_razao}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Button 
-            type="button"
-            variant="outline" 
-            size="icon"
-            onClick={onNovoCliente}
-          >
+          <Button type="button" variant="outline" size="icon" onClick={onNovoCliente}>
             <Plus className="w-4 h-4" />
           </Button>
         </div>
@@ -76,8 +89,18 @@ export default function FormularioOportunidade({
       <div>
         <Label>Responsável *</Label>
         <div className="mt-1.5">
-          <ResponsaveisSelect 
-            responsaveisEmails={Array.isArray(formData.responsaveis_ids) ? formData.responsaveis_ids : (() => { try { return JSON.parse(formData.responsaveis_ids || '[]'); } catch { return []; } })()}
+          <ResponsaveisSelect
+            responsaveisEmails={
+              Array.isArray(formData.responsaveis_ids)
+                ? formData.responsaveis_ids
+                : (() => {
+                    try {
+                      return JSON.parse(formData.responsaveis_ids || "[]");
+                    } catch {
+                      return [];
+                    }
+                  })()
+            }
             usuarios={usuariosEmpresa}
             onUpdate={(newIds) => setFormData({ ...formData, responsaveis_ids: newIds })}
             buttonSize="h-10 w-10"
@@ -88,13 +111,18 @@ export default function FormularioOportunidade({
       <div className="grid grid-cols-2 gap-4">
         <div>
           <Label>Status</Label>
-          <Select value={formData.status_id} onValueChange={(v) => setFormData({ ...formData, status_id: v })}>
+          <Select
+            value={formData.status_id}
+            onValueChange={(v) => setFormData({ ...formData, status_id: v })}
+          >
             <SelectTrigger className="mt-1.5">
               <SelectValue placeholder="Selecione" />
             </SelectTrigger>
             <SelectContent>
-              {statusList.map(s => (
-                <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
+              {statusList.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.nome}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -102,19 +130,24 @@ export default function FormularioOportunidade({
         <div>
           <Label>Origem</Label>
           <div className="flex gap-2 mt-1.5">
-            <Select value={formData.origem_id} onValueChange={(v) => setFormData({ ...formData, origem_id: v })}>
+            <Select
+              value={formData.origem_id}
+              onValueChange={(v) => setFormData({ ...formData, origem_id: v })}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
               <SelectContent>
-                {origensList.map(o => (
-                  <SelectItem key={o.id} value={o.id}>{o.nome}</SelectItem>
+                {origensList.map((o) => (
+                  <SelectItem key={o.id} value={o.id}>
+                    {o.nome}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <Button 
+            <Button
               type="button"
-              variant="outline" 
+              variant="outline"
               size="icon"
               onClick={() => setShowNovaOrigem(!showNovaOrigem)}
             >
@@ -128,19 +161,19 @@ export default function FormularioOportunidade({
                 value={novaOrigem}
                 onChange={(e) => setNovaOrigem(e.target.value)}
               />
-              <Button 
-                      type="button"
-                      size="sm" 
-                      onClick={() => {
-                        if (!novaOrigem.trim()) return;
-                        onNovaOrigem(novaOrigem);
-                        setNovaOrigem('');
-                        setShowNovaOrigem(false);
-                      }}
-                      disabled={!novaOrigem.trim()}
-                    >
-                      Criar
-                    </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  if (!novaOrigem.trim()) return;
+                  onNovaOrigem(novaOrigem);
+                  setNovaOrigem("");
+                  setShowNovaOrigem(false);
+                }}
+                disabled={!novaOrigem.trim()}
+              >
+                Criar
+              </Button>
             </div>
           )}
         </div>
@@ -151,16 +184,29 @@ export default function FormularioOportunidade({
           <Label>Valor Estimado (R$)</Label>
           <Input
             type="text"
-            value={formData._valorEstimadoDisplay !== undefined ? formData._valorEstimadoDisplay : formatarMoeda(formData.valor_estimado || 0)}
+            value={
+              formData._valorEstimadoDisplay !== undefined
+                ? formData._valorEstimadoDisplay
+                : formatarMoeda(formData.valor_estimado || 0)
+            }
             onFocus={(e) => {
               const num = parseMoeda(formData.valor_estimado);
               // Exibir sem casas decimais se for inteiro
-              const display = num === 0 ? '' : Number.isInteger(num) ? String(num) : String(num).replace('.', ',');
+              const display =
+                num === 0
+                  ? ""
+                  : Number.isInteger(num)
+                    ? String(num)
+                    : String(num).replace(".", ",");
               setFormData({ ...formData, _valorEstimadoDisplay: display });
             }}
             onChange={(e) => {
-              const raw = e.target.value.replace(/[^\d,]/g, '');
-              setFormData({ ...formData, _valorEstimadoDisplay: raw, valor_estimado: parseMoeda(raw) });
+              const raw = e.target.value.replace(/[^\d,]/g, "");
+              setFormData({
+                ...formData,
+                _valorEstimadoDisplay: raw,
+                valor_estimado: parseMoeda(raw),
+              });
             }}
             onBlur={(e) => {
               const num = parseMoeda(formData.valor_estimado);
@@ -177,7 +223,9 @@ export default function FormularioOportunidade({
             min="0"
             max="100"
             value={formData.probabilidade}
-            onChange={(e) => setFormData({ ...formData, probabilidade: parseInt(e.target.value) || 0 })}
+            onChange={(e) =>
+              setFormData({ ...formData, probabilidade: parseInt(e.target.value) || 0 })
+            }
             className="mt-1.5"
           />
         </div>
@@ -200,7 +248,10 @@ export default function FormularioOportunidade({
           <div className="grid grid-cols-3 gap-4">
             <div>
               <Label>Modalidade</Label>
-              <Select value={formData.licitacao_modalidade} onValueChange={(v) => setFormData({ ...formData, licitacao_modalidade: v })}>
+              <Select
+                value={formData.licitacao_modalidade}
+                onValueChange={(v) => setFormData({ ...formData, licitacao_modalidade: v })}
+              >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue placeholder="Não informada" />
                 </SelectTrigger>
@@ -240,8 +291,10 @@ export default function FormularioOportunidade({
               <Label>Data de Impugnação</Label>
               <Input
                 type="date"
-                value={formData.licitacao_data_impugnacao || ''}
-                onChange={(e) => setFormData({ ...formData, licitacao_data_impugnacao: e.target.value })}
+                value={formData.licitacao_data_impugnacao || ""}
+                onChange={(e) =>
+                  setFormData({ ...formData, licitacao_data_impugnacao: e.target.value })
+                }
                 className="mt-1.5"
               />
               <p className="text-xs text-slate-400 mt-1">Aparece no calendário</p>
@@ -254,18 +307,24 @@ export default function FormularioOportunidade({
               <Label>Data Limite da Proposta</Label>
               <Input
                 type="date"
-                value={formData.licitacao_data_proposta || ''}
-                onChange={(e) => setFormData({ ...formData, licitacao_data_proposta: e.target.value })}
+                value={formData.licitacao_data_proposta || ""}
+                onChange={(e) =>
+                  setFormData({ ...formData, licitacao_data_proposta: e.target.value })
+                }
                 className="mt-1.5"
               />
-              <p className="text-xs text-slate-400 mt-1">Aparece no calendário + aviso 2 dias antes</p>
+              <p className="text-xs text-slate-400 mt-1">
+                Aparece no calendário + aviso 2 dias antes
+              </p>
             </div>
             <div>
               <Label>Horário Limite da Proposta</Label>
               <Input
                 type="time"
-                value={formData.licitacao_horario_proposta || ''}
-                onChange={(e) => setFormData({ ...formData, licitacao_horario_proposta: e.target.value })}
+                value={formData.licitacao_horario_proposta || ""}
+                onChange={(e) =>
+                  setFormData({ ...formData, licitacao_horario_proposta: e.target.value })
+                }
                 className="mt-1.5"
               />
             </div>
@@ -273,10 +332,29 @@ export default function FormularioOportunidade({
               <Label className="mb-2">Garantia de Proposta</Label>
               <label className="flex items-center gap-2 cursor-pointer mt-1.5">
                 <div
-                  onClick={() => setFormData({ ...formData, licitacao_garantia_proposta: !formData.licitacao_garantia_proposta })}
-                  className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors cursor-pointer ${formData.licitacao_garantia_proposta ? 'bg-amber-500 border-amber-500' : 'border-slate-300 bg-white'}`}
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      licitacao_garantia_proposta: !formData.licitacao_garantia_proposta,
+                    })
+                  }
+                  className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors cursor-pointer ${formData.licitacao_garantia_proposta ? "bg-amber-500 border-amber-500" : "border-slate-300 bg-white"}`}
                 >
-                  {formData.licitacao_garantia_proposta && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                  {formData.licitacao_garantia_proposta && (
+                    <svg
+                      className="w-3 h-3 text-white"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={3}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                  )}
                 </div>
                 <span className="text-sm text-slate-700 flex items-center gap-1">
                   <Shield className="w-4 h-4 text-amber-600" />
@@ -298,7 +376,7 @@ export default function FormularioOportunidade({
                 value={formData.cep}
                 onChange={(e) => {
                   setFormData({ ...formData, cep: e.target.value });
-                  if (e.target.value.replace(/\D/g, '').length === 8) {
+                  if (e.target.value.replace(/\D/g, "").length === 8) {
                     handleBuscarCep(e.target.value);
                   }
                 }}

@@ -14,7 +14,9 @@ export function createAuth(supabase) {
      * Formato compatível com base44.auth.me().
      */
     async me() {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
         const err = new Error("Usuário não autenticado");
         err.code = "NOT_AUTHENTICATED";

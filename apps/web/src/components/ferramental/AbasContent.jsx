@@ -1,17 +1,17 @@
-import React from 'react';
-import { TabsContent } from '@/components/ui/tabs';
-import MovimentacoesTab from '@/components/ferramental/MovimentacoesTab';
-import ManutencaoTab from '@/components/ferramental/ManutencaoTab';
-import EntregasTab from '@/components/ferramental/EntregasTab';
-import RelatorioFerramental from '@/components/ferramental/RelatorioFerramental';
-import RelatorioFerramentaisPorCaminhao from '@/components/ferramental/RelatorioFerramentaisPorCaminhao';
+import React from "react";
+import { TabsContent } from "@/components/ui/tabs";
+import MovimentacoesTab from "@/components/ferramental/MovimentacoesTab";
+import ManutencaoTab from "@/components/ferramental/ManutencaoTab";
+import EntregasTab from "@/components/ferramental/EntregasTab";
+import RelatorioFerramental from "@/components/ferramental/RelatorioFerramental";
+import RelatorioFerramentaisPorCaminhao from "@/components/ferramental/RelatorioFerramentaisPorCaminhao";
 
-export default function AbasContent({ 
-  empresaAtiva, 
+export default function AbasContent({
+  empresaAtiva,
   user,
   ferramentas,
   historicoMovimentacoes,
-  almoxarifados
+  almoxarifados,
 }) {
   return (
     <>
@@ -28,7 +28,7 @@ export default function AbasContent({
       </TabsContent>
 
       <TabsContent value="relatorios">
-        <RelatorioFerramental 
+        <RelatorioFerramental
           ferramentas={ferramentas}
           movimentacoes={historicoMovimentacoes}
           almoxarifados={almoxarifados}

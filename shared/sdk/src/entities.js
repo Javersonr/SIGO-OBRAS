@@ -74,11 +74,7 @@ function buildEntityClient(supabase, entityName) {
      */
     async create(payload) {
       const clean = stripBase44Aliases(payload);
-      const { data, error } = await supabase
-        .from(table)
-        .insert(clean)
-        .select()
-        .single();
+      const { data, error } = await supabase.from(table).insert(clean).select().single();
       if (error) throw error;
       return addBase44Aliases(data);
     },
@@ -89,10 +85,7 @@ function buildEntityClient(supabase, entityName) {
     async bulkCreate(records) {
       if (!Array.isArray(records) || records.length === 0) return [];
       const cleaned = records.map(stripBase44Aliases);
-      const { data, error } = await supabase
-        .from(table)
-        .insert(cleaned)
-        .select();
+      const { data, error } = await supabase.from(table).insert(cleaned).select();
       if (error) throw error;
       return addBase44AliasesAll(data);
     },

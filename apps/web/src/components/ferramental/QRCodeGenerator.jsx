@@ -1,37 +1,37 @@
-import React, { useRef } from 'react';
-import { QRCodeCanvas } from 'qrcode.react';
-import { Button } from '@/components/ui/button';
-import { Download, Printer } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
+import React, { useRef } from "react";
+import { QRCodeCanvas } from "qrcode.react";
+import { Button } from "@/components/ui/button";
+import { Download, Printer } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 
-export default function QRCodeGenerator({ 
-  value, 
-  size = 200, 
-  level = 'M',
+export default function QRCodeGenerator({
+  value,
+  size = 200,
+  level = "M",
   showDownload = true,
   showPrint = true,
-  label = '',
-  className = ''
+  label = "",
+  className = "",
 }) {
   const qrRef = useRef(null);
 
   const handleDownload = () => {
-    const canvas = qrRef.current?.querySelector('canvas');
+    const canvas = qrRef.current?.querySelector("canvas");
     if (!canvas) return;
 
-    const url = canvas.toDataURL('image/png');
-    const link = document.createElement('a');
+    const url = canvas.toDataURL("image/png");
+    const link = document.createElement("a");
     link.href = url;
     link.download = `qrcode-${value}.png`;
     link.click();
   };
 
   const handlePrint = () => {
-    const canvas = qrRef.current?.querySelector('canvas');
+    const canvas = qrRef.current?.querySelector("canvas");
     if (!canvas) return;
 
-    const url = canvas.toDataURL('image/png');
-    const printWindow = window.open('', '_blank');
+    const url = canvas.toDataURL("image/png");
+    const printWindow = window.open("", "_blank");
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
@@ -72,7 +72,7 @@ export default function QRCodeGenerator({
         </head>
         <body>
           <img src="${url}" alt="QR Code" />
-          ${label ? `<div class="label">${label}</div>` : ''}
+          ${label ? `<div class="label">${label}</div>` : ""}
           <div class="code">${value}</div>
           <script>
             window.onload = function() {
@@ -93,14 +93,9 @@ export default function QRCodeGenerator({
       <Card>
         <CardContent className="p-4 flex flex-col items-center gap-4">
           <div ref={qrRef} className="bg-white p-4 rounded-lg">
-            <QRCodeCanvas
-              value={value}
-              size={size}
-              level={level}
-              includeMargin={true}
-            />
+            <QRCodeCanvas value={value} size={size} level={level} includeMargin={true} />
           </div>
-          
+
           {label && (
             <div className="text-center">
               <p className="font-semibold text-slate-800">{label}</p>
@@ -122,12 +117,7 @@ export default function QRCodeGenerator({
                 </Button>
               )}
               {showPrint && (
-                <Button
-                  onClick={handlePrint}
-                  variant="outline"
-                  className="flex-1 gap-2"
-                  size="sm"
-                >
+                <Button onClick={handlePrint} variant="outline" className="flex-1 gap-2" size="sm">
                   <Printer className="w-4 h-4" />
                   Imprimir
                 </Button>

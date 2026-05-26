@@ -1,30 +1,30 @@
-import React from 'react';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import React from "react";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
-import { Search, X } from 'lucide-react';
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Search, X } from "lucide-react";
 
-export default function HistoricoInventarioFilters({ 
-  filtros, 
+export default function HistoricoInventarioFilters({
+  filtros,
   onFiltrosChange,
   usuarios,
-  ferramentas
+  ferramentas,
 }) {
   const handleLimpar = () => {
     onFiltrosChange({
-      ferramenta: '',
-      usuario: '',
-      dataInicio: '',
-      dataFim: '',
-      tipoOperacao: ''
+      ferramenta: "",
+      usuario: "",
+      dataInicio: "",
+      dataFim: "",
+      tipoOperacao: "",
     });
   };
 
@@ -48,15 +48,16 @@ export default function HistoricoInventarioFilters({
           {/* Ferramenta */}
           <div>
             <Label className="text-xs font-medium text-slate-700">Ferramenta</Label>
-            <Select value={filtros.ferramenta} onValueChange={(value) => 
-              onFiltrosChange({...filtros, ferramenta: value})
-            }>
+            <Select
+              value={filtros.ferramenta}
+              onValueChange={(value) => onFiltrosChange({ ...filtros, ferramenta: value })}
+            >
               <SelectTrigger className="mt-1.5 text-sm">
                 <SelectValue placeholder="Todas" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={null}>Todas as ferramentas</SelectItem>
-                {ferramentas.map(f => (
+                {ferramentas.map((f) => (
                   <SelectItem key={f.id} value={f.id}>
                     {f.descricao} ({f.codigo})
                   </SelectItem>
@@ -68,15 +69,16 @@ export default function HistoricoInventarioFilters({
           {/* Usuário */}
           <div>
             <Label className="text-xs font-medium text-slate-700">Usuário</Label>
-            <Select value={filtros.usuario} onValueChange={(value) => 
-              onFiltrosChange({...filtros, usuario: value})
-            }>
+            <Select
+              value={filtros.usuario}
+              onValueChange={(value) => onFiltrosChange({ ...filtros, usuario: value })}
+            >
               <SelectTrigger className="mt-1.5 text-sm">
                 <SelectValue placeholder="Todos" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={null}>Todos os usuários</SelectItem>
-                {usuarios.map(u => (
+                {usuarios.map((u) => (
                   <SelectItem key={u.email} value={u.email}>
                     {u.nome}
                   </SelectItem>
@@ -88,9 +90,10 @@ export default function HistoricoInventarioFilters({
           {/* Tipo de Operação */}
           <div>
             <Label className="text-xs font-medium text-slate-700">Tipo</Label>
-            <Select value={filtros.tipoOperacao} onValueChange={(value) => 
-              onFiltrosChange({...filtros, tipoOperacao: value})
-            }>
+            <Select
+              value={filtros.tipoOperacao}
+              onValueChange={(value) => onFiltrosChange({ ...filtros, tipoOperacao: value })}
+            >
               <SelectTrigger className="mt-1.5 text-sm">
                 <SelectValue placeholder="Todos" />
               </SelectTrigger>
@@ -109,7 +112,7 @@ export default function HistoricoInventarioFilters({
             <Input
               type="date"
               value={filtros.dataInicio}
-              onChange={(e) => onFiltrosChange({...filtros, dataInicio: e.target.value})}
+              onChange={(e) => onFiltrosChange({ ...filtros, dataInicio: e.target.value })}
               className="mt-1.5 text-sm"
             />
           </div>
@@ -120,7 +123,7 @@ export default function HistoricoInventarioFilters({
             <Input
               type="date"
               value={filtros.dataFim}
-              onChange={(e) => onFiltrosChange({...filtros, dataFim: e.target.value})}
+              onChange={(e) => onFiltrosChange({ ...filtros, dataFim: e.target.value })}
               className="mt-1.5 text-sm"
             />
           </div>
@@ -132,8 +135,8 @@ export default function HistoricoInventarioFilters({
               <Search className="absolute left-2 top-2.5 w-4 h-4 text-slate-400" />
               <Input
                 placeholder="Código ou descrição..."
-                value={filtros.busca || ''}
-                onChange={(e) => onFiltrosChange({...filtros, busca: e.target.value})}
+                value={filtros.busca || ""}
+                onChange={(e) => onFiltrosChange({ ...filtros, busca: e.target.value })}
                 className="pl-8 text-sm"
               />
             </div>

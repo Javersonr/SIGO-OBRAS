@@ -1,19 +1,19 @@
-import React, { useState } from 'react';
-import { TabsContent, Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import MovimentacoesTab from '@/components/ferramental/MovimentacoesTab';
-import ManutencaoTab from '@/components/ferramental/ManutencaoTab';
-import EntregasTab from '@/components/ferramental/EntregasTab';
-import RelatorioFerramental from '@/components/ferramental/RelatorioFerramental';
-import RelatorioFerramentaisPorCaminhao from '@/components/ferramental/RelatorioFerramentaisPorCaminhao';
+import React, { useState } from "react";
+import { TabsContent, Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import MovimentacoesTab from "@/components/ferramental/MovimentacoesTab";
+import ManutencaoTab from "@/components/ferramental/ManutencaoTab";
+import EntregasTab from "@/components/ferramental/EntregasTab";
+import RelatorioFerramental from "@/components/ferramental/RelatorioFerramental";
+import RelatorioFerramentaisPorCaminhao from "@/components/ferramental/RelatorioFerramentaisPorCaminhao";
 
-export default function ConteudoAbas({ 
-  empresaAtiva, 
+export default function ConteudoAbas({
+  empresaAtiva,
   user,
   ferramentas,
   historicoMovimentacoes,
-  almoxarifados
+  almoxarifados,
 }) {
-  const [relatorioTab, setRelatorioTab] = useState('geral');
+  const [relatorioTab, setRelatorioTab] = useState("geral");
 
   return (
     <>
@@ -37,7 +37,7 @@ export default function ConteudoAbas({
           </TabsList>
 
           <TabsContent value="geral">
-            <RelatorioFerramental 
+            <RelatorioFerramental
               ferramentas={ferramentas}
               movimentacoes={historicoMovimentacoes}
               almoxarifados={almoxarifados}

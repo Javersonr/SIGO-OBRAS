@@ -28,17 +28,15 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-      - name: Install root deps
-        run: npm ci --ignore-scripts
+      # npm workspaces: lockfile único na raiz, instala tudo de uma vez
+      - name: Install all workspaces
+        run: npm ci
 
       - name: Prettier check
         run: npm run format:check
 
       - name: ESLint (apps/web)
-        run: |
-          cd apps/web
-          npm ci
-          npm run lint
+        run: npm run lint --workspace=apps/web
 
   # -------------------------------------------------------------------------
   # Build do frontend: garante que dist/ é gerado sem erro
@@ -56,17 +54,18 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: apps/web/package-lock.json
 
-      - name: Install deps
-        working-directory: apps/web
+      - name: Install all workspaces
         run: npm ci
 
       - name: Vite build
         working-directory: apps/web
         env:
+          # Valores reais via GH Secrets em prod; fallback p/ placeholders no CI
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://placeholder.supabase.co' }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'placeholder' }}
+          VITE_LEGACY_APP_ID: ${{ secrets.VITE_LEGACY_APP_ID || 'placeholder' }}
+          VITE_LEGACY_APP_BASE_URL: ${{ secrets.VITE_LEGACY_APP_BASE_URL || 'https://placeholder.example.com' }}
         run: npm run build
 
       - name: Upload build artifact
@@ -79,6 +78,7 @@ jobs:
 
   # -------------------------------------------------------------------------
   # SDK smoke test: chama Supabase de teste, valida API surface
+  # Skip se VITE_SUPABASE_URL não estiver configurado (PRs de fork, etc.)
   # -------------------------------------------------------------------------
   test-sdk:
     name: Test @sigoobras/sdk
@@ -93,34 +93,31 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: shared/sdk/package-lock.json
 
-      - name: Install deps
-        working-directory: shared/sdk
+      - name: Install all workspaces
         run: npm ci
 
-      - name: Smoke test
-        working-directory: shared/sdk
+      - name: Smoke test (se secrets disponíveis)
         env:
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: node smoke-test.mjs
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::warning::VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY não setados — pulando smoke test"
+            exit 0
+          fi
+          npm run sdk:test
 
   # -------------------------------------------------------------------------
   # Migrations dry-check: garante que SQL é parseável
   # (não aplica nada — só verifica sintaxe básica)
   # -------------------------------------------------------------------------
   check-migrations:
-    name: Check Supabase migrations syntax
+    name: Check Supabase migrations
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
-        with:
-          version: latest
 
       - name: List migrations
         run: |
@@ -135,7 +132,7 @@ jobs:
               exit 1
             fi
           done
-          echo "All migrations OK"
+          echo "✅ All migrations OK"
 
   # -------------------------------------------------------------------------
   # Status final: agrega todos os jobs (útil pra branch protection)

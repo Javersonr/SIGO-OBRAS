@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
-import { FileText, Eye, Download } from 'lucide-react';
-import { format } from 'date-fns';
-import VisualizadorDocumentoModal from './VisualizadorDocumentoModal';
+import React, { useState } from "react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { FileText, Eye, Download } from "lucide-react";
+import { format } from "date-fns";
+import VisualizadorDocumentoModal from "./VisualizadorDocumentoModal";
 
 export default function HistoricoDocumentosModal({ open, onOpenChange, documentos, tipo }) {
   const [documentoSelecionado, setDocumentoSelecionado] = useState(null);
@@ -11,15 +11,15 @@ export default function HistoricoDocumentosModal({ open, onOpenChange, documento
 
   const getTituloTipo = (tipo) => {
     const titulos = {
-      'documentos_obrigatorios': 'Documentos Obrigatórios',
-      'documentos_rh': 'Documentos de RH',
-      'epis': 'Lista de EPIs',
-      'ferramentas': 'Lista de Ferramentas',
-      'autorizacao_formal': 'Autorização Formal',
-      'direito_recusa': 'Direito de Recusa',
-      'ordem_servicos': 'Ordem de Serviços'
+      documentos_obrigatorios: "Documentos Obrigatórios",
+      documentos_rh: "Documentos de RH",
+      epis: "Lista de EPIs",
+      ferramentas: "Lista de Ferramentas",
+      autorizacao_formal: "Autorização Formal",
+      direito_recusa: "Direito de Recusa",
+      ordem_servicos: "Ordem de Serviços",
     };
-    return titulos[tipo] || 'Documentos';
+    return titulos[tipo] || "Documentos";
   };
 
   const handleVisualizarDocumento = (doc) => {
@@ -42,17 +42,18 @@ export default function HistoricoDocumentosModal({ open, onOpenChange, documento
         ) : (
           <div className="space-y-3">
             {documentos.map((doc, idx) => (
-              <div key={idx} className="p-4 bg-slate-50 rounded-lg border border-slate-200 hover:border-amber-300 transition-colors">
+              <div
+                key={idx}
+                className="p-4 bg-slate-50 rounded-lg border border-slate-200 hover:border-amber-300 transition-colors"
+              >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 flex-1 min-w-0">
                     <FileText className="w-5 h-5 text-slate-400 flex-shrink-0 mt-1" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-900 truncate">
-                        {doc.nome}
-                      </p>
+                      <p className="text-sm font-medium text-slate-900 truncate">{doc.nome}</p>
                       {doc.data_upload && (
                         <p className="text-xs text-slate-500 mt-1">
-                          Enviado em {format(new Date(doc.data_upload), 'dd/MM/yyyy HH:mm')}
+                          Enviado em {format(new Date(doc.data_upload), "dd/MM/yyyy HH:mm")}
                         </p>
                       )}
                     </div>
@@ -70,9 +71,9 @@ export default function HistoricoDocumentosModal({ open, onOpenChange, documento
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        const link = document.createElement('a');
+                        const link = document.createElement("a");
                         link.href = doc.url;
-                        link.download = doc.nome_arquivo || doc.nome || 'documento';
+                        link.download = doc.nome_arquivo || doc.nome || "documento";
                         link.click();
                       }}
                       title="Baixar"

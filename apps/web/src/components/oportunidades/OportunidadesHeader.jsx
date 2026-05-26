@@ -1,10 +1,21 @@
-import React from 'react';
-import { Button } from '@/components/ui/button';
-import { Plus, FileSpreadsheet, ChevronDown } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import PermissionGate from '../PermissionGate';
+import React from "react";
+import { Button } from "@/components/ui/button";
+import { Plus, FileSpreadsheet, ChevronDown } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import PermissionGate from "../PermissionGate";
 
-export default function OportunidadesHeader({ onOpenModal, onExport, onStatusConfig, onHandleOpenModal }) {
+export default function OportunidadesHeader({
+  onOpenModal,
+  onExport,
+  onStatusConfig,
+  onHandleOpenModal,
+}) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>

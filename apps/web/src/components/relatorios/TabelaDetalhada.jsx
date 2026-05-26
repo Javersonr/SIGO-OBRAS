@@ -1,119 +1,129 @@
-import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Download, FileText } from 'lucide-react';
+import React, { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Download, FileText } from "lucide-react";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 
 export default function TabelaDetalhada({ dados, filtros }) {
-  const [tipoSelecionado, setTipoSelecionado] = useState('oportunidades');
+  const [tipoSelecionado, setTipoSelecionado] = useState("oportunidades");
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+      value || 0
+    );
   };
 
   const exportarCSV = () => {
     let headers, linhas;
 
     switch (tipoSelecionado) {
-      case 'oportunidades':
-        headers = ['Título', 'Cliente', 'Status', 'Valor', 'Data'];
-        linhas = dados.oportunidades.map(op => [
+      case "oportunidades":
+        headers = ["Título", "Cliente", "Status", "Valor", "Data"];
+        linhas = dados.oportunidades.map((op) => [
           op.titulo,
-          op.cliente_nome || '',
+          op.cliente_nome || "",
           op.status_nome,
           op.valor_estimado || 0,
-          new Date(op.created_date).toLocaleDateString('pt-BR')
+          new Date(op.created_date).toLocaleDateString("pt-BR"),
         ]);
         break;
-      case 'projetos':
-        headers = ['Título', 'Cliente', 'Status', 'Valor', 'Data'];
-        linhas = dados.projetos.map(proj => [
+      case "projetos":
+        headers = ["Título", "Cliente", "Status", "Valor", "Data"];
+        linhas = dados.projetos.map((proj) => [
           proj.titulo,
-          proj.cliente_nome || '',
+          proj.cliente_nome || "",
           proj.status_nome,
           proj.valor_estimado || 0,
-          new Date(proj.created_date).toLocaleDateString('pt-BR')
+          new Date(proj.created_date).toLocaleDateString("pt-BR"),
         ]);
         break;
-      case 'solicitacoes':
-        headers = ['Número', 'Projeto', 'Solicitante', 'Status', 'Data'];
-        linhas = dados.solicitacoes.map(sol => [
+      case "solicitacoes":
+        headers = ["Número", "Projeto", "Solicitante", "Status", "Data"];
+        linhas = dados.solicitacoes.map((sol) => [
           sol.numero,
-          sol.projeto_nome || '',
+          sol.projeto_nome || "",
           sol.solicitante_nome,
           sol.status,
-          new Date(sol.created_date).toLocaleDateString('pt-BR')
+          new Date(sol.created_date).toLocaleDateString("pt-BR"),
         ]);
         break;
-      case 'cotacoes':
-        headers = ['Número', 'Projeto', 'Status', 'Fornecedores', 'Data'];
-        linhas = dados.cotacoes.map(cot => [
+      case "cotacoes":
+        headers = ["Número", "Projeto", "Status", "Fornecedores", "Data"];
+        linhas = dados.cotacoes.map((cot) => [
           cot.numero,
-          cot.projeto_nome || '',
+          cot.projeto_nome || "",
           cot.status,
           cot.total_fornecedores || 0,
-          new Date(cot.created_date).toLocaleDateString('pt-BR')
+          new Date(cot.created_date).toLocaleDateString("pt-BR"),
         ]);
         break;
-      case 'pedidos':
-        headers = ['Número', 'Fornecedor', 'Status', 'Total', 'Data'];
-        linhas = dados.pedidos.map(ped => [
+      case "pedidos":
+        headers = ["Número", "Fornecedor", "Status", "Total", "Data"];
+        linhas = dados.pedidos.map((ped) => [
           ped.numero,
           ped.fornecedor_nome,
           ped.status,
           ped.total || 0,
-          new Date(ped.created_date).toLocaleDateString('pt-BR')
+          new Date(ped.created_date).toLocaleDateString("pt-BR"),
         ]);
         break;
     }
 
-    const csv = [headers, ...linhas].map(row => row.join(';')).join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
+    const csv = [headers, ...linhas].map((row) => row.join(";")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `relatorio_${tipoSelecionado}_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `relatorio_${tipoSelecionado}_${new Date().toISOString().split("T")[0]}.csv`;
     link.click();
   };
 
   const exportarPDF = async () => {
-    const { jsPDF } = await import('jspdf');
-    const doc = new jsPDF('landscape');
-    
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF("landscape");
+
     doc.setFontSize(16);
     doc.text(`Relatório - ${tipoSelecionado}`, 14, 15);
     doc.setFontSize(10);
-    doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 22);
-    
+    doc.text(`Gerado em: ${new Date().toLocaleDateString("pt-BR")}`, 14, 22);
+
     let y = 35;
     const items = dados[tipoSelecionado].slice(0, 30);
-    
-    items.forEach(item => {
-      const texto = tipoSelecionado === 'oportunidades' || tipoSelecionado === 'projetos'
-        ? `${item.titulo} - ${item.status_nome} - ${formatCurrency(item.valor_estimado)}`
-        : tipoSelecionado === 'solicitacoes'
-        ? `${item.numero} - ${item.status} - ${item.solicitante_nome}`
-        : tipoSelecionado === 'cotacoes'
-        ? `${item.numero} - ${item.status}`
-        : `${item.numero} - ${item.fornecedor_nome} - ${formatCurrency(item.total)}`;
-      
+
+    items.forEach((item) => {
+      const texto =
+        tipoSelecionado === "oportunidades" || tipoSelecionado === "projetos"
+          ? `${item.titulo} - ${item.status_nome} - ${formatCurrency(item.valor_estimado)}`
+          : tipoSelecionado === "solicitacoes"
+            ? `${item.numero} - ${item.status} - ${item.solicitante_nome}`
+            : tipoSelecionado === "cotacoes"
+              ? `${item.numero} - ${item.status}`
+              : `${item.numero} - ${item.fornecedor_nome} - ${formatCurrency(item.total)}`;
+
       doc.text(texto, 14, y);
       y += 7;
-      
+
       if (y > 190) {
         doc.addPage();
         y = 20;
       }
     });
-    
-    doc.save(`relatorio_${tipoSelecionado}_${new Date().toISOString().split('T')[0]}.pdf`);
+
+    doc.save(`relatorio_${tipoSelecionado}_${new Date().toISOString().split("T")[0]}.pdf`);
   };
 
   return (
@@ -150,7 +160,7 @@ export default function TabelaDetalhada({ dados, filtros }) {
           <Table>
             <TableHeader>
               <TableRow>
-                {tipoSelecionado === 'oportunidades' || tipoSelecionado === 'projetos' ? (
+                {tipoSelecionado === "oportunidades" || tipoSelecionado === "projetos" ? (
                   <>
                     <TableHead>Título</TableHead>
                     <TableHead>Cliente</TableHead>
@@ -158,7 +168,7 @@ export default function TabelaDetalhada({ dados, filtros }) {
                     <TableHead>Valor</TableHead>
                     <TableHead>Data</TableHead>
                   </>
-                ) : tipoSelecionado === 'solicitacoes' ? (
+                ) : tipoSelecionado === "solicitacoes" ? (
                   <>
                     <TableHead>Número</TableHead>
                     <TableHead>Projeto</TableHead>
@@ -166,7 +176,7 @@ export default function TabelaDetalhada({ dados, filtros }) {
                     <TableHead>Status</TableHead>
                     <TableHead>Data</TableHead>
                   </>
-                ) : tipoSelecionado === 'cotacoes' ? (
+                ) : tipoSelecionado === "cotacoes" ? (
                   <>
                     <TableHead>Número</TableHead>
                     <TableHead>Projeto</TableHead>
@@ -186,39 +196,45 @@ export default function TabelaDetalhada({ dados, filtros }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {dados[tipoSelecionado]?.slice(0, 50).map(item => (
+              {dados[tipoSelecionado]?.slice(0, 50).map((item) => (
                 <TableRow key={item.id}>
-                  {tipoSelecionado === 'oportunidades' || tipoSelecionado === 'projetos' ? (
+                  {tipoSelecionado === "oportunidades" || tipoSelecionado === "projetos" ? (
                     <>
                       <TableCell className="font-medium">{item.titulo}</TableCell>
-                      <TableCell>{item.cliente_nome || '-'}</TableCell>
+                      <TableCell>{item.cliente_nome || "-"}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{item.status_nome}</Badge>
                       </TableCell>
                       <TableCell className="font-medium text-green-600">
                         {formatCurrency(item.valor_estimado)}
                       </TableCell>
-                      <TableCell>{new Date(item.created_date).toLocaleDateString('pt-BR')}</TableCell>
+                      <TableCell>
+                        {new Date(item.created_date).toLocaleDateString("pt-BR")}
+                      </TableCell>
                     </>
-                  ) : tipoSelecionado === 'solicitacoes' ? (
+                  ) : tipoSelecionado === "solicitacoes" ? (
                     <>
                       <TableCell className="font-medium">{item.numero}</TableCell>
-                      <TableCell>{item.projeto_nome || '-'}</TableCell>
+                      <TableCell>{item.projeto_nome || "-"}</TableCell>
                       <TableCell>{item.solicitante_nome}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{item.status}</Badge>
                       </TableCell>
-                      <TableCell>{new Date(item.created_date).toLocaleDateString('pt-BR')}</TableCell>
+                      <TableCell>
+                        {new Date(item.created_date).toLocaleDateString("pt-BR")}
+                      </TableCell>
                     </>
-                  ) : tipoSelecionado === 'cotacoes' ? (
+                  ) : tipoSelecionado === "cotacoes" ? (
                     <>
                       <TableCell className="font-medium">{item.numero}</TableCell>
-                      <TableCell>{item.projeto_nome || '-'}</TableCell>
+                      <TableCell>{item.projeto_nome || "-"}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{item.status}</Badge>
                       </TableCell>
                       <TableCell>{item.total_fornecedores || 0}</TableCell>
-                      <TableCell>{new Date(item.created_date).toLocaleDateString('pt-BR')}</TableCell>
+                      <TableCell>
+                        {new Date(item.created_date).toLocaleDateString("pt-BR")}
+                      </TableCell>
                     </>
                   ) : (
                     <>
@@ -230,7 +246,9 @@ export default function TabelaDetalhada({ dados, filtros }) {
                       <TableCell className="font-medium text-green-600">
                         {formatCurrency(item.total)}
                       </TableCell>
-                      <TableCell>{new Date(item.created_date).toLocaleDateString('pt-BR')}</TableCell>
+                      <TableCell>
+                        {new Date(item.created_date).toLocaleDateString("pt-BR")}
+                      </TableCell>
                     </>
                   )}
                 </TableRow>

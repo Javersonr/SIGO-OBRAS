@@ -1,23 +1,33 @@
-import React from 'react';
-import ReactQuill from 'react-quill';
-import 'react-quill/dist/quill.snow.css';
+import React from "react";
+import ReactQuill from "react-quill";
+import "react-quill/dist/quill.snow.css";
 
 const modules = {
   toolbar: [
     [{ header: [1, 2, 3, false] }],
-    ['bold', 'italic', 'underline', 'strike'],
+    ["bold", "italic", "underline", "strike"],
     [{ color: [] }, { background: [] }],
-    [{ list: 'ordered' }, { list: 'bullet' }],
-    [{ indent: '-1' }, { indent: '+1' }],
+    [{ list: "ordered" }, { list: "bullet" }],
+    [{ indent: "-1" }, { indent: "+1" }],
     [{ align: [] }],
-    ['link'],
-    ['clean'],
+    ["link"],
+    ["clean"],
   ],
 };
 
 const formats = [
-  'header', 'bold', 'italic', 'underline', 'strike',
-  'color', 'background', 'list', 'bullet', 'indent', 'align', 'link',
+  "header",
+  "bold",
+  "italic",
+  "underline",
+  "strike",
+  "color",
+  "background",
+  "list",
+  "bullet",
+  "indent",
+  "align",
+  "link",
 ];
 
 export default function RichTextEditor({ value, onChange, placeholder, minHeight = 150 }) {
@@ -47,7 +57,7 @@ export default function RichTextEditor({ value, onChange, placeholder, minHeight
       `}</style>
       <ReactQuill
         theme="snow"
-        value={value || ''}
+        value={value || ""}
         onChange={onChange}
         modules={modules}
         formats={formats}

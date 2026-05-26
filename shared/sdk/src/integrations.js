@@ -57,7 +57,9 @@ export function createIntegrations(supabase) {
         if (!file) throw new Error("UploadFile: parâmetro `file` obrigatório");
 
         // Pega empresa_id do JWT atual
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         const empresaId = user?.app_metadata?.empresa_id;
         if (!empresaId) {
           throw new Error("UploadFile: usuário sem empresa_id no JWT app_metadata");
@@ -65,20 +67,20 @@ export function createIntegrations(supabase) {
 
         const resolvedFileName = fileName || file.name || `upload-${Date.now()}`;
         const resolvedMime = mimeType || file.type || "application/octet-stream";
-        const bucket = explicitBucket || inferBucket({
-          fileName: resolvedFileName,
-          mimeType: resolvedMime,
-          context,
-        });
+        const bucket =
+          explicitBucket ||
+          inferBucket({
+            fileName: resolvedFileName,
+            mimeType: resolvedMime,
+            context,
+          });
 
         const path = buildPath(empresaId, resolvedFileName);
 
-        const { error } = await supabase.storage
-          .from(bucket)
-          .upload(path, file, {
-            contentType: resolvedMime,
-            upsert: false,
-          });
+        const { error } = await supabase.storage.from(bucket).upload(path, file, {
+          contentType: resolvedMime,
+          upsert: false,
+        });
 
         if (error) throw error;
 
@@ -121,7 +123,9 @@ export function createIntegrations(supabase) {
        * GenerateImage({ prompt, ... }) — futuro
        */
       async GenerateImage(payload) {
-        const { data, error } = await supabase.functions.invoke("generate-image", { body: payload });
+        const { data, error } = await supabase.functions.invoke("generate-image", {
+          body: payload,
+        });
         if (error) throw error;
         return data;
       },
@@ -130,7 +134,9 @@ export function createIntegrations(supabase) {
        * ExtractDataFromUploadedFile({ file_url, schema }) — OCR via Gemini/OpenAI
        */
       async ExtractDataFromUploadedFile(payload) {
-        const { data, error } = await supabase.functions.invoke("extract-data-from-file", { body: payload });
+        const { data, error } = await supabase.functions.invoke("extract-data-from-file", {
+          body: payload,
+        });
         if (error) throw error;
         return data;
       },
