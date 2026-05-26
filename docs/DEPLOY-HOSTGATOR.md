@@ -119,6 +119,7 @@ Hostgator suporta Git Version Control no cPanel:
 3. Para deploy, criar `apps/web/.cpanel.yml` (ver template abaixo) e fazer push.
 
 Template `.cpanel.yml` (ainda preciso criar este arquivo no repo):
+
 ```yaml
 ---
 deployment:
@@ -132,12 +133,13 @@ Depois é só fazer push pro GitHub que dispara o pull no Hostgator. Mas atenç�
 ### Opção C: GitHub Actions → FTP (totalmente automatizado)
 
 Workflow `.github/workflows/deploy-hostgator.yml`:
+
 ```yaml
 name: Deploy to Hostgator
 on:
   push:
     branches: [master]
-    paths: ['apps/web/**']
+    paths: ["apps/web/**"]
 
 jobs:
   deploy:
@@ -146,7 +148,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
       - run: |
           cd apps/web
           npm ci
@@ -242,14 +244,14 @@ Se aparecer erro tipo `Access-Control-Allow-Origin missing`:
 
 ## Troubleshooting
 
-| Sintoma | Causa | Solução |
-|---|---|---|
-| `ERR_NAME_NOT_RESOLVED` | DNS ainda propagando | Aguardar 1-24h, testar com `dig` |
-| `404 Not Found` em refresh | `.htaccess` ausente ou sem `mod_rewrite` | Conferir se `.htaccess` foi pro `dist/`; cPanel → Apache Modules → `mod_rewrite` ativo |
-| `Mixed Content` (HTTP no HTTPS) | URL Supabase em HTTP | Garantir que `VITE_SUPABASE_URL` começa com `https://` |
-| Tela branca, console: `failed to load assets` | Paths absolutos errados | Vite gera `/assets/...` por padrão. Se o app estiver em subpasta (`/sigoobras/`), use `base: '/sigoobras/'` no `vite.config.js` |
-| `CORS error` | Supabase não autorizou domínio | Fase 7 |
-| `Invalid API key` | `VITE_SUPABASE_ANON_KEY` errada | Pegar de Dashboard → Settings → API → `anon public` |
+| Sintoma                                       | Causa                                    | Solução                                                                                                                         |
+| --------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `ERR_NAME_NOT_RESOLVED`                       | DNS ainda propagando                     | Aguardar 1-24h, testar com `dig`                                                                                                |
+| `404 Not Found` em refresh                    | `.htaccess` ausente ou sem `mod_rewrite` | Conferir se `.htaccess` foi pro `dist/`; cPanel → Apache Modules → `mod_rewrite` ativo                                          |
+| `Mixed Content` (HTTP no HTTPS)               | URL Supabase em HTTP                     | Garantir que `VITE_SUPABASE_URL` começa com `https://`                                                                          |
+| Tela branca, console: `failed to load assets` | Paths absolutos errados                  | Vite gera `/assets/...` por padrão. Se o app estiver em subpasta (`/sigoobras/`), use `base: '/sigoobras/'` no `vite.config.js` |
+| `CORS error`                                  | Supabase não autorizou domínio           | Fase 7                                                                                                                          |
+| `Invalid API key`                             | `VITE_SUPABASE_ANON_KEY` errada          | Pegar de Dashboard → Settings → API → `anon public`                                                                             |
 
 ---
 

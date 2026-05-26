@@ -5,6 +5,7 @@ Guia operacional pra publicar o novo SIGO Obras em `https://sigoobras.com.br` se
 **Tempo total estimado:** 1h-2h de ação + 1h-24h de propagação DNS.
 
 **O que você vai precisar antes:**
+
 - Login do portal Hostgator (`portalcliente.hostgator.com.br`)
 - Login do cPanel (acessado via portal ou diretamente)
 - Login do GitHub (Javersonr)
@@ -41,23 +42,26 @@ Você vai criar `sigoobras.com.br` como um "domínio adicional" do plano princip
 2. Clique em **"Domínios Adicionais"** (ou "Addon Domains" se o cPanel estiver em inglês)
 3. Vai abrir um formulário com 4 campos:
 
-| Campo | O que preencher |
-|---|---|
-| **Novo Nome de Domínio** | `sigoobras.com.br` |
-| **Subdomínio/prefixo do FTP** | deixe o padrão que ele sugerir (algo como `sigoobras`) |
-| **Document Root** | `public_html/sigoobras` (importante — é exatamente o que vamos usar no deploy) |
-| **Senha** | usa o botão **"Gerador de Senha"** → marca "Eu copiei essa senha" → guarda no Notepad por enquanto |
+| Campo                         | O que preencher                                                                                    |
+| ----------------------------- | -------------------------------------------------------------------------------------------------- |
+| **Novo Nome de Domínio**      | `sigoobras.com.br`                                                                                 |
+| **Subdomínio/prefixo do FTP** | deixe o padrão que ele sugerir (algo como `sigoobras`)                                             |
+| **Document Root**             | `public_html/sigoobras` (importante — é exatamente o que vamos usar no deploy)                     |
+| **Senha**                     | usa o botão **"Gerador de Senha"** → marca "Eu copiei essa senha" → guarda no Notepad por enquanto |
 
 4. Clique em **"Adicionar Domínio"**
 
 ### Resultado esperado:
+
 - Verde no topo: "Sucesso, adicionado o domínio sigoobras.com.br"
 - Aparece na lista de Domínios Adicionais embaixo
 
 ### ⚠ Pode dar este erro:
+
 > "O domínio já está apontado para outro lugar — confirme propriedade"
 
 Se aparecer, é porque o Hostgator detectou que os nameservers do `sigoobras.com.br` estão fora (Cloudflare). Tem 2 opções:
+
 - **Opção 1**: marque a opção "Adicionar mesmo assim" / "Ignorar verificação"
 - **Opção 2**: se não tiver checkbox, **passa pra Etapa C primeiro** (troca os NS pra Hostgator), aguarda 2h e volta aqui
 
@@ -74,17 +78,18 @@ Vamos criar uma conta FTP **isolada** só pra deploys automáticos (não usa a s
 1. cPanel → busca **"FTP"** → clique em **"Contas FTP"**
 2. Formulário:
 
-| Campo | O que preencher |
-|---|---|
-| **Login** | `deploy` |
-| **Domínio** (dropdown ao lado) | escolha `sigoobras.com.br` |
-| **Senha** | botão **"Gerador de Senha"** → 16+ caracteres → **COPIE pro Notepad** |
-| **Diretório** | `/home/<seu-usuario>/public_html/sigoobras` (geralmente já vem preenchido com `public_html/sigoobras` quando você escolhe o domínio acima) |
-| **Quota** | "Ilimitado" |
+| Campo                          | O que preencher                                                                                                                            |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Login**                      | `deploy`                                                                                                                                   |
+| **Domínio** (dropdown ao lado) | escolha `sigoobras.com.br`                                                                                                                 |
+| **Senha**                      | botão **"Gerador de Senha"** → 16+ caracteres → **COPIE pro Notepad**                                                                      |
+| **Diretório**                  | `/home/<seu-usuario>/public_html/sigoobras` (geralmente já vem preenchido com `public_html/sigoobras` quando você escolhe o domínio acima) |
+| **Quota**                      | "Ilimitado"                                                                                                                                |
 
 3. Clique em **"Criar Conta FTP"**
 
 ### Resultado esperado:
+
 - Verde: "Conta criada com sucesso"
 - Lista embaixo mostra `deploy@sigoobras.com.br`
 
@@ -100,6 +105,7 @@ FTP_DIR:  /public_html/sigoobras
 > ⚠ Em alguns servidores o host FTP é o IP do servidor (ex: `br588.hostgator.com.br` ou `108.179.253.173`) em vez de `ftp.sigoobras.com.br`. Depois confirmamos.
 
 ### Como confirmar o host correto:
+
 - Na mesma tela de Contas FTP, ao lado da conta criada, clique em **"Configurar Cliente FTP"**
 - Vai mostrar uma seção com "Configuração FTP Manual" — copie o **"Servidor FTP"** dali. Esse é o valor real do `FTP_HOST`.
 
@@ -123,12 +129,14 @@ Pré-cadastrar significa: deixar tudo pronto na Zona Avançada **antes** de redi
 ### A.4.1 — Adicionar 6 DKIMs
 
 Pra cada registro abaixo:
+
 - Clique em **"Adicionar Registro"** (botão geralmente no topo direito)
 - Preencha conforme a tabela
 - Clique em **"Adicionar Registro"** (confirmação)
 - Repete pro próximo
 
 #### Registro 1: Resend DKIM
+
 ```
 Tipo:    TXT
 Nome:    resend._domainkey
@@ -139,6 +147,7 @@ Valor:   p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC+ys+O4szWenx4ed1FeX1qVFVfJfVHM
 > ⚠ Esse valor é **muito longo** (uma linha só). Copia inteiro. Alguns cPanels truncam visualmente — não tem problema, salva e abre de novo pra conferir.
 
 #### Registro 2: Brevo DKIM 1
+
 ```
 Tipo:    CNAME
 Nome:    brevo1._domainkey
@@ -147,6 +156,7 @@ Valor:   b1.sigoobras-com-br.dkim.brevo.com
 ```
 
 #### Registro 3: Brevo DKIM 2
+
 ```
 Tipo:    CNAME
 Nome:    brevo2._domainkey
@@ -155,6 +165,7 @@ Valor:   b2.sigoobras-com-br.dkim.brevo.com
 ```
 
 #### Registro 4: SendGrid DKIM 1
+
 ```
 Tipo:    CNAME
 Nome:    s1._domainkey
@@ -163,6 +174,7 @@ Valor:   s1.domainkey.u58028738.wl239.sendgrid.net
 ```
 
 #### Registro 5: SendGrid DKIM 2
+
 ```
 Tipo:    CNAME
 Nome:    s2._domainkey
@@ -171,6 +183,7 @@ Valor:   s2.domainkey.u58028738.wl239.sendgrid.net
 ```
 
 #### Registro 6: AWS SES feedback
+
 ```
 Tipo:    TXT
 Nome:    titan1._domainkey
@@ -181,6 +194,7 @@ Valor:   feedback-smtp.sa-east-1.amazonses.com
 ### A.4.2 — SPF do subdomínio `send`
 
 #### Registro 7
+
 ```
 Tipo:    TXT
 Nome:    send
@@ -193,6 +207,7 @@ Valor:   v=spf1 include:amazonses.com ~all
 ### A.4.3 — DMARC
 
 #### Registro 8
+
 ```
 Tipo:    TXT
 Nome:    _dmarc
@@ -203,6 +218,7 @@ Valor:   v=DMARC1; p=none; rua=mailto:rua@dmarc.brevo.com
 ### A.4.4 — Verificação Brevo
 
 #### Registro 9
+
 ```
 Tipo:    TXT
 Nome:    @  (ou deixe em branco se aceitar; significa o domínio raiz sigoobras.com.br)
@@ -215,6 +231,7 @@ Valor:   brevo-code:9d4ad8dbd1e993f6454768cc31a01f10
 ### A.4.5 — MX adicionais (backup Titan + bounces SES)
 
 #### Registro 10: Titan backup
+
 ```
 Tipo:      MX
 Nome:      @ (raiz, ou deixe em branco)
@@ -224,6 +241,7 @@ Destino:   mx2.titan.email
 ```
 
 #### Registro 11: SES bounces no `send`
+
 ```
 Tipo:      MX
 Nome:      send
@@ -237,6 +255,7 @@ Destino:   feedback-smtp.sa-east-1.amazonses.com
 > Pule se você não usa SendGrid pra envio (parece que já tem Resend + Brevo + SES, então provavelmente SendGrid não é mais necessário).
 
 #### Registros 12-14 (só se usar SendGrid)
+
 ```
 Tipo: CNAME, Nome: em471,  Valor: u58028738.wl239.sendgrid.net
 Tipo: CNAME, Nome: em846,  Valor: u58028738.wl239.sendgrid.net
@@ -273,6 +292,7 @@ Confirma que o Hostgator vai **receber localmente** os emails (não tentar reenv
 5. Clica em **"Alterar"** / **"Salvar"**
 
 ### Resultado esperado:
+
 - Verde: "Detecção Automática selecionada para sigoobras.com.br"
 
 ---
@@ -292,19 +312,23 @@ URL direta: https://github.com/Javersonr/SIGO-OBRAS/settings/secrets/actions
 ## B.2 — Criar 6 secrets
 
 Pra cada secret:
+
 - Clique no botão verde **"New repository secret"** no topo direito
 - Preencha `Name` (exato) e `Secret` (valor)
 - Clique em **"Add secret"**
 - Volta automático pra lista, e repete pro próximo
 
 ### Secret 1: VITE_SUPABASE_URL
+
 ```
 Name:   VITE_SUPABASE_URL
 Value:  https://fpyvdwpvxrubrkdwrqbs.supabase.co
 ```
 
 ### Secret 2: VITE_SUPABASE_ANON_KEY
+
 Pegar o valor de **uma** das opções:
+
 - **Opção a:** abra `apps/web/.env.example` no seu PC, copia a linha que começa com `VITE_SUPABASE_ANON_KEY=eyJhbGc...`
 - **Opção b:** Dashboard Supabase → https://supabase.com/dashboard/project/fpyvdwpvxrubrkdwrqbs/settings/api → seção **"Project API keys"** → linha **"anon"** → botão **"Copy"**
 
@@ -314,25 +338,30 @@ Value:  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ
 ```
 
 ### Secret 3: HOSTGATOR_FTP_HOST
+
 ```
 Name:   HOSTGATOR_FTP_HOST
 Value:  ftp.sigoobras.com.br
 ```
+
 (Ou o valor que você anotou na A.3 quando viu "Configurar Cliente FTP".)
 
 ### Secret 4: HOSTGATOR_FTP_USER
+
 ```
 Name:   HOSTGATOR_FTP_USER
 Value:  deploy@sigoobras.com.br
 ```
 
 ### Secret 5: HOSTGATOR_FTP_PASS
+
 ```
 Name:   HOSTGATOR_FTP_PASS
 Value:  (a senha forte que você gerou na A.3)
 ```
 
 ### Secret 6: HOSTGATOR_FTP_DIR
+
 ```
 Name:   HOSTGATOR_FTP_DIR
 Value:  /public_html/sigoobras/
@@ -341,7 +370,9 @@ Value:  /public_html/sigoobras/
 > ⚠ A barra final `/` é importante.
 
 ### Conferência B.2
+
 A lista de secrets deve ter exatamente esses 6 nomes:
+
 - ✓ HOSTGATOR_FTP_DIR
 - ✓ HOSTGATOR_FTP_HOST
 - ✓ HOSTGATOR_FTP_PASS
@@ -360,6 +391,7 @@ A lista de secrets deve ter exatamente esses 6 nomes:
    - Clica no botão verde **"Run workflow"**
 
 ### O que vai acontecer:
+
 - Em ~30s aparece um novo "run" em amarelo na lista
 - Clica nele pra ver progresso
 - Vai passar por etapas:
@@ -374,23 +406,26 @@ A lista de secrets deve ter exatamente esses 6 nomes:
 **Total: ~3-5 min.**
 
 ### Resultado esperado:
+
 - Bolinha verde ✓ ao lado do run
 - Mensagem final: "Deploy concluído. Site: https://sigoobras.com.br"
 
 ### Se der erro:
-| Erro | Causa | Solução |
-|---|---|---|
-| `Error: Login authentication failed` no step FTP | Senha FTP errada nos secrets | Volte na A.3, reseta senha, atualiza secret HOSTGATOR_FTP_PASS |
-| `unable to verify the first certificate` | FTP com SSL não match | Geralmente passa retry; se persistir, troca FTP_HOST pra IP do servidor |
-| `dist/.htaccess ausente` | Pasta `public/` não foi pro build | Confirma que `apps/web/public/.htaccess` existe no repo |
-| `VITE_SUPABASE_URL undefined` | Secret não foi criado ou nome errado | Re-confere B.2 |
-| Timeout no Build | Lento (raro) | Re-roda |
+
+| Erro                                             | Causa                                | Solução                                                                 |
+| ------------------------------------------------ | ------------------------------------ | ----------------------------------------------------------------------- |
+| `Error: Login authentication failed` no step FTP | Senha FTP errada nos secrets         | Volte na A.3, reseta senha, atualiza secret HOSTGATOR_FTP_PASS          |
+| `unable to verify the first certificate`         | FTP com SSL não match                | Geralmente passa retry; se persistir, troca FTP_HOST pra IP do servidor |
+| `dist/.htaccess ausente`                         | Pasta `public/` não foi pro build    | Confirma que `apps/web/public/.htaccess` existe no repo                 |
+| `VITE_SUPABASE_URL undefined`                    | Secret não foi criado ou nome errado | Re-confere B.2                                                          |
+| Timeout no Build                                 | Lento (raro)                         | Re-roda                                                                 |
 
 ## B.4 — Confirmar que os arquivos chegaram no servidor
 
 Você pode confirmar de 2 jeitos:
 
 ### Opção 1: via cPanel File Manager
+
 1. cPanel → **"Gerenciador de Arquivos"** (File Manager)
 2. Navega pra `public_html/sigoobras/`
 3. Deve ver: `index.html`, pasta `assets/`, `.htaccess`, `vite.svg` etc.
@@ -398,10 +433,13 @@ Você pode confirmar de 2 jeitos:
 ### Opção 2: via URL direta (só funciona ANTES da troca de NS, usando um IP-based path do servidor)
 
 Hostgator geralmente expõe sites antes do DNS via uma URL tipo:
+
 ```
 http://<seu-usuario-cpanel>.br588.hostgator.com.br/sigoobras/
 ```
+
 ou
+
 ```
 http://<IP-servidor>/~<seu-usuario-cpanel>/sigoobras/
 ```
@@ -436,6 +474,7 @@ http://<IP-servidor>/~<seu-usuario-cpanel>/sigoobras/
 10. Clica em **"Salvar"** / **"Alterar"** / **"Atualizar"**
 
 ### Resultado esperado:
+
 - Mensagem verde: "Servidores de nome atualizados com sucesso"
 - A tela mostra os novos NS
 
@@ -448,10 +487,12 @@ Enquanto propaga, **o site ainda mostra o Mocha pra alguns usuários, e o novo S
 ### Como acompanhar a propagação:
 
 #### Opção 1: navegador
+
 - https://www.whatsmydns.net/#NS/sigoobras.com.br
 - Conforme as bandeirinhas globais ficam verdes (mostram ns588/ns589), a propagação avança
 
 #### Opção 2: terminal
+
 ```bash
 nslookup -type=NS sigoobras.com.br
 # Deve mostrar: ns588.hostgator.com.br + ns589.hostgator.com.br
@@ -474,6 +515,7 @@ Depois que a propagação DNS chegar (verifica acima), o cPanel pode emitir SSL 
    - Aguarda 1-3 min
 
 ### Resultado esperado:
+
 - Status verde "AutoSSL Domain Validated" para ambos
 - Pode levar até 10-15 min pra fluxo completo
 
@@ -487,6 +529,7 @@ Depois que a propagação DNS chegar (verifica acima), o cPanel pode emitir SSL 
    - ✓ Header com logo / título "SIGO OBRAS"
 
 ### Teste de SPA fallback (refresh em rota interna):
+
 1. Tente acessar uma rota direta: `https://sigoobras.com.br/financeiro`
 2. Deve mostrar tela de login (porque não está logado), NÃO 404
 3. Se aparecer "404 Not Found", o `.htaccess` não foi pro servidor — volta na B.4 e confere
@@ -494,12 +537,14 @@ Depois que a propagação DNS chegar (verifica acima), o cPanel pode emitir SSL 
 ## C.5 — Testar email
 
 ### Recebimento:
+
 1. Manda um email de teste de um Gmail (ou outro provider) externo para `contato@sigoobras.com.br` (ou outro email que você tenha)
 2. Aguarda 1-2 min
 3. Acessa https://webmail.sigoobras.com.br → entra com login do email
 4. Deve estar lá
 
 ### Envio:
+
 1. No webmail, manda um teste pro seu Gmail
 2. No Gmail, abre o email
 3. Clica nos 3 pontinhos → **"Mostrar original"** ou **"Show original"**
@@ -517,14 +562,14 @@ Se algum FAIL → revisa registros DKIM/SPF no doc DNS-CHECKLIST.
 
 Use https://mxtoolbox.com/SuperTool.aspx (gratuito, sem login) pra confirmar:
 
-| Teste | Esperado |
-|---|---|
-| `MX Lookup` sigoobras.com.br | Ver os MX prio 0 (Hostgator), 20 (Titan), 10 (SES bounces no send) |
-| `SPF Record Lookup` sigoobras.com.br | Resposta com `v=spf1...` |
-| `DKIM Lookup` resend._domainkey.sigoobras.com.br | Valor com `p=MIGfMA...` |
-| `DMARC Lookup` sigoobras.com.br | `v=DMARC1; p=none; rua=...` |
-| `DNS Lookup` sigoobras.com.br | IP do servidor Hostgator (108.x.x.x) |
-| `Blacklist Check` | 0 listas (todo OK) |
+| Teste                                             | Esperado                                                           |
+| ------------------------------------------------- | ------------------------------------------------------------------ |
+| `MX Lookup` sigoobras.com.br                      | Ver os MX prio 0 (Hostgator), 20 (Titan), 10 (SES bounces no send) |
+| `SPF Record Lookup` sigoobras.com.br              | Resposta com `v=spf1...`                                           |
+| `DKIM Lookup` resend.\_domainkey.sigoobras.com.br | Valor com `p=MIGfMA...`                                            |
+| `DMARC Lookup` sigoobras.com.br                   | `v=DMARC1; p=none; rua=...`                                        |
+| `DNS Lookup` sigoobras.com.br                     | IP do servidor Hostgator (108.x.x.x)                               |
+| `Blacklist Check`                                 | 0 listas (todo OK)                                                 |
 
 ---
 
@@ -548,6 +593,7 @@ Aguardo confirmação. Obrigado.
 ## Atualizar o bot WhatsApp (SIGO-WHATSAPP-BOT)
 
 O bot em `C:\Users\javer\SIGO-WHATSAPP-BOT\` está apontando pra Mocha:
+
 ```
 MOCHA_OCR_URL=https://sigoobras2.mocha.app/api/ocr-receber-arquivo
 ```
@@ -558,16 +604,16 @@ Vai precisar atualizar pra apontar pra uma Edge Function do Supabase quando ela 
 
 # 🆘 Se algo der errado
 
-| Sintoma | Diagnóstico rápido | Solução |
-|---|---|---|
-| `sigoobras.com.br` mostra "Default Page cPanel" | Build não chegou ao servidor | Confere se workflow GitHub passou; arquivo `index.html` em `public_html/sigoobras/`? |
-| Erro de SSL `ERR_CERT_AUTHORITY_INVALID` | Let's Encrypt ainda não emitiu | Espera 30 min, ou força em SSL/TLS Status |
-| Refresh em `/financeiro` dá 404 | `.htaccess` ausente ou `mod_rewrite` off | Confere `.htaccess` no `public_html/sigoobras/`; cPanel → Apache Modules → mod_rewrite |
-| Email não chega | Email Routing errado, ou MX errado, ou Spam | Confere A.5 (Local Mail Exchanger), mxtoolbox |
-| Email chega mas SPF/DKIM FAIL | Registros DKIM/SPF errados | Revisa A.4 — tab da Zona Avançada |
-| Login no app falha mesmo com dados certos | Edge Function `login-custom` ainda não existe | Esperado por enquanto. Próxima fase |
-| `Mocha continua aparecendo em vez do novo site` | DNS ainda propagando | Espera mais; testa em aba anônima; testa em outro dispositivo/rede |
-| `Login_FAILED` no FTP do workflow GH | Senha errada nos secrets | Reseta FTP pwd em cPanel → atualiza secret |
+| Sintoma                                         | Diagnóstico rápido                            | Solução                                                                                |
+| ----------------------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `sigoobras.com.br` mostra "Default Page cPanel" | Build não chegou ao servidor                  | Confere se workflow GitHub passou; arquivo `index.html` em `public_html/sigoobras/`?   |
+| Erro de SSL `ERR_CERT_AUTHORITY_INVALID`        | Let's Encrypt ainda não emitiu                | Espera 30 min, ou força em SSL/TLS Status                                              |
+| Refresh em `/financeiro` dá 404                 | `.htaccess` ausente ou `mod_rewrite` off      | Confere `.htaccess` no `public_html/sigoobras/`; cPanel → Apache Modules → mod_rewrite |
+| Email não chega                                 | Email Routing errado, ou MX errado, ou Spam   | Confere A.5 (Local Mail Exchanger), mxtoolbox                                          |
+| Email chega mas SPF/DKIM FAIL                   | Registros DKIM/SPF errados                    | Revisa A.4 — tab da Zona Avançada                                                      |
+| Login no app falha mesmo com dados certos       | Edge Function `login-custom` ainda não existe | Esperado por enquanto. Próxima fase                                                    |
+| `Mocha continua aparecendo em vez do novo site` | DNS ainda propagando                          | Espera mais; testa em aba anônima; testa em outro dispositivo/rede                     |
+| `Login_FAILED` no FTP do workflow GH            | Senha errada nos secrets                      | Reseta FTP pwd em cPanel → atualiza secret                                             |
 
 ---
 

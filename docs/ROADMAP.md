@@ -9,7 +9,7 @@
 
 ## Fases
 
-### Fase 0 — Setup do monorepo  ✅ (em andamento)
+### Fase 0 — Setup do monorepo ✅ (em andamento)
 
 - [x] Reorganizar código em monorepo (`apps/web`, `supabase`, `workers`, `shared`, `legacy`, `tools`, `docs`)
 - [x] `package.json` raiz com workspaces
@@ -106,10 +106,10 @@ Estratégia: **dual-write** durante ~1 semana.
 
 ## Riscos principais
 
-| Risco | Mitigação |
-|---|---|
-| Entities não documentadas no zip | Fase 1 bloqueante: rodar `tools/export-base44.mjs` com admin Base44 |
-| Storage Base44 (comprovantes, certificados) | Script de export baixa todos os arquivos referenciados |
-| Senha dual-write (SHA-256 vs bcrypt) | Fase 2: rehash transparente no próximo login |
-| Limites Hostgator shared | Tudo dinâmico vai pro Supabase/Railway — Hostgator só serve estáticos |
-| CORS / cookies cross-domain | Configurar Allowed Origins no Supabase desde a Fase 0 |
+| Risco                                       | Mitigação                                                             |
+| ------------------------------------------- | --------------------------------------------------------------------- |
+| Entities não documentadas no zip            | Fase 1 bloqueante: rodar `tools/export-base44.mjs` com admin Base44   |
+| Storage Base44 (comprovantes, certificados) | Script de export baixa todos os arquivos referenciados                |
+| Senha dual-write (SHA-256 vs bcrypt)        | Fase 2: rehash transparente no próximo login                          |
+| Limites Hostgator shared                    | Tudo dinâmico vai pro Supabase/Railway — Hostgator só serve estáticos |
+| CORS / cookies cross-domain                 | Configurar Allowed Origins no Supabase desde a Fase 0                 |

@@ -65,6 +65,7 @@ supabase db dump --schema public --data-only=false | head -100
 ```
 
 Se houver tabelas legadas e for OK perder, **resetar** (DESTRUTIVO):
+
 ```bash
 supabase db reset --linked
 # Isso APAGA o banco e re-aplica todas as migrations limpas
@@ -81,6 +82,7 @@ psql "<DB_URL>" < supabase/seed-storage.sql
 ```
 
 Buckets criados (ver `supabase/seed-storage.sql`):
+
 - `comprovantes` — imagens/PDFs anexados a pre_lancamento e transacao_anexo
 - `certificados` — certificados de treinamento, ASOs
 - `laudos` — laudos técnicos de ferramentas
@@ -101,22 +103,29 @@ Cada bucket tem policy `tenant_isolation_<bucket>` que só permite upload/downlo
 ## Fase 5 — Configurar Auth
 
 ### 5a. Provider e fluxos
+
 Dashboard → Authentication → Providers
+
 - [ ] Email/password: habilitado (default)
 - [ ] Confirmation email: **desativar** inicialmente (vamos usar fluxo customizado de convite)
 - [ ] Magic links: opcional
 
 ### 5b. Email templates
+
 Dashboard → Authentication → Email Templates
+
 - Personalizar com logo/cores SIGO Obras
 - Templates a editar: Confirm signup, Reset password, Magic link, Invite user
 
 ### 5c. SMTP (custom)
+
 Dashboard → Project Settings → Auth → SMTP Settings
+
 - Configurar com seu provedor de email (Resend, SendGrid, ou SMTP da Hostgator)
 - Sem isso, Supabase usa SMTP padrão com rate limit baixo (4 emails/h)
 
 ### 5d. JWT Claims
+
 A Edge Function `login-custom` (Fase 7) será responsável por setar `empresa_id` no `app_metadata` do JWT após login. Isso é o que faz a RLS funcionar.
 
 ---
@@ -126,6 +135,7 @@ A Edge Function `login-custom` (Fase 7) será responsável por setar `empresa_id
 Dashboard → Project Settings → API → CORS Allowed Origins
 
 Adicionar:
+
 ```
 https://sigoobras.com.br
 https://www.sigoobras.com.br
@@ -140,6 +150,7 @@ Salvar. Efeito imediato.
 ## Fase 7 — Edge Functions
 
 Estrutura (ainda não criadas — vão na Fase 4 do roadmap):
+
 ```
 supabase/functions/
 ├── login-custom/
@@ -150,6 +161,7 @@ supabase/functions/
 ```
 
 Deploy:
+
 ```bash
 supabase functions deploy login-custom
 supabase functions deploy webhook-asaas
@@ -157,6 +169,7 @@ supabase functions deploy webhook-asaas
 ```
 
 Secrets das functions:
+
 ```bash
 supabase secrets set ASAAS_API_KEY=...
 supabase secrets set ASSINAFY_API_KEY=...
@@ -169,6 +182,7 @@ supabase secrets set FOCUSNFE_API_KEY=...
 ```
 
 Listar:
+
 ```bash
 supabase secrets list
 ```
@@ -178,6 +192,7 @@ supabase secrets list
 ## Fase 8 — Importar dados (seed)
 
 Opção A: do backup xlsx (`tools/seed-from-xlsx.mjs`):
+
 ```bash
 cd tools
 # .env com SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (de Dashboard → Settings → API → service_role)
@@ -186,6 +201,7 @@ npm run seed:from-xlsx
 ```
 
 Opção B: do export Base44 live (`tools/export-base44.mjs` + script de import a criar):
+
 ```bash
 # 1. exporta tudo do Base44
 npm run export:base44
@@ -228,6 +244,7 @@ select cron.schedule(
 ## Fase 10 — Backups
 
 Dashboard → Database → Backups
+
 - Free tier: 7 dias de backup automático (Point-in-Time Recovery limitado)
 - Pro tier: 30 dias PITR
 - Backup manual: `supabase db dump --linked > backup-$(date +%F).sql` periodicamente
@@ -251,11 +268,11 @@ Dashboard → Database → Backups
 
 ## Troubleshooting
 
-| Sintoma | Solução |
-|---|---|
-| `project is paused` | Despausar no dashboard, Fase 1 |
-| `Database password mismatch` | Settings → Database → Reset DB Password |
-| `migration X already applied` | `supabase migration repair --status applied <timestamp>` |
-| `relation already exists` | Banco tem schema legado — `supabase db reset --linked` se for OK perder, ou criar migration de cleanup |
-| `permission denied for schema public` | Usar service_role_key, não anon key |
-| `JWT expired` | Renovar token: `supabase login` |
+| Sintoma                               | Solução                                                                                                |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `project is paused`                   | Despausar no dashboard, Fase 1                                                                         |
+| `Database password mismatch`          | Settings → Database → Reset DB Password                                                                |
+| `migration X already applied`         | `supabase migration repair --status applied <timestamp>`                                               |
+| `relation already exists`             | Banco tem schema legado — `supabase db reset --linked` se for OK perder, ou criar migration de cleanup |
+| `permission denied for schema public` | Usar service_role_key, não anon key                                                                    |
+| `JWT expired`                         | Renovar token: `supabase login`                                                                        |

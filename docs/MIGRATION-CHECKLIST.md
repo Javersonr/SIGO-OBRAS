@@ -38,14 +38,17 @@ Lista de coisas práticas — credenciais, contas, decisões — que precisam es
 ## Antes de cada fase
 
 ### Fase 1
+
 - [ ] Backup completo do Base44 (snapshot além do export do script)
 - [ ] Confirmar que `tools/dump/` não vai pro git (já está no `.gitignore`)
 
 ### Fase 7 (deploy Hostgator)
+
 - [ ] Definir build target Vite (default `es2020` deve servir)
 - [ ] Configurar variáveis de produção (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`)
 - [ ] Adicionar `https://sigoobras.com.br` em Allowed Origins do Supabase
 
 ### Fase 8 (cutover)
+
 - [ ] Avisar usuários sobre janela de instabilidade
 - [ ] Ter rollback documentado (DNS pode voltar pra Base44 em <5min)
