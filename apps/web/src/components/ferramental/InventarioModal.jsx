@@ -397,7 +397,6 @@ export default function InventarioModal({
 
       // Adicionar direto ao inventário
       const novoItem = {
-        id: Date.now(),
         ...dados,
         id: novaFerramenta.id,
         quantidade: parseInt(quantidadeConfirmada || 1),
