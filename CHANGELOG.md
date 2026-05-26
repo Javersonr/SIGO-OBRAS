@@ -17,10 +17,17 @@ e este projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - Documentação operacional completa: roteiros de deploy (Supabase, Hostgator, Cloudflare Pages), DNS checklist, cutover passo-a-passo
 - Infraestrutura de qualidade: Conventional Commits, Prettier, EditorConfig, husky, lint-staged
 
+### Mudanças de design
+
+- **Auth sem reset por email** (decisão 2026-05-26): substituído por senha provisória + troca no primeiro acesso. Ver `docs/AUTH-FLUXO.md`. Migration 0016 adicionou coluna `senha_provisoria` em `usuario_custom`, `cliente_portal_usuario`, `fornecedor_acesso`. Descarta 6 functions Base44 (`solicitarResetSenha`, `redefinirSenha`, `validarTokenReset`, `enviarResetSenhaAdmin`, `enviarTokenRecuperacaoEmail`, `enviarTokenRecuperacaoEmailCustom`). Elimina dependência de provider de email transacional (Resend/SES) pro fluxo de auth.
+
 ### Pendente
 
-- Edge Function `login-custom` (auth multi-empresa)
-- Cutover de DNS Cloudflare → Hostgator
+- Edge Function `login-custom` (auth multi-empresa com `must_change_password` no JWT)
+- Edge Function `alterar-senha` (usuário muda própria senha)
+- Edge Function `redefinir-senha-admin` (admin gera nova senha provisória)
+- Frontend: `MudarSenhaProvisoria` + ajuste do `ProtectedRoute` + tela `EsqueciSenha` informativa
+- Cutover de DNS Cloudflare → Hostgator (em andamento)
 - Importação dos dados produtivos das ~13 empresas do Mocha/Base44
 
 [Unreleased]: https://github.com/Javersonr/SIGO-OBRAS/commits/master

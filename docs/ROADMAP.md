@@ -31,11 +31,18 @@
 
 Migrar auth customizado (`UsuarioCustom` + `UsuarioEmpresa` + `ClientePortalUsuario`) para Supabase Auth + tabelas de perfil.
 
-- [ ] Migrar `loginCustom` → Supabase Auth (provider `email`)
-- [ ] Recriar fluxo de convites (`convidarUsuario`, `validarTokenConvite`, `concluirPrimeiroAcesso`)
-- [ ] Recriar reset de senha (`solicitarResetSenha`, `redefinirSenha`)
+**Decisão (2026-05-26):** sem reset de senha por email — substituído por **senha provisória + troca no primeiro login**. Ver [`AUTH-FLUXO.md`](./AUTH-FLUXO.md).
+
+- [x] Migration 0016: coluna `senha_provisoria` em `usuario_custom`, `cliente_portal_usuario`, `fornecedor_acesso`
+- [ ] Edge Function `login-custom` — autentica + retorna JWT com `must_change_password` na app_metadata
+- [ ] Edge Function `alterar-senha` — usuário muda própria senha; seta `senha_provisoria = false`
+- [ ] Edge Function `redefinir-senha-admin` — admin gera nova senha provisória
+- [ ] Frontend: componente `MudarSenhaProvisoria` + `ProtectedRoute` que detecta `must_change_password`
+- [ ] Frontend: refazer `EsqueciSenha.jsx` como tela informativa (sem fluxo de reset)
 - [ ] Manter hierarquia super_admin → GrupoEmpresarial (holding) → Empresa → UsuarioEmpresa → ClientePortalUsuario
-- [ ] Política de hash: Supabase Auth usa bcrypt — durante dual-write, manter `senha_hash` (SHA-256) sincronizado
+- [ ] Política de hash: bcrypt no Supabase. Durante migração de dados Base44, rehash transparente no primeiro login (SHA-256 → bcrypt)
+- [ ] ~~Recriar fluxo de tokens de reset por email~~ — **DESCARTADO**
+- [ ] ~~Provisionar provider de email transacional (Resend/SES)~~ — **DESCARTADO** (não necessário pro auth)
 
 ### Fase 3 — Wrapper SDK (`shared/sdk`)
 

@@ -44,6 +44,12 @@
 | [DNS-CHECKLIST-HOSTGATOR.md](./DNS-CHECKLIST-HOSTGATOR.md) | Lista exata dos registros DNS a migrar              | Oficial   |
 | [CUTOVER-PASSO-A-PASSO.md](./CUTOVER-PASSO-A-PASSO.md)     | Guia operacional clique-a-clique                    | Oficial   |
 
+### Auth & Segurança
+
+| Documento                        | Descrição                                                | Status  |
+| -------------------------------- | -------------------------------------------------------- | ------- |
+| [AUTH-FLUXO.md](./AUTH-FLUXO.md) | Fluxo sem reset por email — senha provisória + 1º acesso | Oficial |
+
 ### Referências técnicas (em `legacy/`)
 
 | Documento                                                         | Descrição                                            |
