@@ -31,16 +31,9 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: |
-            apps/web/package-lock.json
-            shared/sdk/package-lock.json
+          # npm workspaces: lockfile único na raiz
 
-      - name: Install web deps
-        working-directory: apps/web
-        run: npm ci
-
-      - name: Install sdk deps
-        working-directory: shared/sdk
+      - name: Install all workspaces
         run: npm ci
 
       - name: Build Vite (production)
@@ -48,6 +41,8 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_LEGACY_APP_ID: ${{ secrets.VITE_LEGACY_APP_ID }}
+          VITE_LEGACY_APP_BASE_URL: ${{ secrets.VITE_LEGACY_APP_BASE_URL }}
           VITE_APP_BASE_URL: https://sigoobras.com.br
           VITE_APP_NAME: SIGO Obras
           VITE_DATA_BACKEND: supabase
@@ -62,12 +57,13 @@ jobs:
       - name: Deploy via FTP to Hostgator
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.HOSTGATOR_FTP_HOST }} # ex: ftp.sigoobras.com.br
+          server: ${{ secrets.HOSTGATOR_FTP_HOST }}
           username: ${{ secrets.HOSTGATOR_FTP_USER }}
           password: ${{ secrets.HOSTGATOR_FTP_PASS }}
-          server-dir: ${{ secrets.HOSTGATOR_FTP_DIR }} # ex: /public_html/  ou  /public_html/sigoobras/
+          server-dir: ${{ secrets.HOSTGATOR_FTP_DIR }}
           local-dir: apps/web/dist/
-          dangerous-clean-slate: false # NÃO apaga tudo da pasta destino (preserva outros arquivos)
+          # NÃO apaga tudo da pasta destino (preserva outros arquivos como .well-known/)
+          dangerous-clean-slate: false
           exclude: |
             **/.git*
             **/.git*/**
@@ -78,7 +74,7 @@ jobs:
         if: always()
         run: |
           if [ "${{ job.status }}" = "success" ]; then
-            echo "::notice::Deploy concluído. Site: https://sigoobras.com.br"
+            echo "::notice::✅ Deploy concluído. Site: https://sigoobras.com.br"
           else
             echo "::error::Deploy falhou — ver logs acima"
           fi
