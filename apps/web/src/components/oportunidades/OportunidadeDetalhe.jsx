@@ -499,12 +499,13 @@ export default function OportunidadeDetalhe({
                     {selectedOp.descricao && (
                       <div className="border-t pt-4">
                         <Label className="text-slate-500">{"Descri\u00e7\u00e3o"}</Label>
-                        <div
-                          className="mt-2 p-4 bg-slate-50 rounded-lg prose prose-sm max-w-none text-slate-700 whitespace-pre-wrap break-words"
-                          dangerouslySetInnerHTML={{
-                            __html: selectedOp.descricao?.replace(/\n/g, "<br/>"),
-                          }}
-                        />
+                        {/* React escapa HTML automaticamente; whitespace-pre-wrap
+                            preserva quebras de linha sem precisar de <br/> manual.
+                            ANTES: dangerouslySetInnerHTML deixava aberto pra XSS
+                            se algum admin colasse HTML/script na descri\u00e7\u00e3o. */}
+                        <div className="mt-2 p-4 bg-slate-50 rounded-lg prose prose-sm max-w-none text-slate-700 whitespace-pre-wrap break-words">
+                          {selectedOp.descricao}
+                        </div>
                       </div>
                     )}
                   </TabsContent>

@@ -32,7 +32,11 @@ export default function EntrarSistema() {
         if (userData && userData.id && userData.empresa_id) {
           navigate(createPageUrl("Dashboard"), { replace: true });
         }
-      } catch {
+      } catch (e) {
+        console.warn(
+          "[EntrarSistema] custom_auth no sessionStorage está corrompido, limpando:",
+          e?.message
+        );
         sessionStorage.clear();
       }
     }
@@ -92,7 +96,16 @@ export default function EntrarSistema() {
           navigate(createPageUrl("HistoricoCotacoes"), { replace: true });
           return;
         }
-      } catch {}
+      } catch (fornErr) {
+        // Falha normal se o usuário não for fornecedor — não é erro.
+        // Mas logamos pra debug em caso de erro de rede/CORS/etc.
+        if (fornErr?.message && !/credenciais|inv[áa]lid/i.test(fornErr.message)) {
+          console.warn(
+            "[EntrarSistema] autenticarFornecedor falhou (esperado se o user não é fornecedor):",
+            fornErr.message
+          );
+        }
+      }
 
       // Se não for fornecedor, tentar login interno
       const response = await sigo.functions.invoke("loginCustom", {
@@ -136,10 +149,6 @@ export default function EntrarSistema() {
     setError("");
 
     try {
-      console.log("=== SELEÇÃO DE EMPRESA ===");
-      console.log("Empresa selecionada:", empresa.nome, empresa.id);
-      console.log("Usuario base completo:", usuarioBase);
-
       // Validação: certificar que temos os dados necessários
       if (!usuarioBase || !usuarioBase.id || !usuarioBase.email) {
         setError("Erro: dados do usuário incompletos");
@@ -158,23 +167,14 @@ export default function EntrarSistema() {
         empresa_nome: empresa.nome,
       };
 
-      console.log("Dados do usuário completo a salvar:", JSON.stringify(usuarioCompleto, null, 2));
-
-      // Salvar no sessionStorage
+      // Salvar no sessionStorage (não logamos os dados — privacidade/segurança)
       const authData = {
         ...usuarioCompleto,
         grupo_id: usuarioBase?.grupo_selecionado || usuarioBase?.grupo_id || null,
       };
 
-      console.log("Salvando auth com grupo_id:", authData.grupo_id);
       sessionStorage.setItem("custom_auth", JSON.stringify(authData));
       sessionStorage.setItem("empresa_ativa", empresa.id);
-
-      // Verificar se foi salvo
-      const verificacao = sessionStorage.getItem("custom_auth");
-      console.log("Verificação do que foi salvo:", verificacao);
-
-      console.log("Redirecionando...");
 
       // Se for fornecedor, redirecionar para área de cotações
       if (usuarioCompleto.perfil === "Fornecedor") {

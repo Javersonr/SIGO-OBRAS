@@ -1,5 +1,20 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+
+/**
+ * Escapa caracteres HTML pra prevenir XSS quando interpolamos dados
+ * do banco em template literals de impressão (innerHTML).
+ * Ex: "<script>alert(1)</script>" → "&lt;script&gt;alert(1)&lt;/script&gt;"
+ */
+const escHtml = (val) =>
+  val == null
+    ? ""
+    : String(val)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -280,13 +295,13 @@ export default function AprovacaoModal({
                             .label { font-weight: bold; }
                           }
                         </style>
-                        <h1>Solicitação de Compra - ${solicitacao?.numero || ""}</h1>
-                        
+                        <h1>Solicitação de Compra - ${escHtml(solicitacao?.numero)}</h1>
+
                         <div style="margin: 20px 0;">
-                          <div class="info-row"><span class="label">Solicitante:</span> ${solicitacao?.solicitante_nome || ""}</div>
-                          <div class="info-row"><span class="label">Projeto:</span> ${solicitacao?.projeto_nome || "-"}</div>
+                          <div class="info-row"><span class="label">Solicitante:</span> ${escHtml(solicitacao?.solicitante_nome)}</div>
+                          <div class="info-row"><span class="label">Projeto:</span> ${escHtml(solicitacao?.projeto_nome || "-")}</div>
                           <div class="info-row"><span class="label">Valor Total:</span> R$ ${(solicitacao?.valor_total || 0).toFixed(2)}</div>
-                          <div class="info-row"><span class="label">Prioridade:</span> ${solicitacao?.prioridade || "Normal"}</div>
+                          <div class="info-row"><span class="label">Prioridade:</span> ${escHtml(solicitacao?.prioridade || "Normal")}</div>
                         </div>
 
                         <h2>Itens da Solicitação</h2>
@@ -306,12 +321,12 @@ export default function AprovacaoModal({
                               .map(
                                 (item) => `
                               <tr>
-                                <td>${item.codigo}</td>
-                                <td>${item.descricao}</td>
-                                <td style="text-align: right;">${item.quantidade_editavel}</td>
-                                <td>${item.unidade}</td>
-                                <td style="text-align: right;">R$ ${item.valor_medio.toFixed(2)}</td>
-                                <td style="text-align: right;">${item.quantidade_estoque.toFixed(2)}</td>
+                                <td>${escHtml(item.codigo)}</td>
+                                <td>${escHtml(item.descricao)}</td>
+                                <td style="text-align: right;">${Number(item.quantidade_editavel) || 0}</td>
+                                <td>${escHtml(item.unidade)}</td>
+                                <td style="text-align: right;">R$ ${(Number(item.valor_medio) || 0).toFixed(2)}</td>
+                                <td style="text-align: right;">${(Number(item.quantidade_estoque) || 0).toFixed(2)}</td>
                               </tr>
                             `
                               )

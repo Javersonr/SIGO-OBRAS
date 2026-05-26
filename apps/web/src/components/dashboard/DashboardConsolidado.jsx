@@ -48,12 +48,20 @@ export default function DashboardConsolidado({ grupoId, user }) {
         sigo.asServiceRole.entities.DocumentoEmpresa.filter({ empresa_id: { $in: empresaIds } }),
       ]);
 
-      setVencimentos(vencimentosData);
-      setTransacoes(transacoesData);
-      setPedidos(pedidosData);
-      setDocumentos(documentosData);
+      // Defensivo: se algum filter retornar null/undefined (ex: tabela vazia
+      // ou erro silencioso do supabase-js), evita null nas chamadas .filter()
+      // do filtrarPorEmpresa() abaixo.
+      setVencimentos(vencimentosData || []);
+      setTransacoes(transacoesData || []);
+      setPedidos(pedidosData || []);
+      setDocumentos(documentosData || []);
     } catch (error) {
       console.error("Erro ao carregar dados consolidados:", error);
+      // Garante que os estados ficam em array vazio mesmo se Promise.all rejeita
+      setVencimentos([]);
+      setTransacoes([]);
+      setPedidos([]);
+      setDocumentos([]);
     } finally {
       setLoading(false);
     }
