@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import {
   Package,
@@ -148,17 +148,17 @@ export default function Estoque() {
     setLoading(true);
     try {
       const [mats, almoxs, slds, movs, projs, reservasData, notasDevData] = await Promise.all([
-        base44.entities.Material.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Almoxarifado.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.EstoqueSaldo.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.EstoqueMovimento.filter(
+        sigo.entities.Material.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Almoxarifado.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.EstoqueSaldo.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.EstoqueMovimento.filter(
           { empresa_id: empresaAtiva.id },
           "-created_date",
           100
         ),
-        base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id, arquivado: false }),
-        base44.entities.ReservaMaterial.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.NotaFiscalDevolucao.filter({ empresa_id: empresaAtiva.id }).catch(() => []),
+        sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id, arquivado: false }),
+        sigo.entities.ReservaMaterial.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.NotaFiscalDevolucao.filter({ empresa_id: empresaAtiva.id }).catch(() => []),
       ]);
 
       // Calcular quantidade disponível para cada saldo
@@ -243,9 +243,9 @@ export default function Estoque() {
       };
 
       if (selectedItem) {
-        await base44.entities.Material.update(selectedItem.id, data);
+        await sigo.entities.Material.update(selectedItem.id, data);
       } else {
-        await base44.entities.Material.create(data);
+        await sigo.entities.Material.create(data);
       }
 
       setShowMaterialModal(false);
@@ -259,7 +259,7 @@ export default function Estoque() {
 
   const handleDeleteMaterial = async (mat) => {
     if (!confirm("Excluir este material?")) return;
-    await base44.entities.Material.update(mat.id, { ativo: false });
+    await sigo.entities.Material.update(mat.id, { ativo: false });
     loadData();
   };
 
@@ -290,9 +290,9 @@ export default function Estoque() {
       };
 
       if (selectedItem) {
-        await base44.entities.Almoxarifado.update(selectedItem.id, data);
+        await sigo.entities.Almoxarifado.update(selectedItem.id, data);
       } else {
-        await base44.entities.Almoxarifado.create(data);
+        await sigo.entities.Almoxarifado.create(data);
       }
 
       setShowAlmoxarifadoModal(false);
@@ -376,15 +376,15 @@ export default function Estoque() {
             : saldoExistente.quantidade - movimentoForm.quantidade;
 
         await Promise.all([
-          base44.entities.EstoqueMovimento.create(data),
-          base44.entities.EstoqueSaldo.update(saldoExistente.id, {
+          sigo.entities.EstoqueMovimento.create(data),
+          sigo.entities.EstoqueSaldo.update(saldoExistente.id, {
             quantidade: Math.max(0, novaQtd),
           }),
         ]);
       } else {
         await Promise.all([
-          base44.entities.EstoqueMovimento.create(data),
-          base44.entities.EstoqueSaldo.create({
+          sigo.entities.EstoqueMovimento.create(data),
+          sigo.entities.EstoqueSaldo.create({
             empresa_id: empresaAtiva.id,
             material_id: movimentoForm.material_id,
             material_codigo: material?.codigo,
@@ -904,7 +904,7 @@ export default function Estoque() {
                                 );
                                 Promise.all(
                                   itens.map((r) =>
-                                    base44.entities.ReservaMaterial.update(r.id, {
+                                    sigo.entities.ReservaMaterial.update(r.id, {
                                       status: "Concluída",
                                     })
                                   )
@@ -921,7 +921,7 @@ export default function Estoque() {
                                 );
                                 Promise.all(
                                   itens.map((r) =>
-                                    base44.entities.ReservaMaterial.update(r.id, {
+                                    sigo.entities.ReservaMaterial.update(r.id, {
                                       status: "Cancelada",
                                     })
                                   )
@@ -1876,7 +1876,7 @@ export default function Estoque() {
 
                   // Gerar número e grupo únicos para esta reserva
                   const grupoId = `grp_${Date.now()}`;
-                  const todasReservas = await base44.entities.ReservaMaterial.filter({
+                  const todasReservas = await sigo.entities.ReservaMaterial.filter({
                     empresa_id: empresaAtiva.id,
                   });
                   const proximoNum = (todasReservas.length || 0) + 1;
@@ -1884,7 +1884,7 @@ export default function Estoque() {
 
                   for (const projId of projetosParaReservar) {
                     const proj = projetos.find((p) => p.id === projId);
-                    await base44.entities.ReservaMaterial.create({
+                    await sigo.entities.ReservaMaterial.create({
                       empresa_id: empresaAtiva.id,
                       numero: numeroReserva,
                       grupo_id: grupoId,

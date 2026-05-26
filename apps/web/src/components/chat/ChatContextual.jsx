@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { MessageSquare, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,7 +60,7 @@ export default function ChatContextual({ tipo, contextoId, contextoNome, empresa
       if (tipo === "Solicitacao") filtro.solicitacao_id = contextoId;
       if (tipo === "Tarefa") filtro.pedido_id = contextoId;
 
-      const canais = await base44.entities.CanalChat.filter(filtro);
+      const canais = await sigo.entities.CanalChat.filter(filtro);
 
       if (canais.length > 0) {
         setCanal(canais[0]);
@@ -91,14 +91,14 @@ export default function ChatContextual({ tipo, contextoId, contextoNome, empresa
       ativo: true,
     };
 
-    return await base44.entities.CanalChat.create(data);
+    return await sigo.entities.CanalChat.create(data);
   };
 
   const loadMensagens = async (canalId = canal?.id) => {
     if (!canalId) return;
 
     try {
-      const msgs = await base44.entities.MensagemChat.filter(
+      const msgs = await sigo.entities.MensagemChat.filter(
         { canal_id: canalId },
         "created_date",
         50
@@ -114,7 +114,7 @@ export default function ChatContextual({ tipo, contextoId, contextoNome, empresa
 
     setEnviando(true);
     try {
-      const msg = await base44.entities.MensagemChat.create({
+      const msg = await sigo.entities.MensagemChat.create({
         empresa_id: empresaAtiva.id,
         canal_id: canal.id,
         usuario_id: user.id,
@@ -125,7 +125,7 @@ export default function ChatContextual({ tipo, contextoId, contextoNome, empresa
       });
 
       // Atualizar última mensagem do canal
-      await base44.entities.CanalChat.update(canal.id, {
+      await sigo.entities.CanalChat.update(canal.id, {
         ultima_mensagem: novaMensagem.substring(0, 100),
         ultima_mensagem_data: new Date().toISOString(),
       });

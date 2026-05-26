@@ -1,24 +1,42 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '../Layout';
-import { BarChart3, Target, FolderKanban, ShoppingCart, Package, DollarSign, Shield } from 'lucide-react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import FiltrosRelatorio from '../components/relatorios/FiltrosRelatorio';
-import RelatorioVendas from '../components/relatorios/RelatorioVendas';
-import RelatorioProjetos from '../components/relatorios/RelatorioProjetos';
-import RelatorioCompras from '../components/relatorios/RelatorioCompras';
-import RelatorioEstoque from '../components/relatorios/RelatorioEstoque';
-import RelatorioFinanceiro from '../components/relatorios/RelatorioFinanceiro';
-import RelatorioSeguranca from '../components/relatorios/RelatorioSeguranca';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { useEmpresa } from "../Layout";
+import {
+  BarChart3,
+  Target,
+  FolderKanban,
+  ShoppingCart,
+  Package,
+  DollarSign,
+  Shield,
+} from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import FiltrosRelatorio from "../components/relatorios/FiltrosRelatorio";
+import RelatorioVendas from "../components/relatorios/RelatorioVendas";
+import RelatorioProjetos from "../components/relatorios/RelatorioProjetos";
+import RelatorioCompras from "../components/relatorios/RelatorioCompras";
+import RelatorioEstoque from "../components/relatorios/RelatorioEstoque";
+import RelatorioFinanceiro from "../components/relatorios/RelatorioFinanceiro";
+import RelatorioSeguranca from "../components/relatorios/RelatorioSeguranca";
 
 export default function Relatorios() {
   const { empresaAtiva } = useEmpresa();
   const [loading, setLoading] = useState(true);
   const [modulosLiberados, setModulosLiberados] = useState({});
   const [dados, setDados] = useState({
-    oportunidades: [], projetos: [], solicitacoes: [], cotacoes: [], pedidos: []
+    oportunidades: [],
+    projetos: [],
+    solicitacoes: [],
+    cotacoes: [],
+    pedidos: [],
   });
-  const [filtros, setFiltros] = useState({ dataInicio: '', dataFim: '', usuario: 'all', status: 'all', tipo: 'all' });
+  const [filtros, setFiltros] = useState({
+    dataInicio: "",
+    dataFim: "",
+    usuario: "all",
+    status: "all",
+    tipo: "all",
+  });
 
   useEffect(() => {
     if (empresaAtiva?.id) loadModulos();
@@ -26,19 +44,25 @@ export default function Relatorios() {
 
   const loadModulos = async () => {
     try {
-      const todasAssinaturas = await base44.entities.Assinatura.filter({ empresa_id: empresaAtiva.id });
-      const assinaturas = todasAssinaturas.filter(a => a.status === 'Ativa' || a.status === 'Trial');
+      const todasAssinaturas = await sigo.entities.Assinatura.filter({
+        empresa_id: empresaAtiva.id,
+      });
+      const assinaturas = todasAssinaturas.filter(
+        (a) => a.status === "Ativa" || a.status === "Trial"
+      );
       let modulos = {};
       if (assinaturas.length > 0) {
-        const planos = await base44.entities.Plano.filter({ id: assinaturas[0].plano_id });
+        const planos = await sigo.entities.Plano.filter({ id: assinaturas[0].plano_id });
         if (planos.length > 0 && planos[0].modulos_liberados) {
-          try { modulos = JSON.parse(planos[0].modulos_liberados); } catch {}
+          try {
+            modulos = JSON.parse(planos[0].modulos_liberados);
+          } catch {}
         }
       }
       setModulosLiberados(modulos);
       await loadData(modulos);
     } catch (error) {
-      console.error('Erro ao carregar módulos:', error);
+      console.error("Erro ao carregar módulos:", error);
       setLoading(false);
     }
   };
@@ -47,15 +71,31 @@ export default function Relatorios() {
     setLoading(true);
     try {
       const [ops, projs, sols, cots, peds] = await Promise.all([
-        modulos['Oportunidades'] ? base44.entities.Oportunidade.filter({ empresa_id: empresaAtiva.id }) : Promise.resolve([]),
-        modulos['Projetos'] ? base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id }) : Promise.resolve([]),
-        modulos['Compras'] ? base44.entities.SolicitacaoCompra.filter({ empresa_id: empresaAtiva.id }) : Promise.resolve([]),
-        modulos['Compras'] ? base44.entities.Cotacao.filter({ empresa_id: empresaAtiva.id }) : Promise.resolve([]),
-        modulos['Compras'] ? base44.entities.PedidoCompra.filter({ empresa_id: empresaAtiva.id }) : Promise.resolve([]),
+        modulos["Oportunidades"]
+          ? sigo.entities.Oportunidade.filter({ empresa_id: empresaAtiva.id })
+          : Promise.resolve([]),
+        modulos["Projetos"]
+          ? sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id })
+          : Promise.resolve([]),
+        modulos["Compras"]
+          ? sigo.entities.SolicitacaoCompra.filter({ empresa_id: empresaAtiva.id })
+          : Promise.resolve([]),
+        modulos["Compras"]
+          ? sigo.entities.Cotacao.filter({ empresa_id: empresaAtiva.id })
+          : Promise.resolve([]),
+        modulos["Compras"]
+          ? sigo.entities.PedidoCompra.filter({ empresa_id: empresaAtiva.id })
+          : Promise.resolve([]),
       ]);
-      setDados({ oportunidades: ops, projetos: projs, solicitacoes: sols, cotacoes: cots, pedidos: peds });
+      setDados({
+        oportunidades: ops,
+        projetos: projs,
+        solicitacoes: sols,
+        cotacoes: cots,
+        pedidos: peds,
+      });
     } catch (error) {
-      console.error('Erro ao carregar dados:', error);
+      console.error("Erro ao carregar dados:", error);
     } finally {
       setLoading(false);
     }
@@ -74,26 +114,26 @@ export default function Relatorios() {
       projetos: dados.projetos.filter(filtrarPorData),
       solicitacoes: dados.solicitacoes.filter(filtrarPorData),
       cotacoes: dados.cotacoes.filter(filtrarPorData),
-      pedidos: dados.pedidos.filter(filtrarPorData)
+      pedidos: dados.pedidos.filter(filtrarPorData),
     };
   }, [dados, filtros]);
 
-  const temOportunidades = modulosLiberados['Oportunidades'];
-  const temProjetos = modulosLiberados['Projetos'];
-  const temCompras = modulosLiberados['Compras'];
-  const temEstoque = modulosLiberados['Estoque'];
-  const temFinanceiro = modulosLiberados['Financeiro'];
-  const temSeguranca = modulosLiberados['Segurança do Trabalho'];
+  const temOportunidades = modulosLiberados["Oportunidades"];
+  const temProjetos = modulosLiberados["Projetos"];
+  const temCompras = modulosLiberados["Compras"];
+  const temEstoque = modulosLiberados["Estoque"];
+  const temFinanceiro = modulosLiberados["Financeiro"];
+  const temSeguranca = modulosLiberados["Segurança do Trabalho"];
 
   const abas = [];
-  if (temOportunidades) abas.push('vendas');
-  if (temProjetos) abas.push('projetos');
-  if (temCompras) abas.push('compras');
-  if (temEstoque) abas.push('estoque');
-  if (temFinanceiro) abas.push('financeiro');
-  if (temSeguranca) abas.push('seguranca');
+  if (temOportunidades) abas.push("vendas");
+  if (temProjetos) abas.push("projetos");
+  if (temCompras) abas.push("compras");
+  if (temEstoque) abas.push("estoque");
+  if (temFinanceiro) abas.push("financeiro");
+  if (temSeguranca) abas.push("seguranca");
 
-  const defaultTab = abas[0] || '';
+  const defaultTab = abas[0] || "";
 
   if (!empresaAtiva) return null;
 
@@ -101,7 +141,9 @@ export default function Relatorios() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Relatórios</h1>
-        <p className="text-slate-500 text-sm">Análises e métricas do seu negócio com exportação em PDF e Excel</p>
+        <p className="text-slate-500 text-sm">
+          Análises e métricas do seu negócio com exportação em PDF e Excel
+        </p>
       </div>
 
       <FiltrosRelatorio filtros={filtros} onFiltrosChange={setFiltros} />

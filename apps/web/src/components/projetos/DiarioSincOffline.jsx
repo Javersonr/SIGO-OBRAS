@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Upload, WifiOff, Loader } from "lucide-react";
@@ -42,7 +42,7 @@ export default function DiarioSincOffline({ onFotosSincronizadas }) {
       for (const foto of fotosPendentes) {
         const blob = await (await fetch(foto.dataUrl)).blob();
         const file = new File([blob], "foto_obra.jpg", { type: "image/jpeg" });
-        const result = await base44.integrations.Core.UploadFile({ file });
+        const result = await sigo.integrations.Core.UploadFile({ file });
         urls.push(result.file_url);
         marcarFotoEnviada(foto.id);
       }

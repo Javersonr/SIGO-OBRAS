@@ -1,24 +1,37 @@
-import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CheckCircle2, Upload, X } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import React, { useState, useEffect } from "react";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { CheckCircle2, Upload, X } from "lucide-react";
+import { sigo } from "@/api/sigoClient";
 
-export default function ModalPagamento({ open, onOpenChange, despesa, empresaAtiva, onConfirm, onExcluir }) {
-  const [dataPagamento, setDataPagamento] = useState('');
-  const [formaPagamento, setFormaPagamento] = useState('');
-  const [comprovanteUrl, setComprovanteUrl] = useState('');
+export default function ModalPagamento({
+  open,
+  onOpenChange,
+  despesa,
+  empresaAtiva,
+  onConfirm,
+  onExcluir,
+}) {
+  const [dataPagamento, setDataPagamento] = useState("");
+  const [formaPagamento, setFormaPagamento] = useState("");
+  const [comprovanteUrl, setComprovanteUrl] = useState("");
   const [uploading, setUploading] = useState(false);
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
     if (open && !dataPagamento) {
-      setDataPagamento(new Date().toISOString().split('T')[0]);
-      setFormaPagamento(despesa?.forma_pagamento || '');
-      setComprovanteUrl('');
+      setDataPagamento(new Date().toISOString().split("T")[0]);
+      setFormaPagamento(despesa?.forma_pagamento || "");
+      setComprovanteUrl("");
       setUploading(false);
       setSalvando(false);
     }
@@ -29,10 +42,10 @@ export default function ModalPagamento({ open, onOpenChange, despesa, empresaAti
     if (!file) return;
     setUploading(true);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       setComprovanteUrl(file_url);
     } catch (err) {
-      alert('Erro ao fazer upload: ' + err.message);
+      alert("Erro ao fazer upload: " + err.message);
     } finally {
       setUploading(false);
     }
@@ -40,15 +53,15 @@ export default function ModalPagamento({ open, onOpenChange, despesa, empresaAti
 
   const handleConfirmar = async () => {
     if (!dataPagamento) {
-      alert('Informe a data de pagamento.');
+      alert("Informe a data de pagamento.");
       return;
     }
     setSalvando(true);
     try {
       // Só atualiza no banco se for pagamento da despesa inteira (não de parcela individual)
       if (despesa?.id && despesa?._parcelaIndex === undefined) {
-        await base44.entities.TransacaoFinanceira.update(despesa.id, {
-          status: 'Realizado',
+        await sigo.entities.TransacaoFinanceira.update(despesa.id, {
+          status: "Realizado",
           data_pagamento: dataPagamento,
           ...(formaPagamento ? { forma_pagamento: formaPagamento } : {}),
         });
@@ -56,7 +69,7 @@ export default function ModalPagamento({ open, onOpenChange, despesa, empresaAti
       onOpenChange(false);
       if (onConfirm) onConfirm(dataPagamento, comprovanteUrl);
     } catch (err) {
-      alert('Erro ao confirmar pagamento: ' + err.message);
+      alert("Erro ao confirmar pagamento: " + err.message);
     } finally {
       setSalvando(false);
     }
@@ -70,15 +83,15 @@ export default function ModalPagamento({ open, onOpenChange, despesa, empresaAti
         data-fullscreen-modal
         className="!fixed !inset-auto !left-1/2 !top-1/2 !-translate-x-1/2 !-translate-y-1/2 !w-full !max-w-md !h-auto !max-h-[90vh] !rounded-xl !border !shadow-2xl flex flex-col overflow-hidden p-0"
         style={{
-          position: 'fixed',
-          left: '50%',
-          top: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: '100%',
-          maxWidth: '480px',
-          height: 'auto',
-          maxHeight: '90vh',
-          borderRadius: '12px',
+          position: "fixed",
+          left: "50%",
+          top: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "100%",
+          maxWidth: "480px",
+          height: "auto",
+          maxHeight: "90vh",
+          borderRadius: "12px",
         }}
       >
         {/* Header */}
@@ -87,19 +100,18 @@ export default function ModalPagamento({ open, onOpenChange, despesa, empresaAti
             <h2 className="text-lg font-semibold text-slate-800">
               {isParcela
                 ? `Confirmar Pagamento — Parcela ${(despesa?._parcelaIndex ?? 0) + 1}`
-                : 'Confirmar Pagamento'}
+                : "Confirmar Pagamento"}
             </h2>
             {despesa && (
               <p className="text-sm text-slate-500 mt-0.5">
-                {despesa.descricao || 'Despesa'}
-                {despesa.valor ? ` — R$ ${parseFloat(despesa.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''}
+                {despesa.descricao || "Despesa"}
+                {despesa.valor
+                  ? ` — R$ ${parseFloat(despesa.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+                  : ""}
               </p>
             )}
           </div>
-          <button
-            onClick={() => onOpenChange(false)}
-            className="p-2 hover:bg-slate-100 rounded-lg"
-          >
+          <button onClick={() => onOpenChange(false)} className="p-2 hover:bg-slate-100 rounded-lg">
             <X className="w-5 h-5 text-slate-500" />
           </button>
         </div>
@@ -118,7 +130,10 @@ export default function ModalPagamento({ open, onOpenChange, despesa, empresaAti
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">Valor</span>
                 <span className="font-bold text-red-600 text-base">
-                  R$ {parseFloat(despesa.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  R${" "}
+                  {parseFloat(despesa.valor || 0).toLocaleString("pt-BR", {
+                    minimumFractionDigits: 2,
+                  })}
                 </span>
               </div>
               {despesa.conta_nome && (
@@ -174,10 +189,10 @@ export default function ModalPagamento({ open, onOpenChange, despesa, empresaAti
                 variant="outline"
                 className="w-full"
                 disabled={uploading}
-                onClick={() => document.getElementById('upload-comprovante-pagamento').click()}
+                onClick={() => document.getElementById("upload-comprovante-pagamento").click()}
               >
                 <Upload className="w-4 h-4 mr-2" />
-                {uploading ? 'Enviando...' : 'Adicionar Comprovante'}
+                {uploading ? "Enviando..." : "Adicionar Comprovante"}
               </Button>
               {comprovanteUrl && (
                 <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded text-sm text-green-700">
@@ -200,7 +215,7 @@ export default function ModalPagamento({ open, onOpenChange, despesa, empresaAti
             className="flex-1 bg-green-600 hover:bg-green-700"
           >
             <CheckCircle2 className="w-4 h-4 mr-2" />
-            {salvando ? 'Salvando...' : 'Confirmar Pagamento'}
+            {salvando ? "Salvando..." : "Confirmar Pagamento"}
           </Button>
         </div>
       </DialogContent>

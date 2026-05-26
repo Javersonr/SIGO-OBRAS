@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../../Layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -33,7 +33,7 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
   React.useEffect(() => {
     if (!empresaAtiva?.id) return;
     let cancelled = false;
-    base44.entities.CentroCusto.filter({ empresa_id: empresaAtiva.id })
+    sigo.entities.CentroCusto.filter({ empresa_id: empresaAtiva.id })
       .then((data) => {
         if (!cancelled) setCentrosCusto(data);
       })
@@ -55,7 +55,7 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
 
   const handleSalvarTemplate = async (nome) => {
     try {
-      await base44.entities.RelatorioCustomizado.create({
+      await sigo.entities.RelatorioCustomizado.create({
         empresa_id: empresaAtiva.id,
         usuario_id: user?.id,
         nome,

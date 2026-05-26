@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import { Link } from "react-router-dom";
 import {
@@ -55,7 +55,7 @@ export default function NotificationsPanel({ open, onOpenChange }) {
   useEffect(() => {
     if (!empresaAtiva?.id || !user?.email) return;
 
-    const unsubscribe = base44.entities.Notificacao.subscribe((event) => {
+    const unsubscribe = sigo.entities.Notificacao.subscribe((event) => {
       // Apenas notificações para o usuário atual
       if (event.data?.empresa_id === empresaAtiva.id && event.data?.usuario_email === user.email) {
         if (event.type === "create") {
@@ -90,7 +90,7 @@ export default function NotificationsPanel({ open, onOpenChange }) {
   const loadNotificacoes = async () => {
     setLoading(true);
     try {
-      const result = await base44.entities.Notificacao.filter(
+      const result = await sigo.entities.Notificacao.filter(
         { empresa_id: empresaAtiva.id, usuario_email: user.email },
         "-created_date",
         50
@@ -105,7 +105,7 @@ export default function NotificationsPanel({ open, onOpenChange }) {
 
   const marcarComoLida = async (notificacao) => {
     try {
-      await base44.entities.Notificacao.update(notificacao.id, { lida: true });
+      await sigo.entities.Notificacao.update(notificacao.id, { lida: true });
       setNotificacoes(
         notificacoes.map((n) => (n.id === notificacao.id ? { ...n, lida: true } : n))
       );
@@ -118,7 +118,7 @@ export default function NotificationsPanel({ open, onOpenChange }) {
     try {
       const naoLidas = notificacoes.filter((n) => !n.lida);
       await Promise.all(
-        naoLidas.map((n) => base44.entities.Notificacao.update(n.id, { lida: true }))
+        naoLidas.map((n) => sigo.entities.Notificacao.update(n.id, { lida: true }))
       );
       setNotificacoes(notificacoes.map((n) => ({ ...n, lida: true })));
     } catch (error) {
@@ -128,7 +128,7 @@ export default function NotificationsPanel({ open, onOpenChange }) {
 
   const excluirNotificacao = async (id) => {
     try {
-      await base44.entities.Notificacao.delete(id);
+      await sigo.entities.Notificacao.delete(id);
       setNotificacoes(notificacoes.filter((n) => n.id !== id));
     } catch (error) {
       console.error("Erro ao excluir notificação:", error);
@@ -138,7 +138,7 @@ export default function NotificationsPanel({ open, onOpenChange }) {
   const limparLidas = async () => {
     try {
       const lidas = notificacoes.filter((n) => n.lida);
-      await Promise.all(lidas.map((n) => base44.entities.Notificacao.delete(n.id)));
+      await Promise.all(lidas.map((n) => sigo.entities.Notificacao.delete(n.id)));
       setNotificacoes(notificacoes.filter((n) => !n.lida));
     } catch (error) {
       console.error("Erro ao limpar notificações:", error);

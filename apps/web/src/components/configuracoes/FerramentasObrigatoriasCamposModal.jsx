@@ -1,12 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Pencil } from 'lucide-react';
-import CaminhaoCamposObrigatoriosManager from './CaminhaoCamposObrigatoriosManager';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Pencil } from "lucide-react";
+import CaminhaoCamposObrigatoriosManager from "./CaminhaoCamposObrigatoriosManager";
 
-export default function FerramentasObrigatoriasCamposModal({ open, onOpenChange, empresaAtiva, onSave }) {
+export default function FerramentasObrigatoriasCamposModal({
+  open,
+  onOpenChange,
+  empresaAtiva,
+  onSave,
+}) {
   const [caminhaos, setCaminhaos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [caminhaaoSelecionado, setCaminhaaoSelecionado] = useState(null);
@@ -21,13 +26,13 @@ export default function FerramentasObrigatoriasCamposModal({ open, onOpenChange,
   const loadCaminhaos = async () => {
     try {
       setLoading(true);
-      const dados = await base44.entities.Caminhao.filter({
+      const dados = await sigo.entities.Caminhao.filter({
         empresa_id: empresaAtiva?.id,
-        ativo: true
+        ativo: true,
       });
       setCaminhaos(dados);
     } catch (error) {
-      console.error('Erro ao carregar caminhões:', error);
+      console.error("Erro ao carregar caminhões:", error);
     } finally {
       setLoading(false);
     }
@@ -41,7 +46,11 @@ export default function FerramentasObrigatoriasCamposModal({ open, onOpenChange,
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="right" className="w-full h-full overflow-y-auto !p-0" data-fullscreen-modal>
+        <SheetContent
+          side="right"
+          className="w-full h-full overflow-y-auto !p-0"
+          data-fullscreen-modal
+        >
           <SheetHeader className="p-6 border-b border-slate-200 sticky top-0 bg-white">
             <SheetTitle>Gerenciar Campos Obrigatórios por Caminhão</SheetTitle>
           </SheetHeader>
@@ -53,16 +62,18 @@ export default function FerramentasObrigatoriasCamposModal({ open, onOpenChange,
               <p className="text-sm text-slate-500 text-center py-8">Nenhum caminhão cadastrado</p>
             ) : (
               <div className="space-y-2">
-                {caminhaos.map(caminhao => (
+                {caminhaos.map((caminhao) => (
                   <Card key={caminhao.id} className="hover:shadow-md transition-all">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
                         <div>
                           <h3 className="font-semibold text-slate-900">{caminhao.placa}</h3>
-                          <p className="text-sm text-slate-500">{caminhao.marca} {caminhao.modelo}</p>
+                          <p className="text-sm text-slate-500">
+                            {caminhao.marca} {caminhao.modelo}
+                          </p>
                         </div>
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           size="icon"
                           onClick={() => handleEditarCampos(caminhao)}
                         >

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "../utils";
 import { Button } from "@/components/ui/button";
@@ -73,7 +73,7 @@ export default function EntrarSistema() {
     try {
       // Tentar login de fornecedor PRIMEIRO
       try {
-        const fornResp = await base44.functions.invoke("autenticarFornecedor", {
+        const fornResp = await sigo.functions.invoke("autenticarFornecedor", {
           email: email.trim().toLowerCase(),
           senha,
         });
@@ -95,7 +95,7 @@ export default function EntrarSistema() {
       } catch {}
 
       // Se não for fornecedor, tentar login interno
-      const response = await base44.functions.invoke("loginCustom", {
+      const response = await sigo.functions.invoke("loginCustom", {
         email: email.trim(),
         senha,
       });
@@ -195,7 +195,7 @@ export default function EntrarSistema() {
     setMessageReset("");
 
     try {
-      const response = await base44.functions.invoke("redefinirSenhaUsuario", {
+      const response = await sigo.functions.invoke("redefinirSenhaUsuario", {
         usuario_email: emailReset.trim(),
       });
 

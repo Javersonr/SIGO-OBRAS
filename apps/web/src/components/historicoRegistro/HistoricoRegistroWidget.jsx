@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Eye } from "lucide-react";
@@ -27,7 +27,7 @@ export default function HistoricoRegistroWidget({ entidade, entidadeId, nomeCurt
     if (!entidade || !entidadeId) return;
     setLoading(true);
     try {
-      const logs = await base44.entities.AuditLog.filter(
+      const logs = await sigo.entities.AuditLog.filter(
         { entidade, entidade_id: entidadeId },
         "-created_date",
         50

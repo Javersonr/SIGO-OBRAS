@@ -23,7 +23,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import * as XLSX from "xlsx";
 import JSZip from "jszip";
 import BarraProgressoImportacao from "./BarraProgressoImportacao";
@@ -59,7 +59,7 @@ export default function PreLancamentosTab({
 
   useEffect(() => {
     if (!empresaAtiva?.id) return;
-    base44.entities.UsuarioEmpresa.filter({ empresa_id: empresaAtiva.id, ativo: true })
+    sigo.entities.UsuarioEmpresa.filter({ empresa_id: empresaAtiva.id, ativo: true })
       .then((users) => setUsuarios(users || []))
       .catch(() => {});
   }, [empresaAtiva?.id]);
@@ -68,7 +68,7 @@ export default function PreLancamentosTab({
     useOfflineSync();
 
   const handleSincronizar = async (itens) => {
-    const response = await base44.functions.invoke("sincronizarPreLancamentosOffline", {
+    const response = await sigo.functions.invoke("sincronizarPreLancamentosOffline", {
       itensOffline: itens,
     });
     if (response.data.sucesso) {
@@ -85,7 +85,7 @@ export default function PreLancamentosTab({
     try {
       const filtro = { empresa_id: empresaAtiva.id, status: "Pendente" };
       if (!verTodos && usuarioEmail) filtro.usuario_email = usuarioEmail;
-      const todos = await base44.entities.PreLancamento.filter(filtro);
+      const todos = await sigo.entities.PreLancamento.filter(filtro);
       if (todos.length === 0) {
         alert("Nenhum pré-lançamento encontrado");
         return;
@@ -135,7 +135,7 @@ export default function PreLancamentosTab({
     try {
       const filtro = { empresa_id: empresaAtiva.id, status: "Pendente" };
       if (!verTodos && usuarioEmail) filtro.usuario_email = usuarioEmail;
-      const todos = await base44.entities.PreLancamento.filter(filtro);
+      const todos = await sigo.entities.PreLancamento.filter(filtro);
       if (todos.length === 0) {
         alert("Nenhum pré-lançamento encontrado");
         return;
@@ -196,7 +196,7 @@ export default function PreLancamentosTab({
     try {
       const filtro = { empresa_id: empresaAtiva.id };
       if (!verTodos && usuarioEmail) filtro.usuario_email = usuarioEmail;
-      const todos = await base44.entities.PreLancamento.filter(filtro);
+      const todos = await sigo.entities.PreLancamento.filter(filtro);
       const comComprovante = todos.filter((p) => p.comprovante_url);
 
       if (comComprovante.length === 0) {
@@ -280,11 +280,11 @@ export default function PreLancamentosTab({
 
         const [todosFornecedores, todosClientes, todosProjetos, todasCategorias, todasContas] =
           await Promise.all([
-            base44.entities.Fornecedor.filter({ empresa_id: empresaAtiva.id }),
-            base44.entities.Cliente.filter({ empresa_id: empresaAtiva.id }),
-            base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
-            base44.entities.CategoriaFinanceira.filter({ empresa_id: empresaAtiva.id }),
-            base44.entities.ContaFinanceira.filter({ empresa_id: empresaAtiva.id }),
+            sigo.entities.Fornecedor.filter({ empresa_id: empresaAtiva.id }),
+            sigo.entities.Cliente.filter({ empresa_id: empresaAtiva.id }),
+            sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
+            sigo.entities.CategoriaFinanceira.filter({ empresa_id: empresaAtiva.id }),
+            sigo.entities.ContaFinanceira.filter({ empresa_id: empresaAtiva.id }),
           ]);
 
         let importadas = 0,
@@ -298,7 +298,7 @@ export default function PreLancamentosTab({
               setImportacao((prev) => ({ ...prev, processados: i + 1, erros: prev.erros + 1 }));
               continue;
             }
-            await base44.entities.TransacaoFinanceira.create({
+            await sigo.entities.TransacaoFinanceira.create({
               empresa_id: empresaAtiva.id,
               tipo: row["Tipo"]?.toLowerCase() === "receita" ? "receita" : "despesa",
               status: "pre_lancamento",
@@ -378,7 +378,7 @@ export default function PreLancamentosTab({
           </Button>
 
           <a
-            href={base44.agents.getWhatsAppConnectURL("prelancamentos_whatsapp")}
+            href={sigo.agents.getWhatsAppConnectURL("prelancamentos_whatsapp")}
             target="_blank"
             rel="noopener noreferrer"
           >

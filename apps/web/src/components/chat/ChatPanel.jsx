@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { MessageSquare, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,14 +27,14 @@ export default function ChatPanel({ open, onOpenChange, empresaAtiva, user }) {
     setLoading(true);
     try {
       const [canaisData, usuarios] = await Promise.all([
-        base44.entities.CanalChat.filter(
+        sigo.entities.CanalChat.filter(
           {
             empresa_id: empresaAtiva.id,
             ativo: true,
           },
           "-ultima_mensagem_data"
         ),
-        base44.entities.UsuarioEmpresa.filter({
+        sigo.entities.UsuarioEmpresa.filter({
           empresa_id: empresaAtiva.id,
           ativo: true,
         }),
@@ -60,7 +60,7 @@ export default function ChatPanel({ open, onOpenChange, empresaAtiva, user }) {
   };
 
   const handleCriarCanal = async (novoCanal) => {
-    const canal = await base44.entities.CanalChat.create(novoCanal);
+    const canal = await sigo.entities.CanalChat.create(novoCanal);
     setCanais([canal, ...canais]);
     setCanalSelecionado(canal);
     setShowNovoCanal(false);

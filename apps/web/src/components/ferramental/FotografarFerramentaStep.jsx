@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import jsQR from "jsqr";
 import SheetModal from "@/components/ui/sheet-modal";
 import { Button } from "@/components/ui/button";
@@ -238,7 +238,7 @@ export default function FotografarFerramentaStep({
       }
 
       setStep("confirmacao");
-      const ferramentas = await base44.entities.Ferramenta.filter({
+      const ferramentas = await sigo.entities.Ferramenta.filter({
         qrcode_data: qrCode,
       });
 
@@ -337,13 +337,13 @@ export default function FotografarFerramentaStep({
       console.log("File criado:", file.name, file.type, file.size);
 
       // Upload da foto
-      const uploadRes = await base44.integrations.Core.UploadFile({ file });
+      const uploadRes = await sigo.integrations.Core.UploadFile({ file });
       console.log("Upload realizado:", uploadRes);
       const fotoUrl = uploadRes.file_url;
       console.log("URL da foto:", fotoUrl);
 
       // IA do Google valida a ferramenta
-      const validacaoResponse = await base44.functions.invoke("validarFotoComIA", {
+      const validacaoResponse = await sigo.functions.invoke("validarFotoComIA", {
         fotoUrl,
         fotoOriginalUrl: ferramenta.foto_url,
         ferramenta: {

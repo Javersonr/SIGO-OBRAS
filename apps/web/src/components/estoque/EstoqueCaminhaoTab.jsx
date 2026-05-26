@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -50,8 +50,8 @@ export default function EstoqueCaminhaoTab({
     setLoading(true);
     try {
       const [cams, ferrs] = await Promise.all([
-        base44.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 1000),
+        sigo.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 1000),
       ]);
       setCaminhoes(cams.sort((a, b) => (a.placa || "").localeCompare(b.placa || "")));
       setFerramentas(ferrs);
@@ -120,7 +120,7 @@ export default function EstoqueCaminhaoTab({
 
   const handleSaveCell = async (ferr, field) => {
     try {
-      await base44.entities.Ferramenta.update(ferr.id, { [field]: editingValue });
+      await sigo.entities.Ferramenta.update(ferr.id, { [field]: editingValue });
       setFerramentas((prev) =>
         prev.map((f) => (f.id === ferr.id ? { ...f, [field]: editingValue } : f))
       );
@@ -389,12 +389,12 @@ export default function EstoqueCaminhaoTab({
           movimentacao={null}
           onSave={async (formData) => {
             try {
-              await base44.entities.MovimentacaoFerramenta.create({
+              await sigo.entities.MovimentacaoFerramenta.create({
                 ...formData,
                 empresa_id: empresaAtiva.id,
               });
               if (formData.destino && formData.ferramenta_id) {
-                await base44.entities.Ferramenta.update(formData.ferramenta_id, {
+                await sigo.entities.Ferramenta.update(formData.ferramenta_id, {
                   localizacao: formData.destino,
                 });
               }

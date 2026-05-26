@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -28,7 +28,7 @@ export default function ReconciliacaoPreLancamentoModal({
     setErro(null);
 
     try {
-      const response = await base44.functions.invoke("reconciliarPreLancamento", {
+      const response = await sigo.functions.invoke("reconciliarPreLancamento", {
         preLancamentoId: preLancamento.id,
         empresaId: preLancamento.empresa_id,
         observacoes,

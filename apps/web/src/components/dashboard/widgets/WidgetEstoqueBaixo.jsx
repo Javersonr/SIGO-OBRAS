@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../../../Layout";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "../../../utils";
@@ -20,7 +20,7 @@ export default function WidgetEstoqueBaixo() {
 
   const loadMateriais = async () => {
     try {
-      const mats = await base44.entities.Material.filter({
+      const mats = await sigo.entities.Material.filter({
         empresa_id: empresaAtiva.id,
         ativo: true,
       });

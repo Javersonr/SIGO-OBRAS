@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,12 +44,12 @@ export default function ManutencaoTab() {
     setLoading(true);
     try {
       const [manus, ferrs] = await Promise.all([
-        base44.entities.ManutencaoFerramenta.filter(
+        sigo.entities.ManutencaoFerramenta.filter(
           { empresa_id: empresaAtiva.id },
           "-data_prevista",
           500
         ),
-        base44.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 1000),
+        sigo.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 1000),
       ]);
 
       setManutencoes(manus);
@@ -90,10 +90,10 @@ export default function ManutencaoTab() {
   const handleSalvar = async (dados) => {
     try {
       if (manutencaoSelecionada?.id) {
-        await base44.entities.ManutencaoFerramenta.update(manutencaoSelecionada.id, dados);
+        await sigo.entities.ManutencaoFerramenta.update(manutencaoSelecionada.id, dados);
         toast.success("Manutenção atualizada");
       } else {
-        await base44.entities.ManutencaoFerramenta.create(dados);
+        await sigo.entities.ManutencaoFerramenta.create(dados);
         toast.success("Manutenção registrada");
       }
 
@@ -117,7 +117,7 @@ export default function ManutencaoTab() {
 
   const handleAprovar = async (manutencao) => {
     try {
-      await base44.entities.ManutencaoFerramenta.update(manutencao.id, { status: "Em Andamento" });
+      await sigo.entities.ManutencaoFerramenta.update(manutencao.id, { status: "Em Andamento" });
       toast.success("Pedido aprovado!");
       loadData();
     } catch (error) {
@@ -128,11 +128,9 @@ export default function ManutencaoTab() {
 
   const handleReprovar = async (manutencao, extras = []) => {
     try {
-      await base44.entities.ManutencaoFerramenta.update(manutencao.id, { status: "Cancelada" });
+      await sigo.entities.ManutencaoFerramenta.update(manutencao.id, { status: "Cancelada" });
       await Promise.all(
-        extras.map((e) =>
-          base44.entities.ManutencaoFerramenta.update(e.id, { status: "Cancelada" })
-        )
+        extras.map((e) => sigo.entities.ManutencaoFerramenta.update(e.id, { status: "Cancelada" }))
       );
       toast.success("Pedido reprovado.");
       loadData();
@@ -428,7 +426,7 @@ export default function ManutencaoTab() {
                               onClick={() => {
                                 handleAprovar(principal);
                                 extras.forEach((e) =>
-                                  base44.entities.ManutencaoFerramenta.update(e.id, {
+                                  sigo.entities.ManutencaoFerramenta.update(e.id, {
                                     status: "Em Andamento",
                                   })
                                 );

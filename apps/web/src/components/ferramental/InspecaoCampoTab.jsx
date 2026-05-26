@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -65,7 +65,7 @@ export default function InspecaoCampoTab({ caminhoes: caminhoesProps = [] }) {
     setLoading(true);
     try {
       const [ferrs, funcs, inspsAtivas, inspsHistorico] = await Promise.all([
-        base44.entities.Ferramenta.filter(
+        sigo.entities.Ferramenta.filter(
           {
             empresa_id: empresaAtiva.id,
             ativo: true,
@@ -73,7 +73,7 @@ export default function InspecaoCampoTab({ caminhoes: caminhoesProps = [] }) {
           "",
           1000
         ),
-        base44.entities.Funcionario.filter(
+        sigo.entities.Funcionario.filter(
           {
             empresa_id: empresaAtiva.id,
             ativo: true,
@@ -81,7 +81,7 @@ export default function InspecaoCampoTab({ caminhoes: caminhoesProps = [] }) {
           "",
           1000
         ),
-        base44.entities.InspecaoFerramenta.filter(
+        sigo.entities.InspecaoFerramenta.filter(
           {
             empresa_id: empresaAtiva.id,
             status: "em_andamento",
@@ -89,7 +89,7 @@ export default function InspecaoCampoTab({ caminhoes: caminhoesProps = [] }) {
           "-created_date",
           100
         ),
-        base44.entities.InspecaoFerramenta.filter(
+        sigo.entities.InspecaoFerramenta.filter(
           {
             empresa_id: empresaAtiva.id,
           },
@@ -120,7 +120,7 @@ export default function InspecaoCampoTab({ caminhoes: caminhoesProps = [] }) {
       return;
     }
 
-    const user = await base44.auth.me();
+    const user = await sigo.auth.me();
 
     try {
       // Filtrar ferramentas baseado no tipo de inspeção
@@ -155,7 +155,7 @@ export default function InspecaoCampoTab({ caminhoes: caminhoesProps = [] }) {
         });
       });
 
-      const inspecao = await base44.entities.InspecaoFerramenta.create({
+      const inspecao = await sigo.entities.InspecaoFerramenta.create({
         empresa_id: empresaAtiva.id,
         data_inspecao: new Date().toISOString().split("T")[0],
         funcionario_id: tipoInspecao === "funcionario" ? novaInspecaoForm.funcionario_id : "",
@@ -174,7 +174,7 @@ export default function InspecaoCampoTab({ caminhoes: caminhoesProps = [] }) {
       });
 
       // Registrar no histórico
-      await base44.entities.InspecaoHistorico.create({
+      await sigo.entities.InspecaoHistorico.create({
         empresa_id: empresaAtiva.id,
         inspecao_id: inspecao.id,
         tipo_acao: "inspecao_iniciada",
@@ -269,7 +269,7 @@ export default function InspecaoCampoTab({ caminhoes: caminhoesProps = [] }) {
                           onClick={async () => {
                             if (confirm("Deseja excluir esta inspeção?")) {
                               try {
-                                await base44.entities.InspecaoFerramenta.delete(insp.id);
+                                await sigo.entities.InspecaoFerramenta.delete(insp.id);
                                 toast.success("Inspeção excluída");
                                 loadData();
                               } catch (error) {
@@ -357,7 +357,7 @@ export default function InspecaoCampoTab({ caminhoes: caminhoesProps = [] }) {
                           onClick={async () => {
                             if (confirm("Deseja excluir esta inspeção?")) {
                               try {
-                                await base44.entities.InspecaoFerramenta.delete(insp.id);
+                                await sigo.entities.InspecaoFerramenta.delete(insp.id);
                                 toast.success("Inspeção excluída");
                                 loadData();
                               } catch (error) {
@@ -531,7 +531,7 @@ export default function InspecaoCampoTab({ caminhoes: caminhoesProps = [] }) {
           }}
           onExcluir={async (ferramenta) => {
             try {
-              await base44.entities.Ferramenta.delete(ferramenta.id);
+              await sigo.entities.Ferramenta.delete(ferramenta.id);
               toast.success("Ferramenta excluída");
               loadData();
             } catch (error) {

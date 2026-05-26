@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,8 +25,8 @@ export default function CaminhoesConfigTab({ empresaAtiva }) {
     setLoading(true);
     try {
       const [cam, ferr] = await Promise.all([
-        base44.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 1000),
+        sigo.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 1000),
       ]);
       setCaminhoes(cam.sort((a, b) => (a.placa || "").localeCompare(b.placa || "")));
       setFerramentas(ferr);
@@ -44,7 +44,7 @@ export default function CaminhoesConfigTab({ empresaAtiva }) {
   const carregarFerramentasObrigatorias = async () => {
     if (!empresaAtiva?.id) return;
     try {
-      const obrigatorias = await base44.entities.Ferramenta.filter({
+      const obrigatorias = await sigo.entities.Ferramenta.filter({
         empresa_id: empresaAtiva.id,
         obrigatoria_caminhao: true,
         ativo: true,
@@ -68,7 +68,7 @@ export default function CaminhoesConfigTab({ empresaAtiva }) {
         for (const ferramentaId of ferramentasSelecionadas) {
           const ferramenta = ferramentas.find((f) => f.id === ferramentaId);
           if (ferramenta && ferramenta.caminhao_id !== caminhao.id) {
-            await base44.entities.Ferramenta.update(ferramentaId, {
+            await sigo.entities.Ferramenta.update(ferramentaId, {
               caminhao_id: caminhao.id,
               localizacao: caminhao.placa,
               obrigatoria_caminhao: true,
@@ -99,13 +99,13 @@ export default function CaminhoesConfigTab({ empresaAtiva }) {
     setSaving(true);
     try {
       if (isAdicionando) {
-        await base44.entities.Ferramenta.update(ferramentaId, {
+        await sigo.entities.Ferramenta.update(ferramentaId, {
           caminhao_id: selectedCaminhao.id,
           localizacao: selectedCaminhao.placa,
         });
         toast.success("Ferramenta vinculada");
       } else {
-        await base44.entities.Ferramenta.update(ferramentaId, {
+        await sigo.entities.Ferramenta.update(ferramentaId, {
           caminhao_id: null,
           localizacao: "",
         });

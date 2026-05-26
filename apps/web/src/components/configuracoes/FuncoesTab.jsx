@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -42,7 +42,7 @@ export default function FuncoesTab({ empresaAtiva }) {
     if (!empresaAtiva?.id) return;
     setLoading(true);
     try {
-      const result = await base44.entities.Funcao.filter({
+      const result = await sigo.entities.Funcao.filter({
         empresa_id: empresaAtiva.id,
       });
       // Mostrar todas as funções, independente do status ativo
@@ -58,7 +58,7 @@ export default function FuncoesTab({ empresaAtiva }) {
     if (!empresaAtiva?.id) return;
     try {
       // Buscar todos os treinamentos marcados como modelo
-      const result = await base44.entities.Treinamento.filter({
+      const result = await sigo.entities.Treinamento.filter({
         empresa_id: empresaAtiva.id,
         usar_como_modelo: true,
       });
@@ -89,9 +89,9 @@ export default function FuncoesTab({ empresaAtiva }) {
   const handleSave = async (formData) => {
     try {
       if (selectedFuncao) {
-        await base44.entities.Funcao.update(selectedFuncao.id, formData);
+        await sigo.entities.Funcao.update(selectedFuncao.id, formData);
       } else {
-        await base44.entities.Funcao.create({
+        await sigo.entities.Funcao.create({
           ...formData,
           empresa_id: empresaAtiva.id,
         });
@@ -113,7 +113,7 @@ export default function FuncoesTab({ empresaAtiva }) {
   const handleDelete = async (id) => {
     if (!confirm("Deseja excluir esta função?")) return;
     try {
-      await base44.entities.Funcao.delete(id);
+      await sigo.entities.Funcao.delete(id);
       loadFuncoes();
     } catch (error) {
       console.error("Erro ao excluir função:", error);
@@ -138,8 +138,8 @@ export default function FuncoesTab({ empresaAtiva }) {
         modelo_ordem_servicos: funcao.modelo_ordem_servicos,
       };
       const [funcaoCriada, treinamentos] = await Promise.all([
-        base44.entities.Funcao.create(novaFuncao),
-        base44.entities.Treinamento.filter({ empresa_id: empresaAtiva.id, funcao_id: funcao.id }),
+        sigo.entities.Funcao.create(novaFuncao),
+        sigo.entities.Treinamento.filter({ empresa_id: empresaAtiva.id, funcao_id: funcao.id }),
       ]);
 
       // Duplicar treinamentos para a nova função
@@ -185,7 +185,7 @@ export default function FuncoesTab({ empresaAtiva }) {
             ativo: t.ativo,
           };
         });
-        await base44.entities.Treinamento.bulkCreate(treinamentosDuplicados);
+        await sigo.entities.Treinamento.bulkCreate(treinamentosDuplicados);
       }
 
       toast.success("Função duplicada com tudo!");
@@ -313,7 +313,7 @@ export default function FuncoesTab({ empresaAtiva }) {
             return;
           }
 
-          await base44.entities.Funcao.bulkCreate(funcoesImportadas);
+          await sigo.entities.Funcao.bulkCreate(funcoesImportadas);
           toast.success(`✅ ${funcoesImportadas.length} funções importadas`);
           loadFuncoes();
         } catch (error) {
@@ -387,7 +387,7 @@ export default function FuncoesTab({ empresaAtiva }) {
             return;
           }
 
-          await base44.entities.Funcao.bulkCreate(funcoesImportadas);
+          await sigo.entities.Funcao.bulkCreate(funcoesImportadas);
           toast.success(`✅ ${funcoesImportadas.length} funções importadas`);
           loadFuncoes();
         } catch (error) {
@@ -485,7 +485,7 @@ export default function FuncoesTab({ empresaAtiva }) {
                 onClick={async () => {
                   try {
                     // Buscar todos os treinamentos vinculados a funções
-                    const treinamentosVinculados = await base44.entities.Treinamento.filter({
+                    const treinamentosVinculados = await sigo.entities.Treinamento.filter({
                       empresa_id: empresaAtiva.id,
                       usar_como_modelo: true,
                     });
@@ -513,7 +513,7 @@ export default function FuncoesTab({ empresaAtiva }) {
                       ativo: true,
                     }));
 
-                    await base44.entities.Treinamento.bulkCreate(novosModelos);
+                    await sigo.entities.Treinamento.bulkCreate(novosModelos);
                     loadTreinamentos();
                     toast.success(`✅ ${novosModelos.length} treinamentos migrados para modelos`);
                   } catch (error) {
@@ -592,7 +592,7 @@ export default function FuncoesTab({ empresaAtiva }) {
                       onClick={async () => {
                         if (!confirm("Excluir este treinamento?")) return;
                         try {
-                          await base44.entities.Treinamento.delete(t.id);
+                          await sigo.entities.Treinamento.delete(t.id);
                           loadTreinamentos();
                           toast.success("Treinamento excluído");
                         } catch (error) {

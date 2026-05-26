@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '@/Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { AlertTriangle, Clock, Wrench, ChevronRight } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { useEmpresa } from "@/Layout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { AlertTriangle, Clock, Wrench, ChevronRight } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
 
 export default function WidgetManutencaoFerramentas() {
   const { empresaAtiva } = useEmpresa();
@@ -23,10 +23,10 @@ export default function WidgetManutencaoFerramentas() {
   const loadAlertas = async () => {
     setLoading(true);
     try {
-      const ferramentas = await base44.entities.Ferramenta.filter({
+      const ferramentas = await sigo.entities.Ferramenta.filter({
         empresa_id: empresaAtiva.id,
         ativo: true,
-        alerta_manutencao: true
+        alerta_manutencao: true,
       });
 
       const hoje = new Date();
@@ -38,7 +38,7 @@ export default function WidgetManutencaoFerramentas() {
       const atrasadas = [];
       const proximas = [];
 
-      ferramentas.forEach(f => {
+      ferramentas.forEach((f) => {
         if (f.proxima_manutencao) {
           const proxManut = new Date(f.proxima_manutencao);
           proxManut.setHours(0, 0, 0, 0);
@@ -53,7 +53,7 @@ export default function WidgetManutencaoFerramentas() {
 
       setAlertas({ atrasadas, proximas });
     } catch (error) {
-      console.error('Erro ao carregar alertas:', error);
+      console.error("Erro ao carregar alertas:", error);
     } finally {
       setLoading(false);
     }
@@ -93,12 +93,15 @@ export default function WidgetManutencaoFerramentas() {
             <div className="flex items-center gap-2 mb-3">
               <AlertTriangle className="w-5 h-5 text-red-600" />
               <span className="font-semibold text-red-700">
-                {alertas.atrasadas.length} Manutenção{alertas.atrasadas.length !== 1 ? 'ões' : ''} Atrasada{alertas.atrasadas.length !== 1 ? 's' : ''}
+                {alertas.atrasadas.length} Manutenção{alertas.atrasadas.length !== 1 ? "ões" : ""}{" "}
+                Atrasada{alertas.atrasadas.length !== 1 ? "s" : ""}
               </span>
             </div>
             <div className="space-y-2">
-              {alertas.atrasadas.slice(0, 3).map(f => {
-                const diasAtraso = Math.floor((new Date() - new Date(f.proxima_manutencao)) / (1000 * 60 * 60 * 24));
+              {alertas.atrasadas.slice(0, 3).map((f) => {
+                const diasAtraso = Math.floor(
+                  (new Date() - new Date(f.proxima_manutencao)) / (1000 * 60 * 60 * 24)
+                );
                 return (
                   <div key={f.id} className="flex items-center justify-between text-sm">
                     <div>
@@ -106,15 +109,13 @@ export default function WidgetManutencaoFerramentas() {
                       <p className="text-red-600 text-xs">{f.descricao}</p>
                     </div>
                     <Badge variant="outline" className="bg-red-100 text-red-700 border-red-300">
-                      {diasAtraso} {diasAtraso === 1 ? 'dia' : 'dias'}
+                      {diasAtraso} {diasAtraso === 1 ? "dia" : "dias"}
                     </Badge>
                   </div>
                 );
               })}
               {alertas.atrasadas.length > 3 && (
-                <p className="text-xs text-red-600">
-                  +{alertas.atrasadas.length - 3} mais...
-                </p>
+                <p className="text-xs text-red-600">+{alertas.atrasadas.length - 3} mais...</p>
               )}
             </div>
           </div>
@@ -126,28 +127,31 @@ export default function WidgetManutencaoFerramentas() {
             <div className="flex items-center gap-2 mb-3">
               <Clock className="w-5 h-5 text-amber-600" />
               <span className="font-semibold text-amber-700">
-                {alertas.proximas.length} Próxima{alertas.proximas.length !== 1 ? 's' : ''} (7 dias)
+                {alertas.proximas.length} Próxima{alertas.proximas.length !== 1 ? "s" : ""} (7 dias)
               </span>
             </div>
             <div className="space-y-2">
-              {alertas.proximas.slice(0, 3).map(f => {
-                const diasRestantes = Math.ceil((new Date(f.proxima_manutencao) - new Date()) / (1000 * 60 * 60 * 24));
+              {alertas.proximas.slice(0, 3).map((f) => {
+                const diasRestantes = Math.ceil(
+                  (new Date(f.proxima_manutencao) - new Date()) / (1000 * 60 * 60 * 24)
+                );
                 return (
                   <div key={f.id} className="flex items-center justify-between text-sm">
                     <div>
                       <p className="font-medium text-amber-800">{f.codigo}</p>
                       <p className="text-amber-600 text-xs">{f.descricao}</p>
                     </div>
-                    <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-300">
-                      {diasRestantes} {diasRestantes === 1 ? 'dia' : 'dias'}
+                    <Badge
+                      variant="outline"
+                      className="bg-amber-100 text-amber-700 border-amber-300"
+                    >
+                      {diasRestantes} {diasRestantes === 1 ? "dia" : "dias"}
                     </Badge>
                   </div>
                 );
               })}
               {alertas.proximas.length > 3 && (
-                <p className="text-xs text-amber-600">
-                  +{alertas.proximas.length - 3} mais...
-                </p>
+                <p className="text-xs text-amber-600">+{alertas.proximas.length - 3} mais...</p>
               )}
             </div>
           </div>
@@ -156,7 +160,7 @@ export default function WidgetManutencaoFerramentas() {
         <Button
           variant="outline"
           className="w-full"
-          onClick={() => navigate(createPageUrl('Ferramental'))}
+          onClick={() => navigate(createPageUrl("Ferramental"))}
         >
           Ver Todas as Manutenções
           <ChevronRight className="w-4 h-4 ml-2" />

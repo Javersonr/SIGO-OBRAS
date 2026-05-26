@@ -1,5 +1,5 @@
 import React from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -82,14 +82,14 @@ export default function OrcamentoTab({
     const key = `${itemId}-${field}`;
     if (updateTimeoutRef.current[key]) clearTimeout(updateTimeoutRef.current[key]);
     updateTimeoutRef.current[key] = setTimeout(async () => {
-      await base44.entities.OrcamentoItem.update(itemId, updatedData);
+      await sigo.entities.OrcamentoItem.update(itemId, updatedData);
       delete updateTimeoutRef.current[key];
     }, 1500);
   };
 
   const handleDelete = async (itemId) => {
     if (!confirm("Excluir este item?")) return;
-    await base44.entities.OrcamentoItem.delete(itemId);
+    await sigo.entities.OrcamentoItem.delete(itemId);
     setItensSelecionados((prev) => {
       const n = new Set(prev);
       n.delete(itemId);
@@ -102,7 +102,7 @@ export default function OrcamentoTab({
     if (!confirm(`Excluir ${itensSelecionados.size} item(ns)?`)) return;
     for (const id of itensSelecionados) {
       try {
-        await base44.entities.OrcamentoItem.delete(id);
+        await sigo.entities.OrcamentoItem.delete(id);
       } catch {}
     }
     setItensSelecionados(new Set());
@@ -111,7 +111,7 @@ export default function OrcamentoTab({
 
   const handleNovoItem = async () => {
     const maxOrdem = Math.max(0, ...orcamentoItens.map((i) => i.ordem || 0));
-    const novoItem = await base44.entities.OrcamentoItem.create({
+    const novoItem = await sigo.entities.OrcamentoItem.create({
       empresa_id: empresaAtiva.id,
       projeto_id: selectedProj.id,
       item: (orcamentoItens.length + 1).toString(),
@@ -131,11 +131,11 @@ export default function OrcamentoTab({
 
   const handleLimpar = async () => {
     if (!confirm("⚠️ Apagar TODOS os itens?")) return;
-    const itens = await base44.entities.OrcamentoItem.filter({
+    const itens = await sigo.entities.OrcamentoItem.filter({
       empresa_id: empresaAtiva.id,
       projeto_id: selectedProj.id,
     });
-    await Promise.all(itens.map((i) => base44.entities.OrcamentoItem.delete(i.id)));
+    await Promise.all(itens.map((i) => sigo.entities.OrcamentoItem.delete(i.id)));
     loadOrcamentoData(selectedProj.id);
   };
 
@@ -316,9 +316,9 @@ export default function OrcamentoTab({
         let materiaisDB = [];
         try {
           const [mats, mao, ferr] = await Promise.all([
-            base44.entities.Material.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-            base44.entities.MaoDeObra.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-            base44.entities.Ferramental.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+            sigo.entities.Material.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+            sigo.entities.MaoDeObra.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+            sigo.entities.Ferramental.filter({ empresa_id: empresaAtiva.id, ativo: true }),
           ]);
           materiaisDB = [...mats, ...mao, ...ferr];
         } catch {}
@@ -368,7 +368,7 @@ export default function OrcamentoTab({
             (i) => !existentes.has((i.descricao || "").toLowerCase())
           );
           if (novos.length > 0) {
-            await base44.entities.OrcamentoItem.bulkCreate(novos);
+            await sigo.entities.OrcamentoItem.bulkCreate(novos);
             loadOrcamentoData(selectedProj.id);
           }
           alert(
@@ -385,7 +385,7 @@ export default function OrcamentoTab({
 
   const handleSalvarTemplate = async () => {
     if (!nomeTemplate.trim()) return;
-    await base44.entities.TemplateOportunidade.create({
+    await sigo.entities.TemplateOportunidade.create({
       empresa_id: empresaAtiva.id,
       nome: nomeTemplate,
       tipo: "orcamento",
@@ -402,7 +402,7 @@ export default function OrcamentoTab({
     if (!template?.itens_json) return;
     try {
       const itens = JSON.parse(template.itens_json);
-      await base44.entities.OrcamentoItem.bulkCreate(
+      await sigo.entities.OrcamentoItem.bulkCreate(
         itens.map((item, idx) => ({
           empresa_id: empresaAtiva.id,
           projeto_id: selectedProj.id,
@@ -732,7 +732,7 @@ export default function OrcamentoTab({
                                         const imp = item.imposto || 0;
                                         const valor_total =
                                           qtd * valorUnitario * (1 + bdi / 100) * (1 + imp / 100);
-                                        await base44.entities.OrcamentoItem.update(item.id, {
+                                        await sigo.entities.OrcamentoItem.update(item.id, {
                                           descricao: m.nome_item,
                                           codigo: m.codigo || "",
                                           unidade: m.unidade || "UN",

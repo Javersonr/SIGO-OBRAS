@@ -1,18 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { AlertCircle, Trash2, CheckCircle2, X } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import React, { useState, useEffect } from "react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { AlertCircle, Trash2, CheckCircle2, X } from "lucide-react";
+import { sigo } from "@/api/sigoClient";
 
-export default function ConfirmacaoExclusaoModal({ 
-  open, 
+export default function ConfirmacaoExclusaoModal({
+  open,
   onOpenChange,
   tipo, // 'solicitacao' ou 'cotacao'
   registro,
-  onConfirm
+  onConfirm,
 }) {
   const [loading, setLoading] = useState(true);
   const [dados, setDados] = useState({
@@ -21,7 +21,7 @@ export default function ConfirmacaoExclusaoModal({
     pedidos: [],
     aprovacoes: [],
     respostas: [],
-    fornecedores: []
+    fornecedores: [],
   });
   const [itensSelecionados, setItensSelecionados] = useState([]);
   const [excluirTudo, setExcluirTudo] = useState(false);
@@ -36,27 +36,27 @@ export default function ConfirmacaoExclusaoModal({
   const carregarDados = async () => {
     setLoading(true);
     try {
-      if (tipo === 'solicitacao') {
+      if (tipo === "solicitacao") {
         const [itens, cotacoes, pedidos, aprovacoes] = await Promise.all([
-          base44.entities.SolicitacaoCompraItem.filter({ solicitacao_id: registro.id }),
-          base44.entities.Cotacao.filter({ solicitacao_id: registro.id }),
-          base44.entities.PedidoCompra.filter({ solicitacao_id: registro.id }),
-          base44.entities.AprovacaoSolicitacao.filter({ solicitacao_id: registro.id })
+          sigo.entities.SolicitacaoCompraItem.filter({ solicitacao_id: registro.id }),
+          sigo.entities.Cotacao.filter({ solicitacao_id: registro.id }),
+          sigo.entities.PedidoCompra.filter({ solicitacao_id: registro.id }),
+          sigo.entities.AprovacaoSolicitacao.filter({ solicitacao_id: registro.id }),
         ]);
         setDados({ itens, cotacoes, pedidos, aprovacoes, respostas: [], fornecedores: [] });
-        setItensSelecionados(itens.map(i => i.id));
-      } else if (tipo === 'cotacao') {
+        setItensSelecionados(itens.map((i) => i.id));
+      } else if (tipo === "cotacao") {
         const [itens, pedidos, respostas, fornecedores] = await Promise.all([
-          base44.entities.CotacaoItem.filter({ cotacao_id: registro.id }),
-          base44.entities.PedidoCompra.filter({ cotacao_id: registro.id }),
-          base44.entities.CotacaoResposta.filter({ cotacao_id: registro.id }),
-          base44.entities.CotacaoFornecedor.filter({ cotacao_id: registro.id })
+          sigo.entities.CotacaoItem.filter({ cotacao_id: registro.id }),
+          sigo.entities.PedidoCompra.filter({ cotacao_id: registro.id }),
+          sigo.entities.CotacaoResposta.filter({ cotacao_id: registro.id }),
+          sigo.entities.CotacaoFornecedor.filter({ cotacao_id: registro.id }),
         ]);
         setDados({ itens, pedidos, respostas, fornecedores, cotacoes: [], aprovacoes: [] });
-        setItensSelecionados(itens.map(i => i.id));
+        setItensSelecionados(itens.map((i) => i.id));
       }
     } catch (error) {
-      console.error('Erro ao carregar dados:', error);
+      console.error("Erro ao carregar dados:", error);
     } finally {
       setLoading(false);
     }
@@ -64,7 +64,7 @@ export default function ConfirmacaoExclusaoModal({
 
   const toggleItem = (itemId) => {
     if (itensSelecionados.includes(itemId)) {
-      setItensSelecionados(itensSelecionados.filter(id => id !== itemId));
+      setItensSelecionados(itensSelecionados.filter((id) => id !== itemId));
     } else {
       setItensSelecionados([...itensSelecionados, itemId]);
     }
@@ -74,38 +74,43 @@ export default function ConfirmacaoExclusaoModal({
     if (itensSelecionados.length === dados.itens.length) {
       setItensSelecionados([]);
     } else {
-      setItensSelecionados(dados.itens.map(i => i.id));
+      setItensSelecionados(dados.itens.map((i) => i.id));
     }
   };
 
   const handleConfirmar = async () => {
     // Verificações de bloqueio
     if (dados.pedidos.length > 0) {
-      alert('❌ Não é possível excluir!\n\n' +
-        `Existem ${dados.pedidos.length} pedido(s) vinculado(s):\n` +
-        dados.pedidos.map(p => `• ${p.numero} - ${p.status}`).join('\n'));
+      alert(
+        "❌ Não é possível excluir!\n\n" +
+          `Existem ${dados.pedidos.length} pedido(s) vinculado(s):\n` +
+          dados.pedidos.map((p) => `• ${p.numero} - ${p.status}`).join("\n")
+      );
       return;
     }
 
-    if (tipo === 'solicitacao' && dados.cotacoes.some(c => c.status === 'Aprovada')) {
-      const cotAprovada = dados.cotacoes.find(c => c.status === 'Aprovada');
-      alert('❌ Não é possível excluir!\n\n' +
-        `A cotação ${cotAprovada.numero} foi APROVADA.`);
+    if (tipo === "solicitacao" && dados.cotacoes.some((c) => c.status === "Aprovada")) {
+      const cotAprovada = dados.cotacoes.find((c) => c.status === "Aprovada");
+      alert("❌ Não é possível excluir!\n\n" + `A cotação ${cotAprovada.numero} foi APROVADA.`);
       return;
     }
 
     if (!excluirTudo && itensSelecionados.length === 0) {
-      alert('Selecione pelo menos um item para excluir');
+      alert("Selecione pelo menos um item para excluir");
       return;
     }
 
-    const mensagem = excluirTudo 
+    const mensagem = excluirTudo
       ? `⚠️ EXCLUIR TUDO\n\n` +
-        `${tipo === 'solicitacao' ? 'Solicitação' : 'Cotação'}: ${registro.numero}\n\n` +
+        `${tipo === "solicitacao" ? "Solicitação" : "Cotação"}: ${registro.numero}\n\n` +
         `Serão excluídos:\n` +
         `• ${dados.itens.length} item(ns)\n` +
-        (tipo === 'solicitacao' ? `• ${dados.aprovacoes.length} aprovação(ões)\n• ${dados.cotacoes.length} cotação(ões)\n` : '') +
-        (tipo === 'cotacao' ? `• ${dados.fornecedores.length} fornecedor(es)\n• ${dados.respostas.length} resposta(s)\n` : '') +
+        (tipo === "solicitacao"
+          ? `• ${dados.aprovacoes.length} aprovação(ões)\n• ${dados.cotacoes.length} cotação(ões)\n`
+          : "") +
+        (tipo === "cotacao"
+          ? `• ${dados.fornecedores.length} fornecedor(es)\n• ${dados.respostas.length} resposta(s)\n`
+          : "") +
         `\nEsta ação NÃO pode ser desfeita!`
       : `⚠️ EXCLUIR ITENS SELECIONADOS\n\n` +
         `Serão excluídos ${itensSelecionados.length} de ${dados.itens.length} item(ns)\n\n` +
@@ -118,8 +123,8 @@ export default function ConfirmacaoExclusaoModal({
       await onConfirm(registro, excluirTudo, itensSelecionados);
       onOpenChange(false);
     } catch (error) {
-      console.error('Erro:', error);
-      alert('❌ Erro ao excluir: ' + error.message);
+      console.error("Erro:", error);
+      alert("❌ Erro ao excluir: " + error.message);
     } finally {
       setProcessando(false);
     }
@@ -128,7 +133,11 @@ export default function ConfirmacaoExclusaoModal({
   if (loading) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="right" className="h-full overflow-y-auto p-0 flex flex-col" style={{ inset: 'auto 0 0 256px', width: 'calc(100% - 256px)', maxWidth: 'none' }}>
+        <SheetContent
+          side="right"
+          className="h-full overflow-y-auto p-0 flex flex-col"
+          style={{ inset: "auto 0 0 256px", width: "calc(100% - 256px)", maxWidth: "none" }}
+        >
           <div className="flex items-center justify-center h-64">
             <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
           </div>
@@ -137,12 +146,17 @@ export default function ConfirmacaoExclusaoModal({
     );
   }
 
-  const temBloqueio = dados.pedidos.length > 0 || 
-    (tipo === 'solicitacao' && dados.cotacoes.some(c => c.status === 'Aprovada'));
+  const temBloqueio =
+    dados.pedidos.length > 0 ||
+    (tipo === "solicitacao" && dados.cotacoes.some((c) => c.status === "Aprovada"));
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="h-full p-0 flex flex-col w-full md:w-[calc(100%-256px)] md:inset-auto md:right-0 md:left-256px md:top-16" data-fullscreen-modal>
+      <SheetContent
+        side="right"
+        className="h-full p-0 flex flex-col w-full md:w-[calc(100%-256px)] md:inset-auto md:right-0 md:left-256px md:top-16"
+        data-fullscreen-modal
+      >
         <div className="sticky top-0 bg-white border-b p-6 z-10 flex-shrink-0 flex items-center justify-between">
           <SheetHeader className="flex-1">
             <SheetTitle className="flex items-center gap-2">
@@ -150,7 +164,7 @@ export default function ConfirmacaoExclusaoModal({
               Confirmar Exclusão - {registro?.numero}
             </SheetTitle>
           </SheetHeader>
-          <button 
+          <button
             onClick={() => onOpenChange(false)}
             className="ml-4 p-2 hover:bg-slate-100 rounded-lg lg:hidden"
           >
@@ -172,10 +186,8 @@ export default function ConfirmacaoExclusaoModal({
                     • {dados.pedidos.length} pedido(s) de compra vinculado(s)
                   </p>
                 )}
-                {tipo === 'solicitacao' && dados.cotacoes.some(c => c.status === 'Aprovada') && (
-                  <p className="text-sm text-red-600">
-                    • Cotação aprovada vinculada
-                  </p>
+                {tipo === "solicitacao" && dados.cotacoes.some((c) => c.status === "Aprovada") && (
+                  <p className="text-sm text-red-600">• Cotação aprovada vinculada</p>
                 )}
                 <p className="text-xs text-red-600 mt-2">
                   Para excluir, primeiro remova os bloqueios acima.
@@ -191,13 +203,13 @@ export default function ConfirmacaoExclusaoModal({
                 <h3 className="font-semibold text-amber-800 mb-2">Dados que serão excluídos:</h3>
                 <div className="space-y-1 text-sm text-amber-700">
                   <p>• {dados.itens.length} item(ns)</p>
-                  {tipo === 'solicitacao' && (
+                  {tipo === "solicitacao" && (
                     <>
                       <p>• {dados.aprovacoes.length} aprovação(ões)</p>
                       <p>• {dados.cotacoes.length} cotação(ões)</p>
                     </>
                   )}
-                  {tipo === 'cotacao' && (
+                  {tipo === "cotacao" && (
                     <>
                       <p>• {dados.fornecedores.length} fornecedor(es) convidado(s)</p>
                       <p>• {dados.respostas.length} resposta(s) recebida(s)</p>
@@ -218,11 +230,12 @@ export default function ConfirmacaoExclusaoModal({
                     checked={excluirTudo}
                     onCheckedChange={setExcluirTudo}
                   />
-                  <label 
-                    htmlFor="excluir-tudo" 
+                  <label
+                    htmlFor="excluir-tudo"
                     className="text-sm font-medium cursor-pointer flex-1"
                   >
-                    Excluir {tipo === 'solicitacao' ? 'solicitação' : 'cotação'} completa (todos os itens e dados relacionados)
+                    Excluir {tipo === "solicitacao" ? "solicitação" : "cotação"} completa (todos os
+                    itens e dados relacionados)
                   </label>
                 </div>
               </CardContent>
@@ -235,23 +248,21 @@ export default function ConfirmacaoExclusaoModal({
               <CardContent className="p-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-slate-800">Selecione os itens para excluir:</h3>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={toggleTodos}
-                  >
-                    {itensSelecionados.length === dados.itens.length ? 'Desmarcar Todos' : 'Selecionar Todos'}
+                  <Button variant="outline" size="sm" onClick={toggleTodos}>
+                    {itensSelecionados.length === dados.itens.length
+                      ? "Desmarcar Todos"
+                      : "Selecionar Todos"}
                   </Button>
                 </div>
 
                 <div className="space-y-2">
                   {dados.itens.map((item, idx) => (
-                    <div 
+                    <div
                       key={item.id}
                       className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                        itensSelecionados.includes(item.id) 
-                          ? 'border-red-300 bg-red-50' 
-                          : 'border-slate-200 bg-white hover:bg-slate-50'
+                        itensSelecionados.includes(item.id)
+                          ? "border-red-300 bg-red-50"
+                          : "border-slate-200 bg-white hover:bg-slate-50"
                       }`}
                       onClick={() => toggleItem(item.id)}
                     >
@@ -282,7 +293,8 @@ export default function ConfirmacaoExclusaoModal({
 
                 {itensSelecionados.length > 0 && (
                   <p className="text-sm text-slate-600 bg-slate-50 p-3 rounded">
-                    <strong>{itensSelecionados.length}</strong> de <strong>{dados.itens.length}</strong> item(ns) selecionado(s) para exclusão
+                    <strong>{itensSelecionados.length}</strong> de{" "}
+                    <strong>{dados.itens.length}</strong> item(ns) selecionado(s) para exclusão
                   </p>
                 )}
               </CardContent>
@@ -301,14 +313,11 @@ export default function ConfirmacaoExclusaoModal({
               className="bg-red-600 hover:bg-red-700"
             >
               {processando ? (
-                'Excluindo...'
+                "Excluindo..."
               ) : (
                 <>
                   <Trash2 className="w-4 h-4 mr-2" />
-                  {excluirTudo 
-                    ? `Excluir Tudo` 
-                    : `Excluir ${itensSelecionados.length} Item(ns)`
-                  }
+                  {excluirTudo ? `Excluir Tudo` : `Excluir ${itensSelecionados.length} Item(ns)`}
                 </>
               )}
             </Button>

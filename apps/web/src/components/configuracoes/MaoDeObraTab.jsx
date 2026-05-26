@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -84,9 +84,9 @@ export default function MaoDeObraTab({
           (parseFloat(maoDeObraForm.raior_us) || 1),
       };
       if (selectedMaoDeObra) {
-        await base44.entities.MaoDeObra.update(selectedMaoDeObra.id, data);
+        await sigo.entities.MaoDeObra.update(selectedMaoDeObra.id, data);
       } else {
-        await base44.entities.MaoDeObra.create({ empresa_id: empresaAtiva.id, ...data });
+        await sigo.entities.MaoDeObra.create({ empresa_id: empresaAtiva.id, ...data });
       }
       setShowMaoDeObraModal(false);
       setMaoDeObraForm({
@@ -110,13 +110,13 @@ export default function MaoDeObraTab({
 
   const handleDeleteMaoDeObra = async (m) => {
     if (!confirm("Desativar?")) return;
-    await base44.entities.MaoDeObra.update(m.id, { ativo: false });
+    await sigo.entities.MaoDeObra.update(m.id, { ativo: false });
     loadData();
   };
 
   const handleCriarCategoriaMaoObra = async () => {
     if (!novaCatMaoObra.trim()) return;
-    await base44.entities.CategoriaMaoDeObra.create({
+    await sigo.entities.CategoriaMaoDeObra.create({
       empresa_id: empresaAtiva.id,
       nome: novaCatMaoObra,
       ativo: true,

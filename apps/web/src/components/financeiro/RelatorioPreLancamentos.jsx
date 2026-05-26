@@ -1,15 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Loader2 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Loader2 } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
 
 export default function RelatorioPreLancamentos({ empresaId, usuarioEmail, verTodos }) {
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(true);
 
-  const CORES = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6'];
+  const CORES = ["#ef4444", "#f59e0b", "#10b981", "#3b82f6"];
 
   useEffect(() => {
     carregarDados();
@@ -23,7 +35,7 @@ export default function RelatorioPreLancamentos({ empresaId, usuarioEmail, verTo
       if (!verTodos && usuarioEmail) {
         filtro.usuario_email = usuarioEmail;
       }
-      const preLancamentos = await base44.entities.PreLancamento.filter(filtro);
+      const preLancamentos = await sigo.entities.PreLancamento.filter(filtro);
 
       // Processar dados
       const porStatus = {};
@@ -31,10 +43,11 @@ export default function RelatorioPreLancamentos({ empresaId, usuarioEmail, verTo
       let totalValor = 0;
       let totalItens = preLancamentos.length;
 
-      preLancamentos.forEach(item => {
-        const dados = typeof item.dados_extraidos === 'string'
-          ? JSON.parse(item.dados_extraidos)
-          : item.dados_extraidos;
+      preLancamentos.forEach((item) => {
+        const dados =
+          typeof item.dados_extraidos === "string"
+            ? JSON.parse(item.dados_extraidos)
+            : item.dados_extraidos;
 
         const valor = parseFloat(dados.valor || 0);
         totalValor += valor;
@@ -43,7 +56,7 @@ export default function RelatorioPreLancamentos({ empresaId, usuarioEmail, verTo
         porStatus[item.status] = (porStatus[item.status] || 0) + 1;
 
         // Por projeto
-        const projeto = item.projeto_nome || 'Sem Projeto';
+        const projeto = item.projeto_nome || "Sem Projeto";
         if (!porProjeto[projeto]) {
           porProjeto[projeto] = { quantidade: 0, valor: 0 };
         }
@@ -53,13 +66,13 @@ export default function RelatorioPreLancamentos({ empresaId, usuarioEmail, verTo
 
       const statusData = Object.entries(porStatus).map(([status, qtd]) => ({
         name: status,
-        quantidade: qtd
+        quantidade: qtd,
       }));
 
       const projetoData = Object.entries(porProjeto).map(([projeto, dados]) => ({
         name: projeto,
         valor: dados.valor,
-        quantidade: dados.quantidade
+        quantidade: dados.quantidade,
       }));
 
       setDados({
@@ -67,10 +80,10 @@ export default function RelatorioPreLancamentos({ empresaId, usuarioEmail, verTo
         totalValor,
         statusData,
         projetoData,
-        porStatus
+        porStatus,
       });
     } catch (error) {
-      console.error('Erro ao carregar relatório:', error);
+      console.error("Erro ao carregar relatório:", error);
     } finally {
       setCarregando(false);
     }
@@ -108,7 +121,7 @@ export default function RelatorioPreLancamentos({ empresaId, usuarioEmail, verTo
             <div className="text-center">
               <p className="text-slate-600 text-sm">Valor Total</p>
               <p className="text-3xl font-bold text-slate-900 mt-2">
-                R$ {dados.totalValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                R$ {dados.totalValor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
               </p>
             </div>
           </CardContent>
@@ -119,7 +132,7 @@ export default function RelatorioPreLancamentos({ empresaId, usuarioEmail, verTo
             <div className="text-center">
               <p className="text-slate-600 text-sm">Pendentes</p>
               <p className="text-3xl font-bold text-yellow-600 mt-2">
-                {dados.porStatus['Pendente'] || 0}
+                {dados.porStatus["Pendente"] || 0}
               </p>
             </div>
           </CardContent>
@@ -167,7 +180,9 @@ export default function RelatorioPreLancamentos({ empresaId, usuarioEmail, verTo
                 <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
                 <YAxis />
                 <Tooltip
-                  formatter={(value) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
+                  formatter={(value) =>
+                    `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+                  }
                 />
                 <Legend />
                 <Bar dataKey="valor" fill="#f59e0b" name="Valor (R$)" />
@@ -189,16 +204,16 @@ export default function RelatorioPreLancamentos({ empresaId, usuarioEmail, verTo
           <div className="flex flex-wrap gap-3">
             {Object.entries(dados.porStatus).map(([status, quantidade]) => {
               const cores = {
-                'Pendente': 'bg-yellow-100 text-yellow-800',
-                'Confirmado': 'bg-blue-100 text-blue-800',
-                'Conciliado': 'bg-green-100 text-green-800',
-                'Rejeitado': 'bg-red-100 text-red-800'
+                Pendente: "bg-yellow-100 text-yellow-800",
+                Confirmado: "bg-blue-100 text-blue-800",
+                Conciliado: "bg-green-100 text-green-800",
+                Rejeitado: "bg-red-100 text-red-800",
               };
 
               return (
                 <Badge
                   key={status}
-                  className={`${cores[status] || 'bg-slate-100 text-slate-800'} px-4 py-2 text-base font-semibold`}
+                  className={`${cores[status] || "bg-slate-100 text-slate-800"} px-4 py-2 text-base font-semibold`}
                 >
                   {status}: {quantidade}
                 </Badge>

@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import React, { useState } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Table,
   TableBody,
@@ -14,23 +14,23 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Plus, Edit, Trash2, Search, Eye, FileText } from 'lucide-react';
-import { toast } from 'sonner';
+} from "@/components/ui/dropdown-menu";
+import { Plus, Edit, Trash2, Search, Eye, FileText } from "lucide-react";
+import { toast } from "sonner";
 
 export default function MateriaisTab({
   empresaAtiva,
@@ -44,26 +44,26 @@ export default function MateriaisTab({
   const [showMaterialModal, setShowMaterialModal] = useState(false);
   const [selectedMaterial, setSelectedMaterial] = useState(null);
   const [materialForm, setMaterialForm] = useState({
-    nome: '',
-    categoria: '',
-    codigo: '',
-    ean: '',
-    unidade: 'UN',
-    preco: '',
-    estoque: '',
-    estoque_minimo: '',
-    localizacao: '',
-    foto_url: '',
-    observacoes: '',
+    nome: "",
+    categoria: "",
+    codigo: "",
+    ean: "",
+    unidade: "UN",
+    preco: "",
+    estoque: "",
+    estoque_minimo: "",
+    localizacao: "",
+    foto_url: "",
+    observacoes: "",
   });
   const [uploadingMaterialFoto, setUploadingMaterialFoto] = useState(false);
   const [selectedMaterialIds, setSelectedMaterialIds] = useState([]);
   const [materiaisPage, setMateriaisPage] = useState(1);
-  const [buscaMaterial, setBuscaMaterial] = useState('');
-  const [filtroCategoriaMaterial, setFiltroCategoriaMaterial] = useState('');
+  const [buscaMaterial, setBuscaMaterial] = useState("");
+  const [filtroCategoriaMaterial, setFiltroCategoriaMaterial] = useState("");
   const [importProgress, setImportProgress] = useState({ show: false, current: 0, total: 0 });
   const [showNovaCatMaterial, setShowNovaCatMaterial] = useState(false);
-  const [novaCatMaterial, setNovaCatMaterial] = useState('');
+  const [novaCatMaterial, setNovaCatMaterial] = useState("");
 
   const fileInputMateriaisRef = React.useRef(null);
 
@@ -73,8 +73,9 @@ export default function MateriaisTab({
       let codigoFinal = materialForm.codigo;
 
       if (!codigoFinal && !selectedMaterial) {
-        const ultimoCodigo = materiais.length > 0 ? Math.max(...materiais.map(m => parseInt(m.codigo) || 0)) : 0;
-        codigoFinal = (ultimoCodigo + 1).toString().padStart(6, '0');
+        const ultimoCodigo =
+          materiais.length > 0 ? Math.max(...materiais.map((m) => parseInt(m.codigo) || 0)) : 0;
+        codigoFinal = (ultimoCodigo + 1).toString().padStart(6, "0");
       }
 
       const data = {
@@ -86,9 +87,9 @@ export default function MateriaisTab({
       };
 
       if (selectedMaterial) {
-        await base44.entities.Material.update(selectedMaterial.id, data);
+        await sigo.entities.Material.update(selectedMaterial.id, data);
       } else {
-        await base44.entities.Material.create({
+        await sigo.entities.Material.create({
           empresa_id: empresaAtiva.id,
           ...data,
           ativo: true,
@@ -96,23 +97,23 @@ export default function MateriaisTab({
       }
       setShowMaterialModal(false);
       setMaterialForm({
-        nome: '',
-        categoria: '',
-        codigo: '',
-        ean: '',
-        unidade: 'UN',
-        preco: '',
-        estoque: '',
-        estoque_minimo: '',
-        localizacao: '',
-        foto_url: '',
-        observacoes: '',
+        nome: "",
+        categoria: "",
+        codigo: "",
+        ean: "",
+        unidade: "UN",
+        preco: "",
+        estoque: "",
+        estoque_minimo: "",
+        localizacao: "",
+        foto_url: "",
+        observacoes: "",
       });
       setSelectedMaterial(null);
       loadData();
     } catch (error) {
-      console.error('Erro:', error);
-      toast.error('Erro ao salvar material');
+      console.error("Erro:", error);
+      toast.error("Erro ao salvar material");
     }
   };
 
@@ -121,144 +122,144 @@ export default function MateriaisTab({
     if (!file) return;
     setUploadingMaterialFoto(true);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       setMaterialForm({ ...materialForm, foto_url: file_url });
-      toast.success('✅ Foto enviada');
+      toast.success("✅ Foto enviada");
     } catch (error) {
-      console.error('Erro:', error);
-      toast.error('❌ Erro ao enviar foto');
+      console.error("Erro:", error);
+      toast.error("❌ Erro ao enviar foto");
     } finally {
       setUploadingMaterialFoto(false);
     }
   };
 
   const handleDeleteMaterial = async (material) => {
-    if (!confirm('Desativar este material?')) return;
-    await base44.entities.Material.update(material.id, { ativo: false });
+    if (!confirm("Desativar este material?")) return;
+    await sigo.entities.Material.update(material.id, { ativo: false });
     loadData();
   };
 
   const handleLimparTodosMateriais = async () => {
-    if (!confirm('Tem certeza? Isso não pode ser desfeito')) return;
+    if (!confirm("Tem certeza? Isso não pode ser desfeito")) return;
     try {
-      const toDelete = materiais.filter(m => m.ativo);
+      const toDelete = materiais.filter((m) => m.ativo);
       for (const m of toDelete) {
-        await base44.entities.Material.update(m.id, { ativo: false });
+        await sigo.entities.Material.update(m.id, { ativo: false });
       }
       setSelectedMaterialIds([]);
       loadData();
-      toast.success('✅ Todos os materiais foram desativados');
+      toast.success("✅ Todos os materiais foram desativados");
     } catch (error) {
-      toast.error('❌ Erro ao limpar');
+      toast.error("❌ Erro ao limpar");
     }
   };
 
   const handleDeletarSelecionadosMateriais = async () => {
-    if (!confirm('Desativar selecionados?')) return;
+    if (!confirm("Desativar selecionados?")) return;
     try {
       for (const id of selectedMaterialIds) {
-        await base44.entities.Material.update(id, { ativo: false });
+        await sigo.entities.Material.update(id, { ativo: false });
       }
       setSelectedMaterialIds([]);
       loadData();
-      toast.success('✅ Materiais desativados');
+      toast.success("✅ Materiais desativados");
     } catch (error) {
-      toast.error('❌ Erro ao desativar');
+      toast.error("❌ Erro ao desativar");
     }
   };
 
   const handleExportarExcel = () => {
-    const dados = materiais.map(m => [
-      m.nome || '',
-      '',
-      m.unidade || '',
-      m.codigo || '',
-      m.ean || '',
-      m.ncm || '',
-      m.categoria || '',
+    const dados = materiais.map((m) => [
+      m.nome || "",
+      "",
+      m.unidade || "",
+      m.codigo || "",
+      m.ean || "",
+      m.ncm || "",
+      m.categoria || "",
       m.preco || 0,
       m.preco_medio || 0,
       m.estoque || 0,
       m.estoque_minimo || 0,
-      m.localizacao || '',
-      m.observacoes || '',
+      m.localizacao || "",
+      m.observacoes || "",
     ]);
 
     const headers = [
-      'Nome',
-      'Descrição',
-      'Unidade de Medida',
-      'Código Interno',
-      'Código de Barras',
-      'NCM',
-      'Categoria',
-      'Preço Referência',
-      'Preço Médio',
-      'Estoque Atual',
-      'Estoque Mínimo',
-      'Localização',
-      'Observações',
+      "Nome",
+      "Descrição",
+      "Unidade de Medida",
+      "Código Interno",
+      "Código de Barras",
+      "NCM",
+      "Categoria",
+      "Preço Referência",
+      "Preço Médio",
+      "Estoque Atual",
+      "Estoque Mínimo",
+      "Localização",
+      "Observações",
     ];
     const linhas = [headers, ...dados];
     const csv = linhas
-      .map(row =>
+      .map((row) =>
         row
-          .map(cell => {
+          .map((cell) => {
             const cellStr = String(cell).replace(/"/g, '""');
-            return cellStr.includes(';') || cellStr.includes('\n') || cellStr.includes('"')
+            return cellStr.includes(";") || cellStr.includes("\n") || cellStr.includes('"')
               ? `"${cellStr}"`
               : cellStr;
           })
-          .join(';')
+          .join(";")
       )
-      .join('\n');
+      .join("\n");
 
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `materiais_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `materiais_${new Date().toISOString().split("T")[0]}.csv`;
     link.click();
   };
 
   const handleBaixarModelo = () => {
     const modelo = [
       [
-        'Nome',
-        'Descrição',
-        'Unidade de Medida',
-        'Código Interno',
-        'Código de Barras',
-        'NCM',
-        'Categoria',
-        'Preço Referência',
-        'Preço Médio',
-        'Estoque Atual',
-        'Estoque Mínimo',
-        'Localização',
-        'Observações',
+        "Nome",
+        "Descrição",
+        "Unidade de Medida",
+        "Código Interno",
+        "Código de Barras",
+        "NCM",
+        "Categoria",
+        "Preço Referência",
+        "Preço Médio",
+        "Estoque Atual",
+        "Estoque Mínimo",
+        "Localização",
+        "Observações",
       ],
       [
-        'Cimento Portland CP-II saco 50kg',
-        '',
-        'SC',
-        'MAT001',
-        '7891234567890',
-        '25232900',
-        'Cimento',
-        '35.5',
-        '36',
-        '100',
-        '20',
-        'Prateleira A1',
-        '',
+        "Cimento Portland CP-II saco 50kg",
+        "",
+        "SC",
+        "MAT001",
+        "7891234567890",
+        "25232900",
+        "Cimento",
+        "35.5",
+        "36",
+        "100",
+        "20",
+        "Prateleira A1",
+        "",
       ],
     ];
 
-    const csv = modelo.map(row => row.join(';')).join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
+    const csv = modelo.map((row) => row.join(";")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = 'modelo_importacao_materiais.csv';
+    link.download = "modelo_importacao_materiais.csv";
     link.click();
   };
 
@@ -275,51 +276,56 @@ export default function MateriaisTab({
       let linhasIgnoradas = 0;
 
       const codigosNumericos = materiais
-        .map(m => m.codigo || '')
-        .filter(c => /^\d+$/.test(c.trim()))
-        .map(c => parseInt(c.trim(), 10) || 0);
+        .map((m) => m.codigo || "")
+        .filter((c) => /^\d+$/.test(c.trim()))
+        .map((c) => parseInt(c.trim(), 10) || 0);
       let proximoCodigo = codigosNumericos.length > 0 ? Math.max(...codigosNumericos) + 1 : 1;
 
-      const toMoeda = val => {
-        if (val === null || val === undefined || val === '') return 0;
-        if (typeof val === 'number') return val;
-        let s = val.toString().trim().replace(/R\$\s*/gi, '').replace(/\s/g, '');
-        if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+      const toMoeda = (val) => {
+        if (val === null || val === undefined || val === "") return 0;
+        if (typeof val === "number") return val;
+        let s = val
+          .toString()
+          .trim()
+          .replace(/R\$\s*/gi, "")
+          .replace(/\s/g, "");
+        if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
         return parseFloat(s) || 0;
       };
 
-      const toNum = val => {
-        if (val === null || val === undefined || val === '') return 0;
-        if (typeof val === 'number') return val;
-        return parseFloat(val.toString().replace(',', '.')) || 0;
+      const toNum = (val) => {
+        if (val === null || val === undefined || val === "") return 0;
+        if (typeof val === "number") return val;
+        return parseFloat(val.toString().replace(",", ".")) || 0;
       };
 
       for (let i = 0; i < rows.length; i++) {
         try {
           const values = rows[i];
-          const nome = (values[0] ?? '').toString().trim();
+          const nome = (values[0] ?? "").toString().trim();
           if (!nome) {
             linhasIgnoradas++;
             continue;
           }
 
-          const codigoRaw = (values[3] ?? '').toString().trim();
-          const codigo = codigoRaw.length > 0 ? codigoRaw : (proximoCodigo++).toString().padStart(6, '0');
+          const codigoRaw = (values[3] ?? "").toString().trim();
+          const codigo =
+            codigoRaw.length > 0 ? codigoRaw : (proximoCodigo++).toString().padStart(6, "0");
 
           materaisImportados.push({
             empresa_id: empresaAtiva.id,
             nome,
-            unidade: (values[2] ?? '').toString().trim() || 'UN',
+            unidade: (values[2] ?? "").toString().trim() || "UN",
             codigo,
-            ean: (values[4] ?? '').toString().trim(),
-            ncm: (values[5] ?? '').toString().trim(),
-            categoria: (values[6] ?? '').toString().trim(),
+            ean: (values[4] ?? "").toString().trim(),
+            ncm: (values[5] ?? "").toString().trim(),
+            categoria: (values[6] ?? "").toString().trim(),
             preco: toMoeda(values[7]),
             preco_medio: toMoeda(values[8]),
             estoque: toNum(values[9]),
             estoque_minimo: toNum(values[10]),
-            localizacao: (values[11] ?? '').toString().trim(),
-            observacoes: (values[12] ?? '').toString().trim(),
+            localizacao: (values[11] ?? "").toString().trim(),
+            observacoes: (values[12] ?? "").toString().trim(),
             ativo: true,
           });
         } catch {
@@ -329,7 +335,7 @@ export default function MateriaisTab({
 
       if (materaisImportados.length === 0) {
         setImportProgress({ show: false, current: 0, total: 0 });
-        toast.error('❌ Nenhum material válido encontrado', { duration: 4000 });
+        toast.error("❌ Nenhum material válido encontrado", { duration: 4000 });
         return;
       }
 
@@ -338,25 +344,25 @@ export default function MateriaisTab({
       const BATCH_SIZE = 200;
       let importados = 0;
       for (let i = 0; i < materaisImportados.length; i += BATCH_SIZE) {
-        const batch = materaisImportados.slice(i, i + BATCH_SIZE).map(mat => {
+        const batch = materaisImportados.slice(i, i + BATCH_SIZE).map((mat) => {
           const limpo = { ...mat };
-          Object.keys(limpo).forEach(key => {
+          Object.keys(limpo).forEach((key) => {
             if (
-              (limpo[key] === '' || limpo[key] === null || limpo[key] === undefined) &&
-              key !== 'nome' &&
-              key !== 'unidade' &&
-              key !== 'empresa_id'
+              (limpo[key] === "" || limpo[key] === null || limpo[key] === undefined) &&
+              key !== "nome" &&
+              key !== "unidade" &&
+              key !== "empresa_id"
             ) {
               delete limpo[key];
             }
           });
           return limpo;
         });
-        await base44.entities.Material.bulkCreate(batch);
+        await sigo.entities.Material.bulkCreate(batch);
         importados += batch.length;
         setImportProgress({ show: true, current: importados, total: materaisImportados.length });
         if (i + BATCH_SIZE < materaisImportados.length) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise((resolve) => setTimeout(resolve, 500));
         }
       }
 
@@ -369,25 +375,25 @@ export default function MateriaisTab({
 
     if (isExcel) {
       const reader = new FileReader();
-      reader.onload = async event => {
+      reader.onload = async (event) => {
         try {
           let text = event.target.result;
           if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
 
-          const firstLine = text.split(/\r?\n/)[0] || '';
+          const firstLine = text.split(/\r?\n/)[0] || "";
           const totalTabFirst = (firstLine.match(/\t/g) || []).length;
           const totalSemiFirst = (firstLine.match(/;/g) || []).length;
           const totalCommaFirst = (firstLine.match(/,/g) || []).length;
           const sep =
             totalTabFirst > 0 && totalTabFirst >= totalSemiFirst && totalTabFirst >= totalCommaFirst
-              ? '\t'
+              ? "\t"
               : totalSemiFirst > 0
-                ? ';'
-                : ',';
+                ? ";"
+                : ",";
 
           const parseCSVFull = (rawText, separator) => {
             const rows = [];
-            let cur = '';
+            let cur = "";
             let inQ = false;
             for (let i = 0; i < rawText.length; i++) {
               const c = rawText[i];
@@ -399,14 +405,14 @@ export default function MateriaisTab({
                 } else {
                   inQ = !inQ;
                 }
-              } else if ((c === '\r' && next === '\n') || c === '\n') {
+              } else if ((c === "\r" && next === "\n") || c === "\n") {
                 if (inQ) {
-                  cur += '\n';
-                  if (c === '\r') i++;
+                  cur += "\n";
+                  if (c === "\r") i++;
                 } else {
-                  if (c === '\r') i++;
+                  if (c === "\r") i++;
                   rows.push(cur);
-                  cur = '';
+                  cur = "";
                 }
               } else {
                 cur += c;
@@ -414,9 +420,9 @@ export default function MateriaisTab({
             }
             if (cur.trim()) rows.push(cur);
 
-            return rows.map(row => {
+            return rows.map((row) => {
               const vals = [];
-              let field = '';
+              let field = "";
               let inQuote = false;
               for (let k = 0; k < row.length; k++) {
                 const ch = row[k];
@@ -429,7 +435,7 @@ export default function MateriaisTab({
                   }
                 } else if (ch === separator && !inQuote) {
                   vals.push(field.trim());
-                  field = '';
+                  field = "";
                 } else {
                   field += ch;
                 }
@@ -441,39 +447,39 @@ export default function MateriaisTab({
 
           const allRows = parseCSVFull(text, sep);
           if (allRows.length <= 1) {
-            toast.error('❌ Arquivo vazio ou sem dados válidos', { duration: 4000 });
+            toast.error("❌ Arquivo vazio ou sem dados válidos", { duration: 4000 });
             setImportProgress({ show: false, current: 0, total: 0 });
             return;
           }
-          const rows = allRows.slice(1).filter(r => r.some(v => v.trim()));
+          const rows = allRows.slice(1).filter((r) => r.some((v) => v.trim()));
           await processarDados(rows);
         } catch (error) {
           setImportProgress({ show: false, current: 0, total: 0 });
           toast.error(`❌ Erro ao processar Excel: ${error.message}`, { duration: 6000 });
         }
       };
-      reader.readAsText(file, 'UTF-8');
+      reader.readAsText(file, "UTF-8");
     } else {
       const reader = new FileReader();
-      reader.onload = async event => {
+      reader.onload = async (event) => {
         try {
           let text = event.target.result;
           if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
 
-          const firstLine = text.split(/\r?\n/)[0] || '';
+          const firstLine = text.split(/\r?\n/)[0] || "";
           const totalTabFirst = (firstLine.match(/\t/g) || []).length;
           const totalSemiFirst = (firstLine.match(/;/g) || []).length;
           const totalCommaFirst = (firstLine.match(/,/g) || []).length;
           const sep =
             totalTabFirst > 0 && totalTabFirst >= totalSemiFirst && totalTabFirst >= totalCommaFirst
-              ? '\t'
+              ? "\t"
               : totalSemiFirst > 0
-                ? ';'
-                : ',';
+                ? ";"
+                : ",";
 
           const parseCSVFull = (rawText, separator) => {
             const rows = [];
-            let cur = '';
+            let cur = "";
             let inQ = false;
             for (let i = 0; i < rawText.length; i++) {
               const c = rawText[i];
@@ -485,14 +491,14 @@ export default function MateriaisTab({
                 } else {
                   inQ = !inQ;
                 }
-              } else if ((c === '\r' && next === '\n') || c === '\n') {
+              } else if ((c === "\r" && next === "\n") || c === "\n") {
                 if (inQ) {
-                  cur += '\n';
-                  if (c === '\r') i++;
+                  cur += "\n";
+                  if (c === "\r") i++;
                 } else {
-                  if (c === '\r') i++;
+                  if (c === "\r") i++;
                   rows.push(cur);
-                  cur = '';
+                  cur = "";
                 }
               } else {
                 cur += c;
@@ -500,9 +506,9 @@ export default function MateriaisTab({
             }
             if (cur.trim()) rows.push(cur);
 
-            return rows.map(row => {
+            return rows.map((row) => {
               const vals = [];
-              let field = '';
+              let field = "";
               let inQuote = false;
               for (let k = 0; k < row.length; k++) {
                 const ch = row[k];
@@ -515,7 +521,7 @@ export default function MateriaisTab({
                   }
                 } else if (ch === separator && !inQuote) {
                   vals.push(field.trim());
-                  field = '';
+                  field = "";
                 } else {
                   field += ch;
                 }
@@ -527,37 +533,37 @@ export default function MateriaisTab({
 
           const allRows = parseCSVFull(text, sep);
           if (allRows.length <= 1) {
-            toast.error('❌ Arquivo vazio ou sem dados válidos', { duration: 4000 });
+            toast.error("❌ Arquivo vazio ou sem dados válidos", { duration: 4000 });
             setImportProgress({ show: false, current: 0, total: 0 });
             return;
           }
-          const rows = allRows.slice(1).filter(r => r.some(v => v.trim()));
+          const rows = allRows.slice(1).filter((r) => r.some((v) => v.trim()));
           await processarDados(rows);
         } catch (error) {
           setImportProgress({ show: false, current: 0, total: 0 });
           toast.error(`❌ Erro ao processar: ${error.message}`, { duration: 6000 });
         }
       };
-      reader.readAsText(file, 'UTF-8');
+      reader.readAsText(file, "UTF-8");
     }
-    e.target.value = '';
+    e.target.value = "";
   };
 
   const handleCriarCategoriaMaterial = async () => {
     if (!novaCatMaterial.trim()) return;
-    await base44.entities.CategoriaMaterial.create({
+    await sigo.entities.CategoriaMaterial.create({
       empresa_id: empresaAtiva.id,
       nome: novaCatMaterial,
       ativo: true,
     });
-    setNovaCatMaterial('');
+    setNovaCatMaterial("");
     setShowNovaCatMaterial(false);
     loadData();
   };
 
   const handleDeleteCategoriaMaterial = async (catId) => {
-    if (!confirm('Excluir esta categoria?')) return;
-    await base44.entities.CategoriaMaterial.delete(catId);
+    if (!confirm("Excluir esta categoria?")) return;
+    await sigo.entities.CategoriaMaterial.delete(catId);
     loadData();
   };
 
@@ -611,17 +617,17 @@ export default function MateriaisTab({
               onClick={() => {
                 setSelectedMaterial(null);
                 setMaterialForm({
-                  nome: '',
-                  categoria: '',
-                  codigo: '',
-                  ean: '',
-                  unidade: 'UN',
-                  preco: '',
-                  estoque: '',
-                  estoque_minimo: '',
-                  localizacao: '',
-                  foto_url: '',
-                  observacoes: '',
+                  nome: "",
+                  categoria: "",
+                  codigo: "",
+                  ean: "",
+                  unidade: "UN",
+                  preco: "",
+                  estoque: "",
+                  estoque_minimo: "",
+                  localizacao: "",
+                  foto_url: "",
+                  observacoes: "",
                 });
                 setShowMaterialModal(true);
               }}
@@ -636,7 +642,7 @@ export default function MateriaisTab({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <Input
               value={buscaMaterial}
-              onChange={e => setBuscaMaterial(e.target.value)}
+              onChange={(e) => setBuscaMaterial(e.target.value)}
               placeholder="Buscar por nome, código ou EAN..."
               className="pl-10"
             />
@@ -647,7 +653,7 @@ export default function MateriaisTab({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={null}>Todas as categorias</SelectItem>
-              {categoriasMaterial.map(c => (
+              {categoriasMaterial.map((c) => (
                 <SelectItem key={c.id} value={c.nome}>
                   {c.nome}
                 </SelectItem>
@@ -663,10 +669,12 @@ export default function MateriaisTab({
               <TableRow>
                 <TableHead className="w-12">
                   <Checkbox
-                    checked={selectedMaterialIds.length === materiais.length && materiais.length > 0}
-                    onCheckedChange={checked => {
+                    checked={
+                      selectedMaterialIds.length === materiais.length && materiais.length > 0
+                    }
+                    onCheckedChange={(checked) => {
                       if (checked) {
-                        setSelectedMaterialIds(materiais.map(m => m.id));
+                        setSelectedMaterialIds(materiais.map((m) => m.id));
                       } else {
                         setSelectedMaterialIds([]);
                       }
@@ -686,32 +694,33 @@ export default function MateriaisTab({
             </TableHeader>
             <TableBody>
               {materiais
-                .filter(m => {
+                .filter((m) => {
                   const matchBusca =
                     !buscaMaterial ||
                     m.nome?.toLowerCase().includes(buscaMaterial.toLowerCase()) ||
                     m.codigo?.toLowerCase().includes(buscaMaterial.toLowerCase()) ||
                     m.ean?.toLowerCase().includes(buscaMaterial.toLowerCase());
-                  const matchCategoria = !filtroCategoriaMaterial || m.categoria === filtroCategoriaMaterial;
+                  const matchCategoria =
+                    !filtroCategoriaMaterial || m.categoria === filtroCategoriaMaterial;
                   return matchBusca && matchCategoria;
                 })
                 .slice((materiaisPage - 1) * 50, materiaisPage * 50)
-                .map(m => (
+                .map((m) => (
                   <TableRow key={m.id}>
                     <TableCell>
                       <Checkbox
                         checked={selectedMaterialIds.includes(m.id)}
-                        onCheckedChange={checked => {
+                        onCheckedChange={(checked) => {
                           if (checked) {
                             setSelectedMaterialIds([...selectedMaterialIds, m.id]);
                           } else {
-                            setSelectedMaterialIds(selectedMaterialIds.filter(id => id !== m.id));
+                            setSelectedMaterialIds(selectedMaterialIds.filter((id) => id !== m.id));
                           }
                         }}
                       />
                     </TableCell>
                     <TableCell className="font-medium">{m.nome}</TableCell>
-                    <TableCell>{m.categoria || '-'}</TableCell>
+                    <TableCell>{m.categoria || "-"}</TableCell>
                     <TableCell>
                       <div className="text-xs">
                         {m.codigo && <div>int: {m.codigo}</div>}
@@ -723,10 +732,12 @@ export default function MateriaisTab({
                     <TableCell>
                       <div className="flex items-center gap-1">
                         {m.estoque || 0}
-                        {(m.estoque || 0) <= (m.estoque_minimo || 0) && <span className="text-red-500">⚠️</span>}
+                        {(m.estoque || 0) <= (m.estoque_minimo || 0) && (
+                          <span className="text-red-500">⚠️</span>
+                        )}
                       </div>
                     </TableCell>
-                    <TableCell>{m.localizacao || '-'}</TableCell>
+                    <TableCell>{m.localizacao || "-"}</TableCell>
                     <TableCell>
                       <Badge className="bg-green-100 text-green-700">Ativo</Badge>
                     </TableCell>
@@ -737,7 +748,7 @@ export default function MateriaisTab({
                           size="icon"
                           onClick={() => {
                             setCatalogItemId(m.id);
-                            setCatalogItemTipo('material');
+                            setCatalogItemTipo("material");
                             setShowVisualizarCatalog(true);
                           }}
                           title="Visualizar imagem"
@@ -768,8 +779,8 @@ export default function MateriaisTab({
         {materiais.length > 50 && (
           <div className="flex justify-between items-center mt-4 pt-4 border-t">
             <p className="text-sm text-slate-600">
-              Mostrando {(materiaisPage - 1) * 50 + 1} a {Math.min(materiaisPage * 50, materiais.length)} de{' '}
-              {materiais.length} materiais
+              Mostrando {(materiaisPage - 1) * 50 + 1} a{" "}
+              {Math.min(materiaisPage * 50, materiais.length)} de {materiais.length} materiais
             </p>
             <div className="flex gap-2">
               <Button
@@ -797,14 +808,14 @@ export default function MateriaisTab({
       <Sheet open={showMaterialModal} onOpenChange={setShowMaterialModal}>
         <SheetContent side="right" className="h-full overflow-y-auto p-0 flex flex-col">
           <SheetHeader>
-            <SheetTitle>{selectedMaterial ? 'Editar Material' : 'Novo Material'}</SheetTitle>
+            <SheetTitle>{selectedMaterial ? "Editar Material" : "Novo Material"}</SheetTitle>
           </SheetHeader>
           <div className="space-y-6 py-4 px-6 flex-1">
             <div>
               <Label>Nome *</Label>
               <Input
-                value={materialForm.nome || ''}
-                onChange={e => setMaterialForm({ ...materialForm, nome: e.target.value })}
+                value={materialForm.nome || ""}
+                onChange={(e) => setMaterialForm({ ...materialForm, nome: e.target.value })}
                 placeholder="Nome do material"
                 className="mt-1.5"
               />
@@ -814,26 +825,37 @@ export default function MateriaisTab({
               <div>
                 <Label>Categoria</Label>
                 <div className="flex gap-2 mt-1.5">
-                  <Select value={materialForm.categoria || ''} onValueChange={v => setMaterialForm({ ...materialForm, categoria: v })}>
+                  <Select
+                    value={materialForm.categoria || ""}
+                    onValueChange={(v) => setMaterialForm({ ...materialForm, categoria: v })}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {categoriasMaterial.map(c => (
+                      {categoriasMaterial.map((c) => (
                         <SelectItem key={c.id} value={c.nome}>
                           {c.nome}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button type="button" variant="outline" size="icon" onClick={() => setShowNovaCatMaterial(!showNovaCatMaterial)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setShowNovaCatMaterial(!showNovaCatMaterial)}
+                  >
                     <Plus className="w-4 h-4" />
                   </Button>
                 </div>
               </div>
               <div>
                 <Label>Unidade</Label>
-                <Select value={materialForm.unidade} onValueChange={v => setMaterialForm({ ...materialForm, unidade: v })}>
+                <Select
+                  value={materialForm.unidade}
+                  onValueChange={(v) => setMaterialForm({ ...materialForm, unidade: v })}
+                >
                   <SelectTrigger className="mt-1.5">
                     <SelectValue />
                   </SelectTrigger>
@@ -856,8 +878,8 @@ export default function MateriaisTab({
             <div>
               <Label>Código Interno</Label>
               <Input
-                value={materialForm.codigo || ''}
-                onChange={e => setMaterialForm({ ...materialForm, codigo: e.target.value })}
+                value={materialForm.codigo || ""}
+                onChange={(e) => setMaterialForm({ ...materialForm, codigo: e.target.value })}
                 className="mt-1.5"
               />
             </div>
@@ -866,8 +888,8 @@ export default function MateriaisTab({
               <Label>Preço de Referência</Label>
               <Input
                 type="number"
-                value={materialForm.preco || ''}
-                onChange={e => setMaterialForm({ ...materialForm, preco: e.target.value })}
+                value={materialForm.preco || ""}
+                onChange={(e) => setMaterialForm({ ...materialForm, preco: e.target.value })}
                 className="mt-1.5"
               />
             </div>
@@ -877,8 +899,8 @@ export default function MateriaisTab({
                 <Label>Estoque Atual</Label>
                 <Input
                   type="number"
-                  value={materialForm.estoque || ''}
-                  onChange={e => setMaterialForm({ ...materialForm, estoque: e.target.value })}
+                  value={materialForm.estoque || ""}
+                  onChange={(e) => setMaterialForm({ ...materialForm, estoque: e.target.value })}
                   className="mt-1.5"
                 />
               </div>
@@ -886,8 +908,10 @@ export default function MateriaisTab({
                 <Label>Estoque Mínimo</Label>
                 <Input
                   type="number"
-                  value={materialForm.estoque_minimo || ''}
-                  onChange={e => setMaterialForm({ ...materialForm, estoque_minimo: e.target.value })}
+                  value={materialForm.estoque_minimo || ""}
+                  onChange={(e) =>
+                    setMaterialForm({ ...materialForm, estoque_minimo: e.target.value })
+                  }
                   className="mt-1.5"
                 />
               </div>
@@ -896,8 +920,8 @@ export default function MateriaisTab({
             <div>
               <Label>Localização</Label>
               <Input
-                value={materialForm.localizacao || ''}
-                onChange={e => setMaterialForm({ ...materialForm, localizacao: e.target.value })}
+                value={materialForm.localizacao || ""}
+                onChange={(e) => setMaterialForm({ ...materialForm, localizacao: e.target.value })}
                 placeholder="Prateleira, Corredor..."
                 className="mt-1.5"
               />

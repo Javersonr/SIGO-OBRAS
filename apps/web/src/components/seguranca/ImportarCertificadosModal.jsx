@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
-import { Upload, CheckCircle2, AlertCircle, Loader2, Eye } from 'lucide-react';
-import { toast } from 'sonner';
-import VisualizarCertificadoModal from './VisualizarCertificadoModal';
+import React, { useState } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Upload, CheckCircle2, AlertCircle, Loader2, Eye } from "lucide-react";
+import { toast } from "sonner";
+import VisualizarCertificadoModal from "./VisualizarCertificadoModal";
 
 export default function ImportarCertificadosModal({ open, onOpenChange, empresaAtiva }) {
   const [arquivo, setArquivo] = useState(null);
@@ -22,12 +22,12 @@ export default function ImportarCertificadosModal({ open, onOpenChange, empresaA
 
     try {
       // Upload do ZIP primeiro
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
 
       // Enviar URL para função backend
-      const response = await base44.functions.invoke('processarCertificadosComIA', {
+      const response = await sigo.functions.invoke("processarCertificadosComIA", {
         zipUrl: file_url,
-        empresaId: empresaAtiva.id
+        empresaId: empresaAtiva.id,
       });
 
       setResultado(response.data);
@@ -39,8 +39,8 @@ export default function ImportarCertificadosModal({ open, onOpenChange, empresaA
         toast.warning(`${response.data.erros_count} erro(s) durante a importação`);
       }
     } catch (error) {
-      console.error('Erro ao processar:', error);
-      toast.error('Erro ao processar certificados');
+      console.error("Erro ao processar:", error);
+      toast.error("Erro ao processar certificados");
     } finally {
       setLoading(false);
     }
@@ -48,8 +48,8 @@ export default function ImportarCertificadosModal({ open, onOpenChange, empresaA
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent 
-        side="right" 
+      <SheetContent
+        side="right"
         className="h-full overflow-y-auto p-0 flex flex-col w-full sm:max-w-2xl"
       >
         <SheetHeader className="border-b p-4">
@@ -75,7 +75,9 @@ export default function ImportarCertificadosModal({ open, onOpenChange, empresaA
           <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center hover:border-blue-400 transition">
             <label htmlFor="zip-upload" className="cursor-pointer flex flex-col items-center gap-2">
               <Upload className="w-8 h-8 text-slate-400" />
-              <span className="text-sm font-medium text-slate-700">Clique ou arraste o ZIP aqui</span>
+              <span className="text-sm font-medium text-slate-700">
+                Clique ou arraste o ZIP aqui
+              </span>
               <span className="text-xs text-slate-500">Máximo: 100MB</span>
               <input
                 id="zip-upload"
@@ -124,34 +126,38 @@ export default function ImportarCertificadosModal({ open, onOpenChange, empresaA
                     Certificados Importados
                   </h4>
                   <div className="space-y-2 max-h-48 overflow-y-auto">
-                   {resultado.processados.map((item, idx) => (
-                     <div 
-                       key={idx} 
-                       className="text-xs bg-green-50 border border-green-200 rounded p-3 cursor-pointer hover:bg-green-100 transition flex items-start justify-between gap-2"
-                       onClick={() => setTreinamentoSelecionado(item)}
-                     >
-                       <div className="flex-1">
-                         <p className="font-medium text-green-900 mb-1">✓ {item.funcionario}</p>
-                         <div className="ml-3 space-y-1">
-                           <p className="text-green-700"><strong>Treinamento:</strong> {item.treinamento}</p>
-                           {item.data_inicio && <p className="text-green-600">📅 {item.data_inicio}</p>}
-                           {item.data_fim && <p className="text-green-600">→ {item.data_fim}</p>}
-                           <p className="text-green-600">📄 {item.arquivo}</p>
-                         </div>
-                       </div>
-                       <Button 
-                         size="icon" 
-                         variant="ghost" 
-                         className="h-6 w-6 text-green-600 hover:bg-green-200 flex-shrink-0"
-                         onClick={(e) => {
-                           e.stopPropagation();
-                           setTreinamentoSelecionado(item);
-                         }}
-                       >
-                         <Eye className="w-4 h-4" />
-                       </Button>
-                     </div>
-                   ))}
+                    {resultado.processados.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="text-xs bg-green-50 border border-green-200 rounded p-3 cursor-pointer hover:bg-green-100 transition flex items-start justify-between gap-2"
+                        onClick={() => setTreinamentoSelecionado(item)}
+                      >
+                        <div className="flex-1">
+                          <p className="font-medium text-green-900 mb-1">✓ {item.funcionario}</p>
+                          <div className="ml-3 space-y-1">
+                            <p className="text-green-700">
+                              <strong>Treinamento:</strong> {item.treinamento}
+                            </p>
+                            {item.data_inicio && (
+                              <p className="text-green-600">📅 {item.data_inicio}</p>
+                            )}
+                            {item.data_fim && <p className="text-green-600">→ {item.data_fim}</p>}
+                            <p className="text-green-600">📄 {item.arquivo}</p>
+                          </div>
+                        </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 text-green-600 hover:bg-green-200 flex-shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTreinamentoSelecionado(item);
+                          }}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -165,7 +171,10 @@ export default function ImportarCertificadosModal({ open, onOpenChange, empresaA
                   </h4>
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {resultado.erros.map((item, idx) => (
-                      <div key={idx} className="text-xs bg-red-50 border border-red-200 rounded p-2">
+                      <div
+                        key={idx}
+                        className="text-xs bg-red-50 border border-red-200 rounded p-2"
+                      >
                         <p className="font-medium text-red-900">{item.arquivo}</p>
                         <p className="text-red-700">{item.motivo}</p>
                       </div>
@@ -182,7 +191,7 @@ export default function ImportarCertificadosModal({ open, onOpenChange, empresaA
             Fechar
           </Button>
           {resultado && (
-            <Button 
+            <Button
               onClick={() => {
                 setArquivo(null);
                 setResultado(null);
@@ -196,13 +205,13 @@ export default function ImportarCertificadosModal({ open, onOpenChange, empresaA
 
         {/* Modal de visualização */}
         {treinamentoSelecionado && (
-          <VisualizarCertificadoModal 
+          <VisualizarCertificadoModal
             open={!!treinamentoSelecionado}
             onOpenChange={(isOpen) => {
               if (!isOpen) setTreinamentoSelecionado(null);
             }}
             treinamento={treinamentoSelecionado}
-            funcionario={{ nome_completo: treinamentoSelecionado.funcionario || '', cpf: '' }}
+            funcionario={{ nome_completo: treinamentoSelecionado.funcionario || "", cpf: "" }}
             empresaAtiva={empresaAtiva}
           />
         )}

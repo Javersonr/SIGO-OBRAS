@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -84,7 +84,7 @@ export default function DocumentosAssinadosTST({
 
   const abrirHistoricoCompleto = async (key) => {
     try {
-      const registros = await base44.entities.HistoricoDocumentoAssinado.filter({
+      const registros = await sigo.entities.HistoricoDocumentoAssinado.filter({
         funcionario_id: selectedFuncionario?.id,
         tipo_documento: key,
       });
@@ -113,7 +113,7 @@ export default function DocumentosAssinadosTST({
     if (!file) return;
     setUploadingDoc(true);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       const agora = new Date().toISOString();
       const anexos = getAnexos(key);
       anexos.push({ nome: file.name, url: file_url, data_upload: agora });
@@ -121,13 +121,13 @@ export default function DocumentosAssinadosTST({
       setFuncionarioForm(novoForm);
       handleAutoSave(novoForm);
       if (selectedFuncionario) {
-        await base44.entities.Funcionario.update(selectedFuncionario.id, {
+        await sigo.entities.Funcionario.update(selectedFuncionario.id, {
           [key]: JSON.stringify(anexos),
         });
       }
       // Salvar no histórico permanente
       if (selectedFuncionario && empresaAtiva) {
-        await base44.entities.HistoricoDocumentoAssinado.create({
+        await sigo.entities.HistoricoDocumentoAssinado.create({
           empresa_id: empresaAtiva.id,
           funcionario_id: selectedFuncionario.id,
           funcionario_nome: funcionarioForm.nome_completo,
@@ -158,7 +158,7 @@ export default function DocumentosAssinadosTST({
     setFuncionarioForm(novoForm);
     handleAutoSave(novoForm);
     if (selectedFuncionario) {
-      await base44.entities.Funcionario.update(selectedFuncionario.id, {
+      await sigo.entities.Funcionario.update(selectedFuncionario.id, {
         [key]: JSON.stringify(anexos),
       });
     }

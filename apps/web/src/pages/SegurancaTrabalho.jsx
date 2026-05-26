@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import { formatCPF } from "../components/utils/cpfFormatter";
 import VisualizarEPIModal from "../components/seguranca/VisualizarEPIModal";
@@ -330,11 +330,11 @@ export default function SegurancaTrabalho() {
     try {
       const [funcionariosList, funcoesList, ferramentalList, caminhaoList, caminhoesList] =
         await Promise.all([
-          base44.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-          base44.entities.Funcao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-          base44.entities.InspecaoFerramental.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-          base44.entities.InspecaoCaminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-          base44.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+          sigo.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+          sigo.entities.Funcao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+          sigo.entities.InspecaoFerramental.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+          sigo.entities.InspecaoCaminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+          sigo.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
         ]);
       setFuncionarios(funcionariosList);
       setFuncoes(funcoesList);
@@ -362,7 +362,7 @@ export default function SegurancaTrabalho() {
             ...dadosParaSalvar,
             empresa_id: empresaAtiva.id,
           };
-          await base44.entities.Funcionario.update(selectedFuncionario.id, data);
+          await sigo.entities.Funcionario.update(selectedFuncionario.id, data);
         } catch (error) {
           console.error("Erro ao auto-salvar:", error);
         }
@@ -384,10 +384,10 @@ export default function SegurancaTrabalho() {
       };
 
       if (selectedFuncionario) {
-        await base44.entities.Funcionario.update(selectedFuncionario.id, data);
+        await sigo.entities.Funcionario.update(selectedFuncionario.id, data);
         toast.success("Funcionário atualizado com sucesso");
       } else {
-        const novoFuncionario = await base44.entities.Funcionario.create(data);
+        const novoFuncionario = await sigo.entities.Funcionario.create(data);
         toast.success("Funcionário cadastrado com sucesso");
         setSelectedFuncionario(novoFuncionario);
       }
@@ -404,7 +404,7 @@ export default function SegurancaTrabalho() {
   const handleDeleteFuncionario = async (funcionario) => {
     if (!confirm(`Desativar o funcionário ${funcionario.nome_completo}?`)) return;
     try {
-      await base44.entities.Funcionario.update(funcionario.id, { ativo: false });
+      await sigo.entities.Funcionario.update(funcionario.id, { ativo: false });
       toast.success("Funcionário desativado");
       loadData();
     } catch (error) {
@@ -418,7 +418,7 @@ export default function SegurancaTrabalho() {
     if (!file) return;
     setUploadingFoto(true);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       setFuncionarioForm({ ...funcionarioForm, foto_url: file_url });
       toast.success("Foto enviada com sucesso");
     } catch (error) {
@@ -434,7 +434,7 @@ export default function SegurancaTrabalho() {
     if (!file) return;
     setUploadingDoc(true);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       const docs = JSON.parse(funcionarioForm[tipo] || "[]");
       docs.push({
         nome: file.name,
@@ -464,7 +464,7 @@ export default function SegurancaTrabalho() {
     if (!file) return;
     setUploadingDoc(true);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       const anexos = JSON.parse(funcionarioForm[tipo] || "[]");
       anexos.push({
         nome: file.name,
@@ -507,7 +507,7 @@ export default function SegurancaTrabalho() {
     }
 
     try {
-      const treinamentos = await base44.entities.Treinamento.filter({
+      const treinamentos = await sigo.entities.Treinamento.filter({
         empresa_id: empresaAtiva.id,
         funcao_id: funcionario.funcao_id,
       });
@@ -534,12 +534,12 @@ export default function SegurancaTrabalho() {
       return;
     }
     try {
-      let treinamentos = await base44.entities.Treinamento.filter({
+      let treinamentos = await sigo.entities.Treinamento.filter({
         empresa_id: empresaAtiva.id,
         funcao_id,
       });
       if (treinamentos.length === 0) {
-        const modelos = await base44.entities.Treinamento.filter({
+        const modelos = await sigo.entities.Treinamento.filter({
           empresa_id: empresaAtiva.id,
           usar_como_modelo: true,
         });
@@ -756,7 +756,7 @@ export default function SegurancaTrabalho() {
 
   const analisarDocumentoComIA = async (file_url, tipo_documento) => {
     try {
-      const response = await base44.functions.invoke("analisarDocumentoSeguranca", {
+      const response = await sigo.functions.invoke("analisarDocumentoSeguranca", {
         file_url,
         tipo_documento,
         nome_funcionario: funcionarioForm.nome_completo,
@@ -2469,7 +2469,7 @@ export default function SegurancaTrabalho() {
             };
             setFuncionarioForm(novoForm);
             if (selectedFuncionario) {
-              await base44.entities.Funcionario.update(selectedFuncionario.id, {
+              await sigo.entities.Funcionario.update(selectedFuncionario.id, {
                 treinamentos_anexos: JSON.stringify(novosAnexos),
               });
             }
@@ -2482,7 +2482,7 @@ export default function SegurancaTrabalho() {
             if (camposAtualizados.aproveitamento)
               updateData.aproveitamento = parseInt(camposAtualizados.aproveitamento);
             if (Object.keys(updateData).length > 0) {
-              await base44.entities.Treinamento.update(treinamentoId, updateData);
+              await sigo.entities.Treinamento.update(treinamentoId, updateData);
               loadData();
             }
           }}
@@ -2652,10 +2652,10 @@ export default function SegurancaTrabalho() {
                 try {
                   const data = { ...caminhaoForm, empresa_id: empresaAtiva.id };
                   if (selectedCaminhao) {
-                    await base44.entities.Caminhao.update(selectedCaminhao.id, data);
+                    await sigo.entities.Caminhao.update(selectedCaminhao.id, data);
                     toast.success("Caminhão atualizado");
                   } else {
-                    await base44.entities.Caminhao.create(data);
+                    await sigo.entities.Caminhao.create(data);
                     toast.success("Caminhão cadastrado");
                   }
                   setShowCaminhaoModal(false);

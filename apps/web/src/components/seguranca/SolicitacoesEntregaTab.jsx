@@ -1,34 +1,44 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { toast } from 'sonner';
-import { format } from 'date-fns';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import { format } from "date-fns";
 import {
-  PackageCheck, Clock, CheckCircle2, XCircle, Search,
-  RefreshCw, Plus, Wrench, Shield, Truck, Pencil, Trash2
-} from 'lucide-react';
-import SolicitarEntregaFerramentasModal from './SolicitarEntregaFerramentasModal';
-import SolicitarEntregaCaminhaoModal from './SolicitarEntregaCaminhaoModal';
+  PackageCheck,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  Search,
+  RefreshCw,
+  Plus,
+  Wrench,
+  Shield,
+  Truck,
+  Pencil,
+  Trash2,
+} from "lucide-react";
+import SolicitarEntregaFerramentasModal from "./SolicitarEntregaFerramentasModal";
+import SolicitarEntregaCaminhaoModal from "./SolicitarEntregaCaminhaoModal";
 
 const STATUS_CONFIG = {
-  'Pendente': { color: 'bg-amber-100 text-amber-700', icon: Clock },
-  'Entregue': { color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
-  'Cancelada': { color: 'bg-red-100 text-red-700', icon: XCircle },
+  Pendente: { color: "bg-amber-100 text-amber-700", icon: Clock },
+  Entregue: { color: "bg-green-100 text-green-700", icon: CheckCircle2 },
+  Cancelada: { color: "bg-red-100 text-red-700", icon: XCircle },
 };
 
 export default function SolicitacoesEntregaTab({ empresaAtiva, user }) {
   const [solicitacoes, setSolicitacoes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [busca, setBusca] = useState('');
-  const [filtroStatus, setFiltroStatus] = useState('Pendente');
+  const [busca, setBusca] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("Pendente");
   const [funcionarios, setFuncionarios] = useState([]);
   const [funcoes, setFuncoes] = useState([]);
   const [showNovaSolicitacao, setShowNovaSolicitacao] = useState(false);
   const [funcionarioSelecionado, setFuncionarioSelecionado] = useState(null);
-  const [buscaFuncionario, setBuscaFuncionario] = useState('');
+  const [buscaFuncionario, setBuscaFuncionario] = useState("");
   const [showSelecionarFuncionario, setShowSelecionarFuncionario] = useState(false);
   const [showSolicitacaoCaminhao, setShowSolicitacaoCaminhao] = useState(false);
   const [solicitacaoEditando, setSolicitacaoEditando] = useState(null);
@@ -43,90 +53,103 @@ export default function SolicitacoesEntregaTab({ empresaAtiva, user }) {
     setLoading(true);
     try {
       const [sols, funcs, funcoesList] = await Promise.all([
-        base44.entities.EntregaFerramental.filter({ empresa_id: empresaAtiva.id }, '-created_date', 200),
-        base44.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Funcao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.EntregaFerramental.filter(
+          { empresa_id: empresaAtiva.id },
+          "-created_date",
+          200
+        ),
+        sigo.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Funcao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ]);
       setSolicitacoes(sols);
       setFuncionarios(funcs);
       setFuncoes(funcoesList);
     } catch {
-      toast.error('Erro ao carregar dados');
+      toast.error("Erro ao carregar dados");
     } finally {
       setLoading(false);
     }
   };
 
-  const isAdmin = user?.role === 'admin' || user?.perfil === 'Admin';
+  const isAdmin = user?.role === "admin" || user?.perfil === "Admin";
 
   const handleCancelar = async (sol) => {
     if (!confirm(`Cancelar solicitação para ${sol.funcionario_nome}?`)) return;
     try {
-      await base44.entities.EntregaFerramental.update(sol.id, { status: 'Cancelada' });
-      toast.success('Solicitação cancelada');
+      await sigo.entities.EntregaFerramental.update(sol.id, { status: "Cancelada" });
+      toast.success("Solicitação cancelada");
       loadData();
     } catch {
-      toast.error('Erro ao cancelar');
+      toast.error("Erro ao cancelar");
     }
   };
 
   const handleExcluir = async (sol) => {
-    if (!confirm(`Excluir permanentemente a solicitação de ${sol.funcionario_nome || sol.caminhao_placa}? Esta ação não pode ser desfeita.`)) return;
+    if (
+      !confirm(
+        `Excluir permanentemente a solicitação de ${sol.funcionario_nome || sol.caminhao_placa}? Esta ação não pode ser desfeita.`
+      )
+    )
+      return;
     try {
-      await base44.entities.EntregaFerramental.delete(sol.id);
-      toast.success('Solicitação excluída');
+      await sigo.entities.EntregaFerramental.delete(sol.id);
+      toast.success("Solicitação excluída");
       loadData();
     } catch {
-      toast.error('Erro ao excluir');
+      toast.error("Erro ao excluir");
     }
   };
 
   const solicitacoesFiltradas = solicitacoes
-    .filter(s => filtroStatus === 'Todas' || s.status === filtroStatus)
-    .filter(s =>
-      !busca ||
-      s.funcionario_nome?.toLowerCase().includes(busca.toLowerCase()) ||
-      s.funcao_nome?.toLowerCase().includes(busca.toLowerCase())
+    .filter((s) => filtroStatus === "Todas" || s.status === filtroStatus)
+    .filter(
+      (s) =>
+        !busca ||
+        s.funcionario_nome?.toLowerCase().includes(busca.toLowerCase()) ||
+        s.funcao_nome?.toLowerCase().includes(busca.toLowerCase())
     );
 
   const stats = {
-    pendentes: solicitacoes.filter(s => s.status === 'Pendente').length,
-    entregues: solicitacoes.filter(s => s.status === 'Entregue').length,
+    pendentes: solicitacoes.filter((s) => s.status === "Pendente").length,
+    entregues: solicitacoes.filter((s) => s.status === "Entregue").length,
   };
 
-  const funcionariosFiltrados = funcionarios.filter(f =>
-    !buscaFuncionario || f.nome_completo?.toLowerCase().includes(buscaFuncionario.toLowerCase())
+  const funcionariosFiltrados = funcionarios.filter(
+    (f) =>
+      !buscaFuncionario || f.nome_completo?.toLowerCase().includes(buscaFuncionario.toLowerCase())
   );
 
   const funcaoDoFuncionario = funcionarioSelecionado
-    ? funcoes.find(f => f.id === funcionarioSelecionado.funcao_id)
+    ? funcoes.find((f) => f.id === funcionarioSelecionado.funcao_id)
     : null;
 
   return (
     <div className="space-y-6">
       {/* Header */}
-       <div className="flex items-center justify-between">
-         <div>
-           <h2 className="text-lg font-semibold text-slate-800">Solicitações de Entrega</h2>
-           <p className="text-sm text-slate-500">Solicite entrega de ferramentas e EPIs para o almoxarife</p>
-         </div>
-         <div className="flex gap-2">
-           <Button
-             onClick={() => setShowSelecionarFuncionario(true)}
-             className="bg-blue-600 hover:bg-blue-700 text-white gap-2"
-           >
-             <Plus className="w-4 h-4" />
-             Para Funcionário
-           </Button>
-           <Button
-             onClick={() => setShowSolicitacaoCaminhao(true)}
-             className="bg-amber-600 hover:bg-amber-700 text-white gap-2"
-           >
-             <Truck className="w-4 h-4" />
-             Para Caminhão
-           </Button>
-         </div>
-       </div>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-800">Solicitações de Entrega</h2>
+          <p className="text-sm text-slate-500">
+            Solicite entrega de ferramentas e EPIs para o almoxarife
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => setShowSelecionarFuncionario(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Para Funcionário
+          </Button>
+          <Button
+            onClick={() => setShowSolicitacaoCaminhao(true)}
+            className="bg-amber-600 hover:bg-amber-700 text-white gap-2"
+          >
+            <Truck className="w-4 h-4" />
+            Para Caminhão
+          </Button>
+        </div>
+      </div>
 
       {/* Cards resumo */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -165,15 +188,15 @@ export default function SolicitacoesEntregaTab({ empresaAtiva, user }) {
           <Input
             placeholder="Buscar funcionário..."
             value={busca}
-            onChange={e => setBusca(e.target.value)}
+            onChange={(e) => setBusca(e.target.value)}
             className="pl-9"
           />
         </div>
         <div className="flex gap-2">
-          {['Pendente', 'Entregue', 'Cancelada', 'Todas'].map(s => (
+          {["Pendente", "Entregue", "Cancelada", "Todas"].map((s) => (
             <Button
               key={s}
-              variant={filtroStatus === s ? 'default' : 'outline'}
+              variant={filtroStatus === s ? "default" : "outline"}
               size="sm"
               onClick={() => setFiltroStatus(s)}
             >
@@ -193,8 +216,11 @@ export default function SolicitacoesEntregaTab({ empresaAtiva, user }) {
         <Card>
           <CardContent className="py-12 text-center text-slate-500">
             <PackageCheck className="w-10 h-10 mx-auto mb-3 text-slate-300" />
-            <p>Nenhuma solicitação {filtroStatus !== 'Todas' ? filtroStatus.toLowerCase() : ''} encontrada</p>
-            {filtroStatus === 'Pendente' && (
+            <p>
+              Nenhuma solicitação {filtroStatus !== "Todas" ? filtroStatus.toLowerCase() : ""}{" "}
+              encontrada
+            </p>
+            {filtroStatus === "Pendente" && (
               <Button
                 onClick={() => setShowSelecionarFuncionario(true)}
                 className="mt-4 bg-blue-600 hover:bg-blue-700 text-white gap-2"
@@ -207,12 +233,18 @@ export default function SolicitacoesEntregaTab({ empresaAtiva, user }) {
         </Card>
       ) : (
         <div className="space-y-3">
-          {solicitacoesFiltradas.map(sol => {
-            const statusCfg = STATUS_CONFIG[sol.status] || STATUS_CONFIG['Pendente'];
+          {solicitacoesFiltradas.map((sol) => {
+            const statusCfg = STATUS_CONFIG[sol.status] || STATUS_CONFIG["Pendente"];
             const StatusIcon = statusCfg.icon;
-            const itens = (() => { try { return JSON.parse(sol.itens || '[]'); } catch { return []; } })();
-            const temFerramentas = itens.some(i => i.tipo === 'Ferramenta');
-            const temEPIs = itens.some(i => i.tipo === 'EPI');
+            const itens = (() => {
+              try {
+                return JSON.parse(sol.itens || "[]");
+              } catch {
+                return [];
+              }
+            })();
+            const temFerramentas = itens.some((i) => i.tipo === "Ferramenta");
+            const temEPIs = itens.some((i) => i.tipo === "EPI");
 
             return (
               <Card key={sol.id} className="overflow-hidden">
@@ -238,13 +270,20 @@ export default function SolicitacoesEntregaTab({ empresaAtiva, user }) {
                           </Badge>
                         )}
                       </div>
-                      <p className="text-sm text-slate-500">{sol.funcao_nome} • {itens.length} item(ns)</p>
-                      <p className="text-xs text-slate-400 mt-1">
-                        Solicitado por {sol.solicitante_nome} em {sol.data_solicitacao ? format(new Date(sol.data_solicitacao + 'T12:00:00'), 'dd/MM/yyyy') : '-'}
+                      <p className="text-sm text-slate-500">
+                        {sol.funcao_nome} • {itens.length} item(ns)
                       </p>
-                      {sol.status === 'Entregue' && sol.data_entrega && (
+                      <p className="text-xs text-slate-400 mt-1">
+                        Solicitado por {sol.solicitante_nome} em{" "}
+                        {sol.data_solicitacao
+                          ? format(new Date(sol.data_solicitacao + "T12:00:00"), "dd/MM/yyyy")
+                          : "-"}
+                      </p>
+                      {sol.status === "Entregue" && sol.data_entrega && (
                         <p className="text-xs text-green-600 mt-0.5">
-                          Entregue em {format(new Date(sol.data_entrega + 'T12:00:00'), 'dd/MM/yyyy')} por {sol.responsavel_entrega_nome}
+                          Entregue em{" "}
+                          {format(new Date(sol.data_entrega + "T12:00:00"), "dd/MM/yyyy")} por{" "}
+                          {sol.responsavel_entrega_nome}
                         </p>
                       )}
                       {sol.observacoes && (
@@ -257,8 +296,15 @@ export default function SolicitacoesEntregaTab({ empresaAtiva, user }) {
                         size="sm"
                         variant="ghost"
                         onClick={() => {
-                          const func = funcionarios.find(f => f.id === sol.funcionario_id);
-                          setFuncionarioSelecionado(func || { id: sol.funcionario_id, nome_completo: sol.funcionario_nome, funcao_id: sol.funcao_id, funcao_nome: sol.funcao_nome });
+                          const func = funcionarios.find((f) => f.id === sol.funcionario_id);
+                          setFuncionarioSelecionado(
+                            func || {
+                              id: sol.funcionario_id,
+                              nome_completo: sol.funcionario_nome,
+                              funcao_id: sol.funcao_id,
+                              funcao_nome: sol.funcao_nome,
+                            }
+                          );
                           setSolicitacaoEditando(sol);
                           setShowNovaSolicitacao(true);
                         }}
@@ -267,7 +313,7 @@ export default function SolicitacoesEntregaTab({ empresaAtiva, user }) {
                       >
                         <Pencil className="w-4 h-4" />
                       </Button>
-                      {sol.status === 'Pendente' && (
+                      {sol.status === "Pendente" && (
                         <Button
                           size="sm"
                           variant="ghost"
@@ -309,39 +355,50 @@ export default function SolicitacoesEntregaTab({ empresaAtiva, user }) {
                 <Input
                   placeholder="Buscar funcionário..."
                   value={buscaFuncionario}
-                  onChange={e => setBuscaFuncionario(e.target.value)}
+                  onChange={(e) => setBuscaFuncionario(e.target.value)}
                   className="pl-9"
                   autoFocus
                 />
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
-              {funcionariosFiltrados.map(f => (
+              {funcionariosFiltrados.map((f) => (
                 <button
                   key={f.id}
                   onClick={() => {
                     setFuncionarioSelecionado(f);
                     setShowSelecionarFuncionario(false);
-                    setBuscaFuncionario('');
+                    setBuscaFuncionario("");
                     setShowNovaSolicitacao(true);
                   }}
                   className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-200 transition-all text-left"
                 >
                   <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <span className="text-sm font-semibold text-blue-700">{f.nome_completo?.charAt(0)}</span>
+                    <span className="text-sm font-semibold text-blue-700">
+                      {f.nome_completo?.charAt(0)}
+                    </span>
                   </div>
                   <div>
                     <p className="font-medium text-slate-800 text-sm">{f.nome_completo}</p>
-                    <p className="text-xs text-slate-500">{f.funcao_nome || 'Sem função'}</p>
+                    <p className="text-xs text-slate-500">{f.funcao_nome || "Sem função"}</p>
                   </div>
                 </button>
               ))}
               {funcionariosFiltrados.length === 0 && (
-                <p className="text-center text-slate-400 py-6 text-sm">Nenhum funcionário encontrado</p>
+                <p className="text-center text-slate-400 py-6 text-sm">
+                  Nenhum funcionário encontrado
+                </p>
               )}
             </div>
             <div className="p-4 border-t">
-              <Button variant="outline" onClick={() => { setShowSelecionarFuncionario(false); setBuscaFuncionario(''); }} className="w-full">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowSelecionarFuncionario(false);
+                  setBuscaFuncionario("");
+                }}
+                className="w-full"
+              >
                 Cancelar
               </Button>
             </div>
@@ -355,7 +412,10 @@ export default function SolicitacoesEntregaTab({ empresaAtiva, user }) {
           open={showNovaSolicitacao}
           onOpenChange={(v) => {
             setShowNovaSolicitacao(v);
-            if (!v) { setFuncionarioSelecionado(null); setSolicitacaoEditando(null); }
+            if (!v) {
+              setFuncionarioSelecionado(null);
+              setSolicitacaoEditando(null);
+            }
           }}
           funcionario={funcionarioSelecionado}
           funcao={funcaoDoFuncionario}
@@ -367,7 +427,11 @@ export default function SolicitacoesEntregaTab({ empresaAtiva, user }) {
             setFuncionarioSelecionado(null);
             setSolicitacaoEditando(null);
             loadData();
-            toast.success(solicitacaoEditando ? 'Solicitação atualizada!' : 'Solicitação criada! O almoxarife verá no módulo Ferramental.');
+            toast.success(
+              solicitacaoEditando
+                ? "Solicitação atualizada!"
+                : "Solicitação criada! O almoxarife verá no módulo Ferramental."
+            );
           }}
         />
       )}
@@ -382,10 +446,10 @@ export default function SolicitacoesEntregaTab({ empresaAtiva, user }) {
           onSuccess={() => {
             setShowSolicitacaoCaminhao(false);
             loadData();
-            toast.success('Solicitação criada! O almoxarife verá no módulo Ferramental.');
+            toast.success("Solicitação criada! O almoxarife verá no módulo Ferramental.");
           }}
         />
       )}
-      </div>
-      );
-      }
+    </div>
+  );
+}

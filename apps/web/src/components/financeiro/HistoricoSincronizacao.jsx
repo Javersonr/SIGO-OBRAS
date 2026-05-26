@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
 export default function HistoricoSincronizacao({ empresaId }) {
   const [historico, setHistorico] = useState([]);
@@ -19,14 +19,18 @@ export default function HistoricoSincronizacao({ empresaId }) {
       setCarregando(true);
 
       // Buscar audit logs de sincronização
-      const logs = await base44.entities.AuditLog.filter({
-        empresa_id: empresaId,
-        entidade: 'PreLancamento'
-      }, '-created_date', 10);
+      const logs = await sigo.entities.AuditLog.filter(
+        {
+          empresa_id: empresaId,
+          entidade: "PreLancamento",
+        },
+        "-created_date",
+        10
+      );
 
       setHistorico(logs || []);
     } catch (error) {
-      console.error('Erro ao carregar histórico:', error);
+      console.error("Erro ao carregar histórico:", error);
     } finally {
       setCarregando(false);
     }
@@ -60,18 +64,21 @@ export default function HistoricoSincronizacao({ empresaId }) {
       <CardContent>
         <div className="space-y-3 max-h-96 overflow-y-auto">
           {historico.map((log, idx) => (
-            <div key={idx} className="flex items-start justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
+            <div
+              key={idx}
+              className="flex items-start justify-between p-3 bg-slate-50 rounded-lg border border-slate-200"
+            >
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  {log.status === 'sucesso' ? (
+                  {log.status === "sucesso" ? (
                     <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
                   ) : (
                     <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
                   )}
                   <span className="font-medium text-slate-900 text-sm">
-                    {log.tipo_acao === 'criar' && 'Criado'}
-                    {log.tipo_acao === 'editar' && 'Atualizado'}
-                    {log.tipo_acao === 'deletar' && 'Deletado'}
+                    {log.tipo_acao === "criar" && "Criado"}
+                    {log.tipo_acao === "editar" && "Atualizado"}
+                    {log.tipo_acao === "deletar" && "Deletado"}
                   </span>
                   <span className="text-slate-600 text-sm">- {log.entidade_nome}</span>
                 </div>
@@ -79,13 +86,17 @@ export default function HistoricoSincronizacao({ empresaId }) {
                   Por: {log.usuario_nome || log.usuario_email}
                 </p>
                 <p className="text-xs text-slate-500">
-                  {new Date(log.created_date).toLocaleString('pt-BR')}
+                  {new Date(log.created_date).toLocaleString("pt-BR")}
                 </p>
               </div>
               <Badge
-                className={log.status === 'sucesso' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}
+                className={
+                  log.status === "sucesso"
+                    ? "bg-green-100 text-green-800"
+                    : "bg-red-100 text-red-800"
+                }
               >
-                {log.status === 'sucesso' ? 'OK' : 'Erro'}
+                {log.status === "sucesso" ? "OK" : "Erro"}
               </Badge>
             </div>
           ))}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -107,16 +107,16 @@ export default function ComparacaoPrecos({
     try {
       // Buscar fornecedores e itens da cotação
       const [cotFornecedores, cotItens, respostas] = await Promise.all([
-        base44.entities.CotacaoFornecedor.filter({ cotacao_id: cotacao.id }),
-        base44.entities.CotacaoItem.filter({ cotacao_id: cotacao.id }),
-        base44.entities.CotacaoResposta.filter({ cotacao_id: cotacao.id }),
+        sigo.entities.CotacaoFornecedor.filter({ cotacao_id: cotacao.id }),
+        sigo.entities.CotacaoItem.filter({ cotacao_id: cotacao.id }),
+        sigo.entities.CotacaoResposta.filter({ cotacao_id: cotacao.id }),
       ]);
 
       setFornecedores(cotFornecedores);
       setItens(cotItens);
 
       // Buscar todos os materiais da empresa
-      const materiaisList = await base44.entities.Material.filter({ empresa_id: empresaAtiva.id });
+      const materiaisList = await sigo.entities.Material.filter({ empresa_id: empresaAtiva.id });
       const materiaisMap = {};
       const materiaisByCode = {};
       materiaisList.forEach((mat) => {
@@ -132,7 +132,7 @@ export default function ComparacaoPrecos({
       const solItensMap = {};
       if (solItemIds.length > 0 && cotacao.solicitacao_id) {
         try {
-          const solItens = await base44.entities.SolicitacaoCompraItem.filter({
+          const solItens = await sigo.entities.SolicitacaoCompraItem.filter({
             solicitacao_id: cotacao.solicitacao_id,
           });
           solItens.forEach((si) => {
@@ -191,7 +191,7 @@ export default function ComparacaoPrecos({
       }
 
       // Buscar resposta existente usando cotacao_item_id e cotacao_fornecedor_id
-      const respostasExistentes = await base44.entities.CotacaoResposta.filter({
+      const respostasExistentes = await sigo.entities.CotacaoResposta.filter({
         cotacao_id: cotacao.id,
         cotacao_item_id: itemId,
         cotacao_fornecedor_id: fornecedorCotacaoId,
@@ -200,14 +200,14 @@ export default function ComparacaoPrecos({
       if (respostasExistentes.length > 0) {
         // Atualizar
         console.log("🔄 Atualizando resposta existente:", respostasExistentes[0].id);
-        await base44.entities.CotacaoResposta.update(respostasExistentes[0].id, {
+        await sigo.entities.CotacaoResposta.update(respostasExistentes[0].id, {
           valor_unitario: valorNum,
           valor_total: valorNum * (item.quantidade || 1),
         });
       } else {
         // Criar novo
         console.log("➕ Criando nova resposta");
-        await base44.entities.CotacaoResposta.create({
+        await sigo.entities.CotacaoResposta.create({
           empresa_id: empresaAtiva.id,
           cotacao_id: cotacao.id,
           cotacao_item_id: itemId,
@@ -231,7 +231,7 @@ export default function ComparacaoPrecos({
         cotacao.status === "Enviada aos Fornecedores" ||
         cotacao.status === "Aguardando Respostas"
       ) {
-        await base44.entities.Cotacao.update(cotacao.id, {
+        await sigo.entities.Cotacao.update(cotacao.id, {
           status: "Respostas Recebidas",
         });
 
@@ -279,7 +279,7 @@ export default function ComparacaoPrecos({
       return;
 
     try {
-      await base44.entities.CotacaoFornecedor.update(fornecedorCotId, {
+      await sigo.entities.CotacaoFornecedor.update(fornecedorCotId, {
         status: "Enviada",
         data_resposta: null,
       });
@@ -294,7 +294,7 @@ export default function ComparacaoPrecos({
     if (!confirm("Excluir este item?")) return;
 
     try {
-      await base44.entities.CotacaoItem.delete(itemId);
+      await sigo.entities.CotacaoItem.delete(itemId);
       await carregarDados();
     } catch (error) {
       console.error("Erro ao excluir:", error);
@@ -381,13 +381,13 @@ export default function ComparacaoPrecos({
     try {
       // Marcar cada CotacaoResposta selecionada como aprovada
       for (const [itemId, fornId] of Object.entries(itensSelecionados)) {
-        const respostas = await base44.entities.CotacaoResposta.filter({
+        const respostas = await sigo.entities.CotacaoResposta.filter({
           cotacao_id: cotacao.id,
           cotacao_item_id: itemId,
           cotacao_fornecedor_id: fornId,
         });
         if (respostas.length > 0) {
-          await base44.entities.CotacaoResposta.update(respostas[0].id, { aprovado: true });
+          await sigo.entities.CotacaoResposta.update(respostas[0].id, { aprovado: true });
         }
       }
 
@@ -399,7 +399,7 @@ export default function ComparacaoPrecos({
       const principalId = Object.entries(contagem).sort((a, b) => b[1] - a[1])[0]?.[0];
       const principal = fornecedores.find((f) => f.id === principalId);
 
-      await base44.entities.Cotacao.update(cotacao.id, {
+      await sigo.entities.Cotacao.update(cotacao.id, {
         status: "Aprovada",
         fornecedor_vencedor_id: principal?.fornecedor_id || "",
         fornecedor_vencedor_nome:
@@ -410,7 +410,7 @@ export default function ComparacaoPrecos({
       });
 
       if (cotacao.solicitacao_id) {
-        await base44.entities.SolicitacaoCompra.update(cotacao.solicitacao_id, {
+        await sigo.entities.SolicitacaoCompra.update(cotacao.solicitacao_id, {
           status: "Cotação Aprovada",
         });
       }
@@ -464,7 +464,7 @@ export default function ComparacaoPrecos({
         cotacao.status === "Enviada aos Fornecedores" ||
         cotacao.status === "Aguardando Respostas"
       ) {
-        await base44.entities.Cotacao.update(cotacao.id, {
+        await sigo.entities.Cotacao.update(cotacao.id, {
           status: "Respostas Recebidas",
         });
 

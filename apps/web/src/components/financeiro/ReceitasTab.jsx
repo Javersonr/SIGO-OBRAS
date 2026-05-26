@@ -41,7 +41,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import * as XLSX from "xlsx";
 import { createPortal } from "react-dom";
 import NovoClienteModal from "../clientes/NovoClienteModal";
@@ -129,7 +129,7 @@ export default function ReceitasTab({
   useEffect(() => {
     let mounted = true;
     if (empresaAtiva?.id && oportunidades.length === 0) {
-      base44.entities.Oportunidade.filter({ empresa_id: empresaAtiva.id }).then((ops) => {
+      sigo.entities.Oportunidade.filter({ empresa_id: empresaAtiva.id }).then((ops) => {
         if (mounted) setOportunidades(ops);
       });
     }
@@ -165,7 +165,7 @@ export default function ReceitasTab({
     const abrirTransacao = async () => {
       let t = transacoesIniciais.find((tr) => tr.id === tid);
       if (!t) {
-        const results = await base44.entities.TransacaoFinanceira.filter({ id: tid });
+        const results = await sigo.entities.TransacaoFinanceira.filter({ id: tid });
         t = results[0];
       }
       if (t && (t.tipo || "").toLowerCase() === "receita") {
@@ -181,7 +181,7 @@ export default function ReceitasTab({
   useEffect(() => {
     let mounted = true;
     if (empresaAtiva?.id && centrosCusto.length === 0) {
-      base44.entities.CentroCusto.filter({ empresa_id: empresaAtiva.id }).then((centros) => {
+      sigo.entities.CentroCusto.filter({ empresa_id: empresaAtiva.id }).then((centros) => {
         if (mounted) setCentrosCusto(centros);
       });
     }
@@ -192,12 +192,12 @@ export default function ReceitasTab({
 
   const handleSalvarCentroCusto = async () => {
     if (!novoCentroCusto.nome) return;
-    await base44.entities.CentroCusto.create({
+    await sigo.entities.CentroCusto.create({
       empresa_id: empresaAtiva.id,
       ...novoCentroCusto,
       ativo: true,
     });
-    const centros = await base44.entities.CentroCusto.filter({ empresa_id: empresaAtiva.id });
+    const centros = await sigo.entities.CentroCusto.filter({ empresa_id: empresaAtiva.id });
     setCentrosCusto(centros);
     setShowNovoCentroCusto(false);
     setNovoCentroCusto({ nome: "", codigo: "" });
@@ -273,7 +273,7 @@ export default function ReceitasTab({
     const novosAnexos = [];
 
     for (const file of files) {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       novosAnexos.push({
         nome: file.name,
         url: file_url,
@@ -454,14 +454,14 @@ export default function ReceitasTab({
           }
 
           // Buscar ou criar cliente
-          let clientesEncontrados = await base44.entities.Cliente.filter({
+          let clientesEncontrados = await sigo.entities.Cliente.filter({
             empresa_id: empresaAtiva.id,
             documento: clienteCNPJ,
           });
 
           let cliente;
           if (clienteCNPJ && clientesEncontrados.length === 0) {
-            cliente = await base44.entities.Cliente.create({
+            cliente = await sigo.entities.Cliente.create({
               empresa_id: empresaAtiva.id,
               nome_razao: clienteNome,
               documento: clienteCNPJ,
@@ -472,7 +472,7 @@ export default function ReceitasTab({
           }
 
           // Criar receita
-          await base44.entities.TransacaoFinanceira.create({
+          await sigo.entities.TransacaoFinanceira.create({
             empresa_id: empresaAtiva.id,
             tipo: "receita",
             conta_id: contas[0]?.id,
@@ -531,14 +531,14 @@ export default function ReceitasTab({
           }
 
           // Buscar ou criar cliente
-          let clientesEncontrados = await base44.entities.Cliente.filter({
+          let clientesEncontrados = await sigo.entities.Cliente.filter({
             empresa_id: empresaAtiva.id,
             documento: clienteCNPJ,
           });
 
           let cliente;
           if (clienteCNPJ && clientesEncontrados.length === 0) {
-            cliente = await base44.entities.Cliente.create({
+            cliente = await sigo.entities.Cliente.create({
               empresa_id: empresaAtiva.id,
               nome_razao: clienteNome,
               documento: clienteCNPJ,
@@ -549,7 +549,7 @@ export default function ReceitasTab({
           }
 
           // Criar receita
-          await base44.entities.TransacaoFinanceira.create({
+          await sigo.entities.TransacaoFinanceira.create({
             empresa_id: empresaAtiva.id,
             tipo: "receita",
             conta_id: contas[0]?.id,
@@ -607,14 +607,14 @@ export default function ReceitasTab({
         // PRÉ-CARREGAR TODOS OS DADOS
         const [todosClientes, todasOportunidades, todosProjetos, todasCategorias, todasContas] =
           await Promise.all([
-            base44.entities.Cliente.filter({ empresa_id: empresaAtiva.id }),
-            base44.entities.Oportunidade.filter({ empresa_id: empresaAtiva.id }),
-            base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
-            base44.entities.CategoriaFinanceira.filter({
+            sigo.entities.Cliente.filter({ empresa_id: empresaAtiva.id }),
+            sigo.entities.Oportunidade.filter({ empresa_id: empresaAtiva.id }),
+            sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
+            sigo.entities.CategoriaFinanceira.filter({
               empresa_id: empresaAtiva.id,
               tipo: "Receita",
             }),
-            base44.entities.ContaFinanceira.filter({ empresa_id: empresaAtiva.id }),
+            sigo.entities.ContaFinanceira.filter({ empresa_id: empresaAtiva.id }),
           ]);
 
         // Criar mapas para busca rápida
@@ -625,7 +625,7 @@ export default function ReceitasTab({
         const contasMap = new Map(todasContas.map((c) => [c.nome, c]));
 
         // Carregar apenas as últimas 1000 transações para verificar duplicidade (otimização)
-        const transacoesExistentes = await base44.entities.TransacaoFinanceira.filter(
+        const transacoesExistentes = await sigo.entities.TransacaoFinanceira.filter(
           {
             empresa_id: empresaAtiva.id,
             tipo: "receita",
@@ -714,13 +714,13 @@ export default function ReceitasTab({
           const lote = transacoesParaCriar.slice(i, i + LOTE_SIZE);
 
           try {
-            await base44.entities.TransacaoFinanceira.bulkCreate(lote);
+            await sigo.entities.TransacaoFinanceira.bulkCreate(lote);
             importadas += lote.length;
           } catch (error) {
             // Se for rate limit, aguarda mais tempo e tenta novamente
             if (error.message?.includes("rate limit")) {
               await new Promise((resolve) => setTimeout(resolve, 3000));
-              await base44.entities.TransacaoFinanceira.bulkCreate(lote);
+              await sigo.entities.TransacaoFinanceira.bulkCreate(lote);
               importadas += lote.length;
             } else {
               throw error;
@@ -875,7 +875,7 @@ export default function ReceitasTab({
     }
 
     for (const id of itensSelecionados) {
-      await base44.entities.TransacaoFinanceira.update(id, { status: "pago" });
+      await sigo.entities.TransacaoFinanceira.update(id, { status: "pago" });
     }
 
     setItensSelecionados([]);
@@ -907,7 +907,7 @@ export default function ReceitasTab({
 
         while (tentativas < 3 && !sucesso) {
           try {
-            await base44.entities.TransacaoFinanceira.delete(id);
+            await sigo.entities.TransacaoFinanceira.delete(id);
             excluidas++;
             sucesso = true;
           } catch (error) {
@@ -1025,7 +1025,7 @@ export default function ReceitasTab({
     if (numeroParcelas > 1 && parcelas.length > 0) {
       // Criar uma transação para cada parcela
       for (const parcela of parcelas) {
-        await base44.entities.TransacaoFinanceira.create({
+        await sigo.entities.TransacaoFinanceira.create({
           ...dataBase,
           valor: parcela.valor,
           data_vencimento: parcela.data_vencimento,
@@ -1035,9 +1035,9 @@ export default function ReceitasTab({
       }
     } else {
       if (selectedItem) {
-        await base44.entities.TransacaoFinanceira.update(selectedItem.id, dataBase);
+        await sigo.entities.TransacaoFinanceira.update(selectedItem.id, dataBase);
       } else {
-        await base44.entities.TransacaoFinanceira.create(dataBase);
+        await sigo.entities.TransacaoFinanceira.create(dataBase);
       }
     }
 
@@ -1051,24 +1051,24 @@ export default function ReceitasTab({
 
   const handleDelete = async (id) => {
     if (!confirm("Excluir esta receita?")) return;
-    await base44.entities.TransacaoFinanceira.delete(id);
+    await sigo.entities.TransacaoFinanceira.delete(id);
     onReload();
   };
 
   const handleToggleStatus = async (item) => {
     const newStatus = item.status === "pago" ? "em_aberto" : "pago";
-    await base44.entities.TransacaoFinanceira.update(item.id, {
+    await sigo.entities.TransacaoFinanceira.update(item.id, {
       status: newStatus,
       data_pagamento: newStatus === "pago" ? new Date().toISOString().split("T")[0] : null,
     });
 
     if (newStatus === "pago") {
-      const lancamentosExistentes = await base44.entities.ExtratoBancario.filter({
+      const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
         empresa_id: empresaAtiva.id,
         transacao_id: item.id,
       });
       if (lancamentosExistentes.length === 0) {
-        await base44.entities.ExtratoBancario.create({
+        await sigo.entities.ExtratoBancario.create({
           empresa_id: empresaAtiva.id,
           conta_id: item.conta_id,
           data: new Date().toISOString().split("T")[0],
@@ -1082,12 +1082,12 @@ export default function ReceitasTab({
         });
       }
     } else {
-      const lancamentosExistentes = await base44.entities.ExtratoBancario.filter({
+      const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
         empresa_id: empresaAtiva.id,
         transacao_id: item.id,
       });
       for (const lanc of lancamentosExistentes) {
-        await base44.entities.ExtratoBancario.delete(lanc.id);
+        await sigo.entities.ExtratoBancario.delete(lanc.id);
       }
     }
     onReload();

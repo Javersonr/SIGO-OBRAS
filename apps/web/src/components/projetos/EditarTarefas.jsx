@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -105,7 +105,7 @@ export default function EditarTarefas({
 
   const loadSubtarefas = async () => {
     if (!tarefa?.id) return;
-    const result = await base44.entities.TarefaProjeto.filter({
+    const result = await sigo.entities.TarefaProjeto.filter({
       empresa_id: empresaAtiva.id,
       projeto_id: projetoId,
       tarefa_pai_id: tarefa.id,
@@ -116,7 +116,7 @@ export default function EditarTarefas({
   const loadDespesasVinculadas = async () => {
     if (!tarefa?.id) return;
     try {
-      const result = await base44.entities.TransacaoFinanceira.filter({
+      const result = await sigo.entities.TransacaoFinanceira.filter({
         empresa_id: empresaAtiva.id,
         tipo: "Despesa",
         referencia_id: tarefa.id,
@@ -131,7 +131,7 @@ export default function EditarTarefas({
     setShowVincularDespesa(true);
     setLoadingDespesas(true);
     try {
-      const result = await base44.entities.TransacaoFinanceira.filter({
+      const result = await sigo.entities.TransacaoFinanceira.filter({
         empresa_id: empresaAtiva.id,
         tipo: "Despesa",
         projeto_id: projetoId,
@@ -146,7 +146,7 @@ export default function EditarTarefas({
   };
 
   const handleVincularDespesa = async (despesa) => {
-    await base44.entities.TransacaoFinanceira.update(despesa.id, {
+    await sigo.entities.TransacaoFinanceira.update(despesa.id, {
       referencia_id: tarefa.id,
       referencia_tipo: "Outro",
     });
@@ -155,7 +155,7 @@ export default function EditarTarefas({
   };
 
   const handleDesvincularDespesa = async (despesa) => {
-    await base44.entities.TransacaoFinanceira.update(despesa.id, {
+    await sigo.entities.TransacaoFinanceira.update(despesa.id, {
       referencia_id: null,
     });
     await loadDespesasVinculadas();
@@ -200,9 +200,9 @@ export default function EditarTarefas({
     };
 
     if (tarefa) {
-      await base44.entities.TarefaProjeto.update(tarefa.id, dataComum);
+      await sigo.entities.TarefaProjeto.update(tarefa.id, dataComum);
     } else {
-      await base44.entities.TarefaProjeto.create(dataComum);
+      await sigo.entities.TarefaProjeto.create(dataComum);
     }
 
     onClose();
@@ -211,7 +211,7 @@ export default function EditarTarefas({
   const handleAdicionarSubtarefa = async () => {
     if (!novaSubtarefa.trim() || !tarefa?.id) return;
 
-    await base44.entities.TarefaProjeto.create({
+    await sigo.entities.TarefaProjeto.create({
       empresa_id: empresaAtiva.id,
       projeto_id: projetoId,
       tarefa_pai_id: tarefa.id,
@@ -232,7 +232,7 @@ export default function EditarTarefas({
 
   const handleToggleSubtarefa = async (subtarefa) => {
     const novoStatus = subtarefa.status === "Concluída" ? "A Fazer" : "Concluída";
-    await base44.entities.TarefaProjeto.update(subtarefa.id, {
+    await sigo.entities.TarefaProjeto.update(subtarefa.id, {
       status: novoStatus,
       progresso: novoStatus === "Concluída" ? 100 : 0,
     });
@@ -240,7 +240,7 @@ export default function EditarTarefas({
   };
 
   const handleConcluirSubtarefa = async (subtarefaId) => {
-    await base44.entities.TarefaProjeto.update(subtarefaId, {
+    await sigo.entities.TarefaProjeto.update(subtarefaId, {
       status: "Concluída",
       progresso: 100,
     });
@@ -248,7 +248,7 @@ export default function EditarTarefas({
   };
 
   const handleEditarDataSubtarefa = async (subtarefaId, campo, valor) => {
-    await base44.entities.TarefaProjeto.update(subtarefaId, {
+    await sigo.entities.TarefaProjeto.update(subtarefaId, {
       [campo]: valor || null,
     });
     loadSubtarefas();
@@ -289,10 +289,10 @@ export default function EditarTarefas({
     };
 
     if (tarefa) {
-      await base44.entities.TarefaProjeto.update(tarefa.id, dataComum);
+      await sigo.entities.TarefaProjeto.update(tarefa.id, dataComum);
 
       // Liberar tarefas que dependiam desta e agora podem ser desbloqueadas
-      const todasTarefas = await base44.entities.TarefaProjeto.filter({
+      const todasTarefas = await sigo.entities.TarefaProjeto.filter({
         empresa_id: empresaAtiva.id,
         projeto_id: projetoId,
       });
@@ -313,10 +313,10 @@ export default function EditarTarefas({
       });
 
       for (const t of tarefasParaLiberar) {
-        await base44.entities.TarefaProjeto.update(t.id, { status: "A Fazer" });
+        await sigo.entities.TarefaProjeto.update(t.id, { status: "A Fazer" });
       }
     } else {
-      await base44.entities.TarefaProjeto.create(dataComum);
+      await sigo.entities.TarefaProjeto.create(dataComum);
     }
 
     onClose();
@@ -329,7 +329,7 @@ export default function EditarTarefas({
 
   const handleSalvarEdicaoSubtarefa = async (subtarefaId) => {
     if (!tituloEditando.trim()) return;
-    await base44.entities.TarefaProjeto.update(subtarefaId, {
+    await sigo.entities.TarefaProjeto.update(subtarefaId, {
       titulo: tituloEditando,
     });
     setSubtarefaEditando(null);
@@ -344,7 +344,7 @@ export default function EditarTarefas({
 
   const handleRemoverSubtarefa = async (id) => {
     if (!confirm("Remover esta subtarefa?")) return;
-    await base44.entities.TarefaProjeto.delete(id);
+    await sigo.entities.TarefaProjeto.delete(id);
     loadSubtarefas();
   };
 
@@ -354,7 +354,7 @@ export default function EditarTarefas({
 
     setUploading(true);
     try {
-      const result = await base44.integrations.Core.UploadFile({ file });
+      const result = await sigo.integrations.Core.UploadFile({ file });
       const fileUrl = result.file_url || result.url || result;
 
       // Determinar tipo do arquivo

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,7 +35,7 @@ export default function EditarLaudoModal({ open, onClose, ferramenta, onSaved })
   const loadHistorico = async (ferramentaId) => {
     setLoadingHistorico(true);
     try {
-      const laudos = await base44.entities.LaudoFerramenta.filter(
+      const laudos = await sigo.entities.LaudoFerramenta.filter(
         { ferramenta_id: ferramentaId },
         "-data_laudo"
       );
@@ -51,7 +51,7 @@ export default function EditarLaudoModal({ open, onClose, ferramenta, onSaved })
     if (!file) return;
     setUploading(true);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       setForm((prev) => ({ ...prev, laudo_url: file_url }));
       toast.success("Arquivo enviado");
     } catch {
@@ -65,7 +65,7 @@ export default function EditarLaudoModal({ open, onClose, ferramenta, onSaved })
     if (!ferramenta?.id) return;
     setSaving(true);
     try {
-      await base44.entities.Ferramenta.update(ferramenta.id, {
+      await sigo.entities.Ferramenta.update(ferramenta.id, {
         numero_serie: form.numero_serie,
         numero_laudo: form.numero_laudo,
         data_vencimento_laudo: form.data_vencimento_laudo,
@@ -78,7 +78,7 @@ export default function EditarLaudoModal({ open, onClose, ferramenta, onSaved })
           (h) => h.numero_laudo === form.numero_laudo && h.foto_laudo_url === form.laudo_url
         );
         if (!jaExiste) {
-          await base44.entities.LaudoFerramenta.create({
+          await sigo.entities.LaudoFerramenta.create({
             ferramenta_id: ferramenta.id,
             empresa_id: ferramenta.empresa_id,
             ferramenta_codigo: ferramenta.codigo,

@@ -29,7 +29,7 @@ import { toast } from "sonner";
 import DiarioSincOffline from "./DiarioSincOffline";
 import DiarioOfflineBanner from "../offline/DiarioOfflineBanner";
 import { useDiarioOffline } from "../offline/useDiarioOffline";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import {
   Select,
   SelectContent,
@@ -92,7 +92,7 @@ export default function DiarioObraTab({
 
         if (projeto.cliente_id) {
           try {
-            const clientes = await base44.entities.Cliente.filter({ id: projeto.cliente_id });
+            const clientes = await sigo.entities.Cliente.filter({ id: projeto.cliente_id });
             if (clientes.length > 0) {
               const cliente = clientes[0];
               cliente_nome = cliente.nome_razao || cliente.nome_fantasia || "";
@@ -190,7 +190,7 @@ export default function DiarioObraTab({
   const [diarioAberto, setDiarioAberto] = React.useState(null); // Diário em edição
 
   const loadDiarios = React.useCallback(async () => {
-    const result = await base44.entities.DiarioObra.filter({
+    const result = await sigo.entities.DiarioObra.filter({
       empresa_id: empresaAtiva.id,
       projeto_id: projetoId,
     });
@@ -198,7 +198,7 @@ export default function DiarioObraTab({
   }, [empresaAtiva.id, projetoId]);
 
   const loadFuncoes = React.useCallback(async () => {
-    const result = await base44.entities.Funcao.filter({
+    const result = await sigo.entities.Funcao.filter({
       empresa_id: empresaAtiva.id,
       ativo: true,
     });
@@ -208,9 +208,9 @@ export default function DiarioObraTab({
   const loadItensConfiguracao = React.useCallback(async () => {
     // Otimizado: Carregar apenas primeiros 100 itens para sugestões
     const [mats, maoObra, ferram] = await Promise.all([
-      base44.entities.Material.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 100),
-      base44.entities.MaoDeObra.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 100),
-      base44.entities.Ferramental.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 100),
+      sigo.entities.Material.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 100),
+      sigo.entities.MaoDeObra.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 100),
+      sigo.entities.Ferramental.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 100),
     ]);
 
     setTodosItens([
@@ -221,7 +221,7 @@ export default function DiarioObraTab({
   }, [empresaAtiva.id]);
 
   const loadEtapas = React.useCallback(async () => {
-    const result = await base44.entities.TarefaProjeto.filter({
+    const result = await sigo.entities.TarefaProjeto.filter({
       empresa_id: empresaAtiva.id,
       projeto_id: projetoId,
     });
@@ -231,7 +231,7 @@ export default function DiarioObraTab({
   const loadItensPlanejamento = React.useCallback(async () => {
     try {
       // Buscar tarefas do planejamento (TarefaProjeto)
-      const tarefas = await base44.entities.TarefaProjeto.filter({
+      const tarefas = await sigo.entities.TarefaProjeto.filter({
         empresa_id: empresaAtiva.id,
         projeto_id: projetoId,
       });
@@ -300,7 +300,7 @@ export default function DiarioObraTab({
     setUploading(true);
     try {
       for (const file of Array.from(files)) {
-        const result = await base44.integrations.Core.UploadFile({ file });
+        const result = await sigo.integrations.Core.UploadFile({ file });
         const fileUrl = result.file_url || result.url || result;
         setNovoDiario((prev) => ({
           ...prev,
@@ -400,14 +400,14 @@ export default function DiarioObraTab({
       await salvarOffline({ ...dadosDiario, fotos_offline: [] });
       toast.success("📴 Registro salvo offline — será sincronizado quando conectar");
     } else {
-      await base44.entities.DiarioObra.create(dadosDiario);
+      await sigo.entities.DiarioObra.create(dadosDiario);
 
       // Atualizar etapas no cronograma com progresso do diário
       if (atividadesSelecionadas.length > 0) {
         try {
           await Promise.all(
             atividadesSelecionadas.map((atividade) =>
-              base44.entities.TarefaProjeto.update(atividade.id, {
+              sigo.entities.TarefaProjeto.update(atividade.id, {
                 progresso: atividade.percentual_dia || 0,
               })
             )
@@ -445,7 +445,7 @@ export default function DiarioObraTab({
 
   const handleDelete = async (id) => {
     if (!confirm("Excluir este registro do diário?")) return;
-    await base44.entities.DiarioObra.delete(id);
+    await sigo.entities.DiarioObra.delete(id);
     loadDiarios();
   };
 
@@ -501,7 +501,7 @@ export default function DiarioObraTab({
   const handleSalvarEdicao = async () => {
     setSalvandoEdicao(true);
     try {
-      await base44.entities.DiarioObra.update(diarioEditar.id, {
+      await sigo.entities.DiarioObra.update(diarioEditar.id, {
         data: editForm.data,
         horario_inicio: editForm.horario_inicio,
         horario_fim: editForm.horario_fim,
@@ -532,7 +532,7 @@ export default function DiarioObraTab({
               // Extrair percentual da atividade se estiver no formato "titulo - XX% concluído"
               const match = editForm.atividades.match(new RegExp(`${atividade.titulo}.*?(\\d+)%`));
               const percentual = match ? parseInt(match[1]) : atividade.progresso || 0;
-              return base44.entities.TarefaProjeto.update(atividade.id, {
+              return sigo.entities.TarefaProjeto.update(atividade.id, {
                 progresso: percentual,
               });
             })

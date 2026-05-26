@@ -1,20 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Calendar, Clock, AlertTriangle } from 'lucide-react';
-import { toast } from 'sonner';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Calendar, Clock, AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
 
 export default function ConfiguracaoManutencaoModal({ open, onOpenChange, ferramenta, onSave }) {
   const [dados, setDados] = useState({
     intervalo_manutencao_dias: 0,
     intervalo_manutencao_horas: 0,
-    ultima_manutencao: '',
-    proxima_manutencao: '',
-    horas_uso: 0
+    ultima_manutencao: "",
+    proxima_manutencao: "",
+    horas_uso: 0,
   });
   const [usarDias, setUsarDias] = useState(false);
   const [usarHoras, setUsarHoras] = useState(false);
@@ -25,9 +25,9 @@ export default function ConfiguracaoManutencaoModal({ open, onOpenChange, ferram
       setDados({
         intervalo_manutencao_dias: ferramenta.intervalo_manutencao_dias || 0,
         intervalo_manutencao_horas: ferramenta.intervalo_manutencao_horas || 0,
-        ultima_manutencao: ferramenta.ultima_manutencao || '',
-        proxima_manutencao: ferramenta.proxima_manutencao || '',
-        horas_uso: ferramenta.horas_uso || 0
+        ultima_manutencao: ferramenta.ultima_manutencao || "",
+        proxima_manutencao: ferramenta.proxima_manutencao || "",
+        horas_uso: ferramenta.horas_uso || 0,
       });
       setUsarDias((ferramenta.intervalo_manutencao_dias || 0) > 0);
       setUsarHoras((ferramenta.intervalo_manutencao_horas || 0) > 0);
@@ -36,13 +36,13 @@ export default function ConfiguracaoManutencaoModal({ open, onOpenChange, ferram
 
   const calcularProximaManutencao = () => {
     if (!usarDias || !dados.ultima_manutencao || dados.intervalo_manutencao_dias <= 0) {
-      return '';
+      return "";
     }
 
     const ultima = new Date(dados.ultima_manutencao);
     const proxima = new Date(ultima);
     proxima.setDate(proxima.getDate() + dados.intervalo_manutencao_dias);
-    return proxima.toISOString().split('T')[0];
+    return proxima.toISOString().split("T")[0];
   };
 
   const handleSalvar = async () => {
@@ -52,7 +52,7 @@ export default function ConfiguracaoManutencaoModal({ open, onOpenChange, ferram
         intervalo_manutencao_dias: usarDias ? dados.intervalo_manutencao_dias : 0,
         intervalo_manutencao_horas: usarHoras ? dados.intervalo_manutencao_horas : 0,
         ultima_manutencao: dados.ultima_manutencao || null,
-        horas_uso: dados.horas_uso
+        horas_uso: dados.horas_uso,
       };
 
       // Calcular próxima manutenção automaticamente se houver intervalo
@@ -62,13 +62,13 @@ export default function ConfiguracaoManutencaoModal({ open, onOpenChange, ferram
         updates.proxima_manutencao = null;
       }
 
-      await base44.entities.Ferramenta.update(ferramenta.id, updates);
-      toast.success('Configurações de manutenção atualizadas');
+      await sigo.entities.Ferramenta.update(ferramenta.id, updates);
+      toast.success("Configurações de manutenção atualizadas");
       onSave();
       onOpenChange(false);
     } catch (error) {
-      console.error('Erro ao salvar:', error);
-      toast.error('Erro ao salvar configurações');
+      console.error("Erro ao salvar:", error);
+      toast.error("Erro ao salvar configurações");
     } finally {
       setLoading(false);
     }
@@ -95,10 +95,7 @@ export default function ConfiguracaoManutencaoModal({ open, onOpenChange, ferram
                 <Calendar className="w-4 h-4 text-slate-400" />
                 <Label className="text-base">Manutenção por Tempo</Label>
               </div>
-              <Switch
-                checked={usarDias}
-                onCheckedChange={setUsarDias}
-              />
+              <Switch checked={usarDias} onCheckedChange={setUsarDias} />
             </div>
 
             {usarDias && (
@@ -109,7 +106,12 @@ export default function ConfiguracaoManutencaoModal({ open, onOpenChange, ferram
                     type="number"
                     min="1"
                     value={dados.intervalo_manutencao_dias}
-                    onChange={(e) => setDados({ ...dados, intervalo_manutencao_dias: parseInt(e.target.value) || 0 })}
+                    onChange={(e) =>
+                      setDados({
+                        ...dados,
+                        intervalo_manutencao_dias: parseInt(e.target.value) || 0,
+                      })
+                    }
                     placeholder="Ex: 30, 60, 90..."
                   />
                   <p className="text-xs text-slate-500 mt-1">
@@ -132,7 +134,7 @@ export default function ConfiguracaoManutencaoModal({ open, onOpenChange, ferram
                       <AlertTriangle className="w-4 h-4" />
                       <span className="text-sm font-medium">Próxima Manutenção:</span>
                       <span className="text-sm font-bold">
-                        {new Date(calcularProximaManutencao()).toLocaleDateString('pt-BR')}
+                        {new Date(calcularProximaManutencao()).toLocaleDateString("pt-BR")}
                       </span>
                     </div>
                   </div>
@@ -148,10 +150,7 @@ export default function ConfiguracaoManutencaoModal({ open, onOpenChange, ferram
                 <Clock className="w-4 h-4 text-slate-400" />
                 <Label className="text-base">Manutenção por Horas de Uso</Label>
               </div>
-              <Switch
-                checked={usarHoras}
-                onCheckedChange={setUsarHoras}
-              />
+              <Switch checked={usarHoras} onCheckedChange={setUsarHoras} />
             </div>
 
             {usarHoras && (
@@ -162,7 +161,12 @@ export default function ConfiguracaoManutencaoModal({ open, onOpenChange, ferram
                     type="number"
                     min="1"
                     value={dados.intervalo_manutencao_horas}
-                    onChange={(e) => setDados({ ...dados, intervalo_manutencao_horas: parseInt(e.target.value) || 0 })}
+                    onChange={(e) =>
+                      setDados({
+                        ...dados,
+                        intervalo_manutencao_horas: parseInt(e.target.value) || 0,
+                      })
+                    }
                     placeholder="Ex: 100, 500, 1000..."
                   />
                   <p className="text-xs text-slate-500 mt-1">
@@ -176,7 +180,9 @@ export default function ConfiguracaoManutencaoModal({ open, onOpenChange, ferram
                     type="number"
                     min="0"
                     value={dados.horas_uso}
-                    onChange={(e) => setDados({ ...dados, horas_uso: parseFloat(e.target.value) || 0 })}
+                    onChange={(e) =>
+                      setDados({ ...dados, horas_uso: parseFloat(e.target.value) || 0 })
+                    }
                   />
                 </div>
 
@@ -185,7 +191,12 @@ export default function ConfiguracaoManutencaoModal({ open, onOpenChange, ferram
                     <div className="flex items-center gap-2 text-blue-700">
                       <Clock className="w-4 h-4" />
                       <span className="text-sm">
-                        Próxima manutenção em: <strong>{dados.intervalo_manutencao_horas - (dados.horas_uso % dados.intervalo_manutencao_horas)}h</strong>
+                        Próxima manutenção em:{" "}
+                        <strong>
+                          {dados.intervalo_manutencao_horas -
+                            (dados.horas_uso % dados.intervalo_manutencao_horas)}
+                          h
+                        </strong>
                       </span>
                     </div>
                   </div>
@@ -205,12 +216,12 @@ export default function ConfiguracaoManutencaoModal({ open, onOpenChange, ferram
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button 
-            onClick={handleSalvar} 
+          <Button
+            onClick={handleSalvar}
             disabled={loading || (!usarDias && !usarHoras)}
             className="bg-amber-500 hover:bg-amber-600"
           >
-            {loading ? 'Salvando...' : 'Salvar Configurações'}
+            {loading ? "Salvando..." : "Salvar Configurações"}
           </Button>
         </div>
       </DialogContent>

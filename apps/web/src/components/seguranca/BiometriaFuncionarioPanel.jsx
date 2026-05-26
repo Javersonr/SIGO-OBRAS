@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Fingerprint, Loader2, CheckCircle2, Trash2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import NitgenCapture from "@/components/ferramental/NitgenCapture";
 import { format } from "date-fns";
 
@@ -61,7 +61,7 @@ export default function BiometriaFuncionarioPanel({
 
       // Se já existe funcionário, salvar imediatamente
       if (selectedFuncionario?.id) {
-        await base44.entities.Funcionario.update(selectedFuncionario.id, {
+        await sigo.entities.Funcionario.update(selectedFuncionario.id, {
           biometria_capturada: true,
           biometria_template: JSON.stringify(novaBiometria),
         });
@@ -90,7 +90,7 @@ export default function BiometriaFuncionarioPanel({
       setBiometriaCarregada(null);
 
       if (selectedFuncionario?.id) {
-        await base44.entities.Funcionario.update(selectedFuncionario.id, {
+        await sigo.entities.Funcionario.update(selectedFuncionario.id, {
           biometria_capturada: false,
           biometria_template: null,
         });

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import * as XLSX from "xlsx";
 import { Upload, Download, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -360,7 +360,7 @@ export default function ImportarFuncionariosModal({
       };
 
       try {
-        await base44.entities.Funcionario.create(dados);
+        await sigo.entities.Funcionario.create(dados);
         importados++;
       } catch (e) {
         console.error("Erro ao importar linha", linha, e);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -129,7 +129,7 @@ export default function FuncaoModal({
 
   const loadFerramentas = async () => {
     try {
-      const todasFerramentas = await base44.entities.Ferramenta.filter(
+      const todasFerramentas = await sigo.entities.Ferramenta.filter(
         {
           empresa_id: empresaAtiva.id,
           ativo: true,
@@ -154,7 +154,7 @@ export default function FuncaoModal({
       return;
     }
     try {
-      const result = await base44.entities.Treinamento.filter({
+      const result = await sigo.entities.Treinamento.filter({
         empresa_id: empresaAtiva.id,
         funcao_id: funcaoId,
         ativo: true,
@@ -192,7 +192,7 @@ export default function FuncaoModal({
   const handleDeleteTreinamento = async (id) => {
     if (!confirm("Deseja excluir este treinamento?")) return;
     try {
-      await base44.entities.Treinamento.delete(id);
+      await sigo.entities.Treinamento.delete(id);
       if (funcao?.id) loadTreinamentos(funcao.id);
       toast.success("Treinamento excluído");
     } catch (error) {
@@ -204,7 +204,7 @@ export default function FuncaoModal({
   const handleGerarCertificado = async (treinamento) => {
     setGerandoCertificado(true);
     try {
-      const response = await base44.functions.invoke("gerarCertificadoTreinamento", {
+      const response = await sigo.functions.invoke("gerarCertificadoTreinamento", {
         treinamento_id: treinamento.id,
         empresa_id: empresaAtiva.id,
       });
@@ -545,7 +545,7 @@ export default function FuncaoModal({
 
                             if (novosModelos > 0) {
                               // Salvar na função
-                              await base44.entities.Funcao.update(funcao.id, {
+                              await sigo.entities.Funcao.update(funcao.id, {
                                 modelo_treinamentos: JSON.stringify(modelosAtuais),
                               });
 
@@ -647,7 +647,7 @@ export default function FuncaoModal({
                                         try {
                                           const isChecked = e.target.checked;
 
-                                          await base44.entities.Treinamento.update(treinamento.id, {
+                                          await sigo.entities.Treinamento.update(treinamento.id, {
                                             usar_como_modelo: isChecked,
                                           });
 
@@ -673,7 +673,7 @@ export default function FuncaoModal({
                                                 obrigatorio: true,
                                               });
 
-                                              await base44.entities.Funcao.update(funcao.id, {
+                                              await sigo.entities.Funcao.update(funcao.id, {
                                                 modelo_treinamentos: JSON.stringify(modelosAtuais),
                                               });
 

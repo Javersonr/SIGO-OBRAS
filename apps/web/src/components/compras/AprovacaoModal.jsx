@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -49,10 +49,10 @@ export default function AprovacaoModal({
         setLoading(true);
         try {
           const [itensData, materiais, orcamentoItens] = await Promise.all([
-            base44.entities.SolicitacaoCompraItem.filter({ solicitacao_id: solicitacao.id }),
-            base44.entities.Material.filter({ empresa_id: empresaAtiva.id }, "-created_date", 9999),
+            sigo.entities.SolicitacaoCompraItem.filter({ solicitacao_id: solicitacao.id }),
+            sigo.entities.Material.filter({ empresa_id: empresaAtiva.id }, "-created_date", 9999),
             solicitacao.projeto_id
-              ? base44.entities.OrcamentoItem.filter({ projeto_id: solicitacao.projeto_id })
+              ? sigo.entities.OrcamentoItem.filter({ projeto_id: solicitacao.projeto_id })
               : Promise.resolve([]),
           ]);
 
@@ -138,12 +138,12 @@ export default function AprovacaoModal({
         (item) => item.quantidade_editavel !== item.quantidade
       );
       for (const item of itensAlterados) {
-        await base44.entities.SolicitacaoCompraItem.update(item.id, {
+        await sigo.entities.SolicitacaoCompraItem.update(item.id, {
           quantidade: item.quantidade_editavel,
         });
       }
 
-      const response = await base44.functions.invoke("processarAprovacao", {
+      const response = await sigo.functions.invoke("processarAprovacao", {
         decisao,
         comentarios,
         aprovador_id: user?.id,
@@ -229,25 +229,25 @@ export default function AprovacaoModal({
                         const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 
                         // Excluir aprovações sequencialmente
-                        const aprovs = await base44.entities.AprovacaoSolicitacao.filter({
+                        const aprovs = await sigo.entities.AprovacaoSolicitacao.filter({
                           solicitacao_id: solicitacao.id,
                         });
                         for (const a of aprovs) {
-                          await base44.entities.AprovacaoSolicitacao.delete(a.id);
+                          await sigo.entities.AprovacaoSolicitacao.delete(a.id);
                           await delay(300);
                         }
 
                         // Excluir itens sequencialmente
-                        const its = await base44.entities.SolicitacaoCompraItem.filter({
+                        const its = await sigo.entities.SolicitacaoCompraItem.filter({
                           solicitacao_id: solicitacao.id,
                         });
                         for (const i of its) {
-                          await base44.entities.SolicitacaoCompraItem.delete(i.id);
+                          await sigo.entities.SolicitacaoCompraItem.delete(i.id);
                           await delay(300);
                         }
 
                         // Excluir solicitação
-                        await base44.entities.SolicitacaoCompra.delete(solicitacao.id);
+                        await sigo.entities.SolicitacaoCompra.delete(solicitacao.id);
 
                         alert("✅ Solicitação excluída com sucesso!");
                         onOpenChange(false);

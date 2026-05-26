@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { WifiOff, Upload, Loader, Wifi } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { toast } from "sonner";
 import { useDiarioOffline } from "./useDiarioOffline";
 
@@ -22,13 +22,13 @@ export default function DiarioOfflineBanner({ empresaAtiva, onSincronizado }) {
           for (const dataUrl of entrada.fotos_offline) {
             const blob = await (await fetch(dataUrl)).blob();
             const file = new File([blob], "foto_obra.jpg", { type: "image/jpeg" });
-            const { file_url } = await base44.integrations.Core.UploadFile({ file });
+            const { file_url } = await sigo.integrations.Core.UploadFile({ file });
             fotosUrls.push(file_url);
           }
         }
 
         // Criar o DiarioObra no servidor
-        await base44.entities.DiarioObra.create({
+        await sigo.entities.DiarioObra.create({
           empresa_id: entrada.empresa_id,
           projeto_id: entrada.projeto_id,
           data: entrada.data,

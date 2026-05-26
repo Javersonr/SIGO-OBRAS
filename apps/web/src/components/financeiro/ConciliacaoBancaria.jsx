@@ -12,7 +12,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Upload, CheckCircle2, XCircle, Link2, AlertCircle } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 
 export default function ConciliacaoBancaria({ empresaAtiva, contas, onReload }) {
   const [extratosBancarios, setExtratosBancarios] = useState([]);
@@ -33,15 +33,15 @@ export default function ConciliacaoBancaria({ empresaAtiva, contas, onReload }) 
     setLoading(true);
     try {
       const [extratos, transacoes, regrasDb] = await Promise.all([
-        base44.entities.ExtratoBancario.filter({
+        sigo.entities.ExtratoBancario.filter({
           empresa_id: empresaAtiva.id,
           conta_id: contaSelecionada,
         }),
-        base44.entities.TransacaoFinanceira.filter({
+        sigo.entities.TransacaoFinanceira.filter({
           empresa_id: empresaAtiva.id,
           conta_id: contaSelecionada,
         }),
-        base44.entities.RegraConciliacao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.RegraConciliacao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ]);
       setExtratosBancarios(extratos);
       setTransacoesSistema(transacoes);
@@ -58,9 +58,9 @@ export default function ConciliacaoBancaria({ empresaAtiva, contas, onReload }) 
     if (!file || !contaSelecionada) return;
 
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
 
-      await base44.entities.UploadOFX.create({
+      await sigo.entities.UploadOFX.create({
         empresa_id: empresaAtiva.id,
         conta_id: contaSelecionada,
         arquivo_url: file_url,
@@ -83,7 +83,7 @@ export default function ConciliacaoBancaria({ empresaAtiva, contas, onReload }) 
         // Importar sequencialmente com delay
         for (let i = 0; i < transacoes.length; i++) {
           const trans = transacoes[i];
-          await base44.entities.ExtratoBancario.create({
+          await sigo.entities.ExtratoBancario.create({
             empresa_id: empresaAtiva.id,
             conta_id: contaSelecionada,
             data: trans.data,
@@ -251,12 +251,12 @@ export default function ConciliacaoBancaria({ empresaAtiva, contas, onReload }) 
 
   const conciliarTransacao = async (extratoId, transacaoId) => {
     await Promise.all([
-      base44.entities.ExtratoBancario.update(extratoId, {
+      sigo.entities.ExtratoBancario.update(extratoId, {
         status_conciliacao: "conciliado",
         transacao_id: transacaoId,
         data_conciliacao: new Date().toISOString().split("T")[0],
       }),
-      base44.entities.TransacaoFinanceira.update(transacaoId, {
+      sigo.entities.TransacaoFinanceira.update(transacaoId, {
         conciliado: true,
         extrato_id: extratoId,
       }),

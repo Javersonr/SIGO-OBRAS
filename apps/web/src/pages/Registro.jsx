@@ -1,26 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '../utils';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { HardHat, Loader2, UserPlus } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "../utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { HardHat, Loader2, UserPlus } from "lucide-react";
 
 export default function Registro() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [empresas, setEmpresas] = useState([]);
   const [form, setForm] = useState({
-    nome_completo: '',
-    email: '',
-    senha: '',
-    confirmar_senha: '',
-    empresa_id: ''
+    nome_completo: "",
+    email: "",
+    senha: "",
+    confirmar_senha: "",
+    empresa_id: "",
   });
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   useEffect(() => {
     loadEmpresas();
@@ -28,45 +34,45 @@ export default function Registro() {
 
   const loadEmpresas = async () => {
     try {
-      const lista = await base44.entities.Empresa.filter({ ativo: true });
+      const lista = await sigo.entities.Empresa.filter({ ativo: true });
       setEmpresas(lista);
     } catch (error) {
-      console.error('Erro ao carregar empresas:', error);
+      console.error("Erro ao carregar empresas:", error);
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
     if (form.senha !== form.confirmar_senha) {
-      setError('As senhas não coincidem');
+      setError("As senhas não coincidem");
       return;
     }
 
     if (form.senha.length < 6) {
-      setError('A senha deve ter no mínimo 6 caracteres');
+      setError("A senha deve ter no mínimo 6 caracteres");
       return;
     }
 
     setLoading(true);
 
     try {
-      const { data } = await base44.functions.invoke('registrarUsuario', {
+      const { data } = await sigo.functions.invoke("registrarUsuario", {
         nome_completo: form.nome_completo,
         email: form.email,
         senha: form.senha,
         empresa_id: form.empresa_id,
-        perfil: 'Gestor'
+        perfil: "Gestor",
       });
 
       if (data.success) {
-        navigate(createPageUrl('EntrarSistema'));
+        navigate(createPageUrl("EntrarSistema"));
       } else {
-        setError(data.error || 'Erro ao cadastrar usuário');
+        setError(data.error || "Erro ao cadastrar usuário");
       }
     } catch (err) {
-      setError('Erro ao conectar com o servidor');
+      setError("Erro ao conectar com o servidor");
       console.error(err);
     } finally {
       setLoading(false);
@@ -110,7 +116,10 @@ export default function Registro() {
 
             <div>
               <Label>Empresa</Label>
-              <Select value={form.empresa_id} onValueChange={(value) => setForm({ ...form, empresa_id: value })}>
+              <Select
+                value={form.empresa_id}
+                onValueChange={(value) => setForm({ ...form, empresa_id: value })}
+              >
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="Selecione a empresa" />
                 </SelectTrigger>
@@ -174,8 +183,11 @@ export default function Registro() {
           </form>
 
           <p className="text-center text-sm text-slate-500 mt-6">
-            Já tem conta?{' '}
-            <a href={createPageUrl('EntrarSistema')} className="text-amber-600 hover:underline font-medium">
+            Já tem conta?{" "}
+            <a
+              href={createPageUrl("EntrarSistema")}
+              className="text-amber-600 hover:underline font-medium"
+            >
               Faça login
             </a>
           </p>

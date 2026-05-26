@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,7 +55,7 @@ export default function InspecaoCampoDetalheModal({
     if (!file) return;
     setUploadingFoto(idx);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       const novosItens = [...itens];
       novosItens[idx] = {
         ...novosItens[idx],
@@ -95,7 +95,7 @@ Analise se o item na foto da inspeção está CONFORME (bom estado, seguindo os 
 
 Responda SOMENTE em JSON: {"status": "conforme" ou "nao_conforme", "descricao": "breve justificativa em até 2 frases"}`;
 
-      const resultado = await base44.integrations.Core.InvokeLLM({
+      const resultado = await sigo.integrations.Core.InvokeLLM({
         prompt,
         file_urls: [item.foto_referencia_url, foto_url],
         response_json_schema: {
@@ -153,7 +153,7 @@ Responda SOMENTE em JSON: {"status": "conforme" ou "nao_conforme", "descricao": 
             ? "Concluída"
             : "Em Andamento";
 
-    await base44.entities.InspecaoCampo.update(inspecao.id, {
+    await sigo.entities.InspecaoCampo.update(inspecao.id, {
       itens_inspecao: JSON.stringify(itensAtual),
       total_itens: total,
       total_inspecionados: inspecionados,

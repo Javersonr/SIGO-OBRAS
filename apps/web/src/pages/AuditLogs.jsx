@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,7 +65,7 @@ export default function AuditLogs() {
       if (filters.entidade) query.entidade = filters.entidade;
       if (filters.usuario_email) query.usuario_email = filters.usuario_email;
 
-      const auditLogs = await base44.entities.AuditLog.filter(query);
+      const auditLogs = await sigo.entities.AuditLog.filter(query);
 
       // Filtrar por datas se necessário
       let filtered = auditLogs;

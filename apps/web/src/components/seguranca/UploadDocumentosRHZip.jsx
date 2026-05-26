@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -38,10 +38,10 @@ export default function UploadDocumentosRHZip({
 
     try {
       // Upload do ZIP
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
 
       // Processar com IA
-      const response = await base44.functions.invoke("verificarDocumentosRH", {
+      const response = await sigo.functions.invoke("verificarDocumentosRH", {
         zipUrl: file_url,
         funcionarioId,
         empresaId,

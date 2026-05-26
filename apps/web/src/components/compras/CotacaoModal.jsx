@@ -7,7 +7,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Mail, MessageSquare, Copy, X } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 
 export default function CotacaoModal({
   open,
@@ -34,7 +34,7 @@ export default function CotacaoModal({
   const carregarCotacaoExistente = React.useCallback(async () => {
     if (!open || !solicitacao) return;
     try {
-      const cotacoes = await base44.entities.Cotacao.filter({
+      const cotacoes = await sigo.entities.Cotacao.filter({
         empresa_id: empresaAtiva.id,
         solicitacao_id: solicitacao.id,
       });
@@ -46,7 +46,7 @@ export default function CotacaoModal({
         setObservacoes(cotacao.observacoes || "");
 
         // Carregar fornecedores já vinculados
-        const fornecedoresVinculados = await base44.entities.CotacaoFornecedor.filter({
+        const fornecedoresVinculados = await sigo.entities.CotacaoFornecedor.filter({
           cotacao_id: cotacao.id,
         });
 
@@ -69,7 +69,7 @@ export default function CotacaoModal({
         await Promise.all(
           fornecedoresVinculados.map(async (fv) => {
             try {
-              const acessos = await base44.entities.FornecedorAcesso.filter({
+              const acessos = await sigo.entities.FornecedorAcesso.filter({
                 fornecedor_id: fv.fornecedor_id,
                 empresa_id: empresaAtiva.id,
                 ativo: true,
@@ -108,7 +108,7 @@ export default function CotacaoModal({
       carregarCotacaoExistente();
       // Carregar códigos do orçamento para exibir na lista de itens
       if (solicitacao.projeto_id) {
-        base44.entities.OrcamentoItem.filter({ projeto_id: solicitacao.projeto_id })
+        sigo.entities.OrcamentoItem.filter({ projeto_id: solicitacao.projeto_id })
           .then((orcItens) => {
             const mapa = {};
             orcItens.forEach((o) => {
@@ -156,7 +156,7 @@ export default function CotacaoModal({
       const ano = new Date().getFullYear();
 
       if (cotacaoExistente) {
-        await base44.entities.Cotacao.update(cotacaoExistente.id, {
+        await sigo.entities.Cotacao.update(cotacaoExistente.id, {
           status: "Enviada aos Fornecedores",
           data_limite: dataLimite || null,
           observacoes,
@@ -164,7 +164,7 @@ export default function CotacaoModal({
         });
         cotacao = cotacaoExistente;
 
-        const fornecedoresExistentes = await base44.entities.CotacaoFornecedor.filter({
+        const fornecedoresExistentes = await sigo.entities.CotacaoFornecedor.filter({
           cotacao_id: cotacaoExistente.id,
         });
         const idsExistentes = fornecedoresExistentes.map((f) => f.fornecedor_id);
@@ -178,7 +178,7 @@ export default function CotacaoModal({
             const fornecedor = fornecedores.find((f) => f.id === fId);
             const token = btoa(`${cotacaoExistente.id}-${fId}-${Date.now()}`);
 
-            await base44.entities.CotacaoFornecedor.create({
+            await sigo.entities.CotacaoFornecedor.create({
               empresa_id: empresaAtiva.id,
               cotacao_id: cotacaoExistente.id,
               fornecedor_id: fId,
@@ -190,10 +190,10 @@ export default function CotacaoModal({
           })
         );
       } else {
-        const cotacoes = await base44.entities.Cotacao.filter({ empresa_id: empresaAtiva.id });
+        const cotacoes = await sigo.entities.Cotacao.filter({ empresa_id: empresaAtiva.id });
         const numero = `COT${ano}-${String(cotacoes.length + 1).padStart(4, "0")}`;
 
-        cotacao = await base44.entities.Cotacao.create({
+        cotacao = await sigo.entities.Cotacao.create({
           empresa_id: empresaAtiva.id,
           numero,
           solicitacao_id: solicitacao.id,
@@ -207,7 +207,7 @@ export default function CotacaoModal({
         });
 
         const itensPromises = itens.map((item) =>
-          base44.entities.CotacaoItem.create({
+          sigo.entities.CotacaoItem.create({
             empresa_id: empresaAtiva.id,
             cotacao_id: cotacao.id,
             solicitacao_item_id: item.id,
@@ -227,7 +227,7 @@ export default function CotacaoModal({
             const fornecedor = fornecedores.find((f) => f.id === fId);
             const token = btoa(`${cotacao.id}-${fId}-${Date.now()}`);
 
-            await base44.entities.CotacaoFornecedor.create({
+            await sigo.entities.CotacaoFornecedor.create({
               empresa_id: empresaAtiva.id,
               cotacao_id: cotacao.id,
               fornecedor_id: fId,
@@ -241,7 +241,7 @@ export default function CotacaoModal({
       }
 
       // Otimizado: Buscar todos CotacaoFornecedor de uma vez
-      const todosCotForn = await base44.entities.CotacaoFornecedor.filter({
+      const todosCotForn = await sigo.entities.CotacaoFornecedor.filter({
         cotacao_id: cotacao.id,
       });
 
@@ -260,7 +260,7 @@ export default function CotacaoModal({
       for (const cotForn of todosCotForn) {
         try {
           const fornecedor = fornecedores.find((f) => f.id === cotForn.fornecedor_id);
-          const acessos = await base44.entities.FornecedorAcesso.filter({
+          const acessos = await sigo.entities.FornecedorAcesso.filter({
             fornecedor_id: cotForn.fornecedor_id,
             empresa_id: empresaAtiva.id,
             ativo: true,
@@ -273,7 +273,7 @@ export default function CotacaoModal({
           } else if (fornecedor?.email) {
             // Criar acesso automaticamente se não existir
             const senhaGerada = Math.random().toString(36).slice(2, 10).toUpperCase();
-            const novoAcesso = await base44.entities.FornecedorAcesso.create({
+            const novoAcesso = await sigo.entities.FornecedorAcesso.create({
               empresa_id: empresaAtiva.id,
               fornecedor_id: cotForn.fornecedor_id,
               fornecedor_nome: fornecedor.nome_razao,
@@ -292,7 +292,7 @@ export default function CotacaoModal({
       }
       setCredenciaisFornecedores(credenciais);
 
-      await base44.entities.SolicitacaoCompra.update(solicitacao.id, { status: "Em Cotação" });
+      await sigo.entities.SolicitacaoCompra.update(solicitacao.id, { status: "Em Cotação" });
 
       alert(
         cotacaoExistente

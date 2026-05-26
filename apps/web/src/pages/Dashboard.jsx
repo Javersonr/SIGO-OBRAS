@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import {
   Target,
@@ -112,11 +112,11 @@ export default function Dashboard() {
 
   const loadModulos = async () => {
     try {
-      const assinaturas = await base44.entities.Assinatura.filter({ empresa_id: empresaAtiva.id });
+      const assinaturas = await sigo.entities.Assinatura.filter({ empresa_id: empresaAtiva.id });
       const ativas = assinaturas.filter((a) => a.status === "Ativa" || a.status === "Trial");
       let modulos = {};
       if (ativas.length > 0) {
-        const planos = await base44.entities.Plano.filter({ id: ativas[0].plano_id });
+        const planos = await sigo.entities.Plano.filter({ id: ativas[0].plano_id });
         if (planos.length > 0 && planos[0].modulos_liberados) {
           try {
             modulos = JSON.parse(planos[0].modulos_liberados);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -24,7 +24,7 @@ export default function SeletorKitOrcamento({ empresaId, onAdicionarKit }) {
   const carregarKits = async () => {
     try {
       setCarregando(true);
-      const data = await base44.entities.Kit.filter({ empresa_id: empresaId, ativo: true });
+      const data = await sigo.entities.Kit.filter({ empresa_id: empresaId, ativo: true });
       setKits(data || []);
     } catch (err) {
       console.error("Erro ao carregar kits:", err);

@@ -13,7 +13,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Wallet, CreditCard, Link2, FolderTree, TrendingUp, Trash2 } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import ConciliacaoBancaria from "./ConciliacaoBancaria";
 import RegrasConciliacao from "./RegrasConciliacao";
 import IntegracaoBancaria from "./IntegracaoBancaria";
@@ -37,7 +37,7 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
   const handleOpen = async (conta = null) => {
     // Carregar usuários da empresa para vínculo Fundo Fixo
     try {
-      const usrs = await base44.entities.UsuarioEmpresa.filter({
+      const usrs = await sigo.entities.UsuarioEmpresa.filter({
         empresa_id: empresaAtiva.id,
         ativo: true,
       });
@@ -83,9 +83,9 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
     };
 
     if (selectedItem) {
-      await base44.entities.ContaFinanceira.update(selectedItem.id, data);
+      await sigo.entities.ContaFinanceira.update(selectedItem.id, data);
     } else {
-      await base44.entities.ContaFinanceira.create(data);
+      await sigo.entities.ContaFinanceira.create(data);
     }
 
     setShowModal(false);
@@ -97,7 +97,7 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
     if (!confirm("Tem certeza que deseja excluir esta conta? Esta ação não pode ser desfeita."))
       return;
 
-    await base44.entities.ContaFinanceira.delete(selectedItem.id);
+    await sigo.entities.ContaFinanceira.delete(selectedItem.id);
     setShowModal(false);
     onReload();
   };

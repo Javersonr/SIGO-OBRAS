@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,7 +52,7 @@ export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, 
   const loadProjetos = React.useCallback(async () => {
     if (!empresaAtiva?.id) return;
     try {
-      const projs = await base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id });
+      const projs = await sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id });
       setProjetos(projs.sort((a, b) => (a.nome || "").localeCompare(b.nome || "")));
     } catch (error) {
       console.error("Erro ao carregar projetos:", error);
@@ -227,7 +227,7 @@ export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, 
     }
     setAlterandoEmail(true);
     try {
-      const res = await base44.functions.invoke("alterarEmailUsuario", {
+      const res = await sigo.functions.invoke("alterarEmailUsuario", {
         vinculo_id: usuario.id,
         email_antigo: usuario.usuario_email,
         email_novo: novoEmail,
@@ -253,7 +253,7 @@ export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, 
     }
     setAlterandoSenhaAdmin(true);
     try {
-      const res = await base44.functions.invoke("redefinirSenhaAdmin", {
+      const res = await sigo.functions.invoke("redefinirSenhaAdmin", {
         usuario_email: usuario.usuario_email,
         nova_senha: novaSenhaAdmin,
       });

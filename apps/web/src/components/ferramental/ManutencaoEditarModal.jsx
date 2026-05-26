@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
 import SheetModalComponent from "@/components/ui/sheet-modal";
 import { Button } from "@/components/ui/button";
@@ -49,13 +49,13 @@ export default function ManutencaoEditarModal({
     setSaving(true);
     try {
       // Atualizar o registro principal
-      await base44.entities.ManutencaoFerramenta.update(manutencao.id, form);
+      await sigo.entities.ManutencaoFerramenta.update(manutencao.id, form);
 
       // Atualizar todos os registros extras do grupo com o mesmo status
       if (extras.length > 0) {
         await Promise.all(
           extras.map((e) =>
-            base44.entities.ManutencaoFerramenta.update(e.id, { status: form.status })
+            sigo.entities.ManutencaoFerramenta.update(e.id, { status: form.status })
           )
         );
       }
@@ -78,7 +78,7 @@ export default function ManutencaoEditarModal({
       if (form.status === "Concluída" && ferramentaIds.length > 0) {
         await Promise.all(
           ferramentaIds.map((fid) =>
-            base44.entities.Ferramenta.update(fid, {
+            sigo.entities.Ferramenta.update(fid, {
               status: "Disponível",
               ultima_manutencao: form.data_manutencao || new Date().toISOString().split("T")[0],
               ...(form.proxima_manutencao_prevista
@@ -91,9 +91,7 @@ export default function ManutencaoEditarModal({
 
       if (form.status === "Cancelada" && ferramentaIds.length > 0) {
         await Promise.all(
-          ferramentaIds.map((fid) =>
-            base44.entities.Ferramenta.update(fid, { status: "Disponível" })
-          )
+          ferramentaIds.map((fid) => sigo.entities.Ferramenta.update(fid, { status: "Disponível" }))
         );
       }
 

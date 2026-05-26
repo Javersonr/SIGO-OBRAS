@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Download, Eye, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,8 +45,8 @@ export default function AuditoriaTab({ empresaAtiva }) {
     setLoading(true);
     try {
       const [auditLogs, usuariosList] = await Promise.all([
-        base44.entities.AuditLog.filter({ empresa_id: empresaAtiva.id }, "-created_date", 100),
-        base44.entities.UsuarioEmpresa.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.AuditLog.filter({ empresa_id: empresaAtiva.id }, "-created_date", 100),
+        sigo.entities.UsuarioEmpresa.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ]);
 
       setLogs(auditLogs);

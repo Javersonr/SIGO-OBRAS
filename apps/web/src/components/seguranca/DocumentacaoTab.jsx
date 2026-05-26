@@ -1,13 +1,24 @@
-import React from 'react';
-import { base44 } from '@/api/base44Client';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, FileText, Plus, Upload, X } from 'lucide-react';
-import { toast } from 'sonner';
+import React from "react";
+import { sigo } from "@/api/sigoClient";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { AlertCircle, FileText, Plus, Upload, X } from "lucide-react";
+import { toast } from "sonner";
 
-export default function DocumentacaoTab({ funcionarioForm, setFuncionarioForm, uploadingDoc, setUploadingDoc }) {
+export default function DocumentacaoTab({
+  funcionarioForm,
+  setFuncionarioForm,
+  uploadingDoc,
+  setUploadingDoc,
+}) {
   return (
     <div className="space-y-4 mt-4">
       <div className="grid grid-cols-2 gap-4">
@@ -44,7 +55,9 @@ export default function DocumentacaoTab({ funcionarioForm, setFuncionarioForm, u
           <Input
             type="date"
             value={funcionarioForm.rg_data_expedicao}
-            onChange={(e) => setFuncionarioForm({ ...funcionarioForm, rg_data_expedicao: e.target.value })}
+            onChange={(e) =>
+              setFuncionarioForm({ ...funcionarioForm, rg_data_expedicao: e.target.value })
+            }
             className="mt-1.5"
           />
         </div>
@@ -65,7 +78,9 @@ export default function DocumentacaoTab({ funcionarioForm, setFuncionarioForm, u
           <Input
             type="date"
             value={funcionarioForm.data_nascimento}
-            onChange={(e) => setFuncionarioForm({ ...funcionarioForm, data_nascimento: e.target.value })}
+            onChange={(e) =>
+              setFuncionarioForm({ ...funcionarioForm, data_nascimento: e.target.value })
+            }
             className="mt-1.5"
           />
         </div>
@@ -74,7 +89,9 @@ export default function DocumentacaoTab({ funcionarioForm, setFuncionarioForm, u
           <Label>Naturalidade</Label>
           <Input
             value={funcionarioForm.naturalidade}
-            onChange={(e) => setFuncionarioForm({ ...funcionarioForm, naturalidade: e.target.value })}
+            onChange={(e) =>
+              setFuncionarioForm({ ...funcionarioForm, naturalidade: e.target.value })
+            }
             placeholder="Ex: São Paulo - SP"
             className="mt-1.5"
           />
@@ -84,7 +101,9 @@ export default function DocumentacaoTab({ funcionarioForm, setFuncionarioForm, u
           <Label>Título de Eleitor</Label>
           <Input
             value={funcionarioForm.titulo_eleitor}
-            onChange={(e) => setFuncionarioForm({ ...funcionarioForm, titulo_eleitor: e.target.value })}
+            onChange={(e) =>
+              setFuncionarioForm({ ...funcionarioForm, titulo_eleitor: e.target.value })
+            }
             className="mt-1.5"
           />
         </div>
@@ -93,7 +112,9 @@ export default function DocumentacaoTab({ funcionarioForm, setFuncionarioForm, u
           <Label>Zona</Label>
           <Input
             value={funcionarioForm.titulo_eleitor_zona}
-            onChange={(e) => setFuncionarioForm({ ...funcionarioForm, titulo_eleitor_zona: e.target.value })}
+            onChange={(e) =>
+              setFuncionarioForm({ ...funcionarioForm, titulo_eleitor_zona: e.target.value })
+            }
             className="mt-1.5"
           />
         </div>
@@ -102,7 +123,9 @@ export default function DocumentacaoTab({ funcionarioForm, setFuncionarioForm, u
           <Label>Seção</Label>
           <Input
             value={funcionarioForm.titulo_eleitor_secao}
-            onChange={(e) => setFuncionarioForm({ ...funcionarioForm, titulo_eleitor_secao: e.target.value })}
+            onChange={(e) =>
+              setFuncionarioForm({ ...funcionarioForm, titulo_eleitor_secao: e.target.value })
+            }
             className="mt-1.5"
           />
         </div>
@@ -161,7 +184,7 @@ export default function DocumentacaoTab({ funcionarioForm, setFuncionarioForm, u
       <div className="border-t pt-4">
         <h4 className="font-medium mb-3">Dependentes</h4>
         <div className="space-y-3">
-          {JSON.parse(funcionarioForm.dependentes || '[]').map((dep, idx) => {
+          {JSON.parse(funcionarioForm.dependentes || "[]").map((dep, idx) => {
             const calcularIdade = (dataNascimento) => {
               if (!dataNascimento) return 0;
               const hoje = new Date();
@@ -180,14 +203,16 @@ export default function DocumentacaoTab({ funcionarioForm, setFuncionarioForm, u
                 <div className="flex items-start justify-between mb-3">
                   <h5 className="font-medium text-sm">
                     Dependente {idx + 1}
-                    {idade > 0 && <span className="ml-2 text-xs text-slate-500">({idade} anos)</span>}
+                    {idade > 0 && (
+                      <span className="ml-2 text-xs text-slate-500">({idade} anos)</span>
+                    )}
                   </h5>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-6 w-6"
                     onClick={() => {
-                      const deps = JSON.parse(funcionarioForm.dependentes || '[]');
+                      const deps = JSON.parse(funcionarioForm.dependentes || "[]");
                       deps.splice(idx, 1);
                       setFuncionarioForm({ ...funcionarioForm, dependentes: JSON.stringify(deps) });
                     }}
@@ -199,11 +224,14 @@ export default function DocumentacaoTab({ funcionarioForm, setFuncionarioForm, u
                   <div className="col-span-3">
                     <Label className="text-xs">Nome Completo</Label>
                     <Input
-                      value={dep.nome || ''}
+                      value={dep.nome || ""}
                       onChange={(e) => {
-                        const deps = JSON.parse(funcionarioForm.dependentes || '[]');
+                        const deps = JSON.parse(funcionarioForm.dependentes || "[]");
                         deps[idx].nome = e.target.value;
-                        setFuncionarioForm({ ...funcionarioForm, dependentes: JSON.stringify(deps) });
+                        setFuncionarioForm({
+                          ...funcionarioForm,
+                          dependentes: JSON.stringify(deps),
+                        });
                       }}
                       placeholder="Nome completo do dependente"
                       className="mt-1 h-8 text-sm"
@@ -213,11 +241,14 @@ export default function DocumentacaoTab({ funcionarioForm, setFuncionarioForm, u
                     <Label className="text-xs">Data de Nascimento</Label>
                     <Input
                       type="date"
-                      value={dep.data_nascimento || ''}
+                      value={dep.data_nascimento || ""}
                       onChange={(e) => {
-                        const deps = JSON.parse(funcionarioForm.dependentes || '[]');
+                        const deps = JSON.parse(funcionarioForm.dependentes || "[]");
                         deps[idx].data_nascimento = e.target.value;
-                        setFuncionarioForm({ ...funcionarioForm, dependentes: JSON.stringify(deps) });
+                        setFuncionarioForm({
+                          ...funcionarioForm,
+                          dependentes: JSON.stringify(deps),
+                        });
                       }}
                       className="mt-1 h-8 text-sm"
                     />
@@ -225,11 +256,14 @@ export default function DocumentacaoTab({ funcionarioForm, setFuncionarioForm, u
                   <div className="col-span-2">
                     <Label className="text-xs">CPF</Label>
                     <Input
-                      value={dep.cpf || ''}
+                      value={dep.cpf || ""}
                       onChange={(e) => {
-                        const deps = JSON.parse(funcionarioForm.dependentes || '[]');
+                        const deps = JSON.parse(funcionarioForm.dependentes || "[]");
                         deps[idx].cpf = e.target.value;
-                        setFuncionarioForm({ ...funcionarioForm, dependentes: JSON.stringify(deps) });
+                        setFuncionarioForm({
+                          ...funcionarioForm,
+                          dependentes: JSON.stringify(deps),
+                        });
                       }}
                       placeholder="000.000.000-00"
                       className="mt-1 h-8 text-sm"
@@ -258,9 +292,12 @@ export default function DocumentacaoTab({ funcionarioForm, setFuncionarioForm, u
                             size="sm"
                             className="h-6 text-xs"
                             onClick={() => {
-                              const deps = JSON.parse(funcionarioForm.dependentes || '[]');
-                              deps[idx].comprovante_escolar_url = '';
-                              setFuncionarioForm({ ...funcionarioForm, dependentes: JSON.stringify(deps) });
+                              const deps = JSON.parse(funcionarioForm.dependentes || "[]");
+                              deps[idx].comprovante_escolar_url = "";
+                              setFuncionarioForm({
+                                ...funcionarioForm,
+                                dependentes: JSON.stringify(deps),
+                              });
                             }}
                           >
                             <X className="w-3 h-3 text-red-500" />
@@ -268,7 +305,13 @@ export default function DocumentacaoTab({ funcionarioForm, setFuncionarioForm, u
                         </div>
                       ) : (
                         <label className="mt-1 block">
-                          <Button variant="outline" size="sm" className="h-7 text-xs w-full" disabled={uploadingDoc} asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs w-full"
+                            disabled={uploadingDoc}
+                            asChild
+                          >
                             <span>
                               <Upload className="w-3 h-3 mr-1" />
                               Anexar Comprovante
@@ -282,17 +325,22 @@ export default function DocumentacaoTab({ funcionarioForm, setFuncionarioForm, u
                               if (!file) return;
                               setUploadingDoc(true);
                               try {
-                                const { file_url } = await base44.integrations.Core.UploadFile({ file });
-                                const deps = JSON.parse(funcionarioForm.dependentes || '[]');
+                                const { file_url } = await sigo.integrations.Core.UploadFile({
+                                  file,
+                                });
+                                const deps = JSON.parse(funcionarioForm.dependentes || "[]");
                                 deps[idx].comprovante_escolar_url = file_url;
-                                setFuncionarioForm({ ...funcionarioForm, dependentes: JSON.stringify(deps) });
-                                toast.success('Comprovante anexado');
+                                setFuncionarioForm({
+                                  ...funcionarioForm,
+                                  dependentes: JSON.stringify(deps),
+                                });
+                                toast.success("Comprovante anexado");
                               } catch {
-                                toast.error('Erro ao anexar comprovante');
+                                toast.error("Erro ao anexar comprovante");
                               } finally {
                                 setUploadingDoc(false);
                               }
-                              e.target.value = '';
+                              e.target.value = "";
                             }}
                             disabled={uploadingDoc}
                           />
@@ -310,8 +358,8 @@ export default function DocumentacaoTab({ funcionarioForm, setFuncionarioForm, u
           size="sm"
           className="mt-3"
           onClick={() => {
-            const deps = JSON.parse(funcionarioForm.dependentes || '[]');
-            deps.push({ nome: '', data_nascimento: '', cpf: '', comprovante_escolar_url: '' });
+            const deps = JSON.parse(funcionarioForm.dependentes || "[]");
+            deps.push({ nome: "", data_nascimento: "", cpf: "", comprovante_escolar_url: "" });
             setFuncionarioForm({ ...funcionarioForm, dependentes: JSON.stringify(deps) });
           }}
         >

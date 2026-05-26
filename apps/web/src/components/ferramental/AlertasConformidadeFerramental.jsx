@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -26,11 +26,11 @@ export default function AlertasConformidadeFerramental({ empresaAtiva, compact =
     setLoading(true);
     try {
       const [funcionarios, caminhoes, laudos, funcoes, ferramentas] = await Promise.all([
-        base44.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.LaudoFerramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Funcao.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.LaudoFerramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Funcao.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ]);
 
       // --- LAUDOS SEM ARQUIVO ---

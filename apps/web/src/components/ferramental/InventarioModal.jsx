@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import jsQR from "jsqr";
 import SheetModalComponent from "@/components/ui/sheet-modal";
 import { Button } from "@/components/ui/button";
@@ -281,10 +281,10 @@ export default function InventarioModal({
           const blob = await response.blob();
           const file = new File([blob], "inventario.jpg", { type: "image/jpeg" });
 
-          const uploadRes = await base44.integrations.Core.UploadFile({ file });
+          const uploadRes = await sigo.integrations.Core.UploadFile({ file });
           const fotoUrl = uploadRes.file_url;
 
-          const buscarRes = await base44.functions.invoke("buscarFerramentaPorFoto", {
+          const buscarRes = await sigo.functions.invoke("buscarFerramentaPorFoto", {
             fotoUrl,
             empresaAtiva,
           });
@@ -352,8 +352,8 @@ export default function InventarioModal({
 
     // Registrar no histórico
     try {
-      const user = await base44.auth.me();
-      await base44.entities.InventarioHistorico.create({
+      const user = await sigo.auth.me();
+      await sigo.entities.InventarioHistorico.create({
         empresa_id: empresaAtiva.id,
         ferramenta_id: ferramentaIdentificada.id,
         ferramenta_codigo: ferramentaIdentificada.codigo,
@@ -387,7 +387,7 @@ export default function InventarioModal({
 
   const handleCadastroNovaFerramenta = async (dados) => {
     try {
-      const novaFerramenta = await base44.entities.Ferramenta.create({
+      const novaFerramenta = await sigo.entities.Ferramenta.create({
         empresa_id: empresaAtiva.id,
         ...dados,
         status: "Disponível",
@@ -441,14 +441,14 @@ export default function InventarioModal({
 
         // Atualizar quantidade
         for (const ferrEstoque of ferramentasEstoque) {
-          await base44.entities.Ferramenta.update(ferrEstoque.id, {
+          await sigo.entities.Ferramenta.update(ferrEstoque.id, {
             quantidade_estoque: item.quantidade,
           });
         }
 
         // Registrar movimentação
         if (ferramentasEstoque.length > 0) {
-          await base44.entities.MovimentacaoFerramenta.create({
+          await sigo.entities.MovimentacaoFerramenta.create({
             empresa_id: empresaAtiva.id,
             ferramenta_id: ferramentasEstoque[0].id,
             ferramenta_codigo: item.codigo,

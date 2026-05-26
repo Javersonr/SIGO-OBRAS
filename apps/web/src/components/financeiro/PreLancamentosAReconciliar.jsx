@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -356,14 +356,14 @@ export default function PreLancamentosAReconciliar({
 
   const carregarProjetos = async () => {
     try {
-      const data = await base44.entities.Projeto.filter({ empresa_id: empresaId });
+      const data = await sigo.entities.Projeto.filter({ empresa_id: empresaId });
       setProjetos(data || []);
     } catch {}
   };
 
   const carregarUsuarios = async () => {
     try {
-      const data = await base44.entities.UsuarioEmpresa.filter({
+      const data = await sigo.entities.UsuarioEmpresa.filter({
         empresa_id: empresaId,
         ativo: true,
       });
@@ -392,8 +392,8 @@ export default function PreLancamentosAReconciliar({
       }
 
       const [pendentes, conciliadosData] = await Promise.all([
-        base44.entities.PreLancamento.filter(filtroPendente),
-        base44.entities.PreLancamento.filter(filtroConciliado),
+        sigo.entities.PreLancamento.filter(filtroPendente),
+        sigo.entities.PreLancamento.filter(filtroConciliado),
       ]);
 
       setPreLancamentos(pendentes || []);
@@ -419,25 +419,25 @@ export default function PreLancamentosAReconciliar({
     dados.descricao = novaDescricao;
     const dadosStr = JSON.stringify(dados);
     updateLocal(item.id, { dados_extraidos: dadosStr });
-    await base44.entities.PreLancamento.update(item.id, { dados_extraidos: dadosStr });
+    await sigo.entities.PreLancamento.update(item.id, { dados_extraidos: dadosStr });
   };
 
   const handleSalvarObservacao = async (item, novaObs) => {
     updateLocal(item.id, { observacoes: novaObs });
-    await base44.entities.PreLancamento.update(item.id, { observacoes: novaObs });
+    await sigo.entities.PreLancamento.update(item.id, { observacoes: novaObs });
   };
 
   const handleSalvarProjeto = async (item, projeto) => {
     const patch = { projeto_id: projeto?.id || null, projeto_nome: projeto?.nome || null };
     updateLocal(item.id, patch);
-    await base44.entities.PreLancamento.update(item.id, patch);
+    await sigo.entities.PreLancamento.update(item.id, patch);
   };
 
   const handleFecharCaixaDireto = async () => {
     if (itensSelecionadosParaCaixa.length === 0) return;
     setFechandoCaixa(true);
     try {
-      const existentes = await base44.entities.FechamentoCaixa.filter({ empresa_id: empresaId });
+      const existentes = await sigo.entities.FechamentoCaixa.filter({ empresa_id: empresaId });
       const numero = String(existentes.length + 1).padStart(4, "0");
       const total = itensSelecionadosParaCaixa.reduce((sum, pl) => {
         try {
@@ -450,7 +450,7 @@ export default function PreLancamentosAReconciliar({
           return sum;
         }
       }, 0);
-      await base44.entities.FechamentoCaixa.create({
+      await sigo.entities.FechamentoCaixa.create({
         empresa_id: empresaId,
         numero,
         status: "Aguardando Pagamento",
@@ -462,7 +462,7 @@ export default function PreLancamentosAReconciliar({
       });
       await Promise.all(
         itensSelecionadosParaCaixa.map((pl) =>
-          base44.entities.PreLancamento.update(pl.id, { status: "Em Fechamento" })
+          sigo.entities.PreLancamento.update(pl.id, { status: "Em Fechamento" })
         )
       );
       setSelecionados([]);
@@ -478,7 +478,7 @@ export default function PreLancamentosAReconciliar({
   const handleDeletar = async (item) => {
     if (!window.confirm("Deseja excluir este pré-lançamento?")) return;
     try {
-      await base44.entities.PreLancamento.delete(item.id);
+      await sigo.entities.PreLancamento.delete(item.id);
       await carregarPreLancamentos();
       if (onReload) onReload();
     } catch (err) {
@@ -723,7 +723,7 @@ export default function PreLancamentosAReconciliar({
                               {!isConciliado && podeAcionar && (
                                 <DropdownMenuItem
                                   onClick={async () => {
-                                    const response = await base44.functions.invoke(
+                                    const response = await sigo.functions.invoke(
                                       "reconciliarPreLancamento",
                                       {
                                         preLancamentoId: item.id,
@@ -750,7 +750,7 @@ export default function PreLancamentosAReconciliar({
                                   onClick={async () => {
                                     let transacao = null;
                                     if (item.transacao_id) {
-                                      const ts = await base44.entities.TransacaoFinanceira.filter({
+                                      const ts = await sigo.entities.TransacaoFinanceira.filter({
                                         id: item.transacao_id,
                                       });
                                       transacao = ts[0] || null;

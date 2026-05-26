@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { createPageUrl } from "../utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -52,13 +52,13 @@ export default function HistoricoCotacoes() {
         }
 
         // Carregar empresa
-        const empresas = await base44.entities.Empresa.filter({ id: userData.empresa_id });
+        const empresas = await sigo.entities.Empresa.filter({ id: userData.empresa_id });
         if (empresas.length > 0) setEmpresa(empresas[0]);
 
         // Buscar fornecedor
         let fornecedorId = userData.fornecedor_id;
         if (!fornecedorId) {
-          const fornecedores = await base44.entities.Fornecedor.filter({
+          const fornecedores = await sigo.entities.Fornecedor.filter({
             empresa_id: userData.empresa_id,
             email: userData.email,
           });
@@ -69,12 +69,12 @@ export default function HistoricoCotacoes() {
           fornecedorId = fornecedores[0].id;
           setFornecedor(fornecedores[0]);
         } else {
-          const fornecedores = await base44.entities.Fornecedor.filter({ id: fornecedorId });
+          const fornecedores = await sigo.entities.Fornecedor.filter({ id: fornecedorId });
           if (fornecedores.length > 0) setFornecedor(fornecedores[0]);
         }
 
         // Buscar todas as cotações em que este fornecedor participou
-        const participacoes = await base44.entities.CotacaoFornecedor.filter({
+        const participacoes = await sigo.entities.CotacaoFornecedor.filter({
           fornecedor_id: fornecedorId,
         });
 
@@ -85,7 +85,7 @@ export default function HistoricoCotacoes() {
 
         // Buscar dados das cotações
         const cotacoesPromises = participacoes.map((p) =>
-          base44.entities.Cotacao.filter({ id: p.cotacao_id }).then((res) => ({
+          sigo.entities.Cotacao.filter({ id: p.cotacao_id }).then((res) => ({
             cotacao: res[0],
             participacao: p,
           }))
@@ -126,7 +126,7 @@ export default function HistoricoCotacoes() {
       const token = cotacao.participacao?.token;
       if (token) {
         // Usa o backend function que já enriquece os itens com código
-        const result = await base44.functions.invoke("carregarCotacaoFornecedor", { token });
+        const result = await sigo.functions.invoke("carregarCotacaoFornecedor", { token });
         const data = result.data;
         setSelectedCotacao({
           ...cotacao,
@@ -136,8 +136,8 @@ export default function HistoricoCotacoes() {
       } else {
         // Fallback sem token
         const [itens, respostas] = await Promise.all([
-          base44.entities.CotacaoItem.filter({ cotacao_id: cotacao.id }),
-          base44.entities.CotacaoResposta.filter({
+          sigo.entities.CotacaoItem.filter({ cotacao_id: cotacao.id }),
+          sigo.entities.CotacaoResposta.filter({
             cotacao_id: cotacao.id,
             fornecedor_id: cotacao.participacao.fornecedor_id,
           }),

@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Plus, DollarSign, Calendar, CheckCircle2, AlertCircle } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import {
   Select,
   SelectContent,
@@ -27,7 +27,7 @@ export default function ReceitasTab({ oportunidadeId, empresaAtiva }) {
   }, [oportunidadeId]);
 
   const loadReceitas = async () => {
-    const transacoes = await base44.entities.TransacaoFinanceira.filter({
+    const transacoes = await sigo.entities.TransacaoFinanceira.filter({
       empresa_id: empresaAtiva.id,
       projeto_id: oportunidadeId,
       tipo: "receita",

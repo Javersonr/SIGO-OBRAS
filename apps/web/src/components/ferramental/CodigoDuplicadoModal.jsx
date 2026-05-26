@@ -1,17 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
-import { Badge } from '@/components/ui/badge';
-import { toast } from 'sonner';
-import { AlertCircle, Save } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import { AlertCircle, Save } from "lucide-react";
 
 export default function CodigoDuplicadoModal({ open, onClose, empresaAtiva, onSave }) {
   const [duplicados, setDuplicados] = useState([]);
@@ -28,24 +23,24 @@ export default function CodigoDuplicadoModal({ open, onClose, empresaAtiva, onSa
     setLoading(true);
     try {
       const [ferramentas, epis] = await Promise.all([
-        base44.entities.Ferramenta.filter({
+        sigo.entities.Ferramenta.filter({
           empresa_id: empresaAtiva.id,
-          ativo: true
+          ativo: true,
         }),
-        base44.entities.EPI.filter({
+        sigo.entities.EPI.filter({
           empresa_id: empresaAtiva.id,
-          ativo: true
-        })
+          ativo: true,
+        }),
       ]);
 
       const todosItens = [
-        ...ferramentas.map(f => ({ ...f, tipo: 'Ferramenta' })),
-        ...epis.map(e => ({ ...e, tipo: 'EPI' }))
+        ...ferramentas.map((f) => ({ ...f, tipo: "Ferramenta" })),
+        ...epis.map((e) => ({ ...e, tipo: "EPI" })),
       ];
 
       // Agrupar por código
       const codigosMap = {};
-      todosItens.forEach(item => {
+      todosItens.forEach((item) => {
         if (item.codigo) {
           if (!codigosMap[item.codigo]) {
             codigosMap[item.codigo] = [];
@@ -59,20 +54,20 @@ export default function CodigoDuplicadoModal({ open, onClose, empresaAtiva, onSa
         .filter(([_, items]) => items.length > 1)
         .map(([codigo, items]) => ({
           codigo,
-          items: items.map(item => ({
+          items: items.map((item) => ({
             ...item,
-            novoCodigoTemp: `${codigo}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`
-          }))
+            novoCodigoTemp: `${codigo}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+          })),
         }));
 
       setDuplicados(duplicadosEncontrados);
 
       if (duplicadosEncontrados.length === 0) {
-        toast.success('Nenhum código duplicado encontrado!');
+        toast.success("Nenhum código duplicado encontrado!");
       }
     } catch (error) {
-      console.error('Erro ao buscar duplicados:', error);
-      toast.error('Erro ao buscar códigos duplicados');
+      console.error("Erro ao buscar duplicados:", error);
+      toast.error("Erro ao buscar códigos duplicados");
     } finally {
       setLoading(false);
     }
@@ -80,7 +75,7 @@ export default function CodigoDuplicadoModal({ open, onClose, empresaAtiva, onSa
 
   const atualizarCodigoTemp = (codigoOriginal, itemIdx, novoCodigoTemp) => {
     const novosDuplicados = [...duplicados];
-    const grupoIdx = novosDuplicados.findIndex(d => d.codigo === codigoOriginal);
+    const grupoIdx = novosDuplicados.findIndex((d) => d.codigo === codigoOriginal);
     if (grupoIdx >= 0) {
       novosDuplicados[grupoIdx].items[itemIdx].novoCodigoTemp = novoCodigoTemp;
       setDuplicados(novosDuplicados);
@@ -95,9 +90,10 @@ export default function CodigoDuplicadoModal({ open, onClose, empresaAtiva, onSa
       for (const grupo of duplicados) {
         for (const item of grupo.items) {
           if (item.novoCodigoTemp && item.novoCodigoTemp !== item.codigo) {
-            const entidade = item.tipo === 'Ferramenta' ? base44.entities.Ferramenta : base44.entities.EPI;
+            const entidade =
+              item.tipo === "Ferramenta" ? sigo.entities.Ferramenta : sigo.entities.EPI;
             await entidade.update(item.id, {
-              codigo: item.novoCodigoTemp
+              codigo: item.novoCodigoTemp,
             });
             totalAlterados++;
           }
@@ -108,8 +104,8 @@ export default function CodigoDuplicadoModal({ open, onClose, empresaAtiva, onSa
       onSave();
       onClose();
     } catch (error) {
-      console.error('Erro ao salvar alterações:', error);
-      toast.error('Erro ao salvar alterações');
+      console.error("Erro ao salvar alterações:", error);
+      toast.error("Erro ao salvar alterações");
     } finally {
       setSaving(false);
     }
@@ -118,7 +114,7 @@ export default function CodigoDuplicadoModal({ open, onClose, empresaAtiva, onSa
   const verificarCodigosValidos = () => {
     for (const grupo of duplicados) {
       for (const item of grupo.items) {
-        if (!item.novoCodigoTemp || item.novoCodigoTemp.trim() === '') {
+        if (!item.novoCodigoTemp || item.novoCodigoTemp.trim() === "") {
           return false;
         }
       }
@@ -128,7 +124,11 @@ export default function CodigoDuplicadoModal({ open, onClose, empresaAtiva, onSa
 
   return (
     <Sheet open={open} onOpenChange={onClose}>
-      <SheetContent side="right" className="h-full overflow-y-auto p-0 flex flex-col" style={{ inset: 'auto 0 0 256px', width: 'calc(100% - 256px)', maxWidth: 'none' }}>
+      <SheetContent
+        side="right"
+        className="h-full overflow-y-auto p-0 flex flex-col"
+        style={{ inset: "auto 0 0 256px", width: "calc(100% - 256px)", maxWidth: "none" }}
+      >
         <SheetHeader className="p-6 border-b">
           <SheetTitle className="flex items-center gap-2">
             <AlertCircle className="w-5 h-5 text-amber-600" />
@@ -192,7 +192,9 @@ export default function CodigoDuplicadoModal({ open, onClose, empresaAtiva, onSa
                           <Input
                             type="text"
                             value={item.novoCodigoTemp}
-                            onChange={(e) => atualizarCodigoTemp(grupo.codigo, itemIdx, e.target.value)}
+                            onChange={(e) =>
+                              atualizarCodigoTemp(grupo.codigo, itemIdx, e.target.value)
+                            }
                             placeholder="Ex: FEAT-001"
                             className="mt-1 h-8 text-xs"
                           />
@@ -217,7 +219,7 @@ export default function CodigoDuplicadoModal({ open, onClose, empresaAtiva, onSa
               className="flex-1 bg-amber-500 hover:bg-amber-600 gap-2"
             >
               <Save className="w-4 h-4" />
-              {saving ? 'Salvando...' : 'Salvar Alterações'}
+              {saving ? "Salvando..." : "Salvar Alterações"}
             </Button>
           </div>
         )}

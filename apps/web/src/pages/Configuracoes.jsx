@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import { Plus, Trash2 } from "lucide-react";
 import { toast, Toaster } from "sonner";
@@ -93,7 +93,7 @@ export default function Configuracoes() {
 
     // Carregar módulos liberados do plano
     try {
-      const todasAssinaturas = await base44.entities.Assinatura.filter({
+      const todasAssinaturas = await sigo.entities.Assinatura.filter({
         empresa_id: empresaAtiva.id,
       });
       const assinaturas = todasAssinaturas.filter(
@@ -102,7 +102,7 @@ export default function Configuracoes() {
 
       if (assinaturas.length > 0) {
         const assinatura = assinaturas[0];
-        const planos = await base44.entities.Plano.filter({ id: assinatura.plano_id });
+        const planos = await sigo.entities.Plano.filter({ id: assinatura.plano_id });
         if (planos.length > 0) {
           const plano = planos[0];
           let modulos = {};
@@ -147,56 +147,56 @@ export default function Configuracoes() {
     });
 
     // Batch 1: Fetch usuarios
-    const vinculos = await base44.entities.UsuarioEmpresa.filter({
+    const vinculos = await sigo.entities.UsuarioEmpresa.filter({
       empresa_id: empresaAtiva.id,
       ativo: true,
     });
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     // Batch 2: Fetch categorias financeiras
-    const cats = await base44.entities.CategoriaFinanceira.filter({ empresa_id: empresaAtiva.id });
+    const cats = await sigo.entities.CategoriaFinanceira.filter({ empresa_id: empresaAtiva.id });
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     // Batch 3: Fetch clientes
-    const clientesList = await base44.entities.Cliente.filter({
+    const clientesList = await sigo.entities.Cliente.filter({
       empresa_id: empresaAtiva.id,
       ativo: true,
     });
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     // Batch 4: Fetch fornecedores
-    const fornecedoresList = await base44.entities.Fornecedor.filter({
+    const fornecedoresList = await sigo.entities.Fornecedor.filter({
       empresa_id: empresaAtiva.id,
       ativo: true,
     });
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     // Batch 5: Fetch materiais
-    const materiaisList = await base44.entities.Material.filter({
+    const materiaisList = await sigo.entities.Material.filter({
       empresa_id: empresaAtiva.id,
       ativo: true,
     });
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     // Batch 6: Fetch mão de obra
-    const maoDeObraList = await base44.entities.MaoDeObra.filter({
+    const maoDeObraList = await sigo.entities.MaoDeObra.filter({
       empresa_id: empresaAtiva.id,
       ativo: true,
     });
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     // Batch 7: Fetch categorias
-    const catsMaterial = await base44.entities.CategoriaMaterial.filter({
+    const catsMaterial = await sigo.entities.CategoriaMaterial.filter({
       empresa_id: empresaAtiva.id,
       ativo: true,
     });
     await new Promise((resolve) => setTimeout(resolve, 150));
-    const catsMaoObra = await base44.entities.CategoriaMaoDeObra.filter({
+    const catsMaoObra = await sigo.entities.CategoriaMaoDeObra.filter({
       empresa_id: empresaAtiva.id,
       ativo: true,
     });
     await new Promise((resolve) => setTimeout(resolve, 150));
-    const unidades = await base44.entities.UnidadeMedida.filter({
+    const unidades = await sigo.entities.UnidadeMedida.filter({
       empresa_id: empresaAtiva.id,
       ativo: true,
     });
@@ -222,7 +222,7 @@ export default function Configuracoes() {
   const handleSaveEmpresa = async () => {
     setSavingEmpresa(true);
     try {
-      await base44.entities.Empresa.update(empresaAtiva.id, empresaData);
+      await sigo.entities.Empresa.update(empresaAtiva.id, empresaData);
       await reloadEmpresaAtiva();
       toast.success("✅ Dados da empresa salvos com sucesso", { duration: 3000 });
     } catch (error) {
@@ -238,7 +238,7 @@ export default function Configuracoes() {
     if (!file) return;
     setUploadingLogo(true);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       setEmpresaData({ ...empresaData, logo_url: file_url });
       toast.success("✅ Logo enviado com sucesso", { duration: 3000 });
     } catch (error) {
@@ -343,11 +343,11 @@ export default function Configuracoes() {
       };
 
       if (selectedUser) {
-        await base44.entities.UsuarioEmpresa.update(selectedUser.id, userData);
+        await sigo.entities.UsuarioEmpresa.update(selectedUser.id, userData);
         toast.success("✅ Usuário atualizado com sucesso");
       } else {
         // Criar novo usuário direto (já vinculado à empresa)
-        await base44.entities.UsuarioEmpresa.create({
+        await sigo.entities.UsuarioEmpresa.create({
           usuario_email: formData.email,
           empresa_id: empresaAtiva.id,
           ...userData,
@@ -365,7 +365,7 @@ export default function Configuracoes() {
 
   const handleDeleteUser = async (vinculo) => {
     if (!confirm("Remover este usuário da empresa?")) return;
-    await base44.entities.UsuarioEmpresa.update(vinculo.id, { ativo: false });
+    await sigo.entities.UsuarioEmpresa.update(vinculo.id, { ativo: false });
     loadData();
   };
 
@@ -375,7 +375,7 @@ export default function Configuracoes() {
   const handleGerarLinkReset = async (usuario) => {
     setEnviandoReset(usuario.id);
     try {
-      const response = await base44.functions.invoke("enviarResetSenhaAdmin", {
+      const response = await sigo.functions.invoke("enviarResetSenhaAdmin", {
         usuario_email: usuario.usuario_email,
       });
       if (response.data.success) {
@@ -398,7 +398,7 @@ export default function Configuracoes() {
   const handleSaveCategoria = async () => {
     if (!categoriaForm.nome) return;
     try {
-      await base44.entities.CategoriaFinanceira.create({
+      await sigo.entities.CategoriaFinanceira.create({
         empresa_id: empresaAtiva.id,
         nome: categoriaForm.nome,
         tipo: categoriaForm.tipo,
@@ -414,13 +414,13 @@ export default function Configuracoes() {
 
   const handleDeleteCategoria = async (cat) => {
     if (!confirm("Excluir esta categoria?")) return;
-    await base44.entities.CategoriaFinanceira.delete(cat.id);
+    await sigo.entities.CategoriaFinanceira.delete(cat.id);
     loadData();
   };
 
   const handleLimparTodosMaoDeObra = async () => {
     await deletarTodos(
-      base44.entities.MaoDeObra,
+      sigo.entities.MaoDeObra,
       { empresa_id: empresaAtiva.id, ativo: true },
       "serviços"
     );
@@ -429,20 +429,20 @@ export default function Configuracoes() {
   };
 
   const handleDeletarSelecionadosMaoDeObra = async () => {
-    await deletarSelecionados(base44.entities.MaoDeObra, selectedMaoDeObraIds, "serviços");
+    await deletarSelecionados(sigo.entities.MaoDeObra, selectedMaoDeObraIds, "serviços");
     setSelectedMaoDeObraIds([]);
     loadData();
   };
 
   // Handlers para Materiais
   const handleLimparTodosMateriais = async () => {
-    await deletarTodos(base44.entities.Material, { empresa_id: empresaAtiva.id }, "materiais");
+    await deletarTodos(sigo.entities.Material, { empresa_id: empresaAtiva.id }, "materiais");
     setSelectedMaterialIds([]);
     loadData();
   };
 
   const handleDeletarSelecionadosMateriais = async () => {
-    await deletarSelecionados(base44.entities.Material, selectedMaterialIds, "materiais");
+    await deletarSelecionados(sigo.entities.Material, selectedMaterialIds, "materiais");
     setSelectedMaterialIds([]);
     loadData();
   };
@@ -450,12 +450,12 @@ export default function Configuracoes() {
   const handleCriarEmpresa = async () => {
     if (!empresaForm.nome) return;
     try {
-      const novaEmpresa = await base44.entities.Empresa.create({
+      const novaEmpresa = await sigo.entities.Empresa.create({
         nome: empresaForm.nome,
         ativo: true,
       });
 
-      await base44.entities.UsuarioEmpresa.create({
+      await sigo.entities.UsuarioEmpresa.create({
         usuario_email: user.email,
         empresa_id: novaEmpresa.id,
         perfil: "Admin",
@@ -464,7 +464,7 @@ export default function Configuracoes() {
       });
 
       await Promise.all([
-        base44.entities.StatusOportunidade.bulkCreate([
+        sigo.entities.StatusOportunidade.bulkCreate([
           {
             empresa_id: novaEmpresa.id,
             nome: "Novo Lead",
@@ -488,12 +488,12 @@ export default function Configuracoes() {
             tipo: "perdido",
           },
         ]),
-        base44.entities.OrigemOportunidade.bulkCreate([
+        sigo.entities.OrigemOportunidade.bulkCreate([
           { empresa_id: novaEmpresa.id, nome: "Indicação" },
           { empresa_id: novaEmpresa.id, nome: "Site" },
           { empresa_id: novaEmpresa.id, nome: "Telefone" },
         ]),
-        base44.entities.CategoriaFinanceira.bulkCreate([
+        sigo.entities.CategoriaFinanceira.bulkCreate([
           { empresa_id: novaEmpresa.id, nome: "Materiais", tipo: "Despesa", ativo: true },
           { empresa_id: novaEmpresa.id, nome: "Mão de Obra", tipo: "Despesa", ativo: true },
           { empresa_id: novaEmpresa.id, nome: "Receita de Projeto", tipo: "Receita", ativo: true },
@@ -521,7 +521,7 @@ export default function Configuracoes() {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       try {
-        const todosItens = await base44.entities.MaoDeObra.filter(
+        const todosItens = await sigo.entities.MaoDeObra.filter(
           {
             empresa_id: empresaAtiva.id,
           },
@@ -554,7 +554,7 @@ export default function Configuracoes() {
               const raior = parseFloat(item.raior_us) || 1;
               const precoRef = valorUS * raior;
 
-              return base44.entities.MaoDeObra.update(item.id, {
+              return sigo.entities.MaoDeObra.update(item.id, {
                 valor_us_global: valorUS,
                 preco_referencia: precoRef,
               });
@@ -588,7 +588,7 @@ export default function Configuracoes() {
         const raior = parseFloat(selectedMaoObraUS?.raior_us) || 1;
         const precoRef = valorUS * raior;
 
-        await base44.entities.MaoDeObra.update(selectedMaoObraUS.id, {
+        await sigo.entities.MaoDeObra.update(selectedMaoObraUS.id, {
           valor_us_global: valorUS,
           preco_referencia: precoRef,
         });
@@ -886,7 +886,7 @@ export default function Configuracoes() {
               return maoObraLimpa;
             });
 
-            await base44.entities.MaoDeObra.bulkCreate(batchLimpo);
+            await sigo.entities.MaoDeObra.bulkCreate(batchLimpo);
             importados += batch.length;
             setImportProgress({ show: true, current: importados, total: maoObraImportada.length });
 

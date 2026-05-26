@@ -1,17 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '@/Layout';
-import { createPageUrl } from '../utils';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { 
-  ArrowLeft, User, Calendar, MapPin, CheckCircle2, 
-  AlertCircle, Clock, X, Image as ImageIcon, TrendingUp
-} from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { sigo } from "@/api/sigoClient";
+import { useEmpresa } from "@/Layout";
+import { createPageUrl } from "../utils";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  ArrowLeft,
+  User,
+  Calendar,
+  MapPin,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  X,
+  Image as ImageIcon,
+  TrendingUp,
+} from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 export default function InspecaoDetalhes() {
   const navigate = useNavigate();
@@ -31,29 +39,29 @@ export default function InspecaoDetalhes() {
     try {
       setLoading(true);
       const urlParams = new URLSearchParams(window.location.search);
-      const id = urlParams.get('id');
+      const id = urlParams.get("id");
 
       if (!id) {
-        navigate(createPageUrl('HistoricoInspecoes'));
+        navigate(createPageUrl("HistoricoInspecoes"));
         return;
       }
 
-      const data = await base44.entities.InspecaoFerramenta.filter({ id });
-      
+      const data = await sigo.entities.InspecaoFerramenta.filter({ id });
+
       if (data.length === 0) {
-        navigate(createPageUrl('HistoricoInspecoes'));
+        navigate(createPageUrl("HistoricoInspecoes"));
         return;
       }
 
       setInspecao(data[0]);
-      
+
       if (data[0].ferramentas_inspecionadas) {
         const parsed = JSON.parse(data[0].ferramentas_inspecionadas);
         setFerramentasInsp(parsed);
       }
     } catch (error) {
-      console.error('Erro ao carregar inspeção:', error);
-      navigate(createPageUrl('HistoricoInspecoes'));
+      console.error("Erro ao carregar inspeção:", error);
+      navigate(createPageUrl("HistoricoInspecoes"));
     } finally {
       setLoading(false);
     }
@@ -74,11 +82,11 @@ export default function InspecaoDetalhes() {
 
   const totalItens = ferramentasInsp.reduce((sum, f) => sum + f.itens.length, 0);
   const concluidos = ferramentasInsp.reduce(
-    (sum, f) => sum + f.itens.filter(i => i.status_foto === 'concluida').length,
+    (sum, f) => sum + f.itens.filter((i) => i.status_foto === "concluida").length,
     0
   );
   const falhados = ferramentasInsp.reduce(
-    (sum, f) => sum + f.itens.filter(i => i.status_foto === 'falhou').length,
+    (sum, f) => sum + f.itens.filter((i) => i.status_foto === "falhou").length,
     0
   );
   const percentual = Math.round((concluidos / totalItens) * 100);
@@ -90,17 +98,13 @@ export default function InspecaoDetalhes() {
         <Button
           variant="outline"
           size="icon"
-          onClick={() => navigate(createPageUrl('HistoricoInspecoes'))}
+          onClick={() => navigate(createPageUrl("HistoricoInspecoes"))}
         >
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <div className="flex-1">
-          <h1 className="text-2xl md:text-3xl font-bold text-slate-800">
-            Detalhes da Inspeção
-          </h1>
-          <p className="text-slate-600 mt-1">
-            Visualize todas as informações e fotos da inspeção
-          </p>
+          <h1 className="text-2xl md:text-3xl font-bold text-slate-800">Detalhes da Inspeção</h1>
+          <p className="text-slate-600 mt-1">Visualize todas as informações e fotos da inspeção</p>
         </div>
       </div>
 
@@ -124,7 +128,9 @@ export default function InspecaoDetalhes() {
               <div>
                 <p className="text-sm text-slate-600">Data da Inspeção</p>
                 <p className="font-semibold text-slate-800">
-                  {format(new Date(inspecao.created_date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                  {format(new Date(inspecao.created_date), "dd 'de' MMMM 'de' yyyy", {
+                    locale: ptBR,
+                  })}
                 </p>
               </div>
             </div>
@@ -170,7 +176,9 @@ export default function InspecaoDetalhes() {
 
             <div className="text-center p-4 bg-slate-50 rounded-lg">
               <Clock className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-slate-700">{totalItens - concluidos - falhados}</p>
+              <p className="text-2xl font-bold text-slate-700">
+                {totalItens - concluidos - falhados}
+              </p>
               <p className="text-sm text-slate-600">Pendentes</p>
             </div>
           </div>
@@ -181,7 +189,7 @@ export default function InspecaoDetalhes() {
               <span className="text-sm font-bold text-slate-800">{percentual}%</span>
             </div>
             <div className="w-full bg-slate-200 rounded-full h-3">
-              <div 
+              <div
                 className="bg-green-600 h-3 rounded-full transition-all"
                 style={{ width: `${percentual}%` }}
               />
@@ -193,7 +201,7 @@ export default function InspecaoDetalhes() {
       {/* Ferramentas Inspecionadas */}
       <div className="space-y-4">
         <h2 className="text-xl font-bold text-slate-800">Ferramentas Inspecionadas</h2>
-        
+
         {ferramentasInsp.map((ferramenta, ferIdx) => (
           <Card key={ferIdx}>
             <CardHeader className="bg-slate-50">
@@ -203,8 +211,8 @@ export default function InspecaoDetalhes() {
                     onClick={() => setFotoExpandida(ferramenta.foto_url)}
                     className="cursor-pointer hover:opacity-80 transition-opacity"
                   >
-                    <img 
-                      src={ferramenta.foto_url} 
+                    <img
+                      src={ferramenta.foto_url}
                       alt={ferramenta.descricao}
                       className="w-16 h-16 rounded-lg object-cover border-2 border-white shadow"
                     />
@@ -216,24 +224,21 @@ export default function InspecaoDetalhes() {
                 </div>
               </div>
             </CardHeader>
-            
+
             <CardContent className="p-4">
               <div className="space-y-3">
                 {ferramenta.itens.map((item, itemIdx) => (
-                  <div 
-                    key={itemIdx} 
-                    className="p-4 bg-slate-50 rounded-lg space-y-3"
-                  >
+                  <div key={itemIdx} className="p-4 bg-slate-50 rounded-lg space-y-3">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <p className="font-semibold text-slate-800">Item #{itemIdx + 1}</p>
-                          {item.status_foto === 'concluida' ? (
+                          {item.status_foto === "concluida" ? (
                             <Badge className="bg-green-100 text-green-700 gap-1">
                               <CheckCircle2 className="w-3 h-3" />
                               Validada
                             </Badge>
-                          ) : item.status_foto === 'falhou' ? (
+                          ) : item.status_foto === "falhou" ? (
                             <Badge className="bg-red-100 text-red-700 gap-1">
                               <AlertCircle className="w-3 h-3" />
                               Falhou
@@ -245,7 +250,8 @@ export default function InspecaoDetalhes() {
 
                         {item.numero_serie && (
                           <p className="text-sm text-slate-600">
-                            Número de Série: <span className="font-medium">{item.numero_serie}</span>
+                            Número de Série:{" "}
+                            <span className="font-medium">{item.numero_serie}</span>
                           </p>
                         )}
 
@@ -253,7 +259,7 @@ export default function InspecaoDetalhes() {
                           <div className="flex items-center gap-2 mt-2">
                             <TrendingUp className="w-4 h-4 text-blue-600" />
                             <span className="text-sm text-slate-700">
-                              Confiança IA:{' '}
+                              Confiança IA:{" "}
                               <span className="font-semibold text-blue-600">
                                 {Math.round(item.ai_confidence * 100)}%
                               </span>
@@ -268,8 +274,8 @@ export default function InspecaoDetalhes() {
                           className="cursor-pointer hover:opacity-80 transition-opacity group"
                         >
                           <div className="relative">
-                            <img 
-                              src={item.foto_url} 
+                            <img
+                              src={item.foto_url}
                               alt={`Item ${itemIdx + 1}`}
                               className="w-24 h-24 rounded-lg object-cover border-2 border-white shadow-md"
                             />
@@ -290,13 +296,13 @@ export default function InspecaoDetalhes() {
 
       {/* Modal de Foto Expandida */}
       {fotoExpandida && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
           onClick={() => setFotoExpandida(null)}
         >
           <div className="relative max-w-4xl max-h-[90vh] w-full h-full">
-            <img 
-              src={fotoExpandida} 
+            <img
+              src={fotoExpandida}
               alt="Foto expandida"
               className="w-full h-full object-contain"
             />

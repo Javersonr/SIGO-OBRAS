@@ -1,32 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Hash, User, MessageSquare } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Hash, User, MessageSquare } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Card, CardContent } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
+} from "@/components/ui/select";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 
-export default function NovoCanal({ open, onOpenChange, onCriar, empresaAtiva, user, usuariosEmpresa }) {
-  const [tipo, setTipo] = useState('Geral');
-  const [nome, setNome] = useState('');
-  const [projetoId, setProjetoId] = useState('');
-  const [oportunidadeId, setOportunidadeId] = useState('');
-  const [solicitacaoId, setSolicitacaoId] = useState('');
-  const [pedidoId, setPedidoId] = useState('');
+export default function NovoCanal({
+  open,
+  onOpenChange,
+  onCriar,
+  empresaAtiva,
+  user,
+  usuariosEmpresa,
+}) {
+  const [tipo, setTipo] = useState("Geral");
+  const [nome, setNome] = useState("");
+  const [projetoId, setProjetoId] = useState("");
+  const [oportunidadeId, setOportunidadeId] = useState("");
+  const [solicitacaoId, setSolicitacaoId] = useState("");
+  const [pedidoId, setPedidoId] = useState("");
   const [participantesSelecionados, setParticipantesSelecionados] = useState([]);
   const [projetos, setProjetos] = useState([]);
   const [oportunidades, setOportunidades] = useState([]);
@@ -42,10 +44,10 @@ export default function NovoCanal({ open, onOpenChange, onCriar, empresaAtiva, u
 
   const loadOptions = async () => {
     const [projs, ops, sols, peds] = await Promise.all([
-      base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
-      base44.entities.Oportunidade.filter({ empresa_id: empresaAtiva.id }),
-      base44.entities.SolicitacaoCompra.filter({ empresa_id: empresaAtiva.id }),
-      base44.entities.PedidoCompra.filter({ empresa_id: empresaAtiva.id })
+      sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
+      sigo.entities.Oportunidade.filter({ empresa_id: empresaAtiva.id }),
+      sigo.entities.SolicitacaoCompra.filter({ empresa_id: empresaAtiva.id }),
+      sigo.entities.PedidoCompra.filter({ empresa_id: empresaAtiva.id }),
     ]);
     setProjetos(projs);
     setOportunidades(ops);
@@ -58,49 +60,46 @@ export default function NovoCanal({ open, onOpenChange, onCriar, empresaAtiva, u
 
     setSaving(true);
     try {
-      const participantes = tipo === 'Direto' 
-        ? participantesSelecionados 
-        : [user.id, ...participantesSelecionados];
+      const participantes =
+        tipo === "Direto" ? participantesSelecionados : [user.id, ...participantesSelecionados];
 
       const participantesEmails = usuariosEmpresa
-        .filter(u => participantes.includes(u.usuario_id || u.id))
-        .map(u => u.usuario_email);
+        .filter((u) => participantes.includes(u.usuario_id || u.id))
+        .map((u) => u.usuario_email);
 
       const data = {
         empresa_id: empresaAtiva.id,
         tipo,
         nome,
-        projeto_id: tipo === 'Projeto' ? projetoId : null,
-        oportunidade_id: tipo === 'Oportunidade' ? oportunidadeId : null,
-        solicitacao_id: tipo === 'Solicitacao' ? solicitacaoId : null,
-        pedido_id: tipo === 'Tarefa' ? pedidoId : null,
+        projeto_id: tipo === "Projeto" ? projetoId : null,
+        oportunidade_id: tipo === "Oportunidade" ? oportunidadeId : null,
+        solicitacao_id: tipo === "Solicitacao" ? solicitacaoId : null,
+        pedido_id: tipo === "Tarefa" ? pedidoId : null,
         participantes: JSON.stringify(participantes),
         participantes_emails: JSON.stringify(participantesEmails),
-        ativo: true
+        ativo: true,
       };
 
       await onCriar(data);
-      
+
       // Reset form
-      setTipo('Geral');
-      setNome('');
-      setProjetoId('');
-      setOportunidadeId('');
-      setSolicitacaoId('');
-      setPedidoId('');
+      setTipo("Geral");
+      setNome("");
+      setProjetoId("");
+      setOportunidadeId("");
+      setSolicitacaoId("");
+      setPedidoId("");
       setParticipantesSelecionados([]);
     } catch (error) {
-      console.error('Erro ao criar canal:', error);
+      console.error("Erro ao criar canal:", error);
     } finally {
       setSaving(false);
     }
   };
 
   const toggleParticipante = (usuarioId) => {
-    setParticipantesSelecionados(prev => 
-      prev.includes(usuarioId)
-        ? prev.filter(id => id !== usuarioId)
-        : [...prev, usuarioId]
+    setParticipantesSelecionados((prev) =>
+      prev.includes(usuarioId) ? prev.filter((id) => id !== usuarioId) : [...prev, usuarioId]
     );
   };
 
@@ -117,19 +116,19 @@ export default function NovoCanal({ open, onOpenChange, onCriar, empresaAtiva, u
             <Label>Tipo de Canal</Label>
             <div className="grid grid-cols-2 gap-3 mt-2">
               {[
-                { value: 'Geral', icon: MessageSquare, label: 'Geral', color: 'amber' },
-                { value: 'Projeto', icon: Hash, label: 'Projeto', color: 'blue' },
-                { value: 'Oportunidade', icon: Hash, label: 'Oportunidade', color: 'green' },
-                { value: 'Solicitacao', icon: Hash, label: 'Solicitação', color: 'orange' },
-                { value: 'Tarefa', icon: Hash, label: 'Pedido/Tarefa', color: 'cyan' },
-                { value: 'Direto', icon: User, label: 'Mensagem Direta', color: 'purple' }
-              ].map(option => (
+                { value: "Geral", icon: MessageSquare, label: "Geral", color: "amber" },
+                { value: "Projeto", icon: Hash, label: "Projeto", color: "blue" },
+                { value: "Oportunidade", icon: Hash, label: "Oportunidade", color: "green" },
+                { value: "Solicitacao", icon: Hash, label: "Solicitação", color: "orange" },
+                { value: "Tarefa", icon: Hash, label: "Pedido/Tarefa", color: "cyan" },
+                { value: "Direto", icon: User, label: "Mensagem Direta", color: "purple" },
+              ].map((option) => (
                 <Card
                   key={option.value}
                   className={`cursor-pointer transition-all ${
-                    tipo === option.value 
-                      ? `border-${option.color}-500 bg-${option.color}-50` 
-                      : 'hover:border-slate-300'
+                    tipo === option.value
+                      ? `border-${option.color}-500 bg-${option.color}-50`
+                      : "hover:border-slate-300"
                   }`}
                   onClick={() => setTipo(option.value)}
                 >
@@ -149,17 +148,19 @@ export default function NovoCanal({ open, onOpenChange, onCriar, empresaAtiva, u
               value={nome}
               onChange={(e) => setNome(e.target.value)}
               placeholder={
-                tipo === 'Direto' ? 'Será gerado automaticamente' :
-                tipo === 'Projeto' ? 'Ex: Discussão do Projeto' :
-                'Ex: Canal Geral'
+                tipo === "Direto"
+                  ? "Será gerado automaticamente"
+                  : tipo === "Projeto"
+                    ? "Ex: Discussão do Projeto"
+                    : "Ex: Canal Geral"
               }
               className="mt-1.5"
-              disabled={tipo === 'Direto'}
+              disabled={tipo === "Direto"}
             />
           </div>
 
           {/* Seleção de Projeto */}
-          {tipo === 'Projeto' && (
+          {tipo === "Projeto" && (
             <div>
               <Label>Selecione o Projeto</Label>
               <Select value={projetoId} onValueChange={setProjetoId}>
@@ -167,8 +168,10 @@ export default function NovoCanal({ open, onOpenChange, onCriar, empresaAtiva, u
                   <SelectValue placeholder="Escolha um projeto" />
                 </SelectTrigger>
                 <SelectContent>
-                  {projetos.map(p => (
-                    <SelectItem key={p.id} value={p.id}>{p.titulo}</SelectItem>
+                  {projetos.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.titulo}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -176,7 +179,7 @@ export default function NovoCanal({ open, onOpenChange, onCriar, empresaAtiva, u
           )}
 
           {/* Seleção de Oportunidade */}
-          {tipo === 'Oportunidade' && (
+          {tipo === "Oportunidade" && (
             <div>
               <Label>Selecione a Oportunidade</Label>
               <Select value={oportunidadeId} onValueChange={setOportunidadeId}>
@@ -184,8 +187,10 @@ export default function NovoCanal({ open, onOpenChange, onCriar, empresaAtiva, u
                   <SelectValue placeholder="Escolha uma oportunidade" />
                 </SelectTrigger>
                 <SelectContent>
-                  {oportunidades.map(o => (
-                    <SelectItem key={o.id} value={o.id}>{o.titulo}</SelectItem>
+                  {oportunidades.map((o) => (
+                    <SelectItem key={o.id} value={o.id}>
+                      {o.titulo}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -193,7 +198,7 @@ export default function NovoCanal({ open, onOpenChange, onCriar, empresaAtiva, u
           )}
 
           {/* Seleção de Solicitação */}
-          {tipo === 'Solicitacao' && (
+          {tipo === "Solicitacao" && (
             <div>
               <Label>Selecione a Solicitação</Label>
               <Select value={solicitacaoId} onValueChange={setSolicitacaoId}>
@@ -201,8 +206,10 @@ export default function NovoCanal({ open, onOpenChange, onCriar, empresaAtiva, u
                   <SelectValue placeholder="Escolha uma solicitação" />
                 </SelectTrigger>
                 <SelectContent>
-                  {solicitacoes.map(s => (
-                    <SelectItem key={s.id} value={s.id}>{s.numero} - {s.status}</SelectItem>
+                  {solicitacoes.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.numero} - {s.status}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -210,7 +217,7 @@ export default function NovoCanal({ open, onOpenChange, onCriar, empresaAtiva, u
           )}
 
           {/* Seleção de Pedido/Tarefa */}
-          {tipo === 'Tarefa' && (
+          {tipo === "Tarefa" && (
             <div>
               <Label>Selecione o Pedido</Label>
               <Select value={pedidoId} onValueChange={setPedidoId}>
@@ -218,8 +225,10 @@ export default function NovoCanal({ open, onOpenChange, onCriar, empresaAtiva, u
                   <SelectValue placeholder="Escolha um pedido" />
                 </SelectTrigger>
                 <SelectContent>
-                  {pedidos.map(p => (
-                    <SelectItem key={p.id} value={p.id}>{p.numero} - {p.fornecedor_nome}</SelectItem>
+                  {pedidos.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.numero} - {p.fornecedor_nome}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -227,14 +236,14 @@ export default function NovoCanal({ open, onOpenChange, onCriar, empresaAtiva, u
           )}
 
           {/* Participantes */}
-          {tipo !== 'Geral' && (
+          {tipo !== "Geral" && (
             <div>
               <Label>Participantes</Label>
               <div className="mt-2 space-y-2 max-h-64 overflow-y-auto border rounded-lg p-3">
-                {usuariosEmpresa.map(u => {
+                {usuariosEmpresa.map((u) => {
                   const usuarioId = u.usuario_id || u.id;
                   const isSelecionado = participantesSelecionados.includes(usuarioId);
-                  
+
                   return (
                     <div key={u.id} className="flex items-center gap-3">
                       <Checkbox
@@ -273,10 +282,14 @@ export default function NovoCanal({ open, onOpenChange, onCriar, empresaAtiva, u
           </Button>
           <Button
             onClick={handleCriar}
-            disabled={saving || (!nome.trim() && tipo !== 'Direto') || (tipo === 'Direto' && participantesSelecionados.length === 0)}
+            disabled={
+              saving ||
+              (!nome.trim() && tipo !== "Direto") ||
+              (tipo === "Direto" && participantesSelecionados.length === 0)
+            }
             className="bg-amber-500 hover:bg-amber-600"
           >
-            {saving ? 'Criando...' : 'Criar Canal'}
+            {saving ? "Criando..." : "Criar Canal"}
           </Button>
         </div>
       </SheetContent>

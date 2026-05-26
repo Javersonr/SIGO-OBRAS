@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
 import {
   Dialog,
   DialogContent,
@@ -7,10 +7,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -18,14 +18,21 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { toast } from 'sonner';
-import { Loader, Search, Plus, Trash2 } from 'lucide-react';
+} from "@/components/ui/table";
+import { toast } from "sonner";
+import { Loader, Search, Plus, Trash2 } from "lucide-react";
 
-export default function SolicitacaoEPIModal({ open, onOpenChange, funcionario, epis, empresaAtiva, onSuccess }) {
+export default function SolicitacaoEPIModal({
+  open,
+  onOpenChange,
+  funcionario,
+  epis,
+  empresaAtiva,
+  onSuccess,
+}) {
   const [loading, setLoading] = useState(false);
-  const [observacoes, setObservacoes] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [observacoes, setObservacoes] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [materiaisDoBanco, setMateriaisDoBanco] = useState([]);
   const [materiaisSelecionados, setMateriaisSelecionados] = useState([]);
   const [loadingMateriais, setLoadingMateriais] = useState(false);
@@ -33,48 +40,49 @@ export default function SolicitacaoEPIModal({ open, onOpenChange, funcionario, e
   useEffect(() => {
     if (open && epis && epis.length > 0) {
       // Inicializar com EPIs do modelo
-      const iniciaisSelecionados = epis.map(epi => ({
+      const iniciaisSelecionados = epis.map((epi) => ({
         id: epi.id || `epi-${epi.item}`,
         item: epi.item,
         ca: epi.ca,
         quantidade: epi.quantidade || 1,
-        tipo: 'modelo'
+        tipo: "modelo",
       }));
       setMateriaisSelecionados(iniciaisSelecionados);
-      buscarMateriais('');
+      buscarMateriais("");
     }
   }, [open, epis]);
 
   const buscarMateriais = async (termo) => {
     setLoadingMateriais(true);
     try {
-      const materiais = await base44.entities.Material.filter({
+      const materiais = await sigo.entities.Material.filter({
         empresa_id: empresaAtiva.id,
-        ativo: true
+        ativo: true,
       });
-      
+
       let filtered = materiais;
       if (termo) {
         const lower = termo.toLowerCase();
-        filtered = materiais.filter(m => 
-          m.nome?.toLowerCase().includes(lower) ||
-          m.codigo?.toLowerCase().includes(lower) ||
-          m.categoria?.toLowerCase().includes(lower)
+        filtered = materiais.filter(
+          (m) =>
+            m.nome?.toLowerCase().includes(lower) ||
+            m.codigo?.toLowerCase().includes(lower) ||
+            m.categoria?.toLowerCase().includes(lower)
         );
       }
-      
+
       setMateriaisDoBanco(filtered);
     } catch (error) {
-      console.error('Erro ao buscar materiais:', error);
+      console.error("Erro ao buscar materiais:", error);
     } finally {
       setLoadingMateriais(false);
     }
   };
 
   const handleAdicionar = (material) => {
-    const jaSelecionado = materiaisSelecionados.find(m => m.id === material.id);
+    const jaSelecionado = materiaisSelecionados.find((m) => m.id === material.id);
     if (jaSelecionado) {
-      toast.info('Este material já foi adicionado');
+      toast.info("Este material já foi adicionado");
       return;
     }
 
@@ -85,72 +93,68 @@ export default function SolicitacaoEPIModal({ open, onOpenChange, funcionario, e
         codigo: material.codigo,
         nome: material.nome,
         quantidade: 1,
-        tipo: 'banco'
-      }
+        tipo: "banco",
+      },
     ]);
     toast.success(`${material.nome} adicionado`);
-    setSearchTerm('');
+    setSearchTerm("");
   };
 
   const handleRemover = (id) => {
-    setMateriaisSelecionados(
-      materiaisSelecionados.filter(m => m.id !== id)
-    );
+    setMateriaisSelecionados(materiaisSelecionados.filter((m) => m.id !== id));
   };
 
   const handleQuantidade = (id, novaQuantidade) => {
     const qtd = parseInt(novaQuantidade) || 1;
     if (qtd < 1) return;
-    
+
     setMateriaisSelecionados(
-      materiaisSelecionados.map(m => 
-        m.id === id ? { ...m, quantidade: qtd } : m
-      )
+      materiaisSelecionados.map((m) => (m.id === id ? { ...m, quantidade: qtd } : m))
     );
   };
 
   const handleSolicitar = async () => {
     if (materiaisSelecionados.length === 0) {
-      toast.error('Adicione pelo menos um EPI');
+      toast.error("Adicione pelo menos um EPI");
       return;
     }
 
     setLoading(true);
     try {
       // Criar solicitação de compra para os EPIs
-      const solicitacao = await base44.entities.SolicitacaoCompra.create({
+      const solicitacao = await sigo.entities.SolicitacaoCompra.create({
         empresa_id: empresaAtiva.id,
         numero: `SC-EPI-${Date.now()}`,
         solicitante_nome: funcionario.nome_completo,
-        status: 'Pendente Aprovação',
-        prioridade: 'Alta',
+        status: "Pendente Aprovação",
+        prioridade: "Alta",
         observacoes: `EPIs para ${funcionario.nome_completo}. ${observacoes}`,
-        total_itens: materiaisSelecionados.length
+        total_itens: materiaisSelecionados.length,
       });
 
       // Criar itens da solicitação
       for (const material of materiaisSelecionados) {
-        await base44.entities.SolicitacaoCompraItem.create({
+        await sigo.entities.SolicitacaoCompraItem.create({
           empresa_id: empresaAtiva.id,
           solicitacao_id: solicitacao.id,
           material_id: material.id,
           descricao: material.nome || material.item,
           quantidade: material.quantidade,
-          unidade: 'UN'
+          unidade: "UN",
         });
       }
 
-      toast.success('Solicitação de EPI criada com sucesso! Almoxarife será notificado.');
-      setObservacoes('');
+      toast.success("Solicitação de EPI criada com sucesso! Almoxarife será notificado.");
+      setObservacoes("");
       setMateriaisSelecionados([]);
       onOpenChange(false);
-      
+
       if (onSuccess) {
         onSuccess(solicitacao);
       }
     } catch (error) {
-      console.error('Erro ao criar solicitação:', error);
-      toast.error('Erro ao criar solicitação de EPI');
+      console.error("Erro ao criar solicitação:", error);
+      toast.error("Erro ao criar solicitação de EPI");
     } finally {
       setLoading(false);
     }
@@ -188,7 +192,7 @@ export default function SolicitacaoEPIModal({ open, onOpenChange, funcionario, e
             {/* Sugestões de busca */}
             {searchTerm && materiaisDoBanco.length > 0 && (
               <div className="mt-2 border rounded-lg bg-white max-h-40 overflow-y-auto">
-                {materiaisDoBanco.slice(0, 5).map(material => (
+                {materiaisDoBanco.slice(0, 5).map((material) => (
                   <button
                     key={material.id}
                     onClick={() => handleAdicionar(material)}
@@ -229,16 +233,14 @@ export default function SolicitacaoEPIModal({ open, onOpenChange, funcionario, e
                       </TableCell>
                     </TableRow>
                   ) : (
-                    materiaisSelecionados.map(material => (
+                    materiaisSelecionados.map((material) => (
                       <TableRow key={material.id} className="hover:bg-slate-50">
                         <TableCell className="text-xs text-slate-600">
-                          {material.codigo || '-'}
+                          {material.codigo || "-"}
                         </TableCell>
-                        <TableCell className="text-sm">
-                          {material.nome || material.item}
-                        </TableCell>
+                        <TableCell className="text-sm">{material.nome || material.item}</TableCell>
                         <TableCell className="text-xs text-slate-600">
-                          {material.ca || '-'}
+                          {material.ca || "-"}
                         </TableCell>
                         <TableCell>
                           <Input
@@ -281,11 +283,7 @@ export default function SolicitacaoEPIModal({ open, onOpenChange, funcionario, e
         </div>
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={loading}
-          >
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
             Cancelar
           </Button>
           <Button
@@ -299,7 +297,7 @@ export default function SolicitacaoEPIModal({ open, onOpenChange, funcionario, e
                 Enviando...
               </>
             ) : (
-              `Solicitar ${materiaisSelecionados.length} EPI${materiaisSelecionados.length !== 1 ? 's' : ''}`
+              `Solicitar ${materiaisSelecionados.length} EPI${materiaisSelecionados.length !== 1 ? "s" : ""}`
             )}
           </Button>
         </DialogFooter>

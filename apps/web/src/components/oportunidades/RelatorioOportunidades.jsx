@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ export default function RelatorioOportunidades() {
       if (!empresaAtiva?.id) return;
       try {
         setLoading(true);
-        const data = await base44.entities.Oportunidade.filter({
+        const data = await sigo.entities.Oportunidade.filter({
           empresa_id: empresaAtiva.id,
         });
         setOportunidades(data);

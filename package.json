@@ -36,7 +36,7 @@
     "supabase:functions:serve": "supabase functions serve",
     "supabase:functions:deploy": "supabase functions deploy",
     "supabase:types": "supabase gen types typescript --linked > shared/types/database.ts",
-    "export:base44": "node tools/export-base44.mjs",
+    "export:legacy": "node tools/export-legacy.mjs",
     "seed:from-xlsx": "node tools/seed-from-xlsx.mjs",
     "sdk:test": "node shared/sdk/smoke-test.mjs",
     "prepare": "husky"

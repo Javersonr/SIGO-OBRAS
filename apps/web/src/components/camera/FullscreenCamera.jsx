@@ -125,8 +125,8 @@ export default function FullscreenCamera({
       try {
         pararCamera();
         toast.loading("Fazendo upload do PDF...", { id: "camera-upload" });
-        const { base44 } = await import("@/api/base44Client");
-        const result = await base44.integrations.Core.UploadFile({ file });
+        const { sigo } = await import("@/api/sigoClient");
+        const result = await sigo.integrations.Core.UploadFile({ file });
         toast.dismiss("camera-upload");
         if (!result?.file_url) throw new Error("Falha no upload");
         toast.success("PDF enviado com sucesso!");
@@ -168,8 +168,8 @@ export default function FullscreenCamera({
     try {
       toast.loading("Processando imagem...", { id: "camera-upload" });
       const blob = await fetch(fotoCapturada).then((r) => r.blob());
-      const { base44 } = await import("@/api/base44Client");
-      const result = await base44.integrations.Core.UploadFile({
+      const { sigo } = await import("@/api/sigoClient");
+      const result = await sigo.integrations.Core.UploadFile({
         file: new File([blob], "captura.jpg", { type: "image/jpeg" }),
       });
       toast.dismiss("camera-upload");

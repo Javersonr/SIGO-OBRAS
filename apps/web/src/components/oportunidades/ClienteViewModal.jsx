@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Copy, Calendar, Eye, Send, CheckCircle2, DollarSign } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 
 export default function ClienteViewModal({ open, onOpenChange, oportunidade, empresaAtiva }) {
   const [emailCliente, setEmailCliente] = useState("");
@@ -25,7 +25,7 @@ export default function ClienteViewModal({ open, onOpenChange, oportunidade, emp
       const expiraEm = new Date();
       expiraEm.setDate(expiraEm.getDate() + 30);
 
-      await base44.entities.TokenClienteOportunidade.create({
+      await sigo.entities.TokenClienteOportunidade.create({
         empresa_id: empresaAtiva.id,
         oportunidade_id: oportunidade.id,
         token: token,
@@ -50,7 +50,7 @@ export default function ClienteViewModal({ open, onOpenChange, oportunidade, emp
 
     setEnviando(true);
     try {
-      await base44.integrations.Core.SendEmail({
+      await sigo.integrations.Core.SendEmail({
         to: emailCliente,
         subject: `Acompanhe seu projeto: ${oportunidade.nome || oportunidade.titulo}`,
         body: `

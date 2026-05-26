@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Plus, ChevronRight, ChevronDown, FolderTree, Edit, Trash2, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -79,9 +79,9 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
     };
 
     if (selectedItem) {
-      await base44.entities.ContaFinanceira.update(selectedItem.id, data);
+      await sigo.entities.ContaFinanceira.update(selectedItem.id, data);
     } else {
-      await base44.entities.ContaFinanceira.create(data);
+      await sigo.entities.ContaFinanceira.create(data);
     }
 
     setShowModal(false);
@@ -98,7 +98,7 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
 
     if (!confirm(`Excluir conta "${conta.nome}"?`)) return;
 
-    await base44.entities.ContaFinanceira.delete(conta.id);
+    await sigo.entities.ContaFinanceira.delete(conta.id);
     onReload();
   };
 

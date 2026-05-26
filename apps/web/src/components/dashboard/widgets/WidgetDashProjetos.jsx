@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../../../Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FolderKanban, CheckCircle, Clock, AlertCircle } from "lucide-react";
@@ -17,7 +17,7 @@ export default function WidgetDashProjetos({ onDadosCarregados }) {
 
   const load = async () => {
     try {
-      const projetos = await base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id });
+      const projetos = await sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id });
 
       const ativos = projetos.filter((p) => p.status === "Em Andamento" || p.status === "Ativo");
       const concluidos = projetos.filter(

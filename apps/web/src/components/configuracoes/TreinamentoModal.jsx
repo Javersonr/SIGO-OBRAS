@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Plus, Trash2, Upload, X } from 'lucide-react';
-import { formatCPF } from '@/components/utils/cpfFormatter';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Plus, Trash2, Upload, X } from "lucide-react";
+import { formatCPF } from "@/components/utils/cpfFormatter";
 
 // Parseia instrutores do campo instrutor_nome (suporta JSON array ou string legada)
 const parseInstrutores = (instrutor_nome, instrutor_cpf, instrutor_assinatura_url) => {
@@ -15,80 +15,98 @@ const parseInstrutores = (instrutor_nome, instrutor_cpf, instrutor_assinatura_ur
     if (Array.isArray(parsed)) return parsed;
   } catch {}
   if (instrutor_nome) {
-    return [{ nome: instrutor_nome, cpf: instrutor_cpf || '', formacao: '', assinatura_url: instrutor_assinatura_url || '' }];
+    return [
+      {
+        nome: instrutor_nome,
+        cpf: instrutor_cpf || "",
+        formacao: "",
+        assinatura_url: instrutor_assinatura_url || "",
+      },
+    ];
   }
-  return [{ nome: '', cpf: '', formacao: '', assinatura_url: '' }];
+  return [{ nome: "", cpf: "", formacao: "", assinatura_url: "" }];
 };
 
 export default function TreinamentoModal({ open, onClose, treinamento, empresaAtiva, onSave }) {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    nome: '',
-    codigo: '',
-    carga_horaria: '',
-    conteudo_programatico: '',
+    nome: "",
+    codigo: "",
+    carga_horaria: "",
+    conteudo_programatico: "",
     validade_meses: 12,
     obrigatorio: true,
-    responsavel_tecnico_nome: '',
-    responsavel_tecnico_criacao: '',
-    responsavel_tecnico_assinatura_url: '',
-    engenheiro_responsavel_assinatura_url: '',
+    responsavel_tecnico_nome: "",
+    responsavel_tecnico_criacao: "",
+    responsavel_tecnico_assinatura_url: "",
+    engenheiro_responsavel_assinatura_url: "",
   });
-  const [instrutores, setInstrutores] = useState([{ nome: '', cpf: '', formacao: '', assinatura_url: '' }]);
+  const [instrutores, setInstrutores] = useState([
+    { nome: "", cpf: "", formacao: "", assinatura_url: "" },
+  ]);
 
   useEffect(() => {
     if (treinamento) {
       setFormData({
-         nome: treinamento.nome || '',
-         codigo: treinamento.codigo || '',
-         carga_horaria: treinamento.carga_horaria || '',
-         conteudo_programatico: treinamento.conteudo_programatico || '',
-         validade_meses: treinamento.validade_meses || 12,
-         obrigatorio: treinamento.obrigatorio !== false,
-         responsavel_tecnico_nome: treinamento.responsavel_tecnico_nome || '',
-         responsavel_tecnico_criacao: treinamento.responsavel_tecnico_criacao || '',
-         responsavel_tecnico_assinatura_url: treinamento.responsavel_tecnico_assinatura_url || '',
-         engenheiro_responsavel_assinatura_url: treinamento.engenheiro_responsavel_assinatura_url || '',
-       });
-      setInstrutores(parseInstrutores(treinamento.instrutor_nome, treinamento.instrutor_cpf, treinamento.instrutor_assinatura_url));
+        nome: treinamento.nome || "",
+        codigo: treinamento.codigo || "",
+        carga_horaria: treinamento.carga_horaria || "",
+        conteudo_programatico: treinamento.conteudo_programatico || "",
+        validade_meses: treinamento.validade_meses || 12,
+        obrigatorio: treinamento.obrigatorio !== false,
+        responsavel_tecnico_nome: treinamento.responsavel_tecnico_nome || "",
+        responsavel_tecnico_criacao: treinamento.responsavel_tecnico_criacao || "",
+        responsavel_tecnico_assinatura_url: treinamento.responsavel_tecnico_assinatura_url || "",
+        engenheiro_responsavel_assinatura_url:
+          treinamento.engenheiro_responsavel_assinatura_url || "",
+      });
+      setInstrutores(
+        parseInstrutores(
+          treinamento.instrutor_nome,
+          treinamento.instrutor_cpf,
+          treinamento.instrutor_assinatura_url
+        )
+      );
     } else {
       setFormData({
-        nome: '',
-        codigo: '',
-        carga_horaria: '',
-        conteudo_programatico: '',
+        nome: "",
+        codigo: "",
+        carga_horaria: "",
+        conteudo_programatico: "",
         validade_meses: 12,
         obrigatorio: true,
-        responsavel_tecnico_nome: '',
-        responsavel_tecnico_criacao: '',
-        responsavel_tecnico_assinatura_url: '',
-        engenheiro_responsavel_assinatura_url: '',
+        responsavel_tecnico_nome: "",
+        responsavel_tecnico_criacao: "",
+        responsavel_tecnico_assinatura_url: "",
+        engenheiro_responsavel_assinatura_url: "",
       });
-      setInstrutores([{ nome: '', cpf: '', formacao: '', assinatura_url: '' }]);
+      setInstrutores([{ nome: "", cpf: "", formacao: "", assinatura_url: "" }]);
     }
   }, [treinamento, open]);
 
-  const addInstrutor = () => setInstrutores([...instrutores, { nome: '', cpf: '', formacao: '', assinatura_url: '' }]);
+  const addInstrutor = () =>
+    setInstrutores([...instrutores, { nome: "", cpf: "", formacao: "", assinatura_url: "" }]);
   const removeInstrutor = (idx) => setInstrutores(instrutores.filter((_, i) => i !== idx));
   const updateInstrutor = (idx, field, value) => {
-    const updated = instrutores.map((inst, i) => i === idx ? { ...inst, [field]: value } : inst);
+    const updated = instrutores.map((inst, i) => (i === idx ? { ...inst, [field]: value } : inst));
     setInstrutores(updated);
   };
 
   const handleSave = async () => {
     if (!formData.nome.trim()) {
-      alert('Preencha o nome do treinamento');
+      alert("Preencha o nome do treinamento");
       return;
     }
 
     setLoading(true);
     try {
       // Serializar instrutores: se só um e sem formação, manter compatibilidade legada
-      const instrutoresValidos = instrutores.filter(i => i.nome.trim());
-      const instrutor_nome = instrutoresValidos.length === 1 && !instrutoresValidos[0].formacao
-        ? instrutoresValidos[0].nome
-        : JSON.stringify(instrutoresValidos);
-      const instrutor_cpf = instrutoresValidos.length === 1 ? instrutoresValidos[0].cpf : '';
+      const instrutoresValidos = instrutores.filter((i) => i.nome.trim());
+      const instrutor_nome =
+        instrutoresValidos.length === 1 && !instrutoresValidos[0].formacao
+          ? instrutoresValidos[0].nome
+          : JSON.stringify(instrutoresValidos);
+      const instrutor_cpf = instrutoresValidos.length === 1 ? instrutoresValidos[0].cpf : "";
 
       const data = {
         nome: formData.nome,
@@ -103,27 +121,32 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
         engenheiro_responsavel_assinatura_url: formData.engenheiro_responsavel_assinatura_url,
         instrutor_nome,
         instrutor_cpf,
-        instrutor_assinatura_url: instrutores.map(i => i.assinatura_url).filter(Boolean).join('|') || '',
+        instrutor_assinatura_url:
+          instrutores
+            .map((i) => i.assinatura_url)
+            .filter(Boolean)
+            .join("|") || "",
         empresa_id: empresaAtiva.id,
         funcao_id: treinamento ? treinamento.funcao_id : null,
-        usar_como_modelo: treinamento ? treinamento.usar_como_modelo : true
+        usar_como_modelo: treinamento ? treinamento.usar_como_modelo : true,
       };
 
-      console.log('Dados sendo salvos:', data);
+      console.log("Dados sendo salvos:", data);
 
       if (treinamento) {
-        await base44.entities.Treinamento.update(treinamento.id, data);
-        
+        await sigo.entities.Treinamento.update(treinamento.id, data);
+
         // Propagar atualizações para treinamentos vinculados às funções com o mesmo nome/código
         try {
-          const vinculados = await base44.entities.Treinamento.filter({
+          const vinculados = await sigo.entities.Treinamento.filter({
             empresa_id: empresaAtiva.id,
-            nome: treinamento.nome
+            nome: treinamento.nome,
           });
-          const paraAtualizar = vinculados.filter(t =>
-            t.id !== treinamento.id &&
-            t.funcao_id &&
-            (t.codigo || '') === (treinamento.codigo || '')
+          const paraAtualizar = vinculados.filter(
+            (t) =>
+              t.id !== treinamento.id &&
+              t.funcao_id &&
+              (t.codigo || "") === (treinamento.codigo || "")
           );
           if (paraAtualizar.length > 0) {
             const camposParaPropagar = {
@@ -140,22 +163,22 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
               responsavel_tecnico_criacao: data.responsavel_tecnico_criacao,
               responsavel_tecnico_assinatura_url: data.responsavel_tecnico_assinatura_url,
             };
-            await Promise.all(paraAtualizar.map(t =>
-              base44.entities.Treinamento.update(t.id, camposParaPropagar)
-            ));
+            await Promise.all(
+              paraAtualizar.map((t) => sigo.entities.Treinamento.update(t.id, camposParaPropagar))
+            );
           }
         } catch (syncErr) {
-          console.warn('Erro ao propagar atualização para funções:', syncErr);
+          console.warn("Erro ao propagar atualização para funções:", syncErr);
         }
       } else {
-        await base44.entities.Treinamento.create(data);
+        await sigo.entities.Treinamento.create(data);
       }
-      
+
       onSave();
       onClose();
     } catch (error) {
-      console.error('Erro ao salvar treinamento:', error);
-      alert('Erro ao salvar treinamento');
+      console.error("Erro ao salvar treinamento:", error);
+      alert("Erro ao salvar treinamento");
     } finally {
       setLoading(false);
     }
@@ -163,11 +186,13 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
 
   return (
     <Sheet open={open} onOpenChange={onClose}>
-      <SheetContent side="right" className="h-full overflow-y-auto p-0 flex flex-col" style={{ inset: 'auto 0 0 256px', width: 'calc(100% - 256px)', maxWidth: 'none' }}>
+      <SheetContent
+        side="right"
+        className="h-full overflow-y-auto p-0 flex flex-col"
+        style={{ inset: "auto 0 0 256px", width: "calc(100% - 256px)", maxWidth: "none" }}
+      >
         <SheetHeader className="p-6 border-b">
-          <SheetTitle>
-            {treinamento ? 'Editar Treinamento' : 'Novo Treinamento'}
-          </SheetTitle>
+          <SheetTitle>{treinamento ? "Editar Treinamento" : "Novo Treinamento"}</SheetTitle>
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
@@ -198,7 +223,9 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
               <Input
                 type="number"
                 value={formData.carga_horaria}
-                onChange={(e) => setFormData({ ...formData, carga_horaria: parseFloat(e.target.value) || '' })}
+                onChange={(e) =>
+                  setFormData({ ...formData, carga_horaria: parseFloat(e.target.value) || "" })
+                }
                 placeholder="Ex: 40"
                 className="mt-1.5"
               />
@@ -208,7 +235,9 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
               <Input
                 type="number"
                 value={formData.validade_meses}
-                onChange={(e) => setFormData({ ...formData, validade_meses: parseInt(e.target.value) || 12 })}
+                onChange={(e) =>
+                  setFormData({ ...formData, validade_meses: parseInt(e.target.value) || 12 })
+                }
                 placeholder="Ex: 12, 24"
                 className="mt-1.5"
               />
@@ -246,7 +275,9 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
                 <Label>Nome</Label>
                 <Input
                   value={formData.responsavel_tecnico_nome}
-                  onChange={(e) => setFormData({ ...formData, responsavel_tecnico_nome: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, responsavel_tecnico_nome: e.target.value })
+                  }
                   placeholder="Nome completo"
                   className="mt-1.5"
                 />
@@ -255,7 +286,9 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
                 <Label>CREA</Label>
                 <Input
                   value={formData.responsavel_tecnico_criacao}
-                  onChange={(e) => setFormData({ ...formData, responsavel_tecnico_criacao: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, responsavel_tecnico_criacao: e.target.value })
+                  }
                   placeholder="Número do CREA"
                   className="mt-1.5"
                 />
@@ -274,17 +307,20 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
                       const file = e.target.files?.[0];
                       if (file) {
                         try {
-                          const { file_url } = await base44.integrations.Core.UploadFile({ file });
-                          setFormData({ ...formData, responsavel_tecnico_assinatura_url: file_url });
+                          const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+                          setFormData({
+                            ...formData,
+                            responsavel_tecnico_assinatura_url: file_url,
+                          });
                         } catch (error) {
-                          console.error('Erro ao fazer upload:', error);
+                          console.error("Erro ao fazer upload:", error);
                         }
                       }
                     }}
                   />
                   <div className="flex items-center gap-1 text-xs text-slate-500">
                     <Upload className="w-3.5 h-3.5" />
-                    {formData.responsavel_tecnico_assinatura_url ? 'Trocar' : 'Enviar'} assinatura
+                    {formData.responsavel_tecnico_assinatura_url ? "Trocar" : "Enviar"} assinatura
                   </div>
                 </label>
                 {formData.responsavel_tecnico_assinatura_url && (
@@ -292,7 +328,9 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
                     type="button"
                     variant="ghost"
                     size="icon"
-                    onClick={() => setFormData({ ...formData, responsavel_tecnico_assinatura_url: '' })}
+                    onClick={() =>
+                      setFormData({ ...formData, responsavel_tecnico_assinatura_url: "" })
+                    }
                     className="text-red-500 hover:text-red-700"
                   >
                     <X className="w-4 h-4" />
@@ -301,7 +339,11 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
               </div>
               {formData.responsavel_tecnico_assinatura_url && (
                 <div className="mt-2 flex items-center gap-2">
-                  <img src={formData.responsavel_tecnico_assinatura_url} alt="Assinatura" className="h-12 border rounded" />
+                  <img
+                    src={formData.responsavel_tecnico_assinatura_url}
+                    alt="Assinatura"
+                    className="h-12 border rounded"
+                  />
                   <span className="text-xs text-slate-500">Assinatura carregada</span>
                 </div>
               )}
@@ -311,7 +353,13 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
           <div className="border-t pt-4 mt-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-sm text-slate-700">Instrutores</h3>
-              <Button type="button" variant="outline" size="sm" onClick={addInstrutor} className="gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addInstrutor}
+                className="gap-1"
+              >
                 <Plus className="w-3.5 h-3.5" /> Adicionar
               </Button>
             </div>
@@ -323,31 +371,31 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
                       <Label className="text-xs">Nome</Label>
                       <Input
                         value={inst.nome}
-                        onChange={(e) => updateInstrutor(idx, 'nome', e.target.value)}
+                        onChange={(e) => updateInstrutor(idx, "nome", e.target.value)}
                         placeholder="Nome completo"
                         className="mt-1"
                       />
                     </div>
                     <div>
-                       <Label className="text-xs">CPF</Label>
-                       <Input
-                         value={formatCPF(inst.cpf)}
-                         onChange={(e) => updateInstrutor(idx, 'cpf', e.target.value)}
-                         placeholder="000.000.000-00"
-                         className="mt-1"
-                       />
-                     </div>
+                      <Label className="text-xs">CPF</Label>
+                      <Input
+                        value={formatCPF(inst.cpf)}
+                        onChange={(e) => updateInstrutor(idx, "cpf", e.target.value)}
+                        placeholder="000.000.000-00"
+                        className="mt-1"
+                      />
+                    </div>
                     <div>
                       <Label className="text-xs">Formação</Label>
                       <Input
                         value={inst.formacao}
-                        onChange={(e) => updateInstrutor(idx, 'formacao', e.target.value)}
+                        onChange={(e) => updateInstrutor(idx, "formacao", e.target.value)}
                         placeholder="Ex: Engenheiro Elétrico"
                         className="mt-1"
                       />
                     </div>
                   </div>
-                  
+
                   <div>
                     <Label className="text-xs">Assinatura do Instrutor</Label>
                     <div className="flex gap-2 mt-1">
@@ -360,17 +408,19 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
                             const file = e.target.files?.[0];
                             if (file) {
                               try {
-                                const { file_url } = await base44.integrations.Core.UploadFile({ file });
-                                updateInstrutor(idx, 'assinatura_url', file_url);
+                                const { file_url } = await sigo.integrations.Core.UploadFile({
+                                  file,
+                                });
+                                updateInstrutor(idx, "assinatura_url", file_url);
                               } catch (error) {
-                                console.error('Erro ao fazer upload:', error);
+                                console.error("Erro ao fazer upload:", error);
                               }
                             }
                           }}
                         />
                         <div className="flex items-center gap-1 text-xs text-slate-500">
                           <Upload className="w-3.5 h-3.5" />
-                          {inst.assinatura_url ? 'Trocar' : 'Enviar'} assinatura
+                          {inst.assinatura_url ? "Trocar" : "Enviar"} assinatura
                         </div>
                       </label>
                       {inst.assinatura_url && (
@@ -378,7 +428,7 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
                           type="button"
                           variant="ghost"
                           size="icon"
-                          onClick={() => updateInstrutor(idx, 'assinatura_url', '')}
+                          onClick={() => updateInstrutor(idx, "assinatura_url", "")}
                           className="text-red-500 hover:text-red-700"
                         >
                           <X className="w-4 h-4" />
@@ -387,14 +437,24 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
                     </div>
                     {inst.assinatura_url && (
                       <div className="mt-2 flex items-center gap-2">
-                        <img src={inst.assinatura_url} alt="Assinatura" className="h-12 border rounded" />
+                        <img
+                          src={inst.assinatura_url}
+                          alt="Assinatura"
+                          className="h-12 border rounded"
+                        />
                         <span className="text-xs text-slate-500">Assinatura carregada</span>
                       </div>
                     )}
                   </div>
 
                   {instrutores.length > 1 && (
-                    <Button type="button" variant="outline" size="sm" onClick={() => removeInstrutor(idx)} className="w-full text-red-500 hover:text-red-700 border-red-200">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => removeInstrutor(idx)}
+                      className="w-full text-red-500 hover:text-red-700 border-red-200"
+                    >
                       <Trash2 className="w-3.5 h-3.5 mr-1" /> Remover Instrutor
                     </Button>
                   )}
@@ -410,13 +470,9 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
             disabled={loading || !formData.nome.trim()}
             className="flex-1 bg-amber-500 hover:bg-amber-600"
           >
-            {loading ? 'Salvando...' : treinamento ? 'Atualizar' : 'Criar'}
+            {loading ? "Salvando..." : treinamento ? "Atualizar" : "Criar"}
           </Button>
-          <Button
-            variant="outline"
-            onClick={onClose}
-            className="flex-1"
-          >
+          <Button variant="outline" onClick={onClose} className="flex-1">
             Cancelar
           </Button>
         </div>

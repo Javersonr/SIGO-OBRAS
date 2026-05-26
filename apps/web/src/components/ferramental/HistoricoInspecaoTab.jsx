@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -92,7 +92,7 @@ export default function HistoricoInspecaoTab({ inspecaoId, empresaId }) {
   const loadHistorico = async () => {
     setLoading(true);
     try {
-      const dados = await base44.entities.InspecaoHistorico.filter(
+      const dados = await sigo.entities.InspecaoHistorico.filter(
         {
           empresa_id: empresaId,
           inspecao_id: inspecaoId,

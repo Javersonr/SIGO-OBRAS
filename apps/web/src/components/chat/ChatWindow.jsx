@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Hash, User, Users } from "lucide-react";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
@@ -28,7 +28,7 @@ export default function ChatWindow({ canal, user, empresaAtiva, usuariosEmpresa,
 
   const loadMensagens = async () => {
     try {
-      const msgs = await base44.entities.MensagemChat.filter(
+      const msgs = await sigo.entities.MensagemChat.filter(
         { canal_id: canal.id },
         "created_date",
         100
@@ -49,7 +49,7 @@ export default function ChatWindow({ canal, user, empresaAtiva, usuariosEmpresa,
       for (const msg of naoLidas) {
         const lidaPor = msg.lida_por ? JSON.parse(msg.lida_por) : [];
         if (!lidaPor.includes(user.id)) {
-          await base44.entities.MensagemChat.update(msg.id, {
+          await sigo.entities.MensagemChat.update(msg.id, {
             lida_por: JSON.stringify([...lidaPor, user.id]),
           });
         }
@@ -76,10 +76,10 @@ export default function ChatWindow({ canal, user, empresaAtiva, usuariosEmpresa,
         lida_por: JSON.stringify([user.id]),
       };
 
-      const msg = await base44.entities.MensagemChat.create(novaMensagem);
+      const msg = await sigo.entities.MensagemChat.create(novaMensagem);
 
       // Atualizar última mensagem do canal
-      await base44.entities.CanalChat.update(canal.id, {
+      await sigo.entities.CanalChat.update(canal.id, {
         ultima_mensagem: mensagem.substring(0, 100),
         ultima_mensagem_data: new Date().toISOString(),
       });
@@ -90,7 +90,7 @@ export default function ChatWindow({ canal, user, empresaAtiva, usuariosEmpresa,
       for (const usuarioId of mencoes) {
         const usuarioMencionado = usuariosEmpresa.find((u) => (u.usuario_id || u.id) === usuarioId);
         if (usuarioMencionado && usuarioMencionado.usuario_email !== user.email) {
-          await base44.entities.Notificacao.create({
+          await sigo.entities.Notificacao.create({
             empresa_id: empresaAtiva.id,
             usuario_email: usuarioMencionado.usuario_email,
             tipo: "Sistema",

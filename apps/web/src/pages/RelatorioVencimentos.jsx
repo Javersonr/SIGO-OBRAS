@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
 import VencimentosContratos from "@/components/vencimentos/VencimentosContratos";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,7 +16,7 @@ export default function RelatorioVencimentos() {
       if (!empresaAtiva?.id) return;
       try {
         setLoading(true);
-        const projetosData = await base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id });
+        const projetosData = await sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id });
         setProjetos(projetosData);
       } catch (error) {
         console.error("Erro ao carregar projetos:", error);

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,7 +31,7 @@ export default function ImportarTreinamentosZip({
         try {
           const base64 = event.target.result.split(",")[1];
 
-          const response = await base44.functions.invoke("processarPDFsComGemini", {
+          const response = await sigo.functions.invoke("processarPDFsComGemini", {
             zipBase64: base64,
             funcionarioId: funcionario.id,
             empresaId: empresaAtiva.id,
@@ -73,7 +73,7 @@ export default function ImportarTreinamentosZip({
       );
 
       for (const treino of treinamentosParaSalvar) {
-        await base44.entities.Treinamento.create({
+        await sigo.entities.Treinamento.create({
           empresa_id: empresaAtiva.id,
           funcao_id: funcionario.funcao_id,
           nome: treino.nome_treinamento || "Treinamento",

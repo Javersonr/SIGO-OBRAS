@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,7 +27,7 @@ export default function ExportacaoMassaModal({
 
   const loadTreinamentos = async () => {
     try {
-      const data = await base44.entities.Treinamento.filter({
+      const data = await sigo.entities.Treinamento.filter({
         empresa_id: empresaAtiva.id,
         ativo: true,
       });
@@ -157,7 +157,7 @@ export default function ExportacaoMassaModal({
         if (treinamentosFunc.length === 0 && funcionario.funcao_id) {
           // Buscar direto do banco caso não tenha carregado ainda
           try {
-            treinamentosFunc = await base44.entities.Treinamento.filter({
+            treinamentosFunc = await sigo.entities.Treinamento.filter({
               empresa_id: empresaAtiva.id,
               funcao_id: funcionario.funcao_id,
               ativo: true,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,9 +61,9 @@ export default function ClientePortal() {
         const projetoId = token.replace("preview_", "");
 
         // Buscar projeto para pegar empresa_id
-        const projetos = await base44.entities.Projeto.filter({ id: projetoId });
+        const projetos = await sigo.entities.Projeto.filter({ id: projetoId });
         if (projetos.length === 0) {
-          const ops = await base44.entities.Oportunidade.filter({ id: projetoId });
+          const ops = await sigo.entities.Oportunidade.filter({ id: projetoId });
           if (ops.length === 0) {
             setError("Projeto não encontrado.");
             setLoading(false);
@@ -87,7 +87,7 @@ export default function ClientePortal() {
       }
       // MODO 2: Acesso por token de cliente
       else if (token) {
-        const tokens = await base44.entities.TokenClienteOportunidade.filter({
+        const tokens = await sigo.entities.TokenClienteOportunidade.filter({
           token,
           ativo: true,
         });
@@ -130,7 +130,7 @@ export default function ClientePortal() {
         const userData = JSON.parse(customAuth);
 
         // Buscar vínculo do usuário
-        const vinculos = await base44.entities.UsuarioEmpresa.filter({
+        const vinculos = await sigo.entities.UsuarioEmpresa.filter({
           empresa_id: userData.empresa_id,
           usuario_email: userData.email,
           perfil: "Cliente",
@@ -158,7 +158,7 @@ export default function ClientePortal() {
       setShowBanner(isVisualizacao);
 
       // Carregar empresa
-      const emp = await base44.entities.Empresa.filter({ id: clienteInfo.empresa_id });
+      const emp = await sigo.entities.Empresa.filter({ id: clienteInfo.empresa_id });
       if (emp.length === 0) {
         setError("Empresa não encontrada.");
         setLoading(false);
@@ -167,13 +167,13 @@ export default function ClientePortal() {
       setEmpresa(emp[0]);
 
       // Tentar carregar como Projeto primeiro, se não encontrar, busca como Oportunidade
-      let projeto = await base44.entities.Projeto.filter({ id: clienteInfo.oportunidade_id });
+      let projeto = await sigo.entities.Projeto.filter({ id: clienteInfo.oportunidade_id });
       let oportunidadeData = null;
 
       if (projeto.length > 0) {
         oportunidadeData = projeto[0];
       } else {
-        const op = await base44.entities.Oportunidade.filter({ id: clienteInfo.oportunidade_id });
+        const op = await sigo.entities.Oportunidade.filter({ id: clienteInfo.oportunidade_id });
         if (op.length === 0) {
           setError("Projeto não encontrado.");
           setLoading(false);
@@ -185,13 +185,13 @@ export default function ClientePortal() {
       setOportunidade(oportunidadeData);
 
       // Carregar orçamento (tenta projeto_id primeiro, depois oportunidade_id)
-      let itens = await base44.entities.OrcamentoItem.filter({
+      let itens = await sigo.entities.OrcamentoItem.filter({
         empresa_id: clienteInfo.empresa_id,
         projeto_id: clienteInfo.oportunidade_id,
       });
 
       if (itens.length === 0) {
-        itens = await base44.entities.OrcamentoItem.filter({
+        itens = await sigo.entities.OrcamentoItem.filter({
           empresa_id: clienteInfo.empresa_id,
           oportunidade_id: clienteInfo.oportunidade_id,
         });
@@ -199,13 +199,13 @@ export default function ClientePortal() {
       setOrcamentoItens(itens.sort((a, b) => a.ordem - b.ordem));
 
       // Carregar cronograma
-      let etapas = await base44.entities.CronogramaEtapa.filter({
+      let etapas = await sigo.entities.CronogramaEtapa.filter({
         empresa_id: clienteInfo.empresa_id,
         projeto_id: clienteInfo.oportunidade_id,
       });
 
       if (etapas.length === 0) {
-        etapas = await base44.entities.CronogramaEtapa.filter({
+        etapas = await sigo.entities.CronogramaEtapa.filter({
           empresa_id: clienteInfo.empresa_id,
           oportunidade_id: clienteInfo.oportunidade_id,
         });
@@ -213,13 +213,13 @@ export default function ClientePortal() {
       setCronogramaEtapas(etapas.sort((a, b) => a.ordem - b.ordem));
 
       // Carregar arquivos
-      let arqs = await base44.entities.ArquivoOportunidade.filter({
+      let arqs = await sigo.entities.ArquivoOportunidade.filter({
         empresa_id: clienteInfo.empresa_id,
         projeto_id: clienteInfo.oportunidade_id,
       });
 
       if (arqs.length === 0) {
-        arqs = await base44.entities.ArquivoOportunidade.filter({
+        arqs = await sigo.entities.ArquivoOportunidade.filter({
           empresa_id: clienteInfo.empresa_id,
           oportunidade_id: clienteInfo.oportunidade_id,
         });
@@ -227,14 +227,14 @@ export default function ClientePortal() {
       setArquivos(arqs.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
 
       // Carregar anotações
-      let notas = await base44.entities.OportunidadeAtualizacao.filter({
+      let notas = await sigo.entities.OportunidadeAtualizacao.filter({
         empresa_id: clienteInfo.empresa_id,
         projeto_id: clienteInfo.oportunidade_id,
         tipo: "Nota",
       });
 
       if (notas.length === 0) {
-        notas = await base44.entities.OportunidadeAtualizacao.filter({
+        notas = await sigo.entities.OportunidadeAtualizacao.filter({
           empresa_id: clienteInfo.empresa_id,
           oportunidade_id: clienteInfo.oportunidade_id,
           tipo: "Nota",
@@ -243,7 +243,7 @@ export default function ClientePortal() {
       setAnotacoes(notas.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
 
       // Carregar diários de obra
-      const diario = await base44.entities.DiarioObra.filter({
+      const diario = await sigo.entities.DiarioObra.filter({
         empresa_id: clienteInfo.empresa_id,
         projeto_id: clienteInfo.oportunidade_id,
       });
@@ -262,10 +262,10 @@ export default function ClientePortal() {
 
     setUploadingFile(true);
     try {
-      const uploadResult = await base44.integrations.Core.UploadFile({ file });
+      const uploadResult = await sigo.integrations.Core.UploadFile({ file });
       const fileUrl = uploadResult.file_url || uploadResult.url || uploadResult;
 
-      await base44.entities.ArquivoOportunidade.create({
+      await sigo.entities.ArquivoOportunidade.create({
         empresa_id: tokenData.empresa_id,
         oportunidade_id: tokenData.oportunidade_id,
         nome: file.name,
@@ -289,7 +289,7 @@ export default function ClientePortal() {
   const handleAddAnotacao = async () => {
     if (!novaAnotacao.trim()) return;
 
-    await base44.entities.OportunidadeAtualizacao.create({
+    await sigo.entities.OportunidadeAtualizacao.create({
       empresa_id: tokenData.empresa_id,
       oportunidade_id: tokenData.oportunidade_id,
       usuario_id: null,

@@ -1,12 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { base44 } from '@/api/base44Client';
-import ReceitasTabFinanceiro from '../financeiro/ReceitasTab';
-import DespesasTabFinanceiro from '../financeiro/DespesasTab';
-import ResultadosTab from '../oportunidades/ResultadosTab';
-import ResumoFinanceiroTab from './ResumoFinanceiroTab';
+import React, { useState, useEffect } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { sigo } from "@/api/sigoClient";
+import ReceitasTabFinanceiro from "../financeiro/ReceitasTab";
+import DespesasTabFinanceiro from "../financeiro/DespesasTab";
+import ResultadosTab from "../oportunidades/ResultadosTab";
+import ResumoFinanceiroTab from "./ResumoFinanceiroTab";
 
-export default function FinanceiroTab({ projetoId, empresaAtiva, orcamentoItens, temPermissao, perfil }) {
+export default function FinanceiroTab({
+  projetoId,
+  empresaAtiva,
+  orcamentoItens,
+  temPermissao,
+  perfil,
+}) {
   const [transacoes, setTransacoes] = useState([]);
   const [contas, setContas] = useState([]);
   const [categorias, setCategorias] = useState([]);
@@ -18,17 +24,17 @@ export default function FinanceiroTab({ projetoId, empresaAtiva, orcamentoItens,
   // Determinar aba padrão baseada nas permissões
   const getDefaultTab = () => {
     // Admin ou usuário sem permissões granulares vê Resumo
-    if (perfil === 'Admin') return 'resumo';
-    if (!temPermissao) return 'receitas';
-    
+    if (perfil === "Admin") return "resumo";
+    if (!temPermissao) return "receitas";
+
     // Com permissões granulares, só mostra Resumo se tem acesso à aba Financeiro
-    const temAcessoFinanceiro = temPermissao('Projetos', 'Financeiro');
-    return temAcessoFinanceiro ? 'resumo' : 'receitas';
+    const temAcessoFinanceiro = temPermissao("Projetos", "Financeiro");
+    return temAcessoFinanceiro ? "resumo" : "receitas";
   };
 
   const loadData = React.useCallback(async () => {
     if (!empresaAtiva?.id) return;
-    
+
     setLoading(true);
     try {
       const filterParams = { empresa_id: empresaAtiva.id };
@@ -37,12 +43,12 @@ export default function FinanceiroTab({ projetoId, empresaAtiva, orcamentoItens,
       }
 
       const [trans, conts, cats, forns, clis, projs] = await Promise.all([
-        base44.entities.TransacaoFinanceira.filter(filterParams),
-        base44.entities.ContaFinanceira.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.CategoriaFinanceira.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Fornecedor.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Cliente.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id })
+        sigo.entities.TransacaoFinanceira.filter(filterParams),
+        sigo.entities.ContaFinanceira.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.CategoriaFinanceira.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Fornecedor.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Cliente.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
       ]);
 
       setTransacoes(trans);
@@ -52,7 +58,7 @@ export default function FinanceiroTab({ projetoId, empresaAtiva, orcamentoItens,
       setClientes(clis);
       setProjetos(projs);
     } catch (error) {
-      console.error('Erro ao carregar dados financeiros:', error);
+      console.error("Erro ao carregar dados financeiros:", error);
     } finally {
       setLoading(false);
     }

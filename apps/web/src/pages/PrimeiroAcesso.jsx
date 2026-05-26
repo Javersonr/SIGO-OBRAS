@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '../utils';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { HardHat, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "../utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { HardHat, Loader2, CheckCircle2, XCircle } from "lucide-react";
 
 export default function PrimeiroAcesso() {
   const navigate = useNavigate();
@@ -15,10 +15,10 @@ export default function PrimeiroAcesso() {
   const [tokenValido, setTokenValido] = useState(false);
   const [usuario, setUsuario] = useState(null);
   const [form, setForm] = useState({
-    senha: '',
-    confirmar_senha: ''
+    senha: "",
+    confirmar_senha: "",
   });
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   useEffect(() => {
     validarToken();
@@ -26,28 +26,28 @@ export default function PrimeiroAcesso() {
 
   const validarToken = async () => {
     const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get('token');
+    const token = urlParams.get("token");
 
     if (!token) {
-      setError('Token não encontrado');
+      setError("Token não encontrado");
       setValidando(false);
       return;
     }
 
     setValidando(true);
     try {
-      const { data } = await base44.functions.invoke('validarTokenConvite', { token });
-      
+      const { data } = await sigo.functions.invoke("validarTokenConvite", { token });
+
       if (data.success) {
         setTokenValido(true);
         setUsuario(data.usuario);
       } else {
-        setError(data.error || 'Token inválido');
+        setError(data.error || "Token inválido");
         setTokenValido(false);
       }
     } catch (err) {
       console.error(err);
-      setError('Erro ao validar token');
+      setError("Erro ao validar token");
       setTokenValido(false);
     } finally {
       setValidando(false);
@@ -56,15 +56,15 @@ export default function PrimeiroAcesso() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
     if (form.senha !== form.confirmar_senha) {
-      setError('As senhas não coincidem');
+      setError("As senhas não coincidem");
       return;
     }
 
     if (form.senha.length < 6) {
-      setError('A senha deve ter no mínimo 6 caracteres');
+      setError("A senha deve ter no mínimo 6 caracteres");
       return;
     }
 
@@ -72,20 +72,20 @@ export default function PrimeiroAcesso() {
 
     try {
       const urlParams = new URLSearchParams(window.location.search);
-      const token = urlParams.get('token');
+      const token = urlParams.get("token");
 
-      const { data } = await base44.functions.invoke('concluirPrimeiroAcesso', {
+      const { data } = await sigo.functions.invoke("concluirPrimeiroAcesso", {
         token,
-        senha: form.senha
+        senha: form.senha,
       });
 
       if (data.success) {
-        navigate(createPageUrl('EntrarSistema'));
+        navigate(createPageUrl("EntrarSistema"));
       } else {
-        setError(data.error || 'Erro ao criar senha');
+        setError(data.error || "Erro ao criar senha");
       }
     } catch (err) {
-      setError('Erro ao conectar com o servidor');
+      setError("Erro ao conectar com o servidor");
       console.error(err);
     } finally {
       setLoading(false);
@@ -113,7 +113,7 @@ export default function PrimeiroAcesso() {
             <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-slate-800 mb-2">Link Inválido</h2>
             <p className="text-slate-600 mb-6">{error}</p>
-            <Button onClick={() => navigate(createPageUrl('EntrarSistema'))} variant="outline">
+            <Button onClick={() => navigate(createPageUrl("EntrarSistema"))} variant="outline">
               Voltar para Login
             </Button>
           </CardContent>
@@ -141,7 +141,7 @@ export default function PrimeiroAcesso() {
               <Label>Email</Label>
               <Input
                 type="email"
-                value={usuario?.usuario_email || ''}
+                value={usuario?.usuario_email || ""}
                 disabled
                 className="mt-1 bg-slate-50"
               />

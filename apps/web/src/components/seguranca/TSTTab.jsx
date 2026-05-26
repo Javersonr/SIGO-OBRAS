@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Plus, Upload, Edit, Eye, X, FileText, CheckCircle2, PackageCheck } from "lucide-react";
@@ -71,7 +71,7 @@ export default function TSTTab({
     handleAutoSave(novoForm);
     // Persistir no banco se já existe funcionário salvo
     if (selectedFuncionario) {
-      await base44.entities.Funcionario.update(selectedFuncionario.id, {
+      await sigo.entities.Funcionario.update(selectedFuncionario.id, {
         treinamentos_anexos: JSON.stringify(novosAnexos),
       });
     }
@@ -86,7 +86,7 @@ export default function TSTTab({
         updateData.aproveitamento = parseInt(camposAtualizados.aproveitamento);
 
       if (Object.keys(updateData).length > 0) {
-        const result = await base44.entities.Treinamento.update(treinamentoId, updateData);
+        const result = await sigo.entities.Treinamento.update(treinamentoId, updateData);
         toast.success("Datas atualizadas automaticamente do certificado");
 
         // Atualizar estado local
@@ -196,7 +196,7 @@ export default function TSTTab({
                   }
                   setUploadingDoc(true);
                   try {
-                    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+                    const { file_url } = await sigo.integrations.Core.UploadFile({ file });
                     const anexos = JSON.parse(funcionarioForm.treinamentos_anexos || "[]");
                     anexos.push({
                       nome: nomeArquivo,
@@ -448,7 +448,7 @@ export default function TSTTab({
                                     if (aproveitamento !== undefined)
                                       updateData.aproveitamento = aproveitamento;
 
-                                    const result = await base44.entities.Treinamento.update(
+                                    const result = await sigo.entities.Treinamento.update(
                                       treinamento.id,
                                       updateData
                                     );

@@ -1,23 +1,30 @@
-import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Loader2, FileText } from 'lucide-react';
+import React, { useState } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Loader2, FileText } from "lucide-react";
 
-export default function ImportarListaMateriais({ open, onOpenChange, empresaId, oportunidadeId, projetoId, onSucesso }) {
+export default function ImportarListaMateriais({
+  open,
+  onOpenChange,
+  empresaId,
+  oportunidadeId,
+  projetoId,
+  onSucesso,
+}) {
   const [carregando, setCarregando] = useState(false);
 
   const handleImportar = async () => {
     setCarregando(true);
     try {
-      const response = await base44.functions.invoke('gerarListaMaterialesDoOrcamento', {
+      const response = await sigo.functions.invoke("gerarListaMaterialesDoOrcamento", {
         empresaId,
         oportunidadeId,
-        projetoId
+        projetoId,
       });
 
-      if (response.data.status !== 'sucesso') {
-        alert('Erro ao gerar lista de materiais');
+      if (response.data.status !== "sucesso") {
+        alert("Erro ao gerar lista de materiais");
         return;
       }
 
@@ -30,7 +37,7 @@ export default function ImportarListaMateriais({ open, onOpenChange, empresaId, 
         material_codigo: m.material_codigo,
         quantidade: m.quantidade,
         unidade: m.material_unidade,
-        ordem: idx + 1
+        ordem: idx + 1,
       }));
 
       // Retornar dados para o componente pai processar
@@ -38,14 +45,14 @@ export default function ImportarListaMateriais({ open, onOpenChange, empresaId, 
         onSucesso({
           materiais: materiais,
           itens: itens,
-          valor_total: response.data.valor_total
+          valor_total: response.data.valor_total,
         });
       }
 
       onOpenChange(false);
     } catch (err) {
-      console.error('Erro ao importar:', err);
-      alert('Erro ao importar lista de materiais: ' + err.message);
+      console.error("Erro ao importar:", err);
+      alert("Erro ao importar lista de materiais: " + err.message);
     } finally {
       setCarregando(false);
     }
@@ -60,20 +67,18 @@ export default function ImportarListaMateriais({ open, onOpenChange, empresaId, 
 
         <div className="space-y-4 py-4">
           <p className="text-sm text-slate-600">
-            Esta ação irá gerar uma lista consolidada de materiais do orçamento (incluindo expansão de KITs) para criar uma solicitação de compra.
+            Esta ação irá gerar uma lista consolidada de materiais do orçamento (incluindo expansão
+            de KITs) para criar uma solicitação de compra.
           </p>
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-900">
             <FileText className="w-4 h-4 inline mr-2" />
-            Os KITs serão expandidos em seus materiais constituintes com as quantidades multiplicadas.
+            Os KITs serão expandidos em seus materiais constituintes com as quantidades
+            multiplicadas.
           </div>
 
           <div className="flex gap-2 justify-end pt-4 border-t">
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={carregando}
-            >
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={carregando}>
               Cancelar
             </Button>
             <Button

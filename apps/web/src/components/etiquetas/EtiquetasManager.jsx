@@ -1,50 +1,64 @@
-import React, { useState, useMemo } from 'react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { X, Plus } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import React, { useState, useMemo } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { X, Plus } from "lucide-react";
+import { sigo } from "@/api/sigoClient";
 
-export default function EtiquetasManager({ etiquetas, etiquetasSelecionadas = [], onEtiquetasChange, empresaAtiva }) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [novaEtiqueta, setNovaEtiqueta] = useState('');
-  const [cores] = useState(['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#6366F1']);
+export default function EtiquetasManager({
+  etiquetas,
+  etiquetasSelecionadas = [],
+  onEtiquetasChange,
+  empresaAtiva,
+}) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [novaEtiqueta, setNovaEtiqueta] = useState("");
+  const [cores] = useState([
+    "#3B82F6",
+    "#10B981",
+    "#F59E0B",
+    "#EF4444",
+    "#8B5CF6",
+    "#EC4899",
+    "#06B6D4",
+    "#6366F1",
+  ]);
   const [corSelecionada, setCorSelecionada] = useState(cores[0]);
 
   const filtroEtiquetas = useMemo(() => {
     const search = searchTerm.toLowerCase();
-    return etiquetas.filter(e => 
-      e.nome.toLowerCase().includes(search) && !etiquetasSelecionadas.includes(e.id)
+    return etiquetas.filter(
+      (e) => e.nome.toLowerCase().includes(search) && !etiquetasSelecionadas.includes(e.id)
     );
   }, [searchTerm, etiquetas, etiquetasSelecionadas]);
 
   const handleAddEtiqueta = async () => {
     if (!novaEtiqueta.trim()) return;
-    
-    const novaEtiq = await base44.entities.Etiqueta.create({
+
+    const novaEtiq = await sigo.entities.Etiqueta.create({
       empresa_id: empresaAtiva.id,
       nome: novaEtiqueta,
-      cor: corSelecionada
+      cor: corSelecionada,
     });
-    
+
     onEtiquetasChange([...etiquetasSelecionadas, novaEtiq.id]);
-    setNovaEtiqueta('');
+    setNovaEtiqueta("");
   };
 
   const handleToggleEtiqueta = (etiquetaId) => {
     if (etiquetasSelecionadas.includes(etiquetaId)) {
-      onEtiquetasChange(etiquetasSelecionadas.filter(id => id !== etiquetaId));
+      onEtiquetasChange(etiquetasSelecionadas.filter((id) => id !== etiquetaId));
     } else {
       onEtiquetasChange([...etiquetasSelecionadas, etiquetaId]);
     }
   };
 
-  const etiquetasAtuais = etiquetas.filter(e => etiquetasSelecionadas.includes(e.id));
+  const etiquetasAtuais = etiquetas.filter((e) => etiquetasSelecionadas.includes(e.id));
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
-        {etiquetasAtuais.map(etiqueta => (
+        {etiquetasAtuais.map((etiqueta) => (
           <Badge
             key={etiqueta.id}
             style={{ backgroundColor: etiqueta.cor }}
@@ -72,14 +86,14 @@ export default function EtiquetasManager({ etiquetas, etiquetasSelecionadas = []
           <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
             {filtroEtiquetas.length > 0 ? (
               <>
-                {filtroEtiquetas.map(etiqueta => (
+                {filtroEtiquetas.map((etiqueta) => (
                   <button
                     key={etiqueta.id}
                     type="button"
                     onClick={() => {
                       handleToggleEtiqueta(etiqueta.id);
-                      setSearchTerm('');
-                      setNovaEtiqueta('');
+                      setSearchTerm("");
+                      setNovaEtiqueta("");
                     }}
                     className="w-full text-left p-2 hover:bg-slate-50 flex items-center gap-2 border-b last:border-b-0"
                   >
@@ -121,12 +135,12 @@ export default function EtiquetasManager({ etiquetas, etiquetasSelecionadas = []
 
       {!searchTerm && !novaEtiqueta && (
         <div className="flex gap-1 flex-wrap">
-          {cores.map(cor => (
+          {cores.map((cor) => (
             <button
               key={cor}
               type="button"
               onClick={() => setCorSelecionada(cor)}
-              className={`w-6 h-6 rounded-full border-2 ${corSelecionada === cor ? 'border-slate-800' : 'border-slate-300'}`}
+              className={`w-6 h-6 rounded-full border-2 ${corSelecionada === cor ? "border-slate-800" : "border-slate-300"}`}
               style={{ backgroundColor: cor }}
             />
           ))}

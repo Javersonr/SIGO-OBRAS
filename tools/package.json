@@ -4,11 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "export:base44": "node export-base44.mjs",
-    "seed:from-xlsx": "node seed-from-xlsx.mjs"
+    "export:legacy": "node export-legacy.mjs",
+    "seed:from-xlsx": "node seed-from-xlsx.mjs",
+    "create:super-admin": "node create-super-admin.mjs"
   },
   "dependencies": {
-    "@base44/sdk": "^0.8.30",
     "@supabase/supabase-js": "^2.45.0",
     "bcryptjs": "^3.0.3",
     "dotenv": "^16.4.5",

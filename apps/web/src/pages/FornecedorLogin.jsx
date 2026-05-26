@@ -1,18 +1,18 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { base44 } from '@/api/base44Client';
-import { createPageUrl } from '../utils';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { HardHat, Lock } from 'lucide-react';
-import { toast } from 'sonner';
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { sigo } from "@/api/sigoClient";
+import { createPageUrl } from "../utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HardHat, Lock } from "lucide-react";
+import { toast } from "sonner";
 
 export default function FornecedorLogin() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
-  const [senha, setSenha] = useState('');
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
   const [loading, setLoading] = useState(false);
   // Começa como true para bloquear qualquer render até o redirect acontecer
   const [redirecting, setRedirecting] = useState(true);
@@ -20,12 +20,14 @@ export default function FornecedorLogin() {
   // Se vier com token, redirecionar para AcessoFornecedor
   React.useEffect(() => {
     const hash = window.location.hash;
-    const searchString = hash.includes('?') ? hash.split('?')[1] : window.location.search.substring(1);
+    const searchString = hash.includes("?")
+      ? hash.split("?")[1]
+      : window.location.search.substring(1);
     const params = new URLSearchParams(searchString);
-    const urlToken = params.get('token');
-    
+    const urlToken = params.get("token");
+
     if (urlToken) {
-      navigate(createPageUrl('AcessoFornecedor') + `?token=${urlToken}`, { replace: true });
+      navigate(createPageUrl("AcessoFornecedor") + `?token=${urlToken}`, { replace: true });
     } else {
       setRedirecting(false); // Mostrar formulário de login
     }
@@ -33,37 +35,40 @@ export default function FornecedorLogin() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    
+
     if (!email || !senha) {
-      toast.error('Preencha todos os campos');
+      toast.error("Preencha todos os campos");
       return;
     }
 
     setLoading(true);
 
     try {
-      const { data } = await base44.functions.invoke('autenticarFornecedor', {
+      const { data } = await sigo.functions.invoke("autenticarFornecedor", {
         email: email.toLowerCase(),
-        senha
+        senha,
       });
 
       if (data.success) {
         // Salvar dados do fornecedor no sessionStorage
-        sessionStorage.setItem('fornecedor_auth', JSON.stringify({
-          fornecedor_id: data.fornecedor_id,
-          fornecedor_nome: data.fornecedor_nome,
-          email: data.email,
-          empresa_id: data.empresa_id
-        }));
+        sessionStorage.setItem(
+          "fornecedor_auth",
+          JSON.stringify({
+            fornecedor_id: data.fornecedor_id,
+            fornecedor_nome: data.fornecedor_nome,
+            email: data.email,
+            empresa_id: data.empresa_id,
+          })
+        );
 
-        toast.success('Login realizado com sucesso!');
-        navigate(createPageUrl('HistoricoCotacoes'));
+        toast.success("Login realizado com sucesso!");
+        navigate(createPageUrl("HistoricoCotacoes"));
       } else {
-        toast.error(data.error || 'Credenciais inválidas');
+        toast.error(data.error || "Credenciais inválidas");
       }
     } catch (error) {
-      console.error('Erro no login:', error);
-      toast.error('Erro ao fazer login. Verifique suas credenciais.');
+      console.error("Erro no login:", error);
+      toast.error("Erro ao fazer login. Verifique suas credenciais.");
     } finally {
       setLoading(false);
     }
@@ -126,7 +131,7 @@ export default function FornecedorLogin() {
               className="w-full text-white bg-slate-900 hover:bg-slate-800"
               disabled={loading}
             >
-              {loading ? 'Entrando...' : 'Entrar'}
+              {loading ? "Entrando..." : "Entrar"}
             </Button>
 
             <div className="text-center pt-4 border-t border-slate-200">

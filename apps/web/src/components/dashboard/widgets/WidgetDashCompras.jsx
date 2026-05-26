@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../../../Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ShoppingCart, Clock, CheckCircle, FileText } from "lucide-react";
@@ -18,9 +18,9 @@ export default function WidgetDashCompras({ onDadosCarregados }) {
   const load = async () => {
     try {
       const [solicitacoes, cotacoes, pedidos] = await Promise.all([
-        base44.entities.SolicitacaoCompra.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.Cotacao.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.PedidoCompra.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.SolicitacaoCompra.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.Cotacao.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.PedidoCompra.filter({ empresa_id: empresaAtiva.id }),
       ]);
 
       const solPendentes = solicitacoes.filter((s) => s.status === "Pendente Aprovação");

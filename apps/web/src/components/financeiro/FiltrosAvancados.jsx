@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../../Layout";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -44,9 +44,9 @@ export default function FiltrosAvancados({
   const loadData = async () => {
     try {
       const [ccs, contas, projs] = await Promise.all([
-        base44.entities.CentroCusto.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.ContaFinanceira.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.CentroCusto.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.ContaFinanceira.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
       ]);
 
       setCentrosCusto(ccs);

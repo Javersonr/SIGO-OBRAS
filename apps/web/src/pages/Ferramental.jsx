@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import {
   Plus,
@@ -165,7 +165,7 @@ export default function Ferramental() {
 
   const loadFuncionarios = async () => {
     try {
-      const funcs = await base44.entities.Funcionario.filter({
+      const funcs = await sigo.entities.Funcionario.filter({
         empresa_id: empresaAtiva.id,
         ativo: true,
       });
@@ -177,7 +177,7 @@ export default function Ferramental() {
 
   const loadCaminhoes = async () => {
     try {
-      const caminhoesDb = await base44.entities.Caminhao.filter({
+      const caminhoesDb = await sigo.entities.Caminhao.filter({
         empresa_id: empresaAtiva.id,
         ativo: true,
       });
@@ -189,7 +189,7 @@ export default function Ferramental() {
 
   const loadCamposObrigatorios = async () => {
     try {
-      const campos = await base44.entities.CaminhaoCampoObrigatorio.filter({
+      const campos = await sigo.entities.CaminhaoCampoObrigatorio.filter({
         empresa_id: empresaAtiva.id,
       });
       setCamposObrigatorios(campos);
@@ -200,7 +200,7 @@ export default function Ferramental() {
 
   const loadFuncoes = async () => {
     try {
-      const funcs = await base44.entities.Funcao.filter({ empresa_id: empresaAtiva.id });
+      const funcs = await sigo.entities.Funcao.filter({ empresa_id: empresaAtiva.id });
       setFuncoes(funcs);
     } catch (error) {
       console.error("Erro ao carregar funções:", error);
@@ -210,9 +210,9 @@ export default function Ferramental() {
   const migrarLocaisAntigos = async () => {
     try {
       const [caminhoesList, almoxarifadosList, ferramentasList] = await Promise.all([
-        base44.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Almoxarifado.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 1000),
+        sigo.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Almoxarifado.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 1000),
       ]);
       const placasValidas = new Set(
         caminhoesList.map((c) => c.placa?.toUpperCase()).filter(Boolean)
@@ -225,7 +225,7 @@ export default function Ferramental() {
         if (ferr.caminhao_id) {
           const cam = caminhoesList.find((c) => c.id === ferr.caminhao_id);
           if (cam && loc !== cam.placa) {
-            await base44.entities.Ferramenta.update(ferr.id, { localizacao: cam.placa });
+            await sigo.entities.Ferramenta.update(ferr.id, { localizacao: cam.placa });
           }
           continue;
         }
@@ -236,14 +236,14 @@ export default function Ferramental() {
           (c) => c.placa && loc.toUpperCase().includes(c.placa.toUpperCase())
         );
         if (caminhaoMatch) {
-          await base44.entities.Ferramenta.update(ferr.id, {
+          await sigo.entities.Ferramenta.update(ferr.id, {
             localizacao: caminhaoMatch.placa,
             caminhao_id: caminhaoMatch.id,
           });
           continue;
         }
         if (almoxarifadosList.length > 0) {
-          await base44.entities.Ferramenta.update(ferr.id, {
+          await sigo.entities.Ferramenta.update(ferr.id, {
             localizacao: almoxarifadosList[0].nome,
           });
         }
@@ -255,7 +255,7 @@ export default function Ferramental() {
 
   const loadAlmoxarifados = async () => {
     try {
-      const almoxarifadosDb = await base44.entities.Almoxarifado.filter({
+      const almoxarifadosDb = await sigo.entities.Almoxarifado.filter({
         empresa_id: empresaAtiva.id,
         ativo: true,
       });
@@ -268,7 +268,7 @@ export default function Ferramental() {
   const handleAdicionarAlmoxarifado = async () => {
     if (novoAlmoxarifado.trim() && !almoxarifados.includes(novoAlmoxarifado.trim())) {
       try {
-        await base44.entities.Almoxarifado.create({
+        await sigo.entities.Almoxarifado.create({
           empresa_id: empresaAtiva.id,
           nome: novoAlmoxarifado.trim(),
           ativo: true,
@@ -285,13 +285,13 @@ export default function Ferramental() {
 
   const handleRemoverAlmoxarifado = async (local) => {
     try {
-      const almoxDb = await base44.entities.Almoxarifado.filter({
+      const almoxDb = await sigo.entities.Almoxarifado.filter({
         empresa_id: empresaAtiva.id,
         nome: local,
         ativo: true,
       });
       if (almoxDb.length > 0) {
-        await base44.entities.Almoxarifado.update(almoxDb[0].id, { ativo: false });
+        await sigo.entities.Almoxarifado.update(almoxDb[0].id, { ativo: false });
         loadAlmoxarifados();
         toast.success("Local removido com sucesso");
       }
@@ -303,7 +303,7 @@ export default function Ferramental() {
 
   const loadHistoricoMovimentacoes = async (ferramentaIds) => {
     try {
-      const movimentacoes = await base44.entities.MovimentacaoFerramenta.filter(
+      const movimentacoes = await sigo.entities.MovimentacaoFerramenta.filter(
         { empresa_id: empresaAtiva.id, ferramenta_id: { $in: ferramentaIds } },
         "-data_movimentacao"
       );
@@ -318,8 +318,8 @@ export default function Ferramental() {
     setLoading(true);
     try {
       const [ferrs, projs] = await Promise.all([
-        base44.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 1000),
-        base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id }, "", 1000),
+        sigo.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 1000),
+        sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id }, "", 1000),
       ]);
       setFerramentas(ferrs.sort((a, b) => (a.descricao || "").localeCompare(b.descricao || "")));
       setProjetos(projs);
@@ -451,10 +451,10 @@ export default function Ferramental() {
     setSaving(true);
     try {
       if (selectedItem) {
-        await base44.entities.Ferramenta.update(selectedItem.id, dataToSave);
+        await sigo.entities.Ferramenta.update(selectedItem.id, dataToSave);
         toast.success("Ferramenta atualizada com sucesso");
       } else {
-        await base44.entities.Ferramenta.create(dataToSave);
+        await sigo.entities.Ferramenta.create(dataToSave);
         toast.success(
           formData.tipo === "EPI" ? "EPI cadastrado com sucesso" : "Ferramenta criada com sucesso"
         );
@@ -476,7 +476,7 @@ export default function Ferramental() {
   const handleDelete = async (id) => {
     if (!confirm("Deseja deletar esta ferramenta?")) return;
     try {
-      await base44.entities.Ferramenta.delete(id);
+      await sigo.entities.Ferramenta.delete(id);
       toast.success("Ferramenta deletada");
       loadData();
     } catch (error) {
@@ -502,7 +502,7 @@ export default function Ferramental() {
     }
     try {
       const { id, created_date, updated_date, created_by, ...dadosOriginais } = ferramentaOrigem;
-      await base44.entities.Ferramenta.create({
+      await sigo.entities.Ferramenta.create({
         ...dadosOriginais,
         codigo: novoCodigo.trim(),
         qrcode_data: novoCodigo.trim(),
@@ -514,7 +514,7 @@ export default function Ferramental() {
       toast.success(`Ferramenta duplicada com código "${novoCodigo.trim()}"`);
       await loadData();
       if (ferramentaDetalhes) {
-        const ferramentasAtualizadas = await base44.entities.Ferramenta.filter(
+        const ferramentasAtualizadas = await sigo.entities.Ferramenta.filter(
           { empresa_id: empresaAtiva.id, ativo: true },
           "",
           1000
@@ -570,7 +570,7 @@ export default function Ferramental() {
       const quantidade = parseInt(entradaForm.quantidade);
       const valorUnitario =
         parseFloat(entradaForm.valor_unitario) || ferramentaBase.valor_unitario || 0;
-      let ferramentasAtuais = await base44.entities.Ferramenta.filter(
+      let ferramentasAtuais = await sigo.entities.Ferramenta.filter(
         { empresa_id: empresaAtiva.id, ativo: true },
         "",
         1000
@@ -581,7 +581,7 @@ export default function Ferramental() {
           ferramentaBase.tipo,
           ferramentaBase.descricao
         );
-        const novaFerramenta = await base44.entities.Ferramenta.create({
+        const novaFerramenta = await sigo.entities.Ferramenta.create({
           empresa_id: empresaAtiva.id,
           codigo: novoCodigo,
           descricao: ferramentaBase.descricao,
@@ -598,7 +598,7 @@ export default function Ferramental() {
           ativo: true,
         });
         ferramentasAtuais = [...ferramentasAtuais, { ...novaFerramenta, codigo: novoCodigo }];
-        await base44.entities.MovimentacaoFerramenta.create({
+        await sigo.entities.MovimentacaoFerramenta.create({
           empresa_id: empresaAtiva.id,
           ferramenta_id: novaFerramenta.id,
           ferramenta_codigo: novoCodigo,
@@ -882,7 +882,7 @@ export default function Ferramental() {
   const handleConfirmarConciliacao = async () => {
     try {
       let totalItens = 0;
-      let listaLocal = await base44.entities.Ferramenta.filter(
+      let listaLocal = await sigo.entities.Ferramenta.filter(
         { empresa_id: empresaAtiva.id, ativo: true },
         "",
         1000
@@ -898,7 +898,7 @@ export default function Ferramental() {
             ferramentaBase.tipo,
             ferramentaBase.descricao
           );
-          const nova = await base44.entities.Ferramenta.create({
+          const nova = await sigo.entities.Ferramenta.create({
             empresa_id: empresaAtiva.id,
             codigo: novoCodigo,
             descricao: ferramentaBase.descricao,
@@ -916,7 +916,7 @@ export default function Ferramental() {
             ativo: true,
           });
           listaLocal = [...listaLocal, { ...nova, codigo: novoCodigo }];
-          await base44.entities.MovimentacaoFerramenta.create({
+          await sigo.entities.MovimentacaoFerramenta.create({
             empresa_id: empresaAtiva.id,
             ferramenta_id: nova.id,
             ferramenta_codigo: novoCodigo,
@@ -958,7 +958,7 @@ export default function Ferramental() {
     try {
       await Promise.all(
         ferramentasSelecionadas.map((f) =>
-          base44.entities.Ferramenta.update(f.id, { laudo_obrigatorio: laudoMassaObrigatorio })
+          sigo.entities.Ferramenta.update(f.id, { laudo_obrigatorio: laudoMassaObrigatorio })
         )
       );
       toast.success(`${ferramentasSelecionadas.length} ferramenta(s) atualizadas`);
@@ -1182,7 +1182,7 @@ export default function Ferramental() {
                         return;
                       try {
                         for (const ferr of ferramentas) {
-                          await base44.entities.Ferramenta.delete(ferr.id);
+                          await sigo.entities.Ferramenta.delete(ferr.id);
                         }
                         toast.success("Todos os registros foram excluídos");
                         loadData();
@@ -1463,7 +1463,7 @@ export default function Ferramental() {
                                   return;
                                 try {
                                   for (const item of itens) {
-                                    await base44.entities.Ferramenta.delete(item.id);
+                                    await sigo.entities.Ferramenta.delete(item.id);
                                   }
                                   toast.success("Ferramentas deletadas");
                                   loadData();
@@ -1703,7 +1703,7 @@ export default function Ferramental() {
                       if (!file) return;
                       setUploadingLaudo(true);
                       try {
-                        const { file_url } = await base44.integrations.Core.UploadFile({ file });
+                        const { file_url } = await sigo.integrations.Core.UploadFile({ file });
                         setFormData((prev) => ({ ...prev, laudo_url: file_url }));
                         toast.success("Laudo anexado com sucesso");
                       } catch (err) {

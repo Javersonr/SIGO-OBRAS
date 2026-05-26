@@ -24,7 +24,7 @@ import {
   Link2Off,
   X,
 } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import {
   Command,
   CommandEmpty,
@@ -231,7 +231,7 @@ export default function DespesaModal({
     if (!file) return;
 
     try {
-      await base44.integrations.Core.UploadFile({ file }); // upload registra comprovante
+      await sigo.integrations.Core.UploadFile({ file }); // upload registra comprovante
       // Processar o XML localmente para extrair dados
       const reader = new FileReader();
       reader.onload = async (event) => {
@@ -385,7 +385,7 @@ export default function DespesaModal({
 
   useEffect(() => {
     if (empresaAtiva?.id) {
-      base44.entities.CentroCusto.filter({ empresa_id: empresaAtiva.id }).then(setCentrosCusto);
+      sigo.entities.CentroCusto.filter({ empresa_id: empresaAtiva.id }).then(setCentrosCusto);
     }
   }, [empresaAtiva?.id]);
 
@@ -411,13 +411,13 @@ export default function DespesaModal({
     }
 
     try {
-      const centroCusto = await base44.entities.CentroCusto.create({
+      const centroCusto = await sigo.entities.CentroCusto.create({
         empresa_id: empresaAtiva.id,
         ...novoCentroCusto,
         ativo: true,
       });
 
-      const centros = await base44.entities.CentroCusto.filter({ empresa_id: empresaAtiva.id });
+      const centros = await sigo.entities.CentroCusto.filter({ empresa_id: empresaAtiva.id });
       setCentrosCusto(centros);
       setForm({ ...form, centro_custo_id: centroCusto.id, centro_custo_nome: centroCusto.nome });
       setShowNovoCentroCusto(false);
@@ -1250,7 +1250,7 @@ export default function DespesaModal({
 
                                       // Se é edição, salvar direto
                                       if (selectedItem?.id) {
-                                        await base44.entities.TransacaoFinanceira.update(
+                                        await sigo.entities.TransacaoFinanceira.update(
                                           selectedItem.id,
                                           {
                                             parcelas: JSON.stringify(novasParcelas),
@@ -1353,7 +1353,7 @@ export default function DespesaModal({
 
                     if (isPago) {
                       if (!confirm("Marcar esta despesa como pendente?")) return;
-                      await base44.entities.TransacaoFinanceira.update(selectedItem.id, {
+                      await sigo.entities.TransacaoFinanceira.update(selectedItem.id, {
                         status: "em_aberto",
                         data_pagamento: null,
                       });
@@ -1611,7 +1611,7 @@ export default function DespesaModal({
 
               // Se está editando, salvar direto
               if (selectedItem?.id) {
-                await base44.entities.TransacaoFinanceira.update(selectedItem.id, {
+                await sigo.entities.TransacaoFinanceira.update(selectedItem.id, {
                   parcelas: JSON.stringify(novasParcelas),
                 });
                 setShowModalPagamento(false);
@@ -1626,7 +1626,7 @@ export default function DespesaModal({
           }}
           onExcluir={async (item) => {
             try {
-              await base44.entities.PreLancamento.delete(item.id);
+              await sigo.entities.PreLancamento.delete(item.id);
               setShowModalPagamento(false);
               onReload();
             } catch (err) {

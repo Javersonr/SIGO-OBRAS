@@ -1,24 +1,24 @@
-import React from 'react';
-import { useState, useEffect } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Label } from '@/components/ui/label';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { base44 } from '@/api/base44Client';
+import React from "react";
+import { useState, useEffect } from "react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { sigo } from "@/api/sigoClient";
 
 const parseInstrutor = (valor) => {
   if (!valor) return null;
-  if (typeof valor === 'object') {
+  if (typeof valor === "object") {
     if (Array.isArray(valor)) return valor[0]?.nome || null;
     return valor.nome || null;
   }
-  if (typeof valor === 'string') {
+  if (typeof valor === "string") {
     try {
       const parsed = JSON.parse(valor);
       if (Array.isArray(parsed)) return parsed[0]?.nome || null;
-      if (typeof parsed === 'object') return parsed.nome || null;
+      if (typeof parsed === "object") return parsed.nome || null;
     } catch {}
     // string pura
     return valor;
@@ -28,15 +28,15 @@ const parseInstrutor = (valor) => {
 
 const parseInstrutorCpf = (valor) => {
   if (!valor) return null;
-  if (typeof valor === 'object') {
+  if (typeof valor === "object") {
     if (Array.isArray(valor)) return valor[0]?.cpf || null;
     return valor.cpf || null;
   }
-  if (typeof valor === 'string') {
+  if (typeof valor === "string") {
     try {
       const parsed = JSON.parse(valor);
       if (Array.isArray(parsed)) return parsed[0]?.cpf || null;
-      if (typeof parsed === 'object') return parsed.cpf || null;
+      if (typeof parsed === "object") return parsed.cpf || null;
     } catch {}
   }
   return null;
@@ -50,12 +50,12 @@ export default function VisualizarTreinamentoModal({ open, onClose, treinamento 
     if (!treinamento?.id) return;
     setLoading(true);
     try {
-      const treinamentos = await base44.entities.Treinamento.filter({ id: treinamento.id });
+      const treinamentos = await sigo.entities.Treinamento.filter({ id: treinamento.id });
       if (treinamentos.length > 0) {
         setDados(treinamentos[0]);
       }
     } catch (err) {
-      console.error('Erro ao recarregar treinamento:', err);
+      console.error("Erro ao recarregar treinamento:", err);
     } finally {
       setLoading(false);
     }
@@ -74,27 +74,32 @@ export default function VisualizarTreinamentoModal({ open, onClose, treinamento 
 
   return (
     <Sheet open={open} onOpenChange={onClose}>
-      <SheetContent side="right" className="h-full overflow-y-auto p-0 flex flex-col" style={{ inset: 'auto 0 0 256px', width: 'calc(100% - 256px)', maxWidth: 'none' }}>
+      <SheetContent
+        side="right"
+        className="h-full overflow-y-auto p-0 flex flex-col"
+        style={{ inset: "auto 0 0 256px", width: "calc(100% - 256px)", maxWidth: "none" }}
+      >
         <SheetHeader className="p-6 border-b space-y-3">
-           <div className="flex items-center justify-between">
-             <SheetTitle>Detalhes do Treinamento</SheetTitle>
-             <Button
-               size="sm"
-               variant="outline"
-               onClick={recarregarDados}
-               disabled={loading}
-               className="gap-2">
-               {loading ? '⟳ Recarregando...' : '⟳ Recarregar'}
-             </Button>
-           </div>
-         </SheetHeader>
+          <div className="flex items-center justify-between">
+            <SheetTitle>Detalhes do Treinamento</SheetTitle>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={recarregarDados}
+              disabled={loading}
+              className="gap-2"
+            >
+              {loading ? "⟳ Recarregando..." : "⟳ Recarregar"}
+            </Button>
+          </div>
+        </SheetHeader>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* Informações Básicas */}
           <div className="space-y-4">
             <div>
               <Label className="text-slate-500 text-xs">Nome do Treinamento</Label>
-               <p className="text-lg font-semibold text-slate-800 mt-1">{dados.nome}</p>
+              <p className="text-lg font-semibold text-slate-800 mt-1">{dados.nome}</p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -113,11 +118,13 @@ export default function VisualizarTreinamentoModal({ open, onClose, treinamento 
             </div>
 
             {dados.conteudo_programatico && (
-               <div>
-                 <Label className="text-slate-500 text-xs">Conteúdo Programático</Label>
-                 <div className="text-slate-700 mt-1 whitespace-pre-wrap bg-slate-50 p-4 rounded border border-slate-200 max-h-96 overflow-y-auto">{dados.conteudo_programatico}</div>
-               </div>
-             )}
+              <div>
+                <Label className="text-slate-500 text-xs">Conteúdo Programático</Label>
+                <div className="text-slate-700 mt-1 whitespace-pre-wrap bg-slate-50 p-4 rounded border border-slate-200 max-h-96 overflow-y-auto">
+                  {dados.conteudo_programatico}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Instrutor */}
@@ -141,7 +148,11 @@ export default function VisualizarTreinamentoModal({ open, onClose, treinamento 
               {dados.instrutor_assinatura_url && (
                 <div>
                   <Label className="text-slate-500 text-xs">Assinatura</Label>
-                  <img src={dados.instrutor_assinatura_url} alt="Assinatura" className="mt-2 max-w-xs border rounded" />
+                  <img
+                    src={dados.instrutor_assinatura_url}
+                    alt="Assinatura"
+                    className="mt-2 max-w-xs border rounded"
+                  />
                 </div>
               )}
             </div>
@@ -168,7 +179,11 @@ export default function VisualizarTreinamentoModal({ open, onClose, treinamento 
               {dados.engenheiro_responsavel_assinatura_url && (
                 <div>
                   <Label className="text-slate-500 text-xs">Assinatura</Label>
-                  <img src={dados.engenheiro_responsavel_assinatura_url} alt="Assinatura" className="mt-2 max-w-xs border rounded" />
+                  <img
+                    src={dados.engenheiro_responsavel_assinatura_url}
+                    alt="Assinatura"
+                    className="mt-2 max-w-xs border rounded"
+                  />
                 </div>
               )}
             </div>
@@ -182,7 +197,7 @@ export default function VisualizarTreinamentoModal({ open, onClose, treinamento 
                 <div>
                   <Label className="text-slate-500 text-xs">Data de Início</Label>
                   <p className="text-slate-800 mt-1">
-                    {format(new Date(dados.data_inicio), 'dd/MM/yyyy', { locale: ptBR })}
+                    {format(new Date(dados.data_inicio), "dd/MM/yyyy", { locale: ptBR })}
                   </p>
                 </div>
               )}
@@ -190,7 +205,7 @@ export default function VisualizarTreinamentoModal({ open, onClose, treinamento 
                 <div>
                   <Label className="text-slate-500 text-xs">Data de Término</Label>
                   <p className="text-slate-800 mt-1">
-                    {format(new Date(dados.data_fim), 'dd/MM/yyyy', { locale: ptBR })}
+                    {format(new Date(dados.data_fim), "dd/MM/yyyy", { locale: ptBR })}
                   </p>
                 </div>
               )}
@@ -207,11 +222,9 @@ export default function VisualizarTreinamentoModal({ open, onClose, treinamento 
                 </div>
               )}
             </div>
-            
+
             <div className="flex gap-2">
-              {dados.obrigatorio && (
-                <Badge className="bg-red-100 text-red-700">Obrigatório</Badge>
-              )}
+              {dados.obrigatorio && <Badge className="bg-red-100 text-red-700">Obrigatório</Badge>}
               {dados.usar_como_modelo && (
                 <Badge className="bg-blue-100 text-blue-700">Modelo</Badge>
               )}

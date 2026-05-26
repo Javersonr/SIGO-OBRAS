@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,8 +52,8 @@ export default function CriarMaterialModal({
 
   const loadCategorias = async () => {
     const [cats, unidades] = await Promise.all([
-      base44.entities.CategoriaMaterial.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-      base44.entities.UnidadeMedida.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+      sigo.entities.CategoriaMaterial.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+      sigo.entities.UnidadeMedida.filter({ empresa_id: empresaAtiva.id, ativo: true }),
     ]);
     setCategoriasMaterial(cats);
     setUnidadesMedida(unidades);
@@ -66,7 +66,7 @@ export default function CriarMaterialModal({
       // Buscar todos os materiais para gerar código automático
       let codigoFinal = form.codigo;
       if (!codigoFinal) {
-        const todos = await base44.entities.Material.filter({
+        const todos = await sigo.entities.Material.filter({
           empresa_id: empresaAtiva.id,
           ativo: true,
         });
@@ -78,7 +78,7 @@ export default function CriarMaterialModal({
         codigoFinal = (ultimoCodigo + 1).toString().padStart(6, "0");
       }
 
-      const novoMat = await base44.entities.Material.create({
+      const novoMat = await sigo.entities.Material.create({
         empresa_id: empresaAtiva.id,
         nome: form.nome,
         categoria: form.categoria || undefined,
@@ -122,7 +122,7 @@ export default function CriarMaterialModal({
     if (!file) return;
     setUploadingFoto(true);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       setForm((prev) => ({ ...prev, foto_url: file_url }));
     } catch (error) {
       console.error("Erro ao fazer upload:", error);
@@ -133,7 +133,7 @@ export default function CriarMaterialModal({
 
   const handleCriarCategoria = async () => {
     if (!novaCat.trim()) return;
-    await base44.entities.CategoriaMaterial.create({
+    await sigo.entities.CategoriaMaterial.create({
       empresa_id: empresaAtiva.id,
       nome: novaCat,
       ativo: true,
@@ -145,7 +145,7 @@ export default function CriarMaterialModal({
 
   const handleCriarUnidade = async () => {
     if (!novaUnidade.sigla || !novaUnidade.nome) return;
-    await base44.entities.UnidadeMedida.create({
+    await sigo.entities.UnidadeMedida.create({
       empresa_id: empresaAtiva.id,
       sigla: novaUnidade.sigla,
       nome: novaUnidade.nome,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,7 +58,7 @@ export default function HistoricoFechamentosCaixa({
   const carregar = async () => {
     setCarregando(true);
     try {
-      const data = await base44.entities.FechamentoCaixa.filter({ empresa_id: empresaId });
+      const data = await sigo.entities.FechamentoCaixa.filter({ empresa_id: empresaId });
       setFechamentos(data.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
     } catch (err) {
       console.error("Erro:", err);
@@ -74,7 +74,7 @@ export default function HistoricoFechamentosCaixa({
     if (preLancamentosCache[key]) return;
     const pls = await Promise.all(
       ids.map((id) =>
-        base44.entities.PreLancamento.filter({ id })
+        sigo.entities.PreLancamento.filter({ id })
           .then((r) => r[0])
           .catch(() => null)
       )
@@ -128,7 +128,7 @@ export default function HistoricoFechamentosCaixa({
           saldoAtual: 0,
         },
       };
-      const response = await base44.functions.invoke("gerarPDFComprovantes", payload);
+      const response = await sigo.functions.invoke("gerarPDFComprovantes", payload);
       const base64 = response.data.base64;
       const binary = atob(base64);
       const arr = new Uint8Array(binary.length);
@@ -305,7 +305,7 @@ export default function HistoricoFechamentosCaixa({
   const handleSalvarEdicaoFechamento = async (fechamentoId) => {
     setSalvandoEdicao(true);
     try {
-      await base44.entities.FechamentoCaixa.update(fechamentoId, editValues);
+      await sigo.entities.FechamentoCaixa.update(fechamentoId, editValues);
       setEditandoId(null);
       setEditValues({});
       carregar();
@@ -757,7 +757,7 @@ function ModalDesfazerPagamento({ fechamento, onClose, onSucesso }) {
       const ids = JSON.parse(fechamento.pre_lancamentos_ids || "[]");
       const pls = await Promise.all(
         ids.map((id) =>
-          base44.entities.PreLancamento.filter({ id })
+          sigo.entities.PreLancamento.filter({ id })
             .then((r) => r[0])
             .catch(() => null)
         )
@@ -768,16 +768,16 @@ function ModalDesfazerPagamento({ fechamento, onClose, onSucesso }) {
       for (const pl of plsFiltrados) {
         if (pl.transacao_id) {
           try {
-            const anexos = await base44.entities.TransacaoAnexo.filter({
+            const anexos = await sigo.entities.TransacaoAnexo.filter({
               transacao_id: pl.transacao_id,
             });
-            await Promise.all(anexos.map((a) => base44.entities.TransacaoAnexo.delete(a.id)));
+            await Promise.all(anexos.map((a) => sigo.entities.TransacaoAnexo.delete(a.id)));
           } catch {}
           try {
-            await base44.entities.TransacaoFinanceira.delete(pl.transacao_id);
+            await sigo.entities.TransacaoFinanceira.delete(pl.transacao_id);
           } catch {}
         }
-        await base44.entities.PreLancamento.update(pl.id, {
+        await sigo.entities.PreLancamento.update(pl.id, {
           status: "Em Fechamento",
           transacao_id: null,
         });
@@ -786,18 +786,18 @@ function ModalDesfazerPagamento({ fechamento, onClose, onSucesso }) {
       // Deletar também a transação de reposição (Receita) gerada no pagamento
       // Buscar pela descrição do fechamento
       try {
-        const transacoesReposicao = await base44.entities.TransacaoFinanceira.filter({
+        const transacoesReposicao = await sigo.entities.TransacaoFinanceira.filter({
           empresa_id: fechamento.empresa_id,
           tipo: "Receita",
         });
         const reposicao = transacoesReposicao.find((t) =>
           t.descricao?.includes(`Fechamento #${fechamento.numero}`)
         );
-        if (reposicao) await base44.entities.TransacaoFinanceira.delete(reposicao.id);
+        if (reposicao) await sigo.entities.TransacaoFinanceira.delete(reposicao.id);
       } catch {}
 
       // Reverter fechamento para "Aguardando Pagamento"
-      await base44.entities.FechamentoCaixa.update(fechamento.id, {
+      await sigo.entities.FechamentoCaixa.update(fechamento.id, {
         status: "Aguardando Pagamento",
         usuario_pagamento_email: null,
         usuario_pagamento_nome: null,
@@ -867,10 +867,10 @@ function ModalDesfazerFechamento({ fechamento, onClose, onSucesso }) {
       const ids = JSON.parse(fechamento.pre_lancamentos_ids || "[]");
       await Promise.all(
         ids.map((id) =>
-          base44.entities.PreLancamento.update(id, { status: "Pendente" }).catch(() => null)
+          sigo.entities.PreLancamento.update(id, { status: "Pendente" }).catch(() => null)
         )
       );
-      await base44.entities.FechamentoCaixa.delete(fechamento.id);
+      await sigo.entities.FechamentoCaixa.delete(fechamento.id);
       onSucesso();
     } catch (err) {
       alert("Erro ao desfazer: " + err.message);

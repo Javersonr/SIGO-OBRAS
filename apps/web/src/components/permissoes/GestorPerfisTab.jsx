@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Plus, Edit, Trash2, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,7 @@ export default function GestorPerfisTab({ empresaAtiva, user }) {
     if (!empresaAtiva?.id) return;
     setLoading(true);
     try {
-      const dados = await base44.entities.PerfilPermissao.filter({
+      const dados = await sigo.entities.PerfilPermissao.filter({
         empresa_id: empresaAtiva.id,
       });
       setPerfis(dados);
@@ -73,10 +73,10 @@ export default function GestorPerfisTab({ empresaAtiva, user }) {
       };
 
       if (editingPerfil) {
-        await base44.entities.PerfilPermissao.update(editingPerfil.id, data);
+        await sigo.entities.PerfilPermissao.update(editingPerfil.id, data);
       } else {
         data.criado_por = user?.email;
-        await base44.entities.PerfilPermissao.create(data);
+        await sigo.entities.PerfilPermissao.create(data);
       }
 
       setShowModal(false);
@@ -90,7 +90,7 @@ export default function GestorPerfisTab({ empresaAtiva, user }) {
   const handleDelete = async (perfil) => {
     if (!confirm("Excluir este perfil?")) return;
     try {
-      await base44.entities.PerfilPermissao.delete(perfil.id);
+      await sigo.entities.PerfilPermissao.delete(perfil.id);
       await loadPerfis();
     } catch (error) {
       console.error("Erro ao deletar:", error);
@@ -99,7 +99,7 @@ export default function GestorPerfisTab({ empresaAtiva, user }) {
 
   const handleDuplicate = async (perfil) => {
     try {
-      await base44.entities.PerfilPermissao.create({
+      await sigo.entities.PerfilPermissao.create({
         empresa_id: empresaAtiva.id,
         nome: `${perfil.nome} (cópia)`,
         descricao: perfil.descricao,

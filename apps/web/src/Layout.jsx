@@ -1,6 +1,6 @@
 import React, { useState, useEffect, createContext, useContext } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { createPageUrl } from "./utils";
 import {
   Building2,
@@ -173,7 +173,7 @@ export default function Layout({ children, currentPageName }) {
           if (userData.grupo_id) {
             setGrupoAtivo(userData.grupo_id);
             try {
-              const empresasGrupo = await base44.asServiceRole.entities.Empresa.filter({
+              const empresasGrupo = await sigo.asServiceRole.entities.Empresa.filter({
                 grupo_id: userData.grupo_id,
                 ativo: true,
               });
@@ -228,7 +228,7 @@ export default function Layout({ children, currentPageName }) {
 
     const loadNotificacoesNaoLidas = async () => {
       try {
-        const notifs = await base44.entities.Notificacao.filter({
+        const notifs = await sigo.entities.Notificacao.filter({
           empresa_id: empresaAtiva.id,
           usuario_email: user.email,
           lida: false,
@@ -248,7 +248,7 @@ export default function Layout({ children, currentPageName }) {
   const handleSelectEmpresa = async (empresa, redirectUrl = null) => {
     try {
       // CRÍTICO: Buscar vínculo ANTES de mudar a empresa ativa
-      const vinculos = await base44.entities.UsuarioEmpresa.filter({
+      const vinculos = await sigo.entities.UsuarioEmpresa.filter({
         empresa_id: empresa.id,
         usuario_email: user?.email,
         ativo: true,
@@ -275,7 +275,7 @@ export default function Layout({ children, currentPageName }) {
 
       // Carregar módulos liberados da nova empresa
       try {
-        const todasAssinaturas = await base44.entities.Assinatura.filter({
+        const todasAssinaturas = await sigo.entities.Assinatura.filter({
           empresa_id: empresa.id,
         });
         const assinaturas = todasAssinaturas.filter(
@@ -284,7 +284,7 @@ export default function Layout({ children, currentPageName }) {
 
         if (assinaturas.length > 0) {
           const assinatura = assinaturas[0];
-          const planos = await base44.entities.Plano.filter({ id: assinatura.plano_id });
+          const planos = await sigo.entities.Plano.filter({ id: assinatura.plano_id });
 
           if (planos.length > 0) {
             const plano = planos[0];
@@ -319,7 +319,7 @@ export default function Layout({ children, currentPageName }) {
   const reloadEmpresaAtiva = async () => {
     if (!empresaAtiva?.id) return;
     try {
-      const empresas = await base44.entities.Empresa.filter({ id: empresaAtiva.id });
+      const empresas = await sigo.entities.Empresa.filter({ id: empresaAtiva.id });
       if (empresas.length > 0) {
         setEmpresaAtiva(empresas[0]);
       }
@@ -339,7 +339,7 @@ export default function Layout({ children, currentPageName }) {
       });
 
       // Buscar TODAS as empresas do usuário (não apenas a selecionada)
-      const vinculosUsuario = await base44.entities.UsuarioEmpresa.filter({
+      const vinculosUsuario = await sigo.entities.UsuarioEmpresa.filter({
         usuario_email: userData.email,
         ativo: true,
       });
@@ -351,7 +351,7 @@ export default function Layout({ children, currentPageName }) {
       // Buscar dados de todas as empresas
       const empresaIds = vinculosUsuario.map((v) => v.empresa_id);
       const todasEmpresas = await Promise.all(
-        empresaIds.map((id) => base44.entities.Empresa.filter({ id, ativo: true }))
+        empresaIds.map((id) => sigo.entities.Empresa.filter({ id, ativo: true }))
       );
       const empresasAtivas = todasEmpresas.flat();
 
@@ -372,7 +372,7 @@ export default function Layout({ children, currentPageName }) {
 
       // Buscar assinatura e plano da empresa para obter módulos liberados
       try {
-        const todasAssinaturas = await base44.entities.Assinatura.filter({
+        const todasAssinaturas = await sigo.entities.Assinatura.filter({
           empresa_id: empresaLogin.id,
         });
         const assinaturas = todasAssinaturas.filter(
@@ -381,7 +381,7 @@ export default function Layout({ children, currentPageName }) {
 
         if (assinaturas.length > 0) {
           const assinatura = assinaturas[0];
-          const planos = await base44.entities.Plano.filter({ id: assinatura.plano_id });
+          const planos = await sigo.entities.Plano.filter({ id: assinatura.plano_id });
 
           if (planos.length > 0) {
             const plano = planos[0];

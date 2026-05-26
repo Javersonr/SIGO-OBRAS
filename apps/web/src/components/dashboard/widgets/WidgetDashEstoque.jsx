@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../../../Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -42,12 +42,12 @@ export default function WidgetDashEstoque({ onDadosCarregados }) {
     try {
       const [materiais, reservas, movimentos, retiradas, retiradaItens, projetos] =
         await Promise.all([
-          base44.entities.Material.filter({ empresa_id: empresaAtiva.id }),
-          base44.entities.ReservaMaterial.filter({ empresa_id: empresaAtiva.id }),
-          base44.entities.EstoqueMovimento.filter({ empresa_id: empresaAtiva.id }),
-          base44.entities.RetiradaEstoque.filter({ empresa_id: empresaAtiva.id }),
-          base44.entities.RetiradaEstoqueItem.filter({ empresa_id: empresaAtiva.id }),
-          base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+          sigo.entities.Material.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.ReservaMaterial.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.EstoqueMovimento.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.RetiradaEstoque.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.RetiradaEstoqueItem.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id, ativo: true }),
         ]);
 
       // --- MATERIAIS ---

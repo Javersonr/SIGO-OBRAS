@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '../../Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Sparkles, Loader2, RefreshCw } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
+import React, { useState } from "react";
+import { sigo } from "@/api/sigoClient";
+import { useEmpresa } from "../../Layout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Sparkles, Loader2, RefreshCw } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 
 export default function DashboardIAAnalise({ moduloAtivo, dadosModulo }) {
   const { empresaAtiva } = useEmpresa();
@@ -28,10 +28,12 @@ ${JSON.stringify(dadosModulo, null, 2)}
 
 Seja direto, objetivo e use linguagem empresarial. Foque em insights acionáveis.`;
 
-      const resultado = await base44.integrations.Core.InvokeLLM({ prompt, model: 'gemini_3_flash' });
-      setAnalise(typeof resultado === 'string' ? resultado : resultado?.response || JSON.stringify(resultado));
+      const resultado = await sigo.integrations.Core.InvokeLLM({ prompt, model: "gemini_3_flash" });
+      setAnalise(
+        typeof resultado === "string" ? resultado : resultado?.response || JSON.stringify(resultado)
+      );
     } catch (e) {
-      setErro('Erro ao gerar análise. Tente novamente.');
+      setErro("Erro ao gerar análise. Tente novamente.");
       console.error(e);
     } finally {
       setLoading(false);
@@ -44,7 +46,9 @@ Seja direto, objetivo e use linguagem empresarial. Foque em insights acionáveis
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-purple-600" />
-            <CardTitle className="text-sm text-purple-700">Análise por Inteligência Artificial</CardTitle>
+            <CardTitle className="text-sm text-purple-700">
+              Análise por Inteligência Artificial
+            </CardTitle>
           </div>
           <Button
             size="sm"
@@ -53,11 +57,20 @@ Seja direto, objetivo e use linguagem empresarial. Foque em insights acionáveis
             className="bg-purple-600 hover:bg-purple-700 text-white text-xs h-7 px-3"
           >
             {loading ? (
-              <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Analisando...</>
+              <>
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                Analisando...
+              </>
             ) : analise ? (
-              <><RefreshCw className="w-3 h-3 mr-1" />Reanalisar</>
+              <>
+                <RefreshCw className="w-3 h-3 mr-1" />
+                Reanalisar
+              </>
             ) : (
-              <><Sparkles className="w-3 h-3 mr-1" />Analisar com IA</>
+              <>
+                <Sparkles className="w-3 h-3 mr-1" />
+                Analisar com IA
+              </>
             )}
           </Button>
         </div>
@@ -65,7 +78,9 @@ Seja direto, objetivo e use linguagem empresarial. Foque em insights acionáveis
       <CardContent className="px-4 pb-4">
         {erro && <p className="text-xs text-red-500">{erro}</p>}
         {!analise && !loading && !erro && (
-          <p className="text-xs text-purple-400 italic">Clique em "Analisar com IA" para obter insights automáticos sobre este módulo.</p>
+          <p className="text-xs text-purple-400 italic">
+            Clique em "Analisar com IA" para obter insights automáticos sobre este módulo.
+          </p>
         )}
         {loading && (
           <div className="flex items-center gap-2 py-4">

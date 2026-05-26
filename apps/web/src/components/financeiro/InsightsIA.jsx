@@ -1,11 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { base44 } from '@/api/base44Client';
-import { Brain, TrendingUp, AlertTriangle, Lightbulb, Loader2, RefreshCw, MessageSquare } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { sigo } from "@/api/sigoClient";
+import {
+  Brain,
+  TrendingUp,
+  AlertTriangle,
+  Lightbulb,
+  Loader2,
+  RefreshCw,
+  MessageSquare,
+} from "lucide-react";
 
-export default function InsightsIA({ transacoes, categorias, tipo = 'dre' }) {
+export default function InsightsIA({ transacoes, categorias, tipo = "dre" }) {
   const [insights, setInsights] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showResumo, setShowResumo] = useState(false);
@@ -20,17 +28,18 @@ export default function InsightsIA({ transacoes, categorias, tipo = 'dre' }) {
     setLoading(true);
     try {
       // Preparar dados para análise
-      const receitas = transacoes.filter(t => t.tipo === 'Receita' && t.status === 'Pago');
-      const despesas = transacoes.filter(t => t.tipo === 'Despesa' && t.status === 'Pago');
-      
+      const receitas = transacoes.filter((t) => t.tipo === "Receita" && t.status === "Pago");
+      const despesas = transacoes.filter((t) => t.tipo === "Despesa" && t.status === "Pago");
+
       const totalReceitas = receitas.reduce((sum, t) => sum + (t.valor || 0), 0);
       const totalDespesas = despesas.reduce((sum, t) => sum + (t.valor || 0), 0);
-      const margemLiquida = totalReceitas > 0 ? ((totalReceitas - totalDespesas) / totalReceitas) * 100 : 0;
+      const margemLiquida =
+        totalReceitas > 0 ? ((totalReceitas - totalDespesas) / totalReceitas) * 100 : 0;
 
       // Agrupar por categoria
       const despesasPorCategoria = {};
-      despesas.forEach(d => {
-        const cat = d.categoria_nome || 'Sem Categoria';
+      despesas.forEach((d) => {
+        const cat = d.categoria_nome || "Sem Categoria";
         despesasPorCategoria[cat] = (despesasPorCategoria[cat] || 0) + (d.valor || 0);
       });
 
@@ -40,7 +49,7 @@ export default function InsightsIA({ transacoes, categorias, tipo = 'dre' }) {
         .map(([cat, valor]) => `${cat}: R$ ${valor.toFixed(2)}`);
 
       // Chamar IA para análise
-      const resultado = await base44.integrations.Core.InvokeLLM({
+      const resultado = await sigo.integrations.Core.InvokeLLM({
         prompt: `Você é um analista financeiro experiente. Analise os seguintes dados financeiros e identifique:
         1. Anomalias ou valores atípicos que merecem atenção
         2. Tendências positivas ou preocupantes
@@ -50,7 +59,7 @@ export default function InsightsIA({ transacoes, categorias, tipo = 'dre' }) {
         - Total Receitas: R$ ${totalReceitas.toFixed(2)}
         - Total Despesas: R$ ${totalDespesas.toFixed(2)}
         - Margem Líquida: ${margemLiquida.toFixed(1)}%
-        - Maiores categorias de despesa: ${categoriasMaiores.join(', ')}
+        - Maiores categorias de despesa: ${categoriasMaiores.join(", ")}
         - Número de transações: ${transacoes.length}
         
         Retorne um JSON com:
@@ -58,41 +67,41 @@ export default function InsightsIA({ transacoes, categorias, tipo = 'dre' }) {
         - tendencias: array de objetos {titulo, descricao, tipo: 'positiva'|'negativa'|'neutra'}
         - recomendacoes: array de strings com ações práticas`,
         response_json_schema: {
-          type: 'object',
+          type: "object",
           properties: {
             anomalias: {
-              type: 'array',
+              type: "array",
               items: {
-                type: 'object',
+                type: "object",
                 properties: {
-                  titulo: { type: 'string' },
-                  descricao: { type: 'string' },
-                  severidade: { type: 'string' }
-                }
-              }
+                  titulo: { type: "string" },
+                  descricao: { type: "string" },
+                  severidade: { type: "string" },
+                },
+              },
             },
             tendencias: {
-              type: 'array',
+              type: "array",
               items: {
-                type: 'object',
+                type: "object",
                 properties: {
-                  titulo: { type: 'string' },
-                  descricao: { type: 'string' },
-                  tipo: { type: 'string' }
-                }
-              }
+                  titulo: { type: "string" },
+                  descricao: { type: "string" },
+                  tipo: { type: "string" },
+                },
+              },
             },
             recomendacoes: {
-              type: 'array',
-              items: { type: 'string' }
-            }
-          }
-        }
+              type: "array",
+              items: { type: "string" },
+            },
+          },
+        },
       });
 
       setInsights(resultado);
     } catch (error) {
-      console.error('Erro ao gerar insights:', error);
+      console.error("Erro ao gerar insights:", error);
     } finally {
       setLoading(false);
     }
@@ -101,29 +110,29 @@ export default function InsightsIA({ transacoes, categorias, tipo = 'dre' }) {
   const gerarResumoExecutivo = async () => {
     setLoading(true);
     try {
-      const receitas = transacoes.filter(t => t.tipo === 'Receita' && t.status === 'Pago');
-      const despesas = transacoes.filter(t => t.tipo === 'Despesa' && t.status === 'Pago');
-      
+      const receitas = transacoes.filter((t) => t.tipo === "Receita" && t.status === "Pago");
+      const despesas = transacoes.filter((t) => t.tipo === "Despesa" && t.status === "Pago");
+
       const totalReceitas = receitas.reduce((sum, t) => sum + (t.valor || 0), 0);
       const totalDespesas = despesas.reduce((sum, t) => sum + (t.valor || 0), 0);
 
-      const resumo = await base44.integrations.Core.InvokeLLM({
+      const resumo = await sigo.integrations.Core.InvokeLLM({
         prompt: `Você é um CFO experiente. Crie um resumo executivo conciso (máximo 3 parágrafos) dos resultados financeiros:
         
         - Receitas: R$ ${totalReceitas.toFixed(2)}
         - Despesas: R$ ${totalDespesas.toFixed(2)}
         - Resultado: R$ ${(totalReceitas - totalDespesas).toFixed(2)}
         
-        Anomalias identificadas: ${insights?.anomalias?.map(a => a.titulo).join(', ') || 'Nenhuma'}
-        Tendências: ${insights?.tendencias?.map(t => t.titulo).join(', ') || 'Nenhuma'}
+        Anomalias identificadas: ${insights?.anomalias?.map((a) => a.titulo).join(", ") || "Nenhuma"}
+        Tendências: ${insights?.tendencias?.map((t) => t.titulo).join(", ") || "Nenhuma"}
         
-        Use linguagem clara e objetiva, destacando os principais pontos de atenção e oportunidades.`
+        Use linguagem clara e objetiva, destacando os principais pontos de atenção e oportunidades.`,
       });
 
       setInsights({ ...insights, resumo_executivo: resumo });
       setShowResumo(true);
     } catch (error) {
-      console.error('Erro ao gerar resumo:', error);
+      console.error("Erro ao gerar resumo:", error);
     } finally {
       setLoading(false);
     }
@@ -131,18 +140,25 @@ export default function InsightsIA({ transacoes, categorias, tipo = 'dre' }) {
 
   const getSeveridadeColor = (severidade) => {
     switch (severidade) {
-      case 'alta': return 'bg-red-100 text-red-700 border-red-300';
-      case 'media': return 'bg-amber-100 text-amber-700 border-amber-300';
-      case 'baixa': return 'bg-blue-100 text-blue-700 border-blue-300';
-      default: return 'bg-slate-100 text-slate-700';
+      case "alta":
+        return "bg-red-100 text-red-700 border-red-300";
+      case "media":
+        return "bg-amber-100 text-amber-700 border-amber-300";
+      case "baixa":
+        return "bg-blue-100 text-blue-700 border-blue-300";
+      default:
+        return "bg-slate-100 text-slate-700";
     }
   };
 
   const getTipoIcon = (tipo) => {
     switch (tipo) {
-      case 'positiva': return <TrendingUp className="w-4 h-4 text-green-600" />;
-      case 'negativa': return <AlertTriangle className="w-4 h-4 text-red-600" />;
-      default: return <TrendingUp className="w-4 h-4 text-slate-600" />;
+      case "positiva":
+        return <TrendingUp className="w-4 h-4 text-green-600" />;
+      case "negativa":
+        return <AlertTriangle className="w-4 h-4 text-red-600" />;
+      default:
+        return <TrendingUp className="w-4 h-4 text-slate-600" />;
     }
   };
 
@@ -177,8 +193,10 @@ export default function InsightsIA({ transacoes, categorias, tipo = 'dre' }) {
           </CardHeader>
           <CardContent>
             <div className="prose prose-sm max-w-none text-slate-700">
-              {insights.resumo_executivo.split('\n').map((paragrafo, idx) => (
-                <p key={idx} className="mb-3">{paragrafo}</p>
+              {insights.resumo_executivo.split("\n").map((paragrafo, idx) => (
+                <p key={idx} className="mb-3">
+                  {paragrafo}
+                </p>
               ))}
             </div>
           </CardContent>
@@ -196,8 +214,8 @@ export default function InsightsIA({ transacoes, categorias, tipo = 'dre' }) {
             </div>
             <div className="flex gap-2">
               {!showResumo && (
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   size="sm"
                   onClick={gerarResumoExecutivo}
                   disabled={loading}
@@ -222,8 +240,8 @@ export default function InsightsIA({ transacoes, categorias, tipo = 'dre' }) {
               </div>
               <div className="space-y-2">
                 {insights.anomalias.map((anomalia, idx) => (
-                  <div 
-                    key={idx} 
+                  <div
+                    key={idx}
                     className={`p-3 rounded-lg border ${getSeveridadeColor(anomalia.severidade)}`}
                   >
                     <div className="flex items-start justify-between mb-1">
@@ -273,7 +291,10 @@ export default function InsightsIA({ transacoes, categorias, tipo = 'dre' }) {
               </div>
               <div className="space-y-2">
                 {insights.recomendacoes.map((rec, idx) => (
-                  <div key={idx} className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div
+                    key={idx}
+                    className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg"
+                  >
                     <span className="text-amber-600 font-bold text-sm">{idx + 1}.</span>
                     <p className="text-sm text-slate-700 flex-1">{rec}</p>
                   </div>

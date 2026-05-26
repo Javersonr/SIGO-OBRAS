@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
 import SheetModalComponent from "@/components/ui/sheet-modal";
 import { Button } from "@/components/ui/button";
@@ -91,14 +91,14 @@ export default function InspecaoDetalheModal({
         0
       );
 
-      await base44.entities.InspecaoFerramenta.update(inspecao.id, {
+      await sigo.entities.InspecaoFerramenta.update(inspecao.id, {
         ferramentas_inspecionadas: JSON.stringify(novasFerramentas),
         total_fotografadas: totalFotografadas,
       });
 
       // Registrar no histórico
       const tipoAcao = fotoValidada?.confianca_validacao >= 70 ? "foto_validada" : "foto_capturada";
-      await base44.entities.InspecaoHistorico.create({
+      await sigo.entities.InspecaoHistorico.create({
         empresa_id: empresaAtiva.id,
         inspecao_id: inspecao.id,
         ferramenta_id: item.id,
@@ -112,7 +112,7 @@ export default function InspecaoDetalheModal({
         foto_url: fotoValidada?.foto_url,
       });
 
-      const atualizada = await base44.entities.InspecaoFerramenta.filter({ id: inspecao.id });
+      const atualizada = await sigo.entities.InspecaoFerramenta.filter({ id: inspecao.id });
       setInspecaoAtualizada(atualizada[0]);
 
       toast.success("Foto salva com sucesso!");
@@ -120,7 +120,7 @@ export default function InspecaoDetalheModal({
       // Notificar se houve falha na validação
       if (!fotoValidada) {
         try {
-          await base44.functions.invoke("enviarNotificacao", {
+          await sigo.functions.invoke("enviarNotificacao", {
             empresa_id: empresaAtiva.id,
             usuarios_emails: inspecao.usuario_email,
             tipo_notificacao: "inspecao_falha",
@@ -162,7 +162,7 @@ export default function InspecaoDetalheModal({
   const handleGerarPDF = async () => {
     setGerandoPDF(true);
     try {
-      const response = await base44.functions.invoke("gerarRelatorioInspecao", {
+      const response = await sigo.functions.invoke("gerarRelatorioInspecao", {
         inspecao_id: inspecao.id,
       });
 
@@ -202,7 +202,7 @@ export default function InspecaoDetalheModal({
 
     setEnviandoEmail(true);
     try {
-      const response = await base44.functions.invoke("gerarRelatorioInspecao", {
+      const response = await sigo.functions.invoke("gerarRelatorioInspecao", {
         inspecao_id: inspecao.id,
         enviar_email: true,
         emails_destino: emails,
@@ -378,7 +378,7 @@ export default function InspecaoDetalheModal({
                                               0
                                             );
 
-                                            await base44.entities.InspecaoFerramenta.update(
+                                            await sigo.entities.InspecaoFerramenta.update(
                                               inspecao.id,
                                               {
                                                 ferramentas_inspecionadas:
@@ -388,7 +388,7 @@ export default function InspecaoDetalheModal({
                                             );
 
                                             // Registrar no histórico
-                                            await base44.entities.InspecaoHistorico.create({
+                                            await sigo.entities.InspecaoHistorico.create({
                                               empresa_id: empresaAtiva.id,
                                               inspecao_id: inspecao.id,
                                               ferramenta_codigo: ferramenta.codigo,
@@ -400,7 +400,7 @@ export default function InspecaoDetalheModal({
                                             });
 
                                             const atualizada =
-                                              await base44.entities.InspecaoFerramenta.filter({
+                                              await sigo.entities.InspecaoFerramenta.filter({
                                                 id: inspecao.id,
                                               });
                                             setInspecaoAtualizada(atualizada[0]);
@@ -556,10 +556,10 @@ export default function InspecaoDetalheModal({
           }}
           onExcluir={async (ferramenta) => {
             try {
-              await base44.entities.Ferramenta.delete(ferramenta.id);
+              await sigo.entities.Ferramenta.delete(ferramenta.id);
               toast.success("Ferramenta excluída");
               // Recarregar inspeção
-              const atualizada = await base44.entities.InspecaoFerramenta.filter({
+              const atualizada = await sigo.entities.InspecaoFerramenta.filter({
                 id: inspecao.id,
               });
               setInspecaoAtualizada(atualizada[0]);

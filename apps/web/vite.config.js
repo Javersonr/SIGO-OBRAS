@@ -1,4 +1,4 @@
-import base44 from "@base44/vite-plugin";
+import legacyPlugin from "@base44/vite-plugin";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -11,8 +11,10 @@ export default defineConfig(({ mode }) => ({
 
   plugins: [
     // Plugin do SDK legado (resolve aliases @/integrations, @/entities, etc.).
-    // Será removido na migração para @sigoobras/sdk (Fase 3 do roadmap).
-    base44({
+    // Mantido enquanto o sigoClient.js usa o pacote @base44/sdk como fallback
+    // pra superfícies não migradas (asServiceRole, integrations.Core).
+    // Removido na Phase 8 do roadmap (cutover completo).
+    legacyPlugin({
       legacySDKImports: process.env.LEGACY_SDK_IMPORTS === "true",
       hmrNotifier: true,
       navigationNotifier: true,

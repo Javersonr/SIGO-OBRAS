@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import {
   ShoppingCart,
@@ -132,11 +132,11 @@ export default function Compras() {
     setLoading(true);
     try {
       const [sols, cots, peds, projs, forns] = await Promise.all([
-        base44.entities.SolicitacaoCompra.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.Cotacao.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.PedidoCompra.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id, arquivado: false }),
-        base44.entities.Fornecedor.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.SolicitacaoCompra.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.Cotacao.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.PedidoCompra.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id, arquivado: false }),
+        sigo.entities.Fornecedor.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ]);
 
       setSolicitacoes(sols);
@@ -210,7 +210,7 @@ export default function Compras() {
     try {
       const proj = projetos.find((p) => p.id === solicitacaoForm.projeto_id);
 
-      const novaSol = await base44.entities.SolicitacaoCompra.create({
+      const novaSol = await sigo.entities.SolicitacaoCompra.create({
         empresa_id: empresaAtiva.id,
         numero: gerarNumero("SC"),
         projeto_id: solicitacaoForm.projeto_id || null,
@@ -227,7 +227,7 @@ export default function Compras() {
       });
 
       for (const item of itensValidos) {
-        await base44.entities.SolicitacaoCompraItem.create({
+        await sigo.entities.SolicitacaoCompraItem.create({
           empresa_id: empresaAtiva.id,
           solicitacao_id: novaSol.id,
           descricao: item.descricao,
@@ -242,7 +242,7 @@ export default function Compras() {
 
       // Criar aprovação
       try {
-        await base44.functions.invoke("iniciarFluxoAprovacao", {
+        await sigo.functions.invoke("iniciarFluxoAprovacao", {
           solicitacao_id: novaSol.id,
           empresa_id: empresaAtiva.id,
         });
@@ -270,7 +270,7 @@ export default function Compras() {
   const handleCancelarSolicitacao = async (solicitacao) => {
     if (!confirm("Cancelar esta solicitação?")) return;
     try {
-      await base44.entities.SolicitacaoCompra.update(solicitacao.id, { status: "Cancelada" });
+      await sigo.entities.SolicitacaoCompra.update(solicitacao.id, { status: "Cancelada" });
       setSolicitacoes(
         solicitacoes.map((s) => (s.id === solicitacao.id ? { ...s, status: "Cancelada" } : s))
       );
@@ -304,28 +304,28 @@ export default function Compras() {
 
   const confirmarExclusaoCotacao = async (cotacao, excluirTudo, itensSelecionados) => {
     if (excluirTudo) {
-      const respostas = await base44.entities.CotacaoResposta.filter({ cotacao_id: cotacao.id });
+      const respostas = await sigo.entities.CotacaoResposta.filter({ cotacao_id: cotacao.id });
       await sleep(300);
-      const fornecedoresCot = await base44.entities.CotacaoFornecedor.filter({
+      const fornecedoresCot = await sigo.entities.CotacaoFornecedor.filter({
         cotacao_id: cotacao.id,
       });
       await sleep(300);
-      const itens = await base44.entities.CotacaoItem.filter({ cotacao_id: cotacao.id });
+      const itens = await sigo.entities.CotacaoItem.filter({ cotacao_id: cotacao.id });
       await sleep(300);
 
-      await deleteSeq(respostas, (id) => base44.entities.CotacaoResposta.delete(id));
-      await deleteSeq(fornecedoresCot, (id) => base44.entities.CotacaoFornecedor.delete(id));
-      await deleteSeq(itens, (id) => base44.entities.CotacaoItem.delete(id));
+      await deleteSeq(respostas, (id) => sigo.entities.CotacaoResposta.delete(id));
+      await deleteSeq(fornecedoresCot, (id) => sigo.entities.CotacaoFornecedor.delete(id));
+      await deleteSeq(itens, (id) => sigo.entities.CotacaoItem.delete(id));
 
       try {
-        await base44.entities.Cotacao.delete(cotacao.id);
+        await sigo.entities.Cotacao.delete(cotacao.id);
       } catch (e) {
         /* ignora not found */
       }
 
       if (cotacao.solicitacao_id) {
         try {
-          await base44.entities.SolicitacaoCompra.update(cotacao.solicitacao_id, {
+          await sigo.entities.SolicitacaoCompra.update(cotacao.solicitacao_id, {
             status: "Aprovada",
           });
         } catch (e) {
@@ -333,15 +333,15 @@ export default function Compras() {
         }
       }
     } else {
-      const respostasItens = await base44.entities.CotacaoResposta.filter({
+      const respostasItens = await sigo.entities.CotacaoResposta.filter({
         cotacao_id: cotacao.id,
       });
       await sleep(300);
       const respostasExcluir = respostasItens.filter((r) => itensSelecionados.includes(r.item_id));
-      await deleteSeq(respostasExcluir, (id) => base44.entities.CotacaoResposta.delete(id));
+      await deleteSeq(respostasExcluir, (id) => sigo.entities.CotacaoResposta.delete(id));
       await deleteSeq(
         itensSelecionados.map((id) => ({ id })),
-        (id) => base44.entities.CotacaoItem.delete(id)
+        (id) => sigo.entities.CotacaoItem.delete(id)
       );
     }
   };
@@ -354,49 +354,49 @@ export default function Compras() {
 
   const confirmarExclusaoSolicitacao = async (solicitacao, excluirTudo, itensSelecionados) => {
     if (excluirTudo) {
-      const itens = await base44.entities.SolicitacaoCompraItem.filter({
+      const itens = await sigo.entities.SolicitacaoCompraItem.filter({
         solicitacao_id: solicitacao.id,
       });
       await sleep(300);
-      const aprovacoes = await base44.entities.AprovacaoSolicitacao.filter({
+      const aprovacoes = await sigo.entities.AprovacaoSolicitacao.filter({
         solicitacao_id: solicitacao.id,
       });
       await sleep(300);
-      const cotacoesRelacionadas = await base44.entities.Cotacao.filter({
+      const cotacoesRelacionadas = await sigo.entities.Cotacao.filter({
         solicitacao_id: solicitacao.id,
       });
       await sleep(300);
 
       for (const cotacao of cotacoesRelacionadas) {
-        const respostas = await base44.entities.CotacaoResposta.filter({ cotacao_id: cotacao.id });
+        const respostas = await sigo.entities.CotacaoResposta.filter({ cotacao_id: cotacao.id });
         await sleep(300);
-        const fornecedoresCot = await base44.entities.CotacaoFornecedor.filter({
+        const fornecedoresCot = await sigo.entities.CotacaoFornecedor.filter({
           cotacao_id: cotacao.id,
         });
         await sleep(300);
-        await deleteSeq(respostas, (id) => base44.entities.CotacaoResposta.delete(id));
-        await deleteSeq(fornecedoresCot, (id) => base44.entities.CotacaoFornecedor.delete(id));
+        await deleteSeq(respostas, (id) => sigo.entities.CotacaoResposta.delete(id));
+        await deleteSeq(fornecedoresCot, (id) => sigo.entities.CotacaoFornecedor.delete(id));
       }
 
-      await deleteSeq(cotacoesRelacionadas, (id) => base44.entities.Cotacao.delete(id));
-      await deleteSeq(itens, (id) => base44.entities.SolicitacaoCompraItem.delete(id));
-      await deleteSeq(aprovacoes, (id) => base44.entities.AprovacaoSolicitacao.delete(id));
+      await deleteSeq(cotacoesRelacionadas, (id) => sigo.entities.Cotacao.delete(id));
+      await deleteSeq(itens, (id) => sigo.entities.SolicitacaoCompraItem.delete(id));
+      await deleteSeq(aprovacoes, (id) => sigo.entities.AprovacaoSolicitacao.delete(id));
 
       try {
-        await base44.entities.SolicitacaoCompra.delete(solicitacao.id);
+        await sigo.entities.SolicitacaoCompra.delete(solicitacao.id);
       } catch (e) {
         /* ignora */
       }
     } else {
       await deleteSeq(
         itensSelecionados.map((id) => ({ id })),
-        (id) => base44.entities.SolicitacaoCompraItem.delete(id)
+        (id) => sigo.entities.SolicitacaoCompraItem.delete(id)
       );
     }
   };
 
   const handleAbrirCotacao = async (solicitacao) => {
-    const itens = await base44.entities.SolicitacaoCompraItem.filter({
+    const itens = await sigo.entities.SolicitacaoCompraItem.filter({
       solicitacao_id: solicitacao.id,
     });
     setSolicitacaoItens(itens);
@@ -406,11 +406,11 @@ export default function Compras() {
 
   const criarCotacaoAutomatica = async (solicitacao) => {
     try {
-      const itens = await base44.entities.SolicitacaoCompraItem.filter({
+      const itens = await sigo.entities.SolicitacaoCompraItem.filter({
         solicitacao_id: solicitacao.id,
       });
 
-      const cotacao = await base44.entities.Cotacao.create({
+      const cotacao = await sigo.entities.Cotacao.create({
         empresa_id: empresaAtiva.id,
         numero: gerarNumero("COT"),
         solicitacao_id: solicitacao.id,
@@ -424,7 +424,7 @@ export default function Compras() {
       // Criar itens da cotação
       await Promise.all(
         itens.map((item) =>
-          base44.entities.CotacaoItem.create({
+          sigo.entities.CotacaoItem.create({
             empresa_id: empresaAtiva.id,
             cotacao_id: cotacao.id,
             solicitacao_item_id: item.id,
@@ -456,11 +456,11 @@ export default function Compras() {
     if (!confirm("Gerar pedido de compra a partir desta cotação?")) return;
 
     try {
-      const fornecedor = await base44.entities.Fornecedor.filter({
+      const fornecedor = await sigo.entities.Fornecedor.filter({
         id: cotacao.fornecedor_vencedor_id,
       });
-      const respostas = await base44.entities.CotacaoResposta.filter({ cotacao_id: cotacao.id });
-      const cotacaoFornecedor = await base44.entities.CotacaoFornecedor.filter({
+      const respostas = await sigo.entities.CotacaoResposta.filter({ cotacao_id: cotacao.id });
+      const cotacaoFornecedor = await sigo.entities.CotacaoFornecedor.filter({
         cotacao_id: cotacao.id,
         fornecedor_id: cotacao.fornecedor_vencedor_id,
       });
@@ -474,7 +474,7 @@ export default function Compras() {
         0
       );
 
-      const novoPedido = await base44.entities.PedidoCompra.create({
+      const novoPedido = await sigo.entities.PedidoCompra.create({
         empresa_id: empresaAtiva.id,
         numero: numeroPedido,
         fornecedor_id: cotacao.fornecedor_vencedor_id,
@@ -491,7 +491,7 @@ export default function Compras() {
 
       // Criar itens do pedido
       for (const resp of respostasFornecedor) {
-        await base44.entities.PedidoCompraItem.create({
+        await sigo.entities.PedidoCompraItem.create({
           empresa_id: empresaAtiva.id,
           pedido_id: novoPedido.id,
           descricao: resp.descricao,
@@ -503,16 +503,16 @@ export default function Compras() {
       }
 
       // Atualizar status da cotação
-      await base44.entities.Cotacao.update(cotacao.id, { status: "Pedido Gerado" });
+      await sigo.entities.Cotacao.update(cotacao.id, { status: "Pedido Gerado" });
 
       // Atualizar solicitação
-      await base44.entities.SolicitacaoCompra.update(cotacao.solicitacao_id, {
+      await sigo.entities.SolicitacaoCompra.update(cotacao.solicitacao_id, {
         status: "Pedido Gerado",
       });
 
       // Enviar email de aprovação ao fornecedor
       if (fornecedor[0]?.email) {
-        await base44.functions.invoke("enviarEmailSMTP", {
+        await sigo.functions.invoke("enviarEmailSMTP", {
           to: fornecedor[0].email,
           subject: `Pedido de Compra ${numeroPedido} - ${empresaAtiva.nome}`,
           body: `
@@ -541,7 +541,7 @@ export default function Compras() {
   };
 
   const handleChangeStatusPedido = async (pedido, newStatus) => {
-    await base44.entities.PedidoCompra.update(pedido.id, { status: newStatus });
+    await sigo.entities.PedidoCompra.update(pedido.id, { status: newStatus });
     setPedidos(pedidos.map((p) => (p.id === pedido.id ? { ...p, status: newStatus } : p)));
   };
 
@@ -1136,7 +1136,7 @@ export default function Compras() {
                                     );
                                     if (sol) {
                                       setSolicitacaoItens(
-                                        await base44.entities.SolicitacaoCompraItem.filter({
+                                        await sigo.entities.SolicitacaoCompraItem.filter({
                                           solicitacao_id: sol.id,
                                         })
                                       );
@@ -1156,7 +1156,7 @@ export default function Compras() {
                                       );
                                       if (sol) {
                                         setSolicitacaoItens(
-                                          await base44.entities.SolicitacaoCompraItem.filter({
+                                          await sigo.entities.SolicitacaoCompraItem.filter({
                                             solicitacao_id: sol.id,
                                           })
                                         );

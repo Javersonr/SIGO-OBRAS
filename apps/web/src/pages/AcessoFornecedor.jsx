@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -86,7 +86,7 @@ export default function AcessoFornecedor() {
 
   const loadCotacao = async (t) => {
     try {
-      const result = await base44.functions.invoke("carregarCotacaoFornecedor", { token: t });
+      const result = await sigo.functions.invoke("carregarCotacaoFornecedor", { token: t });
       const data = result.data;
 
       if (!data || data.error) {
@@ -126,7 +126,7 @@ export default function AcessoFornecedor() {
 
       // Marcar como visualizada
       if (data.cotacaoFornecedor?.status === "Enviada") {
-        await base44.functions.invoke("carregarCotacaoFornecedor", {
+        await sigo.functions.invoke("carregarCotacaoFornecedor", {
           token: t,
           marcar_visualizada: true,
         });
@@ -158,8 +158,8 @@ export default function AcessoFornecedor() {
     setUploadingFiles(true);
     try {
       for (const file of files) {
-        const { file_url } = await base44.integrations.Core.UploadFile({ file });
-        const arquivo = await base44.functions.invoke("salvarRespostaFornecedor", {
+        const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+        const arquivo = await sigo.functions.invoke("salvarRespostaFornecedor", {
           token,
           action: "upload_arquivo",
           arquivo: {
@@ -188,7 +188,7 @@ export default function AcessoFornecedor() {
     }
     setEnviando(true);
     try {
-      const result = await base44.functions.invoke("salvarRespostaFornecedor", {
+      const result = await sigo.functions.invoke("salvarRespostaFornecedor", {
         token,
         action: "impossivel",
         motivo_recusa: motivoRecusa,
@@ -224,7 +224,7 @@ export default function AcessoFornecedor() {
 
     setEnviando(true);
     try {
-      const result = await base44.functions.invoke("salvarRespostaFornecedor", {
+      const result = await sigo.functions.invoke("salvarRespostaFornecedor", {
         token,
         action: "responder",
         respostas,

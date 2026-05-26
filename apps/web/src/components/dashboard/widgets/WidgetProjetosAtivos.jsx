@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../../../Layout";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "../../../utils";
@@ -32,8 +32,8 @@ export default function WidgetProjetosAtivos() {
   const loadProjetos = async () => {
     try {
       const [projs, usuarios] = await Promise.all([
-        base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id }, "-created_date", 50),
-        base44.entities.UsuarioEmpresa.filter({
+        sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id }, "-created_date", 50),
+        sigo.entities.UsuarioEmpresa.filter({
           empresa_id: empresaAtiva.id,
           usuario_email: user?.email,
           ativo: true,

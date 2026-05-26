@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,8 +17,8 @@ export default function AprovacaoConfigTab({ empresaAtiva }) {
     setLoading(true);
     try {
       const [niveisData, usuariosData] = await Promise.all([
-        base44.entities.NivelAprovacao.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.UsuarioEmpresa.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.NivelAprovacao.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.UsuarioEmpresa.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ]);
       setNiveis(niveisData.sort((a, b) => a.ordem - b.ordem));
       const perfisUnicos = [...new Set(usuariosData.map((u) => u.perfil))];
@@ -48,9 +48,9 @@ export default function AprovacaoConfigTab({ empresaAtiva }) {
     };
 
     if (editingNivel.id) {
-      await base44.entities.NivelAprovacao.update(editingNivel.id, dataToSave);
+      await sigo.entities.NivelAprovacao.update(editingNivel.id, dataToSave);
     } else {
-      await base44.entities.NivelAprovacao.create(dataToSave);
+      await sigo.entities.NivelAprovacao.create(dataToSave);
     }
     setEditingNivel(null);
     loadData();
@@ -58,7 +58,7 @@ export default function AprovacaoConfigTab({ empresaAtiva }) {
 
   const handleDeleteNivel = async (id) => {
     if (confirm("Deseja excluir este nível de aprovação?")) {
-      await base44.entities.NivelAprovacao.delete(id);
+      await sigo.entities.NivelAprovacao.delete(id);
       loadData();
     }
   };

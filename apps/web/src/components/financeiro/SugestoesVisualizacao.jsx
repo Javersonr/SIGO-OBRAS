@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { BarChart3, PieChart, TrendingUp, Layers, Loader2 } from "lucide-react";
 
 export default function SugestoesVisualizacao({ transacoes, tipo, onAplicarSugestao }) {
@@ -24,7 +24,7 @@ export default function SugestoesVisualizacao({ transacoes, tipo, onAplicarSuges
       const temProjetos = transacoes.some((t) => t.projeto_id);
       const temPeriodos = transacoes.length > 30;
 
-      const resultado = await base44.integrations.Core.InvokeLLM({
+      const resultado = await sigo.integrations.Core.InvokeLLM({
         prompt: `Como analista de BI, sugira as 5 melhores visualizações para os dados financeiros:
         
         Contexto:

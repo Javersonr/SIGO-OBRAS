@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +38,7 @@ export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
   const loadUsuarios = async () => {
     setLoading(true);
     try {
-      const vinculos = await base44.entities.UsuarioEmpresa.filter({
+      const vinculos = await sigo.entities.UsuarioEmpresa.filter({
         empresa_id: empresaAtiva.id,
         ativo: true,
       });

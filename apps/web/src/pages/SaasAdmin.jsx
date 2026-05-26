@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Plus, AlertCircle, Loader2 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -202,14 +202,14 @@ export default function SaasAdmin() {
         usuariosList,
         superAdminsList,
       ] = await Promise.all([
-        base44.entities.Empresa.filter({ ativo: true }),
-        base44.entities.Plano.filter({}),
-        base44.entities.Assinatura.filter({}),
-        base44.entities.PropostaComercial.filter({}),
-        base44.entities.BoletoBancario.filter({}),
-        base44.entities.Pagamento.filter({}),
-        base44.entities.UsuarioEmpresa.filter({}),
-        base44.entities.UsuarioCustom?.filter?.({ is_super_admin: true }) || [],
+        sigo.entities.Empresa.filter({ ativo: true }),
+        sigo.entities.Plano.filter({}),
+        sigo.entities.Assinatura.filter({}),
+        sigo.entities.PropostaComercial.filter({}),
+        sigo.entities.BoletoBancario.filter({}),
+        sigo.entities.Pagamento.filter({}),
+        sigo.entities.UsuarioEmpresa.filter({}),
+        sigo.entities.UsuarioCustom?.filter?.({ is_super_admin: true }) || [],
       ]);
 
       setEmpresas(empresasList);
@@ -287,10 +287,10 @@ export default function SaasAdmin() {
 
     try {
       if (selectedEmpresa) {
-        await base44.entities.Empresa.update(selectedEmpresa.id, empresaForm);
+        await sigo.entities.Empresa.update(selectedEmpresa.id, empresaForm);
         toast.success("Empresa atualizada");
       } else {
-        await base44.entities.Empresa.create(empresaForm);
+        await sigo.entities.Empresa.create(empresaForm);
         toast.success("Empresa criada");
       }
       handleCloseEmpresaModal();
@@ -348,10 +348,10 @@ export default function SaasAdmin() {
       };
 
       if (selectedPlano) {
-        await base44.entities.Plano.update(selectedPlano.id, data);
+        await sigo.entities.Plano.update(selectedPlano.id, data);
         toast.success("Plano atualizado");
       } else {
-        await base44.entities.Plano.create(data);
+        await sigo.entities.Plano.create(data);
         toast.success("Plano criado");
       }
       setShowPlanoModal(false);
@@ -364,7 +364,7 @@ export default function SaasAdmin() {
   const handleDeletePlano = async (plano) => {
     if (confirm("Tem certeza que deseja deletar este plano?")) {
       try {
-        await base44.entities.Plano.delete(plano.id);
+        await sigo.entities.Plano.delete(plano.id);
         toast.success("Plano deletado");
         loadData();
       } catch (error) {
@@ -418,10 +418,10 @@ export default function SaasAdmin() {
       };
 
       if (selectedAssinatura) {
-        await base44.entities.Assinatura.update(selectedAssinatura.id, data);
+        await sigo.entities.Assinatura.update(selectedAssinatura.id, data);
         toast.success("Assinatura atualizada");
       } else {
-        await base44.entities.Assinatura.create(data);
+        await sigo.entities.Assinatura.create(data);
         toast.success("Assinatura criada");
       }
       setShowAssinaturaModal(false);
@@ -434,7 +434,7 @@ export default function SaasAdmin() {
   const handleDeleteAssinatura = async (assinatura) => {
     if (confirm("Deletar esta assinatura?")) {
       try {
-        await base44.entities.Assinatura.delete(assinatura.id);
+        await sigo.entities.Assinatura.delete(assinatura.id);
         toast.success("Assinatura deletada");
         loadData();
       } catch (error) {
@@ -493,10 +493,10 @@ export default function SaasAdmin() {
       };
 
       if (selectedProposta) {
-        await base44.entities.PropostaComercial.update(selectedProposta.id, data);
+        await sigo.entities.PropostaComercial.update(selectedProposta.id, data);
         toast.success("Proposta atualizada");
       } else {
-        await base44.entities.PropostaComercial.create(data);
+        await sigo.entities.PropostaComercial.create(data);
         toast.success("Proposta criada");
       }
       setShowPropostaModal(false);
@@ -512,7 +512,7 @@ export default function SaasAdmin() {
 
   const handleEnviarProposta = async (proposta) => {
     try {
-      await base44.entities.PropostaComercial.update(proposta.id, { status: "Enviada" });
+      await sigo.entities.PropostaComercial.update(proposta.id, { status: "Enviada" });
       toast.success("Proposta enviada");
       loadData();
     } catch (error) {
@@ -551,10 +551,10 @@ export default function SaasAdmin() {
       };
 
       if (selectedBoleto) {
-        await base44.entities.BoletoBancario.update(selectedBoleto.id, data);
+        await sigo.entities.BoletoBancario.update(selectedBoleto.id, data);
         toast.success("Boleto atualizado");
       } else {
-        await base44.entities.BoletoBancario.create(data);
+        await sigo.entities.BoletoBancario.create(data);
         toast.success("Boleto criado");
       }
       setShowBoletoModal(false);
@@ -571,7 +571,7 @@ export default function SaasAdmin() {
   const handleDeleteBoleto = async (boleto) => {
     if (confirm("Deletar este boleto?")) {
       try {
-        await base44.entities.BoletoBancario.delete(boleto.id);
+        await sigo.entities.BoletoBancario.delete(boleto.id);
         toast.success("Boleto deletado");
         loadData();
       } catch (error) {
@@ -605,7 +605,7 @@ export default function SaasAdmin() {
         empresa_nome: empresa?.nome || "",
       };
 
-      await base44.entities.Pagamento.create(data);
+      await sigo.entities.Pagamento.create(data);
       toast.success("Pagamento registrado");
       setShowPagamentoModal(false);
       loadData();
@@ -616,7 +616,7 @@ export default function SaasAdmin() {
 
   const handleMarcarPago = async (pagamento) => {
     try {
-      await base44.entities.Pagamento.update(pagamento.id, {
+      await sigo.entities.Pagamento.update(pagamento.id, {
         status: "Pago",
         data_pagamento: new Date().toISOString().split("T")[0],
       });
@@ -639,7 +639,7 @@ export default function SaasAdmin() {
     }
 
     try {
-      await base44.functions.invoke("criarSuperAdmin", superAdminForm);
+      await sigo.functions.invoke("criarSuperAdmin", superAdminForm);
       toast.success("Super admin criado");
       setShowSuperAdminModal(false);
       loadData();
@@ -651,7 +651,7 @@ export default function SaasAdmin() {
   const handleRemoveSuperAdmin = async (admin) => {
     if (confirm("Remover super admin?")) {
       try {
-        await base44.entities.UsuarioCustom.delete(admin.id);
+        await sigo.entities.UsuarioCustom.delete(admin.id);
         toast.success("Super admin removido");
         loadData();
       } catch (error) {
@@ -669,13 +669,13 @@ export default function SaasAdmin() {
     try {
       if (selectedEmpresa) {
         if (selectedUsuario) {
-          await base44.entities.UsuarioEmpresa.update(selectedUsuario.id, {
+          await sigo.entities.UsuarioEmpresa.update(selectedUsuario.id, {
             ...data,
             empresa_id: selectedEmpresa.id,
           });
           toast.success("Usuário atualizado");
         } else {
-          await base44.entities.UsuarioEmpresa.create({
+          await sigo.entities.UsuarioEmpresa.create({
             ...data,
             empresa_id: selectedEmpresa.id,
           });
@@ -710,7 +710,7 @@ export default function SaasAdmin() {
     setSalvandoAdmin(true);
     try {
       // 1. Criar UsuarioEmpresa (vínculo Admin)
-      await base44.entities.UsuarioEmpresa.create({
+      await sigo.entities.UsuarioEmpresa.create({
         usuario_email: criarAdminForm.email.toLowerCase().trim(),
         empresa_id: selectedEmpresa.id,
         nome_completo: criarAdminForm.nome_completo,
@@ -719,7 +719,7 @@ export default function SaasAdmin() {
         is_owner: false,
       });
       // 2. Criar UsuarioCustom com senha hash via função
-      const { data } = await base44.functions.invoke("criarUsuarioComSenha", {
+      const { data } = await sigo.functions.invoke("criarUsuarioComSenha", {
         usuario_email: criarAdminForm.email.toLowerCase().trim(),
         nome_completo: criarAdminForm.nome_completo,
         empresa_id: selectedEmpresa.id,
@@ -743,7 +743,7 @@ export default function SaasAdmin() {
 
   const handleAlterarEmailUsuario = async (usuario, novoEmail) => {
     try {
-      await base44.functions.invoke("alterarEmailUsuario", {
+      await sigo.functions.invoke("alterarEmailUsuario", {
         usuario_email: usuario.usuario_email,
         novo_email: novoEmail,
         empresa_id: usuario.empresa_id,
@@ -757,7 +757,7 @@ export default function SaasAdmin() {
 
   const handleToggleUsuario = async (usuario) => {
     try {
-      await base44.entities.UsuarioEmpresa.update(usuario.id, {
+      await sigo.entities.UsuarioEmpresa.update(usuario.id, {
         ativo: !usuario.ativo,
       });
       toast.success(usuario.ativo ? "Usuário desativado" : "Usuário ativado");

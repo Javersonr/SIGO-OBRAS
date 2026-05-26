@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -63,7 +63,7 @@ export default function HistoricoInspecoes() {
 
   const loadCaminhoes = async () => {
     try {
-      const data = await base44.entities.Caminhao.filter({
+      const data = await sigo.entities.Caminhao.filter({
         empresa_id: empresaAtiva.id,
         ativo: true,
       });
@@ -97,7 +97,7 @@ export default function HistoricoInspecoes() {
         };
       }
 
-      const data = await base44.entities.InspecaoCaminhao.filter(filtro, "-data_inspecao");
+      const data = await sigo.entities.InspecaoCaminhao.filter(filtro, "-data_inspecao");
       setInspecoes(data);
     } catch (error) {
       console.error("Erro ao carregar inspeções:", error);
@@ -114,7 +114,7 @@ export default function HistoricoInspecoes() {
 
     setGerandoRelatorio(true);
     try {
-      const response = await base44.functions.invoke("gerarRelatorioConsolidado", {
+      const response = await sigo.functions.invoke("gerarRelatorioConsolidado", {
         empresa_id: empresaAtiva.id,
         data_inicio: filtros.data_inicio,
         data_fim: filtros.data_fim,
@@ -163,7 +163,7 @@ export default function HistoricoInspecoes() {
 
     setGerandoRelatorio(true);
     try {
-      const response = await base44.functions.invoke("gerarRelatorioConsolidado", {
+      const response = await sigo.functions.invoke("gerarRelatorioConsolidado", {
         empresa_id: empresaAtiva.id,
         data_inicio: filtros.data_inicio,
         data_fim: filtros.data_fim,

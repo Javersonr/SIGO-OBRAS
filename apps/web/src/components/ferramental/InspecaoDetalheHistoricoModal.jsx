@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import SheetModalComponent from "@/components/ui/sheet-modal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -44,13 +44,13 @@ export default function InspecaoDetalheHistoricoModal({ open, onOpenChange, insp
       setLoading(true);
 
       // Buscar ferramentas do caminhão
-      const ferramentasData = await base44.entities.Ferramenta.filter({
+      const ferramentasData = await sigo.entities.Ferramenta.filter({
         empresa_id: inspecao.empresa_id,
         localizacao: inspecao.caminhao_placa,
       });
 
       // Buscar dados de inspeção
-      const inspecoesFerramental = await base44.entities.InspecaoFerramental.filter({
+      const inspecoesFerramental = await sigo.entities.InspecaoFerramental.filter({
         empresa_id: inspecao.empresa_id,
         inspecao_id: inspecao.id,
       });
@@ -78,7 +78,7 @@ export default function InspecaoDetalheHistoricoModal({ open, onOpenChange, insp
   const handleGerarPDF = async () => {
     setGerandoPDF(true);
     try {
-      const response = await base44.functions.invoke("gerarRelatorioInspecao", {
+      const response = await sigo.functions.invoke("gerarRelatorioInspecao", {
         inspecao_id: inspecao.id,
       });
 

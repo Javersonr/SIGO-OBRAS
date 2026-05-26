@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import { Plus, Trash2, Edit, Search, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -64,8 +64,8 @@ export default function InspecaoFerramenta() {
     setLoading(true);
     try {
       const [insp, ferrs] = await Promise.all([
-        base44.entities.InspecaoCaminhao.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.InspecaoCaminhao.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ]);
       setInspecoes(insp.sort((a, b) => new Date(b.data_inspecao) - new Date(a.data_inspecao)));
       setFerramentas(ferrs);
@@ -154,10 +154,10 @@ export default function InspecaoFerramenta() {
     setSaving(true);
     try {
       if (selectedInspecao) {
-        await base44.entities.InspecaoCaminhao.update(selectedInspecao.id, dataToSave);
+        await sigo.entities.InspecaoCaminhao.update(selectedInspecao.id, dataToSave);
         toast.success("Inspeção atualizada");
       } else {
-        await base44.entities.InspecaoCaminhao.create(dataToSave);
+        await sigo.entities.InspecaoCaminhao.create(dataToSave);
         toast.success("Inspeção criada");
       }
       setShowModal(false);
@@ -173,7 +173,7 @@ export default function InspecaoFerramenta() {
   const handleDelete = async (id) => {
     if (!confirm("Deseja deletar esta inspeção?")) return;
     try {
-      await base44.entities.InspecaoCaminhao.delete(id);
+      await sigo.entities.InspecaoCaminhao.delete(id);
       toast.success("Inspeção deletada");
       loadData();
     } catch (error) {

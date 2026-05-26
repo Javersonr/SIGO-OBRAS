@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -30,7 +30,7 @@ export default function DashboardConsolidado({ grupoId, user }) {
       setLoading(true);
 
       // Carregar empresas do grupo
-      const empresasGrupo = await base44.asServiceRole.entities.Empresa.filter({
+      const empresasGrupo = await sigo.asServiceRole.entities.Empresa.filter({
         grupo_id: grupoId,
         ativo: true,
       });
@@ -40,12 +40,12 @@ export default function DashboardConsolidado({ grupoId, user }) {
 
       // Carregar todos os dados em paralelo
       const [vencimentosData, transacoesData, pedidosData, documentosData] = await Promise.all([
-        base44.asServiceRole.entities.Vencimento.filter({ empresa_id: { $in: empresaIds } }),
-        base44.asServiceRole.entities.TransacaoFinanceira.filter({
+        sigo.asServiceRole.entities.Vencimento.filter({ empresa_id: { $in: empresaIds } }),
+        sigo.asServiceRole.entities.TransacaoFinanceira.filter({
           empresa_id: { $in: empresaIds },
         }),
-        base44.asServiceRole.entities.PedidoCompra.filter({ empresa_id: { $in: empresaIds } }),
-        base44.asServiceRole.entities.DocumentoEmpresa.filter({ empresa_id: { $in: empresaIds } }),
+        sigo.asServiceRole.entities.PedidoCompra.filter({ empresa_id: { $in: empresaIds } }),
+        sigo.asServiceRole.entities.DocumentoEmpresa.filter({ empresa_id: { $in: empresaIds } }),
       ]);
 
       setVencimentos(vencimentosData);

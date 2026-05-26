@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -143,8 +143,8 @@ export default function PermissoesTab() {
 
   const loadData = async () => {
     const [perfisList, permList] = await Promise.all([
-      base44.entities.PerfilPermissao.list(),
-      base44.entities.PermissaoDetalhada.list(),
+      sigo.entities.PerfilPermissao.list(),
+      sigo.entities.PermissaoDetalhada.list(),
     ]);
     setPerfis(perfisList);
     setPermissoes(permList);
@@ -199,9 +199,9 @@ export default function PermissoesTab() {
     };
 
     if (selectedPerfil) {
-      await base44.entities.PerfilPermissao.update(selectedPerfil.id, data);
+      await sigo.entities.PerfilPermissao.update(selectedPerfil.id, data);
     } else {
-      await base44.entities.PerfilPermissao.create(data);
+      await sigo.entities.PerfilPermissao.create(data);
     }
 
     setShowPerfilModal(false);
@@ -211,7 +211,7 @@ export default function PermissoesTab() {
   const handleCopiarPerfil = async (perfil) => {
     try {
       const perms = perfil.permissoes ? JSON.parse(perfil.permissoes) : {};
-      await base44.entities.PerfilPermissao.create({
+      await sigo.entities.PerfilPermissao.create({
         nome: `${perfil.nome} (Cópia)`,
         descricao: perfil.descricao,
         tipo: "Customizado",
@@ -227,7 +227,7 @@ export default function PermissoesTab() {
 
   const handleDeletePerfil = async (perfil) => {
     if (!confirm("Excluir este perfil?")) return;
-    await base44.entities.PerfilPermissao.delete(perfil.id);
+    await sigo.entities.PerfilPermissao.delete(perfil.id);
     loadData();
   };
 

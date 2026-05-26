@@ -1,18 +1,36 @@
-import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Edit, Trash2, PackageCheck } from 'lucide-react';
-import { toast } from 'sonner';
-import { format } from 'date-fns';
-import { cn } from '@/lib/utils';
-import InspecaoCaminhaoCampoModal from '@/components/ferramental/InspecaoCaminhaoCampoModal';
-import SolicitarEntregaCaminhaoModal from '@/components/seguranca/SolicitarEntregaCaminhaoModal';
+import React, { useState } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Plus, Edit, Trash2, PackageCheck } from "lucide-react";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+import InspecaoCaminhaoCampoModal from "@/components/ferramental/InspecaoCaminhaoCampoModal";
+import SolicitarEntregaCaminhaoModal from "@/components/seguranca/SolicitarEntregaCaminhaoModal";
 
-export default function CaminhoesTab({ caminhoes, inspecoesCaminhao, funcionarios, empresaAtiva, selectedCaminhao, setSelectedCaminhao, onNovoCaminhao, onEditarCaminhao, onRecarregar, user }) {
+export default function CaminhoesTab({
+  caminhoes,
+  inspecoesCaminhao,
+  funcionarios,
+  empresaAtiva,
+  selectedCaminhao,
+  setSelectedCaminhao,
+  onNovoCaminhao,
+  onEditarCaminhao,
+  onRecarregar,
+  user,
+}) {
   const [showSolicitarEntrega, setShowSolicitarEntrega] = useState(false);
   const [caminhaoParaEntrega, setCaminhaoParaEntrega] = useState(null);
 
@@ -20,9 +38,11 @@ export default function CaminhoesTab({ caminhoes, inspecoesCaminhao, funcionario
     return (
       <InspecaoCaminhaoCampoModal
         open={true}
-        onOpenChange={(open) => { if (!open) setSelectedCaminhao(null); }}
+        onOpenChange={(open) => {
+          if (!open) setSelectedCaminhao(null);
+        }}
         caminhao={selectedCaminhao}
-        user={{ full_name: empresaAtiva?.responsavel_principal || 'Usuário', email: '' }}
+        user={{ full_name: empresaAtiva?.responsavel_principal || "Usuário", email: "" }}
         empresaAtiva={empresaAtiva}
       />
     );
@@ -87,22 +107,34 @@ export default function CaminhoesTab({ caminhoes, inspecoesCaminhao, funcionario
                       </TableCell>
                     </TableRow>
                   ) : (
-                    caminhoes.map(caminhao => (
-                      <TableRow key={caminhao.id} onClick={() => setSelectedCaminhao(caminhao)} className="cursor-pointer hover:bg-slate-50">
+                    caminhoes.map((caminhao) => (
+                      <TableRow
+                        key={caminhao.id}
+                        onClick={() => setSelectedCaminhao(caminhao)}
+                        className="cursor-pointer hover:bg-slate-50"
+                      >
                         <TableCell>
                           {caminhao.foto_url ? (
-                            <img src={caminhao.foto_url} alt={caminhao.placa} className="w-12 h-12 rounded object-cover" />
+                            <img
+                              src={caminhao.foto_url}
+                              alt={caminhao.placa}
+                              className="w-12 h-12 rounded object-cover"
+                            />
                           ) : (
                             <div className="w-12 h-12 rounded bg-slate-100 flex items-center justify-center">
                               <span className="text-xs text-slate-400">🚛</span>
                             </div>
                           )}
                         </TableCell>
-                        <TableCell className="font-mono font-medium hover:text-amber-600">{caminhao.placa}</TableCell>
-                        <TableCell>{caminhao.modelo || '-'}</TableCell>
-                        <TableCell>{caminhao.marca || '-'}</TableCell>
-                        <TableCell>{caminhao.ano || '-'}</TableCell>
-                        <TableCell>{caminhao.km_atual ? `${caminhao.km_atual.toLocaleString()} km` : '-'}</TableCell>
+                        <TableCell className="font-mono font-medium hover:text-amber-600">
+                          {caminhao.placa}
+                        </TableCell>
+                        <TableCell>{caminhao.modelo || "-"}</TableCell>
+                        <TableCell>{caminhao.marca || "-"}</TableCell>
+                        <TableCell>{caminhao.ano || "-"}</TableCell>
+                        <TableCell>
+                          {caminhao.km_atual ? `${caminhao.km_atual.toLocaleString()} km` : "-"}
+                        </TableCell>
                         <TableCell>
                           {caminhao.motorista_padrao_nome ? (
                             <Badge variant="outline">{caminhao.motorista_padrao_nome}</Badge>
@@ -124,18 +156,33 @@ export default function CaminhoesTab({ caminhoes, inspecoesCaminhao, funcionario
                             >
                               <PackageCheck className="w-4 h-4 text-blue-500" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); onEditarCaminhao(caminhao); }}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onEditarCaminhao(caminhao);
+                              }}
+                            >
                               <Edit className="w-4 h-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={async (e) => {
-                              e.stopPropagation();
-                              if (!confirm(`Desativar o caminhão ${caminhao.placa}?`)) return;
-                              try {
-                                await base44.entities.Caminhao.update(caminhao.id, { ativo: false });
-                                toast.success('Caminhão desativado');
-                                onRecarregar();
-                              } catch { toast.error('Erro ao desativar caminhão'); }
-                            }}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (!confirm(`Desativar o caminhão ${caminhao.placa}?`)) return;
+                                try {
+                                  await sigo.entities.Caminhao.update(caminhao.id, {
+                                    ativo: false,
+                                  });
+                                  toast.success("Caminhão desativado");
+                                  onRecarregar();
+                                } catch {
+                                  toast.error("Erro ao desativar caminhão");
+                                }
+                              }}
+                            >
                               <Trash2 className="w-4 h-4 text-red-500" />
                             </Button>
                           </div>
@@ -168,26 +215,32 @@ export default function CaminhoesTab({ caminhoes, inspecoesCaminhao, funcionario
                       </TableCell>
                     </TableRow>
                   ) : (
-                    inspecoesCaminhao.map(insp => (
+                    inspecoesCaminhao.map((insp) => (
                       <TableRow key={insp.id}>
                         <TableCell className="font-medium">
-                          {format(new Date(insp.data_inspecao + 'T00:00:00'), 'dd/MM/yyyy')}
+                          {format(new Date(insp.data_inspecao + "T00:00:00"), "dd/MM/yyyy")}
                         </TableCell>
                         <TableCell className="font-mono text-sm">{insp.placa}</TableCell>
-                        <TableCell>{insp.modelo || '-'}</TableCell>
-                        <TableCell>{insp.motorista || '-'}</TableCell>
-                        <TableCell>{insp.km_atual ? `${insp.km_atual.toLocaleString()} km` : '-'}</TableCell>
+                        <TableCell>{insp.modelo || "-"}</TableCell>
+                        <TableCell>{insp.motorista || "-"}</TableCell>
                         <TableCell>
-                          <Badge className={cn(
-                            insp.status === 'Aprovado' && 'bg-green-100 text-green-700',
-                            insp.status === 'Reprovado' && 'bg-red-100 text-red-700',
-                            insp.status === 'Atenção' && 'bg-yellow-100 text-yellow-700'
-                          )}>
+                          {insp.km_atual ? `${insp.km_atual.toLocaleString()} km` : "-"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            className={cn(
+                              insp.status === "Aprovado" && "bg-green-100 text-green-700",
+                              insp.status === "Reprovado" && "bg-red-100 text-red-700",
+                              insp.status === "Atenção" && "bg-yellow-100 text-yellow-700"
+                            )}
+                          >
                             {insp.status}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-sm">
-                          {insp.proxima_inspecao ? format(new Date(insp.proxima_inspecao + 'T00:00:00'), 'dd/MM/yyyy') : '-'}
+                          {insp.proxima_inspecao
+                            ? format(new Date(insp.proxima_inspecao + "T00:00:00"), "dd/MM/yyyy")
+                            : "-"}
                         </TableCell>
                       </TableRow>
                     ))

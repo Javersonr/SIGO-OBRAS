@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -44,12 +44,12 @@ export default function InspecaoCaminhaoCampoModal({
     setLoading(true);
     try {
       const [camposDb, ferramentasDb, inspecoesDb] = await Promise.all([
-        base44.entities.CaminhaoCampoObrigatorio.filter({
+        sigo.entities.CaminhaoCampoObrigatorio.filter({
           empresa_id: empresaAtiva.id,
           caminhao_id: caminhao.id,
           ativo: true,
         }),
-        base44.entities.Ferramenta.filter(
+        sigo.entities.Ferramenta.filter(
           {
             empresa_id: empresaAtiva.id,
             ativo: true,
@@ -57,7 +57,7 @@ export default function InspecaoCaminhaoCampoModal({
           "-descricao",
           1000
         ),
-        base44.entities.InspecaoCaminhao.filter(
+        sigo.entities.InspecaoCaminhao.filter(
           {
             empresa_id: empresaAtiva.id,
             caminhao_id: caminhao.id,
@@ -97,7 +97,7 @@ export default function InspecaoCaminhaoCampoModal({
     }
 
     try {
-      const novaInspecao = await base44.entities.InspecaoCaminhao.create({
+      const novaInspecao = await sigo.entities.InspecaoCaminhao.create({
         empresa_id: empresaAtiva.id,
         caminhao_id: caminhao.id,
         caminhao_placa: caminhao.placa,
@@ -138,7 +138,7 @@ export default function InspecaoCaminhaoCampoModal({
       const proximoIndex = indexAtual + 1;
 
       // Atualizar contagem de campos inspecionados
-      await base44.entities.InspecaoCaminhao.update(inspecaoAtiva.id, {
+      await sigo.entities.InspecaoCaminhao.update(inspecaoAtiva.id, {
         campos_inspecionados: proximoIndex,
       });
 
@@ -147,7 +147,7 @@ export default function InspecaoCaminhaoCampoModal({
         setFotoReferencia(null);
       } else {
         // Inspeção concluída
-        await base44.entities.InspecaoCaminhao.update(inspecaoAtiva.id, {
+        await sigo.entities.InspecaoCaminhao.update(inspecaoAtiva.id, {
           status: "concluida",
         });
         toast.success("Inspeção concluída com sucesso!");

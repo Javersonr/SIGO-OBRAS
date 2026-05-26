@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../../../Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Target, TrendingUp, CheckCircle, XCircle } from "lucide-react";
@@ -30,8 +30,8 @@ export default function WidgetDashOportunidades({ onDadosCarregados }) {
   const load = async () => {
     try {
       const [oportunidades, status] = await Promise.all([
-        base44.entities.Oportunidade.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.StatusOportunidade.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.Oportunidade.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.StatusOportunidade.filter({ empresa_id: empresaAtiva.id }),
       ]);
 
       const abertas = oportunidades.filter((o) => {

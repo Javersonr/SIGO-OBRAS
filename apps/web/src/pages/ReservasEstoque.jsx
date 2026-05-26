@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/lib/layout-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,7 +24,7 @@ export default function ReservasEstoque() {
     try {
       const query = { empresa_id: empresaAtiva.id };
       if (filtro !== "Todas") query.status = filtro;
-      const dados = await base44.entities.ReservaMaterial.filter(query);
+      const dados = await sigo.entities.ReservaMaterial.filter(query);
       // Agrupar por numero de reserva
       const agrupadas = {};
       dados.forEach((r) => {

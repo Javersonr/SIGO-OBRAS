@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import { useSearchParams } from "react-router-dom";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -154,12 +154,12 @@ export default function Financeiro() {
     setLoading(true);
     try {
       const [trans, conts, cats, projs, forns, clis] = await Promise.all([
-        base44.entities.TransacaoFinanceira.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.ContaFinanceira.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.CategoriaFinanceira.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.Fornecedor.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Cliente.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.TransacaoFinanceira.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.ContaFinanceira.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.CategoriaFinanceira.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.Fornecedor.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Cliente.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ]);
 
       setTransacoes(trans);

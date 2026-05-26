@@ -11,6 +11,9 @@
   RewriteBase /
 
   # 1a. Força HTTPS (caso SSL não force no nível do cPanel)
+  # EXCETO /.well-known/ — Let's Encrypt valida cert via HTTP nesse path
+  # (se redirecionarmos, AutoSSL falha o handshake porque o cert ainda não existe)
+  RewriteCond %{REQUEST_URI} !^/\.well-known/
   RewriteCond %{HTTPS} off
   RewriteCond %{HTTP:X-Forwarded-Proto} !https
   RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]

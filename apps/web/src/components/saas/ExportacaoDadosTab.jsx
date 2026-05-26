@@ -1,48 +1,54 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Download, Loader2, CheckCircle2, Database } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import * as XLSX from 'xlsx';
-import { toast } from 'sonner';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Download, Loader2, CheckCircle2, Database } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import * as XLSX from "xlsx";
+import { toast } from "sonner";
 
 const ENTIDADES = [
-  { key: 'Empresa', label: 'Empresas' },
-  { key: 'UsuarioEmpresa', label: 'Usuários de Empresas' },
-  { key: 'Plano', label: 'Planos' },
-  { key: 'Assinatura', label: 'Assinaturas' },
-  { key: 'Cliente', label: 'Clientes' },
-  { key: 'Fornecedor', label: 'Fornecedores' },
-  { key: 'Projeto', label: 'Projetos' },
-  { key: 'Oportunidade', label: 'Oportunidades' },
-  { key: 'TransacaoFinanceira', label: 'Transações Financeiras' },
-  { key: 'ContaFinanceira', label: 'Contas Financeiras' },
-  { key: 'CategoriaFinanceira', label: 'Categorias Financeiras' },
-  { key: 'CentroCusto', label: 'Centros de Custo' },
-  { key: 'SolicitacaoCompra', label: 'Solicitações de Compra' },
-  { key: 'PedidoCompra', label: 'Pedidos de Compra' },
-  { key: 'Cotacao', label: 'Cotações' },
-  { key: 'Material', label: 'Materiais' },
-  { key: 'Almoxarifado', label: 'Almoxarifados' },
-  { key: 'EstoqueMovimento', label: 'Movimentos de Estoque' },
-  { key: 'Funcionario', label: 'Funcionários' },
-  { key: 'Ferramental', label: 'Ferramentais' },
-  { key: 'PreLancamento', label: 'Pré-Lançamentos' },
-  { key: 'ExtratoBancario', label: 'Extrato Bancário' },
-  { key: 'DiarioObra', label: 'Diário de Obra' },
+  { key: "Empresa", label: "Empresas" },
+  { key: "UsuarioEmpresa", label: "Usuários de Empresas" },
+  { key: "Plano", label: "Planos" },
+  { key: "Assinatura", label: "Assinaturas" },
+  { key: "Cliente", label: "Clientes" },
+  { key: "Fornecedor", label: "Fornecedores" },
+  { key: "Projeto", label: "Projetos" },
+  { key: "Oportunidade", label: "Oportunidades" },
+  { key: "TransacaoFinanceira", label: "Transações Financeiras" },
+  { key: "ContaFinanceira", label: "Contas Financeiras" },
+  { key: "CategoriaFinanceira", label: "Categorias Financeiras" },
+  { key: "CentroCusto", label: "Centros de Custo" },
+  { key: "SolicitacaoCompra", label: "Solicitações de Compra" },
+  { key: "PedidoCompra", label: "Pedidos de Compra" },
+  { key: "Cotacao", label: "Cotações" },
+  { key: "Material", label: "Materiais" },
+  { key: "Almoxarifado", label: "Almoxarifados" },
+  { key: "EstoqueMovimento", label: "Movimentos de Estoque" },
+  { key: "Funcionario", label: "Funcionários" },
+  { key: "Ferramental", label: "Ferramentais" },
+  { key: "PreLancamento", label: "Pré-Lançamentos" },
+  { key: "ExtratoBancario", label: "Extrato Bancário" },
+  { key: "DiarioObra", label: "Diário de Obra" },
 ];
 
 export default function ExportacaoDadosTab() {
-  const [empresaId, setEmpresaId] = useState('');
+  const [empresaId, setEmpresaId] = useState("");
   const [empresas, setEmpresas] = useState([]);
   const [loadingEmpresas, setLoadingEmpresas] = useState(false);
   const [exportando, setExportando] = useState({});
   const [exportandoTudo, setExportandoTudo] = useState(false);
   const [exportandoTodasEmpresas, setExportandoTodasEmpresas] = useState(false);
-  const [progressoTodasEmpresas, setProgressoTodasEmpresas] = useState('');
+  const [progressoTodasEmpresas, setProgressoTodasEmpresas] = useState("");
   const [contagens, setContagens] = useState({});
   const [contagensLoading, setContagensLoading] = useState(false);
 
@@ -50,7 +56,7 @@ export default function ExportacaoDadosTab() {
     const carregarEmpresas = async () => {
       setLoadingEmpresas(true);
       try {
-        const lista = await base44.entities.Empresa.filter({ ativo: true });
+        const lista = await sigo.entities.Empresa.filter({ ativo: true });
         setEmpresas(lista);
       } catch (e) {
         console.error(e);
@@ -62,14 +68,17 @@ export default function ExportacaoDadosTab() {
   }, []);
 
   useEffect(() => {
-    if (!empresaId) { setContagens({}); return; }
+    if (!empresaId) {
+      setContagens({});
+      return;
+    }
     const carregarContagens = async () => {
       setContagensLoading(true);
       const novasContagens = {};
       await Promise.all(
         ENTIDADES.map(async ({ key }) => {
           try {
-            const dados = await base44.entities[key]?.filter?.({ empresa_id: empresaId }) || [];
+            const dados = (await sigo.entities[key]?.filter?.({ empresa_id: empresaId })) || [];
             novasContagens[key] = dados.length;
           } catch {
             novasContagens[key] = 0;
@@ -82,18 +91,26 @@ export default function ExportacaoDadosTab() {
     carregarContagens();
   }, [empresaId]);
 
-  const exportarEntidade = async (key, label, formato = 'excel') => {
-    if (!empresaId) { toast.error('Selecione uma empresa'); return; }
-    setExportando(prev => ({ ...prev, [key]: true }));
+  const exportarEntidade = async (key, label, formato = "excel") => {
+    if (!empresaId) {
+      toast.error("Selecione uma empresa");
+      return;
+    }
+    setExportando((prev) => ({ ...prev, [key]: true }));
     try {
-      const dados = await base44.entities[key]?.filter?.({ empresa_id: empresaId }) || [];
-      if (dados.length === 0) { toast.info(`Sem dados para ${label}`); return; }
+      const dados = (await sigo.entities[key]?.filter?.({ empresa_id: empresaId })) || [];
+      if (dados.length === 0) {
+        toast.info(`Sem dados para ${label}`);
+        return;
+      }
 
-      if (formato === 'json') {
-        const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
+      if (formato === "json") {
+        const blob = new Blob([JSON.stringify(dados, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url;
-        a.download = `${key}_${empresaId}.json`; a.click();
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${key}_${empresaId}.json`;
+        a.click();
         URL.revokeObjectURL(url);
       } else {
         const ws = XLSX.utils.json_to_sheet(dados);
@@ -105,37 +122,44 @@ export default function ExportacaoDadosTab() {
     } catch (e) {
       toast.error(`Erro ao exportar ${label}`);
     } finally {
-      setExportando(prev => ({ ...prev, [key]: false }));
+      setExportando((prev) => ({ ...prev, [key]: false }));
     }
   };
 
-  const exportarTudo = async (formato = 'excel') => {
-    if (!empresaId) { toast.error('Selecione uma empresa'); return; }
+  const exportarTudo = async (formato = "excel") => {
+    if (!empresaId) {
+      toast.error("Selecione uma empresa");
+      return;
+    }
     setExportandoTudo(true);
     try {
-      const empresa = empresas.find(e => e.id === empresaId);
-      const nomeArquivo = `backup_${empresa?.nome || empresaId}_${new Date().toISOString().split('T')[0]}`;
+      const empresa = empresas.find((e) => e.id === empresaId);
+      const nomeArquivo = `backup_${empresa?.nome || empresaId}_${new Date().toISOString().split("T")[0]}`;
 
-      if (formato === 'json') {
+      if (formato === "json") {
         const backup = {};
         await Promise.all(
           ENTIDADES.map(async ({ key }) => {
             try {
-              backup[key] = await base44.entities[key]?.filter?.({ empresa_id: empresaId }) || [];
-            } catch { backup[key] = []; }
+              backup[key] = (await sigo.entities[key]?.filter?.({ empresa_id: empresaId })) || [];
+            } catch {
+              backup[key] = [];
+            }
           })
         );
-        const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+        const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url;
-        a.download = `${nomeArquivo}.json`; a.click();
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${nomeArquivo}.json`;
+        a.click();
         URL.revokeObjectURL(url);
       } else {
         const wb = XLSX.utils.book_new();
         await Promise.all(
           ENTIDADES.map(async ({ key, label }) => {
             try {
-              const dados = await base44.entities[key]?.filter?.({ empresa_id: empresaId }) || [];
+              const dados = (await sigo.entities[key]?.filter?.({ empresa_id: empresaId })) || [];
               if (dados.length > 0) {
                 const ws = XLSX.utils.json_to_sheet(dados);
                 XLSX.utils.book_append_sheet(wb, ws, label.slice(0, 31));
@@ -145,21 +169,21 @@ export default function ExportacaoDadosTab() {
         );
         XLSX.writeFile(wb, `${nomeArquivo}.xlsx`);
       }
-      toast.success('Backup completo exportado!');
+      toast.success("Backup completo exportado!");
     } catch (e) {
-      toast.error('Erro ao exportar backup');
+      toast.error("Erro ao exportar backup");
     } finally {
       setExportandoTudo(false);
     }
   };
 
-  const exportarTodasEmpresas = async (formato = 'excel') => {
+  const exportarTodasEmpresas = async (formato = "excel") => {
     setExportandoTodasEmpresas(true);
-    setProgressoTodasEmpresas('Iniciando...');
+    setProgressoTodasEmpresas("Iniciando...");
     try {
-      const nomeArquivo = `backup_todas_empresas_${new Date().toISOString().split('T')[0]}`;
+      const nomeArquivo = `backup_todas_empresas_${new Date().toISOString().split("T")[0]}`;
 
-      if (formato === 'json') {
+      if (formato === "json") {
         const backupGeral = {};
         for (let i = 0; i < empresas.length; i++) {
           const emp = empresas[i];
@@ -168,15 +192,20 @@ export default function ExportacaoDadosTab() {
           await Promise.all(
             ENTIDADES.map(async ({ key }) => {
               try {
-                backupGeral[emp.nome][key] = await base44.entities[key]?.filter?.({ empresa_id: emp.id }) || [];
-              } catch { backupGeral[emp.nome][key] = []; }
+                backupGeral[emp.nome][key] =
+                  (await sigo.entities[key]?.filter?.({ empresa_id: emp.id })) || [];
+              } catch {
+                backupGeral[emp.nome][key] = [];
+              }
             })
           );
         }
-        const blob = new Blob([JSON.stringify(backupGeral, null, 2)], { type: 'application/json' });
+        const blob = new Blob([JSON.stringify(backupGeral, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url;
-        a.download = `${nomeArquivo}.json`; a.click();
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${nomeArquivo}.json`;
+        a.click();
         URL.revokeObjectURL(url);
       } else {
         const wb = XLSX.utils.book_new();
@@ -185,7 +214,7 @@ export default function ExportacaoDadosTab() {
           setProgressoTodasEmpresas(`Exportando ${emp.nome} (${i + 1}/${empresas.length})...`);
           for (const { key, label } of ENTIDADES) {
             try {
-              const dados = await base44.entities[key]?.filter?.({ empresa_id: emp.id }) || [];
+              const dados = (await sigo.entities[key]?.filter?.({ empresa_id: emp.id })) || [];
               if (dados.length > 0) {
                 const nomeAba = `${emp.nome.slice(0, 15)}_${label.slice(0, 14)}`.slice(0, 31);
                 const ws = XLSX.utils.json_to_sheet(dados);
@@ -196,12 +225,12 @@ export default function ExportacaoDadosTab() {
         }
         XLSX.writeFile(wb, `${nomeArquivo}.xlsx`);
       }
-      toast.success('Todas as empresas exportadas!');
+      toast.success("Todas as empresas exportadas!");
     } catch (e) {
-      toast.error('Erro ao exportar');
+      toast.error("Erro ao exportar");
     } finally {
       setExportandoTodasEmpresas(false);
-      setProgressoTodasEmpresas('');
+      setProgressoTodasEmpresas("");
     }
   };
 
@@ -216,7 +245,9 @@ export default function ExportacaoDadosTab() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-sm text-blue-700">Exporta os dados de <strong>todas as {empresas.length} empresas</strong> de uma só vez.</p>
+          <p className="text-sm text-blue-700">
+            Exporta os dados de <strong>todas as {empresas.length} empresas</strong> de uma só vez.
+          </p>
           {exportandoTodasEmpresas && (
             <p className="text-sm text-blue-600 flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" /> {progressoTodasEmpresas}
@@ -224,20 +255,28 @@ export default function ExportacaoDadosTab() {
           )}
           <div className="flex gap-3">
             <Button
-              onClick={() => exportarTodasEmpresas('excel')}
+              onClick={() => exportarTodasEmpresas("excel")}
               disabled={exportandoTodasEmpresas || empresas.length === 0}
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
-              {exportandoTodasEmpresas ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+              {exportandoTodasEmpresas ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4 mr-2" />
+              )}
               Todas as Empresas (Excel)
             </Button>
             <Button
-              onClick={() => exportarTodasEmpresas('json')}
+              onClick={() => exportarTodasEmpresas("json")}
               disabled={exportandoTodasEmpresas || empresas.length === 0}
               variant="outline"
               className="border-blue-300"
             >
-              {exportandoTodasEmpresas ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+              {exportandoTodasEmpresas ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4 mr-2" />
+              )}
               Todas as Empresas (JSON)
             </Button>
           </div>
@@ -257,11 +296,15 @@ export default function ExportacaoDadosTab() {
             <Label>Empresa</Label>
             <Select value={empresaId} onValueChange={setEmpresaId}>
               <SelectTrigger className="mt-1.5">
-                <SelectValue placeholder={loadingEmpresas ? 'Carregando...' : 'Selecione a empresa'} />
+                <SelectValue
+                  placeholder={loadingEmpresas ? "Carregando..." : "Selecione a empresa"}
+                />
               </SelectTrigger>
               <SelectContent>
-                {empresas.map(e => (
-                  <SelectItem key={e.id} value={e.id}>{e.nome}</SelectItem>
+                {empresas.map((e) => (
+                  <SelectItem key={e.id} value={e.id}>
+                    {e.nome}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -270,19 +313,27 @@ export default function ExportacaoDadosTab() {
           {empresaId && (
             <div className="flex gap-3 pt-2">
               <Button
-                onClick={() => exportarTudo('excel')}
+                onClick={() => exportarTudo("excel")}
                 disabled={exportandoTudo}
                 className="bg-green-600 hover:bg-green-700 text-white"
               >
-                {exportandoTudo ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+                {exportandoTudo ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
                 Exportar Tudo (Excel)
               </Button>
               <Button
-                onClick={() => exportarTudo('json')}
+                onClick={() => exportarTudo("json")}
                 disabled={exportandoTudo}
                 variant="outline"
               >
-                {exportandoTudo ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+                {exportandoTudo ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
                 Exportar Tudo (JSON)
               </Button>
             </div>
@@ -307,7 +358,9 @@ export default function ExportacaoDadosTab() {
                       </Badge>
                     )}
                   </div>
-                  {contagens[key] > 0 && <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />}
+                  {contagens[key] > 0 && (
+                    <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -315,18 +368,18 @@ export default function ExportacaoDadosTab() {
                     variant="outline"
                     className="flex-1 text-xs"
                     disabled={!!exportando[key] || contagens[key] === 0}
-                    onClick={() => exportarEntidade(key, label, 'excel')}
+                    onClick={() => exportarEntidade(key, label, "excel")}
                   >
-                    {exportando[key] ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Excel'}
+                    {exportando[key] ? <Loader2 className="w-3 h-3 animate-spin" /> : "Excel"}
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
                     className="flex-1 text-xs"
                     disabled={!!exportando[key] || contagens[key] === 0}
-                    onClick={() => exportarEntidade(key, label, 'json')}
+                    onClick={() => exportarEntidade(key, label, "json")}
                   >
-                    {exportando[key] ? <Loader2 className="w-3 h-3 animate-spin" /> : 'JSON'}
+                    {exportando[key] ? <Loader2 className="w-3 h-3 animate-spin" /> : "JSON"}
                   </Button>
                 </div>
               </CardContent>

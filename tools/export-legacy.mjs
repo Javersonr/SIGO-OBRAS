@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * export-base44.mjs
+ * export-legacy.mjs
  *
  * Exporta TODAS as entidades + dados + arquivos da plataforma anterior
  * (Base44 REST API) usando fetch direto com header `api_key`.
@@ -12,9 +12,9 @@
  *   Headers: { api_key: <ADMIN_KEY> }
  *
  * Uso:
- *   cp .env.example .env  # preencha BASE44_APP_ID, BASE44_API_KEY
+ *   cp .env.example .env  # preencha LEGACY_APP_ID, LEGACY_API_KEY
  *   npm install
- *   npm run export:base44
+ *   npm run export:legacy
  *
  * Saída:
  *   dump/_meta.json                 — metadados (lista de entities, contagens, falhas)
@@ -33,10 +33,10 @@ import { Readable } from "stream";
 dotenv.config();
 
 const {
-  BASE44_APP_ID,
-  BASE44_API_KEY,
-  BASE44_SERVER_URL = "https://base44.app",
-  BASE44_ENTITIES,
+  LEGACY_APP_ID,
+  LEGACY_API_KEY,
+  LEGACY_SERVER_URL = "https://base44.app",
+  LEGACY_ENTITIES,
   DUMP_DIR = "./dump",
   DOWNLOAD_FILES = "true",
   CONCURRENCY = "4",
@@ -47,8 +47,8 @@ const {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-if (!BASE44_APP_ID || !BASE44_API_KEY) {
-  console.error("✗ Faltam vars no .env: BASE44_APP_ID e BASE44_API_KEY são obrigatórios");
+if (!LEGACY_APP_ID || !LEGACY_API_KEY) {
+  console.error("✗ Faltam vars no .env: LEGACY_APP_ID e LEGACY_API_KEY são obrigatórios");
   process.exit(1);
 }
 
@@ -62,21 +62,21 @@ await fs.mkdir(dumpDir, { recursive: true });
 if (downloadFiles) await fs.mkdir(filesDir, { recursive: true });
 
 console.log("=== Export da plataforma anterior ===");
-console.log("App ID:    ", BASE44_APP_ID);
-console.log("Server URL:", BASE44_SERVER_URL);
+console.log("App ID:    ", LEGACY_APP_ID);
+console.log("Server URL:", LEGACY_SERVER_URL);
 console.log("Dump dir:  ", dumpDir);
 console.log("Files:     ", downloadFiles ? `ON (concurrency=${fileConcurrency})` : "OFF");
 console.log("");
 
-const apiBase = `${BASE44_SERVER_URL}/api/apps/${BASE44_APP_ID}/entities`;
-const headers = { api_key: BASE44_API_KEY };
+const apiBase = `${LEGACY_SERVER_URL}/api/apps/${LEGACY_APP_ID}/entities`;
+const headers = { api_key: LEGACY_API_KEY };
 
 // ---------------------------------------------------------------------------
 // 1. Lista de entidades (100 oficiais do schema)
 // ---------------------------------------------------------------------------
 function getEntitiesList() {
-  if (BASE44_ENTITIES) {
-    return BASE44_ENTITIES.split(",")
+  if (LEGACY_ENTITIES) {
+    return LEGACY_ENTITIES.split(",")
       .map((s) => s.trim())
       .filter(Boolean);
   }
@@ -391,8 +391,8 @@ if (downloadFiles) {
 
 const meta = {
   exportedAt: new Date().toISOString(),
-  appId: BASE44_APP_ID,
-  serverUrl: BASE44_SERVER_URL,
+  appId: LEGACY_APP_ID,
+  serverUrl: LEGACY_SERVER_URL,
   durationMs: Date.now() - t0,
   totalEntities: results.length,
   totalRecords: results.reduce((acc, r) => acc + (r.count || 0), 0),

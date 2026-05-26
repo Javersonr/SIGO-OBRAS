@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '../../../Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Shield, AlertTriangle, Clock, UserCheck, FileWarning, Calendar } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import React, { useEffect, useState } from "react";
+import { sigo } from "@/api/sigoClient";
+import { useEmpresa } from "../../../Layout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Shield, AlertTriangle, Clock, UserCheck, FileWarning, Calendar } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 export default function WidgetDashSeguranca({ onDadosCarregados }) {
   const { empresaAtiva } = useEmpresa();
@@ -17,18 +17,25 @@ export default function WidgetDashSeguranca({ onDadosCarregados }) {
 
   const load = async () => {
     try {
-      const funcionarios = await base44.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true });
+      const funcionarios = await sigo.entities.Funcionario.filter({
+        empresa_id: empresaAtiva.id,
+        ativo: true,
+      });
 
       const hoje = new Date();
-      const em30Dias = new Date(); em30Dias.setDate(em30Dias.getDate() + 30);
-      const em90Dias = new Date(); em90Dias.setDate(em90Dias.getDate() + 90);
+      const em30Dias = new Date();
+      em30Dias.setDate(em30Dias.getDate() + 30);
+      const em90Dias = new Date();
+      em90Dias.setDate(em90Dias.getDate() + 90);
 
       // Treinamentos/cursos próximos de vencer (data_vencimento nos próximos 30 dias)
-      let cursosVencendo = 0, cursosVencidos = 0;
-      let asoVencendo = 0, asoVencido = 0;
+      let cursosVencendo = 0,
+        cursosVencidos = 0;
+      let asoVencendo = 0,
+        asoVencido = 0;
       let contratoVencendo90 = 0; // contratados nos últimos 90 dias (período de experiência)
 
-      funcionarios.forEach(f => {
+      funcionarios.forEach((f) => {
         // ASO (data_aso ou data_exame_admissional)
         const dataAso = f.data_aso || f.data_exame_medico;
         if (dataAso) {
@@ -50,8 +57,8 @@ export default function WidgetDashSeguranca({ onDadosCarregados }) {
       // Treinamentos
       let treinamentos = [];
       try {
-        treinamentos = await base44.entities.Treinamento.filter({ empresa_id: empresaAtiva.id });
-        treinamentos.forEach(t => {
+        treinamentos = await sigo.entities.Treinamento.filter({ empresa_id: empresaAtiva.id });
+        treinamentos.forEach((t) => {
           if (!t.data_vencimento) return;
           const d = new Date(t.data_vencimento);
           if (d < hoje) cursosVencidos++;
@@ -62,17 +69,26 @@ export default function WidgetDashSeguranca({ onDadosCarregados }) {
       // Inspeções (InspecaoCampo do mês atual)
       let inspecoesMes = 0;
       try {
-        const inspecoes = await base44.entities.InspecaoCampo.filter({ empresa_id: empresaAtiva.id });
+        const inspecoes = await sigo.entities.InspecaoCampo.filter({ empresa_id: empresaAtiva.id });
         const mesAtual = hoje.getMonth();
         const anoAtual = hoje.getFullYear();
-        inspecoesMes = inspecoes.filter(i => {
+        inspecoesMes = inspecoes.filter((i) => {
           const d = new Date(i.created_date);
           return d.getMonth() === mesAtual && d.getFullYear() === anoAtual;
         }).length;
       } catch {}
 
-      const d = { totalFuncionarios: funcionarios.length, cursosVencendo, cursosVencidos, asoVencendo, asoVencido, contratoVencendo90, inspecoesMes };
-      setData(d); onDadosCarregados?.(d);
+      const d = {
+        totalFuncionarios: funcionarios.length,
+        cursosVencendo,
+        cursosVencidos,
+        asoVencendo,
+        asoVencido,
+        contratoVencendo90,
+        inspecoesMes,
+      };
+      setData(d);
+      onDadosCarregados?.(d);
     } catch (e) {
       console.error(e);
     } finally {
@@ -84,19 +100,44 @@ export default function WidgetDashSeguranca({ onDadosCarregados }) {
   if (!data) return null;
 
   const alertas = [
-    { label: 'ASO Vencidos', value: data.asoVencido, color: 'red', icon: AlertTriangle },
-    { label: 'ASO Vencendo (30d)', value: data.asoVencendo, color: 'yellow', icon: Clock },
-    { label: 'Cursos Vencidos', value: data.cursosVencidos, color: 'red', icon: FileWarning },
-    { label: 'Cursos Vencendo (30d)', value: data.cursosVencendo, color: 'yellow', icon: Calendar },
-    { label: 'Contrato 90d Vencendo', value: data.contratoVencendo90, color: 'orange', icon: UserCheck },
-    { label: 'Inspeções no Mês', value: data.inspecoesMes, color: 'blue', icon: Shield },
+    { label: "ASO Vencidos", value: data.asoVencido, color: "red", icon: AlertTriangle },
+    { label: "ASO Vencendo (30d)", value: data.asoVencendo, color: "yellow", icon: Clock },
+    { label: "Cursos Vencidos", value: data.cursosVencidos, color: "red", icon: FileWarning },
+    { label: "Cursos Vencendo (30d)", value: data.cursosVencendo, color: "yellow", icon: Calendar },
+    {
+      label: "Contrato 90d Vencendo",
+      value: data.contratoVencendo90,
+      color: "orange",
+      icon: UserCheck,
+    },
+    { label: "Inspeções no Mês", value: data.inspecoesMes, color: "blue", icon: Shield },
   ];
 
   const colorMap = {
-    red: { bg: 'bg-red-50', text: 'text-red-700', badge: 'bg-red-100 text-red-700 border-red-200', icon: 'text-red-500' },
-    yellow: { bg: 'bg-yellow-50', text: 'text-yellow-700', badge: 'bg-yellow-100 text-yellow-700 border-yellow-200', icon: 'text-yellow-500' },
-    orange: { bg: 'bg-orange-50', text: 'text-orange-700', badge: 'bg-orange-100 text-orange-700 border-orange-200', icon: 'text-orange-500' },
-    blue: { bg: 'bg-blue-50', text: 'text-blue-700', badge: 'bg-blue-100 text-blue-700 border-blue-200', icon: 'text-blue-500' },
+    red: {
+      bg: "bg-red-50",
+      text: "text-red-700",
+      badge: "bg-red-100 text-red-700 border-red-200",
+      icon: "text-red-500",
+    },
+    yellow: {
+      bg: "bg-yellow-50",
+      text: "text-yellow-700",
+      badge: "bg-yellow-100 text-yellow-700 border-yellow-200",
+      icon: "text-yellow-500",
+    },
+    orange: {
+      bg: "bg-orange-50",
+      text: "text-orange-700",
+      badge: "bg-orange-100 text-orange-700 border-orange-200",
+      icon: "text-orange-500",
+    },
+    blue: {
+      bg: "bg-blue-50",
+      text: "text-blue-700",
+      badge: "bg-blue-100 text-blue-700 border-blue-200",
+      icon: "text-blue-500",
+    },
   };
 
   return (
@@ -105,7 +146,10 @@ export default function WidgetDashSeguranca({ onDadosCarregados }) {
         <Card className="border-l-4 border-l-blue-500 sm:col-span-1">
           <CardContent className="p-3">
             <div className="flex items-center justify-between">
-              <div><p className="text-xs text-slate-500">Funcionários</p><p className="text-2xl font-bold text-blue-600">{data.totalFuncionarios}</p></div>
+              <div>
+                <p className="text-xs text-slate-500">Funcionários</p>
+                <p className="text-2xl font-bold text-blue-600">{data.totalFuncionarios}</p>
+              </div>
               <UserCheck className="w-8 h-8 text-blue-200" />
             </div>
             <p className="text-xs text-slate-400 mt-1">ativos</p>
@@ -115,7 +159,10 @@ export default function WidgetDashSeguranca({ onDadosCarregados }) {
         <Card className="border-l-4 border-l-red-500">
           <CardContent className="p-3">
             <div className="flex items-center justify-between">
-              <div><p className="text-xs text-slate-500">ASO Vencidos</p><p className="text-2xl font-bold text-red-600">{data.asoVencido}</p></div>
+              <div>
+                <p className="text-xs text-slate-500">ASO Vencidos</p>
+                <p className="text-2xl font-bold text-red-600">{data.asoVencido}</p>
+              </div>
               <AlertTriangle className="w-8 h-8 text-red-200" />
             </div>
             <p className="text-xs text-slate-400 mt-1">{data.asoVencendo} vencendo em 30d</p>
@@ -125,7 +172,10 @@ export default function WidgetDashSeguranca({ onDadosCarregados }) {
         <Card className="border-l-4 border-l-orange-500">
           <CardContent className="p-3">
             <div className="flex items-center justify-between">
-              <div><p className="text-xs text-slate-500">Contratos 90d</p><p className="text-2xl font-bold text-orange-600">{data.contratoVencendo90}</p></div>
+              <div>
+                <p className="text-xs text-slate-500">Contratos 90d</p>
+                <p className="text-2xl font-bold text-orange-600">{data.contratoVencendo90}</p>
+              </div>
               <Clock className="w-8 h-8 text-orange-200" />
             </div>
             <p className="text-xs text-slate-400 mt-1">vencendo em breve</p>
@@ -134,7 +184,9 @@ export default function WidgetDashSeguranca({ onDadosCarregados }) {
       </div>
 
       <Card>
-        <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm">Alertas de Segurança</CardTitle></CardHeader>
+        <CardHeader className="pb-2 pt-3 px-4">
+          <CardTitle className="text-sm">Alertas de Segurança</CardTitle>
+        </CardHeader>
         <CardContent className="px-4 pb-4 space-y-2">
           {alertas.map((a, i) => {
             const c = colorMap[a.color];

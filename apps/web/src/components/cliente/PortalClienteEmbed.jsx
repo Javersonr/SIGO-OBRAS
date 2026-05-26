@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,13 +35,13 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
     setLoading(true);
     try {
       // Tentar carregar como Projeto primeiro, se não encontrar, busca como Oportunidade
-      let projeto = await base44.entities.Projeto.filter({ id: projetoId });
+      let projeto = await sigo.entities.Projeto.filter({ id: projetoId });
       let oportunidadeData = null;
 
       if (projeto.length > 0) {
         oportunidadeData = projeto[0];
       } else {
-        const op = await base44.entities.Oportunidade.filter({ id: projetoId });
+        const op = await sigo.entities.Oportunidade.filter({ id: projetoId });
         if (op.length === 0) {
           setLoading(false);
           return;
@@ -52,13 +52,13 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
       setOportunidade(oportunidadeData);
 
       // Carregar orçamento
-      let itens = await base44.entities.OrcamentoItem.filter({
+      let itens = await sigo.entities.OrcamentoItem.filter({
         empresa_id: empresaAtiva.id,
         projeto_id: projetoId,
       });
 
       if (itens.length === 0) {
-        itens = await base44.entities.OrcamentoItem.filter({
+        itens = await sigo.entities.OrcamentoItem.filter({
           empresa_id: empresaAtiva.id,
           oportunidade_id: projetoId,
         });
@@ -66,13 +66,13 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
       setOrcamentoItens(itens.sort((a, b) => a.ordem - b.ordem));
 
       // Carregar cronograma
-      let etapas = await base44.entities.CronogramaEtapa.filter({
+      let etapas = await sigo.entities.CronogramaEtapa.filter({
         empresa_id: empresaAtiva.id,
         projeto_id: projetoId,
       });
 
       if (etapas.length === 0) {
-        etapas = await base44.entities.CronogramaEtapa.filter({
+        etapas = await sigo.entities.CronogramaEtapa.filter({
           empresa_id: empresaAtiva.id,
           oportunidade_id: projetoId,
         });
@@ -80,13 +80,13 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
       setCronogramaEtapas(etapas.sort((a, b) => a.ordem - b.ordem));
 
       // Carregar arquivos
-      let arqs = await base44.entities.ArquivoOportunidade.filter({
+      let arqs = await sigo.entities.ArquivoOportunidade.filter({
         empresa_id: empresaAtiva.id,
         projeto_id: projetoId,
       });
 
       if (arqs.length === 0) {
-        arqs = await base44.entities.ArquivoOportunidade.filter({
+        arqs = await sigo.entities.ArquivoOportunidade.filter({
           empresa_id: empresaAtiva.id,
           oportunidade_id: projetoId,
         });
@@ -94,14 +94,14 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
       setArquivos(arqs.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
 
       // Carregar anotações
-      let notas = await base44.entities.OportunidadeAtualizacao.filter({
+      let notas = await sigo.entities.OportunidadeAtualizacao.filter({
         empresa_id: empresaAtiva.id,
         projeto_id: projetoId,
         tipo: "Nota",
       });
 
       if (notas.length === 0) {
-        notas = await base44.entities.OportunidadeAtualizacao.filter({
+        notas = await sigo.entities.OportunidadeAtualizacao.filter({
           empresa_id: empresaAtiva.id,
           oportunidade_id: projetoId,
           tipo: "Nota",
@@ -110,7 +110,7 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
       setAnotacoes(notas.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
 
       // Carregar diários de obra
-      const diario = await base44.entities.DiarioObra.filter({
+      const diario = await sigo.entities.DiarioObra.filter({
         empresa_id: empresaAtiva.id,
         projeto_id: projetoId,
       });

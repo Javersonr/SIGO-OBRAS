@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { TrendingUp, TrendingDown, FileSpreadsheet } from "lucide-react";
 import {
   LineChart,
@@ -38,7 +38,7 @@ export default function FluxoContaDetalhado({ empresaAtiva, contas }) {
   const loadTransacoes = async () => {
     setLoading(true);
     try {
-      const todas = await base44.entities.TransacaoFinanceira.filter({
+      const todas = await sigo.entities.TransacaoFinanceira.filter({
         empresa_id: empresaAtiva.id,
         conta_id: contaSelecionada,
       });

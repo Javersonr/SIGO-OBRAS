@@ -1,17 +1,30 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Edit, Trash2, Search } from 'lucide-react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { toast } from 'sonner';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Plus, Edit, Trash2, Search } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { toast } from "sonner";
 
 export default function KitsTab({ empresaAtiva }) {
   const [kits, setKits] = useState([]);
@@ -19,16 +32,16 @@ export default function KitsTab({ empresaAtiva }) {
   const [carregando, setCarregando] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editandoKit, setEditandoKit] = useState(null);
-  const [busca, setBusca] = useState('');
+  const [busca, setBusca] = useState("");
   const [selectedKitIds, setSelectedKitIds] = useState([]);
 
   // Form
-  const [nome, setNome] = useState('');
-  const [codigo, setCodigo] = useState('');
-  const [descricao, setDescricao] = useState('');
+  const [nome, setNome] = useState("");
+  const [codigo, setCodigo] = useState("");
+  const [descricao, setDescricao] = useState("");
   const [itens, setItens] = useState([]);
-  const [materialSelecionado, setMaterialSelecionado] = useState('');
-  const [quantidade, setQuantidade] = useState('1');
+  const [materialSelecionado, setMaterialSelecionado] = useState("");
+  const [quantidade, setQuantidade] = useState("1");
 
   useEffect(() => {
     if (empresaAtiva?.id) {
@@ -40,14 +53,14 @@ export default function KitsTab({ empresaAtiva }) {
     setCarregando(true);
     try {
       const [kitsData, materiaisData] = await Promise.all([
-        base44.entities.Kit.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Material.filter({ empresa_id: empresaAtiva.id, ativo: true })
+        sigo.entities.Kit.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Material.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ]);
       setKits(kitsData || []);
       setMateriais(materiaisData || []);
     } catch (err) {
-      console.error('Erro ao carregar:', err);
-      toast.error('Erro ao carregar dados');
+      console.error("Erro ao carregar:", err);
+      toast.error("Erro ao carregar dados");
     } finally {
       setCarregando(false);
     }
@@ -55,9 +68,9 @@ export default function KitsTab({ empresaAtiva }) {
 
   const handleNovoKit = () => {
     setEditandoKit(null);
-    setNome('');
-    setCodigo('');
-    setDescricao('');
+    setNome("");
+    setCodigo("");
+    setDescricao("");
     setItens([]);
     setShowModal(true);
   };
@@ -65,35 +78,35 @@ export default function KitsTab({ empresaAtiva }) {
   const handleEditarKit = async (kit) => {
     setEditandoKit(kit);
     setNome(kit.nome);
-    setCodigo(kit.codigo || '');
-    setDescricao(kit.descricao || '');
+    setCodigo(kit.codigo || "");
+    setDescricao(kit.descricao || "");
     try {
-      const itemsData = await base44.entities.KitItem.filter({ kit_id: kit.id });
+      const itemsData = await sigo.entities.KitItem.filter({ kit_id: kit.id });
       setItens(itemsData || []);
     } catch (err) {
-      console.error('Erro:', err);
+      console.error("Erro:", err);
     }
     setShowModal(true);
   };
 
   const handleAdicionarMaterial = () => {
     if (!materialSelecionado || !quantidade) return;
-    const material = materiais.find(m => m.id === materialSelecionado);
+    const material = materiais.find((m) => m.id === materialSelecionado);
     if (!material) return;
 
     const novoItem = {
-      id: 'new_' + Date.now(),
+      id: "new_" + Date.now(),
       material_id: material.id,
       material_nome: material.nome,
       material_codigo: material.codigo,
       material_unidade: material.unidade,
       quantidade: parseFloat(quantidade),
-      preco_unitario: material.preco || 0
+      preco_unitario: material.preco || 0,
     };
 
     setItens([...itens, novoItem]);
-    setMaterialSelecionado('');
-    setQuantidade('1');
+    setMaterialSelecionado("");
+    setQuantidade("1");
   };
 
   const handleRemoverMaterial = (index) => {
@@ -102,7 +115,7 @@ export default function KitsTab({ empresaAtiva }) {
 
   const handleSalvarKit = async () => {
     if (!nome || itens.length === 0) {
-      toast.error('Preencha o nome e adicione pelo menos um material');
+      toast.error("Preencha o nome e adicione pelo menos um material");
       return;
     }
 
@@ -111,36 +124,36 @@ export default function KitsTab({ empresaAtiva }) {
       let kitId = editandoKit?.id;
 
       if (!kitId) {
-        const novoKit = await base44.entities.Kit.create({
+        const novoKit = await sigo.entities.Kit.create({
           empresa_id: empresaAtiva.id,
           nome,
           codigo,
           descricao,
           total_itens: itens.length,
-          ativo: true
+          ativo: true,
         });
         kitId = novoKit.id;
       } else {
-        await base44.entities.Kit.update(kitId, {
+        await sigo.entities.Kit.update(kitId, {
           nome,
           codigo,
           descricao,
-          total_itens: itens.length
+          total_itens: itens.length,
         });
       }
 
       // Deletar itens antigos se editando
       if (editandoKit) {
-        const antigosItems = await base44.entities.KitItem.filter({ kit_id: kitId });
+        const antigosItems = await sigo.entities.KitItem.filter({ kit_id: kitId });
         for (const item of antigosItems) {
-          await base44.entities.KitItem.delete(item.id);
+          await sigo.entities.KitItem.delete(item.id);
         }
       }
 
       // Criar novos itens
       for (const item of itens) {
-        if (item.id.startsWith('new_')) {
-          await base44.entities.KitItem.create({
+        if (item.id.startsWith("new_")) {
+          await sigo.entities.KitItem.create({
             empresa_id: empresaAtiva.id,
             kit_id: kitId,
             material_id: item.material_id,
@@ -148,35 +161,36 @@ export default function KitsTab({ empresaAtiva }) {
             material_codigo: item.material_codigo,
             material_unidade: item.material_unidade,
             quantidade: item.quantidade,
-            preco_unitario: item.preco_unitario
+            preco_unitario: item.preco_unitario,
           });
         }
       }
 
       await carregarDados();
       setShowModal(false);
-      toast.success(editandoKit ? '✅ KIT atualizado' : '✅ KIT criado');
+      toast.success(editandoKit ? "✅ KIT atualizado" : "✅ KIT criado");
     } catch (err) {
-      toast.error('Erro: ' + err.message);
+      toast.error("Erro: " + err.message);
     } finally {
       setCarregando(false);
     }
   };
 
   const handleDeletarKit = async (kitId) => {
-    if (!window.confirm('Deseja excluir este KIT?')) return;
+    if (!window.confirm("Deseja excluir este KIT?")) return;
     try {
-      await base44.entities.Kit.delete(kitId);
+      await sigo.entities.Kit.delete(kitId);
       await carregarDados();
-      toast.success('✅ KIT deletado');
+      toast.success("✅ KIT deletado");
     } catch (err) {
-      toast.error('Erro: ' + err.message);
+      toast.error("Erro: " + err.message);
     }
   };
 
-  const filteredKits = kits.filter(k => 
-    k.nome.toLowerCase().includes(busca.toLowerCase()) ||
-    k.codigo?.toLowerCase().includes(busca.toLowerCase())
+  const filteredKits = kits.filter(
+    (k) =>
+      k.nome.toLowerCase().includes(busca.toLowerCase()) ||
+      k.codigo?.toLowerCase().includes(busca.toLowerCase())
   );
 
   return (
@@ -205,10 +219,12 @@ export default function KitsTab({ empresaAtiva }) {
                 <TableRow>
                   <TableHead className="w-12">
                     <Checkbox
-                      checked={selectedKitIds.length === filteredKits.length && filteredKits.length > 0}
+                      checked={
+                        selectedKitIds.length === filteredKits.length && filteredKits.length > 0
+                      }
                       onCheckedChange={(checked) => {
                         if (checked) {
-                          setSelectedKitIds(filteredKits.map(k => k.id));
+                          setSelectedKitIds(filteredKits.map((k) => k.id));
                         } else {
                           setSelectedKitIds([]);
                         }
@@ -230,7 +246,7 @@ export default function KitsTab({ empresaAtiva }) {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredKits.map(kit => (
+                  filteredKits.map((kit) => (
                     <TableRow key={kit.id}>
                       <TableCell>
                         <Checkbox
@@ -239,24 +255,22 @@ export default function KitsTab({ empresaAtiva }) {
                             if (checked) {
                               setSelectedKitIds([...selectedKitIds, kit.id]);
                             } else {
-                              setSelectedKitIds(selectedKitIds.filter(id => id !== kit.id));
+                              setSelectedKitIds(selectedKitIds.filter((id) => id !== kit.id));
                             }
                           }}
                         />
                       </TableCell>
                       <TableCell className="font-medium">{kit.nome}</TableCell>
-                      <TableCell>{kit.codigo || '-'}</TableCell>
-                      <TableCell className="text-sm max-w-[200px] truncate">{kit.descricao || '-'}</TableCell>
+                      <TableCell>{kit.codigo || "-"}</TableCell>
+                      <TableCell className="text-sm max-w-[200px] truncate">
+                        {kit.descricao || "-"}
+                      </TableCell>
                       <TableCell>
                         <Badge variant="outline">{kit.total_itens}</Badge>
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleEditarKit(kit)}
-                          >
+                          <Button variant="ghost" size="icon" onClick={() => handleEditarKit(kit)}>
                             <Edit className="w-4 h-4" />
                           </Button>
                           <Button
@@ -281,7 +295,7 @@ export default function KitsTab({ empresaAtiva }) {
       <Sheet open={showModal} onOpenChange={setShowModal}>
         <SheetContent side="right" className="h-full overflow-y-auto p-0 flex flex-col">
           <SheetHeader>
-            <SheetTitle>{editandoKit ? 'Editar KIT' : 'Novo KIT'}</SheetTitle>
+            <SheetTitle>{editandoKit ? "Editar KIT" : "Novo KIT"}</SheetTitle>
           </SheetHeader>
           <div className="space-y-4 p-6 flex-1">
             <div>
@@ -324,7 +338,7 @@ export default function KitsTab({ empresaAtiva }) {
                     <SelectValue placeholder="Selecionar material..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {materiais.map(m => (
+                    {materiais.map((m) => (
                       <SelectItem key={m.id} value={m.id}>
                         {m.nome} ({m.codigo})
                       </SelectItem>
@@ -351,7 +365,9 @@ export default function KitsTab({ empresaAtiva }) {
                     <div className="flex items-center justify-between text-sm">
                       <div className="flex-1">
                         <p className="font-medium">{item.material_nome}</p>
-                        <p className="text-xs text-slate-500">{item.quantidade} {item.material_unidade}</p>
+                        <p className="text-xs text-slate-500">
+                          {item.quantidade} {item.material_unidade}
+                        </p>
                       </div>
                       <Button
                         size="sm"
@@ -369,9 +385,15 @@ export default function KitsTab({ empresaAtiva }) {
           </div>
 
           <div className="flex justify-end gap-3 p-6 border-t">
-            <Button variant="outline" onClick={() => setShowModal(false)}>Cancelar</Button>
-            <Button onClick={handleSalvarKit} disabled={carregando} className="bg-green-600 hover:bg-green-700">
-              {carregando ? 'Salvando...' : 'Salvar KIT'}
+            <Button variant="outline" onClick={() => setShowModal(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSalvarKit}
+              disabled={carregando}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {carregando ? "Salvando..." : "Salvar KIT"}
             </Button>
           </div>
         </SheetContent>

@@ -1,9 +1,29 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Users, ShieldCheck, AlertTriangle, GraduationCap, HardHat, CheckCircle2, XCircle, Clock } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Users,
+  ShieldCheck,
+  AlertTriangle,
+  GraduationCap,
+  HardHat,
+  CheckCircle2,
+  XCircle,
+  Clock,
+} from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
 
 export default function RelatorioSeguranca({ empresaId }) {
   const [loading, setLoading] = useState(true);
@@ -17,13 +37,13 @@ export default function RelatorioSeguranca({ empresaId }) {
     setLoading(true);
     try {
       const [funcs, treins, episList] = await Promise.all([
-        base44.entities.Funcionario.filter({ empresa_id: empresaId, ativo: true }),
-        base44.entities.Treinamento.filter({ empresa_id: empresaId, ativo: true }),
-        base44.entities.EPI.filter({ empresa_id: empresaId, ativo: true }),
+        sigo.entities.Funcionario.filter({ empresa_id: empresaId, ativo: true }),
+        sigo.entities.Treinamento.filter({ empresa_id: empresaId, ativo: true }),
+        sigo.entities.EPI.filter({ empresa_id: empresaId, ativo: true }),
       ]);
       setDados({ funcionarios: funcs, treinamentos: treins, epis: episList });
     } catch (error) {
-      console.error('Erro ao carregar dados de segurança:', error);
+      console.error("Erro ao carregar dados de segurança:", error);
     } finally {
       setLoading(false);
     }
@@ -33,28 +53,45 @@ export default function RelatorioSeguranca({ empresaId }) {
   const em30dias = new Date(hoje.getTime() + 30 * 24 * 60 * 60 * 1000);
 
   // ASO vencidos ou a vencer
-  const asoVencidos = dados.funcionarios.filter(f => f.aso_vencimento && new Date(f.aso_vencimento) < hoje);
-  const asoAVencer = dados.funcionarios.filter(f => f.aso_vencimento && new Date(f.aso_vencimento) >= hoje && new Date(f.aso_vencimento) <= em30dias);
-  const asoOk = dados.funcionarios.filter(f => f.aso_vencimento && new Date(f.aso_vencimento) > em30dias);
-  const asoSemData = dados.funcionarios.filter(f => !f.aso_vencimento);
+  const asoVencidos = dados.funcionarios.filter(
+    (f) => f.aso_vencimento && new Date(f.aso_vencimento) < hoje
+  );
+  const asoAVencer = dados.funcionarios.filter(
+    (f) =>
+      f.aso_vencimento &&
+      new Date(f.aso_vencimento) >= hoje &&
+      new Date(f.aso_vencimento) <= em30dias
+  );
+  const asoOk = dados.funcionarios.filter(
+    (f) => f.aso_vencimento && new Date(f.aso_vencimento) > em30dias
+  );
+  const asoSemData = dados.funcionarios.filter((f) => !f.aso_vencimento);
 
   // Treinamentos por validade
-  const treinsVencidos = dados.treinamentos.filter(t => t.data_fim && (() => {
-    const valMeses = t.validade_meses || 12;
-    const fim = new Date(t.data_fim);
-    fim.setMonth(fim.getMonth() + valMeses);
-    return fim < hoje;
-  })());
-  const treinsAVencer = dados.treinamentos.filter(t => t.data_fim && (() => {
-    const valMeses = t.validade_meses || 12;
-    const fim = new Date(t.data_fim);
-    fim.setMonth(fim.getMonth() + valMeses);
-    return fim >= hoje && fim <= em30dias;
-  })());
+  const treinsVencidos = dados.treinamentos.filter(
+    (t) =>
+      t.data_fim &&
+      (() => {
+        const valMeses = t.validade_meses || 12;
+        const fim = new Date(t.data_fim);
+        fim.setMonth(fim.getMonth() + valMeses);
+        return fim < hoje;
+      })()
+  );
+  const treinsAVencer = dados.treinamentos.filter(
+    (t) =>
+      t.data_fim &&
+      (() => {
+        const valMeses = t.validade_meses || 12;
+        const fim = new Date(t.data_fim);
+        fim.setMonth(fim.getMonth() + valMeses);
+        return fim >= hoje && fim <= em30dias;
+      })()
+  );
 
   // Por função
   const porFuncao = dados.funcionarios.reduce((acc, f) => {
-    const fn = f.funcao_nome || 'Sem função';
+    const fn = f.funcao_nome || "Sem função";
     acc[fn] = (acc[fn] || 0) + 1;
     return acc;
   }, {});
@@ -68,21 +105,25 @@ export default function RelatorioSeguranca({ empresaId }) {
   const dataTreinamentos = Object.entries(porTreinamento)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 6)
-    .map(([name, value]) => ({ name: name.length > 20 ? name.substring(0, 20) + '...' : name, value }));
+    .map(([name, value]) => ({
+      name: name.length > 20 ? name.substring(0, 20) + "..." : name,
+      value,
+    }));
 
-  const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#94a3b8'];
+  const COLORS = ["#10b981", "#f59e0b", "#ef4444", "#94a3b8"];
   const asoData = [
-    { name: 'Em dia', value: asoOk.length },
-    { name: 'A vencer', value: asoAVencer.length },
-    { name: 'Vencido', value: asoVencidos.length },
-    { name: 'Sem ASO', value: asoSemData.length },
-  ].filter(d => d.value > 0);
+    { name: "Em dia", value: asoOk.length },
+    { name: "A vencer", value: asoAVencer.length },
+    { name: "Vencido", value: asoVencidos.length },
+    { name: "Sem ASO", value: asoSemData.length },
+  ].filter((d) => d.value > 0);
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-12">
-      <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
+  if (loading)
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
 
   return (
     <div className="space-y-6">
@@ -127,7 +168,9 @@ export default function RelatorioSeguranca({ empresaId }) {
               <AlertTriangle className="w-5 h-5 text-red-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-red-600">{asoVencidos.length + asoAVencer.length}</p>
+              <p className="text-2xl font-bold text-red-600">
+                {asoVencidos.length + asoAVencer.length}
+              </p>
               <p className="text-xs text-slate-500">ASOs Críticos</p>
             </div>
           </CardContent>
@@ -137,13 +180,24 @@ export default function RelatorioSeguranca({ empresaId }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Status dos ASOs */}
         <Card>
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><ShieldCheck className="w-4 h-4" /> Status dos ASOs</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4" /> Status dos ASOs
+            </CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="flex items-center gap-6">
               <div className="w-40 h-40">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={asoData} cx="50%" cy="50%" innerRadius={35} outerRadius={60} dataKey="value">
+                    <Pie
+                      data={asoData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={35}
+                      outerRadius={60}
+                      dataKey="value"
+                    >
                       {asoData.map((entry, index) => (
                         <Cell key={index} fill={COLORS[index % COLORS.length]} />
                       ))}
@@ -171,7 +225,9 @@ export default function RelatorioSeguranca({ empresaId }) {
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-slate-400" />
                   <span className="text-sm text-slate-600">Sem ASO:</span>
-                  <Badge variant="secondary" className="ml-auto">{asoSemData.length}</Badge>
+                  <Badge variant="secondary" className="ml-auto">
+                    {asoSemData.length}
+                  </Badge>
                 </div>
               </div>
             </div>
@@ -180,7 +236,11 @@ export default function RelatorioSeguranca({ empresaId }) {
 
         {/* Treinamentos */}
         <Card>
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><GraduationCap className="w-4 h-4" /> Treinamentos Mais Frequentes</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <GraduationCap className="w-4 h-4" /> Treinamentos Mais Frequentes
+            </CardTitle>
+          </CardHeader>
           <CardContent>
             {dataTreinamentos.length > 0 ? (
               <ResponsiveContainer width="100%" height={180}>
@@ -193,14 +253,20 @@ export default function RelatorioSeguranca({ empresaId }) {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <p className="text-slate-400 text-sm text-center py-8">Nenhum treinamento cadastrado</p>
+              <p className="text-slate-400 text-sm text-center py-8">
+                Nenhum treinamento cadastrado
+              </p>
             )}
           </CardContent>
         </Card>
 
         {/* Funcionários por Função */}
         <Card>
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Users className="w-4 h-4" /> Funcionários por Função</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Users className="w-4 h-4" /> Funcionários por Função
+            </CardTitle>
+          </CardHeader>
           <CardContent>
             {dataFuncao.length > 0 ? (
               <ResponsiveContainer width="100%" height={180}>
@@ -213,26 +279,38 @@ export default function RelatorioSeguranca({ empresaId }) {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <p className="text-slate-400 text-sm text-center py-8">Nenhum funcionário cadastrado</p>
+              <p className="text-slate-400 text-sm text-center py-8">
+                Nenhum funcionário cadastrado
+              </p>
             )}
           </CardContent>
         </Card>
 
         {/* Alertas */}
         <Card>
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-amber-500" /> Alertas de Segurança</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-500" /> Alertas de Segurança
+            </CardTitle>
+          </CardHeader>
           <CardContent className="space-y-3">
             {asoVencidos.length > 0 && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
                 <p className="text-sm font-medium text-red-700">ASOs Vencidos</p>
                 <div className="mt-2 space-y-1">
-                  {asoVencidos.slice(0, 4).map(f => (
+                  {asoVencidos.slice(0, 4).map((f) => (
                     <div key={f.id} className="flex justify-between text-xs text-red-600">
                       <span>{f.nome_completo}</span>
-                      <span>{f.aso_vencimento ? new Date(f.aso_vencimento).toLocaleDateString('pt-BR') : '-'}</span>
+                      <span>
+                        {f.aso_vencimento
+                          ? new Date(f.aso_vencimento).toLocaleDateString("pt-BR")
+                          : "-"}
+                      </span>
                     </div>
                   ))}
-                  {asoVencidos.length > 4 && <p className="text-xs text-red-500">+{asoVencidos.length - 4} mais</p>}
+                  {asoVencidos.length > 4 && (
+                    <p className="text-xs text-red-500">+{asoVencidos.length - 4} mais</p>
+                  )}
                 </div>
               </div>
             )}
@@ -240,19 +318,27 @@ export default function RelatorioSeguranca({ empresaId }) {
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
                 <p className="text-sm font-medium text-amber-700">ASOs a Vencer em 30 dias</p>
                 <div className="mt-2 space-y-1">
-                  {asoAVencer.slice(0, 4).map(f => (
+                  {asoAVencer.slice(0, 4).map((f) => (
                     <div key={f.id} className="flex justify-between text-xs text-amber-600">
                       <span>{f.nome_completo}</span>
-                      <span>{f.aso_vencimento ? new Date(f.aso_vencimento).toLocaleDateString('pt-BR') : '-'}</span>
+                      <span>
+                        {f.aso_vencimento
+                          ? new Date(f.aso_vencimento).toLocaleDateString("pt-BR")
+                          : "-"}
+                      </span>
                     </div>
                   ))}
-                  {asoAVencer.length > 4 && <p className="text-xs text-amber-500">+{asoAVencer.length - 4} mais</p>}
+                  {asoAVencer.length > 4 && (
+                    <p className="text-xs text-amber-500">+{asoAVencer.length - 4} mais</p>
+                  )}
                 </div>
               </div>
             )}
             {treinsVencidos.length > 0 && (
               <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                <p className="text-sm font-medium text-orange-700">Treinamentos Vencidos: {treinsVencidos.length}</p>
+                <p className="text-sm font-medium text-orange-700">
+                  Treinamentos Vencidos: {treinsVencidos.length}
+                </p>
               </div>
             )}
             {asoVencidos.length === 0 && asoAVencer.length === 0 && treinsVencidos.length === 0 && (

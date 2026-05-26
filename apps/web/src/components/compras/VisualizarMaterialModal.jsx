@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,12 +17,12 @@ export default function VisualizarMaterialModal({ open, onOpenChange, solicitaca
   const loadMaterial = async () => {
     setLoading(true);
     try {
-      const solicitacaoItem = await base44.entities.SolicitacaoCompraItem.filter({
+      const solicitacaoItem = await sigo.entities.SolicitacaoCompraItem.filter({
         id: solicitacaoItemId,
       });
 
       if (solicitacaoItem.length > 0 && solicitacaoItem[0].material_id) {
-        const materiais = await base44.entities.Material.filter({
+        const materiais = await sigo.entities.Material.filter({
           id: solicitacaoItem[0].material_id,
         });
         setMaterial(materiais[0] || null);

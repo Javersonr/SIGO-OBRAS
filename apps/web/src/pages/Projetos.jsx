@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import {
   Plus,
@@ -148,12 +148,12 @@ export default function Projetos() {
     try {
       const [projs, status, origens, clientesList, templatesList, usuariosList] = await Promise.all(
         [
-          base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
-          base44.entities.StatusOportunidade.filter({ empresa_id: empresaAtiva.id }),
-          base44.entities.OrigemOportunidade.filter({ empresa_id: empresaAtiva.id }),
-          base44.entities.Cliente.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-          base44.entities.TemplateOportunidade.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-          base44.entities.UsuarioEmpresa.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+          sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.StatusOportunidade.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.OrigemOportunidade.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.Cliente.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+          sigo.entities.TemplateOportunidade.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+          sigo.entities.UsuarioEmpresa.filter({ empresa_id: empresaAtiva.id, ativo: true }),
         ]
       );
 
@@ -182,7 +182,7 @@ export default function Projetos() {
   }, [projetos]);
 
   const loadAtualizacoes = async (projId) => {
-    const atualiz = await base44.entities.OportunidadeAtualizacao.filter({
+    const atualiz = await sigo.entities.OportunidadeAtualizacao.filter({
       empresa_id: empresaAtiva.id,
       projeto_id: projId,
     });
@@ -192,13 +192,13 @@ export default function Projetos() {
   const loadOrcamentoData = async (projId) => {
     // Carregar apenas dados essenciais - materiais serão carregados sob demanda
     const [itens, etapas, arqs, cols] = await Promise.all([
-      base44.entities.OrcamentoItem.filter({ empresa_id: empresaAtiva.id, projeto_id: projId }),
-      base44.entities.CronogramaEtapa.filter({ empresa_id: empresaAtiva.id, projeto_id: projId }),
-      base44.entities.ArquivoOportunidade.filter({
+      sigo.entities.OrcamentoItem.filter({ empresa_id: empresaAtiva.id, projeto_id: projId }),
+      sigo.entities.CronogramaEtapa.filter({ empresa_id: empresaAtiva.id, projeto_id: projId }),
+      sigo.entities.ArquivoOportunidade.filter({
         empresa_id: empresaAtiva.id,
         projeto_id: projId,
       }),
-      base44.entities.OrcamentoColunaConfig.filter({ empresa_id: empresaAtiva.id }),
+      sigo.entities.OrcamentoColunaConfig.filter({ empresa_id: empresaAtiva.id }),
     ]);
 
     const sortedItens = itens.sort((a, b) => {
@@ -219,9 +219,9 @@ export default function Projetos() {
     setTimeout(async () => {
       try {
         const [mats, maoObra, ferram] = await Promise.all([
-          base44.entities.Material.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-          base44.entities.MaoDeObra.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-          base44.entities.Ferramental.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+          sigo.entities.Material.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+          sigo.entities.MaoDeObra.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+          sigo.entities.Ferramental.filter({ empresa_id: empresaAtiva.id, ativo: true }),
         ]);
         setMateriais([
           ...mats.map((m) => ({ ...m, tipo: "Material", nome_item: m.nome })),
@@ -272,7 +272,7 @@ export default function Projetos() {
   const handleAddNota = async () => {
     if (!novaNota.trim() || !selectedProj) return;
 
-    await base44.entities.OportunidadeAtualizacao.create({
+    await sigo.entities.OportunidadeAtualizacao.create({
       empresa_id: empresaAtiva.id,
       projeto_id: selectedProj.id,
       usuario_id: user?.id,
@@ -287,7 +287,7 @@ export default function Projetos() {
 
   const handleDeleteOrcamentoItem = async (itemId) => {
     if (!confirm("Excluir este item?")) return;
-    await base44.entities.OrcamentoItem.delete(itemId);
+    await sigo.entities.OrcamentoItem.delete(itemId);
     setItensSelecionados((prev) => {
       const n = new Set(prev);
       n.delete(itemId);
@@ -300,7 +300,7 @@ export default function Projetos() {
     if (itensSelecionados.size === 0) return;
     if (!confirm(`Excluir ${itensSelecionados.size} item(ns) selecionado(s)?`)) return;
     await Promise.all(
-      [...itensSelecionados].map((id) => base44.entities.OrcamentoItem.delete(id).catch(() => {}))
+      [...itensSelecionados].map((id) => sigo.entities.OrcamentoItem.delete(id).catch(() => {}))
     );
     setItensSelecionados(new Set());
     loadOrcamentoData(selectedProj.id);
@@ -312,10 +312,10 @@ export default function Projetos() {
 
     setUploadingFile(true);
     try {
-      const uploadResult = await base44.integrations.Core.UploadFile({ file });
+      const uploadResult = await sigo.integrations.Core.UploadFile({ file });
       const fileUrl = uploadResult.file_url || uploadResult.url || uploadResult;
 
-      await base44.entities.ArquivoOportunidade.create({
+      await sigo.entities.ArquivoOportunidade.create({
         empresa_id: empresaAtiva.id,
         projeto_id: selectedProj.id,
         nome: file.name,
@@ -342,7 +342,7 @@ export default function Projetos() {
 
   const handleDeleteArquivo = async (arquivoId) => {
     if (!confirm("Excluir este arquivo?")) return;
-    await base44.entities.ArquivoOportunidade.delete(arquivoId);
+    await sigo.entities.ArquivoOportunidade.delete(arquivoId);
     loadOrcamentoData(selectedProj.id);
   };
 
@@ -355,11 +355,11 @@ export default function Projetos() {
       )
     );
 
-    await base44.entities.Projeto.update(proj.id, {
+    await sigo.entities.Projeto.update(proj.id, {
       status_id: newStatusId,
       status_nome: statusNovo?.nome,
     });
-    await base44.entities.OportunidadeAtualizacao.create({
+    await sigo.entities.OportunidadeAtualizacao.create({
       empresa_id: empresaAtiva.id,
       projeto_id: proj.id,
       usuario_id: user?.id,
@@ -383,13 +383,13 @@ export default function Projetos() {
   const handleDelete = async (proj) => {
     if (!confirm("Deseja excluir este projeto?")) return;
     setProjetos((prev) => prev.filter((p) => p.id !== proj.id));
-    await base44.entities.Projeto.delete(proj.id);
+    await sigo.entities.Projeto.delete(proj.id);
   };
 
   const handleArchive = async (proj) => {
     if (!confirm("Deseja arquivar este projeto?")) return;
     setProjetos((prev) => prev.map((p) => (p.id === proj.id ? { ...p, arquivado: true } : p)));
-    await base44.entities.Projeto.update(proj.id, { arquivado: true });
+    await sigo.entities.Projeto.update(proj.id, { arquivado: true });
     setShowDetail(false);
   };
 
@@ -505,7 +505,7 @@ export default function Projetos() {
                   (c) => c.nome_razao?.toLowerCase() === row["Cliente (Razão)"]?.toLowerCase()
                 );
                 if (!cliente && row["Cliente (Razão)"]?.trim()) {
-                  cliente = await base44.entities.Cliente.create({
+                  cliente = await sigo.entities.Cliente.create({
                     empresa_id: empresaAtiva.id,
                     nome_razao: row["Cliente (Razão)"],
                     tipo_pessoa: "PJ",
@@ -516,12 +516,12 @@ export default function Projetos() {
                   (o) => o.nome?.toLowerCase() === row.Origem?.toLowerCase()
                 );
                 if (!origem && row.Origem?.trim()) {
-                  origem = await base44.entities.OrigemOportunidade.create({
+                  origem = await sigo.entities.OrigemOportunidade.create({
                     empresa_id: empresaAtiva.id,
                     nome: row.Origem,
                   });
                 }
-                const existente = await base44.entities.Projeto.filter({
+                const existente = await sigo.entities.Projeto.filter({
                   empresa_id: empresaAtiva.id,
                   nome: row.Nome,
                 });
@@ -539,7 +539,7 @@ export default function Projetos() {
                       .replace(/[^\d,.-]/g, "")
                       .replace(",", ".")
                   ) || 0;
-                await base44.entities.Projeto.create({
+                await sigo.entities.Projeto.create({
                   empresa_id: empresaAtiva.id,
                   nome: row.Nome,
                   cliente_id: cliente?.id || null,
@@ -916,7 +916,7 @@ export default function Projetos() {
                                                       : p
                                                   )
                                                 );
-                                                await base44.entities.Projeto.update(proj.id, {
+                                                await sigo.entities.Projeto.update(proj.id, {
                                                   responsaveis_emails: JSON.stringify(newEmails),
                                                 });
                                               }}
@@ -1055,7 +1055,7 @@ export default function Projetos() {
                                       : p
                                   )
                                 );
-                                await base44.entities.Projeto.update(proj.id, {
+                                await sigo.entities.Projeto.update(proj.id, {
                                   responsaveis_emails: JSON.stringify(newEmails),
                                 });
                               }}
@@ -1633,7 +1633,7 @@ export default function Projetos() {
           setSavingSolicitacao(true);
 
           try {
-            const novaSol = await base44.entities.SolicitacaoCompra.create({
+            const novaSol = await sigo.entities.SolicitacaoCompra.create({
               empresa_id: empresaAtiva.id,
               numero: `SC${new Date().getFullYear()}-${String(Math.floor(Math.random() * 10000)).padStart(4, "0")}`,
               projeto_id: solicitacaoCompraForm.projeto_id || null,
@@ -1656,7 +1656,7 @@ export default function Projetos() {
               const lote = itensValidos.slice(i, i + 5);
               await Promise.all(
                 lote.map((item) =>
-                  base44.entities.SolicitacaoCompraItem.create({
+                  sigo.entities.SolicitacaoCompraItem.create({
                     empresa_id: empresaAtiva.id,
                     solicitacao_id: novaSol.id,
                     descricao: item.descricao,
@@ -1671,7 +1671,7 @@ export default function Projetos() {
               }
             }
 
-            await base44.entities.AprovacaoSolicitacao.create({
+            await sigo.entities.AprovacaoSolicitacao.create({
               solicitacao_id: novaSol.id,
               nivel_aprovacao_id: "default",
               nivel_nome: "Aprovação",
@@ -1717,7 +1717,7 @@ export default function Projetos() {
                 valor_unitario: novoMat.preco || 0,
               };
               setOrcamentoItens((prev) => prev.map((i) => (i.id === item.id ? updatedItem : i)));
-              await base44.entities.OrcamentoItem.update(item.id, {
+              await sigo.entities.OrcamentoItem.update(item.id, {
                 descricao: novoMat.nome,
                 codigo: novoMat.codigo || "",
                 unidade: novoMat.unidade || "UN",

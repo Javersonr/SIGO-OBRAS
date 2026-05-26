@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,7 +36,7 @@ export default function SelecionarFerramentasModal({
   const loadFerramentas = async () => {
     setLoading(true);
     try {
-      const result = await base44.entities.Ferramenta.filter({
+      const result = await sigo.entities.Ferramenta.filter({
         empresa_id: empresaAtiva.id,
         tipo: tipo,
         ativo: true,

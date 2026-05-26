@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
 import SheetModalComponent from "@/components/ui/sheet-modal";
 import { Button } from "@/components/ui/button";
@@ -88,7 +88,7 @@ export default function FerramentaModal({ open, onOpenChange, ferramenta, onSave
     const caminhao = caminhoes.find((c) => c.placa === placa);
     if (!caminhao) return;
 
-    base44.entities.CaminhaoCampoObrigatorio.filter({
+    sigo.entities.CaminhaoCampoObrigatorio.filter({
       empresa_id: empresaAtiva.id,
       caminhao_id: caminhao.id,
       ativo: true,
@@ -164,7 +164,7 @@ export default function FerramentaModal({ open, onOpenChange, ferramenta, onSave
 
   const loadCaminhoes = async () => {
     try {
-      const data = await base44.entities.Caminhao.filter({
+      const data = await sigo.entities.Caminhao.filter({
         empresa_id: empresaAtiva.id,
         ativo: true,
       });
@@ -199,7 +199,7 @@ export default function FerramentaModal({ open, onOpenChange, ferramenta, onSave
     if (!file) return;
     try {
       setUploadingLaudo(true);
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       setFormData((prev) => ({ ...prev, laudo_url: file_url }));
       toast.success("Laudo anexado com sucesso!");
     } catch (error) {
@@ -221,7 +221,7 @@ export default function FerramentaModal({ open, onOpenChange, ferramenta, onSave
 
     try {
       setUploadingPhoto(true);
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       setFormData({ ...formData, foto_url: file_url });
       toast.success("Foto enviada com sucesso!");
     } catch (error) {
@@ -249,11 +249,11 @@ export default function FerramentaModal({ open, onOpenChange, ferramenta, onSave
       };
 
       if (ferramenta) {
-        await base44.entities.Ferramenta.update(ferramenta.id, data);
+        await sigo.entities.Ferramenta.update(ferramenta.id, data);
         toast.success("Ferramenta atualizada com sucesso!");
       } else {
         // Verificar se código já existe
-        const existe = await base44.entities.Ferramenta.filter({
+        const existe = await sigo.entities.Ferramenta.filter({
           empresa_id: empresaAtiva.id,
           codigo: formData.codigo,
           ativo: true,
@@ -265,7 +265,7 @@ export default function FerramentaModal({ open, onOpenChange, ferramenta, onSave
           return;
         }
 
-        await base44.entities.Ferramenta.create(data);
+        await sigo.entities.Ferramenta.create(data);
         toast.success("Ferramenta cadastrada com sucesso!");
       }
 

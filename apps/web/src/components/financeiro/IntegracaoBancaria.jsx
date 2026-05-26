@@ -12,7 +12,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Link2, RefreshCw, Trash2 } from "lucide-react";
 
 const bancosList = [
@@ -50,7 +50,7 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
   const loadIntegracoes = async () => {
     setLoading(true);
     try {
-      const data = await base44.entities.IntegracaoBancaria.filter({ empresa_id: empresaAtiva.id });
+      const data = await sigo.entities.IntegracaoBancaria.filter({ empresa_id: empresaAtiva.id });
       setIntegracoes(data);
     } catch (error) {
       console.error("Erro ao carregar integrações:", error);
@@ -75,7 +75,7 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
     try {
       const banco = bancosList.find((b) => b.nome === form.banco);
 
-      await base44.entities.IntegracaoBancaria.create({
+      await sigo.entities.IntegracaoBancaria.create({
         empresa_id: empresaAtiva.id,
         conta_id: form.conta_id,
         banco: form.banco,
@@ -88,7 +88,7 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
       });
 
       // Atualizar conta
-      await base44.entities.ContaFinanceira.update(form.conta_id, {
+      await sigo.entities.ContaFinanceira.update(form.conta_id, {
         integracao_bancaria: true,
         codigo_banco: banco?.codigo,
       });
@@ -110,11 +110,11 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
 
     try {
       // Simular sincronização - em produção, chamaria API do banco
-      const resultado = await base44.functions.invoke("sincronizarContaBancaria", {
+      const resultado = await sigo.functions.invoke("sincronizarContaBancaria", {
         integracao_id: integracao.id,
       });
 
-      await base44.entities.IntegracaoBancaria.update(integracao.id, {
+      await sigo.entities.IntegracaoBancaria.update(integracao.id, {
         status: "Ativa",
         ultima_sincronizacao: new Date().toISOString(),
         transacoes_importadas:
@@ -137,8 +137,8 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
   const handleDesconectar = async (integracao) => {
     if (!confirm("Desconectar esta integração bancária?")) return;
 
-    await base44.entities.IntegracaoBancaria.delete(integracao.id);
-    await base44.entities.ContaFinanceira.update(integracao.conta_id, {
+    await sigo.entities.IntegracaoBancaria.delete(integracao.id);
+    await sigo.entities.ContaFinanceira.update(integracao.conta_id, {
       integracao_bancaria: false,
     });
 

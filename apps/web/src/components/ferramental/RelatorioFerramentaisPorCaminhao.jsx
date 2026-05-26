@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -29,8 +29,8 @@ export default function RelatorioFerramentaisPorCaminhao({ empresaAtiva }) {
     setLoading(true);
     try {
       const [caminhoes, ferramentas] = await Promise.all([
-        base44.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 1000),
+        sigo.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 1000),
       ]);
 
       // Agrupar ferramentas por caminhão

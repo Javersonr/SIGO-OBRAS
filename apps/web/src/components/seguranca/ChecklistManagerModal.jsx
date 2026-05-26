@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,7 +35,7 @@ export default function ChecklistManagerModal({ open, onOpenChange, empresaAtiva
   const loadChecklists = async () => {
     setLoading(true);
     try {
-      const data = await base44.entities.ChecklistInspecaoCampo.filter({
+      const data = await sigo.entities.ChecklistInspecaoCampo.filter({
         empresa_id: empresaAtiva.id,
         ativo: true,
       });
@@ -65,7 +65,7 @@ export default function ChecklistManagerModal({ open, onOpenChange, empresaAtiva
   const handleExcluir = async (cl) => {
     if (!confirm(`Excluir checklist "${cl.nome}"?`)) return;
     try {
-      await base44.entities.ChecklistInspecaoCampo.update(cl.id, { ativo: false });
+      await sigo.entities.ChecklistInspecaoCampo.update(cl.id, { ativo: false });
       toast.success("Checklist excluído");
       loadChecklists();
     } catch {
@@ -95,10 +95,10 @@ export default function ChecklistManagerModal({ open, onOpenChange, empresaAtiva
         ativo: true,
       };
       if (editando === "novo") {
-        await base44.entities.ChecklistInspecaoCampo.create(data);
+        await sigo.entities.ChecklistInspecaoCampo.create(data);
         toast.success("Checklist criado");
       } else {
-        await base44.entities.ChecklistInspecaoCampo.update(editando.id, data);
+        await sigo.entities.ChecklistInspecaoCampo.update(editando.id, data);
         toast.success("Checklist atualizado");
       }
       setEditando(null);
@@ -129,7 +129,7 @@ export default function ChecklistManagerModal({ open, onOpenChange, empresaAtiva
     if (!file) return;
     setUploadingFoto(idx);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       setForm((prev) => {
         const itens = [...prev.itens];
         itens[idx] = { ...itens[idx], foto_referencia_url: file_url };
@@ -156,7 +156,7 @@ export default function ChecklistManagerModal({ open, onOpenChange, empresaAtiva
         total_itens: itens.length,
         ativo: true,
       };
-      await base44.entities.ChecklistInspecaoCampo.create(copia);
+      await sigo.entities.ChecklistInspecaoCampo.create(copia);
       toast.success("Checklist duplicado");
       loadChecklists();
     } catch {
@@ -373,9 +373,7 @@ export default function ChecklistManagerModal({ open, onOpenChange, empresaAtiva
                       className="gap-2"
                       onClick={async () => {
                         try {
-                          const response = await base44.functions.invoke(
-                            "gerarModeloChecklistExcel"
-                          );
+                          const response = await sigo.functions.invoke("gerarModeloChecklistExcel");
                           const blob = new Blob([response.data], {
                             type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                           });

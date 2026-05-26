@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Plus, Trash2, X, Upload } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import ImportarItensSolicitacao from "./ImportarItensSolicitacao";
 
 export default function SolicitacaoModal({
@@ -38,8 +38,8 @@ export default function SolicitacaoModal({
     if (!empresaAtiva?.id) return;
     try {
       const [mats, ferramentas] = await Promise.all([
-        base44.entities.Material.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }).catch(
+        sigo.entities.Material.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }).catch(
           () => []
         ),
       ]);
@@ -159,12 +159,12 @@ export default function SolicitacaoModal({
     setLoadingOrcamento(true);
     try {
       const [orcamentoItens, todosPedidosItems, reservasAtivas] = await Promise.all([
-        base44.entities.OrcamentoItem.filter({
+        sigo.entities.OrcamentoItem.filter({
           empresa_id: empresaAtiva.id,
           projeto_id: projetoId,
         }),
-        base44.entities.PedidoCompraItem.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.ReservaMaterial.filter({
+        sigo.entities.PedidoCompraItem.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.ReservaMaterial.filter({
           empresa_id: empresaAtiva.id,
           projeto_id: projetoId,
           status: "Ativa",
@@ -229,10 +229,10 @@ export default function SolicitacaoModal({
     setLoadingOrcamento(true);
     try {
       const [todosPedidosItems, todasReservas, ...todosOrcamentos] = await Promise.all([
-        base44.entities.PedidoCompraItem.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.ReservaMaterial.filter({ empresa_id: empresaAtiva.id, status: "Ativa" }),
+        sigo.entities.PedidoCompraItem.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.ReservaMaterial.filter({ empresa_id: empresaAtiva.id, status: "Ativa" }),
         ...projetoIds.map((pid) =>
-          base44.entities.OrcamentoItem.filter({ empresa_id: empresaAtiva.id, projeto_id: pid })
+          sigo.entities.OrcamentoItem.filter({ empresa_id: empresaAtiva.id, projeto_id: pid })
         ),
       ]);
 

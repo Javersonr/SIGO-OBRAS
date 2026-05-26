@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -75,7 +75,7 @@ export default function VincularMassaCarrosselModal({
           status: "Em Uso",
         };
       }
-      await base44.entities.Ferramenta.update(ferramenta.id, updateData);
+      await sigo.entities.Ferramenta.update(ferramenta.id, updateData);
       setConcluidos((c) => c + 1);
       toast.success(`Ferramenta vinculada!`);
       avancar();

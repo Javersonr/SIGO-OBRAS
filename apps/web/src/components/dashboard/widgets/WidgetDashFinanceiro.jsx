@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../../../Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -31,7 +31,7 @@ export default function WidgetDashFinanceiro({ onDadosCarregados }) {
         .toISOString()
         .split("T")[0];
 
-      const transacoes = await base44.entities.TransacaoFinanceira.filter({
+      const transacoes = await sigo.entities.TransacaoFinanceira.filter({
         empresa_id: empresaAtiva.id,
       });
 

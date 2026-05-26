@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -56,7 +56,7 @@ export default function CadastroFerramentas() {
         filtro.status = filtros.status;
       }
 
-      const data = await base44.entities.Ferramenta.filter(filtro, "-created_date");
+      const data = await sigo.entities.Ferramenta.filter(filtro, "-created_date");
       setFerramentas(data);
     } catch (error) {
       console.error("Erro ao carregar ferramentas:", error);
@@ -76,7 +76,7 @@ export default function CadastroFerramentas() {
     if (!confirm(`Deseja realmente excluir a ferramenta ${ferramenta.codigo}?`)) return;
 
     try {
-      await base44.entities.Ferramenta.update(ferramenta.id, { ativo: false });
+      await sigo.entities.Ferramenta.update(ferramenta.id, { ativo: false });
       toast.success("Ferramenta excluída com sucesso!");
       loadFerramentas();
     } catch (error) {

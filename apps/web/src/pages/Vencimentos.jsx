@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { EmpresaContext } from "../Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,13 +67,13 @@ export default function Vencimentos() {
       if (isAdminHolding) {
         grupoId = grupoIdAuth || grupoIdVinculo;
         console.log("[Vencimentos] Admin Holding detectado, grupo_id:", grupoId);
-        const todasEmpresas = await base44.entities.Empresa.filter({
+        const todasEmpresas = await sigo.entities.Empresa.filter({
           grupo_id: grupoId,
           ativo: true,
         });
         const results = await Promise.all(
           todasEmpresas.map((e) =>
-            base44.entities.Vencimento.filter({ empresa_id: e.id, ativo: true })
+            sigo.entities.Vencimento.filter({ empresa_id: e.id, ativo: true })
           )
         );
         todos = results.flat();
@@ -106,12 +106,12 @@ export default function Vencimentos() {
           const empresasDoGrupo = empresas.filter((e) => e.grupo_id === empresaAtiva.grupo_id);
           const results = await Promise.all(
             empresasDoGrupo.map((e) =>
-              base44.entities.Vencimento.filter({ empresa_id: e.id, ativo: true })
+              sigo.entities.Vencimento.filter({ empresa_id: e.id, ativo: true })
             )
           );
           todos = results.flat();
         } else {
-          todos = await base44.entities.Vencimento.filter({
+          todos = await sigo.entities.Vencimento.filter({
             empresa_id: empresaAtiva.id,
             ativo: true,
           });
@@ -138,7 +138,7 @@ export default function Vencimentos() {
       return;
     }
     try {
-      await base44.integrations.Core.SendEmail({
+      await sigo.integrations.Core.SendEmail({
         to: v.responsavel_email,
         subject: `⚠️ Vencimento próximo: ${v.titulo}`,
         body: `Olá ${v.responsavel_nome || ""},\n\nO documento "${v.titulo}" da empresa ${v.empresa_nome} vence em ${v.data_vencimento}.\n\nStatus: ${v.status}\n\nPor favor, providencie a renovação.\n\nSIGO Obras`,

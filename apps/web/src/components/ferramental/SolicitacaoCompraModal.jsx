@@ -1,23 +1,23 @@
-import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import React, { useState } from "react";
+import { sigo } from "@/api/sigoClient";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from '@/components/ui/dialog';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from "@/components/ui/dialog";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -25,10 +25,10 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Trash2, Loader } from 'lucide-react';
-import { toast } from 'sonner';
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Trash2, Loader } from "lucide-react";
+import { toast } from "sonner";
 
 export default function SolicitacaoCompraModal({
   open,
@@ -36,70 +36,72 @@ export default function SolicitacaoCompraModal({
   itensPrevisao = [],
   fornecedores = [],
   empresaAtiva,
-  user
+  user,
 }) {
   const [itens, setItens] = useState([]);
-  const [fornecedorId, setFornecedorId] = useState('');
-  const [descricao, setDescricao] = useState('');
+  const [fornecedorId, setFornecedorId] = useState("");
+  const [descricao, setDescricao] = useState("");
   const [salvando, setSalvando] = useState(false);
 
   // Preparar itens quando o modal abre
   React.useEffect(() => {
     if (open && itensPrevisao.length > 0) {
       const itensParaPedir = itensPrevisao
-        .filter(item => item.nivelUrgencia === 'crítico' || item.nivelUrgencia === 'alto')
-        .map(item => ({
+        .filter((item) => item.nivelUrgencia === "crítico" || item.nivelUrgencia === "alto")
+        .map((item) => ({
           id: item.id,
           codigo: item.codigo,
           descricao: item.descricao,
           quantidade: item.quantidadeRecomendada,
-          original: item
+          original: item,
         }));
       setItens(itensParaPedir);
     }
   }, [open, itensPrevisao]);
 
   const atualizarQuantidade = (id, novaQuantidade) => {
-    setItens(itens.map(item =>
-      item.id === id ? { ...item, quantidade: Math.max(0, parseInt(novaQuantidade) || 0) } : item
-    ));
+    setItens(
+      itens.map((item) =>
+        item.id === id ? { ...item, quantidade: Math.max(0, parseInt(novaQuantidade) || 0) } : item
+      )
+    );
   };
 
   const removerItem = (id) => {
-    setItens(itens.filter(item => item.id !== id));
+    setItens(itens.filter((item) => item.id !== id));
   };
 
   const salvarSolicitacao = async () => {
     if (!fornecedorId || itens.length === 0) {
-      toast.error('Selecione um fornecedor e adicione itens');
+      toast.error("Selecione um fornecedor e adicione itens");
       return;
     }
 
     setSalvando(true);
     try {
       // Criar solicitação de compra
-      const solicitacao = await base44.entities.SolicitacaoCompra.create({
+      const solicitacao = await sigo.entities.SolicitacaoCompra.create({
         empresa_id: empresaAtiva.id,
         fornecedor_id: fornecedorId,
-        status: 'Rascunho',
-        descricao: descricao || 'Solicitação gerada por previsão de demanda',
+        status: "Rascunho",
+        descricao: descricao || "Solicitação gerada por previsão de demanda",
         usuario_solicitante_email: user.email,
         usuario_solicitante_nome: user.full_name,
-        data_solicitacao: new Date().toISOString().split('T')[0],
-        observacoes: 'Criada a partir de análise de previsão de demanda'
+        data_solicitacao: new Date().toISOString().split("T")[0],
+        observacoes: "Criada a partir de análise de previsão de demanda",
       });
 
       // Criar itens da solicitação
       for (const item of itens) {
         if (item.quantidade > 0) {
-          await base44.entities.SolicitacaoCompraItem.create({
+          await sigo.entities.SolicitacaoCompraItem.create({
             empresa_id: empresaAtiva.id,
             solicitacao_id: solicitacao.id,
             ferramenta_id: item.id,
             ferramenta_codigo: item.codigo,
             ferramenta_descricao: item.descricao,
             quantidade_solicitada: item.quantidade,
-            status: 'Aberto'
+            status: "Aberto",
           });
         }
       }
@@ -107,11 +109,11 @@ export default function SolicitacaoCompraModal({
       toast.success(`✓ Solicitação ${solicitacao.id} criada como rascunho`);
       onOpenChange(false);
       setItens([]);
-      setFornecedorId('');
-      setDescricao('');
+      setFornecedorId("");
+      setDescricao("");
     } catch (error) {
-      console.error('Erro ao salvar:', error);
-      toast.error('Erro ao criar solicitação');
+      console.error("Erro ao salvar:", error);
+      toast.error("Erro ao criar solicitação");
     } finally {
       setSalvando(false);
     }
@@ -140,7 +142,7 @@ export default function SolicitacaoCompraModal({
                     <SelectValue placeholder="Selecione o fornecedor" />
                   </SelectTrigger>
                   <SelectContent>
-                    {fornecedores.map(f => (
+                    {fornecedores.map((f) => (
                       <SelectItem key={f.id} value={f.id}>
                         {f.nome_razao}
                       </SelectItem>
@@ -184,7 +186,7 @@ export default function SolicitacaoCompraModal({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {itens.map(item => (
+                      {itens.map((item) => (
                         <TableRow key={item.id} className="hover:bg-slate-50">
                           <TableCell className="font-mono text-sm font-semibold">
                             {item.codigo}
@@ -236,7 +238,7 @@ export default function SolicitacaoCompraModal({
                 Salvando...
               </>
             ) : (
-              'Criar como Rascunho'
+              "Criar como Rascunho"
             )}
           </Button>
         </DialogFooter>

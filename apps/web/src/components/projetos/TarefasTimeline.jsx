@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +20,7 @@ export default function TarefasTimeline({ projetoId, empresaAtiva, usuariosEmpre
   }, [projetoId]);
 
   const loadTarefas = async () => {
-    const result = await base44.entities.TarefaProjeto.filter({
+    const result = await sigo.entities.TarefaProjeto.filter({
       empresa_id: empresaAtiva.id,
       projeto_id: projetoId,
     });

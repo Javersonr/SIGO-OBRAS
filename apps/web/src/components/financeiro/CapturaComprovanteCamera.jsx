@@ -20,8 +20,8 @@ export default function CapturaComprovanteCamera({ onCaptura, loading }) {
     try {
       setEnviando(true);
       toast.loading("Fazendo upload do comprovante...", { id: "upload" });
-      const { base44 } = await import("@/api/base44Client");
-      const result = await base44.integrations.Core.UploadFile({ file });
+      const { sigo } = await import("@/api/sigoClient");
+      const result = await sigo.integrations.Core.UploadFile({ file });
       toast.dismiss("upload");
       if (!result?.file_url) throw new Error("Falha no upload");
       toast.success("Comprovante enviado! Extraindo dados com IA...");

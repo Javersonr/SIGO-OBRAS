@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "../utils";
@@ -209,12 +209,12 @@ export default function Oportunidades() {
     setLoading(true);
     try {
       const [ops, status, origens, clientesList, templatesList, usuariosList] = await Promise.all([
-        base44.entities.Oportunidade.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.StatusOportunidade.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.OrigemOportunidade.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.Cliente.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.TemplateOportunidade.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.UsuarioEmpresa.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Oportunidade.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.StatusOportunidade.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.OrigemOportunidade.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.Cliente.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.TemplateOportunidade.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.UsuarioEmpresa.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ]);
       setOportunidades(ops.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
       setStatusList(status.sort((a, b) => a.ordem - b.ordem));
@@ -250,7 +250,7 @@ export default function Oportunidades() {
   const handleMigrarParaProjeto = async (op) => {
     if (!confirm("Migrar esta oportunidade para Projetos?")) return;
     const statusGanho = statusList.find((s) => s.tipo === "ganho");
-    await base44.entities.Oportunidade.update(op.id, {
+    await sigo.entities.Oportunidade.update(op.id, {
       arquivado: true,
       status_id: statusGanho?.id || op.status_id,
       status_nome: statusGanho?.nome || op.status_nome,
@@ -268,7 +268,7 @@ export default function Oportunidades() {
         .filter(Boolean);
       responsaveisEmails = JSON.stringify(emails);
     } catch {}
-    const novoProjeto = await base44.entities.Projeto.create({
+    const novoProjeto = await sigo.entities.Projeto.create({
       empresa_id: op.empresa_id,
       nome: op.nome || op.titulo,
       cliente_id: op.cliente_id,
@@ -284,32 +284,32 @@ export default function Oportunidades() {
       status_nome: statusGanho?.nome || null,
     });
     const [itensOrcamento, etapas, arquivosOp, atualizacoesOp] = await Promise.all([
-      base44.entities.OrcamentoItem.filter({ oportunidade_id: op.id }),
-      base44.entities.CronogramaEtapa.filter({ oportunidade_id: op.id }),
-      base44.entities.ArquivoOportunidade.filter({ oportunidade_id: op.id }),
-      base44.entities.OportunidadeAtualizacao.filter({ oportunidade_id: op.id }),
+      sigo.entities.OrcamentoItem.filter({ oportunidade_id: op.id }),
+      sigo.entities.CronogramaEtapa.filter({ oportunidade_id: op.id }),
+      sigo.entities.ArquivoOportunidade.filter({ oportunidade_id: op.id }),
+      sigo.entities.OportunidadeAtualizacao.filter({ oportunidade_id: op.id }),
     ]);
     await Promise.all([
       ...itensOrcamento.map((item) =>
-        base44.entities.OrcamentoItem.update(item.id, {
+        sigo.entities.OrcamentoItem.update(item.id, {
           projeto_id: novoProjeto.id,
           oportunidade_id: null,
         })
       ),
       ...etapas.map((e) =>
-        base44.entities.CronogramaEtapa.update(e.id, {
+        sigo.entities.CronogramaEtapa.update(e.id, {
           projeto_id: novoProjeto.id,
           oportunidade_id: null,
         })
       ),
       ...arquivosOp.map((a) =>
-        base44.entities.ArquivoOportunidade.update(a.id, {
+        sigo.entities.ArquivoOportunidade.update(a.id, {
           projeto_id: novoProjeto.id,
           oportunidade_id: null,
         })
       ),
       ...atualizacoesOp.map((a) =>
-        base44.entities.OportunidadeAtualizacao.update(a.id, {
+        sigo.entities.OportunidadeAtualizacao.update(a.id, {
           projeto_id: novoProjeto.id,
           oportunidade_id: null,
         })
@@ -320,7 +320,7 @@ export default function Oportunidades() {
   };
 
   const loadAtualizacoes = async (opId) => {
-    const atualiz = await base44.entities.OportunidadeAtualizacao.filter({
+    const atualiz = await sigo.entities.OportunidadeAtualizacao.filter({
       empresa_id: empresaAtiva.id,
       oportunidade_id: opId,
     });
@@ -329,16 +329,16 @@ export default function Oportunidades() {
 
   const loadOrcamentoData = async (opId) => {
     const [itens, etapas, arqs, cols] = await Promise.all([
-      base44.entities.OrcamentoItem.filter({ empresa_id: empresaAtiva.id, oportunidade_id: opId }),
-      base44.entities.CronogramaEtapa.filter({
+      sigo.entities.OrcamentoItem.filter({ empresa_id: empresaAtiva.id, oportunidade_id: opId }),
+      sigo.entities.CronogramaEtapa.filter({
         empresa_id: empresaAtiva.id,
         oportunidade_id: opId,
       }),
-      base44.entities.ArquivoOportunidade.filter({
+      sigo.entities.ArquivoOportunidade.filter({
         empresa_id: empresaAtiva.id,
         oportunidade_id: opId,
       }),
-      base44.entities.OrcamentoColunaConfig.filter({ empresa_id: empresaAtiva.id }),
+      sigo.entities.OrcamentoColunaConfig.filter({ empresa_id: empresaAtiva.id }),
     ]);
     // Usar índice imutavelmente (não modificar objetos originais)
     const sorted = itens
@@ -351,9 +351,9 @@ export default function Oportunidades() {
     // Carregar materiais em paralelo sem bloquear (apenas para autocomplete)
     if (materiais.length === 0) {
       Promise.all([
-        base44.entities.Material.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.MaoDeObra.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Ferramental.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Material.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.MaoDeObra.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Ferramental.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ])
         .then(([mats, maoObra, ferram]) => {
           setMateriais([
@@ -507,7 +507,7 @@ export default function Oportunidades() {
         // Registrar mudança de status se houve
         if (selectedOp.status_id !== formData.status_id) {
           const statusAnterior = statusList.find((s) => s.id === selectedOp.status_id);
-          base44.entities.OportunidadeAtualizacao.create({
+          sigo.entities.OportunidadeAtualizacao.create({
             empresa_id: empresaAtiva.id,
             oportunidade_id: selectedOp.id,
             usuario_nome: user?.full_name,
@@ -515,7 +515,7 @@ export default function Oportunidades() {
             descricao: `Status alterado de "${statusAnterior?.nome}" para "${status?.nome}"`,
           }).catch(() => {});
         }
-        await base44.entities.Oportunidade.update(selectedOp.id, data);
+        await sigo.entities.Oportunidade.update(selectedOp.id, data);
         const opAtualizada = { ...selectedOp, ...data, id: selectedOp.id };
         setSelectedOp(opAtualizada);
         setOportunidades((prev) => prev.map((o) => (o.id === selectedOp.id ? opAtualizada : o)));
@@ -523,8 +523,8 @@ export default function Oportunidades() {
         setShowDetail(true);
         loadData(); // reload em background
       } else {
-        const novaOp = await base44.entities.Oportunidade.create(data);
-        base44.entities.OportunidadeAtualizacao.create({
+        const novaOp = await sigo.entities.Oportunidade.create(data);
+        sigo.entities.OportunidadeAtualizacao.create({
           empresa_id: empresaAtiva.id,
           oportunidade_id: novaOp.id,
           usuario_nome: user?.full_name,
@@ -546,7 +546,7 @@ export default function Oportunidades() {
     if (!novaNota.trim() || !selectedOp) return;
     const nota = novaNota;
     setNovaNota("");
-    await base44.entities.OportunidadeAtualizacao.create({
+    await sigo.entities.OportunidadeAtualizacao.create({
       empresa_id: empresaAtiva.id,
       oportunidade_id: selectedOp.id,
       usuario_nome: user?.full_name,
@@ -565,7 +565,7 @@ export default function Oportunidades() {
       n.delete(itemId);
       return n;
     });
-    base44.entities.OrcamentoItem.delete(itemId).catch(() => {
+    sigo.entities.OrcamentoItem.delete(itemId).catch(() => {
       if (selectedOp) loadOrcamentoData(selectedOp.id);
     });
   };
@@ -573,14 +573,14 @@ export default function Oportunidades() {
   const handleDeleteSelecionados = async () => {
     if (itensSelecionados.size === 0) return;
     if (!confirm(`Excluir ${itensSelecionados.size} item(ns)?`)) return;
-    await Promise.all([...itensSelecionados].map((id) => base44.entities.OrcamentoItem.delete(id)));
+    await Promise.all([...itensSelecionados].map((id) => sigo.entities.OrcamentoItem.delete(id)));
     setItensSelecionados(new Set());
     loadOrcamentoData(selectedOp.id);
   };
 
   const handleAddEtapa = async () => {
     if (!etapaForm.etapa || !selectedOp) return;
-    await base44.entities.CronogramaEtapa.create({
+    await sigo.entities.CronogramaEtapa.create({
       empresa_id: empresaAtiva.id,
       oportunidade_id: selectedOp.id,
       etapa: etapaForm.etapa,
@@ -616,7 +616,7 @@ export default function Oportunidades() {
     if (!file || !selectedOp) return;
     setUploadingFile(true);
     try {
-      const uploadResult = await base44.integrations.Core.UploadFile({ file });
+      const uploadResult = await sigo.integrations.Core.UploadFile({ file });
       const fileUrl = uploadResult.file_url || uploadResult.url || uploadResult;
       let fileType = file.type;
       if (!fileType) {
@@ -630,7 +630,7 @@ export default function Oportunidades() {
         };
         fileType = typeMap[ext] || "application/octet-stream";
       }
-      await base44.entities.ArquivoOportunidade.create({
+      await sigo.entities.ArquivoOportunidade.create({
         empresa_id: empresaAtiva.id,
         oportunidade_id: selectedOp.id,
         nome: file.name,
@@ -651,7 +651,7 @@ export default function Oportunidades() {
 
   const handleDeleteArquivo = async (arquivoId) => {
     if (!confirm("Excluir este arquivo?")) return;
-    await base44.entities.ArquivoOportunidade.delete(arquivoId);
+    await sigo.entities.ArquivoOportunidade.delete(arquivoId);
     loadOrcamentoData(selectedOp.id);
   };
 
@@ -664,7 +664,7 @@ export default function Oportunidades() {
         o.id === op.id ? { ...o, status_id: newStatusId, status_nome: statusNovo?.nome } : o
       )
     );
-    base44.entities.Oportunidade.update(op.id, {
+    sigo.entities.Oportunidade.update(op.id, {
       status_id: newStatusId,
       status_nome: statusNovo?.nome,
     }).catch(() => {
@@ -675,7 +675,7 @@ export default function Oportunidades() {
         )
       );
     });
-    base44.entities.OportunidadeAtualizacao.create({
+    sigo.entities.OportunidadeAtualizacao.create({
       empresa_id: empresaAtiva.id,
       oportunidade_id: op.id,
       usuario_nome: user?.full_name,
@@ -700,7 +700,7 @@ export default function Oportunidades() {
       setShowDetail(false);
       setSelectedOp(null);
     }
-    base44.entities.Oportunidade.delete(op.id).catch(() => loadData());
+    sigo.entities.Oportunidade.delete(op.id).catch(() => loadData());
   };
 
   const handleArquivar = async (op) => {
@@ -714,10 +714,8 @@ export default function Oportunidades() {
     if (selectedOp?.id === op.id) {
       setShowDetail(false);
     }
-    base44.entities.Oportunidade.update(op.id, { arquivado: novoArquivado }).catch(() =>
-      loadData()
-    );
-    base44.entities.OportunidadeAtualizacao.create({
+    sigo.entities.Oportunidade.update(op.id, { arquivado: novoArquivado }).catch(() => loadData());
+    sigo.entities.OportunidadeAtualizacao.create({
       empresa_id: empresaAtiva.id,
       oportunidade_id: op.id,
       usuario_nome: user?.full_name,
@@ -760,9 +758,9 @@ export default function Oportunidades() {
   const handleSaveStatus = async () => {
     if (!statusForm.nome) return;
     if (editingStatus) {
-      await base44.entities.StatusOportunidade.update(editingStatus.id, statusForm);
+      await sigo.entities.StatusOportunidade.update(editingStatus.id, statusForm);
     } else {
-      await base44.entities.StatusOportunidade.create({
+      await sigo.entities.StatusOportunidade.create({
         empresa_id: empresaAtiva.id,
         ...statusForm,
       });
@@ -775,7 +773,7 @@ export default function Oportunidades() {
   const handleDeleteStatus = async (status) => {
     if (!confirm("Excluir este status?")) return;
     setStatusList((prev) => prev.filter((s) => s.id !== status.id));
-    base44.entities.StatusOportunidade.delete(status.id).catch(() => loadData());
+    sigo.entities.StatusOportunidade.delete(status.id).catch(() => loadData());
   };
 
   const handleBuscarCep = async (cep) => {
@@ -802,7 +800,7 @@ export default function Oportunidades() {
 
   const handleCriarOrigem = async (nomeOrigem) => {
     if (!nomeOrigem?.trim()) return;
-    const origemCriada = await base44.entities.OrigemOportunidade.create({
+    const origemCriada = await sigo.entities.OrigemOportunidade.create({
       empresa_id: empresaAtiva.id,
       nome: nomeOrigem,
     });
@@ -953,7 +951,7 @@ export default function Oportunidades() {
           })
           .filter(Boolean);
         if (itens.length > 0) {
-          await base44.entities.OrcamentoItem.bulkCreate(itens);
+          await sigo.entities.OrcamentoItem.bulkCreate(itens);
           loadOrcamentoData(selectedOp.id);
           alert(`${itens.length} itens importados!`);
         }
@@ -969,17 +967,17 @@ export default function Oportunidades() {
   const handleLimparOrcamento = async () => {
     if (!confirm("⚠️ Isso irá apagar TODOS os itens do orçamento. Continuar?")) return;
     if (!selectedOp) return;
-    const itens = await base44.entities.OrcamentoItem.filter({
+    const itens = await sigo.entities.OrcamentoItem.filter({
       empresa_id: empresaAtiva.id,
       oportunidade_id: selectedOp.id,
     });
-    await Promise.all(itens.map((item) => base44.entities.OrcamentoItem.delete(item.id)));
+    await Promise.all(itens.map((item) => sigo.entities.OrcamentoItem.delete(item.id)));
     loadOrcamentoData(selectedOp.id);
   };
 
   const handleNovoOrcamentoSelect = async (tipo) => {
     if (tipo === "zero") {
-      await base44.entities.OrcamentoItem.create({
+      await sigo.entities.OrcamentoItem.create({
         empresa_id: empresaAtiva.id,
         oportunidade_id: selectedOp.id,
         item: "1",
@@ -1004,7 +1002,7 @@ export default function Oportunidades() {
 
   const handleSalvarTemplate = async () => {
     if (!nomeTemplate.trim() || !selectedOp) return;
-    await base44.entities.TemplateOportunidade.create({
+    await sigo.entities.TemplateOportunidade.create({
       empresa_id: empresaAtiva.id,
       nome: nomeTemplate,
       tipo: "orcamento",
@@ -1022,7 +1020,7 @@ export default function Oportunidades() {
     if (!template?.itens_json || !selectedOp) return;
     try {
       const itens = JSON.parse(template.itens_json);
-      await base44.entities.OrcamentoItem.bulkCreate(
+      await sigo.entities.OrcamentoItem.bulkCreate(
         itens.map((item, i) => ({
           empresa_id: empresaAtiva.id,
           oportunidade_id: selectedOp.id,
@@ -1269,7 +1267,7 @@ export default function Oportunidades() {
                                                 o.id === op.id ? { ...o, responsaveis_ids: v } : o
                                               )
                                             );
-                                            await base44.entities.Oportunidade.update(op.id, {
+                                            await sigo.entities.Oportunidade.update(op.id, {
                                               responsaveis_ids: v,
                                             });
                                           }}
@@ -1414,7 +1412,7 @@ export default function Oportunidades() {
                           setOportunidades((prev) =>
                             prev.map((o) => (o.id === op.id ? { ...o, responsaveis_ids: v } : o))
                           );
-                          await base44.entities.Oportunidade.update(op.id, { responsaveis_ids: v });
+                          await sigo.entities.Oportunidade.update(op.id, { responsaveis_ids: v });
                         }}
                       />
                     </td>

@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export default function ScannerCodigoBarras({
@@ -155,7 +155,7 @@ export default function ScannerCodigoBarras({
         status: "Realizada",
       };
 
-      await base44.entities.MovimentacaoFerramenta.create(dadosMovimentacao);
+      await sigo.entities.MovimentacaoFerramenta.create(dadosMovimentacao);
 
       // Atualizar status da ferramenta
       let novoStatus = ferramentaSelecionada.status;
@@ -185,7 +185,7 @@ export default function ScannerCodigoBarras({
         };
       }
 
-      await base44.entities.Ferramenta.update(ferramentaSelecionada.id, novosDados);
+      await sigo.entities.Ferramenta.update(ferramentaSelecionada.id, novosDados);
 
       toast.success("Movimentação registrada com sucesso!");
 

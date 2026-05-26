@@ -1,63 +1,74 @@
-import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Plus, DollarSign, Calendar, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
+import React from "react";
+import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Plus, DollarSign, Calendar, AlertCircle, CheckCircle2 } from "lucide-react";
+import { sigo } from "@/api/sigoClient";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 export default function DespesasTab({ oportunidadeId, empresaAtiva }) {
   const navigate = useNavigate();
   const [despesas, setDespesas] = React.useState([]);
-  const [filtroStatus, setFiltroStatus] = React.useState('all');
-  const [dataInicio, setDataInicio] = React.useState('');
-  const [dataFim, setDataFim] = React.useState('');
+  const [filtroStatus, setFiltroStatus] = React.useState("all");
+  const [dataInicio, setDataInicio] = React.useState("");
+  const [dataFim, setDataFim] = React.useState("");
 
   React.useEffect(() => {
     if (oportunidadeId) loadDespesas();
   }, [oportunidadeId]);
 
   const loadDespesas = async () => {
-    const transacoes = await base44.entities.TransacaoFinanceira.filter({
+    const transacoes = await sigo.entities.TransacaoFinanceira.filter({
       empresa_id: empresaAtiva.id,
       projeto_id: oportunidadeId,
-      tipo: 'despesa'
+      tipo: "despesa",
     });
-    setDespesas(transacoes.sort((a, b) => new Date(b.data_vencimento) - new Date(a.data_vencimento)));
+    setDespesas(
+      transacoes.sort((a, b) => new Date(b.data_vencimento) - new Date(a.data_vencimento))
+    );
   };
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+      value || 0
+    );
   };
 
   const calcularTotais = (status) => {
     return despesas
-      .filter(d => status === 'all' || d.status === status)
+      .filter((d) => status === "all" || d.status === status)
       .reduce((sum, d) => sum + (d.valor || 0), 0);
   };
 
-  const despesasFiltradas = despesas.filter(d => {
-    const matchStatus = filtroStatus === 'all' || d.status === filtroStatus;
+  const despesasFiltradas = despesas.filter((d) => {
+    const matchStatus = filtroStatus === "all" || d.status === filtroStatus;
     const matchDataInicio = !dataInicio || d.data_vencimento >= dataInicio;
     const matchDataFim = !dataFim || d.data_vencimento <= dataFim;
     return matchStatus && matchDataInicio && matchDataFim;
   });
 
-  const totalEmAberto = calcularTotais('em_aberto');
-  const totalVencido = despesas.filter(d => d.status === 'em_aberto' && d.data_vencimento < new Date().toISOString().split('T')[0]).reduce((s, d) => s + (d.valor || 0), 0);
-  const totalPago = calcularTotais('pago');
+  const totalEmAberto = calcularTotais("em_aberto");
+  const totalVencido = despesas
+    .filter(
+      (d) => d.status === "em_aberto" && d.data_vencimento < new Date().toISOString().split("T")[0]
+    )
+    .reduce((s, d) => s + (d.valor || 0), 0);
+  const totalPago = calcularTotais("pago");
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="font-semibold text-slate-800">Despesas do Projeto</h3>
-        <Button 
-          onClick={() => navigate(createPageUrl('Financeiro'))}
-          className="gap-2"
-        >
+        <Button onClick={() => navigate(createPageUrl("Financeiro"))} className="gap-2">
           <Plus className="w-4 h-4" />
           Nova Despesa
         </Button>
@@ -68,7 +79,9 @@ export default function DespesasTab({ oportunidadeId, empresaAtiva }) {
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-slate-500">Em aberto</span>
-              <Badge className="bg-blue-100 text-blue-700">{despesas.filter(d => d.status === 'em_aberto').length}</Badge>
+              <Badge className="bg-blue-100 text-blue-700">
+                {despesas.filter((d) => d.status === "em_aberto").length}
+              </Badge>
             </div>
             <p className="text-2xl font-bold text-slate-800">{formatCurrency(totalEmAberto)}</p>
           </CardContent>
@@ -79,7 +92,13 @@ export default function DespesasTab({ oportunidadeId, empresaAtiva }) {
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-red-700">Vencido</span>
               <Badge className="bg-red-100 text-red-700">
-                {despesas.filter(d => d.status === 'em_aberto' && d.data_vencimento < new Date().toISOString().split('T')[0]).length}
+                {
+                  despesas.filter(
+                    (d) =>
+                      d.status === "em_aberto" &&
+                      d.data_vencimento < new Date().toISOString().split("T")[0]
+                  ).length
+                }
               </Badge>
             </div>
             <p className="text-2xl font-bold text-red-700">{formatCurrency(totalVencido)}</p>
@@ -90,7 +109,9 @@ export default function DespesasTab({ oportunidadeId, empresaAtiva }) {
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-green-700">Pagos</span>
-              <Badge className="bg-green-100 text-green-700">{despesas.filter(d => d.status === 'pago').length}</Badge>
+              <Badge className="bg-green-100 text-green-700">
+                {despesas.filter((d) => d.status === "pago").length}
+              </Badge>
             </div>
             <p className="text-2xl font-bold text-green-700">{formatCurrency(totalPago)}</p>
           </CardContent>
@@ -129,34 +150,44 @@ export default function DespesasTab({ oportunidadeId, empresaAtiva }) {
         <table className="w-full">
           <thead className="bg-slate-100 border-b">
             <tr>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-slate-700">Descrição</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-slate-700">Vencimento</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-slate-700">
+                Descrição
+              </th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-slate-700">
+                Vencimento
+              </th>
               <th className="text-left px-4 py-3 text-sm font-semibold text-slate-700">Valor</th>
               <th className="text-left px-4 py-3 text-sm font-semibold text-slate-700">Status</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-slate-700">Categoria</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-slate-700">
+                Categoria
+              </th>
             </tr>
           </thead>
           <tbody>
-            {despesasFiltradas.map(despesa => {
-              const isVencido = despesa.status === 'em_aberto' && despesa.data_vencimento < new Date().toISOString().split('T')[0];
+            {despesasFiltradas.map((despesa) => {
+              const isVencido =
+                despesa.status === "em_aberto" &&
+                despesa.data_vencimento < new Date().toISOString().split("T")[0];
               return (
-                <tr 
-                  key={despesa.id} 
+                <tr
+                  key={despesa.id}
                   className="border-b hover:bg-slate-50 cursor-pointer"
-                  onClick={() => navigate(createPageUrl('Financeiro') + `?tab=despesas&id=${despesa.id}`)}
+                  onClick={() =>
+                    navigate(createPageUrl("Financeiro") + `?tab=despesas&id=${despesa.id}`)
+                  }
                 >
                   <td className="px-4 py-3 text-sm text-slate-800">{despesa.descricao}</td>
                   <td className="px-4 py-3 text-sm text-slate-600">
                     <div className="flex items-center gap-1">
                       <Calendar className="w-3 h-3" />
-                      {new Date(despesa.data_vencimento).toLocaleDateString('pt-BR')}
+                      {new Date(despesa.data_vencimento).toLocaleDateString("pt-BR")}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm font-semibold text-red-600">
                     {formatCurrency(despesa.valor)}
                   </td>
                   <td className="px-4 py-3">
-                    {despesa.status === 'pago' ? (
+                    {despesa.status === "pago" ? (
                       <Badge className="bg-green-100 text-green-700">
                         <CheckCircle2 className="w-3 h-3 mr-1" />
                         Pago
@@ -167,12 +198,12 @@ export default function DespesasTab({ oportunidadeId, empresaAtiva }) {
                         Vencido
                       </Badge>
                     ) : (
-                      <Badge className="bg-blue-100 text-blue-700">
-                        Em aberto
-                      </Badge>
+                      <Badge className="bg-blue-100 text-blue-700">Em aberto</Badge>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm text-slate-600">{despesa.categoria_nome || '-'}</td>
+                  <td className="px-4 py-3 text-sm text-slate-600">
+                    {despesa.categoria_nome || "-"}
+                  </td>
                 </tr>
               );
             })}

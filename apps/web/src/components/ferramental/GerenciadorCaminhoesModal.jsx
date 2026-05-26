@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,7 +40,7 @@ export default function GerenciadorCaminhoesModal({
 
   useEffect(() => {
     if (open && empresaAtiva?.id) {
-      base44.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true })
+      sigo.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true })
         .then((cams) =>
           setCaminhoes(cams.sort((a, b) => (a.placa || "").localeCompare(b.placa || "")))
         )
@@ -50,7 +50,7 @@ export default function GerenciadorCaminhoesModal({
 
   useEffect(() => {
     if (showDetalhes && selectedCaminhao?.id && empresaAtiva?.id) {
-      base44.entities.CaminhaoCampoObrigatorio.filter({
+      sigo.entities.CaminhaoCampoObrigatorio.filter({
         empresa_id: empresaAtiva.id,
         caminhao_id: selectedCaminhao.id,
         ativo: true,
@@ -116,7 +116,7 @@ export default function GerenciadorCaminhoesModal({
 
   const handleSaveCell = async (ferr, field) => {
     try {
-      await base44.entities.Ferramenta.update(ferr.id, { [field]: editingValue });
+      await sigo.entities.Ferramenta.update(ferr.id, { [field]: editingValue });
       toast.success("Alterado com sucesso!");
       setEditingCell(null);
       onAlmoxarifadoUpdated?.();
@@ -559,12 +559,12 @@ export default function GerenciadorCaminhoesModal({
           movimentacao={null}
           onSave={async (formData) => {
             try {
-              await base44.entities.MovimentacaoFerramenta.create({
+              await sigo.entities.MovimentacaoFerramenta.create({
                 ...formData,
                 empresa_id: empresaAtiva.id,
               });
               if (formData.ferramenta_id) {
-                await base44.entities.Ferramenta.update(formData.ferramenta_id, {
+                await sigo.entities.Ferramenta.update(formData.ferramenta_id, {
                   localizacao: formData.destino,
                   caminhao_id:
                     formData.tipo_movimentacao === "Movimentação para Caminhão"

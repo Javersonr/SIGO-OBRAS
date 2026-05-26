@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Plus } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 
 export default function TransferenciasTab({ empresaAtiva, contas, onReload }) {
   const [showModal, setShowModal] = useState(false);
@@ -32,7 +32,7 @@ export default function TransferenciasTab({ empresaAtiva, contas, onReload }) {
 
   const loadTransferencias = React.useCallback(async () => {
     if (!empresaAtiva?.id) return;
-    const trans = await base44.entities.TransacaoTransferencia.filter({
+    const trans = await sigo.entities.TransacaoTransferencia.filter({
       empresa_id: empresaAtiva.id,
     });
     setTransferencias(trans.sort((a, b) => new Date(b.data) - new Date(a.data)));
@@ -44,7 +44,7 @@ export default function TransferenciasTab({ empresaAtiva, contas, onReload }) {
     const contaOrigem = contas.find((c) => c.id === form.conta_origem_id);
     const contaDestino = contas.find((c) => c.id === form.conta_destino_id);
 
-    await base44.entities.TransacaoTransferencia.create({
+    await sigo.entities.TransacaoTransferencia.create({
       empresa_id: empresaAtiva.id,
       conta_origem_id: form.conta_origem_id,
       conta_origem_nome: contaOrigem?.nome,

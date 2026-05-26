@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Upload, CheckCircle2, AlertCircle, Loader2, X, ArrowRight } from "lucide-react";
@@ -41,7 +41,7 @@ export default function ImportarCertificadosTSTModal({
     try {
       // Upload do ZIP uma única vez
       toast.info("Enviando arquivo ZIP...");
-      const { file_url } = await base44.integrations.Core.UploadFile({ file: zipFile });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file: zipFile });
       setZipUrl(file_url);
 
       // Montar fila: começa pelo funcionário atual, depois os demais (em ordem)
@@ -68,7 +68,7 @@ export default function ImportarCertificadosTSTModal({
     setResultadoAtual(null);
 
     try {
-      const response = await base44.functions.invoke("importarCertificadosFuncionario", {
+      const response = await sigo.functions.invoke("importarCertificadosFuncionario", {
         zipUrl: url,
         funcionarioId: func.id,
         empresaId: empresaAtiva.id,
@@ -106,7 +106,7 @@ export default function ImportarCertificadosTSTModal({
       // Buscar anexos existentes do funcionário
       let anexosExistentes = [];
       try {
-        const funcAtualizado = await base44.entities.Funcionario.filter({ id: func.id });
+        const funcAtualizado = await sigo.entities.Funcionario.filter({ id: func.id });
         if (funcAtualizado.length > 0) {
           anexosExistentes = JSON.parse(funcAtualizado[0].treinamentos_anexos || "[]");
         }
@@ -138,7 +138,7 @@ export default function ImportarCertificadosTSTModal({
       }
 
       // Salvar no banco
-      await base44.entities.Funcionario.update(func.id, {
+      await sigo.entities.Funcionario.update(func.id, {
         treinamentos_anexos: JSON.stringify(anexosExistentes),
       });
 

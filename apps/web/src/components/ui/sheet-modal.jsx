@@ -1,5 +1,5 @@
 /**
- * SheetModal - Componente padronizado para modais no padrão base44
+ * SheetModal - Componente padronizado para modais no padrão SIGO
  * 
  * Uso:
  * <SheetModal open={open} onOpenChange={setOpen} title="Título">

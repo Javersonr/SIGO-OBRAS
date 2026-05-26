@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import React, { useEffect, useState } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 
 export default function VisualizarCatalogModal({ open, onOpenChange, itemId, tipo }) {
   const [item, setItem] = useState(null);
@@ -18,28 +18,28 @@ export default function VisualizarCatalogModal({ open, onOpenChange, itemId, tip
     setLoading(true);
     try {
       const entityMap = {
-        material: 'Material',
-        maodeobra: 'MaoDeObra',
-        ferramental: 'Ferramental'
+        material: "Material",
+        maodeobra: "MaoDeObra",
+        ferramental: "Ferramental",
       };
 
       const entity = entityMap[tipo];
       if (!entity) return;
 
-      const items = await base44.entities[entity].filter({ id: itemId });
+      const items = await sigo.entities[entity].filter({ id: itemId });
       setItem(items[0] || null);
     } catch (error) {
-      console.error('Erro ao carregar item:', error);
+      console.error("Erro ao carregar item:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const getTitulo = () => {
-    if (tipo === 'material') return 'Visualizar Material';
-    if (tipo === 'maodeobra') return 'Visualizar Mão de Obra';
-    if (tipo === 'ferramental') return 'Visualizar Ferramenta';
-    return 'Visualizar Item';
+    if (tipo === "material") return "Visualizar Material";
+    if (tipo === "maodeobra") return "Visualizar Mão de Obra";
+    if (tipo === "ferramental") return "Visualizar Ferramenta";
+    return "Visualizar Item";
   };
 
   return (
@@ -58,8 +58,8 @@ export default function VisualizarCatalogModal({ open, onOpenChange, itemId, tip
             {item.foto_url && (
               <Card>
                 <CardContent className="p-4">
-                  <img 
-                    src={item.foto_url} 
+                  <img
+                    src={item.foto_url}
                     alt={item.nome}
                     className="w-full h-64 object-cover rounded"
                   />
@@ -95,7 +95,10 @@ export default function VisualizarCatalogModal({ open, onOpenChange, itemId, tip
                   <div>
                     <p className="text-xs text-slate-500">Preço de Referência</p>
                     <p className="font-semibold text-slate-800">
-                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.preco || 0)}
+                      {new Intl.NumberFormat("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
+                      }).format(item.preco || 0)}
                     </p>
                   </div>
                 )}
@@ -109,7 +112,10 @@ export default function VisualizarCatalogModal({ open, onOpenChange, itemId, tip
                   <div>
                     <p className="text-xs text-slate-500">Valor Unitário</p>
                     <p className="font-semibold text-slate-800">
-                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.valor_unitario || 0)}
+                      {new Intl.NumberFormat("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
+                      }).format(item.valor_unitario || 0)}
                     </p>
                   </div>
                 )}

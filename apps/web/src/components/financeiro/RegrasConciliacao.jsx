@@ -14,7 +14,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Edit, Trash2, Settings } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 
 export default function RegrasConciliacao({ empresaAtiva }) {
   const [regras, setRegras] = useState([]);
@@ -38,7 +38,7 @@ export default function RegrasConciliacao({ empresaAtiva }) {
   }, [empresaAtiva]);
 
   const loadRegras = async () => {
-    const data = await base44.entities.RegraConciliacao.filter({ empresa_id: empresaAtiva.id });
+    const data = await sigo.entities.RegraConciliacao.filter({ empresa_id: empresaAtiva.id });
     setRegras(data.sort((a, b) => (a.prioridade || 0) - (b.prioridade || 0)));
   };
 
@@ -97,9 +97,9 @@ export default function RegrasConciliacao({ empresaAtiva }) {
     };
 
     if (selectedRegra) {
-      await base44.entities.RegraConciliacao.update(selectedRegra.id, data);
+      await sigo.entities.RegraConciliacao.update(selectedRegra.id, data);
     } else {
-      await base44.entities.RegraConciliacao.create(data);
+      await sigo.entities.RegraConciliacao.create(data);
     }
 
     setShowModal(false);
@@ -108,12 +108,12 @@ export default function RegrasConciliacao({ empresaAtiva }) {
 
   const handleDelete = async (id) => {
     if (!confirm("Excluir esta regra?")) return;
-    await base44.entities.RegraConciliacao.delete(id);
+    await sigo.entities.RegraConciliacao.delete(id);
     loadRegras();
   };
 
   const handleToggleAtivo = async (regra) => {
-    await base44.entities.RegraConciliacao.update(regra.id, { ativo: !regra.ativo });
+    await sigo.entities.RegraConciliacao.update(regra.id, { ativo: !regra.ativo });
     loadRegras();
   };
 

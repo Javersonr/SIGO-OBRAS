@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -84,7 +84,7 @@ export default function FerramentaDetalhesModal({
       const quantidade = itensSelecionados.length;
 
       // Atualizar a primeira unidade para representar o kit (quantidade = N, sem numero_serie)
-      await base44.entities.Ferramenta.update(base.id, {
+      await sigo.entities.Ferramenta.update(base.id, {
         quantidade_estoque: quantidade,
         numero_serie: "",
         observacoes: `Kit de ${quantidade} unidades (agrupado em ${new Date().toLocaleDateString("pt-BR")})`,
@@ -93,7 +93,7 @@ export default function FerramentaDetalhesModal({
       // Deletar as demais unidades selecionadas (exceto a base)
       const paraExcluir = itensSelecionados.filter((id) => id !== base.id);
       for (const id of paraExcluir) {
-        await base44.entities.Ferramenta.delete(id);
+        await sigo.entities.Ferramenta.delete(id);
       }
 
       toast.success(`Kit formado com ${quantidade} unidades de "${ferramentaDetalhes.descricao}"`);
@@ -371,7 +371,7 @@ export default function FerramentaDetalhesModal({
                                   }
                                   onBlur={async () => {
                                     try {
-                                      await base44.entities.Ferramenta.update(item.id, {
+                                      await sigo.entities.Ferramenta.update(item.id, {
                                         numero_serie: editandoCampoItem.valor,
                                       });
                                       toast.success("Nº de série atualizado");
@@ -415,10 +415,9 @@ export default function FerramentaDetalhesModal({
                                   }
                                   onBlur={async () => {
                                     try {
-                                      await base44.entities.Ferramenta.update(
-                                        ferramentaCompleta.id,
-                                        { numero_laudo: editandoCampoItem.valor }
-                                      );
+                                      await sigo.entities.Ferramenta.update(ferramentaCompleta.id, {
+                                        numero_laudo: editandoCampoItem.valor,
+                                      });
                                       toast.success("Nº de laudo atualizado");
                                       setEditandoCampoItem({});
                                       loadData();
@@ -461,10 +460,9 @@ export default function FerramentaDetalhesModal({
                                   }
                                   onBlur={async () => {
                                     try {
-                                      await base44.entities.Ferramenta.update(
-                                        ferramentaCompleta.id,
-                                        { data_vencimento_laudo: editandoCampoItem.valor }
-                                      );
+                                      await sigo.entities.Ferramenta.update(ferramentaCompleta.id, {
+                                        data_vencimento_laudo: editandoCampoItem.valor,
+                                      });
                                       toast.success("Data de vencimento atualizada");
                                       setEditandoCampoItem({});
                                       loadData();

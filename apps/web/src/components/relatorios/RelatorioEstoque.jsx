@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   BarChart,
@@ -32,7 +32,7 @@ export default function RelatorioEstoque({ empresaId }) {
 
   useEffect(() => {
     if (!empresaId) return;
-    base44.entities.Material.filter({ empresa_id: empresaId, ativo: true })
+    sigo.entities.Material.filter({ empresa_id: empresaId, ativo: true })
       .then(setMateriais)
       .finally(() => setLoading(false));
   }, [empresaId]);

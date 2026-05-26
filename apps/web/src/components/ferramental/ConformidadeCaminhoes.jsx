@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -43,13 +43,13 @@ export default function ConformidadeCaminhoes({ ferramentas: ferramentasProp }) 
     setLoading(true);
     try {
       const [cams, camposDb, funcs, ferrs] = await Promise.all([
-        base44.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.CaminhaoCampoObrigatorio.filter({
+        sigo.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.CaminhaoCampoObrigatorio.filter({
           empresa_id: empresaAtiva.id,
           ativo: true,
         }),
-        base44.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 1000),
+        sigo.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }, "", 1000),
       ]);
       setCaminhoes(cams.sort((a, b) => (a.placa || "").localeCompare(b.placa || "")));
       setCampos(camposDb);
@@ -135,7 +135,7 @@ export default function ConformidadeCaminhoes({ ferramentas: ferramentasProp }) 
             ferramentasUsadas.add(f.id);
             return f.id;
           });
-          await base44.entities.CaminhaoCampoObrigatorio.update(campo.id, {
+          await sigo.entities.CaminhaoCampoObrigatorio.update(campo.id, {
             ferramenta_ids: JSON.stringify(ids),
           });
         }

@@ -3,7 +3,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Wrench, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,7 +21,7 @@ export default function ImportarFerramentasModal({ open, onOpenChange, itensNota
 
   const loadFerramentasBanco = async () => {
     try {
-      const ferramentas = await base44.entities.Ferramenta.filter({
+      const ferramentas = await sigo.entities.Ferramenta.filter({
         empresa_id: empresaAtiva.id,
         ativo: true,
       });
@@ -92,11 +92,11 @@ export default function ImportarFerramentasModal({ open, onOpenChange, itensNota
       });
 
       if (ferramentasParaCriar.length > 0) {
-        await base44.entities.Ferramenta.bulkCreate(ferramentasParaCriar);
+        await sigo.entities.Ferramenta.bulkCreate(ferramentasParaCriar);
       }
 
       for (const ferr of ferramentasParaAtualizar) {
-        await base44.entities.Ferramenta.update(ferr.id, ferr);
+        await sigo.entities.Ferramenta.update(ferr.id, ferr);
       }
 
       toast.success(

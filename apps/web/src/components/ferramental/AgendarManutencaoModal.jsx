@@ -1,64 +1,64 @@
-import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '@/Layout';
-import SheetModalComponent from '@/components/ui/sheet-modal';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Calendar, Clock, AlertCircle } from 'lucide-react';
-import { toast } from 'sonner';
+import React, { useState } from "react";
+import { sigo } from "@/api/sigoClient";
+import { useEmpresa } from "@/Layout";
+import SheetModalComponent from "@/components/ui/sheet-modal";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Calendar, Clock, AlertCircle } from "lucide-react";
+import { toast } from "sonner";
 
 export default function AgendarManutencaoModal({ open, onOpenChange, ferramenta, onSave }) {
   const { empresaAtiva } = useEmpresa();
   const [intervalo, setIntervalo] = useState(ferramenta?.intervalo_manutencao_dias || 30);
-  const [proximaData, setProximaData] = useState('');
+  const [proximaData, setProximaData] = useState("");
   const [loading, setLoading] = useState(false);
 
   const calcularProximaManutencao = () => {
     if (!intervalo || intervalo <= 0) {
-      toast.error('Informe um intervalo válido');
+      toast.error("Informe um intervalo válido");
       return;
     }
 
     const hoje = new Date();
     const proxData = new Date(hoje);
     proxData.setDate(proxData.getDate() + parseInt(intervalo));
-    setProximaData(proxData.toISOString().split('T')[0]);
+    setProximaData(proxData.toISOString().split("T")[0]);
   };
 
   const handleSalvar = async () => {
     if (!proximaData) {
-      toast.error('Calcule a próxima data de manutenção');
+      toast.error("Calcule a próxima data de manutenção");
       return;
     }
 
     setLoading(true);
     try {
       // Atualizar ferramenta
-      await base44.entities.Ferramenta.update(ferramenta.id, {
+      await sigo.entities.Ferramenta.update(ferramenta.id, {
         intervalo_manutencao_dias: parseInt(intervalo),
         proxima_manutencao: proximaData,
-        alerta_manutencao: false
+        alerta_manutencao: false,
       });
 
       // Criar agendamento
-      await base44.entities.ManutencaoFerramenta.create({
+      await sigo.entities.ManutencaoFerramenta.create({
         empresa_id: empresaAtiva.id,
         ferramenta_id: ferramenta.id,
         ferramenta_codigo: ferramenta.codigo,
         ferramenta_descricao: ferramenta.descricao,
-        tipo_manutencao: 'Preventiva',
+        tipo_manutencao: "Preventiva",
         data_prevista: proximaData,
-        status: 'Agendada',
-        descricao: `Manutenção preventiva programada (intervalo: ${intervalo} dias)`
+        status: "Agendada",
+        descricao: `Manutenção preventiva programada (intervalo: ${intervalo} dias)`,
       });
 
-      toast.success('Manutenção preventiva agendada');
+      toast.success("Manutenção preventiva agendada");
       onSave?.();
       onOpenChange(false);
     } catch (error) {
-      console.error('Erro:', error);
-      toast.error('Erro ao agendar manutenção');
+      console.error("Erro:", error);
+      toast.error("Erro ao agendar manutenção");
     } finally {
       setLoading(false);
     }
@@ -71,9 +71,15 @@ export default function AgendarManutencaoModal({ open, onOpenChange, ferramenta,
       title="Agendar Manutenção Preventiva"
       footer={
         <div className="flex justify-end gap-3">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={handleSalvar} disabled={loading || !proximaData} className="bg-amber-500 hover:bg-amber-600">
-            {loading ? 'Agendando...' : 'Confirmar Agendamento'}
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleSalvar}
+            disabled={loading || !proximaData}
+            className="bg-amber-500 hover:bg-amber-600"
+          >
+            {loading ? "Agendando..." : "Confirmar Agendamento"}
           </Button>
         </div>
       }
@@ -112,7 +118,11 @@ export default function AgendarManutencaoModal({ open, onOpenChange, ferramenta,
               <p className="font-semibold text-amber-900">Próxima Manutenção</p>
             </div>
             <p className="text-2xl font-bold text-amber-700">
-              {new Date(proximaData).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
+              {new Date(proximaData).toLocaleDateString("pt-BR", {
+                day: "2-digit",
+                month: "long",
+                year: "numeric",
+              })}
             </p>
           </div>
         )}
@@ -120,7 +130,10 @@ export default function AgendarManutencaoModal({ open, onOpenChange, ferramenta,
         {/* Alerta */}
         <div className="flex items-start gap-2 text-sm text-slate-600 bg-blue-50 p-3 rounded-lg">
           <AlertCircle className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-          <p>O sistema enviará notificações automáticas 7 dias antes da data prevista e quando a manutenção estiver atrasada.</p>
+          <p>
+            O sistema enviará notificações automáticas 7 dias antes da data prevista e quando a
+            manutenção estiver atrasada.
+          </p>
         </div>
       </div>
     </SheetModalComponent>

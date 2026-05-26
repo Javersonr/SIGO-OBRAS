@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,7 @@ export default function NovoPreLancamentoModal({
     setErro(null);
 
     try {
-      const response = await base44.functions.invoke("extrairDadosComprovante", {
+      const response = await sigo.functions.invoke("extrairDadosComprovante", {
         file_url: fileUrl,
       });
 
@@ -58,7 +58,7 @@ export default function NovoPreLancamentoModal({
     setErro(null);
 
     try {
-      const response = await base44.functions.invoke("criarPreLancamento", {
+      const response = await sigo.functions.invoke("criarPreLancamento", {
         empresa_id: empresaId,
         comprovante_url: comprovanteUrl,
         dados_extraidos: dadosExtraidos,

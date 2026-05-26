@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Sparkles, Send, Loader2, Lightbulb } from "lucide-react";
 
 export default function AssistenteIA({ transacoes, onAplicarFiltros, categorias, centrosCusto }) {
@@ -24,7 +24,7 @@ export default function AssistenteIA({ transacoes, onAplicarFiltros, categorias,
 
     setLoading(true);
     try {
-      const resultado = await base44.integrations.Core.InvokeLLM({
+      const resultado = await sigo.integrations.Core.InvokeLLM({
         prompt: `Você é um assistente financeiro especializado. Analise a seguinte solicitação do usuário e retorne um JSON com:
         1. tipo: tipo de relatório solicitado ('dre', 'balanco', 'fluxo', 'comparacao', 'lista', 'analise')
         2. filtros: objeto com filtros a serem aplicados (dataInicio, dataFim, categoriaId, centroCustoId, etc)

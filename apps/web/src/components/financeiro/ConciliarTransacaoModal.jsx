@@ -1,17 +1,30 @@
-import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, CheckCircle2, X } from 'lucide-react';
+import React, { useState } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2, CheckCircle2, X } from "lucide-react";
 
-export default function ConciliarTransacaoModal({ open, onOpenChange, transacao, contas, categorias, onSucesso }) {
+export default function ConciliarTransacaoModal({
+  open,
+  onOpenChange,
+  transacao,
+  contas,
+  categorias,
+  onSucesso,
+}) {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState(null);
   const [sucesso, setSucesso] = useState(false);
-  const [contaId, setContaId] = useState(transacao?.conta_id || '');
+  const [contaId, setContaId] = useState(transacao?.conta_id || "");
 
   if (!transacao) return null;
 
@@ -19,9 +32,9 @@ export default function ConciliarTransacaoModal({ open, onOpenChange, transacao,
     setLoading(true);
     setErro(null);
     try {
-      const conta = contas.find(c => c.id === (contaId || transacao.conta_id));
-      await base44.entities.TransacaoFinanceira.update(transacao.id, {
-        status: transacao.tipo === 'receita' ? 'recebido' : 'pago',
+      const conta = contas.find((c) => c.id === (contaId || transacao.conta_id));
+      await sigo.entities.TransacaoFinanceira.update(transacao.id, {
+        status: transacao.tipo === "receita" ? "recebido" : "pago",
         conta_id: conta?.id || transacao.conta_id,
         conta_nome: conta?.nome || transacao.conta_nome,
       });
@@ -32,7 +45,7 @@ export default function ConciliarTransacaoModal({ open, onOpenChange, transacao,
         onSucesso();
       }, 1500);
     } catch (err) {
-      setErro('Erro ao conciliar: ' + err.message);
+      setErro("Erro ao conciliar: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -43,7 +56,12 @@ export default function ConciliarTransacaoModal({ open, onOpenChange, transacao,
       <DialogContent className="sm:max-w-md w-full rounded-lg p-0 flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 sticky top-0 bg-white z-10">
           <h2 className="text-base font-semibold text-slate-900">Conciliar Lançamento</h2>
-          <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)} className="h-8 w-8">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onOpenChange(false)}
+            className="h-8 w-8"
+          >
             <X className="w-4 h-4" />
           </Button>
         </div>
@@ -65,32 +83,71 @@ export default function ConciliarTransacaoModal({ open, onOpenChange, transacao,
               )}
 
               <div className="bg-slate-50 p-3 rounded-lg space-y-1 text-sm">
-                <p><span className="text-slate-500">Descrição:</span> <span className="font-medium">{transacao.descricao || '-'}</span></p>
-                <p><span className="text-slate-500">Tipo:</span> <span className={`font-medium ${transacao.tipo === 'receita' ? 'text-green-600' : 'text-red-600'}`}>{transacao.tipo === 'receita' ? 'Receita' : 'Despesa'}</span></p>
-                <p><span className="text-slate-500">Valor:</span> <span className="font-semibold">R$ {(transacao.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></p>
+                <p>
+                  <span className="text-slate-500">Descrição:</span>{" "}
+                  <span className="font-medium">{transacao.descricao || "-"}</span>
+                </p>
+                <p>
+                  <span className="text-slate-500">Tipo:</span>{" "}
+                  <span
+                    className={`font-medium ${transacao.tipo === "receita" ? "text-green-600" : "text-red-600"}`}
+                  >
+                    {transacao.tipo === "receita" ? "Receita" : "Despesa"}
+                  </span>
+                </p>
+                <p>
+                  <span className="text-slate-500">Valor:</span>{" "}
+                  <span className="font-semibold">
+                    R${" "}
+                    {(transacao.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                  </span>
+                </p>
               </div>
 
               {contas.length > 0 && (
                 <div className="space-y-1">
                   <Label>Conta</Label>
                   <Select value={contaId || transacao.conta_id} onValueChange={setContaId}>
-                    <SelectTrigger><SelectValue placeholder="Selecionar conta" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecionar conta" />
+                    </SelectTrigger>
                     <SelectContent>
-                      {contas.map(c => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}
+                      {contas.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.nome}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
               )}
 
               <p className="text-xs text-slate-500">
-                Ao conciliar, o status será alterado para <strong>{transacao.tipo === 'receita' ? '"Recebido"' : '"Pago"'}</strong>.
+                Ao conciliar, o status será alterado para{" "}
+                <strong>{transacao.tipo === "receita" ? '"Recebido"' : '"Pago"'}</strong>.
               </p>
 
               <div className="flex gap-2">
-                <Button onClick={handleConciliar} disabled={loading} className="flex-1 bg-green-600 hover:bg-green-700">
-                  {loading ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Conciliando...</> : 'Conciliar Agora'}
+                <Button
+                  onClick={handleConciliar}
+                  disabled={loading}
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      Conciliando...
+                    </>
+                  ) : (
+                    "Conciliar Agora"
+                  )}
                 </Button>
-                <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading} className="flex-1">
+                <Button
+                  variant="outline"
+                  onClick={() => onOpenChange(false)}
+                  disabled={loading}
+                  className="flex-1"
+                >
                   Cancelar
                 </Button>
               </div>

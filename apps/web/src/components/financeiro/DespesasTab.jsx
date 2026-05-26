@@ -28,7 +28,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 
 import FiltroRapido from "./FiltroRapido";
 import CardsResumo from "./CardsResumo";
@@ -136,7 +136,7 @@ export default function DespesasTab({
   useEffect(() => {
     let mounted = true;
     if (empresaAtiva?.id && oportunidades.length === 0) {
-      base44.entities.Oportunidade.filter({ empresa_id: empresaAtiva.id }).then((ops) => {
+      sigo.entities.Oportunidade.filter({ empresa_id: empresaAtiva.id }).then((ops) => {
         if (mounted) setOportunidades(ops);
       });
     }
@@ -152,7 +152,7 @@ export default function DespesasTab({
     const abrirTransacao = async () => {
       let t = transacoesIniciais.find((tr) => tr.id === tid);
       if (!t) {
-        const results = await base44.entities.TransacaoFinanceira.filter({ id: tid });
+        const results = await sigo.entities.TransacaoFinanceira.filter({ id: tid });
         t = results[0];
       }
       if (t && (t.tipo || "").toLowerCase() === "despesa") {
@@ -204,7 +204,7 @@ export default function DespesasTab({
     const novosAnexos = [];
 
     for (const file of files) {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       novosAnexos.push({
         nome: file.name,
         url: file_url,
@@ -393,14 +393,14 @@ export default function DespesasTab({
         );
 
         // Buscar ou criar fornecedor
-        let fornecedores = await base44.entities.Fornecedor.filter({
+        let fornecedores = await sigo.entities.Fornecedor.filter({
           empresa_id: empresaAtiva.id,
           cnpj: fornecedorCNPJ,
         });
 
         let fornecedor;
         if (fornecedores.length === 0) {
-          fornecedor = await base44.entities.Fornecedor.create({
+          fornecedor = await sigo.entities.Fornecedor.create({
             empresa_id: empresaAtiva.id,
             nome_razao: fornecedorNome,
             cnpj: fornecedorCNPJ,
@@ -426,7 +426,7 @@ export default function DespesasTab({
           observacoes: `Importado de XML - NF-e ${numeroNFe}`,
         };
 
-        await base44.entities.TransacaoFinanceira.create(despesaData);
+        await sigo.entities.TransacaoFinanceira.create(despesaData);
 
         setImportacao({ ativo: false, total: 0, processados: 0, erros: 0 });
         alert(
@@ -532,13 +532,13 @@ export default function DespesasTab({
 
         // PRÉ-CARREGAR TODOS OS DADOS
         const [todosFornecedores, todosProjetos, todasCategorias, todasContas] = await Promise.all([
-          base44.entities.Fornecedor.filter({ empresa_id: empresaAtiva.id }),
-          base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
-          base44.entities.CategoriaFinanceira.filter({
+          sigo.entities.Fornecedor.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.CategoriaFinanceira.filter({
             empresa_id: empresaAtiva.id,
             tipo: "Despesa",
           }),
-          base44.entities.ContaFinanceira.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.ContaFinanceira.filter({ empresa_id: empresaAtiva.id }),
         ]);
 
         // Criar mapas para busca rápida
@@ -548,7 +548,7 @@ export default function DespesasTab({
         const contasMap = new Map(todasContas.map((c) => [c.nome, c]));
 
         // Carregar apenas as últimas 1000 transações para verificar duplicidade (otimização)
-        const transacoesExistentes = await base44.entities.TransacaoFinanceira.filter(
+        const transacoesExistentes = await sigo.entities.TransacaoFinanceira.filter(
           {
             empresa_id: empresaAtiva.id,
             tipo: "despesa",
@@ -677,21 +677,21 @@ export default function DespesasTab({
 
         // CRIAR NOVOS REGISTROS EM LOTE
         if (novosRegistros.fornecedores.length > 0) {
-          const criados = await base44.entities.Fornecedor.bulkCreate(novosRegistros.fornecedores);
+          const criados = await sigo.entities.Fornecedor.bulkCreate(novosRegistros.fornecedores);
           criados.forEach((f) => fornecedoresMap.set(f.nome_razao, f));
         }
         if (novosRegistros.projetos.length > 0) {
-          const criados = await base44.entities.Projeto.bulkCreate(novosRegistros.projetos);
+          const criados = await sigo.entities.Projeto.bulkCreate(novosRegistros.projetos);
           criados.forEach((p) => projetosMap.set(p.nome, p));
         }
         if (novosRegistros.categorias.length > 0) {
-          const criados = await base44.entities.CategoriaFinanceira.bulkCreate(
+          const criados = await sigo.entities.CategoriaFinanceira.bulkCreate(
             novosRegistros.categorias
           );
           criados.forEach((c) => categoriasMap.set(c.nome, c));
         }
         if (novosRegistros.contas.length > 0) {
-          const criados = await base44.entities.ContaFinanceira.bulkCreate(novosRegistros.contas);
+          const criados = await sigo.entities.ContaFinanceira.bulkCreate(novosRegistros.contas);
           criados.forEach((c) => contasMap.set(c.nome, c));
         }
 
@@ -710,13 +710,13 @@ export default function DespesasTab({
           const lote = transacoesParaCriar.slice(i, i + LOTE_SIZE);
 
           try {
-            await base44.entities.TransacaoFinanceira.bulkCreate(lote);
+            await sigo.entities.TransacaoFinanceira.bulkCreate(lote);
             importadas += lote.length;
           } catch (error) {
             // Se for rate limit, aguarda mais tempo e tenta novamente
             if (error.message?.includes("rate limit")) {
               await new Promise((resolve) => setTimeout(resolve, 3000));
-              await base44.entities.TransacaoFinanceira.bulkCreate(lote);
+              await sigo.entities.TransacaoFinanceira.bulkCreate(lote);
               importadas += lote.length;
             } else {
               throw error;
@@ -886,7 +886,7 @@ export default function DespesasTab({
     }
 
     for (const id of itensSelecionados) {
-      await base44.entities.TransacaoFinanceira.update(id, { status: "pago" });
+      await sigo.entities.TransacaoFinanceira.update(id, { status: "pago" });
     }
 
     setItensSelecionados([]);
@@ -922,7 +922,7 @@ export default function DespesasTab({
     let erros = 0;
     for (const id of itensSelecionados) {
       try {
-        await base44.entities.TransacaoFinanceira.delete(id);
+        await sigo.entities.TransacaoFinanceira.delete(id);
       } catch {
         erros++;
       }
@@ -1003,7 +1003,7 @@ export default function DespesasTab({
 
   const loadAnexos = async (transacaoId) => {
     try {
-      const anexosDb = await base44.entities.TransacaoAnexo.filter({
+      const anexosDb = await sigo.entities.TransacaoAnexo.filter({
         empresa_id: empresaAtiva.id,
         transacao_id: transacaoId,
       });
@@ -1056,7 +1056,7 @@ export default function DespesasTab({
     // CENÁRIO 1: Nova despesa com parcelamento
     if (temParcelamento && !selectedItem) {
       // Criar uma única despesa com as parcelas dentro
-      const transacao = await base44.entities.TransacaoFinanceira.create({
+      const transacao = await sigo.entities.TransacaoFinanceira.create({
         ...dataBase,
         parcelado: true,
         parcelas: JSON.stringify(parcelas),
@@ -1064,7 +1064,7 @@ export default function DespesasTab({
 
       // Salvar anexos
       for (const anexo of anexos) {
-        await base44.entities.TransacaoAnexo.create({
+        await sigo.entities.TransacaoAnexo.create({
           empresa_id: empresaAtiva.id,
           transacao_id: transacao.id,
           nome: anexo.nome,
@@ -1075,7 +1075,7 @@ export default function DespesasTab({
 
       // Criar um lançamento no extrato para cada parcela
       for (const parcela of parcelas) {
-        await base44.entities.ExtratoBancario.create({
+        await sigo.entities.ExtratoBancario.create({
           empresa_id: empresaAtiva.id,
           conta_id: form.conta_id,
           data: parcela.data_vencimento,
@@ -1100,24 +1100,24 @@ export default function DespesasTab({
       }
 
       // Atualizar despesa existente com parcelamento
-      await base44.entities.TransacaoFinanceira.update(selectedItem.id, {
+      await sigo.entities.TransacaoFinanceira.update(selectedItem.id, {
         ...dataBase,
         parcelado: true,
         parcelas: JSON.stringify(parcelas),
       });
 
       // Excluir lançamentos antigos do extrato
-      const lancamentosAntigos = await base44.entities.ExtratoBancario.filter({
+      const lancamentosAntigos = await sigo.entities.ExtratoBancario.filter({
         empresa_id: empresaAtiva.id,
         transacao_id: selectedItem.id,
       });
       for (const lanc of lancamentosAntigos) {
-        await base44.entities.ExtratoBancario.delete(lanc.id);
+        await sigo.entities.ExtratoBancario.delete(lanc.id);
       }
 
       // Criar lançamentos no extrato para cada parcela
       for (const parcela of parcelas) {
-        await base44.entities.ExtratoBancario.create({
+        await sigo.entities.ExtratoBancario.create({
           empresa_id: empresaAtiva.id,
           conta_id: form.conta_id,
           data: parcela.data_vencimento,
@@ -1133,16 +1133,16 @@ export default function DespesasTab({
     }
     // CENÁRIO 3: Edição simples (sem parcelamento)
     else if (selectedItem) {
-      await base44.entities.TransacaoFinanceira.update(selectedItem.id, dataBase);
+      await sigo.entities.TransacaoFinanceira.update(selectedItem.id, dataBase);
 
       // Atualizar lançamento existente no extrato
-      const lancamentosExistentes = await base44.entities.ExtratoBancario.filter({
+      const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
         empresa_id: empresaAtiva.id,
         transacao_id: selectedItem.id,
       });
 
       if (lancamentosExistentes.length > 0 && dataBase.status === "pago") {
-        await base44.entities.ExtratoBancario.update(lancamentosExistentes[0].id, {
+        await sigo.entities.ExtratoBancario.update(lancamentosExistentes[0].id, {
           conta_id: form.conta_id,
           data: form.data_pagamento || form.data_vencimento,
           descricao: form.descricao,
@@ -1153,25 +1153,25 @@ export default function DespesasTab({
       } else if (lancamentosExistentes.length > 0 && dataBase.status !== "pago") {
         // If the expense is no longer paid, remove the bank record
         for (const lanc of lancamentosExistentes) {
-          await base44.entities.ExtratoBancario.delete(lanc.id);
+          await sigo.entities.ExtratoBancario.delete(lanc.id);
         }
       }
 
       // Gerenciar anexos - remover e recriar
-      const anexosExistentes = await base44.entities.TransacaoAnexo.filter({
+      const anexosExistentes = await sigo.entities.TransacaoAnexo.filter({
         empresa_id: empresaAtiva.id,
         transacao_id: selectedItem.id,
       });
 
       for (const anexo of anexosExistentes) {
         if (!anexos.find((a) => a.id === anexo.id)) {
-          await base44.entities.TransacaoAnexo.delete(anexo.id);
+          await sigo.entities.TransacaoAnexo.delete(anexo.id);
         }
       }
 
       for (const anexo of anexos) {
         if (!anexo.id) {
-          await base44.entities.TransacaoAnexo.create({
+          await sigo.entities.TransacaoAnexo.create({
             empresa_id: empresaAtiva.id,
             transacao_id: selectedItem.id,
             nome: anexo.nome,
@@ -1183,11 +1183,11 @@ export default function DespesasTab({
     }
     // CENÁRIO 4: Nova despesa simples (sem parcelamento)
     else {
-      const transacao = await base44.entities.TransacaoFinanceira.create(dataBase);
+      const transacao = await sigo.entities.TransacaoFinanceira.create(dataBase);
 
       // Salvar anexos
       for (const anexo of anexos) {
-        await base44.entities.TransacaoAnexo.create({
+        await sigo.entities.TransacaoAnexo.create({
           empresa_id: empresaAtiva.id,
           transacao_id: transacao.id,
           nome: anexo.nome,
@@ -1198,7 +1198,7 @@ export default function DespesasTab({
 
       if (transacao.status === "pago") {
         // Criar lançamento no extrato bancário apenas se já estiver paga
-        await base44.entities.ExtratoBancario.create({
+        await sigo.entities.ExtratoBancario.create({
           empresa_id: empresaAtiva.id,
           conta_id: form.conta_id,
           data: form.data_pagamento || form.data_vencimento,
@@ -1230,14 +1230,14 @@ export default function DespesasTab({
     }
     if (!confirm("Tem certeza que deseja excluir esta despesa?")) return;
 
-    await base44.entities.TransacaoFinanceira.delete(id);
+    await sigo.entities.TransacaoFinanceira.delete(id);
     alert("Despesa excluída com sucesso!");
     onReload();
   };
 
   const handleToggleStatus = async (item) => {
     const newStatus = item.status === "pago" ? "em_aberto" : "pago";
-    await base44.entities.TransacaoFinanceira.update(item.id, {
+    await sigo.entities.TransacaoFinanceira.update(item.id, {
       status: newStatus,
       data_pagamento: newStatus === "pago" ? new Date().toISOString().split("T")[0] : null,
     });
@@ -1245,13 +1245,13 @@ export default function DespesasTab({
     // Sincronizar com ExtratoBancario
     if (newStatus === "pago") {
       // Criar lançamento no extrato quando marcar como pago
-      const lancamentosExistentes = await base44.entities.ExtratoBancario.filter({
+      const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
         empresa_id: empresaAtiva.id,
         transacao_id: item.id,
       });
 
       if (lancamentosExistentes.length === 0) {
-        await base44.entities.ExtratoBancario.create({
+        await sigo.entities.ExtratoBancario.create({
           empresa_id: empresaAtiva.id,
           conta_id: item.conta_id,
           data: new Date().toISOString().split("T")[0],
@@ -1266,13 +1266,13 @@ export default function DespesasTab({
       }
     } else {
       // Remover lançamento do extrato quando marcar como não pago
-      const lancamentosExistentes = await base44.entities.ExtratoBancario.filter({
+      const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
         empresa_id: empresaAtiva.id,
         transacao_id: item.id,
       });
 
       for (const lanc of lancamentosExistentes) {
-        await base44.entities.ExtratoBancario.delete(lanc.id);
+        await sigo.entities.ExtratoBancario.delete(lanc.id);
       }
     }
 
@@ -1381,8 +1381,8 @@ export default function DespesasTab({
     input.onchange = async (e) => {
       const files = Array.from(e.target.files);
       for (const file of files) {
-        const { file_url } = await base44.integrations.Core.UploadFile({ file });
-        await base44.entities.TransacaoAnexo.create({
+        const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+        await sigo.entities.TransacaoAnexo.create({
           empresa_id: empresaAtiva.id,
           transacao_id: despesa.id,
           nome: file.name,
@@ -1398,7 +1398,7 @@ export default function DespesasTab({
 
   const handleVerDetalhes = async (despesa) => {
     // Carregar anexos
-    const anexosDb = await base44.entities.TransacaoAnexo.filter({
+    const anexosDb = await sigo.entities.TransacaoAnexo.filter({
       empresa_id: empresaAtiva.id,
       transacao_id: despesa.id,
     });
@@ -1411,16 +1411,16 @@ export default function DespesasTab({
     if (!confirm("Desfazer a conciliação bancária desta despesa?")) return;
 
     try {
-      await base44.entities.TransacaoFinanceira.update(despesa.id, { conciliado: false });
+      await sigo.entities.TransacaoFinanceira.update(despesa.id, { conciliado: false });
 
       // Atualizar extrato bancário relacionado
-      const lancamentos = await base44.entities.ExtratoBancario.filter({
+      const lancamentos = await sigo.entities.ExtratoBancario.filter({
         empresa_id: empresaAtiva.id,
         transacao_id: despesa.id,
       });
 
       for (const lanc of lancamentos) {
-        await base44.entities.ExtratoBancario.update(lanc.id, { conciliado: false });
+        await sigo.entities.ExtratoBancario.update(lanc.id, { conciliado: false });
       }
 
       alert("Conciliação desfeita com sucesso!");
@@ -1456,7 +1456,7 @@ export default function DespesasTab({
         forma_pagamento: despesa.forma_pagamento,
       };
 
-      await base44.entities.TransacaoFinanceira.create(novaDespesa);
+      await sigo.entities.TransacaoFinanceira.create(novaDespesa);
       alert("Despesa duplicada com sucesso!");
       onReload();
     } catch (error) {

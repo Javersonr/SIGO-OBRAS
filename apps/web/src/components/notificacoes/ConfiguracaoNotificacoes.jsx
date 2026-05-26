@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../../Layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -76,7 +76,7 @@ export default function ConfiguracaoNotificacoes() {
   const loadPrefs = async () => {
     setLoading(true);
     try {
-      const result = await base44.entities.PreferenciaNotificacao.filter({
+      const result = await sigo.entities.PreferenciaNotificacao.filter({
         empresa_id: empresaAtiva.id,
         usuario_email: user.email,
       });
@@ -105,9 +105,9 @@ export default function ConfiguracaoNotificacoes() {
         ativo: true,
       };
       if (prefId) {
-        await base44.entities.PreferenciaNotificacao.update(prefId, data);
+        await sigo.entities.PreferenciaNotificacao.update(prefId, data);
       } else {
-        const novo = await base44.entities.PreferenciaNotificacao.create(data);
+        const novo = await sigo.entities.PreferenciaNotificacao.create(data);
         setPrefId(novo.id);
       }
       toast.success("Preferências salvas com sucesso!");
@@ -121,7 +121,7 @@ export default function ConfiguracaoNotificacoes() {
   const disparar = async (tipo) => {
     setDisparando(tipo);
     try {
-      const resp = await base44.functions.invoke("dispararAlertas", {
+      const resp = await sigo.functions.invoke("dispararAlertas", {
         empresa_id: empresaAtiva.id,
         tipo,
       });

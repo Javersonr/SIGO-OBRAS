@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
 import SheetModalComponent from "@/components/ui/sheet-modal";
 import { Button } from "@/components/ui/button";
@@ -57,14 +57,14 @@ export default function FerramentaDetalheModal({ open, onOpenChange, ferramenta,
     setLoading(true);
     try {
       const [manut, movim, notasData] = await Promise.all([
-        base44.entities.ManutencaoFerramenta.filter(
+        sigo.entities.ManutencaoFerramenta.filter(
           {
             empresa_id: empresaAtiva.id,
             ferramenta_id: ferramenta.id,
           },
           "-data_manutencao"
         ),
-        base44.entities.MovimentacaoFerramenta.filter(
+        sigo.entities.MovimentacaoFerramenta.filter(
           {
             empresa_id: empresaAtiva.id,
             ferramenta_id: ferramenta.id,
@@ -72,7 +72,7 @@ export default function FerramentaDetalheModal({ open, onOpenChange, ferramenta,
           "-created_date",
           50
         ),
-        base44.entities.FerramentaNota.filter(
+        sigo.entities.FerramentaNota.filter(
           {
             empresa_id: empresaAtiva.id,
             ferramenta_id: ferramenta.id,
@@ -113,7 +113,7 @@ export default function FerramentaDetalheModal({ open, onOpenChange, ferramenta,
     try {
       const uploaded = [];
       for (const file of files) {
-        const { file_url } = await base44.integrations.Core.UploadFile({ file });
+        const { file_url } = await sigo.integrations.Core.UploadFile({ file });
         uploaded.push({ nome: file.name, url: file_url, tipo: file.type });
       }
       setAnexosTemp([...anexosTemp, ...uploaded]);
@@ -133,7 +133,7 @@ export default function FerramentaDetalheModal({ open, onOpenChange, ferramenta,
     }
 
     try {
-      await base44.entities.FerramentaNota.create({
+      await sigo.entities.FerramentaNota.create({
         empresa_id: empresaAtiva.id,
         ferramenta_id: ferramenta.id,
         ferramenta_codigo: ferramenta.codigo,
@@ -158,7 +158,7 @@ export default function FerramentaDetalheModal({ open, onOpenChange, ferramenta,
 
   const handleRemoverNota = async (notaId) => {
     try {
-      await base44.entities.FerramentaNota.delete(notaId);
+      await sigo.entities.FerramentaNota.delete(notaId);
       toast.success("Nota removida");
       loadData();
     } catch (error) {

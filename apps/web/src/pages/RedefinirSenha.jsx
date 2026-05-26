@@ -1,28 +1,28 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { createPageUrl } from '../utils';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { HardHat, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { createPageUrl } from "../utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { HardHat, Loader2, CheckCircle, AlertCircle } from "lucide-react";
 
 export default function RedefinirSenha() {
   const [loading, setLoading] = useState(false);
   const [validating, setValidating] = useState(true);
-  const [novaSenha, setNovaSenha] = useState('');
-  const [confirmarSenha, setConfirmarSenha] = useState('');
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmarSenha, setConfirmarSenha] = useState("");
   const [success, setSuccess] = useState(false);
-  const [error, setError] = useState('');
-  const [token, setToken] = useState('');
+  const [error, setError] = useState("");
+  const [token, setToken] = useState("");
   const [tokenValido, setTokenValido] = useState(false);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.hash.split('?')[1]);
-    const tokenParam = params.get('token');
-    
+    const params = new URLSearchParams(window.location.hash.split("?")[1]);
+    const tokenParam = params.get("token");
+
     if (!tokenParam) {
-      setError('Link inválido ou expirado');
+      setError("Link inválido ou expirado");
       setValidating(false);
       return;
     }
@@ -33,15 +33,15 @@ export default function RedefinirSenha() {
 
   const validarToken = async (tokenParam) => {
     try {
-      const response = await base44.functions.invoke('validarTokenReset', { token: tokenParam });
-      
+      const response = await sigo.functions.invoke("validarTokenReset", { token: tokenParam });
+
       if (response.data.valido) {
         setTokenValido(true);
       } else {
-        setError('Link inválido ou expirado');
+        setError("Link inválido ou expirado");
       }
     } catch (err) {
-      setError('Erro ao validar link');
+      setError("Erro ao validar link");
     } finally {
       setValidating(false);
     }
@@ -49,34 +49,34 @@ export default function RedefinirSenha() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
     if (novaSenha.length < 6) {
-      setError('A senha deve ter pelo menos 6 caracteres');
+      setError("A senha deve ter pelo menos 6 caracteres");
       return;
     }
 
     if (novaSenha !== confirmarSenha) {
-      setError('As senhas não conferem');
+      setError("As senhas não conferem");
       return;
     }
 
     setLoading(true);
 
     try {
-      const response = await base44.functions.invoke('redefinirSenha', {
+      const response = await sigo.functions.invoke("redefinirSenha", {
         token,
-        nova_senha: novaSenha
+        nova_senha: novaSenha,
       });
 
       if (response.data.success) {
         setSuccess(true);
       } else {
-        setError(response.data.error || 'Erro ao redefinir senha');
+        setError(response.data.error || "Erro ao redefinir senha");
       }
     } catch (err) {
-      console.error('Erro:', err);
-      setError('Erro ao processar solicitação. Tente novamente.');
+      console.error("Erro:", err);
+      setError("Erro ao processar solicitação. Tente novamente.");
     } finally {
       setLoading(false);
     }
@@ -110,7 +110,7 @@ export default function RedefinirSenha() {
           </CardHeader>
           <CardContent>
             <Button
-              onClick={() => window.location.href = createPageUrl('EntrarSistema')}
+              onClick={() => (window.location.href = createPageUrl("EntrarSistema"))}
               className="w-full bg-amber-500 hover:bg-amber-600"
             >
               Fazer Login
@@ -134,7 +134,7 @@ export default function RedefinirSenha() {
           </CardHeader>
           <CardContent>
             <Button
-              onClick={() => window.location.href = createPageUrl('EsqueciSenha')}
+              onClick={() => (window.location.href = createPageUrl("EsqueciSenha"))}
               variant="outline"
               className="w-full"
             >
@@ -201,7 +201,7 @@ export default function RedefinirSenha() {
                   Redefinindo...
                 </>
               ) : (
-                'Redefinir Senha'
+                "Redefinir Senha"
               )}
             </Button>
           </form>

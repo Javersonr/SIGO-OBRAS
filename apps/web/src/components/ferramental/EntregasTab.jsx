@@ -1,29 +1,37 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { toast } from 'sonner';
-import { format } from 'date-fns';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import { format } from "date-fns";
 import {
-  PackageCheck, Clock, CheckCircle2, XCircle, Search,
-  Printer, Eye, RefreshCw, Fingerprint, Truck
-} from 'lucide-react';
-import ConfirmarEntregaModal from './ConfirmarEntregaModal';
-import ImprimirFichaEntregaModal from './ImprimirFichaEntregaModal';
+  PackageCheck,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  Search,
+  Printer,
+  Eye,
+  RefreshCw,
+  Fingerprint,
+  Truck,
+} from "lucide-react";
+import ConfirmarEntregaModal from "./ConfirmarEntregaModal";
+import ImprimirFichaEntregaModal from "./ImprimirFichaEntregaModal";
 
 const STATUS_CONFIG = {
-  'Pendente': { color: 'bg-amber-100 text-amber-700', icon: Clock },
-  'Entregue': { color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
-  'Cancelada': { color: 'bg-red-100 text-red-700', icon: XCircle },
+  Pendente: { color: "bg-amber-100 text-amber-700", icon: Clock },
+  Entregue: { color: "bg-green-100 text-green-700", icon: CheckCircle2 },
+  Cancelada: { color: "bg-red-100 text-red-700", icon: XCircle },
 };
 
 export default function EntregasTab({ empresaAtiva, user }) {
   const [entregas, setEntregas] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [busca, setBusca] = useState('');
-  const [filtroStatus, setFiltroStatus] = useState('Pendente');
+  const [busca, setBusca] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("Pendente");
   const [entregaSelecionada, setEntregaSelecionada] = useState(null);
   const [showConfirmar, setShowConfirmar] = useState(false);
   const [showImprimir, setShowImprimir] = useState(false);
@@ -35,14 +43,14 @@ export default function EntregasTab({ empresaAtiva, user }) {
   const loadEntregas = async () => {
     setLoading(true);
     try {
-      const data = await base44.entities.EntregaFerramental.filter(
+      const data = await sigo.entities.EntregaFerramental.filter(
         { empresa_id: empresaAtiva.id },
-        '-created_date',
+        "-created_date",
         100
       );
       setEntregas(data);
     } catch (err) {
-      toast.error('Erro ao carregar entregas');
+      toast.error("Erro ao carregar entregas");
     } finally {
       setLoading(false);
     }
@@ -52,52 +60,58 @@ export default function EntregasTab({ empresaAtiva, user }) {
     await loadEntregas();
     // Se foi entregue 100%, muda pra aba "Entregue"
     // Se foi parcial (Pendente), mantém na aba "Pendente"
-    if (statusNovaEntrega === 'Entregue') {
-      setFiltroStatus('Entregue');
+    if (statusNovaEntrega === "Entregue") {
+      setFiltroStatus("Entregue");
     }
   };
 
   const handleCancelar = async (entrega) => {
-    const nomeDest = entrega.funcionario_nome || entrega.caminhao_placa || 'desconhecido';
+    const nomeDest = entrega.funcionario_nome || entrega.caminhao_placa || "desconhecido";
     if (!confirm(`Cancelar solicitação de entrega para ${nomeDest}?`)) return;
     try {
-      await base44.entities.EntregaFerramental.update(entrega.id, { status: 'Cancelada' });
-      toast.success('Solicitação cancelada');
+      await sigo.entities.EntregaFerramental.update(entrega.id, { status: "Cancelada" });
+      toast.success("Solicitação cancelada");
       loadEntregas();
     } catch {
-      toast.error('Erro ao cancelar');
+      toast.error("Erro ao cancelar");
     }
   };
 
   const handleDesfazer = async (entrega) => {
-    if (!confirm(`Desfazer entrega para ${entrega.funcionario_nome || entrega.caminhao_placa}? A entrega voltará para Pendente.`)) return;
+    if (
+      !confirm(
+        `Desfazer entrega para ${entrega.funcionario_nome || entrega.caminhao_placa}? A entrega voltará para Pendente.`
+      )
+    )
+      return;
     try {
-      await base44.entities.EntregaFerramental.update(entrega.id, { 
-        status: 'Pendente',
-        data_entrega: '',
-        responsavel_entrega_nome: '',
-        responsavel_entrega_email: ''
+      await sigo.entities.EntregaFerramental.update(entrega.id, {
+        status: "Pendente",
+        data_entrega: "",
+        responsavel_entrega_nome: "",
+        responsavel_entrega_email: "",
       });
-      toast.success('Entrega desfeita com sucesso');
+      toast.success("Entrega desfeita com sucesso");
       loadEntregas();
     } catch {
-      toast.error('Erro ao desfazer entrega');
+      toast.error("Erro ao desfazer entrega");
     }
   };
 
   const entregasFiltradas = entregas
-    .filter(e => filtroStatus === 'Todas' || e.status === filtroStatus)
-    .filter(e =>
-      !busca ||
-      e.funcionario_nome?.toLowerCase().includes(busca.toLowerCase()) ||
-      e.funcao_nome?.toLowerCase().includes(busca.toLowerCase()) ||
-      e.caminhao_placa?.toLowerCase().includes(busca.toLowerCase()) ||
-      e.caminhao_modelo?.toLowerCase().includes(busca.toLowerCase())
+    .filter((e) => filtroStatus === "Todas" || e.status === filtroStatus)
+    .filter(
+      (e) =>
+        !busca ||
+        e.funcionario_nome?.toLowerCase().includes(busca.toLowerCase()) ||
+        e.funcao_nome?.toLowerCase().includes(busca.toLowerCase()) ||
+        e.caminhao_placa?.toLowerCase().includes(busca.toLowerCase()) ||
+        e.caminhao_modelo?.toLowerCase().includes(busca.toLowerCase())
     );
 
   const stats = {
-    pendentes: entregas.filter(e => e.status === 'Pendente').length,
-    entregues: entregas.filter(e => e.status === 'Entregue').length,
+    pendentes: entregas.filter((e) => e.status === "Pendente").length,
+    entregues: entregas.filter((e) => e.status === "Entregue").length,
   };
 
   return (
@@ -133,37 +147,37 @@ export default function EntregasTab({ empresaAtiva, user }) {
       </div>
 
       {/* Barra de Busca */}
-       <div className="w-full">
-         <div className="relative">
-           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-           <Input
-             placeholder="Buscar por funcionário, função, placa do caminhão..."
-             value={busca}
-             onChange={e => setBusca(e.target.value)}
-             className="pl-10 py-2 h-10 text-sm"
-           />
-         </div>
-       </div>
+      <div className="w-full">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+          <Input
+            placeholder="Buscar por funcionário, função, placa do caminhão..."
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            className="pl-10 py-2 h-10 text-sm"
+          />
+        </div>
+      </div>
 
-       {/* Filtros por Status */}
-       <div className="flex flex-wrap gap-3 items-center">
-         <div className="flex gap-2">
-           {['Pendente', 'Entregue', 'Cancelada', 'Todas'].map(s => (
-             <Button
-               key={s}
-               variant={filtroStatus === s ? 'default' : 'outline'}
-               size="sm"
-               onClick={() => setFiltroStatus(s)}
-             >
-               {s}
-             </Button>
-           ))}
-         </div>
-         <Button variant="ghost" size="sm" onClick={loadEntregas} className="gap-1">
-           <RefreshCw className="w-4 h-4" />
-           Atualizar
-         </Button>
-       </div>
+      {/* Filtros por Status */}
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="flex gap-2">
+          {["Pendente", "Entregue", "Cancelada", "Todas"].map((s) => (
+            <Button
+              key={s}
+              variant={filtroStatus === s ? "default" : "outline"}
+              size="sm"
+              onClick={() => setFiltroStatus(s)}
+            >
+              {s}
+            </Button>
+          ))}
+        </div>
+        <Button variant="ghost" size="sm" onClick={loadEntregas} className="gap-1">
+          <RefreshCw className="w-4 h-4" />
+          Atualizar
+        </Button>
+      </div>
 
       {/* Lista */}
       {loading ? (
@@ -172,20 +186,23 @@ export default function EntregasTab({ empresaAtiva, user }) {
         <Card>
           <CardContent className="py-12 text-center text-slate-500">
             <PackageCheck className="w-10 h-10 mx-auto mb-3 text-slate-300" />
-            <p>Nenhuma entrega {filtroStatus !== 'Todas' ? filtroStatus.toLowerCase() : ''} encontrada</p>
+            <p>
+              Nenhuma entrega {filtroStatus !== "Todas" ? filtroStatus.toLowerCase() : ""}{" "}
+              encontrada
+            </p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
-          {entregasFiltradas.map(entrega => {
-            const statusCfg = STATUS_CONFIG[entrega.status] || STATUS_CONFIG['Pendente'];
+          {entregasFiltradas.map((entrega) => {
+            const statusCfg = STATUS_CONFIG[entrega.status] || STATUS_CONFIG["Pendente"];
             const StatusIcon = statusCfg.icon;
             const itens = (() => {
               try {
-                const parsed = JSON.parse(entrega.itens || '[]');
+                const parsed = JSON.parse(entrega.itens || "[]");
                 return Array.isArray(parsed) ? parsed : [];
               } catch (err) {
-                console.error('Erro ao parsear itens da entrega:', err);
+                console.error("Erro ao parsear itens da entrega:", err);
                 return [];
               }
             })();
@@ -197,15 +214,21 @@ export default function EntregasTab({ empresaAtiva, user }) {
                     {/* Info principal */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        {entrega.tipo_destinatario === 'Caminhão' ? (
+                        {entrega.tipo_destinatario === "Caminhão" ? (
                           <span className="flex items-center gap-1.5">
                             <Truck className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                            <h3 className="font-semibold text-slate-800 truncate">{entrega.caminhao_placa}</h3>
+                            <h3 className="font-semibold text-slate-800 truncate">
+                              {entrega.caminhao_placa}
+                            </h3>
                           </span>
                         ) : (
-                          <h3 className="font-semibold text-slate-800 truncate">{entrega.funcionario_nome}</h3>
+                          <h3 className="font-semibold text-slate-800 truncate">
+                            {entrega.funcionario_nome}
+                          </h3>
                         )}
-                        <Badge className={`text-xs ${statusCfg.color} flex items-center gap-1 flex-shrink-0`}>
+                        <Badge
+                          className={`text-xs ${statusCfg.color} flex items-center gap-1 flex-shrink-0`}
+                        >
                           <StatusIcon className="w-3 h-3" />
                           {entrega.status}
                         </Badge>
@@ -215,7 +238,7 @@ export default function EntregasTab({ empresaAtiva, user }) {
                             Biometria
                           </Badge>
                         )}
-                        {entrega.tipo_destinatario === 'Caminhão' && (
+                        {entrega.tipo_destinatario === "Caminhão" && (
                           <Badge className="text-xs bg-blue-100 text-blue-700 flex items-center gap-1 flex-shrink-0">
                             <Truck className="w-3 h-3" />
                             Caminhão
@@ -223,26 +246,37 @@ export default function EntregasTab({ empresaAtiva, user }) {
                         )}
                       </div>
                       <p className="text-sm text-slate-500">
-                        {entrega.tipo_destinatario === 'Caminhão'
-                          ? `${entrega.caminhao_modelo || ''} • ${itens.length} item(ns)`
-                          : `${entrega.funcao_nome} • ${itens.length} item(ns)`
-                        }
+                        {entrega.tipo_destinatario === "Caminhão"
+                          ? `${entrega.caminhao_modelo || ""} • ${itens.length} item(ns)`
+                          : `${entrega.funcao_nome} • ${itens.length} item(ns)`}
                       </p>
                       <div className="flex gap-4 mt-1 text-xs text-slate-400">
-                        <span>Solicitado por: {entrega.solicitante_nome} em {entrega.data_solicitacao ? format(new Date(entrega.data_solicitacao + 'T12:00:00'), 'dd/MM/yyyy') : '-'}</span>
+                        <span>
+                          Solicitado por: {entrega.solicitante_nome} em{" "}
+                          {entrega.data_solicitacao
+                            ? format(new Date(entrega.data_solicitacao + "T12:00:00"), "dd/MM/yyyy")
+                            : "-"}
+                        </span>
                         {entrega.data_entrega && (
-                          <span>Entregue em: {format(new Date(entrega.data_entrega + 'T12:00:00'), 'dd/MM/yyyy')} por {entrega.responsavel_entrega_nome}</span>
+                          <span>
+                            Entregue em:{" "}
+                            {format(new Date(entrega.data_entrega + "T12:00:00"), "dd/MM/yyyy")} por{" "}
+                            {entrega.responsavel_entrega_nome}
+                          </span>
                         )}
                       </div>
                     </div>
 
                     {/* Ações */}
                     <div className="flex gap-2 flex-shrink-0">
-                      {entrega.status === 'Pendente' && (
+                      {entrega.status === "Pendente" && (
                         <>
                           <Button
                             size="sm"
-                            onClick={() => { setEntregaSelecionada(entrega); setShowConfirmar(true); }}
+                            onClick={() => {
+                              setEntregaSelecionada(entrega);
+                              setShowConfirmar(true);
+                            }}
                             className="gap-1 bg-green-600 hover:bg-green-700 text-white"
                           >
                             <Fingerprint className="w-4 h-4" />
@@ -258,12 +292,15 @@ export default function EntregasTab({ empresaAtiva, user }) {
                           </Button>
                         </>
                       )}
-                      {entrega.status === 'Entregue' && (
+                      {entrega.status === "Entregue" && (
                         <>
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => { setEntregaSelecionada(entrega); setShowImprimir(true); }}
+                            onClick={() => {
+                              setEntregaSelecionada(entrega);
+                              setShowImprimir(true);
+                            }}
                             className="gap-1"
                           >
                             <Printer className="w-4 h-4" />
@@ -283,7 +320,10 @@ export default function EntregasTab({ empresaAtiva, user }) {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => { setEntregaSelecionada(entrega); setShowImprimir(true); }}
+                        onClick={() => {
+                          setEntregaSelecionada(entrega);
+                          setShowImprimir(true);
+                        }}
                         title="Visualizar detalhes"
                       >
                         <Eye className="w-4 h-4" />

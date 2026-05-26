@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import {
   Plus,
   Upload,
@@ -116,8 +116,8 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
     setLoading(true);
     try {
       const [docs, vencs] = await Promise.all([
-        base44.entities.DocumentoEmpresa.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Vencimento.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.DocumentoEmpresa.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Vencimento.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ]);
       setDocumentos(docs.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
       setVencimentos(
@@ -149,10 +149,10 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
     try {
       const data = { ...form, empresa_id: empresaAtiva.id };
       if (editando) {
-        await base44.entities.DocumentoEmpresa.update(editando.id, data);
+        await sigo.entities.DocumentoEmpresa.update(editando.id, data);
         toast.success("Documento atualizado");
       } else {
-        await base44.entities.DocumentoEmpresa.create({ ...data, anexos: "[]" });
+        await sigo.entities.DocumentoEmpresa.create({ ...data, anexos: "[]" });
         toast.success("Documento criado");
       }
       setShowModal(false);
@@ -185,7 +185,7 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
   const handleExcluir = async (doc) => {
     if (!confirm(`Excluir o documento "${doc.nome}"?`)) return;
     try {
-      await base44.entities.DocumentoEmpresa.update(doc.id, { ativo: false });
+      await sigo.entities.DocumentoEmpresa.update(doc.id, { ativo: false });
       toast.success("Documento excluído");
       loadDocumentos();
     } catch {
@@ -198,11 +198,11 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
     if (!file) return;
     setUploading(true);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       const doc = documentos.find((d) => d.id === docId);
       const anexos = JSON.parse(doc.anexos || "[]");
       anexos.push({ nome: file.name, url: file_url, data_upload: new Date().toISOString() });
-      await base44.entities.DocumentoEmpresa.update(docId, { anexos: JSON.stringify(anexos) });
+      await sigo.entities.DocumentoEmpresa.update(docId, { anexos: JSON.stringify(anexos) });
       toast.success("Arquivo anexado");
       loadDocumentos();
     } catch {
@@ -218,7 +218,7 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
     const anexos = JSON.parse(doc.anexos || "[]");
     anexos.splice(anexoIdx, 1);
     try {
-      await base44.entities.DocumentoEmpresa.update(docId, { anexos: JSON.stringify(anexos) });
+      await sigo.entities.DocumentoEmpresa.update(docId, { anexos: JSON.stringify(anexos) });
       toast.success("Arquivo removido");
       loadDocumentos();
     } catch {
@@ -252,7 +252,7 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
       return;
     }
     try {
-      await base44.integrations.Core.SendEmail({
+      await sigo.integrations.Core.SendEmail({
         to: v.responsavel_email,
         subject: `⚠️ Vencimento próximo: ${v.titulo}`,
         body: `Olá ${v.responsavel_nome || ""},\n\nO documento "${v.titulo}" vence em ${v.data_vencimento}.\n\nStatus: ${v.status}\n\nPor favor, providencie a renovação.`,
@@ -266,10 +266,10 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
   const handleSalvarVencimento = async (vencData) => {
     try {
       if (vencimentoEditando) {
-        await base44.entities.Vencimento.update(vencimentoEditando.id, vencData);
+        await sigo.entities.Vencimento.update(vencimentoEditando.id, vencData);
         toast.success("Vencimento atualizado");
       } else {
-        await base44.entities.Vencimento.create({ ...vencData, empresa_id: empresaAtiva.id });
+        await sigo.entities.Vencimento.create({ ...vencData, empresa_id: empresaAtiva.id });
         toast.success("Vencimento criado");
       }
       setShowVencimentoModal(false);
@@ -283,7 +283,7 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
   const handleExcluirVencimento = async (v) => {
     if (!confirm(`Excluir o vencimento "${v.titulo}"?`)) return;
     try {
-      await base44.entities.Vencimento.update(v.id, { ativo: false });
+      await sigo.entities.Vencimento.update(v.id, { ativo: false });
       toast.success("Vencimento excluído");
       loadDocumentos();
     } catch {

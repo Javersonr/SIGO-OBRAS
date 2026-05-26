@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '../../../Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { AlertCircle, FileCheck, Eye, Wrench } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { useEmpresa } from "../../../Layout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { AlertCircle, FileCheck, Eye, Wrench } from "lucide-react";
 
 export default function WidgetSeguranca() {
   const { empresaAtiva } = useEmpresa();
@@ -11,7 +11,7 @@ export default function WidgetSeguranca() {
     examesVencendo: 0,
     documentosPendentes: 0,
     vistoriaPendentes: 0,
-    totalFuncionarios: 0
+    totalFuncionarios: 0,
   });
   const [loading, setLoading] = useState(true);
 
@@ -24,7 +24,7 @@ export default function WidgetSeguranca() {
   const loadData = async () => {
     try {
       const [funcionarios] = await Promise.all([
-        base44.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }, null, null)
+        sigo.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }, null, null),
       ]);
 
       const hoje = new Date();
@@ -32,7 +32,7 @@ export default function WidgetSeguranca() {
       let documentosPendentes = 0;
       let vistoriaPendentes = 0;
 
-      funcionarios.forEach(f => {
+      funcionarios.forEach((f) => {
         // Contar ASOs vencendo (até 30 dias)
         if (f.aso_vencimento) {
           const dataAso = new Date(f.aso_vencimento);
@@ -46,12 +46,12 @@ export default function WidgetSeguranca() {
         if (f.documentos_obrigatorios) {
           try {
             const docs = JSON.parse(f.documentos_obrigatorios);
-            documentosPendentes += docs.filter(d => !d.anexado).length;
+            documentosPendentes += docs.filter((d) => !d.anexado).length;
           } catch (e) {}
         }
 
         // Vistorias pendentes (assumir como registros de inspeção)
-        if (!f.documentos_pessoais || f.documentos_pessoais === '[]') {
+        if (!f.documentos_pessoais || f.documentos_pessoais === "[]") {
           vistoriaPendentes++;
         }
       });
@@ -60,19 +60,17 @@ export default function WidgetSeguranca() {
         examesVencendo,
         documentosPendentes,
         vistoriaPendentes,
-        totalFuncionarios: funcionarios.length
+        totalFuncionarios: funcionarios.length,
       });
     } catch (error) {
-      console.error('Erro ao carregar dados de segurança:', error);
+      console.error("Erro ao carregar dados de segurança:", error);
     } finally {
       setLoading(false);
     }
   };
 
   if (loading) {
-    return (
-      <Card className="h-48 animate-pulse bg-slate-100" />
-    );
+    return <Card className="h-48 animate-pulse bg-slate-100" />;
   }
 
   return (
@@ -92,9 +90,7 @@ export default function WidgetSeguranca() {
             <div className="text-sm text-slate-600 mb-1">Exames Vencendo</div>
             <div className="flex items-baseline justify-between">
               <span className="text-2xl font-bold text-red-600">{data.examesVencendo}</span>
-              {data.examesVencendo > 0 && (
-                <AlertCircle className="w-4 h-4 text-red-500" />
-              )}
+              {data.examesVencendo > 0 && <AlertCircle className="w-4 h-4 text-red-500" />}
             </div>
             <p className="text-xs text-red-600 mt-1">próximos 30 dias</p>
           </div>
@@ -104,9 +100,7 @@ export default function WidgetSeguranca() {
             <div className="text-sm text-slate-600 mb-1">Documentos</div>
             <div className="flex items-baseline justify-between">
               <span className="text-2xl font-bold text-yellow-600">{data.documentosPendentes}</span>
-              {data.documentosPendentes > 0 && (
-                <AlertCircle className="w-4 h-4 text-yellow-500" />
-              )}
+              {data.documentosPendentes > 0 && <AlertCircle className="w-4 h-4 text-yellow-500" />}
             </div>
             <p className="text-xs text-yellow-600 mt-1">pendentes</p>
           </div>
@@ -116,9 +110,7 @@ export default function WidgetSeguranca() {
             <div className="text-sm text-slate-600 mb-1">Vistorias</div>
             <div className="flex items-baseline justify-between">
               <span className="text-2xl font-bold text-blue-600">{data.vistoriaPendentes}</span>
-              {data.vistoriaPendentes > 0 && (
-                <Eye className="w-4 h-4 text-blue-500" />
-              )}
+              {data.vistoriaPendentes > 0 && <Eye className="w-4 h-4 text-blue-500" />}
             </div>
             <p className="text-xs text-blue-600 mt-1">pendentes</p>
           </div>
@@ -152,11 +144,13 @@ export default function WidgetSeguranca() {
                 {data.vistoriaPendentes} vistorias
               </Badge>
             )}
-            {data.examesVencendo === 0 && data.documentosPendentes === 0 && data.vistoriaPendentes === 0 && (
-              <Badge className="bg-green-100 text-green-700 border-green-200">
-                Tudo em dia ✓
-              </Badge>
-            )}
+            {data.examesVencendo === 0 &&
+              data.documentosPendentes === 0 &&
+              data.vistoriaPendentes === 0 && (
+                <Badge className="bg-green-100 text-green-700 border-green-200">
+                  Tudo em dia ✓
+                </Badge>
+              )}
           </div>
         </div>
       </CardContent>

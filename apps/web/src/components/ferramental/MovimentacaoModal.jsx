@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -191,12 +191,12 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
   const loadData = async () => {
     try {
       const [funcs, prjs, ferrs, funcoesData, almox, cams] = await Promise.all([
-        base44.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
-        base44.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Funcao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Almoxarifado.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Funcao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Almoxarifado.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Caminhao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ]);
 
       const funcionariosUnificados = funcs.map((func) => {
@@ -231,7 +231,7 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
     }
 
     try {
-      const funcoesAtualizada = await base44.entities.Funcao.filter({ id: funcaoId });
+      const funcoesAtualizada = await sigo.entities.Funcao.filter({ id: funcaoId });
       if (funcoesAtualizada.length === 0) {
         setFerramentasPorFuncao([]);
         return;
@@ -269,7 +269,7 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
       }
 
       // Para cada item do modelo, buscar candidatos disponíveis no estoque
-      const todasFerramentas = await base44.entities.Ferramenta.filter({
+      const todasFerramentas = await sigo.entities.Ferramenta.filter({
         empresa_id: empresaAtiva.id,
         ativo: true,
       });
@@ -320,7 +320,7 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
       try {
         let total = 0;
         for (const ferramenta of todasSelecionadas) {
-          await base44.entities.MovimentacaoFerramenta.create({
+          await sigo.entities.MovimentacaoFerramenta.create({
             ferramenta_id: ferramenta.id,
             ferramenta_codigo: ferramenta.codigo,
             ferramenta_descricao: ferramenta.descricao,
@@ -336,7 +336,7 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
             origem: ferramenta.localizacao || "Almoxarifado",
             usuario_nome: "Sistema",
           });
-          await base44.entities.Ferramenta.update(ferramenta.id, {
+          await sigo.entities.Ferramenta.update(ferramenta.id, {
             status: "Em Uso",
             funcionario_id: form.funcionario_id,
             funcionario_nome: form.funcionario_nome,
@@ -422,7 +422,7 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
           descricao: f.descricao,
           numero_serie: f.numero_serie || "",
         }));
-        await base44.entities.ManutencaoFerramenta.create({
+        await sigo.entities.ManutencaoFerramenta.create({
           empresa_id: empresaAtiva.id,
           ferramenta_id: ferramentasValidas[0]?.ferramenta_id || "",
           ferramenta_codigo: ferramentasValidas[0]?.codigo || "",
@@ -440,7 +440,7 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
         // Atualizar status de todas as ferramentas para Em Manutenção
         await Promise.all(
           ferramentasValidas.map((ferr) =>
-            base44.entities.Ferramenta.update(ferr.ferramenta_id, { status: "Em Manutenção" })
+            sigo.entities.Ferramenta.update(ferr.ferramenta_id, { status: "Em Manutenção" })
           )
         );
       }
@@ -452,7 +452,7 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
           ferramentasMovimentacao
             .filter((f) => f.ferramenta_id)
             .map((f) =>
-              base44.entities.Ferramenta.update(f.ferramenta_id, {
+              sigo.entities.Ferramenta.update(f.ferramenta_id, {
                 caminhao_id: form.almoxarifado_id,
                 localizacao: form.almoxarifado_nome || "Caminhão",
               })
@@ -462,7 +462,7 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
         if (Object.keys(campoVinculacoes).length > 0) {
           await Promise.all(
             Object.entries(campoVinculacoes).map(([campoId, ferrIds]) =>
-              base44.entities.CaminhaoCampoObrigatorio.update(campoId, {
+              sigo.entities.CaminhaoCampoObrigatorio.update(campoId, {
                 ferramenta_ids: JSON.stringify(ferrIds),
               })
             )
@@ -498,12 +498,12 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
     }
     try {
       const [campos, ferrsNoCaminhao] = await Promise.all([
-        base44.entities.CaminhaoCampoObrigatorio.filter({
+        sigo.entities.CaminhaoCampoObrigatorio.filter({
           empresa_id: empresaAtiva.id,
           caminhao_id: caminhaoId,
           ativo: true,
         }),
-        base44.entities.Ferramenta.filter({
+        sigo.entities.Ferramenta.filter({
           empresa_id: empresaAtiva.id,
           caminhao_id: caminhaoId,
           ativo: true,

@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Camera, RotateCcw, Check, X, MapPin, Loader2, CheckCircle2 } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { toast } from "sonner";
 
 // Desenha a assinatura pré-definida cursiva no canvas
@@ -220,7 +220,7 @@ export default function AssinaturaConfirmacaoModal({
       // Upload foto
       const fotoBlob = await fetch(fotoUrl).then((r) => r.blob());
       const fotoFile = new File([fotoBlob], "foto_confirmacao.jpg", { type: "image/jpeg" });
-      const { file_url: fotoUploadUrl } = await base44.integrations.Core.UploadFile({
+      const { file_url: fotoUploadUrl } = await sigo.integrations.Core.UploadFile({
         file: fotoFile,
       });
 

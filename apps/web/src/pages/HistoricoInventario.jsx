@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useEmpresa } from '@/Layout';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import React, { useState, useEffect } from "react";
+import { sigo } from "@/api/sigoClient";
+import { useEmpresa } from "@/Layout";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -11,13 +11,13 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Eye, Download, Loader } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { toast } from 'sonner';
-import HistoricoInventarioFilters from '@/components/ferramental/HistoricoInventarioFilters';
-import HistoricoDetalhesModal from '@/components/ferramental/HistoricoDetalhesModal';
+} from "@/components/ui/table";
+import { Eye, Download, Loader } from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { toast } from "sonner";
+import HistoricoInventarioFilters from "@/components/ferramental/HistoricoInventarioFilters";
+import HistoricoDetalhesModal from "@/components/ferramental/HistoricoDetalhesModal";
 
 export default function HistoricoInventario() {
   const { empresaAtiva } = useEmpresa();
@@ -32,12 +32,12 @@ export default function HistoricoInventario() {
   const pageSize = 20;
 
   const [filtros, setFiltros] = useState({
-    ferramenta: '',
-    usuario: '',
-    dataInicio: '',
-    dataFim: '',
-    tipoOperacao: '',
-    busca: ''
+    ferramenta: "",
+    usuario: "",
+    dataInicio: "",
+    dataFim: "",
+    tipoOperacao: "",
+    busca: "",
   });
 
   // Carregar dados iniciais
@@ -56,34 +56,38 @@ export default function HistoricoInventario() {
   const carregarDados = async () => {
     try {
       setCarregando(true);
-      
+
       // Carregar ferramentas
-      const ferrs = await base44.entities.Ferramenta.filter({
+      const ferrs = await sigo.entities.Ferramenta.filter({
         empresa_id: empresaAtiva.id,
-        ativo: true
+        ativo: true,
       });
       setFerramentas(ferrs);
 
       // Carregar usuários únicos do histórico
-      const hist = await base44.entities.InventarioHistorico.filter({
-        empresa_id: empresaAtiva.id,
-        ativo: true
-      }, '-timestamp', 1000);
-      
-      const usuariosUnicos = [...new Map(
-        hist.map(h => [h.usuario_email, h])
-      ).values()].map(h => ({
-        email: h.usuario_email,
-        nome: h.usuario_nome
-      }));
+      const hist = await sigo.entities.InventarioHistorico.filter(
+        {
+          empresa_id: empresaAtiva.id,
+          ativo: true,
+        },
+        "-timestamp",
+        1000
+      );
+
+      const usuariosUnicos = [...new Map(hist.map((h) => [h.usuario_email, h])).values()].map(
+        (h) => ({
+          email: h.usuario_email,
+          nome: h.usuario_nome,
+        })
+      );
 
       setUsuarios(usuariosUnicos);
       setTotalItems(hist.length);
-      
+
       carregarHistorico(0);
     } catch (error) {
-      console.error('Erro ao carregar dados:', error);
-      toast.error('Erro ao carregar dados');
+      console.error("Erro ao carregar dados:", error);
+      toast.error("Erro ao carregar dados");
     } finally {
       setCarregando(false);
     }
@@ -97,29 +101,26 @@ export default function HistoricoInventario() {
       if (filtros.usuario) query.usuario_email = filtros.usuario;
       if (filtros.tipoOperacao) query.tipo_operacao = filtros.tipoOperacao;
 
-      let hist = await base44.entities.InventarioHistorico.filter(
-        query,
-        '-timestamp',
-        10000
-      );
+      let hist = await sigo.entities.InventarioHistorico.filter(query, "-timestamp", 10000);
 
       // Aplicar filtros de data
       if (filtros.dataInicio) {
         const dataInicio = new Date(filtros.dataInicio);
-        hist = hist.filter(h => new Date(h.timestamp) >= dataInicio);
+        hist = hist.filter((h) => new Date(h.timestamp) >= dataInicio);
       }
       if (filtros.dataFim) {
         const dataFim = new Date(filtros.dataFim);
         dataFim.setHours(23, 59, 59, 999);
-        hist = hist.filter(h => new Date(h.timestamp) <= dataFim);
+        hist = hist.filter((h) => new Date(h.timestamp) <= dataFim);
       }
 
       // Aplicar busca
       if (filtros.busca) {
         const busca = filtros.busca.toLowerCase();
-        hist = hist.filter(h =>
-          h.ferramenta_codigo?.toLowerCase().includes(busca) ||
-          h.ferramenta_descricao?.toLowerCase().includes(busca)
+        hist = hist.filter(
+          (h) =>
+            h.ferramenta_codigo?.toLowerCase().includes(busca) ||
+            h.ferramenta_descricao?.toLowerCase().includes(busca)
         );
       }
 
@@ -128,27 +129,27 @@ export default function HistoricoInventario() {
       setHistorico(hist.slice(inicio, inicio + pageSize));
       setPage(pageNum);
     } catch (error) {
-      console.error('Erro ao carregar histórico:', error);
-      toast.error('Erro ao carregar histórico');
+      console.error("Erro ao carregar histórico:", error);
+      toast.error("Erro ao carregar histórico");
     }
   };
 
   const exportarCSV = () => {
     try {
       const headers = [
-        'Data',
-        'Ferramenta',
-        'Código',
-        'Quantidade',
-        'Localização',
-        'Tipo',
-        'Usuário',
-        'Método',
-        'Confiança IA'
+        "Data",
+        "Ferramenta",
+        "Código",
+        "Quantidade",
+        "Localização",
+        "Tipo",
+        "Usuário",
+        "Método",
+        "Confiança IA",
       ];
 
-      const rows = historico.map(h => [
-        format(new Date(h.timestamp), 'dd/MM/yyyy HH:mm', { locale: ptBR }),
+      const rows = historico.map((h) => [
+        format(new Date(h.timestamp), "dd/MM/yyyy HH:mm", { locale: ptBR }),
         h.ferramenta_descricao,
         h.ferramenta_codigo,
         h.quantidade,
@@ -156,24 +157,23 @@ export default function HistoricoInventario() {
         h.tipo_operacao,
         h.usuario_nome,
         h.metodo_identificacao,
-        `${h.confianca_ia || 0}%`
+        `${h.confianca_ia || 0}%`,
       ]);
 
-      const csv = [
-        headers.join(';'),
-        ...rows.map(r => r.map(v => `"${v}"`).join(';'))
-      ].join('\n');
+      const csv = [headers.join(";"), ...rows.map((r) => r.map((v) => `"${v}"`).join(";"))].join(
+        "\n"
+      );
 
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `historico_inventario_${format(new Date(), 'ddMMyyyy')}.csv`;
+      link.download = `historico_inventario_${format(new Date(), "ddMMyyyy")}.csv`;
       link.click();
 
-      toast.success('Arquivo exportado com sucesso');
+      toast.success("Arquivo exportado com sucesso");
     } catch (error) {
-      console.error('Erro ao exportar:', error);
-      toast.error('Erro ao exportar arquivo');
+      console.error("Erro ao exportar:", error);
+      toast.error("Erro ao exportar arquivo");
     }
   };
 
@@ -194,9 +194,7 @@ export default function HistoricoInventario() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Histórico de Inventário</h1>
-          <p className="text-slate-600 mt-1">
-            {totalItems} registros encontrados
-          </p>
+          <p className="text-slate-600 mt-1">{totalItems} registros encontrados</p>
         </div>
         <Button
           onClick={exportarCSV}
@@ -225,29 +223,39 @@ export default function HistoricoInventario() {
                 <TableRow>
                   <TableHead className="text-xs font-semibold text-slate-700">Data/Hora</TableHead>
                   <TableHead className="text-xs font-semibold text-slate-700">Ferramenta</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-700 text-right">Quantidade</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-700">Localização</TableHead>
+                  <TableHead className="text-xs font-semibold text-slate-700 text-right">
+                    Quantidade
+                  </TableHead>
+                  <TableHead className="text-xs font-semibold text-slate-700">
+                    Localização
+                  </TableHead>
                   <TableHead className="text-xs font-semibold text-slate-700">Tipo</TableHead>
                   <TableHead className="text-xs font-semibold text-slate-700">Usuário</TableHead>
                   <TableHead className="text-xs font-semibold text-slate-700">Método</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-700 text-center">IA</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-700 text-center">Ação</TableHead>
+                  <TableHead className="text-xs font-semibold text-slate-700 text-center">
+                    IA
+                  </TableHead>
+                  <TableHead className="text-xs font-semibold text-slate-700 text-center">
+                    Ação
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {historico.map((item) => {
                   const confianca = item.confianca_ia || 0;
-                  let confiancaCor = 'bg-red-100 text-red-800';
-                  if (confianca >= 80) confiancaCor = 'bg-green-100 text-green-800';
-                  else if (confianca >= 60) confiancaCor = 'bg-yellow-100 text-yellow-800';
+                  let confiancaCor = "bg-red-100 text-red-800";
+                  if (confianca >= 80) confiancaCor = "bg-green-100 text-green-800";
+                  else if (confianca >= 60) confiancaCor = "bg-yellow-100 text-yellow-800";
 
                   return (
                     <TableRow key={item.id} className="border-b border-slate-100 hover:bg-slate-50">
                       <TableCell className="text-xs text-slate-900 whitespace-nowrap">
-                        {format(new Date(item.timestamp), 'dd/MM HH:mm', { locale: ptBR })}
+                        {format(new Date(item.timestamp), "dd/MM HH:mm", { locale: ptBR })}
                       </TableCell>
                       <TableCell className="text-sm">
-                        <div className="font-medium text-slate-900">{item.ferramenta_descricao}</div>
+                        <div className="font-medium text-slate-900">
+                          {item.ferramenta_descricao}
+                        </div>
                         <div className="text-xs text-slate-500">{item.ferramenta_codigo}</div>
                       </TableCell>
                       <TableCell className="text-sm font-semibold text-slate-900 text-right">
@@ -269,9 +277,7 @@ export default function HistoricoInventario() {
                       </TableCell>
                       <TableCell className="text-center">
                         {item.confianca_ia !== undefined && (
-                          <Badge className={`text-xs ${confiancaCor}`}>
-                            {item.confianca_ia}%
-                          </Badge>
+                          <Badge className={`text-xs ${confiancaCor}`}>{item.confianca_ia}%</Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-center">
@@ -304,7 +310,8 @@ export default function HistoricoInventario() {
       {totalItems > pageSize && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-slate-600">
-            Mostrando {page * pageSize + 1} a {Math.min((page + 1) * pageSize, totalItems)} de {totalItems}
+            Mostrando {page * pageSize + 1} a {Math.min((page + 1) * pageSize, totalItems)} de{" "}
+            {totalItems}
           </p>
           <div className="flex gap-2">
             <Button

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -56,7 +56,7 @@ export default function DashboardInspecoes() {
   const carregarDados = async () => {
     setLoading(true);
     try {
-      const todasInspecoes = await base44.entities.InspecaoFerramenta.filter({
+      const todasInspecoes = await sigo.entities.InspecaoFerramenta.filter({
         empresa_id: empresaAtiva.id,
         status: "concluida",
       });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../../../Layout";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "../../../utils";
@@ -30,7 +30,7 @@ export default function WidgetContasPagar() {
   const loadContas = async () => {
     try {
       const hoje = new Date().toISOString().split("T")[0];
-      const transacoes = await base44.entities.TransacaoFinanceira.filter({
+      const transacoes = await sigo.entities.TransacaoFinanceira.filter({
         empresa_id: empresaAtiva.id,
         tipo: "Despesa",
         status: "Pendente",

@@ -1,50 +1,56 @@
-import React, { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Plus, Edit, Trash2, Calendar, RefreshCw } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
-import { Switch } from '@/components/ui/switch';
+import React, { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Plus, Edit, Trash2, Calendar, RefreshCw } from "lucide-react";
+import { sigo } from "@/api/sigoClient";
+import { Switch } from "@/components/ui/switch";
 
-export default function RecorrentesTab({ 
-  empresaAtiva, 
-  contas, 
-  categorias, 
-  fornecedores, 
-  clientes, 
-  projetos, 
-  oportunidades 
+export default function RecorrentesTab({
+  empresaAtiva,
+  contas,
+  categorias,
+  fornecedores,
+  clientes,
+  projetos,
+  oportunidades,
 }) {
   const [recorrencias, setRecorrencias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [form, setForm] = useState({
-    tipo: 'despesa',
-    descricao: '',
-    valor: '',
-    conta_id: '',
-    categoria_id: '',
-    fornecedor_id: '',
-    cliente_id: '',
-    projeto_id: '',
-    frequencia: 'mensal',
-    data_inicio: '',
-    data_fim: '',
-    dia_vencimento: '',
-    forma_pagamento: '',
-    observacoes: '',
-    ativo: true
+    tipo: "despesa",
+    descricao: "",
+    valor: "",
+    conta_id: "",
+    categoria_id: "",
+    fornecedor_id: "",
+    cliente_id: "",
+    projeto_id: "",
+    frequencia: "mensal",
+    data_inicio: "",
+    data_fim: "",
+    dia_vencimento: "",
+    forma_pagamento: "",
+    observacoes: "",
+    ativo: true,
   });
 
   const loadRecorrencias = React.useCallback(async () => {
     if (!empresaAtiva?.id) return;
     setLoading(true);
-    const data = await base44.entities.TransacaoRecorrente.filter({ empresa_id: empresaAtiva.id });
+    const data = await sigo.entities.TransacaoRecorrente.filter({ empresa_id: empresaAtiva.id });
     setRecorrencias(data);
     setLoading(false);
   }, [empresaAtiva?.id]);
@@ -58,38 +64,38 @@ export default function RecorrentesTab({
       setForm({
         tipo: item.tipo,
         descricao: item.descricao,
-        valor: item.valor?.toString() || '',
-        conta_id: item.conta_id || '',
-        categoria_id: item.categoria_id || '',
-        fornecedor_id: item.fornecedor_id || '',
-        cliente_id: item.cliente_id || '',
-        projeto_id: item.projeto_id || '',
+        valor: item.valor?.toString() || "",
+        conta_id: item.conta_id || "",
+        categoria_id: item.categoria_id || "",
+        fornecedor_id: item.fornecedor_id || "",
+        cliente_id: item.cliente_id || "",
+        projeto_id: item.projeto_id || "",
         frequencia: item.frequencia,
         data_inicio: item.data_inicio,
-        data_fim: item.data_fim || '',
-        dia_vencimento: item.dia_vencimento?.toString() || '',
-        forma_pagamento: item.forma_pagamento || '',
-        observacoes: item.observacoes || '',
-        ativo: item.ativo
+        data_fim: item.data_fim || "",
+        dia_vencimento: item.dia_vencimento?.toString() || "",
+        forma_pagamento: item.forma_pagamento || "",
+        observacoes: item.observacoes || "",
+        ativo: item.ativo,
       });
       setSelectedItem(item);
     } else {
       setForm({
-        tipo: 'despesa',
-        descricao: '',
-        valor: '',
-        conta_id: contas[0]?.id || '',
-        categoria_id: '',
-        fornecedor_id: '',
-        cliente_id: '',
-        projeto_id: '',
-        frequencia: 'mensal',
-        data_inicio: new Date().toISOString().split('T')[0],
-        data_fim: '',
-        dia_vencimento: '',
-        forma_pagamento: '',
-        observacoes: '',
-        ativo: true
+        tipo: "despesa",
+        descricao: "",
+        valor: "",
+        conta_id: contas[0]?.id || "",
+        categoria_id: "",
+        fornecedor_id: "",
+        cliente_id: "",
+        projeto_id: "",
+        frequencia: "mensal",
+        data_inicio: new Date().toISOString().split("T")[0],
+        data_fim: "",
+        dia_vencimento: "",
+        forma_pagamento: "",
+        observacoes: "",
+        ativo: true,
       });
       setSelectedItem(null);
     }
@@ -98,15 +104,15 @@ export default function RecorrentesTab({
 
   const handleSave = async () => {
     if (!form.descricao || !form.valor || !form.conta_id || !form.data_inicio) {
-      alert('Preencha os campos obrigatórios');
+      alert("Preencha os campos obrigatórios");
       return;
     }
 
-    const conta = contas.find(c => c.id === form.conta_id);
-    const categoria = categorias.find(c => c.id === form.categoria_id);
-    const fornecedor = fornecedores.find(f => f.id === form.fornecedor_id);
-    const cliente = clientes.find(c => c.id === form.cliente_id);
-    const projeto = projetos.find(p => p.id === form.projeto_id);
+    const conta = contas.find((c) => c.id === form.conta_id);
+    const categoria = categorias.find((c) => c.id === form.categoria_id);
+    const fornecedor = fornecedores.find((f) => f.id === form.fornecedor_id);
+    const cliente = clientes.find((c) => c.id === form.cliente_id);
+    const projeto = projetos.find((p) => p.id === form.projeto_id);
 
     const data = {
       empresa_id: empresaAtiva.id,
@@ -130,54 +136,60 @@ export default function RecorrentesTab({
       dia_vencimento: form.dia_vencimento ? parseInt(form.dia_vencimento) : null,
       forma_pagamento: form.forma_pagamento || null,
       observacoes: form.observacoes || null,
-      ativo: form.ativo
+      ativo: form.ativo,
     };
 
     if (selectedItem) {
-      const updated = await base44.entities.TransacaoRecorrente.update(selectedItem.id, data);
-      setRecorrencias(prev => prev.map(r => r.id === selectedItem.id ? { ...r, ...data, ...updated } : r));
+      const updated = await sigo.entities.TransacaoRecorrente.update(selectedItem.id, data);
+      setRecorrencias((prev) =>
+        prev.map((r) => (r.id === selectedItem.id ? { ...r, ...data, ...updated } : r))
+      );
     } else {
-      const created = await base44.entities.TransacaoRecorrente.create(data);
-      setRecorrencias(prev => [...prev, created]);
+      const created = await sigo.entities.TransacaoRecorrente.create(data);
+      setRecorrencias((prev) => [...prev, created]);
     }
 
     setShowModal(false);
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Excluir esta recorrência?')) return;
-    await base44.entities.TransacaoRecorrente.delete(id);
-    setRecorrencias(prev => prev.filter(r => r.id !== id));
+    if (!confirm("Excluir esta recorrência?")) return;
+    await sigo.entities.TransacaoRecorrente.delete(id);
+    setRecorrencias((prev) => prev.filter((r) => r.id !== id));
   };
 
   const handleToggleAtivo = async (item) => {
     const novoAtivo = !item.ativo;
-    setRecorrencias(prev => prev.map(r => r.id === item.id ? { ...r, ativo: novoAtivo } : r));
-    await base44.entities.TransacaoRecorrente.update(item.id, { ativo: novoAtivo });
+    setRecorrencias((prev) => prev.map((r) => (r.id === item.id ? { ...r, ativo: novoAtivo } : r)));
+    await sigo.entities.TransacaoRecorrente.update(item.id, { ativo: novoAtivo });
   };
 
   const handleProcessarAgora = async () => {
-    if (!confirm('Processar todas as recorrências agora?')) return;
-    await base44.functions.invoke('processarRecorrencias', {});
-    alert('Recorrências processadas!');
+    if (!confirm("Processar todas as recorrências agora?")) return;
+    await sigo.functions.invoke("processarRecorrencias", {});
+    alert("Recorrências processadas!");
     loadRecorrencias();
   };
 
   const getFrequenciaLabel = (freq) => {
     const labels = {
-      diaria: 'Diária',
-      semanal: 'Semanal',
-      mensal: 'Mensal',
-      anual: 'Anual'
+      diaria: "Diária",
+      semanal: "Semanal",
+      mensal: "Mensal",
+      anual: "Anual",
     };
     return labels[freq] || freq;
   };
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+      value || 0
+    );
   };
 
-  const categoriasFiltered = categorias.filter(c => c.tipo === (form.tipo === 'despesa' ? 'Despesa' : 'Receita'));
+  const categoriasFiltered = categorias.filter(
+    (c) => c.tipo === (form.tipo === "despesa" ? "Despesa" : "Receita")
+  );
 
   if (loading) return <div className="p-8 text-center">Carregando...</div>;
 
@@ -200,16 +212,22 @@ export default function RecorrentesTab({
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {recorrencias.map(rec => (
+        {recorrencias.map((rec) => (
           <div key={rec.id} className="border rounded-lg p-4 bg-white">
             <div className="flex justify-between items-start mb-3">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
-                  <Badge className={rec.tipo === 'despesa' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}>
-                    {rec.tipo === 'despesa' ? 'Despesa' : 'Receita'}
+                  <Badge
+                    className={
+                      rec.tipo === "despesa"
+                        ? "bg-red-100 text-red-700"
+                        : "bg-green-100 text-green-700"
+                    }
+                  >
+                    {rec.tipo === "despesa" ? "Despesa" : "Receita"}
                   </Badge>
-                  <Badge variant={rec.ativo ? 'default' : 'secondary'}>
-                    {rec.ativo ? 'Ativo' : 'Inativo'}
+                  <Badge variant={rec.ativo ? "default" : "secondary"}>
+                    {rec.ativo ? "Ativo" : "Inativo"}
                   </Badge>
                 </div>
                 <h3 className="font-semibold text-slate-800">{rec.descricao}</h3>
@@ -218,10 +236,20 @@ export default function RecorrentesTab({
                 </p>
               </div>
               <div className="flex gap-1">
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleOpen(rec)}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => handleOpen(rec)}
+                >
                   <Edit className="w-4 h-4" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete(rec.id)}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => handleDelete(rec.id)}
+                >
                   <Trash2 className="w-4 h-4 text-red-500" />
                 </Button>
               </div>
@@ -233,15 +261,20 @@ export default function RecorrentesTab({
                 <span>{getFrequenciaLabel(rec.frequencia)}</span>
               </div>
               <div>
-                <span className="font-medium">Início:</span> {new Date(rec.data_inicio).toLocaleDateString('pt-BR')}
+                <span className="font-medium">Início:</span>{" "}
+                {new Date(rec.data_inicio).toLocaleDateString("pt-BR")}
               </div>
               {rec.data_fim && (
                 <div>
-                  <span className="font-medium">Fim:</span> {new Date(rec.data_fim).toLocaleDateString('pt-BR')}
+                  <span className="font-medium">Fim:</span>{" "}
+                  {new Date(rec.data_fim).toLocaleDateString("pt-BR")}
                 </div>
               )}
               <div>
-                <span className="font-medium">Próxima:</span> {rec.proxima_geracao ? new Date(rec.proxima_geracao).toLocaleDateString('pt-BR') : '-'}
+                <span className="font-medium">Próxima:</span>{" "}
+                {rec.proxima_geracao
+                  ? new Date(rec.proxima_geracao).toLocaleDateString("pt-BR")
+                  : "-"}
               </div>
               <div>
                 <span className="font-medium">Conta:</span> {rec.conta_nome}
@@ -270,17 +303,29 @@ export default function RecorrentesTab({
 
       {/* Modal */}
       <Sheet open={showModal} onOpenChange={setShowModal}>
-        <SheetContent className="overflow-y-auto" style={{ inset: 'auto 0 0 256px', width: 'calc(100% - 256px)', maxWidth: 'none' }}>
+        <SheetContent
+          className="overflow-y-auto"
+          style={{ inset: "auto 0 0 256px", width: "calc(100% - 256px)", maxWidth: "none" }}
+        >
           <SheetHeader>
-            <SheetTitle>
-              {selectedItem ? 'Editar' : 'Nova'} Transação Recorrente
-            </SheetTitle>
+            <SheetTitle>{selectedItem ? "Editar" : "Nova"} Transação Recorrente</SheetTitle>
           </SheetHeader>
 
           <div className="space-y-4 mt-6">
             <div>
               <Label>Tipo *</Label>
-              <Select value={form.tipo} onValueChange={(val) => setForm({ ...form, tipo: val, categoria_id: '', fornecedor_id: '', cliente_id: '' })}>
+              <Select
+                value={form.tipo}
+                onValueChange={(val) =>
+                  setForm({
+                    ...form,
+                    tipo: val,
+                    categoria_id: "",
+                    fornecedor_id: "",
+                    cliente_id: "",
+                  })
+                }
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -293,17 +338,28 @@ export default function RecorrentesTab({
 
             <div>
               <Label>Descrição *</Label>
-              <Input value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} />
+              <Input
+                value={form.descricao}
+                onChange={(e) => setForm({ ...form, descricao: e.target.value })}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Valor *</Label>
-                <Input type="number" step="0.01" value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} />
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={form.valor}
+                  onChange={(e) => setForm({ ...form, valor: e.target.value })}
+                />
               </div>
               <div>
                 <Label>Frequência *</Label>
-                <Select value={form.frequencia} onValueChange={(val) => setForm({ ...form, frequencia: val })}>
+                <Select
+                  value={form.frequencia}
+                  onValueChange={(val) => setForm({ ...form, frequencia: val })}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -319,13 +375,18 @@ export default function RecorrentesTab({
 
             <div>
               <Label>Conta *</Label>
-              <Select value={form.conta_id} onValueChange={(val) => setForm({ ...form, conta_id: val })}>
+              <Select
+                value={form.conta_id}
+                onValueChange={(val) => setForm({ ...form, conta_id: val })}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {contas.map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
+                  {contas.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.nome}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -333,44 +394,59 @@ export default function RecorrentesTab({
 
             <div>
               <Label>Categoria</Label>
-              <Select value={form.categoria_id} onValueChange={(val) => setForm({ ...form, categoria_id: val })}>
+              <Select
+                value={form.categoria_id}
+                onValueChange={(val) => setForm({ ...form, categoria_id: val })}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {categoriasFiltered.map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
+                  {categoriasFiltered.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.nome}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
-            {form.tipo === 'despesa' && (
+            {form.tipo === "despesa" && (
               <div>
                 <Label>Fornecedor</Label>
-                <Select value={form.fornecedor_id} onValueChange={(val) => setForm({ ...form, fornecedor_id: val })}>
+                <Select
+                  value={form.fornecedor_id}
+                  onValueChange={(val) => setForm({ ...form, fornecedor_id: val })}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {fornecedores.map(f => (
-                      <SelectItem key={f.id} value={f.id}>{f.nome_razao}</SelectItem>
+                    {fornecedores.map((f) => (
+                      <SelectItem key={f.id} value={f.id}>
+                        {f.nome_razao}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             )}
 
-            {form.tipo === 'receita' && (
+            {form.tipo === "receita" && (
               <div>
                 <Label>Cliente</Label>
-                <Select value={form.cliente_id} onValueChange={(val) => setForm({ ...form, cliente_id: val })}>
+                <Select
+                  value={form.cliente_id}
+                  onValueChange={(val) => setForm({ ...form, cliente_id: val })}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {clientes.map(c => (
-                      <SelectItem key={c.id} value={c.id}>{c.nome_razao}</SelectItem>
+                    {clientes.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.nome_razao}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -379,13 +455,18 @@ export default function RecorrentesTab({
 
             <div>
               <Label>Projeto</Label>
-              <Select value={form.projeto_id} onValueChange={(val) => setForm({ ...form, projeto_id: val })}>
+              <Select
+                value={form.projeto_id}
+                onValueChange={(val) => setForm({ ...form, projeto_id: val })}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {projetos.map(p => (
-                    <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+                  {projetos.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.nome}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -394,34 +475,59 @@ export default function RecorrentesTab({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Data Início *</Label>
-                <Input type="date" value={form.data_inicio} onChange={(e) => setForm({ ...form, data_inicio: e.target.value })} />
+                <Input
+                  type="date"
+                  value={form.data_inicio}
+                  onChange={(e) => setForm({ ...form, data_inicio: e.target.value })}
+                />
               </div>
               <div>
                 <Label>Data Fim</Label>
-                <Input type="date" value={form.data_fim} onChange={(e) => setForm({ ...form, data_fim: e.target.value })} />
+                <Input
+                  type="date"
+                  value={form.data_fim}
+                  onChange={(e) => setForm({ ...form, data_fim: e.target.value })}
+                />
               </div>
             </div>
 
-            {form.frequencia === 'mensal' && (
+            {form.frequencia === "mensal" && (
               <div>
                 <Label>Dia do Vencimento (1-31)</Label>
-                <Input type="number" min="1" max="31" value={form.dia_vencimento} onChange={(e) => setForm({ ...form, dia_vencimento: e.target.value })} />
+                <Input
+                  type="number"
+                  min="1"
+                  max="31"
+                  value={form.dia_vencimento}
+                  onChange={(e) => setForm({ ...form, dia_vencimento: e.target.value })}
+                />
               </div>
             )}
 
             <div>
               <Label>Forma de Pagamento</Label>
-              <Input value={form.forma_pagamento} onChange={(e) => setForm({ ...form, forma_pagamento: e.target.value })} placeholder="PIX, Boleto, etc" />
+              <Input
+                value={form.forma_pagamento}
+                onChange={(e) => setForm({ ...form, forma_pagamento: e.target.value })}
+                placeholder="PIX, Boleto, etc"
+              />
             </div>
 
             <div>
               <Label>Observações</Label>
-              <Textarea value={form.observacoes} onChange={(e) => setForm({ ...form, observacoes: e.target.value })} rows={3} />
+              <Textarea
+                value={form.observacoes}
+                onChange={(e) => setForm({ ...form, observacoes: e.target.value })}
+                rows={3}
+              />
             </div>
 
             <div className="flex items-center justify-between py-2">
               <Label>Ativo</Label>
-              <Switch checked={form.ativo} onCheckedChange={(val) => setForm({ ...form, ativo: val })} />
+              <Switch
+                checked={form.ativo}
+                onCheckedChange={(val) => setForm({ ...form, ativo: val })}
+              />
             </div>
 
             <div className="flex gap-2 pt-4">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,7 +37,7 @@ export default function SelecionarEpisModal({
   const loadEpis = async () => {
     setLoading(true);
     try {
-      const result = await base44.entities.Ferramental.filter({
+      const result = await sigo.entities.Ferramental.filter({
         empresa_id: empresaAtiva.id,
         categoria: "EPI",
       });

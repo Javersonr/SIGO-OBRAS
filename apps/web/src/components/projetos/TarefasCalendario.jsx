@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -36,7 +36,7 @@ export default function TarefasCalendario({ projetoId, empresaAtiva, usuariosEmp
   }, [projetoId, mesAtual]);
 
   const loadTarefas = async () => {
-    const result = await base44.entities.TarefaProjeto.filter({
+    const result = await sigo.entities.TarefaProjeto.filter({
       empresa_id: empresaAtiva.id,
       projeto_id: projetoId,
     });
@@ -135,7 +135,7 @@ export default function TarefasCalendario({ projetoId, empresaAtiva, usuariosEmp
             .split("T")[0]
         : novaData;
 
-    await base44.entities.TarefaProjeto.update(dragData.id, {
+    await sigo.entities.TarefaProjeto.update(dragData.id, {
       data_inicio: novaData,
       data_fim: dataFim,
     });

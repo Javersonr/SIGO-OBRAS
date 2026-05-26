@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Printer, Filter, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,8 +26,8 @@ export default function RelatorioFuncao({ empresaAtiva }) {
     setLoading(true);
     try {
       const [funcs, funcoesData] = await Promise.all([
-        base44.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        base44.entities.Funcao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.Funcao.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ]);
       setFuncionarios(
         funcs.sort((a, b) => (a.nome_completo || "").localeCompare(b.nome_completo || ""))

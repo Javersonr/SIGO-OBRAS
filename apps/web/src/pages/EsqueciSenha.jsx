@@ -1,36 +1,36 @@
-import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { createPageUrl } from '../utils';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { HardHat, Loader2, ArrowLeft, CheckCircle } from 'lucide-react';
+import React, { useState } from "react";
+import { sigo } from "@/api/sigoClient";
+import { createPageUrl } from "../utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { HardHat, Loader2, ArrowLeft, CheckCircle } from "lucide-react";
 
 export default function EsqueciSenha() {
   const [loading, setLoading] = useState(false);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState("");
   const [success, setSuccess] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
 
     try {
-      const response = await base44.functions.invoke('solicitarResetSenha', {
-        email: email.trim()
+      const response = await sigo.functions.invoke("solicitarResetSenha", {
+        email: email.trim(),
       });
 
       if (response.data.success) {
         setSuccess(true);
       } else {
-        setError(response.data.error || 'Erro ao enviar email');
+        setError(response.data.error || "Erro ao enviar email");
       }
     } catch (err) {
-      console.error('Erro:', err);
-      setError('Erro ao processar solicitação. Tente novamente.');
+      console.error("Erro:", err);
+      setError("Erro ao processar solicitação. Tente novamente.");
     } finally {
       setLoading(false);
     }
@@ -54,7 +54,7 @@ export default function EsqueciSenha() {
               Verifique sua caixa de entrada e spam. O link expira em 1 hora.
             </p>
             <Button
-              onClick={() => window.location.href = createPageUrl('EntrarSistema')}
+              onClick={() => (window.location.href = createPageUrl("EntrarSistema"))}
               variant="outline"
               className="w-full"
             >
@@ -108,13 +108,16 @@ export default function EsqueciSenha() {
                   Enviando...
                 </>
               ) : (
-                'Enviar Link de Recuperação'
+                "Enviar Link de Recuperação"
               )}
             </Button>
           </form>
 
           <p className="text-center text-sm text-slate-500 mt-6">
-            <a href={createPageUrl('EntrarSistema')} className="text-amber-600 hover:underline font-medium">
+            <a
+              href={createPageUrl("EntrarSistema")}
+              className="text-amber-600 hover:underline font-medium"
+            >
               <ArrowLeft className="w-3 h-3 inline mr-1" />
               Voltar ao login
             </a>

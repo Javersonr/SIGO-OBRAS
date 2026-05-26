@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../../Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,7 +29,7 @@ export default function RelatoriosCustomizados({ onCarregarTemplate }) {
   const loadTemplates = async () => {
     setLoading(true);
     try {
-      const result = await base44.entities.RelatorioCustomizado.filter({
+      const result = await sigo.entities.RelatorioCustomizado.filter({
         empresa_id: empresaAtiva.id,
       });
 
@@ -48,7 +48,7 @@ export default function RelatoriosCustomizados({ onCarregarTemplate }) {
 
   const handleToggleFavorito = async (template) => {
     try {
-      await base44.entities.RelatorioCustomizado.update(template.id, {
+      await sigo.entities.RelatorioCustomizado.update(template.id, {
         favorito: !template.favorito,
       });
       loadTemplates();
@@ -61,7 +61,7 @@ export default function RelatoriosCustomizados({ onCarregarTemplate }) {
     if (!confirm("Excluir este template?")) return;
 
     try {
-      await base44.entities.RelatorioCustomizado.delete(template.id);
+      await sigo.entities.RelatorioCustomizado.delete(template.id);
       loadTemplates();
     } catch (error) {
       console.error("Erro:", error);

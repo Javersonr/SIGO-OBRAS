@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../../Layout";
 import { AlertTriangle, X, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -38,8 +38,8 @@ export default function AlertasVencimento() {
     // Buscar despesas E receitas de todas as empresas em paralelo
     Promise.all(
       empresas.flatMap((e) => [
-        base44.entities.TransacaoFinanceira.filter({ empresa_id: e.id, tipo: "Despesa" }),
-        base44.entities.TransacaoFinanceira.filter({ empresa_id: e.id, tipo: "Receita" }),
+        sigo.entities.TransacaoFinanceira.filter({ empresa_id: e.id, tipo: "Despesa" }),
+        sigo.entities.TransacaoFinanceira.filter({ empresa_id: e.id, tipo: "Receita" }),
       ])
     ).then((resultados) => {
       setTransacoes(resultados.flat());

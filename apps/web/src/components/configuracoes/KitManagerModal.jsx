@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,8 +36,8 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
     setCarregando(true);
     try {
       const [kitsData, materiaisData] = await Promise.all([
-        base44.entities.Kit.filter({ empresa_id: empresaId, ativo: true }),
-        base44.entities.Material.filter({ empresa_id: empresaId, ativo: true }),
+        sigo.entities.Kit.filter({ empresa_id: empresaId, ativo: true }),
+        sigo.entities.Material.filter({ empresa_id: empresaId, ativo: true }),
       ]);
       setKits(kitsData || []);
       setMateriais(materiaisData || []);
@@ -62,7 +62,7 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
     setCodigo(kit.codigo || "");
     setDescricao(kit.descricao || "");
     try {
-      const itemsData = await base44.entities.KitItem.filter({ kit_id: kit.id });
+      const itemsData = await sigo.entities.KitItem.filter({ kit_id: kit.id });
       setItens(itemsData || []);
     } catch (err) {
       console.error("Erro ao carregar itens:", err);
@@ -104,7 +104,7 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
       let kitId = editandoKit?.id;
 
       if (!kitId) {
-        const novoKit = await base44.entities.Kit.create({
+        const novoKit = await sigo.entities.Kit.create({
           empresa_id: empresaId,
           nome,
           codigo,
@@ -114,7 +114,7 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
         });
         kitId = novoKit.id;
       } else {
-        await base44.entities.Kit.update(kitId, {
+        await sigo.entities.Kit.update(kitId, {
           nome,
           codigo,
           descricao,
@@ -124,16 +124,16 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
 
       // Deletar itens antigos se editando
       if (editandoKit) {
-        const antigosItems = await base44.entities.KitItem.filter({ kit_id: kitId });
+        const antigosItems = await sigo.entities.KitItem.filter({ kit_id: kitId });
         for (const item of antigosItems) {
-          await base44.entities.KitItem.delete(item.id);
+          await sigo.entities.KitItem.delete(item.id);
         }
       }
 
       // Criar novos itens
       for (const item of itens) {
         if (item.id.startsWith("new_")) {
-          await base44.entities.KitItem.create({
+          await sigo.entities.KitItem.create({
             empresa_id: empresaId,
             kit_id: kitId,
             material_id: item.material_id,
@@ -162,7 +162,7 @@ export default function KitManagerModal({ open, onOpenChange, empresaId }) {
   const handleDeletarKit = async (kitId) => {
     if (!window.confirm("Deseja excluir este kit?")) return;
     try {
-      await base44.entities.Kit.delete(kitId);
+      await sigo.entities.Kit.delete(kitId);
       await carregarDados();
     } catch (err) {
       alert("Erro ao deletar: " + err.message);

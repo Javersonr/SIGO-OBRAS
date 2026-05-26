@@ -2,14 +2,14 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AlertCircle, HardHat, Mail, Home } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { sigo } from "@/api/sigoClient";
 export default function AcessoNegado() {
   const [user, setUser] = React.useState(null);
 
   React.useEffect(() => {
     const loadUser = async () => {
       try {
-        const userData = await base44.auth.me();
+        const userData = await sigo.auth.me();
         setUser(userData);
       } catch (error) {
         console.error("Erro ao carregar usuário:", error);
@@ -19,7 +19,7 @@ export default function AcessoNegado() {
   }, []);
 
   const handleLogout = () => {
-    base44.auth.logout();
+    sigo.auth.logout();
   };
 
   return (
