@@ -20,7 +20,7 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -31,7 +31,6 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          # npm workspaces: lockfile único na raiz
 
       - name: Install all workspaces
         run: npm ci
@@ -54,27 +53,50 @@ jobs:
           test -f apps/web/dist/index.html || (echo "::error::dist/index.html ausente"; exit 1)
           test -f apps/web/dist/.htaccess || (echo "::error::dist/.htaccess ausente (esqueceu public/.htaccess?)"; exit 1)
 
-      - name: Deploy via FTP to Hostgator
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.HOSTGATOR_FTP_HOST }}
-          username: ${{ secrets.HOSTGATOR_FTP_USER }}
-          password: ${{ secrets.HOSTGATOR_FTP_PASS }}
-          server-dir: ${{ secrets.HOSTGATOR_FTP_DIR }}
-          local-dir: apps/web/dist/
-          # NÃO apaga tudo da pasta destino (preserva outros arquivos como .well-known/)
-          dangerous-clean-slate: false
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/node_modules/**
-            **/*.map
+      # Deploy via lftp — ferramenta nativa Linux, controle preciso de paths.
+      # Substituiu o SamKirkland/FTP-Deploy-Action que tinha bug criando
+      # diretório "C:/" no servidor mesmo em chroot limpo.
+      - name: Install lftp
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+
+      - name: Deploy via lftp (mirror)
+        env:
+          FTP_HOST: ${{ secrets.HOSTGATOR_FTP_HOST }}
+          FTP_USER: ${{ secrets.HOSTGATOR_FTP_USER }}
+          FTP_PASS: ${{ secrets.HOSTGATOR_FTP_PASS }}
+          # FTP_DIR é o destino remoto. Geralmente "/" pra chroot do FTP user
+          # já ser a pasta do site. Se precisar de subdiretório, ajuste o secret.
+          FTP_DIR: ${{ secrets.HOSTGATOR_FTP_DIR }}
+        run: |
+          cd apps/web/dist
+          echo "Arquivos a enviar:"
+          find . -type f | wc -l
+
+          lftp -c "
+            set ftp:ssl-allow no;
+            set ssl:verify-certificate no;
+            set net:max-retries 3;
+            set net:timeout 30;
+            open -u '$FTP_USER','$FTP_PASS' 'ftp://$FTP_HOST';
+            cd '$FTP_DIR';
+            pwd;
+            mirror \
+              --reverse \
+              --delete \
+              --verbose \
+              --exclude-glob '.well-known/' \
+              --exclude-glob '.well-known/**' \
+              --exclude-glob 'sigoobras-deploy-*.zip' \
+              ./ ./;
+            bye;
+          "
+          echo "::notice::✅ Deploy concluído via lftp"
 
       - name: Notify result
         if: always()
         run: |
           if [ "${{ job.status }}" = "success" ]; then
-            echo "::notice::✅ Deploy concluído. Site: https://sigoobras.com.br"
+            echo "::notice::Site: https://sigoobras.com.br"
           else
             echo "::error::Deploy falhou — ver logs acima"
           fi
