@@ -72,13 +72,16 @@ jobs:
           echo "Arquivos a enviar:"
           find . -type f | wc -l
 
+          # IMPORTANTE: usamos `mirror ./ /` direto SEM `cd` antes.
+          # O FTP user (cPanel) já está chrootado na pasta do site, então
+          # `/` aqui = raiz do site. Tentar `cd` em algum subdiretório
+          # pode entrar na pasta lixo "C:/" que sobrou de deploys antigos.
           lftp -c "
             set ftp:ssl-allow no;
             set ssl:verify-certificate no;
             set net:max-retries 3;
             set net:timeout 30;
             open -u '$FTP_USER','$FTP_PASS' 'ftp://$FTP_HOST';
-            cd '$FTP_DIR';
             pwd;
             mirror \
               --reverse \
@@ -87,7 +90,9 @@ jobs:
               --exclude-glob '.well-known/' \
               --exclude-glob '.well-known/**' \
               --exclude-glob 'sigoobras-deploy-*.zip' \
-              ./ ./;
+              --exclude-glob 'C:/' \
+              --exclude-glob 'C:/**' \
+              ./ /;
             bye;
           "
           echo "::notice::✅ Deploy concluído via lftp"
