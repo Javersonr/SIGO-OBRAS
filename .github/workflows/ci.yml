@@ -22,10 +22,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node 20
+      - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # Node 22 traz WebSocket nativo, requerido pelo @supabase/realtime-js
+          # que o smoke-test do SDK instancia indiretamente. Node 20 quebrava
+          # com "Node.js 20 detected without native WebSocket support".
+          node-version: "22"
           cache: "npm"
 
       # npm workspaces: lockfile único na raiz, instala tudo de uma vez
@@ -49,10 +52,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node 20
+      - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # Node 22 traz WebSocket nativo, requerido pelo @supabase/realtime-js
+          # que o smoke-test do SDK instancia indiretamente. Node 20 quebrava
+          # com "Node.js 20 detected without native WebSocket support".
+          node-version: "22"
           cache: "npm"
 
       - name: Install all workspaces
@@ -88,10 +94,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node 20
+      - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # Node 22 traz WebSocket nativo, requerido pelo @supabase/realtime-js
+          # que o smoke-test do SDK instancia indiretamente. Node 20 quebrava
+          # com "Node.js 20 detected without native WebSocket support".
+          node-version: "22"
           cache: "npm"
 
       - name: Install all workspaces
