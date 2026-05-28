@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -33,10 +33,13 @@ import { sigo } from "@/api/sigoClient";
 import FiltroRapido from "./FiltroRapido";
 import CardsResumo from "./CardsResumo";
 import BarraProgressoImportacao from "./BarraProgressoImportacao";
-import DetalheDespesaModal from "./DetalheDespesaModal";
+import DetalheTransacaoModal from "./DetalheTransacaoModal";
 import { parseData, parseValor, formatCurrency } from "./utils";
 import SortableTableHeader from "../shared/SortableTableHeader";
-import DespesaModal from "./DespesaModal";
+import TransacaoModal from "./TransacaoModal";
+import { useTransacaoFilters } from "./hooks/useTransacaoFilters";
+import PaginacaoTransacoes from "./PaginacaoTransacoes";
+import { isStatusPago } from "@/lib/financeiro-utils";
 
 export default function DespesasTab({
   empresaAtiva,
@@ -56,7 +59,6 @@ export default function DespesasTab({
   const [showDetalhes, setShowDetalhes] = useState(false);
   const [despesaDetalhes, setDespesaDetalhes] = useState(null);
   const [anexosDetalhes, setAnexosDetalhes] = useState([]);
-  const [sortConfig, setSortConfig] = useState({ field: "data_vencimento", direction: "desc" });
   const [showModal, setShowModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [oportunidades, setOportunidades] = useState([]);
@@ -68,17 +70,21 @@ export default function DespesasTab({
     processados: 0,
     erros: 0,
   });
-  const [paginaAtual, setPaginaAtual] = useState(1);
-  const itensPorPagina = 50;
 
-  const [filtros, setFiltros] = useState({
-    busca: "",
-    status: "all",
-    periodo: "mes",
-    categoriaId: "all",
-    projetoId: filtroProjetoInicial || "all",
-    contaId: "all",
-  });
+  const {
+    filtros,
+    setFiltros,
+    sortConfig,
+    setSortConfig,
+    paginaAtual,
+    setPaginaAtual,
+    itensPorPagina,
+    totalPaginas,
+    indiceInicio,
+    indiceFim,
+    transacoesFiltradas: despesasFiltradas,
+    transacoesPaginadas: despesas,
+  } = useTransacaoFilters("despesa", transacoesIniciais, { filtroProjetoInicial });
 
   // Colunas visíveis - carregar do localStorage
   const colunasDisponiveis = [
@@ -751,133 +757,6 @@ export default function DespesasTab({
     };
     reader.readAsText(file, "UTF-8");
   };
-
-  const aplicarFiltros = (transacoes) => {
-    let filtered = transacoes.filter((t) => (t.tipo || "").toLowerCase() === "despesa");
-
-    // Busca
-    if (filtros.busca) {
-      const busca = filtros.busca.toLowerCase();
-      filtered = filtered.filter(
-        (t) =>
-          t.descricao?.toLowerCase().includes(busca) ||
-          t.fornecedor_nome?.toLowerCase().includes(busca)
-      );
-    }
-
-    // Status
-    if (filtros.status && filtros.status !== "all") {
-      filtered = filtered.filter((t) => t.status === filtros.status);
-    }
-
-    // Categoria
-    if (filtros.categoriaId && filtros.categoriaId !== "all") {
-      filtered = filtered.filter((t) => t.categoria_id === filtros.categoriaId);
-    }
-
-    // Projeto
-    if (filtros.projetoId && filtros.projetoId !== "all") {
-      filtered = filtered.filter((t) => t.projeto_id === filtros.projetoId);
-    }
-
-    // Período
-    if (filtros.periodo && filtros.periodo !== "todos") {
-      const hoje = new Date();
-      const dataVencimento = (t) => new Date(t.data_vencimento || t.data);
-
-      switch (filtros.periodo) {
-        case "hoje":
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            return d.toDateString() === hoje.toDateString();
-          });
-          break;
-        case "semana":
-          const inicioSemana = new Date(hoje);
-          inicioSemana.setDate(hoje.getDate() - hoje.getDay());
-          const fimSemana = new Date(inicioSemana);
-          fimSemana.setDate(inicioSemana.getDate() + 6);
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            return d >= inicioSemana && d <= fimSemana;
-          });
-          break;
-        case "mes":
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            return d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
-          });
-          break;
-        case "trimestre":
-          const mesAtual = hoje.getMonth();
-          const trimestreInicio = Math.floor(mesAtual / 3) * 3;
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            const mesItem = d.getMonth();
-            return (
-              mesItem >= trimestreInicio &&
-              mesItem < trimestreInicio + 3 &&
-              d.getFullYear() === hoje.getFullYear()
-            );
-          });
-          break;
-        case "ano":
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            return d.getFullYear() === hoje.getFullYear();
-          });
-          break;
-      }
-    }
-
-    return filtered;
-  };
-
-  const despesasFiltradas = useMemo(() => {
-    // Ocultar despesas conciliadas via pré-lançamento que ainda não foram aprovadas
-    const semConciliadasPendentes = transacoesIniciais.filter((t) => {
-      if (t.pre_lancamento_id && t.conciliado && !t.pre_lancamento_aprovado) {
-        return false; // ocultar até aprovação
-      }
-      return true;
-    });
-    return aplicarFiltros(semConciliadasPendentes);
-  }, [transacoesIniciais, filtros]);
-
-  // Paginação
-  const totalPaginas = Math.ceil(despesasFiltradas.length / itensPorPagina);
-  const indiceInicio = (paginaAtual - 1) * itensPorPagina;
-  const indiceFim = indiceInicio + itensPorPagina;
-
-  const despesas = useMemo(() => {
-    const sorted = [...despesasFiltradas].sort((a, b) => {
-      let aVal, bVal;
-
-      if (
-        sortConfig.field === "data" ||
-        sortConfig.field === "data_vencimento" ||
-        sortConfig.field === "data_pagamento"
-      ) {
-        aVal = a[sortConfig.field] ? new Date(a[sortConfig.field]).getTime() : 0;
-        bVal = b[sortConfig.field] ? new Date(b[sortConfig.field]).getTime() : 0;
-      } else if (sortConfig.field === "valor") {
-        aVal = a[sortConfig.field] || 0;
-        bVal = b[sortConfig.field] || 0;
-      } else {
-        aVal = (a[sortConfig.field] || "").toString().toLowerCase();
-        bVal = (b[sortConfig.field] || "").toString().toLowerCase();
-      }
-
-      if (sortConfig.direction === "asc") {
-        return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
-      } else {
-        return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
-      }
-    });
-
-    // Aplicar paginação
-    return sorted.slice(indiceInicio, indiceFim);
-  }, [despesasFiltradas, sortConfig, indiceInicio, indiceFim]);
 
   const handleBaixarEmLote = async () => {
     if (itensSelecionados.length === 0) {
@@ -1839,7 +1718,7 @@ export default function DespesasTab({
                         <div className="flex items-center gap-2">
                           <Badge
                             className={
-                              d.status === "pago" || d.status === "Pago"
+                              isStatusPago(d.status)
                                 ? "bg-green-100 text-green-700 cursor-pointer"
                                 : "bg-blue-100 text-blue-700 cursor-pointer"
                             }
@@ -1848,7 +1727,7 @@ export default function DespesasTab({
                               handleToggleStatus(d);
                             }}
                           >
-                            {d.status === "pago" || d.status === "Pago" ? "Pago" : "Em aberto"}
+                            {isStatusPago(d.status) ? "Pago" : "Em aberto"}
                           </Badge>
                           {d.conciliado && (
                             <Badge
@@ -1928,64 +1807,23 @@ export default function DespesasTab({
           </table>
         </div>
 
-        {/* Paginação */}
-        {totalPaginas > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t">
-            <div className="text-sm text-slate-600">
-              Mostrando {indiceInicio + 1} a {Math.min(indiceFim, despesasFiltradas.length)} de{" "}
-              {despesasFiltradas.length} despesas
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPaginaAtual(Math.max(1, paginaAtual - 1))}
-                disabled={paginaAtual === 1}
-              >
-                Anterior
-              </Button>
-              <div className="flex items-center gap-1">
-                {Array.from({ length: Math.min(5, totalPaginas) }, (_, i) => {
-                  let pageNum;
-                  if (totalPaginas <= 5) {
-                    pageNum = i + 1;
-                  } else if (paginaAtual <= 3) {
-                    pageNum = i + 1;
-                  } else if (paginaAtual >= totalPaginas - 2) {
-                    pageNum = totalPaginas - 4 + i;
-                  } else {
-                    pageNum = paginaAtual - 2 + i;
-                  }
-                  return (
-                    <Button
-                      key={pageNum}
-                      variant={paginaAtual === pageNum ? "default" : "outline"}
-                      size="sm"
-                      className={paginaAtual === pageNum ? "bg-amber-500 hover:bg-amber-600" : ""}
-                      onClick={() => setPaginaAtual(pageNum)}
-                    >
-                      {pageNum}
-                    </Button>
-                  );
-                })}
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPaginaAtual(Math.min(totalPaginas, paginaAtual + 1))}
-                disabled={paginaAtual === totalPaginas}
-              >
-                Próxima
-              </Button>
-            </div>
-          </div>
-        )}
+        <PaginacaoTransacoes
+          paginaAtual={paginaAtual}
+          totalPaginas={totalPaginas}
+          indiceInicio={indiceInicio}
+          indiceFim={indiceFim}
+          totalItens={despesasFiltradas.length}
+          rotuloItens="despesas"
+          setPaginaAtual={setPaginaAtual}
+          wrapper="inline"
+        />
       </div>
 
-      <DetalheDespesaModal
+      <DetalheTransacaoModal
+        tipo="despesa"
         open={showDetalhes}
         onOpenChange={setShowDetalhes}
-        despesa={despesaDetalhes}
+        transacao={despesaDetalhes}
         anexos={anexosDetalhes}
         podeEditar={true}
         onEditar={(despesa) => {
@@ -2002,7 +1840,8 @@ export default function DespesasTab({
 
       {/* Modal de Criação/Edição */}
       {showModal && (
-        <DespesaModal
+        <TransacaoModal
+          tipo="despesa"
           showModal={showModal}
           setShowModal={setShowModal}
           selectedItem={selectedItem}

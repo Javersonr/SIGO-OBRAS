@@ -157,7 +157,8 @@ function DraggableComprovante({ url, onFechar }) {
   );
 }
 
-export default function DespesaModal({
+export default function TransacaoModal({
+  tipo = "despesa",
   showModal,
   setShowModal,
   selectedItem,
@@ -185,6 +186,7 @@ export default function DespesaModal({
   onDesfazerConciliacao,
   podeEditar,
 }) {
+  const labelTipo = tipo === "receita" ? "Receita" : "Despesa";
   const [notaFiscal, setNotaFiscal] = useState({
     numero: "",
     dataEmissao: "",
@@ -436,7 +438,7 @@ export default function DespesaModal({
 
   const categoriasOrdenadas = useMemo(() => {
     return [...categorias]
-      .filter((c) => c.tipo === "Despesa")
+      .filter((c) => c.tipo === labelTipo)
       .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
   }, [categorias]);
 
@@ -493,8 +495,8 @@ export default function DespesaModal({
         >
           <div className="sticky top-0 bg-white border-b p-6 z-10 flex-shrink-0 flex items-center justify-between">
             <SheetHeader className="flex-1">
-              <SheetTitle>{selectedItem ? "Editar Despesa" : "Nova Despesa"}</SheetTitle>
-              <p className="text-sm text-slate-500">Registre uma nova despesa do sistema</p>
+              <SheetTitle>{selectedItem ? `Editar ${labelTipo}` : `Nova ${labelTipo}`}</SheetTitle>
+              <p className="text-sm text-slate-500">{`Registre uma nova ${labelTipo.toLowerCase()} do sistema`}</p>
             </SheetHeader>
             <button
               onClick={() => setShowModal(false)}
@@ -506,10 +508,9 @@ export default function DespesaModal({
 
           <div className="p-6 flex-1 overflow-y-auto">
             <div className="space-y-6">
-              {/* INFORMAÇÕES DA DESPESA */}
               <div>
                 <h3 className="text-sm font-semibold text-slate-700 uppercase mb-4 pb-2 border-b">
-                  Informações da Despesa
+                  {`Informações da ${labelTipo}`}
                 </h3>
 
                 <div className="space-y-4">

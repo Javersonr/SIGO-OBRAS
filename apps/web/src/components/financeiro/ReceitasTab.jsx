@@ -1,4 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useTransacaoFilters } from "./hooks/useTransacaoFilters";
+import PaginacaoTransacoes from "./PaginacaoTransacoes";
+import { isStatusPago } from "@/lib/financeiro-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,7 +55,7 @@ import { parseData, parseValor, formatCurrency } from "./utils";
 import SortButton from "../shared/SortButton";
 import SortableTableHeader from "../shared/SortableTableHeader";
 import AnexoViewer from "../shared/AnexoViewer";
-import DetalheReceitaModal from "./DetalheReceitaModal";
+import DetalheTransacaoModal from "./DetalheTransacaoModal";
 
 export default function ReceitasTab({
   empresaAtiva,
@@ -69,7 +72,6 @@ export default function ReceitasTab({
   transacaoKey,
   onTransacaoInicialConsumed,
 }) {
-  const [sortConfig, setSortConfig] = useState({ field: "data_vencimento", direction: "desc" });
   const [anexoSelecionado, setAnexoSelecionado] = useState(null);
   const [showAnexoViewer, setShowAnexoViewer] = useState(false);
   const [showDetalhes, setShowDetalhes] = useState(false);
@@ -90,16 +92,20 @@ export default function ReceitasTab({
     processados: 0,
     erros: 0,
   });
-  const [paginaAtual, setPaginaAtual] = useState(1);
-  const itensPorPagina = 50;
-  const [filtros, setFiltros] = useState({
-    busca: "",
-    status: "all",
-    periodo: "mes",
-    categoriaId: "all",
-    projetoId: filtroProjetoInicial || "all",
-    contaId: "all",
-  });
+  const {
+    filtros,
+    setFiltros,
+    sortConfig,
+    setSortConfig,
+    paginaAtual,
+    setPaginaAtual,
+    itensPorPagina,
+    totalPaginas,
+    indiceInicio,
+    indiceFim,
+    transacoesFiltradas: receitasFiltradas,
+    transacoesPaginadas: receitas,
+  } = useTransacaoFilters("receita", transacoesIniciais, { filtroProjetoInicial });
   const [form, setForm] = useState({
     conta_id: "",
     categoria_id: "",
@@ -748,126 +754,6 @@ export default function ReceitasTab({
     reader.readAsBinaryString(file);
   };
 
-  const aplicarFiltros = (transacoes) => {
-    let filtered = (transacoes || []).filter((t) => (t.tipo || "").toLowerCase() === "receita");
-
-    // Busca
-    if (filtros.busca) {
-      const busca = filtros.busca.toLowerCase();
-      filtered = filtered.filter(
-        (t) =>
-          t.descricao?.toLowerCase().includes(busca) ||
-          t.cliente_nome?.toLowerCase().includes(busca)
-      );
-    }
-
-    // Status
-    if (filtros.status && filtros.status !== "all") {
-      filtered = filtered.filter((t) => t.status === filtros.status);
-    }
-
-    // Categoria
-    if (filtros.categoriaId && filtros.categoriaId !== "all") {
-      filtered = filtered.filter((t) => t.categoria_id === filtros.categoriaId);
-    }
-
-    // Projeto
-    if (filtros.projetoId && filtros.projetoId !== "all") {
-      filtered = filtered.filter((t) => t.projeto_id === filtros.projetoId);
-    }
-
-    // Período
-    if (filtros.periodo && filtros.periodo !== "todos") {
-      const hoje = new Date();
-      const dataVencimento = (t) => new Date(t.data_vencimento || t.data);
-
-      switch (filtros.periodo) {
-        case "hoje":
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            return d.toDateString() === hoje.toDateString();
-          });
-          break;
-        case "semana":
-          const inicioSemana = new Date(hoje);
-          inicioSemana.setDate(hoje.getDate() - hoje.getDay());
-          const fimSemana = new Date(inicioSemana);
-          fimSemana.setDate(inicioSemana.getDate() + 6);
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            return d >= inicioSemana && d <= fimSemana;
-          });
-          break;
-        case "mes":
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            return d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
-          });
-          break;
-        case "trimestre":
-          const mesAtual = hoje.getMonth();
-          const trimestreInicio = Math.floor(mesAtual / 3) * 3;
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            const mesItem = d.getMonth();
-            return (
-              mesItem >= trimestreInicio &&
-              mesItem < trimestreInicio + 3 &&
-              d.getFullYear() === hoje.getFullYear()
-            );
-          });
-          break;
-        case "ano":
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            return d.getFullYear() === hoje.getFullYear();
-          });
-          break;
-      }
-    }
-
-    return filtered;
-  };
-
-  const receitasFiltradas = useMemo(
-    () => aplicarFiltros(transacoesIniciais),
-    [transacoesIniciais, filtros]
-  );
-
-  // Paginação
-  const totalPaginas = Math.ceil(receitasFiltradas.length / itensPorPagina);
-  const indiceInicio = (paginaAtual - 1) * itensPorPagina;
-  const indiceFim = indiceInicio + itensPorPagina;
-
-  const receitas = useMemo(() => {
-    const sorted = [...receitasFiltradas].sort((a, b) => {
-      let aVal, bVal;
-
-      if (
-        sortConfig.field === "data_vencimento" ||
-        sortConfig.field === "data_pagamento" ||
-        sortConfig.field === "created_date"
-      ) {
-        aVal = a[sortConfig.field] ? new Date(a[sortConfig.field]).getTime() : 0;
-        bVal = b[sortConfig.field] ? new Date(b[sortConfig.field]).getTime() : 0;
-      } else if (sortConfig.field === "valor") {
-        aVal = a[sortConfig.field] || 0;
-        bVal = b[sortConfig.field] || 0;
-      } else {
-        aVal = (a[sortConfig.field] || "").toString().toLowerCase();
-        bVal = (b[sortConfig.field] || "").toString().toLowerCase();
-      }
-
-      if (sortConfig.direction === "asc") {
-        return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
-      } else {
-        return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
-      }
-    });
-
-    return sorted.slice(indiceInicio, indiceFim);
-  }, [receitasFiltradas, sortConfig, indiceInicio, indiceFim]);
-
   const handleBaixarEmLote = async () => {
     if (itensSelecionados.length === 0) {
       alert("Selecione pelo menos uma receita");
@@ -1352,7 +1238,7 @@ export default function ReceitasTab({
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <Badge
                       className={
-                        r.status === "pago" || r.status === "Pago"
+                        isStatusPago(r.status)
                           ? "bg-green-100 text-green-700 cursor-pointer"
                           : "bg-blue-100 text-blue-700 cursor-pointer"
                       }
@@ -1361,7 +1247,7 @@ export default function ReceitasTab({
                         handleToggleStatus(r);
                       }}
                     >
-                      {r.status === "pago" || r.status === "Pago" ? "Recebido" : "Em aberto"}
+                      {isStatusPago(r.status) ? "Recebido" : "Em aberto"}
                     </Badge>
                   </td>
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -1391,58 +1277,16 @@ export default function ReceitasTab({
         </table>
       </div>
 
-      {/* Paginação */}
-      {totalPaginas > 1 && (
-        <div className="flex items-center justify-between px-4 py-3 border rounded-lg bg-white">
-          <div className="text-sm text-slate-600">
-            Mostrando {indiceInicio + 1} a {Math.min(indiceFim, receitasFiltradas.length)} de{" "}
-            {receitasFiltradas.length} receitas
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPaginaAtual(Math.max(1, paginaAtual - 1))}
-              disabled={paginaAtual === 1}
-            >
-              Anterior
-            </Button>
-            <div className="flex items-center gap-1">
-              {Array.from({ length: Math.min(5, totalPaginas) }, (_, i) => {
-                let pageNum;
-                if (totalPaginas <= 5) {
-                  pageNum = i + 1;
-                } else if (paginaAtual <= 3) {
-                  pageNum = i + 1;
-                } else if (paginaAtual >= totalPaginas - 2) {
-                  pageNum = totalPaginas - 4 + i;
-                } else {
-                  pageNum = paginaAtual - 2 + i;
-                }
-                return (
-                  <Button
-                    key={pageNum}
-                    variant={paginaAtual === pageNum ? "default" : "outline"}
-                    size="sm"
-                    className={paginaAtual === pageNum ? "bg-amber-500 hover:bg-amber-600" : ""}
-                    onClick={() => setPaginaAtual(pageNum)}
-                  >
-                    {pageNum}
-                  </Button>
-                );
-              })}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPaginaAtual(Math.min(totalPaginas, paginaAtual + 1))}
-              disabled={paginaAtual === totalPaginas}
-            >
-              Próxima
-            </Button>
-          </div>
-        </div>
-      )}
+      <PaginacaoTransacoes
+        paginaAtual={paginaAtual}
+        totalPaginas={totalPaginas}
+        indiceInicio={indiceInicio}
+        indiceFim={indiceFim}
+        totalItens={receitasFiltradas.length}
+        rotuloItens="receitas"
+        setPaginaAtual={setPaginaAtual}
+        wrapper="card"
+      />
 
       <Sheet open={showModal} onOpenChange={setShowModal}>
         <SheetContent
@@ -2073,10 +1917,11 @@ export default function ReceitasTab({
         onOpenChange={setShowAnexoViewer}
       />
 
-      <DetalheReceitaModal
+      <DetalheTransacaoModal
+        tipo="receita"
         open={showDetalhes}
         onOpenChange={setShowDetalhes}
-        receita={receitaDetalhes}
+        transacao={receitaDetalhes}
         podeEditar={true}
         empresaAtiva={empresaAtiva}
         onEditar={(r) => {

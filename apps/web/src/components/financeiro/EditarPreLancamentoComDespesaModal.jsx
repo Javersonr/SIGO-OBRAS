@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
-import DespesaModal from "./DespesaModal";
+import TransacaoModal from "./TransacaoModal";
 
 export default function EditarPreLancamentoComDespesaModal({
   open,
@@ -129,7 +129,8 @@ export default function EditarPreLancamentoComDespesaModal({
   if (!open || !preLancamento) return null;
 
   return (
-    <DespesaModal
+    <TransacaoModal
+      tipo="despesa"
       showModal={open}
       setShowModal={onOpenChange}
       selectedItem={null}
