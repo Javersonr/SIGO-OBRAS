@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,8 +91,9 @@ export default function NotaDevolucaoModal({
 
   const handleSelecionarDespesa = (despesa) => {
     // Tentar recuperar dados do emitente do sessionStorage
-    const emit = JSON.parse(
-      sessionStorage.getItem(`nfe_emit_${despesa.numero_documento}`) || "null"
+    const emit = safeParseJSON(
+      sessionStorage.getItem(`nfe_emit_${despesa.numero_documento}`),
+      null
     );
     setForm((prev) => ({
       ...prev,

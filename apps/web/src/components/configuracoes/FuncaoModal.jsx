@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -253,7 +254,7 @@ export default function FuncaoModal({
         }
 
         // Obter EPIs já existentes
-        const episExistentes = JSON.parse(formData.modelo_epi || "[]");
+        const episExistentes = safeParseJSON(formData.modelo_epi, []);
         const nomesExistentes = episExistentes.map((e) => e.item?.toLowerCase().trim());
 
         const episImportados = [];
@@ -317,7 +318,7 @@ export default function FuncaoModal({
         }
 
         // Obter ferramentas já existentes
-        const ferramentasExistentes = JSON.parse(formData.modelo_ferramentas || "[]");
+        const ferramentasExistentes = safeParseJSON(formData.modelo_ferramentas, []);
         const nomesExistentes = ferramentasExistentes.map((f) =>
           f.ferramenta?.toLowerCase().trim()
         );
@@ -520,7 +521,7 @@ export default function FuncaoModal({
                       <Button
                         onClick={async () => {
                           try {
-                            const modelosAtuais = JSON.parse(formData.modelo_treinamentos || "[]");
+                            const modelosAtuais = safeParseJSON(formData.modelo_treinamentos, []);
                             let novosModelos = 0;
 
                             // Para cada treinamento realizado, verificar se já existe como modelo
@@ -652,8 +653,9 @@ export default function FuncaoModal({
                                           });
 
                                           if (isChecked && funcao?.id) {
-                                            const modelosAtuais = JSON.parse(
-                                              formData.modelo_treinamentos || "[]"
+                                            const modelosAtuais = safeParseJSON(
+                                              formData.modelo_treinamentos,
+                                              []
                                             );
 
                                             const jaExiste = modelosAtuais.some(
@@ -815,7 +817,7 @@ export default function FuncaoModal({
                       </DropdownMenu>
                     </div>
                   </div>
-                  {JSON.parse(formData.modelo_ferramentas || "[]").length === 0 ? (
+                  {safeParseJSON(formData.modelo_ferramentas, []).length === 0 ? (
                     <div className="text-center py-4 text-slate-500 text-sm">
                       Nenhuma ferramenta adicionada. Digite no campo "Ferramenta" abaixo para
                       adicionar.
@@ -831,7 +833,7 @@ export default function FuncaoModal({
                       <span>Nº Série</span>
                       <span>Ação</span>
                     </div>
-                    {JSON.parse(formData.modelo_ferramentas || "[]")
+                    {safeParseJSON(formData.modelo_ferramentas, [])
                       .sort((a, b) => (a.ferramenta || "").localeCompare(b.ferramenta || ""))
                       .map((ferr, idx) => (
                         <div
@@ -844,7 +846,7 @@ export default function FuncaoModal({
                               placeholder="Digite para buscar ferramenta..."
                               value={ferr.ferramenta || ""}
                               onChange={(e) => {
-                                const itens = JSON.parse(formData.modelo_ferramentas || "[]");
+                                const itens = safeParseJSON(formData.modelo_ferramentas, []);
                                 itens[idx].ferramenta = e.target.value;
                                 setFormData({
                                   ...formData,
@@ -892,8 +894,9 @@ export default function FuncaoModal({
                                     <button
                                       key={f.id}
                                       onClick={() => {
-                                        const itens = JSON.parse(
-                                          formData.modelo_ferramentas || "[]"
+                                        const itens = safeParseJSON(
+                                          formData.modelo_ferramentas,
+                                          []
                                         );
                                         itens[idx] = {
                                           ferramenta: f.descricao || "",
@@ -922,7 +925,7 @@ export default function FuncaoModal({
                             type="number"
                             value={ferr.quantidade || ""}
                             onChange={(e) => {
-                              const itens = JSON.parse(formData.modelo_ferramentas || "[]");
+                              const itens = safeParseJSON(formData.modelo_ferramentas, []);
                               itens[idx].quantidade = e.target.value;
                               setFormData({
                                 ...formData,
@@ -936,7 +939,7 @@ export default function FuncaoModal({
                             placeholder="Nº Série (opcional)"
                             value={ferr.numero_serie || ""}
                             onChange={(e) => {
-                              const itens = JSON.parse(formData.modelo_ferramentas || "[]");
+                              const itens = safeParseJSON(formData.modelo_ferramentas, []);
                               itens[idx].numero_serie = e.target.value;
                               setFormData({
                                 ...formData,
@@ -945,7 +948,7 @@ export default function FuncaoModal({
                             }}
                             onKeyDown={(e) => {
                               if (e.key === "Tab" && !e.shiftKey) {
-                                const itens = JSON.parse(formData.modelo_ferramentas || "[]");
+                                const itens = safeParseJSON(formData.modelo_ferramentas, []);
                                 // Se for a última linha E ferramenta está preenchida, criar nova
                                 if (idx === itens.length - 1 && ferr.ferramenta?.trim()) {
                                   e.preventDefault();
@@ -972,7 +975,7 @@ export default function FuncaoModal({
                             size="icon"
                             className="h-8 w-8 justify-self-center"
                             onClick={() => {
-                              const itens = JSON.parse(formData.modelo_ferramentas || "[]");
+                              const itens = safeParseJSON(formData.modelo_ferramentas, []);
                               itens.splice(idx, 1);
                               setFormData({
                                 ...formData,
@@ -1034,7 +1037,7 @@ export default function FuncaoModal({
                               <button
                                 key={f.id}
                                 onClick={() => {
-                                  const itens = JSON.parse(formData.modelo_ferramentas || "[]");
+                                  const itens = safeParseJSON(formData.modelo_ferramentas, []);
                                   itens.push({
                                     ferramenta: f.descricao || "",
                                     quantidade: 1,
@@ -1086,7 +1089,7 @@ export default function FuncaoModal({
                     {(() => {
                       const opcoes = (() => {
                         try {
-                          return JSON.parse(formData.modelo_autorizacao_formal_opcoes || "{}");
+                          return safeParseJSON(formData.modelo_autorizacao_formal_opcoes, {});
                         } catch {
                           return {};
                         }
@@ -1339,7 +1342,7 @@ export default function FuncaoModal({
                             <Input
                               value={(() => {
                                 try {
-                                  const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                  const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                   return data.funcao || "";
                                 } catch {
                                   return "";
@@ -1347,7 +1350,7 @@ export default function FuncaoModal({
                               })()}
                               onChange={(e) => {
                                 try {
-                                  const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                  const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                   data.funcao = e.target.value;
                                   setFormData({
                                     ...formData,
@@ -1364,7 +1367,7 @@ export default function FuncaoModal({
                             <Input
                               value={(() => {
                                 try {
-                                  const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                  const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                   return data.setor || "";
                                 } catch {
                                   return "";
@@ -1372,7 +1375,7 @@ export default function FuncaoModal({
                               })()}
                               onChange={(e) => {
                                 try {
-                                  const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                  const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                   data.setor = e.target.value;
                                   setFormData({
                                     ...formData,
@@ -1391,7 +1394,7 @@ export default function FuncaoModal({
                           <Input
                             value={(() => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 return data.locais_trabalho || "";
                               } catch {
                                 return "";
@@ -1399,7 +1402,7 @@ export default function FuncaoModal({
                             })()}
                             onChange={(e) => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 data.locais_trabalho = e.target.value;
                                 setFormData({
                                   ...formData,
@@ -1417,7 +1420,7 @@ export default function FuncaoModal({
                           <Textarea
                             value={(() => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 return data.descricao_sumaria || "";
                               } catch {
                                 return "";
@@ -1425,7 +1428,7 @@ export default function FuncaoModal({
                             })()}
                             onChange={(e) => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 data.descricao_sumaria = e.target.value;
                                 setFormData({
                                   ...formData,
@@ -1444,7 +1447,7 @@ export default function FuncaoModal({
                           <Textarea
                             value={(() => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 return data.atividades_desenvolvidas || "";
                               } catch {
                                 return "";
@@ -1452,7 +1455,7 @@ export default function FuncaoModal({
                             })()}
                             onChange={(e) => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 data.atividades_desenvolvidas = e.target.value;
                                 setFormData({
                                   ...formData,
@@ -1478,7 +1481,7 @@ export default function FuncaoModal({
                           <Textarea
                             value={(() => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 return data.agentes_fisicos || "";
                               } catch {
                                 return "";
@@ -1486,7 +1489,7 @@ export default function FuncaoModal({
                             })()}
                             onChange={(e) => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 data.agentes_fisicos = e.target.value;
                                 setFormData({
                                   ...formData,
@@ -1505,7 +1508,7 @@ export default function FuncaoModal({
                           <Textarea
                             value={(() => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 return data.agentes_quimicos || "";
                               } catch {
                                 return "";
@@ -1513,7 +1516,7 @@ export default function FuncaoModal({
                             })()}
                             onChange={(e) => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 data.agentes_quimicos = e.target.value;
                                 setFormData({
                                   ...formData,
@@ -1532,7 +1535,7 @@ export default function FuncaoModal({
                           <Input
                             value={(() => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 return data.agentes_biologicos || "";
                               } catch {
                                 return "";
@@ -1540,7 +1543,7 @@ export default function FuncaoModal({
                             })()}
                             onChange={(e) => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 data.agentes_biologicos = e.target.value;
                                 setFormData({
                                   ...formData,
@@ -1558,7 +1561,7 @@ export default function FuncaoModal({
                           <Input
                             value={(() => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 return data.agentes_ergonomicos || "";
                               } catch {
                                 return "";
@@ -1566,7 +1569,7 @@ export default function FuncaoModal({
                             })()}
                             onChange={(e) => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 data.agentes_ergonomicos = e.target.value;
                                 setFormData({
                                   ...formData,
@@ -1584,7 +1587,7 @@ export default function FuncaoModal({
                           <Textarea
                             value={(() => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 return data.agentes_acidentes || "";
                               } catch {
                                 return "";
@@ -1592,7 +1595,7 @@ export default function FuncaoModal({
                             })()}
                             onChange={(e) => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 data.agentes_acidentes = e.target.value;
                                 setFormData({
                                   ...formData,
@@ -1616,7 +1619,7 @@ export default function FuncaoModal({
                           <Textarea
                             value={(() => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 return data.tecnologias_epc || "";
                               } catch {
                                 return "";
@@ -1624,7 +1627,7 @@ export default function FuncaoModal({
                             })()}
                             onChange={(e) => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 data.tecnologias_epc = e.target.value;
                                 setFormData({
                                   ...formData,
@@ -1643,7 +1646,7 @@ export default function FuncaoModal({
                           <Textarea
                             value={(() => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 return data.tecnologias_epi || "";
                               } catch {
                                 return "";
@@ -1651,7 +1654,7 @@ export default function FuncaoModal({
                             })()}
                             onChange={(e) => {
                               try {
-                                const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                                const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                                 data.tecnologias_epi = e.target.value;
                                 setFormData({
                                   ...formData,
@@ -1674,7 +1677,7 @@ export default function FuncaoModal({
                       <Textarea
                         value={(() => {
                           try {
-                            const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                            const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                             return data.instrucoes_seguranca || "";
                           } catch {
                             return "";
@@ -1682,7 +1685,7 @@ export default function FuncaoModal({
                         })()}
                         onChange={(e) => {
                           try {
-                            const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                            const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                             data.instrucoes_seguranca = e.target.value;
                             setFormData({
                               ...formData,
@@ -1701,7 +1704,7 @@ export default function FuncaoModal({
                       <Textarea
                         value={(() => {
                           try {
-                            const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                            const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                             return data.observacoes || "";
                           } catch {
                             return "";
@@ -1709,7 +1712,7 @@ export default function FuncaoModal({
                         })()}
                         onChange={(e) => {
                           try {
-                            const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                            const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                             data.observacoes = e.target.value;
                             setFormData({
                               ...formData,
@@ -1728,7 +1731,7 @@ export default function FuncaoModal({
                       <Textarea
                         value={(() => {
                           try {
-                            const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                            const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                             return data.punicoes || "";
                           } catch {
                             return "";
@@ -1736,7 +1739,7 @@ export default function FuncaoModal({
                         })()}
                         onChange={(e) => {
                           try {
-                            const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                            const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                             data.punicoes = e.target.value;
                             setFormData({
                               ...formData,
@@ -1755,7 +1758,7 @@ export default function FuncaoModal({
                       <Textarea
                         value={(() => {
                           try {
-                            const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                            const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                             return data.ministerio_trabalho || "";
                           } catch {
                             return "";
@@ -1763,7 +1766,7 @@ export default function FuncaoModal({
                         })()}
                         onChange={(e) => {
                           try {
-                            const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                            const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                             data.ministerio_trabalho = e.target.value;
                             setFormData({
                               ...formData,
@@ -1782,7 +1785,7 @@ export default function FuncaoModal({
                       <Textarea
                         value={(() => {
                           try {
-                            const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                            const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                             return data.medicina_trabalho || "";
                           } catch {
                             return "";
@@ -1790,7 +1793,7 @@ export default function FuncaoModal({
                         })()}
                         onChange={(e) => {
                           try {
-                            const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                            const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                             data.medicina_trabalho = e.target.value;
                             setFormData({
                               ...formData,
@@ -1883,7 +1886,7 @@ export default function FuncaoModal({
                     <div className="p-3 text-xs space-y-2">
                       {(() => {
                         try {
-                          const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                          const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                           return (
                             <>
                               <div className="grid grid-cols-2 gap-4 border-b border-slate-300 pb-2">
@@ -1923,7 +1926,7 @@ export default function FuncaoModal({
                     <div className="p-3 text-xs">
                       {(() => {
                         try {
-                          const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                          const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                           return (
                             <>
                               <div className="grid grid-cols-2 gap-4 mb-2">
@@ -1967,7 +1970,7 @@ export default function FuncaoModal({
                     <div className="p-3 text-xs space-y-2">
                       {(() => {
                         try {
-                          const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                          const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                           return (
                             <>
                               <div className="border-b border-slate-300 pb-2">
@@ -1993,7 +1996,7 @@ export default function FuncaoModal({
                     <div className="p-3 text-xs whitespace-pre-wrap leading-relaxed">
                       {(() => {
                         try {
-                          const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                          const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                           return data.instrucoes_seguranca || "Nenhum conteúdo definido";
                         } catch {
                           return "Nenhum conteúdo definido";
@@ -2010,7 +2013,7 @@ export default function FuncaoModal({
                     <div className="p-3 text-xs whitespace-pre-wrap leading-relaxed">
                       {(() => {
                         try {
-                          const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                          const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                           return data.observacoes || "Nenhum conteúdo definido";
                         } catch {
                           return "Nenhum conteúdo definido";
@@ -2027,7 +2030,7 @@ export default function FuncaoModal({
                     <div className="p-3 text-xs whitespace-pre-wrap leading-relaxed">
                       {(() => {
                         try {
-                          const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                          const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                           return data.punicoes || "Nenhum conteúdo definido";
                         } catch {
                           return "Nenhum conteúdo definido";
@@ -2044,7 +2047,7 @@ export default function FuncaoModal({
                     <div className="p-3 text-xs whitespace-pre-wrap leading-relaxed">
                       {(() => {
                         try {
-                          const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                          const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                           return data.ministerio_trabalho || "Nenhum conteúdo definido";
                         } catch {
                           return "Nenhum conteúdo definido";
@@ -2061,7 +2064,7 @@ export default function FuncaoModal({
                     <div className="p-3 text-xs whitespace-pre-wrap leading-relaxed">
                       {(() => {
                         try {
-                          const data = JSON.parse(formData.modelo_ordem_servicos || "{}");
+                          const data = safeParseJSON(formData.modelo_ordem_servicos, {});
                           return data.medicina_trabalho || "Nenhum conteúdo definido";
                         } catch {
                           return "Nenhum conteúdo definido";

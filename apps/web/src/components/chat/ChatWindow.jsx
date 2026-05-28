@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Hash, User, Users } from "lucide-react";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
@@ -38,16 +39,12 @@ export default function ChatWindow({ canal, user, empresaAtiva, usuariosEmpresa,
 
       // Marcar mensagens como lidas
       const naoLidas = msgs.filter((m) => {
-        try {
-          const lidaPor = m.lida_por ? JSON.parse(m.lida_por) : [];
-          return !lidaPor.includes(user.id) && m.usuario_id !== user.id;
-        } catch {
-          return false;
-        }
+        const lidaPor = safeParseJSON(m.lida_por, []);
+        return !lidaPor.includes(user.id) && m.usuario_id !== user.id;
       });
 
       for (const msg of naoLidas) {
-        const lidaPor = msg.lida_por ? JSON.parse(msg.lida_por) : [];
+        const lidaPor = safeParseJSON(msg.lida_por, []);
         if (!lidaPor.includes(user.id)) {
           await sigo.entities.MensagemChat.update(msg.id, {
             lida_por: JSON.stringify([...lidaPor, user.id]),

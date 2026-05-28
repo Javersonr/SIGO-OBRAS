@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -107,13 +108,7 @@ export default function CaminhaoCamposObrigatoriosManager({
     }
   };
 
-  const getFerramentaIds = (campo) => {
-    try {
-      return JSON.parse(campo.ferramenta_ids || "[]");
-    } catch {
-      return [];
-    }
-  };
+  const getFerramentaIds = (campo) => safeParseJSON(campo.ferramenta_ids, []);
 
   const vincularFerramenta = async (campo, ferramentaId) => {
     const ids = getFerramentaIds(campo);

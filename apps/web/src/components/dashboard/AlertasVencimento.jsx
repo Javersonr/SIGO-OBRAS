@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../../Layout";
+import { safeParseJSON } from "@/lib/json-utils";
 import { AlertTriangle, X, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
@@ -17,11 +18,8 @@ export default function AlertasVencimento() {
   const [transacoes, setTransacoes] = useState([]);
   const [empresasMap, setEmpresasMap] = useState({});
   const [dismissed, setDismissed] = useState(() => {
-    try {
-      return JSON.parse(sessionStorage.getItem("alertas_dismissed") || "[]");
-    } catch {
-      return [];
-    }
+    const parsed = safeParseJSON(sessionStorage.getItem("alertas_dismissed"), []);
+    return Array.isArray(parsed) ? parsed : [];
   });
   const [expandido, setExpandido] = useState(true);
 

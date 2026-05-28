@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -112,8 +113,9 @@ export default function SelecionarTreinamentoModal({
                                   let instrutorAssinaturaUrl =
                                     treinamento.instrutor_assinatura_url || "";
                                   try {
-                                    const instrutoresParsed = JSON.parse(
-                                      treinamento.instrutor_nome
+                                    const instrutoresParsed = safeParseJSON(
+                                      treinamento.instrutor_nome,
+                                      null
                                     );
                                     if (Array.isArray(instrutoresParsed)) {
                                       // Extrair assinaturas do array de instrutores

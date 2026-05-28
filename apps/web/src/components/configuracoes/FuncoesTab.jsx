@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -147,15 +148,13 @@ export default function FuncoesTab({ empresaAtiva }) {
         const treinamentosDuplicados = treinamentos.map((t) => {
           // Garantir que a assinatura do instrutor seja propagada corretamente
           let instrutorAssinaturaUrl = t.instrutor_assinatura_url || "";
-          try {
-            const instrutoresParsed = JSON.parse(t.instrutor_nome);
-            if (Array.isArray(instrutoresParsed)) {
-              const assinaturas = instrutoresParsed.map((i) => i.assinatura_url).filter(Boolean);
-              if (assinaturas.length > 0 && !instrutorAssinaturaUrl) {
-                instrutorAssinaturaUrl = assinaturas.join("|");
-              }
+          const instrutoresParsed = safeParseJSON(t.instrutor_nome, null);
+          if (Array.isArray(instrutoresParsed)) {
+            const assinaturas = instrutoresParsed.map((i) => i.assinatura_url).filter(Boolean);
+            if (assinaturas.length > 0 && !instrutorAssinaturaUrl) {
+              instrutorAssinaturaUrl = assinaturas.join("|");
             }
-          } catch {}
+          }
           return {
             empresa_id: empresaAtiva.id,
             funcao_id: funcaoCriada.id,

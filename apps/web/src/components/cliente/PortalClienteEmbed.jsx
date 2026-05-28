@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -254,8 +255,8 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
           {activeTab === "diario" && (
             <div className="space-y-4">
               {diarios.map((diario) => {
-                const fotosData = diario.fotos ? JSON.parse(diario.fotos) : [];
-                const maoDeObraData = diario.mao_de_obra ? JSON.parse(diario.mao_de_obra) : [];
+                const fotosData = safeParseJSON(diario.fotos, []);
+                const maoDeObraData = safeParseJSON(diario.mao_de_obra, []);
 
                 return (
                   <Card key={diario.id}>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Eye } from "lucide-react";
@@ -160,7 +161,7 @@ export default function HistoricoRegistroWidget({ entidade, entidadeId, nomeCurt
                   <div>
                     <label className="text-xs text-slate-500 font-medium">Dados Anteriores</label>
                     <pre className="bg-red-50 p-2 rounded text-xs mt-1 overflow-auto max-h-32 text-red-700 border border-red-200">
-                      {JSON.stringify(JSON.parse(selectedLog.dados_anteriores), null, 2)}
+                      {JSON.stringify(safeParseJSON(selectedLog.dados_anteriores, {}), null, 2)}
                     </pre>
                   </div>
                 )}
@@ -169,7 +170,7 @@ export default function HistoricoRegistroWidget({ entidade, entidadeId, nomeCurt
                   <div>
                     <label className="text-xs text-slate-500 font-medium">Dados Novos</label>
                     <pre className="bg-green-50 p-2 rounded text-xs mt-1 overflow-auto max-h-32 text-green-700 border border-green-200">
-                      {JSON.stringify(JSON.parse(selectedLog.dados_novos), null, 2)}
+                      {JSON.stringify(safeParseJSON(selectedLog.dados_novos, {}), null, 2)}
                     </pre>
                   </div>
                 )}

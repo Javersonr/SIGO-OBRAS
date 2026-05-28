@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,10 +11,8 @@ import { formatCPF } from "@/components/utils/cpfFormatter";
 
 // Parseia instrutores do campo instrutor_nome (suporta JSON array ou string legada)
 const parseInstrutores = (instrutor_nome, instrutor_cpf, instrutor_assinatura_url) => {
-  try {
-    const parsed = JSON.parse(instrutor_nome);
-    if (Array.isArray(parsed)) return parsed;
-  } catch {}
+  const parsed = safeParseJSON(instrutor_nome, null);
+  if (Array.isArray(parsed)) return parsed;
   if (instrutor_nome) {
     return [
       {

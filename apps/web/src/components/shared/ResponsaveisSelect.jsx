@@ -1,4 +1,5 @@
 import React from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -8,17 +9,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Plus, X, CheckCircle2 } from "lucide-react";
 
-const parseIds = (v) => {
-  if (Array.isArray(v)) return v;
-  if (v && typeof v === "string") {
-    try {
-      return JSON.parse(v);
-    } catch {
-      return [];
-    }
-  }
-  return [];
-};
+const parseIds = (v) => safeParseJSON(v, []);
 
 export default function ResponsaveisSelect({
   responsaveisEmails,

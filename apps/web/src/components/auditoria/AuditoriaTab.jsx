@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Download, Eye, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -319,7 +320,7 @@ export default function AuditoriaTab({ empresaAtiva }) {
                   <div>
                     <Label className="text-xs text-slate-500">Dados Anteriores</Label>
                     <pre className="bg-slate-100 p-3 rounded mt-1 text-xs overflow-auto max-h-48">
-                      {JSON.stringify(JSON.parse(selectedLog.dados_anteriores), null, 2)}
+                      {JSON.stringify(safeParseJSON(selectedLog.dados_anteriores, {}), null, 2)}
                     </pre>
                   </div>
                 )}
@@ -328,7 +329,7 @@ export default function AuditoriaTab({ empresaAtiva }) {
                   <div>
                     <Label className="text-xs text-slate-500">Dados Novos</Label>
                     <pre className="bg-slate-100 p-3 rounded mt-1 text-xs overflow-auto max-h-48">
-                      {JSON.stringify(JSON.parse(selectedLog.dados_novos), null, 2)}
+                      {JSON.stringify(safeParseJSON(selectedLog.dados_novos, {}), null, 2)}
                     </pre>
                   </div>
                 )}

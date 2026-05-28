@@ -171,7 +171,7 @@ export default function Layout({ children, currentPageName }) {
 
         // Validar dados de autenticação
         try {
-          const userData = JSON.parse(customAuth);
+          const userData = safeParseJSON(customAuth, {});
           if (!userData.id || !userData.empresa_id || !userData.email) {
             throw new Error("Dados de autenticação inválidos");
           }
@@ -287,7 +287,7 @@ export default function Layout({ children, currentPageName }) {
       const vinculoEmpresa = vinculos[0];
 
       // Atualizar sessionStorage com empresa e vínculo
-      const authData = JSON.parse(sessionStorage.getItem("custom_auth") || "{}");
+      const authData = safeParseJSON(sessionStorage.getItem("custom_auth"), {});
       authData.empresa_id = empresa.id;
       authData.perfil = vinculoEmpresa.perfil;
       sessionStorage.setItem("custom_auth", JSON.stringify(authData));
@@ -523,13 +523,7 @@ export default function Layout({ children, currentPageName }) {
     if (!user || !empresaAtiva) return [];
 
     const currentPerfil = vinculo?.perfil || "Admin";
-    let customAuth = {};
-    try {
-      customAuth = JSON.parse(sessionStorage.getItem("custom_auth") || "{}");
-    } catch (e) {
-      console.error("[Layout] sessionStorage.custom_auth corrompido:", e);
-      customAuth = {};
-    }
+    const customAuth = safeParseJSON(sessionStorage.getItem("custom_auth"), {});
     const isSuperAdmin = customAuth.is_super_admin === true;
 
     return menuItems.filter((item) => {
@@ -596,16 +590,11 @@ export default function Layout({ children, currentPageName }) {
     });
   }, [user, vinculo, temPermissao, empresaAtiva, modulosLibertados]);
 
-  const temaCores = React.useMemo(() => {
-    try {
-      if (empresaAtiva?.tema_cores) {
-        return JSON.parse(empresaAtiva.tema_cores);
-      }
-      return {};
-    } catch {
-      return {};
-    }
-  }, [empresaAtiva?.tema_cores]);
+  // tema_cores é JSONB → vem como objeto pelo supabase-js (não string)
+  const temaCores = React.useMemo(
+    () => safeParseJSON(empresaAtiva?.tema_cores, {}),
+    [empresaAtiva?.tema_cores]
+  );
 
   // EARLY RETURNS APÓS TODOS OS HOOKS
   if (isPublicPage || isFornecedorPage) {

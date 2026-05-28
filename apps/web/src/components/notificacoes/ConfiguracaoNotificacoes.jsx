@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { useEmpresa } from "../../Layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -82,11 +83,7 @@ export default function ConfiguracaoNotificacoes() {
       });
       if (result.length > 0) {
         setPrefId(result[0].id);
-        try {
-          setPrefs({ ...DEFAULT_PREFS, ...JSON.parse(result[0].preferencias || "{}") });
-        } catch {
-          setPrefs(DEFAULT_PREFS);
-        }
+        setPrefs({ ...DEFAULT_PREFS, ...safeParseJSON(result[0].preferencias, {}) });
       }
     } catch (e) {
       console.error(e);

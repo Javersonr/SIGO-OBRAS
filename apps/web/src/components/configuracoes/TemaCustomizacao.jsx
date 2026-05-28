@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,7 +56,7 @@ export default function TemaCustomizacao({ value, onChange }) {
   useEffect(() => {
     try {
       if (value) {
-        const parsedCores = JSON.parse(value);
+        const parsedCores = safeParseJSON(value, {});
         setCores((prev) => ({ ...prev, ...parsedCores }));
       } else {
         setCores(CORES_PADRAO);

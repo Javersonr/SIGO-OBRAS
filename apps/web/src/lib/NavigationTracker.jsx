@@ -2,20 +2,15 @@ import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { sigo } from "@/api/sigoClient";
 import { pagesConfig } from "@/pages.config";
+import { safeParseJSON } from "@/lib/json-utils";
 
 /**
  * Loga a página visitada em background (fire-and-forget).
  * "Autenticado" = sessionStorage.custom_auth tem id+empresa_id válidos.
  */
 function isAuthenticated() {
-  try {
-    const raw = sessionStorage.getItem("custom_auth");
-    if (!raw) return false;
-    const data = JSON.parse(raw);
-    return Boolean(data?.id && data?.empresa_id);
-  } catch {
-    return false;
-  }
+  const data = safeParseJSON(sessionStorage.getItem("custom_auth"), null);
+  return Boolean(data?.id && data?.empresa_id);
 }
 
 export default function NavigationTracker() {

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 // eslint-disable-next-line no-unused-vars
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -218,13 +219,7 @@ export default function OrdenServicoCEMIGModal({
           <div className="space-y-3">
             <Label className="text-base font-semibold">Opções de Autorização</Label>
             {(() => {
-              const opcoes = (() => {
-                try {
-                  return JSON.parse(formData.modelo_autorizacao_formal_opcoes || "{}");
-                } catch {
-                  return {};
-                }
-              })();
+              const opcoes = safeParseJSON(formData.modelo_autorizacao_formal_opcoes, {});
 
               const handleCheckboxChange = (key, value) => {
                 const novasOpcoes = { ...opcoes, [key]: value };

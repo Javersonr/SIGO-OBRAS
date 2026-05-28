@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Download, Settings } from "lucide-react";
@@ -18,7 +19,10 @@ export default function VisualizarAutorizacaoFormalModal({
     try {
       const saved = localStorage.getItem("autorizacao-formal-modal-settings");
       return saved
-        ? JSON.parse(saved)
+        ? safeParseJSON(saved, {
+            fontSizeTitulo: 14,
+            fontSizeTabela: 11,
+          })
         : {
             fontSizeTitulo: 14,
             fontSizeTabela: 11,

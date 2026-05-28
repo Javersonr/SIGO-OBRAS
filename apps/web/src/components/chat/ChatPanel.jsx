@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { MessageSquare, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,12 +43,8 @@ export default function ChatPanel({ open, onOpenChange, empresaAtiva, user }) {
 
       // Filtrar apenas canais que o usuário participa
       const meusCanais = canaisData.filter((canal) => {
-        try {
-          const participantes = canal.participantes ? JSON.parse(canal.participantes) : [];
-          return participantes.includes(user.id) || canal.tipo === "Geral";
-        } catch {
-          return canal.tipo === "Geral";
-        }
+        const participantes = safeParseJSON(canal.participantes, []);
+        return participantes.includes(user.id) || canal.tipo === "Geral";
       });
 
       setCanais(meusCanais);

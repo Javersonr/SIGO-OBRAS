@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,8 +96,8 @@ export default function AprovacaoConfigTab({ empresaAtiva }) {
                 {nivel.valor_maximo ? `R$ ${nivel.valor_maximo}` : "infinito"}
               </p>
               <div className="flex flex-wrap gap-2">
-                {Array.isArray(JSON.parse(nivel.perfis_aprovadores || "[]")) &&
-                  JSON.parse(nivel.perfis_aprovadores || "[]").map((p) => (
+                {Array.isArray(safeParseJSON(nivel.perfis_aprovadores, [])) &&
+                  safeParseJSON(nivel.perfis_aprovadores, []).map((p) => (
                     <Badge key={p} variant="secondary">
                       {p}
                     </Badge>

@@ -1,5 +1,6 @@
 import React from "react";
 import { useState, useEffect } from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,11 +16,9 @@ const parseInstrutor = (valor) => {
     return valor.nome || null;
   }
   if (typeof valor === "string") {
-    try {
-      const parsed = JSON.parse(valor);
-      if (Array.isArray(parsed)) return parsed[0]?.nome || null;
-      if (typeof parsed === "object") return parsed.nome || null;
-    } catch {}
+    const parsed = safeParseJSON(valor, null);
+    if (Array.isArray(parsed)) return parsed[0]?.nome || null;
+    if (parsed && typeof parsed === "object") return parsed.nome || null;
     // string pura
     return valor;
   }
@@ -33,11 +32,9 @@ const parseInstrutorCpf = (valor) => {
     return valor.cpf || null;
   }
   if (typeof valor === "string") {
-    try {
-      const parsed = JSON.parse(valor);
-      if (Array.isArray(parsed)) return parsed[0]?.cpf || null;
-      if (typeof parsed === "object") return parsed.cpf || null;
-    } catch {}
+    const parsed = safeParseJSON(valor, null);
+    if (Array.isArray(parsed)) return parsed[0]?.cpf || null;
+    if (parsed && typeof parsed === "object") return parsed.cpf || null;
   }
   return null;
 };

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,13 +23,7 @@ export default function EPIListaModelo({
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  const epis = (() => {
-    try {
-      return JSON.parse(modeloEpi || "[]");
-    } catch {
-      return [];
-    }
-  })();
+  const epis = safeParseJSON(modeloEpi, []);
 
   const updateEpis = (newList) => onChangeModeloEpi(JSON.stringify(newList));
 
