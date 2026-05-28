@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
+import { salvarDraftSC } from "@/lib/sc-draft";
 import {
   Package,
   Plus,
@@ -574,15 +575,24 @@ export default function Estoque() {
                 size="sm"
                 className="bg-red-600 hover:bg-red-700 text-white flex-shrink-0"
                 onClick={() => {
-                  window.solicitacaoCompraData = {
+                  // Antes usava window.solicitacaoCompraData (estado global,
+                  // sumia no F5). Agora sessionStorage via helper sc-draft.
+                  salvarDraftSC({
                     origem: "Estoque",
+                    prioridade: "Alta",
+                    observacoes: "Solicitação gerada automaticamente por estoque mínimo atingido.",
                     itens: alertas.map((a) => ({
+                      material_id: a.material_id || undefined,
+                      material_codigo: a.material_codigo || undefined,
                       descricao: a.material_descricao || "",
                       quantidade: Math.max(1, (a.estoque_minimo || 0) - (a.quantidade || 0)),
                       unidade: a.unidade || "UN",
+                      // preço estimado vem do saldo (valor_medio) pra alimentar
+                      // a aprovação por valor da migration 0028.
+                      preco_unitario_estimado: a.valor_medio || 0,
                       especificacoes: `Estoque atual: ${a.quantidade || 0} ${a.unidade || ""} | Mínimo: ${a.estoque_minimo || 0} ${a.unidade || ""}`,
                     })),
-                  };
+                  });
                   navigate(createPageUrl("Compras"));
                 }}
               >

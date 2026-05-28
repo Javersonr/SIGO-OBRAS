@@ -448,15 +448,34 @@ export default function OrcamentoTab({
         <div className="flex items-center justify-between gap-4 border-b pb-4 flex-wrap">
           <div className="flex items-center gap-3 flex-wrap">
             {itensSelecionados.size > 0 && (
-              <Button
-                variant="destructive"
-                size="sm"
-                className="gap-1"
-                onClick={handleDeleteSelecionados}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Excluir {itensSelecionados.size}
-              </Button>
+              <>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="gap-1"
+                  onClick={handleDeleteSelecionados}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Excluir {itensSelecionados.size}
+                </Button>
+                <Button
+                  size="sm"
+                  className="gap-1 bg-blue-600 hover:bg-blue-700 text-white"
+                  onClick={() => {
+                    // Envia só os itens marcados; handler em Projetos.jsx
+                    // salva draft + navega pra /Compras (mesmo fluxo do Estoque).
+                    onCreateSolicitacao(
+                      Array.from(itensSelecionados)
+                        .map((id) => orcamentoItens.find((i) => i.id === id))
+                        .filter(Boolean)
+                    );
+                  }}
+                  title="Cria solicitação de compra com os itens marcados"
+                >
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  Solicitar compra ({itensSelecionados.size})
+                </Button>
+              </>
             )}
             <Select value={filtroTipo} onValueChange={setFiltroTipo}>
               <SelectTrigger className="w-[160px]">

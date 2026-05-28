@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
+import { consumirDraftSC } from "@/lib/sc-draft";
 import {
   ShoppingCart,
   Plus,
@@ -161,26 +162,35 @@ export default function Compras() {
   }, [empresaAtiva?.id, loadData]);
 
   useEffect(() => {
-    if (window.solicitacaoCompraData && !showSolicitacaoModal) {
-      const data = window.solicitacaoCompraData;
-      setSolicitacaoForm({
-        projeto_id: data.projeto_id || "",
-        projeto_nome: data.projeto_nome || "",
-        prioridade: data.origem === "Estoque" ? "Alta" : "Normal",
-        origem: data.origem || "Manual",
-        data_necessidade: "",
-        observacoes:
-          data.origem === "Estoque"
-            ? "Solicitação gerada automaticamente por estoque mínimo atingido."
-            : "",
-        itens:
-          data.itens?.length > 0
-            ? data.itens
-            : [{ descricao: "", quantidade: 1, unidade: "UN", especificacoes: "" }],
-      });
-      setShowSolicitacaoModal(true);
-      delete window.solicitacaoCompraData;
-    }
+    // Consome draft em sessionStorage (vindo de Estoque ou Projetos>Orçamento).
+    // consumirDraftSC() lê e remove atomicamente — não dispara 2x.
+    if (showSolicitacaoModal) return;
+    const data = consumirDraftSC();
+    if (!data) return;
+
+    setSolicitacaoForm({
+      projeto_id: data.projeto_id || "",
+      projeto_nome: data.projeto_nome || "",
+      oportunidade_id: data.oportunidade_id || "",
+      oportunidade_nome: data.oportunidade_nome || "",
+      prioridade: data.prioridade || (data.origem === "Estoque" ? "Alta" : "Normal"),
+      origem: data.origem || "Manual",
+      data_necessidade: data.data_necessidade || "",
+      observacoes: data.observacoes || "",
+      itens:
+        data.itens?.length > 0
+          ? data.itens.map((it) => ({
+              material_id: it.material_id || "",
+              material_codigo: it.material_codigo || "",
+              descricao: it.descricao || "",
+              quantidade: it.quantidade ?? 1,
+              unidade: it.unidade || "UN",
+              preco_unitario_estimado: it.preco_unitario_estimado ?? 0,
+              especificacoes: it.especificacoes || "",
+            }))
+          : [{ descricao: "", quantidade: 1, unidade: "UN", especificacoes: "" }],
+    });
+    setShowSolicitacaoModal(true);
   }, [showSolicitacaoModal]);
 
   const gerarNumero = (tipo) => {

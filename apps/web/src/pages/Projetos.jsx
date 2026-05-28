@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import { safeParseJSON } from "@/lib/json-utils";
+import { salvarDraftSC } from "@/lib/sc-draft";
+import { createPageUrl } from "../utils";
 import {
   Plus,
   Eye,
@@ -57,6 +60,7 @@ import AnexoViewer from "../components/shared/AnexoViewer";
 import CriarMaterialModal from "../components/materiais/CriarMaterialModal";
 
 export default function Projetos() {
+  const navigate = useNavigate();
   const { empresaAtiva, perfil, user, temPermissao, vinculo } = useEmpresa();
 
   // permissoes/responsaveis_emails são JSONB → vêm como objeto/array pelo
@@ -1371,26 +1375,38 @@ export default function Projetos() {
                       formatCurrency={formatCurrency}
                       onShowStatusConfig={() => setShowStatusConfig(true)}
                       onCreateSolicitacao={(itensOrc) => {
-                        const todosItens = itensOrc.length > 0 ? itensOrc : orcamentoItens;
-                        setSolicitacaoCompraForm({
+                        // Exige seleção explícita (decisão UX: "só itens marcados").
+                        if (!itensOrc || itensOrc.length === 0) {
+                          alert(
+                            "Marque ao menos 1 item do orçamento (checkbox) antes de solicitar compra."
+                          );
+                          return;
+                        }
+                        // Salva rascunho em sessionStorage + navega pro modulo Compras
+                        // que vai detectar o draft e abrir o SolicitacaoModal já preenchido.
+                        // Isso unifica os 3 pontos de entrada (Compras/Estoque/Orcamento)
+                        // num só modal, sem duplicar lógica entre páginas.
+                        // preco_unitario_estimado: alimenta o trigger da migration 0028
+                        // que recalcula valor_total_estimado e a regra de aprovação.
+                        salvarDraftSC({
+                          origem: "Orcamento",
                           projeto_id: selectedProj.id,
                           projeto_nome: selectedProj.nome,
-                          oportunidade_id: "",
-                          oportunidade_nome: "",
-                          aprovador_id: "",
-                          aprovador_nome: "",
                           prioridade: "Normal",
-                          origem: "Orcamento",
-                          data_necessidade: "",
-                          observacoes: "",
-                          itens: todosItens.map((item) => ({
+                          observacoes: `Solicitação a partir do orçamento do projeto ${selectedProj.nome}`,
+                          itens: itensOrc.map((item) => ({
+                            material_id: item.material_id || undefined,
+                            material_codigo: item.codigo || item.material_codigo || undefined,
                             descricao: item.descricao,
                             quantidade: item.quantidade,
-                            unidade: item.unidade,
-                            especificacoes: `Código: ${item.codigo || "-"} | Valor Ref: R$ ${item.valor_unitario?.toFixed(2) || "0.00"}`,
+                            unidade: item.unidade || "UN",
+                            preco_unitario_estimado: item.valor_unitario || 0,
+                            especificacoes: `Código: ${item.codigo || "-"} | Valor Ref: R$ ${
+                              item.valor_unitario?.toFixed(2) || "0.00"
+                            }`,
                           })),
                         });
-                        setShowSolicitacaoCompra(true);
+                        navigate(createPageUrl("Compras"));
                       }}
                       onCriarMaterial={(nome, item) => {
                         setNovoMaterialForm({
