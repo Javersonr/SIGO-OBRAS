@@ -24,6 +24,10 @@ import {
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { formatBRL, formatFullDate } from "@/lib/formatters";
+import AliquotasTab from "@/components/contabilidade/AliquotasTab";
+import IssMunicipiosTab from "@/components/contabilidade/IssMunicipiosTab";
+import RegrasNcmTab from "@/components/contabilidade/RegrasNcmTab";
+import CertificadoTab from "@/components/contabilidade/CertificadoTab";
 
 const TIPOS_NFE = {
   NFe_recebida: { label: "NFe Recebida", cor: "bg-blue-100 text-blue-700" },
@@ -456,55 +460,86 @@ export default function Contabilidade() {
         </TabsContent>
 
         <TabsContent value="config" className="space-y-4 pt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Regime tributário da empresa</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 max-w-2xl">
-              <div>
-                <Label>Regime</Label>
-                <Select
-                  value={regimeForm.regime_tributario}
-                  onValueChange={(v) => setRegimeForm((f) => ({ ...f, regime_tributario: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {REGIMES.map((r) => (
-                      <SelectItem key={r} value={r}>
-                        {r}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-slate-500 mt-1">
-                  Cada empresa do grupo pode ter regime diferente.
-                </p>
-              </div>
-              <div>
-                <Label>CNAE principal</Label>
-                <Input
-                  placeholder="Ex: 4399-1/03"
-                  value={regimeForm.cnae_principal}
-                  onChange={(e) => setRegimeForm((f) => ({ ...f, cnae_principal: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label>Inscrição municipal (para NFS-e)</Label>
-                <Input
-                  placeholder="Inscrição na prefeitura"
-                  value={regimeForm.inscricao_municipal}
-                  onChange={(e) =>
-                    setRegimeForm((f) => ({ ...f, inscricao_municipal: e.target.value }))
-                  }
-                />
-              </div>
-              <Button onClick={salvarRegime} disabled={salvandoRegime}>
-                {salvandoRegime ? "Salvando..." : "Salvar"}
-              </Button>
-            </CardContent>
-          </Card>
+          {/* Sub-tabs dentro de Configuração: regime, alíquotas, ISS, NCM, certificado */}
+          <Tabs defaultValue="regime">
+            <TabsList>
+              <TabsTrigger value="regime">Regime</TabsTrigger>
+              <TabsTrigger value="aliquotas">Alíquotas</TabsTrigger>
+              <TabsTrigger value="iss">ISS Municípios</TabsTrigger>
+              <TabsTrigger value="ncm">Regras NCM</TabsTrigger>
+              <TabsTrigger value="cert">Certificado A1</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="regime" className="pt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Regime tributário da empresa</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 max-w-2xl">
+                  <div>
+                    <Label>Regime</Label>
+                    <Select
+                      value={regimeForm.regime_tributario}
+                      onValueChange={(v) => setRegimeForm((f) => ({ ...f, regime_tributario: v }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {REGIMES.map((r) => (
+                          <SelectItem key={r} value={r}>
+                            {r}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Cada empresa do grupo pode ter regime diferente.
+                    </p>
+                  </div>
+                  <div>
+                    <Label>CNAE principal</Label>
+                    <Input
+                      placeholder="Ex: 4399-1/03"
+                      value={regimeForm.cnae_principal}
+                      onChange={(e) =>
+                        setRegimeForm((f) => ({ ...f, cnae_principal: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label>Inscrição municipal (para NFS-e)</Label>
+                    <Input
+                      placeholder="Inscrição na prefeitura"
+                      value={regimeForm.inscricao_municipal}
+                      onChange={(e) =>
+                        setRegimeForm((f) => ({ ...f, inscricao_municipal: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <Button onClick={salvarRegime} disabled={salvandoRegime}>
+                    {salvandoRegime ? "Salvando..." : "Salvar"}
+                  </Button>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="aliquotas" className="pt-4">
+              <AliquotasTab empresaAtiva={empresaAtiva} />
+            </TabsContent>
+
+            <TabsContent value="iss" className="pt-4">
+              <IssMunicipiosTab empresaAtiva={empresaAtiva} />
+            </TabsContent>
+
+            <TabsContent value="ncm" className="pt-4">
+              <RegrasNcmTab empresaAtiva={empresaAtiva} />
+            </TabsContent>
+
+            <TabsContent value="cert" className="pt-4">
+              <CertificadoTab empresaAtiva={empresaAtiva} />
+            </TabsContent>
+          </Tabs>
         </TabsContent>
       </Tabs>
     </div>
