@@ -64,6 +64,8 @@ export default function AprovacaoModal({
   const [processando, setProcessando] = useState(false);
   const [itensSelecionados, setItensSelecionados] = useState([]);
   const [aprovarTodos, setAprovarTodos] = useState(true);
+  const [aprovacoes, setAprovacoes] = useState([]);
+  const [niveis, setNiveis] = useState([]);
 
   // Solicitante não pode aprovar a si mesmo — server-side bloqueia,
   // aqui apenas escondemos o botão pra evitar confusão.
@@ -77,13 +79,28 @@ export default function AprovacaoModal({
       const loadApprovalData = async () => {
         setLoading(true);
         try {
-          const [itensData, materiais, orcamentoItens] = await Promise.all([
-            sigo.entities.SolicitacaoCompraItem.filter({ solicitacao_id: solicitacao.id }),
-            sigo.entities.Material.filter({ empresa_id: empresaAtiva.id }, "-created_date", 9999),
-            solicitacao.projeto_id
-              ? sigo.entities.OrcamentoItem.filter({ projeto_id: solicitacao.projeto_id })
-              : Promise.resolve([]),
-          ]);
+          const [itensData, materiais, orcamentoItens, aprovacoesData, niveisData] =
+            await Promise.all([
+              sigo.entities.SolicitacaoCompraItem.filter({ solicitacao_id: solicitacao.id }),
+              sigo.entities.Material.filter({ empresa_id: empresaAtiva.id }, "-created_date", 9999),
+              solicitacao.projeto_id
+                ? sigo.entities.OrcamentoItem.filter({ projeto_id: solicitacao.projeto_id })
+                : Promise.resolve([]),
+              sigo.entities.AprovacaoSolicitacao.filter({ solicitacao_id: solicitacao.id }),
+              sigo.entities.NivelAprovacao.filter({
+                empresa_id: empresaAtiva.id,
+                tipo: "SolicitacaoCompra",
+              }).catch(() => []),
+            ]);
+          // Ordena cronologicamente
+          aprovacoesData.sort((a, b) => {
+            const da = new Date(a.data_decisao || a.created_at || 0).getTime();
+            const db = new Date(b.data_decisao || b.created_at || 0).getTime();
+            return da - db;
+          });
+          niveisData.sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+          setAprovacoes(aprovacoesData);
+          setNiveis(niveisData);
 
           const itensEnriquecidosData = itensData.map((item) => {
             const material = materiais.find(
@@ -475,8 +492,147 @@ export default function AprovacaoModal({
                       {solicitacao.prioridade}
                     </Badge>
                   </div>
+                  {solicitacao.valor_total_estimado != null && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Valor estimado:</span>
+                      <span className="font-medium text-emerald-700">
+                        {(Number(solicitacao.valor_total_estimado) || 0).toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })}
+                      </span>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
+
+              {/* Timeline de aprovação */}
+              {(aprovacoes.length > 0 || niveis.length > 0) && (
+                <Card>
+                  <CardContent className="p-4">
+                    <h3 className="font-semibold text-sm mb-3">Histórico de Aprovação</h3>
+                    <ol className="space-y-2">
+                      {niveis.length > 0
+                        ? niveis.map((n) => {
+                            // Casa cada nivel.ordem com o registro de aprovacao do nivel
+                            // (a RPC anota "Aprovado nível X" no comentário).
+                            const reg = aprovacoes.find(
+                              (a) =>
+                                a.status === "Aprovado" &&
+                                String(a.comentarios || "").match(
+                                  new RegExp("nível\\s*" + n.ordem + "\\b", "i")
+                                )
+                            );
+                            const nivelAtual = solicitacao.nivel_aprovacao_atual || 1;
+                            const passou = !!reg;
+                            const atual =
+                              !passou &&
+                              n.ordem === nivelAtual &&
+                              solicitacao.status === "Pendente Aprovação";
+                            return (
+                              <li
+                                key={n.id}
+                                className={cn(
+                                  "flex items-start gap-3 p-2 rounded border",
+                                  passou
+                                    ? "bg-emerald-50 border-emerald-200"
+                                    : atual
+                                      ? "bg-amber-50 border-amber-200"
+                                      : "bg-slate-50 border-slate-200"
+                                )}
+                              >
+                                <span className="mt-0.5">
+                                  {passou ? (
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                  ) : atual ? (
+                                    <Clock className="w-4 h-4 text-amber-600" />
+                                  ) : (
+                                    <Clock className="w-4 h-4 text-slate-400" />
+                                  )}
+                                </span>
+                                <div className="flex-1 text-xs">
+                                  <div className="font-medium text-slate-800">
+                                    Nível {n.ordem} — {n.nome}
+                                  </div>
+                                  <div className="text-slate-600">
+                                    {passou
+                                      ? `${reg.aprovador_nome || "—"} • ${new Date(
+                                          reg.data_decisao || reg.created_at
+                                        ).toLocaleString("pt-BR")}`
+                                      : atual
+                                        ? "Aguardando aprovação"
+                                        : "Pendente"}
+                                  </div>
+                                  {passou && reg.comentarios && (
+                                    <div className="text-slate-500 mt-0.5 italic">
+                                      “{reg.comentarios}”
+                                    </div>
+                                  )}
+                                </div>
+                              </li>
+                            );
+                          })
+                        : aprovacoes.map((a, i) => (
+                            <li
+                              key={a.id}
+                              className={cn(
+                                "flex items-start gap-3 p-2 rounded border",
+                                a.status === "Aprovado"
+                                  ? "bg-emerald-50 border-emerald-200"
+                                  : a.status === "Rejeitado"
+                                    ? "bg-red-50 border-red-200"
+                                    : "bg-amber-50 border-amber-200"
+                              )}
+                            >
+                              <span className="mt-0.5">{getStatusIcon(a.status)}</span>
+                              <div className="flex-1 text-xs">
+                                <div className="font-medium text-slate-800">
+                                  Decisão {i + 1} — {a.status}
+                                </div>
+                                <div className="text-slate-600">
+                                  {a.aprovador_nome || "—"}
+                                  {a.data_decisao
+                                    ? ` • ${new Date(a.data_decisao).toLocaleString("pt-BR")}`
+                                    : ""}
+                                </div>
+                                {a.comentarios && (
+                                  <div className="text-slate-500 mt-0.5 italic">
+                                    “{a.comentarios}”
+                                  </div>
+                                )}
+                              </div>
+                            </li>
+                          ))}
+                      {/* Mostra rejeição se vier separado */}
+                      {niveis.length > 0 &&
+                        aprovacoes
+                          .filter((a) => a.status === "Rejeitado")
+                          .map((r) => (
+                            <li
+                              key={r.id}
+                              className="flex items-start gap-3 p-2 rounded border bg-red-50 border-red-200"
+                            >
+                              <XCircle className="w-4 h-4 text-red-600 mt-0.5" />
+                              <div className="flex-1 text-xs">
+                                <div className="font-medium text-red-700">Rejeitado</div>
+                                <div className="text-slate-600">
+                                  {r.aprovador_nome || "—"}
+                                  {r.data_decisao
+                                    ? ` • ${new Date(r.data_decisao).toLocaleString("pt-BR")}`
+                                    : ""}
+                                </div>
+                                {r.comentarios && (
+                                  <div className="text-slate-500 mt-0.5 italic">
+                                    “{r.comentarios}”
+                                  </div>
+                                )}
+                              </div>
+                            </li>
+                          ))}
+                    </ol>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Itens */}
               <Card>

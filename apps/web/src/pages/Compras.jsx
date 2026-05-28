@@ -18,6 +18,7 @@ import {
   TrendingDown,
   Award,
   MessageSquare,
+  Rocket,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import SortButton from "../components/shared/SortButton";
@@ -54,6 +55,7 @@ import ComparacaoPrecos from "../components/compras/ComparacaoPrecos";
 import LinksModal from "../components/compras/LinksModal";
 import HistoricoTab from "../components/compras/HistoricoTab";
 import AprovacaoModal from "../components/compras/AprovacaoModal";
+import PedidoDiretoModal from "../components/compras/PedidoDiretoModal";
 import ChatContextual from "../components/chat/ChatContextual";
 import ConfirmacaoExclusaoModal from "../components/compras/ConfirmacaoExclusaoModal";
 import AdicionarItensCotacaoModal from "../components/compras/AdicionarItensCotacaoModal";
@@ -97,6 +99,7 @@ export default function Compras() {
   const [showComparacaoModal, setShowComparacaoModal] = useState(false);
   const [showLinksModal, setShowLinksModal] = useState(false);
   const [showAprovacaoModal, setShowAprovacaoModal] = useState(false);
+  const [showPedidoDiretoModal, setShowPedidoDiretoModal] = useState(false);
   const [aprovacaoData, setAprovacaoData] = useState({
     solicitacao: null,
     aprovacoes: [],
@@ -235,6 +238,9 @@ export default function Compras() {
           unidade: item.unidade,
           especificacoes: item.especificacoes || "",
           ultimo_preco: item.ultimo_preco || null,
+          // Migration 0028: trigger trg_sync_total_solicitacao usa este campo
+          // pra recalcular solicitacao_compra.valor_total_estimado.
+          preco_unitario_estimado: item.preco_unitario_estimado || null,
           material_id: item.material_id || null,
           material_codigo: item.material_codigo || item.codigo || "",
         });
@@ -553,6 +559,17 @@ export default function Compras() {
 
   const searchLower = searchTerm.toLowerCase();
   const minhasPendentes = solicitacoes.filter((s) => s.status === "Pendente Aprovação").length;
+
+  // Pedido direto: SC Aprovada + valor dentro do limite configurado na empresa.
+  // Limite null = recurso desligado pra essa empresa (sempre exige cotação).
+  const limitePedidoDireto =
+    empresaAtiva?.compras_pular_cotacao_valor_max != null
+      ? Number(empresaAtiva.compras_pular_cotacao_valor_max)
+      : null;
+  const isElegivelPedidoDireto = (sol) =>
+    sol?.status === "Aprovada" &&
+    limitePedidoDireto != null &&
+    Number(sol?.valor_total_estimado || 0) <= limitePedidoDireto;
 
   const filterData = (data, searchFields) => {
     const filtered = data.filter((item) => {
@@ -914,7 +931,18 @@ export default function Compras() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge className={statusColors[sol.status]}>{sol.status}</Badge>
+                      <div className="flex flex-col items-start gap-1">
+                        <Badge className={statusColors[sol.status]}>{sol.status}</Badge>
+                        {isElegivelPedidoDireto(sol) && (
+                          <Badge
+                            variant="outline"
+                            className="border-emerald-500 text-emerald-700 bg-emerald-50 text-[10px]"
+                            title="Valor estimado dentro do limite configurado pra pular cotação"
+                          >
+                            <Rocket className="w-3 h-3 mr-1" /> Elegível pedido direto
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Badge
@@ -938,55 +966,83 @@ export default function Compras() {
                       {new Date(sol.created_date).toLocaleDateString("pt-BR")}
                     </TableCell>
                     <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setSelectedItem(sol);
-                              setShowChatSolicitacao(true);
-                            }}
-                            className="text-purple-600"
-                          >
-                            <MessageSquare className="w-4 h-4 mr-2" /> Chat da Solicitação
-                          </DropdownMenuItem>
-                          {[
-                            "Pendente Aprovação",
-                            "Aprovada",
-                            "Em Cotação",
-                            "Cotação Aprovada",
-                            "Pedido Gerado",
-                          ].includes(sol.status) && (
-                            <DropdownMenuItem
-                              onClick={() => handleAprovarSolicitacao(sol)}
-                              className="text-blue-600"
+                      <div className="flex items-center gap-1 justify-end">
+                        {isElegivelPedidoDireto(sol) &&
+                          temPermissao("Compras", "Pedidos", "criar") && (
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                setSelectedItem(sol);
+                                setShowPedidoDiretoModal(true);
+                              }}
+                              className="bg-emerald-600 hover:bg-emerald-700 h-8 px-2"
+                              title="Gerar pedido direto sem passar por cotação"
                             >
-                              <Eye className="w-4 h-4 mr-2" /> Ver Fluxo de Aprovação
-                            </DropdownMenuItem>
+                              <Rocket className="w-3.5 h-3.5 mr-1" /> Pedido Direto
+                            </Button>
                           )}
-                          {["Pendente Aprovação", "Aprovada"].includes(sol.status) &&
-                            temPermissao("Compras", "Solicitações", "cancelar") && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreHorizontal className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setSelectedItem(sol);
+                                setShowChatSolicitacao(true);
+                              }}
+                              className="text-purple-600"
+                            >
+                              <MessageSquare className="w-4 h-4 mr-2" /> Chat da Solicitação
+                            </DropdownMenuItem>
+                            {[
+                              "Pendente Aprovação",
+                              "Aprovada",
+                              "Em Cotação",
+                              "Cotação Aprovada",
+                              "Pedido Gerado",
+                            ].includes(sol.status) && (
                               <DropdownMenuItem
-                                onClick={() => handleCancelarSolicitacao(sol)}
-                                className="text-orange-600"
+                                onClick={() => handleAprovarSolicitacao(sol)}
+                                className="text-blue-600"
                               >
-                                <X className="w-4 h-4 mr-2" /> Cancelar
+                                <Eye className="w-4 h-4 mr-2" /> Ver Fluxo de Aprovação
                               </DropdownMenuItem>
                             )}
-                          {temPermissao("Compras", "Solicitações", "excluir") && (
-                            <DropdownMenuItem
-                              onClick={() => handleExcluirSolicitacao(sol)}
-                              className="text-red-600"
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" /> Excluir
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                            {isElegivelPedidoDireto(sol) &&
+                              temPermissao("Compras", "Pedidos", "criar") && (
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setSelectedItem(sol);
+                                    setShowPedidoDiretoModal(true);
+                                  }}
+                                  className="text-emerald-600"
+                                >
+                                  <Rocket className="w-4 h-4 mr-2" /> Gerar Pedido Direto
+                                </DropdownMenuItem>
+                              )}
+                            {["Pendente Aprovação", "Aprovada"].includes(sol.status) &&
+                              temPermissao("Compras", "Solicitações", "cancelar") && (
+                                <DropdownMenuItem
+                                  onClick={() => handleCancelarSolicitacao(sol)}
+                                  className="text-orange-600"
+                                >
+                                  <X className="w-4 h-4 mr-2" /> Cancelar
+                                </DropdownMenuItem>
+                              )}
+                            {temPermissao("Compras", "Solicitações", "excluir") && (
+                              <DropdownMenuItem
+                                onClick={() => handleExcluirSolicitacao(sol)}
+                                className="text-red-600"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" /> Excluir
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1390,6 +1446,21 @@ export default function Compras() {
           empresaAtiva={empresaAtiva}
           user={user}
           onApproved={loadData}
+        />
+      )}
+
+      {selectedItem && showPedidoDiretoModal && (
+        <PedidoDiretoModal
+          open={showPedidoDiretoModal}
+          onOpenChange={setShowPedidoDiretoModal}
+          solicitacao={selectedItem}
+          fornecedores={fornecedores}
+          user={user}
+          onSuccess={async () => {
+            await loadData();
+            setActiveTab("pedidos");
+            setFilterStatus("all");
+          }}
         />
       )}
 

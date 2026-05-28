@@ -1,17 +1,50 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { useEmpresa } from "@/Layout";
 import { safeParseJSON } from "@/lib/json-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Edit } from "lucide-react";
+import { Plus, Trash2, Edit, Rocket } from "lucide-react";
 
 export default function AprovacaoConfigTab({ empresaAtiva }) {
+  const { reloadEmpresaAtiva } = useEmpresa();
   const [niveis, setNiveis] = useState([]);
   const [perfis, setPerfis] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingNivel, setEditingNivel] = useState(null);
+  const [limitePedidoDireto, setLimitePedidoDireto] = useState("");
+  const [savingLimite, setSavingLimite] = useState(false);
+
+  useEffect(() => {
+    const v = empresaAtiva?.compras_pular_cotacao_valor_max;
+    setLimitePedidoDireto(v == null ? "" : String(v));
+  }, [empresaAtiva?.compras_pular_cotacao_valor_max]);
+
+  const handleSaveLimitePedidoDireto = async () => {
+    if (!empresaAtiva?.id) return;
+    setSavingLimite(true);
+    try {
+      const raw = limitePedidoDireto?.toString().trim();
+      const valor = raw === "" ? null : Number(raw);
+      if (raw !== "" && (Number.isNaN(valor) || valor < 0)) {
+        alert("Informe um valor numérico maior ou igual a zero, ou deixe em branco.");
+        setSavingLimite(false);
+        return;
+      }
+      await sigo.entities.Empresa.update(empresaAtiva.id, {
+        compras_pular_cotacao_valor_max: valor,
+      });
+      await reloadEmpresaAtiva?.();
+      alert("✅ Limite de pedido direto salvo.");
+    } catch (err) {
+      console.error("[AprovacaoConfigTab] erro ao salvar limite:", err);
+      alert("❌ " + (err?.message || "Erro ao salvar limite"));
+    } finally {
+      setSavingLimite(false);
+    }
+  };
 
   const loadData = React.useCallback(async () => {
     if (!empresaAtiva?.id) return;
@@ -192,6 +225,40 @@ export default function AprovacaoConfigTab({ empresaAtiva }) {
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Rocket className="w-5 h-5 text-emerald-600" /> Pedido direto sem cotação
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-slate-600">
+            Solicitações aprovadas com valor até este limite podem virar pedido direto sem passar
+            por cotação. Deixe em branco para sempre exigir cotação.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+            <div className="flex-1">
+              <label className="text-sm font-medium block mb-1">Valor máximo (R$)</label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Ex: 1500.00 — deixe em branco para desabilitar"
+                value={limitePedidoDireto}
+                onChange={(e) => setLimitePedidoDireto(e.target.value)}
+              />
+            </div>
+            <Button
+              onClick={handleSaveLimitePedidoDireto}
+              disabled={savingLimite}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              {savingLimite ? "Salvando..." : "Salvar"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {renderNiveis("SolicitacaoCompra")}
       {renderNiveis("OrcamentoProjeto")}
     </div>

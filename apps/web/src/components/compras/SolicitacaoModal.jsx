@@ -33,7 +33,37 @@ export default function SolicitacaoModal({
   const [sugestoesAberta, setSugestoesAberta] = React.useState(null);
   const [sugestaoFocada, setSugestaoFocada] = React.useState(-1);
   const [showImportar, setShowImportar] = React.useState(false);
+  // Cache de OrcamentoItem dos projetos selecionados pra sugerir preço estimado.
+  // Keys: material_id (uuid) e descricao.toLowerCase() — ambas resolvem pro mesmo valor_unitario.
+  const [orcamentoPrecos, setOrcamentoPrecos] = React.useState({
+    porMaterial: {},
+    porDescricao: {},
+  });
   const inputRefs = React.useRef({}); // refs para focar campos por index
+
+  const fmtBRL = (v) =>
+    (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+  // Preço sugerido pra um item: orçamento manda > material.preco_medio > material.preco
+  const sugerirPreco = React.useCallback(
+    (item) => {
+      if (form.origem === "Orcamento") {
+        const porMat = item.material_id ? orcamentoPrecos.porMaterial[item.material_id] : null;
+        const porDesc = item.descricao
+          ? orcamentoPrecos.porDescricao[item.descricao.toLowerCase()]
+          : null;
+        if (porMat != null) return porMat;
+        if (porDesc != null) return porDesc;
+      }
+      if (item.material_id) {
+        const m = materiais.find((mat) => mat.id === item.material_id);
+        if (m?.preco_medio != null) return m.preco_medio;
+        if (m?.preco != null) return m.preco;
+      }
+      return null;
+    },
+    [form.origem, orcamentoPrecos, materiais]
+  );
 
   const carregarMateriais = React.useCallback(async () => {
     if (!empresaAtiva?.id) return;
@@ -49,6 +79,7 @@ export default function SolicitacaoModal({
         nome: m.nome,
         tipo: "Material",
         preco: m.preco || null,
+        preco_medio: m.preco_medio || null,
         unidade: m.unidade || "UN",
         codigo: m.codigo || "",
       }));
@@ -58,6 +89,7 @@ export default function SolicitacaoModal({
           nome: f.descricao || f.nome,
           tipo: "Ferramenta",
           preco: null,
+          preco_medio: null,
           unidade: "UN",
           codigo: f.codigo || "",
         }))
@@ -74,6 +106,7 @@ export default function SolicitacaoModal({
   React.useEffect(() => {
     if (open && empresaAtiva?.id) {
       carregarMateriais();
+      setOrcamentoPrecos({ porMaterial: {}, porDescricao: {} });
     }
   }, [open, empresaAtiva?.id, carregarMateriais]);
 
@@ -84,6 +117,7 @@ export default function SolicitacaoModal({
       unidade: "UN",
       data_necessidade: "",
       ultimo_preco: null,
+      preco_unitario_estimado: null,
     };
     setForm((prev) => {
       const novos = [...prev.itens, novoItem];
@@ -151,6 +185,18 @@ export default function SolicitacaoModal({
         newItens[index].material_id = null;
         newItens[index].material_codigo = "";
       }
+
+      // Sugere preço estimado se o usuário ainda não digitou nada (não sobrescreve edição manual).
+      // Orçamento manda > preco_medio > preço cadastrado.
+      const jaTemPrecoManual =
+        newItens[index].preco_unitario_estimado != null &&
+        newItens[index].preco_unitario_estimado !== "";
+      if (!jaTemPrecoManual) {
+        const sugerido = sugerirPreco(newItens[index]);
+        if (sugerido != null) {
+          newItens[index].preco_unitario_estimado = sugerido;
+        }
+      }
     }
 
     setForm({ ...form, itens: newItens });
@@ -172,6 +218,16 @@ export default function SolicitacaoModal({
         }),
       ]);
 
+      // Index dos preços do orçamento pra sugerir em edições futuras
+      const porMaterial = {};
+      const porDescricao = {};
+      for (const o of orcamentoItens) {
+        if (o.valor_unitario == null) continue;
+        if (o.material_id) porMaterial[o.material_id] = o.valor_unitario;
+        if (o.descricao) porDescricao[o.descricao.toLowerCase()] = o.valor_unitario;
+      }
+      setOrcamentoPrecos({ porMaterial, porDescricao });
+
       if (orcamentoItens.length > 0) {
         const itensFormatados = orcamentoItens.map((item) => {
           const pedidoItem = todosPedidosItems.find((p) => p.descricao === item.descricao);
@@ -188,6 +244,7 @@ export default function SolicitacaoModal({
             qtd_reservada: qtdReservada,
             unidade: item.unidade,
             ultimo_preco: ultimoPreco,
+            preco_unitario_estimado: item.valor_unitario || null,
             material_id: item.material_id || null,
             material_codigo: item.codigo || "",
           };
@@ -213,6 +270,7 @@ export default function SolicitacaoModal({
               unidade: "UN",
               data_necessidade: "",
               ultimo_preco: null,
+              preco_unitario_estimado: null,
               qtd_reservada: 0,
             },
           ],
@@ -241,7 +299,14 @@ export default function SolicitacaoModal({
       const reservasDosProjetos = todasReservas.filter((r) => projetoIds.includes(r.projeto_id));
 
       const itensMap = {};
+      // Index de preços pra sugestão posterior
+      const porMaterial = {};
+      const porDescricao = {};
       todosOrcamentos.flat().forEach((item) => {
+        if (item.valor_unitario != null) {
+          if (item.material_id) porMaterial[item.material_id] = item.valor_unitario;
+          if (item.descricao) porDescricao[item.descricao.toLowerCase()] = item.valor_unitario;
+        }
         const key = item.descricao?.toLowerCase();
         if (!key) return;
         if (itensMap[key]) {
@@ -253,11 +318,13 @@ export default function SolicitacaoModal({
             quantidade_original: item.quantidade,
             unidade: item.unidade,
             ultimo_preco: pedidoItem?.valor_unitario || null,
+            preco_unitario_estimado: item.valor_unitario || null,
             material_id: item.material_id || null,
             material_codigo: item.codigo || "",
           };
         }
       });
+      setOrcamentoPrecos({ porMaterial, porDescricao });
 
       // Subtrair reservas
       const itens = Object.values(itensMap)
@@ -660,6 +727,34 @@ export default function SolicitacaoModal({
                         />
                       </div>
 
+                      <div className="w-32">
+                        <Label className="text-xs text-slate-600 mb-1.5 block">
+                          Preço unit. estimado
+                        </Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0,00"
+                          value={
+                            item.preco_unitario_estimado == null ? "" : item.preco_unitario_estimado
+                          }
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            updateItem(
+                              index,
+                              "preco_unitario_estimado",
+                              v === "" ? null : parseFloat(v) || 0
+                            );
+                          }}
+                          className="w-full"
+                        />
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          Valor estimado:{" "}
+                          {fmtBRL((item.quantidade || 0) * (item.preco_unitario_estimado || 0))}
+                        </p>
+                      </div>
+
                       {form.itens.length > 1 && (
                         <Button
                           type="button"
@@ -676,6 +771,19 @@ export default function SolicitacaoModal({
                 ))}
               </div>
 
+              <div className="mt-3 flex justify-end items-center gap-3 border-t pt-3">
+                <span className="text-xs text-slate-500">Total estimado da solicitação</span>
+                <span className="text-base font-semibold text-emerald-700">
+                  {fmtBRL(
+                    form.itens.reduce(
+                      (acc, it) =>
+                        acc +
+                        (Number(it.quantidade) || 0) * (Number(it.preco_unitario_estimado) || 0),
+                      0
+                    )
+                  )}
+                </span>
+              </div>
               <p className="text-xs text-slate-500 mt-2">
                 * Campos obrigatórios. Digite as últimas palavras para adicionar novos itens
                 automaticamente.
