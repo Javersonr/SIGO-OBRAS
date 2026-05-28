@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Plus, Trash2, Edit, Search, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,7 +81,7 @@ export default function InspecaoFerramenta() {
   const handleOpenModal = (insp = null) => {
     if (insp) {
       setFormData({ ...insp });
-      setItensInspecao(JSON.parse(insp.itens_inspecao || "[]"));
+      setItensInspecao(safeParseJSON(insp.itens_inspecao, []));
       setSelectedInspecao(insp);
     } else {
       setFormData({ ...inspecaoSchema, empresa_id: empresaAtiva.id });

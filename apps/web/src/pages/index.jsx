@@ -1,11 +1,12 @@
 import { useEffect } from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { createPageUrl } from "../utils";
 
 export default function Index() {
   useEffect(() => {
     try {
       const customAuth = sessionStorage.getItem("custom_auth");
-      const userData = customAuth ? JSON.parse(customAuth) : null;
+      const userData = customAuth ? safeParseJSON(customAuth, null) : null;
       if (userData?.id && userData?.email && userData?.empresa_id) {
         window.location.href = createPageUrl("Dashboard");
       } else {

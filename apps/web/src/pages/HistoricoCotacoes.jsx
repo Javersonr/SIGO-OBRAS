@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { createPageUrl } from "../utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -45,7 +46,7 @@ export default function HistoricoCotacoes() {
           return;
         }
 
-        const userData = JSON.parse(customAuth);
+        const userData = safeParseJSON(customAuth, {});
         if (!userData || userData.perfil !== "Fornecedor") {
           navigate(createPageUrl("EntrarSistema"), { replace: true });
           return;

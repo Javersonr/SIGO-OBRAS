@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -114,7 +115,7 @@ export default function ClientePortal() {
           email_cliente: tokenInfo.email_cliente,
         };
 
-        const abas = tokenInfo.abas_liberadas ? JSON.parse(tokenInfo.abas_liberadas) : {};
+        const abas = safeParseJSON(tokenInfo.abas_liberadas, {});
         setAbasLiberadas(abas);
         isVisualizacao = true;
       }
@@ -127,7 +128,7 @@ export default function ClientePortal() {
           return;
         }
 
-        const userData = JSON.parse(customAuth);
+        const userData = safeParseJSON(customAuth, {});
 
         // Buscar vínculo do usuário
         const vinculos = await sigo.entities.UsuarioEmpresa.filter({
@@ -614,8 +615,8 @@ export default function ClientePortal() {
           {activeTab === "diario" && (
             <div className="space-y-4">
               {diarios.map((diario) => {
-                const fotosData = diario.fotos ? JSON.parse(diario.fotos) : [];
-                const maoDeObraData = diario.mao_de_obra ? JSON.parse(diario.mao_de_obra) : [];
+                const fotosData = safeParseJSON(diario.fotos, []);
+                const maoDeObraData = safeParseJSON(diario.mao_de_obra, []);
 
                 return (
                   <Card key={diario.id}>

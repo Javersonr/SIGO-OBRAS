@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -92,7 +93,7 @@ export default function DashboardInspecoes() {
 
     inspecoes.forEach((inspecao) => {
       try {
-        const ferramentas = JSON.parse(inspecao.ferramentas_inspecionadas || "[]");
+        const ferramentas = safeParseJSON(inspecao.ferramentas_inspecionadas, []);
         const dia = moment(inspecao.data_inspecao).format("DD/MM");
 
         // Contadores por dia

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "../utils";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,7 @@ export default function EntrarSistema() {
     const customAuth = sessionStorage.getItem("custom_auth");
     if (customAuth) {
       try {
-        const userData = JSON.parse(customAuth);
+        const userData = safeParseJSON(customAuth, {});
         if (userData && userData.id && userData.empresa_id) {
           navigate(createPageUrl("Dashboard"), { replace: true });
         }

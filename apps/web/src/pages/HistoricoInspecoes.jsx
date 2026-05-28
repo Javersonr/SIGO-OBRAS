@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -195,7 +196,7 @@ export default function HistoricoInspecoes() {
   }, [filtros]);
 
   const getStatusInfo = (inspecao) => {
-    const ferramentas = JSON.parse(inspecao.ferramentas_inspecionadas || "[]");
+    const ferramentas = safeParseJSON(inspecao.ferramentas_inspecionadas, []);
     const totalItens = ferramentas.reduce((sum, f) => sum + f.itens.length, 0);
     const concluidos = ferramentas.reduce(
       (sum, f) => sum + f.itens.filter((i) => i.status_foto === "concluida").length,

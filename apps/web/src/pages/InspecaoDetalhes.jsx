@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
 import { createPageUrl } from "../utils";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -56,7 +57,7 @@ export default function InspecaoDetalhes() {
       setInspecao(data[0]);
 
       if (data[0].ferramentas_inspecionadas) {
-        const parsed = JSON.parse(data[0].ferramentas_inspecionadas);
+        const parsed = safeParseJSON(data[0].ferramentas_inspecionadas, []);
         setFerramentasInsp(parsed);
       }
     } catch (error) {

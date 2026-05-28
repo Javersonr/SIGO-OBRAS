@@ -186,7 +186,7 @@ export default function SaasAdmin() {
     try {
       const customAuth = sessionStorage.getItem("custom_auth");
       if (customAuth) {
-        const authData = JSON.parse(customAuth);
+        const authData = safeParseJSON(customAuth, {});
         if (!authData.is_super_admin) {
           setLoading(false);
           return;
@@ -772,7 +772,7 @@ export default function SaasAdmin() {
   const usuariosEmpresaFiltrados = usuarios.filter((u) => u.empresa_id === selectedEmpresa?.id);
 
   const customAuth = sessionStorage.getItem("custom_auth");
-  const customAuthData = customAuth ? JSON.parse(customAuth) : null;
+  const customAuthData = customAuth ? safeParseJSON(customAuth, null) : null;
   const isSuperAdmin = customAuthData?.is_super_admin === true;
 
   if (!customAuthData || !isSuperAdmin) {

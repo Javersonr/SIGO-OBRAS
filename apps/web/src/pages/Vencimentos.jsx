@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useContext } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { EmpresaContext } from "../Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,7 +51,7 @@ export default function Vencimentos() {
   const [estatisticasGrupo, setEstatisticasGrupo] = useState(null);
 
   // Determinar se é Admin Holding: verificar sessonStorage ou contexto
-  const customAuth = JSON.parse(sessionStorage.getItem("custom_auth") || "{}");
+  const customAuth = safeParseJSON(sessionStorage.getItem("custom_auth"), {});
   const grupoIdAuth = customAuth.grupo_id;
   const grupoIdVinculo = vinculo?.grupo_id;
   const isAdminHolding =
