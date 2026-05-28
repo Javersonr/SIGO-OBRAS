@@ -67,7 +67,10 @@ export default function FechamentoCaixaModal({
     setItens(itensProp || []);
     sigo.entities.Empresa.filter({ id: empresaId })
       .then((r) => setEmpresa(r[0] || null))
-      .catch(() => {});
+      .catch((err) => {
+        console.warn("[FechamentoCaixa] falha carregando empresa:", err);
+        setEmpresa(null);
+      });
   }, [open, itensProp, empresaId]);
 
   const total = itens.reduce((s, pl) => s + getValor(pl), 0);

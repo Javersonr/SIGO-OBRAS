@@ -358,7 +358,10 @@ export default function PreLancamentosAReconciliar({
     try {
       const data = await sigo.entities.Projeto.filter({ empresa_id: empresaId });
       setProjetos(data || []);
-    } catch {}
+    } catch (err) {
+      console.warn("[PreLancamentos] falha carregando projetos:", err);
+      setProjetos([]);
+    }
   };
 
   const carregarUsuarios = async () => {
@@ -368,7 +371,10 @@ export default function PreLancamentosAReconciliar({
         ativo: true,
       });
       setUsuarios(data || []);
-    } catch {}
+    } catch (err) {
+      console.warn("[PreLancamentos] falha carregando usuarios:", err);
+      setUsuarios([]);
+    }
   };
 
   const carregarPreLancamentos = async () => {

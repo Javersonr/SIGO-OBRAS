@@ -23,10 +23,16 @@ export default function EditarPreLancamentoComDespesaModal({
     if (!empresaAtiva?.id) return;
     sigo.entities.Fornecedor.filter({ empresa_id: empresaAtiva.id })
       .then(setFornecedores)
-      .catch(() => {});
+      .catch((err) => {
+        console.warn("[EditarPreLancamento] falha carregando fornecedores:", err);
+        setFornecedores([]);
+      });
     sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id })
       .then(setProjetos)
-      .catch(() => {});
+      .catch((err) => {
+        console.warn("[EditarPreLancamento] falha carregando projetos:", err);
+        setProjetos([]);
+      });
   }, [empresaAtiva?.id]);
 
   useEffect(() => {

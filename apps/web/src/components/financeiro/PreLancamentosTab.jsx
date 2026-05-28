@@ -61,7 +61,10 @@ export default function PreLancamentosTab({
     if (!empresaAtiva?.id) return;
     sigo.entities.UsuarioEmpresa.filter({ empresa_id: empresaAtiva.id, ativo: true })
       .then((users) => setUsuarios(users || []))
-      .catch(() => {});
+      .catch((err) => {
+        console.warn("[PreLancamentosTab] falha carregando usuarios:", err);
+        setUsuarios([]);
+      });
   }, [empresaAtiva?.id]);
 
   const { online, itemsPendentes, sincronizando, marcarSincronizado, deletarOffline } =
@@ -221,7 +224,9 @@ export default function PreLancamentosTab({
           const nomeArq = `${String(i + 1).padStart(3, "0")}_${(d.fornecedor || "sem_fornecedor").replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30)}_${(d.data || "").replace(/-/g, "")}.${ext}`;
           zip.file(nomeArq, blob);
           baixados++;
-        } catch {}
+        } catch (err) {
+          console.warn("[PreLancamentosTab] falha baixando comprovante:", err);
+        }
       }
 
       if (baixados === 0) {

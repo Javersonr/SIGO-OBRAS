@@ -86,12 +86,14 @@ export default function WidgetDashEstoque({ onDadosCarregados }) {
                 m.motivo?.toLowerCase().includes("devol")
             )
             .reduce((a, m) => a + (m.quantidade || 0), 0);
+          // movItem pode ser array vazio se filter não casar (improvável aqui mas defensivo)
+          const primeiroMov = movItem?.[0] ?? null;
           return {
             id,
             nome: mat?.nome || "Desconhecido",
             codigo: mat?.codigo || "",
-            projeto_id: movItem[0]?.projeto_id || "",
-            projeto_nome: movItem[0]?.projeto_nome || "",
+            projeto_id: primeiroMov?.projeto_id ?? "",
+            projeto_nome: primeiroMov?.projeto_nome ?? "",
             entradas,
             saidas,
             devolucoes,

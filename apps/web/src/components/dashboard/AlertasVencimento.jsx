@@ -35,14 +35,20 @@ export default function AlertasVencimento() {
     });
     setEmpresasMap(mapa);
 
-    // Buscar despesas E receitas de todas as empresas em paralelo
-    Promise.all(
+    // Buscar despesas E receitas de todas as empresas em paralelo.
+    // allSettled garante que 1 query falhando não trava o componente em loading.
+    Promise.allSettled(
       empresas.flatMap((e) => [
         sigo.entities.TransacaoFinanceira.filter({ empresa_id: e.id, tipo: "Despesa" }),
         sigo.entities.TransacaoFinanceira.filter({ empresa_id: e.id, tipo: "Receita" }),
       ])
     ).then((resultados) => {
-      setTransacoes(resultados.flat());
+      const ok = resultados.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+      const falhas = resultados.filter((r) => r.status === "rejected");
+      if (falhas.length > 0) {
+        console.warn(`[AlertasVencimento] ${falhas.length} query(s) falharam:`, falhas[0]?.reason);
+      }
+      setTransacoes(ok);
     });
   }, [empresas]);
 

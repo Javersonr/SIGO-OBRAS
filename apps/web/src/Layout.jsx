@@ -98,6 +98,11 @@ const menuItems = [
   { name: "SAAS Admin", icon: Building2, path: "SaasAdmin", superAdminOnly: true },
 ];
 
+// Tempo máximo (ms) que o spinner "Carregando seus dados..." pode ficar travado
+// antes de o sistema desistir e mandar o usuário pro login. Evita tela branca
+// permanente se loadCustomUserData ficar pendurado por bug/timeout silencioso.
+const USER_LOAD_TIMEOUT_MS = 8000;
+
 export default function Layout({ children, currentPageName }) {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
@@ -137,16 +142,17 @@ export default function Layout({ children, currentPageName }) {
   useEffect(() => {
     let isMounted = true;
 
+    // Recomputamos isPublicPage/isFornecedorPage aqui dentro pra não depender
+    // de referências instáveis nas deps (que causavam initAuth rodar 2x).
+    const _isFornecedor = fornecedorPages.includes(currentPageName);
+    const _isPublic = publicPages.includes(currentPageName) || _isFornecedor;
+
     const initAuth = async () => {
       try {
-        // PRIMEIRO: Verificar se é página pública ou de fornecedor ANTES de qualquer autenticação
-        if (isPublicPage || isFornecedorPage) {
-          console.log(`[Layout] Página ${currentPageName} é pública/fornecedor - sem autenticação`);
+        if (_isPublic) {
           setLoading(false);
           return;
         }
-
-        console.log(`[Layout] Página ${currentPageName} requer autenticação`);
         setLoading(true);
 
         // APENAS autenticação customizada - usar sessionStorage (limpa ao fechar navegador)
@@ -179,9 +185,10 @@ export default function Layout({ children, currentPageName }) {
               });
               setEmpresasDoGrupo(empresasGrupo);
             } catch (grupoErr) {
-              if (grupoErr?.status === 429) {
-                console.warn("[Layout] Rate limit ao carregar grupo, continuando...");
-              }
+              // Qualquer erro carregando empresas do grupo: limpa array pra
+              // não deixar grupoAtivo setado com lista vazia (trava o seletor).
+              console.warn("[Layout] Erro carregando empresas do grupo:", grupoErr);
+              setEmpresasDoGrupo([]);
             }
           }
 
@@ -215,7 +222,25 @@ export default function Layout({ children, currentPageName }) {
     return () => {
       isMounted = false;
     };
-  }, [currentPageName, isPublicPage, isFornecedorPage, navigate]);
+    // Deps mínimas e estáveis. fornecedorPages/publicPages são constantes
+    // declaradas no escopo do componente (não-reativas).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPageName, navigate]);
+
+  // Safety net: se loading=false mas user=null (loadCustomUserData engasgou),
+  // espera USER_LOAD_TIMEOUT_MS e força redirect pro login em vez de deixar
+  // o usuário olhando spinner pra sempre.
+  useEffect(() => {
+    if (loading || user) return;
+    if (publicPages.includes(currentPageName)) return;
+    const timer = setTimeout(() => {
+      console.warn("[Layout] user=null após timeout, redirecionando pro login");
+      sessionStorage.clear();
+      navigate(createPageUrl("EntrarSistema"), { replace: true });
+    }, USER_LOAD_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, user, currentPageName, navigate]);
 
   // Polling para notificações não lidas - apenas quando painel está aberto
   useEffect(() => {
@@ -520,7 +545,13 @@ export default function Layout({ children, currentPageName }) {
     if (!user || !empresaAtiva) return [];
 
     const currentPerfil = vinculo?.perfil || "Admin";
-    const customAuth = JSON.parse(sessionStorage.getItem("custom_auth") || "{}");
+    let customAuth = {};
+    try {
+      customAuth = JSON.parse(sessionStorage.getItem("custom_auth") || "{}");
+    } catch (e) {
+      console.error("[Layout] sessionStorage.custom_auth corrompido:", e);
+      customAuth = {};
+    }
     const isSuperAdmin = customAuth.is_super_admin === true;
 
     return menuItems.filter((item) => {

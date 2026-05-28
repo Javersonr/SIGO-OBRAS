@@ -772,10 +772,18 @@ function ModalDesfazerPagamento({ fechamento, onClose, onSucesso }) {
               transacao_id: pl.transacao_id,
             });
             await Promise.all(anexos.map((a) => sigo.entities.TransacaoAnexo.delete(a.id)));
-          } catch {}
+          } catch (err) {
+            console.warn(
+              "[HistoricoFechamentos] falha apagando anexos da transacao",
+              pl.transacao_id,
+              err
+            );
+          }
           try {
             await sigo.entities.TransacaoFinanceira.delete(pl.transacao_id);
-          } catch {}
+          } catch (err) {
+            console.warn("[HistoricoFechamentos] falha apagando transacao", pl.transacao_id, err);
+          }
         }
         await sigo.entities.PreLancamento.update(pl.id, {
           status: "Em Fechamento",
@@ -794,7 +802,9 @@ function ModalDesfazerPagamento({ fechamento, onClose, onSucesso }) {
           t.descricao?.includes(`Fechamento #${fechamento.numero}`)
         );
         if (reposicao) await sigo.entities.TransacaoFinanceira.delete(reposicao.id);
-      } catch {}
+      } catch (err) {
+        console.warn("[HistoricoFechamentos] falha buscando/apagando transacao de reposicao:", err);
+      }
 
       // Reverter fechamento para "Aguardando Pagamento"
       await sigo.entities.FechamentoCaixa.update(fechamento.id, {

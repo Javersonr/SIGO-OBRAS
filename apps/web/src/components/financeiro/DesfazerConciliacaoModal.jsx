@@ -44,7 +44,9 @@ export default function DesfazerConciliacaoModal({
         try {
           const anexos = await sigo.entities.TransacaoAnexo.filter({ transacao_id: transacao.id });
           await Promise.all(anexos.map((a) => sigo.entities.TransacaoAnexo.delete(a.id)));
-        } catch {}
+        } catch (err) {
+          console.warn("[DesfazerConciliacao] falha apagando anexos:", err);
+        }
         await sigo.entities.TransacaoFinanceira.delete(transacao.id);
       }
 

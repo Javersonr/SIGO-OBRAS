@@ -1,40 +1,46 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import { useAuth } from "./AuthContext";
 import { sigo } from "@/api/sigoClient";
 import { pagesConfig } from "@/pages.config";
 
+/**
+ * Loga a página visitada em background (fire-and-forget).
+ * "Autenticado" = sessionStorage.custom_auth tem id+empresa_id válidos.
+ */
+function isAuthenticated() {
+  try {
+    const raw = sessionStorage.getItem("custom_auth");
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    return Boolean(data?.id && data?.empresa_id);
+  } catch {
+    return false;
+  }
+}
+
 export default function NavigationTracker() {
   const location = useLocation();
-  const { isAuthenticated } = useAuth();
   const { Pages, mainPage } = pagesConfig;
   const mainPageKey = mainPage ?? Object.keys(Pages)[0];
 
-  // Log user activity when navigating to a page
   useEffect(() => {
-    // Extract page name from pathname
     const pathname = location.pathname;
     let pageName;
 
     if (pathname === "/" || pathname === "") {
       pageName = mainPageKey;
     } else {
-      // Remove leading slash and get the first segment
       const pathSegment = pathname.replace(/^\//, "").split("/")[0];
-
-      // Try case-insensitive lookup in Pages config
       const pageKeys = Object.keys(Pages);
-      const matchedKey = pageKeys.find((key) => key.toLowerCase() === pathSegment.toLowerCase());
-
-      pageName = matchedKey || null;
+      pageName = pageKeys.find((key) => key.toLowerCase() === pathSegment.toLowerCase()) || null;
     }
 
-    if (isAuthenticated && pageName) {
+    if (isAuthenticated() && pageName && sigo?.appLogs?.logUserInApp) {
       sigo.appLogs.logUserInApp(pageName).catch(() => {
-        // Silently fail - logging shouldn't break the app
+        // logging silencioso por design — nunca quebrar UX por causa de telemetria
       });
     }
-  }, [location, isAuthenticated, Pages, mainPageKey]);
+  }, [location, Pages, mainPageKey]);
 
   return null;
 }

@@ -6,8 +6,6 @@ import NavigationTracker from "@/lib/NavigationTracker";
 import { pagesConfig } from "./pages.config";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 import PageNotFound from "./lib/PageNotFound";
-import { AuthProvider, useAuth } from "@/lib/AuthContext";
-import UserNotRegisteredError from "@/components/UserNotRegisteredError";
 import EntrarSistema from "./pages/EntrarSistema";
 
 const { Pages, Layout, mainPage } = pagesConfig;
@@ -24,51 +22,34 @@ const RouteSpinner = () => (
   </div>
 );
 
-const AuthenticatedApp = () => {
-  const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
-
-  // Mostra spinner enquanto checa public settings ou auth
-  if (isLoadingPublicSettings || isLoadingAuth) {
-    return <RouteSpinner />;
-  }
-
-  // Erros de autenticação
-  if (authError) {
-    if (authError.type === "user_not_registered") {
-      return <UserNotRegisteredError />;
-    } else if (authError.type === "auth_required") {
-      navigateToLogin();
-      return null;
-    }
-  }
-
-  return (
-    <Suspense fallback={<RouteSpinner />}>
-      <Routes>
+// Toda a autenticação acontece dentro do Layout (sessionStorage custom_auth).
+// Esse wrapper só fornece o shell de rotas + React Query.
+const AuthenticatedApp = () => (
+  <Suspense fallback={<RouteSpinner />}>
+    <Routes>
+      <Route
+        path="/"
+        element={
+          <LayoutWrapper currentPageName={mainPageKey}>
+            <MainPage />
+          </LayoutWrapper>
+        }
+      />
+      {Object.entries(Pages).map(([path, Page]) => (
         <Route
-          path="/"
+          key={path}
+          path={`/${path}`}
           element={
-            <LayoutWrapper currentPageName={mainPageKey}>
-              <MainPage />
+            <LayoutWrapper currentPageName={path}>
+              <Page />
             </LayoutWrapper>
           }
         />
-        {Object.entries(Pages).map(([path, Page]) => (
-          <Route
-            key={path}
-            path={`/${path}`}
-            element={
-              <LayoutWrapper currentPageName={path}>
-                <Page />
-              </LayoutWrapper>
-            }
-          />
-        ))}
-        <Route path="*" element={<PageNotFound />} />
-      </Routes>
-    </Suspense>
-  );
-};
+      ))}
+      <Route path="*" element={<PageNotFound />} />
+    </Routes>
+  </Suspense>
+);
 
 function App() {
   return (
@@ -81,13 +62,11 @@ function App() {
         <Route
           path="/*"
           element={
-            <AuthProvider>
-              <QueryClientProvider client={queryClientInstance}>
-                <NavigationTracker />
-                <AuthenticatedApp />
-                <Toaster />
-              </QueryClientProvider>
-            </AuthProvider>
+            <QueryClientProvider client={queryClientInstance}>
+              <NavigationTracker />
+              <AuthenticatedApp />
+              <Toaster />
+            </QueryClientProvider>
           }
         />
       </Routes>

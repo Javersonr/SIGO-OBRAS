@@ -37,7 +37,10 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
       .then((data) => {
         if (!cancelled) setCentrosCusto(data);
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.warn("[RelatoriosTab] falha carregando centros de custo:", err);
+        if (!cancelled) setCentrosCusto([]);
+      });
     return () => {
       cancelled = true;
     };

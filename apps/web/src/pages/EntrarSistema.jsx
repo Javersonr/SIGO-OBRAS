@@ -365,8 +365,19 @@ export default function EntrarSistema() {
                       <button
                         key={grupo.id}
                         onClick={() => {
+                          // Bug histórico: pegava sempre empresasDisponiveis[0] —
+                          // se o usuário tem 2 grupos, clicar em B abria empresa de A.
+                          // Agora filtramos as empresas DO grupo escolhido e entramos
+                          // na primeira (ou empresa marcada como principal).
+                          const empresasDoGrupo = empresasDisponiveis.filter(
+                            (e) => e.grupo_id === grupo.id
+                          );
+                          const empresaInicial =
+                            empresasDoGrupo.find((e) => e.id === grupo.empresa_principal_id) ||
+                            empresasDoGrupo[0] ||
+                            empresasDisponiveis[0];
                           setUsuarioBase({ ...usuarioBase, grupo_selecionado: grupo.id });
-                          handleSelecionarEmpresa(empresasDisponiveis[0]);
+                          handleSelecionarEmpresa(empresaInicial);
                         }}
                         disabled={loading}
                         className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-lg transition-all text-left disabled:opacity-50 hover:border-slate-300"
