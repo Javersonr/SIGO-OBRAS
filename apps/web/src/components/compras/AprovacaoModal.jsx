@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, supabase } from "@/api/sigoClient";
+import { useEmpresa } from "@/Layout";
 
 /**
  * Escapa caracteres HTML pra prevenir XSS quando interpolamos dados
@@ -50,6 +51,12 @@ export default function AprovacaoModal({
   user,
   onApproved,
 }) {
+  // Pegamos o perfil do vínculo (Admin, Supervisor, Gerente, etc).
+  // Usado pra validar quem pode aprovar cada faixa (RPC valida server-side
+  // mas evitamos a viagem de rede quando obviamente não tem perfil).
+  const { vinculo } = useEmpresa();
+  const perfilUsuario = vinculo?.perfil || "Operador";
+
   const [loading, setLoading] = useState(true);
   const [itens, setItens] = useState([]);
   const [itensEnriquecidos, setItensEnriquecidos] = useState([]);
@@ -57,6 +64,13 @@ export default function AprovacaoModal({
   const [processando, setProcessando] = useState(false);
   const [itensSelecionados, setItensSelecionados] = useState([]);
   const [aprovarTodos, setAprovarTodos] = useState(true);
+
+  // Solicitante não pode aprovar a si mesmo — server-side bloqueia,
+  // aqui apenas escondemos o botão pra evitar confusão.
+  const isSolicitante =
+    solicitacao?.solicitante_id === user?.id ||
+    String(solicitacao?.solicitante_nome || "").toLowerCase() ===
+      String(user?.full_name || "").toLowerCase();
 
   useEffect(() => {
     if (open && solicitacao) {
@@ -141,14 +155,26 @@ export default function AprovacaoModal({
   };
 
   const handleDecisao = async (decisao) => {
+    if (!solicitacao?.id) {
+      alert("Erro: Dados inválidos");
+      return;
+    }
+    if (!supabase) {
+      alert("Erro: backend Supabase não disponível");
+      return;
+    }
+
+    // Rejeição exige motivo claro (a RPC valida mínimo 5 chars)
+    if (decisao === "Rejeitado" && (!comentarios || comentarios.trim().length < 5)) {
+      alert("Informe o motivo da rejeição no campo de comentários (mínimo 5 caracteres).");
+      return;
+    }
+
     setProcessando(true);
     try {
-      if (!solicitacao?.id) {
-        alert("Erro: Dados inválidos");
-        return;
-      }
-
-      // Atualizar quantidades apenas dos itens que mudaram, sequencialmente
+      // 1) Salva alterações de quantidade nos itens (mesma lógica original).
+      //    O trigger trg_sync_total_solicitacao recalcula valor_total_estimado
+      //    automaticamente — não precisamos atualizar manualmente.
       const itensAlterados = itensEnriquecidos.filter(
         (item) => item.quantidade_editavel !== item.quantidade
       );
@@ -158,24 +184,53 @@ export default function AprovacaoModal({
         });
       }
 
-      const response = await sigo.functions.invoke("processarAprovacao", {
-        decisao,
-        comentarios,
-        aprovador_id: user?.id,
-        aprovador_nome: user?.full_name,
-        empresa_id: empresaAtiva?.id,
-        solicitacao_id: solicitacao.id,
-      });
+      // 2) Chama a RPC apropriada. Ela faz:
+      //    - bloqueio de auto-aprovação (solicitante != aprovador)
+      //    - validação de perfil contra perfis_aprovadores do nível
+      //    - validação de valor contra faixa do nível
+      //    - avança pro próximo nível ou marca Aprovada/Rejeitada
+      //    - registra em aprovacao_solicitacao + dispara notificação
+      const fn =
+        decisao === "Aprovado" ? "aprovar_solicitacao_compra" : "rejeitar_solicitacao_compra";
 
-      if (response.data?.success) {
-        alert(`✅ Solicitação ${decisao === "Aprovado" ? "aprovada" : "reprovada"} com sucesso!`);
-        onApproved();
-        onOpenChange(false);
+      const args =
+        decisao === "Aprovado"
+          ? {
+              p_solicitacao_id: solicitacao.id,
+              p_aprovador_email: user?.email,
+              p_aprovador_nome: user?.full_name,
+              p_aprovador_perfil: perfilUsuario,
+              p_comentario: comentarios || null,
+            }
+          : {
+              p_solicitacao_id: solicitacao.id,
+              p_aprovador_email: user?.email,
+              p_aprovador_nome: user?.full_name,
+              p_aprovador_perfil: perfilUsuario,
+              p_motivo: comentarios,
+            };
+
+      const { data, error } = await supabase.rpc(fn, args);
+      if (error) throw error;
+
+      // Resposta de aprovar é jsonb { aprovada_final, proximo_nivel, mensagem }
+      if (decisao === "Aprovado") {
+        const r = typeof data === "string" ? JSON.parse(data) : data;
+        alert(
+          (r?.aprovada_final
+            ? "✅ Solicitação APROVADA em todos os níveis!"
+            : "✅ Aprovado neste nível.") + (r?.mensagem ? "\n\n" + r.mensagem : "")
+        );
       } else {
-        throw new Error(response.data?.error || "Erro ao processar");
+        alert("Solicitação rejeitada. O solicitante foi notificado.");
       }
-    } catch (error) {
-      alert("❌ " + (error.message || "Erro ao processar aprovação"));
+
+      onApproved?.();
+      onOpenChange(false);
+    } catch (err) {
+      console.error("[AprovacaoModal] erro na decisão:", err);
+      // PostgreSQL erros vêm com message; supabase-js encapsula em err.message
+      alert("❌ " + (err?.message || "Erro ao processar aprovação"));
     } finally {
       setProcessando(false);
     }
@@ -213,25 +268,33 @@ export default function AprovacaoModal({
               <div className="flex items-center justify-between">
                 <SheetTitle>Revisar Solicitação - {solicitacao?.numero}</SheetTitle>
                 <div className="flex gap-2">
-                  <Button
-                    onClick={() => handleDecisao("Aprovado")}
-                    disabled={processando || (!aprovarTodos && itensSelecionados.length === 0)}
-                    size="sm"
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    <ThumbsUp className="w-4 h-4 mr-2" />
-                    Aprovar
-                  </Button>
-                  <Button
-                    onClick={() => handleDecisao("Rejeitado")}
-                    disabled={processando || (!aprovarTodos && itensSelecionados.length === 0)}
-                    size="sm"
-                    variant="outline"
-                    className="text-red-600 border-red-600 hover:bg-red-50"
-                  >
-                    <ThumbsDown className="w-4 h-4 mr-2" />
-                    Reprovar
-                  </Button>
+                  {isSolicitante ? (
+                    <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded">
+                      Você é o solicitante — outra pessoa precisa aprovar.
+                    </div>
+                  ) : (
+                    <>
+                      <Button
+                        onClick={() => handleDecisao("Aprovado")}
+                        disabled={processando || (!aprovarTodos && itensSelecionados.length === 0)}
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        <ThumbsUp className="w-4 h-4 mr-2" />
+                        Aprovar
+                      </Button>
+                      <Button
+                        onClick={() => handleDecisao("Rejeitado")}
+                        disabled={processando || (!aprovarTodos && itensSelecionados.length === 0)}
+                        size="sm"
+                        variant="outline"
+                        className="text-red-600 border-red-600 hover:bg-red-50"
+                      >
+                        <ThumbsDown className="w-4 h-4 mr-2" />
+                        Reprovar
+                      </Button>
+                    </>
+                  )}
                   <Button
                     onClick={async () => {
                       if (
