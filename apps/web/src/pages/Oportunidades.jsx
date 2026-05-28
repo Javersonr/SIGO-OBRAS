@@ -3,6 +3,7 @@ import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "../utils";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Plus, Edit, Trash2, Calendar, User, X, FileText, Copy, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,13 +39,13 @@ import OportunidadeDetalhe from "../components/oportunidades/OportunidadeDetalhe
 export default function Oportunidades() {
   const { empresaAtiva, perfil, user, temPermissao, vinculo } = useEmpresa();
 
-  const permissoes = React.useMemo(() => {
-    try {
-      return vinculo?.permissoes ? JSON.parse(vinculo.permissoes) : {};
-    } catch {
-      return {};
-    }
-  }, [vinculo?.permissoes]);
+  // permissoes / responsaveis_ids / campos_padrao / itens_json são JSONB —
+  // vêm como objeto pelo supabase-js, não como string. JSON.parse direto
+  // virava "[object Object]" e quebrava a página.
+  const permissoes = React.useMemo(
+    () => safeParseJSON(vinculo?.permissoes, {}),
+    [vinculo?.permissoes]
+  );
 
   const temPermissoesGranulares = Object.keys(permissoes).length > 0;
   const podeVerValores = perfil === "Admin" || !temPermissoesGranulares;
@@ -259,7 +260,7 @@ export default function Oportunidades() {
     // Converter IDs de responsáveis para emails ao migrar
     let responsaveisEmails = "[]";
     try {
-      const ids = JSON.parse(op.responsaveis_ids || "[]");
+      const ids = safeParseJSON(op.responsaveis_ids, []);
       const emails = ids
         .map((id) => {
           const vinculo = usuariosEmpresa.find((u) => u.id === id);
@@ -383,7 +384,7 @@ export default function Oportunidades() {
           ? op.responsaveis_ids
           : (() => {
               try {
-                return JSON.parse(op.responsaveis_ids || "[]");
+                return safeParseJSON(op.responsaveis_ids, []);
               } catch {
                 return [];
               }
@@ -482,7 +483,7 @@ export default function Oportunidades() {
             ? formData.responsaveis_ids
             : (() => {
                 try {
-                  return JSON.parse(formData.responsaveis_ids || "[]");
+                  return safeParseJSON(formData.responsaveis_ids, []);
                 } catch {
                   return [];
                 }
@@ -727,10 +728,8 @@ export default function Oportunidades() {
   const handleApplyTemplate = (templateId) => {
     const template = templates.find((t) => t.id === templateId);
     if (template?.campos_padrao) {
-      try {
-        const campos = JSON.parse(template.campos_padrao);
-        setFormData((prev) => ({ ...prev, ...campos, template_id: templateId }));
-      } catch {}
+      const campos = safeParseJSON(template.campos_padrao, null);
+      if (campos) setFormData((prev) => ({ ...prev, ...campos, template_id: templateId }));
     }
   };
 
@@ -1019,7 +1018,8 @@ export default function Oportunidades() {
     const template = templates.find((t) => t.id === templateId);
     if (!template?.itens_json || !selectedOp) return;
     try {
-      const itens = JSON.parse(template.itens_json);
+      const itens = safeParseJSON(template.itens_json, []);
+      if (!Array.isArray(itens) || itens.length === 0) return;
       await sigo.entities.OrcamentoItem.bulkCreate(
         itens.map((item, i) => ({
           empresa_id: empresaAtiva.id,
@@ -1053,7 +1053,7 @@ export default function Oportunidades() {
       const meuVinculo = usuariosEmpresa.find((u) => u.usuario_email === user.email);
       filtered = filtered.filter((op) => {
         try {
-          const ids = JSON.parse(op.responsaveis_ids || "[]");
+          const ids = safeParseJSON(op.responsaveis_ids, []);
           // Verificar por email (padrão atual) OU por ID (compatibilidade com registros antigos)
           return ids.includes(user.email) || (meuVinculo ? ids.includes(meuVinculo.id) : false);
         } catch {
@@ -1254,7 +1254,7 @@ export default function Oportunidades() {
                                             try {
                                               return Array.isArray(op.responsaveis_ids)
                                                 ? op.responsaveis_ids
-                                                : JSON.parse(op.responsaveis_ids || "[]");
+                                                : safeParseJSON(op.responsaveis_ids, []);
                                             } catch {
                                               return [];
                                             }
@@ -1401,7 +1401,7 @@ export default function Oportunidades() {
                           try {
                             return Array.isArray(op.responsaveis_ids)
                               ? op.responsaveis_ids
-                              : JSON.parse(op.responsaveis_ids || "[]");
+                              : safeParseJSON(op.responsaveis_ids, []);
                           } catch {
                             return [];
                           }

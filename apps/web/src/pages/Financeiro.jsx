@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import { useSearchParams } from "react-router-dom";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Select,
@@ -36,14 +37,12 @@ export default function Financeiro() {
   const [fornecedores, setFornecedores] = useState([]);
   const [clientes, setClientes] = useState([]);
 
-  // Determinar quais abas o usuário pode acessar
-  const permissoes = React.useMemo(() => {
-    try {
-      return vinculo?.permissoes ? JSON.parse(vinculo.permissoes) : {};
-    } catch {
-      return {};
-    }
-  }, [vinculo?.permissoes]);
+  // permissoes é JSONB no Postgres → vem como objeto pelo supabase-js,
+  // safeParseJSON aceita tanto string quanto objeto sem lançar.
+  const permissoes = React.useMemo(
+    () => safeParseJSON(vinculo?.permissoes, {}),
+    [vinculo?.permissoes]
+  );
 
   // Resumo apenas para Admin ou para quem tem permissão específica
   const temAbaResumo = perfil === "Admin" || temPermissao("Financeiro", "Resumo");

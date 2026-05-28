@@ -1,5 +1,6 @@
 import React, { useState, useRef } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -325,15 +326,10 @@ export default function OportunidadeDetalhe({
                           </DropdownMenu>
 
                           <ResponsaveisSelect
-                            responsaveisEmails={(() => {
-                              try {
-                                return Array.isArray(selectedOp.responsaveis_ids)
-                                  ? selectedOp.responsaveis_ids
-                                  : JSON.parse(selectedOp.responsaveis_ids || "[]");
-                              } catch {
-                                return [];
-                              }
-                            })()}
+                            // responsaveis_ids é JSONB: vem como array pelo
+                            // supabase-js. Em registros legacy pode vir string —
+                            // safeParseJSON aceita ambos.
+                            responsaveisEmails={safeParseJSON(selectedOp.responsaveis_ids, [])}
                             usuarios={usuariosEmpresa}
                             onUpdate={async (newIds) => {
                               const novoValor = JSON.stringify(newIds);

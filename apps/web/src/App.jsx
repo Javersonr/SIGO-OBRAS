@@ -7,6 +7,7 @@ import { pagesConfig } from "./pages.config";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 import PageNotFound from "./lib/PageNotFound";
 import EntrarSistema from "./pages/EntrarSistema";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -41,7 +42,12 @@ const AuthenticatedApp = () => (
           path={`/${path}`}
           element={
             <LayoutWrapper currentPageName={path}>
-              <Page />
+              {/* ErrorBoundary por página: se essa página específica quebrar,
+                  o resto do app (sidebar, header) continua funcional e o
+                  usuário vê uma mensagem clara em vez de tela 100% branca. */}
+              <ErrorBoundary scope={path}>
+                <Page />
+              </ErrorBoundary>
             </LayoutWrapper>
           }
         />

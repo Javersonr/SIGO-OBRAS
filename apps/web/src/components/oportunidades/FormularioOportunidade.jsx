@@ -1,4 +1,5 @@
 import React from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -90,17 +91,8 @@ export default function FormularioOportunidade({
         <Label>Responsável *</Label>
         <div className="mt-1.5">
           <ResponsaveisSelect
-            responsaveisEmails={
-              Array.isArray(formData.responsaveis_ids)
-                ? formData.responsaveis_ids
-                : (() => {
-                    try {
-                      return JSON.parse(formData.responsaveis_ids || "[]");
-                    } catch {
-                      return [];
-                    }
-                  })()
-            }
+            // responsaveis_ids é JSONB: pode vir array (supabase-js) ou string (legacy)
+            responsaveisEmails={safeParseJSON(formData.responsaveis_ids, [])}
             usuarios={usuariosEmpresa}
             onUpdate={(newIds) => setFormData({ ...formData, responsaveis_ids: newIds })}
             buttonSize="h-10 w-10"

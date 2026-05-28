@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Search, X, Filter } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -13,11 +14,13 @@ export default function BuscaAvancada({ oportunidades, onResultsChange, statusLi
   const inputRef = useRef(null);
   const suggestionsRef = useRef(null);
 
-  // Carregar histórico do localStorage
+  // Carregar histórico do localStorage. safeParseJSON cobre o caso de corrupção
+  // (storage manual editado por usuário ou versão antiga do app).
   useEffect(() => {
     const history = localStorage.getItem("oportunidades_search_history");
     if (history) {
-      setSearchHistory(JSON.parse(history));
+      const parsed = safeParseJSON(history, []);
+      setSearchHistory(Array.isArray(parsed) ? parsed : []);
     }
   }, []);
 
@@ -43,15 +46,16 @@ export default function BuscaAvancada({ oportunidades, onResultsChange, statusLi
         const matchModalidade = op.licitacao_modalidade?.toLowerCase().includes(lowerTerm);
         let matchResponsavel = false;
         if (op.responsaveis_ids) {
-          try {
-            const ids = JSON.parse(op.responsaveis_ids);
+          // JSONB: pode vir array (supabase-js) ou string (legacy)
+          const ids = safeParseJSON(op.responsaveis_ids, []);
+          if (Array.isArray(ids) && ids.length > 0) {
             matchResponsavel = usuarios.some(
               (u) =>
                 ids.includes(u.id) &&
                 (u.usuario_email?.toLowerCase().includes(lowerTerm) ||
                   u.nome_completo?.toLowerCase().includes(lowerTerm))
             );
-          } catch {}
+          }
         }
         return (
           matchTitulo ||
