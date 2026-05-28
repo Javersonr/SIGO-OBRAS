@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -75,7 +76,7 @@ export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, 
   useEffect(() => {
     if (usuario && open) {
       try {
-        const perms = usuario.permissoes ? JSON.parse(usuario.permissoes) : {};
+        const perms = safeParseJSON(usuario.permissoes, {});
         setForm({
           nome_completo: usuario.nome_completo || "",
           email: usuario.usuario_email,

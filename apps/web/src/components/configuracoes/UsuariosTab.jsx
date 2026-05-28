@@ -1,4 +1,5 @@
 import React from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +40,7 @@ export default function UsuariosTab({
               <p className="text-2xl font-bold text-blue-700">
                 {
                   usuarios.filter((u) => {
-                    const p = u.permissoes ? JSON.parse(u.permissoes) : {};
+                    const p = safeParseJSON(u.permissoes, {});
                     return Object.keys(p).length === 0;
                   }).length
                 }
@@ -51,7 +52,7 @@ export default function UsuariosTab({
               <p className="text-2xl font-bold text-purple-700">
                 {
                   usuarios.filter((u) => {
-                    const p = u.permissoes ? JSON.parse(u.permissoes) : {};
+                    const p = safeParseJSON(u.permissoes, {});
                     return Object.keys(p).length > 0;
                   }).length
                 }
@@ -123,7 +124,7 @@ export default function UsuariosTab({
                       <Badge className="bg-blue-100 text-blue-700">Portal do Cliente</Badge>
                     ) : (
                       (() => {
-                        const perms = u.permissoes ? JSON.parse(u.permissoes) : {};
+                        const perms = safeParseJSON(u.permissoes, {});
                         let total = 0;
                         Object.values(perms).forEach((mod) => {
                           if (typeof mod === "object")

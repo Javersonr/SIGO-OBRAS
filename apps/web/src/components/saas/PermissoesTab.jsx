@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -152,25 +153,14 @@ export default function PermissoesTab() {
 
   const handleOpenPerfilModal = (perfil = null) => {
     if (perfil) {
-      try {
-        const perms = perfil.permissoes ? JSON.parse(perfil.permissoes) : {};
-        setPerfilForm({
-          nome: perfil.nome,
-          descricao: perfil.descricao || "",
-          tipo: perfil.tipo || "Global",
-          permissoes: typeof perms === "object" ? perms : {},
-          nivel_hierarquico: perfil.nivel_hierarquico || 5,
-        });
-      } catch (e) {
-        console.error("Erro ao parsear permissões:", e);
-        setPerfilForm({
-          nome: perfil.nome,
-          descricao: perfil.descricao || "",
-          tipo: perfil.tipo || "Global",
-          permissoes: {},
-          nivel_hierarquico: perfil.nivel_hierarquico || 5,
-        });
-      }
+      const perms = safeParseJSON(perfil.permissoes, {});
+      setPerfilForm({
+        nome: perfil.nome,
+        descricao: perfil.descricao || "",
+        tipo: perfil.tipo || "Global",
+        permissoes: perms,
+        nivel_hierarquico: perfil.nivel_hierarquico || 5,
+      });
       setSelectedPerfil(perfil);
     } else {
       setPerfilForm({
@@ -210,7 +200,7 @@ export default function PermissoesTab() {
 
   const handleCopiarPerfil = async (perfil) => {
     try {
-      const perms = perfil.permissoes ? JSON.parse(perfil.permissoes) : {};
+      const perms = safeParseJSON(perfil.permissoes, {});
       await sigo.entities.PerfilPermissao.create({
         nome: `${perfil.nome} (Cópia)`,
         descricao: perfil.descricao,
@@ -363,12 +353,7 @@ export default function PermissoesTab() {
             </TableHeader>
             <TableBody>
               {perfis.map((perfil) => {
-                let perms = {};
-                try {
-                  perms = perfil.permissoes ? JSON.parse(perfil.permissoes) : {};
-                } catch (e) {
-                  console.error("Erro ao parsear:", e);
-                }
+                const perms = safeParseJSON(perfil.permissoes, {});
 
                 const contarPermissoes = () => {
                   let count = 0;

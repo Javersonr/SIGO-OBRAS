@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,7 @@ export default function UsuarioEmpresaModal({
     telefone: usuario?.telefone || "",
     perfil: usuario?.perfil || "Admin",
     grupo_id: usuario?.grupo_id || "",
-    permissoes: usuario?.permissoes ? JSON.parse(usuario.permissoes) : {},
+    permissoes: safeParseJSON(usuario?.permissoes, {}),
     ativo: usuario?.ativo !== false,
     senha: "",
   });
@@ -39,15 +40,7 @@ export default function UsuarioEmpresaModal({
   useEffect(() => {
     if (usuario && open) {
       try {
-        let perms = {};
-        if (usuario.permissoes) {
-          try {
-            perms = JSON.parse(usuario.permissoes);
-          } catch (parseError) {
-            console.error("Erro ao fazer parse de permissões:", parseError, usuario.permissoes);
-            perms = {};
-          }
-        }
+        const perms = safeParseJSON(usuario.permissoes, {});
         setForm({
           nome_completo: usuario.nome_completo || "",
           email: usuario.usuario_email || "",
@@ -128,8 +121,11 @@ export default function UsuarioEmpresaModal({
         if (typeof form.permissoes === "object" && form.permissoes !== null) {
           permissoesJson = JSON.stringify(form.permissoes);
         } else if (typeof form.permissoes === "string") {
-          // Se já é string, validar que é JSON válido
-          JSON.parse(form.permissoes);
+          // Valida via safeParseJSON antes de aceitar a string original.
+          // Fallback `undefined` distingue parse válido (nunca volta undefined) de inválido.
+          if (safeParseJSON(form.permissoes, undefined) === undefined) {
+            throw new Error("permissoes em formato inválido");
+          }
           permissoesJson = form.permissoes;
         }
       } catch (e) {

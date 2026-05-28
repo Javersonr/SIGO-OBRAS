@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -60,7 +61,7 @@ export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
     }
 
     try {
-      const perms = usuario.permissoes ? JSON.parse(usuario.permissoes) : {};
+      const perms = safeParseJSON(usuario.permissoes, {});
       const modulos = Object.keys(perms);
       let totalFuncoes = 0;
       const todasAbas = [];
@@ -92,7 +93,7 @@ export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
     if (usuario.perfil === "Admin") return "total";
 
     try {
-      const perms = usuario.permissoes ? JSON.parse(usuario.permissoes) : {};
+      const perms = safeParseJSON(usuario.permissoes, {});
       if (!perms[modulo]) return "nenhuma";
 
       const moduloPerms = perms[modulo];
@@ -178,7 +179,7 @@ export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
     comPermissoes: usuarios.filter((u) => {
       if (u.perfil === "Admin" || u.perfil === "Cliente") return false;
       try {
-        const perms = u.permissoes ? JSON.parse(u.permissoes) : {};
+        const perms = safeParseJSON(u.permissoes, {});
         return Object.keys(perms).length > 0;
       } catch {
         return false;
@@ -187,7 +188,7 @@ export default function DashboardPermissoes({ empresaAtiva, onEditUsuario }) {
     semPermissoes: usuarios.filter((u) => {
       if (u.perfil === "Admin" || u.perfil === "Cliente") return false;
       try {
-        const perms = u.permissoes ? JSON.parse(u.permissoes) : {};
+        const perms = safeParseJSON(u.permissoes, {});
         return Object.keys(perms).length === 0;
       } catch {
         return true;

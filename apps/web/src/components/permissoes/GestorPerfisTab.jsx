@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Plus, Edit, Trash2, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,7 +47,7 @@ export default function GestorPerfisTab({ empresaAtiva, user }) {
       setFormData({
         nome: perfil.nome,
         descricao: perfil.descricao || "",
-        permissoes_json: perfil.permissoes_json ? JSON.parse(perfil.permissoes_json) : {},
+        permissoes_json: safeParseJSON(perfil.permissoes_json, {}),
       });
     } else {
       setEditingPerfil(null);
