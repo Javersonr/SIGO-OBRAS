@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
+import { safeParseJSON } from "@/lib/json-utils";
 import {
   BarChart3,
   Target,
@@ -53,10 +54,9 @@ export default function Relatorios() {
       let modulos = {};
       if (assinaturas.length > 0) {
         const planos = await sigo.entities.Plano.filter({ id: assinaturas[0].plano_id });
-        if (planos.length > 0 && planos[0].modulos_liberados) {
-          try {
-            modulos = JSON.parse(planos[0].modulos_liberados);
-          } catch {}
+        if (planos.length > 0) {
+          // modulos_liberados é JSONB → objeto pelo supabase-js (não string)
+          modulos = safeParseJSON(planos[0].modulos_liberados, {});
         }
       }
       setModulosLiberados(modulos);

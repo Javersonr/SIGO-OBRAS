@@ -2,6 +2,7 @@ import React, { useState, useEffect, createContext, useContext } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { sigo } from "@/api/sigoClient";
 import { createPageUrl } from "./utils";
+import { safeParseJSON } from "@/lib/json-utils";
 import {
   Building2,
   LayoutDashboard,
@@ -310,18 +311,9 @@ export default function Layout({ children, currentPageName }) {
           const planos = await sigo.entities.Plano.filter({ id: assinatura.plano_id });
 
           if (planos.length > 0) {
-            const plano = planos[0];
-            let modulos = {};
-            if (plano.modulos_liberados) {
-              try {
-                modulos = JSON.parse(plano.modulos_liberados);
-                console.log("[Layout] Módulos carregados do plano:", modulos);
-              } catch (e) {
-                console.error("Erro ao fazer parse de módulos liberados:", e);
-                modulos = {};
-              }
-            }
-            console.log("[Layout] Módulos liberados setados:", modulos);
+            // modulos_liberados é JSONB no Supabase → vem como objeto, não string.
+            // safeParseJSON aceita ambos sem lançar.
+            const modulos = safeParseJSON(planos[0].modulos_liberados, {});
             setModulosLiberados(modulos);
           }
         } else {
@@ -407,16 +399,8 @@ export default function Layout({ children, currentPageName }) {
           const planos = await sigo.entities.Plano.filter({ id: assinatura.plano_id });
 
           if (planos.length > 0) {
-            const plano = planos[0];
-            let modulos = {};
-            if (plano.modulos_liberados) {
-              try {
-                modulos = JSON.parse(plano.modulos_liberados);
-              } catch (e) {
-                console.error("Erro ao fazer parse de módulos liberados:", e);
-                modulos = {};
-              }
-            }
+            // modulos_liberados é JSONB → vem como objeto pelo supabase-js.
+            const modulos = safeParseJSON(planos[0].modulos_liberados, {});
             console.log("[Layout] Módulos liberados setados:", modulos);
             setModulosLiberados(modulos);
           } else {
@@ -486,14 +470,8 @@ export default function Layout({ children, currentPageName }) {
       // Usuário inativo não tem permissão
       if (vinculo && vinculo.ativo === false) return false;
 
-      // Tentar parsear permissões
-      let currentPermissoes = {};
-      try {
-        currentPermissoes = vinculo?.permissoes ? JSON.parse(vinculo.permissoes) : {};
-      } catch (e) {
-        console.error("[Layout] Erro ao parsear permissões:", e);
-        currentPermissoes = {};
-      }
+      // permissoes é JSONB → objeto pelo supabase-js (não string)
+      const currentPermissoes = safeParseJSON(vinculo?.permissoes, {});
 
       // Se não há permissões granulares definidas, nega acesso (o filteredMenu vai liberar por módulos contratados)
       if (
@@ -599,12 +577,7 @@ export default function Layout({ children, currentPageName }) {
         if (!moduloContratado) return false;
 
         // Módulo está contratado: verificar se tem permissões granulares definidas
-        let permissoesGranulares = {};
-        try {
-          permissoesGranulares = vinculo?.permissoes ? JSON.parse(vinculo.permissoes) : {};
-        } catch (e) {
-          permissoesGranulares = {};
-        }
+        const permissoesGranulares = safeParseJSON(vinculo?.permissoes, {});
 
         // Se NÃO tem permissões granulares definidas (ou objeto vazio), assume acesso total ao módulo contratado
         if (

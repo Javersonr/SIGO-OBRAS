@@ -61,10 +61,44 @@ legacy.functions.invoke = async function patchedInvoke(name, payload = {}) {
   return legacyInvoke(name, payload);
 };
 
+/**
+ * Stub de `.subscribe()` por entidade.
+ *
+ * O SDK base44 antigo tinha pubsub realtime via `entities.X.subscribe(cb)`.
+ * O novo backend (Supabase) ainda não expõe isso pelo wrapper, e há lugares
+ * no frontend (NotificationsPanel, SolicitarEntregaFerramentas) que chamam
+ * `subscribe` e quebravam a árvore de render inteira (tela branca) com
+ * "TypeError: entities.X.subscribe is not a function".
+ *
+ * Aqui devolvemos um no-op que retorna função de unsubscribe — preserva a
+ * API esperada sem fazer realtime de verdade. Quando migrarmos para
+ * supabase.channel(...), trocamos por implementação real.
+ */
+const NOOP_UNSUBSCRIBE = () => {};
+const SUBSCRIBE_NOOP = () => NOOP_UNSUBSCRIBE;
+
+function wrapEntitiesWithSubscribeStub(entities) {
+  return new Proxy(entities, {
+    get(target, prop) {
+      const entity = target[prop];
+      if (!entity || typeof entity !== "object") return entity;
+      // Já tem subscribe? Não mexe.
+      if (typeof entity.subscribe === "function") return entity;
+      // Cria wrapper só pra essa entidade adicionando subscribe no-op.
+      return new Proxy(entity, {
+        get(t, p) {
+          if (p === "subscribe") return SUBSCRIBE_NOOP;
+          return t[p];
+        },
+      });
+    },
+  });
+}
+
 // Substitui entities inteiramente pelo Supabase via @sigoobras/sdk
 if (supa) {
   Object.defineProperty(legacy, "entities", {
-    value: supa.entities,
+    value: wrapEntitiesWithSubscribeStub(supa.entities),
     writable: true,
     configurable: true,
   });

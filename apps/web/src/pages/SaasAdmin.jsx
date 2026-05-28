@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Plus, AlertCircle, Loader2 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -303,7 +304,8 @@ export default function SaasAdmin() {
   const handleOpenPlanoModal = (plano = null) => {
     if (plano) {
       setSelectedPlano(plano);
-      const modulos = plano.modulos_liberados ? JSON.parse(plano.modulos_liberados) : {};
+      // modulos_liberados é JSONB → pode vir como objeto OU como string (legado)
+      const modulos = safeParseJSON(plano.modulos_liberados, {});
       setPlanoForm({
         nome: plano.nome,
         descricao: plano.descricao || "",

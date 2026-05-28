@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Plus, Trash2 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -104,14 +105,8 @@ export default function Configuracoes() {
         const assinatura = assinaturas[0];
         const planos = await sigo.entities.Plano.filter({ id: assinatura.plano_id });
         if (planos.length > 0) {
-          const plano = planos[0];
-          let modulos = {};
-          if (plano.modulos_liberados) {
-            try {
-              modulos = JSON.parse(plano.modulos_liberados);
-            } catch {}
-          }
-          setModulosLiberados(modulos);
+          // modulos_liberados é JSONB → objeto pelo supabase-js (não string)
+          setModulosLiberados(safeParseJSON(planos[0].modulos_liberados, {}));
         } else {
           setModulosLiberados({});
         }
