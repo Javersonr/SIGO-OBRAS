@@ -256,15 +256,13 @@ export default function Compras() {
         });
       }
 
-      // Criar aprovação
-      try {
-        await sigo.functions.invoke("iniciarFluxoAprovacao", {
-          solicitacao_id: novaSol.id,
-          empresa_id: empresaAtiva.id,
-        });
-      } catch (e) {
-        console.error("Erro ao criar aprovação:", e);
-      }
+      // Aprovação: nao precisamos mais chamar Edge Function aqui. A SC ja nasce
+      // com status='Pendente Aprovação' e nivel_aprovacao_atual=1 (default da
+      // tabela). A primeira chamada de aprovar_solicitacao_compra() vai
+      // identificar o nivel pela faixa de valor_total_estimado (recalculado
+      // pelo trigger trg_sync_total_solicitacao da migration 0028) e notificar
+      // os aprovadores do nivel 1. Codigo de chamada da Edge function
+      // 'iniciarFluxoAprovacao' (que nem existe) removido.
 
       // Recarregar dados
       await loadData();
