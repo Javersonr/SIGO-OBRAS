@@ -34,18 +34,13 @@ export default function WidgetDashOportunidades({ onDadosCarregados }) {
         sigo.entities.StatusOportunidade.filter({ empresa_id: empresaAtiva.id }),
       ]);
 
-      const abertas = oportunidades.filter((o) => {
-        const s = status.find((s) => s.id === o.status_id);
-        return s?.tipo === "aberto";
-      });
-      const ganhas = oportunidades.filter((o) => {
-        const s = status.find((s) => s.id === o.status_id);
-        return s?.tipo === "ganho";
-      });
-      const perdidas = oportunidades.filter((o) => {
-        const s = status.find((s) => s.id === o.status_id);
-        return s?.tipo === "perdido";
-      });
+      // Indexa status por id antes dos filtros — antes era O(n*m) com find()
+      // dentro de cada filter(). Com 1k oportunidades × 20 status = 60k iterações
+      // por load. Agora: 1 pré-cálculo O(m) + filtros O(n).
+      const statusById = new Map(status.map((s) => [s.id, s]));
+      const abertas = oportunidades.filter((o) => statusById.get(o.status_id)?.tipo === "aberto");
+      const ganhas = oportunidades.filter((o) => statusById.get(o.status_id)?.tipo === "ganho");
+      const perdidas = oportunidades.filter((o) => statusById.get(o.status_id)?.tipo === "perdido");
 
       const valorTotal = abertas.reduce((acc, o) => acc + (o.valor || 0), 0);
       const valorGanho = ganhas.reduce((acc, o) => acc + (o.valor || 0), 0);

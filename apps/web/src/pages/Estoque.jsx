@@ -116,8 +116,11 @@ export default function Estoque() {
   const [openMaterialCombo, setOpenMaterialCombo] = useState(false);
   const [openAlmoxCombo, setOpenAlmoxCombo] = useState(false);
   const [openProjetoReservaCombo, setOpenProjetoReservaCombo] = useState(false);
+  // setMateriaisDoProjetoReserva é chamado mas o valor nunca é lido em render —
+  // mantido como no-op pra não quebrar o fluxo do popover de reservas até
+  // que essa feature seja finalizada ou removida (ver task pendente).
+  // eslint-disable-next-line no-unused-vars
   const [materiaisDoProjetoReserva, setMateriaisDoProjetoReserva] = useState([]);
-  const [loadingMateriaisProjeto, setLoadingMateriaisProjeto] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -414,6 +417,14 @@ export default function Estoque() {
     );
   };
 
+  // Index materiais por id pra trocar O(n) por O(1) dentro do filtro abaixo.
+  // Sem isso, com 1k saldos × 1k materiais, era O(n²) por render = ~1s de UI travada.
+  const materiaisById = React.useMemo(() => {
+    const map = new Map();
+    for (const m of materiais) map.set(m.id, m);
+    return map;
+  }, [materiais]);
+
   const filteredSaldos = React.useMemo(() => {
     const filtered = saldos.filter((s) => {
       const matchSearch =
@@ -427,8 +438,8 @@ export default function Estoque() {
       const matchUnidade =
         !filterUnidade || s.unidade?.toLowerCase().includes(filterUnidade.toLowerCase());
 
-      // Para categoria, preciso buscar do material original
-      const material = materiais.find((m) => m.id === s.material_id);
+      // O(1) lookup pela Map em vez de materiais.find() (O(n))
+      const material = materiaisById.get(s.material_id);
       const matchCategoria =
         !filterCategoria ||
         material?.categoria?.toLowerCase().includes(filterCategoria.toLowerCase());

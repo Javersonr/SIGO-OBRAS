@@ -984,48 +984,52 @@ export default function Ferramental() {
     ...[...placasAtivas].filter((p) => locsNasFerramentas.has(p)),
   ];
 
-  const ferramentasAgrupadas = ferramentas.reduce((acc, f) => {
-    const descricaoKey = f.descricao?.toLowerCase().trim() || "sem-descricao";
-    if (!acc[descricaoKey]) {
-      const codigoPartes = f.codigo?.split("-") || [];
-      const codigoBase =
-        codigoPartes.length >= 2 ? `${codigoPartes[0]}-${codigoPartes[1]}` : f.codigo;
-      acc[descricaoKey] = {
-        codigo: codigoBase,
-        descricao: f.descricao,
-        marca: f.marca,
-        modelo: f.modelo,
-        tipo: f.tipo,
-        valor_unitario: f.valor_unitario,
-        foto_url: f.foto_url,
-        data_vencimento_laudo: f.data_vencimento_laudo,
+  // ferramentasAgrupadas reduzia 700+ itens A CADA RENDER (filtro digitado,
+  // input mudando, etc). Agora só recomputa se `ferramentas` muda.
+  const ferramentasAgrupadas = React.useMemo(() => {
+    return ferramentas.reduce((acc, f) => {
+      const descricaoKey = f.descricao?.toLowerCase().trim() || "sem-descricao";
+      if (!acc[descricaoKey]) {
+        const codigoPartes = f.codigo?.split("-") || [];
+        const codigoBase =
+          codigoPartes.length >= 2 ? `${codigoPartes[0]}-${codigoPartes[1]}` : f.codigo;
+        acc[descricaoKey] = {
+          codigo: codigoBase,
+          descricao: f.descricao,
+          marca: f.marca,
+          modelo: f.modelo,
+          tipo: f.tipo,
+          valor_unitario: f.valor_unitario,
+          foto_url: f.foto_url,
+          data_vencimento_laudo: f.data_vencimento_laudo,
+          numero_laudo: f.numero_laudo,
+          laudo_obrigatorio: f.laudo_obrigatorio || false,
+          controle_individual: f.controle_individual || false,
+          itens: [],
+        };
+      }
+      // Para itens SEM controle individual, atualiza quantidade total somando quantidade_estoque
+      acc[descricaoKey].itens.push({
+        id: f.id,
+        codigo: f.codigo,
+        localizacao: f.localizacao,
+        status: f.status,
+        numero_serie: f.numero_serie,
         numero_laudo: f.numero_laudo,
-        laudo_obrigatorio: f.laudo_obrigatorio || false,
+        data_vencimento_laudo: f.data_vencimento_laudo,
+        numero: f.numero,
+        ca: f.ca,
+        observacoes: f.observacoes,
+        funcionario_nome: f.funcionario_nome || "",
+        funcionario_id: f.funcionario_id || "",
+        fornecedor_nome: f.fornecedor_nome || "",
+        fornecedor_id: f.fornecedor_id || "",
+        quantidade_estoque: f.quantidade_estoque || 1,
         controle_individual: f.controle_individual || false,
-        itens: [],
-      };
-    }
-    // Para itens SEM controle individual, atualiza quantidade total somando quantidade_estoque
-    acc[descricaoKey].itens.push({
-      id: f.id,
-      codigo: f.codigo,
-      localizacao: f.localizacao,
-      status: f.status,
-      numero_serie: f.numero_serie,
-      numero_laudo: f.numero_laudo,
-      data_vencimento_laudo: f.data_vencimento_laudo,
-      numero: f.numero,
-      ca: f.ca,
-      observacoes: f.observacoes,
-      funcionario_nome: f.funcionario_nome || "",
-      funcionario_id: f.funcionario_id || "",
-      fornecedor_nome: f.fornecedor_nome || "",
-      fornecedor_id: f.fornecedor_id || "",
-      quantidade_estoque: f.quantidade_estoque || 1,
-      controle_individual: f.controle_individual || false,
-    });
-    return acc;
-  }, {});
+      });
+      return acc;
+    }, {});
+  }, [ferramentas]);
 
   const buscaFuzzy = (ferramenta, termo) => {
     if (!termo || termo.trim() === "") return { match: true, score: 100 };
@@ -1061,34 +1065,42 @@ export default function Ferramental() {
     return { match: matched, score: melhorScore };
   };
 
-  const filteredFerramentasAgrupadas = Object.values(ferramentasAgrupadas)
-    .map((f) => {
-      const buscaResult = buscaFuzzy(f, searchTerm);
-      const matchLocalizacao =
-        filterStatus === "all" ||
-        (f.itens &&
-          f.itens.some(
-            (item) =>
-              item.localizacao === filterStatus ||
-              (item.localizacao &&
-                item.localizacao.toLowerCase().includes(filterStatus.toLowerCase()))
-          ));
-      const matchTipo = filterTipo === "all" || f.tipo === filterTipo;
-      const matchLaudo =
-        filterLaudo === "all" ||
-        (filterLaudo === "com_laudo" ? f.laudo_obrigatorio === true : f.laudo_obrigatorio !== true);
-      const matchCaminhao =
-        filterCaminhao === "all" ||
-        (f.itens && f.itens.some((item) => item.localizacao === filterCaminhao));
-      return {
-        ...f,
-        _searchScore: buscaResult.score,
-        _matchFilters:
-          buscaResult.match && matchLocalizacao && matchTipo && matchLaudo && matchCaminhao,
-      };
-    })
-    .filter((f) => f._matchFilters)
-    .sort((a, b) => b._searchScore - a._searchScore);
+  // useMemo evita refazer map+filter+sort de 700 itens em cada keystroke
+  // fora dos campos de filtro. Antes a UI travava ~300-500ms por digit.
+  const filteredFerramentasAgrupadas = React.useMemo(() => {
+    return Object.values(ferramentasAgrupadas)
+      .map((f) => {
+        const buscaResult = buscaFuzzy(f, searchTerm);
+        const matchLocalizacao =
+          filterStatus === "all" ||
+          (f.itens &&
+            f.itens.some(
+              (item) =>
+                item.localizacao === filterStatus ||
+                (item.localizacao &&
+                  item.localizacao.toLowerCase().includes(filterStatus.toLowerCase()))
+            ));
+        const matchTipo = filterTipo === "all" || f.tipo === filterTipo;
+        const matchLaudo =
+          filterLaudo === "all" ||
+          (filterLaudo === "com_laudo"
+            ? f.laudo_obrigatorio === true
+            : f.laudo_obrigatorio !== true);
+        const matchCaminhao =
+          filterCaminhao === "all" ||
+          (f.itens && f.itens.some((item) => item.localizacao === filterCaminhao));
+        return {
+          ...f,
+          _searchScore: buscaResult.score,
+          _matchFilters:
+            buscaResult.match && matchLocalizacao && matchTipo && matchLaudo && matchCaminhao,
+        };
+      })
+      .filter((f) => f._matchFilters)
+      .sort((a, b) => b._searchScore - a._searchScore);
+    // buscaFuzzy é local ao componente — só depende de inputs no escopo de useMemo
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ferramentasAgrupadas, searchTerm, filterStatus, filterTipo, filterLaudo, filterCaminhao]);
 
   if (!empresaAtiva) return null;
 

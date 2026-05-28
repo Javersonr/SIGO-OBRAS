@@ -99,7 +99,6 @@ export default function SegurancaTrabalho() {
   const [treinamentosFuncao, setTreinamentosFuncao] = useState([]);
   const [treinamentosSelecionados, setTreinamentosSelecionados] = useState([]);
   const [funcionarioTreinamentos, setFuncionarioTreinamentos] = useState(null);
-  const [uploadingTreinamento, setUploadingTreinamento] = useState(null);
   const [editandoDatasTreinamento, setEditandoDatasTreinamento] = useState({});
   const [sortConfig, setSortConfig] = useState({ field: "nome_completo", direction: "asc" });
   const [treinamentosDaFuncao, setTreinamentosDaFuncao] = useState([]);
