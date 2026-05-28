@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 
 import FiltroRapido from "./FiltroRapido";
 import CardsResumo from "./CardsResumo";
@@ -99,7 +100,10 @@ export default function DespesasTab({
   const [colunasVisiveis, setColunasVisiveis] = useState(() => {
     const saved = localStorage.getItem("despesas_colunas_visiveis");
     if (saved) {
-      return JSON.parse(saved);
+      return safeParseJSON(
+        saved,
+        colunasDisponiveis.map((c) => c.id)
+      );
     }
     return colunasDisponiveis.map((c) => c.id); // Todas visíveis por padrão
   });
@@ -962,11 +966,11 @@ export default function DespesasTab({
       loadAnexos(item.id);
       // Carregar parcelas se existirem
       if (item.parcelado && item.parcelas) {
-        try {
-          const parcelasCarregadas = JSON.parse(item.parcelas);
+        const parcelasCarregadas = safeParseJSON(item.parcelas, null);
+        if (Array.isArray(parcelasCarregadas)) {
           setParcelas(parcelasCarregadas);
           setNumeroParcelas(parcelasCarregadas.length);
-        } catch {
+        } else {
           setNumeroParcelas(1);
           setParcelas([]);
         }

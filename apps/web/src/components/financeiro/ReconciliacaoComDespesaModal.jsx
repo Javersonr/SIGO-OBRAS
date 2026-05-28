@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import DespesaModal from "./DespesaModal";
 
 export default function ReconciliacaoComDespesaModal({
@@ -19,16 +20,10 @@ export default function ReconciliacaoComDespesaModal({
   const [carregando, setCarregando] = useState(true);
 
   // Dados extraídos do pré-lançamento
-  const dados = React.useMemo(() => {
-    if (!preLancamento?.dados_extraidos) return {};
-    try {
-      return typeof preLancamento.dados_extraidos === "string"
-        ? JSON.parse(preLancamento.dados_extraidos)
-        : preLancamento.dados_extraidos;
-    } catch {
-      return {};
-    }
-  }, [preLancamento]);
+  const dados = React.useMemo(
+    () => safeParseJSON(preLancamento?.dados_extraidos, {}),
+    [preLancamento]
+  );
 
   useEffect(() => {
     if (open && preLancamento?.empresa_id) {

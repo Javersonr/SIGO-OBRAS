@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -18,10 +19,7 @@ export default function ReconciliacaoPreLancamentoModal({
   const [sucesso, setSucesso] = useState(false);
   const [observacoes, setObservacoes] = useState("");
 
-  const dados =
-    typeof preLancamento.dados_extraidos === "string"
-      ? JSON.parse(preLancamento.dados_extraidos)
-      : preLancamento.dados_extraidos;
+  const dados = safeParseJSON(preLancamento.dados_extraidos, {});
 
   const handleReconciliar = async () => {
     setCarregando(true);

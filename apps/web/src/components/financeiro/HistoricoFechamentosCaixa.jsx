@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,7 +69,7 @@ export default function HistoricoFechamentosCaixa({
   };
 
   const carregarPreLancamentos = async (fechamento) => {
-    const ids = JSON.parse(fechamento.pre_lancamentos_ids || "[]");
+    const ids = safeParseJSON(fechamento.pre_lancamentos_ids, []);
     if (ids.length === 0) return;
     const key = fechamento.id;
     if (preLancamentosCache[key]) return;
@@ -101,10 +102,7 @@ export default function HistoricoFechamentosCaixa({
     try {
       const payload = {
         itens: itens.map((pl, i) => {
-          const d =
-            typeof pl.dados_extraidos === "string"
-              ? JSON.parse(pl.dados_extraidos || "{}")
-              : pl.dados_extraidos || {};
+          const d = safeParseJSON(pl.dados_extraidos, {});
           return {
             idx: i,
             data: pl.data_competencia
@@ -152,15 +150,8 @@ export default function HistoricoFechamentosCaixa({
   const handleImprimirPlanilha = (fechamento, pls) => {
     const itens = pls.filter((pl) => pl.status === "Conciliado");
     const total = itens.reduce((sum, pl) => {
-      try {
-        const d =
-          typeof pl.dados_extraidos === "string"
-            ? JSON.parse(pl.dados_extraidos)
-            : pl.dados_extraidos || {};
-        return sum + (parseFloat(d.valor) || 0);
-      } catch {
-        return sum;
-      }
+      const d = safeParseJSON(pl.dados_extraidos, {});
+      return sum + (parseFloat(d.valor) || 0);
     }, 0);
     const saldoAnt = 0;
     const saldoAtu = saldoAnt - total;
@@ -173,10 +164,7 @@ export default function HistoricoFechamentosCaixa({
 
     const linhasItens = itens
       .map((pl, i) => {
-        const d =
-          typeof pl.dados_extraidos === "string"
-            ? JSON.parse(pl.dados_extraidos || "{}")
-            : pl.dados_extraidos || {};
+        const d = safeParseJSON(pl.dados_extraidos, {});
         const data = pl.data_competencia
           ? new Date(pl.data_competencia + "T12:00:00").toLocaleDateString("pt-BR")
           : d.data || "";
@@ -226,23 +214,13 @@ export default function HistoricoFechamentosCaixa({
   const handleImprimir = (fechamento, pls) => {
     const itens = pls.filter((pl) => pl.status === "Conciliado");
     const total = itens.reduce((sum, pl) => {
-      try {
-        const d =
-          typeof pl.dados_extraidos === "string"
-            ? JSON.parse(pl.dados_extraidos)
-            : pl.dados_extraidos || {};
-        return sum + (parseFloat(d.valor) || 0);
-      } catch {
-        return sum;
-      }
+      const d = safeParseJSON(pl.dados_extraidos, {});
+      return sum + (parseFloat(d.valor) || 0);
     }, 0);
 
     const linhas = itens
       .map((pl, i) => {
-        const d =
-          typeof pl.dados_extraidos === "string"
-            ? JSON.parse(pl.dados_extraidos || "{}")
-            : pl.dados_extraidos || {};
+        const d = safeParseJSON(pl.dados_extraidos, {});
         const data = pl.data_competencia
           ? new Date(pl.data_competencia + "T12:00:00").toLocaleDateString("pt-BR")
           : "-";
@@ -281,26 +259,11 @@ export default function HistoricoFechamentosCaixa({
   };
 
   const getValor = (pl) => {
-    try {
-      const d =
-        typeof pl.dados_extraidos === "string"
-          ? JSON.parse(pl.dados_extraidos)
-          : pl.dados_extraidos || {};
-      return parseFloat(d.valor) || 0;
-    } catch {
-      return 0;
-    }
+    const d = safeParseJSON(pl.dados_extraidos, {});
+    return parseFloat(d.valor) || 0;
   };
 
-  const getDados = (pl) => {
-    try {
-      return typeof pl.dados_extraidos === "string"
-        ? JSON.parse(pl.dados_extraidos)
-        : pl.dados_extraidos || {};
-    } catch {
-      return {};
-    }
-  };
+  const getDados = (pl) => safeParseJSON(pl.dados_extraidos, {});
 
   const handleSalvarEdicaoFechamento = async (fechamentoId) => {
     setSalvandoEdicao(true);
@@ -399,7 +362,7 @@ export default function HistoricoFechamentosCaixa({
                       {(f.valor_total || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                     </div>
                     <div className="text-xs text-slate-400">
-                      {JSON.parse(f.pre_lancamentos_ids || "[]").length} item(s)
+                      {safeParseJSON(f.pre_lancamentos_ids, []).length} item(s)
                     </div>
                     {f.status !== "Pago" && editandoId !== f.id && (
                       <button
@@ -754,7 +717,7 @@ function ModalDesfazerPagamento({ fechamento, onClose, onSucesso }) {
     setDesfazendo(true);
     try {
       // Buscar e deletar transações financeiras vinculadas aos pré-lançamentos deste fechamento
-      const ids = JSON.parse(fechamento.pre_lancamentos_ids || "[]");
+      const ids = safeParseJSON(fechamento.pre_lancamentos_ids, []);
       const pls = await Promise.all(
         ids.map((id) =>
           sigo.entities.PreLancamento.filter({ id })
@@ -874,7 +837,7 @@ function ModalDesfazerFechamento({ fechamento, onClose, onSucesso }) {
     setDesfazendo(true);
     try {
       // Voltar pré-lançamentos para "Pendente"
-      const ids = JSON.parse(fechamento.pre_lancamentos_ids || "[]");
+      const ids = safeParseJSON(fechamento.pre_lancamentos_ids, []);
       await Promise.all(
         ids.map((id) =>
           sigo.entities.PreLancamento.update(id, { status: "Pendente" }).catch(() => null)

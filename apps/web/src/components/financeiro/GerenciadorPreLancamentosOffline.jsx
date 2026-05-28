@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -132,10 +133,7 @@ export default function GerenciadorPreLancamentosOffline({
 
           <div className="space-y-3 max-h-96 overflow-y-auto">
             {itemsPendentes.map((item) => {
-              const dados =
-                typeof item.dados_extraidos === "string"
-                  ? JSON.parse(item.dados_extraidos)
-                  : item.dados_extraidos;
+              const dados = safeParseJSON(item.dados_extraidos, {});
 
               return (
                 <Card key={item.id} className="bg-slate-50">

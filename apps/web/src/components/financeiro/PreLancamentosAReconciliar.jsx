@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -313,10 +314,7 @@ export default function PreLancamentosAReconciliar({
   const listaTotalizador =
     itensSelecionadosFiltrados.length > 0 ? itensSelecionadosFiltrados : listaFiltrada;
   const totalFiltrado = listaTotalizador.reduce((sum, item) => {
-    const d =
-      typeof item.dados_extraidos === "string"
-        ? JSON.parse(item.dados_extraidos || "{}")
-        : item.dados_extraidos || {};
+    const d = safeParseJSON(item.dados_extraidos, {});
     return sum + (parseFloat(d.valor) || 0);
   }, 0);
 
@@ -418,10 +416,7 @@ export default function PreLancamentosAReconciliar({
   };
 
   const handleSalvarDescricao = async (item, novaDescricao) => {
-    const dados =
-      typeof item.dados_extraidos === "string"
-        ? JSON.parse(item.dados_extraidos)
-        : item.dados_extraidos || {};
+    const dados = safeParseJSON(item.dados_extraidos, {});
     dados.descricao = novaDescricao;
     const dadosStr = JSON.stringify(dados);
     updateLocal(item.id, { dados_extraidos: dadosStr });
@@ -446,15 +441,8 @@ export default function PreLancamentosAReconciliar({
       const existentes = await sigo.entities.FechamentoCaixa.filter({ empresa_id: empresaId });
       const numero = String(existentes.length + 1).padStart(4, "0");
       const total = itensSelecionadosParaCaixa.reduce((sum, pl) => {
-        try {
-          const d =
-            typeof pl.dados_extraidos === "string"
-              ? JSON.parse(pl.dados_extraidos)
-              : pl.dados_extraidos || {};
-          return sum + (parseFloat(d.valor) || 0);
-        } catch {
-          return sum;
-        }
+        const d = safeParseJSON(pl.dados_extraidos, {});
+        return sum + (parseFloat(d.valor) || 0);
       }, 0);
       await sigo.entities.FechamentoCaixa.create({
         empresa_id: empresaId,
@@ -602,10 +590,7 @@ export default function PreLancamentosAReconciliar({
                 </thead>
                 <tbody>
                   {listaFiltrada.map((item) => {
-                    const dados =
-                      typeof item.dados_extraidos === "string"
-                        ? JSON.parse(item.dados_extraidos)
-                        : item.dados_extraidos || {};
+                    const dados = safeParseJSON(item.dados_extraidos, {});
                     const valor = parseFloat(dados.valor) || 0;
                     const podeAcionar = podeManiputar(item);
                     const isConciliado = tabAtiva === "conciliados";

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,7 +27,7 @@ export default function AcrescentarPreLancamentoModal({
     setBusca("");
     setCarregando(true);
 
-    const idsNoFechamento = JSON.parse(fechamento?.pre_lancamentos_ids || "[]");
+    const idsNoFechamento = safeParseJSON(fechamento?.pre_lancamentos_ids, []);
 
     sigo.entities.PreLancamento.filter({ empresa_id: empresaId, status: "Pendente" })
       .then((data) => {
@@ -37,15 +38,7 @@ export default function AcrescentarPreLancamentoModal({
       .finally(() => setCarregando(false));
   }, [open, empresaId, fechamento]);
 
-  const getDados = (pl) => {
-    try {
-      return typeof pl.dados_extraidos === "string"
-        ? JSON.parse(pl.dados_extraidos)
-        : pl.dados_extraidos || {};
-    } catch {
-      return {};
-    }
-  };
+  const getDados = (pl) => safeParseJSON(pl.dados_extraidos, {});
 
   const filtrados = pendentes.filter((pl) => {
     if (!busca.trim()) return true;
@@ -66,7 +59,7 @@ export default function AcrescentarPreLancamentoModal({
     if (selecionados.length === 0) return;
     setSalvando(true);
     try {
-      const idsAtuais = JSON.parse(fechamento.pre_lancamentos_ids || "[]");
+      const idsAtuais = safeParseJSON(fechamento.pre_lancamentos_ids, []);
       const novosIds = [...idsAtuais, ...selecionados];
 
       const plsSelecionados = pendentes.filter((p) => selecionados.includes(p.id));

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -94,10 +95,7 @@ export default function PreLancamentosTab({
         return;
       }
       const dados = todos.map((p) => {
-        const d =
-          typeof p.dados_extraidos === "string"
-            ? JSON.parse(p.dados_extraidos || "{}")
-            : p.dados_extraidos || {};
+        const d = safeParseJSON(p.dados_extraidos, {});
         return {
           Fornecedor: d.fornecedor || "",
           Descrição: d.descricao || "",
@@ -145,19 +143,13 @@ export default function PreLancamentosTab({
       }
 
       const totalValor = todos.reduce((s, p) => {
-        const d =
-          typeof p.dados_extraidos === "string"
-            ? JSON.parse(p.dados_extraidos || "{}")
-            : p.dados_extraidos || {};
+        const d = safeParseJSON(p.dados_extraidos, {});
         return s + (parseFloat(d.valor) || 0);
       }, 0);
 
       const linhas = todos
         .map((p, i) => {
-          const d =
-            typeof p.dados_extraidos === "string"
-              ? JSON.parse(p.dados_extraidos || "{}")
-              : p.dados_extraidos || {};
+          const d = safeParseJSON(p.dados_extraidos, {});
           const valor = parseFloat(d.valor) || 0;
           return `<tr style="background:${i % 2 === 0 ? "#ffffff" : "#f8fafc"}">
           <td>${i + 1}</td><td>${d.fornecedor || "-"}</td><td>${d.descricao || "-"}</td>
@@ -217,10 +209,7 @@ export default function PreLancamentosTab({
           if (!resp.ok) continue;
           const blob = await resp.blob();
           const ext = p.comprovante_url.split("?")[0].split(".").pop() || "jpg";
-          const d =
-            typeof p.dados_extraidos === "string"
-              ? JSON.parse(p.dados_extraidos || "{}")
-              : p.dados_extraidos || {};
+          const d = safeParseJSON(p.dados_extraidos, {});
           const nomeArq = `${String(i + 1).padStart(3, "0")}_${(d.fornecedor || "sem_fornecedor").replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30)}_${(d.data || "").replace(/-/g, "")}.${ext}`;
           zip.file(nomeArq, blob);
           baixados++;

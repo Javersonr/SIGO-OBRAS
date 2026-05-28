@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Edit, Trash2, Settings } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 
 export default function RegrasConciliacao({ empresaAtiva }) {
   const [regras, setRegras] = useState([]);
@@ -50,7 +51,9 @@ export default function RegrasConciliacao({ empresaAtiva }) {
         tolerancia_valor: regra.tolerancia_valor || 0,
         tolerancia_dias: regra.tolerancia_dias || 3,
         ignorar_descricao: regra.ignorar_descricao || false,
-        palavras_chave: regra.palavras_chave ? JSON.parse(regra.palavras_chave).join(", ") : "",
+        palavras_chave: regra.palavras_chave
+          ? safeParseJSON(regra.palavras_chave, []).join(", ")
+          : "",
         prioridade: regra.prioridade || 1,
         ativo: regra.ativo !== false,
       });
@@ -157,7 +160,7 @@ export default function RegrasConciliacao({ empresaAtiva }) {
                     <span>Valor: ±R$ {regra.tolerancia_valor?.toFixed(2)}</span>
                     <span>Data: ±{regra.tolerancia_dias} dias</span>
                     {regra.palavras_chave && (
-                      <span>Palavras: {JSON.parse(regra.palavras_chave).join(", ")}</span>
+                      <span>Palavras: {safeParseJSON(regra.palavras_chave, []).join(", ")}</span>
                     )}
                   </div>
                 </div>

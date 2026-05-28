@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
@@ -44,10 +45,7 @@ export default function RelatorioPreLancamentos({ empresaId, usuarioEmail, verTo
       let totalItens = preLancamentos.length;
 
       preLancamentos.forEach((item) => {
-        const dados =
-          typeof item.dados_extraidos === "string"
-            ? JSON.parse(item.dados_extraidos)
-            : item.dados_extraidos;
+        const dados = safeParseJSON(item.dados_extraidos, {});
 
         const valor = parseFloat(dados.valor || 0);
         totalValor += valor;

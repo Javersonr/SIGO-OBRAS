@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { useEmpresa } from "../../Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -69,7 +70,7 @@ export default function RelatoriosCustomizados({ onCarregarTemplate }) {
   };
 
   const handleCarregar = (template) => {
-    const filtros = JSON.parse(template.filtros);
+    const filtros = safeParseJSON(template.filtros, {});
     onCarregarTemplate(filtros);
     setShowDialog(false);
   };
@@ -158,7 +159,7 @@ export default function RelatoriosCustomizados({ onCarregarTemplate }) {
 
 function TemplateCard({ template, onCarregar, onFavorito, onExcluir, user }) {
   const isOwner = template.usuario_id === user?.id;
-  const filtros = JSON.parse(template.filtros);
+  const filtros = safeParseJSON(template.filtros, {});
 
   return (
     <Card className="hover:border-amber-300 transition-colors">

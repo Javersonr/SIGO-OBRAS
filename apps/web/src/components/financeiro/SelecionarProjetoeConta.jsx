@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -62,16 +63,12 @@ export default function SelecionarProjetoeConta({
         projsAtivos = projsAtivos.filter((p) => {
           // 1. Campo: responsaveis_emails (JSON array de emails)
           if (p.responsaveis_emails) {
-            try {
-              const emails = JSON.parse(p.responsaveis_emails);
-              if (
-                Array.isArray(emails) &&
-                emails.some((e) => String(e).toLowerCase().trim() === emailLower)
-              ) {
-                return true;
-              }
-            } catch (e) {
-              console.warn("Erro ao parsear responsaveis_emails para projeto", p.id, e);
+            const emails = safeParseJSON(p.responsaveis_emails, []);
+            if (
+              Array.isArray(emails) &&
+              emails.some((e) => String(e).toLowerCase().trim() === emailLower)
+            ) {
+              return true;
             }
           }
 
@@ -85,19 +82,15 @@ export default function SelecionarProjetoeConta({
 
           // 3. Campo: responsaveis_ids (JSON array de IDs de usuários)
           if (p.responsaveis_ids) {
-            try {
-              const ids = JSON.parse(p.responsaveis_ids);
-              if (Array.isArray(ids)) {
-                // Verificar se algum ID corresponde a um usuário com este email
-                const matchingUsers = usuariosData.filter(
-                  (u) => ids.includes(u.id) && u.usuario_email.toLowerCase().trim() === emailLower
-                );
-                if (matchingUsers.length > 0) {
-                  return true;
-                }
+            const ids = safeParseJSON(p.responsaveis_ids, []);
+            if (Array.isArray(ids)) {
+              // Verificar se algum ID corresponde a um usuário com este email
+              const matchingUsers = usuariosData.filter(
+                (u) => ids.includes(u.id) && u.usuario_email.toLowerCase().trim() === emailLower
+              );
+              if (matchingUsers.length > 0) {
+                return true;
               }
-            } catch (e) {
-              console.warn("Erro ao parsear responsaveis_ids para projeto", p.id, e);
             }
           }
 

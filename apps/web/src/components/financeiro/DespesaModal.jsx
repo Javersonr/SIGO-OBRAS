@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import {
   Command,
   CommandEmpty,
@@ -354,14 +355,10 @@ export default function DespesaModal({
 
   useEffect(() => {
     if (selectedItem?.parcelado && selectedItem?.parcelas) {
-      try {
-        const parcelasData = JSON.parse(selectedItem.parcelas);
-        if (parcelasData.length > 0) {
-          setPermitirParcelamento(true);
-          setMostrarParcelas(true);
-        }
-      } catch {
-        // parcelas inválidas - não exibir
+      const parcelasData = safeParseJSON(selectedItem.parcelas, []);
+      if (Array.isArray(parcelasData) && parcelasData.length > 0) {
+        setPermitirParcelamento(true);
+        setMostrarParcelas(true);
       }
     } else {
       setPermitirParcelamento(false);

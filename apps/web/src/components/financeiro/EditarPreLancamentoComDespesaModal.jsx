@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import DespesaModal from "./DespesaModal";
 
 export default function EditarPreLancamentoComDespesaModal({
@@ -37,10 +38,7 @@ export default function EditarPreLancamentoComDespesaModal({
 
   useEffect(() => {
     if (!preLancamento) return;
-    const dados =
-      typeof preLancamento.dados_extraidos === "string"
-        ? JSON.parse(preLancamento.dados_extraidos || "{}")
-        : preLancamento.dados_extraidos || {};
+    const dados = safeParseJSON(preLancamento.dados_extraidos, {});
 
     setForm({
       descricao:

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -90,99 +91,96 @@ export default function DetalheDespesaModal({
           {despesa.parcelado &&
             despesa.parcelas &&
             (() => {
-              try {
-                const parcelasData = JSON.parse(despesa.parcelas);
-                return (
-                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                    <h3 className="text-sm font-semibold text-blue-800 mb-3">
-                      Despesa Parcelada ({parcelasData.length}x)
-                    </h3>
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {parcelasData.map((parcela, index) => (
-                        <div
-                          key={index}
-                          className={`flex items-center justify-between p-3 rounded-lg border ${
-                            parcela.status === "pago"
-                              ? "bg-green-50 border-green-200"
-                              : "bg-white border-slate-200"
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            {parcela.status === "pago" ? (
-                              <CheckCircle2 className="w-5 h-5 text-green-600" />
-                            ) : (
-                              <div className="w-5 h-5 rounded-full border-2 border-orange-400" />
-                            )}
-                            <div>
-                              <p className="text-sm font-semibold text-slate-800">
-                                Parcela {parcela.numero}/{parcelasData.length}
-                              </p>
-                              <p className="text-xs text-slate-500">
-                                Vencimento: {formatDate(parcela.data_vencimento)}
-                                {parcela.data_pagamento &&
-                                  ` • Pago em: ${formatDate(parcela.data_pagamento)}`}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <div className="text-right">
-                              <p className="text-sm font-bold text-slate-800">
-                                {formatCurrency(parcela.valor)}
-                              </p>
-                              <Badge
-                                variant="outline"
-                                className={
-                                  parcela.status === "pago"
-                                    ? "bg-green-100 text-green-700 border-green-300"
-                                    : "bg-orange-100 text-orange-700 border-orange-300"
-                                }
-                              >
-                                {parcela.status === "pago" ? "Pago" : "Pendente"}
-                              </Badge>
-                            </div>
-                            <Button
-                              size="sm"
-                              variant={parcela.status === "pago" ? "outline" : "default"}
-                              className={
-                                parcela.status === "pago" ? "" : "bg-green-600 hover:bg-green-700"
-                              }
-                              onClick={async () => {
-                                if (parcela.status === "pago") {
-                                  if (!confirm("Desfazer pagamento desta parcela?")) return;
-                                  const novasParcelas = [...parcelasData];
-                                  novasParcelas[index].status = "em_aberto";
-                                  novasParcelas[index].data_pagamento = null;
-                                  novasParcelas[index].comprovante_url = null;
-
-                                  await sigo.entities.TransacaoFinanceira.update(despesa.id, {
-                                    parcelas: JSON.stringify(novasParcelas),
-                                  });
-
-                                  if (onBaixar) onBaixar(despesa);
-                                } else {
-                                  // Abrir modal de pagamento para esta parcela
-                                  setDespesaPagamento({
-                                    ...despesa,
-                                    _parcelaIndex: index,
-                                    _parcela: parcela,
-                                    _parcelasData: parcelasData,
-                                    valor: parcela.valor,
-                                  });
-                                  setShowModalPagamento(true);
-                                }
-                              }}
-                            >
-                              {parcela.status === "pago" ? "Desfazer" : "Pagar"}
-                            </Button>
+              const parcelasData = safeParseJSON(despesa.parcelas, []);
+              if (!Array.isArray(parcelasData) || parcelasData.length === 0) return null;
+              return (
+                <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                  <h3 className="text-sm font-semibold text-blue-800 mb-3">
+                    Despesa Parcelada ({parcelasData.length}x)
+                  </h3>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {parcelasData.map((parcela, index) => (
+                      <div
+                        key={index}
+                        className={`flex items-center justify-between p-3 rounded-lg border ${
+                          parcela.status === "pago"
+                            ? "bg-green-50 border-green-200"
+                            : "bg-white border-slate-200"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          {parcela.status === "pago" ? (
+                            <CheckCircle2 className="w-5 h-5 text-green-600" />
+                          ) : (
+                            <div className="w-5 h-5 rounded-full border-2 border-orange-400" />
+                          )}
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">
+                              Parcela {parcela.numero}/{parcelasData.length}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Vencimento: {formatDate(parcela.data_vencimento)}
+                              {parcela.data_pagamento &&
+                                ` • Pago em: ${formatDate(parcela.data_pagamento)}`}
+                            </p>
                           </div>
                         </div>
-                      ))}
-                    </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <p className="text-sm font-bold text-slate-800">
+                              {formatCurrency(parcela.valor)}
+                            </p>
+                            <Badge
+                              variant="outline"
+                              className={
+                                parcela.status === "pago"
+                                  ? "bg-green-100 text-green-700 border-green-300"
+                                  : "bg-orange-100 text-orange-700 border-orange-300"
+                              }
+                            >
+                              {parcela.status === "pago" ? "Pago" : "Pendente"}
+                            </Badge>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant={parcela.status === "pago" ? "outline" : "default"}
+                            className={
+                              parcela.status === "pago" ? "" : "bg-green-600 hover:bg-green-700"
+                            }
+                            onClick={async () => {
+                              if (parcela.status === "pago") {
+                                if (!confirm("Desfazer pagamento desta parcela?")) return;
+                                const novasParcelas = [...parcelasData];
+                                novasParcelas[index].status = "em_aberto";
+                                novasParcelas[index].data_pagamento = null;
+                                novasParcelas[index].comprovante_url = null;
+
+                                await sigo.entities.TransacaoFinanceira.update(despesa.id, {
+                                  parcelas: JSON.stringify(novasParcelas),
+                                });
+
+                                if (onBaixar) onBaixar(despesa);
+                              } else {
+                                // Abrir modal de pagamento para esta parcela
+                                setDespesaPagamento({
+                                  ...despesa,
+                                  _parcelaIndex: index,
+                                  _parcela: parcela,
+                                  _parcelasData: parcelasData,
+                                  valor: parcela.valor,
+                                });
+                                setShowModalPagamento(true);
+                              }
+                            }}
+                          >
+                            {parcela.status === "pago" ? "Desfazer" : "Pagar"}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                );
-              } catch (e) {
-                return null;
-              }
+                </div>
+              );
             })()}
 
           {/* Informações Principais */}

@@ -13,6 +13,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Upload, CheckCircle2, XCircle, Link2, AlertCircle } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 
 export default function ConciliacaoBancaria({ empresaAtiva, contas, onReload }) {
   const [extratosBancarios, setExtratosBancarios] = useState([]);
@@ -239,10 +240,10 @@ export default function ConciliacaoBancaria({ empresaAtiva, contas, onReload }) 
       } else if (regra.tipo_match === "contem") {
         descMatch = t.descricao?.toLowerCase().includes(extrato.descricao?.toLowerCase());
       } else if (regra.tipo_match === "palavra_chave" && regra.palavras_chave) {
-        const palavras = JSON.parse(regra.palavras_chave);
-        descMatch = palavras.some((p) =>
-          extrato.descricao?.toLowerCase().includes(p.toLowerCase())
-        );
+        const palavras = safeParseJSON(regra.palavras_chave, []);
+        descMatch =
+          Array.isArray(palavras) &&
+          palavras.some((p) => extrato.descricao?.toLowerCase().includes(p.toLowerCase()));
       }
 
       return valorMatch && dataMatch && (regra.ignorar_descricao || descMatch);

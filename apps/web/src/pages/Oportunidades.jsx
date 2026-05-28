@@ -256,31 +256,52 @@ export default function Oportunidades() {
       status_id: statusGanho?.id || op.status_id,
       status_nome: statusGanho?.nome || op.status_nome,
     });
-    // BUG FIX: Projeto usa responsaveis_emails (array de emails), Oportunidade usa responsaveis_ids
-    // Converter IDs de responsáveis para emails ao migrar
-    let responsaveisEmails = "[]";
-    try {
-      const ids = safeParseJSON(op.responsaveis_ids, []);
-      const emails = ids
-        .map((id) => {
-          const vinculo = usuariosEmpresa.find((u) => u.id === id);
-          return vinculo?.usuario_email || null;
-        })
-        .filter(Boolean);
-      responsaveisEmails = JSON.stringify(emails);
-    } catch {}
+
+    // Projeto usa responsaveis_emails (array de emails); Oportunidade usa
+    // responsaveis_ids (array de uuids). Convertemos via lookup no usuariosEmpresa.
+    const ids = safeParseJSON(op.responsaveis_ids, []);
+    const emails = (Array.isArray(ids) ? ids : [])
+      .map((id) => usuariosEmpresa.find((u) => u.id === id)?.usuario_email)
+      .filter(Boolean);
+    const responsaveisEmails = JSON.stringify(emails);
+
+    // Copiamos TODOS os campos preserváveis. Bug histórico: faltavam descricao,
+    // observacoes, probabilidade, data_fechamento_prevista, origem,
+    // licitacao_* e endereço completo — usuário reportava "perde dados".
     const novoProjeto = await sigo.entities.Projeto.create({
       empresa_id: op.empresa_id,
       nome: op.nome || op.titulo,
+      // Cliente
       cliente_id: op.cliente_id,
       cliente_nome: op.cliente_nome,
+      // Valores e prazos
       valor_estimado: op.valor_estimado,
+      probabilidade: op.probabilidade,
+      data_fechamento_prevista: op.data_fechamento_prevista,
+      // Descritivos
+      descricao: op.descricao,
+      observacoes: op.observacoes,
+      // Origem (CRM origem, não confundir com oportunidade_origem_id)
+      origem_id: op.origem_id,
+      origem_nome: op.origem_nome,
+      // Responsáveis (formato Projeto)
       responsaveis_emails: responsaveisEmails,
-      oportunidade_origem_id: op.id,
+      // Licitação
+      licitacao_modalidade: op.licitacao_modalidade,
+      licitacao_data: op.licitacao_data,
+      licitacao_horario: op.licitacao_horario,
+      // Endereço completo
+      cep: op.cep,
       endereco: op.endereco,
+      numero: op.numero,
+      complemento: op.complemento,
+      bairro: op.bairro,
       cidade: op.cidade,
       estado: op.estado,
-      cep: op.cep,
+      // Tags
+      etiquetas_ids: op.etiquetas_ids,
+      // Rastreabilidade + status
+      oportunidade_origem_id: op.id,
       status_id: statusGanho?.id || null,
       status_nome: statusGanho?.nome || null,
     });

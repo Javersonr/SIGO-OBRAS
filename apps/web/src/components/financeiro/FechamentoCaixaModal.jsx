@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import {
   Loader2,
   Package,
@@ -20,15 +21,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
-const parseDados = (pl) => {
-  try {
-    return typeof pl.dados_extraidos === "string"
-      ? JSON.parse(pl.dados_extraidos || "{}")
-      : pl.dados_extraidos || {};
-  } catch {
-    return {};
-  }
-};
+const parseDados = (pl) => safeParseJSON(pl.dados_extraidos, {});
 
 const getValor = (pl) => parseFloat(parseDados(pl).valor) || 0;
 

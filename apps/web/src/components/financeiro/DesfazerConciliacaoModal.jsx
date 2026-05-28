@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Loader2, Undo2, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -24,7 +25,7 @@ export default function DesfazerConciliacaoModal({
         const fechamentos = await sigo.entities.FechamentoCaixa.filter({});
         const fechamentoPago = fechamentos.find((f) => {
           if (f.status === "Pago") {
-            const ids = JSON.parse(f.pre_lancamentos_ids || "[]");
+            const ids = safeParseJSON(f.pre_lancamentos_ids, []);
             return ids.includes(preLancamento.id);
           }
           return false;
