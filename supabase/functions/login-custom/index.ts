@@ -70,9 +70,16 @@ Deno.serve(async (req) => {
   if (!senhaOk) return fail("Credenciais inválidas", 401);
 
   // Rehash transparente: se era SHA-256 legado, regrava como bcrypt
+  // E desliga senha_provisoria — user já provou que sabe a senha original,
+  // não é "provisória" no sentido de "admin escolheu pra ele trocar".
   if (needsRehash) {
     const novoHash = await hashPassword(senha);
-    await supabase.from("usuario_custom").update({ senha_hash: novoHash }).eq("id", usuario.id);
+    await supabase
+      .from("usuario_custom")
+      .update({ senha_hash: novoHash, senha_provisoria: false })
+      .eq("id", usuario.id);
+    // Atualiza o objeto local pro response não enviar must_change_password=true
+    usuario.senha_provisoria = false;
   }
 
   // 3. Resolver vínculos com empresas via usuario_empresa
