@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { useEmpresa } from "@/Layout";
 import SheetModalComponent from "@/components/ui/sheet-modal";
 import { Button } from "@/components/ui/button";
@@ -64,7 +65,7 @@ export default function InspecaoDetalheModal({
 
   useEffect(() => {
     if (inspecao?.ferramentas_inspecionadas) {
-      const parsed = JSON.parse(inspecao.ferramentas_inspecionadas);
+      const parsed = safeParseJSON(inspecao.ferramentas_inspecionadas, []);
       // Ordenar alfabeticamente por descrição
       const ordenadas = parsed.sort((a, b) =>
         (a.descricao || "").localeCompare(b.descricao || "", "pt-BR")

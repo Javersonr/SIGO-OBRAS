@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,7 +58,7 @@ export default function ChecklistManagerModal({ open, onOpenChange, empresaAtiva
       nome: cl.nome || "",
       descricao: cl.descricao || "",
       categoria: cl.categoria || "",
-      itens: cl.itens ? JSON.parse(cl.itens) : [],
+      itens: safeParseJSON(cl.itens, []),
     });
     setEditando(cl);
   };
@@ -146,7 +147,7 @@ export default function ChecklistManagerModal({ open, onOpenChange, empresaAtiva
 
   const handleDuplicarChecklist = async (cl) => {
     try {
-      const itens = cl.itens ? JSON.parse(cl.itens) : [];
+      const itens = safeParseJSON(cl.itens, []);
       const copia = {
         empresa_id: empresaAtiva.id,
         nome: `${cl.nome} (cópia)`,
@@ -166,7 +167,7 @@ export default function ChecklistManagerModal({ open, onOpenChange, empresaAtiva
 
   const handleExportarChecklist = async (cl) => {
     const XLSX = await import("xlsx");
-    const itens = cl.itens ? JSON.parse(cl.itens) : [];
+    const itens = safeParseJSON(cl.itens, []);
     const rows = itens.map((it, i) => ({
       Ordem: i + 1,
       "Nome do Item": it.nome,

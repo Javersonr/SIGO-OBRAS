@@ -17,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Search, Truck, HardHat, AlertCircle, CheckCircle2 } from "lucide-react";
 
 /**
@@ -46,10 +47,7 @@ export default function ObrigatoriosUnificadosTab({
 
     // Caminhões: CaminhaoCampoObrigatorio
     for (const campo of camposObrigatorios || []) {
-      let ids = [];
-      try {
-        ids = JSON.parse(campo.ferramenta_ids || "[]");
-      } catch {}
+      const ids = safeParseJSON(campo.ferramenta_ids, []);
       for (const fid of ids) {
         const ferr = (ferramentas || []).find((f) => f.id === fid);
         if (!ferr) continue;
@@ -68,13 +66,8 @@ export default function ObrigatoriosUnificadosTab({
     // Funções: modelo_ferramentas e modelo_epi
     for (const funcao of funcoes || []) {
       let modeloFerr = [];
-      let modeloEpi = [];
-      try {
-        modeloFerr = JSON.parse(funcao.modelo_ferramentas || "[]");
-      } catch {}
-      try {
-        modeloEpi = JSON.parse(funcao.modelo_epi || "[]");
-      } catch {}
+      modeloFerr = safeParseJSON(funcao.modelo_ferramentas, []);
+      let modeloEpi = safeParseJSON(funcao.modelo_epi, []);
 
       for (const item of [...modeloFerr, ...modeloEpi]) {
         const desc = item.ferramenta || item.item || item.descricao || "";

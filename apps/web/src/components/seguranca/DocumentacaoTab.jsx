@@ -1,5 +1,6 @@
 import React from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -184,7 +185,7 @@ export default function DocumentacaoTab({
       <div className="border-t pt-4">
         <h4 className="font-medium mb-3">Dependentes</h4>
         <div className="space-y-3">
-          {JSON.parse(funcionarioForm.dependentes || "[]").map((dep, idx) => {
+          {safeParseJSON(funcionarioForm.dependentes, []).map((dep, idx) => {
             const calcularIdade = (dataNascimento) => {
               if (!dataNascimento) return 0;
               const hoje = new Date();
@@ -212,7 +213,7 @@ export default function DocumentacaoTab({
                     size="icon"
                     className="h-6 w-6"
                     onClick={() => {
-                      const deps = JSON.parse(funcionarioForm.dependentes || "[]");
+                      const deps = safeParseJSON(funcionarioForm.dependentes, []);
                       deps.splice(idx, 1);
                       setFuncionarioForm({ ...funcionarioForm, dependentes: JSON.stringify(deps) });
                     }}
@@ -226,7 +227,7 @@ export default function DocumentacaoTab({
                     <Input
                       value={dep.nome || ""}
                       onChange={(e) => {
-                        const deps = JSON.parse(funcionarioForm.dependentes || "[]");
+                        const deps = safeParseJSON(funcionarioForm.dependentes, []);
                         deps[idx].nome = e.target.value;
                         setFuncionarioForm({
                           ...funcionarioForm,
@@ -243,7 +244,7 @@ export default function DocumentacaoTab({
                       type="date"
                       value={dep.data_nascimento || ""}
                       onChange={(e) => {
-                        const deps = JSON.parse(funcionarioForm.dependentes || "[]");
+                        const deps = safeParseJSON(funcionarioForm.dependentes, []);
                         deps[idx].data_nascimento = e.target.value;
                         setFuncionarioForm({
                           ...funcionarioForm,
@@ -258,7 +259,7 @@ export default function DocumentacaoTab({
                     <Input
                       value={dep.cpf || ""}
                       onChange={(e) => {
-                        const deps = JSON.parse(funcionarioForm.dependentes || "[]");
+                        const deps = safeParseJSON(funcionarioForm.dependentes, []);
                         deps[idx].cpf = e.target.value;
                         setFuncionarioForm({
                           ...funcionarioForm,
@@ -292,7 +293,7 @@ export default function DocumentacaoTab({
                             size="sm"
                             className="h-6 text-xs"
                             onClick={() => {
-                              const deps = JSON.parse(funcionarioForm.dependentes || "[]");
+                              const deps = safeParseJSON(funcionarioForm.dependentes, []);
                               deps[idx].comprovante_escolar_url = "";
                               setFuncionarioForm({
                                 ...funcionarioForm,
@@ -328,7 +329,7 @@ export default function DocumentacaoTab({
                                 const { file_url } = await sigo.integrations.Core.UploadFile({
                                   file,
                                 });
-                                const deps = JSON.parse(funcionarioForm.dependentes || "[]");
+                                const deps = safeParseJSON(funcionarioForm.dependentes, []);
                                 deps[idx].comprovante_escolar_url = file_url;
                                 setFuncionarioForm({
                                   ...funcionarioForm,
@@ -358,7 +359,7 @@ export default function DocumentacaoTab({
           size="sm"
           className="mt-3"
           onClick={() => {
-            const deps = JSON.parse(funcionarioForm.dependentes || "[]");
+            const deps = safeParseJSON(funcionarioForm.dependentes, []);
             deps.push({ nome: "", data_nascimento: "", cpf: "", comprovante_escolar_url: "" });
             setFuncionarioForm({ ...funcionarioForm, dependentes: JSON.stringify(deps) });
           }}

@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Download, Settings } from "lucide-react";
 import EPIEditorPanel from "./EPIEditorPanel";
+import { safeParseJSON } from "@/lib/json-utils";
 
 export default function VisualizarAutorizacaoFormalModal({
   open,
@@ -14,28 +15,21 @@ export default function VisualizarAutorizacaoFormalModal({
   const printRef = useRef(null);
   const [showEditor, setShowEditor] = useState(false);
   const [settings, setSettings] = useState(() => {
-    try {
-      const saved = localStorage.getItem("autorizacao-formal-modal-settings");
-      return saved
-        ? JSON.parse(saved)
-        : {
-            fontSizeTitulo: 14,
-            fontSizeTabela: 11,
-            fontSizeDados: 10,
-            fontSizeRodape: 10,
-            margemSuperior: 10,
-            margemInferior: 10,
-            paddingCelula: 6,
-            alturaLogo: 70,
-            margemLogo: 20,
-            espacoInferiorCabecalho: 12,
-            espacoDados: 8,
-            fontSizeLabels: 10,
-            alturaAssinatura: 35,
-          };
-    } catch {
-      return {};
-    }
+    return safeParseJSON(localStorage.getItem("autorizacao-formal-modal-settings"), {
+      fontSizeTitulo: 14,
+      fontSizeTabela: 11,
+      fontSizeDados: 10,
+      fontSizeRodape: 10,
+      margemSuperior: 10,
+      margemInferior: 10,
+      paddingCelula: 6,
+      alturaLogo: 70,
+      margemLogo: 20,
+      espacoInferiorCabecalho: 12,
+      espacoDados: 8,
+      fontSizeLabels: 10,
+      alturaAssinatura: 35,
+    });
   });
 
   const funcao = funcoes?.find((f) => f.id === funcionario.funcao_id) || {};

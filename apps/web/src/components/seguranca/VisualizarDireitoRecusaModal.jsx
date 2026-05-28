@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Download, Settings } from "lucide-react";
 import EPIEditorPanel from "./EPIEditorPanel";
+import { safeParseJSON } from "@/lib/json-utils";
 
 export default function VisualizarDireitoRecusaModal({
   open,
@@ -14,32 +15,25 @@ export default function VisualizarDireitoRecusaModal({
   const printRef = useRef(null);
   const [showEditor, setShowEditor] = useState(false);
   const [settings, setSettings] = useState(() => {
-    try {
-      const saved = localStorage.getItem("direito-recusa-modal-settings");
-      return saved
-        ? JSON.parse(saved)
-        : {
-            fontSizeTitulo: 14,
-            fontSizeTabela: 11,
-            fontSizeDados: 10,
-            fontSizeRodape: 10,
-            margemSuperior: 10,
-            margemInferior: 10,
-            paddingCelula: 6,
-            alturaLogo: 70,
-            margemLogo: 20,
-            espacoInferiorCabecalho: 12,
-            espacoDados: 8,
-            fontSizeLabels: 10,
-            alturaAssinatura: 35,
-            rodapeLinha1: "",
-            rodapeLinha2:
-              "Rua Artelux de Oliveira, 74 Bairro Santa José de Paula. CEP 32.77000 – João Pinheiro – MG",
-            rodapeLinha3: "Fone: (38) 3561-4381",
-          };
-    } catch {
-      return {};
-    }
+    return safeParseJSON(localStorage.getItem("direito-recusa-modal-settings"), {
+      fontSizeTitulo: 14,
+      fontSizeTabela: 11,
+      fontSizeDados: 10,
+      fontSizeRodape: 10,
+      margemSuperior: 10,
+      margemInferior: 10,
+      paddingCelula: 6,
+      alturaLogo: 70,
+      margemLogo: 20,
+      espacoInferiorCabecalho: 12,
+      espacoDados: 8,
+      fontSizeLabels: 10,
+      alturaAssinatura: 35,
+      rodapeLinha1: "",
+      rodapeLinha2:
+        "Rua Artelux de Oliveira, 74 Bairro Santa José de Paula. CEP 32.77000 – João Pinheiro – MG",
+      rodapeLinha3: "Fone: (38) 3561-4381",
+    });
   });
 
   useEffect(() => {

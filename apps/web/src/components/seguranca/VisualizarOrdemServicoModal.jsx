@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Download, Settings } from "lucide-react";
 import OrdemServicoEditorPanel from "./OrdemServicoEditorPanel";
+import { safeParseJSON } from "@/lib/json-utils";
 
 export default function VisualizarOrdemServicoModal({
   open,
@@ -15,24 +16,17 @@ export default function VisualizarOrdemServicoModal({
   const printRef = useRef(null);
   const [showEditor, setShowEditor] = useState(false);
   const [settings, setSettings] = useState(() => {
-    try {
-      const saved = localStorage.getItem("ordem-servico-modal-settings");
-      return saved
-        ? JSON.parse(saved)
-        : {
-            fontSizeTitulo: 14,
-            fontSizeDados: 10,
-            margemSuperior: 10,
-            margemInferior: 10,
-            paddingCelula: 8,
-            alturaLogo: 70,
-            margemLogo: 20,
-            espacoInferiorCabecalho: 12,
-            espacoDados: 8,
-          };
-    } catch {
-      return {};
-    }
+    return safeParseJSON(localStorage.getItem("ordem-servico-modal-settings"), {
+      fontSizeTitulo: 14,
+      fontSizeDados: 10,
+      margemSuperior: 10,
+      margemInferior: 10,
+      paddingCelula: 8,
+      alturaLogo: 70,
+      margemLogo: 20,
+      espacoInferiorCabecalho: 12,
+      espacoDados: 8,
+    });
   });
 
   useEffect(() => {
@@ -136,7 +130,7 @@ export default function VisualizarOrdemServicoModal({
     }
   };
 
-  const data = funcao?.modelo_ordem_servicos ? JSON.parse(funcao.modelo_ordem_servicos) : {};
+  const data = safeParseJSON(funcao?.modelo_ordem_servicos, {});
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>

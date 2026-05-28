@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { useEmpresa } from "@/Layout";
 import SheetModalComponent from "@/components/ui/sheet-modal";
 import { Button } from "@/components/ui/button";
@@ -96,7 +97,7 @@ export default function FerramentaDetalheModal({ open, onOpenChange, ferramenta,
     return manutencoes.reduce((total, m) => {
       const custoMaoObra = parseFloat(m.custo) || 0;
       const custoPecas = m.pecas_substituidas
-        ? JSON.parse(m.pecas_substituidas).reduce(
+        ? safeParseJSON(m.pecas_substituidas, []).reduce(
             (sum, p) => sum + p.quantidade * p.custo_unitario,
             0
           )
@@ -315,7 +316,7 @@ export default function FerramentaDetalheModal({ open, onOpenChange, ferramenta,
               </div>
             ) : (
               manutencoes.map((manut) => {
-                const pecas = manut.pecas_substituidas ? JSON.parse(manut.pecas_substituidas) : [];
+                const pecas = safeParseJSON(manut.pecas_substituidas, []);
                 const custoTotal =
                   (parseFloat(manut.custo) || 0) +
                   pecas.reduce((s, p) => s + p.quantidade * p.custo_unitario, 0);
@@ -492,7 +493,7 @@ export default function FerramentaDetalheModal({ open, onOpenChange, ferramenta,
                   const custoTipo = manutTipo.reduce((total, m) => {
                     const custoMaoObra = parseFloat(m.custo) || 0;
                     const custoPecas = m.pecas_substituidas
-                      ? JSON.parse(m.pecas_substituidas).reduce(
+                      ? safeParseJSON(m.pecas_substituidas, []).reduce(
                           (sum, p) => sum + p.quantidade * p.custo_unitario,
                           0
                         )
@@ -661,7 +662,7 @@ export default function FerramentaDetalheModal({ open, onOpenChange, ferramenta,
             ) : (
               <div className="space-y-3">
                 {notas.map((nota) => {
-                  const anexos = nota.anexos ? JSON.parse(nota.anexos) : [];
+                  const anexos = safeParseJSON(nota.anexos, []);
                   return (
                     <Card key={nota.id}>
                       <CardContent className="p-4">

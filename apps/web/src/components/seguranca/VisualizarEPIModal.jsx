@@ -6,6 +6,7 @@ import { Download, Settings, Upload, Send, Loader2 } from "lucide-react";
 import EPIEditorPanel from "./EPIEditorPanel";
 import ImportarTreinamentosZip from "./ImportarTreinamentosZip";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { toast } from "sonner";
 
 export default function VisualizarEPIModal({
@@ -41,30 +42,23 @@ export default function VisualizarEPIModal({
   };
   const [episEntregues, setEpisEntregues] = useState([]);
   const [settings, setSettings] = useState(() => {
-    try {
-      const saved = localStorage.getItem("epi-modal-settings");
-      return saved
-        ? JSON.parse(saved)
-        : {
-            fontSizeTitulo: 14,
-            fontSizeTabela: 11,
-            fontSizeDados: 10,
-            fontSizeRodape: 10,
-            alturaLinhaTabela: 20,
-            alturaAssinatura: 35,
-            margemSuperior: 10,
-            margemInferior: 10,
-            paddingCelula: 6,
-            alturaLogo: 70,
-            margemLogo: 20,
-            espacoInferiorCabecalho: 12,
-            espacoDados: 8,
-            fontSizeLabels: 10,
-            columnWidths: [7, 7, 5, 20, 8, 23, 20],
-          };
-    } catch {
-      return {};
-    }
+    return safeParseJSON(localStorage.getItem("epi-modal-settings"), {
+      fontSizeTitulo: 14,
+      fontSizeTabela: 11,
+      fontSizeDados: 10,
+      fontSizeRodape: 10,
+      alturaLinhaTabela: 20,
+      alturaAssinatura: 35,
+      margemSuperior: 10,
+      margemInferior: 10,
+      paddingCelula: 6,
+      alturaLogo: 70,
+      margemLogo: 20,
+      espacoInferiorCabecalho: 12,
+      espacoDados: 8,
+      fontSizeLabels: 10,
+      columnWidths: [7, 7, 5, 20, 8, 23, 20],
+    });
   });
 
   useEffect(() => {

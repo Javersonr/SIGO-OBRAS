@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -49,10 +50,7 @@ export default function AlertasConformidadeFerramental({ empresaAtiva, compact =
       // --- FERRAMENTAS FALTANDO POR FUNÇÃO ---
       const funcaoMap = {};
       funcoes.forEach((f) => {
-        let itens = [];
-        try {
-          itens = f.modelo_ferramentas ? JSON.parse(f.modelo_ferramentas) : [];
-        } catch {}
+        const itens = safeParseJSON(f.modelo_ferramentas, []);
         if (itens.length > 0) funcaoMap[f.id] = { nome: f.nome, itens };
       });
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { toast } from "sonner";
 import { Wrench, Shield, PackageCheck, Loader2, Minus, Plus } from "lucide-react";
 import { format } from "date-fns";
@@ -45,13 +46,7 @@ export default function SolicitarEntregaFerramentasModal({
     );
   };
 
-  const itensEPIBase = (() => {
-    try {
-      return JSON.parse(funcao?.modelo_epi || "[]");
-    } catch {
-      return [];
-    }
-  })()
+  const itensEPIBase = safeParseJSON(funcao?.modelo_epi, [])
     .map((i) => ({
       descricao: i.item || i.descricao || i.nome || "",
       tipo: "EPI",
@@ -66,13 +61,7 @@ export default function SolicitarEntregaFerramentasModal({
       );
     });
 
-  const itensFerramentasBase = (() => {
-    try {
-      return JSON.parse(funcao?.modelo_ferramentas || "[]");
-    } catch {
-      return [];
-    }
-  })()
+  const itensFerramentasBase = safeParseJSON(funcao?.modelo_ferramentas, [])
     .map((i) => ({
       descricao: i.ferramenta || i.item || i.descricao || i.nome || "",
       tipo: "Ferramenta",
@@ -291,13 +280,7 @@ export default function SolicitarEntregaFerramentasModal({
       if (entregaExistente) {
         // Modo edição: carregar itens existentes
         setObservacoes(entregaExistente.observacoes || "");
-        const itensExistentes = (() => {
-          try {
-            return JSON.parse(entregaExistente.itens || "[]");
-          } catch {
-            return [];
-          }
-        })();
+        const itensExistentes = safeParseJSON(entregaExistente.itens, []);
         const ferrs = itensExistentes
           .filter((i) => i.tipo !== "EPI")
           .map((i) => ({ ...i, selecionado: true, quantidade: i.quantidade || 1 }));

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { useEmpresa } from "@/Layout";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -67,11 +68,7 @@ export default function ConformidadeCaminhoes({ ferramentas: ferramentasProp }) 
   const getCamposDoC = (caminhaoId) => campos.filter((c) => c.caminhao_id === caminhaoId);
 
   const getFerramentasIds = (campo) => {
-    try {
-      return JSON.parse(campo.ferramenta_ids || "[]");
-    } catch {
-      return [];
-    }
+    return safeParseJSON(campo.ferramenta_ids, []);
   };
 
   const getFerramentasCaminhao = (caminhao) =>

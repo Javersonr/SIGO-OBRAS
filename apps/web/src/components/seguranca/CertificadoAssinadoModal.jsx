@@ -13,6 +13,7 @@ import {
   Download,
 } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
@@ -57,7 +58,7 @@ export default function CertificadoAssinadoModal({
   }, [open]);
 
   const todosAnexos =
-    treinamento && funcionario ? JSON.parse(funcionario.treinamentos_anexos || "[]") : [];
+    treinamento && funcionario ? safeParseJSON(funcionario.treinamentos_anexos, []) : [];
   const anexosDeste = treinamento
     ? todosAnexos.filter((a) => String(a.treinamento_id) === String(treinamento.id))
     : [];

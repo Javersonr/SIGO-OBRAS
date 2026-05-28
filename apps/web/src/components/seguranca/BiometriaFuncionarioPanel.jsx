@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Fingerprint, Loader2, CheckCircle2, Trash2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import NitgenCapture from "@/components/ferramental/NitgenCapture";
 import { format } from "date-fns";
 
@@ -23,7 +24,7 @@ export default function BiometriaFuncionarioPanel({
   // Carregar biometria ao abrir funcionário
   useEffect(() => {
     if (selectedFuncionario?.biometria_template) {
-      const biometria = JSON.parse(selectedFuncionario.biometria_template || "null");
+      const biometria = safeParseJSON(selectedFuncionario.biometria_template, null);
       if (biometria) {
         setBiometriaCarregada({
           template: biometria.template,

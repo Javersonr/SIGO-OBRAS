@@ -3,6 +3,7 @@
  * indicando quais caminhões e funções têm aquela ferramenta como obrigatória.
  */
 import { useMemo } from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 
 export function useVinculosObrigatorios(camposObrigatorios, funcoes, ferramentas) {
   return useMemo(() => {
@@ -16,10 +17,7 @@ export function useVinculosObrigatorios(camposObrigatorios, funcoes, ferramentas
 
     // Caminhões: CaminhaoCampoObrigatorio tem ferramenta_ids (JSON array de IDs)
     for (const campo of camposObrigatorios) {
-      let ids = [];
-      try {
-        ids = campo.ferramenta_ids ? JSON.parse(campo.ferramenta_ids) : [];
-      } catch {}
+      const ids = safeParseJSON(campo.ferramenta_ids, []);
       for (const fid of ids) {
         const ferr = ferramentas.find((f) => f.id === fid);
         if (!ferr) continue;
@@ -33,10 +31,7 @@ export function useVinculosObrigatorios(camposObrigatorios, funcoes, ferramentas
 
     // Funções: modelo_ferramentas é JSON array [{ferramenta, quantidade, ...}]
     for (const funcao of funcoes) {
-      let itens = [];
-      try {
-        itens = funcao.modelo_ferramentas ? JSON.parse(funcao.modelo_ferramentas) : [];
-      } catch {}
+      const itens = safeParseJSON(funcao.modelo_ferramentas, []);
       for (const item of itens) {
         // item.ferramenta pode ser a descrição ou o id
         const descricao = item.ferramenta || item.descricao || "";

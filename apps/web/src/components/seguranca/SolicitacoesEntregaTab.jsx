@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -236,13 +237,7 @@ export default function SolicitacoesEntregaTab({ empresaAtiva, user }) {
           {solicitacoesFiltradas.map((sol) => {
             const statusCfg = STATUS_CONFIG[sol.status] || STATUS_CONFIG["Pendente"];
             const StatusIcon = statusCfg.icon;
-            const itens = (() => {
-              try {
-                return JSON.parse(sol.itens || "[]");
-              } catch {
-                return [];
-              }
-            })();
+            const itens = safeParseJSON(sol.itens, []);
             const temFerramentas = itens.some((i) => i.tipo === "Ferramenta");
             const temEPIs = itens.some((i) => i.tipo === "EPI");
 

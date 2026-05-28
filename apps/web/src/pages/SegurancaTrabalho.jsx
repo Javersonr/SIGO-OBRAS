@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
+import { safeParseJSON } from "@/lib/json-utils";
+import {
+  TEMPLATE_DOCS_RH,
+  TEMPLATE_DOCS_DEMISSIONAIS,
+  parseDocsOrTemplate,
+} from "@/lib/documentos-funcionario";
 import { formatCPF } from "../components/utils/cpfFormatter";
 import VisualizarEPIModal from "../components/seguranca/VisualizarEPIModal";
 import VisualizarFerramentasModal from "../components/seguranca/VisualizarFerramentasModal";
@@ -434,7 +440,7 @@ export default function SegurancaTrabalho() {
     setUploadingDoc(true);
     try {
       const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-      const docs = JSON.parse(funcionarioForm[tipo] || "[]");
+      const docs = safeParseJSON(funcionarioForm[tipo], []);
       docs.push({
         nome: file.name,
         url: file_url,
@@ -453,7 +459,7 @@ export default function SegurancaTrabalho() {
   };
 
   const handleRemoverDocumento = (tipo, index) => {
-    const docs = JSON.parse(funcionarioForm[tipo] || "[]");
+    const docs = safeParseJSON(funcionarioForm[tipo], []);
     docs.splice(index, 1);
     setFuncionarioForm({ ...funcionarioForm, [tipo]: JSON.stringify(docs) });
   };
@@ -464,7 +470,7 @@ export default function SegurancaTrabalho() {
     setUploadingDoc(true);
     try {
       const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-      const anexos = JSON.parse(funcionarioForm[tipo] || "[]");
+      const anexos = safeParseJSON(funcionarioForm[tipo], []);
       anexos.push({
         nome: file.name,
         url: file_url,
@@ -484,7 +490,7 @@ export default function SegurancaTrabalho() {
   };
 
   const handleRemoverAnexo = (tipo, index) => {
-    const anexos = JSON.parse(funcionarioForm[tipo] || "[]");
+    const anexos = safeParseJSON(funcionarioForm[tipo], []);
     anexos.splice(index, 1);
     const novoForm = { ...funcionarioForm, [tipo]: JSON.stringify(anexos) };
     setFuncionarioForm(novoForm);
@@ -493,7 +499,7 @@ export default function SegurancaTrabalho() {
   };
 
   const handleVerHistorico = (tipo) => {
-    const anexos = JSON.parse(funcionarioForm[tipo] || "[]");
+    const anexos = safeParseJSON(funcionarioForm[tipo], []);
     setHistoricoData(anexos);
     setHistoricoTipo(tipo.replace("_anexos", ""));
     setShowHistoricoModal(true);
@@ -561,7 +567,7 @@ export default function SegurancaTrabalho() {
       tipo === "documentos_demissionais"
     ) {
       // Para documentos obrigatórios e RH estruturados, compilar todos os anexos
-      const docs = JSON.parse(funcionarioForm[tipo] || "[]");
+      const docs = safeParseJSON(funcionarioForm[tipo], []);
       docs.forEach((doc) => {
         if (doc.anexos && Array.isArray(doc.anexos)) {
           doc.anexos.forEach((anexo) => {
@@ -589,7 +595,7 @@ export default function SegurancaTrabalho() {
                     ? "documentos_rh_anexos"
                     : "ordem_servicos_anexos";
 
-      anexosData = JSON.parse(funcionarioForm[anexosKey] || "[]");
+      anexosData = safeParseJSON(funcionarioForm[anexosKey], []);
     }
 
     setHistoricoData(anexosData);
@@ -602,8 +608,8 @@ export default function SegurancaTrabalho() {
   };
 
   const verificarDocumentosCompletos = () => {
-    const docsObrigatorios = JSON.parse(funcionarioForm.documentos_obrigatorios || "[]");
-    const dependentes = JSON.parse(funcionarioForm.dependentes || "[]");
+    const docsObrigatorios = safeParseJSON(funcionarioForm.documentos_obrigatorios, []);
+    const dependentes = safeParseJSON(funcionarioForm.dependentes, []);
 
     const documentosSempreObrigatorios = [
       "Cópia do CPF *",
@@ -707,7 +713,7 @@ export default function SegurancaTrabalho() {
   const gerarFormularioRegistroPDF = async () => {
     const { jsPDF } = await import("jspdf");
     const doc = new jsPDF();
-    const dependentes = JSON.parse(funcionarioForm.dependentes || "[]");
+    const dependentes = safeParseJSON(funcionarioForm.dependentes, []);
     let y = 35;
     doc.setFontSize(10);
     doc.setFont(undefined, "bold");
@@ -769,7 +775,7 @@ export default function SegurancaTrabalho() {
 
   const handleBaixarTodosAnexos = async () => {
     try {
-      const docsObrigatorios = JSON.parse(funcionarioForm.documentos_obrigatorios || "[]").map(
+      const docsObrigatorios = safeParseJSON(funcionarioForm.documentos_obrigatorios, []).map(
         (doc) => ({ ...doc, anexos: doc.anexos || [] })
       );
       const zip = new JSZip();
@@ -797,7 +803,7 @@ export default function SegurancaTrabalho() {
         }
       };
       await addDocs(docsObrigatorios);
-      await addDocs(JSON.parse(funcionarioForm.documentos_rh_estruturados || "[]"));
+      await addDocs(safeParseJSON(funcionarioForm.documentos_rh_estruturados, []));
       const content = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
       if (content.size === 0) {
         toast.error("ZIP gerado está vazio.");
@@ -1315,10 +1321,10 @@ export default function SegurancaTrabalho() {
                   ) : (
                     filteredFuncionarios.map((f) => {
                       const asoStatus = getASOStatus(f.aso_vencimento);
-                      const docsPessoais = JSON.parse(f.documentos_pessoais || "[]");
-                      const treinamentosAnexos = JSON.parse(f.treinamentos_anexos || "[]");
-                      const ferramentaisAnexos = JSON.parse(f.ferramentais_anexos || "[]");
-                      const episAnexos = JSON.parse(f.epis_anexos || "[]");
+                      const docsPessoais = safeParseJSON(f.documentos_pessoais, []);
+                      const treinamentosAnexos = safeParseJSON(f.treinamentos_anexos, []);
+                      const ferramentaisAnexos = safeParseJSON(f.ferramentais_anexos, []);
+                      const episAnexos = safeParseJSON(f.epis_anexos, []);
                       const totalDocs =
                         docsPessoais.length +
                         treinamentosAnexos.length +
@@ -1391,34 +1397,15 @@ export default function SegurancaTrabalho() {
                                 size="icon"
                                 onClick={async () => {
                                   setSelectedFuncionario(f);
-                                  const docsRH = f.documentos_rh_estruturados
-                                    ? JSON.parse(f.documentos_rh_estruturados)
-                                    : [
-                                        {
-                                          nome: "ASO - Atestado de Saúde Ocupacional *",
-                                          anexado: false,
-                                          url: "",
-                                          data_upload: "",
-                                          anexos: [],
-                                        },
-                                        {
-                                          nome: "Exames Médicos",
-                                          anexado: false,
-                                          url: "",
-                                          data_upload: "",
-                                          anexos: [],
-                                        },
-                                        {
-                                          nome: "Registro de Empregado",
-                                          anexado: false,
-                                          url: "",
-                                          data_upload: "",
-                                          anexos: [],
-                                        },
-                                      ];
-                                  const docsDemissionais = f.documentos_demissionais
-                                    ? JSON.parse(f.documentos_demissionais)
-                                    : [];
+                                  // JSONB → safeParse + fallback p/ templates centralizados
+                                  const docsRH = parseDocsOrTemplate(
+                                    f.documentos_rh_estruturados,
+                                    TEMPLATE_DOCS_RH
+                                  );
+                                  const docsDemissionais = safeParseJSON(
+                                    f.documentos_demissionais,
+                                    []
+                                  );
                                   setFuncionarioForm({
                                     ...f,
                                     documentos_rh_estruturados: JSON.stringify(docsRH),
@@ -1438,102 +1425,17 @@ export default function SegurancaTrabalho() {
                                 size="icon"
                                 onClick={async () => {
                                   setSelectedFuncionario(f);
-
-                                  // MANTER os documentos_obrigatorios EXATAMENTE como estão no banco
-                                  // Inicializar documentos_rh_estruturados se não existir
-                                  const docsRH = f.documentos_rh_estruturados
-                                    ? JSON.parse(f.documentos_rh_estruturados)
-                                    : [
-                                        {
-                                          nome: "ASO - Atestado de Saúde Ocupacional *",
-                                          anexado: false,
-                                          url: "",
-                                          data_upload: "",
-                                          anexos: [],
-                                        },
-                                        {
-                                          nome: "Exames Médicos",
-                                          anexado: false,
-                                          url: "",
-                                          data_upload: "",
-                                          anexos: [],
-                                        },
-                                        {
-                                          nome: "Registro de Empregado",
-                                          anexado: false,
-                                          url: "",
-                                          data_upload: "",
-                                          anexos: [],
-                                        },
-                                      ];
-
-                                  const docsDemissionais = f.documentos_demissionais
-                                    ? JSON.parse(f.documentos_demissionais)
-                                    : [
-                                        {
-                                          nome: "Aviso Prévio",
-                                          anexado: false,
-                                          url: "",
-                                          data_upload: "",
-                                          anexos: [],
-                                        },
-                                        {
-                                          nome: "Comprovante de Acordo Judicial",
-                                          anexado: false,
-                                          url: "",
-                                          data_upload: "",
-                                          anexos: [],
-                                        },
-                                        {
-                                          nome: "Declaração de Empregado Desligado do Contrato",
-                                          anexado: false,
-                                          url: "",
-                                          data_upload: "",
-                                          anexos: [],
-                                        },
-                                        {
-                                          nome: "Declaração de Pedido de Demissão",
-                                          anexado: false,
-                                          url: "",
-                                          data_upload: "",
-                                          anexos: [],
-                                        },
-                                        {
-                                          nome: "Demonstrativo do Trabalhador de Recolhimento FGTS Rescisório",
-                                          anexado: false,
-                                          url: "",
-                                          data_upload: "",
-                                          anexos: [],
-                                        },
-                                        {
-                                          nome: "Exame Demissional",
-                                          anexado: false,
-                                          url: "",
-                                          data_upload: "",
-                                          anexos: [],
-                                        },
-                                        {
-                                          nome: "GRRF - Guia de Recolhimento Rescisório do FGTS e Comprovante de Pagamento",
-                                          anexado: false,
-                                          url: "",
-                                          data_upload: "",
-                                          anexos: [],
-                                        },
-                                        {
-                                          nome: "PPP - Perfil Profissiográfico Previdenciário",
-                                          anexado: false,
-                                          url: "",
-                                          data_upload: "",
-                                          anexos: [],
-                                        },
-                                        {
-                                          nome: "TRCT - Termo de Rescisão de Contrato de Trabalho",
-                                          anexado: false,
-                                          url: "",
-                                          data_upload: "",
-                                          anexos: [],
-                                        },
-                                      ];
+                                  // documentos_obrigatorios fica intacto. Os outros 2 caem pros
+                                  // templates centralizados em lib/documentos-funcionario.js
+                                  // se o valor for vazio/corrompido.
+                                  const docsRH = parseDocsOrTemplate(
+                                    f.documentos_rh_estruturados,
+                                    TEMPLATE_DOCS_RH
+                                  );
+                                  const docsDemissionais = parseDocsOrTemplate(
+                                    f.documentos_demissionais,
+                                    TEMPLATE_DOCS_DEMISSIONAIS
+                                  );
 
                                   setTabAtiva("dados");
                                   setFuncionarioForm({
@@ -2154,31 +2056,10 @@ export default function SegurancaTrabalho() {
                 funcionarios={funcionarios}
                 onAvancarFuncionario={async (proximoFunc) => {
                   setSelectedFuncionario(proximoFunc);
-                  const docsRH = proximoFunc.documentos_rh_estruturados
-                    ? JSON.parse(proximoFunc.documentos_rh_estruturados)
-                    : [
-                        {
-                          nome: "ASO - Atestado de Saúde Ocupacional *",
-                          anexado: false,
-                          url: "",
-                          data_upload: "",
-                          anexos: [],
-                        },
-                        {
-                          nome: "Exames Médicos",
-                          anexado: false,
-                          url: "",
-                          data_upload: "",
-                          anexos: [],
-                        },
-                        {
-                          nome: "Registro de Empregado",
-                          anexado: false,
-                          url: "",
-                          data_upload: "",
-                          anexos: [],
-                        },
-                      ];
+                  const docsRH = parseDocsOrTemplate(
+                    proximoFunc.documentos_rh_estruturados,
+                    TEMPLATE_DOCS_RH
+                  );
                   setFuncionarioForm({
                     ...proximoFunc,
                     documentos_rh_estruturados: JSON.stringify(docsRH),
@@ -2283,8 +2164,9 @@ export default function SegurancaTrabalho() {
           open={showVisualizarEPI}
           onOpenChange={setShowVisualizarEPI}
           funcionario={funcionarioForm}
-          epis={JSON.parse(
-            funcoes.find((f) => f.id === funcionarioForm.funcao_id)?.modelo_epi || "[]"
+          epis={safeParseJSON(
+            funcoes.find((f) => f.id === funcionarioForm.funcao_id)?.modelo_epi,
+            []
           )}
           empresaAtiva={empresaAtiva}
         />
@@ -2296,8 +2178,9 @@ export default function SegurancaTrabalho() {
           open={showVisualizarFerramentas}
           onOpenChange={setShowVisualizarFerramentas}
           funcionario={funcionarioForm}
-          ferramentas={JSON.parse(
-            funcoes.find((f) => f.id === funcionarioForm.funcao_id)?.modelo_ferramentas || "[]"
+          ferramentas={safeParseJSON(
+            funcoes.find((f) => f.id === funcionarioForm.funcao_id)?.modelo_ferramentas,
+            []
           )}
           empresaAtiva={empresaAtiva}
         />
@@ -2407,7 +2290,7 @@ export default function SegurancaTrabalho() {
         empresaId={empresaAtiva?.id}
         onSuccess={async (dados) => {
           try {
-            const docs = JSON.parse(funcionarioForm.documentos_rh_estruturados || "[]");
+            const docs = safeParseJSON(funcionarioForm.documentos_rh_estruturados, []);
             const tipos = { aso: "ASO", exames: "Exames", registro: "Registro de Empregado" };
             const chave = Object.keys(tipos).find((k) => k === dados.tipo);
             if (chave) {
@@ -2494,8 +2377,9 @@ export default function SegurancaTrabalho() {
           open={showSolicitacaoEPI}
           onOpenChange={setShowSolicitacaoEPI}
           funcionario={funcionarioForm}
-          epis={JSON.parse(
-            funcoes.find((f) => f.id === funcionarioForm.funcao_id)?.modelo_epi || "[]"
+          epis={safeParseJSON(
+            funcoes.find((f) => f.id === funcionarioForm.funcao_id)?.modelo_epi,
+            []
           )}
           empresaAtiva={empresaAtiva}
           onSuccess={() => loadData()}
@@ -2730,31 +2614,10 @@ export default function SegurancaTrabalho() {
                     (f) => f.id === funcionarioSelecionadoParaGerarDocs.id
                   );
                   await carregarTreinamentosFuncao(funcSelecionado.funcao_id);
-                  const docsRH = funcSelecionado.documentos_rh_estruturados
-                    ? JSON.parse(funcSelecionado.documentos_rh_estruturados)
-                    : [
-                        {
-                          nome: "ASO - Atestado de Saúde Ocupacional *",
-                          anexado: false,
-                          url: "",
-                          data_upload: "",
-                          anexos: [],
-                        },
-                        {
-                          nome: "Exames Médicos",
-                          anexado: false,
-                          url: "",
-                          data_upload: "",
-                          anexos: [],
-                        },
-                        {
-                          nome: "Registro de Empregado",
-                          anexado: false,
-                          url: "",
-                          data_upload: "",
-                          anexos: [],
-                        },
-                      ];
+                  const docsRH = parseDocsOrTemplate(
+                    funcSelecionado.documentos_rh_estruturados,
+                    TEMPLATE_DOCS_RH
+                  );
                   setFuncionarioForm({
                     ...funcSelecionado,
                     documentos_rh_estruturados: JSON.stringify(docsRH),

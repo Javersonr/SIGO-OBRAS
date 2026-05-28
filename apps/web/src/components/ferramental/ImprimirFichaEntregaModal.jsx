@@ -3,19 +3,14 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Button } from "@/components/ui/button";
 import { Printer } from "lucide-react";
 import { format } from "date-fns";
+import { safeParseJSON } from "@/lib/json-utils";
 
 export default function ImprimirFichaEntregaModal({ open, onOpenChange, entrega, empresaAtiva }) {
   const [tipoImpressao, setTipoImpressao] = useState("ambos"); // 'ambos', 'ferramentas', 'epis'
 
   if (!entrega) return null;
 
-  const itens = (() => {
-    try {
-      return JSON.parse(entrega.itens || "[]");
-    } catch {
-      return [];
-    }
-  })();
+  const itens = safeParseJSON(entrega.itens, []);
 
   // Separar ferramentas e EPIs
   const ferramentas = itens.filter((i) => i.tipo !== "EPI");

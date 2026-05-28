@@ -1,5 +1,6 @@
 import React from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileText, Upload, Eye, Trash2, Clock, Download } from "lucide-react";
@@ -26,7 +27,7 @@ export default function RHTab({
   handleBaixarTodosAnexos,
 }) {
   const renderDocList = (fieldKey, titleNum, title, onHistorico) => {
-    const docs = JSON.parse(funcionarioForm[fieldKey] || "[]");
+    const docs = safeParseJSON(funcionarioForm[fieldKey], []);
     return (
       <Card>
         <CardHeader>
@@ -79,7 +80,7 @@ export default function RHTab({
                           setUploadingDoc(true);
                           try {
                             const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-                            const allDocs = JSON.parse(funcionarioForm[fieldKey] || "[]");
+                            const allDocs = safeParseJSON(funcionarioForm[fieldKey], []);
                             const extensao = file.name.split(".").pop();
                             if (!allDocs[idx].anexos) allDocs[idx].anexos = [];
                             const num = allDocs[idx].anexos.length + 1;
@@ -157,7 +158,7 @@ export default function RHTab({
                               className="h-6 w-6"
                               title="Excluir"
                               onClick={() => {
-                                const allDocs = JSON.parse(funcionarioForm[fieldKey] || "[]");
+                                const allDocs = safeParseJSON(funcionarioForm[fieldKey], []);
                                 allDocs[idx].anexos.splice(anexoIdx, 1);
                                 const novoForm = {
                                   ...funcionarioForm,
@@ -212,7 +213,7 @@ export default function RHTab({
       </div>
       <AlertaDocumentosRH documentosRH={documentosRHAnalisados} />
       {renderDocList("documentos_obrigatorios", 1, "Documentos Obrigatórios para Contratação")}
-      {JSON.parse(funcionarioForm.dependentes || "[]").some(
+      {safeParseJSON(funcionarioForm.dependentes, []).some(
         (dep) => dep.comprovante_escolar_url
       ) && (
         <Card>
@@ -223,7 +224,7 @@ export default function RHTab({
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {JSON.parse(funcionarioForm.dependentes || "[]").map(
+              {safeParseJSON(funcionarioForm.dependentes, []).map(
                 (dep, depIdx) =>
                   dep.comprovante_escolar_url && (
                     <div

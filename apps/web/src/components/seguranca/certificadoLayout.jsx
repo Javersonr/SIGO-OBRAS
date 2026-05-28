@@ -1,5 +1,6 @@
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { safeParseJSON } from "@/lib/json-utils";
 
 const NAVY = [15, 40, 85];
 const GOLD = [196, 155, 50];
@@ -14,10 +15,8 @@ export const loadImage = (url) =>
   });
 
 export const parseInstrutor = (instrutor_nome, instrutor_cpf) => {
-  try {
-    const parsed = JSON.parse(instrutor_nome);
-    if (Array.isArray(parsed) && parsed.length > 0) return parsed[0];
-  } catch {}
+  const parsed = safeParseJSON(instrutor_nome, null);
+  if (Array.isArray(parsed) && parsed.length > 0) return parsed[0];
   return { nome: instrutor_nome || "", cpf: instrutor_cpf || "", formacao: "" };
 };
 

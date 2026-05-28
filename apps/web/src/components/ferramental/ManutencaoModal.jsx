@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import ReactDOM from "react-dom";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { useEmpresa } from "@/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,9 +79,7 @@ export default function ManutencaoModal({ open, onOpenChange, manutencao, ferram
 
   useEffect(() => {
     if (manutencao) {
-      const pecasArray = manutencao.pecas_substituidas
-        ? JSON.parse(manutencao.pecas_substituidas)
-        : [];
+      const pecasArray = safeParseJSON(manutencao.pecas_substituidas, []);
       setPecas(pecasArray);
       setDados({
         ...dados,
@@ -88,8 +87,8 @@ export default function ManutencaoModal({ open, onOpenChange, manutencao, ferram
         pecas_substituidas: manutencao.pecas_substituidas || "[]",
       });
       // Carregar lista de ferramentas
-      try {
-        const lista = manutencao.ferramentas_lista ? JSON.parse(manutencao.ferramentas_lista) : [];
+      {
+        const lista = safeParseJSON(manutencao.ferramentas_lista, []);
         if (lista.length > 0) {
           setFerramentasList(lista);
         } else if (manutencao.ferramenta_id) {
@@ -104,7 +103,7 @@ export default function ManutencaoModal({ open, onOpenChange, manutencao, ferram
               },
             ]);
         }
-      } catch {}
+      }
     } else {
       setFerramentasList([{ id: "", codigo: "", descricao: "", numero_serie: "" }]);
     }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { useEmpresa } from "@/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -141,12 +142,8 @@ export default function ManutencaoTab() {
   };
 
   const getNumeroFerramentas = (manutencao) => {
-    try {
-      const lista = manutencao.ferramentas ? JSON.parse(manutencao.ferramentas) : [];
-      return lista.length > 0 ? lista.length : 1;
-    } catch {
-      return 1;
-    }
+    const lista = safeParseJSON(manutencao.ferramentas, []);
+    return lista.length > 0 ? lista.length : 1;
   };
 
   const handleVisualizar = (manutencao) => {
@@ -200,10 +197,7 @@ export default function ManutencaoTab() {
       if (usados.has(m.id)) continue;
 
       // Se já tem ferramentas JSON (novo fluxo), é um pedido único
-      let ferramentasJson = [];
-      try {
-        ferramentasJson = m.ferramentas ? JSON.parse(m.ferramentas) : [];
-      } catch {}
+      const ferramentasJson = safeParseJSON(m.ferramentas, []);
 
       if (ferramentasJson.length > 0) {
         grupos.push({ principal: m, extras: [], ferramentasList: ferramentasJson });

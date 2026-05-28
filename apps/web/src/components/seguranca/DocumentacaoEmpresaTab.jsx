@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import {
   Plus,
   Upload,
@@ -200,7 +201,7 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
     try {
       const { file_url } = await sigo.integrations.Core.UploadFile({ file });
       const doc = documentos.find((d) => d.id === docId);
-      const anexos = JSON.parse(doc.anexos || "[]");
+      const anexos = safeParseJSON(doc.anexos, []);
       anexos.push({ nome: file.name, url: file_url, data_upload: new Date().toISOString() });
       await sigo.entities.DocumentoEmpresa.update(docId, { anexos: JSON.stringify(anexos) });
       toast.success("Arquivo anexado");
@@ -215,7 +216,7 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
 
   const handleRemoverAnexo = async (docId, anexoIdx) => {
     const doc = documentos.find((d) => d.id === docId);
-    const anexos = JSON.parse(doc.anexos || "[]");
+    const anexos = safeParseJSON(doc.anexos, []);
     anexos.splice(anexoIdx, 1);
     try {
       await sigo.entities.DocumentoEmpresa.update(docId, { anexos: JSON.stringify(anexos) });
@@ -382,7 +383,7 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
           ) : (
             <div className="space-y-3">
               {docsFiltrados.map((doc) => {
-                const anexos = JSON.parse(doc.anexos || "[]");
+                const anexos = safeParseJSON(doc.anexos, []);
                 const statusVenc = getStatusVencimento(doc.data_vencimento);
                 const StatusIcon = statusVenc?.icone;
 
@@ -792,11 +793,11 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
 
                   <div className="pt-2 border-t">
                     <p className="font-medium text-slate-600 mb-2">Arquivos Anexados</p>
-                    {JSON.parse(docSelecionado.anexos || "[]").length === 0 ? (
+                    {safeParseJSON(docSelecionado.anexos, []).length === 0 ? (
                       <p className="text-slate-400 text-xs">Nenhum arquivo anexado</p>
                     ) : (
                       <div className="space-y-1.5">
-                        {JSON.parse(docSelecionado.anexos || "[]").map((anexo, idx) => (
+                        {safeParseJSON(docSelecionado.anexos, []).map((anexo, idx) => (
                           <div
                             key={idx}
                             className="flex items-center gap-2 p-2 bg-slate-50 rounded"

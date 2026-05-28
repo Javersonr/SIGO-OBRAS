@@ -70,10 +70,8 @@ export default function InspecaoCaminhaoCampoModal({
       // Coletar todos os IDs de ferramentas configuradas como obrigatórias nos campos
       const idsObrigatorios = new Set();
       camposDb.forEach((campo) => {
-        try {
-          const ids = JSON.parse(campo.ferramenta_ids || "[]");
-          ids.forEach((id) => idsObrigatorios.add(id));
-        } catch {}
+        const ids = safeParseJSON(campo.ferramenta_ids, []);
+        ids.forEach((id) => idsObrigatorios.add(id));
       });
 
       // Filtrar apenas as ferramentas que estão marcadas como obrigatórias nos campos
@@ -122,12 +120,8 @@ export default function InspecaoCaminhaoCampoModal({
   };
 
   const getFerramentasDoaCampo = (campo) => {
-    try {
-      const ids = JSON.parse(campo.ferramenta_ids || "[]");
-      return ferramentas.filter((f) => ids.includes(f.id));
-    } catch {
-      return [];
-    }
+    const ids = safeParseJSON(campo.ferramenta_ids, []);
+    return ferramentas.filter((f) => ids.includes(f.id));
   };
 
   const handleConfirmarCampo = async () => {

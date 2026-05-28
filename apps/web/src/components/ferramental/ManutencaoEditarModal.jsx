@@ -67,13 +67,13 @@ export default function ManutencaoEditarModal({
         if (e.ferramenta_id) ferramentaIds.push(e.ferramenta_id);
       });
       // Também buscar IDs do JSON ferramentas (novo fluxo)
-      try {
-        const jsonFerrs = manutencao.ferramentas ? JSON.parse(manutencao.ferramentas) : [];
+      {
+        const jsonFerrs = safeParseJSON(manutencao.ferramentas, []);
         jsonFerrs.forEach((f) => {
           if (f.ferramenta_id && !ferramentaIds.includes(f.ferramenta_id))
             ferramentaIds.push(f.ferramenta_id);
         });
-      } catch {}
+      }
 
       if (form.status === "Concluída" && ferramentaIds.length > 0) {
         await Promise.all(

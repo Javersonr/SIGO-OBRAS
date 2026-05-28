@@ -3,6 +3,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { toast } from "sonner";
 import {
   Search,
@@ -69,10 +70,7 @@ export default function SolicitarEntregaCaminhaoModal({
       const lista = [];
       const vistas = new Set();
       for (const campo of obrig) {
-        let ids = [];
-        try {
-          ids = JSON.parse(campo.ferramenta_ids || "[]");
-        } catch {}
+        const ids = safeParseJSON(campo.ferramenta_ids, []);
         for (const fid of ids) {
           if (vistas.has(fid)) continue;
           vistas.add(fid);

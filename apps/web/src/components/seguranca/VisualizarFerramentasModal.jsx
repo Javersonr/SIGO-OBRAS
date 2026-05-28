@@ -5,6 +5,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Download, Settings, Send, Loader2 } from "lucide-react";
 import EPIEditorPanel from "./EPIEditorPanel";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { toast } from "sonner";
 
 export default function VisualizarFerramentasModal({
@@ -38,30 +39,23 @@ export default function VisualizarFerramentasModal({
     }
   };
   const [settings, setSettings] = useState(() => {
-    try {
-      const saved = localStorage.getItem("ferramentas-modal-settings");
-      return saved
-        ? JSON.parse(saved)
-        : {
-            fontSizeTitulo: 14,
-            fontSizeTabela: 11,
-            fontSizeDados: 10,
-            fontSizeRodape: 10,
-            alturaLinhaTabela: 20,
-            alturaAssinatura: 35,
-            margemSuperior: 10,
-            margemInferior: 10,
-            paddingCelula: 6,
-            alturaLogo: 70,
-            margemLogo: 20,
-            espacoInferiorCabecalho: 12,
-            espacoDados: 8,
-            fontSizeLabels: 10,
-            columnWidths: [7, 7, 5, 20, 8, 23, 20],
-          };
-    } catch {
-      return {};
-    }
+    return safeParseJSON(localStorage.getItem("ferramentas-modal-settings"), {
+      fontSizeTitulo: 14,
+      fontSizeTabela: 11,
+      fontSizeDados: 10,
+      fontSizeRodape: 10,
+      alturaLinhaTabela: 20,
+      alturaAssinatura: 35,
+      margemSuperior: 10,
+      margemInferior: 10,
+      paddingCelula: 6,
+      alturaLogo: 70,
+      margemLogo: 20,
+      espacoInferiorCabecalho: 12,
+      espacoDados: 8,
+      fontSizeLabels: 10,
+      columnWidths: [7, 7, 5, 20, 8, 23, 20],
+    });
   });
 
   useEffect(() => {

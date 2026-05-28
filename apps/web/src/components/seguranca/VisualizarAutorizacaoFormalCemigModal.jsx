@@ -7,6 +7,7 @@ import { ptBR } from "date-fns/locale";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import EPIEditorPanel from "./EPIEditorPanel";
+import { safeParseJSON } from "@/lib/json-utils";
 
 export default function VisualizarAutorizacaoFormalCemigModal({
   open,
@@ -18,20 +19,17 @@ export default function VisualizarAutorizacaoFormalCemigModal({
 }) {
   const [showEditor, setShowEditor] = useState(false);
   const [settings, setSettings] = useState(() => {
-    const saved = localStorage.getItem("autorizacao_cemig_settings");
-    return saved
-      ? JSON.parse(saved)
-      : {
-          fontSize: "10pt",
-          lineHeight: "1.4",
-          marginTop: "5mm",
-          marginBottom: "5mm",
-          marginLeft: "5mm",
-          marginRight: "18mm",
-          titleSize: "10pt",
-          textSize: "9.5pt",
-          smallTextSize: "9pt",
-        };
+    return safeParseJSON(localStorage.getItem("autorizacao_cemig_settings"), {
+      fontSize: "10pt",
+      lineHeight: "1.4",
+      marginTop: "5mm",
+      marginBottom: "5mm",
+      marginLeft: "5mm",
+      marginRight: "18mm",
+      titleSize: "10pt",
+      textSize: "9.5pt",
+      smallTextSize: "9pt",
+    });
   });
 
   useEffect(() => {
@@ -43,9 +41,8 @@ export default function VisualizarAutorizacaoFormalCemigModal({
     // Priorizar modelo_autorizacao_formal_opcoes (novo formato)
     const opcoesStr = funcao?.modelo_autorizacao_formal_opcoes;
     if (opcoesStr) {
-      try {
-        const opcoes = JSON.parse(opcoesStr);
-        // Mapear as opções para o formato esperado
+      const opcoes = safeParseJSON(opcoesStr, null);
+      if (opcoes) {
         return {
           intervencoes_sep: opcoes.nr10 === true,
           espaco_confinado: opcoes.nr33 === true,
@@ -58,17 +55,14 @@ export default function VisualizarAutorizacaoFormalCemigModal({
           outros: opcoes.outros === true,
           fase_adaptacao: opcoes.fase_adaptacao === true,
         };
-      } catch (e) {
-        console.error("Erro ao parsear modelo_autorizacao_formal_opcoes:", e);
       }
     }
 
     // Fallback: tentar modelo antigo
     const modeloStr = modelo_autorizacao_formal || funcao?.modelo_autorizacao_formal;
     if (modeloStr) {
-      try {
-        const modelo = JSON.parse(modeloStr);
-        // Se for um array (lista de checkboxes), converter para objeto booleano
+      const modelo = safeParseJSON(modeloStr, null);
+      if (modelo) {
         if (Array.isArray(modelo)) {
           return {
             intervencoes_sep: modelo.some(
@@ -105,8 +99,6 @@ export default function VisualizarAutorizacaoFormalCemigModal({
         }
         // Se já for um objeto, usar diretamente
         return modelo;
-      } catch (e) {
-        console.error("Erro ao parsear modelo de autorização formal:", e);
       }
     }
 
@@ -497,28 +489,18 @@ export default function VisualizarAutorizacaoFormalCemigModal({
                     <em>
                       "
                       {(() => {
-                        try {
-                          const opcoes = JSON.parse(
-                            funcao?.modelo_autorizacao_formal_opcoes || "{}"
-                          );
-                          return opcoes.codigo_autorizacao || "15- C,I";
-                        } catch {
-                          return "15- C,I";
-                        }
+                        const opcoes = safeParseJSON(funcao?.modelo_autorizacao_formal_opcoes, {});
+                        return opcoes.codigo_autorizacao || "15- C,I";
                       })()}
                       "
                     </em>
                   </strong>{" "}
                   {(() => {
-                    try {
-                      const opcoes = JSON.parse(funcao?.modelo_autorizacao_formal_opcoes || "{}");
-                      return (
-                        opcoes.descricao_nr10 ||
-                        "Autorizado a auxiliar na execução de serviços no SEP sem contudo executar atividades que requeiram intervenção diretamente no mesmo. Suas atividades são realizadas somente ao nível do solo e restritas à zona livre, de acordo com os limites estabelecidos no anexo I da NR-10 e critérios corporativos definidos pelo item 4.5.12.2 da ET- VCTE-GM-0832."
-                      );
-                    } catch {
-                      return "Autorizado a auxiliar na execução de serviços no SEP sem contudo executar atividades que requeiram intervenção diretamente no mesmo. Suas atividades são realizadas somente ao nível do solo e restritas à zona livre, de acordo com os limites estabelecidos no anexo I da NR-10 e critérios corporativos definidos pelo item 4.5.12.2 da ET- VCTE-GM-0832.";
-                    }
+                    const opcoes = safeParseJSON(funcao?.modelo_autorizacao_formal_opcoes, {});
+                    return (
+                      opcoes.descricao_nr10 ||
+                      "Autorizado a auxiliar na execução de serviços no SEP sem contudo executar atividades que requeiram intervenção diretamente no mesmo. Suas atividades são realizadas somente ao nível do solo e restritas à zona livre, de acordo com os limites estabelecidos no anexo I da NR-10 e critérios corporativos definidos pelo item 4.5.12.2 da ET- VCTE-GM-0832."
+                    );
                   })()}
                 </label>
               </p>

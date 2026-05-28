@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Plus, Upload, Edit, Eye, X, FileText, CheckCircle2, PackageCheck } from "lucide-react";
@@ -105,7 +106,7 @@ export default function TSTTab({
   };
 
   const getAnexosDeTreinamento = (treinamentoId) => {
-    const todos = JSON.parse(funcionarioForm.treinamentos_anexos || "[]");
+    const todos = safeParseJSON(funcionarioForm.treinamentos_anexos, []);
     return todos.filter((a) => a.treinamento_id === treinamentoId);
   };
 
@@ -197,7 +198,7 @@ export default function TSTTab({
                   setUploadingDoc(true);
                   try {
                     const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-                    const anexos = JSON.parse(funcionarioForm.treinamentos_anexos || "[]");
+                    const anexos = safeParseJSON(funcionarioForm.treinamentos_anexos, []);
                     anexos.push({
                       nome: nomeArquivo,
                       url: file_url,
@@ -228,7 +229,7 @@ export default function TSTTab({
       </Card>
 
       {/* Extras anexados */}
-      {JSON.parse(funcionarioForm.treinamentos_anexos || "[]").filter(
+      {safeParseJSON(funcionarioForm.treinamentos_anexos, []).filter(
         (a) => !a.treinamento_id || a.tipo === "extra"
       ).length > 0 && (
         <Card className="border-green-200 bg-green-50">
@@ -236,7 +237,7 @@ export default function TSTTab({
             <CardTitle className="text-sm text-green-800">Treinamentos Extras Anexados</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {JSON.parse(funcionarioForm.treinamentos_anexos || "[]")
+            {safeParseJSON(funcionarioForm.treinamentos_anexos, [])
               .filter((a) => !a.treinamento_id || a.tipo === "extra")
               .map((anexo, idx) => (
                 <div
@@ -266,7 +267,7 @@ export default function TSTTab({
                       size="icon"
                       className="h-7 w-7"
                       onClick={() => {
-                        const all = JSON.parse(funcionarioForm.treinamentos_anexos || "[]");
+                        const all = safeParseJSON(funcionarioForm.treinamentos_anexos, []);
                         const extras = all.filter((a) => !a.treinamento_id || a.tipo === "extra");
                         const toRemove = extras[idx];
                         const novos = all.filter((a) => a !== toRemove);

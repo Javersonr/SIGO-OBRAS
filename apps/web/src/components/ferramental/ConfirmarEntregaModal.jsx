@@ -3,6 +3,7 @@ import { Download, Search, CheckCircle2, Loader2 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -27,11 +28,7 @@ export default function ConfirmarEntregaModal({
 
   const itens = (() => {
     if (!entrega?.itens) return [];
-    try {
-      return JSON.parse(entrega.itens);
-    } catch (e) {
-      return [];
-    }
+    return safeParseJSON(entrega.itens, []);
   })();
 
   useEffect(() => {

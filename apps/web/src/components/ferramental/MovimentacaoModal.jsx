@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -242,7 +243,7 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
       let modeloFerramentas = [];
       if (funcao.modelo_ferramentas) {
         try {
-          const parsed = JSON.parse(funcao.modelo_ferramentas);
+          const parsed = safeParseJSON(funcao.modelo_ferramentas, []);
           modeloFerramentas = Array.isArray(parsed)
             ? parsed.map((i) => ({ ...i, _tipo: "Ferramenta" }))
             : [];
@@ -254,7 +255,7 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
       let modeloEpis = [];
       if (funcao.modelo_epi) {
         try {
-          const parsed = JSON.parse(funcao.modelo_epi);
+          const parsed = safeParseJSON(funcao.modelo_epi, []);
           modeloEpis = Array.isArray(parsed) ? parsed.map((i) => ({ ...i, _tipo: "EPI" })) : [];
         } catch (e) {
           modeloEpis = [];
@@ -521,7 +522,7 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
       campos.forEach((campo) => {
         if (campo.ferramenta_ids) {
           try {
-            const ids = JSON.parse(campo.ferramenta_ids);
+            const ids = safeParseJSON(campo.ferramenta_ids, []);
             if (Array.isArray(ids)) {
               ids.forEach((ferrId) => {
                 const ferr = ferramentas.find((f) => f.id === ferrId);

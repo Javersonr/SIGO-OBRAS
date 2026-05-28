@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Upload, CheckCircle2, AlertCircle, Loader2, X, ArrowRight } from "lucide-react";
@@ -108,7 +109,7 @@ export default function ImportarCertificadosTSTModal({
       try {
         const funcAtualizado = await sigo.entities.Funcionario.filter({ id: func.id });
         if (funcAtualizado.length > 0) {
-          anexosExistentes = JSON.parse(funcAtualizado[0].treinamentos_anexos || "[]");
+          anexosExistentes = safeParseJSON(funcAtualizado[0].treinamentos_anexos, []);
         }
       } catch {}
 

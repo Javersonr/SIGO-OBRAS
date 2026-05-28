@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { useEmpresa } from "@/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -335,10 +336,7 @@ export default function GerenciadorCaminhoesModal({
               (() => {
                 const todasEmCampos = new Set();
                 const campos = camposObrigatorios.map((campo) => {
-                  let ferrIds = [];
-                  try {
-                    ferrIds = JSON.parse(campo.ferramenta_ids || "[]");
-                  } catch {}
+                  const ferrIds = safeParseJSON(campo.ferramenta_ids, []);
                   const ferrsNoCampo = ferramentasNoCaminhao.filter((f) => ferrIds.includes(f.id));
                   ferrsNoCampo.forEach((f) => todasEmCampos.add(f.id));
                   return {

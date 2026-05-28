@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,7 +89,7 @@ export default function InspecaoCampoFormModal({
     setSaving(true);
     try {
       const cl = checklists.find((c) => c.id === form.checklist_id);
-      const itensChecklist = cl?.itens ? JSON.parse(cl.itens) : [];
+      const itensChecklist = safeParseJSON(cl?.itens, []);
       const itensInspecao = itensChecklist.map((it) => ({
         item_id: it.id,
         nome: it.nome,

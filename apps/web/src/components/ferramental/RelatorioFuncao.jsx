@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Printer, Filter, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -48,13 +49,10 @@ export default function RelatorioFuncao({ empresaAtiva }) {
         const funcao = funcoes.find((f) => f.id === func.funcao_id);
         if (!funcao) return null;
 
-        const itens = (() => {
-          try {
-            return JSON.parse(funcao.modelo_ferramentas || "[]");
-          } catch {
-            return [];
-          }
-        })().map((f) => ({ ...f, tipo: "Ferramenta" }));
+        const itens = safeParseJSON(funcao.modelo_ferramentas, []).map((f) => ({
+          ...f,
+          tipo: "Ferramenta",
+        }));
         if (itens.length === 0) return null;
 
         return {

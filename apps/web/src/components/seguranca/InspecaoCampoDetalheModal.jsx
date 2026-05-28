@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -42,11 +43,7 @@ export default function InspecaoCampoDetalheModal({
 
   useEffect(() => {
     if (open && inspecao?.itens_inspecao) {
-      try {
-        setItens(JSON.parse(inspecao.itens_inspecao));
-      } catch {
-        setItens([]);
-      }
+      setItens(safeParseJSON(inspecao.itens_inspecao, []));
     }
   }, [open, inspecao?.id]);
 

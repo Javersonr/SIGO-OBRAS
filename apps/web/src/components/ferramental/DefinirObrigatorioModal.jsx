@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -105,10 +106,7 @@ export default function DefinirObrigatorioModal({
 
             if (campoExistente) {
               // Adicionar ferramenta ao campo existente
-              let ids = [];
-              try {
-                ids = JSON.parse(campoExistente.ferramenta_ids || "[]");
-              } catch {}
+              const ids = safeParseJSON(campoExistente.ferramenta_ids, []);
               if (!ids.includes(ferr.id)) {
                 ids.push(ferr.id);
                 await sigo.entities.CaminhaoCampoObrigatorio.update(campoExistente.id, {
@@ -137,14 +135,8 @@ export default function DefinirObrigatorioModal({
         // Para cada função, adicionar ferramentas ao modelo_ferramentas e EPIs ao modelo_epi
         for (const funcaoId of selecionados) {
           const funcao = itens.find((f) => f.id === funcaoId);
-          let modeloFerramentas = [];
-          let modeloEpi = [];
-          try {
-            modeloFerramentas = JSON.parse(funcao?.modelo_ferramentas || "[]");
-          } catch {}
-          try {
-            modeloEpi = JSON.parse(funcao?.modelo_epi || "[]");
-          } catch {}
+          let modeloFerramentas = safeParseJSON(funcao?.modelo_ferramentas, []);
+          let modeloEpi = safeParseJSON(funcao?.modelo_epi, []);
 
           for (const ferr of ferramentasSelecionadas) {
             if (ferr.tipo === "EPI") {

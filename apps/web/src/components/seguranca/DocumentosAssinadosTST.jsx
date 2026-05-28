@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -101,11 +102,7 @@ export default function DocumentosAssinadosTST({
   };
 
   const getAnexos = (key) => {
-    try {
-      return JSON.parse(funcionarioForm[key] || "[]");
-    } catch {
-      return [];
-    }
+    return safeParseJSON(funcionarioForm[key], []);
   };
 
   const handleUpload = async (e, key) => {

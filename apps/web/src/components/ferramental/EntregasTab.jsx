@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -198,13 +199,8 @@ export default function EntregasTab({ empresaAtiva, user }) {
             const statusCfg = STATUS_CONFIG[entrega.status] || STATUS_CONFIG["Pendente"];
             const StatusIcon = statusCfg.icon;
             const itens = (() => {
-              try {
-                const parsed = JSON.parse(entrega.itens || "[]");
-                return Array.isArray(parsed) ? parsed : [];
-              } catch (err) {
-                console.error("Erro ao parsear itens da entrega:", err);
-                return [];
-              }
+              const parsed = safeParseJSON(entrega.itens, []);
+              return Array.isArray(parsed) ? parsed : [];
             })();
 
             return (
