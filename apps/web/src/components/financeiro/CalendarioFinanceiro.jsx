@@ -6,8 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, X, TrendingUp, TrendingDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import DetalheDespesaModal from "./DetalheDespesaModal";
-import DetalheReceitaModal from "./DetalheReceitaModal";
+import DetalheTransacaoModal from "./DetalheTransacaoModal";
 
 const formatCurrency = (v) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
@@ -394,10 +393,11 @@ export default function CalendarioFinanceiro() {
       )}
 
       {/* Modais de detalhe inline */}
-      <DetalheDespesaModal
+      <DetalheTransacaoModal
+        tipo="despesa"
         open={showDespesaDetalhe}
         onOpenChange={setShowDespesaDetalhe}
-        despesa={transacaoDetalhe}
+        transacao={transacaoDetalhe}
         anexos={anexosDetalhe}
         podeEditar={true}
         empresaAtiva={empresaDetalhe || empresaAtiva}
@@ -405,10 +405,11 @@ export default function CalendarioFinanceiro() {
           setShowDespesaDetalhe(false);
         }}
       />
-      <DetalheReceitaModal
+      <DetalheTransacaoModal
+        tipo="receita"
         open={showReceitaDetalhe}
         onOpenChange={setShowReceitaDetalhe}
-        receita={transacaoDetalhe}
+        transacao={transacaoDetalhe}
         podeEditar={true}
         empresaAtiva={empresaDetalhe || empresaAtiva}
       />

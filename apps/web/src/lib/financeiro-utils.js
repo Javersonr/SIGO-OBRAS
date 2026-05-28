@@ -44,3 +44,12 @@ export function normalizeStatus(status) {
     .toLowerCase()
     .trim();
 }
+
+/**
+ * "Pago/Recebido" — receita usa `pago`, despesa históricamente "Realizado".
+ * Use isto pra badges, filtros de paid/unpaid e toggles. Cancelado NÃO conta.
+ */
+const STATUS_PAGOS = new Set([STATUS_FINANCEIRO.PAGO, STATUS_FINANCEIRO.REALIZADO]);
+export function isStatusPago(status) {
+  return STATUS_PAGOS.has(normalizeStatus(status));
+}
