@@ -189,13 +189,11 @@ export default function Layout({ children, currentPageName }) {
             await loadCustomUserData(userData);
           }
         } catch (e) {
-          // Rate limit (429) NÃO deve redirecionar para login - apenas logar o erro
-          if (e?.status === 429 || e?.message?.includes("Rate limit")) {
-            console.warn("[Layout] Rate limit detectado, aguardando...");
-            if (isMounted) setLoading(false);
-            return;
-          }
-          console.error("Erro ao validar autenticação:", e);
+          // Erros NÃO devem deixar a página em branco. Logamos com detalhe
+          // e redirecionamos pro login com sessionStorage limpo — usuário
+          // sabe o que está acontecendo. Rate limit (429) também redireciona
+          // porque o sistema fica inutilizável com user=null sem feedback.
+          console.error("[Layout] Erro carregando dados do usuário:", e);
           sessionStorage.clear();
           if (isMounted) {
             setLoading(false);
@@ -622,7 +620,30 @@ export default function Layout({ children, currentPageName }) {
   }
 
   if (!user) {
-    return null;
+    // Antes retornava null e renderizava página branca. Agora mostramos
+    // uma mensagem clara + botão de voltar pro login pra usuário poder agir.
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 max-w-md text-center px-6">
+          <div className="w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-slate-700 font-medium">Carregando seus dados...</p>
+          <p className="text-slate-500 text-sm">
+            Se ficar travado aqui, abra o DevTools (F12) → Console pra ver o erro, ou volte pro
+            login.
+          </p>
+          <button
+            onClick={() => {
+              sessionStorage.clear();
+              localStorage.removeItem("login_email_salvo");
+              window.location.href = "/EntrarSistema";
+            }}
+            className="text-amber-600 hover:text-amber-700 text-sm underline"
+          >
+            Voltar para o login
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const perfil = vinculo?.perfil || "Admin";
