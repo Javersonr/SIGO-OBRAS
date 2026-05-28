@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
+import { safeParseJSON } from "@/lib/json-utils";
 import {
   Plus,
   Eye,
@@ -58,14 +59,12 @@ import CriarMaterialModal from "../components/materiais/CriarMaterialModal";
 export default function Projetos() {
   const { empresaAtiva, perfil, user, temPermissao, vinculo } = useEmpresa();
 
-  // Verificar se tem permissões granulares
-  const permissoes = React.useMemo(() => {
-    try {
-      return vinculo?.permissoes ? JSON.parse(vinculo.permissoes) : {};
-    } catch {
-      return {};
-    }
-  }, [vinculo?.permissoes]);
+  // permissoes/responsaveis_emails são JSONB → vêm como objeto/array pelo
+  // supabase-js, JSON.parse direto virava "[object Object]" e quebrava render.
+  const permissoes = React.useMemo(
+    () => safeParseJSON(vinculo?.permissoes, {}),
+    [vinculo?.permissoes]
+  );
 
   const temPermissoesGranulares = Object.keys(permissoes).length > 0;
 
@@ -618,7 +617,7 @@ export default function Projetos() {
       // Projeto usa responsaveis_emails (array de emails), não IDs
       filtered = filtered.filter((proj) => {
         try {
-          const emails = JSON.parse(proj.responsaveis_emails || "[]");
+          const emails = safeParseJSON(proj.responsaveis_emails, []);
           return emails.includes(user.email);
         } catch {
           return false;
@@ -895,7 +894,7 @@ export default function Projetos() {
                                         {(() => {
                                           const emails = (() => {
                                             try {
-                                              return JSON.parse(proj.responsaveis_emails || "[]");
+                                              return safeParseJSON(proj.responsaveis_emails, []);
                                             } catch {
                                               return [];
                                             }
@@ -1038,7 +1037,7 @@ export default function Projetos() {
                         {(() => {
                           const emails = (() => {
                             try {
-                              return JSON.parse(proj.responsaveis_emails || "[]");
+                              return safeParseJSON(proj.responsaveis_emails, []);
                             } catch {
                               return [];
                             }
@@ -1217,7 +1216,7 @@ export default function Projetos() {
                       <div className="flex -space-x-2 mt-2">
                         {(() => {
                           try {
-                            const emails = JSON.parse(selectedProj.responsaveis_emails || "[]");
+                            const emails = safeParseJSON(selectedProj.responsaveis_emails, []);
                             return emails.map((email, idx) => {
                               const resp = usuariosEmpresa.find((u) => u.usuario_email === email);
                               const label = resp?.nome_completo || email;

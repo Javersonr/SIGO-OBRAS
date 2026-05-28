@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -103,7 +104,7 @@ export default function TarefasTimeline({ projetoId, empresaAtiva, usuariosEmpre
   };
 
   const temDependenciasBloqueadas = (tarefa) => {
-    const dependencias = tarefa.dependencias ? JSON.parse(tarefa.dependencias) : [];
+    const dependencias = safeParseJSON(tarefa.dependencias, []);
     return tarefas.some((t) => dependencias.includes(t.id) && t.status !== "Concluída");
   };
 
@@ -338,7 +339,7 @@ export default function TarefasTimeline({ projetoId, empresaAtiva, usuariosEmpre
                 <div style={{ width: larguraTotal }}>
                   {tarefas.map((tarefa) => {
                     const posicao = calcularPosicao(tarefa.data_inicio, tarefa.data_fim);
-                    const dependencias = tarefa.dependencias ? JSON.parse(tarefa.dependencias) : [];
+                    const dependencias = safeParseJSON(tarefa.dependencias, []);
                     const bloqueada = temDependenciasBloqueadas(tarefa);
 
                     return (

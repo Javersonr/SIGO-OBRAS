@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -208,17 +209,11 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
 
   if (!diario) return null;
 
-  const maoDeObraData = [];
-  try {
-    if (diario.mao_de_obra) {
-      const parsed = JSON.parse(diario.mao_de_obra);
-      if (Array.isArray(parsed)) maoDeObraData.push(...parsed);
-    }
-  } catch (e) {
-    console.error("Erro ao parsear mao_de_obra", e);
-  }
-
-  const fotosData = diario.fotos ? JSON.parse(diario.fotos) : [];
+  // mao_de_obra/fotos: JSONB → array do supabase-js, string em legacy
+  const parsedMao = safeParseJSON(diario.mao_de_obra, []);
+  const maoDeObraData = Array.isArray(parsedMao) ? parsedMao : [];
+  const parsedFotos = safeParseJSON(diario.fotos, []);
+  const fotosData = Array.isArray(parsedFotos) ? parsedFotos : [];
 
   const dataFormatada = new Date(diario.data).toLocaleDateString("pt-BR", {
     day: "2-digit",

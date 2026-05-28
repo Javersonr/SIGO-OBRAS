@@ -39,16 +39,12 @@ import {
 } from "lucide-react";
 import jsPDF from "jspdf";
 import * as XLSX from "xlsx";
+import { safeParseJSON } from "@/lib/json-utils";
 
 const CORES = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
 
-function parseJSON(str, fallback = []) {
-  try {
-    return str ? JSON.parse(str) : fallback;
-  } catch {
-    return fallback;
-  }
-}
+// Alias local pra manter nome `parseJSON` usado em todo o resto desse arquivo.
+const parseJSON = safeParseJSON;
 
 export default function RelatorioDiarioObra({
   open,

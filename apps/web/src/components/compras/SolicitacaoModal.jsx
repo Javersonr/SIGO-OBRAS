@@ -1,4 +1,5 @@
 import React from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -388,13 +389,8 @@ export default function SolicitacaoModal({
                 <>
                   <div className="border border-slate-200 rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto">
                     {projetos.map((p) => {
-                      const selecionados = (() => {
-                        try {
-                          return JSON.parse(form.projetos_ids || "[]");
-                        } catch {
-                          return [];
-                        }
-                      })();
+                      // projetos_ids: JSONB → array do supabase-js, string em legacy
+                      const selecionados = safeParseJSON(form.projetos_ids, []);
                       const marcado = selecionados.includes(p.id);
                       return (
                         <label
@@ -419,13 +415,7 @@ export default function SolicitacaoModal({
                     })}
                   </div>
                   {(() => {
-                    const selecionados = (() => {
-                      try {
-                        return JSON.parse(form.projetos_ids || "[]");
-                      } catch {
-                        return [];
-                      }
-                    })();
+                    const selecionados = safeParseJSON(form.projetos_ids, []);
                     const nomes = projetos
                       .filter((p) => selecionados.includes(p.id))
                       .map((p) => p.nome);

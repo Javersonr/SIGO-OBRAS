@@ -1,16 +1,14 @@
 import React, { useState } from "react";
 import { toast } from "sonner";
 import FullscreenCamera from "@/components/camera/FullscreenCamera";
+import { safeParseJSON } from "@/lib/json-utils";
 
 // Chave para armazenar fotos offline no localStorage
 const OFFLINE_KEY = "diario_fotos_offline";
 
 export function getFotosOffline() {
-  try {
-    return JSON.parse(localStorage.getItem(OFFLINE_KEY) || "[]");
-  } catch {
-    return [];
-  }
+  const parsed = safeParseJSON(localStorage.getItem(OFFLINE_KEY), []);
+  return Array.isArray(parsed) ? parsed : [];
 }
 
 export function salvarFotoOffline(fotoDataUrl, metadata) {

@@ -1,5 +1,6 @@
 import React from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -401,7 +402,9 @@ export default function OrcamentoTab({
     const template = templates.find((t) => t.id === templateId);
     if (!template?.itens_json) return;
     try {
-      const itens = JSON.parse(template.itens_json);
+      // itens_json é JSONB → vem como array do supabase-js
+      const itens = safeParseJSON(template.itens_json, []);
+      if (!Array.isArray(itens) || itens.length === 0) return;
       await sigo.entities.OrcamentoItem.bulkCreate(
         itens.map((item, idx) => ({
           empresa_id: empresaAtiva.id,

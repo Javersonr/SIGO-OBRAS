@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -61,12 +62,11 @@ export default function TarefasKanban({ projetoId, empresaAtiva, usuariosEmpresa
 
     // Verificar dependências
     if (novoStatus === "Em Andamento" || novoStatus === "Concluída") {
-      let dependencias = [];
-      try {
-        dependencias = tarefa.dependencias ? JSON.parse(tarefa.dependencias) : [];
-      } catch {}
+      // dependencias é JSONB → array do supabase-js, string em legacy
+      const dependencias = safeParseJSON(tarefa.dependencias, []);
       const tarefasBloqueadas = tarefas.filter(
-        (t) => dependencias.includes(t.id) && t.status !== "Concluída"
+        (t) =>
+          Array.isArray(dependencias) && dependencias.includes(t.id) && t.status !== "Concluída"
       );
 
       if (tarefasBloqueadas.length > 0) {
@@ -114,12 +114,9 @@ export default function TarefasKanban({ projetoId, empresaAtiva, usuariosEmpresa
   };
 
   const temDependenciasBloqueadas = (tarefa) => {
-    try {
-      const dependencias = tarefa.dependencias ? JSON.parse(tarefa.dependencias) : [];
-      return tarefas.some((t) => dependencias.includes(t.id) && t.status !== "Concluída");
-    } catch {
-      return false;
-    }
+    const dependencias = safeParseJSON(tarefa.dependencias, []);
+    if (!Array.isArray(dependencias)) return false;
+    return tarefas.some((t) => dependencias.includes(t.id) && t.status !== "Concluída");
   };
 
   const handleExportarExcel = () => {
@@ -274,17 +271,9 @@ export default function TarefasKanban({ projetoId, empresaAtiva, usuariosEmpresa
                     >
                       {tarefasColuna.map((tarefa, index) => {
                         const subtarefas = getSubtarefas(tarefa.id);
-                        let responsaveis = [];
-                        try {
-                          responsaveis = tarefa.responsaveis_nomes
-                            ? JSON.parse(tarefa.responsaveis_nomes)
-                            : [];
-                        } catch {}
+                        const responsaveis = safeParseJSON(tarefa.responsaveis_nomes, []);
                         const dependenciasBloqueadas = temDependenciasBloqueadas(tarefa);
-                        let anexos = [];
-                        try {
-                          anexos = tarefa.anexos ? JSON.parse(tarefa.anexos) : [];
-                        } catch {}
+                        const anexos = safeParseJSON(tarefa.anexos, []);
 
                         return (
                           <Draggable key={tarefa.id} draggableId={tarefa.id} index={index}>

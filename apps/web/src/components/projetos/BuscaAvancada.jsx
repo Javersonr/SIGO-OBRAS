@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Search, X, Filter } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -13,11 +14,12 @@ export default function BuscaAvancada({ projetos, onResultsChange, statusList, u
   const inputRef = useRef(null);
   const suggestionsRef = useRef(null);
 
-  // Carregar histórico do localStorage
+  // Carregar histórico do localStorage. safeParseJSON cobre storage corrompido.
   useEffect(() => {
     const history = localStorage.getItem("projetos_search_history");
     if (history) {
-      setSearchHistory(JSON.parse(history));
+      const parsed = safeParseJSON(history, []);
+      setSearchHistory(Array.isArray(parsed) ? parsed : []);
     }
   }, []);
 
@@ -55,11 +57,11 @@ export default function BuscaAvancada({ projetos, onResultsChange, statusList, u
       // Buscar em modalidade
       const matchModalidade = proj.licitacao_modalidade?.toLowerCase().includes(lowerTerm);
 
-      // Buscar em responsáveis (campo correto: responsaveis_emails)
+      // Buscar em responsáveis. JSONB: vem como array (supabase-js) ou string (legacy).
       let matchResponsavel = false;
       if (proj.responsaveis_emails) {
-        try {
-          const emails = JSON.parse(proj.responsaveis_emails);
+        const emails = safeParseJSON(proj.responsaveis_emails, []);
+        if (Array.isArray(emails) && emails.length > 0) {
           matchResponsavel =
             emails.some((email) => email?.toLowerCase().includes(lowerTerm)) ||
             usuarios.some(
@@ -67,7 +69,7 @@ export default function BuscaAvancada({ projetos, onResultsChange, statusList, u
                 emails.includes(u.usuario_email) &&
                 u.nome_completo?.toLowerCase().includes(lowerTerm)
             );
-        } catch {}
+        }
       }
 
       return (

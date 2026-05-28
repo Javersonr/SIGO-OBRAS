@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -469,14 +470,9 @@ export default function DiarioObraTab({
   };
 
   const handleEditarDiario = (diario) => {
-    let maoObra = [];
-    try {
-      maoObra = diario.mao_de_obra ? JSON.parse(diario.mao_de_obra) : [];
-    } catch (e) {}
-    let fotos = [];
-    try {
-      fotos = diario.fotos ? JSON.parse(diario.fotos) : [];
-    } catch (e) {}
+    // mao_de_obra/fotos são JSONB → vêm como array pelo supabase-js, string em legacy
+    const maoObra = safeParseJSON(diario.mao_de_obra, []);
+    const fotos = safeParseJSON(diario.fotos, []);
     setEditForm({
       data: diario.data,
       horario_inicio: diario.horario_inicio || "",
@@ -1455,16 +1451,10 @@ export default function DiarioObraTab({
 
         <div className="space-y-3">
           {diarios.map((diario) => {
-            const maoDeObraData = [];
-            try {
-              if (diario.mao_de_obra) {
-                const parsed = JSON.parse(diario.mao_de_obra);
-                if (Array.isArray(parsed)) maoDeObraData.push(...parsed);
-              }
-            } catch (e) {
-              console.error("Erro ao parsear mao_de_obra", e);
-            }
-            const fotosData = diario.fotos ? JSON.parse(diario.fotos) : [];
+            const parsedMao = safeParseJSON(diario.mao_de_obra, []);
+            const maoDeObraData = Array.isArray(parsedMao) ? parsedMao : [];
+            const parsedFotos = safeParseJSON(diario.fotos, []);
+            const fotosData = Array.isArray(parsedFotos) ? parsedFotos : [];
 
             return (
               <Card key={diario.id}>

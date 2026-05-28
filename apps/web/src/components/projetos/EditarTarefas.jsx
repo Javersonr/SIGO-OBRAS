@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -87,14 +88,15 @@ export default function EditarTarefas({
         status: tarefa.status || "A Fazer",
         prioridade: tarefa.prioridade || "Normal",
         responsavel_principal_id: tarefa.responsavel_principal_id || "",
-        responsaveis_ids: tarefa.responsaveis_ids ? JSON.parse(tarefa.responsaveis_ids) : [],
+        // Campos JSONB: vêm como array do supabase-js, string em legacy. safeParseJSON cobre ambos.
+        responsaveis_ids: safeParseJSON(tarefa.responsaveis_ids, []),
         data_inicio: tarefa.data_inicio || "",
         data_fim: tarefa.data_fim || "",
         progresso: tarefa.progresso || 0,
-        dependencias: tarefa.dependencias ? JSON.parse(tarefa.dependencias) : [],
-        tags: tarefa.tags ? JSON.parse(tarefa.tags) : [],
+        dependencias: safeParseJSON(tarefa.dependencias, []),
+        tags: safeParseJSON(tarefa.tags, []),
         tempo_estimado_horas: tarefa.tempo_estimado_horas || "",
-        anexos: tarefa.anexos ? JSON.parse(tarefa.anexos) : [],
+        anexos: safeParseJSON(tarefa.anexos, []),
       });
 
       // Carregar subtarefas
@@ -303,8 +305,8 @@ export default function EditarTarefas({
 
       const tarefasParaLiberar = tarefasAtualizado.filter((t) => {
         if (t.id === tarefa.id || t.status !== "Bloqueada") return false;
-        const deps = t.dependencias ? JSON.parse(t.dependencias) : [];
-        if (!deps.includes(tarefa.id)) return false;
+        const deps = safeParseJSON(t.dependencias, []);
+        if (!Array.isArray(deps) || !deps.includes(tarefa.id)) return false;
         // Verificar se TODAS as dependências desta tarefa estão concluídas agora
         return deps.every((depId) => {
           const depTarefa = tarefasAtualizado.find((x) => x.id === depId);

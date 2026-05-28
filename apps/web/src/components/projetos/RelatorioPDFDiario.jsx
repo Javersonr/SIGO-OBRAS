@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { safeParseJSON } from "@/lib/json-utils";
 
 export function gerarRelatorioDiarioPDF(diario, empresaAtiva) {
   try {
@@ -100,14 +101,10 @@ export function gerarRelatorioDiarioPDF(diario, empresaAtiva) {
     doc.text(ativLines, 22, y);
     y += ativLines.length * 5 + 5;
 
-    // Mão de obra
+    // Mão de obra: JSONB → array (supabase-js) ou string (legacy)
     if (diario.mao_de_obra) {
       try {
-        const maoObra =
-          typeof diario.mao_de_obra === "string"
-            ? JSON.parse(diario.mao_de_obra)
-            : diario.mao_de_obra;
-
+        const maoObra = safeParseJSON(diario.mao_de_obra, []);
         if (Array.isArray(maoObra) && maoObra.length > 0) {
           doc.setFont("helvetica", "bold");
           doc.setFontSize(10);
@@ -127,11 +124,10 @@ export function gerarRelatorioDiarioPDF(diario, empresaAtiva) {
       }
     }
 
-    // Fotos
+    // Fotos: JSONB → array (supabase-js) ou string (legacy)
     if (diario.fotos) {
       try {
-        const fotos = typeof diario.fotos === "string" ? JSON.parse(diario.fotos) : diario.fotos;
-
+        const fotos = safeParseJSON(diario.fotos, []);
         if (Array.isArray(fotos) && fotos.length > 0) {
           doc.setFont("helvetica", "bold");
           doc.setFontSize(10);
@@ -180,10 +176,7 @@ export function imprimirDiario(diario, empresaAtiva) {
     let maoDeObraHTML = "";
     if (diario.mao_de_obra) {
       try {
-        const maoObra =
-          typeof diario.mao_de_obra === "string"
-            ? JSON.parse(diario.mao_de_obra)
-            : diario.mao_de_obra;
+        const maoObra = safeParseJSON(diario.mao_de_obra, []);
         if (Array.isArray(maoObra) && maoObra.length > 0) {
           maoDeObraHTML = `
             <h3 style="background-color: #fbbf24; padding: 8px 10px; margin: 20px 0 10px 0; font-weight: bold; font-size: 12px;">Mão de Obra Utilizada</h3>
@@ -339,8 +332,7 @@ export function imprimirDiario(diario, empresaAtiva) {
               let fotosHTML = "";
               if (diario.fotos) {
                 try {
-                  const fotos =
-                    typeof diario.fotos === "string" ? JSON.parse(diario.fotos) : diario.fotos;
+                  const fotos = safeParseJSON(diario.fotos, []);
                   if (Array.isArray(fotos) && fotos.length > 0) {
                     fotosHTML = `
                       <h3>Fotos (${fotos.length})</h3>

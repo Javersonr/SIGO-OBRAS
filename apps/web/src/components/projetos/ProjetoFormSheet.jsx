@@ -1,5 +1,6 @@
 import React from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import RichTextEditor from "../shared/RichTextEditor";
 import { Button } from "@/components/ui/button";
@@ -55,14 +56,8 @@ export default function ProjetoFormSheet({
   React.useEffect(() => {
     if (!open) return;
     if (selectedProj) {
-      // Edição: parsear responsaveis_emails com segurança
-      let respEmails = [];
-      try {
-        const v = selectedProj.responsaveis_emails;
-        respEmails = Array.isArray(v) ? v : v ? JSON.parse(v) : [];
-      } catch {
-        respEmails = [];
-      }
+      // responsaveis_emails é JSONB → array do supabase-js, string em legacy
+      const respEmails = safeParseJSON(selectedProj.responsaveis_emails, []);
 
       setFormData({
         nome: selectedProj.nome || "",
@@ -230,10 +225,10 @@ export default function ProjetoFormSheet({
   const handleApplyTemplate = (templateId) => {
     const template = templates.find((t) => t.id === templateId);
     if (template?.campos_padrao) {
-      try {
-        const campos = JSON.parse(template.campos_padrao);
+      const campos = safeParseJSON(template.campos_padrao, null);
+      if (campos && typeof campos === "object") {
         setFormData((prev) => ({ ...prev, ...campos }));
-      } catch {}
+      }
     }
     setShowTemplateSelection(false);
   };

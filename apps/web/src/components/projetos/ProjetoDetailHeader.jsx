@@ -1,4 +1,5 @@
 import React from "react";
+import { safeParseJSON } from "@/lib/json-utils";
 import { Settings, Edit, Eye, Copy, FilePlus, Archive, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -108,14 +109,8 @@ export default function ProjetoDetailHeader({
               </DropdownMenu>
 
               <ResponsaveisSelect
-                responsaveisEmails={(() => {
-                  try {
-                    const v = selectedProj.responsaveis_emails;
-                    return Array.isArray(v) ? v : v ? JSON.parse(v) : [];
-                  } catch {
-                    return [];
-                  }
-                })()}
+                // responsaveis_emails: JSONB → array (supabase-js) ou string (legacy)
+                responsaveisEmails={safeParseJSON(selectedProj.responsaveis_emails, [])}
                 usuarios={usuariosEmpresa}
                 onUpdate={async (newEmails) => {
                   const novoValor = JSON.stringify(newEmails);
