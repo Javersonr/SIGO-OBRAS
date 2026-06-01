@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { useEmpresa } from "@/Layout";
 import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ESTRUTURA_PERMISSOES } from "@/components/shared/PermissoesGranularesEditor";
 
 export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, empresaAtiva }) {
+  // user vem do Layout — é o admin logado, dono da sessão.
+  // Edge Function 'redefinir-senha-admin' valida que esse id é Admin/Owner/
+  // SuperAdmin antes de aceitar a troca de senha do alvo.
+  const { user: adminLogado } = useEmpresa();
+
   const [form, setForm] = useState({
     nome_completo: "",
     email: "",
@@ -47,6 +53,8 @@ export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, 
   const [alterandoEmail, setAlterandoEmail] = useState(false);
   const [novaSenhaAdmin, setNovaSenhaAdmin] = useState("");
   const [alterandoSenhaAdmin, setAlterandoSenhaAdmin] = useState(false);
+  const [mostrarSenhaAdmin, setMostrarSenhaAdmin] = useState(false);
+  const [forcarTrocaSenha, setForcarTrocaSenha] = useState(false);
   const [openProjetoPopover, setOpenProjetoPopover] = useState(false);
   const [searchProjeto, setSearchProjeto] = useState("");
 
@@ -252,17 +260,39 @@ export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, 
       toast.error("❌ A senha deve ter no mínimo 6 caracteres");
       return;
     }
+    if (!adminLogado?.id) {
+      toast.error("❌ Sessão admin inválida. Faça login novamente.");
+      return;
+    }
+    if (
+      !confirm(
+        `Confirmar redefinição de senha para ${usuario.nome_completo}?\n\n` +
+          (forcarTrocaSenha
+            ? "O usuário será OBRIGADO a trocar no primeiro login."
+            : "O usuário poderá usar a senha definida normalmente.")
+      )
+    ) {
+      return;
+    }
     setAlterandoSenhaAdmin(true);
     try {
       const res = await sigo.functions.invoke("redefinirSenhaAdmin", {
+        admin_id: adminLogado.id,
         usuario_email: usuario.usuario_email,
         nova_senha: novaSenhaAdmin,
+        forcar_troca: forcarTrocaSenha,
       });
-      if (res.data.success) {
-        toast.success("✅ Senha redefinida com sucesso");
+      if (res.data?.success !== false && !res.error) {
+        toast.success(
+          forcarTrocaSenha
+            ? "✅ Senha redefinida. Usuário trocará no próximo login."
+            : "✅ Senha redefinida. Já pode usar."
+        );
         setNovaSenhaAdmin("");
+        setMostrarSenhaAdmin(false);
+        setForcarTrocaSenha(false);
       } else {
-        toast.error("❌ " + (res.data.error || "Erro ao redefinir senha"));
+        toast.error("❌ " + (res.data?.error || res.error?.message || "Erro ao redefinir senha"));
       }
     } catch (e) {
       toast.error("❌ " + e.message);
@@ -352,27 +382,55 @@ export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, 
                 </div>
               )}
 
-              {/* Redefinir senha diretamente — apenas na edição */}
+              {/* Redefinir senha diretamente — apenas na edição.
+                  Sem link de email: admin escolhe a senha e entrega ao usuário. */}
               {usuario && (
                 <div className="border rounded-lg p-4 space-y-3 bg-slate-50">
-                  <p className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
-                    <KeyRound className="w-3.5 h-3.5" /> Redefinir Senha
-                  </p>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                      <KeyRound className="w-3.5 h-3.5" /> Redefinir senha (sem email)
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Você define a senha aqui. Entregue ao usuário por canal seguro
+                      (presencial/WhatsApp).
+                    </p>
+                  </div>
+
                   <div className="flex gap-2">
                     <Input
-                      type="password"
+                      type={mostrarSenhaAdmin ? "text" : "password"}
                       value={novaSenhaAdmin}
                       onChange={(e) => setNovaSenhaAdmin(e.target.value)}
                       placeholder="Nova senha (mín. 6 caracteres)"
                       className="flex-1"
+                      autoComplete="new-password"
                     />
                     <Button
+                      type="button"
                       variant="outline"
-                      onClick={handleRedefinirSenhaAdmin}
-                      disabled={alterandoSenhaAdmin || !novaSenhaAdmin}
+                      onClick={() => setMostrarSenhaAdmin((v) => !v)}
                       className="shrink-0"
+                      title={mostrarSenhaAdmin ? "Ocultar" : "Mostrar"}
                     >
-                      {alterandoSenhaAdmin ? "Salvando..." : "Redefinir"}
+                      {mostrarSenhaAdmin ? "Ocultar" : "Mostrar"}
+                    </Button>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                    <Checkbox
+                      checked={forcarTrocaSenha}
+                      onCheckedChange={(v) => setForcarTrocaSenha(!!v)}
+                    />
+                    Forçar usuário a trocar a senha no próximo login
+                  </label>
+
+                  <div className="flex justify-end">
+                    <Button
+                      variant="default"
+                      onClick={handleRedefinirSenhaAdmin}
+                      disabled={alterandoSenhaAdmin || !novaSenhaAdmin || novaSenhaAdmin.length < 6}
+                    >
+                      {alterandoSenhaAdmin ? "Redefinindo..." : "Redefinir senha"}
                     </Button>
                   </div>
                 </div>
