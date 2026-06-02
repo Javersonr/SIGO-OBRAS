@@ -11,10 +11,11 @@ import {
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Plus } from "lucide-react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, supabase } from "@/api/sigoClient";
 
 export default function TransferenciasTab({ empresaAtiva, contas, onReload }) {
   const [showModal, setShowModal] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [transferencias, setTransferencias] = useState([]);
   const [form, setForm] = useState({
     conta_origem_id: "",
@@ -39,32 +40,68 @@ export default function TransferenciasTab({ empresaAtiva, contas, onReload }) {
   }, [empresaAtiva?.id]);
 
   const handleSave = async () => {
-    if (!form.conta_origem_id || !form.conta_destino_id || !form.valor) return;
+    if (saving) return; // guarda contra clique duplo
+    if (!form.conta_origem_id || !form.conta_destino_id || !form.valor) {
+      alert("Preencha origem, destino e valor.");
+      return;
+    }
+    if (form.conta_origem_id === form.conta_destino_id) {
+      alert("Conta de origem e destino devem ser diferentes.");
+      return;
+    }
+    const valor = parseFloat(form.valor) || 0;
+    if (valor <= 0) {
+      alert("Valor deve ser maior que zero.");
+      return;
+    }
+    if (!empresaAtiva?.id) {
+      alert("Selecione uma empresa antes de transferir.");
+      return;
+    }
 
-    const contaOrigem = contas.find((c) => c.id === form.conta_origem_id);
-    const contaDestino = contas.find((c) => c.id === form.conta_destino_id);
+    setSaving(true);
+    try {
+      // Antes esta função só criava a linha em transacao_transferencia. Não
+      // mexia em extrato_bancario nem em saldo_atual das contas — o saldo
+      // mostrado ao usuário ficava desatualizado e relatórios divergiam.
+      // Agora chama a RPC criar_transferencia_atomica (0034) que faz tudo
+      // numa transaction única.
+      const { data, error } = await supabase.rpc("criar_transferencia_atomica", {
+        p_empresa_id: empresaAtiva.id,
+        p_conta_origem_id: form.conta_origem_id,
+        p_conta_destino_id: form.conta_destino_id,
+        p_valor: valor,
+        p_data: form.data,
+        p_descricao: form.descricao || null,
+        p_created_by: null,
+      });
 
-    await sigo.entities.TransacaoTransferencia.create({
-      empresa_id: empresaAtiva.id,
-      conta_origem_id: form.conta_origem_id,
-      conta_origem_nome: contaOrigem?.nome,
-      conta_destino_id: form.conta_destino_id,
-      conta_destino_nome: contaDestino?.nome,
-      valor: parseFloat(form.valor) || 0,
-      data: form.data,
-      descricao: form.descricao,
-    });
+      if (error) {
+        console.error("Erro na transferência:", error);
+        alert(`Erro ao registrar transferência: ${error.message}`);
+        return;
+      }
+      if (data && data.success === false) {
+        alert(`Não foi possível concluir a transferência: ${data.error || "erro desconhecido"}`);
+        return;
+      }
 
-    setShowModal(false);
-    setForm({
-      conta_origem_id: "",
-      conta_destino_id: "",
-      valor: "",
-      data: new Date().toISOString().split("T")[0],
-      descricao: "",
-    });
-    loadTransferencias();
-    onReload();
+      setShowModal(false);
+      setForm({
+        conta_origem_id: "",
+        conta_destino_id: "",
+        valor: "",
+        data: new Date().toISOString().split("T")[0],
+        descricao: "",
+      });
+      await loadTransferencias();
+      onReload?.();
+    } catch (err) {
+      console.error("Falha inesperada ao transferir:", err);
+      alert(`Falha inesperada: ${err?.message || err}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const formatCurrency = (value) => {
@@ -193,9 +230,9 @@ export default function TransferenciasTab({ empresaAtiva, contas, onReload }) {
             </Button>
             <Button
               onClick={handleSave}
-              disabled={!form.valor || !form.conta_origem_id || !form.conta_destino_id}
+              disabled={saving || !form.valor || !form.conta_origem_id || !form.conta_destino_id}
             >
-              Transferir
+              {saving ? "Transferindo..." : "Transferir"}
             </Button>
           </div>
         </SheetContent>

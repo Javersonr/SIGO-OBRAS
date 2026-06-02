@@ -448,7 +448,11 @@ export default function PreLancamentosAReconciliar({
         empresa_id: empresaId,
         numero,
         status: "Aguardando Pagamento",
-        pre_lancamentos_ids: JSON.stringify(itensSelecionadosParaCaixa.map((p) => p.id)),
+        // pre_lancamentos_ids é JSONB no banco (default '[]'::jsonb). Salvar
+        // JSON.stringify(...) gravava como texto literal e quebrava queries
+        // jsonb_array_elements no Supabase. Passa o array cru — o supabase-js
+        // serializa pra JSON certo na request.
+        pre_lancamentos_ids: itensSelecionadosParaCaixa.map((p) => p.id),
         valor_total: total,
         usuario_fechamento_email: usuarioEmail,
         usuario_fechamento_nome: usuarioNome,

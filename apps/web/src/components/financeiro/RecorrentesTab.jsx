@@ -108,6 +108,26 @@ export default function RecorrentesTab({
       return;
     }
 
+    // Validação dia_vencimento: 1..31 e, se mensal e > 28, alerta o usuário
+    // que meses curtos (fev = 28/29; abr/jun/set/nov = 30) vão ajustar pro
+    // último dia. Antes o sistema aceitava 31 silenciosamente e pulava meses
+    // que não tinham aquele dia ou gerava data inválida.
+    if (form.dia_vencimento !== "" && form.dia_vencimento != null) {
+      const dia = parseInt(form.dia_vencimento, 10);
+      if (Number.isNaN(dia) || dia < 1 || dia > 31) {
+        alert("Dia de vencimento deve estar entre 1 e 31.");
+        return;
+      }
+      if (form.frequencia === "mensal" && dia > 28) {
+        const ok = confirm(
+          `Dia ${dia} não existe em todos os meses (fev tem 28/29, abr/jun/set/nov têm 30).\n\n` +
+            `Nos meses curtos, a recorrência será gerada no último dia disponível.\n\n` +
+            `Deseja continuar?`
+        );
+        if (!ok) return;
+      }
+    }
+
     const conta = contas.find((c) => c.id === form.conta_id);
     const categoria = categorias.find((c) => c.id === form.categoria_id);
     const fornecedor = fornecedores.find((f) => f.id === form.fornecedor_id);

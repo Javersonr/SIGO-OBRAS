@@ -2,6 +2,7 @@ import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileDown, FileSpreadsheet } from "lucide-react";
+import { isReceita, isDespesa, isStatusPago, isStatusPendente } from "@/lib/financeiro-utils";
 
 export default function BalancoPatrimonial({
   transacoes,
@@ -16,25 +17,27 @@ export default function BalancoPatrimonial({
 
   const saldoContas = contas.reduce((sum, c) => sum + (c.saldo_atual || 0), 0);
 
+  // Helpers normalizados — comparações case-sensitive deixavam de fora
+  // registros gravados como "pago"/"em_aberto" (minúsculas) ou "Realizado".
   const contasReceber = transacoesFiltradas
-    .filter((t) => t.tipo === "Receita" && (t.status === "Pendente" || t.status === "Em Aberto"))
+    .filter((t) => isReceita(t) && isStatusPendente(t.status))
     .reduce((sum, t) => sum + (t.valor || 0), 0);
 
   const ativoCirculante = saldoContas + contasReceber;
   const ativoTotal = ativoCirculante;
 
   const contasPagar = transacoesFiltradas
-    .filter((t) => t.tipo === "Despesa" && (t.status === "Pendente" || t.status === "Em Aberto"))
+    .filter((t) => isDespesa(t) && isStatusPendente(t.status))
     .reduce((sum, t) => sum + (t.valor || 0), 0);
 
   const passivoCirculante = contasPagar;
 
   const receitasPagas = transacoesFiltradas
-    .filter((t) => t.tipo === "Receita" && t.status === "Pago")
+    .filter((t) => isReceita(t) && isStatusPago(t.status))
     .reduce((sum, t) => sum + (t.valor || 0), 0);
 
   const despesasPagas = transacoesFiltradas
-    .filter((t) => t.tipo === "Despesa" && t.status === "Pago")
+    .filter((t) => isDespesa(t) && isStatusPago(t.status))
     .reduce((sum, t) => sum + (t.valor || 0), 0);
 
   const lucroAcumulado = receitasPagas - despesasPagas;

@@ -2,6 +2,7 @@ import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileDown, FileSpreadsheet } from "lucide-react";
+import { isReceita, isDespesa, isStatusPago } from "@/lib/financeiro-utils";
 
 export default function DRERelatorio({
   transacoes,
@@ -17,31 +18,33 @@ export default function DRERelatorio({
   const receitasPorCategoria = {};
   const despesasPorCategoria = {};
 
+  // Helpers normalizados — antes os filtros eram case-sensitive ("Receita",
+  // "Despesa", "Pago") e perdiam registros gravados em minúsculas / "Realizado".
   transacoesFiltradas.forEach((t) => {
-    if (t.status !== "Pago") return;
+    if (!isStatusPago(t.status)) return;
 
     const catNome = categorias.find((c) => c.id === t.categoria_id)?.nome || "Sem Categoria";
 
-    if (t.tipo === "Receita") {
+    if (isReceita(t)) {
       receitasPorCategoria[catNome] = (receitasPorCategoria[catNome] || 0) + (t.valor || 0);
-    } else if (t.tipo === "Despesa") {
+    } else if (isDespesa(t)) {
       despesasPorCategoria[catNome] = (despesasPorCategoria[catNome] || 0) + (t.valor || 0);
     }
   });
 
   const receitasBrutas = transacoesFiltradas
-    .filter((t) => t.tipo === "Receita" && t.status === "Pago")
+    .filter((t) => isReceita(t) && isStatusPago(t.status))
     .reduce((sum, t) => sum + (t.valor || 0), 0);
 
   const deducoes = 0; // Impostos sobre vendas (pode ser calculado depois)
   const receitasLiquidas = receitasBrutas - deducoes;
 
   const custosVariaveis = transacoesFiltradas
-    .filter((t) => t.tipo === "Despesa" && t.status === "Pago" && t.tipo_despesa === "material")
+    .filter((t) => isDespesa(t) && isStatusPago(t.status) && t.tipo_despesa === "material")
     .reduce((sum, t) => sum + (t.valor || 0), 0);
 
   const despesasOperacionais = transacoesFiltradas
-    .filter((t) => t.tipo === "Despesa" && t.status === "Pago" && t.tipo_despesa !== "material")
+    .filter((t) => isDespesa(t) && isStatusPago(t.status) && t.tipo_despesa !== "material")
     .reduce((sum, t) => sum + (t.valor || 0), 0);
 
   // Calcular resultados

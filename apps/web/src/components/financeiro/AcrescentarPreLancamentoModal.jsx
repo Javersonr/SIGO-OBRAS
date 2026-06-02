@@ -69,7 +69,9 @@ export default function AcrescentarPreLancamentoModal({
       }, 0);
 
       await sigo.entities.FechamentoCaixa.update(fechamento.id, {
-        pre_lancamentos_ids: JSON.stringify(novosIds),
+        // JSONB: passar array cru. JSON.stringify gravava como texto literal e
+        // quebrava jsonb_array_elements no Supabase.
+        pre_lancamentos_ids: novosIds,
         valor_total: (fechamento.valor_total || 0) + valorExtra,
       });
 

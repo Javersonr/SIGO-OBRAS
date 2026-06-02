@@ -1128,17 +1128,37 @@ export default function DespesasTab({
         });
       }
     }
-    // CENÁRIO 2: Edição de despesa com parcelamento habilitado - transformar em parcelas
+    // CENÁRIO 2: Edição de despesa com parcelamento habilitado
+    //
+    // Aqui caem 2 subcasos:
+    //   2A — selectedItem já era parcelado (parcelado=true e tem parcelas
+    //        salvas no banco). Editar dados (descrição, fornecedor) NÃO deve
+    //        regravar o extrato: o usuário só tá ajustando metadados.
+    //   2B — selectedItem era despesa simples e o usuário acabou de habilitar
+    //        parcelamento agora. Aí confirma e reescreve o extrato.
+    //
+    // Antes não havia distinção: sempre confirmava "transformar em N parcelas"
+    // e recriava todos os lançamentos do extrato, inclusive em edição trivial.
+    // Resultado: se o delete falhasse no meio (network), ficavam linhas
+    // duplicadas. Agora detecta o caso 2A e atualiza in-place sem mexer no
+    // extrato, e o 2B usa allSettled pra registrar falhas em vez de mascarar.
     else if (temParcelamento && selectedItem) {
-      if (
-        !confirm(
-          `Deseja transformar esta despesa de ${formatCurrency(dataBase.valor)} em ${parcelas.length} parcelas?\n\nEsta ação não pode ser desfeita!`
-        )
-      ) {
-        return;
+      const jaEraParcelada =
+        selectedItem.parcelado === true &&
+        Array.isArray(safeParseJSON(selectedItem.parcelas, null));
+
+      if (!jaEraParcelada) {
+        // 2B — transformação real: pede confirmação
+        if (
+          !confirm(
+            `Deseja transformar esta despesa de ${formatCurrency(dataBase.valor)} em ${parcelas.length} parcelas?\n\nEsta ação não pode ser desfeita!`
+          )
+        ) {
+          return;
+        }
       }
 
-      // Atualizar despesa existente com parcelamento
+      // Atualiza a despesa em si (sempre)
       await sigo.entities.TransacaoFinanceira.update(selectedItem.id, {
         ...dataBase,
         parcelado: true,
@@ -1146,29 +1166,77 @@ export default function DespesasTab({
       });
       transacaoSalva = { ...selectedItem, ...dataBase, id: selectedItem.id };
 
-      // Excluir lançamentos antigos do extrato
+      // Carrega o extrato atual da transação
       const lancamentosAntigos = await sigo.entities.ExtratoBancario.filter({
         empresa_id: empresaAtiva.id,
         transacao_id: selectedItem.id,
       });
-      for (const lanc of lancamentosAntigos) {
-        await sigo.entities.ExtratoBancario.delete(lanc.id);
-      }
 
-      // Criar lançamentos no extrato para cada parcela
-      for (const parcela of parcelas) {
-        await sigo.entities.ExtratoBancario.create({
-          empresa_id: empresaAtiva.id,
-          conta_id: form.conta_id,
-          data: parcela.data_vencimento,
-          descricao: `${form.descricao} - Parcela ${parcela.numero}/${parcelas.length}`,
-          valor: -Math.abs(parseFloat(parcela.valor) || 0),
-          tipo: "debito",
-          categoria: categoria?.nome || "Despesa",
-          conciliado: false,
-          transacao_id: selectedItem.id,
-          origem: "manual",
+      // Detecta se a estrutura de parcelas mudou (quantidade, valores ou datas).
+      // Se NÃO mudou, só atualizamos a descrição dos lançamentos existentes
+      // em paralelo e nem deletamos nada — evita janela de "0 extratos" no
+      // meio do save e zera o risco de duplicata.
+      const mesmaQtd = lancamentosAntigos.length === parcelas.length;
+      const estruturaInalterada =
+        jaEraParcelada &&
+        mesmaQtd &&
+        parcelas.every((p, idx) => {
+          const lanc = lancamentosAntigos[idx];
+          if (!lanc) return false;
+          const valorIgual =
+            Math.abs((lanc.valor || 0) + Math.abs(parseFloat(p.valor) || 0)) < 0.01;
+          return lanc.data === p.data_vencimento && valorIgual;
         });
+
+      if (estruturaInalterada) {
+        // Só atualiza descrição/conta/categoria nos lançamentos existentes.
+        const results = await Promise.allSettled(
+          lancamentosAntigos.map((lanc, idx) =>
+            sigo.entities.ExtratoBancario.update(lanc.id, {
+              conta_id: form.conta_id,
+              descricao: `${form.descricao} - Parcela ${parcelas[idx].numero}/${parcelas.length}`,
+              categoria: categoria?.nome || "Despesa",
+            })
+          )
+        );
+        const falhas = results.filter((r) => r.status === "rejected");
+        if (falhas.length > 0) {
+          console.error("Falhas ao atualizar parcelas do extrato:", falhas);
+        }
+      } else {
+        // Estrutura mudou: precisa reescrever. Faz delete + create em
+        // allSettled pra não mascarar falhas e logar pra investigação.
+        const deletes = await Promise.allSettled(
+          lancamentosAntigos.map((lanc) => sigo.entities.ExtratoBancario.delete(lanc.id))
+        );
+        const deleteFails = deletes.filter((r) => r.status === "rejected");
+        if (deleteFails.length > 0) {
+          console.error("Falhas ao apagar extrato antigo:", deleteFails);
+        }
+
+        const creates = await Promise.allSettled(
+          parcelas.map((parcela) =>
+            sigo.entities.ExtratoBancario.create({
+              empresa_id: empresaAtiva.id,
+              conta_id: form.conta_id,
+              data: parcela.data_vencimento,
+              descricao: `${form.descricao} - Parcela ${parcela.numero}/${parcelas.length}`,
+              valor: -Math.abs(parseFloat(parcela.valor) || 0),
+              tipo: "debito",
+              categoria: categoria?.nome || "Despesa",
+              conciliado: false,
+              transacao_id: selectedItem.id,
+              origem: "manual",
+            })
+          )
+        );
+        const createFails = creates.filter((r) => r.status === "rejected");
+        if (createFails.length > 0) {
+          console.error("Falhas ao recriar extrato das parcelas:", createFails);
+          alert(
+            `Atenção: ${createFails.length} parcela(s) não foram lançadas no extrato. Verifique e ajuste manualmente.`
+          );
+        }
       }
     }
     // CENÁRIO 3: Edição simples (sem parcelamento)

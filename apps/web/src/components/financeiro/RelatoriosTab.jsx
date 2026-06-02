@@ -79,7 +79,14 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
   };
 
   // Filtrar transações
+  //
+  // Defense-in-depth: o componente pai (Financeiro.jsx) carrega só transações
+  // da empresaAtiva, mas se algum dia esse contrato mudar, queremos garantir
+  // que relatórios JAMAIS mostrem dados de outra empresa. RLS no Supabase já
+  // protege contra leak via API, mas dados em memória podem vir contaminados
+  // por bug no caller.
   const transacoesFiltradas = transacoes.filter((t) => {
+    if (empresaAtiva?.id && t.empresa_id && t.empresa_id !== empresaAtiva.id) return false;
     const data = t.data_vencimento || t.created_date;
     if (filtros.dataInicio && data < filtros.dataInicio) return false;
     if (filtros.dataFim && data > filtros.dataFim) return false;

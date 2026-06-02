@@ -44,3 +44,42 @@ export function normalizeStatus(status) {
     .toLowerCase()
     .trim();
 }
+
+/**
+ * Tipo de transação ("Receita"/"Despesa") normalizado — usado em DRE,
+ * Balanço e qualquer agregação. Antes os filtros usavam comparação
+ * case-sensitive direta, perdendo registros gravados em minúsculas.
+ */
+export function normalizeTipo(tipo) {
+  return String(tipo || "")
+    .toLowerCase()
+    .trim();
+}
+export function isReceita(t) {
+  return normalizeTipo(t?.tipo) === "receita";
+}
+export function isDespesa(t) {
+  return normalizeTipo(t?.tipo) === "despesa";
+}
+
+/**
+ * "Pago" considerando os 2 sinônimos histórios "pago" e "realizado"
+ * (no Brasil, contabilidade usa "realizado" em alguns sistemas).
+ */
+const STATUS_PAGOS = new Set([STATUS_FINANCEIRO.PAGO, STATUS_FINANCEIRO.REALIZADO]);
+export function isStatusPago(status) {
+  return STATUS_PAGOS.has(normalizeStatus(status));
+}
+
+/**
+ * "Em aberto" (não pago, não cancelado, não agendado pra futuro) — usado
+ * em contas a receber/pagar do Balanço Patrimonial.
+ */
+const STATUS_PENDENTES = new Set([
+  STATUS_FINANCEIRO.EM_ABERTO,
+  STATUS_FINANCEIRO.PENDENTE,
+  STATUS_FINANCEIRO.ATRASADO,
+]);
+export function isStatusPendente(status) {
+  return STATUS_PENDENTES.has(normalizeStatus(status));
+}

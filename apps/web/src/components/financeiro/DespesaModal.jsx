@@ -169,8 +169,8 @@ export default function DespesaModal({
   fornecedores,
   projetos,
   oportunidades,
-  tipoDespesa,
-  setTipoDespesa,
+  tipoDespesa: tipoDespesaProp,
+  setTipoDespesa: setTipoDespesaProp,
   numeroParcelas,
   handleNumeroParcelasChange,
   parcelas,
@@ -186,14 +186,24 @@ export default function DespesaModal({
   onDesfazerConciliacao,
   podeEditar,
 }) {
+  // tipoDespesa pode vir do parent ou ser local — usamos local fallback.
+  const [tipoDespesaLocal, setTipoDespesaLocal] = useState(tipoDespesaProp || "geral");
+  const tipoDespesa = tipoDespesaProp ?? tipoDespesaLocal;
+  const setTipoDespesa = setTipoDespesaProp ?? setTipoDespesaLocal;
+
   const [notaFiscal, setNotaFiscal] = useState({
     numero: "",
+    chave: "",
     dataEmissao: "",
     dataEntrada: "",
     valorNota: "",
     statusAprovacao: "pendente",
   });
   const [itensNota, setItensNota] = useState([]);
+  const [almoxarifados, setAlmoxarifados] = useState([]);
+  const [almoxarifadoSelecionado, setAlmoxarifadoSelecionado] = useState("");
+  const [transacaoDuplicada, setTransacaoDuplicada] = useState(null);
+  const [verificandoDuplicidade, setVerificandoDuplicidade] = useState(false);
   const [permitirParcelamento, setPermitirParcelamento] = useState(false);
   const [mostrarParcelas, setMostrarParcelas] = useState(false);
   const [showAssociarMateriais, setShowAssociarMateriais] = useState(false);
@@ -295,6 +305,7 @@ export default function DespesaModal({
           // Atualizar form com dados da nota
           setNotaFiscal({
             numero: numeroNota,
+            chave: chaveNFe,
             dataEmissao: dataEmissao,
             dataEntrada: new Date().toISOString().split("T")[0],
             valorNota: valorTotal,
@@ -307,9 +318,28 @@ export default function DespesaModal({
             fornecedor_id: fornecedorEncontrado?.id || "",
             descricao: `Nota Fiscal ${numeroNota} - ${nomeFornecedor}`,
             numero_documento: chaveNFe || numeroNota,
+            chave_nfe: chaveNFe || null,
           }));
 
-          // Extrair itens da nota
+          // Verificar duplicidade da chave NFe ANTES de prosseguir
+          if (chaveNFe && empresaAtiva?.id) {
+            try {
+              const existentes = await sigo.entities.TransacaoFinanceira.filter({
+                empresa_id: empresaAtiva.id,
+                chave_nfe: chaveNFe,
+              });
+              const naoEhEssa = existentes.filter((t) => t.id !== selectedItem?.id);
+              if (naoEhEssa.length > 0) {
+                setTransacaoDuplicada(naoEhEssa[0]);
+              } else {
+                setTransacaoDuplicada(null);
+              }
+            } catch (err) {
+              console.warn("Falha ao verificar duplicidade NFe:", err);
+            }
+          }
+
+          // Extrair itens da nota (incluindo EAN e NCM)
           const det = infNFe?.getElementsByTagName("det");
           const itens = [];
 
@@ -319,6 +349,8 @@ export default function DespesaModal({
               const item = {
                 descricao: prod?.getElementsByTagName("xProd")[0]?.textContent || "",
                 codigo: prod?.getElementsByTagName("cProd")[0]?.textContent || "",
+                ean: prod?.getElementsByTagName("cEAN")[0]?.textContent || "",
+                ncm: prod?.getElementsByTagName("NCM")[0]?.textContent || "",
                 unidade: prod?.getElementsByTagName("uCom")[0]?.textContent || "UN",
                 quantidade: parseFloat(prod?.getElementsByTagName("qCom")[0]?.textContent || 0),
                 valor_unitario: parseFloat(
@@ -383,8 +415,38 @@ export default function DespesaModal({
   useEffect(() => {
     if (empresaAtiva?.id) {
       sigo.entities.CentroCusto.filter({ empresa_id: empresaAtiva.id }).then(setCentrosCusto);
+      sigo.entities.Almoxarifado.filter({ empresa_id: empresaAtiva.id, ativo: true }).then(
+        (alms) => {
+          setAlmoxarifados(alms);
+          if (alms.length === 1) setAlmoxarifadoSelecionado(alms[0].id);
+        }
+      );
     }
   }, [empresaAtiva?.id]);
+
+  // Re-verifica duplicidade quando o usuário edita a chave manualmente.
+  useEffect(() => {
+    const chave = form?.chave_nfe;
+    if (!chave || !empresaAtiva?.id) {
+      setTransacaoDuplicada(null);
+      return;
+    }
+    let cancelled = false;
+    setVerificandoDuplicidade(true);
+    sigo.entities.TransacaoFinanceira.filter({ empresa_id: empresaAtiva.id, chave_nfe: chave })
+      .then((rows) => {
+        if (cancelled) return;
+        const outras = (rows || []).filter((t) => t.id !== selectedItem?.id);
+        setTransacaoDuplicada(outras[0] || null);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setVerificandoDuplicidade(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form?.chave_nfe, empresaAtiva?.id, selectedItem?.id]);
 
   const fornecedoresOrdenados = useMemo(() => {
     return [...fornecedoresLocais].sort((a, b) =>
@@ -786,14 +848,30 @@ export default function DespesaModal({
                     <div>
                       <Label>Data de Pagamento</Label>
                       <div className="relative mt-1.5">
+                        {/* Só ativa se status == "pago": evita usuário gravar data
+                            de pagamento em despesa ainda em aberto, o que quebra
+                            DRE/fluxo de caixa por contar como realizada. */}
                         <Input
                           type="date"
                           value={form.data_pagamento || ""}
                           onChange={(e) => setForm({ ...form, data_pagamento: e.target.value })}
-                          className="pr-10"
+                          disabled={form.status !== "pago"}
+                          className={`pr-10 ${
+                            form.status !== "pago" ? "bg-slate-100 cursor-not-allowed" : ""
+                          }`}
+                          title={
+                            form.status !== "pago"
+                              ? "Mude o status para 'Pago' para registrar a data."
+                              : ""
+                          }
                         />
                         <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                       </div>
+                      {form.status !== "pago" && (
+                        <p className="text-xs text-slate-500 mt-1">
+                          Disponível quando o status for "Pago".
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -833,7 +911,71 @@ export default function DespesaModal({
                         </p>
                       </div>
                     )}
+
+                    {/* Alerta de NFe duplicada */}
+                    {transacaoDuplicada && (
+                      <div className="mt-2 p-3 bg-red-50 border border-red-300 rounded text-sm flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <p className="text-red-800 font-semibold">
+                            ⚠️ NFe já lançada anteriormente
+                          </p>
+                          <p className="text-red-700 text-xs mt-1">
+                            Chave: {form.chave_nfe?.slice(0, 12)}…{form.chave_nfe?.slice(-6)} •
+                            Lançada em{" "}
+                            {transacaoDuplicada.created_date
+                              ? new Date(transacaoDuplicada.created_date).toLocaleDateString(
+                                  "pt-BR"
+                                )
+                              : "data desconhecida"}
+                            {transacaoDuplicada.created_by_name &&
+                              ` por ${transacaoDuplicada.created_by_name}`}
+                          </p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-red-300 text-red-700"
+                          onClick={() => {
+                            const url = `/Financeiro?tab=despesas&transacaoId=${transacaoDuplicada.id}`;
+                            window.open(url, "_blank");
+                          }}
+                        >
+                          Ver lançamento
+                        </Button>
+                      </div>
+                    )}
+                    {verificandoDuplicidade && (
+                      <p className="text-xs text-slate-400 mt-1">Verificando duplicidade…</p>
+                    )}
                   </div>
+
+                  {/* Selector de almoxarifado quando despesa é de material */}
+                  {tipoDespesa === "material" && itensNota.length > 0 && (
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded space-y-2">
+                      <Label className="text-sm font-semibold text-blue-900">
+                        Almoxarifado de Entrada *
+                      </Label>
+                      <p className="text-xs text-blue-700">
+                        Os itens associados a um material serão lançados como entrada de estoque
+                        neste almoxarifado.
+                      </p>
+                      <Select
+                        value={almoxarifadoSelecionado}
+                        onValueChange={setAlmoxarifadoSelecionado}
+                      >
+                        <SelectTrigger className="bg-white">
+                          <SelectValue placeholder="Selecione o almoxarifado" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {almoxarifados.map((a) => (
+                            <SelectItem key={a.id} value={a.id}>
+                              {a.nome}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
 
                   {/* Lista de itens da nota */}
                   {itensNota.length > 0 && (
@@ -1372,7 +1514,41 @@ export default function DespesaModal({
                 </Button>
               )}
               <Button
-                onClick={handleSave}
+                onClick={async () => {
+                  // Bloqueio adicional contra duplicidade caso a chave tenha sido
+                  // colada/digitada após a importação inicial.
+                  if (transacaoDuplicada) {
+                    if (
+                      !confirm(
+                        `Já existe um lançamento com esta chave NFe (criado em ${
+                          transacaoDuplicada.created_date
+                            ? new Date(transacaoDuplicada.created_date).toLocaleDateString("pt-BR")
+                            : "data desconhecida"
+                        }).\n\nDeseja salvar mesmo assim? (Vai falhar no banco pelo índice único)`
+                      )
+                    ) {
+                      return;
+                    }
+                  }
+                  // Falta selecionar almoxarifado quando o usuário pretende
+                  // lançar entrada de estoque a partir da NFe.
+                  if (
+                    tipoDespesa === "material" &&
+                    itensNota.some((i) => i.material_id_associado || i.material_id) &&
+                    !almoxarifadoSelecionado
+                  ) {
+                    alert(
+                      "Selecione um almoxarifado de entrada antes de salvar — há itens associados a materiais."
+                    );
+                    return;
+                  }
+                  await handleSave({
+                    itensNota,
+                    almoxarifadoId: almoxarifadoSelecionado || null,
+                    chaveNfe: form.chave_nfe || null,
+                    tipoDespesa,
+                  });
+                }}
                 disabled={!form.valor || !form.conta_id || !form.data_vencimento || !form.descricao}
                 className="bg-red-600 hover:bg-red-700 flex-1"
               >
