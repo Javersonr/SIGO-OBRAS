@@ -135,7 +135,17 @@ export default function FiltrosAvancados({
             <Input
               type="date"
               value={filtros.dataInicio || ""}
-              onChange={(e) => onFiltrosChange({ ...filtros, dataInicio: e.target.value })}
+              max={filtros.dataFim || undefined}
+              onChange={(e) => {
+                const novoInicio = e.target.value;
+                // Se o novo início for posterior ao fim, reseta o fim p/ não
+                // criar intervalo invertido que zerava todos os relatórios.
+                const reset =
+                  novoInicio && filtros.dataFim && novoInicio > filtros.dataFim
+                    ? { dataFim: "" }
+                    : {};
+                onFiltrosChange({ ...filtros, dataInicio: novoInicio, ...reset });
+              }}
               className="mt-1"
             />
           </div>
@@ -145,7 +155,15 @@ export default function FiltrosAvancados({
             <Input
               type="date"
               value={filtros.dataFim || ""}
-              onChange={(e) => onFiltrosChange({ ...filtros, dataFim: e.target.value })}
+              min={filtros.dataInicio || undefined}
+              onChange={(e) => {
+                const novoFim = e.target.value;
+                if (novoFim && filtros.dataInicio && novoFim < filtros.dataInicio) {
+                  alert("A data final não pode ser anterior à data inicial.");
+                  return;
+                }
+                onFiltrosChange({ ...filtros, dataFim: novoFim });
+              }}
               className="mt-1"
             />
           </div>

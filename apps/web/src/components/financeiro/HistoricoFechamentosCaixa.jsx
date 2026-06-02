@@ -92,8 +92,13 @@ export default function HistoricoFechamentosCaixa({
     }
   };
 
+  // Antes filtrava só "Conciliado", mas fechamentos com status "Aguardando
+  // Pagamento" têm pré-lançamentos em "Em Fechamento" e ficavam com PDF
+  // vazio. Considera os 2 status como "incluídos no fechamento".
+  const isItemDoFechamento = (pl) => pl?.status === "Conciliado" || pl?.status === "Em Fechamento";
+
   const handleImprimirComComprovantes = async (fechamento, pls) => {
-    const itens = pls.filter((pl) => pl.status === "Conciliado");
+    const itens = pls.filter(isItemDoFechamento);
     if (itens.length === 0) {
       alert("Nenhum item conciliado encontrado.");
       return;
@@ -148,7 +153,7 @@ export default function HistoricoFechamentosCaixa({
   };
 
   const handleImprimirPlanilha = (fechamento, pls) => {
-    const itens = pls.filter((pl) => pl.status === "Conciliado");
+    const itens = pls.filter(isItemDoFechamento);
     const total = itens.reduce((sum, pl) => {
       const d = safeParseJSON(pl.dados_extraidos, {});
       return sum + (parseFloat(d.valor) || 0);
@@ -212,7 +217,7 @@ export default function HistoricoFechamentosCaixa({
   };
 
   const handleImprimir = (fechamento, pls) => {
-    const itens = pls.filter((pl) => pl.status === "Conciliado");
+    const itens = pls.filter(isItemDoFechamento);
     const total = itens.reduce((sum, pl) => {
       const d = safeParseJSON(pl.dados_extraidos, {});
       return sum + (parseFloat(d.valor) || 0);
@@ -734,7 +739,17 @@ function ModalDesfazerPagamento({ fechamento, onClose, onSucesso }) {
             const anexos = await sigo.entities.TransacaoAnexo.filter({
               transacao_id: pl.transacao_id,
             });
-            await Promise.all(anexos.map((a) => sigo.entities.TransacaoAnexo.delete(a.id)));
+            // allSettled: anexo órfão é menos crítico do que travar o desfazer.
+            const delRes = await Promise.allSettled(
+              anexos.map((a) => sigo.entities.TransacaoAnexo.delete(a.id))
+            );
+            const delFails = delRes.filter((r) => r.status === "rejected").length;
+            if (delFails > 0) {
+              console.warn(
+                `[HistoricoFechamentos] ${delFails} anexo(s) não deletados pra transacao`,
+                pl.transacao_id
+              );
+            }
           } catch (err) {
             console.warn(
               "[HistoricoFechamentos] falha apagando anexos da transacao",
@@ -837,12 +852,16 @@ function ModalDesfazerFechamento({ fechamento, onClose, onSucesso }) {
     setDesfazendo(true);
     try {
       // Voltar pré-lançamentos para "Pendente"
+      // allSettled: o .catch(()=>null) já transformava rejeição em null, mas
+      // isso mascarava o problema. Agora logamos e seguimos.
       const ids = safeParseJSON(fechamento.pre_lancamentos_ids, []);
-      await Promise.all(
-        ids.map((id) =>
-          sigo.entities.PreLancamento.update(id, { status: "Pendente" }).catch(() => null)
-        )
+      const results = await Promise.allSettled(
+        ids.map((id) => sigo.entities.PreLancamento.update(id, { status: "Pendente" }))
       );
+      const falhas = results.filter((r) => r.status === "rejected");
+      if (falhas.length > 0) {
+        console.warn("[ModalDesfazerFechamento] falhas voltando pré-lançamentos:", falhas);
+      }
       await sigo.entities.FechamentoCaixa.delete(fechamento.id);
       onSucesso();
     } catch (err) {

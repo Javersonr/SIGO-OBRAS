@@ -185,8 +185,10 @@ export default function FechamentoCaixaModal({
         comprovante_pagamento_url: comprovante_url,
       });
 
-      // Marcar todos os pré-lançamentos como "Conciliado"
-      await Promise.all(
+      // Marcar todos os pré-lançamentos como "Conciliado". allSettled pra
+      // saber se alguma transação ficou pra trás — relatórios financeiros
+      // ficavam mostrando "em aberto" sem aviso quando 1 update falhava.
+      const results = await Promise.allSettled(
         itens.map(async (pl) => {
           await sigo.entities.PreLancamento.update(pl.id, { status: "Conciliado" });
           if (pl.transacao_id) {
@@ -194,6 +196,13 @@ export default function FechamentoCaixaModal({
           }
         })
       );
+      const falhas = results.filter((r) => r.status === "rejected");
+      if (falhas.length > 0) {
+        console.error("Falhas ao conciliar fechamento:", falhas);
+        alert(
+          `Atenção: ${falhas.length} de ${itens.length} item(s) do fechamento não foram marcados como pagos. Verifique no histórico.`
+        );
+      }
 
       onOpenChange(false);
       if (onSucesso) onSucesso();

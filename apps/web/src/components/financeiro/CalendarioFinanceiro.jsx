@@ -72,18 +72,37 @@ export default function CalendarioFinanceiro() {
       .finally(() => setLoading(false));
   }, [empresas?.map((e) => e.id).join(",")]);
 
-  const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-  const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
-  const startDate = new Date(monthStart);
-  startDate.setDate(startDate.getDate() - startDate.getDay());
-  const endDate = new Date(monthEnd);
-  endDate.setDate(endDate.getDate() + (6 - endDate.getDay()));
+  // Fixa horário no meio-dia: evita que mudanças de DST (caso o Brasil
+  // volte a ter horário de verão) ou setDate sobre uma data com horário 00:00
+  // gerem dia pulado/repetido. Iteração sempre constrói novo Date para
+  // não acumular drift de ms.
+  const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1, 12, 0, 0);
+  const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 12, 0, 0);
+
+  const startDate = new Date(
+    monthStart.getFullYear(),
+    monthStart.getMonth(),
+    monthStart.getDate() - monthStart.getDay(),
+    12,
+    0,
+    0
+  );
+  const endDate = new Date(
+    monthEnd.getFullYear(),
+    monthEnd.getMonth(),
+    monthEnd.getDate() + (6 - monthEnd.getDay()),
+    12,
+    0,
+    0
+  );
 
   const days = [];
-  let d = new Date(startDate);
-  while (d <= endDate) {
+  for (
+    let d = new Date(startDate);
+    d <= endDate;
+    d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 12, 0, 0)
+  ) {
     days.push(new Date(d));
-    d.setDate(d.getDate() + 1);
   }
 
   // Agrupar transações por data de vencimento

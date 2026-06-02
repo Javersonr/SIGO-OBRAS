@@ -1,6 +1,7 @@
 import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { TrendingUp, TrendingDown, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import { isStatusPago, isStatusPendente, normalizeStatus } from "@/lib/financeiro-utils";
 
 export default function CardsResumo({ transacoes, tipo = "receitas" }) {
   const formatCurrency = (value) => {
@@ -10,13 +11,14 @@ export default function CardsResumo({ transacoes, tipo = "receitas" }) {
   };
 
   const total = transacoes.reduce((sum, t) => sum + (t.valor || 0), 0);
-  const pendentes = transacoes.filter((t) => t.status === "em_aberto" || t.status === "Pendente");
-  const pagos = transacoes.filter(
-    (t) => t.status === "pago" || t.status === "Pago" || t.status === "Realizado"
-  );
+  // Usa os helpers normalizados: cobrem "pago"/"Pago"/"Realizado" e
+  // "em_aberto"/"Pendente"/"atrasado" de uma vez, sem o OR-spaghetti.
+  const pendentes = transacoes.filter((t) => isStatusPendente(t.status));
+  const pagos = transacoes.filter((t) => isStatusPago(t.status));
   const atrasados = transacoes.filter((t) => {
-    if (t.status === "atrasado") return true;
-    if (t.status !== "em_aberto" && t.status !== "Pendente") return false;
+    const s = normalizeStatus(t.status);
+    if (s === "atrasado") return true;
+    if (!isStatusPendente(t.status)) return false;
     const vencimento = new Date(t.data_vencimento);
     return vencimento < new Date();
   });

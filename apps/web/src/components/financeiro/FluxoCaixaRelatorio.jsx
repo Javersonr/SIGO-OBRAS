@@ -15,6 +15,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
+import { isReceita, isDespesa, isStatusPago } from "@/lib/financeiro-utils";
 
 export default function FluxoCaixaRelatorio({
   transacoes,
@@ -45,9 +46,9 @@ export default function FluxoCaixaRelatorio({
       fluxoPorMes[mes] = { mes, entradas: 0, saidas: 0, saldo: 0 };
     }
 
-    if (t.tipo === "Receita" && t.status === "Pago") {
+    if (isReceita(t) && isStatusPago(t.status)) {
       fluxoPorMes[mes].entradas += t.valor || 0;
-    } else if (t.tipo === "Despesa" && t.status === "Pago") {
+    } else if (isDespesa(t) && isStatusPago(t.status)) {
       fluxoPorMes[mes].saidas += t.valor || 0;
     }
   });

@@ -178,14 +178,25 @@ export default function DespesasTab({
     const valorParcela = parseFloat(valorTotal) / numParcelas;
     const novasParcelas = [];
 
+    // Bug histórico: `new Date("2026-01-15")` é interpretado em UTC
+    // (meia-noite UTC), e em UTC-3 o toISOString().split("T")[0] volta como
+    // "2026-01-14" — todas as parcelas saíam 1 dia antes. Parse manual em
+    // horário local e formato manual evita o drift.
+    const [anoBase, mesBase, diaBase] = dataVencimento.split("-").map((n) => parseInt(n, 10));
+
     for (let i = 0; i < numParcelas; i++) {
-      const data = new Date(dataVencimento);
-      data.setMonth(data.getMonth() + i);
+      // setMonth respeita overflow (mês 12 → ano+1, mês 0), e cap automático
+      // pro último dia do mês quando dia=31 num mês curto.
+      const data = new Date(anoBase, mesBase - 1 + i, diaBase, 12, 0, 0);
+
+      const yyyy = data.getFullYear();
+      const mm = String(data.getMonth() + 1).padStart(2, "0");
+      const dd = String(data.getDate()).padStart(2, "0");
 
       novasParcelas.push({
         numero: i + 1,
         valor: parseFloat(valorParcela.toFixed(2)),
-        data_vencimento: data.toISOString().split("T")[0],
+        data_vencimento: `${yyyy}-${mm}-${dd}`,
         data_pagamento: null,
         status: "em_aberto",
       });
@@ -2218,7 +2229,20 @@ export default function DespesasTab({
       {showModal && (
         <DespesaModal
           showModal={showModal}
-          setShowModal={setShowModal}
+          setShowModal={(v) => {
+            // Reset de estados auxiliares ao fechar (Cancelar OU after-save):
+            // antes anexos/parcelas/selectedItem do registro anterior
+            // sobreviviam até o próximo handleOpen — janela curta mas que
+            // já causou "Editei A, cancelei, abri B e vi anexo do A" em
+            // dev. Centralizamos o reset aqui pra cobrir todos os caminhos.
+            if (v === false) {
+              setSelectedItem(null);
+              setAnexos([]);
+              setParcelas([]);
+              setNumeroParcelas(1);
+            }
+            setShowModal(v);
+          }}
           selectedItem={selectedItem}
           form={form}
           setForm={setForm}

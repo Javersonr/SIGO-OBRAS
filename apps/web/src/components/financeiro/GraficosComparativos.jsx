@@ -15,6 +15,7 @@ import {
   Area,
 } from "recharts";
 import { TrendingUp, TrendingDown } from "lucide-react";
+import { isReceita, isDespesa, isStatusPago } from "@/lib/financeiro-utils";
 
 export default function GraficosComparativos({
   transacoes,
@@ -41,17 +42,17 @@ export default function GraficosComparativos({
 
     const transacoesAtual = transacoes.filter((t) => {
       const data = new Date(t.data_vencimento || t.created_date);
-      return data >= inicio && data <= fim && t.status === "Pago";
+      return data >= inicio && data <= fim && isStatusPago(t.status);
     });
 
     const transacoesAnterior = transacoes.filter((t) => {
       const data = new Date(t.data_vencimento || t.created_date);
-      return data >= inicioAnterior && data < inicio && t.status === "Pago";
+      return data >= inicioAnterior && data < inicio && isStatusPago(t.status);
     });
 
     const calcularDRE = (trans) => ({
-      receitas: trans.filter((t) => t.tipo === "Receita").reduce((s, t) => s + (t.valor || 0), 0),
-      despesas: trans.filter((t) => t.tipo === "Despesa").reduce((s, t) => s + (t.valor || 0), 0),
+      receitas: trans.filter((t) => isReceita(t)).reduce((s, t) => s + (t.valor || 0), 0),
+      despesas: trans.filter((t) => isDespesa(t)).reduce((s, t) => s + (t.valor || 0), 0),
     });
 
     const atual = calcularDRE(transacoesAtual);
@@ -90,9 +91,9 @@ export default function GraficosComparativos({
       }
 
       const valor = t.valor || 0;
-      const mult = t.tipo === "Receita" ? 1 : -1;
+      const mult = isReceita(t) ? 1 : -1;
 
-      if (t.status === "Pago") {
+      if (isStatusPago(t.status)) {
         fluxoPorMes[mes].realizado += valor * mult;
         fluxoPorMes[mes].projetado += valor * mult;
       } else {
@@ -104,7 +105,8 @@ export default function GraficosComparativos({
       .sort((a, b) => a.mes.localeCompare(b.mes))
       .slice(-6)
       .map((item) => ({
-        mes: new Date(item.mes + "-01").toLocaleDateString("pt-BR", {
+        // T12:00:00 evita parse UTC que deslocaria mês em UTC-3
+        mes: new Date(item.mes + "-01T12:00:00").toLocaleDateString("pt-BR", {
           month: "short",
           year: "2-digit",
         }),
@@ -118,7 +120,7 @@ export default function GraficosComparativos({
     const margensPorMes = {};
 
     transacoes.forEach((t) => {
-      if (t.status !== "Pago") return;
+      if (!isStatusPago(t.status)) return;
 
       const mes = (t.data_vencimento || t.created_date)?.slice(0, 7);
       if (!mes) return;
@@ -127,9 +129,9 @@ export default function GraficosComparativos({
         margensPorMes[mes] = { mes, receitas: 0, despesas: 0 };
       }
 
-      if (t.tipo === "Receita") {
+      if (isReceita(t)) {
         margensPorMes[mes].receitas += t.valor || 0;
-      } else if (t.tipo === "Despesa") {
+      } else if (isDespesa(t)) {
         margensPorMes[mes].despesas += t.valor || 0;
       }
     });
@@ -138,7 +140,13 @@ export default function GraficosComparativos({
       .sort((a, b) => a.mes.localeCompare(b.mes))
       .slice(-6)
       .map((item) => ({
-        mes: new Date(item.mes + "-01").toLocaleDateString("pt-BR", { month: "short" }),
+        // Inclui year p/ distinguir "jan 25" de "jan 26" em séries que
+        // cruzam virada de ano. Antes ambos viravam só "jan." e o gráfico
+        // somava os 2 anos no mesmo ponto.
+        mes: new Date(item.mes + "-01T12:00:00").toLocaleDateString("pt-BR", {
+          month: "short",
+          year: "2-digit",
+        }),
         margemBruta:
           item.receitas > 0 ? ((item.receitas - item.despesas) / item.receitas) * 100 : 0,
         receitas: item.receitas,

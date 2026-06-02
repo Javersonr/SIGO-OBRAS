@@ -251,7 +251,10 @@ export default function ConciliacaoBancaria({ empresaAtiva, contas, onReload }) 
   };
 
   const conciliarTransacao = async (extratoId, transacaoId) => {
-    await Promise.all([
+    // allSettled: se um lado falhar, ainda persiste o outro e mostra
+    // o problema. Antes Promise.all rejeitava sem dizer qual dos 2 quebrou
+    // e deixava o estado pela metade (ex: extrato marcado, transação não).
+    const results = await Promise.allSettled([
       sigo.entities.ExtratoBancario.update(extratoId, {
         status_conciliacao: "conciliado",
         transacao_id: transacaoId,
@@ -262,6 +265,13 @@ export default function ConciliacaoBancaria({ empresaAtiva, contas, onReload }) 
         extrato_id: extratoId,
       }),
     ]);
+    const falhas = results.filter((r) => r.status === "rejected");
+    if (falhas.length > 0) {
+      console.error("Conciliação parcial — falhas:", falhas);
+      alert(
+        "Conciliação ficou pela metade — verifique extrato e transação. Pode ser necessário desfazer e refazer."
+      );
+    }
     loadDados();
   };
 

@@ -75,11 +75,21 @@ export default function AcrescentarPreLancamentoModal({
         valor_total: (fechamento.valor_total || 0) + valorExtra,
       });
 
-      await Promise.all(
+      // allSettled em vez de all: se 1 update falhar, queremos saber
+      // quantos NÃO foram marcados como "Em Fechamento" (caso contrário
+      // o fechamento sai com pré-lançamentos órfãos no status antigo).
+      const results = await Promise.allSettled(
         selecionados.map((id) =>
           sigo.entities.PreLancamento.update(id, { status: "Em Fechamento" })
         )
       );
+      const falhas = results.filter((r) => r.status === "rejected");
+      if (falhas.length > 0) {
+        console.error("Falhas atualizando pré-lançamentos:", falhas);
+        alert(
+          `Atenção: ${falhas.length} de ${selecionados.length} pré-lançamento(s) não foram marcados como "Em Fechamento". Verifique no histórico.`
+        );
+      }
 
       onSucesso();
       onOpenChange(false);

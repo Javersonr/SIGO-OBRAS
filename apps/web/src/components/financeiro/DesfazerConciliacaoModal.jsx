@@ -41,10 +41,20 @@ export default function DesfazerConciliacaoModal({
 
       // Deletar a transação financeira vinculada
       if (transacao?.id) {
-        // Deletar anexos da transação primeiro
+        // Deletar anexos da transação primeiro. allSettled pra não bloquear
+        // o desfazer se 1 anexo falhar — anexo órfão é menos crítico do que
+        // pré-lançamento travado em status "Conciliado".
         try {
           const anexos = await sigo.entities.TransacaoAnexo.filter({ transacao_id: transacao.id });
-          await Promise.all(anexos.map((a) => sigo.entities.TransacaoAnexo.delete(a.id)));
+          const results = await Promise.allSettled(
+            anexos.map((a) => sigo.entities.TransacaoAnexo.delete(a.id))
+          );
+          const orfaos = results.filter((r) => r.status === "rejected").length;
+          if (orfaos > 0) {
+            console.warn(
+              `[DesfazerConciliacao] ${orfaos} anexo(s) não foram apagados — ficam como órfãos.`
+            );
+          }
         } catch (err) {
           console.warn("[DesfazerConciliacao] falha apagando anexos:", err);
         }

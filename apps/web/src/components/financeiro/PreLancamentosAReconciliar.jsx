@@ -354,11 +354,24 @@ export default function PreLancamentosAReconciliar({
 
   const carregarProjetos = async () => {
     try {
-      const data = await sigo.entities.Projeto.filter({ empresa_id: empresaId });
+      // Limita ao status ativo: empresas com 200+ projetos antigos travavam
+      // a lista no select. Mantém ordenação por nome.
+      const data = await sigo.entities.Projeto.filter(
+        { empresa_id: empresaId, status: ["Planejamento", "Em Andamento"] },
+        "nome",
+        500
+      );
       setProjetos(data || []);
     } catch (err) {
-      console.warn("[PreLancamentos] falha carregando projetos:", err);
-      setProjetos([]);
+      // Fallback: sem filtro de status (alguns clientes não usam status)
+      console.warn("[PreLancamentos] falha carregando projetos com filtro:", err);
+      try {
+        const fallback = await sigo.entities.Projeto.filter({ empresa_id: empresaId }, "nome", 500);
+        setProjetos(fallback || []);
+      } catch (err2) {
+        console.warn("[PreLancamentos] fallback também falhou:", err2);
+        setProjetos([]);
+      }
     }
   };
 
@@ -458,11 +471,19 @@ export default function PreLancamentosAReconciliar({
         usuario_fechamento_nome: usuarioNome,
         data_fechamento: new Date().toLocaleDateString("en-CA"),
       });
-      await Promise.all(
+      // allSettled: se 1 update falhar, ainda fechamos a UI mas avisamos.
+      const updateResults = await Promise.allSettled(
         itensSelecionadosParaCaixa.map((pl) =>
           sigo.entities.PreLancamento.update(pl.id, { status: "Em Fechamento" })
         )
       );
+      const updateFails = updateResults.filter((r) => r.status === "rejected");
+      if (updateFails.length > 0) {
+        console.error("Falhas marcando pré-lançamentos como Em Fechamento:", updateFails);
+        alert(
+          `Atenção: ${updateFails.length} pré-lançamento(s) não foram atualizados. Verifique no histórico.`
+        );
+      }
       setSelecionados([]);
       await carregarPreLancamentos();
       if (onReload) onReload();

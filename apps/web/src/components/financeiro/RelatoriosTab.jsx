@@ -63,7 +63,9 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
         usuario_id: user?.id,
         nome,
         tipo: "Personalizado",
-        filtros: JSON.stringify(filtros),
+        // filtros é JSONB no banco. Antes salvava JSON.stringify(...) que
+        // armazenava como texto literal — quebrava queries jsonb_extract_path.
+        filtros: filtros || {},
         publico: false,
         favorito: false,
       });

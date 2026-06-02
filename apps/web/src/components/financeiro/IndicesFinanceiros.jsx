@@ -11,6 +11,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isReceita, isDespesa, isStatusPago, isStatusPendente } from "@/lib/financeiro-utils";
 
 export default function IndicesFinanceiros({ transacoes, contas, versao = "real" }) {
   const formatCurrency = (value) => {
@@ -29,13 +30,14 @@ export default function IndicesFinanceiros({ transacoes, contas, versao = "real"
     versao === "contabil" ? t.e_contabil === true : true
   );
 
-  // Calcular valores base
+  // Calcular valores base — usa os helpers normalizados, antes só pegava
+  // status="Realizado" e perdia registros gravados como "pago".
   const receitas = transacoesFiltradas
-    .filter((t) => t.tipo === "Receita" && t.status === "Realizado")
+    .filter((t) => isReceita(t) && isStatusPago(t.status))
     .reduce((sum, t) => sum + (t.valor || 0), 0);
 
   const despesas = transacoesFiltradas
-    .filter((t) => t.tipo === "Despesa" && t.status === "Realizado")
+    .filter((t) => isDespesa(t) && isStatusPago(t.status))
     .reduce((sum, t) => sum + (t.valor || 0), 0);
 
   const lucroLiquido = receitas - despesas;
@@ -47,7 +49,7 @@ export default function IndicesFinanceiros({ transacoes, contas, versao = "real"
 
   // Passivo Circulante (contas a pagar pendentes)
   const passivoCirculante = transacoesFiltradas
-    .filter((t) => t.tipo === "Despesa" && t.status === "Pendente")
+    .filter((t) => isDespesa(t) && isStatusPendente(t.status))
     .reduce((sum, t) => sum + (t.valor || 0), 0);
 
   const ativoTotal = ativoCirculante + receitas * 0.3; // Estimativa simples
