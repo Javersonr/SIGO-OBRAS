@@ -82,6 +82,9 @@ export default function ReceitasTab({
   const [parcelas, setParcelas] = useState([]);
   const [anexos, setAnexos] = useState([]);
   const [tipoReceita, setTipoReceita] = useState("servico");
+  // Bloqueia clique duplo no botão Salvar e no toggle de status individual.
+  const [saving, setSaving] = useState(false);
+  const [togglingIds, setTogglingIds] = useState(() => new Set());
   const [itensSelecionados, setItensSelecionados] = useState([]);
   const [ultimoItemClicado, setUltimoItemClicado] = useState(null);
   const [importacao, setImportacao] = useState({
@@ -114,6 +117,7 @@ export default function ReceitasTab({
     descricao: "",
     status: "em_aberto",
     forma_pagamento: "",
+    observacoes: "",
   });
   const [openCliente, setOpenCliente] = useState(false);
   const [searchCliente, setSearchCliente] = useState("");
@@ -966,8 +970,18 @@ export default function ReceitasTab({
         descricao: item.descricao || "",
         status: item.status || "em_aberto",
         forma_pagamento: item.forma_pagamento || "",
+        observacoes: item.observacoes || "",
       });
       setSelectedItem(item);
+      // Edit de receita parcelada: o item clicado é UMA das parcelas. Ao
+      // re-salvar SEM essa info, o user perdia as outras 11 parcelas. Aqui
+      // detectamos pelo padrão "Parcela N/T" na descrição e desabilitamos
+      // o parcelamento durante a edição (avisa que vai editar só essa parcela).
+      const matchParcela = /Parcela\s+\d+\s*\/\s*\d+/i.test(item.descricao || "");
+      if (matchParcela) {
+        setNumeroParcelas(1);
+        setParcelas([]);
+      }
     } else {
       setForm({
         conta_id: contas[0]?.id || "",
@@ -983,15 +997,38 @@ export default function ReceitasTab({
         descricao: "",
         status: "em_aberto",
         forma_pagamento: "",
+        observacoes: "",
       });
+      // Reset parcelas/anexos no Novo (evita lixo do registro anterior)
+      setNumeroParcelas(1);
+      setParcelas([]);
+      setAnexos([]);
       setSelectedItem(null);
     }
     setShowModal(true);
   };
 
   const handleSave = async () => {
-    if (!form.valor) return;
+    // Validação: campos obrigatórios para o backend gravar corretamente.
+    // Antes só checava valor — perdia descricao/conta/vencimento silenciosamente.
+    if (!form.valor || parseFloat(form.valor) <= 0) {
+      alert("Informe um valor válido.");
+      return;
+    }
+    if (!form.conta_id) {
+      alert("Selecione uma conta financeira.");
+      return;
+    }
+    if (!form.data_vencimento) {
+      alert("Informe a data de vencimento.");
+      return;
+    }
+    if (!form.descricao || !form.descricao.trim()) {
+      alert("Informe a descrição.");
+      return;
+    }
 
+    setSaving(true);
     const conta = contas.find((c) => c.id === form.conta_id);
     const categoria = categorias.find((c) => c.id === form.categoria_id);
     const projeto = projetos.find((p) => p.id === form.projeto_id);
@@ -1020,77 +1057,123 @@ export default function ReceitasTab({
       forma_pagamento: form.forma_pagamento || null,
       tipo_receita: tipoReceita,
       anexos: JSON.stringify(anexos),
+      observacoes: form.observacoes || null,
     };
 
-    if (numeroParcelas > 1 && parcelas.length > 0) {
-      // Criar uma transação para cada parcela
-      for (const parcela of parcelas) {
-        await sigo.entities.TransacaoFinanceira.create({
-          ...dataBase,
-          valor: parcela.valor,
-          data_vencimento: parcela.data_vencimento,
-          status: parcela.status,
-          descricao: `${form.descricao} - Parcela ${parcela.numero}/${parcelas.length}`,
-        });
-      }
-    } else {
-      if (selectedItem) {
-        await sigo.entities.TransacaoFinanceira.update(selectedItem.id, dataBase);
+    try {
+      if (numeroParcelas > 1 && parcelas.length > 0) {
+        // Criar uma transação para cada parcela
+        for (const parcela of parcelas) {
+          await sigo.entities.TransacaoFinanceira.create({
+            ...dataBase,
+            valor: parcela.valor,
+            data_vencimento: parcela.data_vencimento,
+            status: parcela.status,
+            descricao: `${form.descricao} - Parcela ${parcela.numero}/${parcelas.length}`,
+          });
+        }
       } else {
-        await sigo.entities.TransacaoFinanceira.create(dataBase);
+        if (selectedItem) {
+          await sigo.entities.TransacaoFinanceira.update(selectedItem.id, dataBase);
+        } else {
+          await sigo.entities.TransacaoFinanceira.create(dataBase);
+        }
       }
-    }
 
-    setShowModal(false);
-    setNumeroParcelas(1);
-    setParcelas([]);
-    setAnexos([]);
-    setTipoReceita("servico");
-    onReload();
+      // Reset só se gravou com sucesso
+      setShowModal(false);
+      setNumeroParcelas(1);
+      setParcelas([]);
+      setAnexos([]);
+      setTipoReceita("servico");
+      onReload();
+    } catch (err) {
+      console.error("[ReceitasTab] erro ao salvar:", err);
+      alert("❌ Erro ao salvar receita: " + (err?.message || "desconhecido"));
+      // NÃO fechar o modal — usuário pode corrigir e tentar de novo
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async (id) => {
     if (!confirm("Excluir esta receita?")) return;
-    await sigo.entities.TransacaoFinanceira.delete(id);
-    onReload();
+    try {
+      // Cascade: remove lançamentos de extrato vinculados antes de excluir a transação
+      // (evita órfãos no ExtratoBancario que afetam o saldo da conta).
+      const extratos = await sigo.entities.ExtratoBancario.filter({
+        empresa_id: empresaAtiva.id,
+        transacao_id: id,
+      });
+      await Promise.allSettled(
+        (extratos || []).map((e) => sigo.entities.ExtratoBancario.delete(e.id))
+      );
+
+      await sigo.entities.TransacaoFinanceira.delete(id);
+      onReload();
+    } catch (err) {
+      console.error("[ReceitasTab] erro ao excluir:", err);
+      alert("❌ Erro ao excluir: " + (err?.message || "desconhecido"));
+      // Não chama onReload se falhou — registro continua na lista
+    }
   };
 
+  // Set de ids sendo togglados — bloqueia clique duplo que criava 2 ExtratoBancario.
+  // useState ficaria mais idiomático mas como precisamos de Set mutável referenciável
+  // entre cliques rápidos, usamos useRef através de um state-set.
   const handleToggleStatus = async (item) => {
-    const newStatus = item.status === "pago" ? "em_aberto" : "pago";
-    await sigo.entities.TransacaoFinanceira.update(item.id, {
-      status: newStatus,
-      data_pagamento: newStatus === "pago" ? new Date().toISOString().split("T")[0] : null,
-    });
+    if (togglingIds.has(item.id)) return; // já está em processamento
+    setTogglingIds((s) => new Set(s).add(item.id));
 
-    if (newStatus === "pago") {
-      const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
-        empresa_id: empresaAtiva.id,
-        transacao_id: item.id,
+    const isPagoAtual = String(item.status || "").toLowerCase();
+    const eraPago = isPagoAtual === "pago" || isPagoAtual === "realizado";
+    const newStatus = eraPago ? "em_aberto" : "pago";
+
+    try {
+      await sigo.entities.TransacaoFinanceira.update(item.id, {
+        status: newStatus,
+        data_pagamento: newStatus === "pago" ? new Date().toISOString().split("T")[0] : null,
       });
-      if (lancamentosExistentes.length === 0) {
-        await sigo.entities.ExtratoBancario.create({
+
+      if (newStatus === "pago") {
+        const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
           empresa_id: empresaAtiva.id,
-          conta_id: item.conta_id,
-          data: new Date().toISOString().split("T")[0],
-          descricao: item.descricao,
-          valor: Math.abs(item.valor),
-          tipo: "credito",
-          categoria: item.categoria_nome || "Receita",
-          conciliado: false,
           transacao_id: item.id,
-          origem: "manual",
         });
+        if (lancamentosExistentes.length === 0) {
+          await sigo.entities.ExtratoBancario.create({
+            empresa_id: empresaAtiva.id,
+            conta_id: item.conta_id,
+            data: new Date().toISOString().split("T")[0],
+            descricao: item.descricao,
+            valor: Math.abs(item.valor),
+            tipo: "credito",
+            categoria: item.categoria_nome || "Receita",
+            conciliado: false,
+            transacao_id: item.id,
+            origem: "manual",
+          });
+        }
+      } else {
+        const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
+          empresa_id: empresaAtiva.id,
+          transacao_id: item.id,
+        });
+        await Promise.allSettled(
+          lancamentosExistentes.map((l) => sigo.entities.ExtratoBancario.delete(l.id))
+        );
       }
-    } else {
-      const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
-        empresa_id: empresaAtiva.id,
-        transacao_id: item.id,
+      onReload();
+    } catch (err) {
+      console.error("[ReceitasTab] erro toggle status:", err);
+      alert("❌ Erro ao atualizar status: " + (err?.message || "desconhecido"));
+    } finally {
+      setTogglingIds((s) => {
+        const n = new Set(s);
+        n.delete(item.id);
+        return n;
       });
-      for (const lanc of lancamentosExistentes) {
-        await sigo.entities.ExtratoBancario.delete(lanc.id);
-      }
     }
-    onReload();
   };
 
   return (
@@ -1989,22 +2072,34 @@ export default function ReceitasTab({
 
                 <div>
                   <Label>Observação</Label>
-                  <Textarea placeholder="Observações adicionais..." className="mt-1.5" rows={3} />
+                  <Textarea
+                    placeholder="Observações adicionais..."
+                    className="mt-1.5"
+                    rows={3}
+                    value={form.observacoes || ""}
+                    onChange={(e) => setForm({ ...form, observacoes: e.target.value })}
+                  />
                 </div>
               </div>
             </div>
           </div>
 
           <div className="flex justify-end gap-3 border-t pt-4">
-            <Button variant="outline" onClick={() => setShowModal(false)}>
+            <Button variant="outline" onClick={() => setShowModal(false)} disabled={saving}>
               Cancelar
             </Button>
             <Button
               onClick={handleSave}
-              disabled={!form.valor || !form.conta_id}
+              disabled={
+                saving ||
+                !form.valor ||
+                !form.conta_id ||
+                !form.data_vencimento ||
+                !form.descricao?.trim()
+              }
               className="bg-green-600 hover:bg-green-700"
             >
-              Salvar
+              {saving ? "Salvando..." : "Salvar"}
             </Button>
           </div>
         </SheetContent>

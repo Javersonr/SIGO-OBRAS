@@ -28,7 +28,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { sigo } from "@/api/sigoClient";
+import { sigo, supabase } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
 
 import FiltroRapido from "./FiltroRapido";
@@ -120,6 +120,8 @@ export default function DespesasTab({
   const [numeroParcelas, setNumeroParcelas] = useState(1);
   const [parcelas, setParcelas] = useState([]);
   const [anexos, setAnexos] = useState([]);
+  // Bloqueia clique duplo no toggle de status (criava 2 ExtratoBancario).
+  const [togglingIds, setTogglingIds] = useState(() => new Set());
 
   const [form, setForm] = useState({
     conta_id: contas[0]?.id || "",
@@ -1017,12 +1019,39 @@ export default function DespesasTab({
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = async (extras = {}) => {
     if (!form.valor || !form.data_vencimento || !form.conta_id || !form.descricao) {
       alert(
         "Por favor, preencha todos os campos obrigatórios (Descrição, Valor, Data Vencimento, Conta)."
       );
       return;
+    }
+
+    const {
+      itensNota = [],
+      almoxarifadoId = null,
+      chaveNfe = null,
+      tipoDespesa = "geral",
+    } = extras;
+
+    // Validação dura de duplicidade da chave NFe (caso o modal não tenha
+    // bloqueado por algum motivo — defense in depth).
+    if (chaveNfe) {
+      try {
+        const duplicadas = await sigo.entities.TransacaoFinanceira.filter({
+          empresa_id: empresaAtiva.id,
+          chave_nfe: chaveNfe,
+        });
+        const outra = duplicadas.find((t) => t.id !== selectedItem?.id);
+        if (outra) {
+          alert(
+            `❌ NFe já lançada (ID ${outra.id}). Não foi possível salvar duplicado.\n\nDescrição existente: ${outra.descricao}`
+          );
+          return;
+        }
+      } catch (err) {
+        console.warn("Falha ao verificar duplicidade NFe no handleSave:", err);
+      }
     }
 
     const conta = contas.find((c) => c.id === form.conta_id);
@@ -1053,9 +1082,14 @@ export default function DespesasTab({
       descricao: form.descricao,
       status: form.status,
       forma_pagamento: form.forma_pagamento || null,
+      chave_nfe: chaveNfe || null,
     };
 
     const temParcelamento = numeroParcelas > 1 && parcelas.length > 0;
+
+    // Transação resultante do salvamento, qualquer que seja o cenário.
+    // Usada depois pra criar EstoqueMovimento (entrada via NFe).
+    let transacaoSalva = null;
 
     // CENÁRIO 1: Nova despesa com parcelamento
     if (temParcelamento && !selectedItem) {
@@ -1065,6 +1099,7 @@ export default function DespesasTab({
         parcelado: true,
         parcelas: JSON.stringify(parcelas),
       });
+      transacaoSalva = transacao;
 
       // Salvar anexos
       for (const anexo of anexos) {
@@ -1109,6 +1144,7 @@ export default function DespesasTab({
         parcelado: true,
         parcelas: JSON.stringify(parcelas),
       });
+      transacaoSalva = { ...selectedItem, ...dataBase, id: selectedItem.id };
 
       // Excluir lançamentos antigos do extrato
       const lancamentosAntigos = await sigo.entities.ExtratoBancario.filter({
@@ -1138,6 +1174,7 @@ export default function DespesasTab({
     // CENÁRIO 3: Edição simples (sem parcelamento)
     else if (selectedItem) {
       await sigo.entities.TransacaoFinanceira.update(selectedItem.id, dataBase);
+      transacaoSalva = { ...selectedItem, ...dataBase, id: selectedItem.id };
 
       // Atualizar lançamento existente no extrato
       const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
@@ -1188,6 +1225,7 @@ export default function DespesasTab({
     // CENÁRIO 4: Nova despesa simples (sem parcelamento)
     else {
       const transacao = await sigo.entities.TransacaoFinanceira.create(dataBase);
+      transacaoSalva = transacao;
 
       // Salvar anexos
       for (const anexo of anexos) {
@@ -1217,6 +1255,71 @@ export default function DespesasTab({
       }
     }
 
+    // INTEGRAÇÃO NFe → ESTOQUE
+    // Para cada item da NFe que tem material associado, dispara
+    // entrada_estoque_atomica (RPC). Saída atômica + CMP + saldo numa única tx.
+    const itensAssociaveis = (itensNota || []).filter(
+      (i) => (i.material_id_associado || i.material_id) && i.quantidade > 0
+    );
+
+    if (
+      tipoDespesa === "material" &&
+      itensAssociaveis.length > 0 &&
+      almoxarifadoId &&
+      transacaoSalva?.id
+    ) {
+      if (!supabase) {
+        alert(
+          "⚠️ Supabase client não disponível. Lançamento financeiro salvo, mas estoque não foi atualizado."
+        );
+      } else {
+        let user = null;
+        try {
+          user = await sigo.auth.me();
+        } catch {
+          /* anônimo ok */
+        }
+
+        let sucesso = 0;
+        const erros = [];
+        for (const item of itensAssociaveis) {
+          const materialId = item.material_id_associado || item.material_id;
+          try {
+            const { error } = await supabase.rpc("entrada_estoque_atomica", {
+              p_empresa_id: empresaAtiva.id,
+              p_material_id: materialId,
+              p_almoxarifado_id: almoxarifadoId,
+              p_quantidade: parseFloat(item.quantidade),
+              p_valor_unitario: parseFloat(item.valor_unitario),
+              p_referencia_tipo: "NotaFiscal",
+              p_referencia_id: transacaoSalva.id,
+              p_projeto_id: form.projeto_id || null,
+              p_usuario_nome: user?.full_name || null,
+              p_observacoes: `Entrada via NFe ${chaveNfe ? chaveNfe.slice(0, 10) + "…" : "(s/ chave)"}`,
+            });
+            if (error) throw error;
+            sucesso++;
+          } catch (err) {
+            erros.push(`${item.descricao}: ${err.message || err}`);
+          }
+        }
+
+        if (sucesso > 0) {
+          await sigo.entities.TransacaoFinanceira.update(transacaoSalva.id, {
+            gerou_entrada_estoque: true,
+          });
+        }
+
+        if (erros.length > 0) {
+          alert(
+            `Entrada de estoque parcial: ${sucesso}/${itensAssociaveis.length} OK.\n\nErros:\n${erros.join("\n")}`
+          );
+        } else if (sucesso > 0) {
+          alert(`✅ ${sucesso} entrada(s) de estoque registrada(s) com sucesso.`);
+        }
+      }
+    }
+
     setShowModal(false);
     setSelectedItem(null);
     setNumeroParcelas(1);
@@ -1234,53 +1337,92 @@ export default function DespesasTab({
     }
     if (!confirm("Tem certeza que deseja excluir esta despesa?")) return;
 
-    await sigo.entities.TransacaoFinanceira.delete(id);
-    alert("Despesa excluída com sucesso!");
-    onReload();
+    try {
+      // Cascade: limpa extratos, anexos e pré-lançamentos vinculados antes de
+      // deletar a transação. Antes ficava tudo órfão afetando saldo da conta
+      // e referências quebradas em PreLancamento.transacao_id.
+      const [extratos, anexosT, prelancs] = await Promise.allSettled([
+        sigo.entities.ExtratoBancario.filter({ empresa_id: empresaAtiva.id, transacao_id: id }),
+        sigo.entities.TransacaoAnexo.filter({ transacao_id: id }),
+        sigo.entities.PreLancamento.filter({ empresa_id: empresaAtiva.id, transacao_id: id }),
+      ]);
+      const list = (r) => (r.status === "fulfilled" ? r.value || [] : []);
+
+      await Promise.allSettled([
+        ...list(extratos).map((e) => sigo.entities.ExtratoBancario.delete(e.id)),
+        ...list(anexosT).map((a) => sigo.entities.TransacaoAnexo.delete(a.id)),
+        // Pré-lançamento volta pra "Pendente" em vez de ser apagado — preserva
+        // dado do operador (foto do cupom etc).
+        ...list(prelancs).map((p) =>
+          sigo.entities.PreLancamento.update(p.id, { status: "Pendente", transacao_id: null })
+        ),
+      ]);
+
+      await sigo.entities.TransacaoFinanceira.delete(id);
+      alert("Despesa excluída com sucesso!");
+      onReload();
+    } catch (err) {
+      console.error("[DespesasTab] erro ao excluir:", err);
+      alert("❌ Erro ao excluir: " + (err?.message || "desconhecido"));
+    }
   };
 
   const handleToggleStatus = async (item) => {
-    const newStatus = item.status === "pago" ? "em_aberto" : "pago";
-    await sigo.entities.TransacaoFinanceira.update(item.id, {
-      status: newStatus,
-      data_pagamento: newStatus === "pago" ? new Date().toISOString().split("T")[0] : null,
-    });
+    if (togglingIds.has(item.id)) return; // bloqueia clique duplo
+    setTogglingIds((s) => new Set(s).add(item.id));
 
-    // Sincronizar com ExtratoBancario
-    if (newStatus === "pago") {
-      // Criar lançamento no extrato quando marcar como pago
-      const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
-        empresa_id: empresaAtiva.id,
-        transacao_id: item.id,
+    const statusAtual = String(item.status || "").toLowerCase();
+    const eraPago = statusAtual === "pago" || statusAtual === "realizado";
+    const newStatus = eraPago ? "em_aberto" : "pago";
+
+    try {
+      await sigo.entities.TransacaoFinanceira.update(item.id, {
+        status: newStatus,
+        data_pagamento: newStatus === "pago" ? new Date().toISOString().split("T")[0] : null,
       });
 
-      if (lancamentosExistentes.length === 0) {
-        await sigo.entities.ExtratoBancario.create({
+      // Sincronizar com ExtratoBancario
+      if (newStatus === "pago") {
+        const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
           empresa_id: empresaAtiva.id,
-          conta_id: item.conta_id,
-          data: new Date().toISOString().split("T")[0],
-          descricao: item.descricao,
-          valor: -Math.abs(item.valor),
-          tipo: "debito",
-          categoria: item.categoria_nome || "Despesa",
-          conciliado: false,
           transacao_id: item.id,
-          origem: "manual",
         });
+
+        if (lancamentosExistentes.length === 0) {
+          await sigo.entities.ExtratoBancario.create({
+            empresa_id: empresaAtiva.id,
+            conta_id: item.conta_id,
+            data: new Date().toISOString().split("T")[0],
+            descricao: item.descricao,
+            valor: -Math.abs(item.valor),
+            tipo: "debito",
+            categoria: item.categoria_nome || "Despesa",
+            conciliado: false,
+            transacao_id: item.id,
+            origem: "manual",
+          });
+        }
+      } else {
+        const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
+          empresa_id: empresaAtiva.id,
+          transacao_id: item.id,
+        });
+        await Promise.allSettled(
+          lancamentosExistentes.map((l) => sigo.entities.ExtratoBancario.delete(l.id))
+        );
       }
-    } else {
-      // Remover lançamento do extrato quando marcar como não pago
-      const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
-        empresa_id: empresaAtiva.id,
-        transacao_id: item.id,
+
+      onReload();
+    } catch (err) {
+      console.error("[DespesasTab] erro toggle status:", err);
+      alert("❌ Erro ao atualizar status: " + (err?.message || "desconhecido"));
+    } finally {
+      setTogglingIds((s) => {
+        const n = new Set(s);
+        n.delete(item.id);
+        return n;
       });
-
-      for (const lanc of lancamentosExistentes) {
-        await sigo.entities.ExtratoBancario.delete(lanc.id);
-      }
     }
-
-    onReload();
   };
 
   const handleEmitirRecibo = async (despesa) => {
