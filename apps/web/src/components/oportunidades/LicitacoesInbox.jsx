@@ -19,7 +19,10 @@ import {
   Building2,
   MapPin,
   CalendarClock,
+  Trash2,
+  FilterX,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 
 // Estados do fluxo (a ordem aqui é a ordem das abas)
@@ -31,7 +34,7 @@ const STATUS = [
     label: "Aguardando validação",
     color: "bg-purple-100 text-purple-700",
   },
-  { key: "Convertida", label: "Oportunidades", color: "bg-green-100 text-green-700" },
+  { key: "Convertida", label: "Convertidas", color: "bg-green-100 text-green-700" },
   { key: "Recusada", label: "Recusadas", color: "bg-rose-100 text-rose-700" },
   { key: "Descartada", label: "Descartadas", color: "bg-slate-100 text-slate-600" },
 ];
@@ -63,11 +66,14 @@ export default function LicitacoesInbox() {
   const [loading, setLoading] = useState(true);
   const [buscando, setBuscando] = useState(false);
   const [acaoEmId, setAcaoEmId] = useState(null);
+  const [selecionados, setSelecionados] = useState(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const carregar = useCallback(
     async (status = statusFiltro, q = busca) => {
       if (!empresaAtiva?.id) return;
       setLoading(true);
+      setSelecionados(new Set());
       try {
         const { data, error } = await supabase.functions.invoke("licitacoes-triagem", {
           body: { action: "listar", empresa_id: empresaAtiva.id, status, q },
@@ -185,6 +191,68 @@ export default function LicitacoesInbox() {
 
   const busy = (lic) => acaoEmId === lic.id;
 
+  // ---- seleção múltipla ----
+  const toggleSel = (id) =>
+    setSelecionados((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const todosMarcados = licitacoes.length > 0 && licitacoes.every((l) => selecionados.has(l.id));
+  const toggleTodos = () =>
+    setSelecionados(todosMarcados ? new Set() : new Set(licitacoes.map((l) => l.id)));
+
+  const excluirSelecionadas = async () => {
+    const ids = [...selecionados];
+    if (ids.length === 0) return;
+    if (
+      !window.confirm(
+        `Excluir ${ids.length} licitação(ões) da lista? (some da lista; as Convertidas são ignoradas)`
+      )
+    )
+      return;
+    setBulkBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("licitacoes-triagem", {
+        body: { action: "excluir_lote", empresa_id: empresaAtiva.id, ids },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`${data?.excluidas ?? 0} excluída(s) da lista.`);
+      carregar();
+    } catch (err) {
+      console.error("[Licitacoes] excluir_lote:", err);
+      toast.error("Erro ao excluir: " + (err?.message || err));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const limparForaDoFiltro = async () => {
+    if (
+      !window.confirm(
+        "Remover da lista todas as NOVAS que NÃO casam com as palavras-chave atuais da configuração? (somem da lista)"
+      )
+    )
+      return;
+    setBulkBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("licitacoes-triagem", {
+        body: { action: "limpar_fora_do_filtro", empresa_id: empresaAtiva.id },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`${data?.removidas ?? 0} removida(s); ${data?.mantidas ?? 0} mantida(s).`);
+      carregar();
+    } catch (err) {
+      console.error("[Licitacoes] limpar_fora_do_filtro:", err);
+      toast.error("Erro ao limpar: " + (err?.message || err));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Cabeçalho + ações globais */}
@@ -235,6 +303,50 @@ export default function LicitacoesInbox() {
         ))}
       </div>
 
+      {/* Barra de seleção / ações em lote */}
+      {!loading && licitacoes.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <label className="flex items-center gap-2 cursor-pointer text-slate-600">
+            <Checkbox checked={todosMarcados} onCheckedChange={toggleTodos} />
+            Selecionar todos ({licitacoes.length})
+          </label>
+          {selecionados.size > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={excluirSelecionadas}
+              disabled={bulkBusy}
+              className="gap-1.5 text-rose-600 border-rose-200"
+            >
+              {bulkBusy ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
+              Excluir {selecionados.size} selecionada(s)
+            </Button>
+          )}
+          <div className="flex-1" />
+          {statusFiltro === "Nova" && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={limparForaDoFiltro}
+              disabled={bulkBusy}
+              className="gap-1.5 text-slate-500"
+              title="Remove as Novas que não casam com as palavras-chave atuais"
+            >
+              {bulkBusy ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <FilterX className="w-4 h-4" />
+              )}
+              Limpar fora do filtro
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Lista */}
       {loading ? (
         <div className="flex items-center justify-center py-12 text-slate-500">
@@ -254,157 +366,166 @@ export default function LicitacoesInbox() {
           {licitacoes.map((lic) => (
             <Card key={lic.id} className="overflow-hidden">
               <CardContent className="p-4">
-                <div className="flex flex-col md:flex-row md:items-start gap-3 justify-between">
-                  {/* Dados */}
-                  <div className="min-w-0">
-                    <div className="flex items-start gap-2">
-                      <Badge variant="outline" className="shrink-0">
-                        {lic.uf || "—"}
-                      </Badge>
-                      {lic.fonte && (
-                        <Badge
-                          className={`shrink-0 ${
-                            lic.fonte === "PNCP"
-                              ? "bg-indigo-100 text-indigo-700"
-                              : "bg-sky-100 text-sky-700"
-                          }`}
-                          title={`Fonte: ${lic.fonte}`}
-                        >
-                          {lic.fonte === "PNCP" ? "PNCP" : "Alerta"}
+                <div className="flex gap-3">
+                  <Checkbox
+                    checked={selecionados.has(lic.id)}
+                    onCheckedChange={() => toggleSel(lic.id)}
+                    className="mt-1 shrink-0"
+                    aria-label="Selecionar licitação"
+                  />
+                  <div className="flex-1 flex flex-col md:flex-row md:items-start gap-3 justify-between min-w-0">
+                    {/* Dados */}
+                    <div className="min-w-0">
+                      <div className="flex items-start gap-2">
+                        <Badge variant="outline" className="shrink-0">
+                          {lic.uf || "—"}
                         </Badge>
-                      )}
-                      <h3 className="font-semibold text-slate-900 leading-snug">
-                        {lic.titulo || lic.objeto || "Licitação"}
-                      </h3>
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500">
-                      {lic.orgao && (
-                        <span className="inline-flex items-center gap-1">
-                          <Building2 className="w-3.5 h-3.5" /> {lic.orgao}
-                        </span>
-                      )}
-                      {lic.municipio && (
-                        <span className="inline-flex items-center gap-1">
-                          <MapPin className="w-3.5 h-3.5" /> {lic.municipio}
-                        </span>
-                      )}
-                      <span className="inline-flex items-center gap-1">
-                        <CalendarClock className="w-3.5 h-3.5" /> Abertura: {fmtData(lic.abertura)}
-                      </span>
-                      {lic.tipo && <span>{lic.tipo}</span>}
-                    </div>
-                    {lic.objeto && lic.objeto !== lic.titulo && (
-                      <p className="mt-1.5 text-sm text-slate-600 line-clamp-2">{lic.objeto}</p>
-                    )}
-                    <div className="mt-2 flex flex-wrap items-center gap-3">
-                      <span className="text-lg font-bold text-emerald-600">
-                        {fmtBRL(lic.valor)}
-                      </span>
-                      {lic.link_externo && (
-                        <a
-                          href={lic.link_externo}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" /> Abrir no portal
-                        </a>
-                      )}
-                    </div>
-
-                    {/* Rastros do fluxo */}
-                    {lic.operador_nome && (
-                      <p className="mt-2 text-xs text-slate-400">
-                        Operador: {lic.operador_nome}
-                        {lic.validador_nome && ` · Validador: ${lic.validador_nome}`}
-                        {lic.justificativa && ` · "${lic.justificativa}"`}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Ações por status */}
-                  <div className="flex flex-row md:flex-col gap-2 shrink-0">
-                    {(lic.status === "Nova" || lic.status === "Em análise") && (
-                      <>
-                        {lic.status === "Nova" && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={busy(lic)}
-                            onClick={() => analisar(lic)}
-                            className="gap-1.5"
+                        {lic.fonte && (
+                          <Badge
+                            className={`shrink-0 ${
+                              lic.fonte === "PNCP"
+                                ? "bg-indigo-100 text-indigo-700"
+                                : "bg-sky-100 text-sky-700"
+                            }`}
+                            title={`Fonte: ${lic.fonte}`}
                           >
-                            <Eye className="w-4 h-4" /> Analisar
-                          </Button>
+                            {lic.fonte === "PNCP" ? "PNCP" : "Alerta"}
+                          </Badge>
                         )}
-                        <Button
-                          size="sm"
-                          disabled={busy(lic)}
-                          onClick={() => participar(lic)}
-                          className="gap-1.5"
-                        >
-                          {busy(lic) ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Send className="w-4 h-4" />
-                          )}
-                          Vamos participar
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={busy(lic)}
-                          onClick={() => descartar(lic)}
-                          className="gap-1.5 text-slate-500"
-                        >
-                          <XCircle className="w-4 h-4" /> Descartar
-                        </Button>
-                      </>
-                    )}
+                        <h3 className="font-semibold text-slate-900 leading-snug">
+                          {lic.titulo || lic.objeto || "Licitação"}
+                        </h3>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500">
+                        {lic.orgao && (
+                          <span className="inline-flex items-center gap-1">
+                            <Building2 className="w-3.5 h-3.5" /> {lic.orgao}
+                          </span>
+                        )}
+                        {lic.municipio && (
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin className="w-3.5 h-3.5" /> {lic.municipio}
+                          </span>
+                        )}
+                        <span className="inline-flex items-center gap-1">
+                          <CalendarClock className="w-3.5 h-3.5" /> Abertura:{" "}
+                          {fmtData(lic.abertura)}
+                        </span>
+                        {lic.tipo && <span>{lic.tipo}</span>}
+                      </div>
+                      {lic.objeto && lic.objeto !== lic.titulo && (
+                        <p className="mt-1.5 text-sm text-slate-600 line-clamp-2">{lic.objeto}</p>
+                      )}
+                      <div className="mt-2 flex flex-wrap items-center gap-3">
+                        <span className="text-lg font-bold text-emerald-600">
+                          {fmtBRL(lic.valor)}
+                        </span>
+                        {lic.link_externo && (
+                          <a
+                            href={lic.link_externo}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" /> Abrir no portal
+                          </a>
+                        )}
+                      </div>
 
-                    {lic.status === "Aguardando validação" &&
-                      (isValidador ? (
+                      {/* Rastros do fluxo */}
+                      {lic.operador_nome && (
+                        <p className="mt-2 text-xs text-slate-400">
+                          Operador: {lic.operador_nome}
+                          {lic.validador_nome && ` · Validador: ${lic.validador_nome}`}
+                          {lic.justificativa && ` · "${lic.justificativa}"`}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Ações por status */}
+                    <div className="flex flex-row md:flex-col gap-2 shrink-0">
+                      {(lic.status === "Nova" || lic.status === "Em análise") && (
                         <>
+                          {lic.status === "Nova" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busy(lic)}
+                              onClick={() => analisar(lic)}
+                              className="gap-1.5"
+                            >
+                              <Eye className="w-4 h-4" /> Analisar
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             disabled={busy(lic)}
-                            onClick={() => validar(lic, "aprovar")}
-                            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                            onClick={() => participar(lic)}
+                            className="gap-1.5"
                           >
                             {busy(lic) ? (
                               <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
-                              <CheckCircle2 className="w-4 h-4" />
+                              <Send className="w-4 h-4" />
                             )}
-                            Aprovar
+                            Vamos participar
                           </Button>
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant="ghost"
                             disabled={busy(lic)}
-                            onClick={() => validar(lic, "recusar")}
-                            className="gap-1.5 text-rose-600 border-rose-200"
+                            onClick={() => descartar(lic)}
+                            className="gap-1.5 text-slate-500"
                           >
-                            <XCircle className="w-4 h-4" /> Recusar
+                            <XCircle className="w-4 h-4" /> Descartar
                           </Button>
                         </>
-                      ) : (
-                        <Badge className="bg-purple-100 text-purple-700 gap-1">
-                          <ShieldCheck className="w-3.5 h-3.5" /> Aguardando validador
-                        </Badge>
-                      ))}
+                      )}
 
-                    {lic.status === "Convertida" && (
-                      <Badge className="bg-green-100 text-green-700 gap-1">
-                        <Trophy className="w-3.5 h-3.5" /> No pipeline
-                      </Badge>
-                    )}
-                    {lic.status === "Recusada" && (
-                      <Badge className="bg-rose-100 text-rose-700">Recusada</Badge>
-                    )}
-                    {lic.status === "Descartada" && (
-                      <Badge className="bg-slate-100 text-slate-600">Descartada</Badge>
-                    )}
+                      {lic.status === "Aguardando validação" &&
+                        (isValidador ? (
+                          <>
+                            <Button
+                              size="sm"
+                              disabled={busy(lic)}
+                              onClick={() => validar(lic, "aprovar")}
+                              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                            >
+                              {busy(lic) ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="w-4 h-4" />
+                              )}
+                              Aprovar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busy(lic)}
+                              onClick={() => validar(lic, "recusar")}
+                              className="gap-1.5 text-rose-600 border-rose-200"
+                            >
+                              <XCircle className="w-4 h-4" /> Recusar
+                            </Button>
+                          </>
+                        ) : (
+                          <Badge className="bg-purple-100 text-purple-700 gap-1">
+                            <ShieldCheck className="w-3.5 h-3.5" /> Aguardando validador
+                          </Badge>
+                        ))}
+
+                      {lic.status === "Convertida" && (
+                        <Badge className="bg-green-100 text-green-700 gap-1">
+                          <Trophy className="w-3.5 h-3.5" /> No pipeline
+                        </Badge>
+                      )}
+                      {lic.status === "Recusada" && (
+                        <Badge className="bg-rose-100 text-rose-700">Recusada</Badge>
+                      )}
+                      {lic.status === "Descartada" && (
+                        <Badge className="bg-slate-100 text-slate-600">Descartada</Badge>
+                      )}
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -414,11 +535,24 @@ export default function LicitacoesInbox() {
       )}
 
       {/* Rodapé explicativo do fluxo */}
-      <p className="text-xs text-slate-400 pt-2 border-t">
-        Fluxo: <strong>operador</strong> analisa e marca “Vamos participar” →{" "}
-        <strong>validador</strong> (Admin/Gestor) aprova ou recusa. Ao aprovar, vira oportunidade no
-        pipeline (e ganha pasta no Drive). Quem marca não pode validar a própria.
-      </p>
+      <div className="text-xs text-slate-400 pt-2 border-t space-y-1">
+        <p>
+          <strong>Novas</strong> = recém-encontradas, ainda não triadas ·{" "}
+          <strong>Convertidas</strong> = aprovadas pelo validador e que viraram Oportunidade no
+          pipeline (Kanban/calendário).
+        </p>
+        <p>
+          Fluxo: <strong>operador</strong> analisa e marca “Vamos participar” →{" "}
+          <strong>validador</strong> (Admin/Gestor) aprova ou recusa. Quem marca não pode validar a
+          própria.
+        </p>
+        <p>
+          <strong>Descartar</strong> = decisão de triagem (vai pra aba Descartadas, fica registrado)
+          · <strong>Excluir</strong> = some da lista (limpeza de ruído) ·{" "}
+          <strong>Limpar fora do filtro</strong> = remove as Novas que não casam com as
+          palavras-chave atuais.
+        </p>
+      </div>
     </div>
   );
 }

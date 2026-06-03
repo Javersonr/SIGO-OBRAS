@@ -18,6 +18,7 @@
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail } from "../_shared/cors.ts";
+import { parseKeywords, matchKeywords } from "../_shared/keywords.ts";
 
 const PERFIS_VALIDADOR = ["Admin", "Admin Holding", "Gestor"];
 const ORIGEM_LICITACAO = "Licitação (Alerta Licitação)";
@@ -96,7 +97,74 @@ Deno.serve(async (req) => {
   }
 
   // -------------------------------------------------------------------------
-  // Helpers comuns das mutações
+  // EXCLUIR EM LOTE — soft-delete dos ids informados (some da lista).
+  // Não exclui as já Convertidas (são oportunidades reais no pipeline).
+  // -------------------------------------------------------------------------
+  if (action === "excluir_lote") {
+    const ids = Array.isArray(body.ids) ? body.ids.map(String).filter(Boolean) : [];
+    if (ids.length === 0) return fail("Nenhum id informado", 400);
+    const { data, error } = await supabase
+      .from("licitacao_encontrada")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("empresa_id", empresa_id)
+      .in("id", ids)
+      .neq("status", "Convertida")
+      .is("deleted_at", null)
+      .select("id");
+    if (error) return fail("Erro ao excluir: " + error.message, 500);
+    return ok({ excluidas: (data || []).length });
+  }
+
+  // -------------------------------------------------------------------------
+  // LIMPAR FORA DO FILTRO — soft-delete das "Nova" que NÃO casam com as
+  // palavras-chave atuais da config. Usado depois de refinar o filtro.
+  // -------------------------------------------------------------------------
+  if (action === "limpar_fora_do_filtro") {
+    const { data: busca } = await supabase
+      .from("licitacao_busca")
+      .select("palavras_chave")
+      .eq("empresa_id", empresa_id)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true })
+      .limit(1);
+    const palavras = (busca || [])[0]?.palavras_chave || "";
+    const kw = parseKeywords(palavras);
+    if (kw.includes.length === 0 && kw.excludes.length === 0) {
+      return fail("Sem palavras-chave na config — nada a filtrar.", 400);
+    }
+
+    // pega só as Novas (id + textos) e decide quais NÃO casam
+    const { data: novas, error: nErr } = await supabase
+      .from("licitacao_encontrada")
+      .select("id, titulo, objeto, orgao")
+      .eq("empresa_id", empresa_id)
+      .eq("status", "Nova")
+      .is("deleted_at", null)
+      .limit(5000);
+    if (nErr) return fail("Erro lendo Novas: " + nErr.message, 500);
+
+    const fora = (novas || [])
+      .filter((l) => !matchKeywords(`${l.titulo || ""} ${l.objeto || ""} ${l.orgao || ""}`, kw))
+      .map((l) => l.id);
+
+    let removidas = 0;
+    // remove em blocos de 200 ids
+    for (let i = 0; i < fora.length; i += 200) {
+      const bloco = fora.slice(i, i + 200);
+      const { data, error } = await supabase
+        .from("licitacao_encontrada")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("empresa_id", empresa_id)
+        .in("id", bloco)
+        .select("id");
+      if (error) return fail("Erro ao limpar: " + error.message, 500);
+      removidas += (data || []).length;
+    }
+    return ok({ removidas, mantidas: (novas || []).length - removidas });
+  }
+
+  // -------------------------------------------------------------------------
+  // Helpers comuns das mutações (single)
   // -------------------------------------------------------------------------
   const id = body.id ? String(body.id) : "";
   if (!id) return fail("id é obrigatório", 400);
