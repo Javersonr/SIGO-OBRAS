@@ -2,107 +2,86 @@
 name: agente-licitacoes
 description: >
   Agente de Licitações do SIGO Obras. Use quando o usuário pedir para
-  "processar licitações", "criar as pastas das licitações no Drive",
-  "rodar o agente de licitações" ou em execução agendada diária. O agente
-  pega as oportunidades de licitação recém-criadas no SIGO que ainda não têm
-  pasta, cria a pasta no Google Drive e grava o link na aba Arquivos da
-  oportunidade. Requer o conector do Google Drive conectado.
+  "processar licitações", "criar a pasta da licitação", "rodar o agente de
+  licitações" ou ao decidir participar de uma licitação. O agente cria a pasta
+  NUMERADA da licitação na estrutura do OneDrive da Sinergia (por empresa, ano e
+  sequência) para a pessoa baixar o edital ali. Roda no Cowork (acesso ao
+  sistema de arquivos local; o OneDrive sincroniza pra nuvem sozinho).
 ---
 
-# Agente de Licitações — SIGO Obras
+# Agente de Licitações — SIGO Obras (pastas no OneDrive)
 
 ## O que este agente faz (Fase 1)
 
-Diariamente (ou sob demanda), para cada oportunidade de licitação nova **sem
-pasta**:
+Para cada licitação que o usuário decidir tocar (aprovada na aba Licitações, ou
+sob demanda), cria a **próxima pasta numerada** na estrutura do OneDrive, na
+empresa correta. O download dos PDFs do edital é **manual** (a pessoa baixa
+dentro da pasta criada). NÃO cria oportunidade (isso é do `buscar-licitacoes` /
+da validação na aba Licitações).
 
-1. Cria uma subpasta no Google Drive (dentro da pasta-mãe "Licitações").
-2. Grava o link dessa pasta na **aba Arquivos** da oportunidade no SIGO.
+## Estrutura e constantes
 
-O download dos PDFs do edital é **manual** (a pessoa baixa dentro da pasta).
-A análise (Fase 2) é um passo separado, sob demanda.
+- **Base:** `C:\Users\javer\OneDrive\SINERGIA\LICITAÇÕES`
+- **Empresas (subpasta):**
+  - `SINERGIA SERVIÇOS`
+  - `SINERGIA MATERIAIS ELETRICOS`
+- **Caminho da pasta do ano:** `<Base>\<EMPRESA>\Licitações\<ANO>`
+- **Padrão do nome:** `NNN- PM <Município> - <UF>`
+  (NNN = sequencial de 3 dígitos com zero à esquerda; ex: `068- PM São Paulo - SP`).
+  Variações de PM existem (ex: `038- Cemig - Belo Horizonte - MG`); quando não
+  for prefeitura, use o nome do órgão no lugar de "PM <Município>".
 
-## Constantes
+## Regra de roteamento (qual empresa)
 
-- Pasta-mãe no Drive ("Licitações"): id `1EAKSq1jIi5FeBFTkihGWUNpxeyRv5VvE`
-  (se não existir/uso outra conta, busque por título `Licitações` em `parentId='root'`).
-- Base das Edge Functions: `https://fpyvdwpvxrubrkdwrqbs.supabase.co/functions/v1/`
-- Header em toda chamada às functions (anon key pública do SIGO):
-  `apikey: <VITE_SUPABASE_ANON_KEY>` e `Authorization: Bearer <mesma anon key>`
-  (a anon key está em `apps/web/.env.production`).
+- **Execução de obra / serviço / engenharia / manutenção / instalação** →
+  `SINERGIA SERVIÇOS`.
+- **Fornecimento de material elétrico** (refletores, luminárias, cabos,
+  transformadores, postes, etc.) → `SINERGIA MATERIAIS ELETRICOS`.
+- Na dúvida, **pergunte** ao usuário antes de criar.
 
-## Passo a passo
+## Ano
 
-### 1. (Opcional) Disparar a descoberta primeiro
+Use o **ano de abertura** da licitação se houver; senão, o **ano corrente**.
+(As pastas são organizadas pelo ano em que a empresa trabalha a licitação.)
 
-Se quiser garantir que as licitações de hoje já entraram, chame:
+## Passo a passo (para cada licitação)
 
-```
-POST {base}/buscar-licitacoes   body: {}
-```
-
-Isso acha as licitações novas e (se o toggle "criar oportunidade automática"
-estiver ligado na config) cria as oportunidades.
-
-### 2. Listar oportunidades sem pasta
-
-```
-POST {base}/vincular-pasta-oportunidade
-body: { "action": "listar_pendentes", "limite": 50 }
-```
-
-Retorna `pendentes[]` com: `oportunidade_id, empresa_id, nome, valor_estimado,
-licitacao_data, modalidade, uf, municipio, orgao, id_licitacao, link_externo`.
-
-### 3. Para cada pendente, criar a subpasta no Drive
-
-Use o conector do Google Drive (`create_file` com
-`contentMimeType: application/vnd.google-apps.folder`,
-`parentId: 1EAKSq1jIi5FeBFTkihGWUNpxeyRv5VvE`).
-
-Nome da subpasta (padrão):
-
-```
-[<uf>] <municipio> - <modalidade> - <licitacao_data>
-```
-
-Ex: `[MG] Campo Florido - Pregão Eletrônico - 2026-06-10`
-(se faltar algum campo, use o `nome` da oportunidade).
-
-Guarde o `viewUrl` retornado.
-
-### 4. Gravar o link na aba Arquivos da oportunidade
-
-```
-POST {base}/vincular-pasta-oportunidade
-body: {
-  "action": "vincular",
-  "oportunidade_id": "<id>",
-  "pasta_url": "<viewUrl da subpasta>",
-  "pasta_nome": "Pasta da Licitação (Drive)"
-}
-```
-
-É idempotente (não duplica o mesmo link).
-
-### 5. Resumo
-
-Reporte: quantas pastas criadas, quantas já tinham, e os links.
+1. **Decida a empresa** pela regra de roteamento (a partir do objeto da licitação).
+2. **Monte o caminho do ano:** `<Base>\<EMPRESA>\Licitações\<ANO>`.
+3. **Descubra o próximo número:** liste a pasta do ano, pegue o maior `NNN`
+   existente e some 1 (mantendo 3 dígitos). Ex.: se a última é `067-…`, a nova é
+   `068`.
+4. **Idempotência:** antes de criar, confira se já não existe pasta para ESTA
+   licitação (mesmo município/UF criada recentemente para o mesmo edital). Se já
+   existe, **não duplique** — só reporte a existente.
+5. **Crie a pasta:** `mkdir -p` em
+   `<Base>\<EMPRESA>\Licitações\<ANO>\<NNN>- PM <Município> - <UF>`.
+6. **Reporte:** número atribuído, empresa e o caminho completo. O usuário baixa
+   os PDFs do edital nessa pasta (o OneDrive sincroniza sozinho).
 
 ## Regras importantes
 
-- **Idempotência:** só processe os que vierem em `listar_pendentes` (quem já
-  tem pasta não volta). Nunca crie pasta duplicada para a mesma oportunidade.
-- **Não baixe os editais** dos sites das prefeituras (decisão do projeto:
-  download é manual). Só crie a pasta e o link.
-- **Não crie oportunidades** aqui — isso é do `buscar-licitacoes`. Este agente
-  só organiza as que já existem.
-- Se o conector do Drive não estiver disponível (ex: execução headless sem
-  login Google), **pare e avise** — não invente links.
+- **NÃO baixe os editais** dos portais — o download é manual (decisão do projeto).
+- **NÃO crie oportunidade** aqui — isso é da aba Licitações (fluxo
+  operador→validador) / `buscar-licitacoes`.
+- **Sem link automático no SIGO:** não há conector do OneDrive, então o agente
+  só cria a pasta local. O cruzamento com o SIGO é pelo **número** da pasta
+  (ex.: "068"). Se quiser, o usuário cola o link do OneDrive manualmente na aba
+  Arquivos da oportunidade.
+- Se o caminho base do OneDrive não existir/estiver sem sincronizar, **pare e
+  avise** — não invente caminho.
 
 ## Fase 2 (futuro, sob demanda)
 
-Quando os PDFs do edital já estiverem na subpasta, um segundo fluxo lê os
-arquivos da pasta (read_file_content/download_file_content do Drive) e gera,
-em HTML dentro da própria pasta: (1) dashboard financeiro, (2) risco de
-habilitação, (3) análise do contrato — anexando os links na aba Arquivos.
+Quando os PDFs do edital já estiverem na pasta numerada, um segundo fluxo lê os
+arquivos da pasta (Read/PDF local) e gera, em HTML dentro da própria pasta:
+(1) dashboard financeiro, (2) risco de habilitação, (3) análise do
+contrato/minuta.
+
+## Histórico
+
+- Antes este agente criava pastas no **Google Drive** (pasta-mãe "Licitações",
+  id `1EAKSq1jIi5FeBFTkihGWUNpxeyRv5VvE`) e gravava o link via a Edge Function
+  `vincular-pasta-oportunidade`. Migramos para o **OneDrive** (estrutura
+  numerada por empresa/ano que a Sinergia já usa). Aquela função e a pasta do
+  Google Drive ficam como legado.
