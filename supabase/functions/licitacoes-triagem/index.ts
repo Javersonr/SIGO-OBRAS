@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
       .from("licitacao_encontrada")
       .select(
         "id, id_licitacao, titulo, orgao, uf, municipio, objeto, valor, tipo, abertura, " +
-          "abertura_datetime, link_externo, status, oportunidade_id, operador_email, " +
+          "abertura_datetime, link_externo, status, fonte, oportunidade_id, operador_email, " +
           "operador_nome, marcado_participar_em, validador_email, validador_nome, " +
           "validado_em, decisao, justificativa, created_at"
       )

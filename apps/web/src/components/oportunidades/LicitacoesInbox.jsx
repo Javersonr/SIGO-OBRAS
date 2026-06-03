@@ -93,14 +93,20 @@ export default function LicitacoesInbox() {
   const handleBuscarAgora = async () => {
     setBuscando(true);
     try {
-      const { data, error } = await supabase.functions.invoke("buscar-licitacoes", {
-        body: {},
-      });
-      if (error) throw error;
-      const resumo = (data?.resumo || []).find((r) => r.empresa_id === empresaAtiva?.id);
-      toast.success(`Busca executada. ${resumo?.novas ?? 0} nova(s) encontrada(s) hoje.`);
-      carregar("Nova", "");
+      // dispara as duas fontes em paralelo (Alerta Licitação + PNCP)
+      const [alerta, pncp] = await Promise.allSettled([
+        supabase.functions.invoke("buscar-licitacoes", { body: {} }),
+        supabase.functions.invoke("buscar-licitacoes-pncp", { body: {} }),
+      ]);
+      const novasDe = (res) => {
+        if (res.status !== "fulfilled" || res.value?.error) return 0;
+        const r = (res.value?.data?.resumo || []).find((x) => x.empresa_id === empresaAtiva?.id);
+        return r?.novas ?? 0;
+      };
+      const total = novasDe(alerta) + novasDe(pncp);
+      toast.success(`Busca executada. ${total} nova(s) licitação(ões) encontrada(s).`);
       setStatusFiltro("Nova");
+      carregar("Nova", "");
     } catch (err) {
       console.error("[Licitacoes] buscar:", err);
       toast.error("Erro ao buscar: " + (err?.message || err));
@@ -255,6 +261,18 @@ export default function LicitacoesInbox() {
                       <Badge variant="outline" className="shrink-0">
                         {lic.uf || "—"}
                       </Badge>
+                      {lic.fonte && (
+                        <Badge
+                          className={`shrink-0 ${
+                            lic.fonte === "PNCP"
+                              ? "bg-indigo-100 text-indigo-700"
+                              : "bg-sky-100 text-sky-700"
+                          }`}
+                          title={`Fonte: ${lic.fonte}`}
+                        >
+                          {lic.fonte === "PNCP" ? "PNCP" : "Alerta"}
+                        </Badge>
+                      )}
                       <h3 className="font-semibold text-slate-900 leading-snug">
                         {lic.titulo || lic.objeto || "Licitação"}
                       </h3>
