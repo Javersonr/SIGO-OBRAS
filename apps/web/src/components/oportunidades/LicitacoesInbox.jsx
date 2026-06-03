@@ -5,41 +5,33 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Gavel,
   Search,
   Loader2,
   ExternalLink,
-  CheckCircle2,
   XCircle,
   Eye,
   Send,
-  ShieldCheck,
   Trophy,
   Building2,
   MapPin,
   CalendarClock,
   Trash2,
   FilterX,
+  RotateCcw,
+  SlidersHorizontal,
 } from "lucide-react";
-import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 
-// Estados do fluxo (a ordem aqui é a ordem das abas)
+// 4 status (sem validador): Nova → Em análise → Convertida · Excluída
 const STATUS = [
-  { key: "Nova", label: "Novas", color: "bg-blue-100 text-blue-700" },
-  { key: "Em análise", label: "Em análise", color: "bg-amber-100 text-amber-700" },
-  {
-    key: "Aguardando validação",
-    label: "Aguardando validação",
-    color: "bg-purple-100 text-purple-700",
-  },
-  { key: "Convertida", label: "Convertidas", color: "bg-green-100 text-green-700" },
-  { key: "Recusada", label: "Recusadas", color: "bg-rose-100 text-rose-700" },
-  { key: "Descartada", label: "Descartadas", color: "bg-slate-100 text-slate-600" },
+  { key: "Nova", label: "Novas" },
+  { key: "Em análise", label: "Em análise" },
+  { key: "Convertida", label: "Oportunidades" },
+  { key: "Excluída", label: "Excluídas" },
 ];
-
-const PERFIS_VALIDADOR = ["Admin", "Admin Holding", "Gestor"];
 
 const fmtBRL = (v) =>
   v == null ? "—" : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -47,7 +39,6 @@ const fmtBRL = (v) =>
 const fmtData = (iso) => {
   if (!iso) return "—";
   try {
-    // 'abertura' é date (YYYY-MM-DD) — força meio-dia pra não voltar 1 dia por TZ
     const d = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? new Date(iso + "T12:00:00") : new Date(iso);
     return d.toLocaleDateString("pt-BR");
   } catch {
@@ -55,12 +46,15 @@ const fmtData = (iso) => {
   }
 };
 
+const FILTROS_VAZIOS = { uf: "", valorMin: "", valorMax: "", dataIni: "", dataFim: "" };
+
 export default function LicitacoesInbox() {
-  const { empresaAtiva, perfil, user } = useEmpresa();
-  const isValidador = PERFIS_VALIDADOR.includes(perfil);
+  const { empresaAtiva, user } = useEmpresa();
 
   const [statusFiltro, setStatusFiltro] = useState("Nova");
   const [busca, setBusca] = useState("");
+  const [filtros, setFiltros] = useState(FILTROS_VAZIOS);
+  const [showFiltros, setShowFiltros] = useState(false);
   const [licitacoes, setLicitacoes] = useState([]);
   const [contagens, setContagens] = useState({});
   const [loading, setLoading] = useState(true);
@@ -70,14 +64,23 @@ export default function LicitacoesInbox() {
   const [bulkBusy, setBulkBusy] = useState(false);
 
   const carregar = useCallback(
-    async (status = statusFiltro, q = busca) => {
+    async (status = statusFiltro) => {
       if (!empresaAtiva?.id) return;
       setLoading(true);
       setSelecionados(new Set());
       try {
-        const { data, error } = await supabase.functions.invoke("licitacoes-triagem", {
-          body: { action: "listar", empresa_id: empresaAtiva.id, status, q },
-        });
+        const body = {
+          action: "listar",
+          empresa_id: empresaAtiva.id,
+          status,
+          q: busca || undefined,
+          uf: filtros.uf || undefined,
+          valor_min: filtros.valorMin || undefined,
+          valor_max: filtros.valorMax || undefined,
+          data_ini: filtros.dataIni || undefined,
+          data_fim: filtros.dataFim || undefined,
+        };
+        const { data, error } = await supabase.functions.invoke("licitacoes-triagem", { body });
         if (error) throw error;
         setLicitacoes(data?.licitacoes || []);
         setContagens(data?.contagens || {});
@@ -88,20 +91,17 @@ export default function LicitacoesInbox() {
         setLoading(false);
       }
     },
-    [empresaAtiva?.id, statusFiltro, busca]
+    [empresaAtiva?.id, statusFiltro, busca, filtros]
   );
 
   useEffect(() => {
-    carregar(statusFiltro, busca);
+    carregar(statusFiltro);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresaAtiva?.id, statusFiltro]);
 
   const handleBuscarAgora = async () => {
     setBuscando(true);
     try {
-      // dispara as duas fontes em paralelo, em modo "todas em aberto":
-      //  - Alerta: full=true (ignora o filtro de data, traz todas as abertas)
-      //  - PNCP: aberto=true (endpoint /proposta, período de proposta em aberto)
       const [alerta, pncp] = await Promise.allSettled([
         supabase.functions.invoke("buscar-licitacoes", { body: { full: true } }),
         supabase.functions.invoke("buscar-licitacoes-pncp", { body: { aberto: true } }),
@@ -114,7 +114,7 @@ export default function LicitacoesInbox() {
       const total = novasDe(alerta) + novasDe(pncp);
       toast.success(`Busca executada. ${total} nova(s) licitação(ões) encontrada(s).`);
       setStatusFiltro("Nova");
-      carregar("Nova", "");
+      carregar("Nova");
     } catch (err) {
       console.error("[Licitacoes] buscar:", err);
       toast.error("Erro ao buscar: " + (err?.message || err));
@@ -123,27 +123,26 @@ export default function LicitacoesInbox() {
     }
   };
 
-  const chamarAcao = async (acao, lic, extra = {}) => {
+  // ---- ações single ----
+  const chamar = async (action, lic, extra = {}) => {
     setAcaoEmId(lic.id);
     try {
-      const base = {
-        action: acao,
-        empresa_id: empresaAtiva.id,
-        id: lic.id,
-        operador_email: user?.email,
-        operador_nome: user?.full_name || user?.email,
-      };
       const { data, error } = await supabase.functions.invoke("licitacoes-triagem", {
-        body: { ...base, ...extra },
+        body: {
+          action,
+          empresa_id: empresaAtiva.id,
+          id: lic.id,
+          operador_email: user?.email,
+          operador_nome: user?.full_name || user?.email,
+          ...extra,
+        },
       });
       if (error) throw error;
-      // se a function devolveu erro de regra (ex: auto-validação), vem em data?.error
       if (data?.error) throw new Error(data.error);
       return data;
     } catch (err) {
-      console.error(`[Licitacoes] ${acao}:`, err);
-      const msg = err?.context?.body || err?.message || String(err);
-      toast.error(typeof msg === "string" ? msg : "Erro na ação");
+      console.error(`[Licitacoes] ${action}:`, err);
+      toast.error(err?.message || "Erro na ação");
       throw err;
     } finally {
       setAcaoEmId(null);
@@ -151,81 +150,61 @@ export default function LicitacoesInbox() {
   };
 
   const analisar = async (lic) => {
-    await chamarAcao("em_analise", lic);
-    toast.success("Marcada como Em análise.");
+    await chamar("em_analise", lic);
+    toast.success("Em análise.");
+    carregar();
+  };
+  const virarOportunidade = async (lic) => {
+    await chamar("virar_oportunidade", lic);
+    toast.success("Virou oportunidade no pipeline! 🎯");
+    carregar();
+  };
+  const excluirUm = async (lic) => {
+    await chamarLote("excluir_lote", [lic.id]);
+    toast.success("Movida para Excluídas.");
+    carregar();
+  };
+  const restaurarUm = async (lic) => {
+    await chamarLote("restaurar_lote", [lic.id]);
+    toast.success("Restaurada para Novas.");
     carregar();
   };
 
-  const participar = async (lic) => {
-    await chamarAcao("marcar_participar", lic);
-    toast.success("Enviada para validação.");
-    carregar();
-  };
-
-  const descartar = async (lic) => {
-    const motivo = window.prompt("Motivo do descarte (opcional):", "");
-    if (motivo === null) return; // cancelou
-    await chamarAcao("descartar", lic, { justificativa: motivo });
-    toast.success("Licitação descartada.");
-    carregar();
-  };
-
-  const validar = async (lic, decisao) => {
-    let justificativa = "";
-    if (decisao === "recusar") {
-      justificativa = window.prompt("Motivo da recusa:", "") || "";
-      if (justificativa.trim() === "") {
-        toast.error("Informe o motivo da recusa.");
-        return;
-      }
-    }
-    const data = await chamarAcao("validar", lic, {
-      perfil,
-      validador_email: user?.email,
-      validador_nome: user?.full_name || user?.email,
-      decisao,
-      justificativa,
+  // ---- ações em lote ----
+  const chamarLote = async (action, ids) => {
+    const { data, error } = await supabase.functions.invoke("licitacoes-triagem", {
+      body: { action, empresa_id: empresaAtiva.id, ids },
     });
-    if (data?.decisao === "aprovada") toast.success("Aprovada! Virou oportunidade no pipeline.");
-    else toast.success("Licitação recusada.");
-    carregar();
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+    return data;
   };
-
-  const busy = (lic) => acaoEmId === lic.id;
-
-  // ---- seleção múltipla ----
-  const toggleSel = (id) =>
-    setSelecionados((prev) => {
-      const n = new Set(prev);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
-  const todosMarcados = licitacoes.length > 0 && licitacoes.every((l) => selecionados.has(l.id));
-  const toggleTodos = () =>
-    setSelecionados(todosMarcados ? new Set() : new Set(licitacoes.map((l) => l.id)));
 
   const excluirSelecionadas = async () => {
     const ids = [...selecionados];
     if (ids.length === 0) return;
-    if (
-      !window.confirm(
-        `Excluir ${ids.length} licitação(ões) da lista? (some da lista; as Convertidas são ignoradas)`
-      )
-    )
-      return;
     setBulkBusy(true);
     try {
-      const { data, error } = await supabase.functions.invoke("licitacoes-triagem", {
-        body: { action: "excluir_lote", empresa_id: empresaAtiva.id, ids },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      toast.success(`${data?.excluidas ?? 0} excluída(s) da lista.`);
+      const data = await chamarLote("excluir_lote", ids);
+      toast.success(`${data?.excluidas ?? 0} movida(s) para Excluídas.`);
       carregar();
     } catch (err) {
-      console.error("[Licitacoes] excluir_lote:", err);
       toast.error("Erro ao excluir: " + (err?.message || err));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const restaurarSelecionadas = async () => {
+    const ids = [...selecionados];
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    try {
+      const data = await chamarLote("restaurar_lote", ids);
+      toast.success(`${data?.restauradas ?? 0} restaurada(s).`);
+      carregar();
+    } catch (err) {
+      toast.error("Erro ao restaurar: " + (err?.message || err));
     } finally {
       setBulkBusy(false);
     }
@@ -234,7 +213,7 @@ export default function LicitacoesInbox() {
   const limparForaDoFiltro = async () => {
     if (
       !window.confirm(
-        "Remover da lista todas as NOVAS que NÃO casam com as palavras-chave atuais da configuração? (somem da lista)"
+        "Remover de vez as NOVAS que não casam com as palavras-chave atuais ou já passaram?"
       )
     )
       return;
@@ -248,22 +227,41 @@ export default function LicitacoesInbox() {
       toast.success(`${data?.removidas ?? 0} removida(s); ${data?.mantidas ?? 0} mantida(s).`);
       carregar();
     } catch (err) {
-      console.error("[Licitacoes] limpar_fora_do_filtro:", err);
       toast.error("Erro ao limpar: " + (err?.message || err));
     } finally {
       setBulkBusy(false);
     }
   };
 
+  // ---- seleção ----
+  const toggleSel = (id) =>
+    setSelecionados((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const todosMarcados = licitacoes.length > 0 && licitacoes.every((l) => selecionados.has(l.id));
+  const toggleTodos = () =>
+    setSelecionados(todosMarcados ? new Set() : new Set(licitacoes.map((l) => l.id)));
+
+  const busy = (lic) => acaoEmId === lic.id;
+  const aplicarFiltros = () => carregar();
+  const limparFiltros = () => {
+    setFiltros(FILTROS_VAZIOS);
+    setBusca("");
+    setTimeout(() => carregar(), 0);
+  };
+
   return (
     <div className="space-y-4">
-      {/* Cabeçalho + ações globais */}
+      {/* Cabeçalho + busca + ações globais */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2 text-slate-700">
           <Gavel className="w-5 h-5 text-blue-600" />
-          <span className="font-semibold">Licitações encontradas</span>
+          <span className="font-semibold">Licitações</span>
         </div>
-        <div className="flex-1 min-w-[220px]">
+        <div className="flex-1 min-w-[200px]">
           <div className="relative">
             <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <Input
@@ -275,11 +273,74 @@ export default function LicitacoesInbox() {
             />
           </div>
         </div>
+        <Button variant="outline" onClick={() => setShowFiltros((v) => !v)} className="gap-2">
+          <SlidersHorizontal className="w-4 h-4" /> Filtros
+        </Button>
         <Button onClick={handleBuscarAgora} disabled={buscando} className="gap-2">
           {buscando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
           Buscar agora
         </Button>
       </div>
+
+      {/* Filtros: estado, valor, data */}
+      {showFiltros && (
+        <div className="flex flex-wrap items-end gap-3 bg-slate-50 border rounded-lg p-3">
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">Estado (UF)</label>
+            <Input
+              className="w-20 uppercase"
+              maxLength={2}
+              placeholder="MG"
+              value={filtros.uf}
+              onChange={(e) => setFiltros((f) => ({ ...f, uf: e.target.value.toUpperCase() }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">Valor mín. (R$)</label>
+            <Input
+              type="number"
+              className="w-32"
+              placeholder="0"
+              value={filtros.valorMin}
+              onChange={(e) => setFiltros((f) => ({ ...f, valorMin: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">Valor máx. (R$)</label>
+            <Input
+              type="number"
+              className="w-32"
+              placeholder="sem teto"
+              value={filtros.valorMax}
+              onChange={(e) => setFiltros((f) => ({ ...f, valorMax: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">Abertura de</label>
+            <Input
+              type="date"
+              className="w-40"
+              value={filtros.dataIni}
+              onChange={(e) => setFiltros((f) => ({ ...f, dataIni: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">até</label>
+            <Input
+              type="date"
+              className="w-40"
+              value={filtros.dataFim}
+              onChange={(e) => setFiltros((f) => ({ ...f, dataFim: e.target.value }))}
+            />
+          </div>
+          <Button onClick={aplicarFiltros} className="gap-1.5">
+            <Search className="w-4 h-4" /> Filtrar
+          </Button>
+          <Button variant="ghost" onClick={limparFiltros} className="text-slate-500">
+            Limpar
+          </Button>
+        </div>
+      )}
 
       {/* Abas por status (com contagem) */}
       <div className="flex flex-wrap gap-2 border-b pb-2">
@@ -305,27 +366,45 @@ export default function LicitacoesInbox() {
         ))}
       </div>
 
-      {/* Barra de seleção / ações em lote */}
+      {/* Barra de seleção em lote */}
       {!loading && licitacoes.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <label className="flex items-center gap-2 cursor-pointer text-slate-600">
             <Checkbox checked={todosMarcados} onCheckedChange={toggleTodos} />
             Selecionar todos ({licitacoes.length})
           </label>
-          {selecionados.size > 0 && (
+          {selecionados.size > 0 &&
+            statusFiltro !== "Excluída" &&
+            statusFiltro !== "Convertida" && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={excluirSelecionadas}
+                disabled={bulkBusy}
+                className="gap-1.5 text-rose-600 border-rose-200"
+              >
+                {bulkBusy ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                Excluir {selecionados.size} selecionada(s)
+              </Button>
+            )}
+          {selecionados.size > 0 && statusFiltro === "Excluída" && (
             <Button
               size="sm"
               variant="outline"
-              onClick={excluirSelecionadas}
+              onClick={restaurarSelecionadas}
               disabled={bulkBusy}
-              className="gap-1.5 text-rose-600 border-rose-200"
+              className="gap-1.5 text-emerald-600 border-emerald-200"
             >
               {bulkBusy ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <Trash2 className="w-4 h-4" />
+                <RotateCcw className="w-4 h-4" />
               )}
-              Excluir {selecionados.size} selecionada(s)
+              Restaurar {selecionados.size} selecionada(s)
             </Button>
           )}
           <div className="flex-1" />
@@ -336,14 +415,9 @@ export default function LicitacoesInbox() {
               onClick={limparForaDoFiltro}
               disabled={bulkBusy}
               className="gap-1.5 text-slate-500"
-              title="Remove as Novas que não casam com as palavras-chave atuais"
+              title="Remove de vez as Novas fora do filtro ou já passadas"
             >
-              {bulkBusy ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <FilterX className="w-4 h-4" />
-              )}
-              Limpar fora do filtro
+              <FilterX className="w-4 h-4" /> Limpar fora do filtro
             </Button>
           )}
         </div>
@@ -359,7 +433,7 @@ export default function LicitacoesInbox() {
           Nenhuma licitação em <strong>{STATUS.find((s) => s.key === statusFiltro)?.label}</strong>.
           {statusFiltro === "Nova" && (
             <div className="mt-2 text-sm">
-              Clique em <strong>“Buscar agora”</strong> para procurar as de hoje.
+              Clique em <strong>“Buscar agora”</strong> para procurar as em aberto.
             </div>
           )}
         </div>
@@ -389,7 +463,6 @@ export default function LicitacoesInbox() {
                                 ? "bg-indigo-100 text-indigo-700"
                                 : "bg-sky-100 text-sky-700"
                             }`}
-                            title={`Fonte: ${lic.fonte}`}
                           >
                             {lic.fonte === "PNCP" ? "PNCP" : "Alerta"}
                           </Badge>
@@ -433,15 +506,6 @@ export default function LicitacoesInbox() {
                           </a>
                         )}
                       </div>
-
-                      {/* Rastros do fluxo */}
-                      {lic.operador_nome && (
-                        <p className="mt-2 text-xs text-slate-400">
-                          Operador: {lic.operador_nome}
-                          {lic.validador_nome && ` · Validador: ${lic.validador_nome}`}
-                          {lic.justificativa && ` · "${lic.justificativa}"`}
-                        </p>
-                      )}
                     </div>
 
                     {/* Ações por status */}
@@ -462,70 +526,49 @@ export default function LicitacoesInbox() {
                           <Button
                             size="sm"
                             disabled={busy(lic)}
-                            onClick={() => participar(lic)}
-                            className="gap-1.5"
+                            onClick={() => virarOportunidade(lic)}
+                            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
                           >
                             {busy(lic) ? (
                               <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
                               <Send className="w-4 h-4" />
                             )}
-                            Vamos participar
+                            Virar oportunidade
                           </Button>
                           <Button
                             size="sm"
                             variant="ghost"
                             disabled={busy(lic)}
-                            onClick={() => descartar(lic)}
+                            onClick={() => excluirUm(lic)}
                             className="gap-1.5 text-slate-500"
                           >
-                            <XCircle className="w-4 h-4" /> Descartar
+                            <XCircle className="w-4 h-4" /> Excluir
                           </Button>
                         </>
                       )}
-
-                      {lic.status === "Aguardando validação" &&
-                        (isValidador ? (
-                          <>
-                            <Button
-                              size="sm"
-                              disabled={busy(lic)}
-                              onClick={() => validar(lic, "aprovar")}
-                              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
-                            >
-                              {busy(lic) ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <CheckCircle2 className="w-4 h-4" />
-                              )}
-                              Aprovar
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={busy(lic)}
-                              onClick={() => validar(lic, "recusar")}
-                              className="gap-1.5 text-rose-600 border-rose-200"
-                            >
-                              <XCircle className="w-4 h-4" /> Recusar
-                            </Button>
-                          </>
-                        ) : (
-                          <Badge className="bg-purple-100 text-purple-700 gap-1">
-                            <ShieldCheck className="w-3.5 h-3.5" /> Aguardando validador
-                          </Badge>
-                        ))}
 
                       {lic.status === "Convertida" && (
                         <Badge className="bg-green-100 text-green-700 gap-1">
                           <Trophy className="w-3.5 h-3.5" /> No pipeline
                         </Badge>
                       )}
-                      {lic.status === "Recusada" && (
-                        <Badge className="bg-rose-100 text-rose-700">Recusada</Badge>
-                      )}
-                      {lic.status === "Descartada" && (
-                        <Badge className="bg-slate-100 text-slate-600">Descartada</Badge>
+
+                      {lic.status === "Excluída" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy(lic)}
+                          onClick={() => restaurarUm(lic)}
+                          className="gap-1.5 text-emerald-600 border-emerald-200"
+                        >
+                          {busy(lic) ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <RotateCcw className="w-4 h-4" />
+                          )}
+                          Restaurar
+                        </Button>
                       )}
                     </div>
                   </div>
@@ -536,23 +579,17 @@ export default function LicitacoesInbox() {
         </div>
       )}
 
-      {/* Rodapé explicativo do fluxo */}
+      {/* Legenda */}
       <div className="text-xs text-slate-400 pt-2 border-t space-y-1">
         <p>
-          <strong>Novas</strong> = recém-encontradas, ainda não triadas ·{" "}
-          <strong>Convertidas</strong> = aprovadas pelo validador e que viraram Oportunidade no
-          pipeline (Kanban/calendário).
+          <strong>Novas</strong> = recém-encontradas · <strong>Em análise</strong> = você está
+          estudando · <strong>Oportunidades</strong> = viraram Oportunidade no pipeline ·{" "}
+          <strong>Excluídas</strong> = removidas (recuperáveis).
         </p>
         <p>
-          Fluxo: <strong>operador</strong> analisa e marca “Vamos participar” →{" "}
-          <strong>validador</strong> (Admin/Gestor) aprova ou recusa. Quem marca não pode validar a
-          própria.
-        </p>
-        <p>
-          <strong>Descartar</strong> = decisão de triagem (vai pra aba Descartadas, fica registrado)
-          · <strong>Excluir</strong> = some da lista (limpeza de ruído) ·{" "}
-          <strong>Limpar fora do filtro</strong> = remove as Novas que não casam com as
-          palavras-chave atuais.
+          Fluxo: <strong>Analisar</strong> → <strong>Virar oportunidade</strong> (entra no
+          Kanban/calendário). <strong>Excluir</strong> manda pra aba Excluídas (dá pra restaurar);{" "}
+          <strong>Limpar fora do filtro</strong> apaga de vez as Novas fora do filtro/passadas.
         </p>
       </div>
     </div>
