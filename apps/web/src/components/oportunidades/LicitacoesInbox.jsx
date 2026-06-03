@@ -99,10 +99,12 @@ export default function LicitacoesInbox() {
   const handleBuscarAgora = async () => {
     setBuscando(true);
     try {
-      // dispara as duas fontes em paralelo (Alerta Licitação + PNCP)
+      // dispara as duas fontes em paralelo, em modo "todas em aberto":
+      //  - Alerta: full=true (ignora o filtro de data, traz todas as abertas)
+      //  - PNCP: aberto=true (endpoint /proposta, período de proposta em aberto)
       const [alerta, pncp] = await Promise.allSettled([
-        supabase.functions.invoke("buscar-licitacoes", { body: {} }),
-        supabase.functions.invoke("buscar-licitacoes-pncp", { body: {} }),
+        supabase.functions.invoke("buscar-licitacoes", { body: { full: true } }),
+        supabase.functions.invoke("buscar-licitacoes-pncp", { body: { aberto: true } }),
       ]);
       const novasDe = (res) => {
         if (res.status !== "fulfilled" || res.value?.error) return 0;

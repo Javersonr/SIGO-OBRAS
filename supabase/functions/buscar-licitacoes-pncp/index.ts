@@ -17,10 +17,15 @@
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail } from "../_shared/cors.ts";
+import { parseKeywords, matchKeywords } from "../_shared/keywords.ts";
 
-const API = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao";
+// publicacao = por data de publicação (incremental, cron diário)
+// proposta   = com período de recebimento de proposta EM ABERTO (botão "Buscar agora")
+const API_PUBLICACAO = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao";
+const API_PROPOSTA = "https://pncp.gov.br/api/consulta/v1/contratacoes/proposta";
 const TAM_PAGINA = 50;
-const MAX_PAGINAS = 12; // por (uf, modalidade) — teto de segurança
+const MAX_PAGINAS = 12; // incremental — teto por (uf, modalidade)
+const MAX_PAGINAS_ABERTO = 20; // varredura "todas em aberto" — teto maior
 
 // Modalidades mais relevantes p/ obras/engenharia/serviços (código → nome)
 const MODALIDADES: Record<number, string> = {
@@ -47,41 +52,6 @@ interface PncpItem {
   linkSistemaOrigem?: string;
 }
 
-/** lowercase + remove acentos */
-function norm(s: string): string {
-  return (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-}
-
-/**
- * Parser da sintaxe de palavras-chave (igual à config):
- *   vírgula separa termos (OU) · "aspas" = frase exata · -palavra = excluir
- * Retorna {includes[], excludes[]} já normalizados.
- */
-function parseKeywords(raw: string): { includes: string[]; excludes: string[] } {
-  const includes: string[] = [];
-  const excludes: string[] = [];
-  for (let term of (raw || "").split(",")) {
-    term = term.trim();
-    if (!term) continue;
-    let neg = false;
-    if (term.startsWith("-")) {
-      neg = true;
-      term = term.slice(1).trim();
-    }
-    term = term.replace(/^["']|["']$/g, "").trim(); // tira aspas
-    if (!term) continue;
-    (neg ? excludes : includes).push(norm(term));
-  }
-  return { includes, excludes };
-}
-
-function matchKeywords(text: string, kw: { includes: string[]; excludes: string[] }): boolean {
-  const t = norm(text);
-  if (kw.excludes.some((e) => t.includes(e))) return false;
-  if (kw.includes.length === 0) return true;
-  return kw.includes.some((i) => t.includes(i));
-}
-
 /** "2026-06-17T09:00:00" -> "2026-06-17" */
 function dateOnly(s?: string): string | null {
   if (!s) return null;
@@ -101,14 +71,20 @@ const PNCP_HEADERS = {
 async function fetchPncp(params: {
   uf: string;
   modalidade: number;
-  dataInicial: string;
+  modo: "publicacao" | "proposta";
+  dataInicial?: string;
   dataFinal: string;
 }): Promise<PncpItem[]> {
   const out: PncpItem[] = [];
+  const base = params.modo === "proposta" ? API_PROPOSTA : API_PUBLICACAO;
+  const teto = params.modo === "proposta" ? MAX_PAGINAS_ABERTO : MAX_PAGINAS;
   let pagina = 1;
-  while (pagina <= MAX_PAGINAS) {
-    const url = new URL(API);
-    url.searchParams.set("dataInicial", params.dataInicial);
+  while (pagina <= teto) {
+    const url = new URL(base);
+    // publicacao usa janela [dataInicial, dataFinal]; proposta usa só dataFinal (horizonte)
+    if (params.modo === "publicacao" && params.dataInicial) {
+      url.searchParams.set("dataInicial", params.dataInicial);
+    }
     url.searchParams.set("dataFinal", params.dataFinal);
     url.searchParams.set("codigoModalidadeContratacao", String(params.modalidade));
     url.searchParams.set("uf", params.uf);
@@ -148,7 +124,7 @@ function ymd(d: Date): string {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return preflightResponse();
 
-  let body: { full?: boolean; data?: string; dias?: number } = {};
+  let body: { full?: boolean; aberto?: boolean; data?: string; dias?: number } = {};
   try {
     body = await req.json();
   } catch {
@@ -164,13 +140,23 @@ Deno.serve(async (req) => {
     .is("deleted_at", null);
   if (bErr) return fail("Erro lendo configs: " + bErr.message, 500);
 
-  // janela de datas (default: só hoje BRT; body.dias amplia p/ trás)
+  // Modo:
+  //  - incremental (publicacao): só as publicadas hoje BRT (cron diário). body.dias amplia.
+  //  - aberto (proposta): TODAS com proposta em aberto até hoje+90d (botão "Buscar agora").
+  const aberto = Boolean(body.aberto || body.full);
+  const modo: "publicacao" | "proposta" = aberto ? "proposta" : "publicacao";
   const agoraBRT = new Date(Date.now() - 3 * 3600 * 1000);
   const dias = Math.max(0, Math.min(Number(body.dias) || 0, 30));
   const ini = new Date(agoraBRT);
   ini.setUTCDate(ini.getUTCDate() - dias);
+  const horizonte = new Date(agoraBRT);
+  horizonte.setUTCDate(horizonte.getUTCDate() + 90); // proposta: até 90 dias à frente
   const dataInicial = body.data ? body.data.replace(/-/g, "") : ymd(ini);
-  const dataFinal = body.data ? body.data.replace(/-/g, "") : ymd(agoraBRT);
+  const dataFinal = aberto
+    ? ymd(horizonte)
+    : body.data
+      ? body.data.replace(/-/g, "")
+      : ymd(agoraBRT);
 
   const resumo: unknown[] = [];
 
@@ -190,6 +176,7 @@ Deno.serve(async (req) => {
           const itens = await fetchPncp({
             uf,
             modalidade: Number(codStr),
+            modo,
             dataInicial,
             dataFinal,
           });
@@ -285,5 +272,5 @@ Deno.serve(async (req) => {
     }
   }
 
-  return ok({ fonte: "PNCP", periodo: { dataInicial, dataFinal }, resumo });
+  return ok({ fonte: "PNCP", modo, periodo: { dataInicial, dataFinal }, resumo });
 });
