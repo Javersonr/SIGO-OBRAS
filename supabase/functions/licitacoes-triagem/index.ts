@@ -74,6 +74,13 @@ Deno.serve(async (req) => {
         `titulo.ilike.%${q}%,orgao.ilike.%${q}%,objeto.ilike.%${q}%,municipio.ilike.%${q}%`
       );
     }
+    // "de hoje pra frente": nas abas de inbox, esconde as com abertura já passada
+    // (mantém as sem data). Abas terminais (Convertida/Recusada/Descartada) mostram tudo.
+    const hojeLista = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+    const INBOX = ["Nova", "Em análise", "Aguardando validação"];
+    if (!status || INBOX.includes(status)) {
+      query = query.or(`abertura.gte.${hojeLista},abertura.is.null`);
+    }
 
     const { data, error } = await query
       .order("abertura", { ascending: true, nullsFirst: false })
@@ -133,18 +140,24 @@ Deno.serve(async (req) => {
       return fail("Sem palavras-chave na config — nada a filtrar.", 400);
     }
 
-    // pega só as Novas (id + textos) e decide quais NÃO casam
+    // pega só as Novas (id + textos + abertura) e decide quais NÃO casam
     const { data: novas, error: nErr } = await supabase
       .from("licitacao_encontrada")
-      .select("id, titulo, objeto, orgao")
+      .select("id, titulo, objeto, orgao, abertura")
       .eq("empresa_id", empresa_id)
       .eq("status", "Nova")
       .is("deleted_at", null)
       .limit(5000);
     if (nErr) return fail("Erro lendo Novas: " + nErr.message, 500);
 
+    // remove as que NÃO casam com as palavras-chave OU que já têm abertura no passado
+    const hojeLimpa = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
     const fora = (novas || [])
-      .filter((l) => !matchKeywords(`${l.titulo || ""} ${l.objeto || ""} ${l.orgao || ""}`, kw))
+      .filter(
+        (l) =>
+          !matchKeywords(`${l.titulo || ""} ${l.objeto || ""} ${l.orgao || ""}`, kw) ||
+          (l.abertura && String(l.abertura) < hojeLimpa)
+      )
       .map((l) => l.id);
 
     let removidas = 0;

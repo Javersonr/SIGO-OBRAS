@@ -146,6 +146,7 @@ Deno.serve(async (req) => {
   const aberto = Boolean(body.aberto || body.full);
   const modo: "publicacao" | "proposta" = aberto ? "proposta" : "publicacao";
   const agoraBRT = new Date(Date.now() - 3 * 3600 * 1000);
+  const hojeBRT = agoraBRT.toISOString().slice(0, 10); // "YYYY-MM-DD" — só de hoje pra frente
   const dias = Math.max(0, Math.min(Number(body.dias) || 0, 30));
   const ini = new Date(agoraBRT);
   ini.setUTCDate(ini.getUTCDate() - dias);
@@ -198,6 +199,8 @@ Deno.serve(async (req) => {
         const idLic = `PNCP-${cnpj}-${ano}-${seq}`;
         if (byId.has(idLic)) continue;
         const abertura = dateOnly(item.dataAberturaProposta);
+        // só de hoje pra frente: pula abertura já passada (mantém sem data)
+        if (abertura && abertura < hojeBRT) continue;
         byId.set(idLic, {
           empresa_id: busca.empresa_id,
           busca_id: busca.id,

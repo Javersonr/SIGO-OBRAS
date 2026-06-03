@@ -180,7 +180,9 @@ Deno.serve(async (req) => {
             link: l.link ?? null,
             link_externo: l.linkExterno ?? null,
             status: "Nova",
-          }));
+          }))
+          // só de hoje pra frente: descarta as com abertura já passada (mantém sem data)
+          .filter((r) => !r.abertura || (r.abertura as string) >= hojeBRT);
 
         if (rows.length > 0) {
           const { data: ins, error: insErr } = await supabase
