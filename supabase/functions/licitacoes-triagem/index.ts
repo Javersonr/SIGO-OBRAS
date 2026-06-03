@@ -157,6 +157,58 @@ Deno.serve(async (req) => {
   }
 
   // -------------------------------------------------------------------------
+  // REVERTER AUTOMÁTICAS — desfaz as Convertidas criadas pelo robô (toggle
+  // auto), que não têm operador NEM validador. Soft-delete das oportunidades
+  // -fantasma + volta a licitação pra "Nova". Preserva as convertidas à mão.
+  // -------------------------------------------------------------------------
+  if (action === "reverter_auto") {
+    const { data: autos, error: aErr } = await supabase
+      .from("licitacao_encontrada")
+      .select("id, oportunidade_id")
+      .eq("empresa_id", empresa_id)
+      .eq("status", "Convertida")
+      .is("operador_email", null)
+      .is("validador_email", null)
+      .is("deleted_at", null)
+      .limit(5000);
+    if (aErr) return fail("Erro lendo Convertidas: " + aErr.message, 500);
+
+    const licIds = (autos || []).map((a) => a.id);
+    const opIds = (autos || []).map((a) => a.oportunidade_id).filter(Boolean);
+
+    // soft-delete das oportunidades-fantasma (em blocos)
+    let opsRemovidas = 0;
+    for (let i = 0; i < opIds.length; i += 200) {
+      const bloco = opIds.slice(i, i + 200);
+      const { data, error } = await supabase
+        .from("oportunidade")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("empresa_id", empresa_id)
+        .in("id", bloco)
+        .is("deleted_at", null)
+        .select("id");
+      if (error) return fail("Erro removendo oportunidades: " + error.message, 500);
+      opsRemovidas += (data || []).length;
+    }
+
+    // volta as licitações pra "Nova" (limpa o vínculo)
+    let revertidas = 0;
+    for (let i = 0; i < licIds.length; i += 200) {
+      const bloco = licIds.slice(i, i + 200);
+      const { data, error } = await supabase
+        .from("licitacao_encontrada")
+        .update({ status: "Nova", oportunidade_id: null, decisao: null, validado_em: null })
+        .eq("empresa_id", empresa_id)
+        .in("id", bloco)
+        .select("id");
+      if (error) return fail("Erro revertendo licitações: " + error.message, 500);
+      revertidas += (data || []).length;
+    }
+
+    return ok({ revertidas, oportunidades_removidas: opsRemovidas });
+  }
+
+  // -------------------------------------------------------------------------
   // LIMPAR FORA DO FILTRO — soft-delete das "Nova" que NÃO casam com as
   // palavras-chave atuais da config. Usado depois de refinar o filtro.
   // -------------------------------------------------------------------------
