@@ -30,6 +30,7 @@ import SortableTableHeader from "../components/shared/SortableTableHeader";
 import PortalClienteEmbed from "../components/cliente/PortalClienteEmbed";
 import PermissionGate from "../components/PermissionGate";
 import CalendarioOportunidades from "../components/oportunidades/CalendarioOportunidades";
+import LicitacoesInbox from "../components/oportunidades/LicitacoesInbox";
 import CriarMaterialModal from "../components/materiais/CriarMaterialModal";
 import NovoClienteModal from "../components/clientes/NovoClienteModal";
 import OportunidadesHeader from "../components/oportunidades/OportunidadesHeader";
@@ -1187,14 +1188,20 @@ export default function Oportunidades() {
           onSortChange={setSortConfig}
         />
         <div className="flex gap-2">
-          {["kanban", "lista", "calendario", "relatorios"].map((m) => (
+          {[
+            { value: "kanban", label: "Kanban" },
+            { value: "lista", label: "Lista" },
+            { value: "calendario", label: "Calendário" },
+            { value: "relatorios", label: "Relatórios" },
+            { value: "licitacoes", label: "Licitações" },
+          ].map((m) => (
             <Button
-              key={m}
-              variant={viewMode === m ? "default" : "outline"}
+              key={m.value}
+              variant={viewMode === m.value ? "default" : "outline"}
               size="sm"
-              onClick={() => setViewMode(m)}
+              onClick={() => setViewMode(m.value)}
             >
-              {m.charAt(0).toUpperCase() + m.slice(1)}
+              {m.label}
             </Button>
           ))}
         </div>
@@ -1344,6 +1351,8 @@ export default function Oportunidades() {
       )}
 
       {viewMode === "relatorios" && <RelatorioOportunidades />}
+
+      {viewMode === "licitacoes" && <LicitacoesInbox />}
 
       {viewMode === "calendario" && (
         <CalendarioOportunidades
