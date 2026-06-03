@@ -15,7 +15,7 @@ import { AlertTriangle } from "lucide-react";
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, componentStack: "" };
   }
 
   static getDerivedStateFromError(error) {
@@ -26,13 +26,16 @@ export default class ErrorBoundary extends React.Component {
     // Log detalhado pra Console — é onde devs/suporte vão olhar primeiro
     console.error("[ErrorBoundary] componente quebrou:", error);
     console.error("[ErrorBoundary] stack do componente:", info?.componentStack);
+    // Guarda o stack pra mostrar na tela (ajuda a achar QUAL componente quebrou
+    // a partir de um print, sem precisar abrir o Console).
+    this.setState({ componentStack: info?.componentStack || "" });
   }
 
   handleReload = () => {
     // Tenta reset suave do boundary primeiro. Se o erro for persistente,
     // o usuário aperta de novo e cai no full reload.
     if (this.state.hasError) {
-      this.setState({ hasError: false, error: null });
+      this.setState({ hasError: false, error: null, componentStack: "" });
       // Pequeno hack: se erro foi de import/chunk velho, force reload é único caminho
       // — mas só na 2ª tentativa pra não fazer F5 silencioso em qualquer hiccup.
     }
@@ -47,6 +50,14 @@ export default class ErrorBoundary extends React.Component {
 
     const message = this.state.error?.message || String(this.state.error || "");
     const scope = this.props.scope || "Tela";
+    // Top do component stack: as primeiras linhas nomeiam o componente que
+    // quebrou (ex.: "at DespesasTab" / "at CardsResumo"). Mostramos na tela.
+    const stackTop = (this.state.componentStack || "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .slice(0, 6)
+      .join("\n");
 
     return (
       <div className="min-h-[60vh] flex items-center justify-center p-6">
@@ -64,10 +75,24 @@ export default class ErrorBoundary extends React.Component {
             </div>
           </div>
 
-          <details className="text-xs text-slate-500 bg-slate-50 rounded p-3 mb-4">
-            <summary className="cursor-pointer font-mono">Detalhes técnicos</summary>
-            <pre className="mt-2 whitespace-pre-wrap break-words font-mono">{message}</pre>
-          </details>
+          {/* Detalhes SEMPRE visíveis (sem precisar expandir) — facilita o print
+              de suporte: mostra a mensagem + qual componente quebrou. */}
+          <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-3 mb-4 space-y-2">
+            <div>
+              <span className="font-semibold text-slate-700">Erro:</span>
+              <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-red-700">
+                {message || "(sem mensagem)"}
+              </pre>
+            </div>
+            {stackTop && (
+              <div>
+                <span className="font-semibold text-slate-700">Onde:</span>
+                <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-slate-600">
+                  {stackTop}
+                </pre>
+              </div>
+            )}
+          </div>
 
           <div className="flex gap-2">
             <button
