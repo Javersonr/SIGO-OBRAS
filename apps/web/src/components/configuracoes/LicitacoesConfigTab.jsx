@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { sigo, supabase } from "@/api/sigoClient";
+import { supabase } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,10 +33,20 @@ export default function LicitacoesConfigTab({ empresaAtiva }) {
 
   const loadConfig = async () => {
     if (!empresaAtiva?.id) return;
+    if (!supabase) {
+      toast.error("Cliente Supabase indisponível.");
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const rows = await sigo.entities.LicitacaoBusca.filter({ empresa_id: empresaAtiva.id });
-      const cfg = (rows || [])[0] || null;
+      // Lê via Edge Function (service role) — evita o descasamento de RLS
+      // quando a empresa ativa difere da empresa do JWT.
+      const { data, error } = await supabase.functions.invoke("config-licitacao", {
+        body: { action: "get", empresa_id: empresaAtiva.id },
+      });
+      if (error) throw error;
+      const cfg = data?.config || null;
       setConfig(cfg);
       if (cfg) {
         const ufs = Array.isArray(cfg.ufs) ? cfg.ufs : [];
@@ -76,24 +86,25 @@ export default function LicitacoesConfigTab({ empresaAtiva }) {
       toast.error("Informe ao menos uma palavra-chave.");
       return;
     }
+    if (!supabase) {
+      toast.error("Cliente Supabase indisponível.");
+      return;
+    }
     setSaving(true);
     try {
-      const payload = {
-        empresa_id: empresaAtiva.id,
-        ufs: ufsArray,
-        palavras_chave: palavrasChave.trim(),
-        criar_oportunidade_auto: criarAuto,
-        ativo,
-      };
-      if (config?.id) {
-        await sigo.entities.LicitacaoBusca.update(config.id, payload);
-      } else {
-        const novo = await sigo.entities.LicitacaoBusca.create({
-          nome: "Busca padrão",
-          ...payload,
-        });
-        setConfig(novo);
-      }
+      // Grava via Edge Function (service role) — contorna a RLS de insert.
+      const { data, error } = await supabase.functions.invoke("config-licitacao", {
+        body: {
+          action: "save",
+          empresa_id: empresaAtiva.id,
+          ufs: ufsArray,
+          palavras_chave: palavrasChave.trim(),
+          criar_oportunidade_auto: criarAuto,
+          ativo,
+        },
+      });
+      if (error) throw error;
+      if (data?.config) setConfig(data.config);
       toast.success("Configuração de licitações salva.");
       loadConfig();
     } catch (err) {
