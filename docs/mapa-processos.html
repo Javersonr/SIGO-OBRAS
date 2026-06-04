@@ -236,6 +236,10 @@
       .node .nap {
         color: #92400e;
       }
+      .node .nopt {
+        color: #b45309;
+        margin-top: 2px;
+      }
       .linkdel {
         position: absolute;
         background: #fee2e2;
@@ -564,6 +568,41 @@
             .join("")
         );
       }
+      // dropdown de destinos (todas as etapas, menos a própria decisão)
+      function stepOptions(proc, exceptId, selId) {
+        return (
+          `<option value="">— escolher destino —</option>` +
+          proc.steps
+            .map((x, i) => ({ x, i }))
+            .filter(({ x }) => x.id !== exceptId)
+            .map(
+              ({ x, i }) =>
+                `<option value="${x.id}" ${x.id === selId ? "selected" : ""}>${i + 1}. ${escapeHTML(x.nome)}</option>`
+            )
+            .join("")
+        );
+      }
+      // bloco de opções de uma decisão: cada saída = rótulo + destino
+      function decisionExitsHTML(proc, s) {
+        const exits = (proc.links || []).filter((l) => l.from === s.id);
+        const rows = exits
+          .map(
+            (lk) => `
+            <div class="row" style="margin-bottom:4px">
+              <input style="flex:1" value="${escapeAttr(lk.label || "")}" placeholder="Se… (ex.: Aprovado)"
+                oninput="updExit('${lk.id}','label',this.value)" />
+              <span style="color:#94a3b8;flex:0 0 auto">→</span>
+              <select style="flex:1" onchange="updExit('${lk.id}','to',this.value)">${stepOptions(proc, s.id, lk.to)}</select>
+              <button class="ghost danger" title="remover opção" onclick="delExit('${lk.id}')">🗑</button>
+            </div>`
+          )
+          .join("");
+        return `<div style="margin-top:6px;padding:6px;border:1px dashed #fbbf24;border-radius:8px;background:#fffbeb">
+          <label class="lbl" style="color:#b45309">Opções da decisão — para onde vai cada uma</label>
+          ${rows || '<div class="hint" style="margin:2px 0">Nenhuma opção ainda.</div>'}
+          <button class="ghost" style="color:#0284c7;padding-left:0" onclick="addExit('${s.id}')">+ adicionar opção</button>
+        </div>`;
+      }
       function renderSteps() {
         const proc = state.processes[state.activeProcess];
         document.getElementById("procTitle").textContent = "Etapas — " + proc.nome;
@@ -586,12 +625,7 @@
               <div><label class="lbl">Tipo</label><select onchange="upd('${s.id}','tipo',this.value)">${TIPOS.map((t) => `<option ${t === s.tipo ? "selected" : ""}>${t}</option>`).join("")}</select></div>
               <div></div>
             </div>
-            ${
-              s.tipo === "decisao"
-                ? `<div style="margin-top:6px"><label class="lbl">Opções da decisão (saídas, separe por vírgula)</label>
-              <input value="${escapeAttr(s.opcoes || "")}" placeholder="Ex.: Aprovado, Reprovado" oninput="upd('${s.id}','opcoes',this.value)" /></div>`
-                : ""
-            }
+            ${s.tipo === "decisao" ? decisionExitsHTML(proc, s) : ""}
             <div style="margin-top:6px"><label class="lbl">Atividades / captura</label>
               <textarea oninput="upd('${s.id}','atividades',this.value)">${escapeHTML(s.atividades)}</textarea></div>
           `;
@@ -620,13 +654,23 @@
           n.className = "node tipo-" + s.tipo + (s.id === selSource ? " sel" : "");
           n.style.left = s.x + "px";
           n.style.top = s.y + "px";
+          const exitsTxt =
+            s.tipo === "decisao"
+              ? (proc.links || [])
+                  .filter((l) => l.from === s.id)
+                  .map((l) => {
+                    const dest = proc.steps.find((x) => x.id === l.to);
+                    return `<div class="nopt">◇ ${escapeHTML(l.label || "(sem rótulo)")}${
+                      dest ? " → " + escapeHTML(dest.nome) : ""
+                    }</div>`;
+                  })
+                  .join("")
+              : "";
           n.innerHTML =
             `<b>${i + 1}. ${escapeHTML(s.nome)}</b>` +
             (s.responsavel ? `<div class="nrole">👤 ${escapeHTML(s.responsavel)}</div>` : "") +
             (s.aprova ? `<div class="nap">✔ ${escapeHTML(s.aprova)}</div>` : "") +
-            (s.tipo === "decisao" && s.opcoes
-              ? `<div class="nopt">↳ ${escapeHTML(s.opcoes)}</div>`
-              : "");
+            exitsTxt;
           canvas.appendChild(n);
           nodeElsById[s.id] = n;
           attachDrag(n, s);
@@ -823,10 +867,41 @@
         const s = proc.steps.find((x) => x.id === id);
         if (!s) return;
         s[field] = val;
+        // ao virar "decisão", garante 2 opções (se… / senão…) pra preencher
+        if (field === "tipo" && val === "decisao") {
+          if (!Array.isArray(proc.links)) proc.links = [];
+          while (proc.links.filter((l) => l.from === id).length < 2) {
+            proc.links.push({ id: uid("l"), from: id, to: "", label: "" });
+          }
+        }
         save();
-        // trocar o Tipo mostra/esconde o campo "Opções da decisão" → re-renderiza o painel
+        // trocar o Tipo mostra/esconde o bloco de opções → re-renderiza o painel
         if (field === "tipo") renderSteps();
-        if (["nome", "responsavel", "aprova", "tipo", "opcoes"].includes(field)) renderCanvas();
+        if (["nome", "responsavel", "aprova", "tipo"].includes(field)) renderCanvas();
+      }
+      // editar uma saída/opção da decisão (rótulo ou destino)
+      function updExit(linkId, field, val) {
+        const proc = state.processes[state.activeProcess];
+        const lk = (proc.links || []).find((x) => x.id === linkId);
+        if (!lk) return;
+        lk[field] = val; // "label" ou "to"
+        save();
+        renderCanvas(); // não re-renderiza o painel (não perde o foco do que está digitando)
+      }
+      function addExit(stepId) {
+        const proc = state.processes[state.activeProcess];
+        if (!Array.isArray(proc.links)) proc.links = [];
+        proc.links.push({ id: uid("l"), from: stepId, to: "", label: "" });
+        save();
+        renderSteps();
+        renderCanvas();
+      }
+      function delExit(linkId) {
+        const proc = state.processes[state.activeProcess];
+        proc.links = (proc.links || []).filter((x) => x.id !== linkId);
+        save();
+        renderSteps();
+        renderCanvas();
       }
       function del(id) {
         const proc = state.processes[state.activeProcess];
