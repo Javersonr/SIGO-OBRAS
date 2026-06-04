@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeUrl } from "@/lib/safe-url";
 import { useEmpresa } from "@/Layout";
 import SheetModalComponent from "@/components/ui/sheet-modal";
 import { Button } from "@/components/ui/button";
@@ -581,7 +582,7 @@ export default function FerramentaModal({ open, onOpenChange, ferramenta, onSave
                   <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
                   <span className="text-xs text-green-700 font-medium flex-1">Laudo anexado</span>
                   <a
-                    href={formData.laudo_url}
+                    href={safeUrl(formData.laudo_url)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-xs text-blue-600 underline"

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeUrl } from "@/lib/safe-url";
 import { safeParseJSON } from "@/lib/json-utils";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -480,7 +481,7 @@ export default function HistoricoFechamentosCaixa({
                                   </span>
                                   {pl.comprovante_url && (
                                     <a
-                                      href={pl.comprovante_url}
+                                      href={safeUrl(pl.comprovante_url)}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="text-blue-500 hover:text-blue-700"
@@ -516,7 +517,7 @@ export default function HistoricoFechamentosCaixa({
                         )}
                         {f.comprovante_pagamento_url && (
                           <a
-                            href={f.comprovante_pagamento_url}
+                            href={safeUrl(f.comprovante_pagamento_url)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-xs text-blue-600 underline flex items-center gap-1"

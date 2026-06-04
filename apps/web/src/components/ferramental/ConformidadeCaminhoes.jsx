@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeUrl } from "@/lib/safe-url";
 import { safeParseJSON } from "@/lib/json-utils";
 import { useEmpresa } from "@/Layout";
 import { Card } from "@/components/ui/card";
@@ -183,7 +184,7 @@ export default function ConformidadeCaminhoes({ ferramentas: ferramentasProp }) 
       <div className="flex items-center gap-1">
         {f.laudo_url && (
           <a
-            href={f.laudo_url}
+            href={safeUrl(f.laudo_url)}
             target="_blank"
             rel="noopener noreferrer"
             className="p-1 text-blue-600 hover:bg-blue-50 rounded"

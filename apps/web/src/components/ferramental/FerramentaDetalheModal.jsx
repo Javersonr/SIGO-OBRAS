@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeUrl } from "@/lib/safe-url";
 import { safeParseJSON } from "@/lib/json-utils";
 import { useEmpresa } from "@/Layout";
 import SheetModalComponent from "@/components/ui/sheet-modal";
@@ -689,7 +690,7 @@ export default function FerramentaDetalheModal({ open, onOpenChange, ferramenta,
                             {anexos.map((anexo, idx) => (
                               <a
                                 key={idx}
-                                href={anexo.url}
+                                href={safeUrl(anexo.url)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="flex items-center gap-1 text-xs bg-slate-100 px-2 py-1 rounded hover:bg-slate-200"

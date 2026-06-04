@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { safeUrl } from "@/lib/safe-url";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -278,7 +279,7 @@ export default function FechamentoCaixaModal({
                         </p>
                         {pl.comprovante_url && (
                           <a
-                            href={pl.comprovante_url}
+                            href={safeUrl(pl.comprovante_url)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-blue-400 hover:text-blue-600 flex-shrink-0"

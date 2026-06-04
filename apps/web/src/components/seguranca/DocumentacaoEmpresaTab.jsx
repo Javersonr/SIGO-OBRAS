@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeUrl } from "@/lib/safe-url";
 import { safeParseJSON } from "@/lib/json-utils";
 import {
   Plus,
@@ -501,7 +502,7 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
                               <div className="flex items-center gap-2 flex-1 min-w-0">
                                 <FileText className="w-3 h-3 text-slate-400 flex-shrink-0" />
                                 <a
-                                  href={anexo.url}
+                                  href={safeUrl(anexo.url)}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="text-xs text-blue-600 hover:text-blue-700 truncate"
@@ -804,7 +805,7 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
                           >
                             <FileText className="w-4 h-4 text-slate-400" />
                             <a
-                              href={anexo.url}
+                              href={safeUrl(anexo.url)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-blue-600 hover:underline flex-1 truncate"
@@ -812,7 +813,7 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
                               {anexo.nome}
                             </a>
                             <a
-                              href={anexo.url}
+                              href={safeUrl(anexo.url)}
                               download
                               className="text-slate-500 hover:text-slate-700"
                             >

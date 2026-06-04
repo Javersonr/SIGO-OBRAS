@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeUrl } from "@/lib/safe-url";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -180,7 +181,7 @@ export default function EditarLaudoModal({ open, onClose, ferramenta, onSaved })
                 <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
                 <span className="text-sm text-slate-700 flex-1 truncate">Laudo anexado</span>
                 <a
-                  href={form.laudo_url}
+                  href={safeUrl(form.laudo_url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-600 hover:text-blue-700"
@@ -189,7 +190,7 @@ export default function EditarLaudoModal({ open, onClose, ferramenta, onSaved })
                   <Eye className="w-4 h-4" />
                 </a>
                 <a
-                  href={form.laudo_url}
+                  href={safeUrl(form.laudo_url)}
                   download
                   className="text-slate-500 hover:text-slate-700"
                   title="Baixar"
@@ -275,7 +276,7 @@ export default function EditarLaudoModal({ open, onClose, ferramenta, onSaved })
                       {h.foto_laudo_url && (
                         <div className="flex gap-1 flex-shrink-0">
                           <a
-                            href={h.foto_laudo_url}
+                            href={safeUrl(h.foto_laudo_url)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="p-1 text-blue-600 hover:bg-blue-50 rounded"
@@ -284,7 +285,7 @@ export default function EditarLaudoModal({ open, onClose, ferramenta, onSaved })
                             <Eye className="w-3.5 h-3.5" />
                           </a>
                           <a
-                            href={h.foto_laudo_url}
+                            href={safeUrl(h.foto_laudo_url)}
                             download
                             className="p-1 text-slate-500 hover:bg-slate-50 rounded"
                             title="Baixar"

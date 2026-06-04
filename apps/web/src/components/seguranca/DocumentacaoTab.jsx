@@ -1,5 +1,6 @@
 import React from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeUrl } from "@/lib/safe-url";
 import { safeParseJSON } from "@/lib/json-utils";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -280,7 +281,7 @@ export default function DocumentacaoTab({
                       {dep.comprovante_escolar_url ? (
                         <div className="flex items-center gap-2 mt-1">
                           <a
-                            href={dep.comprovante_escolar_url}
+                            href={safeUrl(dep.comprovante_escolar_url)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"

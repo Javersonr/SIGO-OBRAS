@@ -1,5 +1,6 @@
 import React from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeUrl } from "@/lib/safe-url";
 import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -128,7 +129,7 @@ export default function RHTab({
                           <div className="flex items-center gap-2 flex-1 min-w-0">
                             <FileText className="w-3 h-3 text-slate-400 flex-shrink-0" />
                             <a
-                              href={anexo.url}
+                              href={safeUrl(anexo.url)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-xs text-blue-600 hover:text-blue-700 truncate"
@@ -234,7 +235,7 @@ export default function RHTab({
                       <div className="flex items-center gap-2 flex-1">
                         <FileText className="w-4 h-4 text-slate-400" />
                         <a
-                          href={dep.comprovante_escolar_url}
+                          href={safeUrl(dep.comprovante_escolar_url)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-sm hover:text-amber-600"

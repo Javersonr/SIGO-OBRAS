@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { safeUrl } from "@/lib/safe-url";
 import { useEmpresa } from "../Layout";
 import {
   Plus,
@@ -1687,7 +1688,7 @@ export default function Ferramental() {
                   <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
                   <span className="text-sm text-slate-700 truncate flex-1">Laudo anexado</span>
                   <a
-                    href={formData.laudo_url}
+                    href={safeUrl(formData.laudo_url)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-600 hover:text-blue-700"
