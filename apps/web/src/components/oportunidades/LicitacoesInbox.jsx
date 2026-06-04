@@ -112,7 +112,25 @@ export default function LicitacoesInbox() {
         return r?.novas ?? 0;
       };
       const total = novasDe(alerta) + novasDe(pncp);
-      toast.success(`Busca executada. ${total} nova(s) licitação(ões) encontrada(s).`);
+
+      // Alinha as "Novas" à palavra-chave ATUAL: remove as que não casam mais
+      // (ou já passaram). É o que se espera ao trocar a palavra-chave e buscar —
+      // a lista de Novas passa a refletir a palavra-chave nova. Best-effort.
+      let removidas = 0;
+      try {
+        const { data: limp } = await supabase.functions.invoke("licitacoes-triagem", {
+          body: { action: "limpar_fora_do_filtro", empresa_id: empresaAtiva.id },
+        });
+        removidas = limp?.removidas ?? 0;
+      } catch (e) {
+        // sem palavras-chave na config (400) ou outro erro → não bloqueia a busca
+        console.warn("[Licitacoes] alinhar Novas à palavra-chave falhou:", e?.message || e);
+      }
+
+      toast.success(
+        `Busca executada. ${total} nova(s) encontrada(s)` +
+          (removidas > 0 ? `; ${removidas} fora da palavra-chave removida(s).` : ".")
+      );
       setStatusFiltro("Nova");
       carregar("Nova");
     } catch (err) {
