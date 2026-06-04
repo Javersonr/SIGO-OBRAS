@@ -478,10 +478,13 @@ export default function Layout({ children, currentPageName }) {
   // TODOS OS HOOKS ANTES DE QUALQUER EARLY RETURN
   const temPermissao = React.useCallback(
     (modulo, aba = null, funcao = null) => {
-      const currentPerfil = vinculo?.perfil || "Admin";
+      const isSuperAdmin =
+        safeParseJSON(sessionStorage.getItem("custom_auth"), {}).is_super_admin === true;
+      // Sem fallback para "Admin": perfil ausente = SEM privilégio (não elevar).
+      const currentPerfil = vinculo?.perfil || "";
 
-      // Admin ou Owner tem acesso total
-      if (currentPerfil === "Admin" || vinculo?.is_owner === true) return true;
+      // Super admin, Admin ou Owner tem acesso total
+      if (isSuperAdmin || currentPerfil === "Admin" || vinculo?.is_owner === true) return true;
 
       // Dashboard sempre acessível
       if (modulo === "Dashboard") return true;
@@ -541,16 +544,17 @@ export default function Layout({ children, currentPageName }) {
   const filteredMenu = React.useMemo(() => {
     if (!user || !empresaAtiva) return [];
 
-    const currentPerfil = vinculo?.perfil || "Admin";
     const customAuth = safeParseJSON(sessionStorage.getItem("custom_auth"), {});
     const isSuperAdmin = customAuth.is_super_admin === true;
+    // Sem fallback para "Admin": perfil ausente = SEM privilégio (não elevar).
+    const currentPerfil = vinculo?.perfil || "";
 
     return menuItems.filter((item) => {
       // Itens apenas para super admin
       if (item.superAdminOnly) return isSuperAdmin;
 
-      // Admin ou Owner vê: Dashboard, Configurações, Relatórios, Contabilidade + módulos contratados
-      if (currentPerfil === "Admin" || vinculo?.is_owner === true) {
+      // Super admin, Admin ou Owner vê: Dashboard, Configurações, Relatórios, Contabilidade + módulos contratados
+      if (isSuperAdmin || currentPerfil === "Admin" || vinculo?.is_owner === true) {
         if (
           item.path === "Dashboard" ||
           item.path === "Configuracoes" ||
@@ -658,7 +662,13 @@ export default function Layout({ children, currentPageName }) {
     );
   }
 
-  const perfil = vinculo?.perfil || "Admin";
+  // Sem fallback para "Admin" (não elevar). Super admin sem vínculo mantém "Admin"
+  // só para o PermissionGate/exibição; demais perfis ausentes ficam sem privilégio.
+  const perfil =
+    vinculo?.perfil ||
+    (safeParseJSON(sessionStorage.getItem("custom_auth"), {}).is_super_admin === true
+      ? "Admin"
+      : "");
 
   return (
     <EmpresaContext.Provider

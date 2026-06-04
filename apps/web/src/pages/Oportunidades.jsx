@@ -1447,16 +1447,32 @@ export default function Oportunidades() {
                       />
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <EntityActions
-                        entity={op}
-                        markAsCompleteTitle="Migrar para Projetos"
-                        onMarkAsComplete={handleMigrarParaProjeto}
-                        onCopy={(o) =>
-                          handleOpenModal({ ...o, nome: (o.nome || o.titulo) + " (cópia)" })
-                        }
-                        onArchive={handleArquivar}
-                        onDelete={handleDelete}
-                      />
+                      <PermissionGate modulo="Oportunidades" aba="Lista">
+                        <EntityActions
+                          entity={op}
+                          markAsCompleteTitle="Migrar para Projetos"
+                          onMarkAsComplete={
+                            temPermissao("Oportunidades", "Lista", "editar")
+                              ? handleMigrarParaProjeto
+                              : null
+                          }
+                          onCopy={
+                            temPermissao("Oportunidades", "Lista", "criar")
+                              ? (o) =>
+                                  handleOpenModal({
+                                    ...o,
+                                    nome: (o.nome || o.titulo) + " (cópia)",
+                                  })
+                              : null
+                          }
+                          onArchive={
+                            temPermissao("Oportunidades", "Lista", "editar") ? handleArquivar : null
+                          }
+                          onDelete={
+                            temPermissao("Oportunidades", "Lista", "excluir") ? handleDelete : null
+                          }
+                        />
+                      </PermissionGate>
                     </td>
                   </tr>
                 ))}
