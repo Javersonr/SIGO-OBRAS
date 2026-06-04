@@ -586,6 +586,12 @@
               <div><label class="lbl">Tipo</label><select onchange="upd('${s.id}','tipo',this.value)">${TIPOS.map((t) => `<option ${t === s.tipo ? "selected" : ""}>${t}</option>`).join("")}</select></div>
               <div></div>
             </div>
+            ${
+              s.tipo === "decisao"
+                ? `<div style="margin-top:6px"><label class="lbl">Opções da decisão (saídas, separe por vírgula)</label>
+              <input value="${escapeAttr(s.opcoes || "")}" placeholder="Ex.: Aprovado, Reprovado" oninput="upd('${s.id}','opcoes',this.value)" /></div>`
+                : ""
+            }
             <div style="margin-top:6px"><label class="lbl">Atividades / captura</label>
               <textarea oninput="upd('${s.id}','atividades',this.value)">${escapeHTML(s.atividades)}</textarea></div>
           `;
@@ -617,7 +623,10 @@
           n.innerHTML =
             `<b>${i + 1}. ${escapeHTML(s.nome)}</b>` +
             (s.responsavel ? `<div class="nrole">👤 ${escapeHTML(s.responsavel)}</div>` : "") +
-            (s.aprova ? `<div class="nap">✔ ${escapeHTML(s.aprova)}</div>` : "");
+            (s.aprova ? `<div class="nap">✔ ${escapeHTML(s.aprova)}</div>` : "") +
+            (s.tipo === "decisao" && s.opcoes
+              ? `<div class="nopt">↳ ${escapeHTML(s.opcoes)}</div>`
+              : "");
           canvas.appendChild(n);
           nodeElsById[s.id] = n;
           attachDrag(n, s);
@@ -815,8 +824,9 @@
         if (!s) return;
         s[field] = val;
         save();
-        if (field === "nome" || field === "responsavel" || field === "aprova" || field === "tipo")
-          renderCanvas();
+        // trocar o Tipo mostra/esconde o campo "Opções da decisão" → re-renderiza o painel
+        if (field === "tipo") renderSteps();
+        if (["nome", "responsavel", "aprova", "tipo", "opcoes"].includes(field)) renderCanvas();
       }
       function del(id) {
         const proc = state.processes[state.activeProcess];
