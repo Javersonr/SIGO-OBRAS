@@ -299,6 +299,11 @@
     <div class="wrap">
       <div class="card">
         <div class="tabs" id="tabs"></div>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px">
+          <button onclick="addProcess()">+ Novo processo</button>
+          <button onclick="renameProcess()">✏️ Renomear</button>
+          <button class="danger" onclick="deleteProcess()">🗑 Excluir processo</button>
+        </div>
 
         <h2>Funções / Organograma</h2>
         <div class="roles" id="roles"></div>
@@ -785,6 +790,54 @@
         save();
         renderSteps();
         renderCanvas();
+      }
+      function addProcess() {
+        const nome = (prompt("Nome do novo processo:", "Novo processo") || "").trim();
+        if (!nome) return;
+        const key = "proc_" + Math.random().toString(36).slice(2, 8);
+        state.processes[key] = {
+          nome,
+          links: [],
+          steps: [
+            {
+              id: uid(),
+              tipo: "inicio",
+              nome: "Início",
+              responsavel: "",
+              atividades: "",
+              aprova: "",
+              x: 60,
+              y: 20,
+            },
+          ],
+        };
+        state.activeProcess = key;
+        selSource = null;
+        save();
+        renderAll();
+      }
+      function renameProcess() {
+        const p = state.processes[state.activeProcess];
+        const nome = (prompt("Renomear processo:", p.nome) || "").trim();
+        if (nome) {
+          p.nome = nome;
+          save();
+          renderAll();
+        }
+      }
+      function deleteProcess() {
+        const keys = Object.keys(state.processes);
+        if (keys.length <= 1) {
+          alert("Precisa ter ao menos um processo.");
+          return;
+        }
+        const p = state.processes[state.activeProcess];
+        if (!confirm(`Excluir o processo "${p.nome}"? Perde todas as etapas dele.`)) return;
+        delete state.processes[state.activeProcess];
+        state.activeProcess = Object.keys(state.processes)[0];
+        selSource = null;
+        save();
+        renderAll();
       }
       function addRole() {
         const v = document.getElementById("newRole").value.trim();
