@@ -44,6 +44,13 @@ const SUPABASE_FUNCTIONS_REWRITE = {
   alterarSenha: "alterar-senha",
   redefinirSenhaAdmin: "redefinir-senha-admin",
   trocarEmpresa: "trocar-empresa",
+  // Portais externos (Etapa 3b) — service role, sem sessão Supabase Auth
+  portalFornecedorLogin: "portal-fornecedor-login",
+  portalFornecedorCotacoes: "portal-fornecedor-cotacoes",
+  portalFornecedorCotacao: "portal-fornecedor-cotacao",
+  portalFornecedorResposta: "portal-fornecedor-resposta",
+  portalClienteDados: "portal-cliente-dados",
+  portalClienteAcao: "portal-cliente-acao",
 };
 
 // Patch functions.invoke pra rotear as migradas

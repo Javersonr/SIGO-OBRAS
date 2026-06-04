@@ -1,5 +1,5 @@
 -- ============================================================================
--- 0047 — Reabilita a RLS multi-tenant (reverte a 0026)  [DRAFT — NÃO APLICAR]
+-- 0048 — Reabilita a RLS multi-tenant (reverte a 0026)  [DRAFT — NÃO APLICAR]
 -- ============================================================================
 -- ⚠️  NÃO mova este arquivo para supabase/migrations/ nem rode antes da janela.
 --     Aplicar isto SEM os pré-requisitos abaixo = apagão para os 19 clientes.

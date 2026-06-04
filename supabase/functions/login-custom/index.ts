@@ -20,6 +20,44 @@ import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { verifyPassword, hashPassword } from "../_shared/passwords.ts";
 import { preflightResponse, ok, fail } from "../_shared/cors.ts";
 import { montarSessao } from "../_shared/auth-bridge.ts";
+import { signPortalToken } from "../_shared/portal-token.ts";
+
+/**
+ * Resolve a credencial pós-login:
+ *  - perfil "Cliente" (usuário EXTERNO do portal): NÃO recebe sessão Supabase
+ *    Auth (uma sessão tenant-wide o deixaria ler todo o financeiro da empresa).
+ *    Recebe um `portal_token` (HMAC) escopado à oportunidade/projeto do vínculo.
+ *  - demais perfis (staff): recebem a sessão real do Supabase Auth.
+ */
+// deno-lint-ignore no-explicit-any
+async function resolverCredencial(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  // deno-lint-ignore no-explicit-any
+  usuario: any,
+  // deno-lint-ignore no-explicit-any
+  vinc: any,
+  // deno-lint-ignore no-explicit-any
+  empresa: any,
+  senha: string
+): Promise<{ session: unknown; portal_token: string | null }> {
+  if (vinc?.perfil === "Cliente") {
+    let portal_token: string | null = null;
+    try {
+      portal_token = await signPortalToken({
+        scope: "cliente",
+        empresa_id: empresa.id,
+        oportunidade_id: vinc.projeto_id,
+        email: usuario.email,
+      });
+    } catch (e) {
+      console.error("[login-custom] portal_token (cliente) falhou:", (e as Error)?.message);
+    }
+    return { session: null, portal_token };
+  }
+  const session = await gerarSessao(supabase, usuario, empresa.id, vinc.perfil, senha);
+  return { session, portal_token: null };
+}
 
 /**
  * Gera a sessão real do Supabase Auth (best-effort). Se a ponte falhar, o login
@@ -114,7 +152,9 @@ Deno.serve(async (req) => {
   // 3. Resolver vínculos com empresas via usuario_empresa
   const { data: vinculos, error: vincErr } = await supabase
     .from("usuario_empresa")
-    .select("id, empresa_id, grupo_id, perfil, is_owner, nome_completo, ativo, deleted_at")
+    .select(
+      "id, empresa_id, grupo_id, perfil, is_owner, nome_completo, projeto_id, projeto_nome, ativo, deleted_at"
+    )
     .eq("usuario_email", email)
     .is("deleted_at", null)
     .eq("ativo", true);
@@ -168,9 +208,15 @@ Deno.serve(async (req) => {
     if (!empresa || !vinc) {
       return fail("Empresa escolhida não está vinculada ao usuário", 403);
     }
-    const session = await gerarSessao(supabase, usuario, empresa.id, vinc.perfil, senha);
+    const { session, portal_token } = await resolverCredencial(
+      supabase,
+      usuario,
+      vinc,
+      empresa,
+      senha
+    );
     return ok({
-      usuario: buildUsuarioResponse(usuario, vinc, empresa),
+      usuario: { ...buildUsuarioResponse(usuario, vinc, empresa), portal_token },
       session,
     });
   }
@@ -179,9 +225,15 @@ Deno.serve(async (req) => {
   if (empresasAtivas.length === 1) {
     const empresa = empresasAtivas[0];
     const vinc = vinculos.find((v) => v.empresa_id === empresa.id)!;
-    const session = await gerarSessao(supabase, usuario, empresa.id, vinc.perfil, senha);
+    const { session, portal_token } = await resolverCredencial(
+      supabase,
+      usuario,
+      vinc,
+      empresa,
+      senha
+    );
     return ok({
-      usuario: buildUsuarioResponse(usuario, vinc, empresa),
+      usuario: { ...buildUsuarioResponse(usuario, vinc, empresa), portal_token },
       session,
     });
   }

@@ -76,9 +76,9 @@ export default function EntrarSistema() {
     setLoading(true);
 
     try {
-      // Tentar login de fornecedor PRIMEIRO
+      // Tentar login de fornecedor PRIMEIRO (Edge Function service-role no Supabase)
       try {
-        const fornResp = await sigo.functions.invoke("autenticarFornecedor", {
+        const fornResp = await sigo.functions.invoke("portalFornecedorLogin", {
           email: email.trim().toLowerCase(),
           senha,
         });
@@ -92,6 +92,8 @@ export default function EntrarSistema() {
               email: fornResp.data.email,
               empresa_id: fornResp.data.empresa_id,
               perfil: "Fornecedor",
+              // token de portal (HMAC) p/ as functions de cotação validarem
+              portal_token: fornResp.data.portal_token,
             })
           );
           navigate(createPageUrl("HistoricoCotacoes"), { replace: true });
@@ -137,7 +139,9 @@ export default function EntrarSistema() {
           localStorage.removeItem("login_email_salvo");
         }
 
-        navigate(createPageUrl("Dashboard"), { replace: true });
+        // Cliente externo vai pro portal (usa portal_token, não a sessão tenant)
+        const destino = response.data.usuario?.perfil === "Cliente" ? "ClientePortal" : "Dashboard";
+        navigate(createPageUrl(destino), { replace: true });
       } else {
         setError(response.data.error || "Credenciais inválidas");
       }
@@ -207,9 +211,11 @@ export default function EntrarSistema() {
       sessionStorage.setItem("custom_auth", JSON.stringify(authData));
       sessionStorage.setItem("empresa_ativa", empresa.id);
 
-      // Se for fornecedor, redirecionar para área de cotações
+      // Redireciona conforme o perfil
       if (authData.perfil === "Fornecedor") {
         navigate(createPageUrl("HistoricoCotacoes"), { replace: true });
+      } else if (authData.perfil === "Cliente") {
+        navigate(createPageUrl("ClientePortal"), { replace: true });
       } else {
         navigate(createPageUrl("Dashboard"), { replace: true });
       }

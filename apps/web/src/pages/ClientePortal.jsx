@@ -43,6 +43,9 @@ export default function ClientePortal() {
   const [diarios, setDiarios] = useState([]);
   const [showBanner, setShowBanner] = useState(true);
   const [anexoVisualizacao, setAnexoVisualizacao] = useState(null);
+  // Credencial do portal para as ESCRITAS (token magic-link OU portal_token de
+  // login). null = modo preview (admin logado escreve direto).
+  const [credencial, setCredencial] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -54,207 +57,163 @@ export default function ClientePortal() {
       const urlParams = new URLSearchParams(window.location.hash.split("?")[1]);
       const token = urlParams.get("token");
 
-      let clienteInfo;
-      let isVisualizacao = false;
-
-      // MODO 1: Preview (visualização interna pelo sistema - SEM RESTRIÇÕES)
+      // MODO 1: Preview interno — o admin logado vê "como o cliente vê". Lê
+      // direto das entidades; sob RLS isso funciona porque o admin tem sessão
+      // da própria empresa (não é usuário externo).
       if (token && token.startsWith("preview_")) {
-        const projetoId = token.replace("preview_", "");
-
-        // Buscar projeto para pegar empresa_id
-        const projetos = await sigo.entities.Projeto.filter({ id: projetoId });
-        if (projetos.length === 0) {
-          const ops = await sigo.entities.Oportunidade.filter({ id: projetoId });
-          if (ops.length === 0) {
-            setError("Projeto não encontrado.");
-            setLoading(false);
-            return;
-          }
-          clienteInfo = {
-            empresa_id: ops[0].empresa_id,
-            oportunidade_id: projetoId,
-            email_cliente: "preview@sistema.com",
-          };
-        } else {
-          clienteInfo = {
-            empresa_id: projetos[0].empresa_id,
-            oportunidade_id: projetoId,
-            email_cliente: "preview@sistema.com",
-          };
-        }
-
-        setAbasLiberadas({ orcamento: true, obra: true });
-        isVisualizacao = true;
+        await carregarPreviewDireto(token.replace("preview_", ""));
+        return;
       }
-      // MODO 2: Acesso por token de cliente
-      else if (token) {
-        const tokens = await sigo.entities.TokenClienteOportunidade.filter({
-          token,
-          ativo: true,
-        });
 
-        if (tokens.length === 0) {
-          setError("Link inválido ou expirado.");
-          setLoading(false);
-          return;
-        }
-
-        const tokenInfo = tokens[0];
-
-        const hoje = new Date();
-        const expira = new Date(tokenInfo.expira_em);
-        if (expira < hoje) {
-          setError("Este link expirou. Solicite um novo link.");
-          setLoading(false);
-          return;
-        }
-
-        clienteInfo = {
-          empresa_id: tokenInfo.empresa_id,
-          oportunidade_id: tokenInfo.oportunidade_id,
-          email_cliente: tokenInfo.email_cliente,
-        };
-
-        const abas = safeParseJSON(tokenInfo.abas_liberadas, {});
-        setAbasLiberadas(abas);
-        isVisualizacao = true;
-      }
-      // MODO 3: Acesso por login de cliente (UsuarioEmpresa com perfil Cliente)
-      else {
+      // MODO 2 (link) e MODO 3 (login do cliente): usuário EXTERNO = `anon`.
+      // Tudo passa pela Edge Function service-role, que valida a credencial e
+      // devolve só o escopo permitido.
+      let payload;
+      if (token) {
+        payload = { token };
+        setCredencial({ token });
+        setShowBanner(true);
+      } else {
         const customAuth = sessionStorage.getItem("custom_auth");
-        if (!customAuth) {
+        const userData = customAuth ? safeParseJSON(customAuth, {}) : null;
+        if (!userData || userData.perfil !== "Cliente" || !userData.portal_token) {
           setError("Você precisa fazer login para acessar o portal.");
           setLoading(false);
           return;
         }
-
-        const userData = safeParseJSON(customAuth, {});
-
-        // Buscar vínculo do usuário
-        const vinculos = await sigo.entities.UsuarioEmpresa.filter({
-          empresa_id: userData.empresa_id,
-          usuario_email: userData.email,
-          perfil: "Cliente",
-          ativo: true,
-        });
-
-        if (vinculos.length === 0 || !vinculos[0].projeto_id) {
-          setError("Nenhum projeto vinculado a este usuário.");
-          setLoading(false);
-          return;
-        }
-
-        const vinculo = vinculos[0];
-
-        clienteInfo = {
-          empresa_id: userData.empresa_id,
-          oportunidade_id: vinculo.projeto_id,
-          email_cliente: userData.email,
-        };
-
-        setAbasLiberadas({ orcamento: true, obra: true });
+        payload = { portal_token: userData.portal_token };
+        setCredencial({ portal_token: userData.portal_token });
+        setShowBanner(false);
       }
 
-      setTokenData(clienteInfo);
-      setShowBanner(isVisualizacao);
-
-      // Carregar empresa
-      const emp = await sigo.entities.Empresa.filter({ id: clienteInfo.empresa_id });
-      if (emp.length === 0) {
-        setError("Empresa não encontrada.");
+      const { data } = await sigo.functions.invoke("portalClienteDados", payload);
+      if (!data?.success) {
+        setError(data?.error || "Link inválido ou expirado.");
         setLoading(false);
         return;
       }
-      setEmpresa(emp[0]);
 
-      // Tentar carregar como Projeto primeiro, se não encontrar, busca como Oportunidade
-      let projeto = await sigo.entities.Projeto.filter({ id: clienteInfo.oportunidade_id });
-      let oportunidadeData = null;
-
-      if (projeto.length > 0) {
-        oportunidadeData = projeto[0];
-      } else {
-        const op = await sigo.entities.Oportunidade.filter({ id: clienteInfo.oportunidade_id });
-        if (op.length === 0) {
-          setError("Projeto não encontrado.");
-          setLoading(false);
-          return;
-        }
-        oportunidadeData = op[0];
-      }
-
-      setOportunidade(oportunidadeData);
-
-      // Carregar orçamento (tenta projeto_id primeiro, depois oportunidade_id)
-      let itens = await sigo.entities.OrcamentoItem.filter({
-        empresa_id: clienteInfo.empresa_id,
-        projeto_id: clienteInfo.oportunidade_id,
+      setTokenData({
+        empresa_id: data.empresa?.id,
+        oportunidade_id: data.oportunidade?.id,
+        email_cliente: data.email_cliente,
       });
-
-      if (itens.length === 0) {
-        itens = await sigo.entities.OrcamentoItem.filter({
-          empresa_id: clienteInfo.empresa_id,
-          oportunidade_id: clienteInfo.oportunidade_id,
-        });
-      }
-      setOrcamentoItens(itens.sort((a, b) => a.ordem - b.ordem));
-
-      // Carregar cronograma
-      let etapas = await sigo.entities.CronogramaEtapa.filter({
-        empresa_id: clienteInfo.empresa_id,
-        projeto_id: clienteInfo.oportunidade_id,
-      });
-
-      if (etapas.length === 0) {
-        etapas = await sigo.entities.CronogramaEtapa.filter({
-          empresa_id: clienteInfo.empresa_id,
-          oportunidade_id: clienteInfo.oportunidade_id,
-        });
-      }
-      setCronogramaEtapas(etapas.sort((a, b) => a.ordem - b.ordem));
-
-      // Carregar arquivos
-      let arqs = await sigo.entities.ArquivoOportunidade.filter({
-        empresa_id: clienteInfo.empresa_id,
-        projeto_id: clienteInfo.oportunidade_id,
-      });
-
-      if (arqs.length === 0) {
-        arqs = await sigo.entities.ArquivoOportunidade.filter({
-          empresa_id: clienteInfo.empresa_id,
-          oportunidade_id: clienteInfo.oportunidade_id,
-        });
-      }
-      setArquivos(arqs.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
-
-      // Carregar anotações
-      let notas = await sigo.entities.OportunidadeAtualizacao.filter({
-        empresa_id: clienteInfo.empresa_id,
-        projeto_id: clienteInfo.oportunidade_id,
-        tipo: "Nota",
-      });
-
-      if (notas.length === 0) {
-        notas = await sigo.entities.OportunidadeAtualizacao.filter({
-          empresa_id: clienteInfo.empresa_id,
-          oportunidade_id: clienteInfo.oportunidade_id,
-          tipo: "Nota",
-        });
-      }
-      setAnotacoes(notas.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
-
-      // Carregar diários de obra
-      const diario = await sigo.entities.DiarioObra.filter({
-        empresa_id: clienteInfo.empresa_id,
-        projeto_id: clienteInfo.oportunidade_id,
-      });
-      setDiarios(diario.sort((a, b) => new Date(b.data) - new Date(a.data)));
+      setEmpresa(data.empresa);
+      setOportunidade(data.oportunidade);
+      setAbasLiberadas(data.abas_liberadas || { orcamento: false, obra: false });
+      setOrcamentoItens(data.orcamento_itens || []);
+      setCronogramaEtapas(data.cronograma_etapas || []);
+      setArquivos(data.arquivos || []);
+      setAnotacoes(data.anotacoes || []);
+      setDiarios(data.diarios || []);
     } catch (error) {
       console.error("Erro ao carregar dados:", error);
       setError("Erro ao carregar informações. Tente novamente mais tarde.");
     } finally {
       setLoading(false);
     }
+  };
+
+  // Preview interno (admin) — leitura direta das entidades (RLS-safe via sessão
+  // do admin). Mantém o comportamento "sem restrições" da visualização interna.
+  const carregarPreviewDireto = async (projetoId) => {
+    const projetos = await sigo.entities.Projeto.filter({ id: projetoId });
+    let empresaId;
+    if (projetos.length === 0) {
+      const ops = await sigo.entities.Oportunidade.filter({ id: projetoId });
+      if (ops.length === 0) {
+        setError("Projeto não encontrado.");
+        return;
+      }
+      empresaId = ops[0].empresa_id;
+    } else {
+      empresaId = projetos[0].empresa_id;
+    }
+
+    const clienteInfo = {
+      empresa_id: empresaId,
+      oportunidade_id: projetoId,
+      email_cliente: "preview@sistema.com",
+    };
+    setAbasLiberadas({ orcamento: true, obra: true });
+    setShowBanner(true);
+    setTokenData(clienteInfo);
+    setCredencial(null); // preview não escreve via function
+
+    const emp = await sigo.entities.Empresa.filter({ id: empresaId });
+    if (emp.length === 0) {
+      setError("Empresa não encontrada.");
+      return;
+    }
+    setEmpresa(emp[0]);
+
+    let projeto = await sigo.entities.Projeto.filter({ id: projetoId });
+    let oportunidadeData = projeto.length > 0 ? projeto[0] : null;
+    if (!oportunidadeData) {
+      const op = await sigo.entities.Oportunidade.filter({ id: projetoId });
+      if (op.length === 0) {
+        setError("Projeto não encontrado.");
+        return;
+      }
+      oportunidadeData = op[0];
+    }
+    setOportunidade(oportunidadeData);
+
+    let itens = await sigo.entities.OrcamentoItem.filter({
+      empresa_id: empresaId,
+      projeto_id: projetoId,
+    });
+    if (itens.length === 0) {
+      itens = await sigo.entities.OrcamentoItem.filter({
+        empresa_id: empresaId,
+        oportunidade_id: projetoId,
+      });
+    }
+    setOrcamentoItens(itens.sort((a, b) => a.ordem - b.ordem));
+
+    let etapas = await sigo.entities.CronogramaEtapa.filter({
+      empresa_id: empresaId,
+      projeto_id: projetoId,
+    });
+    if (etapas.length === 0) {
+      etapas = await sigo.entities.CronogramaEtapa.filter({
+        empresa_id: empresaId,
+        oportunidade_id: projetoId,
+      });
+    }
+    setCronogramaEtapas(etapas.sort((a, b) => a.ordem - b.ordem));
+
+    let arqs = await sigo.entities.ArquivoOportunidade.filter({
+      empresa_id: empresaId,
+      projeto_id: projetoId,
+    });
+    if (arqs.length === 0) {
+      arqs = await sigo.entities.ArquivoOportunidade.filter({
+        empresa_id: empresaId,
+        oportunidade_id: projetoId,
+      });
+    }
+    setArquivos(arqs.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
+
+    let notas = await sigo.entities.OportunidadeAtualizacao.filter({
+      empresa_id: empresaId,
+      projeto_id: projetoId,
+      tipo: "Nota",
+    });
+    if (notas.length === 0) {
+      notas = await sigo.entities.OportunidadeAtualizacao.filter({
+        empresa_id: empresaId,
+        oportunidade_id: projetoId,
+        tipo: "Nota",
+      });
+    }
+    setAnotacoes(notas.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
+
+    const diario = await sigo.entities.DiarioObra.filter({
+      empresa_id: empresaId,
+      projeto_id: projetoId,
+    });
+    setDiarios(diario.sort((a, b) => new Date(b.data) - new Date(a.data)));
   };
 
   const handleUploadFile = async (e) => {
@@ -266,16 +225,26 @@ export default function ClientePortal() {
       const uploadResult = await sigo.integrations.Core.UploadFile({ file });
       const fileUrl = uploadResult.file_url || uploadResult.url || uploadResult;
 
-      await sigo.entities.ArquivoOportunidade.create({
-        empresa_id: tokenData.empresa_id,
-        oportunidade_id: tokenData.oportunidade_id,
-        nome: file.name,
-        url: fileUrl,
-        tipo: file.type,
-        tamanho: file.size,
-        usuario_nome: tokenData.email_cliente || "Cliente",
-        enviado_por_cliente: true,
-      });
+      if (credencial) {
+        // Externo (anon): grava via Edge Function service-role no escopo do token
+        await sigo.functions.invoke("portalClienteAcao", {
+          ...credencial,
+          action: "upload_arquivo",
+          arquivo: { nome: file.name, url: fileUrl, tipo: file.type, tamanho: file.size },
+        });
+      } else {
+        // Preview (admin logado): grava direto
+        await sigo.entities.ArquivoOportunidade.create({
+          empresa_id: tokenData.empresa_id,
+          oportunidade_id: tokenData.oportunidade_id,
+          nome: file.name,
+          url: fileUrl,
+          tipo: file.type,
+          tamanho: file.size,
+          usuario_nome: tokenData.email_cliente || "Cliente",
+          enviado_por_cliente: true,
+        });
+      }
 
       await loadData();
       e.target.value = "";
@@ -290,17 +259,30 @@ export default function ClientePortal() {
   const handleAddAnotacao = async () => {
     if (!novaAnotacao.trim()) return;
 
-    await sigo.entities.OportunidadeAtualizacao.create({
-      empresa_id: tokenData.empresa_id,
-      oportunidade_id: tokenData.oportunidade_id,
-      usuario_id: null,
-      usuario_nome: tokenData.email_cliente || "Cliente",
-      tipo: "Nota",
-      descricao: novaAnotacao,
-    });
+    try {
+      if (credencial) {
+        await sigo.functions.invoke("portalClienteAcao", {
+          ...credencial,
+          action: "add_nota",
+          descricao: novaAnotacao,
+        });
+      } else {
+        await sigo.entities.OportunidadeAtualizacao.create({
+          empresa_id: tokenData.empresa_id,
+          oportunidade_id: tokenData.oportunidade_id,
+          usuario_id: null,
+          usuario_nome: tokenData.email_cliente || "Cliente",
+          tipo: "Nota",
+          descricao: novaAnotacao,
+        });
+      }
 
-    setNovaAnotacao("");
-    await loadData();
+      setNovaAnotacao("");
+      await loadData();
+    } catch (error) {
+      console.error("Erro ao adicionar anotação:", error);
+      alert("Erro ao adicionar anotação");
+    }
   };
 
   const handleSairModo = () => {

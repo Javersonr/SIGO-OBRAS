@@ -47,57 +47,26 @@ export default function HistoricoCotacoes() {
         }
 
         const userData = safeParseJSON(customAuth, {});
-        if (!userData || userData.perfil !== "Fornecedor") {
+        if (!userData || userData.perfil !== "Fornecedor" || !userData.portal_token) {
           navigate(createPageUrl("EntrarSistema"), { replace: true });
           return;
         }
 
-        // Carregar empresa
-        const empresas = await sigo.entities.Empresa.filter({ id: userData.empresa_id });
-        if (empresas.length > 0) setEmpresa(empresas[0]);
-
-        // Buscar fornecedor
-        let fornecedorId = userData.fornecedor_id;
-        if (!fornecedorId) {
-          const fornecedores = await sigo.entities.Fornecedor.filter({
-            empresa_id: userData.empresa_id,
-            email: userData.email,
-          });
-          if (fornecedores.length === 0) {
-            setLoading(false);
-            return;
-          }
-          fornecedorId = fornecedores[0].id;
-          setFornecedor(fornecedores[0]);
-        } else {
-          const fornecedores = await sigo.entities.Fornecedor.filter({ id: fornecedorId });
-          if (fornecedores.length > 0) setFornecedor(fornecedores[0]);
-        }
-
-        // Buscar todas as cotações em que este fornecedor participou
-        const participacoes = await sigo.entities.CotacaoFornecedor.filter({
-          fornecedor_id: fornecedorId,
+        // Tudo via Edge Function service-role: sob RLS o fornecedor é `anon`, então
+        // a function valida o portal_token e devolve empresa + fornecedor + cotações.
+        const { data } = await sigo.functions.invoke("portalFornecedorCotacoes", {
+          portal_token: userData.portal_token,
         });
 
-        if (participacoes.length === 0) {
-          setLoading(false);
+        if (!data?.success) {
+          // token expirado/inválido → de volta ao login
+          navigate(createPageUrl("EntrarSistema"), { replace: true });
           return;
         }
 
-        // Buscar dados das cotações
-        const cotacoesPromises = participacoes.map((p) =>
-          sigo.entities.Cotacao.filter({ id: p.cotacao_id }).then((res) => ({
-            cotacao: res[0],
-            participacao: p,
-          }))
-        );
-        const results = await Promise.all(cotacoesPromises);
-        const dados = results
-          .filter((r) => r.cotacao)
-          .map((r) => ({ ...r.cotacao, participacao: r.participacao }))
-          .sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
-
-        setCotacoesFornecedor(dados);
+        if (data.empresa) setEmpresa(data.empresa);
+        if (data.fornecedor) setFornecedor(data.fornecedor);
+        setCotacoesFornecedor(data.cotacoes || []);
       } catch (error) {
         console.error("Erro ao carregar histórico:", error);
       } finally {
@@ -126,8 +95,8 @@ export default function HistoricoCotacoes() {
     try {
       const token = cotacao.participacao?.token;
       if (token) {
-        // Usa o backend function que já enriquece os itens com código
-        const result = await sigo.functions.invoke("carregarCotacaoFornecedor", { token });
+        // Edge Function service-role: enriquece os itens com código (RLS-safe)
+        const result = await sigo.functions.invoke("portalFornecedorCotacao", { token });
         const data = result.data;
         setSelectedCotacao({
           ...cotacao,
@@ -135,15 +104,8 @@ export default function HistoricoCotacoes() {
           respostas: data.respostas || [],
         });
       } else {
-        // Fallback sem token
-        const [itens, respostas] = await Promise.all([
-          sigo.entities.CotacaoItem.filter({ cotacao_id: cotacao.id }),
-          sigo.entities.CotacaoResposta.filter({
-            cotacao_id: cotacao.id,
-            fornecedor_id: cotacao.participacao.fornecedor_id,
-          }),
-        ]);
-        setSelectedCotacao({ ...cotacao, itens, respostas });
+        // Sem token não dá pra carregar os itens com segurança sob RLS
+        setSelectedCotacao({ ...cotacao, itens: [], respostas: [] });
       }
     } catch (error) {
       console.error("Erro ao carregar detalhes:", error);

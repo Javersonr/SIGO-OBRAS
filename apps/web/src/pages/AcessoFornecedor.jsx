@@ -86,7 +86,7 @@ export default function AcessoFornecedor() {
 
   const loadCotacao = async (t) => {
     try {
-      const result = await sigo.functions.invoke("carregarCotacaoFornecedor", { token: t });
+      const result = await sigo.functions.invoke("portalFornecedorCotacao", { token: t });
       const data = result.data;
 
       if (!data || data.error) {
@@ -126,7 +126,7 @@ export default function AcessoFornecedor() {
 
       // Marcar como visualizada
       if (data.cotacaoFornecedor?.status === "Enviada") {
-        await sigo.functions.invoke("carregarCotacaoFornecedor", {
+        await sigo.functions.invoke("portalFornecedorCotacao", {
           token: t,
           marcar_visualizada: true,
         });
@@ -159,7 +159,7 @@ export default function AcessoFornecedor() {
     try {
       for (const file of files) {
         const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-        const arquivo = await sigo.functions.invoke("salvarRespostaFornecedor", {
+        const arquivo = await sigo.functions.invoke("portalFornecedorResposta", {
           token,
           action: "upload_arquivo",
           arquivo: {
@@ -188,7 +188,7 @@ export default function AcessoFornecedor() {
     }
     setEnviando(true);
     try {
-      const result = await sigo.functions.invoke("salvarRespostaFornecedor", {
+      const result = await sigo.functions.invoke("portalFornecedorResposta", {
         token,
         action: "impossivel",
         motivo_recusa: motivoRecusa,
@@ -224,7 +224,7 @@ export default function AcessoFornecedor() {
 
     setEnviando(true);
     try {
-      const result = await sigo.functions.invoke("salvarRespostaFornecedor", {
+      const result = await sigo.functions.invoke("portalFornecedorResposta", {
         token,
         action: "responder",
         respostas,

@@ -1,7 +1,7 @@
 -- ============================================================================
--- ROLLBACK da 0047 — re-desabilita a RLS em tudo (volta ao estado da 0026)
+-- ROLLBACK da 0048 — re-desabilita a RLS em tudo (volta ao estado da 0026)
 -- ============================================================================
--- Use IMEDIATAMENTE se, após aplicar a 0047, algo quebrar (usuário vê dados
+-- Use IMEDIATAMENTE se, após aplicar a 0048, algo quebrar (usuário vê dados
 -- vazios, portal fora do ar, etc.). Devolve o sistema ao comportamento atual
 -- (RLS off, segurança só nas Edge Functions + service role).
 --

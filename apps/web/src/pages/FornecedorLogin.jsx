@@ -44,20 +44,24 @@ export default function FornecedorLogin() {
     setLoading(true);
 
     try {
-      const { data } = await sigo.functions.invoke("autenticarFornecedor", {
+      const { data } = await sigo.functions.invoke("portalFornecedorLogin", {
         email: email.toLowerCase(),
         senha,
       });
 
       if (data.success) {
-        // Salvar dados do fornecedor no sessionStorage
+        // Mesma forma do EntrarSistema: custom_auth com perfil Fornecedor +
+        // portal_token (HMAC) que as functions de cotação validam.
         sessionStorage.setItem(
-          "fornecedor_auth",
+          "custom_auth",
           JSON.stringify({
+            id: data.fornecedor_id,
             fornecedor_id: data.fornecedor_id,
-            fornecedor_nome: data.fornecedor_nome,
+            nome_completo: data.fornecedor_nome,
             email: data.email,
             empresa_id: data.empresa_id,
+            perfil: "Fornecedor",
+            portal_token: data.portal_token,
           })
         );
 
