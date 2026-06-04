@@ -226,6 +226,19 @@
         outline: 3px solid #0ea5e9;
         outline-offset: 1px;
       }
+      .node.warn {
+        outline: 2px dashed #ef4444;
+        outline-offset: 1px;
+      }
+      .node .nwarn {
+        color: #b91c1c;
+        font-weight: 600;
+      }
+      #health {
+        font-size: 12px;
+        margin: 6px 0 2px;
+        line-height: 1.5;
+      }
       .node b {
         display: block;
         margin-bottom: 2px;
@@ -341,6 +354,7 @@
 
       <div class="card">
         <h2 id="canvasTitle">Fluxograma — arraste as etapas</h2>
+        <div id="health"></div>
         <div id="canvas"></div>
         <div class="legend">
           <span>⬜ etapa</span><span style="color: #b45309">◇ decisão</span>
@@ -617,6 +631,9 @@
             <div class="row">
               <span class="num">${i + 1}</span>
               <input value="${escapeAttr(s.nome)}" placeholder="Nome da etapa" oninput="upd('${s.id}','nome',this.value)" />
+              <button class="ghost" title="subir" onclick="moveStep('${s.id}',-1)">↑</button>
+              <button class="ghost" title="descer" onclick="moveStep('${s.id}',1)">↓</button>
+              <button class="ghost" title="duplicar" onclick="dupStep('${s.id}')">⧉</button>
               <button class="ghost danger" title="remover" onclick="del('${s.id}')">🗑</button>
             </div>
             <div class="grid2">
@@ -633,6 +650,38 @@
           `;
           el.appendChild(d);
         });
+      }
+
+      // diagnóstico de uma etapa: "" = ok; texto = o que falta
+      function stepWarning(proc, s) {
+        const outs = (proc.links || []).filter((l) => l.from === s.id);
+        if (s.tipo === "decisao") {
+          if (outs.length === 0) return "decisão sem opções";
+          if (outs.some((l) => !l.to)) return "opção sem destino";
+          if (outs.some((l) => !l.label)) return "opção sem rótulo";
+          return "";
+        }
+        if (s.tipo === "fim") return "";
+        // inicio / etapa precisam de pelo menos uma saída ligada
+        if (!outs.some((l) => l.to)) return "sem ligação de saída";
+        return "";
+      }
+      function renderHealth(proc) {
+        const el = document.getElementById("health");
+        if (!el) return;
+        const probs = proc.steps.map((s) => ({ s, w: stepWarning(proc, s) })).filter((o) => o.w);
+        if (!probs.length) {
+          el.innerHTML = `<span style="color:#059669">✓ Fluxo completo: toda etapa tem saída e as decisões têm destino.</span>`;
+          return;
+        }
+        el.innerHTML =
+          `<span style="color:#b91c1c">⚠ ${probs.length} ponto(s) a revisar:</span> ` +
+          probs
+            .map(
+              (o) =>
+                `<span style="color:#334155">${escapeHTML(o.s.nome)}</span> <span style="color:#94a3b8">(${o.w})</span>`
+            )
+            .join(" · ");
       }
 
       // ---------- render canvas (drag) ----------
@@ -653,7 +702,10 @@
           maxY = 520;
         proc.steps.forEach((s, i) => {
           const n = document.createElement("div");
-          n.className = "node tipo-" + s.tipo + (s.id === selSource ? " sel" : "");
+          const warn = stepWarning(proc, s);
+          n.className =
+            "node tipo-" + s.tipo + (s.id === selSource ? " sel" : "") + (warn ? " warn" : "");
+          if (warn) n.title = "Revisar: " + warn;
           n.style.left = s.x + "px";
           n.style.top = s.y + "px";
           const exitsTxt =
@@ -672,7 +724,8 @@
             `<b>${i + 1}. ${escapeHTML(s.nome)}</b>` +
             (s.responsavel ? `<div class="nrole">👤 ${escapeHTML(s.responsavel)}</div>` : "") +
             (s.aprova ? `<div class="nap">✔ ${escapeHTML(s.aprova)}</div>` : "") +
-            exitsTxt;
+            exitsTxt +
+            (warn ? `<div class="nwarn">⚠ ${escapeHTML(warn)}</div>` : "");
           canvas.appendChild(n);
           nodeElsById[s.id] = n;
           attachDrag(n, s);
@@ -726,6 +779,7 @@
           linkEls[lk.id] = { line, del, lbl, from: lk.from, to: lk.to };
         });
         drawLinks();
+        renderHealth(proc);
       }
       function drawLinks() {
         Object.values(linkEls).forEach(({ line, del, lbl, from, to }) => {
@@ -955,6 +1009,37 @@
         proc.steps.push(s);
         if (!Array.isArray(proc.links)) proc.links = [];
         if (last) proc.links.push({ id: uid("l"), from: last.id, to: s.id });
+        save();
+        renderSteps();
+        renderCanvas();
+      }
+      // reordena a etapa na lista (muda a numeração; as ligações seguem pelos ids)
+      function moveStep(id, dir) {
+        const proc = state.processes[state.activeProcess];
+        const i = proc.steps.findIndex((x) => x.id === id);
+        const j = i + dir;
+        if (i < 0 || j < 0 || j >= proc.steps.length) return;
+        const t = proc.steps[i];
+        proc.steps[i] = proc.steps[j];
+        proc.steps[j] = t;
+        save();
+        renderSteps();
+        renderCanvas();
+      }
+      // duplica a etapa logo abaixo (sem copiar as ligações, pra não criar setas erradas)
+      function dupStep(id) {
+        const proc = state.processes[state.activeProcess];
+        const i = proc.steps.findIndex((x) => x.id === id);
+        if (i < 0) return;
+        const s = proc.steps[i];
+        const copy = {
+          ...s,
+          id: uid(),
+          nome: s.nome + " (cópia)",
+          x: (s.x || 80) + 30,
+          y: (s.y || 20) + 30,
+        };
+        proc.steps.splice(i + 1, 0, copy);
         save();
         renderSteps();
         renderCanvas();
