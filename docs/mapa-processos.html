@@ -5,18 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SIGO Obras — Mapa de Processos (editor)</title>
     <style>
-      :root {
-        --bg: #0f172a;
-        --panel: #1e293b;
-        --panel2: #334155;
-        --line: #475569;
-        --txt: #e2e8f0;
-        --muted: #94a3b8;
-        --accent: #38bdf8;
-        --ok: #34d399;
-        --warn: #fbbf24;
-        --danger: #f87171;
-      }
       * {
         box-sizing: border-box;
       }
@@ -32,17 +20,17 @@
         color: #0f172a;
       }
       header {
-        background: var(--bg);
-        color: var(--txt);
-        padding: 14px 20px;
+        background: #0f172a;
+        color: #e2e8f0;
+        padding: 12px 20px;
       }
       header h1 {
         margin: 0;
-        font-size: 18px;
+        font-size: 17px;
       }
       header p {
         margin: 4px 0 0;
-        color: var(--muted);
+        color: #94a3b8;
         font-size: 13px;
       }
       .toolbar {
@@ -54,7 +42,7 @@
         border-bottom: 1px solid #e2e8f0;
         position: sticky;
         top: 0;
-        z-index: 5;
+        z-index: 9;
       }
       button {
         cursor: pointer;
@@ -73,23 +61,28 @@
         border-color: #0284c7;
         color: #fff;
       }
+      button.on {
+        background: #0f172a;
+        color: #fff;
+        border-color: #0f172a;
+      }
       button.ghost {
         border-color: transparent;
         background: transparent;
         padding: 4px 8px;
       }
       button.danger {
-        color: var(--danger);
+        color: #dc2626;
         border-color: #fecaca;
       }
       .wrap {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-        padding: 16px 20px;
+        grid-template-columns: 380px 1fr;
+        gap: 14px;
+        padding: 14px 20px;
         align-items: start;
       }
-      @media (max-width: 1000px) {
+      @media (max-width: 980px) {
         .wrap {
           grid-template-columns: 1fr;
         }
@@ -98,17 +91,17 @@
         background: #fff;
         border: 1px solid #e2e8f0;
         border-radius: 12px;
-        padding: 14px;
+        padding: 12px;
       }
       .card h2 {
-        margin: 0 0 10px;
-        font-size: 15px;
+        margin: 0 0 8px;
+        font-size: 14px;
       }
       .tabs {
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
-        margin-bottom: 12px;
+        margin-bottom: 10px;
       }
       .tab {
         padding: 6px 10px;
@@ -147,51 +140,124 @@
       .step {
         border: 1px solid #e2e8f0;
         border-radius: 10px;
-        padding: 10px;
-        margin-bottom: 10px;
+        padding: 8px;
+        margin-bottom: 8px;
         background: #f8fafc;
       }
       .step .row {
         display: flex;
-        gap: 8px;
+        gap: 6px;
         align-items: center;
         margin-bottom: 6px;
       }
       .step .num {
         font-weight: 700;
-        color: var(--muted);
-        min-width: 22px;
+        color: #94a3b8;
+        min-width: 20px;
       }
       input,
       select,
       textarea {
         font: inherit;
-        padding: 6px 8px;
+        padding: 5px 7px;
         border: 1px solid #cbd5e1;
         border-radius: 8px;
         width: 100%;
         background: #fff;
       }
       textarea {
-        min-height: 42px;
+        min-height: 38px;
         resize: vertical;
       }
       .grid2 {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 8px;
+        gap: 6px;
       }
       label.lbl {
         font-size: 11px;
-        color: var(--muted);
+        color: #94a3b8;
         display: block;
         margin-bottom: 2px;
       }
-      .mermaid-wrap {
-        overflow: auto;
-        background: #fff;
+      .hint {
+        font-size: 12px;
+        color: #64748b;
+        margin: 6px 0;
+      }
+      /* ----- canvas ----- */
+      #canvas {
+        position: relative;
+        min-height: 560px;
+        background: #fff radial-gradient(circle, #e2e8f0 1px, transparent 1px) 0 0 / 22px 22px;
+        border: 1px solid #e2e8f0;
         border-radius: 8px;
-        padding: 8px;
+        overflow: auto;
+      }
+      svg.links {
+        position: absolute;
+        top: 0;
+        left: 0;
+      }
+      .node {
+        position: absolute;
+        width: 200px;
+        background: #fff;
+        border: 2px solid #cbd5e1;
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 12px;
+        cursor: grab;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+        user-select: none;
+        z-index: 2;
+      }
+      .node.tipo-decisao {
+        border-color: #f59e0b;
+        background: #fffbeb;
+      }
+      .node.tipo-inicio,
+      .node.tipo-fim {
+        border-color: #10b981;
+        background: #ecfdf5;
+        border-radius: 999px;
+      }
+      .node.sel {
+        outline: 3px solid #0ea5e9;
+        outline-offset: 1px;
+      }
+      .node b {
+        display: block;
+        margin-bottom: 2px;
+      }
+      .node .nrole {
+        color: #0e7490;
+      }
+      .node .nap {
+        color: #92400e;
+      }
+      .linkdel {
+        position: absolute;
+        background: #fee2e2;
+        color: #b91c1c;
+        border-radius: 999px;
+        width: 18px;
+        height: 18px;
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        border: 1px solid #fecaca;
+        z-index: 3;
+      }
+      .legend {
+        font-size: 12px;
+        color: #64748b;
+        margin-top: 8px;
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
       }
       pre.code {
         background: #0f172a;
@@ -201,27 +267,15 @@
         font-size: 12px;
         overflow: auto;
       }
-      .hint {
-        font-size: 12px;
-        color: var(--muted);
-        margin: 6px 0;
-      }
-      .tag {
-        font-size: 11px;
-        padding: 1px 6px;
-        border-radius: 6px;
-        background: #fef3c7;
-        color: #92400e;
-      }
     </style>
   </head>
   <body>
     <header>
       <h1>SIGO Obras — Mapa de Processos (editor)</h1>
       <p>
-        Edite as funções e as etapas de cada processo. O fluxograma atualiza ao vivo. Tudo fica
-        salvo no seu navegador (localStorage). Ao terminar, clique em <b>Exportar JSON</b> e me
-        devolva o arquivo. Este editor NÃO altera o sistema.
+        Arraste as etapas no quadro. Use <b>🔗 Conectar</b> para ligar uma na outra (clique na
+        origem e depois no destino). Edite os campos na lateral. Salva sozinho no navegador. No fim,
+        <b>Exportar JSON</b> e me devolva. Não altera o sistema.
       </p>
     </header>
 
@@ -236,7 +290,8 @@
         onchange="importJSON(event)"
       />
       <button onclick="copyJSON()">📋 Copiar JSON</button>
-      <button onclick="window.print()">🖨 Imprimir</button>
+      <button id="btnConnect" onclick="toggleConnect()">🔗 Conectar</button>
+      <button onclick="autoLayout()">🧹 Auto-organizar</button>
       <button class="danger" onclick="resetAll()">↺ Restaurar padrão</button>
       <span class="hint" id="savedHint" style="margin-left: auto; align-self: center"></span>
     </div>
@@ -256,36 +311,37 @@
           <button onclick="addRole()">+ Função</button>
         </div>
 
-        <h2 style="margin-top: 16px" id="procTitle">Etapas</h2>
-        <div class="hint">
-          Tipo: <b>etapa</b> (retângulo) · <b>decisão</b> (losango) · <b>início/fim</b>. Use ↑/↓
-          para mover. ✔ marca aprovação.
-        </div>
+        <h2 style="margin-top: 14px" id="procTitle">Etapas</h2>
         <div id="steps"></div>
         <button onclick="addStep()">+ Adicionar etapa</button>
       </div>
 
       <div class="card">
-        <h2>Fluxograma ao vivo</h2>
-        <div class="mermaid-wrap" id="diagram">carregando…</div>
-        <details style="margin-top: 10px">
-          <summary class="hint">ver código Mermaid (copiável)</summary>
+        <h2 id="canvasTitle">Fluxograma — arraste as etapas</h2>
+        <div id="canvas"></div>
+        <div class="legend">
+          <span>⬜ etapa</span><span style="color: #b45309">◇ decisão</span>
+          <span style="color: #059669">⬭ início/fim</span><span>👤 responsável · ✔ aprova</span>
+        </div>
+        <details style="margin-top: 8px">
+          <summary class="hint">ver código Mermaid (documentação)</summary>
           <pre class="code" id="mmcode"></pre>
         </details>
       </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
     <script>
       const STORAGE_KEY = "sigo_mapa_processos_v1";
       const TIPOS = ["inicio", "etapa", "decisao", "fim"];
-      let mermaidOK = false;
-      try {
-        mermaid.initialize({ startOnLoad: false, securityLevel: "loose", theme: "default" });
-        mermaidOK = true;
-      } catch (e) {}
+      let connectMode = false;
+      let selSource = null;
+      let nodeElsById = {};
+      let linkEls = {};
 
-      // ---------- estado padrão (pré-preenchido) ----------
+      // ---------- estado padrão ----------
+      function uid(p) {
+        return (p || "s") + Math.random().toString(36).slice(2, 8);
+      }
       function defaultState() {
         const roles = [
           "Diretor",
@@ -303,125 +359,119 @@
           "RH/SST",
         ];
         const S = (nome, responsavel, atividades, aprova, tipo) => ({
-          id: "s" + Math.random().toString(36).slice(2, 8),
+          id: uid(),
           tipo: tipo || "etapa",
           nome,
           responsavel: responsavel || "",
           atividades: atividades || "",
           aprova: aprova || "",
         });
+        const proc = (nome, steps) => ({ nome, steps, links: null });
         return {
-          roles,
           activeProcess: "licitacao_obra",
+          roles,
           processes: {
-            licitacao_obra: {
-              nome: "Licitação → Obra",
-              steps: [
-                S(
-                  "Pesquisar licitações de interesse",
-                  "Analista",
-                  "Busca por palavra-chave/UF/cidade/órgão/valor; triagem"
-                ),
-                S(
-                  "Conferir o edital + checklist de habilitação",
-                  "Analista",
-                  "Ler edital; checklist de documentos; resumir objeto/risco"
-                ),
-                S("Go / No-Go", "Gestor", "Decidir participar", "Gestor", "decisao"),
-                S(
-                  "Montar proposta (Cowork) e anexar",
-                  "Responsável Técnico",
-                  "Planilha de preços; anexa o PDF"
-                ),
-                S("Participar do certame", "Agente de licitações", "Sessão/lances no portal"),
-                S("Resultado", "Agente de licitações", "Ganhou / Perdeu", "", "decisao"),
-                S(
-                  "Contrato + ART + CNO",
-                  "Analista",
-                  "Assinar contrato; emitir ART (nº/CREA); abrir CNO (nº/data)",
-                  "Gestor"
-                ),
-                S(
-                  "Visita de campo",
-                  "Engenharia",
-                  "Vistoria; fotos; medições; restrições; parecer",
-                  "Responsável Técnico"
-                ),
-                S(
-                  "Projeto técnico (se for o caso)",
-                  "Engenharia",
-                  "Memorial; plantas; ART de projeto",
-                  "Gestor",
-                  "decisao"
-                ),
-                S(
-                  "Planejamento da obra",
-                  "Responsável Técnico",
-                  "Cronograma de execução (etapas/datas)"
-                ),
-                S("Compras de materiais", "Compras", "Orçamento → solicitação → cotação → pedido"),
-                S("Execução da obra", "Encarregado", "Tocar a obra; diário de obra"),
-                S("Encerramento", "Gestor", "Termo de recebimento; as-built", "Gestor", "fim"),
-              ],
-            },
-            financeiro: {
-              nome: "Financeiro",
-              steps: [
-                S(
-                  "Lançar despesa/receita",
-                  "Financeiro",
-                  "Cadastro ou importação de comprovantes",
-                  "",
-                  "inicio"
-                ),
-                S("Aprovar pagamento", "Gestor", "Conferir e aprovar", "Gestor"),
-                S("Pagar / Receber", "Financeiro", "Baixa no caixa/banco"),
-                S("Conciliação bancária", "Financeiro", "Casar extrato × lançamentos"),
-                S("Fechamento de caixa", "Financeiro", "Fundo fixo / fechamento diário"),
-                S("DRE / Relatórios", "Gestor", "Apuração do resultado", "", "fim"),
-              ],
-            },
-            rh_sst: {
-              nome: "RH / SST",
-              steps: [
-                S("Admissão", "RH/SST", "Cadastro do funcionário + documentos", "", "inicio"),
-                S("Exames (ASO)", "RH/SST", "ASO admissional/periódico"),
-                S("Treinamentos (NRs)", "RH/SST", "NR-10, NR-35, etc. com validade"),
-                S("Entrega de EPI", "Almoxarife", "Ficha de EPI"),
-                S(
-                  "Controle de vencimentos",
-                  "RH/SST",
-                  "ASO/treinamento/documentos a vencer",
-                  "",
-                  "fim"
-                ),
-              ],
-            },
-            estoque: {
-              nome: "Estoque",
-              steps: [
-                S("Entrada (NFe)", "Almoxarife", "Lançar entrada por NFe", "", "inicio"),
-                S("Reserva p/ obra", "Almoxarife", "Reservar material do orçamento"),
-                S("Retirada", "Encarregado", "Baixa para a obra"),
-                S("Alerta mínimo", "Almoxarife", "Repor abaixo do mínimo"),
-                S("Inventário", "Almoxarife", "Contagem e ajuste", "", "fim"),
-              ],
-            },
-            frota: {
-              nome: "Frota / Ferramental",
-              steps: [
-                S(
-                  "Cadastro de ferramenta/veículo",
-                  "Almoxarife",
-                  "Tombamento/identificação",
-                  "",
-                  "inicio"
-                ),
-                S("Inspeção", "Encarregado", "Checklist de inspeção"),
-                S("Manutenção", "Almoxarife", "Preventiva/corretiva; laudo"),
-                S("Devolução", "Encarregado", "Baixa/retorno", "", "fim"),
-              ],
-            },
+            licitacao_obra: proc("Licitação → Obra", [
+              S(
+                "Pesquisar licitações de interesse",
+                "Analista",
+                "Busca por palavra-chave/UF/cidade/órgão/valor",
+                "",
+                "inicio"
+              ),
+              S(
+                "Conferir edital + checklist de habilitação",
+                "Analista",
+                "Ler edital; checklist de documentos; risco"
+              ),
+              S("Go / No-Go", "Gestor", "Decidir participar", "Gestor", "decisao"),
+              S(
+                "Montar proposta (Cowork) e anexar",
+                "Responsável Técnico",
+                "Planilha de preços; anexa o PDF"
+              ),
+              S("Participar do certame", "Agente de licitações", "Sessão/lances no portal"),
+              S(
+                "Resultado (ganhou/perdeu)",
+                "Agente de licitações",
+                "Registrar colocação/valor",
+                "",
+                "decisao"
+              ),
+              S(
+                "Contrato + ART + CNO",
+                "Analista",
+                "Assinar contrato; ART (nº/CREA); CNO (nº/data)",
+                "Gestor"
+              ),
+              S(
+                "Visita de campo",
+                "Engenharia",
+                "Vistoria; fotos; medições; restrições; parecer",
+                "Responsável Técnico"
+              ),
+              S(
+                "Projeto técnico (se for o caso)",
+                "Engenharia",
+                "Memorial; plantas; ART de projeto",
+                "Gestor",
+                "decisao"
+              ),
+              S(
+                "Planejamento da obra",
+                "Responsável Técnico",
+                "Cronograma de execução (etapas/datas)"
+              ),
+              S("Compras de materiais", "Compras", "Orçamento → solicitação → cotação → pedido"),
+              S("Execução da obra", "Encarregado", "Tocar a obra; diário de obra"),
+              S("Encerramento", "Gestor", "Termo de recebimento; as-built", "Gestor", "fim"),
+            ]),
+            financeiro: proc("Financeiro", [
+              S(
+                "Lançar despesa/receita",
+                "Financeiro",
+                "Cadastro ou importação de comprovantes",
+                "",
+                "inicio"
+              ),
+              S("Aprovar pagamento", "Gestor", "Conferir e aprovar", "Gestor"),
+              S("Pagar / Receber", "Financeiro", "Baixa no caixa/banco"),
+              S("Conciliação bancária", "Financeiro", "Casar extrato × lançamentos"),
+              S("Fechamento de caixa", "Financeiro", "Fundo fixo / fechamento diário"),
+              S("DRE / Relatórios", "Gestor", "Apuração do resultado", "", "fim"),
+            ]),
+            rh_sst: proc("RH / SST", [
+              S("Admissão", "RH/SST", "Cadastro + documentos", "", "inicio"),
+              S("Exames (ASO)", "RH/SST", "ASO admissional/periódico"),
+              S("Treinamentos (NRs)", "RH/SST", "NR-10, NR-35… com validade"),
+              S("Entrega de EPI", "Almoxarife", "Ficha de EPI"),
+              S(
+                "Controle de vencimentos",
+                "RH/SST",
+                "ASO/treinamento/documentos a vencer",
+                "",
+                "fim"
+              ),
+            ]),
+            estoque: proc("Estoque", [
+              S("Entrada (NFe)", "Almoxarife", "Lançar entrada por NFe", "", "inicio"),
+              S("Reserva p/ obra", "Almoxarife", "Reservar material do orçamento"),
+              S("Retirada", "Encarregado", "Baixa para a obra"),
+              S("Alerta mínimo", "Almoxarife", "Repor abaixo do mínimo"),
+              S("Inventário", "Almoxarife", "Contagem e ajuste", "", "fim"),
+            ]),
+            frota: proc("Frota / Ferramental", [
+              S(
+                "Cadastro de ferramenta/veículo",
+                "Almoxarife",
+                "Tombamento/identificação",
+                "",
+                "inicio"
+              ),
+              S("Inspeção", "Encarregado", "Checklist de inspeção"),
+              S("Manutenção", "Almoxarife", "Preventiva/corretiva; laudo"),
+              S("Devolução", "Encarregado", "Baixa/retorno", "", "fim"),
+            ]),
           },
         };
       }
@@ -438,12 +488,24 @@
       }
       function save() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        const h = document.getElementById("savedHint");
-        h.textContent = "salvo " + new Date().toLocaleTimeString("pt-BR");
-        renderDiagram();
+        document.getElementById("savedHint").textContent =
+          "salvo " + new Date().toLocaleTimeString("pt-BR");
+        renderMermaid();
       }
 
-      // ---------- render ----------
+      function ensureLayout(proc) {
+        if (!Array.isArray(proc.links)) {
+          proc.links = [];
+          for (let i = 0; i < proc.steps.length - 1; i++)
+            proc.links.push({ id: uid("l"), from: proc.steps[i].id, to: proc.steps[i + 1].id });
+        }
+        proc.steps.forEach((s, i) => {
+          if (typeof s.x !== "number") s.x = 60 + (i % 2) * 24;
+          if (typeof s.y !== "number") s.y = 20 + i * 92;
+        });
+      }
+
+      // ---------- render lateral ----------
       function renderTabs() {
         const el = document.getElementById("tabs");
         el.innerHTML = "";
@@ -453,6 +515,7 @@
           b.textContent = p.nome;
           b.onclick = () => {
             state.activeProcess = key;
+            selSource = null;
             renderAll();
           };
           el.appendChild(b);
@@ -467,7 +530,6 @@
           c.innerHTML = `<span>${escapeHTML(r)}</span>`;
           const x = document.createElement("button");
           x.textContent = "×";
-          x.title = "remover";
           x.onclick = () => {
             state.roles.splice(i, 1);
             save();
@@ -497,125 +559,232 @@
             <div class="row">
               <span class="num">${i + 1}</span>
               <input value="${escapeAttr(s.nome)}" placeholder="Nome da etapa" oninput="upd('${s.id}','nome',this.value)" />
-              <button class="ghost" title="subir" onclick="move('${s.id}',-1)">↑</button>
-              <button class="ghost" title="descer" onclick="move('${s.id}',1)">↓</button>
               <button class="ghost danger" title="remover" onclick="del('${s.id}')">🗑</button>
             </div>
             <div class="grid2">
-              <div>
-                <label class="lbl">Responsável (função)</label>
-                <select onchange="upd('${s.id}','responsavel',this.value)">${roleOptions(s.responsavel)}</select>
-              </div>
-              <div>
-                <label class="lbl">Aprova (gate) — opcional</label>
-                <select onchange="upd('${s.id}','aprova',this.value)">${roleOptions(s.aprova)}</select>
-              </div>
+              <div><label class="lbl">Responsável</label><select onchange="upd('${s.id}','responsavel',this.value)">${roleOptions(s.responsavel)}</select></div>
+              <div><label class="lbl">Aprova (gate)</label><select onchange="upd('${s.id}','aprova',this.value)">${roleOptions(s.aprova)}</select></div>
             </div>
             <div class="grid2" style="margin-top:6px">
-              <div>
-                <label class="lbl">Tipo</label>
-                <select onchange="upd('${s.id}','tipo',this.value)">
-                  ${TIPOS.map((t) => `<option ${t === s.tipo ? "selected" : ""}>${t}</option>`).join("")}
-                </select>
-              </div>
+              <div><label class="lbl">Tipo</label><select onchange="upd('${s.id}','tipo',this.value)">${TIPOS.map((t) => `<option ${t === s.tipo ? "selected" : ""}>${t}</option>`).join("")}</select></div>
               <div></div>
             </div>
-            <div style="margin-top:6px">
-              <label class="lbl">Atividades / o que captura</label>
-              <textarea oninput="upd('${s.id}','atividades',this.value)" placeholder="Atividades, documentos, anexos…">${escapeHTML(s.atividades)}</textarea>
-            </div>
+            <div style="margin-top:6px"><label class="lbl">Atividades / captura</label>
+              <textarea oninput="upd('${s.id}','atividades',this.value)">${escapeHTML(s.atividades)}</textarea></div>
           `;
           el.appendChild(d);
         });
       }
-      function renderDiagram() {
+
+      // ---------- render canvas (drag) ----------
+      function renderCanvas() {
         const proc = state.processes[state.activeProcess];
-        const code = toMermaid(proc);
-        document.getElementById("mmcode").textContent = code;
-        const target = document.getElementById("diagram");
-        if (!mermaidOK) {
-          target.innerHTML = '<pre class="code">' + escapeHTML(code) + "</pre>";
-          return;
-        }
-        const id = "mmd" + Date.now();
-        mermaid
-          .render(id, code)
-          .then(({ svg }) => {
-            target.innerHTML = svg;
-          })
-          .catch(() => {
-            target.innerHTML = '<pre class="code">' + escapeHTML(code) + "</pre>";
+        ensureLayout(proc);
+        const canvas = document.getElementById("canvas");
+        canvas.innerHTML = "";
+        nodeElsById = {};
+        linkEls = {};
+        const NS = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(NS, "svg");
+        svg.setAttribute("class", "links");
+        svg.innerHTML = `<defs><marker id="arrow" markerWidth="12" markerHeight="12" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L9,3 L0,6 Z" fill="#64748b"/></marker></defs>`;
+        canvas.appendChild(svg);
+
+        let maxX = 700,
+          maxY = 520;
+        proc.steps.forEach((s, i) => {
+          const n = document.createElement("div");
+          n.className = "node tipo-" + s.tipo + (s.id === selSource ? " sel" : "");
+          n.style.left = s.x + "px";
+          n.style.top = s.y + "px";
+          n.innerHTML =
+            `<b>${i + 1}. ${escapeHTML(s.nome)}</b>` +
+            (s.responsavel ? `<div class="nrole">👤 ${escapeHTML(s.responsavel)}</div>` : "") +
+            (s.aprova ? `<div class="nap">✔ ${escapeHTML(s.aprova)}</div>` : "");
+          canvas.appendChild(n);
+          nodeElsById[s.id] = n;
+          attachDrag(n, s);
+          n.addEventListener("click", () => {
+            if (connectMode) handleConnectClick(s);
           });
+          maxX = Math.max(maxX, s.x + 240);
+          maxY = Math.max(maxY, s.y + 120);
+        });
+        svg.setAttribute("width", maxX);
+        svg.setAttribute("height", maxY);
+        canvas.style.minWidth = maxX + "px";
+
+        proc.links.forEach((lk) => {
+          const a = nodeElsById[lk.from],
+            b = nodeElsById[lk.to];
+          if (!a || !b) return;
+          const line = document.createElementNS(NS, "line");
+          line.setAttribute("stroke", "#64748b");
+          line.setAttribute("stroke-width", "2");
+          line.setAttribute("marker-end", "url(#arrow)");
+          svg.appendChild(line);
+          const del = document.createElement("div");
+          del.className = "linkdel";
+          del.textContent = "×";
+          del.title = "remover ligação";
+          del.onclick = (e) => {
+            e.stopPropagation();
+            proc.links = proc.links.filter((x) => x.id !== lk.id);
+            save();
+            renderCanvas();
+          };
+          canvas.appendChild(del);
+          linkEls[lk.id] = { line, del, from: lk.from, to: lk.to };
+        });
+        drawLinks();
+      }
+      function drawLinks() {
+        Object.values(linkEls).forEach(({ line, del, from, to }) => {
+          const a = nodeElsById[from],
+            b = nodeElsById[to];
+          if (!a || !b) return;
+          const ax = a.offsetLeft + a.offsetWidth / 2,
+            ay = a.offsetTop + a.offsetHeight;
+          const bx = b.offsetLeft + b.offsetWidth / 2,
+            by = b.offsetTop;
+          line.setAttribute("x1", ax);
+          line.setAttribute("y1", ay);
+          line.setAttribute("x2", bx);
+          line.setAttribute("y2", by);
+          del.style.left = (ax + bx) / 2 - 9 + "px";
+          del.style.top = (ay + by) / 2 - 9 + "px";
+        });
+      }
+      function attachDrag(el, s) {
+        el.addEventListener("pointerdown", (e) => {
+          if (connectMode) return;
+          const sx = e.clientX,
+            sy = e.clientY,
+            ox = s.x,
+            oy = s.y;
+          el.setPointerCapture(e.pointerId);
+          el.style.cursor = "grabbing";
+          const mv = (ev) => {
+            s.x = Math.max(0, ox + (ev.clientX - sx));
+            s.y = Math.max(0, oy + (ev.clientY - sy));
+            el.style.left = s.x + "px";
+            el.style.top = s.y + "px";
+            drawLinks();
+          };
+          const up = () => {
+            el.style.cursor = "grab";
+            el.removeEventListener("pointermove", mv);
+            el.removeEventListener("pointerup", up);
+            save();
+          };
+          el.addEventListener("pointermove", mv);
+          el.addEventListener("pointerup", up);
+        });
+      }
+      function handleConnectClick(s) {
+        const proc = state.processes[state.activeProcess];
+        if (!selSource) {
+          selSource = s.id;
+          renderCanvas();
+        } else if (selSource === s.id) {
+          selSource = null;
+          renderCanvas();
+        } else {
+          if (!proc.links.some((l) => l.from === selSource && l.to === s.id))
+            proc.links.push({ id: uid("l"), from: selSource, to: s.id });
+          selSource = null;
+          save();
+          renderCanvas();
+        }
+      }
+      function toggleConnect() {
+        connectMode = !connectMode;
+        selSource = null;
+        document.getElementById("btnConnect").classList.toggle("on", connectMode);
+        document.getElementById("canvasTitle").textContent = connectMode
+          ? "Modo conectar — clique na origem e depois no destino"
+          : "Fluxograma — arraste as etapas";
+        renderCanvas();
+      }
+      function autoLayout() {
+        const proc = state.processes[state.activeProcess];
+        proc.steps.forEach((s, i) => {
+          s.x = 60 + (i % 2) * 24;
+          s.y = 20 + i * 92;
+        });
+        save();
+        renderCanvas();
+      }
+      function renderMermaid() {
+        const proc = state.processes[state.activeProcess];
+        const idx = {};
+        proc.steps.forEach((s, i) => (idx[s.id] = "n" + i));
+        let out = "flowchart TD\n";
+        proc.steps.forEach((s, i) => {
+          let t = s.nome || "etapa";
+          if (s.responsavel) t += " — " + s.responsavel;
+          if (s.aprova) t += " ✔" + s.aprova;
+          t = '"' + t.replace(/"/g, "'") + '"';
+          const id = "n" + i;
+          out +=
+            "    " +
+            (s.tipo === "decisao"
+              ? `${id}{${t}}`
+              : s.tipo === "inicio" || s.tipo === "fim"
+                ? `${id}([${t}])`
+                : `${id}[${t}]`) +
+            "\n";
+        });
+        (proc.links || []).forEach((l) => {
+          if (idx[l.from] && idx[l.to]) out += `    ${idx[l.from]} --> ${idx[l.to]}\n`;
+        });
+        document.getElementById("mmcode").textContent = out;
       }
       function renderAll() {
         renderTabs();
         renderRoles();
         renderSteps();
-        renderDiagram();
-      }
-
-      // ---------- mermaid ----------
-      function toMermaid(proc) {
-        let out = "flowchart TD\n";
-        const nid = (i) => "n" + i;
-        const lbl = (s) => {
-          let t = s.nome || "etapa";
-          if (s.responsavel) t += " — " + s.responsavel;
-          if (s.aprova) t += " ✔" + s.aprova;
-          return t.replace(/"/g, "'").replace(/\n/g, " ");
-        };
-        proc.steps.forEach((s, i) => {
-          const id = nid(i);
-          const L = `"${lbl(s)}"`;
-          let node;
-          if (s.tipo === "decisao") node = `${id}{${L}}`;
-          else if (s.tipo === "inicio" || s.tipo === "fim") node = `${id}([${L}])`;
-          else node = `${id}[${L}]`;
-          out += "    " + node + "\n";
-        });
-        for (let i = 0; i < proc.steps.length - 1; i++) {
-          out += `    ${nid(i)} --> ${nid(i + 1)}\n`;
-        }
-        return out;
+        renderCanvas();
+        renderMermaid();
       }
 
       // ---------- ações ----------
       function upd(id, field, val) {
         const proc = state.processes[state.activeProcess];
         const s = proc.steps.find((x) => x.id === id);
-        if (s) {
-          s[field] = val;
-          save();
-        }
-      }
-      function move(id, dir) {
-        const proc = state.processes[state.activeProcess];
-        const i = proc.steps.findIndex((x) => x.id === id);
-        const j = i + dir;
-        if (i < 0 || j < 0 || j >= proc.steps.length) return;
-        const [it] = proc.steps.splice(i, 1);
-        proc.steps.splice(j, 0, it);
+        if (!s) return;
+        s[field] = val;
         save();
-        renderSteps();
+        if (field === "nome" || field === "responsavel" || field === "aprova" || field === "tipo")
+          renderCanvas();
       }
       function del(id) {
         const proc = state.processes[state.activeProcess];
         proc.steps = proc.steps.filter((x) => x.id !== id);
+        proc.links = (proc.links || []).filter((l) => l.from !== id && l.to !== id);
         save();
         renderSteps();
+        renderCanvas();
       }
       function addStep() {
         const proc = state.processes[state.activeProcess];
-        proc.steps.push({
-          id: "s" + Math.random().toString(36).slice(2, 8),
+        const last = proc.steps[proc.steps.length - 1];
+        const s = {
+          id: uid(),
           tipo: "etapa",
           nome: "Nova etapa",
           responsavel: "",
           atividades: "",
           aprova: "",
-        });
+          x: last ? last.x : 60,
+          y: last ? last.y + 92 : 20,
+        };
+        proc.steps.push(s);
+        if (!Array.isArray(proc.links)) proc.links = [];
+        if (last) proc.links.push({ id: uid("l"), from: last.id, to: s.id });
         save();
         renderSteps();
+        renderCanvas();
       }
       function addRole() {
         const v = document.getElementById("newRole").value.trim();
@@ -627,7 +796,7 @@
         }
       }
       function resetAll() {
-        if (confirm("Restaurar o mapa padrão? Perde as suas edições.")) {
+        if (confirm("Restaurar o mapa padrão? Perde suas edições.")) {
           state = defaultState();
           save();
           renderAll();
@@ -659,13 +828,12 @@
               alert("Importado!");
             } else alert("JSON inválido.");
           } catch (e) {
-            alert("Erro ao ler JSON: " + e.message);
+            alert("Erro: " + e.message);
           }
         };
         r.readAsText(f);
       }
 
-      // ---------- util ----------
       function escapeHTML(s) {
         return String(s || "").replace(
           /[&<>]/g,
