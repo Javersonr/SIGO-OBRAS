@@ -86,6 +86,9 @@ Deno.serve(async (req) => {
     if (body.municipio) {
       query = query.ilike("municipio", `%${String(body.municipio).trim()}%`);
     }
+    if (body.orgao) {
+      query = query.ilike("orgao", `%${String(body.orgao).trim()}%`);
+    }
     if (body.valor_min !== undefined && body.valor_min !== null && body.valor_min !== "") {
       query = query.gte("valor", Number(body.valor_min));
     }

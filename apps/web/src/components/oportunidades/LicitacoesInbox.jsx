@@ -49,6 +49,7 @@ const fmtData = (iso) => {
 const FILTROS_VAZIOS = {
   uf: "",
   municipio: "",
+  orgao: "",
   valorMin: "",
   valorMax: "",
   dataIni: "",
@@ -83,6 +84,7 @@ export default function LicitacoesInbox() {
           q: busca || undefined,
           uf: filtros.uf || undefined,
           municipio: filtros.municipio || undefined,
+          orgao: filtros.orgao || undefined,
           valor_min: filtros.valorMin || undefined,
           valor_max: filtros.valorMax || undefined,
           data_ini: filtros.dataIni || undefined,
@@ -328,6 +330,15 @@ export default function LicitacoesInbox() {
               placeholder="Ex.: Belo Horizonte"
               value={filtros.municipio}
               onChange={(e) => setFiltros((f) => ({ ...f, municipio: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">Órgão</label>
+            <Input
+              className="w-52"
+              placeholder="Ex.: Prefeitura, CEMIG…"
+              value={filtros.orgao}
+              onChange={(e) => setFiltros((f) => ({ ...f, orgao: e.target.value }))}
             />
           </div>
           <div>
