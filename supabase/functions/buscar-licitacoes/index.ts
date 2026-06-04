@@ -19,6 +19,7 @@
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail } from "../_shared/cors.ts";
+import { filtrarTerminaisDuplicados } from "../_shared/licitacoes-dedup.ts";
 
 const API_BASE = "https://alertalicitacao.com.br/api/v1/licitacoesAbertas/";
 const TOKEN = Deno.env.get("ALERTA_LICITACAO_TOKEN") ?? "";
@@ -158,7 +159,7 @@ Deno.serve(async (req) => {
           .in("id_licitacao", ids);
         const existSet = new Set((existentes || []).map((e) => e.id_licitacao));
 
-        const rows = ids
+        let rows = ids
           .filter((id) => !existSet.has(id))
           .map((id) => byId.get(id)!)
           .map((l) => ({
@@ -183,6 +184,10 @@ Deno.serve(async (req) => {
           }))
           // só de hoje pra frente: descarta as com abertura já passada (mantém sem data)
           .filter((r) => !r.abertura || (r.abertura as string) >= hojeBRT);
+
+        // Cross-source: não re-inserir como "Nova" algo já Excluído/Convertido
+        // (mesmo vindo da outra fonte com id_licitacao diferente).
+        rows = await filtrarTerminaisDuplicados(supabase, busca.empresa_id, rows);
 
         if (rows.length > 0) {
           const { data: ins, error: insErr } = await supabase

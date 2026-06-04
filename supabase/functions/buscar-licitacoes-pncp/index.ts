@@ -18,6 +18,7 @@
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail } from "../_shared/cors.ts";
 import { parseKeywords, matchKeywords } from "../_shared/keywords.ts";
+import { filtrarTerminaisDuplicados } from "../_shared/licitacoes-dedup.ts";
 
 // publicacao = por data de publicação (incremental, cron diário)
 // proposta   = com período de recebimento de proposta EM ABERTO (botão "Buscar agora")
@@ -234,7 +235,11 @@ Deno.serve(async (req) => {
           .eq("empresa_id", busca.empresa_id)
           .in("id_licitacao", ids);
         const existSet = new Set((existentes || []).map((e) => e.id_licitacao));
-        const rows = ids.filter((id) => !existSet.has(id)).map((id) => byId.get(id)!);
+        let rows = ids.filter((id) => !existSet.has(id)).map((id) => byId.get(id)!);
+
+        // Cross-source: não re-inserir como "Nova" algo já Excluído/Convertido
+        // (mesmo vindo da outra fonte — ex.: você excluiu a do Alerta).
+        rows = await filtrarTerminaisDuplicados(supabase, busca.empresa_id, rows);
 
         if (rows.length > 0) {
           const { data: ins, error: insErr } = await supabase
