@@ -22,6 +22,7 @@ import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail } from "../_shared/cors.ts";
 import { parseKeywords, matchKeywords } from "../_shared/keywords.ts";
 import { getCallerFromJWT, empresaIdEfetivo } from "../_shared/auth-jwt.ts";
+import { idsNovasDuplicadas } from "../_shared/licitacoes-dedup.ts";
 
 const PERFIS_GESTOR = ["Admin", "Admin Holding", "Gestor"];
 const ORIGEM_LICITACAO = "Licitação (Alerta Licitação)";
@@ -147,6 +148,22 @@ Deno.serve(async (req) => {
   }
 
   // -------------------------------------------------------------------------
+  // LIMPAR EXCLUÍDAS — esvazia a aba "Excluídas" de vez (soft-delete: somem da
+  // lista; deixam de ser recuperáveis pela tela).
+  // -------------------------------------------------------------------------
+  if (action === "limpar_excluidas") {
+    const { data, error } = await supabase
+      .from("licitacao_encontrada")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("empresa_id", empresa_id)
+      .eq("status", "Excluída")
+      .is("deleted_at", null)
+      .select("id");
+    if (error) return fail("Erro ao limpar excluídas: " + error.message, 500);
+    return ok({ removidas: (data || []).length });
+  }
+
+  // -------------------------------------------------------------------------
   // RESTAURAR EM LOTE — volta as Excluídas pra "Nova" (limpa rastros do fluxo).
   // -------------------------------------------------------------------------
   if (action === "restaurar_lote") {
@@ -240,9 +257,7 @@ Deno.serve(async (req) => {
       .limit(1);
     const palavras = (busca || [])[0]?.palavras_chave || "";
     const kw = parseKeywords(palavras);
-    if (kw.includes.length === 0 && kw.excludes.length === 0) {
-      return fail("Sem palavras-chave na config — nada a filtrar.", 400);
-    }
+    const temKw = kw.includes.length > 0 || kw.excludes.length > 0;
 
     // pega só as Novas (id + textos + abertura) e decide quais NÃO casam
     const { data: novas, error: nErr } = await supabase
@@ -254,15 +269,18 @@ Deno.serve(async (req) => {
       .limit(5000);
     if (nErr) return fail("Erro lendo Novas: " + nErr.message, 500);
 
-    // remove as que NÃO casam com as palavras-chave OU que já têm abertura no passado
+    // remove: (a) as que não casam com a palavra-chave (se houver) ou já passaram,
+    // e (b) duplicatas de conteúdo (a mesma licitação 2× entre Alerta e PNCP).
     const hojeLimpa = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
-    const fora = (novas || [])
+    const foraKw = (novas || [])
       .filter(
         (l) =>
-          !matchKeywords(`${l.titulo || ""} ${l.objeto || ""} ${l.orgao || ""}`, kw) ||
+          (temKw && !matchKeywords(`${l.titulo || ""} ${l.objeto || ""} ${l.orgao || ""}`, kw)) ||
           (l.abertura && String(l.abertura) < hojeLimpa)
       )
       .map((l) => l.id);
+    const dupIds = await idsNovasDuplicadas(supabase, empresa_id);
+    const fora = [...new Set([...foraKw, ...dupIds])];
 
     let removidas = 0;
     // remove em blocos de 200 ids

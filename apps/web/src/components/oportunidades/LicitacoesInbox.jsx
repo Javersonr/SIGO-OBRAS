@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/api/sigoClient";
+import { safeUrl } from "@/lib/safe-url";
 import { useEmpresa } from "../../Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -112,10 +113,22 @@ export default function LicitacoesInbox() {
   const handleBuscarAgora = async () => {
     setBuscando(true);
     try {
-      const [alerta, pncp] = await Promise.allSettled([
-        supabase.functions.invoke("buscar-licitacoes", { body: { full: true } }),
-        supabase.functions.invoke("buscar-licitacoes-pncp", { body: { aberto: true } }),
-      ]);
+      // SEQUENCIAL (não paralelo): a 2ª fonte (PNCP) precisa enxergar o que a 1ª
+      // (Alerta) acabou de inserir, senão as duas criam a MESMA licitação ao
+      // mesmo tempo (duplicata). Com a dedup por conteúdo, em sequência não dup.
+      const settle = (p) =>
+        p
+          .then((value) => ({ status: "fulfilled", value }))
+          .catch((reason) => ({
+            status: "rejected",
+            reason,
+          }));
+      const alerta = await settle(
+        supabase.functions.invoke("buscar-licitacoes", { body: { full: true } })
+      );
+      const pncp = await settle(
+        supabase.functions.invoke("buscar-licitacoes-pncp", { body: { aberto: true } })
+      );
       const novasDe = (res) => {
         if (res.status !== "fulfilled" || res.value?.error) return 0;
         const r = (res.value?.data?.resumo || []).find((x) => x.empresa_id === empresaAtiva?.id);
@@ -256,6 +269,24 @@ export default function LicitacoesInbox() {
       carregar();
     } catch (err) {
       toast.error("Erro ao limpar: " + (err?.message || err));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const limparExcluidas = async () => {
+    if (!window.confirm("Limpar TODAS as excluídas? Elas somem da lista de vez.")) return;
+    setBulkBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("licitacoes-triagem", {
+        body: { action: "limpar_excluidas", empresa_id: empresaAtiva.id },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`${data?.removidas ?? 0} excluída(s) removida(s) de vez.`);
+      carregar();
+    } catch (err) {
+      toast.error("Erro ao limpar excluídas: " + (err?.message || err));
     } finally {
       setBulkBusy(false);
     }
@@ -466,6 +497,23 @@ export default function LicitacoesInbox() {
               <FilterX className="w-4 h-4" /> Limpar fora do filtro
             </Button>
           )}
+          {statusFiltro === "Excluída" && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={limparExcluidas}
+              disabled={bulkBusy}
+              className="gap-1.5 text-rose-600"
+              title="Esvazia a aba Excluídas de vez"
+            >
+              {bulkBusy ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
+              Limpar excluídas
+            </Button>
+          )}
         </div>
       )}
 
@@ -543,7 +591,7 @@ export default function LicitacoesInbox() {
                         </span>
                         {lic.link_externo && (
                           <a
-                            href={lic.link_externo}
+                            href={safeUrl(lic.link_externo)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
@@ -569,19 +617,22 @@ export default function LicitacoesInbox() {
                               <Eye className="w-4 h-4" /> Analisar
                             </Button>
                           )}
-                          <Button
-                            size="sm"
-                            disabled={busy(lic)}
-                            onClick={() => virarOportunidade(lic)}
-                            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
-                          >
-                            {busy(lic) ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Send className="w-4 h-4" />
-                            )}
-                            Virar oportunidade
-                          </Button>
+                          {/* Só vira oportunidade DEPOIS de analisar o edital */}
+                          {lic.status === "Em análise" && (
+                            <Button
+                              size="sm"
+                              disabled={busy(lic)}
+                              onClick={() => virarOportunidade(lic)}
+                              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                            >
+                              {busy(lic) ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Send className="w-4 h-4" />
+                              )}
+                              Virar oportunidade
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="ghost"

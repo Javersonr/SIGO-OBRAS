@@ -18,7 +18,7 @@
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail } from "../_shared/cors.ts";
 import { parseKeywords, matchKeywords } from "../_shared/keywords.ts";
-import { filtrarTerminaisDuplicados } from "../_shared/licitacoes-dedup.ts";
+import { filtrarConteudoDuplicado } from "../_shared/licitacoes-dedup.ts";
 
 // publicacao = por data de publicação (incremental, cron diário)
 // proposta   = com período de recebimento de proposta EM ABERTO (botão "Buscar agora")
@@ -239,7 +239,7 @@ Deno.serve(async (req) => {
 
         // Cross-source: não re-inserir como "Nova" algo já Excluído/Convertido
         // (mesmo vindo da outra fonte — ex.: você excluiu a do Alerta).
-        rows = await filtrarTerminaisDuplicados(supabase, busca.empresa_id, rows);
+        rows = await filtrarConteudoDuplicado(supabase, busca.empresa_id, rows);
 
         if (rows.length > 0) {
           const { data: ins, error: insErr } = await supabase

@@ -19,7 +19,7 @@
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail } from "../_shared/cors.ts";
-import { filtrarTerminaisDuplicados } from "../_shared/licitacoes-dedup.ts";
+import { filtrarConteudoDuplicado } from "../_shared/licitacoes-dedup.ts";
 
 const API_BASE = "https://alertalicitacao.com.br/api/v1/licitacoesAbertas/";
 const TOKEN = Deno.env.get("ALERTA_LICITACAO_TOKEN") ?? "";
@@ -187,7 +187,7 @@ Deno.serve(async (req) => {
 
         // Cross-source: não re-inserir como "Nova" algo já Excluído/Convertido
         // (mesmo vindo da outra fonte com id_licitacao diferente).
-        rows = await filtrarTerminaisDuplicados(supabase, busca.empresa_id, rows);
+        rows = await filtrarConteudoDuplicado(supabase, busca.empresa_id, rows);
 
         if (rows.length > 0) {
           const { data: ins, error: insErr } = await supabase
