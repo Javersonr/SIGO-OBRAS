@@ -251,6 +251,18 @@
         border: 1px solid #fecaca;
         z-index: 3;
       }
+      .linklbl {
+        position: absolute;
+        background: #fff;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        padding: 0 5px;
+        font-size: 11px;
+        color: #334155;
+        cursor: pointer;
+        z-index: 3;
+        white-space: nowrap;
+      }
       .legend {
         font-size: 12px;
         color: #64748b;
@@ -639,12 +651,22 @@
             renderCanvas();
           };
           canvas.appendChild(del);
-          linkEls[lk.id] = { line, del, from: lk.from, to: lk.to };
+          const lbl = document.createElement("div");
+          lbl.className = "linklbl";
+          lbl.textContent = lk.label ? lk.label : "+ rótulo";
+          if (!lk.label) lbl.style.opacity = "0.5";
+          lbl.title = "editar rótulo da saída (ex.: Sim / Não / Aprovado)";
+          lbl.onclick = (e) => {
+            e.stopPropagation();
+            editLinkLabel(lk.id);
+          };
+          canvas.appendChild(lbl);
+          linkEls[lk.id] = { line, del, lbl, from: lk.from, to: lk.to };
         });
         drawLinks();
       }
       function drawLinks() {
-        Object.values(linkEls).forEach(({ line, del, from, to }) => {
+        Object.values(linkEls).forEach(({ line, del, lbl, from, to }) => {
           const a = nodeElsById[from],
             b = nodeElsById[to];
           if (!a || !b) return;
@@ -656,8 +678,14 @@
           line.setAttribute("y1", ay);
           line.setAttribute("x2", bx);
           line.setAttribute("y2", by);
-          del.style.left = (ax + bx) / 2 - 9 + "px";
-          del.style.top = (ay + by) / 2 - 9 + "px";
+          const mx = (ax + bx) / 2,
+            my = (ay + by) / 2;
+          del.style.left = mx - 9 + "px";
+          del.style.top = my - 24 + "px";
+          if (lbl) {
+            lbl.style.left = mx - lbl.offsetWidth / 2 + "px";
+            lbl.style.top = my - 8 + "px";
+          }
         });
       }
       function attachDrag(el, s) {
@@ -695,12 +723,29 @@
           selSource = null;
           renderCanvas();
         } else {
-          if (!proc.links.some((l) => l.from === selSource && l.to === s.id))
-            proc.links.push({ id: uid("l"), from: selSource, to: s.id });
+          if (!proc.links.some((l) => l.from === selSource && l.to === s.id)) {
+            const src = proc.steps.find((x) => x.id === selSource);
+            let label = "";
+            if (src && src.tipo === "decisao")
+              label = (
+                prompt("Rótulo desta saída da decisão (ex.: Sim / Não / Aprovado):", "") || ""
+              ).trim();
+            proc.links.push({ id: uid("l"), from: selSource, to: s.id, label });
+          }
           selSource = null;
           save();
           renderCanvas();
         }
+      }
+      function editLinkLabel(id) {
+        const proc = state.processes[state.activeProcess];
+        const lk = (proc.links || []).find((x) => x.id === id);
+        if (!lk) return;
+        const v = prompt("Rótulo da ligação (ex.: Sim / Não / Aprovado):", lk.label || "");
+        if (v === null) return;
+        lk.label = v.trim();
+        save();
+        renderCanvas();
       }
       function toggleConnect() {
         connectMode = !connectMode;
@@ -741,7 +786,10 @@
             "\n";
         });
         (proc.links || []).forEach((l) => {
-          if (idx[l.from] && idx[l.to]) out += `    ${idx[l.from]} --> ${idx[l.to]}\n`;
+          if (idx[l.from] && idx[l.to]) {
+            const lab = l.label ? `|${l.label.replace(/\|/g, "/")}|` : "";
+            out += `    ${idx[l.from]} -->${lab} ${idx[l.to]}\n`;
+          }
         });
         document.getElementById("mmcode").textContent = out;
       }
