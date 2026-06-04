@@ -16,6 +16,7 @@
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { verifyPassword, hashPassword } from "../_shared/passwords.ts";
 import { preflightResponse, ok, fail } from "../_shared/cors.ts";
+import { atualizarSenhaAuth } from "../_shared/auth-bridge.ts";
 
 interface AlterarBody {
   usuario_id?: string;
@@ -63,7 +64,7 @@ Deno.serve(async (req) => {
 
   const { data: usuario, error } = await supabase
     .from("usuario_custom")
-    .select("id, senha_hash, ativo, deleted_at, email")
+    .select("id, senha_hash, ativo, deleted_at, email, auth_user_id")
     .eq("id", usuario_id)
     .is("deleted_at", null)
     .maybeSingle();
@@ -93,6 +94,17 @@ Deno.serve(async (req) => {
   if (updateErr) {
     console.error("Erro atualizando senha:", updateErr);
     return fail("Erro ao salvar nova senha", 500);
+  }
+
+  // Reflete a nova senha no Auth (best-effort — login se auto-cura se falhar)
+  try {
+    await atualizarSenhaAuth(supabase, {
+      email: usuario.email,
+      senha: nova_senha,
+      authUserId: usuario.auth_user_id,
+    });
+  } catch (e) {
+    console.error("[alterar-senha] sync Auth falhou (não-fatal):", (e as Error)?.message);
   }
 
   return ok({ message: "Senha alterada com sucesso", must_change_password: false });

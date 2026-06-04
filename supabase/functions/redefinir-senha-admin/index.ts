@@ -18,6 +18,7 @@
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { hashPassword, generateProvisionalPassword } from "../_shared/passwords.ts";
 import { preflightResponse, ok, fail } from "../_shared/cors.ts";
+import { atualizarSenhaAuth } from "../_shared/auth-bridge.ts";
 
 interface RedefinirBody {
   admin_id?: string;
@@ -52,7 +53,7 @@ Deno.serve(async (req) => {
   // 1. Carrega admin e alvo (alvo pode vir por id ou email)
   const alvoQuery = supabase
     .from("usuario_custom")
-    .select("id, email, nome_completo, empresa_id, ativo, deleted_at")
+    .select("id, email, nome_completo, empresa_id, ativo, deleted_at, auth_user_id")
     .is("deleted_at", null);
 
   const [{ data: admin }, { data: alvo }] = await Promise.all([
@@ -118,6 +119,17 @@ Deno.serve(async (req) => {
   if (updateErr) {
     console.error("Erro redefinindo senha:", updateErr);
     return fail("Erro ao redefinir senha", 500);
+  }
+
+  // Reflete a nova senha no Auth (best-effort — login se auto-cura se falhar)
+  try {
+    await atualizarSenhaAuth(supabase, {
+      email: alvo.email,
+      senha: novaSenha,
+      authUserId: alvo.auth_user_id,
+    });
+  } catch (e) {
+    console.error("[redefinir-senha-admin] sync Auth falhou (não-fatal):", (e as Error)?.message);
   }
 
   // 5. Audit log (best-effort, não bloqueia o sucesso)

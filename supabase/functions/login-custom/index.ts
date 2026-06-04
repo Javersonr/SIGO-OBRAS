@@ -19,6 +19,35 @@
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { verifyPassword, hashPassword } from "../_shared/passwords.ts";
 import { preflightResponse, ok, fail } from "../_shared/cors.ts";
+import { montarSessao } from "../_shared/auth-bridge.ts";
+
+/**
+ * Gera a sessão real do Supabase Auth (best-effort). Se a ponte falhar, o login
+ * segue funcionando como antes (sem sessão) — Etapa 1 não pode quebrar o login.
+ */
+// deno-lint-ignore no-explicit-any
+async function gerarSessao(
+  supabase: any,
+  usuario: any,
+  empresa_id: string,
+  perfil: string,
+  senha: string
+) {
+  try {
+    return await montarSessao(supabase, {
+      email: usuario.email,
+      senha,
+      usuarioCustomId: usuario.id,
+      authUserId: usuario.auth_user_id,
+      empresa_id,
+      perfil,
+      is_super_admin: !!usuario.is_super_admin,
+    });
+  } catch (e) {
+    console.error("[login-custom] auth-bridge falhou (segue sem sessão):", (e as Error)?.message);
+    return null;
+  }
+}
 
 interface LoginBody {
   email?: string;
@@ -49,7 +78,7 @@ Deno.serve(async (req) => {
   const { data: usuario, error: userErr } = await supabase
     .from("usuario_custom")
     .select(
-      "id, email, senha_hash, senha_provisoria, nome_completo, empresa_id, is_super_admin, ativo, deleted_at"
+      "id, email, senha_hash, senha_provisoria, nome_completo, empresa_id, is_super_admin, ativo, deleted_at, auth_user_id"
     )
     .eq("email", email)
     .is("deleted_at", null)
@@ -97,6 +126,7 @@ Deno.serve(async (req) => {
 
   // Super admin sem vínculo: cria sessão na empresa_id do usuario_custom direto
   if ((!vinculos || vinculos.length === 0) && usuario.is_super_admin) {
+    const session = await gerarSessao(supabase, usuario, usuario.empresa_id, "Admin", senha);
     return ok({
       usuario: {
         id: usuario.id,
@@ -107,6 +137,7 @@ Deno.serve(async (req) => {
         is_super_admin: true,
         must_change_password: usuario.senha_provisoria,
       },
+      session,
     });
   }
 
@@ -137,8 +168,10 @@ Deno.serve(async (req) => {
     if (!empresa || !vinc) {
       return fail("Empresa escolhida não está vinculada ao usuário", 403);
     }
+    const session = await gerarSessao(supabase, usuario, empresa.id, vinc.perfil, senha);
     return ok({
       usuario: buildUsuarioResponse(usuario, vinc, empresa),
+      session,
     });
   }
 
@@ -146,8 +179,10 @@ Deno.serve(async (req) => {
   if (empresasAtivas.length === 1) {
     const empresa = empresasAtivas[0];
     const vinc = vinculos.find((v) => v.empresa_id === empresa.id)!;
+    const session = await gerarSessao(supabase, usuario, empresa.id, vinc.perfil, senha);
     return ok({
       usuario: buildUsuarioResponse(usuario, vinc, empresa),
+      session,
     });
   }
 
