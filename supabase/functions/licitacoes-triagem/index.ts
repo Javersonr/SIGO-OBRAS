@@ -23,6 +23,7 @@ import { preflightResponse, ok, fail } from "../_shared/cors.ts";
 import { parseKeywords, matchKeywords } from "../_shared/keywords.ts";
 import { getCallerFromJWT, empresaIdEfetivo } from "../_shared/auth-jwt.ts";
 import { idsNovasDuplicadas } from "../_shared/licitacoes-dedup.ts";
+import { resolverStatusOportunidade } from "../_shared/oportunidade-status.ts";
 
 const PERFIS_GESTOR = ["Admin", "Admin Holding", "Gestor"];
 const ORIGEM_LICITACAO = "Licitação (Alerta Licitação)";
@@ -353,6 +354,13 @@ Deno.serve(async (req) => {
       .order("created_at", { ascending: true })
       .limit(1);
     const statusOp = (busca || [])[0]?.status_oportunidade_nome || "Triagem Licitação";
+    // Resolve o status_id REAL — o Kanban agrupa por status_id; sem ele a
+    // oportunidade convertida sumia do funil (aparecia só na Lista).
+    const { status_id: statusId, status_nome: statusNomeOk } = await resolverStatusOportunidade(
+      supabase,
+      empresa_id,
+      statusOp
+    );
 
     const { data: op, error: opErr } = await supabase
       .from("oportunidade")
@@ -362,7 +370,8 @@ Deno.serve(async (req) => {
         valor_estimado: lic.valor != null ? Number(lic.valor) : null,
         descricao: lic.objeto ?? null,
         origem_nome: ORIGEM_LICITACAO,
-        status_nome: statusOp,
+        status_id: statusId,
+        status_nome: statusNomeOk ?? statusOp,
         data_fechamento_prevista: lic.abertura ?? null,
         licitacao_modalidade: lic.tipo ?? null,
         licitacao_data: lic.abertura ?? null,

@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Settings,
@@ -114,10 +115,40 @@ export default function OportunidadeDetalhe({
   const [activeTab, setActiveTab] = useState("geral");
   const [visitedTabs, setVisitedTabs] = useState(new Set(["geral"]));
   const fileInputArquivosRef = useRef(null);
+  const [perdidoOpen, setPerdidoOpen] = useState(false);
+  const [motivoPerda, setMotivoPerda] = useState("");
+  const [salvandoPerda, setSalvandoPerda] = useState(false);
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
     setVisitedTabs((prev) => new Set([...prev, tab]));
+  };
+
+  // Marca a oportunidade como Perdida: move para o status tipo "perdido",
+  // grava o motivo (win-rate) e arquiva (sai do funil ativo).
+  const handleMarcarPerdido = async () => {
+    const statusPerdido = (statusList || []).find((s) => s.tipo === "perdido");
+    const patch = {
+      status_id: statusPerdido?.id ?? selectedOp.status_id,
+      status_nome: statusPerdido?.nome ?? "Perdido",
+      motivo_perda: motivoPerda.trim() || null,
+      arquivado: true,
+    };
+    setSalvandoPerda(true);
+    try {
+      await sigo.entities.Oportunidade.update(selectedOp.id, patch);
+      setSelectedOp((prev) => ({ ...prev, ...patch }));
+      setOportunidades((prev) =>
+        prev.map((o) => (o.id === selectedOp.id ? { ...o, ...patch } : o))
+      );
+      setPerdidoOpen(false);
+      setMotivoPerda("");
+      handleOpenChange(false);
+    } catch (e) {
+      alert("Erro ao marcar como perdido: " + (e?.message || e));
+    } finally {
+      setSalvandoPerda(false);
+    }
   };
 
   const formatCurrency = (value) =>
@@ -313,6 +344,13 @@ export default function OportunidadeDetalhe({
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
+                                onClick={() => setPerdidoOpen(true)}
+                                className="text-amber-700"
+                              >
+                                <X className="w-4 h-4 mr-2" />
+                                Marcar como Perdido
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
                                 onClick={() => {
                                   onDelete(selectedOp);
                                   handleOpenChange(false);
@@ -324,6 +362,35 @@ export default function OportunidadeDetalhe({
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
+
+                          <Dialog open={perdidoOpen} onOpenChange={setPerdidoOpen}>
+                            <DialogContent className="max-w-md">
+                              <DialogHeader>
+                                <DialogTitle>Marcar como Perdido</DialogTitle>
+                              </DialogHeader>
+                              <div className="space-y-3">
+                                <Label>Motivo da perda</Label>
+                                <Textarea
+                                  value={motivoPerda}
+                                  onChange={(e) => setMotivoPerda(e.target.value)}
+                                  placeholder="Ex.: preço acima do teto, não habilitado, desistimos…"
+                                  rows={3}
+                                />
+                                <div className="flex justify-end gap-2 pt-2">
+                                  <Button variant="outline" onClick={() => setPerdidoOpen(false)}>
+                                    Cancelar
+                                  </Button>
+                                  <Button
+                                    onClick={handleMarcarPerdido}
+                                    disabled={salvandoPerda}
+                                    className="bg-amber-600 hover:bg-amber-700 text-white"
+                                  >
+                                    {salvandoPerda ? "Salvando…" : "Marcar Perdido"}
+                                  </Button>
+                                </div>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
 
                           <ResponsaveisSelect
                             // responsaveis_ids é JSONB: vem como array pelo

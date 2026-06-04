@@ -20,6 +20,7 @@
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail } from "../_shared/cors.ts";
 import { filtrarConteudoDuplicado } from "../_shared/licitacoes-dedup.ts";
+import { resolverStatusOportunidade } from "../_shared/oportunidade-status.ts";
 
 const API_BASE = "https://alertalicitacao.com.br/api/v1/licitacoesAbertas/";
 const TOKEN = Deno.env.get("ALERTA_LICITACAO_TOKEN") ?? "";
@@ -206,6 +207,13 @@ Deno.serve(async (req) => {
       if (busca.criar_oportunidade_auto && inseridas.length > 0) {
         const vmin = Number(busca.valor_minimo ?? 0);
         const vmax = busca.valor_maximo != null ? Number(busca.valor_maximo) : null;
+        // Resolve o status_id uma vez (Kanban agrupa por status_id; sem ele a
+        // oportunidade auto-criada some do funil).
+        const { status_id: statusId, status_nome: statusNomeOk } = await resolverStatusOportunidade(
+          supabase,
+          busca.empresa_id,
+          busca.status_oportunidade_nome || "Triagem Licitação"
+        );
         for (const li of inseridas) {
           const val = li.valor != null ? Number(li.valor) : null;
           if (val == null || val < vmin) continue;
@@ -219,7 +227,8 @@ Deno.serve(async (req) => {
               valor_estimado: val,
               descricao: li.objeto ?? null,
               origem_nome: "Licitação (Alerta Licitação)",
-              status_nome: busca.status_oportunidade_nome || "Triagem Licitação",
+              status_id: statusId,
+              status_nome: statusNomeOk ?? busca.status_oportunidade_nome ?? "Triagem Licitação",
               data_fechamento_prevista: li.abertura ?? null,
               licitacao_modalidade: li.tipo ?? null,
               licitacao_data: li.abertura ?? null,
