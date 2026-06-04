@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SIGO Obras — Mapa de Processos (editor)</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #1e293b;
+        --panel2: #334155;
+        --line: #475569;
+        --txt: #e2e8f0;
+        --muted: #94a3b8;
+        --accent: #38bdf8;
+        --ok: #34d399;
+        --warn: #fbbf24;
+        --danger: #f87171;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          sans-serif;
+        background: #f1f5f9;
+        color: #0f172a;
+      }
+      header {
+        background: var(--bg);
+        color: var(--txt);
+        padding: 14px 20px;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 18px;
+      }
+      header p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 10px 20px;
+        background: #fff;
+        border-bottom: 1px solid #e2e8f0;
+        position: sticky;
+        top: 0;
+        z-index: 5;
+      }
+      button {
+        cursor: pointer;
+        border: 1px solid #cbd5e1;
+        background: #fff;
+        color: #0f172a;
+        border-radius: 8px;
+        padding: 7px 12px;
+        font-size: 13px;
+      }
+      button:hover {
+        background: #f8fafc;
+      }
+      button.primary {
+        background: #0ea5e9;
+        border-color: #0284c7;
+        color: #fff;
+      }
+      button.ghost {
+        border-color: transparent;
+        background: transparent;
+        padding: 4px 8px;
+      }
+      button.danger {
+        color: var(--danger);
+        border-color: #fecaca;
+      }
+      .wrap {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        padding: 16px 20px;
+        align-items: start;
+      }
+      @media (max-width: 1000px) {
+        .wrap {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 14px;
+      }
+      .card h2 {
+        margin: 0 0 10px;
+        font-size: 15px;
+      }
+      .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 12px;
+      }
+      .tab {
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 13px;
+        background: #e2e8f0;
+        border: none;
+      }
+      .tab.active {
+        background: #0f172a;
+        color: #fff;
+      }
+      .roles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: #ecfeff;
+        border: 1px solid #a5f3fc;
+        color: #0e7490;
+        border-radius: 999px;
+        padding: 3px 8px;
+        font-size: 12px;
+      }
+      .chip button {
+        all: unset;
+        cursor: pointer;
+        color: #0891b2;
+        font-weight: 700;
+      }
+      .step {
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 10px;
+        background: #f8fafc;
+      }
+      .step .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 6px;
+      }
+      .step .num {
+        font-weight: 700;
+        color: var(--muted);
+        min-width: 22px;
+      }
+      input,
+      select,
+      textarea {
+        font: inherit;
+        padding: 6px 8px;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        width: 100%;
+        background: #fff;
+      }
+      textarea {
+        min-height: 42px;
+        resize: vertical;
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      label.lbl {
+        font-size: 11px;
+        color: var(--muted);
+        display: block;
+        margin-bottom: 2px;
+      }
+      .mermaid-wrap {
+        overflow: auto;
+        background: #fff;
+        border-radius: 8px;
+        padding: 8px;
+      }
+      pre.code {
+        background: #0f172a;
+        color: #e2e8f0;
+        padding: 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        overflow: auto;
+      }
+      .hint {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 6px 0;
+      }
+      .tag {
+        font-size: 11px;
+        padding: 1px 6px;
+        border-radius: 6px;
+        background: #fef3c7;
+        color: #92400e;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>SIGO Obras — Mapa de Processos (editor)</h1>
+      <p>
+        Edite as funções e as etapas de cada processo. O fluxograma atualiza ao vivo. Tudo fica
+        salvo no seu navegador (localStorage). Ao terminar, clique em <b>Exportar JSON</b> e me
+        devolva o arquivo. Este editor NÃO altera o sistema.
+      </p>
+    </header>
+
+    <div class="toolbar">
+      <button class="primary" onclick="exportJSON()">⬇ Exportar JSON</button>
+      <button onclick="document.getElementById('imp').click()">⬆ Importar JSON</button>
+      <input
+        id="imp"
+        type="file"
+        accept="application/json"
+        style="display: none"
+        onchange="importJSON(event)"
+      />
+      <button onclick="copyJSON()">📋 Copiar JSON</button>
+      <button onclick="window.print()">🖨 Imprimir</button>
+      <button class="danger" onclick="resetAll()">↺ Restaurar padrão</button>
+      <span class="hint" id="savedHint" style="margin-left: auto; align-self: center"></span>
+    </div>
+
+    <div class="wrap">
+      <div class="card">
+        <div class="tabs" id="tabs"></div>
+
+        <h2>Funções / Organograma</h2>
+        <div class="roles" id="roles"></div>
+        <div style="display: flex; gap: 6px">
+          <input
+            id="newRole"
+            placeholder="Adicionar função (ex.: Orçamentista)"
+            onkeydown="if (event.key === 'Enter') addRole();"
+          />
+          <button onclick="addRole()">+ Função</button>
+        </div>
+
+        <h2 style="margin-top: 16px" id="procTitle">Etapas</h2>
+        <div class="hint">
+          Tipo: <b>etapa</b> (retângulo) · <b>decisão</b> (losango) · <b>início/fim</b>. Use ↑/↓
+          para mover. ✔ marca aprovação.
+        </div>
+        <div id="steps"></div>
+        <button onclick="addStep()">+ Adicionar etapa</button>
+      </div>
+
+      <div class="card">
+        <h2>Fluxograma ao vivo</h2>
+        <div class="mermaid-wrap" id="diagram">carregando…</div>
+        <details style="margin-top: 10px">
+          <summary class="hint">ver código Mermaid (copiável)</summary>
+          <pre class="code" id="mmcode"></pre>
+        </details>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+      const STORAGE_KEY = "sigo_mapa_processos_v1";
+      const TIPOS = ["inicio", "etapa", "decisao", "fim"];
+      let mermaidOK = false;
+      try {
+        mermaid.initialize({ startOnLoad: false, securityLevel: "loose", theme: "default" });
+        mermaidOK = true;
+      } catch (e) {}
+
+      // ---------- estado padrão (pré-preenchido) ----------
+      function defaultState() {
+        const roles = [
+          "Diretor",
+          "Gestor",
+          "Analista",
+          "Responsável Técnico",
+          "Engenharia",
+          "Agente de licitações",
+          "Orçamentista",
+          "Compras",
+          "Almoxarife",
+          "Encarregado",
+          "Equipe de obra",
+          "Financeiro",
+          "RH/SST",
+        ];
+        const S = (nome, responsavel, atividades, aprova, tipo) => ({
+          id: "s" + Math.random().toString(36).slice(2, 8),
+          tipo: tipo || "etapa",
+          nome,
+          responsavel: responsavel || "",
+          atividades: atividades || "",
+          aprova: aprova || "",
+        });
+        return {
+          roles,
+          activeProcess: "licitacao_obra",
+          processes: {
+            licitacao_obra: {
+              nome: "Licitação → Obra",
+              steps: [
+                S(
+                  "Pesquisar licitações de interesse",
+                  "Analista",
+                  "Busca por palavra-chave/UF/cidade/órgão/valor; triagem"
+                ),
+                S(
+                  "Conferir o edital + checklist de habilitação",
+                  "Analista",
+                  "Ler edital; checklist de documentos; resumir objeto/risco"
+                ),
+                S("Go / No-Go", "Gestor", "Decidir participar", "Gestor", "decisao"),
+                S(
+                  "Montar proposta (Cowork) e anexar",
+                  "Responsável Técnico",
+                  "Planilha de preços; anexa o PDF"
+                ),
+                S("Participar do certame", "Agente de licitações", "Sessão/lances no portal"),
+                S("Resultado", "Agente de licitações", "Ganhou / Perdeu", "", "decisao"),
+                S(
+                  "Contrato + ART + CNO",
+                  "Analista",
+                  "Assinar contrato; emitir ART (nº/CREA); abrir CNO (nº/data)",
+                  "Gestor"
+                ),
+                S(
+                  "Visita de campo",
+                  "Engenharia",
+                  "Vistoria; fotos; medições; restrições; parecer",
+                  "Responsável Técnico"
+                ),
+                S(
+                  "Projeto técnico (se for o caso)",
+                  "Engenharia",
+                  "Memorial; plantas; ART de projeto",
+                  "Gestor",
+                  "decisao"
+                ),
+                S(
+                  "Planejamento da obra",
+                  "Responsável Técnico",
+                  "Cronograma de execução (etapas/datas)"
+                ),
+                S("Compras de materiais", "Compras", "Orçamento → solicitação → cotação → pedido"),
+                S("Execução da obra", "Encarregado", "Tocar a obra; diário de obra"),
+                S("Encerramento", "Gestor", "Termo de recebimento; as-built", "Gestor", "fim"),
+              ],
+            },
+            financeiro: {
+              nome: "Financeiro",
+              steps: [
+                S(
+                  "Lançar despesa/receita",
+                  "Financeiro",
+                  "Cadastro ou importação de comprovantes",
+                  "",
+                  "inicio"
+                ),
+                S("Aprovar pagamento", "Gestor", "Conferir e aprovar", "Gestor"),
+                S("Pagar / Receber", "Financeiro", "Baixa no caixa/banco"),
+                S("Conciliação bancária", "Financeiro", "Casar extrato × lançamentos"),
+                S("Fechamento de caixa", "Financeiro", "Fundo fixo / fechamento diário"),
+                S("DRE / Relatórios", "Gestor", "Apuração do resultado", "", "fim"),
+              ],
+            },
+            rh_sst: {
+              nome: "RH / SST",
+              steps: [
+                S("Admissão", "RH/SST", "Cadastro do funcionário + documentos", "", "inicio"),
+                S("Exames (ASO)", "RH/SST", "ASO admissional/periódico"),
+                S("Treinamentos (NRs)", "RH/SST", "NR-10, NR-35, etc. com validade"),
+                S("Entrega de EPI", "Almoxarife", "Ficha de EPI"),
+                S(
+                  "Controle de vencimentos",
+                  "RH/SST",
+                  "ASO/treinamento/documentos a vencer",
+                  "",
+                  "fim"
+                ),
+              ],
+            },
+            estoque: {
+              nome: "Estoque",
+              steps: [
+                S("Entrada (NFe)", "Almoxarife", "Lançar entrada por NFe", "", "inicio"),
+                S("Reserva p/ obra", "Almoxarife", "Reservar material do orçamento"),
+                S("Retirada", "Encarregado", "Baixa para a obra"),
+                S("Alerta mínimo", "Almoxarife", "Repor abaixo do mínimo"),
+                S("Inventário", "Almoxarife", "Contagem e ajuste", "", "fim"),
+              ],
+            },
+            frota: {
+              nome: "Frota / Ferramental",
+              steps: [
+                S(
+                  "Cadastro de ferramenta/veículo",
+                  "Almoxarife",
+                  "Tombamento/identificação",
+                  "",
+                  "inicio"
+                ),
+                S("Inspeção", "Encarregado", "Checklist de inspeção"),
+                S("Manutenção", "Almoxarife", "Preventiva/corretiva; laudo"),
+                S("Devolução", "Encarregado", "Baixa/retorno", "", "fim"),
+              ],
+            },
+          },
+        };
+      }
+
+      let state = load() || defaultState();
+
+      function load() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+          return null;
+        }
+      }
+      function save() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        const h = document.getElementById("savedHint");
+        h.textContent = "salvo " + new Date().toLocaleTimeString("pt-BR");
+        renderDiagram();
+      }
+
+      // ---------- render ----------
+      function renderTabs() {
+        const el = document.getElementById("tabs");
+        el.innerHTML = "";
+        Object.entries(state.processes).forEach(([key, p]) => {
+          const b = document.createElement("button");
+          b.className = "tab" + (key === state.activeProcess ? " active" : "");
+          b.textContent = p.nome;
+          b.onclick = () => {
+            state.activeProcess = key;
+            renderAll();
+          };
+          el.appendChild(b);
+        });
+      }
+      function renderRoles() {
+        const el = document.getElementById("roles");
+        el.innerHTML = "";
+        state.roles.forEach((r, i) => {
+          const c = document.createElement("span");
+          c.className = "chip";
+          c.innerHTML = `<span>${escapeHTML(r)}</span>`;
+          const x = document.createElement("button");
+          x.textContent = "×";
+          x.title = "remover";
+          x.onclick = () => {
+            state.roles.splice(i, 1);
+            save();
+            renderAll();
+          };
+          c.appendChild(x);
+          el.appendChild(c);
+        });
+      }
+      function roleOptions(sel) {
+        return (
+          `<option value="">—</option>` +
+          state.roles
+            .map((r) => `<option ${r === sel ? "selected" : ""}>${escapeHTML(r)}</option>`)
+            .join("")
+        );
+      }
+      function renderSteps() {
+        const proc = state.processes[state.activeProcess];
+        document.getElementById("procTitle").textContent = "Etapas — " + proc.nome;
+        const el = document.getElementById("steps");
+        el.innerHTML = "";
+        proc.steps.forEach((s, i) => {
+          const d = document.createElement("div");
+          d.className = "step";
+          d.innerHTML = `
+            <div class="row">
+              <span class="num">${i + 1}</span>
+              <input value="${escapeAttr(s.nome)}" placeholder="Nome da etapa" oninput="upd('${s.id}','nome',this.value)" />
+              <button class="ghost" title="subir" onclick="move('${s.id}',-1)">↑</button>
+              <button class="ghost" title="descer" onclick="move('${s.id}',1)">↓</button>
+              <button class="ghost danger" title="remover" onclick="del('${s.id}')">🗑</button>
+            </div>
+            <div class="grid2">
+              <div>
+                <label class="lbl">Responsável (função)</label>
+                <select onchange="upd('${s.id}','responsavel',this.value)">${roleOptions(s.responsavel)}</select>
+              </div>
+              <div>
+                <label class="lbl">Aprova (gate) — opcional</label>
+                <select onchange="upd('${s.id}','aprova',this.value)">${roleOptions(s.aprova)}</select>
+              </div>
+            </div>
+            <div class="grid2" style="margin-top:6px">
+              <div>
+                <label class="lbl">Tipo</label>
+                <select onchange="upd('${s.id}','tipo',this.value)">
+                  ${TIPOS.map((t) => `<option ${t === s.tipo ? "selected" : ""}>${t}</option>`).join("")}
+                </select>
+              </div>
+              <div></div>
+            </div>
+            <div style="margin-top:6px">
+              <label class="lbl">Atividades / o que captura</label>
+              <textarea oninput="upd('${s.id}','atividades',this.value)" placeholder="Atividades, documentos, anexos…">${escapeHTML(s.atividades)}</textarea>
+            </div>
+          `;
+          el.appendChild(d);
+        });
+      }
+      function renderDiagram() {
+        const proc = state.processes[state.activeProcess];
+        const code = toMermaid(proc);
+        document.getElementById("mmcode").textContent = code;
+        const target = document.getElementById("diagram");
+        if (!mermaidOK) {
+          target.innerHTML = '<pre class="code">' + escapeHTML(code) + "</pre>";
+          return;
+        }
+        const id = "mmd" + Date.now();
+        mermaid
+          .render(id, code)
+          .then(({ svg }) => {
+            target.innerHTML = svg;
+          })
+          .catch(() => {
+            target.innerHTML = '<pre class="code">' + escapeHTML(code) + "</pre>";
+          });
+      }
+      function renderAll() {
+        renderTabs();
+        renderRoles();
+        renderSteps();
+        renderDiagram();
+      }
+
+      // ---------- mermaid ----------
+      function toMermaid(proc) {
+        let out = "flowchart TD\n";
+        const nid = (i) => "n" + i;
+        const lbl = (s) => {
+          let t = s.nome || "etapa";
+          if (s.responsavel) t += " — " + s.responsavel;
+          if (s.aprova) t += " ✔" + s.aprova;
+          return t.replace(/"/g, "'").replace(/\n/g, " ");
+        };
+        proc.steps.forEach((s, i) => {
+          const id = nid(i);
+          const L = `"${lbl(s)}"`;
+          let node;
+          if (s.tipo === "decisao") node = `${id}{${L}}`;
+          else if (s.tipo === "inicio" || s.tipo === "fim") node = `${id}([${L}])`;
+          else node = `${id}[${L}]`;
+          out += "    " + node + "\n";
+        });
+        for (let i = 0; i < proc.steps.length - 1; i++) {
+          out += `    ${nid(i)} --> ${nid(i + 1)}\n`;
+        }
+        return out;
+      }
+
+      // ---------- ações ----------
+      function upd(id, field, val) {
+        const proc = state.processes[state.activeProcess];
+        const s = proc.steps.find((x) => x.id === id);
+        if (s) {
+          s[field] = val;
+          save();
+        }
+      }
+      function move(id, dir) {
+        const proc = state.processes[state.activeProcess];
+        const i = proc.steps.findIndex((x) => x.id === id);
+        const j = i + dir;
+        if (i < 0 || j < 0 || j >= proc.steps.length) return;
+        const [it] = proc.steps.splice(i, 1);
+        proc.steps.splice(j, 0, it);
+        save();
+        renderSteps();
+      }
+      function del(id) {
+        const proc = state.processes[state.activeProcess];
+        proc.steps = proc.steps.filter((x) => x.id !== id);
+        save();
+        renderSteps();
+      }
+      function addStep() {
+        const proc = state.processes[state.activeProcess];
+        proc.steps.push({
+          id: "s" + Math.random().toString(36).slice(2, 8),
+          tipo: "etapa",
+          nome: "Nova etapa",
+          responsavel: "",
+          atividades: "",
+          aprova: "",
+        });
+        save();
+        renderSteps();
+      }
+      function addRole() {
+        const v = document.getElementById("newRole").value.trim();
+        if (v && !state.roles.includes(v)) {
+          state.roles.push(v);
+          document.getElementById("newRole").value = "";
+          save();
+          renderAll();
+        }
+      }
+      function resetAll() {
+        if (confirm("Restaurar o mapa padrão? Perde as suas edições.")) {
+          state = defaultState();
+          save();
+          renderAll();
+        }
+      }
+      function exportJSON() {
+        const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "mapa-processos-sigo.json";
+        a.click();
+      }
+      function copyJSON() {
+        navigator.clipboard
+          .writeText(JSON.stringify(state, null, 2))
+          .then(() => alert("JSON copiado!"));
+      }
+      function importJSON(ev) {
+        const f = ev.target.files[0];
+        if (!f) return;
+        const r = new FileReader();
+        r.onload = () => {
+          try {
+            const obj = JSON.parse(r.result);
+            if (obj && obj.processes && obj.roles) {
+              state = obj;
+              save();
+              renderAll();
+              alert("Importado!");
+            } else alert("JSON inválido.");
+          } catch (e) {
+            alert("Erro ao ler JSON: " + e.message);
+          }
+        };
+        r.readAsText(f);
+      }
+
+      // ---------- util ----------
+      function escapeHTML(s) {
+        return String(s || "").replace(
+          /[&<>]/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]
+        );
+      }
+      function escapeAttr(s) {
+        return escapeHTML(s).replace(/"/g, "&quot;");
+      }
+
+      renderAll();
+    </script>
+  </body>
+</html>
