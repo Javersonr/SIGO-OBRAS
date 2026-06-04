@@ -1,6 +1,6 @@
 import React, { useState, useEffect, createContext, useContext } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { sigo } from "@/api/sigoClient";
+import { sigo, aplicarSessao, encerrarSessao } from "@/api/sigoClient";
 import { createPageUrl } from "./utils";
 import { safeParseJSON } from "@/lib/json-utils";
 import {
@@ -293,6 +293,22 @@ export default function Layout({ children, currentPageName }) {
       sessionStorage.setItem("custom_auth", JSON.stringify(authData));
       sessionStorage.setItem("empresa_ativa", empresa.id);
 
+      // Etapa 2 segurança: troca a empresa no Supabase Auth e aplica a nova
+      // sessão (JWT com o novo empresa_id, que a RLS lê na Etapa 3). Best-effort.
+      try {
+        const resp = await sigo.functions.invoke("trocarEmpresa", {
+          email: user?.email,
+          empresa_id: empresa.id,
+        });
+        if (resp?.data?.session) {
+          await aplicarSessao(resp.data.session);
+        } else if (resp?.data?.needs_relogin) {
+          console.warn("[Layout] sem espelho no Auth ainda — sessão será criada no próximo login");
+        }
+      } catch (trocaSessErr) {
+        console.warn("[Layout] trocar-empresa (sessão) falhou, segue:", trocaSessErr?.message);
+      }
+
       // Atualizar estado
       setEmpresaAtiva(empresa);
       setVinculo(vinculoEmpresa);
@@ -449,6 +465,9 @@ export default function Layout({ children, currentPageName }) {
   };
 
   const handleLogout = () => {
+    // Encerra a sessão do Supabase Auth (best-effort, não bloqueia o logout)
+    encerrarSessao();
+
     // Limpar todos os dados de autenticação
     sessionStorage.clear();
 

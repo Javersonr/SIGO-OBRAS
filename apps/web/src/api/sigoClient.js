@@ -43,6 +43,7 @@ const SUPABASE_FUNCTIONS_REWRITE = {
   loginCustom: "login-custom",
   alterarSenha: "alterar-senha",
   redefinirSenhaAdmin: "redefinir-senha-admin",
+  trocarEmpresa: "trocar-empresa",
 };
 
 // Patch functions.invoke pra rotear as migradas
@@ -109,3 +110,45 @@ export const sigo = legacy;
 
 // Acesso direto ao supabase-js se precisar (escape hatch)
 export const supabase = supa?._supabase ?? null;
+
+/**
+ * Aplica a sessão do Supabase Auth retornada pelo login/troca de empresa.
+ * A partir daí o supabase-js anexa o JWT do usuário (role authenticated) em
+ * toda requisição → habilita a RLS por empresa_id (quando ligada na Etapa 3).
+ *
+ * Best-effort: se não vier sessão (ex.: fornecedor, ou ponte Auth indisponível)
+ * ou der erro, não lança — o app segue funcionando como antes (anon).
+ *
+ * @param {{access_token?: string, refresh_token?: string}|null} session
+ * @returns {Promise<boolean>} true se a sessão foi aplicada
+ */
+export async function aplicarSessao(session) {
+  if (!supabase || !session?.access_token || !session?.refresh_token) return false;
+  try {
+    const { error } = await supabase.auth.setSession({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+    });
+    if (error) {
+      console.warn("[sigoClient] aplicarSessao falhou (segue como anon):", error.message);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn("[sigoClient] aplicarSessao exceção (segue como anon):", e?.message);
+    return false;
+  }
+}
+
+/**
+ * Encerra a sessão do Supabase Auth (logout). `scope: "local"` limpa só este
+ * dispositivo/aba — não revoga as outras sessões do usuário. Best-effort.
+ */
+export async function encerrarSessao() {
+  if (!supabase) return;
+  try {
+    await supabase.auth.signOut({ scope: "local" });
+  } catch (e) {
+    console.warn("[sigoClient] encerrarSessao falhou (não-fatal):", e?.message);
+  }
+}

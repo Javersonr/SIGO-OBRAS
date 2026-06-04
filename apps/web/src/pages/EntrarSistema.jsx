@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, aplicarSessao } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "../utils";
@@ -125,6 +125,10 @@ export default function EntrarSistema() {
           return;
         }
 
+        // Etapa 1/2 segurança: aplica a sessão real do Supabase Auth (se veio).
+        // Best-effort — com RLS off ainda, login funciona mesmo sem sessão.
+        await aplicarSessao(response.data.session);
+
         sessionStorage.setItem("custom_auth", JSON.stringify(response.data.usuario));
         sessionStorage.setItem("empresa_ativa", response.data.usuario.empresa_id);
         if (lembrarEmail) {
@@ -157,28 +161,54 @@ export default function EntrarSistema() {
         return;
       }
 
-      // Reutilizar dados do login para garantir consistência
-      const usuarioCompleto = {
-        id: usuarioBase.id,
-        email: usuarioBase.email,
-        nome_completo: usuarioBase.nome_completo,
-        perfil: usuarioBase.perfil,
-        tipo_usuario: "interno",
-        empresa_id: empresa.id,
-        empresa_nome: empresa.nome,
-      };
+      // Etapa 1/2 segurança: re-chama loginCustom com a empresa escolhida para
+      // obter o usuário AUTORITATIVO (perfil do vínculo) + a sessão real do
+      // Supabase Auth já no escopo dessa empresa. A senha ainda está no estado.
+      let authData = null;
+      try {
+        const resp = await sigo.functions.invoke("loginCustom", {
+          email: usuarioBase.email,
+          senha,
+          empresa_id: empresa.id,
+        });
+        if (resp?.data?.success && resp.data.usuario) {
+          await aplicarSessao(resp.data.session);
+          authData = {
+            ...resp.data.usuario,
+            tipo_usuario: "interno",
+            grupo_id:
+              usuarioBase?.grupo_selecionado ||
+              resp.data.usuario.grupo_id ||
+              usuarioBase?.grupo_id ||
+              null,
+          };
+        }
+      } catch (reloginErr) {
+        console.warn(
+          "[EntrarSistema] re-login com empresa falhou, usando fallback:",
+          reloginErr?.message
+        );
+      }
 
-      // Salvar no sessionStorage (não logamos os dados — privacidade/segurança)
-      const authData = {
-        ...usuarioCompleto,
-        grupo_id: usuarioBase?.grupo_selecionado || usuarioBase?.grupo_id || null,
-      };
+      // Fallback (sem regressão): se o re-login não rolou, mantém o fluxo antigo
+      if (!authData) {
+        authData = {
+          id: usuarioBase.id,
+          email: usuarioBase.email,
+          nome_completo: usuarioBase.nome_completo,
+          perfil: usuarioBase.perfil,
+          tipo_usuario: "interno",
+          empresa_id: empresa.id,
+          empresa_nome: empresa.nome,
+          grupo_id: usuarioBase?.grupo_selecionado || usuarioBase?.grupo_id || null,
+        };
+      }
 
       sessionStorage.setItem("custom_auth", JSON.stringify(authData));
       sessionStorage.setItem("empresa_ativa", empresa.id);
 
       // Se for fornecedor, redirecionar para área de cotações
-      if (usuarioCompleto.perfil === "Fornecedor") {
+      if (authData.perfil === "Fornecedor") {
         navigate(createPageUrl("HistoricoCotacoes"), { replace: true });
       } else {
         navigate(createPageUrl("Dashboard"), { replace: true });
