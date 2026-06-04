@@ -54,3 +54,54 @@
 7. **Projeto técnico (H)** e **IA de edital (#126)** — maiores; fazer por último.
 
 > Nota: "agente de licitações participa" de forma **automática** não entra (portais do governo não permitem). O sistema apoia a **pessoa** (alertas de prazo, checklist, proposta pronta), não substitui a participação manual.
+
+---
+
+## Decisões do dono (2026-06-04)
+
+- **Proposta (passo 3):** será feita no **skill do Cowork** e **anexada no orçamento/oportunidade** (aba Arquivos já existe). → **NÃO construir** geração de proposta no sistema.
+- **Participar (passo 4):** manual. → nada a construir.
+- **Passos 5 (contrato/ART/CNO), 6 (visita de campo), 7 (projeto técnico):** modelar como **fluxo no cronograma, por responsável, com tarefas e aprovação** — reaproveitando o que já existe.
+
+## Sugestão (NÃO implementada — aguardando autorização)
+
+O sistema JÁ tem as peças: `tarefa_projeto` (tarefas por responsável, dependências,
+anexos, status "Em Revisão" = aguardando aprovação), `cronograma_etapa` (etapas/
+timeline), `aprovacao_solicitacao` (registro de aprovação genérico, hoje em
+Compras) e o padrão template→instância de `checklist_inspecao_campo`/`inspecao_campo`.
+
+**Ideia:** um **"Fluxo de Obra" (template de fases por empresa)** que, ao ganhar a
+licitação (virar projeto), é **instanciado** como etapas/tarefas — cada uma com
+responsável (papel), captura própria e gate de aprovação:
+
+| Fase                            | Responsável   | Captura                                                    | Aprova        |
+| ------------------------------- | ------------- | ---------------------------------------------------------- | ------------- |
+| Contrato + **ART** + **CNO**    | Analista      | anexo do contrato; nº/CREA da ART; nº/data do CNO          | Gestor        |
+| Visita de campo                 | Engenharia    | data, fotos, medições, restrições, parecer                 | Resp. Técnico |
+| Projeto técnico (se for o caso) | Engenharia    | memorial/plantas (anexos), ART de projeto                  | Gestor        |
+| Planejamento da obra            | Resp. Técnico | cronograma de execução (**já existe**)                     | —             |
+| Compras de materiais            | Compras       | orçamento→SC→cotação→pedido (**já existe, com aprovação**) | já tem        |
+| Execução                        | Equipe        | diário de obra (**já existe**)                             | —             |
+| Encerramento                    | Gestor        | termo de recebimento / as-built                            | Gestor        |
+
+**Mecânica de aprovação (reaproveitando):** a etapa/tarefa vai pra **"Em Revisão"**
+quando o responsável conclui; o aprovador marca **Concluída/Aprovada** e isso grava
+um registro em `aprovacao_solicitacao` (aprovador + decisão + comentário). A
+próxima fase só "abre" quando a anterior é aprovada (via `dependencias` da tarefa).
+
+**O que precisaria criar (mínimo):**
+
+1. `fluxo_obra_template` (fases padrão por empresa) + ação "aplicar fluxo" ao criar
+   o projeto (manual ou automático). _Pequeno._
+2. Campos de **ART** (nº/CREA/responsável/anexo) e **CNO** (nº/data) no `projeto`. _Pequeno._
+3. Registro de **visita de campo** — usar `tarefa_projeto` + anexos, ou uma tabela
+   leve `visita_campo`. _Pequeno/médio._
+4. Generalizar `aprovacao_solicitacao` para aprovar **etapa/tarefa** (hoje só
+   "solicitacao"). _Pequeno._
+5. **Papéis** Analista / Resp. Técnico / Engenharia — ou usar o responsável da
+   tarefa (pessoa) sem criar perfil novo. _Decisão._
+
+**Benchmark:** é o padrão "processo com etapas + dono + gate de aprovação" de
+ferramentas como Pipefy/Monday/Asana (approval steps) e ERPs de obra (Sienge) —
+e o SIGO já tem os tijolos (`tarefa_projeto` + `aprovacao_solicitacao` +
+template/instância). Não precisa de motor de workflow externo.
