@@ -94,6 +94,20 @@ Descrição | Cliente | Oportunidade | Projeto | Categoria | Conta | Valor | Dat
 - Uma **linha por comprovante** (ou por lançamento, se o comprovante tiver vários).
 - Mantenha um rastro: na coluna Observações, pode pôr a origem (ex.: "WhatsApp 03/06").
 
+## Projeto e "Administrativo" (regra definida pelo usuário)
+
+- **Padrão: SEM projeto = Administrativo.** Fundo fixo é o caixa do dia a dia
+  (refeição, combustível, pequenas compras) — quase nunca de uma obra específica.
+  Deixe a coluna **Projeto em branco** e **prefixe as Observações com
+  "Administrativo - "** (é assim que marcamos despesa administrativa).
+- **Quando for de uma obra específica:** só quando o usuário disser o projeto no
+  lote (ex.: "processa Fundo Fixo Javerson, projeto PM Marmelópoles") **ou** se
+  os comprovantes estiverem numa **subpasta com o nome do projeto** dentro da
+  conta. Aí sim preencha a coluna Projeto com esse nome.
+- ⚠️ **Centro de Custo:** no banco é FK (`centro_custo_id`), **não** texto livre.
+  Não tente gravar texto em "centro_custo". Deixe a coluna "Centro de Custo" da
+  planilha **em branco** (a marcação administrativa vai nas Observações).
+
 ## Passo a passo
 
 1. **Descubra a empresa** (pergunte se não estiver claro).
