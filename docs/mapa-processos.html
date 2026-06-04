@@ -517,8 +517,8 @@
             proc.links.push({ id: uid("l"), from: proc.steps[i].id, to: proc.steps[i + 1].id });
         }
         proc.steps.forEach((s, i) => {
-          if (typeof s.x !== "number") s.x = 60 + (i % 2) * 24;
-          if (typeof s.y !== "number") s.y = 20 + i * 92;
+          if (typeof s.x !== "number") s.x = 80;
+          if (typeof s.y !== "number") s.y = 20 + i * 150;
         });
       }
 
@@ -651,16 +651,23 @@
             renderCanvas();
           };
           canvas.appendChild(del);
-          const lbl = document.createElement("div");
-          lbl.className = "linklbl";
-          lbl.textContent = lk.label ? lk.label : "+ rótulo";
-          if (!lk.label) lbl.style.opacity = "0.5";
-          lbl.title = "editar rótulo da saída (ex.: Sim / Não / Aprovado)";
-          lbl.onclick = (e) => {
-            e.stopPropagation();
-            editLinkLabel(lk.id);
-          };
-          canvas.appendChild(lbl);
+          // Rótulo só aparece nas saídas de DECISÃO ou quando já tem texto —
+          // evita poluir as setas normais com "+ rótulo".
+          const srcStep = proc.steps.find((x) => x.id === lk.from);
+          const showLbl = lk.label || (srcStep && srcStep.tipo === "decisao");
+          let lbl = null;
+          if (showLbl) {
+            lbl = document.createElement("div");
+            lbl.className = "linklbl";
+            lbl.textContent = lk.label ? lk.label : "+ rótulo";
+            if (!lk.label) lbl.style.opacity = "0.55";
+            lbl.title = "editar rótulo da saída (ex.: Sim / Não / Aprovado)";
+            lbl.onclick = (e) => {
+              e.stopPropagation();
+              editLinkLabel(lk.id);
+            };
+            canvas.appendChild(lbl);
+          }
           linkEls[lk.id] = { line, del, lbl, from: lk.from, to: lk.to };
         });
         drawLinks();
@@ -759,8 +766,8 @@
       function autoLayout() {
         const proc = state.processes[state.activeProcess];
         proc.steps.forEach((s, i) => {
-          s.x = 60 + (i % 2) * 24;
-          s.y = 20 + i * 92;
+          s.x = 80;
+          s.y = 20 + i * 150;
         });
         save();
         renderCanvas();
@@ -829,8 +836,8 @@
           responsavel: "",
           atividades: "",
           aprova: "",
-          x: last ? last.x : 60,
-          y: last ? last.y + 92 : 20,
+          x: last ? last.x : 80,
+          y: last ? last.y + 150 : 20,
         };
         proc.steps.push(s);
         if (!Array.isArray(proc.links)) proc.links = [];
