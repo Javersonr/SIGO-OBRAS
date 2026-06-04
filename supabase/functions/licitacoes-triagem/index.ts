@@ -81,8 +81,11 @@ Deno.serve(async (req) => {
         `titulo.ilike.%${q}%,orgao.ilike.%${q}%,objeto.ilike.%${q}%,municipio.ilike.%${q}%`
       );
     }
-    // filtros: estado (uf), valor (faixa), data de abertura (faixa)
+    // filtros: estado (uf), cidade (município), valor (faixa), data de abertura (faixa)
     if (body.uf) query = query.eq("uf", String(body.uf).toUpperCase());
+    if (body.municipio) {
+      query = query.ilike("municipio", `%${String(body.municipio).trim()}%`);
+    }
     if (body.valor_min !== undefined && body.valor_min !== null && body.valor_min !== "") {
       query = query.gte("valor", Number(body.valor_min));
     }

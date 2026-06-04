@@ -46,7 +46,14 @@ const fmtData = (iso) => {
   }
 };
 
-const FILTROS_VAZIOS = { uf: "", valorMin: "", valorMax: "", dataIni: "", dataFim: "" };
+const FILTROS_VAZIOS = {
+  uf: "",
+  municipio: "",
+  valorMin: "",
+  valorMax: "",
+  dataIni: "",
+  dataFim: "",
+};
 
 export default function LicitacoesInbox() {
   const { empresaAtiva, user } = useEmpresa();
@@ -75,6 +82,7 @@ export default function LicitacoesInbox() {
           status,
           q: busca || undefined,
           uf: filtros.uf || undefined,
+          municipio: filtros.municipio || undefined,
           valor_min: filtros.valorMin || undefined,
           valor_max: filtros.valorMax || undefined,
           data_ini: filtros.dataIni || undefined,
@@ -311,6 +319,15 @@ export default function LicitacoesInbox() {
               placeholder="MG"
               value={filtros.uf}
               onChange={(e) => setFiltros((f) => ({ ...f, uf: e.target.value.toUpperCase() }))}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">Cidade</label>
+            <Input
+              className="w-44"
+              placeholder="Ex.: Belo Horizonte"
+              value={filtros.municipio}
+              onChange={(e) => setFiltros((f) => ({ ...f, municipio: e.target.value }))}
             />
           </div>
           <div>
