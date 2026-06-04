@@ -289,9 +289,10 @@
     <header>
       <h1>SIGO Obras — Mapa de Processos (editor)</h1>
       <p>
-        Arraste as etapas no quadro. Use <b>🔗 Conectar</b> para ligar uma na outra (clique na
-        origem e depois no destino). Edite os campos na lateral. Salva sozinho no navegador. No fim,
-        <b>Exportar JSON</b> e me devolva. Não altera o sistema.
+        Arraste as etapas no quadro. <b>↓ Ligar em sequência</b> conecta as etapas soltas de cima
+        pra baixo de uma vez. Em <b>decisões</b>, aponte o destino de cada opção pelo campo “→
+        destino” na lateral. <b>🔗 Conectar (manual)</b> liga duas etapas (clique origem → destino).
+        Salva sozinho no navegador. No fim, <b>Exportar JSON</b> e me devolva. Não altera o sistema.
       </p>
     </header>
 
@@ -306,7 +307,8 @@
         onchange="importJSON(event)"
       />
       <button onclick="copyJSON()">📋 Copiar JSON</button>
-      <button id="btnConnect" onclick="toggleConnect()">🔗 Conectar</button>
+      <button onclick="ligarSequencia()">↓ Ligar em sequência</button>
+      <button id="btnConnect" onclick="toggleConnect()">🔗 Conectar (manual)</button>
       <button onclick="autoLayout()">🧹 Auto-organizar</button>
       <button class="danger" onclick="resetAll()">↺ Restaurar padrão</button>
       <span class="hint" id="savedHint" style="margin-left: auto; align-self: center"></span>
@@ -824,6 +826,32 @@
         });
         save();
         renderCanvas();
+      }
+      // liga automaticamente as etapas SOLTAS (sem seta de saída), de cima pra
+      // baixo. Pula decisões (você aponta os destinos pelo dropdown) e o "fim".
+      function ligarSequencia() {
+        const proc = state.processes[state.activeProcess];
+        if (!Array.isArray(proc.links)) proc.links = [];
+        const ord = [...proc.steps].sort(
+          (a, b) => (a.y || 0) - (b.y || 0) || (a.x || 0) - (b.x || 0)
+        );
+        let add = 0;
+        for (let i = 0; i < ord.length - 1; i++) {
+          const cur = ord[i];
+          if (cur.tipo === "fim" || cur.tipo === "decisao") continue;
+          // já tem alguma saída ligada a um destino? então não mexe.
+          if (proc.links.some((l) => l.from === cur.id && l.to)) continue;
+          proc.links.push({ id: uid("l"), from: cur.id, to: ord[i + 1].id, label: "" });
+          add++;
+        }
+        save();
+        renderSteps();
+        renderCanvas();
+        alert(
+          add
+            ? `Liguei ${add} etapa(s) em sequência. As decisões você aponta pelos campos "→ destino".`
+            : "Tudo já estava ligado. Nas decisões, escolha o destino de cada opção pelo dropdown."
+        );
       }
       function renderMermaid() {
         const proc = state.processes[state.activeProcess];
