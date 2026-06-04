@@ -13,6 +13,7 @@
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail } from "../_shared/cors.ts";
+import { getCallerFromJWT, empresaIdEfetivo } from "../_shared/auth-jwt.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return preflightResponse();
@@ -33,8 +34,13 @@ Deno.serve(async (req) => {
     return fail("Payload inválido", 400);
   }
 
-  const { action = "get", empresa_id } = body;
-  if (!empresa_id) return fail("empresa_id é obrigatório", 400);
+  const action = body.action ?? "get";
+
+  // empresa_id vem do JWT do chamador (não do body) — fecha cross-tenant.
+  const caller = await getCallerFromJWT(req);
+  if (!caller) return fail("Sessão inválida", 401);
+  const empresa_id = empresaIdEfetivo(caller, body.empresa_id);
+  if (!empresa_id) return fail("Token sem empresa associada", 401);
 
   const supabase = createAdminClient();
 

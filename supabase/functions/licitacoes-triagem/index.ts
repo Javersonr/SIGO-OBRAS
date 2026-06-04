@@ -21,6 +21,7 @@
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail } from "../_shared/cors.ts";
 import { parseKeywords, matchKeywords } from "../_shared/keywords.ts";
+import { getCallerFromJWT, empresaIdEfetivo } from "../_shared/auth-jwt.ts";
 
 const PERFIS_GESTOR = ["Admin", "Admin Holding", "Gestor"];
 const ORIGEM_LICITACAO = "Licitação (Alerta Licitação)";
@@ -38,8 +39,12 @@ Deno.serve(async (req) => {
   }
 
   const action = String(body.action || "listar");
-  const empresa_id = body.empresa_id ? String(body.empresa_id) : "";
-  if (!empresa_id) return fail("empresa_id é obrigatório", 400);
+
+  // empresa_id vem do JWT do chamador (não do body) — fecha cross-tenant.
+  const caller = await getCallerFromJWT(req);
+  if (!caller) return fail("Sessão inválida", 401);
+  const empresa_id = empresaIdEfetivo(caller, body.empresa_id);
+  if (!empresa_id) return fail("Token sem empresa associada", 401);
 
   const supabase = createAdminClient();
 
@@ -48,7 +53,14 @@ Deno.serve(async (req) => {
   // -------------------------------------------------------------------------
   if (action === "listar") {
     const status = body.status ? String(body.status) : null;
-    const q = body.q ? String(body.q).trim() : "";
+    // Sanitiza q: remove os chars estruturais do PostgREST ( , ( ) \ % ) para
+    // evitar injeção de filtros no `.or(...)` abaixo. Limita o tamanho.
+    const q = body.q
+      ? String(body.q)
+          .replace(/[,()\\%]/g, " ")
+          .trim()
+          .slice(0, 100)
+      : "";
     const limite = Math.min(Math.max(Number(body.limite) || 100, 1), 300);
 
     let query = supabase
