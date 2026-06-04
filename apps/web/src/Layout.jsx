@@ -476,10 +476,13 @@ export default function Layout({ children, currentPageName }) {
   };
 
   // TODOS OS HOOKS ANTES DE QUALQUER EARLY RETURN
+  // is_super_admin lido UMA vez por render — NÃO a cada chamada de temPermissao.
+  // Ela é chamada por linha em listas grandes (Oportunidades tem milhares); ler
+  // sessionStorage por chamada travava a página.
+  const isSuperAdmin =
+    safeParseJSON(sessionStorage.getItem("custom_auth"), {}).is_super_admin === true;
   const temPermissao = React.useCallback(
     (modulo, aba = null, funcao = null) => {
-      const isSuperAdmin =
-        safeParseJSON(sessionStorage.getItem("custom_auth"), {}).is_super_admin === true;
       // Sem fallback para "Admin": perfil ausente = SEM privilégio (não elevar).
       const currentPerfil = vinculo?.perfil || "";
 
@@ -538,7 +541,7 @@ export default function Layout({ children, currentPageName }) {
 
       return false;
     },
-    [vinculo]
+    [vinculo, isSuperAdmin]
   );
 
   const filteredMenu = React.useMemo(() => {

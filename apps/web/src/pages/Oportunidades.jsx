@@ -39,6 +39,11 @@ import OportunidadeDetalhe from "../components/oportunidades/OportunidadeDetalhe
 
 export default function Oportunidades() {
   const { empresaAtiva, perfil, user, temPermissao, vinculo } = useEmpresa();
+  // Permissões da aba calculadas UMA vez (eram chamadas POR LINHA no Kanban e na
+  // Lista — com milhares de oportunidades isso travava a página).
+  const podeEditarOps = temPermissao("Oportunidades", "Lista", "editar");
+  const podeCriarOps = temPermissao("Oportunidades", "Lista", "criar");
+  const podeExcluirOps = temPermissao("Oportunidades", "Lista", "excluir");
 
   // permissoes / responsaveis_ids / campos_padrao / itens_json são JSONB —
   // vêm como objeto pelo supabase-js, não como string. JSON.parse direto
@@ -1307,12 +1312,10 @@ export default function Oportunidades() {
                                             entity={op}
                                             markAsCompleteTitle="Migrar para Projetos"
                                             onMarkAsComplete={
-                                              temPermissao("Oportunidades", "Lista", "editar")
-                                                ? handleMigrarParaProjeto
-                                                : null
+                                              podeEditarOps ? handleMigrarParaProjeto : null
                                             }
                                             onCopy={
-                                              temPermissao("Oportunidades", "Lista", "criar")
+                                              podeCriarOps
                                                 ? (o) =>
                                                     handleOpenModal({
                                                       ...o,
@@ -1320,16 +1323,8 @@ export default function Oportunidades() {
                                                     })
                                                 : null
                                             }
-                                            onArchive={
-                                              temPermissao("Oportunidades", "Lista", "editar")
-                                                ? handleArquivar
-                                                : null
-                                            }
-                                            onDelete={
-                                              temPermissao("Oportunidades", "Lista", "excluir")
-                                                ? handleDelete
-                                                : null
-                                            }
+                                            onArchive={podeEditarOps ? handleArquivar : null}
+                                            onDelete={podeExcluirOps ? handleDelete : null}
                                           />
                                         </PermissionGate>
                                       </div>
@@ -1451,13 +1446,9 @@ export default function Oportunidades() {
                         <EntityActions
                           entity={op}
                           markAsCompleteTitle="Migrar para Projetos"
-                          onMarkAsComplete={
-                            temPermissao("Oportunidades", "Lista", "editar")
-                              ? handleMigrarParaProjeto
-                              : null
-                          }
+                          onMarkAsComplete={podeEditarOps ? handleMigrarParaProjeto : null}
                           onCopy={
-                            temPermissao("Oportunidades", "Lista", "criar")
+                            podeCriarOps
                               ? (o) =>
                                   handleOpenModal({
                                     ...o,
@@ -1465,12 +1456,8 @@ export default function Oportunidades() {
                                   })
                               : null
                           }
-                          onArchive={
-                            temPermissao("Oportunidades", "Lista", "editar") ? handleArquivar : null
-                          }
-                          onDelete={
-                            temPermissao("Oportunidades", "Lista", "excluir") ? handleDelete : null
-                          }
+                          onArchive={podeEditarOps ? handleArquivar : null}
+                          onDelete={podeExcluirOps ? handleDelete : null}
                         />
                       </PermissionGate>
                     </td>
