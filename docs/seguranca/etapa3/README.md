@@ -18,7 +18,10 @@
   service-role no Supabase (ver `## Etapa 3b` abaixo). Externos NÃO recebem
   sessão Supabase Auth — seguem `anon`, e todo acesso passa por function que
   valida a credencial e devolve só o escopo permitido. Isso destrava a RLS.
-- **RLS:** continua **OFF** (migration 0026). A 0048 reverte isso.
+- **RLS:** **ON** — migration `0048` aplicada via `supabase db push`. Verificado:
+  anon key vê **0** linhas em `transacao_financeira`/`oportunidade`/`projeto`/
+  `cotacao_fornecedor`/`nota_fiscal_eletronica` (antes vazava tudo). Rollback
+  pronto em `0048_rollback_disable_rls.sql` (desliga a RLS na hora se preciso).
 
 ## Diagnóstico do estado da RLS (via migrations, fonte de verdade)
 
