@@ -1,10 +1,12 @@
-# Etapa 3 — Reabilitar a RLS (preparado, **não aplicado**)
+# Etapa 3 — Reabilitar a RLS — ✅ APLICADA E VALIDADA
 
-> O passo sensível da fundação de segurança. Aqui está tudo pronto para a
-> janela: a migration de reativação, o rollback e o roteiro de teste. **Nada
-> nesta pasta foi aplicado em produção.** Os `.sql` estão fora de
-> `supabase/migrations/` de propósito, pra um `supabase db push` acidental não
-> ligar a RLS sem os pré-requisitos.
+> **JANELA CONCLUÍDA.** A RLS multi-tenant foi reativada em produção (migration
+> `0048` via `supabase db push`) e validada: anon key vê 0 linhas, e os usuários
+> logados continuam vendo os dados da própria empresa (validação funcional OK).
+> Rollback disponível em `0048_rollback_disable_rls.sql` caso necessário.
+> Restam só as Etapas 4–5 (hardening — ver fim do arquivo).
+>
+> _Histórico abaixo (preservado para referência da preparação da janela)._
 
 ## Onde paramos (Etapas 1 e 2 — feitas)
 
