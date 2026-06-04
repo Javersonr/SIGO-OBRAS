@@ -28,12 +28,28 @@ description: >
 ⚠️ **Nunca lança direto no banco.** O fluxo é: gerar planilha → usuário revisa →
 usuário importa no SIGO. Isso evita erro de OCR ir parar no caixa.
 
-## Onde salvar a saída
+## Estrutura de pastas (entrada e saída) — POR CONTA
 
-`C:\Users\javer\OneDrive\SIGO Obras - Importacao\<EMPRESA>\`
-Nome dos arquivos: `Despesas_<AAAA-MM-DD>.csv` e `Receitas_<AAAA-MM-DD>.xlsx`.
-(Empresas comuns: `SINERGIA SERVIÇOS`, `SINERGIA MATERIAIS ELETRICOS` — se não
-souber a empresa, **pergunte** antes de gerar.)
+Base (Sinergia): `C:\Users\javer\OneDrive\SINERGIA\SIGO Obras\SIGO Obras - Importacao Sinergia\`
+Dentro dela há **uma pasta por conta financeira** do SIGO (os nomes batem
+exatamente com a coluna "Conta" do importador):
+
+```
+Aplicação Bradesco · Aplicação Sicoob · Bradesco · Caixa da Empresa ·
+Conta Siccob · Fundo Fixo Alisson · Fundo Fixo Camila · Fundo Fixo Javerson ·
+Fundo Fixo Luan · Fundo Fixo Lucas Lima · Fundo Fixo Matheus · Fundo Fixo Samira ·
+Inter - Sinergia Digital · Inter Sinergia Serviços
+```
+
+- **Entrada:** o usuário joga os comprovantes na pasta da **conta** correspondente.
+- **Regra de ouro:** ao processar uma pasta de conta, a coluna **"Conta"** da
+  planilha = **o nome da pasta** (preencha automático, não pergunte).
+- **Saída:** salve a planilha gerada **dentro da própria pasta da conta**, ex.:
+  `…\Fundo Fixo Javerson\Despesas_<AAAA-MM-DD>.csv` (e `Receitas_<AAAA-MM-DD>.xlsx`
+  se houver receitas).
+- Pra atualizar a lista de contas (se criarem novas no SIGO), liste em
+  `conta_financeira` (REST: `/rest/v1/conta_financeira?empresa_id=eq.<id>&select=nome&ativo=eq.true`,
+  RLS está desligada — anon key serve só pra leitura) e crie as pastas que faltarem.
 
 ## Formato da planilha de DESPESAS (arquivo .csv, separador `;`, UTF-8 com BOM)
 
