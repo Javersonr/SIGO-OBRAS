@@ -141,13 +141,14 @@ direto (é o admin logado — já é RLS-safe).
 2. ✅ FEITO — `supabase functions deploy` das 6 functions + `login-custom`
    (`--no-verify-jwt`). Smoke tests dos endpoints OK (401/400 esperados).
 3. ✅ FEITO — `supabase db push` aplicou a 0047 (coluna `enviado_por_cliente`).
-4. ⏳ PENDENTE — **push do frontend** (deploy Hostgator). É o passo que troca os
-   portais para as novas functions. Commit `7b6098a` pronto, ainda não pushado.
-5. ⏳ PENDENTE — testar os dois portais (login fornecedor + responder cotação;
-   abrir link de cliente + ver dados + subir arquivo/nota) **com a RLS ainda OFF**.
+4. ✅ FEITO — push do frontend (commits `7b6098a` + `24e102f`); deploy Hostgator
+   concluído via lftp. Os portais já usam as novas functions.
+5. ⏳ PENDENTE (validação do usuário) — testar os dois portais (login fornecedor +
+   responder cotação; abrir link de cliente + ver dados + subir arquivo/nota)
+   **com a RLS ainda OFF**.
 
-Backend (1–3) já está no ar e é não-disruptivo. Só depois de 3b 100% validado
-(passos 4–5) é que a janela da RLS (0048) fica segura.
+Backend e front (1–4) já estão no ar. Só depois de 3b 100% validado (passo 5) é
+que a janela da RLS (0048) fica segura.
 
 ## Depois da Etapa 3 (Etapas 4–5, do plano)
 
