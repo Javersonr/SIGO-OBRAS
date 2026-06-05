@@ -259,6 +259,19 @@
         text-decoration: underline;
         margin-top: 2px;
       }
+      .node.procbox {
+        width: 180px;
+        border-color: #7c3aed;
+        border-style: dashed;
+        background: #f5f3ff;
+        color: #5b21b6;
+        cursor: pointer;
+      }
+      .node.procbox .hintp {
+        color: #7c3aed;
+        font-size: 11px;
+        margin-top: 2px;
+      }
       .linkdel {
         position: absolute;
         background: #fee2e2;
@@ -364,7 +377,9 @@
         <div id="canvas"></div>
         <div class="legend">
           <span>⬜ etapa</span><span style="color: #b45309">◇ decisão</span>
-          <span style="color: #059669">⬭ início/fim</span><span>👤 responsável · ✔ aprova</span>
+          <span style="color: #059669">⬭ início/fim</span
+          ><span style="color: #7c3aed">▶ processo vinculado</span
+          ><span>👤 responsável · ✔ aprova</span>
         </div>
         <details style="margin-top: 8px">
           <summary class="hint">ver código Mermaid (documentação)</summary>
@@ -380,6 +395,7 @@
       let selSource = null;
       let nodeElsById = {};
       let linkEls = {};
+      let procLinkEls = [];
 
       // ---------- estado padrão ----------
       function uid(p) {
@@ -720,10 +736,11 @@
         canvas.innerHTML = "";
         nodeElsById = {};
         linkEls = {};
+        procLinkEls = [];
         const NS = "http://www.w3.org/2000/svg";
         const svg = document.createElementNS(NS, "svg");
         svg.setAttribute("class", "links");
-        svg.innerHTML = `<defs><marker id="arrow" markerWidth="12" markerHeight="12" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L9,3 L0,6 Z" fill="#64748b"/></marker></defs>`;
+        svg.innerHTML = `<defs><marker id="arrow" markerWidth="12" markerHeight="12" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L9,3 L0,6 Z" fill="#64748b"/></marker><marker id="arrowp" markerWidth="12" markerHeight="12" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L9,3 L0,6 Z" fill="#7c3aed"/></marker></defs>`;
         canvas.appendChild(svg);
 
         let maxX = 700,
@@ -768,6 +785,34 @@
           maxX = Math.max(maxX, s.x + 240);
           maxY = Math.max(maxY, s.y + 120);
         });
+
+        // quadros dos processos vinculados (à direita da etapa, seta pontilhada)
+        proc.steps.forEach((s) => {
+          const alvo = s.processo_link && state.processes[s.processo_link];
+          if (!alvo) return;
+          const bx = s.x + 250,
+            by = s.y;
+          const box = document.createElement("div");
+          box.className = "node procbox";
+          box.style.left = bx + "px";
+          box.style.top = by + "px";
+          box.title = "abrir o processo " + alvo.nome;
+          box.innerHTML =
+            `<b>▶ ${escapeHTML(alvo.nome)}</b>` +
+            `<div class="hintp">processo vinculado — clique para abrir</div>`;
+          box.onclick = () => goToProcess(s.processo_link);
+          canvas.appendChild(box);
+          const line = document.createElementNS(NS, "line");
+          line.setAttribute("stroke", "#7c3aed");
+          line.setAttribute("stroke-width", "2");
+          line.setAttribute("stroke-dasharray", "5,4");
+          line.setAttribute("marker-end", "url(#arrowp)");
+          svg.appendChild(line);
+          procLinkEls.push({ line, box, from: s.id });
+          maxX = Math.max(maxX, bx + 200);
+          maxY = Math.max(maxY, by + 80);
+        });
+
         svg.setAttribute("width", maxX);
         svg.setAttribute("height", maxY);
         canvas.style.minWidth = maxX + "px";
@@ -835,6 +880,18 @@
             lbl.style.left = mx - lbl.offsetWidth / 2 + "px";
             lbl.style.top = my - 8 + "px";
           }
+        });
+        // setas etapa → quadro do processo vinculado (lado direito → lado esquerdo)
+        procLinkEls.forEach(({ line, box, from }) => {
+          const a = nodeElsById[from];
+          if (!a || !box) return;
+          // o quadro acompanha a etapa (fica à direita dela)
+          box.style.left = a.offsetLeft + a.offsetWidth + 50 + "px";
+          box.style.top = a.offsetTop + "px";
+          line.setAttribute("x1", a.offsetLeft + a.offsetWidth);
+          line.setAttribute("y1", a.offsetTop + a.offsetHeight / 2);
+          line.setAttribute("x2", box.offsetLeft);
+          line.setAttribute("y2", box.offsetTop + box.offsetHeight / 2);
         });
       }
       function attachDrag(el, s) {
