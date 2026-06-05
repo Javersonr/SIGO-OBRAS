@@ -634,18 +634,27 @@
           `<option value="__new__">➕ criar novo…</option>`
         );
       }
-      // dropdown de destinos (todas as etapas, menos a própria decisão)
+      // dropdown de destinos: etapas deste processo OU outro processo (proc:<key>)
       function stepOptions(proc, exceptId, selId) {
+        const etapas = proc.steps
+          .map((x, i) => ({ x, i }))
+          .filter(({ x }) => x.id !== exceptId)
+          .map(
+            ({ x, i }) =>
+              `<option value="${x.id}" ${x.id === selId ? "selected" : ""}>${i + 1}. ${escapeHTML(x.nome)}</option>`
+          )
+          .join("");
+        const processos = Object.entries(state.processes)
+          .filter(([key]) => key !== state.activeProcess)
+          .map(
+            ([key, p]) =>
+              `<option value="proc:${key}" ${"proc:" + key === selId ? "selected" : ""}>▶ ${escapeHTML(p.nome)}</option>`
+          )
+          .join("");
         return (
           `<option value="">— escolher destino —</option>` +
-          proc.steps
-            .map((x, i) => ({ x, i }))
-            .filter(({ x }) => x.id !== exceptId)
-            .map(
-              ({ x, i }) =>
-                `<option value="${x.id}" ${x.id === selId ? "selected" : ""}>${i + 1}. ${escapeHTML(x.nome)}</option>`
-            )
-            .join("")
+          `<optgroup label="Etapas deste processo">${etapas}</optgroup>` +
+          (processos ? `<optgroup label="Ir para outro processo">${processos}</optgroup>` : "")
         );
       }
       // bloco de opções de uma decisão: cada saída = rótulo + destino
@@ -737,6 +746,40 @@
         if (!outs.some((l) => l.to)) return "sem ligação de saída";
         return "";
       }
+      // cria um quadro de processo (arrastável) e a seta pontilhada da origem.
+      // posObj guarda a posição (box_x/box_y): a etapa (vínculo) ou o link (decisão).
+      function criarQuadroProcesso(canvas, svg, NS, src, procKey, label, posObj) {
+        const alvo = state.processes[procKey];
+        if (!alvo) return null;
+        const temPos = typeof posObj.box_x === "number" && typeof posObj.box_y === "number";
+        const bx = temPos ? posObj.box_x : src.x + 250;
+        const by = temPos ? posObj.box_y : src.y;
+        const box = document.createElement("div");
+        box.className = "node procbox";
+        box.style.left = bx + "px";
+        box.style.top = by + "px";
+        box.title = "arraste para mover · clique para abrir o processo " + alvo.nome;
+        box.innerHTML =
+          `<b>▶ ${escapeHTML(alvo.nome)}</b>` +
+          `<div class="hintp">${escapeHTML(label || "processo vinculado")} — arraste / clique p/ abrir</div>`;
+        box.onclick = () => {
+          if (box._moved) {
+            box._moved = false;
+            return;
+          }
+          goToProcess(procKey);
+        };
+        canvas.appendChild(box);
+        attachBoxDrag(box, posObj);
+        const line = document.createElementNS(NS, "line");
+        line.setAttribute("stroke", "#7c3aed");
+        line.setAttribute("stroke-width", "2");
+        line.setAttribute("stroke-dasharray", "5,4");
+        line.setAttribute("marker-end", "url(#arrowp)");
+        svg.appendChild(line);
+        procLinkEls.push({ line, box, from: src.id, posObj });
+        return { bx, by };
+      }
       function renderHealth(proc) {
         const el = document.getElementById("health");
         if (!el) return;
@@ -785,9 +828,16 @@
               ? (proc.links || [])
                   .filter((l) => l.from === s.id)
                   .map((l) => {
-                    const dest = proc.steps.find((x) => x.id === l.to);
+                    let destNome = "";
+                    if (typeof l.to === "string" && l.to.startsWith("proc:")) {
+                      const p = state.processes[l.to.slice(5)];
+                      if (p) destNome = "▶ " + p.nome;
+                    } else {
+                      const dest = proc.steps.find((x) => x.id === l.to);
+                      if (dest) destNome = dest.nome;
+                    }
                     return `<div class="nopt">◇ ${escapeHTML(l.label || "(sem rótulo)")}${
-                      dest ? " → " + escapeHTML(dest.nome) : ""
+                      destNome ? " → " + escapeHTML(destNome) : ""
                     }</div>`;
                   })
                   .join("")
@@ -813,39 +863,27 @@
           maxY = Math.max(maxY, s.y + 120);
         });
 
-        // quadros dos processos vinculados (arrastáveis; seta pontilhada da etapa)
+        // quadros de processos vinculados (arrastáveis): por etapa (processo_link)
+        // e por opção de decisão cujo destino é um processo (to = "proc:<key>").
         proc.steps.forEach((s) => {
-          const alvo = s.processo_link && state.processes[s.processo_link];
-          if (!alvo) return;
-          const temPos = typeof s.box_x === "number" && typeof s.box_y === "number";
-          const bx = temPos ? s.box_x : s.x + 250,
-            by = temPos ? s.box_y : s.y;
-          const box = document.createElement("div");
-          box.className = "node procbox";
-          box.style.left = bx + "px";
-          box.style.top = by + "px";
-          box.title = "arraste para mover · clique para abrir o processo " + alvo.nome;
-          box.innerHTML =
-            `<b>▶ ${escapeHTML(alvo.nome)}</b>` +
-            `<div class="hintp">processo vinculado — arraste / clique p/ abrir</div>`;
-          box.onclick = () => {
-            if (box._moved) {
-              box._moved = false;
-              return;
-            } // foi arraste, não clique
-            goToProcess(s.processo_link);
-          };
-          canvas.appendChild(box);
-          attachBoxDrag(box, s);
-          const line = document.createElementNS(NS, "line");
-          line.setAttribute("stroke", "#7c3aed");
-          line.setAttribute("stroke-width", "2");
-          line.setAttribute("stroke-dasharray", "5,4");
-          line.setAttribute("marker-end", "url(#arrowp)");
-          svg.appendChild(line);
-          procLinkEls.push({ line, box, from: s.id, step: s });
-          maxX = Math.max(maxX, bx + 200);
-          maxY = Math.max(maxY, by + 80);
+          if (s.processo_link && state.processes[s.processo_link]) {
+            const r = criarQuadroProcesso(canvas, svg, NS, s, s.processo_link, "", s);
+            if (r) {
+              maxX = Math.max(maxX, r.bx + 200);
+              maxY = Math.max(maxY, r.by + 80);
+            }
+          }
+        });
+        (proc.links || []).forEach((lk) => {
+          if (typeof lk.to !== "string" || !lk.to.startsWith("proc:")) return;
+          const src = proc.steps.find((x) => x.id === lk.from);
+          const key = lk.to.slice(5);
+          if (!src || !state.processes[key]) return;
+          const r = criarQuadroProcesso(canvas, svg, NS, src, key, lk.label || "", lk);
+          if (r) {
+            maxX = Math.max(maxX, r.bx + 200);
+            maxY = Math.max(maxY, r.by + 80);
+          }
         });
 
         svg.setAttribute("width", maxX);
@@ -916,12 +954,12 @@
             lbl.style.top = my - 8 + "px";
           }
         });
-        // setas etapa → quadro do processo vinculado
-        procLinkEls.forEach(({ line, box, from, step }) => {
+        // setas origem → quadro do processo vinculado
+        procLinkEls.forEach(({ line, box, from, posObj }) => {
           const a = nodeElsById[from];
           if (!a || !box) return;
-          // só acompanha a etapa enquanto o usuário não arrastou o quadro
-          if (!step || typeof step.box_x !== "number") {
+          // só acompanha a origem enquanto o usuário não arrastou o quadro
+          if (!posObj || typeof posObj.box_x !== "number") {
             box.style.left = a.offsetLeft + a.offsetWidth + 50 + "px";
             box.style.top = a.offsetTop + "px";
           }
@@ -1038,6 +1076,10 @@
           // reancorar os quadros de processo ao lado da etapa
           delete s.box_x;
           delete s.box_y;
+        });
+        (proc.links || []).forEach((l) => {
+          delete l.box_x;
+          delete l.box_y;
         });
         save();
         renderCanvas();
