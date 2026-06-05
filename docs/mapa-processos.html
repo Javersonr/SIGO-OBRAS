@@ -813,29 +813,37 @@
           maxY = Math.max(maxY, s.y + 120);
         });
 
-        // quadros dos processos vinculados (à direita da etapa, seta pontilhada)
+        // quadros dos processos vinculados (arrastáveis; seta pontilhada da etapa)
         proc.steps.forEach((s) => {
           const alvo = s.processo_link && state.processes[s.processo_link];
           if (!alvo) return;
-          const bx = s.x + 250,
-            by = s.y;
+          const temPos = typeof s.box_x === "number" && typeof s.box_y === "number";
+          const bx = temPos ? s.box_x : s.x + 250,
+            by = temPos ? s.box_y : s.y;
           const box = document.createElement("div");
           box.className = "node procbox";
           box.style.left = bx + "px";
           box.style.top = by + "px";
-          box.title = "abrir o processo " + alvo.nome;
+          box.title = "arraste para mover · clique para abrir o processo " + alvo.nome;
           box.innerHTML =
             `<b>▶ ${escapeHTML(alvo.nome)}</b>` +
-            `<div class="hintp">processo vinculado — clique para abrir</div>`;
-          box.onclick = () => goToProcess(s.processo_link);
+            `<div class="hintp">processo vinculado — arraste / clique p/ abrir</div>`;
+          box.onclick = () => {
+            if (box._moved) {
+              box._moved = false;
+              return;
+            } // foi arraste, não clique
+            goToProcess(s.processo_link);
+          };
           canvas.appendChild(box);
+          attachBoxDrag(box, s);
           const line = document.createElementNS(NS, "line");
           line.setAttribute("stroke", "#7c3aed");
           line.setAttribute("stroke-width", "2");
           line.setAttribute("stroke-dasharray", "5,4");
           line.setAttribute("marker-end", "url(#arrowp)");
           svg.appendChild(line);
-          procLinkEls.push({ line, box, from: s.id });
+          procLinkEls.push({ line, box, from: s.id, step: s });
           maxX = Math.max(maxX, bx + 200);
           maxY = Math.max(maxY, by + 80);
         });
@@ -908,13 +916,15 @@
             lbl.style.top = my - 8 + "px";
           }
         });
-        // setas etapa → quadro do processo vinculado (lado direito → lado esquerdo)
-        procLinkEls.forEach(({ line, box, from }) => {
+        // setas etapa → quadro do processo vinculado
+        procLinkEls.forEach(({ line, box, from, step }) => {
           const a = nodeElsById[from];
           if (!a || !box) return;
-          // o quadro acompanha a etapa (fica à direita dela)
-          box.style.left = a.offsetLeft + a.offsetWidth + 50 + "px";
-          box.style.top = a.offsetTop + "px";
+          // só acompanha a etapa enquanto o usuário não arrastou o quadro
+          if (!step || typeof step.box_x !== "number") {
+            box.style.left = a.offsetLeft + a.offsetWidth + 50 + "px";
+            box.style.top = a.offsetTop + "px";
+          }
           line.setAttribute("x1", a.offsetLeft + a.offsetWidth);
           line.setAttribute("y1", a.offsetTop + a.offsetHeight / 2);
           line.setAttribute("x2", box.offsetLeft);
@@ -943,6 +953,36 @@
             el.removeEventListener("pointermove", mv);
             el.removeEventListener("pointerup", up);
             save();
+          };
+          el.addEventListener("pointermove", mv);
+          el.addEventListener("pointerup", up);
+        });
+      }
+      // arrastar o QUADRO do processo vinculado (guarda posição em s.box_x/box_y)
+      function attachBoxDrag(el, s) {
+        el.addEventListener("pointerdown", (e) => {
+          if (connectMode) return;
+          e.stopPropagation();
+          const sx = e.clientX,
+            sy = e.clientY,
+            ox = el.offsetLeft,
+            oy = el.offsetTop;
+          el._moved = false;
+          el.setPointerCapture(e.pointerId);
+          el.style.cursor = "grabbing";
+          const mv = (ev) => {
+            if (Math.abs(ev.clientX - sx) > 3 || Math.abs(ev.clientY - sy) > 3) el._moved = true;
+            s.box_x = Math.max(0, ox + (ev.clientX - sx));
+            s.box_y = Math.max(0, oy + (ev.clientY - sy));
+            el.style.left = s.box_x + "px";
+            el.style.top = s.box_y + "px";
+            drawLinks();
+          };
+          const up = () => {
+            el.style.cursor = "pointer";
+            el.removeEventListener("pointermove", mv);
+            el.removeEventListener("pointerup", up);
+            if (el._moved) save();
           };
           el.addEventListener("pointermove", mv);
           el.addEventListener("pointerup", up);
@@ -995,6 +1035,9 @@
         proc.steps.forEach((s, i) => {
           s.x = 80;
           s.y = 20 + i * 150;
+          // reancorar os quadros de processo ao lado da etapa
+          delete s.box_x;
+          delete s.box_y;
         });
         save();
         renderCanvas();
