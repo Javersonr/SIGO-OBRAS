@@ -253,6 +253,12 @@
         color: #b45309;
         margin-top: 2px;
       }
+      .node .nlink {
+        color: #7c3aed;
+        cursor: pointer;
+        text-decoration: underline;
+        margin-top: 2px;
+      }
       .linkdel {
         position: absolute;
         background: #fee2e2;
@@ -620,6 +626,25 @@
           <button class="ghost" style="color:#0284c7;padding-left:0" onclick="addExit('${s.id}')">+ adicionar opção</button>
         </div>`;
       }
+      // dropdown dos OUTROS processos, pra vincular uma etapa a outro fluxo
+      function processLinkOptions(sel) {
+        return (
+          `<option value="">— nenhum —</option>` +
+          Object.entries(state.processes)
+            .filter(([key]) => key !== state.activeProcess)
+            .map(
+              ([key, p]) =>
+                `<option value="${key}" ${key === sel ? "selected" : ""}>${escapeHTML(p.nome)}</option>`
+            )
+            .join("")
+        );
+      }
+      function goToProcess(key) {
+        if (!state.processes[key]) return;
+        state.activeProcess = key;
+        selSource = null;
+        renderAll();
+      }
       function renderSteps() {
         const proc = state.processes[state.activeProcess];
         document.getElementById("procTitle").textContent = "Etapas — " + proc.nome;
@@ -643,7 +668,7 @@
             </div>
             <div class="grid2" style="margin-top:6px">
               <div><label class="lbl">Tipo</label><select onchange="upd('${s.id}','tipo',this.value)">${TIPOS.map((t) => `<option ${t === s.tipo ? "selected" : ""}>${t}</option>`).join("")}</select></div>
-              <div></div>
+              <div><label class="lbl">Vincula a outro processo</label><select onchange="upd('${s.id}','processo_link',this.value)">${processLinkOptions(s.processo_link)}</select></div>
             </div>
             ${s.tipo === "decisao" ? decisionExitsHTML(proc, s) : ""}
             <div style="margin-top:6px"><label class="lbl">Atividades / captura</label>
@@ -663,6 +688,8 @@
           return "";
         }
         if (s.tipo === "fim") return "";
+        // vincular a outro processo conta como continuação (não é "solta")
+        if (s.processo_link && state.processes[s.processo_link]) return "";
         // inicio / etapa precisam de pelo menos uma saída ligada
         if (!outs.some((l) => l.to)) return "sem ligação de saída";
         return "";
@@ -721,11 +748,16 @@
                   })
                   .join("")
               : "";
+          const procLink =
+            s.processo_link && state.processes[s.processo_link]
+              ? `<div class="nlink" title="abrir o processo vinculado" onclick="event.stopPropagation();goToProcess('${s.processo_link}')">🔗 → ${escapeHTML(state.processes[s.processo_link].nome)}</div>`
+              : "";
           n.innerHTML =
             `<b>${i + 1}. ${escapeHTML(s.nome)}</b>` +
             (s.responsavel ? `<div class="nrole">👤 ${escapeHTML(s.responsavel)}</div>` : "") +
             (s.aprova ? `<div class="nap">✔ ${escapeHTML(s.aprova)}</div>` : "") +
             exitsTxt +
+            procLink +
             (warn ? `<div class="nwarn">⚠ ${escapeHTML(warn)}</div>` : "");
           canvas.appendChild(n);
           nodeElsById[s.id] = n;
@@ -808,6 +840,7 @@
       function attachDrag(el, s) {
         el.addEventListener("pointerdown", (e) => {
           if (connectMode) return;
+          if (e.target.closest(".nlink")) return; // clicar no link de processo não arrasta
           const sx = e.clientX,
             sy = e.clientY,
             ox = s.x,
@@ -932,6 +965,14 @@
           if (idx[l.from] && idx[l.to]) {
             const lab = l.label ? `|${l.label.replace(/\|/g, "/")}|` : "";
             out += `    ${idx[l.from]} -->${lab} ${idx[l.to]}\n`;
+          }
+        });
+        // vínculos com outros processos (sub-processo) — seta pontilhada
+        proc.steps.forEach((s, i) => {
+          const alvo = s.processo_link && state.processes[s.processo_link];
+          if (alvo) {
+            const pn = '"▶ ' + (alvo.nome || "").replace(/"/g, "'") + '"';
+            out += `    n${i} -. processo .-> x${i}[[${pn}]]\n`;
           }
         });
         document.getElementById("mmcode").textContent = out;
