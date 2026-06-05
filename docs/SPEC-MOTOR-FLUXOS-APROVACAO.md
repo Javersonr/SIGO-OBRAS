@@ -248,16 +248,27 @@ que o sistema **já faz** (não recria):
 
 ## 9. Fases de implementação (incremental, não destrutivo)
 
-- **Fase A — Núcleo (sem UI rica):** tabelas `fluxo_*` + funções
-  `instanciar/concluir/aprovar/reprovar` (espelhando Compras) + generalizar
+> **Reordenado conforme decisão do dono:** o EDITOR de fluxos passa a ser uma
+> **página dentro do SIGO** (ver §13) e é a **Fase 1** — entrega valor sozinha,
+> independente do motor.
+
+- **Fase 1 — Editor de Fluxos no SIGO (a sua ideia):** nova página React que
+  porta o `mapa-processos.html` e **salva no banco** (`fluxo_template` /
+  `fluxo_etapa_template`) por empresa. Sem motor ainda — serve para **moldar e
+  documentar** os processos vivos. Detalhe em §13.
+- **Fase A — Núcleo do motor (sem UI rica):** funções
+  `instanciar/concluir/aprovar/reprovar` (espelhando Compras) + tabelas de
+  instância (`fluxo_instancia`/`fluxo_etapa_instancia`) + generalizar
   `nivel_aprovacao`/`aprovacao_solicitacao`. Teste por RPC.
-- **Fase B — Importador do mapa:** JSON do editor → `fluxo_template`.
 - **Fase C — "Minhas pendências":** a lista executar/aprovar com os 3 botões.
 - **Fase D — Régua na Oportunidade:** esteira visual + checklist por etapa.
 - **Fase E — Piloto real:** ligar o template "Licitação → Obra" e rodar 1 ciclo
   ponta-a-ponta numa empresa de teste.
 - **Fase F (depois):** estender a outros processos (Execução/CEMIG, RH, etc.) — só
-  importar outro mapa; o motor não muda.
+  desenhar/publicar outro fluxo no editor; o motor não muda.
+
+> _Antes a "Fase B — Importador de JSON" deixa de existir: com o editor já dentro
+> do SIGO salvando no banco, não há import/export — o template já está lá._
 
 Cada fase é um deploy isolado e reversível (migrations novas, sem alterar as antigas).
 
@@ -302,4 +313,69 @@ Cada fase é um deploy isolado e reversível (migrations novas, sem alterar as a
   cron/UI, validável por RPC — e só então seguimos.
 
 > **Este documento não alterou o sistema.** É a planta. Ao OK do dono, começo
-> pela Fase A.
+> pela Fase 1 (Editor de Fluxos no SIGO — §13).
+
+---
+
+## 13. Editor de Fluxos DENTRO do SIGO (decisão do dono)
+
+> Em vez do HTML solto (`docs/mapa-processos.html`), o editor vira uma **página
+> do sistema**. Molda-se o fluxo direto no SIGO e ele **já fica salvo** como
+> template — pronto para o motor instanciar depois.
+
+### 13.1 O que é
+
+Uma nova página (ex.: **Configurações → Processos/Fluxos**, ou item de menu
+"Fluxos") que **porta toda a lógica** do `mapa-processos.html` para React em
+`apps/web`:
+
+- canvas de arrastar, etapas, **decisão com opções**, **vínculo a outro
+  processo** (+ retorno), **checklist** (campo Atividades), linhas ortogonais,
+  hover com checklist — **mesma experiência** que já existe no HTML.
+- **Persistência no banco** (Supabase) em `fluxo_template` / `fluxo_etapa_template`
+  por `empresa_id`, em vez de `localStorage`.
+
+### 13.2 Por que é melhor que o HTML standalone
+
+| HTML solto (hoje)                | Página no SIGO (proposto)                                |
+| -------------------------------- | -------------------------------------------------------- |
+| Salva só no navegador (1 pessoa) | Salva no banco, por empresa, **multiusuário**            |
+| Exporta/importa JSON na mão      | **Sem import/export** — já está no sistema               |
+| É só documentação                | É documentação **e** template executável do motor        |
+| Sem permissão/versão             | Permissão (só Admin/Gestor edita) + **versão publicada** |
+
+### 13.3 Ciclo de vida do template
+
+```
+Desenha (rascunho)  ──Publicar versão──▶  Template ATIVO (vN)
+                                              │
+                          motor instancia ────┘  (obras novas usam vN;
+                                                  obras em andamento mantêm a
+                                                  versão com que começaram)
+```
+
+- `fluxo_template.versao` + `status` (`rascunho` | `ativo` | `arquivado`).
+- Cada `fluxo_instancia` guarda a **cópia** das etapas (já previsto em §4.2), então
+  publicar uma versão nova **não quebra** obras em andamento.
+
+### 13.4 Escopo da Fase 1 (só o editor + persistência)
+
+1. **Tabelas** `fluxo_template` + `fluxo_etapa_template` (§4.1) com RLS por empresa.
+2. **Página React** (porta do `mapa-processos.html`) com **load/save** via
+   `sigo`/Supabase.
+3. **Permissão**: leitura para todos; edição só Admin/Gestor.
+4. **Migração opcional**: botão "Importar do editor antigo (JSON)" — aproveita o
+   mapa que o dono já desenhou (`mapa-processos-sigo.json`) para popular o banco
+   **uma vez**. Depois o HTML pode ser aposentado.
+
+> **Fase 1 não tem motor**: não executa, não aprova, não cria etapa em obra. Só
+> **desenha e guarda** — risco baixíssimo (página nova + 2 tabelas novas; nada
+> existente é tocado). O motor (Fase A em diante) lê esses templates.
+
+### 13.5 Reaproveitamento do código do editor
+
+O `mapa-processos.html` é **vanilla JS** com toda a lógica de canvas/estado já
+pronta. A port para React reusa **a mesma estrutura de dados** (steps/links) e os
+algoritmos (auto-ligar, elbow das linhas, decisão, vínculo de processo). O esforço
+é "envelopar em React + trocar `localStorage` por chamadas ao Supabase", não
+reescrever do zero.
