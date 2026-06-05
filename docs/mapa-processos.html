@@ -801,7 +801,8 @@
         };
         canvas.appendChild(box);
         attachBoxDrag(box, posObj);
-        const line = document.createElementNS(NS, "line");
+        const line = document.createElementNS(NS, "path");
+        line.setAttribute("fill", "none");
         line.setAttribute("stroke", "#7c3aed");
         line.setAttribute("stroke-width", "2");
         line.setAttribute("stroke-dasharray", "5,4");
@@ -809,7 +810,8 @@
         svg.appendChild(line);
         let retLine = null;
         if (volta) {
-          retLine = document.createElementNS(NS, "line");
+          retLine = document.createElementNS(NS, "path");
+          retLine.setAttribute("fill", "none");
           retLine.setAttribute("stroke", "#10b981");
           retLine.setAttribute("stroke-width", "2");
           retLine.setAttribute("marker-end", "url(#arrowg)");
@@ -937,7 +939,8 @@
           const a = nodeElsById[lk.from],
             b = nodeElsById[lk.to];
           if (!a || !b) return;
-          const line = document.createElementNS(NS, "line");
+          const line = document.createElementNS(NS, "path");
+          line.setAttribute("fill", "none");
           line.setAttribute("stroke", "#64748b");
           line.setAttribute("stroke-width", "2");
           line.setAttribute("marker-end", "url(#arrow)");
@@ -975,6 +978,57 @@
         drawLinks();
         renderHealth(proc);
       }
+      // path em "L" (90°) com cantos arredondados, a partir de uma lista de pontos
+      function roundedPath(points, r) {
+        const pts = [];
+        for (const p of points) {
+          const last = pts[pts.length - 1];
+          if (!last || last[0] !== p[0] || last[1] !== p[1]) pts.push(p);
+        }
+        if (pts.length < 2) return "";
+        let d = `M ${pts[0][0]} ${pts[0][1]}`;
+        for (let i = 1; i < pts.length - 1; i++) {
+          const [x0, y0] = pts[i - 1],
+            [x1, y1] = pts[i],
+            [x2, y2] = pts[i + 1];
+          const l1 = Math.hypot(x1 - x0, y1 - y0) || 1,
+            l2 = Math.hypot(x2 - x1, y2 - y1) || 1;
+          const rr = Math.min(r, l1 / 2, l2 / 2);
+          const ax = x1 - ((x1 - x0) / l1) * rr,
+            ay = y1 - ((y1 - y0) / l1) * rr;
+          const bx = x1 + ((x2 - x1) / l2) * rr,
+            by = y1 + ((y2 - y1) / l2) * rr;
+          d += ` L ${ax} ${ay} Q ${x1} ${y1} ${bx} ${by}`;
+        }
+        const last = pts[pts.length - 1];
+        d += ` L ${last[0]} ${last[1]}`;
+        return d;
+      }
+      // cotovelo ortogonal: "v" (sai embaixo, entra em cima) ou "h" (sai à direita)
+      function elbow(ax, ay, bx, by, orient) {
+        if (orient === "h") {
+          const mx = (ax + bx) / 2;
+          return roundedPath(
+            [
+              [ax, ay],
+              [mx, ay],
+              [mx, by],
+              [bx, by],
+            ],
+            12
+          );
+        }
+        const my = (ay + by) / 2;
+        return roundedPath(
+          [
+            [ax, ay],
+            [ax, my],
+            [bx, my],
+            [bx, by],
+          ],
+          12
+        );
+      }
       function drawLinks() {
         Object.values(linkEls).forEach(({ line, del, lbl, from, to }) => {
           const a = nodeElsById[from],
@@ -984,10 +1038,7 @@
             ay = a.offsetTop + a.offsetHeight;
           const bx = b.offsetLeft + b.offsetWidth / 2,
             by = b.offsetTop;
-          line.setAttribute("x1", ax);
-          line.setAttribute("y1", ay);
-          line.setAttribute("x2", bx);
-          line.setAttribute("y2", by);
+          line.setAttribute("d", elbow(ax, ay, bx, by, "v"));
           const mx = (ax + bx) / 2,
             my = (ay + by) / 2;
           del.style.left = mx - 9 + "px";
@@ -1006,18 +1057,30 @@
             box.style.left = a.offsetLeft + a.offsetWidth + 50 + "px";
             box.style.top = a.offsetTop + "px";
           }
-          line.setAttribute("x1", a.offsetLeft + a.offsetWidth);
-          line.setAttribute("y1", a.offsetTop + a.offsetHeight / 2);
-          line.setAttribute("x2", box.offsetLeft);
-          line.setAttribute("y2", box.offsetTop + box.offsetHeight / 2);
+          line.setAttribute(
+            "d",
+            elbow(
+              a.offsetLeft + a.offsetWidth,
+              a.offsetTop + a.offsetHeight / 2,
+              box.offsetLeft,
+              box.offsetTop + box.offsetHeight / 2,
+              "h"
+            )
+          );
           // seta de retorno: quadro do processo → etapa de volta
           if (retLine) {
             const t = nodeElsById[retTo];
             if (t) {
-              retLine.setAttribute("x1", box.offsetLeft + box.offsetWidth / 2);
-              retLine.setAttribute("y1", box.offsetTop + box.offsetHeight);
-              retLine.setAttribute("x2", t.offsetLeft + t.offsetWidth / 2);
-              retLine.setAttribute("y2", t.offsetTop);
+              retLine.setAttribute(
+                "d",
+                elbow(
+                  box.offsetLeft + box.offsetWidth / 2,
+                  box.offsetTop + box.offsetHeight,
+                  t.offsetLeft + t.offsetWidth / 2,
+                  t.offsetTop,
+                  "v"
+                )
+              );
             }
           }
         });
