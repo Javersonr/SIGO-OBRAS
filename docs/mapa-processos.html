@@ -657,20 +657,39 @@
           (processos ? `<optgroup label="Ir para outro processo">${processos}</optgroup>` : "")
         );
       }
+      // só as etapas deste processo (destino de retorno de um processo)
+      function stepOnlyOptions(proc, selId) {
+        return (
+          `<option value="">— volta para… —</option>` +
+          proc.steps
+            .map(
+              (x, i) =>
+                `<option value="${x.id}" ${x.id === selId ? "selected" : ""}>${i + 1}. ${escapeHTML(x.nome)}</option>`
+            )
+            .join("")
+        );
+      }
       // bloco de opções de uma decisão: cada saída = rótulo + destino
       function decisionExitsHTML(proc, s) {
         const exits = (proc.links || []).filter((l) => l.from === s.id);
         const rows = exits
-          .map(
-            (lk) => `
+          .map((lk) => {
+            const isProc = typeof lk.to === "string" && lk.to.startsWith("proc:");
+            const retornoRow = isProc
+              ? `<div class="row" style="margin:0 0 6px 26px">
+                  <span style="color:#10b981;flex:0 0 auto">↩ depois volta para</span>
+                  <select style="flex:1" onchange="updExit('${lk.id}','retorno',this.value)">${stepOnlyOptions(proc, lk.retorno)}</select>
+                </div>`
+              : "";
+            return `
             <div class="row" style="margin-bottom:4px">
               <input style="flex:1" value="${escapeAttr(lk.label || "")}" placeholder="Se… (ex.: Aprovado)"
                 oninput="updExit('${lk.id}','label',this.value)" />
               <span style="color:#94a3b8;flex:0 0 auto">→</span>
               <select style="flex:1" onchange="updExit('${lk.id}','to',this.value)">${stepOptions(proc, s.id, lk.to)}</select>
               <button class="ghost danger" title="remover opção" onclick="delExit('${lk.id}')">🗑</button>
-            </div>`
-          )
+            </div>${retornoRow}`;
+          })
           .join("");
         return `<div style="margin-top:6px;padding:6px;border:1px dashed #fbbf24;border-radius:8px;background:#fffbeb">
           <label class="lbl" style="color:#b45309">Opções da decisão — para onde vai cada uma</label>
@@ -722,6 +741,12 @@
               <div><label class="lbl">Tipo</label><select onchange="upd('${s.id}','tipo',this.value)">${TIPOS.map((t) => `<option ${t === s.tipo ? "selected" : ""}>${t}</option>`).join("")}</select></div>
               <div><label class="lbl">Vincula a outro processo</label><select onchange="upd('${s.id}','processo_link',this.value)">${processLinkOptions(s.processo_link)}</select></div>
             </div>
+            ${
+              s.processo_link && state.processes[s.processo_link]
+                ? `<div style="margin-top:6px"><label class="lbl" style="color:#059669">↩ Depois do processo, volta para</label>
+              <select onchange="upd('${s.id}','retorno',this.value)">${stepOnlyOptions(proc, s.retorno)}</select></div>`
+                : ""
+            }
             ${s.tipo === "decisao" ? decisionExitsHTML(proc, s) : ""}
             <div style="margin-top:6px"><label class="lbl">Atividades / captura</label>
               <textarea oninput="upd('${s.id}','atividades',this.value)">${escapeHTML(s.atividades)}</textarea></div>
@@ -748,7 +773,8 @@
       }
       // cria um quadro de processo (arrastável) e a seta pontilhada da origem.
       // posObj guarda a posição (box_x/box_y): a etapa (vínculo) ou o link (decisão).
-      function criarQuadroProcesso(canvas, svg, NS, src, procKey, label, posObj) {
+      // retornoStepId (opcional): etapa pra onde o fluxo volta após o processo.
+      function criarQuadroProcesso(canvas, svg, NS, src, procKey, label, posObj, retornoStepId) {
         const alvo = state.processes[procKey];
         if (!alvo) return null;
         const temPos = typeof posObj.box_x === "number" && typeof posObj.box_y === "number";
@@ -759,9 +785,13 @@
         box.style.left = bx + "px";
         box.style.top = by + "px";
         box.title = "arraste para mover · clique para abrir o processo " + alvo.nome;
+        const volta = retornoStepId && (proc0(retornoStepId) || null);
         box.innerHTML =
           `<b>▶ ${escapeHTML(alvo.nome)}</b>` +
-          `<div class="hintp">${escapeHTML(label || "processo vinculado")} — arraste / clique p/ abrir</div>`;
+          `<div class="hintp">${escapeHTML(label || "processo vinculado")} — arraste / clique p/ abrir</div>` +
+          (volta
+            ? `<div class="hintp" style="color:#059669">↩ volta para: ${escapeHTML(volta.nome)}</div>`
+            : "");
         box.onclick = () => {
           if (box._moved) {
             box._moved = false;
@@ -777,8 +807,21 @@
         line.setAttribute("stroke-dasharray", "5,4");
         line.setAttribute("marker-end", "url(#arrowp)");
         svg.appendChild(line);
-        procLinkEls.push({ line, box, from: src.id, posObj });
+        let retLine = null;
+        if (volta) {
+          retLine = document.createElementNS(NS, "line");
+          retLine.setAttribute("stroke", "#10b981");
+          retLine.setAttribute("stroke-width", "2");
+          retLine.setAttribute("marker-end", "url(#arrowg)");
+          svg.appendChild(retLine);
+        }
+        procLinkEls.push({ line, box, from: src.id, posObj, retLine, retTo: retornoStepId });
         return { bx, by };
+      }
+      // acha uma etapa pelo id no processo ativo (usado pelo "volta para")
+      function proc0(stepId) {
+        const proc = state.processes[state.activeProcess];
+        return (proc.steps || []).find((x) => x.id === stepId);
       }
       function renderHealth(proc) {
         const el = document.getElementById("health");
@@ -810,7 +853,7 @@
         const NS = "http://www.w3.org/2000/svg";
         const svg = document.createElementNS(NS, "svg");
         svg.setAttribute("class", "links");
-        svg.innerHTML = `<defs><marker id="arrow" markerWidth="12" markerHeight="12" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L9,3 L0,6 Z" fill="#64748b"/></marker><marker id="arrowp" markerWidth="12" markerHeight="12" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L9,3 L0,6 Z" fill="#7c3aed"/></marker></defs>`;
+        svg.innerHTML = `<defs><marker id="arrow" markerWidth="12" markerHeight="12" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L9,3 L0,6 Z" fill="#64748b"/></marker><marker id="arrowp" markerWidth="12" markerHeight="12" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L9,3 L0,6 Z" fill="#7c3aed"/></marker><marker id="arrowg" markerWidth="12" markerHeight="12" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L9,3 L0,6 Z" fill="#10b981"/></marker></defs>`;
         canvas.appendChild(svg);
 
         let maxX = 700,
@@ -867,7 +910,7 @@
         // e por opção de decisão cujo destino é um processo (to = "proc:<key>").
         proc.steps.forEach((s) => {
           if (s.processo_link && state.processes[s.processo_link]) {
-            const r = criarQuadroProcesso(canvas, svg, NS, s, s.processo_link, "", s);
+            const r = criarQuadroProcesso(canvas, svg, NS, s, s.processo_link, "", s, s.retorno);
             if (r) {
               maxX = Math.max(maxX, r.bx + 200);
               maxY = Math.max(maxY, r.by + 80);
@@ -879,7 +922,7 @@
           const src = proc.steps.find((x) => x.id === lk.from);
           const key = lk.to.slice(5);
           if (!src || !state.processes[key]) return;
-          const r = criarQuadroProcesso(canvas, svg, NS, src, key, lk.label || "", lk);
+          const r = criarQuadroProcesso(canvas, svg, NS, src, key, lk.label || "", lk, lk.retorno);
           if (r) {
             maxX = Math.max(maxX, r.bx + 200);
             maxY = Math.max(maxY, r.by + 80);
@@ -955,7 +998,7 @@
           }
         });
         // setas origem → quadro do processo vinculado
-        procLinkEls.forEach(({ line, box, from, posObj }) => {
+        procLinkEls.forEach(({ line, box, from, posObj, retLine, retTo }) => {
           const a = nodeElsById[from];
           if (!a || !box) return;
           // só acompanha a origem enquanto o usuário não arrastou o quadro
@@ -967,6 +1010,16 @@
           line.setAttribute("y1", a.offsetTop + a.offsetHeight / 2);
           line.setAttribute("x2", box.offsetLeft);
           line.setAttribute("y2", box.offsetTop + box.offsetHeight / 2);
+          // seta de retorno: quadro do processo → etapa de volta
+          if (retLine) {
+            const t = nodeElsById[retTo];
+            if (t) {
+              retLine.setAttribute("x1", box.offsetLeft + box.offsetWidth / 2);
+              retLine.setAttribute("y1", box.offsetTop + box.offsetHeight);
+              retLine.setAttribute("x2", t.offsetLeft + t.offsetWidth / 2);
+              retLine.setAttribute("y2", t.offsetTop);
+            }
+          }
         });
       }
       function attachDrag(el, s) {
@@ -1198,16 +1251,21 @@
         save();
         // trocar o Tipo mostra/esconde o bloco de opções → re-renderiza o painel
         if (field === "tipo") renderSteps();
-        if (["nome", "responsavel", "aprova", "tipo"].includes(field)) renderCanvas();
+        // vincular processo mostra/esconde o "↩ volta para" no painel
+        if (field === "processo_link") renderSteps();
+        if (["nome", "responsavel", "aprova", "tipo", "processo_link", "retorno"].includes(field))
+          renderCanvas();
       }
       // editar uma saída/opção da decisão (rótulo ou destino)
       function updExit(linkId, field, val) {
         const proc = state.processes[state.activeProcess];
         const lk = (proc.links || []).find((x) => x.id === linkId);
         if (!lk) return;
-        lk[field] = val; // "label" ou "to"
+        lk[field] = val; // "label", "to" ou "retorno"
         save();
-        renderCanvas(); // não re-renderiza o painel (não perde o foco do que está digitando)
+        // mudar o destino mostra/esconde a linha "↩ volta para" → re-render do painel
+        if (field === "to") renderSteps();
+        renderCanvas(); // (em "label" não re-renderiza o painel pra não perder o foco)
       }
       function addExit(stepId) {
         const proc = state.processes[state.activeProcess];
