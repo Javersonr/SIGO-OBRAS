@@ -315,6 +315,66 @@
         font-size: 12px;
         overflow: auto;
       }
+      /* tooltip de checklist (hover na etapa) */
+      #tip {
+        position: fixed;
+        z-index: 50;
+        max-width: 300px;
+        background: #0f172a;
+        color: #e2e8f0;
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 12px;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+        pointer-events: none;
+        display: none;
+      }
+      #tip b {
+        display: block;
+        margin-bottom: 4px;
+      }
+      #tip .ti {
+        margin: 2px 0;
+        color: #cbd5e1;
+      }
+      #printlist {
+        display: none;
+      }
+      /* impressão / PDF: mostra só o fluxograma + checklist */
+      @media print {
+        .toolbar,
+        header p,
+        #health,
+        .legend,
+        details {
+          display: none !important;
+        }
+        .wrap {
+          display: block !important;
+          padding: 0 !important;
+        }
+        .wrap > .card:first-child {
+          display: none !important;
+        }
+        .card {
+          border: none !important;
+        }
+        #canvas {
+          overflow: visible !important;
+          border: none !important;
+          min-height: 0 !important;
+        }
+        .node {
+          box-shadow: none !important;
+        }
+        #printlist {
+          display: block !important;
+          break-before: page;
+        }
+        #printlist li {
+          break-inside: avoid;
+        }
+      }
     </style>
   </head>
   <body>
@@ -339,6 +399,7 @@
         onchange="importJSON(event)"
       />
       <button onclick="copyJSON()">📋 Copiar JSON</button>
+      <button class="primary" onclick="imprimir()">🖨 Imprimir / PDF</button>
       <button id="btnAuto" onclick="toggleAutoLink()">🔗 Auto-ligar: ON</button>
       <button onclick="ligarSequencia()">↓ Ligar em sequência</button>
       <button id="btnConnect" onclick="toggleConnect()">🔗 Conectar (manual)</button>
@@ -386,8 +447,11 @@
           <summary class="hint">ver código Mermaid (documentação)</summary>
           <pre class="code" id="mmcode"></pre>
         </details>
+        <div id="printlist"></div>
       </div>
     </div>
+
+    <div id="tip"></div>
 
     <script>
       const STORAGE_KEY = "sigo_mapa_processos_v1";
@@ -904,6 +968,8 @@
           n.addEventListener("click", () => {
             if (connectMode) handleConnectClick(s);
           });
+          n.addEventListener("mouseenter", () => showTip(s, n));
+          n.addEventListener("mouseleave", hideTip);
           maxX = Math.max(maxX, s.x + 240);
           maxY = Math.max(maxY, s.y + 120);
         });
@@ -1283,6 +1349,66 @@
         renderCanvas();
         renderMermaid();
         updateAutoBtn();
+      }
+
+      // ---------- tooltip de checklist (hover) ----------
+      function checklistItens(s) {
+        return String(s.atividades || "")
+          .split(/\n|;/)
+          .map((t) => t.trim())
+          .filter(Boolean);
+      }
+      function showTip(s, nodeEl) {
+        if (connectMode) return;
+        const tip = document.getElementById("tip");
+        const itens = checklistItens(s);
+        let html = `<b>${escapeHTML(s.nome)}</b>`;
+        if (s.responsavel) html += `<div class="ti">👤 ${escapeHTML(s.responsavel)}</div>`;
+        if (s.aprova) html += `<div class="ti">✔ aprova: ${escapeHTML(s.aprova)}</div>`;
+        html += itens.length
+          ? itens.map((it) => `<div class="ti">☐ ${escapeHTML(it)}</div>`).join("")
+          : `<div class="ti" style="color:#94a3b8">— sem checklist (preencha "Atividades") —</div>`;
+        tip.innerHTML = html;
+        tip.style.display = "block";
+        const r = nodeEl.getBoundingClientRect();
+        const w = tip.offsetWidth;
+        let left = r.right + 10;
+        if (left + w > window.innerWidth - 6) left = r.left - w - 10;
+        if (left < 6) left = 6;
+        let top = r.top;
+        if (top + tip.offsetHeight > window.innerHeight - 6)
+          top = Math.max(6, window.innerHeight - tip.offsetHeight - 6);
+        tip.style.left = left + "px";
+        tip.style.top = top + "px";
+      }
+      function hideTip() {
+        const t = document.getElementById("tip");
+        if (t) t.style.display = "none";
+      }
+
+      // ---------- imprimir / compartilhar em PDF ----------
+      function imprimir() {
+        const proc = state.processes[state.activeProcess];
+        const pl = document.getElementById("printlist");
+        let html = `<h2 style="margin:0 0 8px">${escapeHTML(proc.nome)} — etapas e checklist</h2>`;
+        proc.steps.forEach((s, i) => {
+          const itens = checklistItens(s);
+          html +=
+            `<div style="margin:8px 0;break-inside:avoid">` +
+            `<b>${i + 1}. ${escapeHTML(s.nome)}</b>` +
+            (s.responsavel ? ` — 👤 ${escapeHTML(s.responsavel)}` : "") +
+            (s.aprova ? ` · ✔ ${escapeHTML(s.aprova)}` : "") +
+            (s.tipo && s.tipo !== "etapa" ? ` <i style="color:#64748b">(${s.tipo})</i>` : "") +
+            (itens.length
+              ? `<ul style="margin:3px 0 0 18px">` +
+                itens.map((it) => `<li>${escapeHTML(it)}</li>`).join("") +
+                `</ul>`
+              : "") +
+            `</div>`;
+        });
+        pl.innerHTML = html;
+        hideTip();
+        window.print();
       }
 
       // ---------- ações ----------
