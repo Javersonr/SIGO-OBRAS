@@ -339,6 +339,7 @@
         onchange="importJSON(event)"
       />
       <button onclick="copyJSON()">📋 Copiar JSON</button>
+      <button id="btnAuto" onclick="toggleAutoLink()">🔗 Auto-ligar: ON</button>
       <button onclick="ligarSequencia()">↓ Ligar em sequência</button>
       <button id="btnConnect" onclick="toggleConnect()">🔗 Conectar (manual)</button>
       <button onclick="autoLayout()">🧹 Auto-organizar</button>
@@ -536,6 +537,8 @@
       }
 
       let state = load() || defaultState();
+      // auto-ligar etapas em sequência: ligado por padrão (inclusive em mapas antigos)
+      if (typeof state.autoLink !== "boolean") state.autoLink = true;
 
       function load() {
         try {
@@ -556,12 +559,36 @@
         if (!Array.isArray(proc.links)) {
           proc.links = [];
           for (let i = 0; i < proc.steps.length - 1; i++)
-            proc.links.push({ id: uid("l"), from: proc.steps[i].id, to: proc.steps[i + 1].id });
+            proc.links.push({
+              id: uid("l"),
+              from: proc.steps[i].id,
+              to: proc.steps[i + 1].id,
+              auto: true,
+            });
         }
         proc.steps.forEach((s, i) => {
           if (typeof s.x !== "number") s.x = 80;
           if (typeof s.y !== "number") s.y = 20 + i * 150;
         });
+      }
+      // mantém a "espinha" sequencial: liga cada etapa à seguinte na ordem da
+      // lista. Não mexe em ligações manuais nem nas saídas de decisão; só
+      // gerencia as marcadas auto:true. Decisão e "fim" não geram saída auto.
+      function manterSequencia(proc) {
+        if (!Array.isArray(proc.links)) proc.links = [];
+        proc.links = proc.links.filter((l) => !l.auto); // descarta as auto antigas
+        for (let i = 0; i < proc.steps.length - 1; i++) {
+          const cur = proc.steps[i];
+          if (cur.tipo === "decisao" || cur.tipo === "fim") continue;
+          if (proc.links.some((l) => l.from === cur.id && l.to)) continue; // já tem saída
+          proc.links.push({
+            id: uid("l"),
+            from: cur.id,
+            to: proc.steps[i + 1].id,
+            label: "",
+            auto: true,
+          });
+        }
       }
 
       // ---------- render lateral ----------
@@ -998,6 +1025,20 @@
             : "Tudo já estava ligado. Nas decisões, escolha o destino de cada opção pelo dropdown."
         );
       }
+      function updateAutoBtn() {
+        const b = document.getElementById("btnAuto");
+        if (!b) return;
+        b.textContent = "🔗 Auto-ligar: " + (state.autoLink ? "ON" : "OFF");
+        b.classList.toggle("on", !!state.autoLink);
+      }
+      function toggleAutoLink() {
+        state.autoLink = !state.autoLink;
+        if (state.autoLink) manterSequencia(state.processes[state.activeProcess]);
+        save();
+        updateAutoBtn();
+        renderSteps();
+        renderCanvas();
+      }
       function renderMermaid() {
         const proc = state.processes[state.activeProcess];
         const idx = {};
@@ -1040,6 +1081,7 @@
         renderSteps();
         renderCanvas();
         renderMermaid();
+        updateAutoBtn();
       }
 
       // ---------- ações ----------
@@ -1066,6 +1108,8 @@
             proc.links.push({ id: uid("l"), from: id, to: "", label: "" });
           }
         }
+        // mudar o tipo afeta a espinha (decisão/fim não geram saída auto)
+        if (field === "tipo" && state.autoLink) manterSequencia(proc);
         save();
         // trocar o Tipo mostra/esconde o bloco de opções → re-renderiza o painel
         if (field === "tipo") renderSteps();
@@ -1099,6 +1143,7 @@
         const proc = state.processes[state.activeProcess];
         proc.steps = proc.steps.filter((x) => x.id !== id);
         proc.links = (proc.links || []).filter((l) => l.from !== id && l.to !== id);
+        if (state.autoLink) manterSequencia(proc); // recostura o vão deixado
         save();
         renderSteps();
         renderCanvas();
@@ -1118,12 +1163,13 @@
         };
         proc.steps.push(s);
         if (!Array.isArray(proc.links)) proc.links = [];
-        if (last) proc.links.push({ id: uid("l"), from: last.id, to: s.id });
+        if (state.autoLink) manterSequencia(proc);
+        else if (last) proc.links.push({ id: uid("l"), from: last.id, to: s.id });
         save();
         renderSteps();
         renderCanvas();
       }
-      // reordena a etapa na lista (muda a numeração; as ligações seguem pelos ids)
+      // reordena a etapa na lista (muda a numeração; auto-ligar reordena as setas)
       function moveStep(id, dir) {
         const proc = state.processes[state.activeProcess];
         const i = proc.steps.findIndex((x) => x.id === id);
@@ -1132,6 +1178,7 @@
         const t = proc.steps[i];
         proc.steps[i] = proc.steps[j];
         proc.steps[j] = t;
+        if (state.autoLink) manterSequencia(proc);
         save();
         renderSteps();
         renderCanvas();
@@ -1150,6 +1197,7 @@
           y: (s.y || 20) + 30,
         };
         proc.steps.splice(i + 1, 0, copy);
+        if (state.autoLink) manterSequencia(proc);
         save();
         renderSteps();
         renderCanvas();
@@ -1168,6 +1216,7 @@
         if (pos === i) return;
         const [s] = proc.steps.splice(i, 1);
         proc.steps.splice(pos, 0, s);
+        if (state.autoLink) manterSequencia(proc);
         save();
         renderSteps();
         renderCanvas();
