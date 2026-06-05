@@ -581,7 +581,8 @@
           `<option value="">—</option>` +
           state.roles
             .map((r) => `<option ${r === sel ? "selected" : ""}>${escapeHTML(r)}</option>`)
-            .join("")
+            .join("") +
+          `<option value="__new__">➕ criar novo…</option>`
         );
       }
       // dropdown de destinos (todas as etapas, menos a própria decisão)
@@ -948,6 +949,17 @@
         const proc = state.processes[state.activeProcess];
         const s = proc.steps.find((x) => x.id === id);
         if (!s) return;
+        // criar um novo responsável/função na hora, pelo próprio dropdown da etapa
+        if ((field === "responsavel" || field === "aprova") && val === "__new__") {
+          const nome = (prompt("Nome do novo responsável / função:", "") || "").trim();
+          if (nome && !state.roles.includes(nome)) state.roles.push(nome);
+          s[field] = nome || s[field] || "";
+          save();
+          renderRoles();
+          renderSteps(); // reconstrói o select (some o "__new__" e marca o novo)
+          renderCanvas();
+          return;
+        }
         s[field] = val;
         // ao virar "decisão", garante 2 opções (se… / senão…) pra preencher
         if (field === "tipo" && val === "decisao") {
