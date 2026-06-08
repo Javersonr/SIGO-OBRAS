@@ -1542,12 +1542,21 @@ export default function DespesaModal({
                     );
                     return;
                   }
-                  await handleSave({
-                    itensNota,
-                    almoxarifadoId: almoxarifadoSelecionado || null,
-                    chaveNfe: form.chave_nfe || null,
-                    tipoDespesa,
-                  });
+                  try {
+                    await handleSave({
+                      itensNota,
+                      almoxarifadoId: almoxarifadoSelecionado || null,
+                      chaveNfe: form.chave_nfe || null,
+                      tipoDespesa,
+                    });
+                  } catch (err) {
+                    console.error("Erro ao salvar despesa:", err);
+                    alert(
+                      "❌ Não foi possível salvar a despesa.\n\nErro: " +
+                        (err?.message || String(err)) +
+                        "\n\nNada foi gravado. Tente de novo; se persistir, me mande este texto."
+                    );
+                  }
                 }}
                 disabled={!form.valor || !form.conta_id || !form.data_vencimento || !form.descricao}
                 className="bg-red-600 hover:bg-red-700 flex-1"
