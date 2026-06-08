@@ -1515,6 +1515,18 @@ export default function DespesaModal({
               )}
               <Button
                 onClick={async () => {
+                  // Diz QUAL campo obrigatório falta, em vez de um botão morto
+                  // (antes o botão ficava disabled e o clique não fazia nada → o
+                  // usuário via "não salvou" sem entender o porquê).
+                  const faltando = [];
+                  if (!form.descricao) faltando.push("Descrição");
+                  if (!form.valor) faltando.push("Valor");
+                  if (!form.data_vencimento) faltando.push("Data de Vencimento");
+                  if (!form.conta_id) faltando.push("Conta");
+                  if (faltando.length > 0) {
+                    alert("Preencha antes de salvar:\n• " + faltando.join("\n• "));
+                    return;
+                  }
                   // Bloqueio adicional contra duplicidade caso a chave tenha sido
                   // colada/digitada após a importação inicial.
                   if (transacaoDuplicada) {
@@ -1558,7 +1570,6 @@ export default function DespesaModal({
                     );
                   }
                 }}
-                disabled={!form.valor || !form.conta_id || !form.data_vencimento || !form.descricao}
                 className="bg-red-600 hover:bg-red-700 flex-1"
               >
                 Salvar Despesa
