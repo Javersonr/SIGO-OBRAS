@@ -1,0 +1,9 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": ["src/main.jsx", "index.html"],
+  "project": ["src/**/*.{js,jsx}"],
+  "paths": {
+    "@/*": ["./src/*"]
+  },
+  "ignoreDependencies": ["@base44/sdk", "@base44/vite-plugin"]
+}
