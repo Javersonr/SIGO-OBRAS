@@ -1547,7 +1547,7 @@ export default function Estoque() {
                         {almoxarifados.map((a) => (
                           <CommandItem
                             key={a.id}
-                            value={a.nome}
+                            value={a.nome || a.id}
                             onSelect={() => {
                               setMovimentoForm({ ...movimentoForm, almoxarifado_id: a.id });
                               setOpenAlmoxCombo(false);
@@ -1740,7 +1740,7 @@ export default function Estoque() {
                           return (
                             <CommandItem
                               key={p.id}
-                              value={p.nome}
+                              value={p.nome || p.id}
                               onSelect={async () => {
                                 const current = reservaForm.projetos_ids || [];
                                 const next = selected

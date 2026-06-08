@@ -1,5 +1,35 @@
 import React from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
+
+// Detecta falha de carregamento de "chunk" (JS de página code-split). Acontece
+// quando o deploy substituiu os arquivos e a aba aberta ainda aponta pro chunk
+// antigo. O React.lazy() rejeita com um Error normal (não dispara
+// `vite:preloadError`), então precisamos pegar aqui também.
+function isChunkError(error) {
+  const msg = (error?.message || String(error || "")).toLowerCase();
+  return (
+    error?.name === "ChunkLoadError" ||
+    msg.includes("dynamically imported module") ||
+    msg.includes("error loading dynamically imported module") ||
+    msg.includes("importing a module script failed") ||
+    msg.includes("failed to load module") ||
+    msg.includes("failed to fetch dynamically")
+  );
+}
+
+// Recarrega no máx. 1x a cada 10s (mesma chave do handler em main.jsx) — evita
+// loop de reload se o chunk realmente não existir (ex.: servidor incompleto).
+function reloadOnceForChunk() {
+  const KEY = "sigo_chunk_reload_ts";
+  const now = Date.now();
+  const last = Number(sessionStorage.getItem(KEY) || 0);
+  if (now - last > 10000) {
+    sessionStorage.setItem(KEY, String(now));
+    window.location.reload();
+    return true;
+  }
+  return false;
+}
 
 /**
  * Error boundary global.
@@ -15,14 +45,18 @@ import { AlertTriangle } from "lucide-react";
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null, componentStack: "" };
+    this.state = { hasError: false, error: null, componentStack: "", isChunk: false };
   }
 
   static getDerivedStateFromError(error) {
-    return { hasError: true, error };
+    return { hasError: true, error, isChunk: isChunkError(error) };
   }
 
   componentDidCatch(error, info) {
+    // Erro de chunk (deploy novo) → auto-recupera recarregando a página, em vez
+    // de mostrar o card de erro. Pega o caso do React.lazy que o
+    // `vite:preloadError` não cobre.
+    if (isChunkError(error) && reloadOnceForChunk()) return;
     // Log detalhado pra Console — é onde devs/suporte vão olhar primeiro
     console.error("[ErrorBoundary] componente quebrou:", error);
     console.error("[ErrorBoundary] stack do componente:", info?.componentStack);
@@ -47,6 +81,19 @@ export default class ErrorBoundary extends React.Component {
 
   render() {
     if (!this.state.hasError) return this.props.children;
+
+    // Erro de chunk: estamos recarregando — mostra um aviso leve em vez do
+    // card vermelho assustador (a página vai recarregar em instantes).
+    if (this.state.isChunk) {
+      return (
+        <div className="min-h-[60vh] flex items-center justify-center p-6">
+          <div className="flex items-center gap-3 text-slate-600">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-sm">Atualizando para a nova versão…</span>
+          </div>
+        </div>
+      );
+    }
 
     const message = this.state.error?.message || String(this.state.error || "");
     const scope = this.props.scope || "Tela";

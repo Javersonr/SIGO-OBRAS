@@ -353,7 +353,7 @@ export default function ProjetoFormSheet({
                             {clientesFiltrados.map((c) => (
                               <CommandItem
                                 key={c.id}
-                                value={c.nome_razao}
+                                value={c.nome_razao || c.id}
                                 onSelect={() => {
                                   setFormData((p) => ({ ...p, cliente_id: c.id }));
                                   setOpenClientePopover(false);

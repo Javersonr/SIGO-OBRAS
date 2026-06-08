@@ -498,7 +498,7 @@ export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, 
                               .map((p) => (
                                 <CommandItem
                                   key={p.id}
-                                  value={p.nome}
+                                  value={p.nome || p.id}
                                   onSelect={() => {
                                     setForm({
                                       ...form,
