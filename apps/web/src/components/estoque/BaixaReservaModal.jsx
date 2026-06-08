@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, supabase } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -37,36 +37,48 @@ export default function BaixaReservaModal({ open, onOpenChange, reserva, onSave 
 
     setSaving(true);
     try {
-      // 1. Criar movimentos de estoque (saída)
-      const movimentos = itensSelecionados.map((item) => ({
-        empresa_id: item.empresa_id,
-        material_id: item.material_id,
-        almoxarifado_id: item.almoxarifado_id,
-        tipo_movimento: "Saída",
-        quantidade: item.quantidade_reservada,
-        motivo: `Saída por Reserva ${item.numero}`,
-        referencia_id: item.id,
-        referencia_tipo: "ReservaMaterial",
-        data_movimento: new Date().toISOString().split("T")[0],
-        observacoes,
-      }));
+      if (!supabase) {
+        throw new Error("Supabase client indisponível");
+      }
 
-      await sigo.entities.EstoqueMovimento.bulkCreate(movimentos);
+      let user = null;
+      try {
+        user = await sigo.auth.me();
+      } catch {
+        /* anônimo ok */
+      }
 
-      // 2. Atualizar status da reserva
-      const atualizadasPromises = itensSelecionados.map((item) =>
-        sigo.entities.ReservaMaterial.update(item.id, {
-          status: "Utilizada",
-        })
-      );
-      await Promise.all(atualizadasPromises);
+      // Baixa atômica por reserva (saída de estoque + status Utilizada + saldo
+      // recalculado dentro do Postgres). Substitui o bulkCreate + Promise.all.
+      const erros = [];
+      let sucesso = 0;
+      for (const item of itensSelecionados) {
+        try {
+          const { error } = await supabase.rpc("baixar_reserva_atomica", {
+            p_reserva_id: item.id,
+            p_quantidade_baixar: parseFloat(item.quantidade_reservada),
+            p_usuario_nome: user?.full_name || null,
+            p_observacoes: observacoes || `Baixa de reserva ${item.numero}`,
+          });
+          if (error) throw error;
+          sucesso++;
+        } catch (err) {
+          erros.push(`${item.material_descricao || item.id}: ${err.message || err}`);
+        }
+      }
 
-      alert("✅ Baixa realizada com sucesso!");
+      if (erros.length > 0) {
+        alert(
+          `Baixa parcial: ${sucesso}/${itensSelecionados.length} OK.\n\nErros:\n${erros.join("\n")}`
+        );
+      } else {
+        alert("✅ Baixa realizada com sucesso!");
+      }
       onSave?.();
       onOpenChange(false);
     } catch (error) {
       console.error("Erro ao dar baixa:", error);
-      alert("Erro ao dar baixa na reserva");
+      alert("Erro ao dar baixa na reserva: " + (error?.message || error));
     } finally {
       setSaving(false);
     }

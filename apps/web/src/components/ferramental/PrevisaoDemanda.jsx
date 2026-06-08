@@ -176,12 +176,15 @@ export default function PrevisaoDemanda({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-semibold text-slate-700">Localização</label>
-              <Select value={filtroLocalizacao} onValueChange={setFiltroLocalizacao}>
+              <Select
+                value={filtroLocalizacao || "__all__"}
+                onValueChange={(v) => setFiltroLocalizacao(v === "__all__" ? null : v)}
+              >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue placeholder="Todas" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={null}>Todas</SelectItem>
+                  <SelectItem value="__all__">Todas</SelectItem>
                   {localizacoes.map((local) => (
                     <SelectItem key={local} value={local}>
                       {local}

@@ -141,12 +141,15 @@ export default function HistoricoInspecaoTab({ inspecaoId, empresaId }) {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Tipo de Ação</label>
-          <Select value={filtroTipo} onValueChange={setFiltroTipo}>
+          <Select
+            value={filtroTipo || "__all__"}
+            onValueChange={(v) => setFiltroTipo(v === "__all__" ? null : v)}
+          >
             <SelectTrigger className="h-9">
               <SelectValue placeholder="Todos" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={null}>Todos</SelectItem>
+              <SelectItem value="__all__">Todos</SelectItem>
               {Object.entries(tipoAcaoConfig).map(([key, config]) => (
                 <SelectItem key={key} value={key}>
                   {config.texto}

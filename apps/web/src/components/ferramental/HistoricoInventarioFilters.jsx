@@ -49,14 +49,16 @@ export default function HistoricoInventarioFilters({
           <div>
             <Label className="text-xs font-medium text-slate-700">Ferramenta</Label>
             <Select
-              value={filtros.ferramenta}
-              onValueChange={(value) => onFiltrosChange({ ...filtros, ferramenta: value })}
+              value={filtros.ferramenta || "__all__"}
+              onValueChange={(value) =>
+                onFiltrosChange({ ...filtros, ferramenta: value === "__all__" ? null : value })
+              }
             >
               <SelectTrigger className="mt-1.5 text-sm">
                 <SelectValue placeholder="Todas" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={null}>Todas as ferramentas</SelectItem>
+                <SelectItem value="__all__">Todas as ferramentas</SelectItem>
                 {ferramentas.map((f) => (
                   <SelectItem key={f.id} value={f.id}>
                     {f.descricao} ({f.codigo})
@@ -70,14 +72,16 @@ export default function HistoricoInventarioFilters({
           <div>
             <Label className="text-xs font-medium text-slate-700">Usuário</Label>
             <Select
-              value={filtros.usuario}
-              onValueChange={(value) => onFiltrosChange({ ...filtros, usuario: value })}
+              value={filtros.usuario || "__all__"}
+              onValueChange={(value) =>
+                onFiltrosChange({ ...filtros, usuario: value === "__all__" ? null : value })
+              }
             >
               <SelectTrigger className="mt-1.5 text-sm">
                 <SelectValue placeholder="Todos" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={null}>Todos os usuários</SelectItem>
+                <SelectItem value="__all__">Todos os usuários</SelectItem>
                 {usuarios.map((u) => (
                   <SelectItem key={u.email} value={u.email}>
                     {u.nome}
@@ -91,14 +95,16 @@ export default function HistoricoInventarioFilters({
           <div>
             <Label className="text-xs font-medium text-slate-700">Tipo</Label>
             <Select
-              value={filtros.tipoOperacao}
-              onValueChange={(value) => onFiltrosChange({ ...filtros, tipoOperacao: value })}
+              value={filtros.tipoOperacao || "__all__"}
+              onValueChange={(value) =>
+                onFiltrosChange({ ...filtros, tipoOperacao: value === "__all__" ? null : value })
+              }
             >
               <SelectTrigger className="mt-1.5 text-sm">
                 <SelectValue placeholder="Todos" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={null}>Todas as operações</SelectItem>
+                <SelectItem value="__all__">Todas as operações</SelectItem>
                 <SelectItem value="Entrada">Entrada</SelectItem>
                 <SelectItem value="Ajuste">Ajuste</SelectItem>
                 <SelectItem value="Confirmação">Confirmação</SelectItem>

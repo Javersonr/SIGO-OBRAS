@@ -236,12 +236,15 @@ export default function MaoDeObraTab({
                 className="pl-10"
               />
             </div>
-            <Select value={filtroCategoriaMaoObra} onValueChange={setFiltroCategoriaMaoObra}>
+            <Select
+              value={filtroCategoriaMaoObra || "__all__"}
+              onValueChange={(v) => setFiltroCategoriaMaoObra(v === "__all__" ? null : v)}
+            >
               <SelectTrigger className="w-56">
                 <SelectValue placeholder="Todas as categorias" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={null}>Todas as categorias</SelectItem>
+                <SelectItem value="__all__">Todas as categorias</SelectItem>
                 {categoriasMaoDeObra.map((c) => (
                   <SelectItem key={c.id} value={c.nome}>
                     {c.nome}

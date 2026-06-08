@@ -647,12 +647,15 @@ export default function MateriaisTab({
               className="pl-10"
             />
           </div>
-          <Select value={filtroCategoriaMaterial} onValueChange={setFiltroCategoriaMaterial}>
+          <Select
+            value={filtroCategoriaMaterial || "__all__"}
+            onValueChange={(v) => setFiltroCategoriaMaterial(v === "__all__" ? null : v)}
+          >
             <SelectTrigger className="w-64">
               <SelectValue placeholder="Todas as categorias" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={null}>Todas as categorias</SelectItem>
+              <SelectItem value="__all__">Todas as categorias</SelectItem>
               {categoriasMaterial.map((c) => (
                 <SelectItem key={c.id} value={c.nome}>
                   {c.nome}

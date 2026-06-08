@@ -347,12 +347,15 @@ export default function PreLancamentosTab({
         <div className="flex gap-2 flex-wrap items-center">
           {/* Filtro de Usuário unificado */}
           {verTodos && (
-            <Select value={filtroUsuario || ""} onValueChange={(v) => setFiltroUsuario(v || "")}>
+            <Select
+              value={filtroUsuario || "__all__"}
+              onValueChange={(v) => setFiltroUsuario(v === "__all__" ? "" : v)}
+            >
               <SelectTrigger className="h-9 text-sm w-48">
                 <SelectValue placeholder="Todos os usuários" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={null}>Todos os usuários</SelectItem>
+                <SelectItem value="__all__">Todos os usuários</SelectItem>
                 {usuarios.map((u) => (
                   <SelectItem key={u.id} value={u.usuario_email}>
                     {u.nome_completo || u.usuario_email}

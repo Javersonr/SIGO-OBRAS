@@ -1769,14 +1769,16 @@ export default function ReceitasTab({
                   <div>
                     <Label>Oportunidade</Label>
                     <Select
-                      value={form.oportunidade_id || ""}
-                      onValueChange={(v) => setForm({ ...form, oportunidade_id: v })}
+                      value={form.oportunidade_id || "__none__"}
+                      onValueChange={(v) =>
+                        setForm({ ...form, oportunidade_id: v === "__none__" ? null : v })
+                      }
                     >
                       <SelectTrigger className="mt-1.5">
                         <SelectValue placeholder="Selecione..." />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value={null}>Nenhuma</SelectItem>
+                        <SelectItem value="__none__">Nenhuma</SelectItem>
                         {oportunidades.map((o) => (
                           <SelectItem key={o.id} value={o.id}>
                             {o.nome}
@@ -1788,14 +1790,16 @@ export default function ReceitasTab({
                   <div>
                     <Label>Projeto</Label>
                     <Select
-                      value={form.projeto_id || ""}
-                      onValueChange={(v) => setForm({ ...form, projeto_id: v })}
+                      value={form.projeto_id || "__none__"}
+                      onValueChange={(v) =>
+                        setForm({ ...form, projeto_id: v === "__none__" ? null : v })
+                      }
                     >
                       <SelectTrigger className="mt-1.5">
                         <SelectValue placeholder="Selecione..." />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value={null}>Nenhum</SelectItem>
+                        <SelectItem value="__none__">Nenhum</SelectItem>
                         {projetos.map((p) => (
                           <SelectItem key={p.id} value={p.id}>
                             {p.nome}
@@ -1855,14 +1859,16 @@ export default function ReceitasTab({
                   <div>
                     <Label>Forma de Recebimento</Label>
                     <Select
-                      value={form.forma_pagamento || ""}
-                      onValueChange={(v) => setForm({ ...form, forma_pagamento: v })}
+                      value={form.forma_pagamento || "__none__"}
+                      onValueChange={(v) =>
+                        setForm({ ...form, forma_pagamento: v === "__none__" ? null : v })
+                      }
                     >
                       <SelectTrigger className="mt-1.5">
                         <SelectValue placeholder="Selecione..." />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value={null}>Nenhuma</SelectItem>
+                        <SelectItem value="__none__">Nenhuma</SelectItem>
                         <SelectItem value="dinheiro">Dinheiro</SelectItem>
                         <SelectItem value="pix">PIX</SelectItem>
                         <SelectItem value="transferencia">Transferência</SelectItem>

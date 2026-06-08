@@ -171,14 +171,16 @@ export default function AuditLogs() {
             <div>
               <label className="text-sm font-medium">Tipo de Ação</label>
               <Select
-                value={filters.tipo_acao}
-                onValueChange={(value) => setFilters({ ...filters, tipo_acao: value })}
+                value={filters.tipo_acao || "__all__"}
+                onValueChange={(value) =>
+                  setFilters({ ...filters, tipo_acao: value === "__all__" ? null : value })
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={null}>Todos</SelectItem>
+                  <SelectItem value="__all__">Todos</SelectItem>
                   {tiposAcao.map((tipo) => (
                     <SelectItem key={tipo} value={tipo}>
                       {tipo}
@@ -191,14 +193,16 @@ export default function AuditLogs() {
             <div>
               <label className="text-sm font-medium">Entidade</label>
               <Select
-                value={filters.entidade}
-                onValueChange={(value) => setFilters({ ...filters, entidade: value })}
+                value={filters.entidade || "__all__"}
+                onValueChange={(value) =>
+                  setFilters({ ...filters, entidade: value === "__all__" ? null : value })
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={null}>Todas</SelectItem>
+                  <SelectItem value="__all__">Todas</SelectItem>
                   {entidades.map((ent) => (
                     <SelectItem key={ent} value={ent}>
                       {ent}

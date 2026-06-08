@@ -239,12 +239,15 @@ export default function RelatorioInventario({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <Label className="text-sm">Localização</Label>
-              <Select value={filtroLocalizacao} onValueChange={setFiltroLocalizacao}>
+              <Select
+                value={filtroLocalizacao || "__all__"}
+                onValueChange={(v) => setFiltroLocalizacao(v === "__all__" ? null : v)}
+              >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue placeholder="Todas" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={null}>Todas</SelectItem>
+                  <SelectItem value="__all__">Todas</SelectItem>
                   {localizacoes.map((local) => (
                     <SelectItem key={local} value={local}>
                       {local}
@@ -256,12 +259,15 @@ export default function RelatorioInventario({
 
             <div>
               <Label className="text-sm">Status</Label>
-              <Select value={filtroStatus} onValueChange={setFiltroStatus}>
+              <Select
+                value={filtroStatus || "__all__"}
+                onValueChange={(v) => setFiltroStatus(v === "__all__" ? null : v)}
+              >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={null}>Todos</SelectItem>
+                  <SelectItem value="__all__">Todos</SelectItem>
                   <SelectItem value="Disponível">Disponível</SelectItem>
                   <SelectItem value="Em Uso">Em Uso</SelectItem>
                   <SelectItem value="Em Manutenção">Em Manutenção</SelectItem>
