@@ -32,6 +32,7 @@ import { useBulkOperations } from "@/components/configuracoes/useBulkOperations"
 import ConfiguracaoNotificacoes from "@/components/notificacoes/ConfiguracaoNotificacoes";
 import CaminhoesConfigTab from "@/components/configuracoes/CaminhoesConfigTab";
 import LicitacoesConfigTab from "@/components/configuracoes/LicitacoesConfigTab";
+import FluxosTab from "@/components/configuracoes/FluxosTab";
 
 export default function Configuracoes() {
   const { empresaAtiva, perfil, user, reloadEmpresaAtiva, empresas, setEmpresaAtiva } =
@@ -1071,6 +1072,9 @@ export default function Configuracoes() {
                     Licitações
                   </TabsTrigger>
                 )}
+                <TabsTrigger value="fluxos" className="whitespace-nowrap text-xs sm:text-sm">
+                  Processos
+                </TabsTrigger>
               </>
             )}
           </TabsList>
@@ -1183,6 +1187,11 @@ export default function Configuracoes() {
         {/* Licitações */}
         <TabsContent value="licitacoes">
           <LicitacoesConfigTab empresaAtiva={empresaAtiva} />
+        </TabsContent>
+
+        {/* Processos / Fluxos de trabalho */}
+        <TabsContent value="fluxos">
+          <FluxosTab empresaAtiva={empresaAtiva} />
         </TabsContent>
 
         {/* Categorias */}
