@@ -638,7 +638,7 @@ export default function DespesaModal({
                                   {categoriasFiltradas.map((c) => (
                                     <CommandItem
                                       key={c.id}
-                                      value={c.nome}
+                                      value={c.nome || c.id}
                                       onSelect={() => {
                                         setForm({
                                           ...form,
@@ -681,7 +681,7 @@ export default function DespesaModal({
                                   {fornecedoresFiltrados.map((f) => (
                                     <CommandItem
                                       key={f.id}
-                                      value={f.nome_razao}
+                                      value={f.nome_razao || f.id}
                                       onSelect={() => {
                                         setForm({
                                           ...form,
@@ -738,7 +738,7 @@ export default function DespesaModal({
                                 {centrosCustoFiltrados.map((c) => (
                                   <CommandItem
                                     key={c.id}
-                                    value={c.nome}
+                                    value={c.nome || c.id}
                                     onSelect={() => {
                                       setForm({
                                         ...form,
@@ -794,14 +794,14 @@ export default function DespesaModal({
                                 {projetosFiltrados.map((p) => (
                                   <CommandItem
                                     key={p.id}
-                                    value={p.nome}
+                                    value={p.nome || p.id}
                                     onSelect={() => {
                                       setForm({ ...form, projeto_id: p.id, projeto_nome: p.nome });
                                       setOpenProjeto(false);
                                       setSearchProjeto("");
                                     }}
                                   >
-                                    {p.nome}
+                                    {p.nome || "(sem nome)"}
                                   </CommandItem>
                                 ))}
                               </CommandGroup>

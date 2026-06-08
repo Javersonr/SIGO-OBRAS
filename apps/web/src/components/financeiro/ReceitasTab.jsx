@@ -1636,7 +1636,7 @@ export default function ReceitasTab({
                               {categoriasFiltradas.map((c) => (
                                 <CommandItem
                                   key={c.id}
-                                  value={c.nome}
+                                  value={c.nome || c.id}
                                   onSelect={() => {
                                     setForm({
                                       ...form,
@@ -1678,7 +1678,7 @@ export default function ReceitasTab({
                                 {centrosCustoFiltrados.map((c) => (
                                   <CommandItem
                                     key={c.id}
-                                    value={c.nome}
+                                    value={c.nome || c.id}
                                     onSelect={() => {
                                       setForm({ ...form, centro_custo_id: c.id });
                                       setOpenCentroCusto(false);
@@ -1731,7 +1731,7 @@ export default function ReceitasTab({
                               {clientesFiltrados.map((c) => (
                                 <CommandItem
                                   key={c.id}
-                                  value={c.nome_razao}
+                                  value={c.nome_razao || c.id}
                                   onSelect={() => {
                                     setForm({
                                       ...form,
