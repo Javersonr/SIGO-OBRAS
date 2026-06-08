@@ -218,17 +218,13 @@ export default function DespesasTab({
 
   const handleAnexoUpload = async (e) => {
     const files = Array.from(e.target.files);
-    const novosAnexos = [];
-
-    for (const file of files) {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-      novosAnexos.push({
-        nome: file.name,
-        url: file_url,
-        tipo: file.type,
-      });
-    }
-
+    // uploads em paralelo (eram em série, 1 por vez → lento com vários arquivos)
+    const novosAnexos = await Promise.all(
+      files.map(async (file) => {
+        const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+        return { nome: file.name, url: file_url, tipo: file.type };
+      })
+    );
     setAnexos([...anexos, ...novosAnexos]);
   };
 

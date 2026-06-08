@@ -43,14 +43,15 @@ export default function ChatWindow({ canal, user, empresaAtiva, usuariosEmpresa,
         return !lidaPor.includes(user.id) && m.usuario_id !== user.id;
       });
 
-      for (const msg of naoLidas) {
-        const lidaPor = safeParseJSON(msg.lida_por, []);
-        if (!lidaPor.includes(user.id)) {
-          await sigo.entities.MensagemChat.update(msg.id, {
+      // marca todas como lidas em paralelo (eram updates independentes em série)
+      await Promise.allSettled(
+        naoLidas.map((msg) => {
+          const lidaPor = safeParseJSON(msg.lida_por, []);
+          return sigo.entities.MensagemChat.update(msg.id, {
             lida_por: JSON.stringify([...lidaPor, user.id]),
           });
-        }
-      }
+        })
+      );
     } catch (error) {
       console.error("Erro ao carregar mensagens:", error);
       setLoading(false);
@@ -83,11 +84,17 @@ export default function ChatWindow({ canal, user, empresaAtiva, usuariosEmpresa,
 
       setMensagens([...mensagens, msg]);
 
-      // Criar notificações para usuários mencionados
-      for (const usuarioId of mencoes) {
-        const usuarioMencionado = usuariosEmpresa.find((u) => (u.usuario_id || u.id) === usuarioId);
-        if (usuarioMencionado && usuarioMencionado.usuario_email !== user.email) {
-          await sigo.entities.Notificacao.create({
+      // Notifica os mencionados em paralelo (independentes; falha de uma não
+      // pode derrubar o envio da mensagem).
+      await Promise.allSettled(
+        mencoes.map((usuarioId) => {
+          const usuarioMencionado = usuariosEmpresa.find(
+            (u) => (u.usuario_id || u.id) === usuarioId
+          );
+          if (!usuarioMencionado || usuarioMencionado.usuario_email === user.email) {
+            return Promise.resolve();
+          }
+          return sigo.entities.Notificacao.create({
             empresa_id: empresaAtiva.id,
             usuario_email: usuarioMencionado.usuario_email,
             tipo: "Sistema",
@@ -97,8 +104,8 @@ export default function ChatWindow({ canal, user, empresaAtiva, usuariosEmpresa,
             prioridade: "Normal",
             icone: "MessageSquare",
           });
-        }
-      }
+        })
+      );
 
       if (onUpdateCanal) onUpdateCanal();
     } catch (error) {
