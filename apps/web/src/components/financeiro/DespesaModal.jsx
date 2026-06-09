@@ -26,15 +26,7 @@ import {
 } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import EntityCombobox from "@/components/shared/EntityCombobox";
 import AssociarMateriaisModal from "./AssociarMateriaisModal";
 import NovoFornecedorConfigSheet from "../fornecedores/NovoFornecedorConfigSheet";
 import ModalPagamento from "./ModalPagamento";
@@ -619,92 +611,50 @@ export default function DespesaModal({
                     <div>
                       <Label>Categoria</Label>
                       <div className="flex gap-2 mt-1.5">
-                        <Popover open={openCategoria} onOpenChange={setOpenCategoria}>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" className="w-full justify-between">
-                              {categoriaSelecionada?.nome || "Selecione a categoria"}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-[300px] p-0" align="start">
-                            <Command>
-                              <CommandInput
-                                placeholder="Buscar categoria..."
-                                value={searchCategoria}
-                                onValueChange={setSearchCategoria}
-                              />
-                              <CommandList>
-                                <CommandEmpty>Nenhuma categoria encontrada</CommandEmpty>
-                                <CommandGroup>
-                                  {categoriasFiltradas.map((c) => (
-                                    <CommandItem
-                                      key={c.id}
-                                      value={c.nome || c.id}
-                                      onSelect={() => {
-                                        setForm({
-                                          ...form,
-                                          categoria_id: c.id,
-                                          categoria_nome: c.nome,
-                                        });
-                                        setOpenCategoria(false);
-                                        setSearchCategoria("");
-                                      }}
-                                    >
-                                      {c.nome}
-                                    </CommandItem>
-                                  ))}
-                                </CommandGroup>
-                              </CommandList>
-                            </Command>
-                          </PopoverContent>
-                        </Popover>
+                        <EntityCombobox
+                          items={categoriasFiltradas}
+                          value={form.categoria_id}
+                          onValueChange={(id, c) =>
+                            setForm({
+                              ...form,
+                              categoria_id: id || null,
+                              categoria_nome: c?.nome || null,
+                            })
+                          }
+                          getLabel={(c) => c.nome}
+                          placeholder="Selecione a categoria"
+                          searchPlaceholder="Buscar categoria..."
+                          emptyText="Nenhuma categoria encontrada"
+                          contentClassName="w-[300px]"
+                        />
                       </div>
                     </div>
                     <div>
                       <Label>Fornecedor</Label>
                       <div className="flex gap-2 mt-1.5">
-                        <Popover open={openFornecedor} onOpenChange={setOpenFornecedor}>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" className="w-full justify-between">
-                              {fornecedorSelecionado?.nome_razao || "Selecione o fornecedor"}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-[400px] p-0" align="start">
-                            <Command>
-                              <CommandInput
-                                placeholder="Buscar fornecedor..."
-                                value={searchFornecedor}
-                                onValueChange={setSearchFornecedor}
-                              />
-                              <CommandList>
-                                <CommandEmpty>Nenhum fornecedor encontrado</CommandEmpty>
-                                <CommandGroup>
-                                  {fornecedoresFiltrados.map((f) => (
-                                    <CommandItem
-                                      key={f.id}
-                                      value={f.nome_razao || f.id}
-                                      onSelect={() => {
-                                        setForm({
-                                          ...form,
-                                          fornecedor_id: f.id,
-                                          fornecedor_nome: f.nome_razao,
-                                        });
-                                        setOpenFornecedor(false);
-                                        setSearchFornecedor("");
-                                      }}
-                                    >
-                                      <div className="flex flex-col">
-                                        <span className="font-medium">{f.nome_razao}</span>
-                                        {f.cnpj && (
-                                          <span className="text-xs text-slate-500">{f.cnpj}</span>
-                                        )}
-                                      </div>
-                                    </CommandItem>
-                                  ))}
-                                </CommandGroup>
-                              </CommandList>
-                            </Command>
-                          </PopoverContent>
-                        </Popover>
+                        <EntityCombobox
+                          items={fornecedoresFiltrados}
+                          value={form.fornecedor_id}
+                          onValueChange={(id, f) =>
+                            setForm({
+                              ...form,
+                              fornecedor_id: id || null,
+                              fornecedor_nome: f?.nome_razao || null,
+                            })
+                          }
+                          getLabel={(f) => f.nome_razao}
+                          getSearchText={(f) => f.cnpj}
+                          renderItem={(f) => (
+                            <div className="flex flex-col">
+                              <span className="font-medium">{f.nome_razao}</span>
+                              {f.cnpj && <span className="text-xs text-slate-500">{f.cnpj}</span>}
+                            </div>
+                          )}
+                          placeholder="Selecione o fornecedor"
+                          searchPlaceholder="Buscar fornecedor..."
+                          emptyText="Nenhum fornecedor encontrado"
+                          contentClassName="w-[400px]"
+                        />
                         <Button
                           size="icon"
                           className="bg-red-600 hover:bg-red-700 shrink-0"
@@ -719,49 +669,29 @@ export default function DespesaModal({
                   <div>
                     <Label>Centro de Custo</Label>
                     <div className="flex gap-2 mt-1.5">
-                      <Popover open={openCentroCusto} onOpenChange={setOpenCentroCusto}>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" className="w-full justify-between">
-                            {centroCustoSelecionado?.nome || "Selecione o centro de custo"}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-[300px] p-0" align="start">
-                          <Command>
-                            <CommandInput
-                              placeholder="Buscar centro de custo..."
-                              value={searchCentroCusto}
-                              onValueChange={setSearchCentroCusto}
-                            />
-                            <CommandList>
-                              <CommandEmpty>Nenhum centro de custo encontrado</CommandEmpty>
-                              <CommandGroup>
-                                {centrosCustoFiltrados.map((c) => (
-                                  <CommandItem
-                                    key={c.id}
-                                    value={c.nome || c.id}
-                                    onSelect={() => {
-                                      setForm({
-                                        ...form,
-                                        centro_custo_id: c.id,
-                                        centro_custo_nome: c.nome,
-                                      });
-                                      setOpenCentroCusto(false);
-                                      setSearchCentroCusto("");
-                                    }}
-                                  >
-                                    <div className="flex flex-col">
-                                      <span className="font-medium">{c.nome}</span>
-                                      {c.codigo && (
-                                        <span className="text-xs text-slate-500">{c.codigo}</span>
-                                      )}
-                                    </div>
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
+                      <EntityCombobox
+                        items={centrosCustoFiltrados}
+                        value={form.centro_custo_id}
+                        onValueChange={(id, c) =>
+                          setForm({
+                            ...form,
+                            centro_custo_id: id || null,
+                            centro_custo_nome: c?.nome || null,
+                          })
+                        }
+                        getLabel={(c) => c.nome}
+                        getSearchText={(c) => c.codigo}
+                        renderItem={(c) => (
+                          <div className="flex flex-col">
+                            <span className="font-medium">{c.nome}</span>
+                            {c.codigo && <span className="text-xs text-slate-500">{c.codigo}</span>}
+                          </div>
+                        )}
+                        placeholder="Selecione o centro de custo"
+                        searchPlaceholder="Buscar centro de custo..."
+                        emptyText="Nenhum centro de custo encontrado"
+                        contentClassName="w-[300px]"
+                      />
                       <Button
                         size="icon"
                         className="bg-red-600 hover:bg-red-700 shrink-0"
@@ -775,40 +705,22 @@ export default function DespesaModal({
                   <div>
                     <Label>Projeto</Label>
                     <div className="mt-1.5">
-                      <Popover open={openProjeto} onOpenChange={setOpenProjeto}>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" className="w-full justify-between">
-                            {projetoSelecionado?.nome || "Selecione o projeto"}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-[400px] p-0" align="start">
-                          <Command>
-                            <CommandInput
-                              placeholder="Buscar projeto..."
-                              value={searchProjeto}
-                              onValueChange={setSearchProjeto}
-                            />
-                            <CommandList>
-                              <CommandEmpty>Nenhum projeto encontrado</CommandEmpty>
-                              <CommandGroup>
-                                {projetosFiltrados.map((p) => (
-                                  <CommandItem
-                                    key={p.id}
-                                    value={p.nome || p.id}
-                                    onSelect={() => {
-                                      setForm({ ...form, projeto_id: p.id, projeto_nome: p.nome });
-                                      setOpenProjeto(false);
-                                      setSearchProjeto("");
-                                    }}
-                                  >
-                                    {p.nome || "(sem nome)"}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
+                      <EntityCombobox
+                        items={projetosFiltrados}
+                        value={form.projeto_id}
+                        onValueChange={(id, p) =>
+                          setForm({
+                            ...form,
+                            projeto_id: id || null,
+                            projeto_nome: p?.nome || null,
+                          })
+                        }
+                        getLabel={(p) => p.nome || "(sem nome)"}
+                        placeholder="Selecione o projeto"
+                        searchPlaceholder="Buscar projeto..."
+                        emptyText="Nenhum projeto encontrado"
+                        contentClassName="w-[400px]"
+                      />
                     </div>
                   </div>
 

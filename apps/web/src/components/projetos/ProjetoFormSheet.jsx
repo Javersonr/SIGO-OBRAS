@@ -14,15 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
+import EntityCombobox from "@/components/shared/EntityCombobox";
 import { Plus, Search, FileText } from "lucide-react";
 import ResponsaveisSelect from "../shared/ResponsaveisSelect";
 import NovoClienteModal from "../clientes/NovoClienteModal";
@@ -334,45 +326,25 @@ export default function ProjetoFormSheet({
               <div>
                 <Label>Cliente</Label>
                 <div className="flex gap-2 mt-1.5">
-                  <Popover open={openClientePopover} onOpenChange={setOpenClientePopover}>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-between">
-                        {clienteSelecionado?.nome_razao || "Selecione um cliente"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[400px] p-0" align="start">
-                      <Command>
-                        <CommandInput
-                          placeholder="Buscar cliente..."
-                          value={searchCliente}
-                          onValueChange={setSearchCliente}
-                        />
-                        <CommandList>
-                          <CommandEmpty>Nenhum cliente encontrado</CommandEmpty>
-                          <CommandGroup>
-                            {clientesFiltrados.map((c) => (
-                              <CommandItem
-                                key={c.id}
-                                value={c.nome_razao || c.id}
-                                onSelect={() => {
-                                  setFormData((p) => ({ ...p, cliente_id: c.id }));
-                                  setOpenClientePopover(false);
-                                  setSearchCliente("");
-                                }}
-                              >
-                                <div className="flex flex-col">
-                                  <span className="font-medium">{c.nome_razao}</span>
-                                  {c.documento && (
-                                    <span className="text-xs text-slate-500">{c.documento}</span>
-                                  )}
-                                </div>
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+                  <EntityCombobox
+                    items={clientesFiltrados}
+                    value={formData.cliente_id}
+                    onValueChange={(id) => setFormData((p) => ({ ...p, cliente_id: id || "" }))}
+                    getLabel={(c) => c.nome_razao}
+                    getSearchText={(c) => c.documento}
+                    renderItem={(c) => (
+                      <div className="flex flex-col">
+                        <span className="font-medium">{c.nome_razao}</span>
+                        {c.documento && (
+                          <span className="text-xs text-slate-500">{c.documento}</span>
+                        )}
+                      </div>
+                    )}
+                    placeholder="Selecione um cliente"
+                    searchPlaceholder="Buscar cliente..."
+                    emptyText="Nenhum cliente encontrado"
+                    contentClassName="w-[400px]"
+                  />
                   <Button
                     type="button"
                     variant="outline"

@@ -43,6 +43,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import EntityCombobox from "@/components/shared/EntityCombobox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Command,
@@ -1473,99 +1474,42 @@ export default function Estoque() {
             </div>
             <div>
               <Label>Material *</Label>
-              <Popover open={openMaterialCombo} onOpenChange={setOpenMaterialCombo}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={openMaterialCombo}
-                    className="w-full justify-between mt-1.5"
-                  >
-                    {movimentoForm.material_id
-                      ? materiais.find((m) => m.id === movimentoForm.material_id)?.nome ||
-                        materiais.find((m) => m.id === movimentoForm.material_id)?.descricao
-                      : "Buscar material..."}
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[400px] p-0">
-                  <Command>
-                    <CommandInput placeholder="Buscar material..." />
-                    <CommandList>
-                      <CommandEmpty>Nenhum material encontrado.</CommandEmpty>
-                      <CommandGroup>
-                        {materiais
-                          .filter((m) => m.ativo)
-                          .map((m) => (
-                            <CommandItem
-                              key={m.id}
-                              value={`${m.nome || m.descricao} ${m.codigo}`}
-                              onSelect={() => {
-                                setMovimentoForm({ ...movimentoForm, material_id: m.id });
-                                setOpenMaterialCombo(false);
-                              }}
-                            >
-                              <Check
-                                className={`mr-2 h-4 w-4 ${
-                                  movimentoForm.material_id === m.id ? "opacity-100" : "opacity-0"
-                                }`}
-                              />
-                              <div className="flex flex-col">
-                                <span className="font-medium">{m.nome || m.descricao}</span>
-                                <span className="text-xs text-slate-500">{m.codigo}</span>
-                              </div>
-                            </CommandItem>
-                          ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
+              <EntityCombobox
+                className="mt-1.5"
+                items={materiais.filter((m) => m.ativo)}
+                value={movimentoForm.material_id}
+                onValueChange={(id) =>
+                  setMovimentoForm({ ...movimentoForm, material_id: id || "" })
+                }
+                getLabel={(m) => m.nome || m.descricao}
+                getSearchText={(m) => m.codigo}
+                renderItem={(m) => (
+                  <div className="flex flex-col">
+                    <span className="font-medium">{m.nome || m.descricao}</span>
+                    <span className="text-xs text-slate-500">{m.codigo}</span>
+                  </div>
+                )}
+                placeholder="Buscar material..."
+                searchPlaceholder="Buscar material..."
+                emptyText="Nenhum material encontrado."
+                contentClassName="w-[400px]"
+              />
             </div>
             <div>
               <Label>Almoxarifado *</Label>
-              <Popover open={openAlmoxCombo} onOpenChange={setOpenAlmoxCombo}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={openAlmoxCombo}
-                    className="w-full justify-between mt-1.5"
-                  >
-                    {movimentoForm.almoxarifado_id
-                      ? almoxarifados.find((a) => a.id === movimentoForm.almoxarifado_id)?.nome
-                      : "Buscar almoxarifado..."}
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[400px] p-0">
-                  <Command>
-                    <CommandInput placeholder="Buscar almoxarifado..." />
-                    <CommandList>
-                      <CommandEmpty>Nenhum almoxarifado encontrado.</CommandEmpty>
-                      <CommandGroup>
-                        {almoxarifados.map((a) => (
-                          <CommandItem
-                            key={a.id}
-                            value={a.nome || a.id}
-                            onSelect={() => {
-                              setMovimentoForm({ ...movimentoForm, almoxarifado_id: a.id });
-                              setOpenAlmoxCombo(false);
-                            }}
-                          >
-                            <Check
-                              className={`mr-2 h-4 w-4 ${
-                                movimentoForm.almoxarifado_id === a.id ? "opacity-100" : "opacity-0"
-                              }`}
-                            />
-                            {a.nome}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
+              <EntityCombobox
+                className="mt-1.5"
+                items={almoxarifados}
+                value={movimentoForm.almoxarifado_id}
+                onValueChange={(id) =>
+                  setMovimentoForm({ ...movimentoForm, almoxarifado_id: id || "" })
+                }
+                getLabel={(a) => a.nome}
+                placeholder="Buscar almoxarifado..."
+                searchPlaceholder="Buscar almoxarifado..."
+                emptyText="Nenhum almoxarifado encontrado."
+                contentClassName="w-[400px]"
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

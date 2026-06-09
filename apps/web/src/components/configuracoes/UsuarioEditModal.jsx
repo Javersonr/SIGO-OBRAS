@@ -19,15 +19,7 @@ import {
 import { ChevronRight, ChevronDown, Shield, User, Save, KeyRound, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
+import EntityCombobox from "@/components/shared/EntityCombobox";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ESTRUTURA_PERMISSOES } from "@/components/shared/PermissoesGranularesEditor";
 
@@ -473,57 +465,28 @@ export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, 
               {form.perfil === "Cliente" && (
                 <div>
                   <Label>Projeto Vinculado *</Label>
-                  <Popover open={openProjetoPopover} onOpenChange={setOpenProjetoPopover}>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-between mt-1.5">
-                        {form.projeto_nome || "Selecione um projeto"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[400px] p-0" align="start">
-                      <Command>
-                        <CommandInput
-                          placeholder="Buscar projeto..."
-                          value={searchProjeto}
-                          onValueChange={setSearchProjeto}
-                        />
-                        <CommandList>
-                          <CommandEmpty>Nenhum projeto encontrado</CommandEmpty>
-                          <CommandGroup>
-                            {projetos
-                              .filter(
-                                (p) =>
-                                  !searchProjeto ||
-                                  p.nome?.toLowerCase().includes(searchProjeto.toLowerCase())
-                              )
-                              .map((p) => (
-                                <CommandItem
-                                  key={p.id}
-                                  value={p.nome || p.id}
-                                  onSelect={() => {
-                                    setForm({
-                                      ...form,
-                                      projeto_id: p.id,
-                                      projeto_nome: p.nome,
-                                    });
-                                    setOpenProjetoPopover(false);
-                                    setSearchProjeto("");
-                                  }}
-                                >
-                                  <div className="flex flex-col">
-                                    <span className="font-medium">{p.nome}</span>
-                                    {p.cliente_nome && (
-                                      <span className="text-xs text-slate-500">
-                                        {p.cliente_nome}
-                                      </span>
-                                    )}
-                                  </div>
-                                </CommandItem>
-                              ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+                  <EntityCombobox
+                    className="mt-1.5"
+                    items={projetos}
+                    value={form.projeto_id}
+                    onValueChange={(id, p) =>
+                      setForm({ ...form, projeto_id: id || null, projeto_nome: p?.nome || null })
+                    }
+                    getLabel={(p) => p.nome}
+                    getSearchText={(p) => p.cliente_nome}
+                    renderItem={(p) => (
+                      <div className="flex flex-col">
+                        <span className="font-medium">{p.nome}</span>
+                        {p.cliente_nome && (
+                          <span className="text-xs text-slate-500">{p.cliente_nome}</span>
+                        )}
+                      </div>
+                    )}
+                    placeholder="Selecione um projeto"
+                    searchPlaceholder="Buscar projeto..."
+                    emptyText="Nenhum projeto encontrado"
+                    contentClassName="w-[400px]"
+                  />
                   <p className="text-xs text-slate-500 mt-1">
                     Selecione o projeto que este cliente poderá visualizar
                   </p>
