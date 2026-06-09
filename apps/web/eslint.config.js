@@ -52,6 +52,12 @@ export default [
       "react/react-in-jsx-scope": "off",
       "react/no-unknown-property": ["error", { ignore: ["cmdk-input-wrapper", "toast-close"] }],
       "react-hooks/rules-of-hooks": "error",
+      // pega dependências faltando em useEffect/useCallback (stale closures).
+      // "warn" pra não quebrar o CI; vira "error" depois de limpar os casos.
+      "react-hooks/exhaustive-deps": "warn",
+      // desencoraja console.log/info/debug (o build já remove em prod);
+      // warn/error continuam liberados pra rastrear bugs.
+      "no-console": ["warn", { allow: ["warn", "error"] }],
     },
   },
 ];

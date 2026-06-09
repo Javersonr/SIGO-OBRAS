@@ -27,7 +27,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import moment from "moment";
+import { subDays, startOfDay, isAfter, format } from "date-fns";
 
 export default function DashboardInspecoes() {
   const { empresaAtiva } = useEmpresa();
@@ -65,11 +65,11 @@ export default function DashboardInspecoes() {
       // Filtrar por período
       const dataInicio =
         periodo === "semana"
-          ? moment().subtract(7, "days").startOf("day")
-          : moment().subtract(30, "days").startOf("day");
+          ? startOfDay(subDays(new Date(), 7))
+          : startOfDay(subDays(new Date(), 30));
 
-      const inspecoesFiltradas = todasInspecoes.filter((i) =>
-        moment(i.data_inspecao).isAfter(dataInicio)
+      const inspecoesFiltradas = todasInspecoes.filter(
+        (i) => i.data_inspecao && isAfter(new Date(i.data_inspecao), dataInicio)
       );
 
       setInspecoes(inspecoesFiltradas);
@@ -94,7 +94,9 @@ export default function DashboardInspecoes() {
     inspecoes.forEach((inspecao) => {
       try {
         const ferramentas = safeParseJSON(inspecao.ferramentas_inspecionadas, []);
-        const dia = moment(inspecao.data_inspecao).format("DD/MM");
+        const dia = inspecao.data_inspecao
+          ? format(new Date(inspecao.data_inspecao), "dd/MM")
+          : "—";
 
         // Contadores por dia
         if (!diasMap.has(dia)) {
