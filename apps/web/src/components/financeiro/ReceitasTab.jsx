@@ -111,12 +111,6 @@ export default function ReceitasTab({
     forma_pagamento: "",
     observacoes: "",
   });
-  const [openCliente, setOpenCliente] = useState(false);
-  const [searchCliente, setSearchCliente] = useState("");
-  const [openCategoria, setOpenCategoria] = useState(false);
-  const [searchCategoria, setSearchCategoria] = useState("");
-  const [openCentroCusto, setOpenCentroCusto] = useState(false);
-  const [searchCentroCusto, setSearchCentroCusto] = useState("");
   const [showNovoCliente, setShowNovoCliente] = useState(false);
   const [showNovoCentroCusto, setShowNovoCentroCusto] = useState(false);
   const [novoCentroCusto, setNovoCentroCusto] = useState({ nome: "", codigo: "" });
@@ -224,20 +218,6 @@ export default function ReceitasTab({
     );
   }, [clientesLocais]);
 
-  // Filtrar clientes
-  const clientesFiltrados = useMemo(() => {
-    if (!searchCliente) return clientesOrdenados;
-    return clientesOrdenados.filter(
-      (c) =>
-        c.nome_razao?.toLowerCase().includes(searchCliente.toLowerCase()) ||
-        c.documento?.includes(searchCliente)
-    );
-  }, [clientesOrdenados, searchCliente]);
-
-  const clienteSelecionado = clientesLocais.find((c) => c.id === form.cliente_id);
-  const categoriaSelecionada = categorias.find((c) => c.id === form.categoria_id);
-  const centroCustoSelecionado = centrosCusto.find((c) => c.id === form.centro_custo_id);
-
   // Categorias ordenadas alfabeticamente
   const categoriasOrdenadas = useMemo(() => {
     return [...categorias]
@@ -245,28 +225,10 @@ export default function ReceitasTab({
       .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
   }, [categorias]);
 
-  // Filtrar categorias
-  const categoriasFiltradas = useMemo(() => {
-    if (!searchCategoria) return categoriasOrdenadas;
-    return categoriasOrdenadas.filter((c) =>
-      c.nome?.toLowerCase().includes(searchCategoria.toLowerCase())
-    );
-  }, [categoriasOrdenadas, searchCategoria]);
-
   // Centros de custo ordenados
   const centrosCustoOrdenados = useMemo(() => {
     return [...centrosCusto].sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
   }, [centrosCusto]);
-
-  // Filtrar centros de custo
-  const centrosCustoFiltrados = useMemo(() => {
-    if (!searchCentroCusto) return centrosCustoOrdenados;
-    return centrosCustoOrdenados.filter(
-      (c) =>
-        c.nome?.toLowerCase().includes(searchCentroCusto.toLowerCase()) ||
-        c.codigo?.includes(searchCentroCusto)
-    );
-  }, [centrosCustoOrdenados, searchCentroCusto]);
 
   const handleNumeroParcelasChange = (num) => {
     setNumeroParcelas(num);
@@ -1611,7 +1573,7 @@ export default function ReceitasTab({
                     <Label>Categoria</Label>
                     <EntityCombobox
                       className="mt-1.5"
-                      items={categoriasFiltradas}
+                      items={categoriasOrdenadas}
                       value={form.categoria_id}
                       onValueChange={(id, c) =>
                         setForm({
@@ -1631,7 +1593,7 @@ export default function ReceitasTab({
                     <Label>Centro de Custo</Label>
                     <div className="flex gap-2 mt-1.5">
                       <EntityCombobox
-                        items={centrosCustoFiltrados}
+                        items={centrosCustoOrdenados}
                         value={form.centro_custo_id}
                         onValueChange={(id) => setForm({ ...form, centro_custo_id: id || null })}
                         getLabel={(c) => c.nome}
@@ -1662,7 +1624,7 @@ export default function ReceitasTab({
                   <Label>Cliente</Label>
                   <div className="flex gap-2 mt-1.5">
                     <EntityCombobox
-                      items={clientesFiltrados}
+                      items={clientesOrdenados}
                       value={form.cliente_id}
                       onValueChange={(id, c) =>
                         setForm({

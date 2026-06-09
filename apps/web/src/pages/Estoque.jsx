@@ -115,8 +115,6 @@ export default function Estoque() {
     projeto_id: "",
     observacoes: "",
   });
-  const [openMaterialCombo, setOpenMaterialCombo] = useState(false);
-  const [openAlmoxCombo, setOpenAlmoxCombo] = useState(false);
   const [openProjetoReservaCombo, setOpenProjetoReservaCombo] = useState(false);
   // setMateriaisDoProjetoReserva é chamado mas o valor nunca é lido em render —
   // mantido como no-op pra não quebrar o fluxo do popover de reservas até

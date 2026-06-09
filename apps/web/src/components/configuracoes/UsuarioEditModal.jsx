@@ -47,8 +47,6 @@ export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, 
   const [alterandoSenhaAdmin, setAlterandoSenhaAdmin] = useState(false);
   const [mostrarSenhaAdmin, setMostrarSenhaAdmin] = useState(false);
   const [forcarTrocaSenha, setForcarTrocaSenha] = useState(false);
-  const [openProjetoPopover, setOpenProjetoPopover] = useState(false);
-  const [searchProjeto, setSearchProjeto] = useState("");
 
   const loadProjetos = React.useCallback(async () => {
     if (!empresaAtiva?.id) return;

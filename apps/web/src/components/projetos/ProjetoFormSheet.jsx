@@ -36,8 +36,6 @@ export default function ProjetoFormSheet({
   const [saving, setSaving] = React.useState(false);
   const [showTemplateSelection, setShowTemplateSelection] = React.useState(false);
   const [templateSearchTerm, setTemplateSearchTerm] = React.useState("");
-  const [openClientePopover, setOpenClientePopover] = React.useState(false);
-  const [searchCliente, setSearchCliente] = React.useState("");
   const [showNovoCliente, setShowNovoCliente] = React.useState(false);
   const [showNovaOrigem, setShowNovaOrigem] = React.useState(false);
   const [novaOrigem, setNovaOrigem] = React.useState("");
@@ -231,18 +229,10 @@ export default function ProjetoFormSheet({
     return Array.from(map.values());
   }, [clientes, clientesLocais]);
 
-  const clienteSelecionado = todosClientes.find((c) => c.id === formData?.cliente_id);
-  const clientesFiltrados = React.useMemo(() => {
-    const sorted = [...todosClientes].sort((a, b) =>
-      (a.nome_razao || "").localeCompare(b.nome_razao || "")
-    );
-    if (!searchCliente) return sorted;
-    return sorted.filter(
-      (c) =>
-        c.nome_razao?.toLowerCase().includes(searchCliente.toLowerCase()) ||
-        c.documento?.includes(searchCliente)
-    );
-  }, [todosClientes, searchCliente]);
+  const clientesFiltrados = React.useMemo(
+    () => [...todosClientes].sort((a, b) => (a.nome_razao || "").localeCompare(b.nome_razao || "")),
+    [todosClientes]
+  );
 
   if (!formData) return null;
 

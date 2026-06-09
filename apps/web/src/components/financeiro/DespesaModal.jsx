@@ -207,14 +207,6 @@ export default function DespesaModal({
     quantidade: 0,
     valor_unitario: 0,
   });
-  const [openFornecedor, setOpenFornecedor] = useState(false);
-  const [searchFornecedor, setSearchFornecedor] = useState("");
-  const [openCategoria, setOpenCategoria] = useState(false);
-  const [searchCategoria, setSearchCategoria] = useState("");
-  const [openCentroCusto, setOpenCentroCusto] = useState(false);
-  const [searchCentroCusto, setSearchCentroCusto] = useState("");
-  const [openProjeto, setOpenProjeto] = useState(false);
-  const [searchProjeto, setSearchProjeto] = useState("");
   const [showNovoFornecedor, setShowNovoFornecedor] = useState(false);
   const [fornecedoresLocais, setFornecedoresLocais] = useState(fornecedores);
 
@@ -446,15 +438,6 @@ export default function DespesaModal({
     );
   }, [fornecedoresLocais]);
 
-  const fornecedoresFiltrados = useMemo(() => {
-    if (!searchFornecedor) return fornecedoresOrdenados;
-    return fornecedoresOrdenados.filter(
-      (f) =>
-        f.nome_razao?.toLowerCase().includes(searchFornecedor.toLowerCase()) ||
-        f.cnpj?.includes(searchFornecedor)
-    );
-  }, [fornecedoresOrdenados, searchFornecedor]);
-
   const handleSalvarCentroCusto = async () => {
     if (!novoCentroCusto.nome.trim()) {
       alert("Por favor, preencha o nome do centro de custo");
@@ -480,36 +463,15 @@ export default function DespesaModal({
     }
   };
 
-  const fornecedorSelecionado = fornecedoresLocais.find((f) => f.id === form.fornecedor_id);
-  const categoriaSelecionada = categorias.find((c) => c.id === form.categoria_id);
-  const centroCustoSelecionado = centrosCusto.find((c) => c.id === form.centro_custo_id);
-  const projetoSelecionado = projetos.find((p) => p.id === form.projeto_id);
-
   const categoriasOrdenadas = useMemo(() => {
     return [...categorias]
       .filter((c) => c.tipo === "Despesa")
       .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
   }, [categorias]);
 
-  const categoriasFiltradas = useMemo(() => {
-    if (!searchCategoria) return categoriasOrdenadas;
-    return categoriasOrdenadas.filter((c) =>
-      c.nome?.toLowerCase().includes(searchCategoria.toLowerCase())
-    );
-  }, [categoriasOrdenadas, searchCategoria]);
-
   const centrosCustoOrdenados = useMemo(() => {
     return [...centrosCusto].sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
   }, [centrosCusto]);
-
-  const centrosCustoFiltrados = useMemo(() => {
-    if (!searchCentroCusto) return centrosCustoOrdenados;
-    return centrosCustoOrdenados.filter(
-      (c) =>
-        c.nome?.toLowerCase().includes(searchCentroCusto.toLowerCase()) ||
-        c.codigo?.includes(searchCentroCusto)
-    );
-  }, [centrosCustoOrdenados, searchCentroCusto]);
 
   const contasOrdenadas = useMemo(() => {
     return [...contas].sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
@@ -518,13 +480,6 @@ export default function DespesaModal({
   const projetosOrdenados = useMemo(() => {
     return [...projetos].sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
   }, [projetos]);
-
-  const projetosFiltrados = useMemo(() => {
-    if (!searchProjeto) return projetosOrdenados;
-    return projetosOrdenados.filter((p) =>
-      p.nome?.toLowerCase().includes(searchProjeto.toLowerCase())
-    );
-  }, [projetosOrdenados, searchProjeto]);
 
   return (
     <>
@@ -612,7 +567,7 @@ export default function DespesaModal({
                       <Label>Categoria</Label>
                       <div className="flex gap-2 mt-1.5">
                         <EntityCombobox
-                          items={categoriasFiltradas}
+                          items={categoriasOrdenadas}
                           value={form.categoria_id}
                           onValueChange={(id, c) =>
                             setForm({
@@ -633,7 +588,7 @@ export default function DespesaModal({
                       <Label>Fornecedor</Label>
                       <div className="flex gap-2 mt-1.5">
                         <EntityCombobox
-                          items={fornecedoresFiltrados}
+                          items={fornecedoresOrdenados}
                           value={form.fornecedor_id}
                           onValueChange={(id, f) =>
                             setForm({
@@ -670,7 +625,7 @@ export default function DespesaModal({
                     <Label>Centro de Custo</Label>
                     <div className="flex gap-2 mt-1.5">
                       <EntityCombobox
-                        items={centrosCustoFiltrados}
+                        items={centrosCustoOrdenados}
                         value={form.centro_custo_id}
                         onValueChange={(id, c) =>
                           setForm({
@@ -706,7 +661,7 @@ export default function DespesaModal({
                     <Label>Projeto</Label>
                     <div className="mt-1.5">
                       <EntityCombobox
-                        items={projetosFiltrados}
+                        items={projetosOrdenados}
                         value={form.projeto_id}
                         onValueChange={(id, p) =>
                           setForm({
