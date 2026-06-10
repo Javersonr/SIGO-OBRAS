@@ -1,10 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { sigo } from "@/api/sigoClient";
+import { sigo, supabase } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
 import { toast } from "sonner";
-import { Wrench, Shield, PackageCheck, Loader2, Minus, Plus } from "lucide-react";
+import {
+  Wrench,
+  Shield,
+  PackageCheck,
+  Loader2,
+  Minus,
+  Plus,
+  AlertTriangle,
+  ShieldCheck,
+} from "lucide-react";
 import { format } from "date-fns";
 
 export default function SolicitarEntregaFerramentasModal({
@@ -29,6 +38,57 @@ export default function SolicitarEntregaFerramentasModal({
   const [epis, setEpis] = useState([]);
   const [laudosNumeros, setLaudosNumeros] = useState({});
   const [numerosSerie, setNumerosSerie] = useState({});
+
+  // ── Bloqueio operacional SST (ASO) ────────────────────────────────────────
+  const [aptidao, setAptidao] = useState(null); // {apto, motivos, liberado_excepcionalmente, liberacao}
+  const [mostrarLiberar, setMostrarLiberar] = useState(false);
+  const [motivoLiberacao, setMotivoLiberacao] = useState("");
+  const [liberando, setLiberando] = useState(false);
+
+  const perfilUsuario = user?.perfil || (user?.role === "admin" ? "Admin" : "");
+  const podeLiberar = ["Admin", "Admin Holding", "Gestor"].includes(perfilUsuario);
+
+  const checarAptidao = useCallback(async () => {
+    if (!funcionario?.id || !supabase) return;
+    try {
+      const { data, error } = await supabase.rpc("funcionario_apto_campo", {
+        p_funcionario_id: funcionario.id,
+      });
+      if (error) throw error;
+      setAptidao(data);
+    } catch (err) {
+      // falha técnica não trava a operação (fail-open); o trigger airtight é fase 2
+      console.error("Erro ao checar aptidão SST:", err);
+      setAptidao(null);
+    }
+  }, [funcionario?.id]);
+
+  const handleLiberar = async () => {
+    if (motivoLiberacao.trim().length < 5) {
+      toast.error("Justifique a liberação (mín. 5 caracteres)");
+      return;
+    }
+    setLiberando(true);
+    try {
+      const { error } = await supabase.rpc("liberar_sst", {
+        p_funcionario_id: funcionario.id,
+        p_motivo: motivoLiberacao.trim(),
+        p_liberado_por_email: user?.email || "",
+        p_liberado_por_nome: user?.full_name || user?.email || "",
+        p_perfil: perfilUsuario,
+        p_dias_validade: 30,
+      });
+      if (error) throw error;
+      toast.success("Liberado excepcionalmente. Entrega permitida por 30 dias.");
+      setMostrarLiberar(false);
+      setMotivoLiberacao("");
+      await checarAptidao();
+    } catch (err) {
+      toast.error("Erro ao liberar: " + (err?.message || "tente de novo"));
+    } finally {
+      setLiberando(false);
+    }
+  };
 
   // Refs para manter seleção atual ao atualizar
   const ferramentasRef = useRef([]);
@@ -298,6 +358,17 @@ export default function SolicitarEntregaFerramentasModal({
     }
   }, [open, empresaAtiva?.id, entregaExistente?.id]);
 
+  // Checa aptidão SST (ASO) ao abrir / trocar de funcionário
+  useEffect(() => {
+    if (open && funcionario?.id) {
+      setMostrarLiberar(false);
+      setMotivoLiberacao("");
+      checarAptidao();
+    } else {
+      setAptidao(null);
+    }
+  }, [open, funcionario?.id, checarAptidao]);
+
   // Subscriptions para atualização automática quando itens são adicionados/excluídos
   useEffect(() => {
     if (!open || !empresaAtiva?.id) return;
@@ -338,6 +409,12 @@ export default function SolicitarEntregaFerramentasModal({
   const handleSolicitar = async () => {
     if (itensSelecionados.length === 0) {
       toast.error("Selecione ao menos um item para entregar");
+      return;
+    }
+    if (aptidao && !aptidao.apto) {
+      toast.error(
+        "Funcionário bloqueado por SST (ASO). Regularize o ASO ou peça liberação ao Admin."
+      );
       return;
     }
     setLoading(true);
@@ -602,6 +679,76 @@ export default function SolicitarEntregaFerramentasModal({
         </SheetHeader>
 
         <div className="p-6 space-y-5">
+          {/* Bloqueio operacional SST (ASO vencido) */}
+          {aptidao && !aptidao.apto && (
+            <div className="bg-red-50 border border-red-300 rounded-lg p-4 space-y-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-red-800">
+                  <p className="font-semibold">
+                    Funcionário não pode receber ferramenta / ir a campo
+                  </p>
+                  <ul className="list-disc list-inside mt-1">
+                    {(Array.isArray(aptidao.motivos) ? aptidao.motivos : []).map((m, i) => (
+                      <li key={i}>{m}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              {podeLiberar && !mostrarLiberar && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-red-300 text-red-700 hover:bg-red-100"
+                  onClick={() => setMostrarLiberar(true)}
+                >
+                  Liberar excepcionalmente (Admin)
+                </Button>
+              )}
+              {podeLiberar && mostrarLiberar && (
+                <div className="space-y-2">
+                  <textarea
+                    value={motivoLiberacao}
+                    onChange={(e) => setMotivoLiberacao(e.target.value)}
+                    rows={2}
+                    placeholder="Justificativa da liberação (obrigatória, fica registrada)..."
+                    className="w-full border border-red-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={handleLiberar}
+                      disabled={liberando}
+                      className="bg-red-600 hover:bg-red-700 text-white gap-2"
+                    >
+                      {liberando && <Loader2 className="w-4 h-4 animate-spin" />}
+                      Confirmar liberação (30 dias)
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setMostrarLiberar(false)}>
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {!podeLiberar && (
+                <p className="text-xs text-red-600">
+                  Apenas Admin/Gestor pode liberar excepcionalmente.
+                </p>
+              )}
+            </div>
+          )}
+          {aptidao && aptidao.apto && aptidao.liberado_excepcionalmente && (
+            <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 flex items-start gap-2">
+              <ShieldCheck className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-amber-800">
+                <p className="font-semibold">Liberado excepcionalmente</p>
+                <p className="text-xs">
+                  {aptidao.liberacao?.motivo} — por {aptidao.liberacao?.liberado_por}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Abas Ferramentas / EPIs */}
           <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
             <button
@@ -849,7 +996,7 @@ export default function SolicitarEntregaFerramentasModal({
             </Button>
             <Button
               onClick={handleSolicitar}
-              disabled={loading || itensSelecionados.length === 0}
+              disabled={loading || itensSelecionados.length === 0 || (aptidao && !aptidao.apto)}
               className="flex-1 bg-blue-600 hover:bg-blue-700 text-white gap-2"
             >
               {loading ? (
