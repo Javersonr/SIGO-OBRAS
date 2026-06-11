@@ -48,7 +48,9 @@ por obra**. Por isso hoje não responde "a obra X deu lucro?".
 - [x] **Margem por obra**: view `v_margem_projeto` + aba **Medições** no projeto
       (card orçado × custo × faturado × recebido × retido × margem). _(frontend ok)_
 - [ ] **Retenções fiscais** (ISS/INSS) ligadas à receita.
-- [ ] **Consolidação do grupo** (painel do dono): caixa/margem/despesa somados das 19.
+- [x] **Consolidação do grupo** (0059 + página "Grupo"): caixa, recebido/pago no
+      mês, a receber/pagar e atrasados — total e por empresa; guard no banco
+      (só Admin Holding/super admin). _(feito, smoke OK)_
 - [ ] Proposta versionada + checklist de habilitação (licitação).
 - [ ] Win-rate por órgão (propagar campos da licitação → oportunidade) + `motivo_perda` estruturado.
 
