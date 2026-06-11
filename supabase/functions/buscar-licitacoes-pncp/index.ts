@@ -16,7 +16,7 @@
  */
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
-import { preflightResponse, ok, fail } from "../_shared/cors.ts";
+import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { parseKeywords, matchKeywords } from "../_shared/keywords.ts";
 import { filtrarConteudoDuplicado } from "../_shared/licitacoes-dedup.ts";
 
@@ -122,163 +122,165 @@ function ymd(d: Date): string {
   return d.toISOString().slice(0, 10).replace(/-/g, "");
 }
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return preflightResponse();
+Deno.serve(
+  withCors(async (req) => {
+    if (req.method === "OPTIONS") return preflightResponse();
 
-  let body: { full?: boolean; aberto?: boolean; data?: string; dias?: number } = {};
-  try {
-    body = await req.json();
-  } catch {
-    /* sem body é ok (cron) */
-  }
-
-  const supabase = createAdminClient();
-
-  const { data: buscas, error: bErr } = await supabase
-    .from("licitacao_busca")
-    .select("*")
-    .eq("ativo", true)
-    .is("deleted_at", null);
-  if (bErr) return fail("Erro lendo configs: " + bErr.message, 500);
-
-  // Modo:
-  //  - incremental (publicacao): só as publicadas hoje BRT (cron diário). body.dias amplia.
-  //  - aberto (proposta): TODAS com proposta em aberto até hoje+90d (botão "Buscar agora").
-  const aberto = Boolean(body.aberto || body.full);
-  const modo: "publicacao" | "proposta" = aberto ? "proposta" : "publicacao";
-  const agoraBRT = new Date(Date.now() - 3 * 3600 * 1000);
-  const hojeBRT = agoraBRT.toISOString().slice(0, 10); // "YYYY-MM-DD" — só de hoje pra frente
-  const dias = Math.max(0, Math.min(Number(body.dias) || 0, 30));
-  const ini = new Date(agoraBRT);
-  ini.setUTCDate(ini.getUTCDate() - dias);
-  const horizonte = new Date(agoraBRT);
-  horizonte.setUTCDate(horizonte.getUTCDate() + 90); // proposta: até 90 dias à frente
-  const dataInicial = body.data ? body.data.replace(/-/g, "") : ymd(ini);
-  const dataFinal = aberto
-    ? ymd(horizonte)
-    : body.data
-      ? body.data.replace(/-/g, "")
-      : ymd(agoraBRT);
-
-  const resumo: unknown[] = [];
-
-  for (const busca of buscas || []) {
+    let body: { full?: boolean; aberto?: boolean; data?: string; dias?: number } = {};
     try {
-      const ufs: string[] = Array.isArray(busca.ufs) ? busca.ufs : [];
-      if (ufs.length === 0) {
-        resumo.push({ busca_id: busca.id, skip: "sem UFs" });
-        continue;
-      }
-      const kw = parseKeywords(busca.palavras_chave || "");
-
-      // coleta UF × modalidade
-      const brutos: Array<{ item: PncpItem; modalidadeNome: string }> = [];
-      for (const uf of ufs) {
-        for (const [codStr, modNome] of Object.entries(MODALIDADES)) {
-          const itens = await fetchPncp({
-            uf,
-            modalidade: Number(codStr),
-            modo,
-            dataInicial,
-            dataFinal,
-          });
-          for (const item of itens) brutos.push({ item, modalidadeNome: modNome });
-        }
-      }
-
-      // filtra por palavra-chave (objeto + órgão)
-      const filtrados = brutos.filter(({ item }) =>
-        matchKeywords(`${item.objetoCompra || ""} ${item.orgaoEntidade?.razaoSocial || ""}`, kw)
-      );
-
-      // monta linhas + id estável
-      const byId = new Map<string, Record<string, unknown>>();
-      for (const { item, modalidadeNome } of filtrados) {
-        const cnpj = item.orgaoEntidade?.cnpj || "x";
-        const ano = item.anoCompra || 0;
-        const seq = item.sequencialCompra || 0;
-        const idLic = `PNCP-${cnpj}-${ano}-${seq}`;
-        if (byId.has(idLic)) continue;
-        const abertura = dateOnly(item.dataAberturaProposta);
-        // só de hoje pra frente: pula abertura já passada (mantém sem data)
-        if (abertura && abertura < hojeBRT) continue;
-        byId.set(idLic, {
-          empresa_id: busca.empresa_id,
-          busca_id: busca.id,
-          id_licitacao: idLic,
-          titulo: `${modalidadeNome} ${item.numeroCompra || ""}/${ano}`.trim(),
-          orgao:
-            [item.orgaoEntidade?.razaoSocial, item.unidadeOrgao?.nomeUnidade]
-              .filter(Boolean)
-              .join(" — ") || null,
-          uf: item.unidadeOrgao?.ufSigla ?? null,
-          municipio: item.unidadeOrgao?.municipioNome ?? null,
-          municipio_ibge: item.unidadeOrgao?.codigoIbge ?? null,
-          objeto: item.objetoCompra ?? null,
-          valor: item.valorTotalEstimado != null ? Number(item.valorTotalEstimado) : null,
-          tipo: modalidadeNome,
-          abertura_datetime: item.dataAberturaProposta ?? null,
-          abertura,
-          link: `https://pncp.gov.br/app/editais/${cnpj}/${ano}/${seq}`,
-          link_externo: item.linkSistemaOrigem ?? null,
-          status: "Nova",
-          fonte: "PNCP",
-        });
-      }
-      const ids = [...byId.keys()];
-
-      let inseridas = 0;
-      if (ids.length > 0) {
-        const { data: existentes } = await supabase
-          .from("licitacao_encontrada")
-          .select("id_licitacao")
-          .eq("empresa_id", busca.empresa_id)
-          .in("id_licitacao", ids);
-        const existSet = new Set((existentes || []).map((e) => e.id_licitacao));
-        let rows = ids.filter((id) => !existSet.has(id)).map((id) => byId.get(id)!);
-
-        // Cross-source: não re-inserir como "Nova" algo já Excluído/Convertido
-        // (mesmo vindo da outra fonte — ex.: você excluiu a do Alerta).
-        rows = await filtrarConteudoDuplicado(supabase, busca.empresa_id, rows);
-
-        if (rows.length > 0) {
-          const { data: ins, error: insErr } = await supabase
-            .from("licitacao_encontrada")
-            .upsert(rows, { onConflict: "empresa_id,id_licitacao", ignoreDuplicates: true })
-            .select("id");
-          if (insErr) throw new Error("insert: " + insErr.message);
-          inseridas = (ins || []).length;
-        }
-      }
-
-      if (inseridas > 0) {
-        try {
-          await supabase.rpc("notificar_gestores", {
-            p_empresa_id: busca.empresa_id,
-            p_perfis: ["Admin Holding", "Admin", "Gestor"],
-            p_titulo: "Novas licitações (PNCP)",
-            p_mensagem: `${inseridas} nova(s) licitação(ões) do PNCP entraram na lista.`,
-            p_link: "/Oportunidades",
-            p_tipo: "Sistema",
-            p_prioridade: "Normal",
-            p_dedup_key: `licitacoes-pncp:${busca.empresa_id}:${dataFinal}`,
-          });
-        } catch (_) {
-          /* best-effort */
-        }
-      }
-
-      resumo.push({
-        busca_id: busca.id,
-        empresa_id: busca.empresa_id,
-        baixadas: brutos.length,
-        casaram_keyword: filtrados.length,
-        novas: inseridas,
-      });
-    } catch (e) {
-      resumo.push({ busca_id: busca.id, erro: String((e as Error)?.message || e) });
+      body = await req.json();
+    } catch {
+      /* sem body é ok (cron) */
     }
-  }
 
-  return ok({ fonte: "PNCP", modo, periodo: { dataInicial, dataFinal }, resumo });
-});
+    const supabase = createAdminClient();
+
+    const { data: buscas, error: bErr } = await supabase
+      .from("licitacao_busca")
+      .select("*")
+      .eq("ativo", true)
+      .is("deleted_at", null);
+    if (bErr) return fail("Erro lendo configs: " + bErr.message, 500);
+
+    // Modo:
+    //  - incremental (publicacao): só as publicadas hoje BRT (cron diário). body.dias amplia.
+    //  - aberto (proposta): TODAS com proposta em aberto até hoje+90d (botão "Buscar agora").
+    const aberto = Boolean(body.aberto || body.full);
+    const modo: "publicacao" | "proposta" = aberto ? "proposta" : "publicacao";
+    const agoraBRT = new Date(Date.now() - 3 * 3600 * 1000);
+    const hojeBRT = agoraBRT.toISOString().slice(0, 10); // "YYYY-MM-DD" — só de hoje pra frente
+    const dias = Math.max(0, Math.min(Number(body.dias) || 0, 30));
+    const ini = new Date(agoraBRT);
+    ini.setUTCDate(ini.getUTCDate() - dias);
+    const horizonte = new Date(agoraBRT);
+    horizonte.setUTCDate(horizonte.getUTCDate() + 90); // proposta: até 90 dias à frente
+    const dataInicial = body.data ? body.data.replace(/-/g, "") : ymd(ini);
+    const dataFinal = aberto
+      ? ymd(horizonte)
+      : body.data
+        ? body.data.replace(/-/g, "")
+        : ymd(agoraBRT);
+
+    const resumo: unknown[] = [];
+
+    for (const busca of buscas || []) {
+      try {
+        const ufs: string[] = Array.isArray(busca.ufs) ? busca.ufs : [];
+        if (ufs.length === 0) {
+          resumo.push({ busca_id: busca.id, skip: "sem UFs" });
+          continue;
+        }
+        const kw = parseKeywords(busca.palavras_chave || "");
+
+        // coleta UF × modalidade
+        const brutos: Array<{ item: PncpItem; modalidadeNome: string }> = [];
+        for (const uf of ufs) {
+          for (const [codStr, modNome] of Object.entries(MODALIDADES)) {
+            const itens = await fetchPncp({
+              uf,
+              modalidade: Number(codStr),
+              modo,
+              dataInicial,
+              dataFinal,
+            });
+            for (const item of itens) brutos.push({ item, modalidadeNome: modNome });
+          }
+        }
+
+        // filtra por palavra-chave (objeto + órgão)
+        const filtrados = brutos.filter(({ item }) =>
+          matchKeywords(`${item.objetoCompra || ""} ${item.orgaoEntidade?.razaoSocial || ""}`, kw)
+        );
+
+        // monta linhas + id estável
+        const byId = new Map<string, Record<string, unknown>>();
+        for (const { item, modalidadeNome } of filtrados) {
+          const cnpj = item.orgaoEntidade?.cnpj || "x";
+          const ano = item.anoCompra || 0;
+          const seq = item.sequencialCompra || 0;
+          const idLic = `PNCP-${cnpj}-${ano}-${seq}`;
+          if (byId.has(idLic)) continue;
+          const abertura = dateOnly(item.dataAberturaProposta);
+          // só de hoje pra frente: pula abertura já passada (mantém sem data)
+          if (abertura && abertura < hojeBRT) continue;
+          byId.set(idLic, {
+            empresa_id: busca.empresa_id,
+            busca_id: busca.id,
+            id_licitacao: idLic,
+            titulo: `${modalidadeNome} ${item.numeroCompra || ""}/${ano}`.trim(),
+            orgao:
+              [item.orgaoEntidade?.razaoSocial, item.unidadeOrgao?.nomeUnidade]
+                .filter(Boolean)
+                .join(" — ") || null,
+            uf: item.unidadeOrgao?.ufSigla ?? null,
+            municipio: item.unidadeOrgao?.municipioNome ?? null,
+            municipio_ibge: item.unidadeOrgao?.codigoIbge ?? null,
+            objeto: item.objetoCompra ?? null,
+            valor: item.valorTotalEstimado != null ? Number(item.valorTotalEstimado) : null,
+            tipo: modalidadeNome,
+            abertura_datetime: item.dataAberturaProposta ?? null,
+            abertura,
+            link: `https://pncp.gov.br/app/editais/${cnpj}/${ano}/${seq}`,
+            link_externo: item.linkSistemaOrigem ?? null,
+            status: "Nova",
+            fonte: "PNCP",
+          });
+        }
+        const ids = [...byId.keys()];
+
+        let inseridas = 0;
+        if (ids.length > 0) {
+          const { data: existentes } = await supabase
+            .from("licitacao_encontrada")
+            .select("id_licitacao")
+            .eq("empresa_id", busca.empresa_id)
+            .in("id_licitacao", ids);
+          const existSet = new Set((existentes || []).map((e) => e.id_licitacao));
+          let rows = ids.filter((id) => !existSet.has(id)).map((id) => byId.get(id)!);
+
+          // Cross-source: não re-inserir como "Nova" algo já Excluído/Convertido
+          // (mesmo vindo da outra fonte — ex.: você excluiu a do Alerta).
+          rows = await filtrarConteudoDuplicado(supabase, busca.empresa_id, rows);
+
+          if (rows.length > 0) {
+            const { data: ins, error: insErr } = await supabase
+              .from("licitacao_encontrada")
+              .upsert(rows, { onConflict: "empresa_id,id_licitacao", ignoreDuplicates: true })
+              .select("id");
+            if (insErr) throw new Error("insert: " + insErr.message);
+            inseridas = (ins || []).length;
+          }
+        }
+
+        if (inseridas > 0) {
+          try {
+            await supabase.rpc("notificar_gestores", {
+              p_empresa_id: busca.empresa_id,
+              p_perfis: ["Admin Holding", "Admin", "Gestor"],
+              p_titulo: "Novas licitações (PNCP)",
+              p_mensagem: `${inseridas} nova(s) licitação(ões) do PNCP entraram na lista.`,
+              p_link: "/Oportunidades",
+              p_tipo: "Sistema",
+              p_prioridade: "Normal",
+              p_dedup_key: `licitacoes-pncp:${busca.empresa_id}:${dataFinal}`,
+            });
+          } catch (_) {
+            /* best-effort */
+          }
+        }
+
+        resumo.push({
+          busca_id: busca.id,
+          empresa_id: busca.empresa_id,
+          baixadas: brutos.length,
+          casaram_keyword: filtrados.length,
+          novas: inseridas,
+        });
+      } catch (e) {
+        resumo.push({ busca_id: busca.id, erro: String((e as Error)?.message || e) });
+      }
+    }
+
+    return ok({ fonte: "PNCP", modo, periodo: { dataInicial, dataFinal }, resumo });
+  })
+);

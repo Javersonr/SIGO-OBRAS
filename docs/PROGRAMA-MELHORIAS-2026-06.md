@@ -25,7 +25,7 @@ por obra**. Por isso hoje não responde "a obra X deu lucro?".
 ### 🔒 Onda Segurança
 
 - [x] **0056** — revoga `anon` das 12 RPCs SECURITY DEFINER (SEG 5.3). _(feito, verificado)_
-- [ ] CORS travado no domínio (SEG 4.2) — **precisa confirmar origens de produção** antes (risco de lockout). Redeploy de todas as Edge Functions.
+- [x] **CORS travado no domínio** (SEG 4.2): withCors() ecoa origem permitida (sigoobras.com.br ± www + dev local); 15 functions redeployadas; verificado ao vivo (origem maliciosa sem ACAO; login OK). _(feito)_
 - [ ] Índices únicos cientes de soft-delete (`where deleted_at is null`) — checar duplicatas antes.
 - [ ] Checagem de permissão no **backend** (hoje só no front) — `check_permission` nas RPCs críticas.
 

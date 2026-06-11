@@ -18,7 +18,7 @@
  */
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
-import { preflightResponse, ok, fail } from "../_shared/cors.ts";
+import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { filtrarConteudoDuplicado } from "../_shared/licitacoes-dedup.ts";
 import { resolverStatusOportunidade } from "../_shared/oportunidade-status.ts";
 
@@ -103,189 +103,192 @@ async function fetchAll(params: {
   return out;
 }
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return preflightResponse();
-  if (!TOKEN) return fail("ALERTA_LICITACAO_TOKEN não configurado", 500);
+Deno.serve(
+  withCors(async (req) => {
+    if (req.method === "OPTIONS") return preflightResponse();
+    if (!TOKEN) return fail("ALERTA_LICITACAO_TOKEN não configurado", 500);
 
-  let body: { full?: boolean; data_insercao?: string } = {};
-  try {
-    body = await req.json();
-  } catch {
-    /* sem body é ok (cron) */
-  }
-
-  const supabase = createAdminClient();
-
-  const { data: buscas, error: bErr } = await supabase
-    .from("licitacao_busca")
-    .select("*")
-    .eq("ativo", true)
-    .is("deleted_at", null);
-  if (bErr) return fail("Erro lendo configs: " + bErr.message, 500);
-
-  // "hoje" em America/Sao_Paulo (UTC-3, sem DST atualmente)
-  const hojeBRT = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
-  const dataInsercao = body.full ? undefined : body.data_insercao || hojeBRT;
-
-  const resumo: unknown[] = [];
-
-  for (const busca of buscas || []) {
+    let body: { full?: boolean; data_insercao?: string } = {};
     try {
-      const ufs: string[] = Array.isArray(busca.ufs) ? busca.ufs : [];
-      if (ufs.length === 0) {
-        resumo.push({ busca_id: busca.id, skip: "sem UFs" });
-        continue;
-      }
-      const modalidades: number[] = Array.isArray(busca.modalidades) ? busca.modalidades : [];
+      body = await req.json();
+    } catch {
+      /* sem body é ok (cron) */
+    }
 
-      const fetched = await fetchAll({
-        uf: ufs.join(","),
-        palavra_chave: busca.palavras_chave || "",
-        modalidade: modalidades.length ? modalidades.join(",") : "",
-        data_insercao: dataInsercao,
-      });
+    const supabase = createAdminClient();
 
-      // dedup dentro do lote
-      const byId = new Map<string, ApiLicitacao>();
-      for (const l of fetched) if (l.id_licitacao) byId.set(l.id_licitacao, l);
-      const ids = [...byId.keys()];
+    const { data: buscas, error: bErr } = await supabase
+      .from("licitacao_busca")
+      .select("*")
+      .eq("ativo", true)
+      .is("deleted_at", null);
+    if (bErr) return fail("Erro lendo configs: " + bErr.message, 500);
 
-      let inseridas: Array<Record<string, unknown>> = [];
-      if (ids.length > 0) {
-        // quais já existem?
-        const { data: existentes } = await supabase
-          .from("licitacao_encontrada")
-          .select("id_licitacao")
-          .eq("empresa_id", busca.empresa_id)
-          .in("id_licitacao", ids);
-        const existSet = new Set((existentes || []).map((e) => e.id_licitacao));
+    // "hoje" em America/Sao_Paulo (UTC-3, sem DST atualmente)
+    const hojeBRT = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+    const dataInsercao = body.full ? undefined : body.data_insercao || hojeBRT;
 
-        let rows = ids
-          .filter((id) => !existSet.has(id))
-          .map((id) => byId.get(id)!)
-          .map((l) => ({
-            empresa_id: busca.empresa_id,
-            busca_id: busca.id,
-            id_licitacao: l.id_licitacao,
-            titulo: l.titulo ?? null,
-            orgao: l.orgao ?? null,
-            uf: l.uf ?? null,
-            municipio: l.municipio ?? null,
-            municipio_ibge: l.municipio_IBGE ?? null,
-            objeto: l.objeto ?? null,
-            valor: parseValor(l.valor),
-            tipo: l.tipo ?? null,
-            id_tipo: l.id_tipo ?? null,
-            id_portal: l.id_portal ?? null,
-            abertura_datetime: l.abertura_datetime ?? null,
-            abertura: parseAberturaDate(l.abertura || l.abertura_datetime),
-            link: l.link ?? null,
-            link_externo: l.linkExterno ?? null,
-            status: "Nova",
-          }))
-          // só de hoje pra frente: descarta as com abertura já passada (mantém sem data)
-          .filter((r) => !r.abertura || (r.abertura as string) >= hojeBRT);
+    const resumo: unknown[] = [];
 
-        // Cross-source: não re-inserir como "Nova" algo já Excluído/Convertido
-        // (mesmo vindo da outra fonte com id_licitacao diferente).
-        rows = await filtrarConteudoDuplicado(supabase, busca.empresa_id, rows);
-
-        if (rows.length > 0) {
-          const { data: ins, error: insErr } = await supabase
-            .from("licitacao_encontrada")
-            .upsert(rows, { onConflict: "empresa_id,id_licitacao", ignoreDuplicates: true })
-            .select(
-              "id, titulo, objeto, valor, abertura, tipo, link_externo, uf, municipio, orgao"
-            );
-          if (insErr) throw new Error("insert: " + insErr.message);
-          inseridas = ins || [];
+    for (const busca of buscas || []) {
+      try {
+        const ufs: string[] = Array.isArray(busca.ufs) ? busca.ufs : [];
+        if (ufs.length === 0) {
+          resumo.push({ busca_id: busca.id, skip: "sem UFs" });
+          continue;
         }
-      }
+        const modalidades: number[] = Array.isArray(busca.modalidades) ? busca.modalidades : [];
 
-      // auto-criar oportunidade pelas que passam no filtro de valor
-      let criadas = 0;
-      if (busca.criar_oportunidade_auto && inseridas.length > 0) {
-        const vmin = Number(busca.valor_minimo ?? 0);
-        const vmax = busca.valor_maximo != null ? Number(busca.valor_maximo) : null;
-        // Resolve o status_id uma vez (Kanban agrupa por status_id; sem ele a
-        // oportunidade auto-criada some do funil).
-        const { status_id: statusId, status_nome: statusNomeOk } = await resolverStatusOportunidade(
-          supabase,
-          busca.empresa_id,
-          busca.status_oportunidade_nome || "Triagem Licitação"
-        );
-        for (const li of inseridas) {
-          const val = li.valor != null ? Number(li.valor) : null;
-          if (val == null || val < vmin) continue;
-          if (vmax != null && val > vmax) continue;
+        const fetched = await fetchAll({
+          uf: ufs.join(","),
+          palavra_chave: busca.palavras_chave || "",
+          modalidade: modalidades.length ? modalidades.join(",") : "",
+          data_insercao: dataInsercao,
+        });
 
-          const { data: op, error: opErr } = await supabase
-            .from("oportunidade")
-            .insert({
+        // dedup dentro do lote
+        const byId = new Map<string, ApiLicitacao>();
+        for (const l of fetched) if (l.id_licitacao) byId.set(l.id_licitacao, l);
+        const ids = [...byId.keys()];
+
+        let inseridas: Array<Record<string, unknown>> = [];
+        if (ids.length > 0) {
+          // quais já existem?
+          const { data: existentes } = await supabase
+            .from("licitacao_encontrada")
+            .select("id_licitacao")
+            .eq("empresa_id", busca.empresa_id)
+            .in("id_licitacao", ids);
+          const existSet = new Set((existentes || []).map((e) => e.id_licitacao));
+
+          let rows = ids
+            .filter((id) => !existSet.has(id))
+            .map((id) => byId.get(id)!)
+            .map((l) => ({
               empresa_id: busca.empresa_id,
-              nome: String(li.titulo || li.objeto || "Licitação").slice(0, 200),
-              valor_estimado: val,
-              descricao: li.objeto ?? null,
-              origem_nome: "Licitação (Alerta Licitação)",
-              status_id: statusId,
-              status_nome: statusNomeOk ?? busca.status_oportunidade_nome ?? "Triagem Licitação",
-              data_fechamento_prevista: li.abertura ?? null,
-              licitacao_modalidade: li.tipo ?? null,
-              licitacao_data: li.abertura ?? null,
-              observacoes: li.link_externo ?? null,
-            })
-            .select("id")
-            .single();
+              busca_id: busca.id,
+              id_licitacao: l.id_licitacao,
+              titulo: l.titulo ?? null,
+              orgao: l.orgao ?? null,
+              uf: l.uf ?? null,
+              municipio: l.municipio ?? null,
+              municipio_ibge: l.municipio_IBGE ?? null,
+              objeto: l.objeto ?? null,
+              valor: parseValor(l.valor),
+              tipo: l.tipo ?? null,
+              id_tipo: l.id_tipo ?? null,
+              id_portal: l.id_portal ?? null,
+              abertura_datetime: l.abertura_datetime ?? null,
+              abertura: parseAberturaDate(l.abertura || l.abertura_datetime),
+              link: l.link ?? null,
+              link_externo: l.linkExterno ?? null,
+              status: "Nova",
+            }))
+            // só de hoje pra frente: descarta as com abertura já passada (mantém sem data)
+            .filter((r) => !r.abertura || (r.abertura as string) >= hojeBRT);
 
-          if (!opErr && op) {
-            await supabase
+          // Cross-source: não re-inserir como "Nova" algo já Excluído/Convertido
+          // (mesmo vindo da outra fonte com id_licitacao diferente).
+          rows = await filtrarConteudoDuplicado(supabase, busca.empresa_id, rows);
+
+          if (rows.length > 0) {
+            const { data: ins, error: insErr } = await supabase
               .from("licitacao_encontrada")
-              .update({ status: "Convertida", oportunidade_id: op.id })
-              .eq("id", li.id);
-            criadas++;
+              .upsert(rows, { onConflict: "empresa_id,id_licitacao", ignoreDuplicates: true })
+              .select(
+                "id, titulo, objeto, valor, abertura, tipo, link_externo, uf, municipio, orgao"
+              );
+            if (insErr) throw new Error("insert: " + insErr.message);
+            inseridas = ins || [];
           }
         }
-      }
 
-      // notificar gestores
-      if (inseridas.length > 0) {
-        try {
-          await supabase.rpc("notificar_gestores", {
-            p_empresa_id: busca.empresa_id,
-            p_perfis: ["Admin Holding", "Admin", "Gestor"],
-            p_titulo: "Novas licitações encontradas",
-            p_mensagem:
-              `${inseridas.length} nova(s) licitação(ões)` +
-              (criadas ? `, ${criadas} viraram oportunidade.` : "."),
-            p_link: "/Oportunidades",
-            p_tipo: "Sistema",
-            p_prioridade: "Normal",
-            p_dedup_key: `licitacoes:${busca.empresa_id}:${hojeBRT}`,
-          });
-        } catch (_) {
-          /* notificação é best-effort */
+        // auto-criar oportunidade pelas que passam no filtro de valor
+        let criadas = 0;
+        if (busca.criar_oportunidade_auto && inseridas.length > 0) {
+          const vmin = Number(busca.valor_minimo ?? 0);
+          const vmax = busca.valor_maximo != null ? Number(busca.valor_maximo) : null;
+          // Resolve o status_id uma vez (Kanban agrupa por status_id; sem ele a
+          // oportunidade auto-criada some do funil).
+          const { status_id: statusId, status_nome: statusNomeOk } =
+            await resolverStatusOportunidade(
+              supabase,
+              busca.empresa_id,
+              busca.status_oportunidade_nome || "Triagem Licitação"
+            );
+          for (const li of inseridas) {
+            const val = li.valor != null ? Number(li.valor) : null;
+            if (val == null || val < vmin) continue;
+            if (vmax != null && val > vmax) continue;
+
+            const { data: op, error: opErr } = await supabase
+              .from("oportunidade")
+              .insert({
+                empresa_id: busca.empresa_id,
+                nome: String(li.titulo || li.objeto || "Licitação").slice(0, 200),
+                valor_estimado: val,
+                descricao: li.objeto ?? null,
+                origem_nome: "Licitação (Alerta Licitação)",
+                status_id: statusId,
+                status_nome: statusNomeOk ?? busca.status_oportunidade_nome ?? "Triagem Licitação",
+                data_fechamento_prevista: li.abertura ?? null,
+                licitacao_modalidade: li.tipo ?? null,
+                licitacao_data: li.abertura ?? null,
+                observacoes: li.link_externo ?? null,
+              })
+              .select("id")
+              .single();
+
+            if (!opErr && op) {
+              await supabase
+                .from("licitacao_encontrada")
+                .update({ status: "Convertida", oportunidade_id: op.id })
+                .eq("id", li.id);
+              criadas++;
+            }
+          }
         }
+
+        // notificar gestores
+        if (inseridas.length > 0) {
+          try {
+            await supabase.rpc("notificar_gestores", {
+              p_empresa_id: busca.empresa_id,
+              p_perfis: ["Admin Holding", "Admin", "Gestor"],
+              p_titulo: "Novas licitações encontradas",
+              p_mensagem:
+                `${inseridas.length} nova(s) licitação(ões)` +
+                (criadas ? `, ${criadas} viraram oportunidade.` : "."),
+              p_link: "/Oportunidades",
+              p_tipo: "Sistema",
+              p_prioridade: "Normal",
+              p_dedup_key: `licitacoes:${busca.empresa_id}:${hojeBRT}`,
+            });
+          } catch (_) {
+            /* notificação é best-effort */
+          }
+        }
+
+        await supabase
+          .from("licitacao_busca")
+          .update({
+            ultima_execucao: new Date().toISOString(),
+            ultima_qtd_novas: inseridas.length,
+          })
+          .eq("id", busca.id);
+
+        resumo.push({
+          busca_id: busca.id,
+          empresa_id: busca.empresa_id,
+          retornadas: fetched.length,
+          novas: inseridas.length,
+          oportunidades_criadas: criadas,
+        });
+      } catch (e) {
+        resumo.push({ busca_id: busca.id, erro: String((e as Error)?.message || e) });
       }
-
-      await supabase
-        .from("licitacao_busca")
-        .update({
-          ultima_execucao: new Date().toISOString(),
-          ultima_qtd_novas: inseridas.length,
-        })
-        .eq("id", busca.id);
-
-      resumo.push({
-        busca_id: busca.id,
-        empresa_id: busca.empresa_id,
-        retornadas: fetched.length,
-        novas: inseridas.length,
-        oportunidades_criadas: criadas,
-      });
-    } catch (e) {
-      resumo.push({ busca_id: busca.id, erro: String((e as Error)?.message || e) });
     }
-  }
 
-  return ok({ data_insercao: dataInsercao ?? "full", resumo });
-});
+    return ok({ data_insercao: dataInsercao ?? "full", resumo });
+  })
+);

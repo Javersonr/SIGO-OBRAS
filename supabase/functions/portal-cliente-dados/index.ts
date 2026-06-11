@@ -15,7 +15,7 @@
  */
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
-import { preflightResponse, ok, fail } from "../_shared/cors.ts";
+import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { resolveClienteScope } from "../_shared/portal-cliente-scope.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -27,103 +27,105 @@ function alias(rows: any[] | null) {
   });
 }
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return preflightResponse();
-  if (req.method !== "POST") return fail("Método não permitido", 405);
+Deno.serve(
+  withCors(async (req) => {
+    if (req.method === "OPTIONS") return preflightResponse();
+    if (req.method !== "POST") return fail("Método não permitido", 405);
 
-  // deno-lint-ignore no-explicit-any
-  let body: any;
-  try {
-    body = await req.json();
-  } catch {
-    return fail("Payload inválido", 400);
-  }
+    // deno-lint-ignore no-explicit-any
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return fail("Payload inválido", 400);
+    }
 
-  const supabase = createAdminClient();
-  const { scope, error, status } = await resolveClienteScope(supabase, body);
-  if (!scope) return fail(error ?? "Acesso negado", status ?? 401);
+    const supabase = createAdminClient();
+    const { scope, error, status } = await resolveClienteScope(supabase, body);
+    if (!scope) return fail(error ?? "Acesso negado", status ?? 401);
 
-  const { empresa_id, oportunidade_id } = scope;
+    const { empresa_id, oportunidade_id } = scope;
 
-  // Empresa
-  const { data: empresa } = await supabase
-    .from("empresa")
-    .select("id, nome, nome_fantasia, razao_social, logo_url")
-    .eq("id", empresa_id)
-    .maybeSingle();
-  if (!empresa) return fail("Empresa não encontrada", 404);
+    // Empresa
+    const { data: empresa } = await supabase
+      .from("empresa")
+      .select("id, nome, nome_fantasia, razao_social, logo_url")
+      .eq("id", empresa_id)
+      .maybeSingle();
+    if (!empresa) return fail("Empresa não encontrada", 404);
 
-  // Projeto OU Oportunidade (mesma id)
-  let oportunidade = null;
-  const { data: projeto } = await supabase
-    .from("projeto")
-    .select("*")
-    .eq("id", oportunidade_id)
-    .maybeSingle();
-  if (projeto) {
-    oportunidade = projeto;
-  } else {
-    const { data: op } = await supabase
-      .from("oportunidade")
+    // Projeto OU Oportunidade (mesma id)
+    let oportunidade = null;
+    const { data: projeto } = await supabase
+      .from("projeto")
       .select("*")
       .eq("id", oportunidade_id)
       .maybeSingle();
-    if (!op) return fail("Projeto não encontrado", 404);
-    oportunidade = op;
-  }
+    if (projeto) {
+      oportunidade = projeto;
+    } else {
+      const { data: op } = await supabase
+        .from("oportunidade")
+        .select("*")
+        .eq("id", oportunidade_id)
+        .maybeSingle();
+      if (!op) return fail("Projeto não encontrado", 404);
+      oportunidade = op;
+    }
 
-  // Helper: tenta projeto_id; se vazio, oportunidade_id
-  // deno-lint-ignore no-explicit-any
-  async function porProjetoOuOportunidade(table: string, extra: Record<string, unknown> = {}) {
-    let { data } = await supabase
-      .from(table)
-      .select("*")
-      .eq("empresa_id", empresa_id)
-      .eq("projeto_id", oportunidade_id)
-      .match(extra);
-    if (!data || data.length === 0) {
-      const r = await supabase
+    // Helper: tenta projeto_id; se vazio, oportunidade_id
+    // deno-lint-ignore no-explicit-any
+    async function porProjetoOuOportunidade(table: string, extra: Record<string, unknown> = {}) {
+      let { data } = await supabase
         .from(table)
         .select("*")
         .eq("empresa_id", empresa_id)
-        .eq("oportunidade_id", oportunidade_id)
+        .eq("projeto_id", oportunidade_id)
         .match(extra);
-      data = r.data;
+      if (!data || data.length === 0) {
+        const r = await supabase
+          .from(table)
+          .select("*")
+          .eq("empresa_id", empresa_id)
+          .eq("oportunidade_id", oportunidade_id)
+          .match(extra);
+        data = r.data;
+      }
+      return data ?? [];
     }
-    return data ?? [];
-  }
 
-  const [orcamentoItens, cronogramaEtapas, arquivos, anotacoes, diariosRes] = await Promise.all([
-    porProjetoOuOportunidade("orcamento_item"),
-    porProjetoOuOportunidade("cronograma_etapa"),
-    porProjetoOuOportunidade("arquivo_oportunidade"),
-    porProjetoOuOportunidade("oportunidade_atualizacao", { tipo: "Nota" }),
-    supabase
-      .from("diario_obra")
-      .select("*")
-      .eq("empresa_id", empresa_id)
-      .eq("projeto_id", oportunidade_id),
-  ]);
+    const [orcamentoItens, cronogramaEtapas, arquivos, anotacoes, diariosRes] = await Promise.all([
+      porProjetoOuOportunidade("orcamento_item"),
+      porProjetoOuOportunidade("cronograma_etapa"),
+      porProjetoOuOportunidade("arquivo_oportunidade"),
+      porProjetoOuOportunidade("oportunidade_atualizacao", { tipo: "Nota" }),
+      supabase
+        .from("diario_obra")
+        .select("*")
+        .eq("empresa_id", empresa_id)
+        .eq("projeto_id", oportunidade_id),
+    ]);
 
-  // deno-lint-ignore no-explicit-any
-  const sortByOrdem = (a: any, b: any) => (a.ordem ?? 0) - (b.ordem ?? 0);
-  // deno-lint-ignore no-explicit-any
-  const sortByCreatedDesc = (a: any, b: any) =>
-    new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-
-  return ok({
-    empresa,
-    oportunidade,
-    abas_liberadas: scope.abas,
-    email_cliente: scope.email_cliente,
-    orcamento_itens: alias(orcamentoItens).sort(sortByOrdem),
-    cronograma_etapas: alias(cronogramaEtapas).sort(sortByOrdem),
-    arquivos: alias(arquivos).sort(sortByCreatedDesc),
-    anotacoes: alias(anotacoes).sort(sortByCreatedDesc),
     // deno-lint-ignore no-explicit-any
-    diarios: alias(diariosRes.data).sort(
+    const sortByOrdem = (a: any, b: any) => (a.ordem ?? 0) - (b.ordem ?? 0);
+    // deno-lint-ignore no-explicit-any
+    const sortByCreatedDesc = (a: any, b: any) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+
+    return ok({
+      empresa,
+      oportunidade,
+      abas_liberadas: scope.abas,
+      email_cliente: scope.email_cliente,
+      orcamento_itens: alias(orcamentoItens).sort(sortByOrdem),
+      cronograma_etapas: alias(cronogramaEtapas).sort(sortByOrdem),
+      arquivos: alias(arquivos).sort(sortByCreatedDesc),
+      anotacoes: alias(anotacoes).sort(sortByCreatedDesc),
       // deno-lint-ignore no-explicit-any
-      (a: any, b: any) => new Date(b.data).getTime() - new Date(a.data).getTime()
-    ),
-  });
-});
+      diarios: alias(diariosRes.data).sort(
+        // deno-lint-ignore no-explicit-any
+        (a: any, b: any) => new Date(b.data).getTime() - new Date(a.data).getTime()
+      ),
+    });
+  })
+);
