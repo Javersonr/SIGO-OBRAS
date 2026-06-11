@@ -33,8 +33,8 @@ por obra**. Por isso hoje não responde "a obra X deu lucro?".
 
 - [x] **0057** — backend do bloqueio por ASO: tabela `liberacao_sst` + RPC
       `funcionario_apto_campo` + `liberar_sst` (só Admin/Gestor). _(feito, smoke OK)_
-- [ ] Frontend: tela de entrega de ferramenta consulta `funcionario_apto_campo`,
-      bloqueia se inapto e mostra botão "Liberar (Admin)" com justificativa.
+- [x] Frontend: tela de entrega consulta `funcionario_apto_campo`, bloqueia se
+      inapto e mostra "Liberar excepcionalmente" (Admin, justificativa). _(deploy cf4a912)_
 - [ ] (Fase 2) Trigger airtight no `entrega_ferramental` — habilitar **após** limpar
       os ASOs nulos, pra não travar a operação no dia 1.
 - [ ] (Fase 2) Matriz de treinamento por função (NR-10/NR-35) — exige estruturar a
@@ -42,9 +42,11 @@ por obra**. Por isso hoje não responde "a obra X deu lucro?".
 
 ### 💰 Onda Comercial (o que faz vender)
 
-- [ ] **Medição mensal** por obra (`medicao_mensal`): % físico/financeiro acumulado,
-      retenção (% por contrato), valor medido/faturado, boletim PDF.
-- [ ] **Margem por obra**: orçado × comprometido × realizado × faturado por projeto.
+- [x] **0058 — Medição mensal** por obra (`medicao_obra`): % físico, valor medido,
+      retenção % por contrato, RPC `faturar_medicao` (receita líquida + receita de
+      retenção, trava dupla-faturação). _(feito, smoke OK)_ — boletim PDF pendente.
+- [x] **Margem por obra**: view `v_margem_projeto` + aba **Medições** no projeto
+      (card orçado × custo × faturado × recebido × retido × margem). _(frontend ok)_
 - [ ] **Retenções fiscais** (ISS/INSS) ligadas à receita.
 - [ ] **Consolidação do grupo** (painel do dono): caixa/margem/despesa somados das 19.
 - [ ] Proposta versionada + checklist de habilitação (licitação).

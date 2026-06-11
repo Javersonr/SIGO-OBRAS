@@ -41,6 +41,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import FinanceiroTab from "../components/projetos/FinanceiroTab";
+import MedicoesTab from "../components/projetos/MedicoesTab";
 import DiarioObraTab from "../components/projetos/DiarioObraTab";
 import SolicitacaoModal from "../components/compras/SolicitacaoModal";
 import ChatContextual from "../components/chat/ChatContextual";
@@ -1151,6 +1152,11 @@ export default function Projetos() {
                           Financeiro
                         </TabsTrigger>
                       )}
+                      {(perfil === "Admin" || temPermissao("Projetos", "Financeiro")) && (
+                        <TabsTrigger value="medicoes" className="flex-shrink-0 text-xs sm:text-sm">
+                          Medições
+                        </TabsTrigger>
+                      )}
                       {(perfil === "Admin" || temPermissao("Projetos", "Diário de Obra")) && (
                         <TabsTrigger value="diario" className="flex-shrink-0 text-xs sm:text-sm">
                           Diário de Obra
@@ -1438,6 +1444,14 @@ export default function Projetos() {
                       orcamentoItens={orcamentoItens}
                       temPermissao={temPermissao}
                       perfil={perfil}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="medicoes" className="mt-4">
+                    <MedicoesTab
+                      projeto={selectedProj}
+                      empresaAtiva={empresaAtiva}
+                      podeEditar={perfil === "Admin" || temPermissao("Projetos", "Financeiro")}
                     />
                   </TabsContent>
 
