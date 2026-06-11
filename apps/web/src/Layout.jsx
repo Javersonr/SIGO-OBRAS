@@ -95,6 +95,7 @@ const menuItems = [
   { name: "Financeiro", icon: DollarSign, path: "Financeiro", modulo: "Financeiro" },
   { name: "Contabilidade", icon: Calculator, path: "Contabilidade", modulo: "Contabilidade" },
   { name: "Relatórios", icon: BarChart3, path: "Relatorios", modulo: null },
+  { name: "Grupo", icon: Building2, path: "GrupoConsolidado", holdingOnly: true },
   { name: "Configurações", icon: Settings, path: "Configuracoes", adminOnly: true },
   { name: "SAAS Admin", icon: Building2, path: "SaasAdmin", superAdminOnly: true },
 ];
@@ -555,6 +556,9 @@ export default function Layout({ children, currentPageName }) {
     return menuItems.filter((item) => {
       // Itens apenas para super admin
       if (item.superAdminOnly) return isSuperAdmin;
+
+      // Painel do grupo: só Admin Holding (ou super admin)
+      if (item.holdingOnly) return isSuperAdmin || currentPerfil === "Admin Holding";
 
       // Super admin, Admin ou Owner vê: Dashboard, Configurações, Relatórios, Contabilidade + módulos contratados
       if (isSuperAdmin || currentPerfil === "Admin" || vinculo?.is_owner === true) {

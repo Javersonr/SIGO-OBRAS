@@ -37,6 +37,7 @@ const PAGES = {
   Ferramental: lazy(() => import("./pages/Ferramental")),
   Financeiro: lazy(() => import("./pages/Financeiro")),
   FornecedorLogin: lazy(() => import("./pages/FornecedorLogin")),
+  GrupoConsolidado: lazy(() => import("./pages/GrupoConsolidado")),
   HistoricoCotacoes: lazy(() => import("./pages/HistoricoCotacoes")),
   HistoricoInspecoes: lazy(() => import("./pages/HistoricoInspecoes")),
   HistoricoInventario: lazy(() => import("./pages/HistoricoInventario")),
