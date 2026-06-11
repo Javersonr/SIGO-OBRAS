@@ -27,7 +27,7 @@ por obra**. Por isso hoje não responde "a obra X deu lucro?".
 - [x] **0056** — revoga `anon` das 12 RPCs SECURITY DEFINER (SEG 5.3). _(feito, verificado)_
 - [x] **CORS travado no domínio** (SEG 4.2): withCors() ecoa origem permitida (sigoobras.com.br ± www + dev local); 15 functions redeployadas; verificado ao vivo (origem maliciosa sem ACAO; login OK). _(feito)_
 - [x] **0060** — índices únicos cientes de soft-delete nos 8 catálogos (recriar após apagar funciona; duplicado vivo segue bloqueado; estoque*saldo/licitacao mantidos por usarem ON CONFLICT). *(feito, smoke OK)\_
-- [ ] Checagem de permissão no **backend** (hoje só no front) — `check_permission` nas RPCs críticas.
+- [x] **0061** — identidade derivada do TOKEN no banco (current*user_email/perfil): liberar_sst + fluxo concluir/aprovar/reprovar não aceitam mais perfil declarado pelo cliente (spoof de "Admin" morto); fallback p/ contextos sem JWT. *(feito, smokes OK)\_ — Compras (0028) no mesmo padrão: próxima onda.
 
 ### 🦺 Onda SST (compliance — risco legal)
 
