@@ -42,6 +42,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import FinanceiroTab from "../components/projetos/FinanceiroTab";
 import MedicoesTab from "../components/projetos/MedicoesTab";
+import IniciarFluxoButton from "../components/fluxos/IniciarFluxoButton";
 import DiarioObraTab from "../components/projetos/DiarioObraTab";
 import SolicitacaoModal from "../components/compras/SolicitacaoModal";
 import ChatContextual from "../components/chat/ChatContextual";
@@ -1181,6 +1182,12 @@ export default function Projetos() {
                   </div>
 
                   <TabsContent value="geral" className="space-y-4 mt-4">
+                    <IniciarFluxoButton
+                      entidadeAlvo="projeto"
+                      registroId={selectedProj.id}
+                      empresaAtiva={empresaAtiva}
+                      user={user}
+                    />
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <Label className="text-slate-500">Nome do Projeto</Label>

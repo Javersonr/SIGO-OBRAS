@@ -36,6 +36,7 @@ import NovoClienteModal from "../components/clientes/NovoClienteModal";
 import OportunidadesHeader from "../components/oportunidades/OportunidadesHeader";
 import FormularioOportunidade from "../components/oportunidades/FormularioOportunidade";
 import OportunidadeDetalhe from "../components/oportunidades/OportunidadeDetalhe";
+import IniciarFluxoButton from "../components/fluxos/IniciarFluxoButton";
 
 export default function Oportunidades() {
   const { empresaAtiva, perfil, user, temPermissao, vinculo } = useEmpresa();
@@ -1492,6 +1493,16 @@ export default function Oportunidades() {
             </SheetHeader>
           </div>
           <div className="flex-1 overflow-y-auto">
+            {selectedOp && !showTemplateSelection && (
+              <div className="px-6 pt-4">
+                <IniciarFluxoButton
+                  entidadeAlvo="oportunidade"
+                  registroId={selectedOp.id}
+                  empresaAtiva={empresaAtiva}
+                  user={user}
+                />
+              </div>
+            )}
             {showTemplateSelection ? (
               <div className="flex flex-col items-center justify-center py-12 px-6">
                 <Card
