@@ -6,6 +6,7 @@ import { safeParseJSON } from "@/lib/json-utils";
 import {
   Building2,
   LayoutDashboard,
+  ClipboardCheck,
   Target,
   FolderKanban,
   ShoppingCart,
@@ -85,6 +86,7 @@ const hexToRgba = (hex, alpha) => {
 
 const menuItems = [
   { name: "Dashboard", icon: LayoutDashboard, path: "Dashboard", modulo: null },
+  { name: "Pendências", icon: ClipboardCheck, path: "MinhasPendencias", modulo: null },
   { name: "Oportunidades", icon: Target, path: "Oportunidades", modulo: "Oportunidades" },
   { name: "Projetos", icon: FolderKanban, path: "Projetos", modulo: "Projetos" },
 
@@ -564,6 +566,7 @@ export default function Layout({ children, currentPageName }) {
       if (isSuperAdmin || currentPerfil === "Admin" || vinculo?.is_owner === true) {
         if (
           item.path === "Dashboard" ||
+          item.path === "MinhasPendencias" ||
           item.path === "Configuracoes" ||
           item.path === "Relatorios" ||
           item.path === "Contabilidade" ||
@@ -581,8 +584,9 @@ export default function Layout({ children, currentPageName }) {
       // Itens apenas para admin
       if (item.adminOnly) return false;
 
-      // Dashboard e Vencimentos sempre visíveis
+      // Dashboard, Pendências e Vencimentos sempre visíveis
       if (item.path === "Dashboard") return true;
+      if (item.path === "MinhasPendencias") return true;
       if (item.path === "Vencimentos") return true;
 
       // Configurações: admin OU com permissão granular

@@ -56,7 +56,7 @@ por obra**. Por isso hoje não responde "a obra X deu lucro?".
 
 ### 🧹 Onda Qualidade
 
-- [ ] Plugar o **motor de fluxos** (0052/0053, já no banco) numa tela "Minhas Pendências".
+- [x] **Minhas Pendências** — tela liga o motor de fluxos aos usuários: listas "para executar" (com checklist) e "para aprovar" (aprovar/reprovar com motivo), chamando as RPCs endurecidas da 0061; item de menu visível a todos os perfis internos. _(feito)_
 - [ ] Quebrar os 5 arquivos de 2.000+ linhas (SegurancaTrabalho, FuncaoModal, DespesasTab, Ferramental, ReceitasTab).
 - [ ] Primeiros testes automatizados (começar pelo Financeiro) + TypeScript gradual.
 - [ ] Observabilidade (Sentry) + auditoria de alterações financeiras.
