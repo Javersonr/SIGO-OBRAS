@@ -35,6 +35,11 @@ por obra**. Por isso hoje não responde "a obra X deu lucro?".
       `funcionario_apto_campo` + `liberar_sst` (só Admin/Gestor). _(feito, smoke OK)_
 - [x] Frontend: tela de entrega consulta `funcionario_apto_campo`, bloqueia se
       inapto e mostra "Liberar excepcionalmente" (Admin, justificativa). _(deploy cf4a912)_
+- [x] **0071 — Auditoria + revogação da liberação**: liberar*sst notifica os
+      gestores ao liberar (trilha no sino); `revogar_liberacao_sst` (Admin/Gestor,
+      justificativa, identidade via token) volta a bloquear o funcionário e avisa.
+      Nova aba **"Liberações SST"** lista as ativas e permite revogar. *(feito,
+      smoke verde, deploy 8351920)\_
 - [ ] (Fase 2) Trigger airtight no `entrega_ferramental` — habilitar **após** limpar
       os ASOs nulos, pra não travar a operação no dia 1.
 - [ ] (Fase 2) Matriz de treinamento por função (NR-10/NR-35) — exige estruturar a
