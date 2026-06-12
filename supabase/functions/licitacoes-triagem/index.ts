@@ -376,6 +376,7 @@ Deno.serve(
           data_fechamento_prevista: lic.abertura ?? null,
           licitacao_modalidade: lic.tipo ?? null,
           licitacao_data: lic.abertura ?? null,
+          orgao: lic.orgao ?? null,
           observacoes: lic.link_externo ?? null,
         })
         .select("id")
