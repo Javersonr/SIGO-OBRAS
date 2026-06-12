@@ -36,10 +36,20 @@ declare
   v_notifs int;
   r jsonb;
 begin
-  -- 1. empresa de teste (a primeira que existir)
-  select id into v_empresa from public.empresa order by created_at limit 1;
+  -- 1. empresa de teste: uma SEM níveis de aprovação reais (encontrar_nivel
+  --    usa limit 1 por ordem — um nível real da mesma empresa colidiria com
+  --    os níveis semeados pelo smoke e distorceria as asserções)
+  select e.id into v_empresa
+    from public.empresa e
+    where e.deleted_at is null
+      and not exists (
+        select 1 from public.nivel_aprovacao n
+        where n.empresa_id = e.id and n.deleted_at is null
+      )
+    order by e.created_at
+    limit 1;
   if v_empresa is null then
-    raise exception 'Nenhuma empresa no banco para testar.';
+    raise exception 'Nenhuma empresa sem níveis de aprovação para testar.';
   end if;
   raise notice '== empresa de teste: %', v_empresa;
 
