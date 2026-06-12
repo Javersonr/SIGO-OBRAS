@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, supabase } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ import { format } from "date-fns";
 export default function RelatorioOportunidades() {
   const { empresaAtiva } = useEmpresa();
   const [oportunidades, setOportunidades] = useState([]);
+  const [winrateOrgao, setWinrateOrgao] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dateStart, setDateStart] = useState(() => {
     const d = new Date();
@@ -35,10 +36,17 @@ export default function RelatorioOportunidades() {
       if (!empresaAtiva?.id) return;
       try {
         setLoading(true);
-        const data = await sigo.entities.Oportunidade.filter({
-          empresa_id: empresaAtiva.id,
-        });
+        const [data, { data: wr }] = await Promise.all([
+          sigo.entities.Oportunidade.filter({ empresa_id: empresaAtiva.id }),
+          supabase
+            .from("v_winrate_orgao")
+            .select("*")
+            .eq("empresa_id", empresaAtiva.id)
+            .order("total", { ascending: false })
+            .limit(15),
+        ]);
         setOportunidades(data);
+        setWinrateOrgao(wr || []);
       } catch (error) {
         console.error("Erro ao carregar oportunidades:", error);
       } finally {
@@ -295,6 +303,83 @@ export default function RelatorioOportunidades() {
                 />
               </LineChart>
             </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        {/* Win-rate por órgão (view v_winrate_orgao, 0065) */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">
+              Win-rate por órgão{" "}
+              <span className="text-xs font-normal text-slate-400">
+                (taxa sobre decididas: ganhas ÷ (ganhas + perdidas))
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {winrateOrgao.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-4">Sem dados de órgão ainda.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">
+                        Órgão
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600">
+                        Total
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600">
+                        Ganhas
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600">
+                        Perdidas
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600">
+                        Abertas
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600">
+                        Valor ganho
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600">
+                        Taxa
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {winrateOrgao.map((w, i) => (
+                      <tr key={w.orgao} className={i % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+                        <td className="px-3 py-2 font-medium text-slate-800 max-w-[280px] truncate">
+                          {w.orgao}
+                        </td>
+                        <td className="px-3 py-2 text-right">{w.total}</td>
+                        <td className="px-3 py-2 text-right text-green-700">{w.ganhas}</td>
+                        <td className="px-3 py-2 text-right text-red-700">{w.perdidas}</td>
+                        <td className="px-3 py-2 text-right text-slate-500">{w.abertas}</td>
+                        <td className="px-3 py-2 text-right">
+                          {(parseFloat(w.valor_ganho) || 0).toLocaleString("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
+                          })}
+                        </td>
+                        <td
+                          className={`px-3 py-2 text-right font-semibold ${
+                            w.taxa_conversao == null
+                              ? "text-slate-400"
+                              : parseFloat(w.taxa_conversao) >= 50
+                                ? "text-green-700"
+                                : "text-amber-700"
+                          }`}
+                        >
+                          {w.taxa_conversao == null ? "—" : `${w.taxa_conversao}%`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

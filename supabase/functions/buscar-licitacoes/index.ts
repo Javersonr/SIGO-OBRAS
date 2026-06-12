@@ -233,6 +233,7 @@ Deno.serve(
                 status_nome: statusNomeOk ?? busca.status_oportunidade_nome ?? "Triagem Licitação",
                 data_fechamento_prevista: li.abertura ?? null,
                 licitacao_modalidade: li.tipo ?? null,
+                orgao: li.orgao ?? null,
                 licitacao_data: li.abertura ?? null,
                 observacoes: li.link_externo ?? null,
               })
