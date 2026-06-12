@@ -50,6 +50,7 @@ import PermissionGate from "../PermissionGate";
 import ChatContextual from "../chat/ChatContextual";
 import DiarioObraTab from "../projetos/DiarioObraTab";
 import VisualizarArquivoModal from "./VisualizarArquivoModal";
+import PropostasOportunidade from "./PropostasOportunidade";
 
 export default function OportunidadeDetalhe({
   open,
@@ -465,6 +466,11 @@ export default function OportunidadeDetalhe({
 
                   {/* ABA GERAL */}
                   <TabsContent value="geral" className="space-y-4 mt-4">
+                    <PropostasOportunidade
+                      oportunidadeId={selectedOp.id}
+                      empresaAtiva={empresaAtiva}
+                      user={user}
+                    />
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <Label className="text-slate-500">Nome</Label>

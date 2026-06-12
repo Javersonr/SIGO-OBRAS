@@ -51,7 +51,7 @@ por obra**. Por isso hoje não responde "a obra X deu lucro?".
 - [x] **Consolidação do grupo** (0059 + página "Grupo"): caixa, recebido/pago no
       mês, a receber/pagar e atrasados — total e por empresa; guard no banco
       (só Admin Holding/super admin). _(feito, smoke OK)_
-- [ ] Proposta versionada + checklist de habilitação (licitação).
+- [x] **0066 — Proposta versionada**: proposta*oportunidade com versão sequencial (trigger) e IMUTABILIDADE no banco (mudou valor → nova versão); seção Propostas na aba Geral da Oportunidade (registrar, Aceita/Recusada). *(feito, smoke OK)\_ — checklist de habilitação: próxima fase.
 - [x] **0065 — Win-rate por órgão**: oportunidade.orgao + backfill (2.233/2.296 recuperadas), buscar-licitacoes propaga o órgão, view v*winrate_orgao + tabela no Relatório de Oportunidades. *(feito)\_ — `motivo_perda` estruturado fica p/ proposta versionada.
 
 ### 🧹 Onda Qualidade
