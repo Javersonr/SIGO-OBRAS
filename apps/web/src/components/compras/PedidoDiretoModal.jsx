@@ -109,7 +109,7 @@ export default function PedidoDiretoModal({
               <SelectContent>
                 {fornecedoresAtivos.map((f) => (
                   <SelectItem key={f.id} value={f.id}>
-                    {f.nome}
+                    {f.nome_fantasia || f.nome_razao}
                   </SelectItem>
                 ))}
               </SelectContent>

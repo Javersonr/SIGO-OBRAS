@@ -20,6 +20,7 @@ import {
   Award,
   MessageSquare,
   Rocket,
+  PackageCheck,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import SortButton from "../components/shared/SortButton";
@@ -57,6 +58,7 @@ import LinksModal from "../components/compras/LinksModal";
 import HistoricoTab from "../components/compras/HistoricoTab";
 import AprovacaoModal from "../components/compras/AprovacaoModal";
 import PedidoDiretoModal from "../components/compras/PedidoDiretoModal";
+import ConferirRecebimentoModal from "../components/compras/ConferirRecebimentoModal";
 import ChatContextual from "../components/chat/ChatContextual";
 import ConfirmacaoExclusaoModal from "../components/compras/ConfirmacaoExclusaoModal";
 import AdicionarItensCotacaoModal from "../components/compras/AdicionarItensCotacaoModal";
@@ -101,6 +103,7 @@ export default function Compras() {
   const [showLinksModal, setShowLinksModal] = useState(false);
   const [showAprovacaoModal, setShowAprovacaoModal] = useState(false);
   const [showPedidoDiretoModal, setShowPedidoDiretoModal] = useState(false);
+  const [showRecebimentoModal, setShowRecebimentoModal] = useState(false);
   const [aprovacaoData, setAprovacaoData] = useState({
     solicitacao: null,
     aprovacoes: [],
@@ -1352,6 +1355,17 @@ export default function Compras() {
                           >
                             <MessageSquare className="w-4 h-4 mr-2" /> Chat do Pedido
                           </DropdownMenuItem>
+                          {!["Entregue", "Cancelado"].includes(ped.status) && (
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setSelectedItem(ped);
+                                setShowRecebimentoModal(true);
+                              }}
+                              className="text-emerald-600"
+                            >
+                              <PackageCheck className="w-4 h-4 mr-2" /> Conferir Recebimento
+                            </DropdownMenuItem>
+                          )}
                           {ped.status === "Emitido" && (
                             <DropdownMenuItem
                               onClick={() => handleChangeStatusPedido(ped, "Enviado")}
@@ -1469,6 +1483,16 @@ export default function Compras() {
             setActiveTab("pedidos");
             setFilterStatus("all");
           }}
+        />
+      )}
+
+      {selectedItem && showRecebimentoModal && (
+        <ConferirRecebimentoModal
+          open={showRecebimentoModal}
+          onOpenChange={setShowRecebimentoModal}
+          pedido={selectedItem}
+          user={user}
+          onSuccess={loadData}
         />
       )}
 
