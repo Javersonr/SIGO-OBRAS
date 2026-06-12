@@ -18,6 +18,7 @@ import VisualizadorDocumentoModal from "../components/seguranca/VisualizadorDocu
 import VisualizarCertificadoModal from "../components/seguranca/VisualizarCertificadoModal";
 import CertificadoAssinadoModal from "../components/seguranca/CertificadoAssinadoModal";
 import SolicitacaoEPIModal from "../components/seguranca/SolicitacaoEPIModal";
+import LiberacoesSSTAtivas from "../components/seguranca/LiberacoesSSTAtivas";
 import ExportacaoMassaModal from "../components/seguranca/ExportacaoMassaModal";
 import ImportarFuncionariosModal from "../components/seguranca/ImportarFuncionariosModal";
 import ImportarCertificadosModal from "../components/seguranca/ImportarCertificadosModal";
@@ -1083,6 +1084,7 @@ export default function SegurancaTrabalho() {
                 <SelectItem value="documentacao_empresa">Documentação da Empresa</SelectItem>
               )}
               <SelectItem value="solicitacoes_entrega">Solicitações de Entrega</SelectItem>
+              <SelectItem value="liberacoes_sst">Liberações SST</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -1106,7 +1108,13 @@ export default function SegurancaTrabalho() {
             <TabsTrigger value="documentacao_empresa">Documentação da Empresa</TabsTrigger>
           )}
           <TabsTrigger value="solicitacoes_entrega">Solicitações de Entrega</TabsTrigger>
+          <TabsTrigger value="liberacoes_sst">Liberações SST</TabsTrigger>
         </TabsList>
+
+        {/* Aba Liberações SST excepcionais (notificação + revogação) */}
+        <TabsContent value="liberacoes_sst">
+          <LiberacoesSSTAtivas empresaAtiva={empresaAtiva} perfil={perfil} />
+        </TabsContent>
 
         {/* Aba Funcionários */}
         <TabsContent value="funcionarios">
