@@ -37,6 +37,8 @@ export default function MedicoesTab({ projeto, empresaAtiva, podeEditar = true }
   const [config, setConfig] = useState({
     valor_contrato: projeto?.valor_contrato ?? "",
     retencao_percentual: projeto?.retencao_percentual ?? 0,
+    iss_percentual: projeto?.iss_percentual ?? 0,
+    inss_percentual: projeto?.inss_percentual ?? 0,
   });
 
   const carregar = useCallback(async () => {
@@ -67,6 +69,8 @@ export default function MedicoesTab({ projeto, empresaAtiva, podeEditar = true }
       await sigo.entities.Projeto.update(projeto.id, {
         valor_contrato: parseFloat(String(config.valor_contrato).replace(",", ".")) || null,
         retencao_percentual: parseFloat(String(config.retencao_percentual).replace(",", ".")) || 0,
+        iss_percentual: parseFloat(String(config.iss_percentual).replace(",", ".")) || 0,
+        inss_percentual: parseFloat(String(config.inss_percentual).replace(",", ".")) || 0,
       });
       toast.success("Contrato atualizado");
       setShowConfig(false);
@@ -172,7 +176,7 @@ export default function MedicoesTab({ projeto, empresaAtiva, podeEditar = true }
           </div>
 
           {showConfig && (
-            <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+            <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg grid grid-cols-2 sm:grid-cols-5 gap-3 items-end">
               <div>
                 <Label className="text-xs">Valor do contrato (R$)</Label>
                 <Input
@@ -183,11 +187,29 @@ export default function MedicoesTab({ projeto, empresaAtiva, podeEditar = true }
                 />
               </div>
               <div>
-                <Label className="text-xs">Retenção do contrato (%)</Label>
+                <Label className="text-xs">Retenção contratual (%)</Label>
                 <Input
                   value={config.retencao_percentual ?? ""}
                   onChange={(e) => setConfig({ ...config, retencao_percentual: e.target.value })}
                   placeholder="ex: 10"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">ISS retido (%)</Label>
+                <Input
+                  value={config.iss_percentual ?? ""}
+                  onChange={(e) => setConfig({ ...config, iss_percentual: e.target.value })}
+                  placeholder="ex: 5"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">INSS retido (%)</Label>
+                <Input
+                  value={config.inss_percentual ?? ""}
+                  onChange={(e) => setConfig({ ...config, inss_percentual: e.target.value })}
+                  placeholder="ex: 11"
                   className="mt-1"
                 />
               </div>
@@ -203,7 +225,8 @@ export default function MedicoesTab({ projeto, empresaAtiva, podeEditar = true }
               <p className="text-xs text-slate-500">Contrato</p>
               <p className="font-semibold text-slate-800">{fmtBRL(margem.valor_contrato)}</p>
               <p className="text-[11px] text-slate-400">
-                Retenção {margem.retencao_percentual || 0}%
+                Ret. {margem.retencao_percentual || 0}% • ISS {config.iss_percentual || 0}% • INSS{" "}
+                {config.inss_percentual || 0}%
               </p>
             </div>
             <div className="p-3 bg-slate-50 rounded-lg">

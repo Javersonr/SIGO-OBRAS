@@ -47,7 +47,7 @@ por obra**. Por isso hoje não responde "a obra X deu lucro?".
       retenção, trava dupla-faturação). _(feito, smoke OK)_ — boletim PDF pendente.
 - [x] **Margem por obra**: view `v_margem_projeto` + aba **Medições** no projeto
       (card orçado × custo × faturado × recebido × retido × margem). _(frontend ok)_
-- [ ] **Retenções fiscais** (ISS/INSS) ligadas à receita.
+- [x] **0064 — Retenções fiscais** (ISS/INSS, % por obra): faturar*medicao v3 desconta do líquido e lança os impostos como despesas fiscais vinculadas (custo da obra/DRE corretos, sem mexer no caixa bancário); campos ISS/INSS na config do contrato (aba Medições). *(feito, smoke OK)\_
 - [x] **Consolidação do grupo** (0059 + página "Grupo"): caixa, recebido/pago no
       mês, a receber/pagar e atrasados — total e por empresa; guard no banco
       (só Admin Holding/super admin). _(feito, smoke OK)_
