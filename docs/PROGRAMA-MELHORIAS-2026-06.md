@@ -49,7 +49,11 @@ por obra**. Por isso hoje não responde "a obra X deu lucro?".
 
 - [x] **0058 — Medição mensal** por obra (`medicao_obra`): % físico, valor medido,
       retenção % por contrato, RPC `faturar_medicao` (receita líquida + receita de
-      retenção, trava dupla-faturação). _(feito, smoke OK)_ — boletim PDF pendente.
+      retenção, trava dupla-faturação). _(feito, smoke OK)_
+- [x] **Boletim PDF da medição**: botão "Boletim" em cada medição gera o PDF
+      (prestador/cliente, obra, competência, avanço físico, valor medido,
+      retenção/ISS/INSS, líquido a faturar, observações, assinaturas) — antes ou
+      depois de faturar; documento que cliente/CEMIG exigem. _(feito)_
 - [x] **Margem por obra**: view `v_margem_projeto` + aba **Medições** no projeto
       (card orçado × custo × faturado × recebido × retido × margem). _(frontend ok)_
 - [x] **0064 — Retenções fiscais** (ISS/INSS, % por obra): faturar*medicao v3 desconta do líquido e lança os impostos como despesas fiscais vinculadas (custo da obra/DRE corretos, sem mexer no caixa bancário); campos ISS/INSS na config do contrato (aba Medições). *(feito, smoke OK)\_

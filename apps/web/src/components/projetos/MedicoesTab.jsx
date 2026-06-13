@@ -4,7 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { sigo, supabase } from "@/api/sigoClient";
 import { toast } from "sonner";
-import { Loader2, Plus, Receipt, TrendingUp, TrendingDown, FileText } from "lucide-react";
+import { Loader2, Plus, Receipt, TrendingUp, TrendingDown, FileText, FileDown } from "lucide-react";
+import { gerarBoletimMedicaoPDF } from "./boletimMedicaoPdf";
 
 const fmtBRL = (v) =>
   (parseFloat(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -369,22 +370,34 @@ export default function MedicoesTab({ projeto, empresaAtiva, podeEditar = true }
                       </span>
                     </td>
                     <td className="px-3 py-2 text-right">
-                      {podeEditar && m.status !== "Faturada" && (
+                      <div className="flex items-center justify-end gap-1.5">
                         <Button
                           size="sm"
                           variant="outline"
-                          className="gap-1 text-green-700 border-green-300 hover:bg-green-50"
-                          onClick={() => handleFaturar(m)}
-                          disabled={faturandoId === m.id}
+                          className="gap-1"
+                          onClick={() => gerarBoletimMedicaoPDF(m, projeto, empresaAtiva)}
+                          title="Baixar boletim de medição em PDF"
                         >
-                          {faturandoId === m.id ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Receipt className="w-3.5 h-3.5" />
-                          )}
-                          Faturar
+                          <FileDown className="w-3.5 h-3.5" />
+                          Boletim
                         </Button>
-                      )}
+                        {podeEditar && m.status !== "Faturada" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1 text-green-700 border-green-300 hover:bg-green-50"
+                            onClick={() => handleFaturar(m)}
+                            disabled={faturandoId === m.id}
+                          >
+                            {faturandoId === m.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Receipt className="w-3.5 h-3.5" />
+                            )}
+                            Faturar
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
