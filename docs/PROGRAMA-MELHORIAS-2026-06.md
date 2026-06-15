@@ -68,7 +68,15 @@ por obra**. Por isso hoje não responde "a obra X deu lucro?".
 
 - [x] **Minhas Pendências** — tela liga o motor de fluxos aos usuários: listas "para executar" (com checklist) e "para aprovar" (aprovar/reprovar com motivo), chamando as RPCs endurecidas da 0061; item de menu visível a todos os perfis internos. _(feito)_
 - [ ] Quebrar os 5 arquivos de 2.000+ linhas (SegurancaTrabalho, FuncaoModal, DespesasTab, Ferramental, ReceitasTab).
-- [ ] Primeiros testes automatizados (começar pelo Financeiro) + TypeScript gradual.
+- [x] **Primeiros testes automatizados** (sistema tinha ZERO): Vitest configurado
+      (`vitest.config.js`, scripts `test`/`test:watch`) + 37 testes verdes nas
+      funções puras de maior risco — financeiro-utils (status/`parseValor`/`parseData`),
+      json-utils (`safeParseJSON`), safe-url (anti-XSS), formatters. _(feito)_ —
+      próximos: parsers de import e componentes (jsdom) + TypeScript gradual.
+- [ ] **Varredura de funções plpgsql** (coluna inexistente, classe do `fornecedor.nome`)
+      via `plpgsql_check`: **parada** — pooler da Supabase recusando conexão em
+      14/06. Retomar quando o banco voltar. (Frontend já varrido: `.nome` em
+      fornecedor/cliente está limpo.)
 - [ ] Observabilidade (Sentry) + auditoria de alterações financeiras.
 
 ## Princípios de execução
