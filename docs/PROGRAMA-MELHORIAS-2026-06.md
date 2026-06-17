@@ -69,10 +69,16 @@ por obra**. Por isso hoje não responde "a obra X deu lucro?".
 - [x] **Minhas Pendências** — tela liga o motor de fluxos aos usuários: listas "para executar" (com checklist) e "para aprovar" (aprovar/reprovar com motivo), chamando as RPCs endurecidas da 0061; item de menu visível a todos os perfis internos. _(feito)_
 - [ ] Quebrar os 5 arquivos de 2.000+ linhas (SegurancaTrabalho, FuncaoModal, DespesasTab, Ferramental, ReceitasTab).
 - [x] **Primeiros testes automatizados** (sistema tinha ZERO): Vitest configurado
-      (`vitest.config.js`, scripts `test`/`test:watch`) + 37 testes verdes nas
-      funções puras de maior risco — financeiro-utils (status/`parseValor`/`parseData`),
-      json-utils (`safeParseJSON`), safe-url (anti-XSS), formatters. _(feito)_ —
-      próximos: parsers de import e componentes (jsdom) + TypeScript gradual.
+      (`vitest.config.js`, scripts `test`/`test:watch`) + **56 testes verdes** (7
+      arquivos) nas funções puras de maior risco — financeiro-utils
+      (status/`parseValor`/`parseData`), json-utils (`safeParseJSON`), safe-url
+      (anti-XSS), formatters, medicao-calc, documentos-funcionario, parcelas.
+      _(feito)_ — próximos: componentes (jsdom) + TypeScript gradual.
+- [x] **Extrações com fonte única + bug achado pelo caminho**: - `lib/medicao-calc.js` — matemática da medição (retenção/ISS/INSS/líquido)
+      centralizada (boletim e backend alinhados). - `lib/parcelas.js` — geração de datas de parcela (estava duplicada em
+      Despesas/Receitas). **Bug corrigido**: parcela "dia 31" transbordava pra
+      março (`new Date(2026,1,31)`→03/mar) em vez de clampar em 28/fev. Agora
+      clampa pro último dia do mês, com bissexto correto. _(deploy 1bfa522)_
 - [ ] **Varredura de funções plpgsql** (coluna inexistente, classe do `fornecedor.nome`)
       via `plpgsql_check`: **parada** — pooler da Supabase recusando conexão em
       14/06. Retomar quando o banco voltar. (Frontend já varrido: `.nome` em
