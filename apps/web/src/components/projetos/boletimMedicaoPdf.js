@@ -1,9 +1,10 @@
 import { jsPDF } from "jspdf";
+import { calcularValoresMedicao } from "@/lib/medicao-calc";
 
 // Gera o Boletim de Medição em PDF (cliente/CEMIG costumam exigir um documento
 // por medição). Layout manual (padrão do projeto — sem jspdf-autotable).
-// Valores: se a medição já foi Faturada, usa os snapshots (valor_retencao/iss/
-// inss/liquido); senão, calcula uma prévia a partir dos percentuais.
+// A matemática (medido → retenção → ISS → INSS → líquido) vem de
+// calcularValoresMedicao (fonte única, espelha o backend).
 
 const fmtBRL = (v) =>
   (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -26,17 +27,9 @@ export function gerarBoletimMedicaoPDF(medicao, projeto, empresa) {
   const pageW = doc.internal.pageSize.getWidth();
   const margin = 15;
   const right = pageW - margin;
-  const faturada = medicao?.status === "Faturada";
 
-  const medido = Number(medicao?.valor_medido) || 0;
-  // prévia a partir dos % quando ainda não faturada
-  const retPct = Number(medicao?.retencao_percentual) || 0;
-  const issPct = Number(medicao?.iss_percentual) || 0;
-  const inssPct = Number(medicao?.inss_percentual) || 0;
-  const retencao = faturada ? Number(medicao?.valor_retencao) || 0 : (medido * retPct) / 100;
-  const iss = faturada ? Number(medicao?.valor_iss) || 0 : (medido * issPct) / 100;
-  const inss = faturada ? Number(medicao?.valor_inss) || 0 : (medido * inssPct) / 100;
-  const liquido = faturada ? Number(medicao?.valor_liquido) || 0 : medido - retencao - iss - inss;
+  const { faturada, medido, retPct, issPct, inssPct, retencao, iss, inss, liquido } =
+    calcularValoresMedicao(medicao);
 
   // Cabeçalho
   doc.setFillColor(15, 23, 42); // slate-900
