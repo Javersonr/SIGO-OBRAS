@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { gerarDatasParcelas } from "@/lib/parcelas";
+import { csvParaObjetos } from "@/lib/csv";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -449,83 +450,8 @@ export default function DespesasTab({
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
-        let text = evt.target.result;
-        if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
-
-        const firstLine = text.split(/\r?\n/)[0] || "";
-        const totalTabFirst = (firstLine.match(/\t/g) || []).length;
-        const totalSemiFirst = (firstLine.match(/;/g) || []).length;
-        const totalCommaFirst = (firstLine.match(/,/g) || []).length;
-        const sep =
-          totalTabFirst > 0 && totalTabFirst >= totalSemiFirst && totalTabFirst >= totalCommaFirst
-            ? "\t"
-            : totalSemiFirst > 0
-              ? ";"
-              : ",";
-
-        const parseCSVFull = (rawText, separator) => {
-          const rows = [];
-          let cur = "";
-          let inQ = false;
-          for (let i = 0; i < rawText.length; i++) {
-            const c = rawText[i];
-            const next = rawText[i + 1];
-            if (c === '"') {
-              if (inQ && next === '"') {
-                cur += '"';
-                i++;
-              } else {
-                inQ = !inQ;
-              }
-            } else if ((c === "\r" && next === "\n") || c === "\n") {
-              if (inQ) {
-                cur += "\n";
-                if (c === "\r") i++;
-              } else {
-                if (c === "\r") i++;
-                rows.push(cur);
-                cur = "";
-              }
-            } else {
-              cur += c;
-            }
-          }
-          if (cur.trim()) rows.push(cur);
-
-          return rows.map((row) => {
-            const vals = [];
-            let field = "";
-            let inQuote = false;
-            for (let k = 0; k < row.length; k++) {
-              const ch = row[k];
-              if (ch === '"') {
-                if (inQuote && row[k + 1] === '"') {
-                  field += '"';
-                  k++;
-                } else {
-                  inQuote = !inQuote;
-                }
-              } else if (ch === separator && !inQuote) {
-                vals.push(field.trim());
-                field = "";
-              } else {
-                field += ch;
-              }
-            }
-            vals.push(field.trim());
-            return vals;
-          });
-        };
-
-        const allRows = parseCSVFull(text, sep);
-        const headers = allRows[0] || [];
-        const data = allRows.slice(1).map((row) => {
-          const obj = {};
-          headers.forEach((header, idx) => {
-            obj[header] = row[idx] || "";
-          });
-          return obj;
-        });
+        // Parse extraído p/ lib/csv.js (testado): BOM, separador, aspas, CRLF.
+        const { data } = csvParaObjetos(evt.target.result);
 
         setImportacao({ ativo: true, total: data.length, processados: 0, erros: 0 });
 
