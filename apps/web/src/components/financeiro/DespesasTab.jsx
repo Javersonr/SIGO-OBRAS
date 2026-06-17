@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { gerarDatasParcelas } from "@/lib/parcelas";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -176,31 +177,16 @@ export default function DespesasTab({
     }
 
     const valorParcela = parseFloat(valorTotal) / numParcelas;
-    const novasParcelas = [];
 
-    // Bug histórico: `new Date("2026-01-15")` é interpretado em UTC
-    // (meia-noite UTC), e em UTC-3 o toISOString().split("T")[0] volta como
-    // "2026-01-14" — todas as parcelas saíam 1 dia antes. Parse manual em
-    // horário local e formato manual evita o drift.
-    const [anoBase, mesBase, diaBase] = dataVencimento.split("-").map((n) => parseInt(n, 10));
-
-    for (let i = 0; i < numParcelas; i++) {
-      // setMonth respeita overflow (mês 12 → ano+1, mês 0), e cap automático
-      // pro último dia do mês quando dia=31 num mês curto.
-      const data = new Date(anoBase, mesBase - 1 + i, diaBase, 12, 0, 0);
-
-      const yyyy = data.getFullYear();
-      const mm = String(data.getMonth() + 1).padStart(2, "0");
-      const dd = String(data.getDate()).padStart(2, "0");
-
-      novasParcelas.push({
-        numero: i + 1,
-        valor: parseFloat(valorParcela.toFixed(2)),
-        data_vencimento: `${yyyy}-${mm}-${dd}`,
-        data_pagamento: null,
-        status: "em_aberto",
-      });
-    }
+    // Datas via helper testado (lib/parcelas): trata timezone e clampa o dia
+    // ao último do mês (ex.: dia 31 → fev/28), evitando overflow pra março.
+    const novasParcelas = gerarDatasParcelas(numParcelas, dataVencimento).map((dt, i) => ({
+      numero: i + 1,
+      valor: parseFloat(valorParcela.toFixed(2)),
+      data_vencimento: dt,
+      data_pagamento: null,
+      status: "em_aberto",
+    }));
 
     setParcelas(novasParcelas);
   };
