@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { gerarDatasParcelas } from "@/lib/parcelas";
+import { filtrarTransacoes } from "@/lib/filtros-transacao";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -708,89 +709,9 @@ export default function ReceitasTab({
     reader.readAsBinaryString(file);
   };
 
-  const aplicarFiltros = (transacoes) => {
-    let filtered = (transacoes || []).filter((t) => (t.tipo || "").toLowerCase() === "receita");
-
-    // Busca
-    if (filtros.busca) {
-      const busca = filtros.busca.toLowerCase();
-      filtered = filtered.filter(
-        (t) =>
-          t.descricao?.toLowerCase().includes(busca) ||
-          t.cliente_nome?.toLowerCase().includes(busca)
-      );
-    }
-
-    // Status
-    if (filtros.status && filtros.status !== "all") {
-      filtered = filtered.filter((t) => t.status === filtros.status);
-    }
-
-    // Categoria
-    if (filtros.categoriaId && filtros.categoriaId !== "all") {
-      filtered = filtered.filter((t) => t.categoria_id === filtros.categoriaId);
-    }
-
-    // Projeto
-    if (filtros.projetoId && filtros.projetoId !== "all") {
-      filtered = filtered.filter((t) => t.projeto_id === filtros.projetoId);
-    }
-
-    // Período
-    if (filtros.periodo && filtros.periodo !== "todos") {
-      const hoje = new Date();
-      const dataVencimento = (t) => new Date(t.data_vencimento || t.data);
-
-      switch (filtros.periodo) {
-        case "hoje":
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            return d.toDateString() === hoje.toDateString();
-          });
-          break;
-        case "semana":
-          const inicioSemana = new Date(hoje);
-          inicioSemana.setDate(hoje.getDate() - hoje.getDay());
-          const fimSemana = new Date(inicioSemana);
-          fimSemana.setDate(inicioSemana.getDate() + 6);
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            return d >= inicioSemana && d <= fimSemana;
-          });
-          break;
-        case "mes":
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            return d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
-          });
-          break;
-        case "trimestre":
-          const mesAtual = hoje.getMonth();
-          const trimestreInicio = Math.floor(mesAtual / 3) * 3;
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            const mesItem = d.getMonth();
-            return (
-              mesItem >= trimestreInicio &&
-              mesItem < trimestreInicio + 3 &&
-              d.getFullYear() === hoje.getFullYear()
-            );
-          });
-          break;
-        case "ano":
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            return d.getFullYear() === hoje.getFullYear();
-          });
-          break;
-      }
-    }
-
-    return filtered;
-  };
-
+  // Filtro extraído p/ lib/filtros-transacao (testado, inclui período).
   const receitasFiltradas = useMemo(
-    () => aplicarFiltros(transacoesIniciais),
+    () => filtrarTransacoes(transacoesIniciais, filtros, { tipo: "receita" }),
     [transacoesIniciais, filtros]
   );
 

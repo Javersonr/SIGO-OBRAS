@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { gerarDatasParcelas } from "@/lib/parcelas";
 import { csvParaObjetos } from "@/lib/csv";
+import { filtrarTransacoes } from "@/lib/filtros-transacao";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -677,87 +678,6 @@ export default function DespesasTab({
     reader.readAsText(file, "UTF-8");
   };
 
-  const aplicarFiltros = (transacoes) => {
-    let filtered = transacoes.filter((t) => (t.tipo || "").toLowerCase() === "despesa");
-
-    // Busca
-    if (filtros.busca) {
-      const busca = filtros.busca.toLowerCase();
-      filtered = filtered.filter(
-        (t) =>
-          t.descricao?.toLowerCase().includes(busca) ||
-          t.fornecedor_nome?.toLowerCase().includes(busca)
-      );
-    }
-
-    // Status
-    if (filtros.status && filtros.status !== "all") {
-      filtered = filtered.filter((t) => t.status === filtros.status);
-    }
-
-    // Categoria
-    if (filtros.categoriaId && filtros.categoriaId !== "all") {
-      filtered = filtered.filter((t) => t.categoria_id === filtros.categoriaId);
-    }
-
-    // Projeto
-    if (filtros.projetoId && filtros.projetoId !== "all") {
-      filtered = filtered.filter((t) => t.projeto_id === filtros.projetoId);
-    }
-
-    // Período
-    if (filtros.periodo && filtros.periodo !== "todos") {
-      const hoje = new Date();
-      const dataVencimento = (t) => new Date(t.data_vencimento || t.data);
-
-      switch (filtros.periodo) {
-        case "hoje":
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            return d.toDateString() === hoje.toDateString();
-          });
-          break;
-        case "semana":
-          const inicioSemana = new Date(hoje);
-          inicioSemana.setDate(hoje.getDate() - hoje.getDay());
-          const fimSemana = new Date(inicioSemana);
-          fimSemana.setDate(inicioSemana.getDate() + 6);
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            return d >= inicioSemana && d <= fimSemana;
-          });
-          break;
-        case "mes":
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            return d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
-          });
-          break;
-        case "trimestre":
-          const mesAtual = hoje.getMonth();
-          const trimestreInicio = Math.floor(mesAtual / 3) * 3;
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            const mesItem = d.getMonth();
-            return (
-              mesItem >= trimestreInicio &&
-              mesItem < trimestreInicio + 3 &&
-              d.getFullYear() === hoje.getFullYear()
-            );
-          });
-          break;
-        case "ano":
-          filtered = filtered.filter((t) => {
-            const d = dataVencimento(t);
-            return d.getFullYear() === hoje.getFullYear();
-          });
-          break;
-      }
-    }
-
-    return filtered;
-  };
-
   const despesasFiltradas = useMemo(() => {
     // Ocultar despesas conciliadas via pré-lançamento que ainda não foram aprovadas
     const semConciliadasPendentes = transacoesIniciais.filter((t) => {
@@ -766,7 +686,8 @@ export default function DespesasTab({
       }
       return true;
     });
-    return aplicarFiltros(semConciliadasPendentes);
+    // Filtro extraído p/ lib/filtros-transacao (testado, inclui período).
+    return filtrarTransacoes(semConciliadasPendentes, filtros, { tipo: "despesa" });
   }, [transacoesIniciais, filtros]);
 
   // Paginação
