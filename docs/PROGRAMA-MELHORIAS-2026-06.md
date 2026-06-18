@@ -69,11 +69,11 @@ por obra**. Por isso hoje não responde "a obra X deu lucro?".
 - [x] **Minhas Pendências** — tela liga o motor de fluxos aos usuários: listas "para executar" (com checklist) e "para aprovar" (aprovar/reprovar com motivo), chamando as RPCs endurecidas da 0061; item de menu visível a todos os perfis internos. _(feito)_
 - [ ] Quebrar os 5 arquivos de 2.000+ linhas (SegurancaTrabalho, FuncaoModal, DespesasTab, Ferramental, ReceitasTab).
 - [x] **Primeiros testes automatizados** (sistema tinha ZERO): Vitest configurado
-      (`vitest.config.js`, scripts `test`/`test:watch`) + **69 testes verdes** (8
+      (`vitest.config.js`, scripts `test`/`test:watch`) + **82 testes verdes** (9
       arquivos) nas funções puras de maior risco — financeiro-utils
       (status/`parseValor`/`parseData`), json-utils (`safeParseJSON`), safe-url
-      (anti-XSS), formatters, medicao-calc, documentos-funcionario, parcelas, csv.
-      _(feito)_ — próximos: componentes (jsdom) + TypeScript gradual.
+      (anti-XSS), formatters, medicao-calc, documentos-funcionario, parcelas, csv,
+      filtros-transacao. _(feito)_ — próximos: componentes (jsdom) + TS gradual.
 - [x] **Extrações com fonte única + 2 bugs achados pelo caminho** (cada extração
       virou função pura testada e encolheu o componente):
       `lib/medicao-calc.js` (matemática da medição centralizada);
@@ -82,7 +82,10 @@ por obra**. Por isso hoje não responde "a obra X deu lucro?".
       _(deploy 1bfa522)_;
       `lib/csv.js` — parser do importador de Despesas; **bug:** campo entre aspas
       com o separador dentro (ex.: "Cimento; cal") era partido em 2 colunas,
-      desalinhando o lançamento; corrigido (passada única RFC-4180) _(deploy ed4fccd)_.
+      desalinhando o lançamento; corrigido (passada única RFC-4180) _(deploy ed4fccd)_;
+      `lib/filtros-transacao.js` — filtro busca/status/categoria/projeto/**período**
+      (estava duplicado em Despesas/Receitas); refactor 1:1, `hoje` injetável p/ teste
+      _(deploy a9faf9c)_.
 - [ ] **Varredura de funções plpgsql** (coluna inexistente, classe do `fornecedor.nome`)
       via `plpgsql_check`: **parada** — pooler da Supabase recusando conexão em
       14/06. Retomar quando o banco voltar. (Frontend já varrido: `.nome` em
