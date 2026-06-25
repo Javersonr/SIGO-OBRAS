@@ -64,9 +64,9 @@ export default function ConciliacaoBancaria({ empresaAtiva, contas, onReload }) 
       await sigo.entities.UploadOFX.create({
         empresa_id: empresaAtiva.id,
         conta_id: contaSelecionada,
-        arquivo_url: file_url,
-        data_upload: new Date().toISOString().split("T")[0],
-        status: "processado",
+        nome_arquivo: file.name, // NOT NULL — faltava (quebrava o import OFX)
+        url_arquivo: file_url, // coluna real é url_arquivo (não arquivo_url)
+        status: "Processado", // CHECK aceita Recebido/Processado/Erro (não minúsculo)
       });
 
       const reader = new FileReader();
