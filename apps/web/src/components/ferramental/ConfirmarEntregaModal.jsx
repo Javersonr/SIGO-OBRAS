@@ -134,10 +134,8 @@ export default function ConfirmarEntregaModal({
             data_movimentacao: dataEntrega,
             tipo_movimentacao: "Entrega",
             ferramenta_descricao: item.descricao || item.ferramenta || item.item || "",
-            numero_serie: item.numero_serie || "",
             quantidade: item.quantidade_entregue,
-            tipo: item.tipo || "Ferramenta",
-            usuario_responsavel: user?.full_name || "",
+            usuario_nome: user?.full_name || "", // col. é usuario_nome; `tipo` não existe na tabela
             observacoes: `Entrega confirmada - ${entrega.solicitante_nome || "Sem solicitante"}`,
             ferramenta_id: item.ferramenta_id,
           };

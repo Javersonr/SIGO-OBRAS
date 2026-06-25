@@ -1033,7 +1033,7 @@ export default function Oportunidades() {
       empresa_id: empresaAtiva.id,
       nome: nomeTemplate,
       tipo: "orcamento",
-      itens_json: JSON.stringify(orcamentoItens),
+      campos_padrao: JSON.stringify(orcamentoItens), // coluna real é campos_padrao (não itens_json)
       ativo: true,
     });
     setNomeTemplate("");
@@ -1044,9 +1044,9 @@ export default function Oportunidades() {
 
   const handleAplicarTemplateOrcamento = async (templateId) => {
     const template = templates.find((t) => t.id === templateId);
-    if (!template?.itens_json || !selectedOp) return;
+    if (!template?.campos_padrao || !selectedOp) return;
     try {
-      const itens = safeParseJSON(template.itens_json, []);
+      const itens = safeParseJSON(template.campos_padrao, []);
       if (!Array.isArray(itens) || itens.length === 0) return;
       await sigo.entities.OrcamentoItem.bulkCreate(
         itens.map((item, i) => ({
