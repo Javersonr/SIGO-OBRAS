@@ -310,7 +310,7 @@ export default function PreLancamentosTab({
               categoria_nome: todasCategorias.find((c) => c.nome === row.Categoria)?.nome || null,
               conta_id: conta.id,
               conta_nome: conta.nome,
-              centro_custo: row["Centro de Custo"] || null,
+              centro_custo_nome: row["Centro de Custo"] || null,
               valor: parseFloat(row.Valor) || 0,
               data_vencimento: row["Data Vencimento"] || new Date().toISOString().split("T")[0],
               data: row["Data Competência"] || new Date().toISOString().split("T")[0],
