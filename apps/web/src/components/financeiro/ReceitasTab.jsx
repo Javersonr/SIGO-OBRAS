@@ -233,16 +233,21 @@ export default function ReceitasTab({
     const files = Array.from(e.target.files);
     const novosAnexos = [];
 
-    for (const file of files) {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-      novosAnexos.push({
-        nome: file.name,
-        url: file_url,
-        tipo: file.type,
-      });
+    try {
+      for (const file of files) {
+        // guarda a REFERÊNCIA "bucket/path" (assinada na hora de abrir, não expira)
+        const { bucket, path } = await sigo.integrations.Core.UploadFile({ file });
+        const ref = bucket && path ? `${bucket}/${path}` : null;
+        if (ref) novosAnexos.push({ nome: file.name, url: ref, tipo: file.type });
+      }
+      if (novosAnexos.length < files.length) {
+        alert("Alguns arquivos não puderam ser enviados. Tente novamente.");
+      }
+      setAnexos([...anexos, ...novosAnexos]);
+    } catch (err) {
+      console.error("[ReceitasTab] erro upload anexo:", err);
+      alert("❌ Erro ao enviar anexo: " + (err?.message || "tente novamente"));
     }
-
-    setAnexos([...anexos, ...novosAnexos]);
   };
 
   const handleRemoverAnexo = (index) => {

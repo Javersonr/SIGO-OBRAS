@@ -210,8 +210,11 @@ export default function DespesasTab({
       // uploads em paralelo (eram em série, 1 por vez → lento com vários arquivos)
       const novosAnexos = await Promise.all(
         files.map(async (file) => {
-          const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-          return { nome: file.name, url: file_url, tipo: file.type };
+          // guarda a REFERÊNCIA "bucket/path" (estável) — a URL é assinada na
+          // hora de abrir (AnexoViewer), pra não expirar em 1h.
+          const { bucket, path } = await sigo.integrations.Core.UploadFile({ file });
+          const ref = bucket && path ? `${bucket}/${path}` : null;
+          return { nome: file.name, url: ref, tipo: file.type };
         })
       );
       // nunca guarda anexo sem url (evita NOT NULL em transacao_anexo no save)

@@ -42,8 +42,9 @@ export default function ModalPagamento({
     if (!file) return;
     setUploading(true);
     try {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-      setComprovanteUrl(file_url);
+      // guarda a REFERÊNCIA "bucket/path" (assinada na hora de abrir, não expira)
+      const { bucket, path } = await sigo.integrations.Core.UploadFile({ file });
+      setComprovanteUrl(bucket && path ? `${bucket}/${path}` : "");
     } catch (err) {
       alert("Erro ao fazer upload: " + err.message);
     } finally {

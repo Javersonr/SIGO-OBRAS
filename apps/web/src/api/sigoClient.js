@@ -137,6 +137,42 @@ export const sigo = legacy;
 export const supabase = supa?._supabase ?? null;
 
 /**
+ * resolveStorageUrl — transforma uma referência de arquivo numa URL acessível.
+ *
+ * Buckets do Supabase são privados, então a URL de acesso é ASSINADA e expira.
+ * Em vez de guardar a URL assinada (que morre em 1h) no banco, guardamos a
+ * REFERÊNCIA estável "bucket/caminho/arquivo.ext" e geramos uma URL assinada
+ * fresca toda vez que o anexo vai ser aberto.
+ *
+ * Compatível com o legado: se `ref` já for uma URL pronta (http/data/blob),
+ * devolve como está (anexos antigos / links externos).
+ *
+ * @param {string} ref  "bucket/path" OU uma URL completa
+ * @param {number} expiresIn  validade da URL assinada em segundos (default 1h)
+ * @returns {Promise<string|null>}
+ */
+export async function resolveStorageUrl(ref, expiresIn = 3600) {
+  if (!ref || typeof ref !== "string") return null;
+  if (/^(https?:|data:|blob:)/i.test(ref)) return ref; // já é URL pronta
+  if (!supabase) return null;
+  const slash = ref.indexOf("/");
+  if (slash < 1) return null;
+  const bucket = ref.slice(0, slash);
+  const path = ref.slice(slash + 1);
+  try {
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, expiresIn);
+    if (error) {
+      console.warn("[resolveStorageUrl] falhou:", error.message);
+      return null;
+    }
+    return data?.signedUrl ?? null;
+  } catch (e) {
+    console.warn("[resolveStorageUrl] exceção:", e?.message);
+    return null;
+  }
+}
+
+/**
  * Aplica a sessão do Supabase Auth retornada pelo login/troca de empresa.
  * A partir daí o supabase-js anexa o JWT do usuário (role authenticated) em
  * toda requisição → habilita a RLS por empresa_id (quando ligada na Etapa 3).

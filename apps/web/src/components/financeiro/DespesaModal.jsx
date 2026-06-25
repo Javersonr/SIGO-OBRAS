@@ -24,7 +24,7 @@ import {
   Link2Off,
   X,
 } from "lucide-react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, resolveStorageUrl } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
 import EntityCombobox from "@/components/shared/EntityCombobox";
 import AssociarMateriaisModal from "./AssociarMateriaisModal";
@@ -1047,16 +1047,24 @@ export default function DespesaModal({
                                     variant="ghost"
                                     size="icon"
                                     className="h-8 w-8"
-                                    onClick={(e) => {
+                                    onClick={async (e) => {
                                       e.stopPropagation();
-                                      const isPdf = anexo.url.toLowerCase().includes(".pdf");
+                                      // resolve a referência (bucket/path) numa URL assinada na hora
+                                      const url = await resolveStorageUrl(anexo.url);
+                                      if (!url) {
+                                        alert("Não foi possível abrir o anexo.");
+                                        return;
+                                      }
+                                      const isPdf = `${anexo.nome || ""}${anexo.url || ""}`
+                                        .toLowerCase()
+                                        .includes(".pdf");
                                       if (isPdf) {
                                         window.open(
-                                          `https://docs.google.com/viewer?url=${encodeURIComponent(anexo.url)}&embedded=true`,
+                                          `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`,
                                           "_blank"
                                         );
                                       } else {
-                                        window.open(anexo.url, "_blank");
+                                        window.open(url, "_blank");
                                       }
                                     }}
                                     title="Visualizar"
