@@ -1367,7 +1367,7 @@ export default function Projetos() {
                       <div className="border-t pt-4">
                         <Label className="text-slate-500">Descrição</Label>
                         <div className="mt-2 p-4 bg-slate-50 rounded-lg">
-                          <p className="text-slate-700 whitespace-pre-wrap">
+                          <p className="text-sm text-slate-700 whitespace-pre-wrap break-words leading-relaxed">
                             {selectedProj.descricao}
                           </p>
                         </div>

@@ -572,7 +572,7 @@ export default function OportunidadeDetalhe({
                             preserva quebras de linha sem precisar de <br/> manual.
                             ANTES: dangerouslySetInnerHTML deixava aberto pra XSS
                             se algum admin colasse HTML/script na descri\u00e7\u00e3o. */}
-                        <div className="mt-2 p-4 bg-slate-50 rounded-lg prose prose-sm max-w-none text-slate-700 whitespace-pre-wrap break-words">
+                        <div className="mt-2 p-4 bg-slate-50 rounded-lg max-w-none text-sm text-slate-700 whitespace-pre-wrap break-words leading-relaxed">
                           {selectedOp.descricao}
                         </div>
                       </div>
