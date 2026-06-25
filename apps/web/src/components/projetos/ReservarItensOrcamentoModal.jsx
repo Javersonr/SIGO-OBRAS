@@ -117,13 +117,12 @@ export default function ReservarItensOrcamentoModal({
         empresa_id: empresaAtiva.id,
         material_id: item.orcamento_item.material_id,
         almoxarifado_id: item.saldo.almoxarifado_id,
-        tipo_movimento: "Reserva",
+        tipo: "Reserva", // coluna é `tipo` (não tipo_movimento)
         quantidade: item.quantidade_necessaria,
-        motivo: `Reserva ${numeroReserva} - Projeto ${projeto.nome}`,
-        referencia_id: numeroReserva,
-        referencia_tipo: "ReservaMaterial",
+        // referencia_id é uuid; numeroReserva é string ("RES-0001") → vai na observação
+        referencia_tipo: "Reserva", // CHECK aceita 'Reserva' (não 'ReservaMaterial')
         data_movimento: new Date().toISOString().split("T")[0],
-        observacoes: `Reservado para projeto ${projeto.nome}`,
+        observacoes: `Reserva ${numeroReserva} — projeto ${projeto.nome}`,
       }));
 
       await sigo.entities.EstoqueMovimento.bulkCreate(movimentos);

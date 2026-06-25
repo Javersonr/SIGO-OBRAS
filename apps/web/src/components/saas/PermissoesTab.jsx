@@ -153,7 +153,7 @@ export default function PermissoesTab() {
 
   const handleOpenPerfilModal = (perfil = null) => {
     if (perfil) {
-      const perms = safeParseJSON(perfil.permissoes, {});
+      const perms = safeParseJSON(perfil.permissoes_json, {});
       setPerfilForm({
         nome: perfil.nome,
         descricao: perfil.descricao || "",
@@ -183,7 +183,7 @@ export default function PermissoesTab() {
       descricao: perfilForm.descricao,
       tipo: perfilForm.tipo,
       empresa_id: perfilForm.tipo === "Customizado" ? null : null,
-      permissoes: JSON.stringify(perfilForm.permissoes),
+      permissoes_json: JSON.stringify(perfilForm.permissoes),
       nivel_hierarquico: perfilForm.nivel_hierarquico,
       ativo: true,
     };
@@ -200,12 +200,12 @@ export default function PermissoesTab() {
 
   const handleCopiarPerfil = async (perfil) => {
     try {
-      const perms = safeParseJSON(perfil.permissoes, {});
+      const perms = safeParseJSON(perfil.permissoes_json, {});
       await sigo.entities.PerfilPermissao.create({
         nome: `${perfil.nome} (Cópia)`,
         descricao: perfil.descricao,
         tipo: "Customizado",
-        permissoes: JSON.stringify(perms),
+        permissoes_json: JSON.stringify(perms),
         nivel_hierarquico: perfil.nivel_hierarquico,
         ativo: true,
       });
@@ -353,7 +353,7 @@ export default function PermissoesTab() {
             </TableHeader>
             <TableBody>
               {perfis.map((perfil) => {
-                const perms = safeParseJSON(perfil.permissoes, {});
+                const perms = safeParseJSON(perfil.permissoes_json, {});
 
                 const contarPermissoes = () => {
                   let count = 0;
