@@ -582,7 +582,7 @@ export default function DespesasTab({
               projeto_nome: row.Projeto || null,
               categoria_nome: row.Categoria || null,
               conta_nome: row.Conta,
-              centro_custo: row["Centro de Custo"] || null,
+              centro_custo_nome: row["Centro de Custo"] || null,
               valor: valorParsed,
               data_vencimento: dataVencimento,
               data_pagamento: dataPagamento,
