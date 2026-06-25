@@ -112,6 +112,24 @@ if (supa) {
   });
 }
 
+// integrations.Core.UploadFile: MIGRA do storage legado (Base44, desativado)
+// para o Supabase Storage. Era a causa de "null value in column url of
+// transacao_anexo": o upload legado voltava SEM `file_url`, então o anexo do
+// comprovante era gravado com url nula e estourava o NOT NULL. O wrapper novo
+// sobe pro bucket certo (inferBucket) e devolve uma signed URL em `file_url`.
+// SendEmail/InvokeLLM seguem no legado por ora (não são o problema aqui).
+if (supa?.integrations?.Core?.UploadFile) {
+  if (legacy.integrations?.Core) {
+    legacy.integrations.Core.UploadFile = (...args) => supa.integrations.Core.UploadFile(...args);
+  } else {
+    Object.defineProperty(legacy, "integrations", {
+      value: supa.integrations,
+      writable: true,
+      configurable: true,
+    });
+  }
+}
+
 // Export único: `sigo`. Todo o frontend usa isso agora.
 export const sigo = legacy;
 

@@ -206,14 +206,24 @@ export default function DespesasTab({
 
   const handleAnexoUpload = async (e) => {
     const files = Array.from(e.target.files);
-    // uploads em paralelo (eram em série, 1 por vez → lento com vários arquivos)
-    const novosAnexos = await Promise.all(
-      files.map(async (file) => {
-        const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-        return { nome: file.name, url: file_url, tipo: file.type };
-      })
-    );
-    setAnexos([...anexos, ...novosAnexos]);
+    try {
+      // uploads em paralelo (eram em série, 1 por vez → lento com vários arquivos)
+      const novosAnexos = await Promise.all(
+        files.map(async (file) => {
+          const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+          return { nome: file.name, url: file_url, tipo: file.type };
+        })
+      );
+      // nunca guarda anexo sem url (evita NOT NULL em transacao_anexo no save)
+      const validos = novosAnexos.filter((a) => a.url);
+      if (validos.length < novosAnexos.length) {
+        alert("Alguns arquivos não puderam ser enviados (sem URL). Tente novamente.");
+      }
+      setAnexos((prev) => [...prev, ...validos]);
+    } catch (err) {
+      console.error("[DespesasTab] erro upload anexo:", err);
+      alert("❌ Erro ao enviar anexo: " + (err?.message || "tente novamente"));
+    }
   };
 
   const handleRemoverAnexo = (index) => {
