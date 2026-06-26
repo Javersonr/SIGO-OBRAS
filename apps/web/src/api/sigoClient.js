@@ -114,20 +114,46 @@ if (supa) {
 
 // integrations.Core.UploadFile: MIGRA do storage legado (Base44, desativado)
 // para o Supabase Storage. Era a causa de "null value in column url of
-// transacao_anexo": o upload legado voltava SEM `file_url`, então o anexo do
-// comprovante era gravado com url nula e estourava o NOT NULL. O wrapper novo
-// sobe pro bucket certo (inferBucket) e devolve uma signed URL em `file_url`.
-// SendEmail/InvokeLLM seguem no legado por ora (não são o problema aqui).
+// transacao_anexo" e do "Alguns arquivos não puderam ser enviados (sem URL)".
+//
+// ⚠️ ARMADILHA: o `integrations` do @base44/sdk é um Proxy que REGENERA
+// `Core` e cada endpoint (`UploadFile`...) a CADA acesso. Logo
+// `legacy.integrations.Core.UploadFile = fn` NÃO persiste — o handler continuava
+// chamando o UploadFile legado, que com serverUrl="" faz POST relativo e cai no
+// fallback SPA (index.html, HTTP 200) → resolve sem erro e SEM bucket/path → o
+// anexo ficava "sem URL". Por isso instalamos um `integrations` ESTÁVEL (via
+// defineProperty, sobrepondo o Proxy) com Core.UploadFile roteado pro Supabase
+// e todo o resto (Core.SendEmail/InvokeLLM, custom, installable) delegando ao
+// Proxy legado original.
 if (supa?.integrations?.Core?.UploadFile) {
-  if (legacy.integrations?.Core) {
-    legacy.integrations.Core.UploadFile = (...args) => supa.integrations.Core.UploadFile(...args);
-  } else {
-    Object.defineProperty(legacy, "integrations", {
-      value: supa.integrations,
-      writable: true,
-      configurable: true,
-    });
-  }
+  const legacyIntegrations = legacy.integrations; // Proxy regenerável do @base44/sdk
+  const routedUpload = (...args) => supa.integrations.Core.UploadFile(...args);
+
+  const stableCore = new Proxy(
+    {},
+    {
+      get(_t, prop) {
+        if (prop === "UploadFile") return routedUpload;
+        return legacyIntegrations?.Core?.[prop]; // SendEmail/InvokeLLM/etc → legado
+      },
+    }
+  );
+
+  const stableIntegrations = new Proxy(
+    {},
+    {
+      get(_t, pkg) {
+        if (pkg === "Core") return stableCore;
+        return legacyIntegrations?.[pkg]; // custom/installable → legado
+      },
+    }
+  );
+
+  Object.defineProperty(legacy, "integrations", {
+    value: stableIntegrations,
+    writable: true,
+    configurable: true,
+  });
 }
 
 // Export único: `sigo`. Todo o frontend usa isso agora.
