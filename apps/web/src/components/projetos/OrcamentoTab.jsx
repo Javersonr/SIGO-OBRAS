@@ -1,4 +1,5 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,20 @@ export default function OrcamentoTab({
   const [itensSelecionados, setItensSelecionados] = React.useState(new Set());
   const [itemSearchTerm, setItemSearchTerm] = React.useState("");
   const [showSuggestions, setShowSuggestions] = React.useState(false);
+  // Âncora do autocomplete de material: o dropdown é portalado pro <body> com
+  // position:fixed pra não ser recortado pelos containers do grid (overflow).
+  const itemDescRef = React.useRef(null);
+  const [, setSuggestReposition] = React.useState(0);
+  React.useEffect(() => {
+    if (!showSuggestions) return;
+    const onMove = () => setSuggestReposition((n) => n + 1);
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => {
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+    };
+  }, [showSuggestions]);
   const [editingItemId, setEditingItemId] = React.useState(null);
   const [showRelatorios, setShowRelatorios] = React.useState(false);
   const [showAplicarTemplate, setShowAplicarTemplate] = React.useState(false);
@@ -700,7 +715,11 @@ export default function OrcamentoTab({
                         />
                       </td>
                       <td className="px-3 py-2 text-center text-xs text-slate-500">{index + 1}</td>
-                      <td className="px-3 py-2 relative min-w-[300px]" data-item-id={item.id}>
+                      <td
+                        className="px-3 py-2 relative min-w-[300px]"
+                        data-item-id={item.id}
+                        ref={editingItemId === item.id ? itemDescRef : undefined}
+                      >
                         <Input
                           className="h-8 text-xs"
                           value={item.descricao || ""}
@@ -714,86 +733,106 @@ export default function OrcamentoTab({
                           disabled={!podeEditar}
                           onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                         />
-                        {showSuggestions && editingItemId === item.id && itemSearchTerm && (
-                          <div
-                            className="absolute top-full left-0 z-[9999] bg-white border rounded-lg shadow-xl max-h-[300px] overflow-y-auto mt-1 w-full"
-                            style={{ minWidth: 280 }}
-                          >
-                            {["Material", "Mão de Obra", "Ferramental"].map((tipo) => {
-                              const items = filteredMats.filter((m) => m.tipo === tipo);
-                              if (!items.length) return null;
-                              return (
-                                <div key={tipo}>
-                                  <div className="px-3 py-2 text-xs font-semibold text-slate-600 bg-slate-50 border-b sticky top-0">
-                                    {tipo}
-                                  </div>
-                                  {items.map((m) => (
-                                    <button
-                                      key={m.id}
-                                      type="button"
-                                      className="w-full text-left px-3 py-2 text-xs border-b hover:bg-slate-100"
-                                      onMouseDown={async (e) => {
-                                        e.preventDefault();
-                                        const valorUnitario =
-                                          m.preco_referencia || m.preco || m.preco_medio || 0;
-                                        const updated = {
-                                          ...item,
-                                          descricao: m.nome_item,
-                                          codigo: m.codigo || "",
-                                          unidade: m.unidade || "UN",
-                                          valor_unitario: valorUnitario,
-                                        };
-                                        setOrcamentoItens((prev) =>
-                                          prev.map((i) => (i.id === item.id ? updated : i))
-                                        );
-                                        setItemSearchTerm("");
-                                        setShowSuggestions(false);
-                                        setEditingItemId(null);
-                                        const qtd = item.quantidade || 0;
-                                        const bdi = item.bdi || 0;
-                                        const imp = item.imposto || 0;
-                                        const valor_total =
-                                          qtd * valorUnitario * (1 + bdi / 100) * (1 + imp / 100);
-                                        await sigo.entities.OrcamentoItem.update(item.id, {
-                                          descricao: m.nome_item,
-                                          codigo: m.codigo || "",
-                                          unidade: m.unidade || "UN",
-                                          valor_unitario: valorUnitario,
-                                          valor_total,
-                                        });
-                                      }}
-                                    >
-                                      <div className="font-medium text-slate-800">
-                                        {m.nome_item}
-                                      </div>
-                                      {m.codigo && (
-                                        <div className="text-slate-500">Código: {m.codigo}</div>
-                                      )}
-                                    </button>
-                                  ))}
-                                </div>
-                              );
-                            })}
-                            {filteredMats.length === 0 && (
-                              <button
-                                type="button"
-                                className="w-full text-left px-3 py-3 bg-blue-50 hover:bg-blue-100"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  onCriarMaterial(itemSearchTerm, item);
-                                  setShowSuggestions(false);
-                                }}
+                        {showSuggestions &&
+                          editingItemId === item.id &&
+                          itemSearchTerm &&
+                          (() => {
+                            const r = itemDescRef.current?.getBoundingClientRect();
+                            return createPortal(
+                              <div
+                                className="z-[9999] bg-white border rounded-lg shadow-xl max-h-[300px] overflow-y-auto"
+                                style={
+                                  r
+                                    ? {
+                                        position: "fixed",
+                                        top: r.bottom + 4,
+                                        left: r.left,
+                                        width: r.width,
+                                        minWidth: 280,
+                                      }
+                                    : { display: "none" }
+                                }
                               >
-                                <div className="flex items-center gap-2">
-                                  <Plus className="w-4 h-4 text-blue-600" />
-                                  <span className="font-medium text-blue-600">
-                                    Criar: "{itemSearchTerm}"
-                                  </span>
-                                </div>
-                              </button>
-                            )}
-                          </div>
-                        )}
+                                {["Material", "Mão de Obra", "Ferramental"].map((tipo) => {
+                                  const items = filteredMats.filter((m) => m.tipo === tipo);
+                                  if (!items.length) return null;
+                                  return (
+                                    <div key={tipo}>
+                                      <div className="px-3 py-2 text-xs font-semibold text-slate-600 bg-slate-50 border-b sticky top-0">
+                                        {tipo}
+                                      </div>
+                                      {items.map((m) => (
+                                        <button
+                                          key={m.id}
+                                          type="button"
+                                          className="w-full text-left px-3 py-2 text-xs border-b hover:bg-slate-100"
+                                          onMouseDown={async (e) => {
+                                            e.preventDefault();
+                                            const valorUnitario =
+                                              m.preco_referencia || m.preco || m.preco_medio || 0;
+                                            const updated = {
+                                              ...item,
+                                              descricao: m.nome_item,
+                                              codigo: m.codigo || "",
+                                              unidade: m.unidade || "UN",
+                                              valor_unitario: valorUnitario,
+                                            };
+                                            setOrcamentoItens((prev) =>
+                                              prev.map((i) => (i.id === item.id ? updated : i))
+                                            );
+                                            setItemSearchTerm("");
+                                            setShowSuggestions(false);
+                                            setEditingItemId(null);
+                                            const qtd = item.quantidade || 0;
+                                            const bdi = item.bdi || 0;
+                                            const imp = item.imposto || 0;
+                                            const valor_total =
+                                              qtd *
+                                              valorUnitario *
+                                              (1 + bdi / 100) *
+                                              (1 + imp / 100);
+                                            await sigo.entities.OrcamentoItem.update(item.id, {
+                                              descricao: m.nome_item,
+                                              codigo: m.codigo || "",
+                                              unidade: m.unidade || "UN",
+                                              valor_unitario: valorUnitario,
+                                              valor_total,
+                                            });
+                                          }}
+                                        >
+                                          <div className="font-medium text-slate-800">
+                                            {m.nome_item}
+                                          </div>
+                                          {m.codigo && (
+                                            <div className="text-slate-500">Código: {m.codigo}</div>
+                                          )}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  );
+                                })}
+                                {filteredMats.length === 0 && (
+                                  <button
+                                    type="button"
+                                    className="w-full text-left px-3 py-3 bg-blue-50 hover:bg-blue-100"
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      onCriarMaterial(itemSearchTerm, item);
+                                      setShowSuggestions(false);
+                                    }}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <Plus className="w-4 h-4 text-blue-600" />
+                                      <span className="font-medium text-blue-600">
+                                        Criar: "{itemSearchTerm}"
+                                      </span>
+                                    </div>
+                                  </button>
+                                )}
+                              </div>,
+                              document.body
+                            );
+                          })()}
                       </td>
                       <td className="px-3 py-2">
                         <Input

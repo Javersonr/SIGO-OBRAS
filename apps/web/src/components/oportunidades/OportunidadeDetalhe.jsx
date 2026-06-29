@@ -1,4 +1,5 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -113,6 +114,22 @@ export default function OportunidadeDetalhe({
   const [editingValues, setEditingValues] = useState({});
   const [itemSearchTerm, setItemSearchTerm] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
+  // Âncora do autocomplete de material. O dropdown é portalado pro <body> com
+  // position:fixed (em vez de absolute dentro do <td>), pra não ser RECORTADO
+  // pelos containers do grid que têm overflow-auto/overflow-x-auto — z-index não
+  // vence overflow. Reposiciona em scroll/resize enquanto está aberto.
+  const itemDescRef = useRef(null);
+  const [, setSuggestReposition] = useState(0);
+  useEffect(() => {
+    if (!showSuggestions) return;
+    const onMove = () => setSuggestReposition((n) => n + 1);
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => {
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+    };
+  }, [showSuggestions]);
   const [activeTab, setActiveTab] = useState("geral");
   const [visitedTabs, setVisitedTabs] = useState(new Set(["geral"]));
   const fileInputArquivosRef = useRef(null);
@@ -864,7 +881,12 @@ export default function OportunidadeDetalhe({
                                           {index + 1}
                                         </td>
                                         <td className="px-3 py-2 min-w-[300px]">
-                                          <div className="relative">
+                                          <div
+                                            className="relative"
+                                            ref={
+                                              editingItemId === item.id ? itemDescRef : undefined
+                                            }
+                                          >
                                             <Input
                                               className="h-8 text-xs"
                                               value={
@@ -925,8 +947,22 @@ export default function OportunidadeDetalhe({
                                                       .includes(itemSearchTerm.toLowerCase())
                                                 );
                                                 if (filtered.length === 0) return null;
-                                                return (
-                                                  <div className="absolute top-full left-0 z-50 bg-white border rounded-lg shadow-lg max-h-[250px] overflow-y-auto mt-1 w-full">
+                                                const r =
+                                                  itemDescRef.current?.getBoundingClientRect();
+                                                return createPortal(
+                                                  <div
+                                                    className="z-[9999] bg-white border rounded-lg shadow-lg max-h-[250px] overflow-y-auto"
+                                                    style={
+                                                      r
+                                                        ? {
+                                                            position: "fixed",
+                                                            top: r.bottom + 4,
+                                                            left: r.left,
+                                                            width: r.width,
+                                                          }
+                                                        : { display: "none" }
+                                                    }
+                                                  >
                                                     {filtered.slice(0, 20).map((m) => (
                                                       <button
                                                         key={m.id}
@@ -969,7 +1005,8 @@ export default function OportunidadeDetalhe({
                                                         )}
                                                       </button>
                                                     ))}
-                                                  </div>
+                                                  </div>,
+                                                  document.body
                                                 );
                                               })()}
                                           </div>
