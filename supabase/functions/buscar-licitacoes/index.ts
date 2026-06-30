@@ -71,6 +71,37 @@ function parseAberturaDate(s?: string): string | null {
   return null;
 }
 
+/** Normaliza texto p/ comparação: minúsculas, sem acento, espaços colapsados. */
+function normLic(s?: string): string {
+  return (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Quebra a string de palavras-chave da config em FRASES de busca.
+ * Ex.: `iluminação pública, "obras elétricas", CEMIG.` →
+ *      ["iluminacao publica", "obras eletricas", "cemig"]
+ * Remove aspas/pontos/quebras residuais e descarta ruído curto (< 3 chars).
+ */
+function parseTermosBusca(palavrasChave?: string): string[] {
+  return (palavrasChave || "")
+    .split(",")
+    .map((t) => normLic(t.replace(/["'.]/g, " ")))
+    .filter((t) => t.length >= 3);
+}
+
+/**
+ * Relevância: a licitação só passa se o objeto/título contiver pelo menos UMA das
+ * frases configuradas (match de FRASE, não de palavra solta). Evita que um termo
+ * genérico dentro de uma frase (ex.: "manutenção" em "manutenção de iluminação")
+ * case objetos fora do escopo (ex.: "manutenção mecânica de veículo"), que é o que
+ * a API externa devolve por casar palavra solta. Sem termos → não filtra.
+ */
+function objetoRelevante(objeto: unknown, titulo: unknown, termos: string[]): boolean {
+  if (termos.length === 0) return true;
+  const hay = normLic(`${titulo ?? ""} ${objeto ?? ""}`);
+  return termos.some((t) => hay.includes(t));
+}
+
 async function fetchAll(params: {
   uf: string;
   palavra_chave: string;
@@ -138,6 +169,9 @@ Deno.serve(
           continue;
         }
         const modalidades: number[] = Array.isArray(busca.modalidades) ? busca.modalidades : [];
+        // Frases p/ pós-filtro de relevância (a API casa palavra solta → muitos
+        // falsos-positivos, ex.: "manutenção" pegando "manutenção mecânica de veículo").
+        const termosRelevancia = parseTermosBusca(busca.palavras_chave as string);
 
         const fetched = await fetchAll({
           uf: ufs.join(","),
@@ -185,7 +219,17 @@ Deno.serve(
               status: "Nova",
             }))
             // só de hoje pra frente: descarta as com abertura já passada (mantém sem data)
-            .filter((r) => !r.abertura || (r.abertura as string) >= hojeBRT);
+            .filter((r) => !r.abertura || (r.abertura as string) >= hojeBRT)
+            // relevância: descarta o que a API casou de forma solta (objeto fora do
+            // escopo das frases configuradas)
+            .filter((r) => objetoRelevante(r.objeto, r.titulo, termosRelevancia));
+
+          const descartadas = byId.size - existSet.size - rows.length;
+          if (descartadas > 0) {
+            console.log(
+              `[buscar-licitacoes] busca ${busca.id}: ${descartadas} nova(s) descartada(s) (data passada + relevância de objeto)`
+            );
+          }
 
           // Cross-source: não re-inserir como "Nova" algo já Excluído/Convertido
           // (mesmo vindo da outra fonte com id_licitacao diferente).
