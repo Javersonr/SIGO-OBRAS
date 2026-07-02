@@ -94,6 +94,7 @@ const menuItems = [
   { name: "Compras", icon: ShoppingCart, path: "Compras", modulo: "Compras" },
   { name: "Estoque", icon: Package, path: "Estoque", modulo: "Estoque" },
   { name: "Manufatura", icon: Factory, path: "Manufatura", modulo: "Manufatura" },
+  { name: "Metas", icon: Target, path: "PainelMetas", modulo: "Manufatura", aba: "Metas" },
   { name: "Ferramental", icon: Wrench, path: "Ferramental", modulo: "Ferramental e EPI" },
   { name: "Segurança", icon: Shield, path: "SegurancaTrabalho", modulo: "Segurança do Trabalho" },
   { name: "Financeiro", icon: DollarSign, path: "Financeiro", modulo: "Financeiro" },
@@ -619,7 +620,8 @@ export default function Layout({ children, currentPageName }) {
         }
 
         // Se TEM permissões granulares definidas, verificar se tem acesso a este módulo específico
-        return temPermissao(item.modulo);
+        // (itens com `aba` exigem permissão naquela aba — ex.: Metas dentro de Manufatura)
+        return item.aba ? temPermissao(item.modulo, item.aba) : temPermissao(item.modulo);
       }
 
       return false;
