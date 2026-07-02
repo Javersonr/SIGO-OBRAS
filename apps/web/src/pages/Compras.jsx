@@ -226,6 +226,39 @@ export default function Compras() {
     try {
       const proj = projetos.find((p) => p.id === solicitacaoForm.projeto_id);
 
+      // Item digitado livre (sem material vinculado) vira material no cadastro
+      // automaticamente — sem isso o recebimento da compra não tem onde dar
+      // entrada no estoque. Reusa por nome (case-insensitive) pra não duplicar.
+      let materiaisCriados = 0;
+      const semMaterial = itensValidos.filter((i) => !i.material_id);
+      if (semMaterial.length > 0) {
+        const existentes = await sigo.entities.Material.filter({
+          empresa_id: empresaAtiva.id,
+          ativo: true,
+        });
+        const porNome = new Map(
+          (existentes || []).map((m) => [(m.nome || "").trim().toLowerCase(), m])
+        );
+        for (const item of semMaterial) {
+          const chave = item.descricao.trim().toLowerCase();
+          let mat = porNome.get(chave);
+          if (!mat) {
+            mat = await sigo.entities.Material.create({
+              empresa_id: empresaAtiva.id,
+              nome: item.descricao.trim(),
+              unidade: (item.unidade || "UN").trim().toUpperCase(),
+              preco: item.preco_unitario_estimado || null,
+              estoque: 0,
+              ativo: true,
+            });
+            porNome.set(chave, mat);
+            materiaisCriados++;
+          }
+          item.material_id = mat.id;
+          item.material_codigo = mat.codigo || "";
+        }
+      }
+
       const novaSol = await sigo.entities.SolicitacaoCompra.create({
         empresa_id: empresaAtiva.id,
         numero: gerarNumero("SC"),
@@ -271,6 +304,11 @@ export default function Compras() {
       await loadData();
 
       setShowSolicitacaoModal(false);
+      if (materiaisCriados > 0) {
+        alert(
+          `✅ Solicitação criada. ${materiaisCriados} material(is) novo(s) cadastrado(s) no estoque automaticamente.`
+        );
+      }
     } catch (error) {
       console.error("Erro:", error);
       alert("Erro ao criar solicitação");
