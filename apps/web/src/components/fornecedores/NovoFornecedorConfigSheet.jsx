@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
+import BuscarCnpjButton from "@/components/shared/BuscarCnpjButton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -114,12 +115,35 @@ export default function NovoFornecedorConfigSheet({
             </div>
             <div>
               <Label>CPF/CNPJ</Label>
-              <Input
-                value={form.cnpj}
-                onChange={(e) => setForm({ ...form, cnpj: e.target.value })}
-                placeholder={form.tipo_pessoa === "PF" ? "000.000.000-00" : "00.000.000/0000-00"}
-                className="mt-1.5"
-              />
+              <div className="flex gap-2 mt-1.5">
+                <Input
+                  value={form.cnpj}
+                  onChange={(e) => setForm({ ...form, cnpj: e.target.value })}
+                  placeholder={form.tipo_pessoa === "PF" ? "000.000.000-00" : "00.000.000/0000-00"}
+                />
+                {form.tipo_pessoa === "PJ" && (
+                  <BuscarCnpjButton
+                    cnpj={form.cnpj}
+                    onData={(d) =>
+                      setForm((f) => ({
+                        ...f,
+                        nome_razao: d.razao_social || f.nome_razao,
+                        nome_fantasia: d.nome_fantasia || f.nome_fantasia,
+                        email: d.email || f.email,
+                        telefone: d.telefone || f.telefone,
+                        endereco: d.endereco || f.endereco,
+                        numero: d.numero || f.numero,
+                        complemento_bairro:
+                          [d.complemento, d.bairro].filter(Boolean).join(" - ") ||
+                          f.complemento_bairro,
+                        cidade: d.cidade || f.cidade,
+                        estado: d.estado || f.estado,
+                        cep: d.cep || f.cep,
+                      }))
+                    }
+                  />
+                )}
+              </div>
             </div>
           </div>
           <div className="border-t pt-4">
