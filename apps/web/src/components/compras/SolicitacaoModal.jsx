@@ -15,6 +15,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Plus, Trash2, X, Upload } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
+import { useEmpresa } from "../../Layout";
 import ImportarItensSolicitacao from "./ImportarItensSolicitacao";
 
 export default function SolicitacaoModal({
@@ -27,6 +28,9 @@ export default function SolicitacaoModal({
   projetos,
   empresaAtiva,
 }) {
+  const { modulosLibertados } = useEmpresa();
+  // Empresas sem o módulo Projetos (ex.: plano Fábrica) não vinculam compra a projeto
+  const mostrarProjetos = modulosLibertados?.["Projetos"] !== false;
   const [loadingOrcamento, setLoadingOrcamento] = React.useState(false);
   const [materiais, setMateriais] = React.useState([]);
   const [multiProjeto, setMultiProjeto] = React.useState(false);
@@ -396,117 +400,122 @@ export default function SolicitacaoModal({
             </button>
           </div>
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Label>Projetos Vinculados</Label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMultiProjeto((v) => !v);
-                    setForm((prev) => ({
-                      ...prev,
-                      projetos_ids: "",
-                      projetos_nomes: "",
-                      projeto_id: "",
-                      projeto_nome: "",
-                    }));
-                  }}
-                  className="text-xs text-blue-600 underline ml-2"
-                >
-                  {multiProjeto ? "Selecionar apenas 1 projeto" : "Vincular múltiplos projetos"}
-                </button>
-              </div>
-
-              {!multiProjeto ? (
-                <>
-                  <Select
-                    value={form.projeto_id}
-                    onValueChange={(v) => {
-                      const projeto = projetos.find((p) => p.id === v);
+            {mostrarProjetos && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Label>Projetos Vinculados</Label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMultiProjeto((v) => !v);
                       setForm((prev) => ({
                         ...prev,
-                        projeto_id: v,
-                        projeto_nome: projeto?.nome || "",
+                        projetos_ids: "",
+                        projetos_nomes: "",
+                        projeto_id: "",
+                        projeto_nome: "",
                       }));
-                      carregarOrcamentoProjeto(v);
                     }}
-                    disabled={loadingOrcamento}
+                    className="text-xs text-blue-600 underline ml-2"
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione um projeto" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {projetos.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.nome}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {loadingOrcamento && (
-                    <p className="text-xs text-slate-500">Carregando itens do orçamento...</p>
-                  )}
-                  {!loadingOrcamento && form.itens.length > 0 && form.itens[0].descricao && (
-                    <p className="text-xs text-blue-600">
-                      {form.itens.filter((i) => i.descricao).length} itens do orçamento carregados
-                    </p>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div className="border border-slate-200 rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto">
-                    {projetos.map((p) => {
-                      // projetos_ids: JSONB → array do supabase-js, string em legacy
-                      const selecionados = safeParseJSON(form.projetos_ids, []);
-                      const marcado = selecionados.includes(p.id);
-                      return (
-                        <label
-                          key={p.id}
-                          className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1 rounded"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={marcado}
-                            onChange={() => {
-                              const novos = marcado
-                                ? selecionados.filter((id) => id !== p.id)
-                                : [...selecionados, p.id];
-                              setForm((prev) => ({ ...prev, projetos_ids: JSON.stringify(novos) }));
-                              carregarOrcamentosMultiProjetos(novos);
-                            }}
-                            className="w-4 h-4"
-                          />
-                          <span className="text-sm text-slate-700">{p.nome}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                  {(() => {
-                    const selecionados = safeParseJSON(form.projetos_ids, []);
-                    const nomes = projetos
-                      .filter((p) => selecionados.includes(p.id))
-                      .map((p) => p.nome);
-                    return nomes.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {nomes.map((n) => (
-                          <Badge key={n} className="text-xs bg-blue-100 text-blue-700">
-                            {n}
-                          </Badge>
+                    {multiProjeto ? "Selecionar apenas 1 projeto" : "Vincular múltiplos projetos"}
+                  </button>
+                </div>
+
+                {!multiProjeto ? (
+                  <>
+                    <Select
+                      value={form.projeto_id}
+                      onValueChange={(v) => {
+                        const projeto = projetos.find((p) => p.id === v);
+                        setForm((prev) => ({
+                          ...prev,
+                          projeto_id: v,
+                          projeto_nome: projeto?.nome || "",
+                        }));
+                        carregarOrcamentoProjeto(v);
+                      }}
+                      disabled={loadingOrcamento}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione um projeto" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {projetos.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.nome}
+                          </SelectItem>
                         ))}
-                      </div>
-                    ) : null;
-                  })()}
-                  {loadingOrcamento && (
-                    <p className="text-xs text-slate-500">Carregando itens dos orçamentos...</p>
-                  )}
-                  {!loadingOrcamento && form.itens.length > 0 && form.itens[0].descricao && (
-                    <p className="text-xs text-blue-600">
-                      {form.itens.filter((i) => i.descricao).length} itens agrupados carregados
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
+                      </SelectContent>
+                    </Select>
+                    {loadingOrcamento && (
+                      <p className="text-xs text-slate-500">Carregando itens do orçamento...</p>
+                    )}
+                    {!loadingOrcamento && form.itens.length > 0 && form.itens[0].descricao && (
+                      <p className="text-xs text-blue-600">
+                        {form.itens.filter((i) => i.descricao).length} itens do orçamento carregados
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="border border-slate-200 rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto">
+                      {projetos.map((p) => {
+                        // projetos_ids: JSONB → array do supabase-js, string em legacy
+                        const selecionados = safeParseJSON(form.projetos_ids, []);
+                        const marcado = selecionados.includes(p.id);
+                        return (
+                          <label
+                            key={p.id}
+                            className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1 rounded"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={marcado}
+                              onChange={() => {
+                                const novos = marcado
+                                  ? selecionados.filter((id) => id !== p.id)
+                                  : [...selecionados, p.id];
+                                setForm((prev) => ({
+                                  ...prev,
+                                  projetos_ids: JSON.stringify(novos),
+                                }));
+                                carregarOrcamentosMultiProjetos(novos);
+                              }}
+                              className="w-4 h-4"
+                            />
+                            <span className="text-sm text-slate-700">{p.nome}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {(() => {
+                      const selecionados = safeParseJSON(form.projetos_ids, []);
+                      const nomes = projetos
+                        .filter((p) => selecionados.includes(p.id))
+                        .map((p) => p.nome);
+                      return nomes.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {nomes.map((n) => (
+                            <Badge key={n} className="text-xs bg-blue-100 text-blue-700">
+                              {n}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : null;
+                    })()}
+                    {loadingOrcamento && (
+                      <p className="text-xs text-slate-500">Carregando itens dos orçamentos...</p>
+                    )}
+                    {!loadingOrcamento && form.itens.length > 0 && form.itens[0].descricao && (
+                      <p className="text-xs text-blue-600">
+                        {form.itens.filter((i) => i.descricao).length} itens agrupados carregados
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div>

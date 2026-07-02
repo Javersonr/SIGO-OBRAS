@@ -696,6 +696,7 @@ export default function Layout({ children, currentPageName }) {
         reloadEmpresaAtiva,
         temPermissao,
         vinculo,
+        modulosLibertados,
       }}
     >
       <>
