@@ -131,7 +131,9 @@ export default function Compras() {
 
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState("Pendente Aprovação");
+  // "all" por padrão: com filtro fixo em "Pendente Aprovação", a solicitação
+  // "sumia" da lista assim que era aprovada (confundia o usuário).
+  const [filterStatus, setFilterStatus] = useState("all");
   const [sortConfig, setSortConfig] = useState({ field: "created_date", direction: "desc" });
 
   const loadData = React.useCallback(async () => {
@@ -598,6 +600,55 @@ export default function Compras() {
   const handleChangeStatusPedido = async (pedido, newStatus) => {
     await sigo.entities.PedidoCompra.update(pedido.id, { status: newStatus });
     setPedidos(pedidos.map((p) => (p.id === pedido.id ? { ...p, status: newStatus } : p)));
+  };
+
+  // Envia o pedido pro fornecedor via WhatsApp (wa.me com o texto do pedido).
+  // Se o pedido estava só Emitido, já marca como Enviado.
+  const handleEnviarPedidoWhatsApp = async (pedido) => {
+    try {
+      const forn = fornecedores.find((f) => f.id === pedido.fornecedor_id);
+      const fone = (forn?.telefone || "").replace(/\D/g, "");
+      if (!fone) {
+        alert(
+          "O fornecedor não tem telefone cadastrado. Adicione em Configurações → Fornecedores."
+        );
+        return;
+      }
+
+      const itens = await sigo.entities.PedidoCompraItem.filter({ pedido_id: pedido.id });
+      const fmt = (v) =>
+        new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
+      const linhas = (itens || []).map(
+        (i) =>
+          `• ${i.descricao} — ${Number(i.quantidade).toLocaleString("pt-BR")} ${i.unidade || "UN"} × ${fmt(i.valor_unitario)} = ${fmt(i.valor_total)}`
+      );
+      const texto = [
+        `*PEDIDO DE COMPRA ${pedido.numero || ""}*`,
+        `${empresaAtiva?.nome || ""}`,
+        "",
+        "*Itens:*",
+        ...linhas,
+        "",
+        `*Total: ${fmt(pedido.total)}*`,
+        pedido.data_entrega_prevista
+          ? `Entrega prevista: ${new Date(pedido.data_entrega_prevista).toLocaleDateString("pt-BR")}`
+          : "",
+        "",
+        "Por favor, confirme o recebimento deste pedido.",
+      ]
+        .filter((l) => l !== "")
+        .join("\n");
+
+      const ddi = fone.length <= 11 ? "55" : "";
+      window.open(`https://wa.me/${ddi}${fone}?text=${encodeURIComponent(texto)}`, "_blank");
+
+      if (pedido.status === "Emitido") {
+        await handleChangeStatusPedido(pedido, "Enviado");
+      }
+    } catch (e) {
+      console.error("Erro ao enviar pedido por WhatsApp:", e);
+      alert("Erro ao montar o envio do pedido");
+    }
   };
 
   const formatCurrency = (value) => {
@@ -1402,6 +1453,14 @@ export default function Compras() {
                               className="text-emerald-600"
                             >
                               <PackageCheck className="w-4 h-4 mr-2" /> Conferir Recebimento
+                            </DropdownMenuItem>
+                          )}
+                          {!["Entregue", "Cancelado"].includes(ped.status) && (
+                            <DropdownMenuItem
+                              onClick={() => handleEnviarPedidoWhatsApp(ped)}
+                              className="text-green-600"
+                            >
+                              <MessageSquare className="w-4 h-4 mr-2" /> Enviar por WhatsApp
                             </DropdownMenuItem>
                           )}
                           {ped.status === "Emitido" && (
