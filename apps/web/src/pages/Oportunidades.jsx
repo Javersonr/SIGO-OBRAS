@@ -30,7 +30,6 @@ import SortableTableHeader from "../components/shared/SortableTableHeader";
 import PortalClienteEmbed from "../components/cliente/PortalClienteEmbed";
 import PermissionGate from "../components/PermissionGate";
 import CalendarioOportunidades from "../components/oportunidades/CalendarioOportunidades";
-import LicitacoesInbox from "../components/oportunidades/LicitacoesInbox";
 import CriarMaterialModal from "../components/materiais/CriarMaterialModal";
 import NovoClienteModal from "../components/clientes/NovoClienteModal";
 import OportunidadesHeader from "../components/oportunidades/OportunidadesHeader";
@@ -1199,7 +1198,6 @@ export default function Oportunidades() {
             { value: "lista", label: "Lista" },
             { value: "calendario", label: "Calendário" },
             { value: "relatorios", label: "Relatórios" },
-            { value: "licitacoes", label: "Licitações" },
           ].map((m) => (
             <Button
               key={m.value}
@@ -1347,8 +1345,6 @@ export default function Oportunidades() {
       )}
 
       {viewMode === "relatorios" && <RelatorioOportunidades />}
-
-      {viewMode === "licitacoes" && <LicitacoesInbox />}
 
       {viewMode === "calendario" && (
         <CalendarioOportunidades
