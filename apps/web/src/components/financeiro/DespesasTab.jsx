@@ -461,11 +461,23 @@ export default function DespesasTab({
     const file = e.target.files[0];
     if (!file) return;
 
+    const nome = (file.name || "").toLowerCase();
+    const ehExcel = nome.endsWith(".xlsx") || nome.endsWith(".xls");
+
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
-        // Parse extraído p/ lib/csv.js (testado): BOM, separador, aspas, CRLF.
-        const { data } = csvParaObjetos(evt.target.result);
+        // Aceita Excel (.xlsx/.xls) E CSV. Excel é binário → parseia com SheetJS;
+        // CSV vai pro parser testado (lib/csv.js: BOM, separador, aspas, CRLF).
+        let data;
+        if (ehExcel) {
+          const XLSX = await import("xlsx");
+          const wb = XLSX.read(new Uint8Array(evt.target.result), { type: "array" });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          data = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+        } else {
+          data = csvParaObjetos(evt.target.result).data;
+        }
 
         setImportacao({ ativo: true, total: data.length, processados: 0, erros: 0 });
 
@@ -688,7 +700,8 @@ export default function DespesasTab({
         e.target.value = "";
       }
     };
-    reader.readAsText(file, "UTF-8");
+    if (ehExcel) reader.readAsArrayBuffer(file);
+    else reader.readAsText(file, "UTF-8");
   };
 
   const despesasFiltradas = useMemo(() => {
@@ -1646,7 +1659,7 @@ export default function DespesasTab({
       <input
         type="file"
         id="importar-excel-despesas"
-        accept=".xlsx,.xls"
+        accept=".csv,.xlsx,.xls"
         onChange={handleImportarExcel}
         className="hidden"
       />
