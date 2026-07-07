@@ -31,7 +31,6 @@ import VisualizarCatalogModal from "@/components/compras/VisualizarCatalogModal"
 import { useBulkOperations } from "@/components/configuracoes/useBulkOperations";
 import ConfiguracaoNotificacoes from "@/components/notificacoes/ConfiguracaoNotificacoes";
 import CaminhoesConfigTab from "@/components/configuracoes/CaminhoesConfigTab";
-import LicitacoesConfigTab from "@/components/configuracoes/LicitacoesConfigTab";
 import FluxosTab from "@/components/configuracoes/FluxosTab";
 
 export default function Configuracoes() {
@@ -1067,11 +1066,6 @@ export default function Configuracoes() {
                     Caminhões
                   </TabsTrigger>
                 )}
-                {(modulosLiberados["Oportunidades"] || modulosLiberados["Projetos"]) && (
-                  <TabsTrigger value="licitacoes" className="whitespace-nowrap text-xs sm:text-sm">
-                    Licitações
-                  </TabsTrigger>
-                )}
                 <TabsTrigger value="fluxos" className="whitespace-nowrap text-xs sm:text-sm">
                   Processos
                 </TabsTrigger>
@@ -1182,11 +1176,6 @@ export default function Configuracoes() {
         {/* Caminhões */}
         <TabsContent value="caminhoes">
           <CaminhoesConfigTab empresaAtiva={empresaAtiva} />
-        </TabsContent>
-
-        {/* Licitações */}
-        <TabsContent value="licitacoes">
-          <LicitacoesConfigTab empresaAtiva={empresaAtiva} />
         </TabsContent>
 
         {/* Processos / Fluxos de trabalho */}
