@@ -22,7 +22,6 @@ import { cn } from "@/lib/utils";
 import EntityCombobox from "@/components/shared/EntityCombobox";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ESTRUTURA_PERMISSOES } from "@/components/shared/PermissoesGranularesEditor";
-import { PERFIS_FABRICA, DESCRICAO_PERFIS_FABRICA } from "@/lib/perfis-fabrica";
 
 export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, empresaAtiva }) {
   // user vem do Layout — é o admin logado, dono da sessão.
@@ -439,19 +438,7 @@ export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, 
 
               <div>
                 <Label>Perfil</Label>
-                <Select
-                  value={form.perfil}
-                  onValueChange={(v) => {
-                    // Perfis de fábrica aplicam o template de permissões da função
-                    // (continua editável na aba Permissões)
-                    const template = PERFIS_FABRICA[v];
-                    setForm({
-                      ...form,
-                      perfil: v,
-                      permissoes: template ? JSON.parse(JSON.stringify(template)) : form.permissoes,
-                    });
-                  }}
-                >
+                <Select value={form.perfil} onValueChange={(v) => setForm({ ...form, perfil: v })}>
                   <SelectTrigger className="mt-1.5">
                     <SelectValue />
                   </SelectTrigger>
@@ -462,11 +449,6 @@ export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, 
                     <SelectItem value="Estoque">Estoque</SelectItem>
                     <SelectItem value="Financeiro">Financeiro</SelectItem>
                     <SelectItem value="Cliente">Cliente</SelectItem>
-                    <SelectItem value="Gerente Geral">Gerente Geral</SelectItem>
-                    <SelectItem value="Gerente de Produção">Gerente de Produção</SelectItem>
-                    <SelectItem value="Gerente Comercial">Gerente Comercial</SelectItem>
-                    <SelectItem value="Vendedor">Vendedor</SelectItem>
-                    <SelectItem value="Operacional">Operacional</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-slate-500 mt-1">
@@ -474,9 +456,7 @@ export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, 
                     ? "✅ Admin tem acesso total a todos os módulos"
                     : form.perfil === "Cliente"
                       ? "👤 Cliente terá acesso apenas ao portal do cliente"
-                      : DESCRICAO_PERFIS_FABRICA[form.perfil]
-                        ? `🏭 ${DESCRICAO_PERFIS_FABRICA[form.perfil]} — ajuste fino na aba Permissões`
-                        : "Configure permissões detalhadas na aba Permissões"}
+                      : "Configure permissões detalhadas na aba Permissões"}
                 </p>
               </div>
 

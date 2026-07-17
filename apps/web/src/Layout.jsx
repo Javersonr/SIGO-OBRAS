@@ -24,7 +24,6 @@ import {
   Wrench,
   DollarSign,
   Shield,
-  Factory,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -93,8 +92,6 @@ const menuItems = [
 
   { name: "Compras", icon: ShoppingCart, path: "Compras", modulo: "Compras" },
   { name: "Estoque", icon: Package, path: "Estoque", modulo: "Estoque" },
-  { name: "Manufatura", icon: Factory, path: "Manufatura", modulo: "Manufatura" },
-  { name: "Metas", icon: Target, path: "PainelMetas", modulo: "Manufatura", aba: "Metas" },
   { name: "Ferramental", icon: Wrench, path: "Ferramental", modulo: "Ferramental e EPI" },
   { name: "Segurança", icon: Shield, path: "SegurancaTrabalho", modulo: "Segurança do Trabalho" },
   { name: "Financeiro", icon: DollarSign, path: "Financeiro", modulo: "Financeiro" },

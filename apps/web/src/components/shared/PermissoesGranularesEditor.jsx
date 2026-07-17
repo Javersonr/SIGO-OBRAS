@@ -95,19 +95,6 @@ export const ESTRUTURA_PERMISSOES = {
       "Documentação da Empresa": { funcoes: ["visualizar", "criar", "editar", "deletar"] },
     },
   },
-  Manufatura: {
-    abas: {
-      Ordens: { funcoes: ["visualizar", "criar", "liberar", "concluir", "cancelar"] },
-      Apontamento: { funcoes: ["visualizar", "criar"] },
-      Engenharia: { funcoes: ["visualizar", "criar", "editar", "ativar", "deletar"] },
-      Centros: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
-      MRP: { funcoes: ["visualizar", "executar", "converter"] },
-      Qualidade: { funcoes: ["visualizar", "criar"] },
-      Manutenção: { funcoes: ["visualizar", "criar", "concluir"] },
-      OEE: { funcoes: ["visualizar"] },
-      Metas: { funcoes: ["visualizar", "editar"] },
-    },
-  },
   Relatórios: {
     abas: {
       Oportunidades: { funcoes: ["visualizar", "exportar"] },
