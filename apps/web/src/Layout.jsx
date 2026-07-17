@@ -617,7 +617,7 @@ export default function Layout({ children, currentPageName }) {
         }
 
         // Se TEM permissões granulares definidas, verificar se tem acesso a este módulo específico
-        // (itens com `aba` exigem permissão naquela aba — ex.: Metas dentro de Manufatura)
+        // (itens com `aba` exigem permissão naquela aba específica)
         return item.aba ? temPermissao(item.modulo, item.aba) : temPermissao(item.modulo);
       }
 
