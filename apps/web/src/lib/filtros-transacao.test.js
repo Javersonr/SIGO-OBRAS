@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { filtrarTransacoes, dentroDoPeriodo } from "./filtros-transacao";
+import { filtrarTransacoes, dentroDoPeriodo, normalizarTexto } from "./filtros-transacao";
 
 // hoje fixo (15/jun/2026, meio-dia local) p/ período determinístico.
 const HOJE = new Date(2026, 5, 15, 12, 0, 0);
@@ -96,6 +96,39 @@ describe("filtrarTransacoes", () => {
     expect(filtrarTransacoes(dados, { busca: "areial" }, {})).toHaveLength(1); // fornecedor
     expect(filtrarTransacoes(dados, { busca: "cemig" }, {})).toHaveLength(1); // cliente
     expect(filtrarTransacoes(dados, { busca: "zzz" }, {})).toHaveLength(0);
+  });
+
+  it("busca ignora acentos nos dois lados", () => {
+    const comAcento = [
+      { descricao: "Manutenção elétrica", fornecedor_nome: "João Materiais" },
+      { descricao: "Medição de obra", cliente_nome: "Constrói SA" },
+    ];
+    expect(filtrarTransacoes(comAcento, { busca: "eletrica" }, {})).toHaveLength(1);
+    expect(filtrarTransacoes(comAcento, { busca: "manutencao" }, {})).toHaveLength(1);
+    expect(filtrarTransacoes(comAcento, { busca: "joao" }, {})).toHaveLength(1);
+    expect(filtrarTransacoes(comAcento, { busca: "constroi" }, {})).toHaveLength(1);
+    // digitou COM acento, dado sem acento também casa
+    expect(
+      filtrarTransacoes([{ descricao: "Reparo eletrico" }], { busca: "elétrico" }, {})
+    ).toHaveLength(1);
+  });
+
+  it("busca multi-termo: todos os termos, em qualquer ordem e entre campos", () => {
+    const lote = [
+      { descricao: "Compra de cimento", fornecedor_nome: "João Materiais" },
+      { descricao: "Compra de areia", fornecedor_nome: "Areial Y" },
+    ];
+    expect(filtrarTransacoes(lote, { busca: "cimento joao" }, {})).toHaveLength(1); // termos em campos diferentes
+    expect(filtrarTransacoes(lote, { busca: "joao cimento" }, {})).toHaveLength(1); // ordem livre
+    expect(filtrarTransacoes(lote, { busca: "compra" }, {})).toHaveLength(2);
+    expect(filtrarTransacoes(lote, { busca: "cimento areial" }, {})).toHaveLength(0); // termos de itens diferentes não misturam
+    expect(filtrarTransacoes(lote, { busca: "   " }, {})).toHaveLength(2); // só espaços = sem filtro
+  });
+
+  it("normalizarTexto: minúsculas + sem acentos, null-safe", () => {
+    expect(normalizarTexto("Manutenção ELÉTRICA")).toBe("manutencao eletrica");
+    expect(normalizarTexto(null)).toBe("");
+    expect(normalizarTexto(undefined)).toBe("");
   });
 
   it("status/categoria/projeto, com 'all' = sem filtro", () => {

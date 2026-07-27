@@ -43,6 +43,14 @@ export function dentroDoPeriodo(dataRef, periodo, hoje = new Date()) {
   }
 }
 
+// Normaliza texto p/ busca: minúsculas + sem acentos ("Elétrica" → "eletrica").
+export function normalizarTexto(s) {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+}
+
 export function filtrarTransacoes(transacoes, filtros = {}, opts = {}) {
   const { tipo, hoje = new Date() } = opts;
   let out = transacoes || [];
@@ -52,13 +60,18 @@ export function filtrarTransacoes(transacoes, filtros = {}, opts = {}) {
   }
 
   if (filtros.busca) {
-    const busca = filtros.busca.toLowerCase();
-    out = out.filter(
-      (t) =>
-        t.descricao?.toLowerCase().includes(busca) ||
-        t.fornecedor_nome?.toLowerCase().includes(busca) ||
-        t.cliente_nome?.toLowerCase().includes(busca)
-    );
+    // Busca tolerante: ignora acento/caixa e aceita vários termos em QUALQUER
+    // ordem ("cimento joao" acha "Compra de cimento — João Materiais"). Cada
+    // termo precisa casar em algum campo: descrição, fornecedor ou cliente.
+    const termos = normalizarTexto(filtros.busca).split(/\s+/).filter(Boolean);
+    if (termos.length > 0) {
+      out = out.filter((t) => {
+        const alvo = normalizarTexto(
+          `${t.descricao || ""} ${t.fornecedor_nome || ""} ${t.cliente_nome || ""}`
+        );
+        return termos.every((termo) => alvo.includes(termo));
+      });
+    }
   }
 
   if (filtros.status && filtros.status !== "all") {

@@ -68,7 +68,11 @@ export default function FiltroRapido({
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <Input
-              placeholder="Buscar por descrição..."
+              placeholder={
+                tipo === "despesas"
+                  ? "Buscar por descrição ou fornecedor..."
+                  : "Buscar por descrição ou cliente..."
+              }
               value={filtros.busca || ""}
               onChange={(e) => onFiltrosChange({ ...filtros, busca: e.target.value })}
               className="pl-9"
