@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
@@ -68,7 +69,8 @@ export default function SelecionarTreinamentoModal({
                   const busca = buscaTreinamento.toLowerCase().trim();
                   if (!busca) return true;
                   return (
-                    t.nome?.toLowerCase().includes(busca) || t.codigo?.toLowerCase().includes(busca)
+                    normalizarTexto(t.nome).includes(normalizarTexto(busca)) ||
+                    normalizarTexto(t.codigo).includes(normalizarTexto(busca))
                   );
                 })
                 .map((treinamento) => {
@@ -184,7 +186,8 @@ export default function SelecionarTreinamentoModal({
                 const busca = buscaTreinamento.toLowerCase().trim();
                 if (!busca) return true;
                 return (
-                  t.nome?.toLowerCase().includes(busca) || t.codigo?.toLowerCase().includes(busca)
+                  normalizarTexto(t.nome).includes(normalizarTexto(busca)) ||
+                  normalizarTexto(t.codigo).includes(normalizarTexto(busca))
                 );
               }).length === 0 &&
                 buscaTreinamento && (

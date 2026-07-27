@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
@@ -700,9 +701,13 @@ export default function MateriaisTab({
                 .filter((m) => {
                   const matchBusca =
                     !buscaMaterial ||
-                    m.nome?.toLowerCase().includes(buscaMaterial.toLowerCase()) ||
-                    m.codigo?.toLowerCase().includes(buscaMaterial.toLowerCase()) ||
-                    m.ean?.toLowerCase().includes(buscaMaterial.toLowerCase());
+                    normalizarTexto(m.nome).includes(
+                      normalizarTexto(buscaMaterial.toLowerCase())
+                    ) ||
+                    normalizarTexto(m.codigo).includes(
+                      normalizarTexto(buscaMaterial.toLowerCase())
+                    ) ||
+                    normalizarTexto(m.ean).includes(normalizarTexto(buscaMaterial.toLowerCase()));
                   const matchCategoria =
                     !filtroCategoriaMaterial || m.categoria === filtroCategoriaMaterial;
                   return matchBusca && matchCategoria;

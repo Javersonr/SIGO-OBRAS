@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useEffect, useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../../../Layout";
@@ -63,7 +64,9 @@ export default function WidgetDashFerramental({ onDadosCarregados }) {
       const danificado = ferramentas.filter((f) => f.status === "Danificado").length;
       const sucata = ferramentas.filter((f) => f.status === "Sucata").length;
       const noCaminhao = ferramentas.filter(
-        (f) => f.localizacao?.toLowerCase().includes("caminhão") || f.campo_obrigatorio_id
+        (f) =>
+          normalizarTexto(f.localizacao).includes(normalizarTexto("caminhão")) ||
+          f.campo_obrigatorio_id
       ).length;
       const comFuncionario = ferramentas.filter(
         (f) => f.status === "Em Uso" && f.funcionario_id

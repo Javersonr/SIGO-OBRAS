@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import {
@@ -65,9 +66,9 @@ export default function SolicitacaoEPIModal({
         const lower = termo.toLowerCase();
         filtered = materiais.filter(
           (m) =>
-            m.nome?.toLowerCase().includes(lower) ||
-            m.codigo?.toLowerCase().includes(lower) ||
-            m.categoria?.toLowerCase().includes(lower)
+            normalizarTexto(m.nome).includes(normalizarTexto(lower)) ||
+            normalizarTexto(m.codigo).includes(normalizarTexto(lower)) ||
+            normalizarTexto(m.categoria).includes(normalizarTexto(lower))
         );
       }
 

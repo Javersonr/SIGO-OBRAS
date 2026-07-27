@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeUrl } from "@/lib/safe-url";
@@ -184,7 +185,7 @@ export default function FerramentaModal({ open, onOpenChange, ferramenta, onSave
     setCarregandoSugestoes(true);
     try {
       const sugestoes = camposObrigatorios.filter((campo) =>
-        campo.nome_campo.toLowerCase().includes(texto.toLowerCase())
+        normalizarTexto(campo.nome_campo).includes(normalizarTexto(texto.toLowerCase()))
       );
       setSugestoesIA(sugestoes);
     } catch (error) {

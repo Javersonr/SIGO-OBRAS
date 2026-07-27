@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useRef } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
@@ -129,8 +130,8 @@ export default function MaoDeObraTab({
   const filteredMao = maoDeObra.filter((m) => {
     const matchBusca =
       !buscaMaoObra ||
-      m.nome?.toLowerCase().includes(buscaMaoObra.toLowerCase()) ||
-      m.codigo?.toLowerCase().includes(buscaMaoObra.toLowerCase());
+      normalizarTexto(m.nome).includes(normalizarTexto(buscaMaoObra.toLowerCase())) ||
+      normalizarTexto(m.codigo).includes(normalizarTexto(buscaMaoObra.toLowerCase()));
     const matchCat = !filtroCategoriaMaoObra || m.categoria === filtroCategoriaMaoObra;
     return matchBusca && matchCat;
   });

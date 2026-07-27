@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
@@ -440,9 +441,15 @@ export default function FornecedoresTab({ empresaAtiva, fornecedores, loadData }
                   .filter(
                     (f) =>
                       searchFornecedor === "" ||
-                      f.nome_razao?.toLowerCase().includes(searchFornecedor.toLowerCase()) ||
-                      f.nome_fantasia?.toLowerCase().includes(searchFornecedor.toLowerCase()) ||
-                      f.email?.toLowerCase().includes(searchFornecedor.toLowerCase()) ||
+                      normalizarTexto(f.nome_razao).includes(
+                        normalizarTexto(searchFornecedor.toLowerCase())
+                      ) ||
+                      normalizarTexto(f.nome_fantasia).includes(
+                        normalizarTexto(searchFornecedor.toLowerCase())
+                      ) ||
+                      normalizarTexto(f.email).includes(
+                        normalizarTexto(searchFornecedor.toLowerCase())
+                      ) ||
                       f.telefone?.includes(searchFornecedor) ||
                       f.cnpj?.includes(searchFornecedor)
                   )
@@ -501,9 +508,13 @@ export default function FornecedoresTab({ empresaAtiva, fornecedores, loadData }
           {fornecedores.filter(
             (f) =>
               searchFornecedor === "" ||
-              f.nome_razao?.toLowerCase().includes(searchFornecedor.toLowerCase()) ||
-              f.nome_fantasia?.toLowerCase().includes(searchFornecedor.toLowerCase()) ||
-              f.email?.toLowerCase().includes(searchFornecedor.toLowerCase()) ||
+              normalizarTexto(f.nome_razao).includes(
+                normalizarTexto(searchFornecedor.toLowerCase())
+              ) ||
+              normalizarTexto(f.nome_fantasia).includes(
+                normalizarTexto(searchFornecedor.toLowerCase())
+              ) ||
+              normalizarTexto(f.email).includes(normalizarTexto(searchFornecedor.toLowerCase())) ||
               f.telefone?.includes(searchFornecedor) ||
               f.cnpj?.includes(searchFornecedor)
           ).length > 50 && (
@@ -515,9 +526,15 @@ export default function FornecedoresTab({ empresaAtiva, fornecedores, loadData }
                   fornecedores.filter(
                     (f) =>
                       searchFornecedor === "" ||
-                      f.nome_razao?.toLowerCase().includes(searchFornecedor.toLowerCase()) ||
-                      f.nome_fantasia?.toLowerCase().includes(searchFornecedor.toLowerCase()) ||
-                      f.email?.toLowerCase().includes(searchFornecedor.toLowerCase()) ||
+                      normalizarTexto(f.nome_razao).includes(
+                        normalizarTexto(searchFornecedor.toLowerCase())
+                      ) ||
+                      normalizarTexto(f.nome_fantasia).includes(
+                        normalizarTexto(searchFornecedor.toLowerCase())
+                      ) ||
+                      normalizarTexto(f.email).includes(
+                        normalizarTexto(searchFornecedor.toLowerCase())
+                      ) ||
                       f.telefone?.includes(searchFornecedor) ||
                       f.cnpj?.includes(searchFornecedor)
                   ).length
@@ -527,9 +544,15 @@ export default function FornecedoresTab({ empresaAtiva, fornecedores, loadData }
                   fornecedores.filter(
                     (f) =>
                       searchFornecedor === "" ||
-                      f.nome_razao?.toLowerCase().includes(searchFornecedor.toLowerCase()) ||
-                      f.nome_fantasia?.toLowerCase().includes(searchFornecedor.toLowerCase()) ||
-                      f.email?.toLowerCase().includes(searchFornecedor.toLowerCase()) ||
+                      normalizarTexto(f.nome_razao).includes(
+                        normalizarTexto(searchFornecedor.toLowerCase())
+                      ) ||
+                      normalizarTexto(f.nome_fantasia).includes(
+                        normalizarTexto(searchFornecedor.toLowerCase())
+                      ) ||
+                      normalizarTexto(f.email).includes(
+                        normalizarTexto(searchFornecedor.toLowerCase())
+                      ) ||
                       f.telefone?.includes(searchFornecedor) ||
                       f.cnpj?.includes(searchFornecedor)
                   ).length

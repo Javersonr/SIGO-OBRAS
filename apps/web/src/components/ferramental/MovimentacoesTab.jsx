@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
@@ -358,9 +359,9 @@ export default function MovimentacoesTab({ empresaAtiva }) {
 
   const filteredMovimentacoes = movimentacoes.filter((m) => {
     const matchSearch =
-      m.ferramenta_descricao?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      m.ferramenta_codigo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      m.funcionario_nome?.toLowerCase().includes(searchTerm.toLowerCase());
+      normalizarTexto(m.ferramenta_descricao).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+      normalizarTexto(m.ferramenta_codigo).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+      normalizarTexto(m.funcionario_nome).includes(normalizarTexto(searchTerm.toLowerCase()));
     const matchStatus = filterStatus === "todas" || m.status === filterStatus;
     const matchTipo = filterTipo === "todos" || m.tipo_movimentacao === filterTipo;
     return matchSearch && matchStatus && matchTipo;

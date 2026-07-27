@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeUrl } from "@/lib/safe-url";
@@ -232,9 +233,9 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
     const matchTipo = tipoFiltro === "todos" || d.tipo === tipoFiltro;
     const matchSearch =
       !searchTerm ||
-      d.nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      d.treinamento_nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      d.responsavel_tecnico?.toLowerCase().includes(searchTerm.toLowerCase());
+      normalizarTexto(d.nome).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+      normalizarTexto(d.treinamento_nome).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+      normalizarTexto(d.responsavel_tecnico).includes(normalizarTexto(searchTerm.toLowerCase()));
     return matchTipo && matchSearch;
   });
 

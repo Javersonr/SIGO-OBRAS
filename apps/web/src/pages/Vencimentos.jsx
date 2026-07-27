@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect, useContext } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
@@ -159,8 +160,8 @@ export default function Vencimentos() {
     if (filtroEmpresa !== "Todos" && v.empresa_id !== filtroEmpresa) return false;
     if (
       busca &&
-      !v.titulo?.toLowerCase().includes(busca.toLowerCase()) &&
-      !v.tipo?.toLowerCase().includes(busca.toLowerCase())
+      !normalizarTexto(v.titulo).includes(normalizarTexto(busca.toLowerCase())) &&
+      !normalizarTexto(v.tipo).includes(normalizarTexto(busca.toLowerCase()))
     )
       return false;
     if (filtroPrazo !== "Todos") {

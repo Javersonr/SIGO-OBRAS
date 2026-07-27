@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import { toast } from "sonner";
 
 export async function exportarLaudos(ferramentas, caminhoes, onProgress) {
@@ -38,7 +39,7 @@ export async function exportarLaudos(ferramentas, caminhoes, onProgress) {
     try {
       const resp = await fetch(ferr.laudo_url);
       const blob = await resp.blob();
-      const ext = ferr.laudo_url.toLowerCase().includes(".pdf") ? "pdf" : "jpg";
+      const ext = normalizarTexto(ferr.laudo_url).includes(normalizarTexto(".pdf")) ? "pdf" : "jpg";
       const descricaoSanitizada = (ferr.descricao || "laudo").replace(/[/\\?%*:|"<>]/g, "-");
       const numeroSerie = ferr.numero_serie
         ? `_${ferr.numero_serie.replace(/[/\\?%*:|"<>]/g, "-")}`

@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
@@ -403,8 +404,9 @@ export default function FuncoesTab({ empresaAtiva }) {
 
   const filteredFuncoes = funcoes.filter(
     (f) =>
-      f.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (f.descricao && f.descricao.toLowerCase().includes(searchTerm.toLowerCase()))
+      normalizarTexto(f.nome).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+      (f.descricao &&
+        normalizarTexto(f.descricao).includes(normalizarTexto(searchTerm.toLowerCase())))
   );
 
   return (

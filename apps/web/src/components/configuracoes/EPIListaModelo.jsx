@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState } from "react";
 import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
@@ -159,7 +160,9 @@ export default function EPIListaModelo({
                 if (e.target.value.trim()) {
                   setSuggestions(
                     allFerramentas.filter((f) =>
-                      f.descricao?.toLowerCase().includes(e.target.value.toLowerCase())
+                      normalizarTexto(f.descricao).includes(
+                        normalizarTexto(e.target.value.toLowerCase())
+                      )
                     )
                   );
                   setShowSuggestions(true);

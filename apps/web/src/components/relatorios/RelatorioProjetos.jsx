@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -41,24 +42,24 @@ export default function RelatorioProjetos({ dados }) {
     const total = projetos.length;
     const concluidos = projetos.filter(
       (p) =>
-        p.status_nome?.toLowerCase().includes("conclu") ||
-        p.status_nome?.toLowerCase().includes("entregue")
+        normalizarTexto(p.status_nome).includes(normalizarTexto("conclu")) ||
+        normalizarTexto(p.status_nome).includes(normalizarTexto("entregue"))
     ).length;
     const emAndamento = projetos.filter(
       (p) =>
-        p.status_nome?.toLowerCase().includes("andamento") ||
-        p.status_nome?.toLowerCase().includes("execu")
+        normalizarTexto(p.status_nome).includes(normalizarTexto("andamento")) ||
+        normalizarTexto(p.status_nome).includes(normalizarTexto("execu"))
     ).length;
     const atrasados = projetos.filter((p) => {
       if (!p.data_fechamento_prevista) return false;
       return (
         new Date(p.data_fechamento_prevista) < new Date() &&
-        !p.status_nome?.toLowerCase().includes("conclu")
+        !normalizarTexto(p.status_nome).includes(normalizarTexto("conclu"))
       );
     }).length;
     const valorTotal = projetos.reduce((s, p) => s + (p.valor_estimado || 0), 0);
     const valorConcluido = projetos
-      .filter((p) => p.status_nome?.toLowerCase().includes("conclu"))
+      .filter((p) => normalizarTexto(p.status_nome).includes(normalizarTexto("conclu")))
       .reduce((s, p) => s + (p.valor_estimado || 0), 0);
     return { total, concluidos, emAndamento, atrasados, valorTotal, valorConcluido };
   }, [projetos]);

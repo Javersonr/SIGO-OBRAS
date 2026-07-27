@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
@@ -45,10 +46,10 @@ export default function AcrescentarPreLancamentoModal({
     const d = getDados(pl);
     const s = busca.toLowerCase();
     return (
-      d.fornecedor?.toLowerCase().includes(s) ||
-      d.descricao?.toLowerCase().includes(s) ||
-      pl.projeto_nome?.toLowerCase().includes(s) ||
-      pl.observacoes?.toLowerCase().includes(s)
+      normalizarTexto(d.fornecedor).includes(normalizarTexto(s)) ||
+      normalizarTexto(d.descricao).includes(normalizarTexto(s)) ||
+      normalizarTexto(pl.projeto_nome).includes(normalizarTexto(s)) ||
+      normalizarTexto(pl.observacoes).includes(normalizarTexto(s))
     );
   });
 

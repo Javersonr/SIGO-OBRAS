@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
@@ -106,8 +107,8 @@ export default function SolicitacoesEntregaTab({ empresaAtiva, user }) {
     .filter(
       (s) =>
         !busca ||
-        s.funcionario_nome?.toLowerCase().includes(busca.toLowerCase()) ||
-        s.funcao_nome?.toLowerCase().includes(busca.toLowerCase())
+        normalizarTexto(s.funcionario_nome).includes(normalizarTexto(busca.toLowerCase())) ||
+        normalizarTexto(s.funcao_nome).includes(normalizarTexto(busca.toLowerCase()))
     );
 
   const stats = {
@@ -117,7 +118,8 @@ export default function SolicitacoesEntregaTab({ empresaAtiva, user }) {
 
   const funcionariosFiltrados = funcionarios.filter(
     (f) =>
-      !buscaFuncionario || f.nome_completo?.toLowerCase().includes(buscaFuncionario.toLowerCase())
+      !buscaFuncionario ||
+      normalizarTexto(f.nome_completo).includes(normalizarTexto(buscaFuncionario.toLowerCase()))
   );
 
   const funcaoDoFuncionario = funcionarioSelecionado

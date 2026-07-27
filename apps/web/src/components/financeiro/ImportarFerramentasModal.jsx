@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -141,10 +142,13 @@ export default function ImportarFerramentasModal({ open, onOpenChange, itensNota
           ) : (
             <div className="space-y-3">
               {itensNota.map((item, index) => {
+                // item sem descrição/código NÃO pode casar todas as ferramentas
+                const descItem = normalizarTexto(item.descricao);
+                const codItem = normalizarTexto(item.codigo);
                 const ferramentasSimilares = ferramentasBanco.filter(
                   (f) =>
-                    f.descricao?.toLowerCase().includes(item.descricao?.toLowerCase()) ||
-                    f.codigo?.toLowerCase().includes(item.codigo?.toLowerCase())
+                    (descItem && normalizarTexto(f.descricao).includes(descItem)) ||
+                    (codItem && normalizarTexto(f.codigo).includes(codItem))
                 );
 
                 return (

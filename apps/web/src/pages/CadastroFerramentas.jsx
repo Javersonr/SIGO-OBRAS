@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
@@ -87,10 +88,10 @@ export default function CadastroFerramentas() {
 
   const filteredFerramentas = ferramentas.filter(
     (f) =>
-      f.codigo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      f.descricao?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      f.marca?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      f.modelo?.toLowerCase().includes(searchTerm.toLowerCase())
+      normalizarTexto(f.codigo).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+      normalizarTexto(f.descricao).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+      normalizarTexto(f.marca).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+      normalizarTexto(f.modelo).includes(normalizarTexto(searchTerm.toLowerCase()))
   );
 
   const getStatusBadge = (status) => {

@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect, useMemo } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
@@ -66,7 +67,10 @@ export default function ChatPanel({ open, onOpenChange, empresaAtiva, user }) {
   };
 
   const filteredCanais = useMemo(
-    () => canais.filter((canal) => canal.nome?.toLowerCase().includes(searchTerm.toLowerCase())),
+    () =>
+      canais.filter((canal) =>
+        normalizarTexto(canal.nome).includes(normalizarTexto(searchTerm.toLowerCase()))
+      ),
     [canais, searchTerm]
   );
 

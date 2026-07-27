@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,9 +43,9 @@ function BuscaMaterialInline({ materiais, value, onChange, onCriar }) {
     .filter(
       (m) =>
         !search ||
-        m.nome?.toLowerCase().includes(search.toLowerCase()) ||
-        m.codigo?.toLowerCase().includes(search.toLowerCase()) ||
-        m.ean?.toLowerCase().includes(search.toLowerCase())
+        normalizarTexto(m.nome).includes(normalizarTexto(search.toLowerCase())) ||
+        normalizarTexto(m.codigo).includes(normalizarTexto(search.toLowerCase())) ||
+        normalizarTexto(m.ean).includes(normalizarTexto(search.toLowerCase()))
     )
     .sort((a, b) => (a.nome || "").localeCompare(b.nome || "", "pt-BR"));
 

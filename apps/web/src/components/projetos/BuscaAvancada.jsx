@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect, useRef } from "react";
 import { safeParseJSON } from "@/lib/json-utils";
 import { Search, X, Filter } from "lucide-react";
@@ -40,22 +41,26 @@ export default function BuscaAvancada({ projetos, onResultsChange, statusList, u
     const lowerTerm = term.toLowerCase();
     return projetos.filter((proj) => {
       // Buscar em nome/título
-      const matchNome = (proj.nome || proj.titulo)?.toLowerCase().includes(lowerTerm);
+      const matchNome = normalizarTexto(proj.nome || proj.titulo).includes(
+        normalizarTexto(lowerTerm)
+      );
 
       // Buscar em cliente
-      const matchCliente = proj.cliente_nome?.toLowerCase().includes(lowerTerm);
+      const matchCliente = normalizarTexto(proj.cliente_nome).includes(normalizarTexto(lowerTerm));
 
       // Buscar em status
-      const matchStatus = proj.status_nome?.toLowerCase().includes(lowerTerm);
+      const matchStatus = normalizarTexto(proj.status_nome).includes(normalizarTexto(lowerTerm));
 
       // Buscar em cidade
-      const matchCidade = proj.cidade?.toLowerCase().includes(lowerTerm);
+      const matchCidade = normalizarTexto(proj.cidade).includes(normalizarTexto(lowerTerm));
 
       // Buscar em valor (se for número)
       const matchValor = proj.valor_estimado?.toString().includes(term);
 
       // Buscar em modalidade
-      const matchModalidade = proj.licitacao_modalidade?.toLowerCase().includes(lowerTerm);
+      const matchModalidade = normalizarTexto(proj.licitacao_modalidade).includes(
+        normalizarTexto(lowerTerm)
+      );
 
       // Buscar em responsáveis. JSONB: vem como array (supabase-js) ou string (legacy).
       let matchResponsavel = false;
@@ -63,11 +68,11 @@ export default function BuscaAvancada({ projetos, onResultsChange, statusList, u
         const emails = safeParseJSON(proj.responsaveis_emails, []);
         if (Array.isArray(emails) && emails.length > 0) {
           matchResponsavel =
-            emails.some((email) => email?.toLowerCase().includes(lowerTerm)) ||
+            emails.some((email) => normalizarTexto(email).includes(normalizarTexto(lowerTerm))) ||
             usuarios.some(
               (u) =>
                 emails.includes(u.usuario_email) &&
-                u.nome_completo?.toLowerCase().includes(lowerTerm)
+                normalizarTexto(u.nome_completo).includes(normalizarTexto(lowerTerm))
             );
         }
       }
@@ -97,7 +102,7 @@ export default function BuscaAvancada({ projetos, onResultsChange, statusList, u
     // Sugestões de projetos apenas
     results.slice(0, 10).forEach((proj) => {
       const nome = proj.nome || proj.titulo;
-      if (nome?.toLowerCase().includes(lowerTerm)) {
+      if (normalizarTexto(nome).includes(normalizarTexto(lowerTerm))) {
         suggestions.push({
           text: nome,
           type: "projeto",

@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
@@ -88,7 +89,9 @@ function InlineProjetoCell({ item, projetos, onSave }) {
     const val = e.target.value;
     setQuery(val);
     const filtered = val
-      ? projetos.filter((p) => p.nome?.toLowerCase().includes(val.toLowerCase())).slice(0, 6)
+      ? projetos
+          .filter((p) => normalizarTexto(p.nome).includes(normalizarTexto(val.toLowerCase())))
+          .slice(0, 6)
       : projetos.slice(0, 6);
     setSugestoes(filtered);
     setAberto(true);
@@ -184,7 +187,9 @@ function DraggableComprovante({ url, item, onEditar, onFechar }) {
     };
   }, [size]);
 
-  const isPdf = url.toLowerCase().includes(".pdf") || url.toLowerCase().includes("pdf");
+  const isPdf =
+    normalizarTexto(url).includes(normalizarTexto(".pdf")) ||
+    normalizarTexto(url).includes(normalizarTexto("pdf"));
 
   return (
     <div
@@ -636,8 +641,12 @@ export default function PreLancamentosAReconciliar({
                           {item.comprovante_url ? (
                             (() => {
                               const isPdf =
-                                item.comprovante_url.toLowerCase().includes(".pdf") ||
-                                item.comprovante_url.toLowerCase().includes("pdf");
+                                normalizarTexto(item.comprovante_url).includes(
+                                  normalizarTexto(".pdf")
+                                ) ||
+                                normalizarTexto(item.comprovante_url).includes(
+                                  normalizarTexto("pdf")
+                                );
                               return isPdf ? (
                                 <button
                                   onClick={() => {

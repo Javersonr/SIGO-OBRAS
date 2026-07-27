@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
@@ -119,8 +120,8 @@ export default function HistoricoInventario() {
         const busca = filtros.busca.toLowerCase();
         hist = hist.filter(
           (h) =>
-            h.ferramenta_codigo?.toLowerCase().includes(busca) ||
-            h.ferramenta_descricao?.toLowerCase().includes(busca)
+            normalizarTexto(h.ferramenta_codigo).includes(normalizarTexto(busca)) ||
+            normalizarTexto(h.ferramenta_descricao).includes(normalizarTexto(busca))
         );
       }
 

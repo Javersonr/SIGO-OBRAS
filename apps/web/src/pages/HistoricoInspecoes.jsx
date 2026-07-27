@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { sigo } from "@/api/sigoClient";
@@ -230,9 +231,9 @@ export default function HistoricoInspecoes() {
 
   const filteredInspecoes = inspecoes.filter(
     (insp) =>
-      insp.usuario_nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      insp.caminhao_placa?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      insp.caminhao_modelo?.toLowerCase().includes(searchTerm.toLowerCase())
+      normalizarTexto(insp.usuario_nome).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+      normalizarTexto(insp.caminhao_placa).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+      normalizarTexto(insp.caminhao_modelo).includes(normalizarTexto(searchTerm.toLowerCase()))
   );
 
   if (loading) {

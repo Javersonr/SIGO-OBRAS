@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
@@ -417,9 +418,15 @@ export default function ClientesTab({ empresaAtiva, clientes, loadData }) {
                   .filter(
                     (c) =>
                       searchCliente === "" ||
-                      c.nome_razao?.toLowerCase().includes(searchCliente.toLowerCase()) ||
-                      c.nome_fantasia?.toLowerCase().includes(searchCliente.toLowerCase()) ||
-                      c.contato_email?.toLowerCase().includes(searchCliente.toLowerCase()) ||
+                      normalizarTexto(c.nome_razao).includes(
+                        normalizarTexto(searchCliente.toLowerCase())
+                      ) ||
+                      normalizarTexto(c.nome_fantasia).includes(
+                        normalizarTexto(searchCliente.toLowerCase())
+                      ) ||
+                      normalizarTexto(c.contato_email).includes(
+                        normalizarTexto(searchCliente.toLowerCase())
+                      ) ||
                       c.contato_telefone?.includes(searchCliente) ||
                       c.documento?.includes(searchCliente)
                   )
@@ -478,9 +485,15 @@ export default function ClientesTab({ empresaAtiva, clientes, loadData }) {
           {clientes.filter(
             (c) =>
               searchCliente === "" ||
-              c.nome_razao?.toLowerCase().includes(searchCliente.toLowerCase()) ||
-              c.nome_fantasia?.toLowerCase().includes(searchCliente.toLowerCase()) ||
-              c.contato_email?.toLowerCase().includes(searchCliente.toLowerCase()) ||
+              normalizarTexto(c.nome_razao).includes(
+                normalizarTexto(searchCliente.toLowerCase())
+              ) ||
+              normalizarTexto(c.nome_fantasia).includes(
+                normalizarTexto(searchCliente.toLowerCase())
+              ) ||
+              normalizarTexto(c.contato_email).includes(
+                normalizarTexto(searchCliente.toLowerCase())
+              ) ||
               c.contato_telefone?.includes(searchCliente) ||
               c.documento?.includes(searchCliente)
           ).length > 50 && (
@@ -492,9 +505,15 @@ export default function ClientesTab({ empresaAtiva, clientes, loadData }) {
                   clientes.filter(
                     (c) =>
                       searchCliente === "" ||
-                      c.nome_razao?.toLowerCase().includes(searchCliente.toLowerCase()) ||
-                      c.nome_fantasia?.toLowerCase().includes(searchCliente.toLowerCase()) ||
-                      c.contato_email?.toLowerCase().includes(searchCliente.toLowerCase()) ||
+                      normalizarTexto(c.nome_razao).includes(
+                        normalizarTexto(searchCliente.toLowerCase())
+                      ) ||
+                      normalizarTexto(c.nome_fantasia).includes(
+                        normalizarTexto(searchCliente.toLowerCase())
+                      ) ||
+                      normalizarTexto(c.contato_email).includes(
+                        normalizarTexto(searchCliente.toLowerCase())
+                      ) ||
                       c.contato_telefone?.includes(searchCliente) ||
                       c.documento?.includes(searchCliente)
                   ).length
@@ -504,9 +523,15 @@ export default function ClientesTab({ empresaAtiva, clientes, loadData }) {
                   clientes.filter(
                     (c) =>
                       searchCliente === "" ||
-                      c.nome_razao?.toLowerCase().includes(searchCliente.toLowerCase()) ||
-                      c.nome_fantasia?.toLowerCase().includes(searchCliente.toLowerCase()) ||
-                      c.contato_email?.toLowerCase().includes(searchCliente.toLowerCase()) ||
+                      normalizarTexto(c.nome_razao).includes(
+                        normalizarTexto(searchCliente.toLowerCase())
+                      ) ||
+                      normalizarTexto(c.nome_fantasia).includes(
+                        normalizarTexto(searchCliente.toLowerCase())
+                      ) ||
+                      normalizarTexto(c.contato_email).includes(
+                        normalizarTexto(searchCliente.toLowerCase())
+                      ) ||
                       c.contato_telefone?.includes(searchCliente) ||
                       c.documento?.includes(searchCliente)
                   ).length

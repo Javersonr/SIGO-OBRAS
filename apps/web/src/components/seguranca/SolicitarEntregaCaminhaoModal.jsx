@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -128,8 +129,8 @@ export default function SolicitarEntregaCaminhaoModal({
       const matchBusca =
         !busca ||
         descricao.includes(busca) ||
-        f.codigo?.toLowerCase().includes(busca) ||
-        f.numero_serie?.toLowerCase().includes(busca);
+        normalizarTexto(f.codigo).includes(normalizarTexto(busca)) ||
+        normalizarTexto(f.numero_serie).includes(normalizarTexto(busca));
       return matchNome && matchBusca;
     });
   };
@@ -188,8 +189,8 @@ export default function SolicitarEntregaCaminhaoModal({
   const caminhaofiltrados = caminhaos.filter(
     (c) =>
       !buscaCaminhao ||
-      c.placa?.toLowerCase().includes(buscaCaminhao.toLowerCase()) ||
-      c.modelo?.toLowerCase().includes(buscaCaminhao.toLowerCase())
+      normalizarTexto(c.placa).includes(normalizarTexto(buscaCaminhao.toLowerCase())) ||
+      normalizarTexto(c.modelo).includes(normalizarTexto(buscaCaminhao.toLowerCase()))
   );
 
   const totalVinculados = ferramentasObrigatorias.filter((i) => i.vinculado).length;

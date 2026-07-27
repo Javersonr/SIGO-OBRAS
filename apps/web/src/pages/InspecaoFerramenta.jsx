@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
@@ -185,9 +186,9 @@ export default function InspecaoFerramenta() {
 
   const filteredInspecoes = inspecoes.filter(
     (i) =>
-      i.placa?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      i.modelo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      i.motorista?.toLowerCase().includes(searchTerm.toLowerCase())
+      normalizarTexto(i.placa).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+      normalizarTexto(i.modelo).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+      normalizarTexto(i.motorista).includes(normalizarTexto(searchTerm.toLowerCase()))
   );
 
   const statusColors = {

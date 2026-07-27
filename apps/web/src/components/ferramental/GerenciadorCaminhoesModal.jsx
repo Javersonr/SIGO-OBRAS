@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
@@ -183,9 +184,9 @@ export default function GerenciadorCaminhoesModal({
   const filteredCaminhoes = caminhoes.filter(
     (c) =>
       !searchTerm ||
-      c.placa?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.modelo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.motorista_padrao_nome?.toLowerCase().includes(searchTerm.toLowerCase())
+      normalizarTexto(c.placa).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+      normalizarTexto(c.modelo).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+      normalizarTexto(c.motorista_padrao_nome).includes(normalizarTexto(searchTerm.toLowerCase()))
   );
 
   return (

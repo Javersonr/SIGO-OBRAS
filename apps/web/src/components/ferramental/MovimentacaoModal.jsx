@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect, useRef } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
@@ -33,8 +34,8 @@ function CampoObrigatorioRow({
     .filter(Boolean);
   const ferramentasFiltradas = ferramentasDisponiveisParaCampo.filter(
     (f) =>
-      f.descricao?.toLowerCase().includes(buscaCampo.toLowerCase()) ||
-      f.codigo?.toLowerCase().includes(buscaCampo.toLowerCase())
+      normalizarTexto(f.descricao).includes(normalizarTexto(buscaCampo.toLowerCase())) ||
+      normalizarTexto(f.codigo).includes(normalizarTexto(buscaCampo.toLowerCase()))
   );
 
   return (
@@ -282,8 +283,8 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
             f.status === "Disponível" &&
             (f.descricao?.toLowerCase() === itemNome.toLowerCase() ||
               f.codigo?.toLowerCase() === itemNome.toLowerCase() ||
-              f.descricao?.toLowerCase().includes(itemNome.toLowerCase()) ||
-              itemNome.toLowerCase().includes(f.descricao?.toLowerCase()))
+              normalizarTexto(f.descricao).includes(normalizarTexto(itemNome.toLowerCase())) ||
+              normalizarTexto(itemNome).includes(normalizarTexto(f.descricao?.toLowerCase())))
         );
         return {
           nome: itemNome,
@@ -718,7 +719,7 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
             const descricaoLimpada = (row["Descrição"] || row.descricao || "").toLowerCase().trim();
             const ferramentaMatching = ferramentas.find(
               (f) =>
-                f.descricao.toLowerCase().includes(descricaoLimpada) ||
+                normalizarTexto(f.descricao).includes(normalizarTexto(descricaoLimpada)) ||
                 descricaoLimpada.includes(f.descricao.toLowerCase())
             );
             return {
@@ -973,8 +974,10 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
                       if (jaUsada) return false;
                       if (!busca) return true;
                       return (
-                        f.descricao?.toLowerCase().includes(busca.toLowerCase()) ||
-                        f.codigo?.toLowerCase().includes(busca.toLowerCase())
+                        normalizarTexto(f.descricao).includes(
+                          normalizarTexto(busca.toLowerCase())
+                        ) ||
+                        normalizarTexto(f.codigo).includes(normalizarTexto(busca.toLowerCase()))
                       );
                     });
                     return { globalIdx, selecionada, busca, candidatosFiltrados };
@@ -1189,11 +1192,11 @@ export default function MovimentacaoModal({ open, onClose, empresaAtiva, onSave,
                   const ferramentasFiltradas = ferramentas.filter((f) => {
                     if (!termo) return false;
                     return (
-                      f.descricao?.toLowerCase().includes(termo) ||
-                      f.codigo?.toLowerCase().includes(termo) ||
-                      f.codigo_secundario?.toLowerCase().includes(termo) ||
-                      f.numero_serie?.toLowerCase().includes(termo) ||
-                      f.localizacao?.toLowerCase().includes(termo)
+                      normalizarTexto(f.descricao).includes(normalizarTexto(termo)) ||
+                      normalizarTexto(f.codigo).includes(normalizarTexto(termo)) ||
+                      normalizarTexto(f.codigo_secundario).includes(normalizarTexto(termo)) ||
+                      normalizarTexto(f.numero_serie).includes(normalizarTexto(termo)) ||
+                      normalizarTexto(f.localizacao).includes(normalizarTexto(termo))
                     );
                   });
                   return (

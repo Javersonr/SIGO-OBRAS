@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
@@ -428,21 +429,26 @@ export default function Estoque() {
   const filteredSaldos = React.useMemo(() => {
     const filtered = saldos.filter((s) => {
       const matchSearch =
-        s.material_descricao?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.material_codigo?.toLowerCase().includes(searchTerm.toLowerCase());
+        normalizarTexto(s.material_descricao).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+        normalizarTexto(s.material_codigo).includes(normalizarTexto(searchTerm.toLowerCase()));
       const matchAlmox = filterAlmoxarifado === "all" || s.almoxarifado_id === filterAlmoxarifado;
       const matchCodigo =
-        !filterCodigo || s.material_codigo?.toLowerCase().includes(filterCodigo.toLowerCase());
+        !filterCodigo ||
+        normalizarTexto(s.material_codigo).includes(normalizarTexto(filterCodigo.toLowerCase()));
       const matchNome =
-        !filterNome || s.material_descricao?.toLowerCase().includes(filterNome.toLowerCase());
+        !filterNome ||
+        normalizarTexto(s.material_descricao).includes(normalizarTexto(filterNome.toLowerCase()));
       const matchUnidade =
-        !filterUnidade || s.unidade?.toLowerCase().includes(filterUnidade.toLowerCase());
+        !filterUnidade ||
+        normalizarTexto(s.unidade).includes(normalizarTexto(filterUnidade.toLowerCase()));
 
       // O(1) lookup pela Map em vez de materiais.find() (O(n))
       const material = materiaisById.get(s.material_id);
       const matchCategoria =
         !filterCategoria ||
-        material?.categoria?.toLowerCase().includes(filterCategoria.toLowerCase());
+        normalizarTexto(material?.categoria).includes(
+          normalizarTexto(filterCategoria.toLowerCase())
+        );
 
       return (
         matchSearch && matchAlmox && matchCodigo && matchNome && matchUnidade && matchCategoria
@@ -856,9 +862,15 @@ export default function Estoque() {
                   const gruposList = Object.values(grupos).filter((g) => {
                     return (
                       !searchTerm ||
-                      g.numero?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                      g.projeto_nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                      g.material_descricao?.toLowerCase().includes(searchTerm.toLowerCase())
+                      normalizarTexto(g.numero).includes(
+                        normalizarTexto(searchTerm.toLowerCase())
+                      ) ||
+                      normalizarTexto(g.projeto_nome).includes(
+                        normalizarTexto(searchTerm.toLowerCase())
+                      ) ||
+                      normalizarTexto(g.material_descricao).includes(
+                        normalizarTexto(searchTerm.toLowerCase())
+                      )
                     );
                   });
                   if (gruposList.length === 0)
@@ -1073,17 +1085,26 @@ export default function Estoque() {
                   .filter((m) => {
                     if (!m.ativo) return false;
                     const matchCodigo =
-                      !filterCodigo || m.codigo?.toLowerCase().includes(filterCodigo.toLowerCase());
+                      !filterCodigo ||
+                      normalizarTexto(m.codigo).includes(
+                        normalizarTexto(filterCodigo.toLowerCase())
+                      );
                     const matchNome =
                       !filterNome ||
-                      m.nome?.toLowerCase().includes(filterNome.toLowerCase()) ||
-                      m.descricao?.toLowerCase().includes(filterNome.toLowerCase());
+                      normalizarTexto(m.nome).includes(normalizarTexto(filterNome.toLowerCase())) ||
+                      normalizarTexto(m.descricao).includes(
+                        normalizarTexto(filterNome.toLowerCase())
+                      );
                     const matchUnidade =
                       !filterUnidade ||
-                      m.unidade?.toLowerCase().includes(filterUnidade.toLowerCase());
+                      normalizarTexto(m.unidade).includes(
+                        normalizarTexto(filterUnidade.toLowerCase())
+                      );
                     const matchCategoria =
                       !filterCategoria ||
-                      m.categoria?.toLowerCase().includes(filterCategoria.toLowerCase());
+                      normalizarTexto(m.categoria).includes(
+                        normalizarTexto(filterCategoria.toLowerCase())
+                      );
                     return matchCodigo && matchNome && matchUnidade && matchCategoria;
                   })
                   .map((mat) => {

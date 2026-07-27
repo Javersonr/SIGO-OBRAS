@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
@@ -71,7 +72,7 @@ export default function Chat() {
   };
 
   const filteredCanais = canais.filter((canal) =>
-    canal.nome?.toLowerCase().includes(searchTerm.toLowerCase())
+    normalizarTexto(canal.nome).includes(normalizarTexto(searchTerm.toLowerCase()))
   );
 
   if (!empresaAtiva || !user) return null;

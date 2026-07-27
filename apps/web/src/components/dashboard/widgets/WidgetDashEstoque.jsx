@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useEffect, useState, useMemo } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../../../Layout";
@@ -83,7 +84,7 @@ export default function WidgetDashEstoque({ onDadosCarregados }) {
               (m) =>
                 m.tipo === "Devolução" ||
                 m.tipo === "devolucao" ||
-                m.motivo?.toLowerCase().includes("devol")
+                normalizarTexto(m.motivo).includes(normalizarTexto("devol"))
             )
             .reduce((a, m) => a + (m.quantidade || 0), 0);
           // movItem pode ser array vazio se filter não casar (improvável aqui mas defensivo)
@@ -107,7 +108,7 @@ export default function WidgetDashEstoque({ onDadosCarregados }) {
         (m) =>
           m.tipo === "Devolução" ||
           m.tipo === "devolucao" ||
-          m.motivo?.toLowerCase().includes("devol")
+          normalizarTexto(m.motivo).includes(normalizarTexto("devol"))
       );
       const itensDevolvidos = [
         ...new Set(devolucoesMes.map((m) => m.material_id).filter(Boolean)),
@@ -136,8 +137,8 @@ export default function WidgetDashEstoque({ onDadosCarregados }) {
           d >= inicioMes &&
           d <= fimMes &&
           (m.tipo === "Inventário" ||
-            m.motivo?.toLowerCase().includes("inventário") ||
-            m.motivo?.toLowerCase().includes("inventario"))
+            normalizarTexto(m.motivo).includes(normalizarTexto("inventário")) ||
+            normalizarTexto(m.motivo).includes(normalizarTexto("inventario")))
         );
       });
 

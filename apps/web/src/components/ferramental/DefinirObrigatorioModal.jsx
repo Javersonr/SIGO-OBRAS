@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
@@ -198,7 +199,7 @@ export default function DefinirObrigatorioModal({
 
   const itensFiltrados = itens.filter((item) => {
     const label = isCaminhao ? `${item.placa} ${item.modelo || ""}` : item.nome;
-    return label.toLowerCase().includes(search.toLowerCase());
+    return normalizarTexto(label).includes(normalizarTexto(search.toLowerCase()));
   });
 
   const todosFiltradosSelecionados =

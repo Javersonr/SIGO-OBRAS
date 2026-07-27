@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
@@ -184,8 +185,8 @@ export default function ManutencaoTab() {
     const filtered = manutencoes.filter((m) => {
       const matchBusca =
         !busca ||
-        m.ferramenta_codigo?.toLowerCase().includes(busca.toLowerCase()) ||
-        m.ferramenta_descricao?.toLowerCase().includes(busca.toLowerCase());
+        normalizarTexto(m.ferramenta_codigo).includes(normalizarTexto(busca.toLowerCase())) ||
+        normalizarTexto(m.ferramenta_descricao).includes(normalizarTexto(busca.toLowerCase()));
       const matchStatus = filtroStatus === "Todas" || m.status === filtroStatus;
       return matchBusca && matchStatus;
     });

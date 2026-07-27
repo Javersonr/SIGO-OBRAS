@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React from "react";
 import { safeParseJSON } from "@/lib/json-utils";
 import { Button } from "@/components/ui/button";
@@ -591,7 +592,9 @@ export default function SolicitacaoModal({
                               sugestoesAberta === index && item.descricao.length >= 1
                                 ? materiais
                                     .filter((m) =>
-                                      m.nome?.toLowerCase().includes(item.descricao.toLowerCase())
+                                      normalizarTexto(m.nome).includes(
+                                        normalizarTexto(item.descricao.toLowerCase())
+                                      )
                                     )
                                     .slice(0, 10)
                                 : [];
@@ -644,7 +647,9 @@ export default function SolicitacaoModal({
                           (() => {
                             const filtrados = materiais
                               .filter((m) =>
-                                m.nome?.toLowerCase().includes(item.descricao.toLowerCase())
+                                normalizarTexto(m.nome).includes(
+                                  normalizarTexto(item.descricao.toLowerCase())
+                                )
                               )
                               .slice(0, 10);
                             if (filtrados.length === 0) return null;

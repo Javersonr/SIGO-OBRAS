@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
@@ -104,10 +105,10 @@ export default function EntregasTab({ empresaAtiva, user }) {
     .filter(
       (e) =>
         !busca ||
-        e.funcionario_nome?.toLowerCase().includes(busca.toLowerCase()) ||
-        e.funcao_nome?.toLowerCase().includes(busca.toLowerCase()) ||
-        e.caminhao_placa?.toLowerCase().includes(busca.toLowerCase()) ||
-        e.caminhao_modelo?.toLowerCase().includes(busca.toLowerCase())
+        normalizarTexto(e.funcionario_nome).includes(normalizarTexto(busca.toLowerCase())) ||
+        normalizarTexto(e.funcao_nome).includes(normalizarTexto(busca.toLowerCase())) ||
+        normalizarTexto(e.caminhao_placa).includes(normalizarTexto(busca.toLowerCase())) ||
+        normalizarTexto(e.caminhao_modelo).includes(normalizarTexto(busca.toLowerCase()))
     );
 
   const stats = {

@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
@@ -135,9 +136,9 @@ export default function InspecaoCampoTab({ empresaAtiva }) {
   const filtradas = inspecoes.filter(
     (i) =>
       !search ||
-      i.checklist_nome?.toLowerCase().includes(search.toLowerCase()) ||
-      i.local?.toLowerCase().includes(search.toLowerCase()) ||
-      i.responsavel_nome?.toLowerCase().includes(search.toLowerCase())
+      normalizarTexto(i.checklist_nome).includes(normalizarTexto(search.toLowerCase())) ||
+      normalizarTexto(i.local).includes(normalizarTexto(search.toLowerCase())) ||
+      normalizarTexto(i.responsavel_nome).includes(normalizarTexto(search.toLowerCase()))
   );
 
   const statusColor = {

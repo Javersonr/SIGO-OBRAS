@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -44,18 +45,18 @@ export default function RelatorioVendas({ dados }) {
     const total = oportunidades.length;
     const ganhas = oportunidades.filter(
       (o) =>
-        o.status_nome?.toLowerCase().includes("ganho") ||
-        o.status_nome?.toLowerCase().includes("aprovado")
+        normalizarTexto(o.status_nome).includes(normalizarTexto("ganho")) ||
+        normalizarTexto(o.status_nome).includes(normalizarTexto("aprovado"))
     ).length;
     const perdidas = oportunidades.filter(
       (o) =>
-        o.status_nome?.toLowerCase().includes("perdido") ||
-        o.status_nome?.toLowerCase().includes("cancelado")
+        normalizarTexto(o.status_nome).includes(normalizarTexto("perdido")) ||
+        normalizarTexto(o.status_nome).includes(normalizarTexto("cancelado"))
     ).length;
     const abertas = total - ganhas - perdidas;
     const valorTotal = oportunidades.reduce((s, o) => s + (o.valor_estimado || 0), 0);
     const valorGanho = oportunidades
-      .filter((o) => o.status_nome?.toLowerCase().includes("ganho"))
+      .filter((o) => normalizarTexto(o.status_nome).includes(normalizarTexto("ganho")))
       .reduce((s, o) => s + (o.valor_estimado || 0), 0);
     const txConversao = total > 0 ? Math.round((ganhas / total) * 100) : 0;
     return { total, ganhas, perdidas, abertas, valorTotal, valorGanho, txConversao };

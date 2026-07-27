@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -116,8 +117,8 @@ export default function HistoricoTab({ empresaAtiva, projetos }) {
     const filtradas = cotacoes.filter((cot) => {
       if (
         busca &&
-        !cot.numero?.toLowerCase().includes(buscaLower) &&
-        !cot.projeto_nome?.toLowerCase().includes(buscaLower)
+        !normalizarTexto(cot.numero).includes(normalizarTexto(buscaLower)) &&
+        !normalizarTexto(cot.projeto_nome).includes(normalizarTexto(buscaLower))
       ) {
         return false;
       }

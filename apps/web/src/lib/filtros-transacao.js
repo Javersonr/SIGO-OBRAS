@@ -43,13 +43,9 @@ export function dentroDoPeriodo(dataRef, periodo, hoje = new Date()) {
   }
 }
 
-// Normaliza texto p/ busca: minúsculas + sem acentos ("Elétrica" → "eletrica").
-export function normalizarTexto(s) {
-  return String(s || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "");
-}
+// Normalização central em lib/busca.js; re-exportada aqui por compatibilidade.
+import { normalizarTexto } from "./busca";
+export { normalizarTexto };
 
 export function filtrarTransacoes(transacoes, filtros = {}, opts = {}) {
   const { tipo, hoje = new Date() } = opts;

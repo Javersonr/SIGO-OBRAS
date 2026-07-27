@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect, useMemo } from "react";
 import { useEmpresa } from "../Layout";
 import { sigo, supabase } from "@/api/sigoClient";
@@ -151,9 +152,9 @@ export default function Contabilidade() {
       const q = filtros.busca.toLowerCase();
       lista = lista.filter(
         (n) =>
-          n.emit_nome?.toLowerCase().includes(q) ||
+          normalizarTexto(n.emit_nome).includes(normalizarTexto(q)) ||
           n.emit_cnpj?.includes(q) ||
-          n.numero?.toLowerCase().includes(q) ||
+          normalizarTexto(n.numero).includes(normalizarTexto(q)) ||
           n.chave_nfe?.includes(q)
       );
     }

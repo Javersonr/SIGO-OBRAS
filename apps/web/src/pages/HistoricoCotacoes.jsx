@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { sigo } from "@/api/sigoClient";
@@ -183,8 +184,8 @@ export default function HistoricoCotacoes() {
   const cotacoesFiltradas = cotacoesFornecedor.filter(
     (cot) =>
       !busca ||
-      cot.numero?.toLowerCase().includes(busca.toLowerCase()) ||
-      cot.projeto_nome?.toLowerCase().includes(busca.toLowerCase())
+      normalizarTexto(cot.numero).includes(normalizarTexto(busca.toLowerCase())) ||
+      normalizarTexto(cot.projeto_nome).includes(normalizarTexto(busca.toLowerCase()))
   );
 
   const stats = {

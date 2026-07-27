@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,7 +70,9 @@ function DraggableComprovante({ url, onFechar }) {
     };
   }, [size]);
 
-  const isPdf = url.toLowerCase().includes(".pdf") || url.toLowerCase().includes("pdf");
+  const isPdf =
+    normalizarTexto(url).includes(normalizarTexto(".pdf")) ||
+    normalizarTexto(url).includes(normalizarTexto("pdf"));
 
   return (
     <div

@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -152,7 +153,10 @@ export default function ConciliacaoBancaria({ empresaAtiva, contas, onReload }) 
 
     // Pular cabeçalho se existir
     const startIndex =
-      lines[0].toLowerCase().includes("data") || lines[0].toLowerCase().includes("date") ? 1 : 0;
+      normalizarTexto(lines[0]).includes(normalizarTexto("data")) ||
+      normalizarTexto(lines[0]).includes(normalizarTexto("date"))
+        ? 1
+        : 0;
 
     for (let i = startIndex; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -188,8 +192,8 @@ export default function ConciliacaoBancaria({ empresaAtiva, contas, onReload }) 
             }
           } else if (
             valor > 0 &&
-            (descricao.toLowerCase().includes("receb") ||
-              descricao.toLowerCase().includes("deposit"))
+            (normalizarTexto(descricao).includes(normalizarTexto("receb")) ||
+              normalizarTexto(descricao).includes(normalizarTexto("deposit")))
           ) {
             tipo = "credito";
           }
@@ -238,12 +242,16 @@ export default function ConciliacaoBancaria({ empresaAtiva, contas, onReload }) 
       if (regra.tipo_match === "exato") {
         descMatch = t.descricao === extrato.descricao;
       } else if (regra.tipo_match === "contem") {
-        descMatch = t.descricao?.toLowerCase().includes(extrato.descricao?.toLowerCase());
+        // needle vazio NÃO pode casar tudo (extrato sem descrição ≠ coringa)
+        const alvoContem = normalizarTexto(extrato.descricao);
+        descMatch = alvoContem.length > 0 && normalizarTexto(t.descricao).includes(alvoContem);
       } else if (regra.tipo_match === "palavra_chave" && regra.palavras_chave) {
         const palavras = safeParseJSON(regra.palavras_chave, []);
         descMatch =
           Array.isArray(palavras) &&
-          palavras.some((p) => extrato.descricao?.toLowerCase().includes(p.toLowerCase()));
+          palavras.some((p) =>
+            normalizarTexto(extrato.descricao).includes(normalizarTexto(p.toLowerCase()))
+          );
       }
 
       return valorMatch && dataMatch && (regra.ignorar_descricao || descMatch);

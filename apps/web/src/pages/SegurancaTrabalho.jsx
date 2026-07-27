@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
@@ -996,9 +997,9 @@ export default function SegurancaTrabalho() {
   const filteredFuncionarios = React.useMemo(() => {
     const filtered = funcionarios.filter(
       (f) =>
-        f.nome_completo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        normalizarTexto(f.nome_completo).includes(normalizarTexto(searchTerm.toLowerCase())) ||
         f.cpf?.includes(searchTerm) ||
-        f.funcao_nome?.toLowerCase().includes(searchTerm.toLowerCase())
+        normalizarTexto(f.funcao_nome).includes(normalizarTexto(searchTerm.toLowerCase()))
     );
 
     // Aplicar ordenação

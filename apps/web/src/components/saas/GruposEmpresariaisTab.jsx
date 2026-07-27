@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
@@ -218,7 +219,7 @@ export default function GruposEmpresariaisTab({ empresas: empresasProps = [] }) 
 
   const filteredGrupos = grupos.filter(
     (g) =>
-      g.nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      normalizarTexto(g.nome).includes(normalizarTexto(searchTerm.toLowerCase())) ||
       g.cnpj_principal?.includes(searchTerm)
   );
 

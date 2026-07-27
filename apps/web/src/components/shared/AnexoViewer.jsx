@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { resolveStorageUrl } from "@/api/sigoClient";
@@ -36,7 +37,7 @@ export default function AnexoViewer({ anexo, open, onOpenChange }) {
   const isPDF =
     fileType.includes("pdf") ||
     fileName.toLowerCase().endsWith(".pdf") ||
-    rawRef.toLowerCase().includes(".pdf");
+    normalizarTexto(rawRef).includes(normalizarTexto(".pdf"));
 
   const isImage =
     fileType.startsWith("image/") ||

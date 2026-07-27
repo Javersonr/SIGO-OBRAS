@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -139,8 +140,8 @@ export default function CotacaoModal({
     return fornecedores.filter(
       (f) =>
         !fornecedoresSelecionados.includes(f.id) &&
-        (f.nome_razao?.toLowerCase().includes(searchLower) ||
-          f.email?.toLowerCase().includes(searchLower))
+        (normalizarTexto(f.nome_razao).includes(normalizarTexto(searchLower)) ||
+          normalizarTexto(f.email).includes(normalizarTexto(searchLower)))
     );
   }, [fornecedores, fornecedoresSelecionados, searchFornecedor]);
 

@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
@@ -602,9 +603,9 @@ export default function FuncaoModal({
                           const busca = buscaTreinamentoRealizado.toLowerCase().trim();
                           if (!busca) return true;
                           return (
-                            t.nome?.toLowerCase().includes(busca) ||
-                            t.codigo?.toLowerCase().includes(busca) ||
-                            t.aluno_nome?.toLowerCase().includes(busca)
+                            normalizarTexto(t.nome).includes(normalizarTexto(busca)) ||
+                            normalizarTexto(t.codigo).includes(normalizarTexto(busca)) ||
+                            normalizarTexto(t.aluno_nome).includes(normalizarTexto(busca))
                           );
                         })
                         .map((treinamento) => (
@@ -736,9 +737,9 @@ export default function FuncaoModal({
                         const busca = buscaTreinamentoRealizado.toLowerCase().trim();
                         if (!busca) return true;
                         return (
-                          t.nome?.toLowerCase().includes(busca) ||
-                          t.codigo?.toLowerCase().includes(busca) ||
-                          t.aluno_nome?.toLowerCase().includes(busca)
+                          normalizarTexto(t.nome).includes(normalizarTexto(busca)) ||
+                          normalizarTexto(t.codigo).includes(normalizarTexto(busca)) ||
+                          normalizarTexto(t.aluno_nome).includes(normalizarTexto(busca))
                         );
                       }).length === 0 &&
                         buscaTreinamentoRealizado && (
@@ -860,7 +861,9 @@ export default function FuncaoModal({
                                       f.descricao
                                         ?.toLowerCase()
                                         .includes(e.target.value.toLowerCase()) ||
-                                      f.codigo?.toLowerCase().includes(e.target.value.toLowerCase())
+                                      normalizarTexto(f.codigo).includes(
+                                        normalizarTexto(e.target.value.toLowerCase())
+                                      )
                                   );
                                   setFilteredSuggestions(filtered);
                                   setShowSuggestions(`ferr-${idx}`);
@@ -1003,8 +1006,12 @@ export default function FuncaoModal({
                             if (value.trim()) {
                               const filtered = allFerramentasFerramenta.filter(
                                 (f) =>
-                                  f.descricao?.toLowerCase().includes(value.toLowerCase()) ||
-                                  f.codigo?.toLowerCase().includes(value.toLowerCase())
+                                  normalizarTexto(f.descricao).includes(
+                                    normalizarTexto(value.toLowerCase())
+                                  ) ||
+                                  normalizarTexto(f.codigo).includes(
+                                    normalizarTexto(value.toLowerCase())
+                                  )
                               );
                               setFilteredSuggestions(filtered);
                               setShowSuggestions("ferr-new");

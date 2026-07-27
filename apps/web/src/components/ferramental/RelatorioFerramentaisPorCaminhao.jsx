@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,9 +66,9 @@ export default function RelatorioFerramentaisPorCaminhao({ empresaAtiva }) {
 
   const filteredDados = dados.filter(
     (d) =>
-      d.placa?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      d.marca?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      d.modelo?.toLowerCase().includes(searchTerm.toLowerCase())
+      normalizarTexto(d.placa).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+      normalizarTexto(d.marca).includes(normalizarTexto(searchTerm.toLowerCase())) ||
+      normalizarTexto(d.modelo).includes(normalizarTexto(searchTerm.toLowerCase()))
   );
 
   const totalGeral = dados.reduce((sum, d) => sum + d.quantidade, 0);

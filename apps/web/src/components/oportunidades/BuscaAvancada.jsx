@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { safeParseJSON } from "@/lib/json-utils";
 import { Search, X, Filter } from "lucide-react";
@@ -38,12 +39,16 @@ export default function BuscaAvancada({ oportunidades, onResultsChange, statusLi
       if (!term.trim()) return oportunidades;
       const lowerTerm = term.toLowerCase();
       return oportunidades.filter((op) => {
-        const matchTitulo = (op.nome || op.titulo)?.toLowerCase().includes(lowerTerm);
-        const matchCliente = op.cliente_nome?.toLowerCase().includes(lowerTerm);
-        const matchStatus = op.status_nome?.toLowerCase().includes(lowerTerm);
-        const matchCidade = op.cidade?.toLowerCase().includes(lowerTerm);
+        const matchTitulo = normalizarTexto(op.nome || op.titulo).includes(
+          normalizarTexto(lowerTerm)
+        );
+        const matchCliente = normalizarTexto(op.cliente_nome).includes(normalizarTexto(lowerTerm));
+        const matchStatus = normalizarTexto(op.status_nome).includes(normalizarTexto(lowerTerm));
+        const matchCidade = normalizarTexto(op.cidade).includes(normalizarTexto(lowerTerm));
         const matchValor = op.valor_estimado?.toString().includes(term);
-        const matchModalidade = op.licitacao_modalidade?.toLowerCase().includes(lowerTerm);
+        const matchModalidade = normalizarTexto(op.licitacao_modalidade).includes(
+          normalizarTexto(lowerTerm)
+        );
         let matchResponsavel = false;
         if (op.responsaveis_ids) {
           // JSONB: pode vir array (supabase-js) ou string (legacy)
@@ -52,8 +57,8 @@ export default function BuscaAvancada({ oportunidades, onResultsChange, statusLi
             matchResponsavel = usuarios.some(
               (u) =>
                 ids.includes(u.id) &&
-                (u.usuario_email?.toLowerCase().includes(lowerTerm) ||
-                  u.nome_completo?.toLowerCase().includes(lowerTerm))
+                (normalizarTexto(u.usuario_email).includes(normalizarTexto(lowerTerm)) ||
+                  normalizarTexto(u.nome_completo).includes(normalizarTexto(lowerTerm)))
             );
           }
         }
@@ -84,7 +89,7 @@ export default function BuscaAvancada({ oportunidades, onResultsChange, statusLi
     // Sugestões de oportunidades
     results.slice(0, 5).forEach((op) => {
       const nome = op.nome || op.titulo;
-      if (nome?.toLowerCase().includes(lowerTerm)) {
+      if (normalizarTexto(nome).includes(normalizarTexto(lowerTerm))) {
         suggestions.push({
           text: nome,
           type: "oportunidade",
@@ -98,7 +103,7 @@ export default function BuscaAvancada({ oportunidades, onResultsChange, statusLi
     // Sugestões de clientes
     const clientes = [...new Set(results.map((o) => o.cliente_nome).filter(Boolean))];
     clientes.slice(0, 3).forEach((cliente) => {
-      if (cliente.toLowerCase().includes(lowerTerm)) {
+      if (normalizarTexto(cliente).includes(normalizarTexto(lowerTerm))) {
         suggestions.push({
           text: cliente,
           type: "cliente",
@@ -112,7 +117,7 @@ export default function BuscaAvancada({ oportunidades, onResultsChange, statusLi
     // Sugestões de cidades
     const cidades = [...new Set(results.map((o) => o.cidade).filter(Boolean))];
     cidades.slice(0, 3).forEach((cidade) => {
-      if (cidade.toLowerCase().includes(lowerTerm)) {
+      if (normalizarTexto(cidade).includes(normalizarTexto(lowerTerm))) {
         suggestions.push({
           text: cidade,
           type: "cidade",
@@ -126,7 +131,7 @@ export default function BuscaAvancada({ oportunidades, onResultsChange, statusLi
     // Sugestões de status
     const statusUnicos = [...new Set(results.map((o) => o.status_nome).filter(Boolean))];
     statusUnicos.slice(0, 3).forEach((status) => {
-      if (status.toLowerCase().includes(lowerTerm)) {
+      if (normalizarTexto(status).includes(normalizarTexto(lowerTerm))) {
         const statusObj = statusList.find((s) => s.nome === status);
         suggestions.push({
           text: status,

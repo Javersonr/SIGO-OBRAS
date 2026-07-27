@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import { useState, useEffect } from "react";
 import { Download, Search, CheckCircle2, Loader2 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -749,8 +750,12 @@ export default function ConfirmarEntregaModal({
                           .filter(
                             (i) =>
                               !buscaForramentas ||
-                              i.descricao?.toLowerCase().includes(buscaForramentas.toLowerCase()) ||
-                              i.item?.toLowerCase().includes(buscaForramentas.toLowerCase())
+                              normalizarTexto(i.descricao).includes(
+                                normalizarTexto(buscaForramentas.toLowerCase())
+                              ) ||
+                              normalizarTexto(i.item).includes(
+                                normalizarTexto(buscaForramentas.toLowerCase())
+                              )
                           );
                         if (ferramentas.length === 0)
                           return (
@@ -833,8 +838,12 @@ export default function ConfirmarEntregaModal({
                           .filter(
                             (i) =>
                               !buscaEpis ||
-                              i.descricao?.toLowerCase().includes(buscaEpis.toLowerCase()) ||
-                              i.item?.toLowerCase().includes(buscaEpis.toLowerCase())
+                              normalizarTexto(i.descricao).includes(
+                                normalizarTexto(buscaEpis.toLowerCase())
+                              ) ||
+                              normalizarTexto(i.item).includes(
+                                normalizarTexto(buscaEpis.toLowerCase())
+                              )
                           );
                         if (epis.length === 0)
                           return (

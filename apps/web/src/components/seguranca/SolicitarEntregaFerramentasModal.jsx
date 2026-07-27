@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -585,8 +586,8 @@ export default function SolicitarEntregaFerramentasModal({
       if (temVincAtivoOutro) return false; // Não mostrar se vinculado a outro funcionário/caminhão
 
       return (
-        f.descricao?.toLowerCase().includes(buscaFerramenta.toLowerCase()) ||
-        f.codigo?.toLowerCase().includes(buscaFerramenta.toLowerCase())
+        normalizarTexto(f.descricao).includes(normalizarTexto(buscaFerramenta.toLowerCase())) ||
+        normalizarTexto(f.codigo).includes(normalizarTexto(buscaFerramenta.toLowerCase()))
       );
     });
 
@@ -874,8 +875,9 @@ export default function SolicitarEntregaFerramentasModal({
                   {ferramentas
                     .filter(
                       (f) =>
-                        f.descricao?.toLowerCase().includes(novoItemDesc.toLowerCase()) &&
-                        f.descricao !== novoItemDesc
+                        normalizarTexto(f.descricao).includes(
+                          normalizarTexto(novoItemDesc.toLowerCase())
+                        ) && f.descricao !== novoItemDesc
                     )
                     .slice(0, 3)
                     .map((f, idx) => (
@@ -896,8 +898,9 @@ export default function SolicitarEntregaFerramentasModal({
                   {epis
                     .filter(
                       (e) =>
-                        e.descricao?.toLowerCase().includes(novoItemDesc.toLowerCase()) &&
-                        e.descricao !== novoItemDesc
+                        normalizarTexto(e.descricao).includes(
+                          normalizarTexto(novoItemDesc.toLowerCase())
+                        ) && e.descricao !== novoItemDesc
                     )
                     .slice(0, 3)
                     .map((e, idx) => (

@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useRef } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Send, Paperclip, X, AtSign } from "lucide-react";
@@ -95,7 +96,7 @@ export default function MessageInput({ onEnviar, usuariosEmpresa }) {
   const filteredUsuarios = usuariosEmpresa.filter((u) => {
     const searchAfterAt = mensagem.substring(cursorPosition);
     const palavra = searchAfterAt.split(/\s/)[0];
-    return u.usuario_email?.toLowerCase().includes(palavra.toLowerCase());
+    return normalizarTexto(u.usuario_email).includes(normalizarTexto(palavra.toLowerCase()));
   });
 
   return (

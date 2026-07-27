@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect, useCallback } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
@@ -142,7 +143,9 @@ export default function RegrasNcmTab({ empresaAtiva }) {
 
   const filtrada = busca
     ? lista.filter(
-        (r) => r.ncm?.includes(busca) || r.descricao?.toLowerCase().includes(busca.toLowerCase())
+        (r) =>
+          r.ncm?.includes(busca) ||
+          normalizarTexto(r.descricao).includes(normalizarTexto(busca.toLowerCase()))
       )
     : lista;
 

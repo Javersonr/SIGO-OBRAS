@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -189,8 +190,8 @@ export default function KitsTab({ empresaAtiva }) {
 
   const filteredKits = kits.filter(
     (k) =>
-      k.nome.toLowerCase().includes(busca.toLowerCase()) ||
-      k.codigo?.toLowerCase().includes(busca.toLowerCase())
+      normalizarTexto(k.nome).includes(normalizarTexto(busca.toLowerCase())) ||
+      normalizarTexto(k.codigo).includes(normalizarTexto(busca.toLowerCase()))
   );
 
   return (

@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -111,9 +112,9 @@ export default function ObrigatoriosUnificadosTab({
       if (search.trim()) {
         const s = search.toLowerCase();
         const matchText =
-          l.descricao.toLowerCase().includes(s) ||
-          l.funcoes.some((f) => f.toLowerCase().includes(s)) ||
-          l.caminhoes.some((c) => c.toLowerCase().includes(s));
+          normalizarTexto(l.descricao).includes(normalizarTexto(s)) ||
+          l.funcoes.some((f) => normalizarTexto(f).includes(normalizarTexto(s))) ||
+          l.caminhoes.some((c) => normalizarTexto(c).includes(normalizarTexto(s)));
         if (!matchText) return false;
       }
       // Filtro de tipo

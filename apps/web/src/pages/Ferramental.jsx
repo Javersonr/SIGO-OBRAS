@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeUrl } from "@/lib/safe-url";
@@ -368,8 +369,8 @@ export default function Ferramental() {
       } else if (
         ferr.caminhao_id ||
         (ferr.localizacao &&
-          (ferr.localizacao.toLowerCase().includes("caminhão") ||
-            ferr.localizacao.toLowerCase().includes("caminhao") ||
+          (normalizarTexto(ferr.localizacao).includes(normalizarTexto("caminhão")) ||
+            normalizarTexto(ferr.localizacao).includes(normalizarTexto("caminhao")) ||
             caminhoes.some((c) => c.placa === ferr.localizacao)))
       ) {
         setTipoLocalizacao("caminhao");
@@ -1079,7 +1080,9 @@ export default function Ferramental() {
               (item) =>
                 item.localizacao === filterStatus ||
                 (item.localizacao &&
-                  item.localizacao.toLowerCase().includes(filterStatus.toLowerCase()))
+                  normalizarTexto(item.localizacao).includes(
+                    normalizarTexto(filterStatus.toLowerCase())
+                  ))
             ));
         const matchTipo = filterTipo === "all" || f.tipo === filterTipo;
         const matchLaudo =

@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
@@ -73,7 +74,9 @@ export default function EstoqueCaminhaoTab({
         f.caminhao_id === caminhao.id ||
         (f.localizacao &&
           (f.localizacao === caminhao.placa ||
-            f.localizacao.toLowerCase().includes(caminhao.placa?.toLowerCase())))
+            normalizarTexto(f.localizacao).includes(
+              normalizarTexto(caminhao.placa?.toLowerCase())
+            )))
     );
   };
 
