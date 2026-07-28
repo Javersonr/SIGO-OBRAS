@@ -52,6 +52,17 @@ describe("dentroDoPeriodo", () => {
   it("período desconhecido não filtra", () => {
     expect(dentroDoPeriodo("2026-06-10", "qualquercoisa", HOJE)).toBe(true);
   });
+
+  it("dia 1º NÃO escorrega pro mês anterior (bug de fuso UTC-3)", () => {
+    // 'YYYY-MM-DD' parseado como UTC virava 21h do dia anterior no Brasil:
+    // despesa de 01/06 caía em maio e SUMIA do filtro "Este Mês".
+    expect(dentroDoPeriodo("2026-06-01", "mes", HOJE)).toBe(true);
+    expect(dentroDoPeriodo("2026-06-30", "mes", HOJE)).toBe(true);
+    expect(dentroDoPeriodo("2026-07-01", "mes", HOJE)).toBe(false);
+    expect(dentroDoPeriodo("2026-01-01", "ano", HOJE)).toBe(true); // 1º de janeiro no ano certo
+    expect(dentroDoPeriodo("2026-04-01", "trimestre", HOJE)).toBe(true); // 1º dia do 2º tri
+    expect(dentroDoPeriodo("2026-06-15", "hoje", HOJE)).toBe(true); // vencimento HOJE aparece em Hoje
+  });
 });
 
 describe("filtrarTransacoes", () => {

@@ -591,10 +591,11 @@ export default function ReceitasTab({
         const contasMap = new Map(todasContas.map((c) => [c.nome, c]));
 
         // Carregar apenas as últimas 1000 transações para verificar duplicidade (otimização)
+        // banco tem caixa mista ("Receita"/"receita") — eq exato não achava nada
         const transacoesExistentes = await sigo.entities.TransacaoFinanceira.filter(
           {
             empresa_id: empresaAtiva.id,
-            tipo: "receita",
+            tipo: { $in: ["Receita", "receita"] },
           },
           "-created_date",
           1000

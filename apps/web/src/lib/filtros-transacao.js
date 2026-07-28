@@ -8,12 +8,21 @@
  * `hoje` é injetável p/ testes determinísticos (default = agora).
  */
 
-// Um registro está dentro do período relativo a `hoje`? Comportamento idêntico
-// ao que vivia nos dois componentes (mantido 1:1 para não mudar o que aparece).
+// 'YYYY-MM-DD' no new Date() é interpretado como MEIA-NOITE UTC — em UTC-3
+// vira 21h do dia ANTERIOR, então despesa com vencimento no dia 1º "mudava"
+// de mês e sumia do filtro "Este Mês". Parse LOCAL (ao meio-dia) resolve.
+function parseDataLocal(dataRef) {
+  if (dataRef instanceof Date) return dataRef;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dataRef));
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3], 12);
+  return new Date(dataRef);
+}
+
+// Um registro está dentro do período relativo a `hoje`?
 export function dentroDoPeriodo(dataRef, periodo, hoje = new Date()) {
   if (!periodo || periodo === "todos") return true;
   if (!dataRef) return false; // sem data não casa um período específico
-  const d = new Date(dataRef);
+  const d = parseDataLocal(dataRef);
 
   switch (periodo) {
     case "hoje":
