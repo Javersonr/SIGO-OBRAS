@@ -1,4 +1,5 @@
 import { normalizarTexto } from "@/lib/busca";
+import { senhaEstaHasheada, rotacionarCredencialFornecedor } from "@/lib/senha-portal";
 import React, { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,7 +79,10 @@ export default function CotacaoModal({
               if (acessos.length > 0) {
                 creds[fv.fornecedor_id] = {
                   email: acessos[0].fornecedor_email,
-                  senha: acessos[0].senha_acesso,
+                  // hash não é exibível; a senha em claro só nasce ao ENVIAR (rotação)
+                  senha: senhaEstaHasheada(acessos[0].senha_acesso)
+                    ? null
+                    : acessos[0].senha_acesso,
                 };
               }
             } catch (e) {
@@ -256,39 +260,21 @@ export default function CotacaoModal({
 
       setLinksCotacao(links);
 
-      // Buscar ou criar credenciais (email/senha) dos fornecedores para incluir na mensagem WhatsApp
+      // ENVIO da cotação = rotaciona a credencial de cada fornecedor: gera senha
+      // nova, grava só o HASH no banco e usa a senha em claro na mensagem.
       const credenciais = {};
       for (const cotForn of todosCotForn) {
         try {
           const fornecedor = fornecedores.find((f) => f.id === cotForn.fornecedor_id);
-          const acessos = await sigo.entities.FornecedorAcesso.filter({
-            fornecedor_id: cotForn.fornecedor_id,
-            empresa_id: empresaAtiva.id,
-            ativo: true,
+          const cred = await rotacionarCredencialFornecedor(sigo, {
+            empresaId: empresaAtiva.id,
+            fornecedorId: cotForn.fornecedor_id,
+            fornecedorNome: fornecedor?.nome_razao,
+            fornecedorEmail: fornecedor?.email,
           });
-          if (acessos.length > 0) {
-            credenciais[cotForn.fornecedor_id] = {
-              email: acessos[0].fornecedor_email,
-              senha: acessos[0].senha_acesso,
-            };
-          } else if (fornecedor?.email) {
-            // Criar acesso automaticamente se não existir
-            const senhaGerada = Math.random().toString(36).slice(2, 10).toUpperCase();
-            const novoAcesso = await sigo.entities.FornecedorAcesso.create({
-              empresa_id: empresaAtiva.id,
-              fornecedor_id: cotForn.fornecedor_id,
-              fornecedor_nome: fornecedor.nome_razao,
-              fornecedor_email: fornecedor.email,
-              senha_acesso: senhaGerada,
-              ativo: true,
-            });
-            credenciais[cotForn.fornecedor_id] = {
-              email: fornecedor.email,
-              senha: senhaGerada,
-            };
-          }
+          if (cred) credenciais[cotForn.fornecedor_id] = cred;
         } catch (e) {
-          console.error("Erro ao buscar/criar acesso fornecedor:", e);
+          console.error("Erro ao rotacionar acesso do fornecedor:", e);
         }
       }
       setCredenciaisFornecedores(credenciais);
@@ -315,7 +301,10 @@ export default function CotacaoModal({
   };
 
   const buildMensagemWhatsApp = (fornecedor, link, creds) => {
-    const credLine = creds ? `\n🔑 *Login:* ${creds.email}\n🔑 *Senha:* ${creds.senha}` : "";
+    // senha null = já está em hash no banco; nova senha só nasce na ação de enviar
+    const credLine = creds
+      ? `\n🔑 *Login:* ${creds.email}\n🔑 *Senha:* ${creds.senha || "(a mesma enviada anteriormente)"}`
+      : "";
     return `Olá *${fornecedor.nome_razao}*!\n\nVocê foi convidado a participar da cotação *${solicitacao?.numero}*.\n\n${solicitacao?.projeto_nome ? `📋 Projeto: ${solicitacao.projeto_nome}\n` : ""}${dataLimite ? `📅 Prazo: ${new Date(dataLimite).toLocaleDateString("pt-BR")}\n` : ""}${credLine}\n🔗 Acesse aqui:\n${link}\n\nAtenciosamente,\n*${empresaAtiva.nome_fantasia || empresaAtiva.razao_social || empresaAtiva.nome}*`;
   };
 
@@ -326,7 +315,24 @@ export default function CotacaoModal({
       alert("Fornecedor não tem telefone cadastrado");
       return;
     }
-    const creds = credenciaisFornecedores[fornecedor.id];
+    // Enviar = rotaciona a senha se só existe o hash (mensagem sai com senha nova)
+    let creds = credenciaisFornecedores[fornecedor.id];
+    if (!creds?.senha) {
+      try {
+        const nova = await rotacionarCredencialFornecedor(sigo, {
+          empresaId: empresaAtiva.id,
+          fornecedorId: fornecedor.id,
+          fornecedorNome: fornecedor.nome_razao,
+          fornecedorEmail: fornecedor.email,
+        });
+        if (nova) {
+          creds = nova;
+          setCredenciaisFornecedores((prev) => ({ ...prev, [fornecedor.id]: nova }));
+        }
+      } catch (e) {
+        console.error("Erro ao rotacionar acesso do fornecedor:", e);
+      }
+    }
     const mensagem = buildMensagemWhatsApp(fornecedor, link, creds);
     window.open(`https://wa.me/${telefone}?text=${encodeURIComponent(mensagem)}`, "_blank");
   };
@@ -464,9 +470,29 @@ export default function CotacaoModal({
                                   type="button"
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => {
+                                  onClick={async () => {
                                     const telefone = fornecedor.telefone?.replace(/\D/g, "");
-                                    const creds = credenciaisFornecedores[fornecedor.id];
+                                    // enviar = rotaciona a senha se só existe o hash
+                                    let creds = credenciaisFornecedores[fornecedor.id];
+                                    if (!creds?.senha) {
+                                      try {
+                                        const nova = await rotacionarCredencialFornecedor(sigo, {
+                                          empresaId: empresaAtiva.id,
+                                          fornecedorId: fornecedor.id,
+                                          fornecedorNome: fornecedor.nome_razao,
+                                          fornecedorEmail: fornecedor.email,
+                                        });
+                                        if (nova) {
+                                          creds = nova;
+                                          setCredenciaisFornecedores((prev) => ({
+                                            ...prev,
+                                            [fornecedor.id]: nova,
+                                          }));
+                                        }
+                                      } catch (e) {
+                                        console.error("Erro ao rotacionar acesso:", e);
+                                      }
+                                    }
                                     const mensagem = buildMensagemWhatsApp(
                                       fornecedor,
                                       linkData.link,

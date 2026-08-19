@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { senhaEstaHasheada, rotacionarCredencialFornecedor } from "@/lib/senha-portal";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,7 +64,8 @@ export default function LinksModal({ open, onOpenChange, cotacao, empresaAtiva, 
           if (acessos.length > 0) {
             creds[cf.fornecedor_id] = {
               email: acessos[0].fornecedor_email,
-              senha: acessos[0].senha_acesso,
+              // hash não é exibível; senha nova só nasce ao ENVIAR (rotação)
+              senha: senhaEstaHasheada(acessos[0].senha_acesso) ? null : acessos[0].senha_acesso,
             };
           }
         } catch (e) {
@@ -83,10 +85,29 @@ export default function LinksModal({ open, onOpenChange, cotacao, empresaAtiva, 
     alert("Link copiado!");
   };
 
-  const enviarWhatsApp = (fornecedor) => {
+  const enviarWhatsApp = async (fornecedor) => {
     const link = `${window.location.origin}/#/AcessoFornecedor?token=${fornecedor.token}`;
-    const creds = credenciais[fornecedor.fornecedor_id];
-    const credLine = creds ? `\n🔑 *Login:* ${creds.email}\n🔑 *Senha:* ${creds.senha}` : "";
+    // Enviar = rotaciona a senha se só existe o hash (mensagem sai com senha nova)
+    let creds = credenciais[fornecedor.fornecedor_id];
+    if (creds && !creds.senha) {
+      try {
+        const nova = await rotacionarCredencialFornecedor(sigo, {
+          empresaId: empresaAtiva.id,
+          fornecedorId: fornecedor.fornecedor_id,
+          fornecedorNome: fornecedor.fornecedor_nome,
+          fornecedorEmail: creds.email,
+        });
+        if (nova) {
+          creds = nova;
+          setCredenciais((prev) => ({ ...prev, [fornecedor.fornecedor_id]: nova }));
+        }
+      } catch (e) {
+        console.error("Erro ao rotacionar acesso do fornecedor:", e);
+      }
+    }
+    const credLine = creds
+      ? `\n🔑 *Login:* ${creds.email}\n🔑 *Senha:* ${creds.senha || "(a mesma enviada anteriormente)"}`
+      : "";
 
     const mensagem = `Olá *${fornecedor.fornecedor_nome}*!
 
@@ -515,7 +536,8 @@ ${empresaAtiva.nome_fantasia || empresaAtiva.razao_social || empresaAtiva.nome}
                             <p className="text-slate-600">
                               🔑 Senha:{" "}
                               <span className="font-mono font-bold">
-                                {credenciais[fornecedor.fornecedor_id].senha}
+                                {credenciais[fornecedor.fornecedor_id].senha ||
+                                  "•••••• (nova ao enviar por WhatsApp)"}
                               </span>
                             </p>
                           </div>
