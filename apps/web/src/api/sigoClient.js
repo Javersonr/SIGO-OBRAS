@@ -62,7 +62,18 @@ legacy.functions.invoke = async function patchedInvoke(name, payload = {}) {
       const data = await supa.functions.invoke(supaName, payload);
       return { data };
     } catch (err) {
-      const msg = err?.context?.error || err?.message || "Erro na função";
+      // FunctionsHttpError: err.context é a Response — o motivo real (ex.:
+      // "Credenciais inválidas") está no BODY. Sem ler, a UI mostrava o
+      // genérico "Edge Function returned a non-2xx status code".
+      let msg = err?.message || "Erro na função";
+      try {
+        if (err?.context && typeof err.context.json === "function") {
+          const body = await err.context.json();
+          msg = body?.error || body?.message || msg;
+        }
+      } catch {
+        /* body não-JSON: mantém a mensagem genérica */
+      }
       return { data: { success: false, error: msg }, error: err };
     }
   }
