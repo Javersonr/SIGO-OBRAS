@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
@@ -278,7 +279,9 @@ export default function ProjetoFormSheet({
                         (t) =>
                           t.tipo !== "orcamento" &&
                           (!templateSearchTerm ||
-                            t.nome.toLowerCase().includes(templateSearchTerm.toLowerCase()))
+                            normalizarTexto(t.nome).includes(
+                              normalizarTexto(templateSearchTerm.toLowerCase())
+                            ))
                       )
                       .map((t) => (
                         <div
@@ -417,7 +420,7 @@ export default function ProjetoFormSheet({
                         size="sm"
                         disabled={!novaOrigem.trim()}
                         onClick={async () => {
-                          const o = await sigo.entities.OrigemOportunidade.create({
+                          const o = await sigo.entities.OrigemProjeto.create({
                             empresa_id: empresaAtiva.id,
                             nome: novaOrigem,
                           });

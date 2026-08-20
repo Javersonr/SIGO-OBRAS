@@ -254,7 +254,7 @@ export default function DiarioObraTab({
   React.useEffect(() => {
     if (!projetoId) return;
     if (showOnlyTasks) {
-      // No modo Oportunidades (Planejamento), só carrega etapas para o cronograma
+      // No modo Planejamento, só carrega etapas para o cronograma
       loadEtapas();
       return;
     }

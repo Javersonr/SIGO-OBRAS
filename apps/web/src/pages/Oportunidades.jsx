@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
-import { useNavigate } from "react-router-dom";
-import { createPageUrl } from "../utils";
 import { safeParseJSON } from "@/lib/json-utils";
+import { normalizarTexto } from "@/lib/busca";
 import { Plus, Edit, Trash2, Calendar, User, X, FileText, Copy, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,8 +54,6 @@ export default function Oportunidades() {
 
   const temPermissoesGranulares = Object.keys(permissoes).length > 0;
   const podeVerValores = perfil === "Admin" || !temPermissoesGranulares;
-  const navigate = useNavigate();
-
   const [oportunidades, setOportunidades] = useState([]);
   const [statusList, setStatusList] = useState([]);
   const [origensList, setOrigensList] = useState([]);
@@ -254,49 +251,75 @@ export default function Oportunidades() {
     setSearchResults(oportunidades);
   }, [oportunidades]);
 
-  const handleMigrarParaProjeto = async (op) => {
-    if (!confirm("Migrar esta oportunidade para Projetos?")) return;
-    const statusGanho = statusList.find((s) => s.tipo === "ganho");
-    await sigo.entities.Oportunidade.update(op.id, {
-      arquivado: true,
-      status_id: statusGanho?.id || op.status_id,
-      status_nome: statusGanho?.nome || op.status_nome,
+  // Regra de negócio: oportunidade GANHA vira projeto EM ANDAMENTO (execução).
+  // O projeto NÃO herda o status do funil — senão nascia "Ganho"/"Novo Lead" e
+  // poluía o Kanban de Projetos (ou ficava sem coluna).
+  const resolveProjetoStatus = async () => {
+    const statusProjetos = await sigo.entities.StatusProjeto.filter({
+      empresa_id: empresaAtiva.id,
     });
+    const emAndamento = statusProjetos.find((s) => normalizarTexto(s.nome) === "em andamento");
+    if (emAndamento) return emAndamento;
+    return await sigo.entities.StatusProjeto.create({
+      empresa_id: empresaAtiva.id,
+      nome: "Em Andamento",
+      cor: "#10b981",
+      ordem: 1,
+      tipo: "aberto",
+    });
+  };
 
-    // Projeto usa responsaveis_emails (array de emails); Oportunidade usa
-    // responsaveis_ids (array de uuids). Convertemos via lookup no usuariosEmpresa.
+  const resolveProjetoOrigem = async (op) => {
+    const origemNome = op.origem_nome || origensList.find((o) => o.id === op.origem_id)?.nome;
+    if (!origemNome) return null;
+
+    const origensProjeto = await sigo.entities.OrigemProjeto.filter({
+      empresa_id: empresaAtiva.id,
+    });
+    const existente = origensProjeto.find(
+      (o) => o.nome?.toLowerCase() === origemNome.toLowerCase()
+    );
+    if (existente) return existente;
+
+    return await sigo.entities.OrigemProjeto.create({
+      empresa_id: empresaAtiva.id,
+      nome: origemNome,
+    });
+  };
+
+  const migrarOportunidadeParaProjeto = async (op, statusOportunidade) => {
+    const existentes = await sigo.entities.Projeto.filter({
+      empresa_id: op.empresa_id,
+      oportunidade_origem_id: op.id,
+    });
+    if (existentes.length > 0) return existentes[0];
+
+    const [statusProjeto, origemProjeto] = await Promise.all([
+      resolveProjetoStatus(),
+      resolveProjetoOrigem(op),
+    ]);
+
     const ids = safeParseJSON(op.responsaveis_ids, []);
     const emails = (Array.isArray(ids) ? ids : [])
       .map((id) => usuariosEmpresa.find((u) => u.id === id)?.usuario_email)
       .filter(Boolean);
-    const responsaveisEmails = JSON.stringify(emails);
 
-    // Copiamos TODOS os campos preserváveis. Bug histórico: faltavam descricao,
-    // observacoes, probabilidade, data_fechamento_prevista, origem,
-    // licitacao_* e endereço completo — usuário reportava "perde dados".
     const novoProjeto = await sigo.entities.Projeto.create({
       empresa_id: op.empresa_id,
       nome: op.nome || op.titulo,
-      // Cliente
       cliente_id: op.cliente_id,
       cliente_nome: op.cliente_nome,
-      // Valores e prazos
       valor_estimado: op.valor_estimado,
       probabilidade: op.probabilidade,
       data_fechamento_prevista: op.data_fechamento_prevista,
-      // Descritivos
       descricao: op.descricao,
       observacoes: op.observacoes,
-      // Origem (CRM origem, não confundir com oportunidade_origem_id)
-      origem_id: op.origem_id,
-      origem_nome: op.origem_nome,
-      // Responsáveis (formato Projeto)
-      responsaveis_emails: responsaveisEmails,
-      // Licitação
+      origem_id: origemProjeto?.id || null,
+      origem_nome: origemProjeto?.nome || op.origem_nome || null,
+      responsaveis_emails: JSON.stringify(emails),
       licitacao_modalidade: op.licitacao_modalidade,
       licitacao_data: op.licitacao_data,
       licitacao_horario: op.licitacao_horario,
-      // Endereço completo
       cep: op.cep,
       endereco: op.endereco,
       numero: op.numero,
@@ -304,19 +327,19 @@ export default function Oportunidades() {
       bairro: op.bairro,
       cidade: op.cidade,
       estado: op.estado,
-      // Tags
       etiquetas_ids: op.etiquetas_ids,
-      // Rastreabilidade + status
       oportunidade_origem_id: op.id,
-      status_id: statusGanho?.id || null,
-      status_nome: statusGanho?.nome || null,
+      status_id: statusProjeto?.id || null,
+      status_nome: statusProjeto?.nome || "Em Andamento",
     });
+
     const [itensOrcamento, etapas, arquivosOp, atualizacoesOp] = await Promise.all([
       sigo.entities.OrcamentoItem.filter({ oportunidade_id: op.id }),
       sigo.entities.CronogramaEtapa.filter({ oportunidade_id: op.id }),
       sigo.entities.ArquivoOportunidade.filter({ oportunidade_id: op.id }),
       sigo.entities.OportunidadeAtualizacao.filter({ oportunidade_id: op.id }),
     ]);
+
     await Promise.all([
       ...itensOrcamento.map((item) =>
         sigo.entities.OrcamentoItem.update(item.id, {
@@ -343,8 +366,25 @@ export default function Oportunidades() {
         })
       ),
     ]);
-    alert("Oportunidade migrada para Projetos!");
-    navigate(createPageUrl("Projetos"));
+
+    await sigo.entities.OportunidadeAtualizacao.create({
+      empresa_id: op.empresa_id,
+      projeto_id: novoProjeto.id,
+      usuario_nome: user?.full_name,
+      tipo: "Sistema",
+      descricao: `Projeto criado a partir da oportunidade "${op.nome || op.titulo}"`,
+    });
+
+    return novoProjeto;
+  };
+
+  const handleGanhamos = async (op) => {
+    const statusGanho = statusList.find((s) => s.tipo === "ganho");
+    if (!statusGanho) {
+      alert('Cadastre um status de oportunidade com tipo "Ganho" antes de usar esta ação.');
+      return;
+    }
+    await handleChangeStatus(op, statusGanho.id);
   };
 
   const loadAtualizacoes = async (opId) => {
@@ -692,24 +732,35 @@ export default function Oportunidades() {
         o.id === op.id ? { ...o, status_id: newStatusId, status_nome: statusNovo?.nome } : o
       )
     );
-    sigo.entities.Oportunidade.update(op.id, {
-      status_id: newStatusId,
-      status_nome: statusNovo?.nome,
-    }).catch(() => {
+    try {
+      const opAtualizada = {
+        ...op,
+        status_id: newStatusId,
+        status_nome: statusNovo?.nome,
+      };
+      await sigo.entities.Oportunidade.update(op.id, {
+        status_id: newStatusId,
+        status_nome: statusNovo?.nome,
+      });
+      await sigo.entities.OportunidadeAtualizacao.create({
+        empresa_id: empresaAtiva.id,
+        oportunidade_id: op.id,
+        usuario_nome: user?.full_name,
+        tipo: "Status",
+        descricao: `Status alterado de "${statusAnterior?.nome}" para "${statusNovo?.nome}"`,
+      });
+      if (statusNovo?.tipo === "ganho") {
+        await migrarOportunidadeParaProjeto(opAtualizada, statusNovo);
+      }
+    } catch (error) {
       // Reverter em caso de erro
       setOportunidades((prev) =>
         prev.map((o) =>
           o.id === op.id ? { ...o, status_id: op.status_id, status_nome: op.status_nome } : o
         )
       );
-    });
-    sigo.entities.OportunidadeAtualizacao.create({
-      empresa_id: empresaAtiva.id,
-      oportunidade_id: op.id,
-      usuario_nome: user?.full_name,
-      tipo: "Status",
-      descricao: `Status alterado de "${statusAnterior?.nome}" para "${statusNovo?.nome}"`,
-    }).catch(() => {});
+      alert("Erro ao alterar status: " + (error?.message || error));
+    }
   };
 
   const handleDragEnd = (result) => {
@@ -1309,10 +1360,8 @@ export default function Oportunidades() {
                                         <PermissionGate modulo="Oportunidades" aba="Lista">
                                           <EntityActions
                                             entity={op}
-                                            markAsCompleteTitle="Migrar para Projetos"
-                                            onMarkAsComplete={
-                                              podeEditarOps ? handleMigrarParaProjeto : null
-                                            }
+                                            markAsCompleteTitle="Ganhamos - migrar para Projetos"
+                                            onMarkAsComplete={podeEditarOps ? handleGanhamos : null}
                                             onCopy={
                                               podeCriarOps
                                                 ? (o) =>
@@ -1442,8 +1491,8 @@ export default function Oportunidades() {
                       <PermissionGate modulo="Oportunidades" aba="Lista">
                         <EntityActions
                           entity={op}
-                          markAsCompleteTitle="Migrar para Projetos"
-                          onMarkAsComplete={podeEditarOps ? handleMigrarParaProjeto : null}
+                          markAsCompleteTitle="Ganhamos - migrar para Projetos"
+                          onMarkAsComplete={podeEditarOps ? handleGanhamos : null}
                           onCopy={
                             podeCriarOps
                               ? (o) =>

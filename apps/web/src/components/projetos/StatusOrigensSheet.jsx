@@ -35,9 +35,9 @@ export default function StatusOrigensSheet({
   const handleSaveStatus = async () => {
     if (!statusForm.nome) return;
     if (editingStatus) {
-      await sigo.entities.StatusOportunidade.update(editingStatus.id, statusForm);
+      await sigo.entities.StatusProjeto.update(editingStatus.id, statusForm);
     } else {
-      await sigo.entities.StatusOportunidade.create({ empresa_id: empresaAtiva.id, ...statusForm });
+      await sigo.entities.StatusProjeto.create({ empresa_id: empresaAtiva.id, ...statusForm });
     }
     setStatusForm({ nome: "", cor: "#3B82F6", ordem: 0, tipo: "aberto" });
     setEditingStatus(null);
@@ -46,13 +46,13 @@ export default function StatusOrigensSheet({
 
   const handleDeleteStatus = async (s) => {
     if (!confirm("Excluir este status?")) return;
-    await sigo.entities.StatusOportunidade.delete(s.id);
+    await sigo.entities.StatusProjeto.delete(s.id);
     onReload();
   };
 
   const handleCriarOrigem = async () => {
     if (!novaOrigem.trim()) return;
-    await sigo.entities.OrigemOportunidade.create({
+    await sigo.entities.OrigemProjeto.create({
       empresa_id: empresaAtiva.id,
       nome: novaOrigem,
     });
@@ -207,7 +207,7 @@ export default function StatusOrigensSheet({
                       size="icon"
                       onClick={async () => {
                         if (!confirm("Excluir esta origem?")) return;
-                        await sigo.entities.OrigemOportunidade.delete(o.id);
+                        await sigo.entities.OrigemProjeto.delete(o.id);
                         onReload();
                       }}
                     >

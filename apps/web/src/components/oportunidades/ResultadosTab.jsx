@@ -16,12 +16,12 @@ export default function ResultadosTab({ oportunidadeId, empresaAtiva, orcamentoI
     const [receitasData, despesasData] = await Promise.all([
       sigo.entities.TransacaoFinanceira.filter({
         empresa_id: empresaAtiva.id,
-        projeto_id: oportunidadeId,
+        oportunidade_id: oportunidadeId,
         tipo: "receita",
       }),
       sigo.entities.TransacaoFinanceira.filter({
         empresa_id: empresaAtiva.id,
-        projeto_id: oportunidadeId,
+        oportunidade_id: oportunidadeId,
         tipo: "despesa",
       }),
     ]);

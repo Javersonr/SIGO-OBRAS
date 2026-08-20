@@ -1,3 +1,4 @@
+import { normalizarTexto } from "@/lib/busca";
 import React from "react";
 import { createPortal } from "react-dom";
 import { sigo } from "@/api/sigoClient";
@@ -401,7 +402,7 @@ export default function OrcamentoTab({
 
   const handleSalvarTemplate = async () => {
     if (!nomeTemplate.trim()) return;
-    await sigo.entities.TemplateOportunidade.create({
+    await sigo.entities.TemplateProjeto.create({
       empresa_id: empresaAtiva.id,
       nome: nomeTemplate,
       tipo: "orcamento",
@@ -694,8 +695,12 @@ export default function OrcamentoTab({
                   const podeEditar = true; // todos podem editar itens do orçamento do projeto
                   const filteredMats = materiais.filter(
                     (m) =>
-                      m.nome_item?.toLowerCase().includes(itemSearchTerm.toLowerCase()) ||
-                      m.codigo?.toLowerCase().includes(itemSearchTerm.toLowerCase())
+                      normalizarTexto(m.nome_item).includes(
+                        normalizarTexto(itemSearchTerm.toLowerCase())
+                      ) ||
+                      normalizarTexto(m.codigo).includes(
+                        normalizarTexto(itemSearchTerm.toLowerCase())
+                      )
                   );
                   return (
                     <tr

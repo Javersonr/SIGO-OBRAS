@@ -74,7 +74,7 @@ export default function Projetos() {
 
   const temPermissoesGranulares = Object.keys(permissoes).length > 0;
 
-  // Pode ver valores: Admin OU quem tem 100% acesso aos módulos Oportunidades, Projetos E Financeiro (sem granularidade)
+  // Pode ver valores: Admin OU acesso total sem permissões granulares.
   const podeVerValores = React.useMemo(() => {
     if (perfil === "Admin") return true;
 
@@ -132,8 +132,6 @@ export default function Projetos() {
   const [solicitacaoCompraForm, setSolicitacaoCompraForm] = useState({
     projeto_id: "",
     projeto_nome: "",
-    oportunidade_id: "",
-    oportunidade_nome: "",
     aprovador_id: "",
     aprovador_nome: "",
     prioridade: "Normal",
@@ -154,10 +152,10 @@ export default function Projetos() {
       const [projs, status, origens, clientesList, templatesList, usuariosList] = await Promise.all(
         [
           sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
-          sigo.entities.StatusOportunidade.filter({ empresa_id: empresaAtiva.id }),
-          sigo.entities.OrigemOportunidade.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.StatusProjeto.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.OrigemProjeto.filter({ empresa_id: empresaAtiva.id }),
           sigo.entities.Cliente.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-          sigo.entities.TemplateOportunidade.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+          sigo.entities.TemplateProjeto.filter({ empresa_id: empresaAtiva.id, ativo: true }),
           sigo.entities.UsuarioEmpresa.filter({ empresa_id: empresaAtiva.id, ativo: true }),
         ]
       );
@@ -521,7 +519,7 @@ export default function Projetos() {
                   (o) => o.nome?.toLowerCase() === row.Origem?.toLowerCase()
                 );
                 if (!origem && row.Origem?.trim()) {
-                  origem = await sigo.entities.OrigemOportunidade.create({
+                  origem = await sigo.entities.OrigemProjeto.create({
                     empresa_id: empresaAtiva.id,
                     nome: row.Origem,
                   });
@@ -1674,8 +1672,6 @@ export default function Projetos() {
               numero: `SC${new Date().getFullYear()}-${String(Math.floor(Math.random() * 10000)).padStart(4, "0")}`,
               projeto_id: solicitacaoCompraForm.projeto_id || null,
               projeto_nome: solicitacaoCompraForm.projeto_nome || null,
-              oportunidade_id: solicitacaoCompraForm.oportunidade_id || null,
-              oportunidade_nome: solicitacaoCompraForm.oportunidade_nome || null,
               solicitante_id: user?.id,
               solicitante_nome: user?.full_name,
               solicitante_email: user?.email,
