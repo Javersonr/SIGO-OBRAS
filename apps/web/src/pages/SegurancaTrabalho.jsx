@@ -36,6 +36,7 @@ import DocumentacaoEmpresaTab from "@/components/seguranca/DocumentacaoEmpresaTa
 import SolicitarEntregaFerramentasModal from "@/components/seguranca/SolicitarEntregaFerramentasModal";
 import SolicitacoesEntregaTab from "@/components/seguranca/SolicitacoesEntregaTab";
 import BiometriaFuncionarioPanel from "@/components/seguranca/BiometriaFuncionarioPanel";
+import SstDashboardTab from "@/components/seguranca/SstDashboardTab";
 import {
   Shield,
   Plus,
@@ -1066,6 +1067,9 @@ export default function SegurancaTrabalho() {
             </SelectTrigger>
             <SelectContent>
               {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
+                <SelectItem value="dashboard_sst">Dashboard</SelectItem>
+              )}
+              {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
                 <SelectItem value="funcionarios">Funcionários</SelectItem>
               )}
               {(perfil === "Admin" ||
@@ -1091,6 +1095,9 @@ export default function SegurancaTrabalho() {
         </div>
         <TabsList className="bg-slate-100 hidden md:flex">
           {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
+            <TabsTrigger value="dashboard_sst">Dashboard</TabsTrigger>
+          )}
+          {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
             <TabsTrigger value="funcionarios">Funcionários</TabsTrigger>
           )}
           {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Inspeção de Campo")) && (
@@ -1111,6 +1118,11 @@ export default function SegurancaTrabalho() {
           <TabsTrigger value="solicitacoes_entrega">Solicitações de Entrega</TabsTrigger>
           <TabsTrigger value="liberacoes_sst">Liberações SST</TabsTrigger>
         </TabsList>
+
+        {/* Aba Dashboard SST (vencimentos da planilha CONTROLE SST via sync) */}
+        <TabsContent value="dashboard_sst">
+          <SstDashboardTab empresaAtiva={empresaAtiva} />
+        </TabsContent>
 
         {/* Aba Liberações SST excepcionais (notificação + revogação) */}
         <TabsContent value="liberacoes_sst">
