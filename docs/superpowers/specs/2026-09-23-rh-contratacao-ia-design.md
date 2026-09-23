@@ -86,11 +86,46 @@ anexou.
 6. "Registrado" → cria `funcionario` com os dados e migra anexos para os
    documentos RH do funcionário; contratação arquivada com link.
 
+## Sub-projeto D — Plataforma de Treinamentos (EAD interno)
+
+Decisões do dono: acesso do funcionário via **Portal do Funcionário**
+(link + token no celular, padrão dos portais fornecedor/cliente já existentes;
+RH envia por WhatsApp) e vídeos hospedados no **YouTube não listado**
+(embed no player interno; controle de progresso via YouTube IFrame API —
+conclusão da aula exige tempo assistido acumulado ≥ 90% da duração; rigor
+absoluto contra "pular" não é possível com YouTube e foi aceito).
+
+**Tabelas** (RLS tenant + super admin):
+
+- `treinamento_curso`: empresa_id, nome, código (ex.: NR10 Básico),
+  descrição, validade_meses, ativo;
+- `treinamento_aula`: curso_id, ordem, título, youtube_id, duração;
+- `treinamento_matricula`: empresa_id, curso_id, funcionario_id, status
+  (`pendente | em_andamento | concluido`), data_conclusao,
+  proxima_renovacao (= conclusão + validade do curso);
+- `treinamento_progresso`: matricula_id, aula_id, segundos_assistidos,
+  concluida, concluida_em.
+
+**Regra central:** o curso só é concluído quando **todas as aulas** estiverem
+concluídas. Conclusão grava data e calcula a próxima renovação.
+
+**Gestão (aba "Treinamentos" do módulo RH & Segurança):** cadastrar cursos e
+aulas (link YouTube), matricular funcionários (individual ou por função),
+painel por funcionário: feitos (com data), pendentes/em andamento e
+próximas renovações.
+
+**Portal do Funcionário (novo):** página pública com token de escopo
+funcionário (edge functions `portal-funcionario-*`, mesmo padrão HMAC dos
+portais existentes). O funcionário vê seus treinamentos (feitos, pendentes,
+datas) e assiste as aulas; o progresso é gravado pelo portal com o token.
+
 ## Sub-projeto C (fase futura, fora deste ciclo)
 
 Generalizar vencimentos de ASO/treinamentos para qualquer empresa dentro do
 SIGO (hoje: Dashboard SST via planilha da Eletro). Renovação dispara
-nova autorização de exame reaproveitando a esteira.
+nova autorização de exame reaproveitando a esteira, e a proximidade da
+renovação de treinamento gera matrícula de reciclagem automática na
+plataforma do Sub-projeto D.
 
 ## Riscos e cuidados
 
@@ -115,3 +150,6 @@ nova autorização de exame reaproveitando a esteira.
    autorização em PDF → exames → parecer PCMSO → dossiê → funcionário criado.
 4. Contratação sem documentos obrigatórios **não** chega à contabilidade e
    mostra as pendências.
+5. Treinamentos: funcionário acessa o portal pelo link, assiste as aulas e o
+   curso só conclui com todas as aulas ≥ 90% assistidas; painel do RH mostra
+   feitos/pendentes com datas e próxima renovação.
