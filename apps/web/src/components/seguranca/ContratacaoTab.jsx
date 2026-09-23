@@ -1,7 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { sigo, supabase, resolveStorageUrl } from "@/api/sigoClient";
 import { normalizarTexto } from "@/lib/busca";
-import { CHECKLIST_CONTRATACAO, statusChecklist, itemPorNome } from "@/lib/documentos-contratacao";
+import {
+  CHECKLIST_CONTRATACAO,
+  statusChecklist,
+  itemPorNome,
+  classificarPorNomeArquivo,
+} from "@/lib/documentos-contratacao";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -225,7 +230,8 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
         novos.push({
           ref: `${res.bucket}/${res.path}`,
           nome: file.name,
-          item: null,
+          // 1ª camada: classifica NA HORA pelo nome do arquivo (a IA refina depois)
+          item: campo === "anexos" ? classificarPorNomeArquivo(file.name) : null,
           por_ia: false,
         });
       }
@@ -278,16 +284,22 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
       if (Array.isArray(r.dependentes) && r.dependentes.length && !(c.dependentes || []).length) {
         patch.dependentes = r.dependentes;
       }
-      // classifica anexos pelo nome do arquivo
+      // classifica anexos: nome normalizado (sem acento/extensão) + fallback
+      // por posição (IA devolve na ordem dos anexos) + heurística local
+      const normArq = (s) =>
+        normalizarTexto(String(s || "").replace(/\.[a-z0-9]+$/i, "")).replace(/\s+/g, " ");
       const porArquivo = new Map(
-        (r.classificacao || []).map((x) => [
-          String(x.arquivo || "").toLowerCase(),
-          x.item_checklist,
-        ])
+        (r.classificacao || []).map((x) => [normArq(x.arquivo), x.item_checklist])
       );
-      patch.anexos = (c.anexos || []).map((a) => {
+      const classifPorIndice = r.classificacao || [];
+      patch.anexos = (c.anexos || []).map((a, idx) => {
         if (a.item) return a;
-        const item = itemPorNome(porArquivo.get(String(a.nome || "").toLowerCase()));
+        const daIA =
+          porArquivo.get(normArq(a.nome)) ??
+          (classifPorIndice.length === c.anexos.length
+            ? classifPorIndice[idx]?.item_checklist
+            : null);
+        const item = itemPorNome(daIA) || classificarPorNomeArquivo(a.nome);
         return item ? { ...a, item, por_ia: true } : a;
       });
       // renomeia no Storage pro padrão NOME_ITEM.ext

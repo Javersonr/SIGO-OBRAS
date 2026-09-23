@@ -5,6 +5,8 @@
  * (documentação mínima para registro). Os demais são desejáveis: aparecem
  * como pendência para quem anexou, mas não bloqueiam.
  */
+import { normalizarTexto } from "./busca";
+
 // Espelho da seção "Documentos necessários" do Formulário para Registro
 // (modelo oficial da contabilidade). Foto 3x4 removida a pedido do dono.
 export const CHECKLIST_CONTRATACAO = [
@@ -51,6 +53,40 @@ export function statusChecklist(anexos = []) {
     desejaveisFaltando,
     completoObrigatorio: obrigatoriosFaltando.length === 0,
   };
+}
+
+/**
+ * Classificação INSTANTÂNEA pelo nome do arquivo (sem IA) — roda no anexo.
+ * Os scanners/celulares da equipe costumam nomear bem ("CNH - FULANO.pdf",
+ * "CERTIDAO DE CASAMENTO...", "COMPROVANTE DE ENDERECO (COPASA)...").
+ * A IA refina depois o que sobrar como null.
+ */
+const REGRAS_NOME_ARQUIVO = [
+  ["ctps", /ctps|carteira\s+de\s+trabalho/],
+  ["titulo_eleitor", /titulo.*eleitor|eleitor/],
+  ["reservista", /reservista|alistamento|militar/],
+  ["certidao_casamento", /casamento|convivio|marital/],
+  [
+    "certidao_filhos",
+    /(nascimento|certidao).*(filh|dependente)|(filh[ao]s?).*(nascimento|certidao)/,
+  ],
+  ["vacinacao_filhos", /vacina/],
+  ["frequencia_escolar", /frequencia|escolar/],
+  ["antecedentes_criminais", /antecedente/],
+  ["cartao_conta", /cartao.*(conta|banco)|portabilidade/],
+  ["comprovante_endereco", /endere|resid|copasa|conta\s+de\s+(luz|agua|energia)/],
+  ["pis_nis", /\bpis\b|\bnis\b/],
+  ["rg_cpf", /\brg\b|\bcnh\b|identidade|habilitacao|\bcpf\b/],
+  ["doc_digital", /(identificacao|documento).*digital/],
+];
+
+export function classificarPorNomeArquivo(nomeArquivo) {
+  const n = normalizarTexto(String(nomeArquivo || "").replace(/\.[a-z0-9]+$/i, ""));
+  if (!n) return null;
+  for (const [id, regex] of REGRAS_NOME_ARQUIVO) {
+    if (regex.test(n)) return id;
+  }
+  return null;
 }
 
 /** Mapeia o nome de item devolvido pela IA para o id do checklist. */
