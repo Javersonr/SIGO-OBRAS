@@ -232,6 +232,13 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
       const lista = [...(sel[campo] || []), ...novos];
       await salvar(sel.id, { [campo]: lista });
       toast.success(`${novos.length} arquivo(s) anexado(s)`);
+      // Leitura AUTOMÁTICA: anexou → a IA já lê (sem precisar de botão).
+      const atualizado = { ...sel, [campo]: lista };
+      if (campo === "anexos") {
+        await lerComIA(atualizado);
+      } else if (campo === "exames_anexos" && empresa?.pcmso_ref) {
+        await validarExames(atualizado);
+      }
     } catch (e) {
       console.error(e);
       toast.error("Erro ao anexar: " + (e?.message || e));
@@ -247,8 +254,10 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
   };
 
   // ------------------------------------------------------------------ IA
-  const lerComIA = async () => {
-    if (!sel?.anexos?.length) {
+  // `alvo` permite chamar logo após o upload (o estado `sel` ainda é o antigo)
+  const lerComIA = async (alvo) => {
+    const c = alvo?.id ? alvo : sel;
+    if (!c?.anexos?.length) {
       toast.error("Anexe os documentos pessoais primeiro");
       return;
     }
@@ -256,38 +265,38 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
     try {
       const { data } = await sigo.functions.invoke("iaProcessar", {
         acao: "extrair_documentos",
-        file_refs: sel.anexos.map(refDoAnexo),
-        checklist: CHECKLIST_CONTRATACAO.map((c) => c.nome),
+        file_refs: c.anexos.map(refDoAnexo),
+        checklist: CHECKLIST_CONTRATACAO.map((x) => x.nome),
       });
       if (data?.success === false) throw new Error(data.error);
       const r = data.resultado || {};
       const campos = r.campos || {};
       const patch = { extracao_ia: r };
       for (const [k] of CAMPOS_FORM) {
-        if (campos[k] && !sel[k]) patch[k] = campos[k];
+        if (campos[k] && !c[k]) patch[k] = campos[k];
       }
-      if (Array.isArray(r.dependentes) && r.dependentes.length && !(sel.dependentes || []).length) {
+      if (Array.isArray(r.dependentes) && r.dependentes.length && !(c.dependentes || []).length) {
         patch.dependentes = r.dependentes;
       }
       // classifica anexos pelo nome do arquivo
       const porArquivo = new Map(
-        (r.classificacao || []).map((c) => [
-          String(c.arquivo || "").toLowerCase(),
-          c.item_checklist,
+        (r.classificacao || []).map((x) => [
+          String(x.arquivo || "").toLowerCase(),
+          x.item_checklist,
         ])
       );
-      patch.anexos = (sel.anexos || []).map((a) => {
+      patch.anexos = (c.anexos || []).map((a) => {
         if (a.item) return a;
         const item = itemPorNome(porArquivo.get(String(a.nome || "").toLowerCase()));
         return item ? { ...a, item, por_ia: true } : a;
       });
       // renomeia no Storage pro padrão NOME_ITEM.ext
       patch.anexos = await renomearConformeChecklist(
-        patch.nome_completo || sel.nome_completo,
+        patch.nome_completo || c.nome_completo,
         patch.anexos
       );
-      if (sel.etapa === "documentos") patch.etapa = "conferencia";
-      await salvar(sel.id, patch);
+      if (c.etapa === "documentos") patch.etapa = "conferencia";
+      await salvar(c.id, patch);
       toast.success("✅ Documentos lidos — confira os dados preenchidos");
       if (r.observacoes) toast.info("IA: " + r.observacoes);
     } catch (e) {
@@ -298,12 +307,13 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
     }
   };
 
-  const validarExames = async () => {
+  const validarExames = async (alvo) => {
+    const c = alvo?.id ? alvo : sel;
     if (!empresa?.pcmso_ref) {
       toast.error("Anexe o PCMSO da empresa primeiro (topo do painel)");
       return;
     }
-    if (!sel?.exames_anexos?.length) {
+    if (!c?.exames_anexos?.length) {
       toast.error("Anexe os exames devolvidos pela clínica");
       return;
     }
@@ -312,8 +322,8 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
       const { data } = await sigo.functions.invoke("iaProcessar", {
         acao: "validar_exames_pcmso",
         pcmso_ref: empresa.pcmso_ref,
-        exames_refs: sel.exames_anexos.map(refDoAnexo),
-        funcao: sel.funcao_nome,
+        exames_refs: c.exames_anexos.map(refDoAnexo),
+        funcao: c.funcao_nome,
       });
       if (data?.success === false) throw new Error(data.error);
       const parecer = data.resultado;
@@ -326,7 +336,7 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
         patch.etapa = "validacao_pcmso";
         toast.error(`Pendências nos exames: ${parecer?.pendencias?.length ?? 0}`);
       }
-      await salvar(sel.id, patch);
+      await salvar(c.id, patch);
     } catch (e) {
       console.error(e);
       toast.error("IA: " + (e?.message || e));
@@ -633,7 +643,7 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
 
       {/* Painel da contratação */}
       <Sheet open={!!sel} onOpenChange={(v) => !v && setSel(null)}>
-        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
+        <SheetContent className="w-full sm:max-w-[96vw] overflow-y-auto">
           {sel && (
             <>
               <SheetHeader>
@@ -747,7 +757,7 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
                   <h3 className="font-semibold text-slate-800">
                     Formulário para Registro — dados do colaborador
                   </h3>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     {CAMPOS_FORM.map(([campo, rotulo, tipo, opcoes]) => (
                       <div
                         key={campo}
