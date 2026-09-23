@@ -44,6 +44,9 @@ const SUPABASE_FUNCTIONS_REWRITE = {
   alterarSenha: "alterar-senha",
   redefinirSenhaAdmin: "redefinir-senha-admin",
   trocarEmpresa: "trocar-empresa",
+  // Recuperação de senha por código no WhatsApp
+  recuperarSenha: "recuperar-senha",
+  redefinirSenhaCodigo: "redefinir-senha-codigo",
   // Portais externos (Etapa 3b) — service role, sem sessão Supabase Auth
   portalFornecedorLogin: "portal-fornecedor-login",
   portalFornecedorCotacoes: "portal-fornecedor-cotacoes",
