@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, resolveStorageUrl } from "@/api/sigoClient";
 import { CHECKLIST_CONTRATACAO, statusChecklist, itemPorNome } from "@/lib/documentos-contratacao";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,6 +98,13 @@ const CAMPOS_FORM = [
 ];
 
 const refDoAnexo = (a) => a?.ref || null;
+
+// Abre o anexo numa aba nova (URL assinada — bucket é privado)
+async function abrirAnexo(a) {
+  const url = await resolveStorageUrl(a?.ref);
+  if (url) window.open(url, "_blank");
+  else toast.error("Não foi possível abrir o arquivo");
+}
 
 export default function ContratacaoTab({ empresaAtiva, user }) {
   const [contratacoes, setContratacoes] = useState([]);
@@ -642,7 +649,14 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
                       key={i}
                       className="flex items-center gap-2 text-sm bg-slate-50 rounded p-2"
                     >
-                      <span className="flex-1 truncate">{a.nome}</span>
+                      <button
+                        type="button"
+                        onClick={() => abrirAnexo(a)}
+                        className="flex-1 truncate text-left text-sky-700 hover:underline"
+                        title="Abrir documento"
+                      >
+                        {a.nome}
+                      </button>
                       <Select
                         value={a.item || "none"}
                         onValueChange={async (v) => {
@@ -878,7 +892,14 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
                       key={i}
                       className="flex items-center gap-2 text-sm bg-slate-50 rounded p-2"
                     >
-                      <span className="flex-1 truncate">{a.nome}</span>
+                      <button
+                        type="button"
+                        onClick={() => abrirAnexo(a)}
+                        className="flex-1 truncate text-left text-sky-700 hover:underline"
+                        title="Abrir documento"
+                      >
+                        {a.nome}
+                      </button>
                       <button onClick={() => removerAnexo("exames_anexos", i)} title="Remover">
                         <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
                       </button>
