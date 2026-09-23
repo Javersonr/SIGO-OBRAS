@@ -29,6 +29,7 @@ import PermissoesTab from "@/components/saas/PermissoesTab";
 import UsuarioEmpresaModal from "@/components/saas/UsuarioEmpresaModal";
 import GruposEmpresariaisTab from "@/components/saas/GruposEmpresariaisTab";
 import ExportacaoDadosTab from "@/components/saas/ExportacaoDadosTab";
+import IntegracoesTab from "@/components/saas/IntegracoesTab";
 
 const statusColors = {
   Ativa: "bg-green-100 text-green-700",
@@ -809,7 +810,13 @@ export default function SaasAdmin() {
           <TabsTrigger value="grupos">Grupos</TabsTrigger>
           <TabsTrigger value="superadmins">Super Admins</TabsTrigger>
           <TabsTrigger value="exportacao">Exportação</TabsTrigger>
+          <TabsTrigger value="integracoes">Integrações</TabsTrigger>
         </TabsList>
+
+        {/* Integrações (chave OpenAI global) */}
+        <TabsContent value="integracoes">
+          <IntegracoesTab />
+        </TabsContent>
 
         {/* Empresas */}
         <TabsContent value="empresas">

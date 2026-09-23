@@ -183,7 +183,9 @@ export default function Layout({ children, currentPageName }) {
           if (userData.grupo_id) {
             setGrupoAtivo(userData.grupo_id);
             try {
-              const empresasGrupo = await sigo.asServiceRole.entities.Empresa.filter({
+              // Coberto pela policy empresa_mesmo_grupo (migração 0093) —
+              // o asServiceRole do SDK legado foi removido.
+              const empresasGrupo = await sigo.entities.Empresa.filter({
                 grupo_id: userData.grupo_id,
                 ativo: true,
               });

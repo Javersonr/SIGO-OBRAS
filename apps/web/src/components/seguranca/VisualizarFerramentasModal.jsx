@@ -218,7 +218,8 @@ export default function VisualizarFerramentasModal({
     try {
       const { sigo } = await import("@/api/sigoClient");
       const ferramentaIds = ferramentas.map((f) => f.id);
-      const movs = await sigo.asServiceRole.entities.MovimentacaoFerramenta.filter({
+      // RLS por empresa cobre a consulta — asServiceRole (legado) removido.
+      const movs = await sigo.entities.MovimentacaoFerramenta.filter({
         status: "Realizada",
       });
 

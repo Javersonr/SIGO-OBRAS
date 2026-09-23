@@ -1,6 +1,9 @@
-import legacyPlugin from "@base44/vite-plugin";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+
+const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Vite config — SIGO Obras
@@ -9,19 +12,12 @@ import { defineConfig } from "vite";
 export default defineConfig(({ mode }) => ({
   logLevel: "error", // Suppress warnings, only show errors
 
-  plugins: [
-    // Plugin do SDK legado (resolve aliases @/integrations, @/entities, etc.).
-    // Mantido enquanto o sigoClient.js usa o pacote @base44/sdk como fallback
-    // pra superfícies não migradas (asServiceRole, integrations.Core).
-    // Removido na Phase 8 do roadmap (cutover completo).
-    legacyPlugin({
-      legacySDKImports: process.env.LEGACY_SDK_IMPORTS === "true",
-      hmrNotifier: true,
-      navigationNotifier: true,
-      visualEditAgent: true,
-    }),
-    react(),
-  ],
+  plugins: [react()],
+
+  resolve: {
+    // O alias "@" era resolvido pelo @base44/vite-plugin (removido set/2026).
+    alias: { "@": path.resolve(dirname, "src") },
+  },
 
   build: {
     // Minify com Terser pra poder remover console.* automaticamente
