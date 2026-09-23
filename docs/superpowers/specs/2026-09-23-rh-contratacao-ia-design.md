@@ -62,10 +62,10 @@ validacao_ia jsonb (parecer + pendências), pendencias_documentos jsonb,
 timestamps por etapa, funcionario_id (preenchido no fim).
 
 **Checklist de documentos da contratação** (constante em
-`lib/documentos-contratacao.js`): RG e CPF (ou CNH)_, CTPS_, comprovante de
-endereço*, foto 3x4*, certidão nascimento/casamento, título de eleitor,
-reservista, escolaridade, cartão de vacina, PIS/NIS. `*` = obrigatório para
-registro. A IA classifica cada anexo num item; o usuário pode reclassificar.
+`lib/documentos-contratacao.js`): RG e CPF (ou CNH) [obrigatório], CTPS
+[obrigatório], comprovante de endereço [obrigatório], foto 3x4 [obrigatório],
+certidão nascimento/casamento, título de eleitor, reservista, escolaridade,
+cartão de vacina, PIS/NIS. Itens marcados [obrigatório] travam o registro. A IA classifica cada anexo num item; o usuário pode reclassificar.
 Card mostra ✔/✘ por item; **etapa contabilidade só libera com os obrigatórios
 completos**; pendências aparecem no card, no dossiê e num aviso para quem
 anexou.
