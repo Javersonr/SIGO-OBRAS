@@ -20,6 +20,7 @@ import { atualizarSenhaAuth } from "../_shared/auth-bridge.ts";
 
 interface AlterarBody {
   usuario_id?: string;
+  email?: string;
   senha_atual?: string;
   nova_senha?: string;
 }
@@ -50,8 +51,10 @@ Deno.serve(
     }
 
     const { usuario_id, senha_atual, nova_senha } = body;
-    if (!usuario_id || !senha_atual || !nova_senha) {
-      return fail("usuario_id, senha_atual e nova_senha são obrigatórios", 400);
+    const email = (body.email ?? "").trim().toLowerCase();
+    // O frontend legado (MeuPerfilSheet) mandava só email — aceitamos os dois.
+    if ((!usuario_id && !email) || !senha_atual || !nova_senha) {
+      return fail("usuario_id (ou email), senha_atual e nova_senha são obrigatórios", 400);
     }
 
     const politicaErro = validarPolitica(nova_senha);
@@ -63,12 +66,12 @@ Deno.serve(
 
     const supabase = createAdminClient();
 
-    const { data: usuario, error } = await supabase
+    let query = supabase
       .from("usuario_custom")
       .select("id, senha_hash, ativo, deleted_at, email, auth_user_id")
-      .eq("id", usuario_id)
-      .is("deleted_at", null)
-      .maybeSingle();
+      .is("deleted_at", null);
+    query = usuario_id ? query.eq("id", usuario_id) : query.eq("email", email);
+    const { data: usuario, error } = await query.maybeSingle();
 
     if (error) {
       console.error("Erro consultando usuario_custom:", error);
@@ -90,7 +93,7 @@ Deno.serve(
         reset_token_expira: null,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", usuario_id);
+      .eq("id", usuario.id);
 
     if (updateErr) {
       console.error("Erro atualizando senha:", updateErr);

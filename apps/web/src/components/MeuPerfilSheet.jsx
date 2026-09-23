@@ -123,13 +123,15 @@ export default function MeuPerfilSheet({ open, onOpenChange }) {
       toast.error("❌ As senhas não coincidem");
       return;
     }
-    if (novaSenha.length < 6) {
-      toast.error("❌ A senha deve ter no mínimo 6 caracteres");
+    if (novaSenha.length < 8) {
+      toast.error("❌ A senha deve ter no mínimo 8 caracteres");
       return;
     }
     setAlterandoSenha(true);
     try {
+      // A edge function alterar-senha identifica por usuario_id (email = fallback)
       const response = await sigo.functions.invoke("alterarSenha", {
+        usuario_id: user.id,
         email: user.email,
         senha_atual: senhaAtual,
         nova_senha: novaSenha,
