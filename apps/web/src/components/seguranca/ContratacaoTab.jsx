@@ -45,18 +45,56 @@ const ETAPAS = [
   { id: "registrado", nome: "Registrado" },
 ];
 
+// Campos do "Formulário para Registro" (modelo oficial da contabilidade).
+// [campo, rótulo, tipo?, opções?] — com opções vira <Select> (enums do banco).
+const ESTADOS_CIVIS = ["Solteiro", "Casado", "Divorciado", "Viúvo", "União Estável", "Outros"];
+const RACAS = ["Indígena", "Branca", "Negra", "Amarela", "Parda", "Outros"];
+const INSTRUCOES = [
+  "Analfabeto",
+  "Fundamental até 5º Incompleto",
+  "Fundamental 5º Completo",
+  "Fundamental 6º ao 9º",
+  "Fundamental Completo",
+  "Ensino Médio Incompleto",
+  "Ensino Médio Completo",
+  "Superior Incompleto",
+  "Superior Completo",
+  "Pós-Graduação",
+  "Mestrado",
+  "Doutorado",
+];
 const CAMPOS_FORM = [
-  ["nome_completo", "Nome completo"],
+  ["nome_completo", "Colaborador(a) — nome completo"],
+  ["nome_mae", "Mãe"],
+  ["nome_pai", "Pai"],
   ["cpf", "CPF"],
   ["rg", "RG"],
+  ["rg_data_expedicao", "RG — data de expedição", "date"],
+  ["rg_uf", "RG — UF"],
   ["data_nascimento", "Data de nascimento", "date"],
+  ["naturalidade", "Naturalidade"],
   ["telefone", "Telefone"],
+  ["email", "E-mail"],
   ["cep", "CEP"],
   ["endereco", "Endereço"],
+  ["bairro", "Bairro"],
   ["cidade", "Cidade"],
   ["estado", "UF"],
-  ["pis_nis", "PIS/NIS"],
-  ["ctps_numero", "CTPS nº"],
+  ["pis_nis", "PIS"],
+  ["ctps_numero", "CTPS nº/série"],
+  ["titulo_eleitor", "Título de eleitor"],
+  ["titulo_eleitor_zona", "Zona"],
+  ["titulo_eleitor_secao", "Seção"],
+  ["reservista", "Reservista"],
+  ["estado_civil", "Estado civil", "select", ESTADOS_CIVIS],
+  ["raca_cor", "Raça/Cor", "select", RACAS],
+  ["grau_instrucao", "Grau de instrução", "select", INSTRUCOES],
+  ["banco_codigo", "Banco (código)"],
+  ["banco_tipo_conta", "Tipo de conta", "select", ["Conta Corrente", "Conta Poupança"]],
+  ["banco_agencia", "Agência"],
+  ["banco_conta", "Número da conta"],
+  ["data_admissao", "Data de admissão", "date"],
+  ["horario_trabalho", "Horário de trabalho"],
 ];
 
 const refDoAnexo = (a) => a?.ref || null;
@@ -170,6 +208,9 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
       for (const [k] of CAMPOS_FORM) {
         if (campos[k] && !sel[k]) patch[k] = campos[k];
       }
+      if (Array.isArray(r.dependentes) && r.dependentes.length && !(sel.dependentes || []).length) {
+        patch.dependentes = r.dependentes;
+      }
       // classifica anexos pelo nome do arquivo
       const porArquivo = new Map(
         (r.classificacao || []).map((c) => [
@@ -282,23 +323,60 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
         y = 20;
       }
     };
-    doc.setFontSize(13);
-    linha(`DOSSIÊ DE CONTRATAÇÃO — ${sel.nome_completo || ""}`, 10);
+    const fmtD = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "-");
+    const titulo = (t) => {
+      doc.setFont("helvetica", "bold");
+      linha(t, 8);
+      doc.setFont("helvetica", "normal");
+    };
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    linha("FORMULÁRIO PARA REGISTRO", 9);
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
-    linha(`Empresa: ${empresa?.razao_social || empresa?.nome} (CNPJ ${empresa?.cnpj || "-"})`);
+    linha(`${empresa?.razao_social || empresa?.nome || ""} — CNPJ ${empresa?.cnpj || "-"}`, 9);
     linha(
-      `Função: ${sel.funcao_nome || "-"}   Salário: ${sel.salario ? "R$ " + Number(sel.salario).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "-"}`
+      `Data de Admissão: ${fmtD(sel.data_admissao)}    Salário: ${sel.salario ? "R$ " + Number(sel.salario).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "-"}    Horário: ${sel.horario_trabalho || "-"}`
     );
+    linha(`Função: ${sel.funcao_nome || "-"}`, 9);
+    titulo("Dados do empregado");
+    linha(`Colaborador(a): ${sel.nome_completo || "-"}`);
+    linha(`Mãe: ${sel.nome_mae || "-"}`);
+    linha(`Pai: ${sel.nome_pai || "-"}`);
     linha(
-      `CPF: ${sel.cpf || "-"}   RG: ${sel.rg || "-"}   Nascimento: ${sel.data_nascimento || "-"}`
+      `Endereço: ${sel.endereco || "-"}   Bairro: ${sel.bairro || "-"}   CEP: ${sel.cep || "-"}`
     );
-    linha(`Endereço: ${sel.endereco || "-"}, ${sel.cidade || "-"}/${sel.estado || "-"}`);
+    linha(`Cidade/UF: ${sel.cidade || "-"}/${sel.estado || "-"}`);
+    linha(`Telefone: ${sel.telefone || "-"}   E-mail: ${sel.email || "-"}`, 9);
+    titulo("Documentos");
     linha(
-      `Telefone: ${sel.telefone || "-"}   PIS/NIS: ${sel.pis_nis || "-"}   CTPS: ${sel.ctps_numero || "-"}`,
-      10
+      `RG: ${sel.rg || "-"}   Expedição: ${fmtD(sel.rg_data_expedicao)}   UF: ${sel.rg_uf || "-"}`
     );
+    linha(`CPF: ${sel.cpf || "-"}   PIS: ${sel.pis_nis || "-"}   CTPS: ${sel.ctps_numero || "-"}`);
+    linha(`Nascimento: ${fmtD(sel.data_nascimento)}   Naturalidade: ${sel.naturalidade || "-"}`);
+    linha(
+      `Título de Eleitor: ${sel.titulo_eleitor || "-"}   Zona: ${sel.titulo_eleitor_zona || "-"}   Seção: ${sel.titulo_eleitor_secao || "-"}`
+    );
+    linha(`Reservista: ${sel.reservista || "-"}`);
+    linha(`Estado Civil: ${sel.estado_civil || "-"}   Raça/Cor: ${sel.raca_cor || "-"}`);
+    linha(`Grau de instrução: ${sel.grau_instrucao || "-"}`, 9);
+    titulo("Informações Bancárias (portabilidade da conta salário)");
+    linha(
+      `Banco: ${sel.banco_codigo || "-"}   Tipo: ${sel.banco_tipo_conta || "-"}   Agência: ${sel.banco_agencia || "-"}   Conta: ${sel.banco_conta || "-"}`,
+      9
+    );
+    const deps = sel.dependentes || [];
+    titulo(`Dependentes (cônjuge e filhos < 21 anos): ${deps.length ? "Sim" : "Não"}`);
+    for (const d of deps) {
+      linha(
+        `  ${d.nome_completo || "-"} — Nascimento: ${fmtD(d.data_nascimento)} — CPF: ${d.cpf || "-"}`,
+        6
+      );
+    }
+    doc.addPage();
+    y = 20;
     const st = statusChecklist(sel.anexos);
-    linha("CHECKLIST DE DOCUMENTOS:", 7);
+    titulo("CHECKLIST DE DOCUMENTOS");
     for (const item of st.itens) {
       linha(`  ${item.anexado ? "[X]" : "[ ]"} ${item.nome}${item.obrigatorio ? " *" : ""}`, 6);
     }
@@ -315,7 +393,9 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
     }
     linha(`Anexos (${sel.anexos?.length ?? 0}):`, 6);
     for (const a of sel.anexos || []) linha(`  - ${a.nome} (${a.item || "sem item"})`, 5);
-    doc.save(`Dossie_${(sel.nome_completo || "contratacao").replace(/\s+/g, "_")}.pdf`);
+    doc.save(
+      `Formulario_Registro_${(sel.nome_completo || "contratacao").replace(/\s+/g, "_")}.pdf`
+    );
   };
 
   // ------------------------------------------------------------------ registro
@@ -329,24 +409,41 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
       return;
     setOcupado("registro");
     try {
-      const foto = (sel.anexos || []).find((a) => a.item === "foto_3x4");
       const funcionario = await sigo.entities.Funcionario.create({
         empresa_id: empresaAtiva.id,
         nome_completo: sel.nome_completo,
+        nome_mae: sel.nome_mae || null,
+        nome_pai: sel.nome_pai || null,
         cpf: sel.cpf,
         rg: sel.rg || null,
+        rg_data_expedicao: sel.rg_data_expedicao || null,
+        rg_uf: sel.rg_uf || null,
         data_nascimento: sel.data_nascimento || null,
+        naturalidade: sel.naturalidade || null,
         telefone: sel.telefone || null,
+        email: sel.email || null,
         cep: sel.cep || null,
         endereco: sel.endereco || null,
+        bairro: sel.bairro || null,
         cidade: sel.cidade || null,
         estado: sel.estado || null,
         pis: sel.pis_nis || null,
+        titulo_eleitor: sel.titulo_eleitor || null,
+        titulo_eleitor_zona: sel.titulo_eleitor_zona || null,
+        titulo_eleitor_secao: sel.titulo_eleitor_secao || null,
+        reservista: sel.reservista || null,
+        estado_civil: sel.estado_civil || null,
+        raca_cor: sel.raca_cor || null,
+        grau_instrucao: sel.grau_instrucao || null,
+        banco_codigo: sel.banco_codigo || null,
+        banco_tipo_conta: sel.banco_tipo_conta || null,
+        banco_agencia: sel.banco_agencia || null,
+        banco_conta: sel.banco_conta || null,
+        dependentes: sel.dependentes || [],
         funcao_id: sel.funcao_id || null,
         funcao_nome: sel.funcao_nome || null,
         salario: sel.salario || null,
-        data_admissao: new Date().toISOString().slice(0, 10),
-        foto_url: foto?.ref || null,
+        data_admissao: sel.data_admissao || new Date().toISOString().slice(0, 10),
         documentos_pessoais: (sel.anexos || []).map((a) => ({
           nome: a.nome,
           url: a.ref,
@@ -574,20 +671,99 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
                   ))}
                 </section>
 
-                {/* 2. Dados do candidato */}
+                {/* 2. Dados do candidato (Formulário para Registro) */}
                 <section className="space-y-2">
-                  <h3 className="font-semibold text-slate-800">Dados do candidato</h3>
+                  <h3 className="font-semibold text-slate-800">
+                    Formulário para Registro — dados do colaborador
+                  </h3>
                   <div className="grid grid-cols-2 gap-3">
-                    {CAMPOS_FORM.map(([campo, rotulo, tipo]) => (
-                      <div key={campo} className={campo === "nome_completo" ? "col-span-2" : ""}>
+                    {CAMPOS_FORM.map(([campo, rotulo, tipo, opcoes]) => (
+                      <div
+                        key={campo}
+                        className={
+                          ["nome_completo", "nome_mae", "nome_pai", "endereco"].includes(campo)
+                            ? "col-span-2"
+                            : ""
+                        }
+                      >
                         <Label className="text-xs">{rotulo}</Label>
-                        <Input
-                          type={tipo || "text"}
-                          value={sel[campo] || ""}
-                          onChange={(e) => setSel({ ...sel, [campo]: e.target.value })}
-                          onBlur={(e) => salvar(sel.id, { [campo]: e.target.value || null })}
-                          className="mt-0.5 h-9"
-                        />
+                        {tipo === "select" ? (
+                          <Select
+                            value={sel[campo] || ""}
+                            onValueChange={(v) => salvar(sel.id, { [campo]: v || null })}
+                          >
+                            <SelectTrigger className="mt-0.5 h-9">
+                              <SelectValue placeholder="—" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {opcoes.map((o) => (
+                                <SelectItem key={o} value={o}>
+                                  {o}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            type={tipo || "text"}
+                            value={sel[campo] || ""}
+                            onChange={(e) => setSel({ ...sel, [campo]: e.target.value })}
+                            onBlur={(e) => salvar(sel.id, { [campo]: e.target.value || null })}
+                            className="mt-0.5 h-9"
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Dependentes (cônjuge + filhos < 21) */}
+                  <div className="pt-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-semibold">
+                        Dependentes (cônjuge e filhos menores de 21 anos)
+                      </Label>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          salvar(sel.id, {
+                            dependentes: [
+                              ...(sel.dependentes || []),
+                              { nome_completo: "", data_nascimento: "", cpf: "" },
+                            ],
+                          })
+                        }
+                      >
+                        <Plus className="w-3 h-3 mr-1" /> Adicionar
+                      </Button>
+                    </div>
+                    {(sel.dependentes || []).map((d, i) => (
+                      <div key={i} className="grid grid-cols-[1fr_150px_150px_28px] gap-2 mt-1">
+                        {["nome_completo", "data_nascimento", "cpf"].map((c) => (
+                          <Input
+                            key={c}
+                            type={c === "data_nascimento" ? "date" : "text"}
+                            placeholder={
+                              c === "nome_completo" ? "Nome completo" : c === "cpf" ? "CPF" : ""
+                            }
+                            value={d[c] || ""}
+                            onChange={(e) => {
+                              const deps = [...sel.dependentes];
+                              deps[i] = { ...d, [c]: e.target.value };
+                              setSel({ ...sel, dependentes: deps });
+                            }}
+                            onBlur={() => salvar(sel.id, { dependentes: sel.dependentes })}
+                            className="h-8 text-xs"
+                          />
+                        ))}
+                        <button
+                          onClick={() => {
+                            const deps = (sel.dependentes || []).filter((_, x) => x !== i);
+                            salvar(sel.id, { dependentes: deps });
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -738,7 +914,7 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
                   </h3>
                   <div className="flex flex-wrap gap-2">
                     <Button variant="outline" onClick={gerarDossie}>
-                      <FileText className="w-4 h-4 mr-1" /> Gerar dossiê (PDF)
+                      <FileText className="w-4 h-4 mr-1" /> Formulário de Registro (PDF)
                     </Button>
                     <Button
                       variant="outline"

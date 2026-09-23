@@ -29,6 +29,8 @@ interface Body {
   funcao?: string;
 }
 
+// Campos do "Formulário para Registro" (modelo oficial da contabilidade).
+// Enums IGUAIS aos CHECKs da tabela funcionario — não inventar variações.
 const SCHEMA_EXTRACAO = {
   type: "object",
   properties: {
@@ -36,16 +38,73 @@ const SCHEMA_EXTRACAO = {
       type: "object",
       properties: {
         nome_completo: { type: ["string", "null"] },
+        nome_mae: { type: ["string", "null"] },
+        nome_pai: { type: ["string", "null"] },
         cpf: { type: ["string", "null"] },
         rg: { type: ["string", "null"] },
+        rg_data_expedicao: { type: ["string", "null"], description: "AAAA-MM-DD" },
+        rg_uf: { type: ["string", "null"] },
         data_nascimento: { type: ["string", "null"], description: "AAAA-MM-DD" },
+        naturalidade: { type: ["string", "null"] },
         telefone: { type: ["string", "null"] },
+        email: { type: ["string", "null"] },
         endereco: { type: ["string", "null"] },
+        bairro: { type: ["string", "null"] },
         cidade: { type: ["string", "null"] },
         estado: { type: ["string", "null"] },
         cep: { type: ["string", "null"] },
         pis_nis: { type: ["string", "null"] },
         ctps_numero: { type: ["string", "null"] },
+        titulo_eleitor: { type: ["string", "null"] },
+        titulo_eleitor_zona: { type: ["string", "null"] },
+        titulo_eleitor_secao: { type: ["string", "null"] },
+        reservista: { type: ["string", "null"] },
+        estado_civil: {
+          type: ["string", "null"],
+          enum: ["Solteiro", "Casado", "Divorciado", "Viúvo", "União Estável", "Outros", null],
+        },
+        raca_cor: {
+          type: ["string", "null"],
+          enum: ["Indígena", "Branca", "Negra", "Amarela", "Parda", "Outros", null],
+        },
+        grau_instrucao: {
+          type: ["string", "null"],
+          enum: [
+            "Analfabeto",
+            "Fundamental até 5º Incompleto",
+            "Fundamental 5º Completo",
+            "Fundamental 6º ao 9º",
+            "Fundamental Completo",
+            "Ensino Médio Incompleto",
+            "Ensino Médio Completo",
+            "Superior Incompleto",
+            "Superior Completo",
+            "Pós-Graduação",
+            "Mestrado",
+            "Doutorado",
+            null,
+          ],
+        },
+        banco_codigo: { type: ["string", "null"] },
+        banco_tipo_conta: {
+          type: ["string", "null"],
+          enum: ["Conta Corrente", "Conta Poupança", null],
+        },
+        banco_agencia: { type: ["string", "null"] },
+        banco_conta: { type: ["string", "null"] },
+      },
+    },
+    dependentes: {
+      type: "array",
+      description: "Filhos menores de 21 anos e cônjuge encontrados nos documentos",
+      items: {
+        type: "object",
+        properties: {
+          nome_completo: { type: "string" },
+          data_nascimento: { type: ["string", "null"], description: "AAAA-MM-DD" },
+          cpf: { type: ["string", "null"] },
+          parentesco: { type: ["string", "null"] },
+        },
       },
     },
     classificacao: {
@@ -118,9 +177,10 @@ Deno.serve(
         const checklist = body.checklist?.length ? body.checklist : [];
         const prompt = [
           "Você é o assistente de RH de uma construtora brasileira.",
-          "Leia os documentos pessoais anexados (RG, CPF, CNH, CTPS, comprovante de endereço, certidões etc.)",
-          "e devolva os dados cadastrais do candidato no JSON pedido.",
-          "Datas em AAAA-MM-DD; CPF com pontuação (000.000.000-00); campos não encontrados = null.",
+          "Leia os documentos pessoais anexados (RG, CPF, CNH, CTPS, título de eleitor, reservista, comprovantes, certidões, cartão do banco etc.)",
+          "e preencha o Formulário para Registro do candidato no JSON pedido.",
+          "Datas em AAAA-MM-DD; CPF com pontuação (000.000.000-00); campos não encontrados = null — NUNCA invente.",
+          "Inclua em dependentes o cônjuge e os filhos menores de 21 anos que aparecerem em certidões.",
           checklist.length
             ? `Classifique cada arquivo anexado em UM item deste checklist (ou null se não corresponder): ${checklist.join("; ")}.`
             : "Em classificacao, identifique o tipo de cada documento anexado.",
