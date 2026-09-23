@@ -27,6 +27,7 @@ const PAGES = {
   CadastroFerramentas: lazy(() => import("./pages/CadastroFerramentas")),
   Chat: lazy(() => import("./pages/Chat")),
   ClientePortal: lazy(() => import("./pages/ClientePortal")),
+  PortalFuncionario: lazy(() => import("./pages/PortalFuncionario")),
   Compras: lazy(() => import("./pages/Compras")),
   Configuracoes: lazy(() => import("./pages/Configuracoes")),
   Contabilidade: lazy(() => import("./pages/Contabilidade")),

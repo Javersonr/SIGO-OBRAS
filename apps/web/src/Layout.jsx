@@ -136,6 +136,7 @@ export default function Layout({ children, currentPageName }) {
   // Outras páginas públicas
   const publicPages = [
     "ClientePortal",
+    "PortalFuncionario",
     "AcessoNegado",
     "PrimeiroAcesso",
     "EntrarSistema",

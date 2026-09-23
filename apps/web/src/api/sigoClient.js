@@ -42,6 +42,8 @@ const SUPABASE_FUNCTIONS_REWRITE = {
   // Plataforma de IA + config do SaaS
   iaProcessar: "ia-processar",
   saasConfig: "saas-config",
+  // Portal do Funcionário (treinamentos EAD)
+  portalFuncionario: "portal-funcionario",
 };
 
 async function invokeFn(nome, payload = {}) {

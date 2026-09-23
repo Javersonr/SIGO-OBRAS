@@ -38,6 +38,7 @@ import SolicitacoesEntregaTab from "@/components/seguranca/SolicitacoesEntregaTa
 import BiometriaFuncionarioPanel from "@/components/seguranca/BiometriaFuncionarioPanel";
 import SstDashboardTab from "@/components/seguranca/SstDashboardTab";
 import ContratacaoTab from "@/components/seguranca/ContratacaoTab";
+import TreinamentosEadTab from "@/components/seguranca/TreinamentosEadTab";
 import {
   Shield,
   Plus,
@@ -1076,6 +1077,9 @@ export default function SegurancaTrabalho() {
                 <SelectItem value="contratacao">Contratação</SelectItem>
               )}
               {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
+                <SelectItem value="treinamentos_ead">Treinamentos</SelectItem>
+              )}
+              {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
                 <SelectItem value="funcionarios">Funcionários</SelectItem>
               )}
               {(perfil === "Admin" ||
@@ -1107,6 +1111,9 @@ export default function SegurancaTrabalho() {
             <TabsTrigger value="contratacao">Contratação</TabsTrigger>
           )}
           {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
+            <TabsTrigger value="treinamentos_ead">Treinamentos</TabsTrigger>
+          )}
+          {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
             <TabsTrigger value="funcionarios">Funcionários</TabsTrigger>
           )}
           {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Inspeção de Campo")) && (
@@ -1136,6 +1143,11 @@ export default function SegurancaTrabalho() {
         {/* Aba Contratação (esteira com IA — spec RH & Segurança) */}
         <TabsContent value="contratacao">
           <ContratacaoTab empresaAtiva={empresaAtiva} user={user} />
+        </TabsContent>
+
+        {/* Aba Treinamentos EAD (cursos YouTube + Portal do Funcionário) */}
+        <TabsContent value="treinamentos_ead">
+          <TreinamentosEadTab empresaAtiva={empresaAtiva} />
         </TabsContent>
 
         {/* Aba Liberações SST excepcionais (notificação + revogação) */}
