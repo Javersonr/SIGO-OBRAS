@@ -93,7 +93,13 @@ const menuItems = [
   { name: "Compras", icon: ShoppingCart, path: "Compras", modulo: "Compras" },
   { name: "Estoque", icon: Package, path: "Estoque", modulo: "Estoque" },
   { name: "Ferramental", icon: Wrench, path: "Ferramental", modulo: "Ferramental e EPI" },
-  { name: "Segurança", icon: Shield, path: "SegurancaTrabalho", modulo: "Segurança do Trabalho" },
+  // "modulo" mantém a chave antiga — é o nome usado nas permissões/planos.
+  {
+    name: "RH & Segurança",
+    icon: Shield,
+    path: "SegurancaTrabalho",
+    modulo: "Segurança do Trabalho",
+  },
   { name: "Financeiro", icon: DollarSign, path: "Financeiro", modulo: "Financeiro" },
   { name: "Contabilidade", icon: Calculator, path: "Contabilidade", modulo: "Contabilidade" },
   { name: "Relatórios", icon: BarChart3, path: "Relatorios", modulo: null },

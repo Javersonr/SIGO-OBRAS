@@ -37,6 +37,7 @@ import SolicitarEntregaFerramentasModal from "@/components/seguranca/SolicitarEn
 import SolicitacoesEntregaTab from "@/components/seguranca/SolicitacoesEntregaTab";
 import BiometriaFuncionarioPanel from "@/components/seguranca/BiometriaFuncionarioPanel";
 import SstDashboardTab from "@/components/seguranca/SstDashboardTab";
+import ContratacaoTab from "@/components/seguranca/ContratacaoTab";
 import {
   Shield,
   Plus,
@@ -1053,9 +1054,11 @@ export default function SegurancaTrabalho() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
             <Shield className="w-7 h-7 text-amber-600" />
-            Segurança do Trabalho
+            RH &amp; Segurança
           </h1>
-          <p className="text-slate-500">Gestão de funcionários e documentos de segurança</p>
+          <p className="text-slate-500">
+            Vida do funcionário: contratação, documentos, treinamentos e segurança
+          </p>
         </div>
       </div>
 
@@ -1068,6 +1071,9 @@ export default function SegurancaTrabalho() {
             <SelectContent>
               {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
                 <SelectItem value="dashboard_sst">Dashboard</SelectItem>
+              )}
+              {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
+                <SelectItem value="contratacao">Contratação</SelectItem>
               )}
               {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
                 <SelectItem value="funcionarios">Funcionários</SelectItem>
@@ -1098,6 +1104,9 @@ export default function SegurancaTrabalho() {
             <TabsTrigger value="dashboard_sst">Dashboard</TabsTrigger>
           )}
           {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
+            <TabsTrigger value="contratacao">Contratação</TabsTrigger>
+          )}
+          {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
             <TabsTrigger value="funcionarios">Funcionários</TabsTrigger>
           )}
           {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Inspeção de Campo")) && (
@@ -1122,6 +1131,11 @@ export default function SegurancaTrabalho() {
         {/* Aba Dashboard SST (vencimentos da planilha CONTROLE SST via sync) */}
         <TabsContent value="dashboard_sst">
           <SstDashboardTab empresaAtiva={empresaAtiva} />
+        </TabsContent>
+
+        {/* Aba Contratação (esteira com IA — spec RH & Segurança) */}
+        <TabsContent value="contratacao">
+          <ContratacaoTab empresaAtiva={empresaAtiva} user={user} />
         </TabsContent>
 
         {/* Aba Liberações SST excepcionais (notificação + revogação) */}
