@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { sigo, resolveStorageUrl } from "@/api/sigoClient";
+import { sigo, supabase, resolveStorageUrl } from "@/api/sigoClient";
+import { normalizarTexto } from "@/lib/busca";
 import { CHECKLIST_CONTRATACAO, statusChecklist, itemPorNome } from "@/lib/documentos-contratacao";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -104,6 +105,56 @@ async function abrirAnexo(a) {
   const url = await resolveStorageUrl(a?.ref);
   if (url) window.open(url, "_blank");
   else toast.error("Não foi possível abrir o arquivo");
+}
+
+// "Rafael Pereira de Souza" → "RAFAEL_PEREIRA_DE_SOUZA"
+const slugNome = (s) =>
+  normalizarTexto(s || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+/**
+ * Renomeia no Storage os anexos classificados para o padrão da casa:
+ * NOME_DO_CANDIDATO_ITEM.ext (ex.: RAFAEL_PEREIRA_SOUZA_RG_CPF.pdf).
+ * Colisão (dois arquivos no mesmo item) ganha sufixo _2, _3...
+ * Devolve a lista atualizada (ref/nome novos); falha de move não interrompe.
+ */
+async function renomearConformeChecklist(nomeCandidato, anexos) {
+  const base = slugNome(nomeCandidato);
+  if (!base || !supabase) return anexos;
+  const usados = new Set(anexos.map((a) => a.nome));
+  const out = [];
+  for (const a of anexos) {
+    const ext = (a.nome?.split(".").pop() || "pdf").toLowerCase();
+    if (!a.item || !a.ref) {
+      out.push(a);
+      continue;
+    }
+    let novoNome = `${base}_${a.item.toUpperCase()}.${ext}`;
+    if (a.nome === novoNome) {
+      out.push(a);
+      continue;
+    }
+    for (let i = 2; usados.has(novoNome); i++) {
+      novoNome = `${base}_${a.item.toUpperCase()}_${i}.${ext}`;
+    }
+    const slash = a.ref.indexOf("/");
+    const bucket = a.ref.slice(0, slash);
+    const path = a.ref.slice(slash + 1);
+    const dir = path.split("/").slice(0, -1).join("/");
+    const destino = dir ? `${dir}/${novoNome}` : novoNome;
+    try {
+      const { error } = await supabase.storage.from(bucket).move(path, destino);
+      if (error) throw error;
+      usados.add(novoNome);
+      out.push({ ...a, ref: `${bucket}/${destino}`, nome: novoNome });
+    } catch (e) {
+      console.warn("[contratacao] rename falhou, mantendo original:", e?.message);
+      out.push(a);
+    }
+  }
+  return out;
 }
 
 export default function ContratacaoTab({ empresaAtiva, user }) {
@@ -230,6 +281,11 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
         const item = itemPorNome(porArquivo.get(String(a.nome || "").toLowerCase()));
         return item ? { ...a, item, por_ia: true } : a;
       });
+      // renomeia no Storage pro padrão NOME_ITEM.ext
+      patch.anexos = await renomearConformeChecklist(
+        patch.nome_completo || sel.nome_completo,
+        patch.anexos
+      );
       if (sel.etapa === "documentos") patch.etapa = "conferencia";
       await salvar(sel.id, patch);
       toast.success("✅ Documentos lidos — confira os dados preenchidos");
@@ -660,8 +716,9 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
                       <Select
                         value={a.item || "none"}
                         onValueChange={async (v) => {
-                          const anexos = [...sel.anexos];
+                          let anexos = [...sel.anexos];
                           anexos[i] = { ...a, item: v === "none" ? null : v, por_ia: false };
+                          anexos = await renomearConformeChecklist(sel.nome_completo, anexos);
                           await salvar(sel.id, { anexos });
                         }}
                       >
