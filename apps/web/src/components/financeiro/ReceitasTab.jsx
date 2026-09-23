@@ -723,6 +723,15 @@ export default function ReceitasTab({
 
   // Paginação
   const totalPaginas = Math.ceil(receitasFiltradas.length / itensPorPagina);
+
+  // Página atual fora do intervalo (filtro encolheu a lista) → tabela vazia
+  // com contador cheio. Volta pra página 1.
+  React.useEffect(() => {
+    if (paginaAtual > 1 && paginaAtual > Math.max(1, totalPaginas)) {
+      setPaginaAtual(1);
+    }
+  }, [paginaAtual, totalPaginas]);
+
   const indiceInicio = (paginaAtual - 1) * itensPorPagina;
   const indiceFim = indiceInicio + itensPorPagina;
 

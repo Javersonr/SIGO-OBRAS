@@ -719,6 +719,16 @@ export default function DespesasTab({
 
   // Paginação
   const totalPaginas = Math.ceil(despesasFiltradas.length / itensPorPagina);
+
+  // Filtro mudou/lista encolheu e a página atual deixou de existir → a tabela
+  // ficava VAZIA com o contador cheio ("Despesas (22)" e nenhuma linha).
+  // Sempre que a página sai do intervalo válido, volta pra última existente.
+  React.useEffect(() => {
+    if (paginaAtual > 1 && paginaAtual > Math.max(1, totalPaginas)) {
+      setPaginaAtual(1);
+    }
+  }, [paginaAtual, totalPaginas]);
+
   const indiceInicio = (paginaAtual - 1) * itensPorPagina;
   const indiceFim = indiceInicio + itensPorPagina;
 
