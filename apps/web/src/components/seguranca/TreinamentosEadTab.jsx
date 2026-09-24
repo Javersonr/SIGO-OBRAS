@@ -6,6 +6,7 @@ import { dispararWhatsApp } from "@/lib/whatsapp";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -424,8 +425,12 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
                   {c.codigo ? c.codigo + " · " : ""}
                   {qtdAulas} aula(s)
                   {c.validade_meses ? ` · validade ${c.validade_meses} meses` : ""}
-                  {c.ativo === false ? " · INATIVO" : ""}
                 </p>
+                {c.ativo === false && (
+                  <Badge variant="outline" className="mt-2 text-amber-700 border-amber-300">
+                    Rascunho · não publicado
+                  </Badge>
+                )}
               </button>
             );
           })}
@@ -577,6 +582,22 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
                       onChange={(e) => setCursoSel({ ...cursoSel, descricao: e.target.value })}
                       className="mt-0.5"
                     />
+                  </div>
+                  <div className="col-span-2 flex items-start gap-3 rounded-lg border p-3">
+                    <Switch
+                      id="curso-publicado"
+                      checked={cursoSel.ativo !== false}
+                      onCheckedChange={(v) => setCursoSel({ ...cursoSel, ativo: v })}
+                    />
+                    <div>
+                      <Label htmlFor="curso-publicado" className="text-sm">
+                        Publicado — liberado para matrícula
+                      </Label>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Deixe desligado enquanto o responsável técnico revisa vídeos, questões e
+                        gabarito.
+                      </p>
+                    </div>
                   </div>
                 </div>
                 <Button onClick={salvarCurso} className="bg-slate-900 hover:bg-slate-800">
