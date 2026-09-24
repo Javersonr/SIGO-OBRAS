@@ -35,7 +35,6 @@ import InspecaoCampoTabFerramental from "@/components/ferramental/InspecaoCampoT
 import DocumentacaoEmpresaTab from "@/components/seguranca/DocumentacaoEmpresaTab";
 import SolicitarEntregaFerramentasModal from "@/components/seguranca/SolicitarEntregaFerramentasModal";
 import SolicitacoesEntregaTab from "@/components/seguranca/SolicitacoesEntregaTab";
-import BiometriaFuncionarioPanel from "@/components/seguranca/BiometriaFuncionarioPanel";
 import SstDashboardTab from "@/components/seguranca/SstDashboardTab";
 import ContratacaoTab from "@/components/seguranca/ContratacaoTab";
 import TreinamentosEadTab from "@/components/seguranca/TreinamentosEadTab";
@@ -830,6 +829,25 @@ export default function SegurancaTrabalho() {
     }
   };
 
+  // Abre o editor completo (abas) — usado pelo lápis da tabela e pela Ficha
+  const abrirEdicaoCompleta = async (f) => {
+    setSelectedFuncionario(f);
+    const docsRH = parseDocsOrTemplate(f.documentos_rh_estruturados, TEMPLATE_DOCS_RH);
+    const docsDemissionais = parseDocsOrTemplate(
+      f.documentos_demissionais,
+      TEMPLATE_DOCS_DEMISSIONAIS
+    );
+    setTabAtiva("dados");
+    setFuncionarioForm({
+      ...f,
+      documentos_rh_estruturados: JSON.stringify(docsRH),
+      documentos_demissionais: JSON.stringify(docsDemissionais),
+    });
+    if (f.funcao_id) await carregarTreinamentosFuncao(f.funcao_id);
+    setEditandoDatasTreinamento({});
+    setShowFuncionarioModal(true);
+  };
+
   const resetForm = () => {
     setFuncionarioForm({
       nome_completo: "",
@@ -1482,32 +1500,7 @@ export default function SegurancaTrabalho() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={async () => {
-                                  setSelectedFuncionario(f);
-                                  // documentos_obrigatorios fica intacto. Os outros 2 caem pros
-                                  // templates centralizados em lib/documentos-funcionario.js
-                                  // se o valor for vazio/corrompido.
-                                  const docsRH = parseDocsOrTemplate(
-                                    f.documentos_rh_estruturados,
-                                    TEMPLATE_DOCS_RH
-                                  );
-                                  const docsDemissionais = parseDocsOrTemplate(
-                                    f.documentos_demissionais,
-                                    TEMPLATE_DOCS_DEMISSIONAIS
-                                  );
-
-                                  setTabAtiva("dados");
-                                  setFuncionarioForm({
-                                    ...f,
-                                    documentos_rh_estruturados: JSON.stringify(docsRH),
-                                    documentos_demissionais: JSON.stringify(docsDemissionais),
-                                  });
-
-                                  if (f.funcao_id) await carregarTreinamentosFuncao(f.funcao_id);
-                                  setEditandoDatasTreinamento({});
-
-                                  setShowFuncionarioModal(true);
-                                }}
+                                onClick={() => abrirEdicaoCompleta(f)}
                               >
                                 <Edit className="w-4 h-4" />
                               </Button>
@@ -1770,15 +1763,8 @@ export default function SegurancaTrabalho() {
                 </div>
               </div>
 
-              {/* Biometria */}
-              <BiometriaFuncionarioPanel
-                funcionarioForm={funcionarioForm}
-                setFuncionarioForm={setFuncionarioForm}
-                selectedFuncionario={selectedFuncionario}
-                empresaAtiva={empresaAtiva}
-                uploadingDoc={uploadingDoc}
-                setUploadingDoc={setUploadingDoc}
-              />
+              {/* Biometria removida (set/2026): a ciência de entregas passou a ser
+                  eletrônica pelo Portal do Funcionário (registro de quem/quando/IP). */}
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
@@ -2398,6 +2384,10 @@ export default function SegurancaTrabalho() {
         user={user}
         onClose={() => setFichaFuncionario(null)}
         onSalvo={loadData}
+        onEditarCompleto={(f) => {
+          setFichaFuncionario(null);
+          abrirEdicaoCompleta(f);
+        }}
       />
 
       {/* ===== MODAIS DA ABA TST ===== */}

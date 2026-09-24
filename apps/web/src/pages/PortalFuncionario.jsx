@@ -433,6 +433,51 @@ export default function PortalFuncionario() {
       </header>
 
       <div className="max-w-3xl mx-auto p-4 space-y-3">
+        {/* Pendências de ciência de entrega (EPI/ferramenta/documento) */}
+        {(dados?.ciencias || []).filter((c) => c.status === "pendente").length > 0 && (
+          <Card className="border-amber-300">
+            <CardContent className="p-4 space-y-3">
+              <p className="font-semibold text-amber-800">
+                📋 Você tem entregas aguardando sua ciência:
+              </p>
+              {(dados.ciencias || [])
+                .filter((c) => c.status === "pendente")
+                .map((c) => (
+                  <div key={c.id} className="border rounded-lg p-3 bg-amber-50 space-y-2">
+                    <p className="text-sm">
+                      <Badge variant="outline" className="mr-2">
+                        {c.tipo}
+                      </Badge>
+                      {c.descricao}
+                    </p>
+                    <Button
+                      className="w-full bg-emerald-600 hover:bg-emerald-700"
+                      onClick={async () => {
+                        try {
+                          const { data } = await sigo.functions.invoke("portalFuncionario", {
+                            acao: "ciencia",
+                            token,
+                            ciencia_id: c.id,
+                          });
+                          if (data?.success === false) throw new Error(data.error);
+                          await carregar();
+                        } catch (e) {
+                          setErro(e?.message || "Erro ao registrar ciência");
+                        }
+                      }}
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-1" /> Confirmo o recebimento (dou ciência)
+                    </Button>
+                    <p className="text-[10px] text-amber-700">
+                      Ao confirmar, ficam registrados seu nome, data/hora e dispositivo — vale como
+                      assinatura eletrônica (Lei 14.063/2020).
+                    </p>
+                  </div>
+                ))}
+            </CardContent>
+          </Card>
+        )}
+
         {cursos.length === 0 && (
           <Card>
             <CardContent className="p-10 text-center text-slate-500">

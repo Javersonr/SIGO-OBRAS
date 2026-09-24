@@ -35,6 +35,7 @@ interface Body {
   segundos_assistidos?: number;
   duracao_seg?: number;
   respostas?: { questao_id: string; resposta: number }[];
+  ciencia_id?: string;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -219,11 +220,57 @@ Deno.serve(
         };
       });
 
+      // ciências de entrega (EPI/ferramenta/documento) pendentes e recentes
+      const { data: ciencias } = await supabase
+        .from("entrega_ciencia")
+        .select("id, tipo, descricao, itens, status, created_at, confirmada_em")
+        .eq("funcionario_id", funcionarioId)
+        .eq("empresa_id", empresaId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(30);
+
       return ok({
         funcionario: func,
         empresa_nome: emp?.nome || emp?.razao_social || "",
         cursos: resposta,
+        ciencias: ciencias ?? [],
       });
+    }
+
+    // ------------------------------------------------------------- ciência
+    // Confirmação = assinatura eletrônica simples (Lei 14.063/2020): grava
+    // quem (token do funcionário), quando, o quê e de onde (IP/dispositivo).
+    if (body.acao === "ciencia") {
+      const cienciaId = (body as { ciencia_id?: string }).ciencia_id;
+      if (!cienciaId) return fail("ciencia_id é obrigatório", 400);
+      const { data: ciencia } = await supabase
+        .from("entrega_ciencia")
+        .select("id, status, funcionario_id")
+        .eq("id", cienciaId)
+        .eq("funcionario_id", funcionarioId)
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (!ciencia) return fail("Registro não encontrado", 404);
+      if (ciencia.status === "confirmada") return ok({ message: "Já confirmada" });
+
+      const evidencia = {
+        metodo: "portal_funcionario_token",
+        ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
+        dispositivo: req.headers.get("user-agent") || null,
+        token_exp: payload.exp ?? null,
+        confirmado_em: new Date().toISOString(),
+      };
+      const { error } = await supabase
+        .from("entrega_ciencia")
+        .update({
+          status: "confirmada",
+          confirmada_em: new Date().toISOString(),
+          evidencia,
+        })
+        .eq("id", cienciaId);
+      if (error) return fail("Erro ao registrar ciência", 500);
+      return ok({ message: "Ciência registrada", evidencia });
     }
 
     // ------------------------------------------------------------ progresso

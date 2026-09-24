@@ -53,6 +53,7 @@ export default function FichaFuncionarioSheet({
   user,
   onClose,
   onSalvo,
+  onEditarCompleto,
 }) {
   const [form, setForm] = useState(funcionario || {});
   const [advertencias, setAdvertencias] = useState([]);
@@ -60,6 +61,8 @@ export default function FichaFuncionarioSheet({
   const [cursos, setCursos] = useState([]);
   const [movimentacoes, setMovimentacoes] = useState([]);
   const [ferramentasPosse, setFerramentasPosse] = useState([]);
+  const [ciencias, setCiencias] = useState([]);
+  const [novaCiencia, setNovaCiencia] = useState(null); // {tipo, descricao}
   const [carregando, setCarregando] = useState(true);
   const [novaAdv, setNovaAdv] = useState(null); // {data, tipo, motivo}
   const [ocupado, setOcupado] = useState(false);
@@ -92,6 +95,11 @@ export default function FichaFuncionarioSheet({
         }),
         sigo.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, funcionario_id: f.id }),
       ]);
+      const cien = await sigo.entities.EntregaCiencia.filter({
+        empresa_id: empresaAtiva.id,
+        funcionario_id: f.id,
+      });
+      setCiencias(cien.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || "")));
       setAdvertencias(advs.sort((a, b) => (b.data || "").localeCompare(a.data || "")));
       setVistorias(
         insps.sort((a, b) => (b.data_inspecao || "").localeCompare(a.data_inspecao || ""))
@@ -160,6 +168,45 @@ export default function FichaFuncionarioSheet({
     if (url) window.open(url, "_blank");
   };
 
+  // Cria a entrega e manda o link do portal pro funcionário dar ciência
+  const criarCiencia = async (enviarWhats) => {
+    if (!novaCiencia?.tipo || !novaCiencia?.descricao?.trim()) {
+      toast.error("Informe o tipo e a descrição dos itens entregues");
+      return;
+    }
+    setOcupado(true);
+    try {
+      await sigo.entities.EntregaCiencia.create({
+        empresa_id: empresaAtiva.id,
+        funcionario_id: funcionario.id,
+        tipo: novaCiencia.tipo,
+        descricao: novaCiencia.descricao.trim(),
+        criada_por: user?.full_name || user?.email || null,
+      });
+      setNovaCiencia(null);
+      toast.success("Entrega registrada — aguardando ciência do funcionário");
+      if (enviarWhats) {
+        const { data } = await sigo.functions.invoke("portalFuncionario", {
+          acao: "link",
+          funcionario_id: funcionario.id,
+        });
+        if (data?.success !== false && funcionario.telefone) {
+          const url = `${window.location.origin}${data.url_path}`;
+          const fone = funcionario.telefone.replace(/\D/g, "");
+          const msg = `📋 Você recebeu itens da empresa. Acesse o portal e DÊ CIÊNCIA da entrega:\n${url}`;
+          window.open(`https://wa.me/55${fone}?text=${encodeURIComponent(msg)}`, "_blank");
+        } else if (!funcionario.telefone) {
+          toast.info("Funcionário sem telefone — copie o link pela aba Treinamentos");
+        }
+      }
+      carregarHistorico(funcionario);
+    } catch (e) {
+      toast.error("Erro: " + (e?.message || e));
+    } finally {
+      setOcupado(false);
+    }
+  };
+
   if (!funcionario) return null;
 
   return (
@@ -174,6 +221,15 @@ export default function FichaFuncionarioSheet({
                 inativo
               </Badge>
             )}
+            <span className="flex-1" />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onEditarCompleto?.(funcionario)}
+              className="mr-6"
+            >
+              ✏️ Edição completa
+            </Button>
           </SheetTitle>
         </SheetHeader>
 
@@ -360,6 +416,99 @@ export default function FichaFuncionarioSheet({
                     ))}
                     {!cursos.length && (
                       <p className="text-sm text-slate-400">Nenhum treinamento na plataforma.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Entregas com ciência eletrônica (substitui a biometria) */}
+                <div>
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+                      <ClipboardCheck className="w-4 h-4" /> Entregas — ciência eletrônica (
+                      {ciencias.length})
+                    </h3>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setNovaCiencia({ tipo: "EPI", descricao: "" })}
+                    >
+                      <Plus className="w-4 h-4 mr-1" /> Nova entrega
+                    </Button>
+                  </div>
+                  {novaCiencia && (
+                    <div className="mt-2 border rounded-lg p-3 space-y-2 bg-slate-50">
+                      <div className="grid grid-cols-[140px_1fr] gap-2">
+                        <Select
+                          value={novaCiencia.tipo}
+                          onValueChange={(v) => setNovaCiencia({ ...novaCiencia, tipo: v })}
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {["EPI", "Ferramenta", "Documento"].map((t) => (
+                              <SelectItem key={t} value={t}>
+                                {t}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          placeholder="Itens entregues (ex.: capacete classe B, luva isolante 0,5kV...)"
+                          value={novaCiencia.descricao}
+                          onChange={(e) =>
+                            setNovaCiencia({ ...novaCiencia, descricao: e.target.value })
+                          }
+                          className="h-9"
+                        />
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => setNovaCiencia(null)}>
+                          Cancelar
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => criarCiencia(false)}
+                          disabled={ocupado}
+                        >
+                          Salvar
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => criarCiencia(true)}
+                          disabled={ocupado}
+                          className="bg-emerald-600 hover:bg-emerald-700"
+                        >
+                          Salvar + WhatsApp
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="mt-2 space-y-1">
+                    {ciencias.map((c) => (
+                      <div
+                        key={c.id}
+                        className="flex items-center gap-2 text-sm bg-white border rounded p-2"
+                      >
+                        <Badge variant="outline">{c.tipo}</Badge>
+                        <span className="flex-1">{c.descricao}</span>
+                        {c.status === "confirmada" ? (
+                          <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+                            ✓ ciência em {fmtData(c.confirmada_em)}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-amber-700 border-amber-300">
+                            aguardando ciência
+                          </Badge>
+                        )}
+                      </div>
+                    ))}
+                    {!ciencias.length && !novaCiencia && (
+                      <p className="text-sm text-slate-400">
+                        Nenhuma entrega registrada. A ciência é dada pelo funcionário no portal
+                        (vale como assinatura eletrônica — registra quem, quando e de onde).
+                      </p>
                     )}
                   </div>
                 </div>
