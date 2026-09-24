@@ -772,6 +772,18 @@ export default function FornecedoresTab({ empresaAtiva, fornecedores, loadData }
               </div>
             </div>
             <div>
+              <Label>Dados bancários para pagamento</Label>
+              <Textarea
+                value={fornecedorForm.dados_bancarios || ""}
+                onChange={(e) =>
+                  setFornecedorForm({ ...fornecedorForm, dados_bancarios: e.target.value })
+                }
+                placeholder={"Banco, agência, conta e favorecido\nPIX: chave"}
+                className="mt-1.5"
+                rows={3}
+              />
+            </div>
+            <div>
               <Label>Observações</Label>
               <Textarea
                 value={fornecedorForm.observacoes || ""}

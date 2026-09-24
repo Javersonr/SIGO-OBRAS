@@ -20,6 +20,7 @@ import {
 import { sigo } from "@/api/sigoClient";
 import AnexoViewer from "../shared/AnexoViewer";
 import ModalPagamento from "./ModalPagamento";
+import { DadosBancariosFornecedor } from "./DadosBancariosPagamento";
 
 export default function DetalheDespesaModal({
   open,
@@ -229,6 +230,11 @@ export default function DetalheDespesaModal({
                   <p className="mt-1 text-slate-800">{formatDate(despesa.data_pagamento)}</p>
                 </div>
               </div>
+
+              <DadosBancariosFornecedor
+                fornecedorId={despesa.fornecedor_id}
+                fornecedorNome={despesa.fornecedor_nome}
+              />
             </div>
           </div>
 

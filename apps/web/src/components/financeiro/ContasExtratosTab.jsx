@@ -30,6 +30,7 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
     banco: "",
     agencia: "",
     numero_conta: "",
+    chave_pix: "",
     saldo_inicial: 0,
     responsavel_email: "",
   });
@@ -53,6 +54,7 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
         banco: conta.banco || "",
         agencia: conta.agencia || "",
         numero_conta: conta.numero_conta || "",
+        chave_pix: conta.chave_pix || "",
         saldo_inicial: conta.saldo_inicial || 0,
         responsavel_email: conta.responsavel_email || "",
       });
@@ -64,6 +66,7 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
         banco: "",
         agencia: "",
         numero_conta: "",
+        chave_pix: "",
         saldo_inicial: 0,
         responsavel_email: "",
       });
@@ -286,6 +289,15 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
                   className="mt-1.5"
                 />
               </div>
+            </div>
+            <div>
+              <Label>Chave PIX (para receber)</Label>
+              <Input
+                value={form.chave_pix}
+                onChange={(e) => setForm({ ...form, chave_pix: e.target.value })}
+                placeholder="CNPJ, e-mail, telefone ou chave aleatória"
+                className="mt-1.5"
+              />
             </div>
             <div>
               <Label>Saldo Inicial</Label>

@@ -33,6 +33,7 @@ const FORM_VAZIO = {
   cep: "",
   contato_principal: "",
   categorias: [],
+  dados_bancarios: "",
   observacoes: "",
 };
 
@@ -241,6 +242,15 @@ export default function NovoFornecedorConfigSheet({
                 </div>
               </div>
             </div>
+          </div>
+          <div>
+            <Label>Dados bancários para pagamento</Label>
+            <Textarea
+              value={form.dados_bancarios}
+              onChange={(e) => setForm({ ...form, dados_bancarios: e.target.value })}
+              placeholder={"Banco, agência, conta e favorecido\nPIX: chave"}
+              rows={3}
+            />
           </div>
           <div>
             <Label>Observações</Label>

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { CheckCircle2, Upload, X } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
+import { DadosBancariosFornecedor } from "./DadosBancariosPagamento";
 
 export default function ModalPagamento({
   open,
@@ -144,6 +145,13 @@ export default function ModalPagamento({
                 </div>
               )}
             </div>
+          )}
+
+          {despesa && (
+            <DadosBancariosFornecedor
+              fornecedorId={despesa.fornecedor_id}
+              fornecedorNome={despesa.fornecedor_nome}
+            />
           )}
 
           {/* Data */}

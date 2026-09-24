@@ -4,6 +4,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Edit, X, CheckCircle2 } from "lucide-react";
+import { DadosRecebimentoConta } from "./DadosBancariosPagamento";
 
 export default function DetalheReceitaModal({
   open,
@@ -125,6 +126,10 @@ export default function DetalheReceitaModal({
                 <Label className="text-slate-500">Oportunidade</Label>
                 <p className="mt-1 text-slate-800">{receita.oportunidade_nome || "-"}</p>
               </div>
+            </div>
+
+            <div className="mt-4">
+              <DadosRecebimentoConta contaId={receita.conta_id} />
             </div>
           </div>
 
