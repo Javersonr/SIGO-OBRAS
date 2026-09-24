@@ -42,7 +42,7 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_LEGACY_APP_ID: ${{ secrets.VITE_LEGACY_APP_ID }}
           VITE_LEGACY_APP_BASE_URL: ${{ secrets.VITE_LEGACY_APP_BASE_URL }}
-          VITE_APP_BASE_URL: https://sigoobras.com.br
+          VITE_APP_BASE_URL: https://www.sigoobras.com.br
           VITE_APP_NAME: SIGO Obras
           VITE_DATA_BACKEND: supabase
         run: npm run build
@@ -101,7 +101,7 @@ jobs:
         if: always()
         run: |
           if [ "${{ job.status }}" = "success" ]; then
-            echo "::notice::Site: https://sigoobras.com.br"
+            echo "::notice::Site: https://www.sigoobras.com.br"
           else
             echo "::error::Deploy falhou — ver logs acima"
           fi

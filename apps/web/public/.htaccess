@@ -10,6 +10,14 @@
   RewriteEngine On
   RewriteBase /
 
+  # 1. Endereço sem www → www. O certificado cobre www.sigoobras.com.br
+  #    e *.sigoobras.com.br, mas NÃO o domínio puro (o navegador mostra
+  #    "Não seguro" em https://sigoobras.com.br). /.well-known/ fica de fora
+  #    para o AutoSSL/Let's Encrypt conseguir validar o domínio puro.
+  RewriteCond %{REQUEST_URI} !^/\.well-known/
+  RewriteCond %{HTTP_HOST} ^sigoobras\.com\.br$ [NC]
+  RewriteRule ^(.*)$ https://www.sigoobras.com.br%{REQUEST_URI} [L,R=301]
+
   # 1a. Força HTTPS (caso SSL não force no nível do cPanel)
   # EXCETO /.well-known/ — Let's Encrypt valida cert via HTTP nesse path
   # (se redirecionarmos, AutoSSL falha o handshake porque o cert ainda não existe)
