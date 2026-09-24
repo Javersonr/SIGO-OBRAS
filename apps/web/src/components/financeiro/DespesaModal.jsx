@@ -211,6 +211,35 @@ export default function DespesaModal({
     valor_unitario: 0,
   });
   const [showNovoFornecedor, setShowNovoFornecedor] = useState(false);
+
+  // Dados bancários do fornecedor: editáveis aqui mesmo e SALVOS NO CADASTRO
+  // do fornecedor (valem pra todas as despesas dele), não na despesa.
+  const [dadosBancarios, setDadosBancarios] = useState("");
+  const [dadosBancariosOriginal, setDadosBancariosOriginal] = useState("");
+  useEffect(() => {
+    let vivo = true;
+    setDadosBancarios("");
+    setDadosBancariosOriginal("");
+    if (!form.fornecedor_id) return undefined;
+    sigo.entities.Fornecedor.get(form.fornecedor_id)
+      .then((f) => {
+        if (!vivo) return;
+        setDadosBancarios(f?.dados_bancarios || "");
+        setDadosBancariosOriginal(f?.dados_bancarios || "");
+      })
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [form.fornecedor_id]);
+
+  const salvarDadosBancariosSeMudou = async () => {
+    if (!form.fornecedor_id) return;
+    const novo = dadosBancarios.trim();
+    if (novo === (dadosBancariosOriginal || "").trim()) return;
+    await sigo.entities.Fornecedor.update(form.fornecedor_id, { dados_bancarios: novo || null });
+    setDadosBancariosOriginal(novo);
+  };
   const [fornecedoresLocais, setFornecedoresLocais] = useState(fornecedores);
 
   useEffect(() => {
@@ -621,6 +650,20 @@ export default function DespesaModal({
                           <Plus className="w-4 h-4" />
                         </Button>
                       </div>
+                      {form.fornecedor_id && (
+                        <div className="mt-2">
+                          <Label className="text-xs text-slate-500">
+                            Dados bancários para pagamento (ficam no cadastro do fornecedor)
+                          </Label>
+                          <Textarea
+                            value={dadosBancarios}
+                            onChange={(e) => setDadosBancarios(e.target.value)}
+                            placeholder={"Banco, agência, conta e favorecido\nPIX: chave"}
+                            rows={2}
+                            className="mt-1"
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1433,6 +1476,7 @@ export default function DespesaModal({
                     return;
                   }
                   try {
+                    await salvarDadosBancariosSeMudou();
                     await handleSave({
                       itensNota,
                       almoxarifadoId: almoxarifadoSelecionado || null,
