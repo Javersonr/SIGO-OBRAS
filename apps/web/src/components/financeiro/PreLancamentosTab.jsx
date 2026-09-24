@@ -24,7 +24,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { sigo } from "@/api/sigoClient";
+import { sigo, resolveStorageUrl } from "@/api/sigoClient";
+import { ehBase44, extensaoDoArquivo, nomeDoArquivo } from "@/lib/anexo-ref";
 import * as XLSX from "xlsx";
 import JSZip from "jszip";
 import BarraProgressoImportacao from "./BarraProgressoImportacao";
@@ -96,6 +97,14 @@ export default function PreLancamentosTab({
       }
       const dados = todos.map((p) => {
         const d = safeParseJSON(p.dados_extraidos, {});
+        // comprovante_url é a ref do Storage (ou URL que vence em 1h): exporta
+        // só o nome do arquivo — link cru na planilha não abriria.
+        const ref = p.comprovante_url;
+        const comprovante = !ref
+          ? ""
+          : ehBase44(ref)
+            ? "(sistema antigo) " + nomeDoArquivo(ref)
+            : nomeDoArquivo(ref);
         return {
           Fornecedor: d.fornecedor || "",
           Descrição: d.descricao || "",
@@ -104,7 +113,7 @@ export default function PreLancamentosTab({
           Projeto: p.projeto_nome || "",
           Status: p.status || "",
           Usuário: p.usuario_email || "",
-          Comprovante: p.comprovante_url || "",
+          Comprovante: comprovante,
         };
       });
       const ws = XLSX.utils.json_to_sheet(dados);
@@ -201,25 +210,55 @@ export default function PreLancamentosTab({
 
       const zip = new JSZip();
       let baixados = 0;
+      let doSistemaAntigo = 0;
+      let semArquivo = 0;
 
       for (let i = 0; i < comComprovante.length; i++) {
         const p = comComprovante[i];
+        const ref = p.comprovante_url;
+        // Base44: a plataforma antiga apagou os arquivos — não há o que baixar
+        if (ehBase44(ref)) {
+          doSistemaAntigo++;
+          continue;
+        }
         try {
-          const resp = await fetch(p.comprovante_url);
-          if (!resp.ok) continue;
+          // ref "bucket/caminho" (ou URL assinada antiga) → URL assinada fresca
+          const u = await resolveStorageUrl(ref);
+          if (!u) {
+            semArquivo++;
+            continue;
+          }
+          const resp = await fetch(u);
+          // erro/HTML do SPA não pode entrar no ZIP com nome de comprovante
+          if (!resp.ok || /text\/html/i.test(resp.headers.get("content-type") || "")) {
+            semArquivo++;
+            continue;
+          }
           const blob = await resp.blob();
-          const ext = p.comprovante_url.split("?")[0].split(".").pop() || "jpg";
+          const ext = extensaoDoArquivo(ref) || "jpg";
           const d = safeParseJSON(p.dados_extraidos, {});
           const nomeArq = `${String(i + 1).padStart(3, "0")}_${(d.fornecedor || "sem_fornecedor").replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30)}_${(d.data || "").replace(/-/g, "")}.${ext}`;
           zip.file(nomeArq, blob);
           baixados++;
         } catch (err) {
+          semArquivo++;
           console.warn("[PreLancamentosTab] falha baixando comprovante:", err);
         }
       }
 
+      const foraDoZip = [];
+      if (doSistemaAntigo > 0) {
+        foraDoZip.push(
+          `${doSistemaAntigo} do sistema antigo (Base44) — arquivos apagados com a plataforma antiga`
+        );
+      }
+      if (semArquivo > 0) {
+        foraDoZip.push(`${semArquivo} não encontrado(s) no armazenamento`);
+      }
+      const aviso = foraDoZip.length ? `\n\nFicaram de fora:\n- ${foraDoZip.join("\n- ")}` : "";
+
       if (baixados === 0) {
-        alert("Não foi possível baixar nenhum comprovante");
+        alert("Não foi possível baixar nenhum comprovante." + aviso);
         return;
       }
 
@@ -230,7 +269,7 @@ export default function PreLancamentosTab({
       a.download = `Comprovantes_PreLancamentos_${new Date().toLocaleDateString("pt-BR").replace(/\//g, "-")}.zip`;
       a.click();
       URL.revokeObjectURL(url);
-      alert(`${baixados} comprovante(s) exportados com sucesso!`);
+      alert(`${baixados} comprovante(s) exportados com sucesso!` + aviso);
     } catch (e) {
       alert("Erro ao exportar comprovantes: " + e.message);
     } finally {

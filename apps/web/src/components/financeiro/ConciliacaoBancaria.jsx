@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Upload, CheckCircle2, XCircle, Link2, AlertCircle } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { refDoUpload } from "@/lib/anexo-ref";
 
 export default function ConciliacaoBancaria({ empresaAtiva, contas, onReload }) {
   const [extratosBancarios, setExtratosBancarios] = useState([]);
@@ -60,13 +61,16 @@ export default function ConciliacaoBancaria({ empresaAtiva, contas, onReload }) 
     if (!file || !contaSelecionada) return;
 
     try {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+      const res = await sigo.integrations.Core.UploadFile({ file });
 
       await sigo.entities.UploadOFX.create({
         empresa_id: empresaAtiva.id,
         conta_id: contaSelecionada,
         nome_arquivo: file.name, // NOT NULL — faltava (quebrava o import OFX)
-        url_arquivo: file_url, // coluna real é url_arquivo (não arquivo_url)
+        // coluna real é url_arquivo (não arquivo_url). Grava a ref estável
+        // "bucket/caminho": a file_url assinada vence em 1h. Ninguém lê essa
+        // coluna hoje; para abrir, usar resolveStorageUrl/AnexoViewer.
+        url_arquivo: refDoUpload(res),
         status: "Processado", // CHECK aceita Recebido/Processado/Erro (não minúsculo)
       });
 

@@ -1,7 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { refDoUpload, nomeDoArquivo, extensaoDoArquivo, ehImagem, ehPdf } from "@/lib/anexo-ref";
 import DespesaModal from "./DespesaModal";
+
+/** Mime do comprovante pela extensão da ref; sem extensão, costuma ser foto. */
+function tipoDoComprovante(ref) {
+  const ext = extensaoDoArquivo(ref);
+  if (ehPdf(ref)) return "application/pdf";
+  if (!ext) return "image/jpeg";
+  if (ehImagem(ref)) return `image/${ext === "jpg" ? "jpeg" : ext}`;
+  return "";
+}
 
 export default function EditarPreLancamentoComDespesaModal({
   open,
@@ -60,11 +70,13 @@ export default function EditarPreLancamentoComDespesaModal({
       forma_pagamento: dados.forma_pagamento || "",
     });
 
-    // Carregar comprovante como anexo se existir
+    // Carregar comprovante como anexo se existir (ref "bucket/path" ou URL legada;
+    // nome/tipo sem o ?token=... da URL assinada)
     if (preLancamento.comprovante_url) {
-      const nome = preLancamento.comprovante_url.split("/").pop() || "comprovante";
-      const tipo = nome.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image/jpeg";
-      setAnexos([{ nome, url: preLancamento.comprovante_url, tipo }]);
+      const ref = preLancamento.comprovante_url;
+      setAnexos([
+        { nome: nomeDoArquivo(ref, "comprovante"), url: ref, tipo: tipoDoComprovante(ref) },
+      ]);
     } else {
       setAnexos([]);
     }
@@ -74,8 +86,13 @@ export default function EditarPreLancamentoComDespesaModal({
     const files = Array.from(e.target.files);
     const novos = [];
     for (const file of files) {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-      novos.push({ nome: file.name, url: file_url, tipo: file.type });
+      // grava a REFERÊNCIA "bucket/path": a file_url assinada expira em 1h
+      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+      if (!ref) {
+        alert(`Falha no envio de ${file.name}`);
+        continue;
+      }
+      novos.push({ nome: file.name, url: ref, tipo: file.type });
     }
     setAnexos((prev) => [...prev, ...novos]);
   };
@@ -115,6 +132,7 @@ export default function EditarPreLancamentoComDespesaModal({
       projeto_nome: projeto?.nome || form.projeto_nome || null,
       conta_financeira_id: form.conta_id || null,
       data_competencia: form.data_competencia || null,
+      // comprovante trocado: anexos[0].url já é a ref "bucket/path" do upload
       ...(anexos.length > 0 && anexos[0].url !== preLancamento.comprovante_url
         ? { comprovante_url: anexos[0].url }
         : {}),

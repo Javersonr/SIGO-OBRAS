@@ -2,15 +2,22 @@ import React, { useState } from "react";
 import { Camera, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { sigo, refDoStorage } from "@/api/sigoClient";
+import { refDoUpload } from "@/lib/anexo-ref";
 import FullscreenCamera from "../camera/FullscreenCamera";
 
+/**
+ * onCaptura(ref, urlAssinada): `ref` ("bucket/path") é o que se GRAVA no banco;
+ * `urlAssinada` expira em 1h e serve só para pré-visualizar agora.
+ */
 export default function CapturaComprovanteCamera({ onCaptura, loading }) {
   const [step, setStep] = useState("opcoes"); // 'opcoes' | 'camera'
   const [enviando, setEnviando] = useState(false);
   const fileInputRef = React.useRef(null);
 
+  // FullscreenCamera devolve a URL assinada: extrai a ref estável dela
   const handleCameraCaptura = (fileUrl) => {
-    onCaptura(fileUrl);
+    onCaptura(refDoStorage(fileUrl) || fileUrl, fileUrl);
     setStep("opcoes");
   };
 
@@ -20,12 +27,12 @@ export default function CapturaComprovanteCamera({ onCaptura, loading }) {
     try {
       setEnviando(true);
       toast.loading("Fazendo upload do comprovante...", { id: "upload" });
-      const { sigo } = await import("@/api/sigoClient");
       const result = await sigo.integrations.Core.UploadFile({ file });
       toast.dismiss("upload");
-      if (!result?.file_url) throw new Error("Falha no upload");
+      const ref = refDoUpload(result);
+      if (!ref) throw new Error("Falha no upload");
       toast.success("Comprovante enviado! Extraindo dados com IA...");
-      onCaptura(result.file_url);
+      onCaptura(ref, result.file_url);
     } catch (err) {
       toast.dismiss("upload");
       toast.error("Erro ao enviar: " + err.message);

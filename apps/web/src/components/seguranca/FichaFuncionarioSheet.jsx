@@ -194,9 +194,15 @@ export default function FichaFuncionarioSheet({
           "📋 Você recebeu itens da empresa. Entre no Portal do Funcionário e DÊ CIÊNCIA da entrega."
         );
         if (r.via === "evolution") toast.success("📲 Mensagem enviada automaticamente");
-        if (!funcionario.telefone) {
-          await navigator.clipboard.writeText(r.texto);
-          toast.info("Funcionário sem telefone — mensagem copiada para você entregar");
+        // sem telefone ou telefone inválido: a mensagem (que pode ter a senha
+        // provisória recém-criada) não pode se perder → vai para a área de transferência
+        if (!r.via || r.via === "invalido") {
+          await navigator.clipboard.writeText(r.texto).catch(() => {});
+          toast.info(
+            r.via === "invalido"
+              ? "Telefone inválido — mensagem copiada para você entregar (corrija o cadastro)"
+              : "Funcionário sem telefone — mensagem copiada para você entregar"
+          );
         }
       }
       carregarHistorico(funcionario);

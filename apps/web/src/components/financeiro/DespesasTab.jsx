@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { gerarDatasParcelas } from "@/lib/parcelas";
 import { csvParaObjetos } from "@/lib/csv";
 import { filtrarTransacoes } from "@/lib/filtros-transacao";
@@ -33,6 +33,9 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sigo, supabase } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { refDoUpload } from "@/lib/anexo-ref";
+import { baixarReciboQuitado } from "@/lib/recibo-quitado";
+import { toast } from "sonner";
 
 import FiltroRapido from "./FiltroRapido";
 import CardsResumo from "./CardsResumo";
@@ -60,6 +63,9 @@ export default function DespesasTab({
   const [showDetalhes, setShowDetalhes] = useState(false);
   const [despesaDetalhes, setDespesaDetalhes] = useState(null);
   const [anexosDetalhes, setAnexosDetalhes] = useState([]);
+  // id da despesa aberta no detalhe: recargas assíncronas (upload, PDF do
+  // recibo) de outra despesa não podem sobrescrever a lista de anexos
+  const despesaAbertaRef = useRef(null);
   const [sortConfig, setSortConfig] = useState({ field: "data_vencimento", direction: "desc" });
   const [showModal, setShowModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -1385,6 +1391,13 @@ export default function DespesasTab({
 
   const handleEmitirRecibo = async (despesa) => {
     try {
+      // Fornecedor já deu quitação pelo WhatsApp → o recibo é o QUITADO
+      // (com a evidência), não o modelo em branco para assinar à mão.
+      if (despesa?.id && (await baixarReciboQuitado(despesa.id))) {
+        toast.success("Recibo quitado baixado (também está nos anexos da despesa)");
+        await recarregarAnexosDetalhe(despesa.id);
+        return;
+      }
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF();
 
@@ -1475,7 +1488,17 @@ export default function DespesasTab({
     }
   };
 
+  /** Relê os anexos da despesa aberta no detalhe (senão o novo só aparece ao reabrir). */
+  const recarregarAnexosDetalhe = async (despesaId) => {
+    const anexosDb = await sigo.entities.TransacaoAnexo.filter({
+      empresa_id: empresaAtiva.id,
+      transacao_id: despesaId,
+    });
+    if (despesaAbertaRef.current === despesaId) setAnexosDetalhes(anexosDb);
+  };
+
   const handleAdicionarAnexo = (despesa) => {
+    despesaAbertaRef.current = despesa.id;
     setDespesaDetalhes(despesa);
     // Abrir input de arquivo
     const input = document.createElement("input");
@@ -1484,28 +1507,37 @@ export default function DespesasTab({
     input.accept = "image/*,.pdf";
     input.onchange = async (e) => {
       const files = Array.from(e.target.files);
-      for (const file of files) {
-        const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-        await sigo.entities.TransacaoAnexo.create({
-          empresa_id: empresaAtiva.id,
-          transacao_id: despesa.id,
-          nome: file.name,
-          url: file_url,
-          tipo: file.type || "recibo",
-        });
+      try {
+        for (const file of files) {
+          // grava a REFERÊNCIA "bucket/path": a file_url assinada expira em 1h
+          const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+          if (!ref) throw new Error(`falha no envio de ${file.name}`);
+          await sigo.entities.TransacaoAnexo.create({
+            empresa_id: empresaAtiva.id,
+            transacao_id: despesa.id,
+            nome: file.name,
+            url: ref,
+            tipo: file.type || "recibo",
+          });
+        }
+        toast.success(files.length > 1 ? "Anexos adicionados" : "Anexo adicionado");
+      } catch (err) {
+        toast.error("Erro ao anexar: " + (err?.message || err));
       }
-      alert("Anexo(s) adicionado(s) com sucesso!");
+      await recarregarAnexosDetalhe(despesa.id);
       onReload();
     };
     input.click();
   };
 
   const handleVerDetalhes = async (despesa) => {
+    despesaAbertaRef.current = despesa.id;
     // Carregar anexos
     const anexosDb = await sigo.entities.TransacaoAnexo.filter({
       empresa_id: empresaAtiva.id,
       transacao_id: despesa.id,
     });
+    if (despesaAbertaRef.current !== despesa.id) return; // clicou em outra no meio
     setAnexosDetalhes(anexosDb);
     setDespesaDetalhes(despesa);
     setShowDetalhes(true);
@@ -2100,6 +2132,7 @@ export default function DespesasTab({
         empresaAtiva={empresaAtiva}
         onEmitirRecibo={handleEmitirRecibo}
         onAdicionarAnexo={handleAdicionarAnexo}
+        onAnexosAlterados={() => despesaDetalhes && recarregarAnexosDetalhe(despesaDetalhes.id)}
         onDuplicar={handleDuplicarDespesa}
         onDesfazerConciliacao={handleDesfazerConciliacao}
       />

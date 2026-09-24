@@ -3,7 +3,7 @@ import { sigo } from "@/api/sigoClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, ReceiptText, CheckCircle2, XCircle, ShieldCheck } from "lucide-react";
+import { Loader2, ReceiptText, CheckCircle2, XCircle, ShieldCheck, Download } from "lucide-react";
 
 const fmtMoeda = (v) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
@@ -50,6 +50,21 @@ export default function ReciboPagamento() {
     try {
       setRecibo(await chamar(acao, extra));
       setContestando(false);
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  // PDF do recibo quitado (gerado no servidor) — cópia para o favorecido
+  const baixarPdf = async () => {
+    setOcupado(true);
+    setErro("");
+    try {
+      const { data } = await sigo.functions.invoke("reciboFornecedor", { acao: "pdf", token });
+      if (data?.success === false || !data?.url) throw new Error(data?.error || "Erro no PDF");
+      window.location.href = data.url; // URL com ?download= → baixa sem sair da página
     } catch (e) {
       setErro(e.message);
     } finally {
@@ -137,6 +152,14 @@ export default function ReciboPagamento() {
               <p className="text-sm text-slate-600">
                 em {new Date(recibo.confirmada_em).toLocaleString("pt-BR")}
               </p>
+              <Button variant="outline" className="mt-3" disabled={ocupado} onClick={baixarPdf}>
+                {ocupado ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                Baixar recibo (PDF)
+              </Button>
             </CardContent>
           </Card>
         ) : recibo.status === "contestada" ? (

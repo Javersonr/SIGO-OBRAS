@@ -12,6 +12,7 @@
  * erro claro em vez de falha silenciosa (antes: HTML do SPA com HTTP 200).
  */
 import { createClient as createSupaClient } from "@sigoobras/sdk";
+import { ehBase44 } from "@/lib/anexo-ref";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -182,6 +183,24 @@ export const sigo = {
 export const supabase = supa?._supabase ?? null;
 
 /**
+ * URL do NOSSO Storage gravada no banco (assinada, pública ou autenticada) →
+ * referência "bucket/caminho". Uploads antigos gravavam a URL assinada, que
+ * expira em 1h e depois responde {"error":"InvalidJWT"} — agora assinamos de
+ * novo a partir do caminho. null = não é URL do nosso Storage.
+ */
+export function refDoStorage(url) {
+  if (!url || typeof url !== "string" || !supabaseUrl) return null;
+  if (!url.startsWith(supabaseUrl.replace(/\/+$/, "") + "/storage/v1/object/")) return null;
+  const m = url.match(/\/storage\/v1\/object\/(?:sign|public|authenticated)\/([^/?#]+)\/([^?#]+)/);
+  if (!m) return null;
+  try {
+    return `${m[1]}/${decodeURIComponent(m[2])}`;
+  } catch {
+    return `${m[1]}/${m[2]}`;
+  }
+}
+
+/**
  * resolveStorageUrl — transforma uma referência de arquivo numa URL acessível.
  *
  * Buckets do Supabase são privados, então a URL de acesso é ASSINADA e expira.
@@ -189,8 +208,9 @@ export const supabase = supa?._supabase ?? null;
  * REFERÊNCIA estável "bucket/caminho/arquivo.ext" e geramos uma URL assinada
  * fresca toda vez que o anexo vai ser aberto.
  *
- * Compatível com o legado: se `ref` já for uma URL pronta (http/data/blob),
- * devolve como está (anexos antigos / links externos).
+ * Compatível com o legado: URL assinada antiga do nosso Storage é re-assinada;
+ * outra URL pronta (http/data/blob) volta como está (links externos). URL do
+ * Base44 → null: a plataforma antiga apagou os arquivos (abriria um 404).
  *
  * @param {string} ref  "bucket/path" OU uma URL completa
  * @param {number} expiresIn  validade da URL assinada em segundos (default 1h)
@@ -198,7 +218,9 @@ export const supabase = supa?._supabase ?? null;
  */
 export async function resolveStorageUrl(ref, expiresIn = 3600) {
   if (!ref || typeof ref !== "string") return null;
-  if (/^(https?:|data:|blob:)/i.test(ref)) return ref; // já é URL pronta
+  const doStorage = refDoStorage(ref);
+  if (doStorage) ref = doStorage;
+  else if (/^(https?:|data:|blob:)/i.test(ref)) return ehBase44(ref) ? null : ref; // URL externa pronta
   if (!supabase) return null;
   const slash = ref.indexOf("/");
   if (slash < 1) return null;

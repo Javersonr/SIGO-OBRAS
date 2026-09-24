@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { safeUrl } from "@/lib/safe-url";
+import { ehBase44, nomeDoArquivo, refDoUpload } from "@/lib/anexo-ref";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +18,8 @@ import {
   Download,
   FileText,
   FileSpreadsheet,
-  ExternalLink,
+  Eye,
+  FileWarning,
 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -53,10 +55,14 @@ export default function FechamentoCaixaModal({
   const [salvando, setSalvando] = useState(false);
   const [gerandoPDF, setGerandoPDF] = useState(false);
   const [erro, setErro] = useState(null);
+  const [anexoAberto, setAnexoAberto] = useState(null);
 
   // Carregar empresa e itens ao abrir
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setAnexoAberto(null); // fecha o comprovante junto com o modal
+      return;
+    }
     setErro(null);
     setItens(itensProp || []);
     sigo.entities.Empresa.filter({ id: empresaId })
@@ -140,8 +146,13 @@ export default function FechamentoCaixaModal({
       };
 
       const response = await sigo.functions.invoke("gerarPDFComprovantes", payload);
-      if (response.data.error) throw new Error(response.data.error);
-      const base64 = response.data.base64;
+      // função ainda não migrada do Base44: volta { success:false, error } sem PDF
+      const base64 = response?.data?.base64;
+      if (response?.data?.success === false || response?.data?.error || !base64) {
+        throw new Error(
+          response?.data?.error || "o servidor não devolveu o PDF. Use Imprimir Planilha."
+        );
+      }
       const binary = atob(base64);
       const arr = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
@@ -170,10 +181,12 @@ export default function FechamentoCaixaModal({
     setSalvando(true);
     setErro(null);
     try {
+      // grava a ref estável "bucket/caminho" — a file_url assinada vence em 1h
       let comprovante_url = null;
       if (comprovante) {
         const res = await sigo.integrations.Core.UploadFile({ file: comprovante });
-        comprovante_url = res.file_url;
+        comprovante_url = refDoUpload(res);
+        if (!comprovante_url) throw new Error("o envio do comprovante não retornou o arquivo");
       }
 
       // Atualizar fechamento para "Pago"
@@ -278,14 +291,31 @@ export default function FechamentoCaixaModal({
                           R$ {fmtBRL(getValor(pl))}
                         </p>
                         {pl.comprovante_url && (
-                          <a
-                            href={safeUrl(pl.comprovante_url)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-400 hover:text-blue-600 flex-shrink-0"
+                          <button
+                            type="button"
+                            title={
+                              ehBase44(pl.comprovante_url)
+                                ? "Comprovante do sistema antigo (indisponível)"
+                                : "Ver comprovante"
+                            }
+                            onClick={() =>
+                              setAnexoAberto({
+                                url: pl.comprovante_url,
+                                nome: nomeDoArquivo(pl.comprovante_url, "Comprovante"),
+                              })
+                            }
+                            className={`flex-shrink-0 ${
+                              ehBase44(pl.comprovante_url)
+                                ? "text-slate-300 hover:text-slate-500"
+                                : "text-blue-400 hover:text-blue-600"
+                            }`}
                           >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </a>
+                            {ehBase44(pl.comprovante_url) ? (
+                              <FileWarning className="w-3.5 h-3.5" />
+                            ) : (
+                              <Eye className="w-3.5 h-3.5" />
+                            )}
+                          </button>
                         )}
                       </div>
                     );
@@ -419,6 +449,13 @@ export default function FechamentoCaixaModal({
           </div>
         </div>
       </DialogContent>
+
+      {/* comprovante em janela flutuante (portal no body, por cima do diálogo) */}
+      <AnexoViewer
+        anexo={anexoAberto}
+        open={!!anexoAberto}
+        onOpenChange={(v) => !v && setAnexoAberto(null)}
+      />
     </Dialog>
   );
 }

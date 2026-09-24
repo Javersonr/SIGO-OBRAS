@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
 import { Plus, AlertCircle, Loader2 } from "lucide-react";
-import { toast, Toaster } from "sonner";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -790,8 +790,6 @@ export default function SaasAdmin() {
 
   return (
     <div className="space-y-6">
-      <Toaster position="top-right" richColors />
-
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Administração SaaS</h1>
         <p className="text-slate-500">Gerencie empresas, planos e assinaturas</p>

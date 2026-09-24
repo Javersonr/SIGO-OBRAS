@@ -36,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { sigo } from "@/api/sigoClient";
+import { refDoUpload } from "@/lib/anexo-ref";
 import * as XLSX from "xlsx";
 import { createPortal } from "react-dom";
 import NovoClienteModal from "../clientes/NovoClienteModal";
@@ -46,7 +47,7 @@ import { parseData, parseValor, formatCurrency, hojeLocalISO } from "./utils";
 import SortButton from "../shared/SortButton";
 import SortableTableHeader from "../shared/SortableTableHeader";
 import AnexoViewer from "../shared/AnexoViewer";
-import DetalheReceitaModal from "./DetalheReceitaModal";
+import DetalheReceitaModal, { anexosDaReceita } from "./DetalheReceitaModal";
 
 export default function ReceitasTab({
   empresaAtiva,
@@ -236,8 +237,7 @@ export default function ReceitasTab({
     try {
       for (const file of files) {
         // guarda a REFERÊNCIA "bucket/path" (assinada na hora de abrir, não expira)
-        const { bucket, path } = await sigo.integrations.Core.UploadFile({ file });
-        const ref = bucket && path ? `${bucket}/${path}` : null;
+        const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
         if (ref) novosAnexos.push({ nome: file.name, url: ref, tipo: file.type });
       }
       if (novosAnexos.length < files.length) {
@@ -865,15 +865,15 @@ export default function ReceitasTab({
         observacoes: item.observacoes || "",
       });
       setSelectedItem(item);
-      // Edit de receita parcelada: o item clicado é UMA das parcelas. Ao
-      // re-salvar SEM essa info, o user perdia as outras 11 parcelas. Aqui
-      // detectamos pelo padrão "Parcela N/T" na descrição e desabilitamos
-      // o parcelamento durante a edição (avisa que vai editar só essa parcela).
-      const matchParcela = /Parcela\s+\d+\s*\/\s*\d+/i.test(item.descricao || "");
-      if (matchParcela) {
-        setNumeroParcelas(1);
-        setParcelas([]);
-      }
+      // Edição grava UM registro (update): zera o parcelamento que sobrou de
+      // outro formulário — com parcelas no estado, salvar CRIAVA novas
+      // transações em vez de atualizar esta (vale também p/ "Parcela N/T").
+      setNumeroParcelas(1);
+      setParcelas([]);
+      // Anexos e tipo DESTA receita (antes ficavam os do registro anterior e
+      // o salvar gravava anexos de uma receita na outra / apagava os dela).
+      setAnexos(anexosDaReceita(item));
+      setTipoReceita(item.tipo_receita || "servico");
     } else {
       setForm({
         conta_id: contas[0]?.id || "",
@@ -895,6 +895,7 @@ export default function ReceitasTab({
       setNumeroParcelas(1);
       setParcelas([]);
       setAnexos([]);
+      setTipoReceita("servico");
       setSelectedItem(null);
     }
     setShowModal(true);
@@ -953,7 +954,9 @@ export default function ReceitasTab({
     };
 
     try {
-      if (numeroParcelas > 1 && parcelas.length > 0) {
+      // Parcelar só na criação: na edição, criaria N receitas novas e deixaria
+      // a original intacta (valor a receber em dobro)
+      if (!selectedItem && numeroParcelas > 1 && parcelas.length > 0) {
         // Criar uma transação para cada parcela
         for (const parcela of parcelas) {
           await sigo.entities.TransacaoFinanceira.create({
@@ -1721,6 +1724,8 @@ export default function ReceitasTab({
                       value={numeroParcelas}
                       onChange={(e) => handleNumeroParcelasChange(parseInt(e.target.value) || 1)}
                       min="1"
+                      disabled={!!selectedItem}
+                      title={selectedItem ? "Parcelamento só ao criar a receita" : undefined}
                       className="mt-1.5"
                     />
                   </div>

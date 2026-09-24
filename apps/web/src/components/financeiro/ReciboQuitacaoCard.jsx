@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ReceiptText, MessageCircle, Copy, Loader2 } from "lucide-react";
+import { ReceiptText, MessageCircle, Copy, Loader2, Download } from "lucide-react";
 import { toast } from "sonner";
 import { dispararWhatsApp } from "@/lib/whatsapp";
+import { urlPublica } from "@/lib/url-publica";
+import { baixarReciboQuitado, urlReciboQuitado } from "@/lib/recibo-quitado";
 
 const fmtMoeda = (v) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
@@ -19,11 +21,13 @@ const STATUS = {
 /**
  * Recibo de pagamento com quitação eletrônica do fornecedor — aparece no
  * detalhe da despesa PAGA. Emite (conteúdo congelado + código), envia o link
- * pelo WhatsApp oficial e mostra o status da quitação.
+ * pelo WhatsApp oficial e mostra o status da quitação. Quitado → o PDF do
+ * recibo quitado (gerado pelo servidor e anexado à despesa) fica para baixar.
  */
-export default function ReciboQuitacaoCard({ despesa }) {
+export default function ReciboQuitacaoCard({ despesa, onAnexosAlterados }) {
   const [recibo, setRecibo] = useState(undefined); // undefined = carregando
   const [ocupado, setOcupado] = useState(false);
+  const pdfPedido = useRef(null);
 
   const pago = ["pago", "realizado"].includes(String(despesa?.status || "").toLowerCase());
 
@@ -39,7 +43,37 @@ export default function ReciboQuitacaoCard({ despesa }) {
     };
   }, [despesa?.id, pago]);
 
+  // Quitado antes de existir o PDF automático (ou se a geração falhou na
+  // confirmação): gera agora e anexa — uma vez por recibo.
+  useEffect(() => {
+    if (recibo?.status !== "confirmada" || recibo.pdf_ref || pdfPedido.current === recibo.id)
+      return;
+    pdfPedido.current = recibo.id;
+    // ocupado: não deixa clicar "Baixar"/"Emitir" enquanto o servidor gera
+    setOcupado(true);
+    urlReciboQuitado(despesa.id)
+      .then((url) => {
+        if (!url) return;
+        setRecibo((r) => (r?.id === recibo.id ? { ...r, pdf_ref: r.pdf_ref || "gerado" } : r));
+        onAnexosAlterados?.();
+      })
+      .catch(() => {})
+      .finally(() => setOcupado(false));
+  }, [recibo, despesa?.id, onAnexosAlterados]);
+
   if (!pago || recibo === undefined) return null;
+
+  const baixarPdf = async () => {
+    setOcupado(true);
+    try {
+      if (!(await baixarReciboQuitado(despesa.id))) toast.error("Recibo ainda não quitado");
+      else onAnexosAlterados?.();
+    } catch (e) {
+      toast.error("Erro: " + (e?.message || e));
+    } finally {
+      setOcupado(false);
+    }
+  };
 
   const textoWhatsApp = (r, url) =>
     `🧾 Recibo de pagamento — ${r.dados?.empresa?.nome || ""}\n` +
@@ -57,7 +91,7 @@ export default function ReciboQuitacaoCard({ despesa }) {
       if (data?.success === false) throw new Error(data.error);
       const r = data.recibo;
       setRecibo(r);
-      const url = `${window.location.origin}${data.url_path}`;
+      const url = urlPublica(data.url_path);
       const texto = textoWhatsApp(r, url);
       await navigator.clipboard.writeText(texto).catch(() => {});
       if (porWhatsApp) {
@@ -71,10 +105,9 @@ export default function ReciboQuitacaoCard({ despesa }) {
           toast.info("Fornecedor sem telefone no cadastro — mensagem copiada para você enviar");
           return;
         }
+        // "wa.me"/"invalido": o próprio dispararWhatsApp já avisou o motivo
         const via = await dispararWhatsApp(tel, texto);
-        toast.success(
-          via === "evolution" ? "📲 Recibo enviado pelo WhatsApp" : "Mensagem aberta no WhatsApp"
-        );
+        if (via === "evolution") toast.success("📲 Recibo enviado pelo WhatsApp");
       } else {
         toast.success("Mensagem com o link copiada");
       }
@@ -114,19 +147,35 @@ export default function ReciboQuitacaoCard({ despesa }) {
       )}
 
       <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          className="bg-emerald-600 hover:bg-emerald-700"
-          disabled={ocupado}
-          onClick={() => emitirEEnviar(true)}
-        >
-          {ocupado ? (
-            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-          ) : (
-            <MessageCircle className="w-4 h-4 mr-1" />
-          )}
-          {recibo ? "Reenviar por WhatsApp" : "Emitir e enviar por WhatsApp"}
-        </Button>
+        {recibo?.status === "confirmada" ? (
+          <Button
+            size="sm"
+            className="bg-emerald-600 hover:bg-emerald-700"
+            disabled={ocupado}
+            onClick={baixarPdf}
+          >
+            {ocupado ? (
+              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4 mr-1" />
+            )}
+            Baixar recibo quitado (PDF)
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            className="bg-emerald-600 hover:bg-emerald-700"
+            disabled={ocupado}
+            onClick={() => emitirEEnviar(true)}
+          >
+            {ocupado ? (
+              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+            ) : (
+              <MessageCircle className="w-4 h-4 mr-1" />
+            )}
+            {recibo ? "Reenviar por WhatsApp" : "Emitir e enviar por WhatsApp"}
+          </Button>
+        )}
         <Button size="sm" variant="outline" disabled={ocupado} onClick={() => emitirEEnviar(false)}>
           <Copy className="w-4 h-4 mr-1" /> Copiar link
         </Button>

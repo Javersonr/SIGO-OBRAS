@@ -5,8 +5,9 @@
  */
 import { sigo } from "@/api/sigoClient";
 import { dispararWhatsApp } from "@/lib/whatsapp";
+import { urlPublica } from "@/lib/url-publica";
 
-export const urlPortal = () => `${window.location.origin}/PortalFuncionario`;
+export const urlPortal = () => urlPublica("/PortalFuncionario");
 
 async function chamar(acao, dados = {}) {
   const { data } = await sigo.functions.invoke("funcionarioAcesso", { acao, ...dados });

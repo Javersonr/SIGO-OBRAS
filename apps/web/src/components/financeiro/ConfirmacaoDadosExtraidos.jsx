@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import ImgStorage from "@/components/ImgStorage";
 
 export default function ConfirmacaoDadosExtraidos({
   dados,
@@ -67,8 +68,9 @@ export default function ConfirmacaoDadosExtraidos({
         {comprovanteUrl && (
           <div>
             <Label className="text-sm text-slate-600 mb-2 block">Comprovante</Label>
-            <img
-              src={comprovanteUrl}
+            {/* comprovanteUrl agora é a ref "bucket/path" (CapturaComprovanteCamera) */}
+            <ImgStorage
+              referencia={comprovanteUrl}
               alt="Comprovante"
               className="w-full rounded-lg max-h-48 object-cover border border-slate-200"
             />

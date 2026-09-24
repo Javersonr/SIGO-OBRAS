@@ -1,7 +1,10 @@
 import { normalizarTexto } from "@/lib/busca";
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { ehBase44, ehImagem, ehPdf, extensaoDoArquivo, nomeDoArquivo } from "@/lib/anexo-ref";
+import AnexoViewer from "@/components/shared/AnexoViewer";
+import ImgStorage from "@/components/ImgStorage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +18,7 @@ import {
   Undo2,
   CheckCheck,
   FileText,
+  FileWarning,
   X,
   Package,
   Link2,
@@ -150,132 +154,71 @@ function InlineProjetoCell({ item, projetos, onSave }) {
   );
 }
 
-function DraggableComprovante({ url, item, onEditar, onFechar }) {
-  const [pos, setPos] = useState({ x: window.innerWidth - 440, y: window.innerHeight - 520 });
-  const [size, setSize] = useState({ w: 420, h: 480 });
-  const dragging = useRef(false);
-  const dragOffset = useRef({ x: 0, y: 0 });
-  const panelRef = useRef(null);
+// Miniatura do comprovante na tabela. comprovante_url guarda a ref estável
+// "bucket/caminho" (ou URL legada) — resolvida na hora pelo ImgStorage.
+// Base44: a plataforma antiga apagou os arquivos → placeholder, não imagem quebrada.
+function MiniaturaComprovante({ referencia, onAbrir }) {
+  const caixa = "w-12 h-12 rounded border flex flex-col items-center justify-center gap-0.5";
 
-  const onMouseDownDrag = useCallback(
-    (e) => {
-      dragging.current = true;
-      dragOffset.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
-      e.preventDefault();
-    },
-    [pos]
-  );
+  if (ehBase44(referencia)) {
+    return (
+      <button
+        type="button"
+        onClick={onAbrir}
+        title="Comprovante do sistema antigo (Base44): arquivo indisponível. Reanexe em Editar."
+        className={`${caixa} bg-slate-50 border-dashed border-slate-300 text-slate-400 hover:bg-slate-100 cursor-pointer`}
+      >
+        <FileWarning className="w-4 h-4" />
+        <span className="text-[8px] leading-none text-center">sistema antigo</span>
+      </button>
+    );
+  }
 
-  useEffect(() => {
-    const onMove = (e) => {
-      if (!dragging.current) return;
-      const nx = Math.max(
-        0,
-        Math.min(window.innerWidth - size.w, e.clientX - dragOffset.current.x)
-      );
-      const ny = Math.max(0, Math.min(window.innerHeight - 40, e.clientY - dragOffset.current.y));
-      setPos({ x: nx, y: ny });
-    };
-    const onUp = () => {
-      dragging.current = false;
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [size]);
+  if (ehPdf(referencia)) {
+    return (
+      <button
+        type="button"
+        onClick={onAbrir}
+        className={`${caixa} bg-red-50 border-red-200 hover:opacity-80 transition-opacity cursor-pointer`}
+      >
+        <FileText className="w-5 h-5 text-red-500" />
+        <span className="text-[9px] text-red-500 font-medium">PDF</span>
+      </button>
+    );
+  }
 
-  const isPdf =
-    normalizarTexto(url).includes(normalizarTexto(".pdf")) ||
-    normalizarTexto(url).includes(normalizarTexto("pdf"));
+  // sem extensão (legado) também tenta como imagem; se não carregar, fica o ícone
+  const ext = extensaoDoArquivo(referencia);
+  if (ehImagem(referencia) || !ext) {
+    return (
+      <button
+        type="button"
+        onClick={onAbrir}
+        className={`${caixa} relative overflow-hidden bg-slate-100 border-slate-200 hover:opacity-80 transition-opacity cursor-pointer`}
+      >
+        <Image className="w-5 h-5 text-slate-400" />
+        <ImgStorage
+          key={referencia}
+          referencia={referencia}
+          alt="Comprovante"
+          className="absolute inset-0 w-full h-full object-cover"
+          onError={(e) => {
+            e.currentTarget.style.display = "none";
+          }}
+        />
+      </button>
+    );
+  }
 
   return (
-    <div
-      ref={panelRef}
-      className="fixed z-50 bg-white border border-slate-300 rounded-xl shadow-2xl flex flex-col overflow-hidden"
-      style={{
-        left: pos.x,
-        top: pos.y,
-        width: size.w,
-        height: size.h,
-        minWidth: 280,
-        minHeight: 200,
-      }}
+    <button
+      type="button"
+      onClick={onAbrir}
+      className={`${caixa} bg-slate-50 border-slate-200 hover:opacity-80 transition-opacity cursor-pointer`}
     >
-      {/* Header arrastável */}
-      <div
-        className="flex items-center justify-between px-3 py-2 bg-slate-800 text-white cursor-grab active:cursor-grabbing select-none"
-        onMouseDown={onMouseDownDrag}
-      >
-        <span className="text-xs font-medium truncate">⠿ Comprovante</span>
-        <div className="flex items-center gap-1" onMouseDown={(e) => e.stopPropagation()}>
-          <button
-            onClick={onEditar}
-            className="flex items-center gap-1 text-xs bg-amber-500 hover:bg-amber-600 text-white px-2 py-0.5 rounded transition-colors"
-          >
-            <Pencil className="w-3 h-3" /> Editar
-          </button>
-          <button onClick={onFechar} className="ml-1 hover:text-red-300 transition-colors">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Conteúdo */}
-      <div className="flex-1 overflow-auto" style={{ minHeight: 0 }}>
-        {isPdf ? (
-          <iframe
-            src={`https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`}
-            className="w-full border-0"
-            style={{ height: "100%" }}
-            title="Comprovante PDF"
-          />
-        ) : (
-          <img src={url} alt="Comprovante" className="w-full h-auto object-contain" />
-        )}
-      </div>
-
-      {/* Resize handle */}
-      <div
-        className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
-        style={{ background: "transparent" }}
-        onMouseDown={(e) => {
-          e.preventDefault();
-          const startX = e.clientX,
-            startY = e.clientY;
-          const startW = size.w,
-            startH = size.h;
-          const onMove = (ev) => {
-            setSize({
-              w: Math.max(280, startW + ev.clientX - startX),
-              h: Math.max(200, startH + ev.clientY - startY),
-            });
-          };
-          const onUp = () => {
-            window.removeEventListener("mousemove", onMove);
-            window.removeEventListener("mouseup", onUp);
-          };
-          window.addEventListener("mousemove", onMove);
-          window.addEventListener("mouseup", onUp);
-        }}
-      >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 14 14"
-          className="absolute bottom-1 right-1 text-slate-400"
-        >
-          <path
-            d="M13 1 L1 13 M13 7 L7 13 M13 13 L13 13"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-        </svg>
-      </div>
-    </div>
+      <FileText className="w-5 h-5 text-slate-500" />
+      <span className="text-[9px] text-slate-500 font-medium uppercase">{ext}</span>
+    </button>
   );
 }
 
@@ -297,8 +240,7 @@ export default function PreLancamentosAReconciliar({
   const [erro, setErro] = useState(null);
   const [desfazendoItem, setDesfazendoItem] = useState(null);
   const [transacaoDesfazer, setTransacaoDesfazer] = useState(null);
-  const [visualizandoUrl, setVisualizandoUrl] = useState(null);
-  const [visualizandoItem, setVisualizandoItem] = useState(null);
+  const [anexoAberto, setAnexoAberto] = useState(null);
   const [editandoItem, setEditandoItem] = useState(null);
   const [tabAtiva, setTabAtiva] = useState("pendentes");
   const [conciliados, setConciliados] = useState([]);
@@ -639,41 +581,15 @@ export default function PreLancamentosAReconciliar({
                         </td>
                         <td className="px-4 py-3">
                           {item.comprovante_url ? (
-                            (() => {
-                              const isPdf =
-                                normalizarTexto(item.comprovante_url).includes(
-                                  normalizarTexto(".pdf")
-                                ) ||
-                                normalizarTexto(item.comprovante_url).includes(
-                                  normalizarTexto("pdf")
-                                );
-                              return isPdf ? (
-                                <button
-                                  onClick={() => {
-                                    setVisualizandoUrl(item.comprovante_url);
-                                    setVisualizandoItem(item);
-                                  }}
-                                  className="w-12 h-12 bg-red-50 rounded border border-red-200 flex flex-col items-center justify-center hover:opacity-80 transition-opacity gap-0.5 cursor-pointer"
-                                >
-                                  <FileText className="w-5 h-5 text-red-500" />
-                                  <span className="text-[9px] text-red-500 font-medium">PDF</span>
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => {
-                                    setVisualizandoUrl(item.comprovante_url);
-                                    setVisualizandoItem(item);
-                                  }}
-                                  className="cursor-pointer"
-                                >
-                                  <img
-                                    src={item.comprovante_url}
-                                    alt="Comprovante"
-                                    className="w-12 h-12 object-cover rounded border border-slate-200 hover:opacity-80 transition-opacity"
-                                  />
-                                </button>
-                              );
-                            })()
+                            <MiniaturaComprovante
+                              referencia={item.comprovante_url}
+                              onAbrir={() =>
+                                setAnexoAberto({
+                                  url: item.comprovante_url,
+                                  nome: nomeDoArquivo(item.comprovante_url, "Comprovante"),
+                                })
+                              }
+                            />
                           ) : (
                             <div className="w-12 h-12 bg-slate-100 rounded border border-slate-200 flex items-center justify-center">
                               <Image className="w-5 h-5 text-slate-400" />
@@ -729,7 +645,21 @@ export default function PreLancamentosAReconciliar({
                             {item.usuario_email || "-"}
                           </td>
                         )}
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                          {/* Editar à mão (antes só na janela do comprovante): dá
+                              para editar com o comprovante aberto ao lado */}
+                          {!isConciliado && podeAcionar && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              title="Editar"
+                              aria-label="Editar"
+                              onClick={() => setEditandoItem(item)}
+                              className="h-8 w-8 p-0 mr-1 text-amber-600 hover:text-amber-700"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                          )}
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="outline" size="sm" className="h-8 w-8 p-0">
@@ -836,17 +766,12 @@ export default function PreLancamentosAReconciliar({
         </CardContent>
       </Card>
 
-      {visualizandoUrl && (
-        <DraggableComprovante
-          url={visualizandoUrl}
-          item={visualizandoItem}
-          onEditar={() => setEditandoItem(visualizandoItem)}
-          onFechar={() => {
-            setVisualizandoUrl(null);
-            setVisualizandoItem(null);
-          }}
-        />
-      )}
+      {/* janela flutuante não-modal: fica aberta por cima do "Editar" */}
+      <AnexoViewer
+        anexo={anexoAberto}
+        open={!!anexoAberto}
+        onOpenChange={(v) => !v && setAnexoAberto(null)}
+      />
 
       {editandoItem && (
         <EditarPreLancamentoComDespesaModal

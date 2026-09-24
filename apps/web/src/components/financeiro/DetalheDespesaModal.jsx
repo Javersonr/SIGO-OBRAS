@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { safeParseJSON } from "@/lib/json-utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
@@ -17,7 +17,10 @@ import {
   Edit,
   X,
 } from "lucide-react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, resolveStorageUrl } from "@/api/sigoClient";
+import { ehBase44, ehImagem, ehPdf, nomeDoArquivo } from "@/lib/anexo-ref";
+import ImgStorage from "@/components/ImgStorage";
+import { toast } from "sonner";
 import AnexoViewer from "../shared/AnexoViewer";
 import ModalPagamento from "./ModalPagamento";
 import { DadosBancariosFornecedor } from "./DadosBancariosPagamento";
@@ -37,6 +40,7 @@ export default function DetalheDespesaModal({
   onDuplicar,
   onDesfazerConciliacao,
   onExcluir,
+  onAnexosAlterados,
   somenteLeitura = false,
 }) {
   const [anexoSelecionado, setAnexoSelecionado] = useState(null);
@@ -50,13 +54,44 @@ export default function DetalheDespesaModal({
     );
   };
 
+  // "2026-09-22" é DATA (sem hora): new Date() leria como meia-noite UTC e,
+  // no fuso do Brasil, mostraria o dia anterior (21/09).
   const formatDate = (date) => {
-    return date ? new Date(date).toLocaleDateString("pt-BR") : "-";
+    if (!date) return "-";
+    const soData = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date));
+    if (soData) return `${soData[3]}/${soData[2]}/${soData[1]}`;
+    return new Date(date).toLocaleDateString("pt-BR");
   };
 
   const handleVisualizarAnexo = (anexo) => {
     setAnexoSelecionado(anexo);
     setShowAnexoViewer(true);
+  };
+
+  // outra despesa aberta → não deixa a janela com o anexo da anterior
+  useEffect(() => {
+    setShowAnexoViewer(false);
+    setAnexoSelecionado(null);
+  }, [despesa?.id]);
+
+  const baixarAnexo = async (anexo) => {
+    if (ehBase44(anexo.url)) {
+      toast.error("Arquivo do sistema antigo (Base44): não está mais disponível. Anexe de novo.");
+      return;
+    }
+    const u = await resolveStorageUrl(anexo.url);
+    if (!u) {
+      toast.error("Arquivo não encontrado");
+      return;
+    }
+    const nome = anexo.nome || nomeDoArquivo(anexo.url);
+    const link = document.createElement("a");
+    // &download= faz o Storage responder como anexo (baixa sem sair da tela)
+    link.href = /[?&]token=/.test(u) ? `${u}&download=${encodeURIComponent(nome)}` : u;
+    link.download = nome;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   if (!despesa) return null;
@@ -125,6 +160,20 @@ export default function DetalheDespesaModal({
                               {parcela.data_pagamento &&
                                 ` • Pago em: ${formatDate(parcela.data_pagamento)}`}
                             </p>
+                            {parcela.comprovante_url && (
+                              <button
+                                type="button"
+                                className="mt-0.5 inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                                onClick={() =>
+                                  handleVisualizarAnexo({
+                                    url: parcela.comprovante_url,
+                                    nome: `Comprovante parcela ${parcela.numero}`,
+                                  })
+                                }
+                              >
+                                <Eye className="w-3 h-3" /> Ver comprovante
+                              </button>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
@@ -237,7 +286,7 @@ export default function DetalheDespesaModal({
                 fornecedorNome={despesa.fornecedor_nome}
               />
 
-              <ReciboQuitacaoCard despesa={despesa} />
+              <ReciboQuitacaoCard despesa={despesa} onAnexosAlterados={onAnexosAlterados} />
             </div>
           </div>
 
@@ -284,9 +333,9 @@ export default function DetalheDespesaModal({
               </h3>
               <div className="space-y-2">
                 {anexos.map((anexo) => {
-                  const isPdf = anexo.tipo?.includes("pdf") || anexo.nome?.endsWith(".pdf");
-                  const isImage =
-                    anexo.tipo?.includes("image") || anexo.nome?.match(/\.(jpg|jpeg|png|gif)$/i);
+                  const legado = ehBase44(anexo.url);
+                  const isPdf = !legado && ehPdf(anexo.url, anexo.tipo);
+                  const isImage = !legado && ehImagem(anexo.url, anexo.tipo);
 
                   return (
                     <div
@@ -296,8 +345,8 @@ export default function DetalheDespesaModal({
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         {isImage ? (
                           <div className="w-10 h-10 rounded overflow-hidden bg-slate-100 flex-shrink-0">
-                            <img
-                              src={anexo.url}
+                            <ImgStorage
+                              referencia={anexo.url}
                               alt={anexo.nome}
                               className="w-full h-full object-cover"
                             />
@@ -317,7 +366,13 @@ export default function DetalheDespesaModal({
                           <p className="text-sm font-medium text-slate-700 truncate">
                             {anexo.nome}
                           </p>
-                          {anexo.tipo && <p className="text-xs text-slate-500">{anexo.tipo}</p>}
+                          {legado ? (
+                            <p className="text-xs text-amber-700">
+                              Sistema antigo (Base44) — arquivo não está mais disponível
+                            </p>
+                          ) : (
+                            anexo.tipo && <p className="text-xs text-slate-500">{anexo.tipo}</p>
+                          )}
                         </div>
                       </div>
                       <div className="flex gap-1">
@@ -334,14 +389,7 @@ export default function DetalheDespesaModal({
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8"
-                          onClick={() => {
-                            const link = document.createElement("a");
-                            link.href = anexo.url;
-                            link.download = anexo.nome || "anexo";
-                            document.body.appendChild(link);
-                            link.click();
-                            document.body.removeChild(link);
-                          }}
+                          onClick={() => baixarAnexo(anexo)}
                           title="Baixar arquivo"
                         >
                           <Download className="w-4 h-4 text-blue-600" />

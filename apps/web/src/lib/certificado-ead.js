@@ -7,9 +7,10 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { QRCodeCanvas } from "qrcode.react";
+import { urlPublica } from "@/lib/url-publica";
 
 export const urlValidacao = (codigo) =>
-  `${window.location.origin}/ValidarCertificado?codigo=${encodeURIComponent(codigo)}`;
+  urlPublica(`/ValidarCertificado?codigo=${encodeURIComponent(codigo)}`);
 
 const fmtData = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
 const fmtCpf = (cpf) => {

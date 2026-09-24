@@ -1,5 +1,4 @@
-import { normalizarTexto } from "@/lib/busca";
-import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,134 +23,19 @@ import {
   Copy,
   Link2Off,
   X,
+  FileWarning,
 } from "lucide-react";
-import { sigo, resolveStorageUrl } from "@/api/sigoClient";
+import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { ehBase44, ehImagem, ehPdf } from "@/lib/anexo-ref";
+import ImgStorage from "@/components/ImgStorage";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 import EntityCombobox from "@/components/shared/EntityCombobox";
+import { categoriaDoFornecedor } from "@/components/fornecedores/CategoriasFornecedorSelect";
 import AssociarMateriaisModal from "./AssociarMateriaisModal";
 import NovoFornecedorConfigSheet from "../fornecedores/NovoFornecedorConfigSheet";
 import ModalPagamento from "./ModalPagamento";
 import ImportarFerramentasModal from "./ImportarFerramentasModal";
-
-function DraggableComprovante({ url, onFechar }) {
-  const [pos, setPos] = useState({ x: window.innerWidth - 440, y: window.innerHeight - 520 });
-  const [size, setSize] = useState({ w: 420, h: 480 });
-  const dragging = useRef(false);
-  const dragOffset = useRef({ x: 0, y: 0 });
-  const panelRef = useRef(null);
-
-  const onMouseDownDrag = useCallback(
-    (e) => {
-      dragging.current = true;
-      dragOffset.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
-      e.preventDefault();
-    },
-    [pos]
-  );
-
-  useEffect(() => {
-    const onMove = (e) => {
-      if (!dragging.current) return;
-      const nx = Math.max(
-        0,
-        Math.min(window.innerWidth - size.w, e.clientX - dragOffset.current.x)
-      );
-      const ny = Math.max(0, Math.min(window.innerHeight - 40, e.clientY - dragOffset.current.y));
-      setPos({ x: nx, y: ny });
-    };
-    const onUp = () => {
-      dragging.current = false;
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [size]);
-
-  const isPdf =
-    normalizarTexto(url).includes(normalizarTexto(".pdf")) ||
-    normalizarTexto(url).includes(normalizarTexto("pdf"));
-
-  return (
-    <div
-      ref={panelRef}
-      className="fixed z-[99999] bg-white border border-slate-300 rounded-xl shadow-2xl flex flex-col overflow-hidden"
-      style={{
-        left: pos.x,
-        top: pos.y,
-        width: size.w,
-        height: size.h,
-        minWidth: 280,
-        minHeight: 200,
-      }}
-    >
-      <div
-        className="flex items-center justify-between px-3 py-2 bg-slate-800 text-white cursor-grab active:cursor-grabbing select-none"
-        onMouseDown={onMouseDownDrag}
-      >
-        <span className="text-xs font-medium truncate">⠿ Comprovante</span>
-        <div className="flex items-center gap-1" onMouseDown={(e) => e.stopPropagation()}>
-          <button onClick={onFechar} className="ml-1 hover:text-red-300 transition-colors">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-auto" style={{ minHeight: 0 }}>
-        {isPdf ? (
-          <iframe
-            src={`https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`}
-            className="w-full border-0"
-            style={{ height: "100%" }}
-            title="Comprovante PDF"
-          />
-        ) : (
-          <img src={url} alt="Comprovante" className="w-full h-auto object-contain" />
-        )}
-      </div>
-
-      <div
-        className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
-        style={{ background: "transparent" }}
-        onMouseDown={(e) => {
-          e.preventDefault();
-          const startX = e.clientX,
-            startY = e.clientY;
-          const startW = size.w,
-            startH = size.h;
-          const onMove = (ev) => {
-            setSize({
-              w: Math.max(280, startW + ev.clientX - startX),
-              h: Math.max(200, startH + ev.clientY - startY),
-            });
-          };
-          const onUp = () => {
-            window.removeEventListener("mousemove", onMove);
-            window.removeEventListener("mouseup", onUp);
-          };
-          window.addEventListener("mousemove", onMove);
-          window.addEventListener("mouseup", onUp);
-        }}
-      >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 14 14"
-          className="absolute bottom-1 right-1 text-slate-400"
-        >
-          <path
-            d="M13 1 L1 13 M13 7 L7 13 M13 13 L13 13"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-        </svg>
-      </div>
-    </div>
-  );
-}
 
 export default function DespesaModal({
   showModal,
@@ -251,7 +135,8 @@ export default function DespesaModal({
   const [showModalPagamento, setShowModalPagamento] = useState(false);
   const [despesaPagamento, setDespesaPagamento] = useState(null);
   const [showImportarFerramentas, setShowImportarFerramentas] = useState(false);
-  const [visualizandoAnexoUrl, setVisualizandoAnexoUrl] = useState(null);
+  // anexo aberto na janela flutuante (AnexoViewer): { url: ref, nome, tipo }
+  const [anexoAberto, setAnexoAberto] = useState(null);
 
   const handleImportarXML = async (e) => {
     const file = e.target.files[0];
@@ -520,7 +405,7 @@ export default function DespesaModal({
         onOpenChange={(open) => {
           if (!open) {
             setShowModal(false);
-            setVisualizandoAnexoUrl(null);
+            setAnexoAberto(null);
           }
         }}
       >
@@ -622,13 +507,18 @@ export default function DespesaModal({
                         <EntityCombobox
                           items={fornecedoresOrdenados}
                           value={form.fornecedor_id}
-                          onValueChange={(id, f) =>
+                          onValueChange={(id, f) => {
+                            // Categoria vazia → usa a do cadastro do fornecedor
+                            const cat = form.categoria_id
+                              ? null
+                              : categoriaDoFornecedor(f, categoriasOrdenadas);
                             setForm({
                               ...form,
                               fornecedor_id: id || null,
                               fornecedor_nome: f?.nome_razao || null,
-                            })
-                          }
+                              ...(cat && { categoria_id: cat.id, categoria_nome: cat.nome }),
+                            });
+                          }}
                           getLabel={(f) => f.nome_razao}
                           getSearchText={(f) => f.cnpj}
                           renderItem={(f) => (
@@ -1047,11 +937,11 @@ export default function DespesaModal({
                       {anexos.length > 0 && (
                         <div className="space-y-2">
                           {anexos.map((anexo, index) => {
-                            const isPdf =
-                              anexo.tipo?.includes("pdf") || anexo.nome?.endsWith(".pdf");
-                            const isImage =
-                              anexo.tipo?.includes("image") ||
-                              anexo.nome?.match(/\.(jpg|jpeg|png|gif)$/i);
+                            // anexo.url = referência "bucket/path" (ou URL legada):
+                            // a URL assinada é gerada na hora de exibir.
+                            const antigo = ehBase44(anexo.url);
+                            const isPdf = ehPdf(anexo.url, anexo.tipo);
+                            const isImage = !antigo && ehImagem(anexo.url, anexo.tipo);
 
                             return (
                               <div
@@ -1059,12 +949,21 @@ export default function DespesaModal({
                                 className="flex items-center justify-between p-3 bg-white rounded-lg border hover:border-slate-300 transition-colors"
                               >
                                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                                  {isImage ? (
-                                    <div className="w-10 h-10 rounded overflow-hidden bg-slate-100 flex-shrink-0">
-                                      <img
-                                        src={anexo.url}
+                                  {antigo ? (
+                                    <div
+                                      className="w-10 h-10 rounded flex items-center justify-center flex-shrink-0 bg-amber-50"
+                                      title="Arquivo do sistema antigo (Base44) — não está mais disponível"
+                                    >
+                                      <FileWarning className="w-5 h-5 text-amber-500" />
+                                    </div>
+                                  ) : isImage ? (
+                                    <div className="relative w-10 h-10 rounded overflow-hidden bg-slate-100 flex-shrink-0 flex items-center justify-center">
+                                      {/* ícone fica por baixo enquanto a miniatura carrega */}
+                                      <FileText className="w-5 h-5 text-slate-400" />
+                                      <ImgStorage
+                                        referencia={anexo.url}
                                         alt={anexo.nome}
-                                        className="w-full h-full object-cover"
+                                        className="absolute inset-0 w-full h-full object-cover"
                                       />
                                     </div>
                                   ) : (
@@ -1082,8 +981,14 @@ export default function DespesaModal({
                                     <p className="text-sm font-medium text-slate-700 truncate">
                                       {anexo.nome}
                                     </p>
-                                    {anexo.tipo && (
-                                      <p className="text-xs text-slate-500">{anexo.tipo}</p>
+                                    {antigo ? (
+                                      <p className="text-xs text-amber-600">
+                                        Arquivo do sistema antigo — anexe de novo
+                                      </p>
+                                    ) : (
+                                      anexo.tipo && (
+                                        <p className="text-xs text-slate-500">{anexo.tipo}</p>
+                                      )
                                     )}
                                   </div>
                                 </div>
@@ -1093,25 +998,14 @@ export default function DespesaModal({
                                     variant="ghost"
                                     size="icon"
                                     className="h-8 w-8"
-                                    onClick={async (e) => {
+                                    onClick={(e) => {
                                       e.stopPropagation();
-                                      // resolve a referência (bucket/path) numa URL assinada na hora
-                                      const url = await resolveStorageUrl(anexo.url);
-                                      if (!url) {
-                                        alert("Não foi possível abrir o anexo.");
-                                        return;
-                                      }
-                                      const isPdf = `${anexo.nome || ""}${anexo.url || ""}`
-                                        .toLowerCase()
-                                        .includes(".pdf");
-                                      if (isPdf) {
-                                        window.open(
-                                          `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`,
-                                          "_blank"
-                                        );
-                                      } else {
-                                        window.open(url, "_blank");
-                                      }
+                                      // janela flutuante: resolve a ref e trata PDF/imagem/Base44
+                                      setAnexoAberto({
+                                        url: anexo.url,
+                                        nome: anexo.nome,
+                                        tipo: anexo.tipo,
+                                      });
                                     }}
                                     title="Visualizar"
                                   >
@@ -1750,6 +1644,13 @@ export default function DespesaModal({
           }}
         />
       </Sheet>
+
+      {/* Visualizador de anexo (janela flutuante, portal no body) */}
+      <AnexoViewer
+        anexo={anexoAberto}
+        open={!!anexoAberto}
+        onOpenChange={(v) => !v && setAnexoAberto(null)}
+      />
     </>
   );
 }

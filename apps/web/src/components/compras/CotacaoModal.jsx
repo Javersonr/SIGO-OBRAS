@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Mail, MessageSquare, Copy, X } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
+import { urlPublica } from "@/lib/url-publica";
 
 export default function CotacaoModal({
   open,
@@ -63,7 +64,7 @@ export default function CotacaoModal({
           emails[fv.fornecedor_id] = fornecedor?.email || "";
           links[fv.fornecedor_id] = {
             token: fv.token,
-            link: `${window.location.origin}/AcessoFornecedor?token=${fv.token}`,
+            link: urlPublica(`/AcessoFornecedor?token=${fv.token}`),
           };
         }
         // Carregar credenciais de acesso dos fornecedores
@@ -254,7 +255,7 @@ export default function CotacaoModal({
       const links = {};
       todosCotForn.forEach((cotForn) => {
         const fId = cotForn.fornecedor_id;
-        const link = `${window.location.origin}/AcessoFornecedor?token=${cotForn.token}`;
+        const link = urlPublica(`/AcessoFornecedor?token=${cotForn.token}`);
         links[fId] = { link, token: cotForn.token };
       });
 

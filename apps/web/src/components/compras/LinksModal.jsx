@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { urlPublica } from "@/lib/url-publica";
 import { senhaEstaHasheada, rotacionarCredencialFornecedor } from "@/lib/senha-portal";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -86,7 +87,7 @@ export default function LinksModal({ open, onOpenChange, cotacao, empresaAtiva, 
   };
 
   const enviarWhatsApp = async (fornecedor) => {
-    const link = `${window.location.origin}/AcessoFornecedor?token=${fornecedor.token}`;
+    const link = urlPublica(`/AcessoFornecedor?token=${fornecedor.token}`);
     // Enviar = rotaciona a senha se só existe o hash (mensagem sai com senha nova)
     let creds = credenciais[fornecedor.fornecedor_id];
     if (creds && !creds.senha) {
@@ -125,7 +126,7 @@ Atenciosamente,
   };
 
   const enviarEmail = async (fornecedor, isReenvio = false) => {
-    const link = `${window.location.origin}/AcessoFornecedor?token=${fornecedor.token}`;
+    const link = urlPublica(`/AcessoFornecedor?token=${fornecedor.token}`);
 
     try {
       setReenviando((prev) => ({ ...prev, [fornecedor.id]: true }));
@@ -452,7 +453,7 @@ ${empresaAtiva.nome_fantasia || empresaAtiva.razao_social || empresaAtiva.nome}
                   return 0;
                 })
                 .map((fornecedor) => {
-                  const link = `${window.location.origin}/AcessoFornecedor?token=${fornecedor.token}`;
+                  const link = urlPublica(`/AcessoFornecedor?token=${fornecedor.token}`);
 
                   return (
                     <Card

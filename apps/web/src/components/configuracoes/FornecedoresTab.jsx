@@ -3,6 +3,14 @@ import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import BuscarCnpjButton from "@/components/shared/BuscarCnpjButton";
+import InputTelefone from "@/components/shared/InputTelefone";
+import CategoriasFornecedorSelect from "@/components/fornecedores/CategoriasFornecedorSelect";
+import {
+  digitosTelefone,
+  formatarTelefone,
+  mensagemTelefoneInvalido,
+  telefoneValido,
+} from "@/lib/telefone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -246,13 +254,18 @@ export default function FornecedoresTab({ empresaAtiva, fornecedores, loadData }
 
   const handleSaveFornecedor = async () => {
     if (!fornecedorForm.nome_razao) return;
+    if (!telefoneValido(fornecedorForm.telefone)) {
+      toast.error(mensagemTelefoneInvalido(fornecedorForm.telefone));
+      return;
+    }
+    const dados = { ...fornecedorForm, telefone: formatarTelefone(fornecedorForm.telefone) };
     try {
       if (selectedFornecedor) {
-        await sigo.entities.Fornecedor.update(selectedFornecedor.id, fornecedorForm);
+        await sigo.entities.Fornecedor.update(selectedFornecedor.id, dados);
       } else {
         await sigo.entities.Fornecedor.create({
           empresa_id: empresaAtiva.id,
-          ...fornecedorForm,
+          ...dados,
           ativo: true,
         });
       }
@@ -281,8 +294,24 @@ export default function FornecedoresTab({ empresaAtiva, fornecedores, loadData }
       loadData();
     } catch (error) {
       console.error("Erro:", error);
+      toast.error("Erro ao salvar fornecedor: " + (error?.message || error));
     }
   };
+
+  // Busca por nome, fantasia, e-mail, CPF/CNPJ ou telefone (telefone pelos
+  // dígitos, pra achar "3499..." mesmo salvo como "(34) 99...").
+  const buscaNorm = normalizarTexto(searchFornecedor);
+  const buscaDigitos = searchFornecedor.replace(/\D/g, "");
+  const fornecedoresFiltrados = fornecedores.filter(
+    (f) =>
+      searchFornecedor === "" ||
+      normalizarTexto(f.nome_razao).includes(buscaNorm) ||
+      normalizarTexto(f.nome_fantasia).includes(buscaNorm) ||
+      normalizarTexto(f.email).includes(buscaNorm) ||
+      f.telefone?.includes(searchFornecedor) ||
+      (buscaDigitos.length >= 3 && digitosTelefone(f.telefone).includes(buscaDigitos)) ||
+      f.cnpj?.includes(searchFornecedor)
+  );
 
   const handleDeleteFornecedor = async (f) => {
     if (!confirm("Desativar este fornecedor?")) return;
@@ -437,22 +466,7 @@ export default function FornecedoresTab({ empresaAtiva, fornecedores, loadData }
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {fornecedores
-                  .filter(
-                    (f) =>
-                      searchFornecedor === "" ||
-                      normalizarTexto(f.nome_razao).includes(
-                        normalizarTexto(searchFornecedor.toLowerCase())
-                      ) ||
-                      normalizarTexto(f.nome_fantasia).includes(
-                        normalizarTexto(searchFornecedor.toLowerCase())
-                      ) ||
-                      normalizarTexto(f.email).includes(
-                        normalizarTexto(searchFornecedor.toLowerCase())
-                      ) ||
-                      f.telefone?.includes(searchFornecedor) ||
-                      f.cnpj?.includes(searchFornecedor)
-                  )
+                {fornecedoresFiltrados
                   .slice((fornecedoresPage - 1) * 50, fornecedoresPage * 50)
                   .map((f) => (
                     <TableRow key={f.id}>
@@ -476,7 +490,9 @@ export default function FornecedoresTab({ empresaAtiva, fornecedores, loadData }
                       </TableCell>
                       <TableCell>{f.cnpj || "-"}</TableCell>
                       <TableCell className="text-sm">{f.email || "-"}</TableCell>
-                      <TableCell className="text-sm">{f.telefone || "-"}</TableCell>
+                      <TableCell className="text-sm whitespace-nowrap">
+                        {formatarTelefone(f.telefone) || "-"}
+                      </TableCell>
                       <TableCell>{f.cidade || "-"}</TableCell>
                       <TableCell>
                         <div className="flex gap-2">
@@ -505,58 +521,12 @@ export default function FornecedoresTab({ empresaAtiva, fornecedores, loadData }
               </TableBody>
             </Table>
           </div>
-          {fornecedores.filter(
-            (f) =>
-              searchFornecedor === "" ||
-              normalizarTexto(f.nome_razao).includes(
-                normalizarTexto(searchFornecedor.toLowerCase())
-              ) ||
-              normalizarTexto(f.nome_fantasia).includes(
-                normalizarTexto(searchFornecedor.toLowerCase())
-              ) ||
-              normalizarTexto(f.email).includes(normalizarTexto(searchFornecedor.toLowerCase())) ||
-              f.telefone?.includes(searchFornecedor) ||
-              f.cnpj?.includes(searchFornecedor)
-          ).length > 50 && (
+          {fornecedoresFiltrados.length > 50 && (
             <div className="flex justify-between items-center mt-4 pt-4 border-t">
               <p className="text-sm text-slate-600">
                 Mostrando {(fornecedoresPage - 1) * 50 + 1} a{" "}
-                {Math.min(
-                  fornecedoresPage * 50,
-                  fornecedores.filter(
-                    (f) =>
-                      searchFornecedor === "" ||
-                      normalizarTexto(f.nome_razao).includes(
-                        normalizarTexto(searchFornecedor.toLowerCase())
-                      ) ||
-                      normalizarTexto(f.nome_fantasia).includes(
-                        normalizarTexto(searchFornecedor.toLowerCase())
-                      ) ||
-                      normalizarTexto(f.email).includes(
-                        normalizarTexto(searchFornecedor.toLowerCase())
-                      ) ||
-                      f.telefone?.includes(searchFornecedor) ||
-                      f.cnpj?.includes(searchFornecedor)
-                  ).length
-                )}{" "}
-                de{" "}
-                {
-                  fornecedores.filter(
-                    (f) =>
-                      searchFornecedor === "" ||
-                      normalizarTexto(f.nome_razao).includes(
-                        normalizarTexto(searchFornecedor.toLowerCase())
-                      ) ||
-                      normalizarTexto(f.nome_fantasia).includes(
-                        normalizarTexto(searchFornecedor.toLowerCase())
-                      ) ||
-                      normalizarTexto(f.email).includes(
-                        normalizarTexto(searchFornecedor.toLowerCase())
-                      ) ||
-                      f.telefone?.includes(searchFornecedor) ||
-                      f.cnpj?.includes(searchFornecedor)
-                  ).length
-                }
+                {Math.min(fornecedoresPage * 50, fornecedoresFiltrados.length)} de{" "}
+                {fornecedoresFiltrados.length}
               </p>
               <div className="flex gap-2">
                 <Button
@@ -570,7 +540,7 @@ export default function FornecedoresTab({ empresaAtiva, fornecedores, loadData }
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={fornecedoresPage * 50 >= fornecedores.length}
+                  disabled={fornecedoresPage * 50 >= fornecedoresFiltrados.length}
                   onClick={() => setFornecedoresPage(fornecedoresPage + 1)}
                 >
                   Próximo
@@ -645,7 +615,7 @@ export default function FornecedoresTab({ empresaAtiva, fornecedores, loadData }
                           nome_razao: d.razao_social || f.nome_razao,
                           nome_fantasia: d.nome_fantasia || f.nome_fantasia,
                           email: d.email || f.email,
-                          telefone: d.telefone || f.telefone,
+                          telefone: d.telefone ? formatarTelefone(d.telefone) : f.telefone,
                           endereco: d.endereco || f.endereco,
                           numero: d.numero || f.numero,
                           complemento_bairro:
@@ -689,12 +659,9 @@ export default function FornecedoresTab({ empresaAtiva, fornecedores, loadData }
                 </div>
                 <div>
                   <Label>Telefone</Label>
-                  <Input
+                  <InputTelefone
                     value={fornecedorForm.telefone || ""}
-                    onChange={(e) =>
-                      setFornecedorForm({ ...fornecedorForm, telefone: e.target.value })
-                    }
-                    placeholder="(00) 00000-0000"
+                    onChange={(telefone) => setFornecedorForm((f) => ({ ...f, telefone }))}
                     className="mt-1.5"
                   />
                 </div>
@@ -702,19 +669,10 @@ export default function FornecedoresTab({ empresaAtiva, fornecedores, loadData }
             </div>
             <div className="border-t pt-4">
               <h4 className="font-medium mb-3">Categorias</h4>
-              <Input
-                value={fornecedorForm.categorias?.join(", ") || ""}
-                onChange={(e) =>
-                  setFornecedorForm({
-                    ...fornecedorForm,
-                    categorias: e.target.value
-                      .split(",")
-                      .map((c) => c.trim())
-                      .filter(Boolean),
-                  })
-                }
-                placeholder="Ex: Elétrica, Hidráulica"
-                className="mt-1.5"
+              <CategoriasFornecedorSelect
+                empresaId={empresaAtiva?.id}
+                value={fornecedorForm.categorias}
+                onChange={(categorias) => setFornecedorForm((f) => ({ ...f, categorias }))}
               />
             </div>
             <div className="border-t pt-4">

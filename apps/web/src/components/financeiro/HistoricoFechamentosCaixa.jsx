@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
-import { safeUrl } from "@/lib/safe-url";
 import { safeParseJSON } from "@/lib/json-utils";
+import { ehBase44, nomeDoArquivo } from "@/lib/anexo-ref";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,8 @@ import {
   ChevronDown,
   ChevronRight,
   Undo2,
-  ExternalLink,
+  Eye,
+  FileWarning,
   FileSpreadsheet,
   Pencil,
   Save,
@@ -52,6 +54,7 @@ export default function HistoricoFechamentosCaixa({
   const [desfazendoPagamentoId, setDesfazendoPagamentoId] = useState(null);
   const [aprovandoPagamentoFechamento, setAprovandoPagamentoFechamento] = useState(null); // { fechamento, pls }
   const [acrescentandoEmFechamento, setAcrescentandoEmFechamento] = useState(null); // fechamento
+  const [anexoAberto, setAnexoAberto] = useState(null); // { url: ref, nome }
 
   useEffect(() => {
     carregar();
@@ -133,7 +136,13 @@ export default function HistoricoFechamentosCaixa({
         },
       };
       const response = await sigo.functions.invoke("gerarPDFComprovantes", payload);
-      const base64 = response.data.base64;
+      // função ainda não migrada do Base44: volta { success:false, error } sem PDF
+      const base64 = response?.data?.base64;
+      if (response?.data?.success === false || response?.data?.error || !base64) {
+        throw new Error(
+          response?.data?.error || "o servidor não devolveu o PDF. Use o botão Planilha."
+        );
+      }
       const binary = atob(base64);
       const arr = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
@@ -480,14 +489,31 @@ export default function HistoricoFechamentosCaixa({
                                     R$ {valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                                   </span>
                                   {pl.comprovante_url && (
-                                    <a
-                                      href={safeUrl(pl.comprovante_url)}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-blue-500 hover:text-blue-700"
+                                    <button
+                                      type="button"
+                                      title={
+                                        ehBase44(pl.comprovante_url)
+                                          ? "Comprovante do sistema antigo (indisponível)"
+                                          : "Ver comprovante"
+                                      }
+                                      onClick={() =>
+                                        setAnexoAberto({
+                                          url: pl.comprovante_url,
+                                          nome: nomeDoArquivo(pl.comprovante_url, "Comprovante"),
+                                        })
+                                      }
+                                      className={
+                                        ehBase44(pl.comprovante_url)
+                                          ? "text-slate-300 hover:text-slate-500"
+                                          : "text-blue-500 hover:text-blue-700"
+                                      }
                                     >
-                                      <ExternalLink className="w-3.5 h-3.5" />
-                                    </a>
+                                      {ehBase44(pl.comprovante_url) ? (
+                                        <FileWarning className="w-3.5 h-3.5" />
+                                      ) : (
+                                        <Eye className="w-3.5 h-3.5" />
+                                      )}
+                                    </button>
                                   )}
                                 </div>
                               </div>
@@ -516,14 +542,21 @@ export default function HistoricoFechamentosCaixa({
                           </p>
                         )}
                         {f.comprovante_pagamento_url && (
-                          <a
-                            href={safeUrl(f.comprovante_pagamento_url)}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAnexoAberto({
+                                url: f.comprovante_pagamento_url,
+                                nome: nomeDoArquivo(
+                                  f.comprovante_pagamento_url,
+                                  "Comprovante de pagamento"
+                                ),
+                              })
+                            }
                             className="text-xs text-blue-600 underline flex items-center gap-1"
                           >
                             <FileText className="w-3 h-3" /> Ver comprovante
-                          </a>
+                          </button>
                         )}
                       </div>
                     )}
@@ -711,6 +744,13 @@ export default function HistoricoFechamentosCaixa({
           }}
         />
       )}
+
+      {/* comprovantes (item e pagamento) em janela flutuante — resolve a ref na hora */}
+      <AnexoViewer
+        anexo={anexoAberto}
+        open={!!anexoAberto}
+        onOpenChange={(v) => !v && setAnexoAberto(null)}
+      />
     </div>
   );
 }

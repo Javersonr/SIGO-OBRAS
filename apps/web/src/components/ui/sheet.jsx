@@ -5,6 +5,7 @@ import { cva } from "class-variance-authority";
 import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { ignorarEscDaJanelaFlutuante, ignorarJanelaFlutuante } from "./janela-flutuante"
 
 const Sheet = SheetPrimitive.Root
 
@@ -44,10 +45,15 @@ const sheetVariants = cva(
   }
 )
 
-const SheetContent = React.forwardRef(({ side = "right", className, children, overlayClassName, ...props }, ref) => (
+const SheetContent = React.forwardRef(({ side = "right", className, children, overlayClassName, onInteractOutside, onEscapeKeyDown, ...props }, ref) => (
   <SheetPortal>
     <SheetOverlay className={overlayClassName} />
-    <SheetPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
+    <SheetPrimitive.Content
+      ref={ref}
+      className={cn(sheetVariants({ side }), className)}
+      {...props}
+      onInteractOutside={ignorarJanelaFlutuante(onInteractOutside)}
+      onEscapeKeyDown={ignorarEscDaJanelaFlutuante(onEscapeKeyDown)}>
       <SheetPrimitive.Close
         className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
         <X className="h-4 w-4" />

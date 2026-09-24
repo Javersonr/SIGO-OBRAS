@@ -1,7 +1,17 @@
 import React, { useState, useEffect } from "react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, refDoStorage } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { refDoUpload, nomeDoArquivo, extensaoDoArquivo, ehImagem, ehPdf } from "@/lib/anexo-ref";
 import DespesaModal from "./DespesaModal";
+
+/** Mime do comprovante pela extensão da ref; sem extensão, costuma ser foto. */
+function tipoDoComprovante(ref) {
+  const ext = extensaoDoArquivo(ref);
+  if (ehPdf(ref)) return "application/pdf";
+  if (!ext) return "image/jpeg";
+  if (ehImagem(ref)) return `image/${ext === "jpg" ? "jpeg" : ext}`;
+  return "";
+}
 
 export default function ReconciliacaoComDespesaModal({
   open,
@@ -88,13 +98,15 @@ export default function ReconciliacaoComDespesaModal({
         forma_pagamento: "",
       });
 
-      // Anexar o comprovante automaticamente
+      // Anexar o comprovante automaticamente. URL assinada antiga do nosso
+      // Storage vira ref "bucket/path" (é o que vai para o TransacaoAnexo).
       if (preLancamento.comprovante_url) {
+        const ref = refDoStorage(preLancamento.comprovante_url) || preLancamento.comprovante_url;
         setAnexos([
           {
-            nome: "Comprovante",
-            url: preLancamento.comprovante_url,
-            tipo: "image",
+            nome: nomeDoArquivo(ref, "Comprovante"),
+            url: ref,
+            tipo: tipoDoComprovante(ref),
           },
         ]);
       } else {
@@ -111,8 +123,13 @@ export default function ReconciliacaoComDespesaModal({
     const files = Array.from(e.target.files);
     const novosAnexos = [];
     for (const file of files) {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-      novosAnexos.push({ nome: file.name, url: file_url, tipo: file.type });
+      // grava a REFERÊNCIA "bucket/path": a file_url assinada expira em 1h
+      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+      if (!ref) {
+        alert(`Falha no envio de ${file.name}`);
+        continue;
+      }
+      novosAnexos.push({ nome: file.name, url: ref, tipo: file.type });
     }
     setAnexos((prev) => [...prev, ...novosAnexos]);
   };

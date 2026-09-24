@@ -92,7 +92,10 @@ export function createIntegrations(supabase) {
         if (signErr) throw signErr;
 
         return {
+          // file_url expira em 1h: serve só p/ pré-visualizar agora. Para
+          // GRAVAR no banco use `ref` ("bucket/path") e resolva ao exibir.
           file_url: signed.signedUrl,
+          ref: `${bucket}/${path}`,
           bucket,
           path,
           mime_type: resolvedMime,

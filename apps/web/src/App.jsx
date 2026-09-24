@@ -1,5 +1,8 @@
 import { Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
+// Toaster do sonner GLOBAL: as telas usam toast() do sonner (Financeiro, RH...);
+// antes ele só existia em Configurações/SaaS Admin e os avisos sumiam no resto.
+import { Toaster as SonnerToaster } from "sonner";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClientInstance } from "@/lib/query-client";
 import NavigationTracker from "@/lib/NavigationTracker";
@@ -72,6 +75,7 @@ function App() {
               <NavigationTracker />
               <AuthenticatedApp />
               <Toaster />
+              <SonnerToaster position="top-right" richColors />
             </QueryClientProvider>
           }
         />

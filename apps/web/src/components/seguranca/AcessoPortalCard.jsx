@@ -104,6 +104,10 @@ export default function AcessoPortalCard({ funcionario, empresaAtiva, onMudou })
     }
     const via = await dispararWhatsApp(funcionario.telefone, mensagem);
     if (via === "evolution") toast.success("📲 Acesso enviado pelo WhatsApp");
+    if (via === "invalido") {
+      await navigator.clipboard.writeText(mensagem).catch(() => {});
+      toast.info("Mensagem com o acesso copiada — entregue ao funcionário e corrija o telefone");
+    }
   };
 
   const status = statusAcesso(acesso);

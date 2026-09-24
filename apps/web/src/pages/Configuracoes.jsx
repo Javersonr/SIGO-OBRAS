@@ -3,7 +3,7 @@ import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import { safeParseJSON } from "@/lib/json-utils";
 import { Plus, Trash2 } from "lucide-react";
-import { toast, Toaster } from "sonner";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -930,8 +930,6 @@ export default function Configuracoes() {
 
   return (
     <div className="space-y-6">
-      <Toaster position="top-right" richColors />
-
       {/* Barra de Progresso da Importação */}
       {importProgress.show && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">

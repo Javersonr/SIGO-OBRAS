@@ -2,6 +2,9 @@ import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import BuscarCnpjButton from "@/components/shared/BuscarCnpjButton";
+import InputTelefone from "@/components/shared/InputTelefone";
+import CategoriasFornecedorSelect from "@/components/fornecedores/CategoriasFornecedorSelect";
+import { formatarTelefone, mensagemTelefoneInvalido, telefoneValido } from "@/lib/telefone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -52,11 +55,16 @@ export default function NovoFornecedorConfigSheet({
 
   const handleSave = async () => {
     if (!form.nome_razao) return;
+    if (!telefoneValido(form.telefone)) {
+      toast.error(mensagemTelefoneInvalido(form.telefone));
+      return;
+    }
     setSaving(true);
     try {
       const fornecedor = await sigo.entities.Fornecedor.create({
         empresa_id: empresaAtiva.id,
         ...form,
+        telefone: formatarTelefone(form.telefone),
         ativo: true,
       });
       toast.success("✅ Fornecedor criado com sucesso");
@@ -131,7 +139,7 @@ export default function NovoFornecedorConfigSheet({
                         nome_razao: d.razao_social || f.nome_razao,
                         nome_fantasia: d.nome_fantasia || f.nome_fantasia,
                         email: d.email || f.email,
-                        telefone: d.telefone || f.telefone,
+                        telefone: d.telefone ? formatarTelefone(d.telefone) : f.telefone,
                         endereco: d.endereco || f.endereco,
                         numero: d.numero || f.numero,
                         complemento_bairro:
@@ -171,10 +179,9 @@ export default function NovoFornecedorConfigSheet({
               </div>
               <div>
                 <Label>Telefone</Label>
-                <Input
+                <InputTelefone
                   value={form.telefone}
-                  onChange={(e) => setForm({ ...form, telefone: e.target.value })}
-                  placeholder="(00) 00000-0000"
+                  onChange={(telefone) => setForm((f) => ({ ...f, telefone }))}
                   className="mt-1.5"
                 />
               </div>
@@ -182,19 +189,10 @@ export default function NovoFornecedorConfigSheet({
           </div>
           <div className="border-t pt-4">
             <h4 className="font-medium mb-3">Categorias</h4>
-            <Input
-              value={form.categorias?.join(", ") || ""}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  categorias: e.target.value
-                    .split(",")
-                    .map((c) => c.trim())
-                    .filter(Boolean),
-                })
-              }
-              placeholder="Ex: Elétrica, Hidráulica"
-              className="mt-1.5"
+            <CategoriasFornecedorSelect
+              empresaId={empresaAtiva?.id}
+              value={form.categorias}
+              onChange={(categorias) => setForm((f) => ({ ...f, categorias }))}
             />
           </div>
           <div className="border-t pt-4">
