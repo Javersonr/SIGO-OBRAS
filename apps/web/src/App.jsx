@@ -75,7 +75,9 @@ function App() {
               <NavigationTracker />
               <AuthenticatedApp />
               <Toaster />
-              <SonnerToaster position="top-right" richColors />
+              {/* pointer-events: com Sheet/Dialog modal aberto o body fica "none" e o
+                  clique no aviso vazaria para o overlay (fechando o formulário) */}
+              <SonnerToaster position="top-right" richColors style={{ pointerEvents: "auto" }} />
             </QueryClientProvider>
           }
         />

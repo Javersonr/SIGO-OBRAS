@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { sigo, resolveStorageUrl } from "@/api/sigoClient";
+import { sigo } from "@/api/sigoClient";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
+import { copiarOuOferecer } from "@/lib/whatsapp";
 import AcessoPortalCard from "@/components/seguranca/AcessoPortalCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +62,7 @@ export default function FichaFuncionarioSheet({
 }) {
   const [form, setForm] = useState(funcionario || {});
   const [advertencias, setAdvertencias] = useState([]);
+  const [anexoAberto, setAnexoAberto] = useState(null); // { url: ref, nome }
   const [vistorias, setVistorias] = useState([]);
   const [cursos, setCursos] = useState([]);
   const [movimentacoes, setMovimentacoes] = useState([]);
@@ -166,10 +169,9 @@ export default function FichaFuncionarioSheet({
     }
   };
 
-  const abrirRef = async (ref) => {
-    const url = await resolveStorageUrl(ref);
-    if (url) window.open(url, "_blank");
-  };
+  // abre na janela flutuante: window.open depois de await era barrado pelo
+  // bloqueador de pop-up e arquivo do Base44 (apagado) não dava aviso nenhum
+  const abrirRef = (ref, nome) => setAnexoAberto({ url: ref, nome: nome || "Anexo" });
 
   // Cria a entrega e manda o link do portal pro funcionário dar ciência
   const criarCiencia = async (enviarWhats) => {
@@ -194,14 +196,15 @@ export default function FichaFuncionarioSheet({
           "📋 Você recebeu itens da empresa. Entre no Portal do Funcionário e DÊ CIÊNCIA da entrega."
         );
         if (r.via === "evolution") toast.success("📲 Mensagem enviada automaticamente");
-        // sem telefone ou telefone inválido: a mensagem (que pode ter a senha
-        // provisória recém-criada) não pode se perder → vai para a área de transferência
+        // sem telefone (null: vazio ou sem dígitos) ou telefone inválido: a
+        // mensagem (que pode ter a senha provisória recém-criada) não pode se
+        // perder → copia; se o navegador negar (após await), oferece num clique
         if (!r.via || r.via === "invalido") {
-          await navigator.clipboard.writeText(r.texto).catch(() => {});
-          toast.info(
+          await copiarOuOferecer(
+            r.texto,
             r.via === "invalido"
-              ? "Telefone inválido — mensagem copiada para você entregar (corrija o cadastro)"
-              : "Funcionário sem telefone — mensagem copiada para você entregar"
+              ? "Telefone inválido (corrija o cadastro)"
+              : "Funcionário sem telefone"
           );
         }
       }
@@ -273,7 +276,7 @@ export default function FichaFuncionarioSheet({
               {(funcionario.documentos_pessoais || []).map((d, i) => (
                 <button
                   key={i}
-                  onClick={() => abrirRef(d.url)}
+                  onClick={() => abrirRef(d.url, d.nome)}
                   className="block w-full text-left text-sm text-sky-700 hover:underline truncate"
                 >
                   {d.nome || d.url}
@@ -372,7 +375,12 @@ export default function FichaFuncionarioSheet({
                         <span className="text-slate-500">{fmtData(a.data)}</span>
                         <span className="flex-1">{a.motivo}</span>
                         {a.anexo_ref && (
-                          <button onClick={() => abrirRef(a.anexo_ref)} title="Abrir anexo">
+                          <button
+                            onClick={() =>
+                              abrirRef(a.anexo_ref, `Advertência ${a.tipo || ""}`.trim())
+                            }
+                            title="Abrir anexo"
+                          >
                             <FileText className="w-4 h-4 text-sky-600" />
                           </button>
                         )}
@@ -535,7 +543,7 @@ export default function FichaFuncionarioSheet({
                     {(funcionario.epis_anexos || []).map((d, i) => (
                       <button
                         key={i}
-                        onClick={() => abrirRef(d.url || d.ref)}
+                        onClick={() => abrirRef(d.url || d.ref, d.nome)}
                         className="block w-full text-left text-sm text-sky-700 hover:underline truncate"
                       >
                         {d.nome || d.url || d.ref}
@@ -626,6 +634,11 @@ export default function FichaFuncionarioSheet({
           </section>
         </div>
       </SheetContent>
+      <AnexoViewer
+        anexo={anexoAberto}
+        open={!!anexoAberto}
+        onOpenChange={(aberto) => !aberto && setAnexoAberto(null)}
+      />
     </Sheet>
   );
 }

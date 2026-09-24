@@ -7,7 +7,13 @@ export const ATRIBUTO_JANELA_FLUTUANTE = "data-janela-flutuante";
 
 export function dentroDeJanelaFlutuante(evento) {
   const alvo = evento?.target || evento?.detail?.originalEvent?.target;
-  return !!(alvo && typeof alvo.closest === "function" && alvo.closest(`[${ATRIBUTO_JANELA_FLUTUANTE}]`));
+  // avisos (toasts do sonner) também ficam fora das gavetas: clicar neles
+  // (fechar, "Copiar mensagem") não pode fechar o formulário aberto
+  return !!(
+    alvo &&
+    typeof alvo.closest === "function" &&
+    alvo.closest(`[${ATRIBUTO_JANELA_FLUTUANTE}], [data-sonner-toaster]`)
+  );
 }
 
 /** Envolve o handler do Radix: ignora interações vindas de janela flutuante. */

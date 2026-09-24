@@ -66,6 +66,9 @@ export default function DespesasTab({
   // id da despesa aberta no detalhe: recargas assíncronas (upload, PDF do
   // recibo) de outra despesa não podem sobrescrever a lista de anexos
   const despesaAbertaRef = useRef(null);
+  // idem para o FORMULÁRIO: anexos de uma despesa que chegam depois de abrir
+  // outra não podem cair no formulário errado (e ser apagados/copiados ao salvar)
+  const anexosFormRef = useRef(null);
   const [sortConfig, setSortConfig] = useState({ field: "data_vencimento", direction: "desc" });
   const [showModal, setShowModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -828,6 +831,7 @@ export default function DespesasTab({
 
   const handleOpen = (item = null) => {
     setSelectedItem(item);
+    anexosFormRef.current = item?.id ?? null;
 
     if (item) {
       setForm({
@@ -891,14 +895,16 @@ export default function DespesasTab({
   };
 
   const loadAnexos = async (transacaoId) => {
+    anexosFormRef.current = transacaoId;
     try {
       const anexosDb = await sigo.entities.TransacaoAnexo.filter({
         empresa_id: empresaAtiva.id,
         transacao_id: transacaoId,
       });
+      if (anexosFormRef.current !== transacaoId) return;
       setAnexos(anexosDb.map((a) => ({ id: a.id, nome: a.nome, url: a.url, tipo: a.tipo })));
     } catch {
-      setAnexos([]);
+      if (anexosFormRef.current === transacaoId) setAnexos([]);
     }
   };
 
@@ -1156,6 +1162,9 @@ export default function DespesasTab({
       });
 
       for (const anexo of anexosExistentes) {
+        // recibo quitado é gerado/anexado pelo servidor (pode ter chegado com o
+        // formulário aberto): nunca é removido por aqui
+        if (String(anexo.url || "").includes("/recibos/recibo-quitado-")) continue;
         if (!anexos.find((a) => a.id === anexo.id)) {
           await sigo.entities.TransacaoAnexo.delete(anexo.id);
         }
@@ -1393,9 +1402,18 @@ export default function DespesasTab({
     try {
       // Fornecedor já deu quitação pelo WhatsApp → o recibo é o QUITADO
       // (com a evidência), não o modelo em branco para assinar à mão.
-      if (despesa?.id && (await baixarReciboQuitado(despesa.id))) {
+      let baixouQuitado = false;
+      try {
+        baixouQuitado = !!despesa?.id && (await baixarReciboQuitado(despesa.id));
+      } catch (e) {
+        // servidor fora/instável: não deixa o usuário sem recibo nenhum
+        toast.warning(
+          `Não consegui buscar o recibo quitado (${e?.message || e}) — gerando o simples`
+        );
+      }
+      if (baixouQuitado) {
         toast.success("Recibo quitado baixado (também está nos anexos da despesa)");
-        await recarregarAnexosDetalhe(despesa.id);
+        recarregarAnexosDetalhe(despesa.id).catch(() => {});
         return;
       }
       const { jsPDF } = await import("jspdf");

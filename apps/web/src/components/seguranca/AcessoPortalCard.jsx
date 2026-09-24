@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { KeyRound, Loader2, Copy, MessageCircle, RefreshCw, Power } from "lucide-react";
 import { toast } from "sonner";
-import { dispararWhatsApp } from "@/lib/whatsapp";
+import { copiarOuOferecer, copiarTexto, dispararWhatsApp } from "@/lib/whatsapp";
 import { acessoPortal, textoCredenciais, statusAcesso } from "@/lib/portal-funcionario-acesso";
 
 const fmtDataHora = (iso) =>
@@ -98,16 +98,15 @@ export default function AcessoPortalCard({ funcionario, empresaAtiva, onMudou })
     });
 
   const enviarWhats = async () => {
-    if (!funcionario.telefone) {
-      toast.error("Funcionário sem telefone cadastrado — copie a mensagem");
-      return;
-    }
-    const via = await dispararWhatsApp(funcionario.telefone, mensagem);
+    // null = sem telefone OU só lixo sem dígitos ("-", "não tem"): mesma coisa
+    const via = funcionario.telefone
+      ? await dispararWhatsApp(funcionario.telefone, mensagem)
+      : null;
     if (via === "evolution") toast.success("📲 Acesso enviado pelo WhatsApp");
-    if (via === "invalido") {
-      await navigator.clipboard.writeText(mensagem).catch(() => {});
-      toast.info("Mensagem com o acesso copiada — entregue ao funcionário e corrija o telefone");
-    }
+    // a senha provisória não pode se perder: copia (ou oferece copiar num clique)
+    else if (via === "invalido")
+      await copiarOuOferecer(mensagem, "Telefone inválido (corrija o cadastro)");
+    else if (via === null) await copiarOuOferecer(mensagem, "Funcionário sem telefone cadastrado");
   };
 
   const status = statusAcesso(acesso);
@@ -195,8 +194,8 @@ export default function AcessoPortalCard({ funcionario, empresaAtiva, onMudou })
               size="sm"
               variant="outline"
               onClick={async () => {
-                await navigator.clipboard.writeText(mensagem);
-                toast.success("Mensagem copiada");
+                if (await copiarTexto(mensagem)) toast.success("Mensagem copiada");
+                else toast.error("Não foi possível copiar — anote o usuário e a senha acima");
               }}
             >
               <Copy className="w-4 h-4 mr-1" /> Copiar mensagem

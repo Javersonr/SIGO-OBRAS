@@ -294,11 +294,15 @@ Deno.serve(
         contestado_em: new Date().toISOString(),
         ...origemDaRequisicao(req),
       };
-      const { error } = await supabase
+      // .neq: se uma confirmação gravou no meio, a contestação não a apaga
+      const { data: gravou, error } = await supabase
         .from("recibo_pagamento")
         .update({ status: "contestada", contestacao: motivo, evidencia })
-        .eq("id", recibo.id);
+        .eq("id", recibo.id)
+        .neq("status", "confirmada")
+        .select("id");
       if (error) return fail("Erro ao registrar a contestação", 500);
+      if (!gravou?.length) return fail("Este recibo já foi quitado — fale com a empresa", 409);
       return ok({ recibo: { ...recibo, status: "contestada", contestacao: motivo } });
     }
 

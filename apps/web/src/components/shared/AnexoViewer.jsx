@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+// Mesma cópia usada pelo @radix-ui/react-dialog (Sheet/Dialog): a pilha de
+// FocusScope é do módulo, então abrir um scope aqui pausa o de baixo.
+import { FocusScope } from "@radix-ui/react-focus-scope";
 import { resolveStorageUrl } from "@/api/sigoClient";
 import { ehBase44, ehImagem, ehPdf, extensaoDoArquivo } from "@/lib/anexo-ref";
 import { ATRIBUTO_JANELA_FLUTUANTE } from "@/components/ui/janela-flutuante";
@@ -23,9 +26,15 @@ import {
  * própria do navegador (para levar a outro monitor). Mesma API do antigo
  * diálogo: <AnexoViewer anexo open onOpenChange />.
  *
- * Esc fecha a janela. Se houver Sheet/Dialog Radix aberto por baixo, o Esc
- * também chega nele e ele fecha junto (a janela fecha primeiro; ver o efeito
- * do Esc abaixo).
+ * Esc fecha só a janela: o Sheet/Dialog Radix aberto por baixo ignora esse Esc
+ * (marca `fechouJanelaFlutuante`, ver ui/janela-flutuante.js) e o formulário
+ * continua aberto.
+ *
+ * Foco: o Sheet/Dialog modal de baixo prende o foco (FocusScope do Radix) e,
+ * se o foco sai dele, devolve ao último campo com o texto SELECIONADO — a
+ * próxima tecla apagaria o "Valor". Por isso os controles da janela não pegam
+ * foco no clique (preventDefault no mousedown) e a janela abre um FocusScope
+ * próprio, que pausa o de baixo enquanto ela existe (ex.: clique no PDF).
  */
 
 const CHAVE_GEOMETRIA = "sigo_anexo_janela";
@@ -71,12 +80,33 @@ function limitar(g) {
   };
 }
 
+/**
+ * Tamanho da imagem (w,h, antes de girar) e da caixa que a contém (contorno já
+ * girado). O ajuste à área usa largura/altura trocadas quando girada; em 100%
+ * nunca amplia além do tamanho natural.
+ */
+function medidasImagem(natural, area, zoom, rotacao) {
+  if (!natural || !area) return null;
+  const girada = rotacao % 180 !== 0;
+  const livreW = Math.max(1, area.w - 24); // p-3 dos dois lados
+  const livreH = Math.max(1, area.h - 24);
+  const [largura, altura] = girada ? [natural.h, natural.w] : [natural.w, natural.h];
+  const escala = Math.min(1, livreW / largura, livreH / altura) * zoom;
+  const w = Math.max(1, Math.floor(natural.w * escala));
+  const h = Math.max(1, Math.floor(natural.h * escala));
+  return { w, h, caixaW: girada ? h : w, caixaH: girada ? w : h };
+}
+
+/** Clique sem tirar o foco do campo do formulário de baixo (ver cabeçalho). */
+const semFoco = (e) => e.preventDefault();
+
 function Botao({ titulo, onClick, children, disabled }) {
   return (
     <button
       type="button"
       title={titulo}
       aria-label={titulo}
+      onMouseDown={semFoco}
       onClick={onClick}
       disabled={disabled}
       className="p-1.5 rounded-md text-slate-600 hover:bg-slate-200 hover:text-slate-900 disabled:opacity-40"
@@ -102,6 +132,7 @@ function BotaoAcao({ onClick, children }) {
   return (
     <button
       type="button"
+      onMouseDown={semFoco}
       onClick={onClick}
       className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
     >
@@ -122,9 +153,13 @@ export default function AnexoViewer({ anexo, open, onOpenChange }) {
   const [arrastando, setArrastando] = useState(false);
   const arrasto = useRef(null);
   const raiz = useRef(null);
-  const areaImagem = useRef(null);
+  // quem tinha o foco ao abrir: recebe de volta se o foco sumir com a janela
+  const focoAnterior = useRef(null);
   // tamanho real da imagem: o zoom parte do tamanho "ajustado à janela"
   const [natural, setNatural] = useState(null);
+  // tamanho da área da imagem, medido (acompanha maximizar/restaurar/redimensionar)
+  const [area, setArea] = useState(null);
+  const observador = useRef(null);
 
   // Referência guardada no banco: "bucket/path" (assinamos na hora), URL
   // assinada antiga do nosso Storage (re-assinamos) ou URL externa (legado).
@@ -195,17 +230,23 @@ export default function AnexoViewer({ anexo, open, onOpenChange }) {
     };
   }, [open, temJanela]);
 
-  // Zoom: largura = tamanho ajustado à área × zoom (não o tamanho natural,
-  // que numa foto de celular é 4–7× maior). Centralizar com margin:auto (e não
-  // flex center) deixa o topo/esquerda ampliados alcançáveis pela rolagem.
-  const estiloImagem = () => {
-    const area = areaImagem.current;
-    if (zoom === 1 || !natural || !area) return { maxWidth: "100%", maxHeight: "100%" };
-    const livreW = Math.max(1, area.clientWidth - 24); // p-3 dos dois lados
-    const livreH = Math.max(1, area.clientHeight - 24);
-    const ajuste = Math.min(1, livreW / natural.w, livreH / natural.h);
-    return { width: Math.round(natural.w * ajuste * zoom), maxWidth: "none", maxHeight: "none" };
-  };
+  // Mede a área da imagem com ResizeObserver (ref de callback liga/desliga).
+  // offsetWidth inclui a barra de rolagem: o ajuste não muda quando ela
+  // aparece com o zoom (senão ficaria oscilando). Sem ResizeObserver: mede 1×.
+  const refAreaImagem = useCallback((el) => {
+    observador.current?.disconnect();
+    observador.current = null;
+    if (!el) return;
+    const medir = () => {
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      setArea((a) => (a && a.w === w && a.h === h ? a : { w, h }));
+    };
+    medir();
+    if (typeof ResizeObserver === "undefined") return;
+    observador.current = new ResizeObserver(medir);
+    observador.current.observe(el);
+  }, []);
 
   // mantém dentro da tela se o navegador for redimensionado
   useEffect(() => {
@@ -309,160 +350,214 @@ export default function AnexoViewer({ anexo, open, onOpenChange }) {
       }
     : { left: geo.x, top: geo.y, width: geo.w, height: geo.h };
 
+  const med = medidasImagem(natural, area, zoom, rotacao);
+
+  // FocusScope não preso: só entra na pilha do Radix e pausa o scope do
+  // Sheet/Dialog de baixo enquanto a janela existe (retoma ao fechar). Não
+  // rouba o foco ao abrir nem o devolve selecionando texto ao fechar.
+  const aoMontarFoco = (e) => {
+    focoAnterior.current = document.activeElement;
+    e.preventDefault();
+  };
+  const aoDesmontarFoco = (e) => {
+    e.preventDefault();
+    if (e.currentTarget?.isConnected) return; // desmontagem falsa (StrictMode)
+    const alvo = focoAnterior.current;
+    focoAnterior.current = null;
+    // o foco estava na janela (ex.: no PDF) e sumiu com ela: volta para quem a
+    // abriu — depois de o scope de baixo retomar, para ele registrar esse foco
+    const ativo = document.activeElement;
+    if (ativo && ativo !== document.body) return;
+    if (!alvo || alvo === document.body || !alvo.isConnected) return;
+    setTimeout(() => alvo.focus?.({ preventScroll: true }), 0);
+  };
+
   const janela = (
-    <div
-      {...{ [ATRIBUTO_JANELA_FLUTUANTE]: "" }}
-      ref={raiz}
-      role="dialog"
-      aria-label={`Anexo: ${fileName}`}
-      className="fixed z-[10000] flex flex-col rounded-xl border border-slate-300 bg-white shadow-2xl overflow-hidden"
-      style={{ ...estilo, pointerEvents: "auto" }}
+    <FocusScope
+      asChild
+      trapped={false}
+      // sem o tabIndex=-1 do FocusScope: clicar em área vazia não foca a janela
+      tabIndex={undefined}
+      onMountAutoFocus={aoMontarFoco}
+      onUnmountAutoFocus={aoDesmontarFoco}
     >
-      {/* barra de título = alça de arrasto (touch-none: no toque, arrasta em vez de rolar a página) */}
       <div
-        className={`flex items-center gap-1 border-b bg-slate-50 pl-3 pr-1 py-1 select-none ${
-          maximizada ? "" : "cursor-move touch-none"
-        }`}
-        onPointerDown={iniciar("mover")}
-        onPointerMove={mover}
-        onPointerUp={soltar}
-        onPointerCancel={soltar}
-        onLostPointerCapture={soltar}
-        onDoubleClick={(e) => {
-          if (!e.target.closest("button")) setMaximizada((m) => !m);
-        }}
+        {...{ [ATRIBUTO_JANELA_FLUTUANTE]: "" }}
+        ref={raiz}
+        role="dialog"
+        aria-label={`Anexo: ${fileName}`}
+        className="fixed z-[10000] flex flex-col rounded-xl border border-slate-300 bg-white shadow-2xl overflow-hidden"
+        style={{ ...estilo, pointerEvents: "auto" }}
       >
-        <GripHorizontal className="w-4 h-4 text-slate-400 shrink-0" />
-        <span className="flex-1 truncate text-sm font-medium text-slate-800" title={fileName}>
-          {fileName}
-        </span>
-        {isImage && estado === "ok" && (
-          <>
-            <Botao titulo="Diminuir" onClick={() => setZoom((z) => Math.max(0.25, z - 0.25))}>
-              <ZoomOut className="w-4 h-4" />
-            </Botao>
-            <span className="text-xs text-slate-500 w-10 text-center">
-              {Math.round(zoom * 100)}%
-            </span>
-            <Botao titulo="Aumentar" onClick={() => setZoom((z) => Math.min(4, z + 0.25))}>
-              <ZoomIn className="w-4 h-4" />
-            </Botao>
-            <Botao titulo="Girar" onClick={() => setRotacao((r) => (r + 90) % 360)}>
-              <RotateCw className="w-4 h-4" />
-            </Botao>
-          </>
-        )}
-        <Botao titulo="Baixar" onClick={baixar} disabled={!fileUrl}>
-          <Download className="w-4 h-4" />
-        </Botao>
-        <Botao
-          titulo="Destacar em janela própria (arraste para outro monitor)"
-          onClick={destacar}
-          disabled={!fileUrl}
-        >
-          <ExternalLink className="w-4 h-4" />
-        </Botao>
-        <Botao
-          titulo={maximizada ? "Restaurar" : "Maximizar"}
-          onClick={() => setMaximizada((m) => !m)}
-        >
-          {maximizada ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-        </Botao>
-        <Botao titulo="Fechar" onClick={() => onOpenChange?.(false)}>
-          <X className="w-4 h-4" />
-        </Botao>
-      </div>
-
-      {/* conteúdo */}
-      <div className="relative flex-1 min-h-0 bg-slate-100">
-        {estado === "carregando" ? (
-          <div className="absolute inset-0 flex items-center justify-center gap-2 text-slate-500 text-sm">
-            <Loader2 className="w-4 h-4 animate-spin" /> Carregando arquivo...
-          </div>
-        ) : estado === "base44" ? (
-          <Aviso titulo="Arquivo do sistema antigo (Base44)">
-            Este arquivo foi anexado na plataforma anterior, que foi desligada, e não está mais
-            disponível. Anexe-o de novo neste lançamento.
-          </Aviso>
-        ) : estado === "sem_arquivo" ? (
-          <Aviso titulo="Arquivo não encontrado">
-            O arquivo não está mais no armazenamento. Anexe-o de novo.
-          </Aviso>
-        ) : estado === "falha_exibir" ? (
-          <Aviso titulo="Não foi possível exibir a imagem" acoes={botaoBaixar}>
-            O arquivo existe, mas o navegador não conseguiu mostrá-lo (pode estar corrompido). Baixe
-            para conferir.
-          </Aviso>
-        ) : isImage ? (
-          <div ref={areaImagem} className="absolute inset-0 overflow-auto flex p-3">
-            <img
-              src={fileUrl}
-              alt={fileName}
-              draggable={false}
-              onLoad={(e) =>
-                setNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })
-              }
-              onError={() => setEstado("falha_exibir")}
-              onClick={() => setZoom((z) => (z < 2 ? z + 0.5 : 1))}
-              className="m-auto cursor-zoom-in select-none"
-              style={{
-                ...estiloImagem(),
-                transform: `rotate(${rotacao}deg)`,
-                transition: "transform 0.15s ease",
-              }}
-            />
-          </div>
-        ) : isPDF && pdfSemIframe() ? (
-          <Aviso
-            titulo="Visualização de PDF indisponível neste aparelho"
-            acoes={
-              <>
-                <BotaoAcao onClick={abrirEmOutraAba}>
-                  <ExternalLink className="w-4 h-4" /> Abrir PDF
-                </BotaoAcao>
-                {botaoBaixar}
-              </>
-            }
-          >
-            O navegador do celular não mostra PDF dentro da página. Abra em outra aba.
-          </Aviso>
-        ) : isPDF ? (
-          <iframe
-            src={`${fileUrl}#view=FitH`}
-            className="absolute inset-0 w-full h-full border-0 bg-white"
-            title={fileName}
-          />
-        ) : (
-          <Aviso
-            titulo={`Pré-visualização indisponível para este formato${
-              extensao ? ` (.${extensao.toUpperCase()})` : ""
-            }`}
-            acoes={botaoBaixar}
-          >
-            Baixe o arquivo para abri-lo no seu computador ou celular.
-          </Aviso>
-        )}
-        {/* durante arrasto, o iframe engoliria o movimento do mouse */}
-        {arrastando && <div className="absolute inset-0" />}
-      </div>
-
-      {/* alça de redimensionar */}
-      {!maximizada && (
+        {/* barra de título = alça de arrasto (touch-none: no toque, arrasta em vez de rolar a página) */}
         <div
-          title="Redimensionar"
-          className="absolute right-0 bottom-0 w-4 h-4 cursor-se-resize touch-none"
-          style={{
-            background:
-              "linear-gradient(135deg, transparent 50%, rgb(148 163 184) 50%, rgb(148 163 184) 60%, transparent 60%, transparent 75%, rgb(148 163 184) 75%, rgb(148 163 184) 85%, transparent 85%)",
-          }}
-          onPointerDown={iniciar("redimensionar")}
+          className={`flex items-center gap-1 border-b bg-slate-50 pl-3 pr-1 py-1 select-none ${
+            maximizada ? "" : "cursor-move touch-none"
+          }`}
+          onMouseDown={semFoco}
+          onPointerDown={iniciar("mover")}
           onPointerMove={mover}
           onPointerUp={soltar}
           onPointerCancel={soltar}
           onLostPointerCapture={soltar}
-        />
-      )}
-    </div>
+          onDoubleClick={(e) => {
+            if (!e.target.closest("button")) setMaximizada((m) => !m);
+          }}
+        >
+          <GripHorizontal className="w-4 h-4 text-slate-400 shrink-0" />
+          <span className="flex-1 truncate text-sm font-medium text-slate-800" title={fileName}>
+            {fileName}
+          </span>
+          {isImage && estado === "ok" && (
+            <>
+              <Botao titulo="Diminuir" onClick={() => setZoom((z) => Math.max(0.25, z - 0.25))}>
+                <ZoomOut className="w-4 h-4" />
+              </Botao>
+              <span className="text-xs text-slate-500 w-10 text-center">
+                {Math.round(zoom * 100)}%
+              </span>
+              <Botao titulo="Aumentar" onClick={() => setZoom((z) => Math.min(4, z + 0.25))}>
+                <ZoomIn className="w-4 h-4" />
+              </Botao>
+              <Botao titulo="Girar" onClick={() => setRotacao((r) => (r + 90) % 360)}>
+                <RotateCw className="w-4 h-4" />
+              </Botao>
+            </>
+          )}
+          <Botao titulo="Baixar" onClick={baixar} disabled={!fileUrl}>
+            <Download className="w-4 h-4" />
+          </Botao>
+          <Botao
+            titulo="Destacar em janela própria (arraste para outro monitor)"
+            onClick={destacar}
+            disabled={!fileUrl}
+          >
+            <ExternalLink className="w-4 h-4" />
+          </Botao>
+          <Botao
+            titulo={maximizada ? "Restaurar" : "Maximizar"}
+            onClick={() => setMaximizada((m) => !m)}
+          >
+            {maximizada ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </Botao>
+          <Botao titulo="Fechar" onClick={() => onOpenChange?.(false)}>
+            <X className="w-4 h-4" />
+          </Botao>
+        </div>
+
+        {/* conteúdo */}
+        <div className="relative flex-1 min-h-0 bg-slate-100">
+          {estado === "carregando" ? (
+            <div className="absolute inset-0 flex items-center justify-center gap-2 text-slate-500 text-sm">
+              <Loader2 className="w-4 h-4 animate-spin" /> Carregando arquivo...
+            </div>
+          ) : estado === "base44" ? (
+            <Aviso titulo="Arquivo do sistema antigo (Base44)">
+              Este arquivo foi anexado na plataforma anterior, que foi desligada, e não está mais
+              disponível. Anexe-o de novo neste lançamento.
+            </Aviso>
+          ) : estado === "sem_arquivo" ? (
+            <Aviso titulo="Arquivo não encontrado">
+              O arquivo não está mais no armazenamento. Anexe-o de novo.
+            </Aviso>
+          ) : estado === "falha_exibir" ? (
+            <Aviso titulo="Não foi possível exibir a imagem" acoes={botaoBaixar}>
+              O arquivo existe, mas o navegador não conseguiu mostrá-lo (pode estar corrompido).
+              Baixe para conferir.
+            </Aviso>
+          ) : isImage ? (
+            // Zoom parte do tamanho ajustado à área (não do natural, que numa foto
+            // de celular é 4–7× maior). A caixa tem o tamanho do contorno JÁ
+            // GIRADO e ocupa esse espaço no layout (shrink-0: o flex não encolhe o
+            // zoom); m-auto centraliza e, se passar da área, deixa topo/esquerda
+            // alcançáveis pela rolagem. A imagem gira centrada dentro dela.
+            <div ref={refAreaImagem} className="absolute inset-0 overflow-auto flex p-3">
+              <div
+                className="relative m-auto shrink-0 overflow-hidden"
+                style={{ width: med?.caixaW ?? 0, height: med?.caixaH ?? 0 }}
+              >
+                <img
+                  src={fileUrl}
+                  alt={fileName}
+                  draggable={false}
+                  onLoad={(e) =>
+                    setNatural({
+                      // SVG sem tamanho próprio dá 0: usa o tamanho padrão de <img>
+                      w: e.currentTarget.naturalWidth || 300,
+                      h: e.currentTarget.naturalHeight || 150,
+                    })
+                  }
+                  onError={() => setEstado("falha_exibir")}
+                  onMouseDown={semFoco}
+                  onClick={() => setZoom((z) => (z < 2 ? z + 0.5 : 1))}
+                  className="absolute cursor-zoom-in select-none"
+                  style={{
+                    left: "50%",
+                    top: "50%",
+                    width: med?.w,
+                    height: med?.h,
+                    maxWidth: "none",
+                    maxHeight: "none",
+                    visibility: med ? "visible" : "hidden",
+                    transform: `translate(-50%, -50%) rotate(${rotacao}deg)`,
+                    transition: "transform 0.15s ease",
+                  }}
+                />
+              </div>
+            </div>
+          ) : isPDF && pdfSemIframe() ? (
+            <Aviso
+              titulo="Visualização de PDF indisponível neste aparelho"
+              acoes={
+                <>
+                  <BotaoAcao onClick={abrirEmOutraAba}>
+                    <ExternalLink className="w-4 h-4" /> Abrir PDF
+                  </BotaoAcao>
+                  {botaoBaixar}
+                </>
+              }
+            >
+              O navegador do celular não mostra PDF dentro da página. Abra em outra aba.
+            </Aviso>
+          ) : isPDF ? (
+            <iframe
+              src={`${fileUrl}#view=FitH`}
+              className="absolute inset-0 w-full h-full border-0 bg-white"
+              title={fileName}
+            />
+          ) : (
+            <Aviso
+              titulo={`Pré-visualização indisponível para este formato${
+                extensao ? ` (.${extensao.toUpperCase()})` : ""
+              }`}
+              acoes={botaoBaixar}
+            >
+              Baixe o arquivo para abri-lo no seu computador ou celular.
+            </Aviso>
+          )}
+          {/* durante arrasto, o iframe engoliria o movimento do mouse */}
+          {arrastando && <div className="absolute inset-0" />}
+        </div>
+
+        {/* alça de redimensionar */}
+        {!maximizada && (
+          <div
+            title="Redimensionar"
+            className="absolute right-0 bottom-0 w-4 h-4 cursor-se-resize touch-none"
+            style={{
+              background:
+                "linear-gradient(135deg, transparent 50%, rgb(148 163 184) 50%, rgb(148 163 184) 60%, transparent 60%, transparent 75%, rgb(148 163 184) 75%, rgb(148 163 184) 85%, transparent 85%)",
+            }}
+            onMouseDown={semFoco}
+            onPointerDown={iniciar("redimensionar")}
+            onPointerMove={mover}
+            onPointerUp={soltar}
+            onPointerCancel={soltar}
+            onLostPointerCapture={soltar}
+          />
+        )}
+      </div>
+    </FocusScope>
   );
 
   return createPortal(janela, document.body);
