@@ -322,8 +322,27 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
       for (const [k] of CAMPOS_FORM) {
         if (campos[k] && !c[k]) patch[k] = campos[k];
       }
-      if (Array.isArray(r.dependentes) && r.dependentes.length && !(c.dependentes || []).length) {
-        patch.dependentes = r.dependentes;
+      if (Array.isArray(r.dependentes) && r.dependentes.length) {
+        const atuais = c.dependentes || [];
+        if (!atuais.length) {
+          patch.dependentes = r.dependentes;
+        } else {
+          // mescla: completa dados faltantes de quem já existe e soma os novos
+          const chave = (x) => normalizarTexto(x?.nome_completo || "");
+          patch.dependentes = atuais.map((d) => {
+            const m = r.dependentes.find((x) => chave(x) === chave(d));
+            return m
+              ? {
+                  ...d,
+                  data_nascimento: d.data_nascimento || m.data_nascimento,
+                  cpf: d.cpf || m.cpf,
+                  parentesco: d.parentesco || m.parentesco,
+                }
+              : d;
+          });
+          const existentes = new Set(atuais.map(chave));
+          patch.dependentes.push(...r.dependentes.filter((x) => !existentes.has(chave(x))));
+        }
       }
       // classifica anexos: nome normalizado (sem acento/extensão) + fallback
       // por posição (IA devolve na ordem dos anexos) + heurística local

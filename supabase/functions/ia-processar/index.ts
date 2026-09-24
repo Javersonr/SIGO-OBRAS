@@ -180,6 +180,12 @@ Deno.serve(
           "Leia os documentos pessoais anexados (RG, CPF, CNH, CTPS, título de eleitor, reservista, comprovantes, certidões, cartão do banco etc.)",
           "e preencha o Formulário para Registro do candidato no JSON pedido.",
           "Datas em AAAA-MM-DD; CPF com pontuação (000.000.000-00); campos não encontrados = null — NUNCA invente.",
+          "Como ler cada documento:",
+          "- CNH: aproveite TUDO — o campo DOC. IDENTIDADE / ÓRG. EMISSOR / UF traz o RG e a UF dele (ex.: '63614652 SSP MG' → rg=63614652, rg_uf=MG); CPF, data de nascimento, filiação (nome_pai e nome_mae) e naturalidade também estão na CNH. A data de 1ª habilitação/emissão da CNH NÃO é a expedição do RG (deixe rg_data_expedicao null se não constar).",
+          "- CTPS DIGITAL: o número da carteira é o PRÓPRIO CPF do titular — preencha ctps_numero com ele; NUNCA escreva a palavra 'Digital' como número.",
+          "- Comprovante de residência (conta de água/luz): endereco, bairro, cep, cidade e estado.",
+          "- Título de eleitor: titulo_eleitor (número), titulo_eleitor_zona e titulo_eleitor_secao.",
+          "- Certidão de casamento: estado_civil='Casado' e cônjuge nos dependentes com nome completo, CPF e DATA DE NASCIMENTO (a certidão costuma trazer a data ou a idade dos nubentes — leia o texto corrido com atenção; se só houver idade, deixe null e registre em observacoes).",
           "Inclua em dependentes o cônjuge e os filhos menores de 21 anos que aparecerem em certidões.",
           checklist.length
             ? `Classifique cada arquivo anexado em UM item deste checklist (ou null se não corresponder): ${checklist.join("; ")}.`
