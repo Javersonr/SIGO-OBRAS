@@ -21,6 +21,7 @@ import { sigo } from "@/api/sigoClient";
 import AnexoViewer from "../shared/AnexoViewer";
 import ModalPagamento from "./ModalPagamento";
 import { DadosBancariosFornecedor } from "./DadosBancariosPagamento";
+import ReciboQuitacaoCard from "./ReciboQuitacaoCard";
 
 export default function DetalheDespesaModal({
   open,
@@ -235,6 +236,8 @@ export default function DetalheDespesaModal({
                 fornecedorId={despesa.fornecedor_id}
                 fornecedorNome={despesa.fornecedor_nome}
               />
+
+              <ReciboQuitacaoCard despesa={despesa} />
             </div>
           </div>
 

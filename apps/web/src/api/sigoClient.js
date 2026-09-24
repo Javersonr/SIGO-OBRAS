@@ -46,6 +46,8 @@ const SUPABASE_FUNCTIONS_REWRITE = {
   portalFuncionario: "portal-funcionario",
   funcionarioAcesso: "funcionario-acesso",
   validarCertificado: "validar-certificado",
+  // Recibo de pagamento com quitação eletrônica do fornecedor
+  reciboFornecedor: "recibo-fornecedor",
   // Disparo de WhatsApp pelo canal do SaaS (Evolution)
   enviarWhatsApp: "enviar-whatsapp",
 };

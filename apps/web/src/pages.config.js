@@ -29,6 +29,7 @@ const PAGES = {
   ClientePortal: lazy(() => import("./pages/ClientePortal")),
   PortalFuncionario: lazy(() => import("./pages/PortalFuncionario")),
   ValidarCertificado: lazy(() => import("./pages/ValidarCertificado")),
+  ReciboPagamento: lazy(() => import("./pages/ReciboPagamento")),
   Compras: lazy(() => import("./pages/Compras")),
   Configuracoes: lazy(() => import("./pages/Configuracoes")),
   Contabilidade: lazy(() => import("./pages/Contabilidade")),

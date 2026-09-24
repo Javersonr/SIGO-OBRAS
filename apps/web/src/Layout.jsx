@@ -138,6 +138,7 @@ export default function Layout({ children, currentPageName }) {
     "ClientePortal",
     "PortalFuncionario",
     "ValidarCertificado",
+    "ReciboPagamento",
     "AcessoNegado",
     "PrimeiroAcesso",
     "EntrarSistema",
