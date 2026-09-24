@@ -44,6 +44,8 @@ const SUPABASE_FUNCTIONS_REWRITE = {
   saasConfig: "saas-config",
   // Portal do Funcionário (treinamentos EAD)
   portalFuncionario: "portal-funcionario",
+  // Disparo de WhatsApp pelo canal do SaaS (Evolution)
+  enviarWhatsApp: "enviar-whatsapp",
 };
 
 async function invokeFn(nome, payload = {}) {

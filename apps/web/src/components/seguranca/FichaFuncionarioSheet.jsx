@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sigo, resolveStorageUrl } from "@/api/sigoClient";
+import { dispararWhatsApp } from "@/lib/whatsapp";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -192,9 +193,9 @@ export default function FichaFuncionarioSheet({
         });
         if (data?.success !== false && funcionario.telefone) {
           const url = `${window.location.origin}${data.url_path}`;
-          const fone = funcionario.telefone.replace(/\D/g, "");
           const msg = `📋 Você recebeu itens da empresa. Acesse o portal e DÊ CIÊNCIA da entrega:\n${url}`;
-          window.open(`https://wa.me/55${fone}?text=${encodeURIComponent(msg)}`, "_blank");
+          const via = await dispararWhatsApp(funcionario.telefone, msg);
+          if (via === "evolution") toast.success("📲 Mensagem enviada automaticamente");
         } else if (!funcionario.telefone) {
           toast.info("Funcionário sem telefone — copie o link pela aba Treinamentos");
         }

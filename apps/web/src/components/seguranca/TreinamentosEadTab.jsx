@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import { normalizarTexto } from "@/lib/busca";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
+import { dispararWhatsApp } from "@/lib/whatsapp";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -240,9 +241,9 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
       await navigator.clipboard.writeText(url);
       toast.success("Link do portal copiado! (vale 30 dias)");
       if (telefone) {
-        const fone = telefone.replace(/\D/g, "");
         const msg = `🎓 Seus treinamentos estão disponíveis no Portal do Funcionário:\n${url}`;
-        window.open(`https://wa.me/55${fone}?text=${encodeURIComponent(msg)}`, "_blank");
+        const via = await dispararWhatsApp(telefone, msg);
+        if (via === "evolution") toast.success("📲 Mensagem enviada automaticamente");
       }
     } catch (e) {
       toast.error("Erro ao gerar link: " + (e?.message || e));
