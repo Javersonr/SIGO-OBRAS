@@ -105,6 +105,47 @@ const CAMPOS_FORM = [
 
 const refDoAnexo = (a) => a?.ref || null;
 
+/**
+ * Carrega a logomarca da empresa como dataURL + dimensões (pra jsPDF).
+ * Aceita ref "bucket/caminho" ou URL pronta; sem logo/erro → null.
+ */
+async function logoParaPdf(empresa) {
+  try {
+    if (!empresa?.logo_url) return null;
+    const url = await resolveStorageUrl(empresa.logo_url);
+    if (!url) return null;
+    const blob = await (await fetch(url)).blob();
+    const dataUrl = await new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => res(fr.result);
+      fr.onerror = rej;
+      fr.readAsDataURL(blob);
+    });
+    const img = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = dataUrl;
+    });
+    return { dataUrl, w: img.naturalWidth, h: img.naturalHeight };
+  } catch {
+    return null;
+  }
+}
+
+/** Desenha a logo no topo do PDF e devolve o Y onde o conteúdo pode começar. */
+function desenharLogo(doc, logo, yBase = 12) {
+  if (!logo) return yBase;
+  const alturaMm = 16;
+  const larguraMm = Math.min(60, (logo.w / logo.h) * alturaMm);
+  try {
+    doc.addImage(logo.dataUrl, "PNG", 15, yBase, larguraMm, alturaMm);
+    return yBase + alturaMm + 4;
+  } catch {
+    return yBase;
+  }
+}
+
 // Abre o anexo numa aba nova (URL assinada — bucket é privado)
 async function abrirAnexo(a) {
   const url = await resolveStorageUrl(a?.ref);
@@ -366,12 +407,18 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
     const { jsPDF } = await import("jspdf");
     const doc = new jsPDF();
     const W = doc.internal.pageSize.getWidth();
+    const logo = await logoParaPdf(empresa);
+    desenharLogo(doc, logo);
     doc.setFontSize(14);
-    doc.text(empresa?.razao_social || empresa?.nome || "", W / 2, 22, { align: "center" });
+    doc.text(empresa?.razao_social || empresa?.nome || "", W / 2, logo ? 38 : 22, {
+      align: "center",
+    });
     doc.setFontSize(10);
-    doc.text(`CNPJ: ${empresa?.cnpj || "-"}`, W / 2, 29, { align: "center" });
+    doc.text(`CNPJ: ${empresa?.cnpj || "-"}`, W / 2, logo ? 45 : 29, { align: "center" });
     doc.setFontSize(13);
-    doc.text("AUTORIZAÇÃO PARA EXAME MÉDICO ADMISSIONAL", W / 2, 48, { align: "center" });
+    doc.text("AUTORIZAÇÃO PARA EXAME MÉDICO ADMISSIONAL", W / 2, logo ? 56 : 48, {
+      align: "center",
+    });
     doc.setFontSize(11);
     const corpo =
       `Autorizamos o(a) Sr.(a) ${sel.nome_completo}, CPF ${sel.cpf}, ` +
@@ -399,7 +446,9 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
     const { jsPDF } = await import("jspdf");
     const doc = new jsPDF();
     const W = doc.internal.pageSize.getWidth();
-    let y = 20;
+    const logo = await logoParaPdf(empresa);
+    let y = desenharLogo(doc, logo, 12) + 4;
+    if (!logo) y = 20;
     const linha = (t, salto = 7) => {
       doc.text(doc.splitTextToSize(t, W - 30), 15, y);
       y += salto;
