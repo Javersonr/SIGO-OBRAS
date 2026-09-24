@@ -28,6 +28,7 @@ const PAGES = {
   Chat: lazy(() => import("./pages/Chat")),
   ClientePortal: lazy(() => import("./pages/ClientePortal")),
   PortalFuncionario: lazy(() => import("./pages/PortalFuncionario")),
+  ValidarCertificado: lazy(() => import("./pages/ValidarCertificado")),
   Compras: lazy(() => import("./pages/Compras")),
   Configuracoes: lazy(() => import("./pages/Configuracoes")),
   Contabilidade: lazy(() => import("./pages/Contabilidade")),

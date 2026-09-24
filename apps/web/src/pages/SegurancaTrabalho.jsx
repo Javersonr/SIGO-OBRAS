@@ -39,6 +39,7 @@ import SstDashboardTab from "@/components/seguranca/SstDashboardTab";
 import ContratacaoTab from "@/components/seguranca/ContratacaoTab";
 import TreinamentosEadTab from "@/components/seguranca/TreinamentosEadTab";
 import FichaFuncionarioSheet from "@/components/seguranca/FichaFuncionarioSheet";
+import { acessoPortal, statusAcesso } from "@/lib/portal-funcionario-acesso";
 import {
   Shield,
   Plus,
@@ -335,6 +336,20 @@ export default function SegurancaTrabalho() {
     if (empresaAtiva?.id) {
       loadData();
     }
+  }, [empresaAtiva?.id]);
+
+  const [acessosPortal, setAcessosPortal] = useState(new Map());
+  const carregarAcessosPortal = async () => {
+    if (!empresaAtiva?.id) return;
+    try {
+      const r = await acessoPortal.status(empresaAtiva.id);
+      setAcessosPortal(new Map((r.acessos || []).map((a) => [a.funcionario_id, a])));
+    } catch (e) {
+      console.warn("[SegurancaTrabalho] acessos do portal:", e?.message);
+    }
+  };
+  useEffect(() => {
+    carregarAcessosPortal();
   }, [empresaAtiva?.id]);
 
   const loadData = async () => {
@@ -1168,7 +1183,7 @@ export default function SegurancaTrabalho() {
 
         {/* Aba Treinamentos EAD (cursos YouTube + Portal do Funcionário) */}
         <TabsContent value="treinamentos_ead">
-          <TreinamentosEadTab empresaAtiva={empresaAtiva} />
+          <TreinamentosEadTab empresaAtiva={empresaAtiva} user={user} />
         </TabsContent>
 
         {/* Aba Liberações SST excepcionais (notificação + revogação) */}
@@ -1376,13 +1391,14 @@ export default function SegurancaTrabalho() {
                     <TableHead>Admissão</TableHead>
                     <TableHead>ASO</TableHead>
                     <TableHead>Documentos</TableHead>
+                    <TableHead>Portal</TableHead>
                     <TableHead>Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredFuncionarios.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-8 text-slate-500">
+                      <TableCell colSpan={10} className="text-center py-8 text-slate-500">
                         Nenhum funcionário cadastrado
                       </TableCell>
                     </TableRow>
@@ -1466,6 +1482,25 @@ export default function SegurancaTrabalho() {
                               <FileText className="w-3 h-3" />
                               {totalDocs}
                             </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {(() => {
+                              const s = statusAcesso(acessosPortal.get(f.id));
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => setFichaFuncionario(f)}
+                                  title="Gerenciar o acesso na ficha do funcionário"
+                                >
+                                  <Badge
+                                    variant="outline"
+                                    className={`whitespace-nowrap ${s.classe}`}
+                                  >
+                                    {s.rotulo}
+                                  </Badge>
+                                </button>
+                              );
+                            })()}
                           </TableCell>
                           <TableCell>
                             <div className="flex gap-1">
@@ -2384,6 +2419,7 @@ export default function SegurancaTrabalho() {
         user={user}
         onClose={() => setFichaFuncionario(null)}
         onSalvo={loadData}
+        onAcessoMudou={carregarAcessosPortal}
         onEditarCompleto={(f) => {
           setFichaFuncionario(null);
           abrirEdicaoCompleta(f);

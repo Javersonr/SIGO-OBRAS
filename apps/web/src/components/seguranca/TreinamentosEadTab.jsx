@@ -3,9 +3,12 @@ import { sigo, resolveStorageUrl } from "@/api/sigoClient";
 import { normalizarTexto } from "@/lib/busca";
 import { srtParaVtt } from "@/lib/legendas";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
-import { dispararWhatsApp } from "@/lib/whatsapp";
+import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
+import MatriculaAuditoriaSheet from "@/components/seguranca/MatriculaAuditoriaSheet";
+import DuvidasTutorCard from "@/components/seguranca/DuvidasTutorCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,18 +19,34 @@ import {
   Loader2,
   Trash2,
   GraduationCap,
-  Link2,
   MessageCircle,
   Users,
   Video,
+  ClipboardList,
+  FileText,
+  BookOpen,
+  Award,
 } from "lucide-react";
 import { toast } from "sonner";
 
 /**
- * Gestão da plataforma de treinamentos EAD (cursos → aulas YouTube →
- * matrículas). O funcionário assiste pelo Portal do Funcionário (link com
- * token gerado aqui); conclusão exige todas as aulas >=90% assistidas.
+ * Gestão da plataforma de treinamentos EAD (cursos → módulos/aulas de vídeo,
+ * PDF ou texto → matrículas). O funcionário faz o curso no Portal do
+ * Funcionário com login e senha pessoais; aulas em ordem, tempo validado no
+ * servidor, prova com tentativas registradas e certificado assinado por ele.
  */
+
+// tabelas só de inclusão (sem deleted_at): o SDK precisa de includeDeleted
+const SEM_SOFT_DELETE = { includeDeleted: true };
+const NOVA_AULA = {
+  titulo: "",
+  url: "",
+  arquivo: null,
+  modulo: "",
+  tipo: "video",
+  texto: "",
+  minutos: "",
+};
 
 // aceita URL completa ou ID puro do YouTube
 function extrairYouTubeId(texto) {
@@ -46,17 +65,20 @@ const STATUS_BADGE = {
   concluido: "bg-emerald-100 text-emerald-700 border-emerald-200",
 };
 
-export default function TreinamentosEadTab({ empresaAtiva }) {
+export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const [cursos, setCursos] = useState([]);
   const [aulas, setAulas] = useState([]);
   const [matriculas, setMatriculas] = useState([]);
+  const [certificados, setCertificados] = useState([]);
   const [funcionarios, setFuncionarios] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [cursoSel, setCursoSel] = useState(null); // Sheet de edição do curso
+  const [matriculaDetalheId, setMatriculaDetalheId] = useState(null);
   const [showMatricular, setShowMatricular] = useState(false);
   const [matForm, setMatForm] = useState({ curso_id: "", funcionario_ids: [] });
   const [buscaFunc, setBuscaFunc] = useState("");
-  const [novaAula, setNovaAula] = useState({ titulo: "", url: "", arquivo: null });
+  const [novaAula, setNovaAula] = useState(NOVA_AULA);
+  const [subindoProjeto, setSubindoProjeto] = useState(false);
   const [subindoVideo, setSubindoVideo] = useState(false);
   const [questoes, setQuestoes] = useState([]);
   const [novaQuestao, setNovaQuestao] = useState(null); // {pergunta, opcoes[4], correta}
@@ -64,16 +86,21 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
   const recarregar = async () => {
     setCarregando(true);
     try {
-      const [cs, as, ms, fs] = await Promise.all([
+      const [cs, as, ms, fs, certs] = await Promise.all([
         sigo.entities.TreinamentoCurso.filter({ empresa_id: empresaAtiva.id }),
         sigo.entities.TreinamentoAula.filter({ empresa_id: empresaAtiva.id }),
         sigo.entities.TreinamentoMatricula.filter({ empresa_id: empresaAtiva.id }),
         sigo.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }),
+        sigo.entities.TreinamentoCertificado.filter(
+          { empresa_id: empresaAtiva.id },
+          SEM_SOFT_DELETE
+        ),
       ]);
       setCursos(cs);
       setAulas(as.sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0)));
       setMatriculas(ms);
       setFuncionarios(fs);
+      setCertificados(certs);
     } catch (e) {
       console.error(e);
       toast.error("Erro ao carregar treinamentos");
@@ -105,6 +132,20 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
         ? Number(cursoSel.carga_horaria_horas)
         : null,
       nota_minima: cursoSel.nota_minima ? Number(cursoSel.nota_minima) : 70,
+      max_tentativas:
+        cursoSel.max_tentativas === "" || cursoSel.max_tentativas == null
+          ? 3
+          : Number(cursoSel.max_tentativas),
+      intervalo_tentativa_min:
+        cursoSel.intervalo_tentativa_min === "" || cursoSel.intervalo_tentativa_min == null
+          ? 30
+          : Number(cursoSel.intervalo_tentativa_min),
+      conteudo_programatico: cursoSel.conteudo_programatico?.trim() || null,
+      responsavel_tecnico_nome: cursoSel.responsavel_tecnico_nome?.trim() || null,
+      responsavel_tecnico_registro: cursoSel.responsavel_tecnico_registro?.trim() || null,
+      instrutor_nome: cursoSel.instrutor_nome?.trim() || null,
+      instrutor_qualificacao: cursoSel.instrutor_qualificacao?.trim() || null,
+      tutor_telefone: cursoSel.tutor_telefone?.trim() || null,
       ativo: cursoSel.ativo !== false,
     };
     if (cursoSel.id) {
@@ -126,15 +167,48 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
       toast.error("Informe o título da aula");
       return;
     }
-    const ordem = aulasDoCurso(cursoSel.id).length + 1;
+    const ordem = Math.max(0, ...aulasDoCurso(cursoSel.id).map((a) => a.ordem || 0)) + 1;
     const base = {
       empresa_id: empresaAtiva.id,
       curso_id: cursoSel.id,
       ordem,
       titulo: novaAula.titulo.trim(),
+      modulo: novaAula.modulo.trim() || null,
+      tipo: novaAula.tipo,
     };
+    // PDF/texto: o tempo mínimo com a aula aberta é o que conta para concluir
+    const tempoMinimo = Math.round(Number(novaAula.minutos || 0) * 60);
     try {
-      if (novaAula.arquivo) {
+      if (novaAula.tipo !== "video") {
+        if (!tempoMinimo) {
+          toast.error("Informe o tempo mínimo de leitura (minutos)");
+          return;
+        }
+        let arquivo_ref = null;
+        if (novaAula.tipo === "pdf") {
+          if (!novaAula.arquivo) {
+            toast.error("Anexe o PDF da aula");
+            return;
+          }
+          setSubindoVideo(true);
+          const res = await sigo.integrations.Core.UploadFile({
+            file: novaAula.arquivo,
+            bucket: "treinamentos",
+          });
+          arquivo_ref = `${res.bucket}/${res.path}`;
+        } else if (!novaAula.texto.trim()) {
+          toast.error("Escreva o texto da aula");
+          return;
+        }
+        await sigo.entities.TreinamentoAula.create({
+          ...base,
+          fonte: "upload",
+          youtube_id: null,
+          arquivo_ref,
+          conteudo_texto: novaAula.tipo === "texto" ? novaAula.texto.trim() : null,
+          duracao_seg: tempoMinimo,
+        });
+      } else if (novaAula.arquivo) {
         // HOSPEDAGEM PRÓPRIA: vídeo sobe pro bucket 'treinamentos' (até 1GB)
         setSubindoVideo(true);
         const res = await sigo.integrations.Core.UploadFile({
@@ -155,7 +229,8 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
         }
         await sigo.entities.TreinamentoAula.create({ ...base, fonte: "youtube", youtube_id: ytId });
       }
-      setNovaAula({ titulo: "", url: "", arquivo: null });
+      // mantém o módulo para a próxima aula do mesmo bloco
+      setNovaAula({ ...NOVA_AULA, modulo: novaAula.modulo, tipo: novaAula.tipo });
       toast.success("Aula adicionada");
       recarregar();
     } catch (e) {
@@ -165,7 +240,41 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
     }
   };
 
+  const abrirReferencia = async (ref) => {
+    // aba aberta já no clique: depois do await o navegador bloquearia o pop-up
+    const aba = window.open("", "_blank");
+    const url = await resolveStorageUrl(ref);
+    if (url && aba) {
+      aba.opener = null;
+      aba.location.href = url;
+    } else {
+      aba?.close();
+      toast.error("Não foi possível abrir o arquivo");
+    }
+  };
+
+  const enviarProjetoPedagogico = async (arquivo) => {
+    if (!arquivo || !cursoSel?.id) return;
+    setSubindoProjeto(true);
+    try {
+      const res = await sigo.integrations.Core.UploadFile({
+        file: arquivo,
+        bucket: "treinamentos",
+      });
+      const ref = `${res.bucket}/${res.path}`;
+      await sigo.entities.TreinamentoCurso.update(cursoSel.id, { projeto_pedagogico_ref: ref });
+      setCursoSel({ ...cursoSel, projeto_pedagogico_ref: ref });
+      toast.success("Projeto pedagógico anexado — o aluno vê no portal");
+      recarregar();
+    } catch (e) {
+      toast.error("Erro ao anexar: " + (e?.message || e));
+    } finally {
+      setSubindoProjeto(false);
+    }
+  };
+
   const abrirVideo = async (aula) => {
+    if (aula.tipo === "pdf") return abrirReferencia(aula.arquivo_ref);
     if (aula.fonte !== "upload") {
       window.open(`https://youtu.be/${aula.youtube_id}`, "_blank", "noopener");
       return;
@@ -269,23 +378,22 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
     recarregar();
   };
 
-  const copiarLink = async (funcionarioId, telefone) => {
+  // Avisa o funcionário (WhatsApp) com o link do portal; se ele ainda não tem
+  // login, o acesso é criado agora e a senha provisória vai junto.
+  const avisarFuncionario = async (funcionario) => {
+    if (!funcionario) return;
     try {
-      const { data } = await sigo.functions.invoke("portalFuncionario", {
-        acao: "link",
-        funcionario_id: funcionarioId,
-      });
-      if (data?.success === false) throw new Error(data.error);
-      const url = `${window.location.origin}${data.url_path}`;
-      await navigator.clipboard.writeText(url);
-      toast.success("Link do portal copiado! (vale 30 dias)");
-      if (telefone) {
-        const msg = `🎓 Seus treinamentos estão disponíveis no Portal do Funcionário:\n${url}`;
-        const via = await dispararWhatsApp(telefone, msg);
-        if (via === "evolution") toast.success("📲 Mensagem enviada automaticamente");
-      }
+      const r = await avisarNoPortal(
+        funcionario,
+        "🎓 Você tem treinamentos no Portal do Funcionário."
+      );
+      await navigator.clipboard.writeText(r.texto).catch(() => {});
+      if (r.via === "evolution") toast.success("📲 Aviso enviado pelo WhatsApp");
+      else if (!funcionario.telefone)
+        toast.info("Sem telefone — mensagem copiada para você entregar");
+      if (r.credenciais) toast.success(`Acesso criado · usuário ${r.credenciais.usuario}`);
     } catch (e) {
-      toast.error("Erro ao gerar link: " + (e?.message || e));
+      toast.error("Erro ao avisar: " + (e?.message || e));
     }
   };
 
@@ -500,6 +608,7 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
                 <th className="py-2 pr-3 font-medium">Status</th>
                 <th className="py-2 pr-3 font-medium">Conclusão</th>
                 <th className="py-2 pr-3 font-medium">Próx. renovação</th>
+                <th className="py-2 pr-3 font-medium">Certificado</th>
                 <th className="py-2 font-medium">Ações</th>
               </tr>
             </thead>
@@ -520,19 +629,38 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
                     </td>
                     <td className="py-2 pr-3 text-slate-600">{fmtData(m.data_conclusao)}</td>
                     <td className="py-2 pr-3 text-slate-600">{fmtData(m.proxima_renovacao)}</td>
+                    <td className="py-2 pr-3">
+                      {(() => {
+                        const c = certificados.find((x) => x.matricula_id === m.id);
+                        if (!c) return <span className="text-slate-400">—</span>;
+                        return (
+                          <Badge
+                            variant="outline"
+                            className={
+                              c.revogado_em
+                                ? "bg-red-50 text-red-700 border-red-200"
+                                : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            }
+                          >
+                            <Award className="w-3 h-3 mr-1" />
+                            {c.revogado_em ? "revogado" : c.codigo}
+                          </Badge>
+                        );
+                      })()}
+                    </td>
                     <td className="py-2">
                       <div className="flex gap-2">
                         <button
-                          title="Copiar link do portal (e enviar por WhatsApp se tiver telefone)"
-                          onClick={() => copiarLink(m.funcionario_id, f?.telefone)}
+                          title="Detalhes: tempo por aula, tentativas, trilha de acessos e certificado"
+                          onClick={() => setMatriculaDetalheId(m.id)}
                         >
-                          <MessageCircle className="w-4 h-4 text-emerald-600 hover:text-emerald-800" />
+                          <ClipboardList className="w-4 h-4 text-slate-600 hover:text-slate-900" />
                         </button>
                         <button
-                          title="Copiar link do portal"
-                          onClick={() => copiarLink(m.funcionario_id, null)}
+                          title="Avisar pelo WhatsApp (cria o acesso ao portal se ainda não tiver)"
+                          onClick={() => avisarFuncionario(f)}
                         >
-                          <Link2 className="w-4 h-4 text-slate-500 hover:text-slate-800" />
+                          <MessageCircle className="w-4 h-4 text-emerald-600 hover:text-emerald-800" />
                         </button>
                         <button title="Remover matrícula" onClick={() => removerMatricula(m)}>
                           <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
@@ -544,7 +672,7 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
               })}
               {matriculas.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-6 text-center text-slate-500">
+                  <td colSpan={7} className="py-6 text-center text-slate-500">
                     Nenhuma matrícula — matricule funcionários num curso pra liberar o portal.
                   </td>
                 </tr>
@@ -553,6 +681,31 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
           </table>
         </CardContent>
       </Card>
+
+      <DuvidasTutorCard
+        empresaAtiva={empresaAtiva}
+        cursos={cursos}
+        funcPorId={funcPorId}
+        aulas={aulas}
+        user={user}
+      />
+
+      {(() => {
+        const m = matriculas.find((x) => x.id === matriculaDetalheId);
+        if (!m) return null;
+        return (
+          <MatriculaAuditoriaSheet
+            matricula={m}
+            curso={cursos.find((c) => c.id === m.curso_id)}
+            funcionario={funcPorId.get(m.funcionario_id)}
+            aulas={aulasDoCurso(m.curso_id)}
+            empresaAtiva={empresaAtiva}
+            user={user}
+            onClose={() => setMatriculaDetalheId(null)}
+            onMudou={recarregar}
+          />
+        );
+      })()}
 
       {/* Sheet: curso + aulas */}
       <Sheet open={!!cursoSel} onOpenChange={(v) => !v && setCursoSel(null)}>
@@ -621,6 +774,128 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
                       className="mt-0.5"
                     />
                   </div>
+                  <div>
+                    <Label className="text-xs">Máx. de tentativas na prova (0 = sem limite)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={cursoSel.max_tentativas ?? 3}
+                      onChange={(e) => setCursoSel({ ...cursoSel, max_tentativas: e.target.value })}
+                      className="mt-0.5"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Intervalo p/ revisar entre tentativas (min)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={cursoSel.intervalo_tentativa_min ?? 30}
+                      onChange={(e) =>
+                        setCursoSel({ ...cursoSel, intervalo_tentativa_min: e.target.value })
+                      }
+                      className="mt-0.5"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Responsável técnico</Label>
+                    <Input
+                      value={cursoSel.responsavel_tecnico_nome || ""}
+                      onChange={(e) =>
+                        setCursoSel({ ...cursoSel, responsavel_tecnico_nome: e.target.value })
+                      }
+                      className="mt-0.5"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Registro do responsável (CREA/MTE)</Label>
+                    <Input
+                      value={cursoSel.responsavel_tecnico_registro || ""}
+                      onChange={(e) =>
+                        setCursoSel({ ...cursoSel, responsavel_tecnico_registro: e.target.value })
+                      }
+                      placeholder="Ex.: CREA-MG 123456/D"
+                      className="mt-0.5"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Instrutor</Label>
+                    <Input
+                      value={cursoSel.instrutor_nome || ""}
+                      onChange={(e) => setCursoSel({ ...cursoSel, instrutor_nome: e.target.value })}
+                      className="mt-0.5"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Qualificação do instrutor</Label>
+                    <Input
+                      value={cursoSel.instrutor_qualificacao || ""}
+                      onChange={(e) =>
+                        setCursoSel({ ...cursoSel, instrutor_qualificacao: e.target.value })
+                      }
+                      placeholder="Ex.: Eng. de Segurança do Trabalho"
+                      className="mt-0.5"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs">
+                      WhatsApp do tutor (recebe as dúvidas dos alunos)
+                    </Label>
+                    <Input
+                      value={cursoSel.tutor_telefone || ""}
+                      onChange={(e) => setCursoSel({ ...cursoSel, tutor_telefone: e.target.value })}
+                      placeholder="(38) 99999-9999"
+                      className="mt-0.5"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs">
+                      Conteúdo programático do certificado (um item por linha; vazio = usa as aulas)
+                    </Label>
+                    <Textarea
+                      rows={4}
+                      value={cursoSel.conteudo_programatico || ""}
+                      onChange={(e) =>
+                        setCursoSel({ ...cursoSel, conteudo_programatico: e.target.value })
+                      }
+                      className="mt-0.5"
+                    />
+                  </div>
+                  {cursoSel.id && (
+                    <div className="col-span-2 flex flex-wrap items-center gap-2 rounded-lg border p-3">
+                      <FileText className="w-4 h-4 text-slate-600" />
+                      <span className="text-sm flex-1">
+                        Projeto pedagógico (PDF){" "}
+                        <span className="text-xs text-slate-500">— o aluno baixa pelo portal</span>
+                      </span>
+                      {cursoSel.projeto_pedagogico_ref && (
+                        <button
+                          type="button"
+                          className="text-xs text-sky-600 hover:underline"
+                          onClick={() => abrirReferencia(cursoSel.projeto_pedagogico_ref)}
+                        >
+                          ver atual
+                        </button>
+                      )}
+                      <label className="text-xs border rounded-md px-2 py-1 cursor-pointer hover:border-slate-400">
+                        {subindoProjeto ? (
+                          <Loader2 className="w-3 h-3 animate-spin inline" />
+                        ) : cursoSel.projeto_pedagogico_ref ? (
+                          "trocar PDF"
+                        ) : (
+                          "anexar PDF"
+                        )}
+                        <input
+                          type="file"
+                          accept="application/pdf"
+                          className="hidden"
+                          onChange={(e) => {
+                            enviarProjetoPedagogico(e.target.files?.[0]);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </div>
+                  )}
                   <div className="col-span-2 flex items-start gap-3 rounded-lg border p-3">
                     <Switch
                       id="curso-publicado"
@@ -647,99 +922,214 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
                     <h4 className="font-semibold text-slate-800 flex items-center gap-2">
                       <Video className="w-4 h-4" /> Aulas
                     </h4>
-                    {aulasDoCurso(cursoSel.id).map((a) => (
-                      <div
-                        key={a.id}
-                        className="flex items-center gap-2 text-sm bg-slate-50 rounded p-2"
-                      >
-                        <span className="flex-1">
-                          {a.ordem}. {a.titulo}
-                        </span>
-                        {a.legenda_ref && (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] px-1.5 py-0"
-                            title="Aula com legenda"
-                          >
-                            CC
-                          </Badge>
-                        )}
-                        <label
-                          className="text-xs text-slate-500 hover:text-slate-800 cursor-pointer"
-                          title="Anexar ou trocar a legenda (.srt ou .vtt)"
-                        >
-                          {a.legenda_ref ? "trocar legenda" : "+ legenda"}
-                          <input
-                            type="file"
-                            accept=".srt,.vtt"
-                            className="hidden"
-                            onChange={(e) => {
-                              enviarLegenda(a, e.target.files?.[0]);
-                              e.target.value = "";
-                            }}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => abrirVideo(a)}
-                          className="text-xs text-sky-600 hover:underline"
-                        >
-                          ver vídeo
-                        </button>
-                        <button onClick={() => removerAula(a)}>
-                          <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
-                        </button>
+                    {aulasDoCurso(cursoSel.id).map((a, i, lista) => {
+                      const Icone =
+                        a.tipo === "pdf" ? FileText : a.tipo === "texto" ? BookOpen : Video;
+                      const novoModulo = a.modulo && a.modulo !== lista[i - 1]?.modulo;
+                      return (
+                        <React.Fragment key={a.id}>
+                          {novoModulo && (
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 pt-2">
+                              {a.modulo}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-2 text-sm bg-slate-50 rounded p-2">
+                            <Icone className="w-4 h-4 text-slate-400 shrink-0" />
+                            <span className="flex-1">
+                              {a.ordem}. {a.titulo}
+                              {a.tipo !== "video" && a.duracao_seg ? (
+                                <span className="text-xs text-slate-400">
+                                  {" "}
+                                  · mín. {Math.round(a.duracao_seg / 60)} min
+                                </span>
+                              ) : null}
+                            </span>
+                            {a.tipo === "video" && a.legenda_ref && (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] px-1.5 py-0"
+                                title="Aula com legenda"
+                              >
+                                CC
+                              </Badge>
+                            )}
+                            {a.tipo === "video" && (
+                              <label
+                                className="text-xs text-slate-500 hover:text-slate-800 cursor-pointer"
+                                title="Anexar ou trocar a legenda (.srt ou .vtt)"
+                              >
+                                {a.legenda_ref ? "trocar legenda" : "+ legenda"}
+                                <input
+                                  type="file"
+                                  accept=".srt,.vtt"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    enviarLegenda(a, e.target.files?.[0]);
+                                    e.target.value = "";
+                                  }}
+                                />
+                              </label>
+                            )}
+                            {a.tipo !== "texto" && (
+                              <button
+                                type="button"
+                                onClick={() => abrirVideo(a)}
+                                className="text-xs text-sky-600 hover:underline"
+                              >
+                                {a.tipo === "pdf" ? "ver PDF" : "ver vídeo"}
+                              </button>
+                            )}
+                            <button onClick={() => removerAula(a)}>
+                              <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
+                            </button>
+                          </div>
+                        </React.Fragment>
+                      );
+                    })}
+                    <div className="space-y-2 rounded-lg border border-dashed p-3">
+                      <p className="text-xs font-medium text-slate-600">Nova aula</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input
+                          placeholder="Módulo (ex.: B04 · Medidas de controle)"
+                          value={novaAula.modulo}
+                          onChange={(e) => setNovaAula({ ...novaAula, modulo: e.target.value })}
+                          list="modulos-curso"
+                          className="h-9"
+                        />
+                        <datalist id="modulos-curso">
+                          {[
+                            ...new Set(
+                              aulasDoCurso(cursoSel.id)
+                                .map((a) => a.modulo)
+                                .filter(Boolean)
+                            ),
+                          ].map((m) => (
+                            <option key={m} value={m} />
+                          ))}
+                        </datalist>
+                        <div className="flex rounded-md border overflow-hidden text-sm">
+                          {[
+                            ["video", "Vídeo"],
+                            ["pdf", "PDF"],
+                            ["texto", "Texto"],
+                          ].map(([v, rot]) => (
+                            <button
+                              key={v}
+                              type="button"
+                              onClick={() => setNovaAula({ ...novaAula, tipo: v, arquivo: null })}
+                              className={`flex-1 py-1.5 ${
+                                novaAula.tipo === v
+                                  ? "bg-slate-900 text-white"
+                                  : "bg-white text-slate-600 hover:bg-slate-50"
+                              }`}
+                            >
+                              {rot}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    ))}
-                    <div className="space-y-2">
                       <Input
                         placeholder="Título da aula"
                         value={novaAula.titulo}
                         onChange={(e) => setNovaAula({ ...novaAula, titulo: e.target.value })}
                         className="h-9"
                       />
-                      <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
-                        <label className="h-9 flex items-center gap-2 px-3 rounded-md border border-slate-200 text-sm text-slate-600 cursor-pointer hover:border-slate-400 truncate">
-                          <Video className="w-4 h-4 shrink-0" />
-                          <span className="truncate">
-                            {novaAula.arquivo
-                              ? novaAula.arquivo.name
-                              : "Anexar vídeo (hospedagem própria, até 1GB)"}
-                          </span>
-                          <input
-                            type="file"
-                            accept="video/*"
-                            className="hidden"
-                            onChange={(e) =>
-                              setNovaAula({ ...novaAula, arquivo: e.target.files?.[0] || null })
-                            }
-                          />
-                        </label>
-                        <span className="text-xs text-slate-400">ou</span>
-                        <Input
-                          placeholder="Link do YouTube (não listado)"
-                          value={novaAula.url}
-                          onChange={(e) => setNovaAula({ ...novaAula, url: e.target.value })}
-                          disabled={!!novaAula.arquivo}
-                          className="h-9"
-                        />
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={adicionarAula}
-                          disabled={subindoVideo}
-                        >
-                          {subindoVideo ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
+                      {novaAula.tipo !== "video" && (
+                        <div className="space-y-2">
+                          {novaAula.tipo === "pdf" ? (
+                            <label className="h-9 flex items-center gap-2 px-3 rounded-md border border-slate-200 text-sm text-slate-600 cursor-pointer hover:border-slate-400 truncate">
+                              <FileText className="w-4 h-4 shrink-0" />
+                              <span className="truncate">
+                                {novaAula.arquivo ? novaAula.arquivo.name : "Anexar PDF da aula"}
+                              </span>
+                              <input
+                                type="file"
+                                accept="application/pdf"
+                                className="hidden"
+                                onChange={(e) =>
+                                  setNovaAula({ ...novaAula, arquivo: e.target.files?.[0] || null })
+                                }
+                              />
+                            </label>
                           ) : (
-                            <Plus className="w-4 h-4" />
+                            <Textarea
+                              rows={5}
+                              placeholder="Texto da aula"
+                              value={novaAula.texto}
+                              onChange={(e) => setNovaAula({ ...novaAula, texto: e.target.value })}
+                            />
                           )}
-                        </Button>
-                      </div>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min={1}
+                              placeholder="Tempo mínimo de leitura (min)"
+                              value={novaAula.minutos}
+                              onChange={(e) =>
+                                setNovaAula({ ...novaAula, minutos: e.target.value })
+                              }
+                              className="h-9"
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={adicionarAula}
+                              disabled={subindoVideo}
+                            >
+                              {subindoVideo ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Plus className="w-4 h-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      {novaAula.tipo === "video" && (
+                        <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
+                          <label className="h-9 flex items-center gap-2 px-3 rounded-md border border-slate-200 text-sm text-slate-600 cursor-pointer hover:border-slate-400 truncate">
+                            <Video className="w-4 h-4 shrink-0" />
+                            <span className="truncate">
+                              {novaAula.arquivo
+                                ? novaAula.arquivo.name
+                                : "Anexar vídeo (hospedagem própria, até 1GB)"}
+                            </span>
+                            <input
+                              type="file"
+                              accept="video/*"
+                              className="hidden"
+                              onChange={(e) =>
+                                setNovaAula({ ...novaAula, arquivo: e.target.files?.[0] || null })
+                              }
+                            />
+                          </label>
+                          <span className="text-xs text-slate-400">ou</span>
+                          <Input
+                            placeholder="Link do YouTube (não listado)"
+                            value={novaAula.url}
+                            onChange={(e) => setNovaAula({ ...novaAula, url: e.target.value })}
+                            disabled={!!novaAula.arquivo}
+                            className="h-9"
+                          />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={adicionarAula}
+                            disabled={subindoVideo}
+                          >
+                            {subindoVideo ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Plus className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                     <p className="text-xs text-slate-400">
-                      A duração do vídeo é detectada automaticamente na primeira exibição; a aula
-                      conclui com 90% do tempo assistido.
+                      Aulas abrem em ordem. Vídeo conclui com 90% do tempo assistido (a duração é
+                      detectada na primeira exibição); PDF e texto, com o tempo mínimo de leitura. O
+                      tempo só conta com a tela do aluno aberta.
                     </p>
                     <Button
                       variant="outline"

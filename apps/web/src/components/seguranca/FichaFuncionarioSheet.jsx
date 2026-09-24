@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { sigo, resolveStorageUrl } from "@/api/sigoClient";
-import { dispararWhatsApp } from "@/lib/whatsapp";
+import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
+import AcessoPortalCard from "@/components/seguranca/AcessoPortalCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,6 +56,7 @@ export default function FichaFuncionarioSheet({
   onClose,
   onSalvo,
   onEditarCompleto,
+  onAcessoMudou,
 }) {
   const [form, setForm] = useState(funcionario || {});
   const [advertencias, setAdvertencias] = useState([]);
@@ -187,17 +189,14 @@ export default function FichaFuncionarioSheet({
       setNovaCiencia(null);
       toast.success("Entrega registrada — aguardando ciência do funcionário");
       if (enviarWhats) {
-        const { data } = await sigo.functions.invoke("portalFuncionario", {
-          acao: "link",
-          funcionario_id: funcionario.id,
-        });
-        if (data?.success !== false && funcionario.telefone) {
-          const url = `${window.location.origin}${data.url_path}`;
-          const msg = `📋 Você recebeu itens da empresa. Acesse o portal e DÊ CIÊNCIA da entrega:\n${url}`;
-          const via = await dispararWhatsApp(funcionario.telefone, msg);
-          if (via === "evolution") toast.success("📲 Mensagem enviada automaticamente");
-        } else if (!funcionario.telefone) {
-          toast.info("Funcionário sem telefone — copie o link pela aba Treinamentos");
+        const r = await avisarNoPortal(
+          funcionario,
+          "📋 Você recebeu itens da empresa. Entre no Portal do Funcionário e DÊ CIÊNCIA da entrega."
+        );
+        if (r.via === "evolution") toast.success("📲 Mensagem enviada automaticamente");
+        if (!funcionario.telefone) {
+          await navigator.clipboard.writeText(r.texto);
+          toast.info("Funcionário sem telefone — mensagem copiada para você entregar");
         }
       }
       carregarHistorico(funcionario);
@@ -252,6 +251,12 @@ export default function FichaFuncionarioSheet({
                 </div>
               ))}
             </div>
+
+            <AcessoPortalCard
+              funcionario={funcionario}
+              empresaAtiva={empresaAtiva}
+              onMudou={onAcessoMudou}
+            />
 
             {/* Documentos pessoais */}
             <h3 className="font-semibold text-slate-800 pt-3 flex items-center gap-2">

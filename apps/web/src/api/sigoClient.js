@@ -42,8 +42,10 @@ const SUPABASE_FUNCTIONS_REWRITE = {
   // Plataforma de IA + config do SaaS
   iaProcessar: "ia-processar",
   saasConfig: "saas-config",
-  // Portal do Funcionário (treinamentos EAD)
+  // Portal do Funcionário (treinamentos EAD) + login gerenciado pelo RH
   portalFuncionario: "portal-funcionario",
+  funcionarioAcesso: "funcionario-acesso",
+  validarCertificado: "validar-certificado",
   // Disparo de WhatsApp pelo canal do SaaS (Evolution)
   enviarWhatsApp: "enviar-whatsapp",
 };
@@ -64,15 +66,18 @@ async function invokeFn(nome, payload = {}) {
     // FunctionsHttpError: err.context é a Response — o motivo real (ex.:
     // "Credenciais inválidas") está no BODY.
     let msg = err?.message || "Erro na função";
+    let extra = {};
     try {
       if (err?.context && typeof err.context.json === "function") {
         const body = await err.context.json();
         msg = body?.error || body?.message || msg;
+        // campos extras do erro (ex.: `codigo` que o portal usa p/ pedir login)
+        if (body && typeof body === "object") extra = body;
       }
     } catch {
       /* body não-JSON: mantém a mensagem genérica */
     }
-    return { data: { success: false, error: msg }, error: err };
+    return { data: { ...extra, success: false, error: msg }, error: err };
   }
 }
 

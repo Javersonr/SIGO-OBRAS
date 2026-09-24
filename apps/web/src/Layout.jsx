@@ -137,6 +137,7 @@ export default function Layout({ children, currentPageName }) {
   const publicPages = [
     "ClientePortal",
     "PortalFuncionario",
+    "ValidarCertificado",
     "AcessoNegado",
     "PrimeiroAcesso",
     "EntrarSistema",

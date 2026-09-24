@@ -9,7 +9,7 @@ import { createAdminClient } from "./supabase-admin.ts";
 
 export async function usuarioDaRequisicao(
   req: Request
-): Promise<{ email: string; is_super_admin: boolean } | null> {
+): Promise<{ email: string; is_super_admin: boolean; empresa_id: string | null } | null> {
   const auth = req.headers.get("Authorization") ?? "";
   const jwt = auth.replace(/^Bearer\s+/i, "");
   if (!jwt) return null;
@@ -24,5 +24,7 @@ export async function usuarioDaRequisicao(
     .is("deleted_at", null)
     .maybeSingle();
   if (!uc || !uc.ativo) return null;
-  return { email: uc.email, is_super_admin: !!uc.is_super_admin };
+  // empresa ATIVA da sessão (troca de empresa reemite o JWT com a nova)
+  const empresaId = (data.user.app_metadata?.empresa_id as string | undefined) ?? null;
+  return { email: uc.email, is_super_admin: !!uc.is_super_admin, empresa_id: empresaId };
 }
