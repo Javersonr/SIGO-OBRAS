@@ -53,7 +53,10 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
   const [showMatricular, setShowMatricular] = useState(false);
   const [matForm, setMatForm] = useState({ curso_id: "", funcionario_ids: [] });
   const [buscaFunc, setBuscaFunc] = useState("");
-  const [novaAula, setNovaAula] = useState({ titulo: "", url: "" });
+  const [novaAula, setNovaAula] = useState({ titulo: "", url: "", arquivo: null });
+  const [subindoVideo, setSubindoVideo] = useState(false);
+  const [questoes, setQuestoes] = useState([]);
+  const [novaQuestao, setNovaQuestao] = useState(null); // {pergunta, opcoes[4], correta}
 
   const recarregar = async () => {
     setCarregando(true);
@@ -98,6 +101,7 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
       carga_horaria_horas: cursoSel.carga_horaria_horas
         ? Number(cursoSel.carga_horaria_horas)
         : null,
+      nota_minima: cursoSel.nota_minima ? Number(cursoSel.nota_minima) : 70,
       ativo: cursoSel.ativo !== false,
     };
     if (cursoSel.id) {
@@ -111,31 +115,89 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
   };
 
   const adicionarAula = async () => {
-    const ytId = extrairYouTubeId(novaAula.url);
     if (!cursoSel?.id) {
       toast.error("Salve o curso antes de adicionar aulas");
       return;
     }
-    if (!novaAula.titulo.trim() || !ytId) {
-      toast.error("Informe o título e um link válido do YouTube");
+    if (!novaAula.titulo.trim()) {
+      toast.error("Informe o título da aula");
       return;
     }
     const ordem = aulasDoCurso(cursoSel.id).length + 1;
-    await sigo.entities.TreinamentoAula.create({
+    const base = {
       empresa_id: empresaAtiva.id,
       curso_id: cursoSel.id,
       ordem,
       titulo: novaAula.titulo.trim(),
-      youtube_id: ytId,
-    });
-    setNovaAula({ titulo: "", url: "" });
-    recarregar();
+    };
+    try {
+      if (novaAula.arquivo) {
+        // HOSPEDAGEM PRÓPRIA: vídeo sobe pro bucket 'treinamentos' (até 1GB)
+        setSubindoVideo(true);
+        const res = await sigo.integrations.Core.UploadFile({
+          file: novaAula.arquivo,
+          bucket: "treinamentos",
+        });
+        await sigo.entities.TreinamentoAula.create({
+          ...base,
+          fonte: "upload",
+          video_ref: `${res.bucket}/${res.path}`,
+          youtube_id: null,
+        });
+      } else {
+        const ytId = extrairYouTubeId(novaAula.url);
+        if (!ytId) {
+          toast.error("Anexe o vídeo OU informe um link válido do YouTube");
+          return;
+        }
+        await sigo.entities.TreinamentoAula.create({ ...base, fonte: "youtube", youtube_id: ytId });
+      }
+      setNovaAula({ titulo: "", url: "", arquivo: null });
+      toast.success("Aula adicionada");
+      recarregar();
+    } catch (e) {
+      toast.error("Erro ao adicionar aula: " + (e?.message || e));
+    } finally {
+      setSubindoVideo(false);
+    }
   };
 
   const removerAula = async (aula) => {
     if (!confirm(`Remover a aula "${aula.titulo}"?`)) return;
     await sigo.entities.TreinamentoAula.delete(aula.id);
     recarregar();
+  };
+
+  // ------------------------------------------------------------ avaliação
+  const carregarQuestoes = async (cursoId) => {
+    const qs = await sigo.entities.TreinamentoQuestao.filter({
+      empresa_id: empresaAtiva.id,
+      curso_id: cursoId,
+    });
+    setQuestoes(qs.sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0)));
+  };
+
+  useEffect(() => {
+    if (cursoSel?.id) carregarQuestoes(cursoSel.id);
+    else setQuestoes([]);
+  }, [cursoSel?.id]);
+
+  const salvarQuestao = async () => {
+    const ops = (novaQuestao?.opcoes || []).map((o) => (o || "").trim()).filter(Boolean);
+    if (!novaQuestao?.pergunta?.trim() || ops.length < 2) {
+      toast.error("Informe a pergunta e pelo menos 2 opções");
+      return;
+    }
+    await sigo.entities.TreinamentoQuestao.create({
+      empresa_id: empresaAtiva.id,
+      curso_id: cursoSel.id,
+      ordem: questoes.length + 1,
+      pergunta: novaQuestao.pergunta.trim(),
+      opcoes: ops,
+      correta: Math.min(novaQuestao.correta ?? 0, ops.length - 1),
+    });
+    setNovaQuestao(null);
+    carregarQuestoes(cursoSel.id);
   };
 
   // -------------------------------------------------------------- matrículas
@@ -498,6 +560,15 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
                       className="mt-0.5"
                     />
                   </div>
+                  <div>
+                    <Label className="text-xs">Nota mínima da avaliação (%)</Label>
+                    <Input
+                      type="number"
+                      value={cursoSel.nota_minima ?? 70}
+                      onChange={(e) => setCursoSel({ ...cursoSel, nota_minima: e.target.value })}
+                      className="mt-0.5"
+                    />
+                  </div>
                   <div className="col-span-2">
                     <Label className="text-xs">Descrição</Label>
                     <Input
@@ -537,22 +608,51 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
                         </button>
                       </div>
                     ))}
-                    <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                    <div className="space-y-2">
                       <Input
                         placeholder="Título da aula"
                         value={novaAula.titulo}
                         onChange={(e) => setNovaAula({ ...novaAula, titulo: e.target.value })}
                         className="h-9"
                       />
-                      <Input
-                        placeholder="Link do YouTube (não listado)"
-                        value={novaAula.url}
-                        onChange={(e) => setNovaAula({ ...novaAula, url: e.target.value })}
-                        className="h-9"
-                      />
-                      <Button size="sm" variant="outline" onClick={adicionarAula}>
-                        <Plus className="w-4 h-4" />
-                      </Button>
+                      <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
+                        <label className="h-9 flex items-center gap-2 px-3 rounded-md border border-slate-200 text-sm text-slate-600 cursor-pointer hover:border-slate-400 truncate">
+                          <Video className="w-4 h-4 shrink-0" />
+                          <span className="truncate">
+                            {novaAula.arquivo
+                              ? novaAula.arquivo.name
+                              : "Anexar vídeo (hospedagem própria, até 1GB)"}
+                          </span>
+                          <input
+                            type="file"
+                            accept="video/*"
+                            className="hidden"
+                            onChange={(e) =>
+                              setNovaAula({ ...novaAula, arquivo: e.target.files?.[0] || null })
+                            }
+                          />
+                        </label>
+                        <span className="text-xs text-slate-400">ou</span>
+                        <Input
+                          placeholder="Link do YouTube (não listado)"
+                          value={novaAula.url}
+                          onChange={(e) => setNovaAula({ ...novaAula, url: e.target.value })}
+                          disabled={!!novaAula.arquivo}
+                          className="h-9"
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={adicionarAula}
+                          disabled={subindoVideo}
+                        >
+                          {subindoVideo ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Plus className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </div>
                     </div>
                     <p className="text-xs text-slate-400">
                       A duração do vídeo é detectada automaticamente na primeira exibição; a aula
@@ -566,6 +666,101 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
                     >
                       <Users className="w-4 h-4 mr-1" /> Listas de Presença (PDF — 10h/dia)
                     </Button>
+
+                    {/* Avaliação final */}
+                    <div className="border-t pt-3 mt-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold text-slate-800">
+                          Avaliação final ({questoes.length} questão(ões))
+                        </h4>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setNovaQuestao({ pergunta: "", opcoes: ["", "", "", ""], correta: 0 })
+                          }
+                        >
+                          <Plus className="w-4 h-4 mr-1" /> Questão
+                        </Button>
+                      </div>
+                      {questoes.map((q, qi) => (
+                        <div key={q.id} className="text-sm bg-slate-50 rounded p-2">
+                          <div className="flex items-start gap-2">
+                            <span className="flex-1 font-medium">
+                              {qi + 1}. {q.pergunta}
+                            </span>
+                            <button
+                              onClick={async () => {
+                                if (!confirm("Excluir esta questão?")) return;
+                                await sigo.entities.TreinamentoQuestao.delete(q.id);
+                                carregarQuestoes(cursoSel.id);
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
+                            </button>
+                          </div>
+                          <ul className="mt-1 ml-4 space-y-0.5">
+                            {(q.opcoes || []).map((o, i) => (
+                              <li
+                                key={i}
+                                className={
+                                  i === q.correta
+                                    ? "text-emerald-700 font-medium"
+                                    : "text-slate-600"
+                                }
+                              >
+                                {String.fromCharCode(65 + i)}) {o} {i === q.correta ? "✓" : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                      {novaQuestao && (
+                        <div className="border rounded-lg p-3 space-y-2 bg-white">
+                          <Input
+                            placeholder="Pergunta"
+                            value={novaQuestao.pergunta}
+                            onChange={(e) =>
+                              setNovaQuestao({ ...novaQuestao, pergunta: e.target.value })
+                            }
+                            className="h-9"
+                          />
+                          {novaQuestao.opcoes.map((o, i) => (
+                            <div key={i} className="flex items-center gap-2">
+                              <input
+                                type="radio"
+                                name="correta"
+                                checked={novaQuestao.correta === i}
+                                onChange={() => setNovaQuestao({ ...novaQuestao, correta: i })}
+                                title="Marcar como correta"
+                              />
+                              <Input
+                                placeholder={`Opção ${String.fromCharCode(65 + i)}`}
+                                value={o}
+                                onChange={(e) => {
+                                  const ops = [...novaQuestao.opcoes];
+                                  ops[i] = e.target.value;
+                                  setNovaQuestao({ ...novaQuestao, opcoes: ops });
+                                }}
+                                className="h-8"
+                              />
+                            </div>
+                          ))}
+                          <div className="flex justify-end gap-2">
+                            <Button variant="ghost" size="sm" onClick={() => setNovaQuestao(null)}>
+                              Cancelar
+                            </Button>
+                            <Button size="sm" onClick={salvarQuestao}>
+                              Salvar questão
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      <p className="text-xs text-slate-400">
+                        Com questões cadastradas, o funcionário só conclui o curso após assistir
+                        todas as aulas E ser aprovado na avaliação (nota mínima acima).
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>

@@ -60,7 +60,9 @@ export default function PortalFuncionario() {
   const [dados, setDados] = useState(null);
   const [cursoAberto, setCursoAberto] = useState(null); // item de dados.cursos
   const [aulaAtiva, setAulaAtiva] = useState(null);
+  const [avaliacao, setAvaliacao] = useState(null); // {respostas:{}, resultado}
   const playerRef = useRef(null);
+  const videoElRef = useRef(null); // <video> das aulas hospedadas
   const assistidoRef = useRef(0); // segundos acumulados da aula ativa
   const timersRef = useRef({ tick: null, envio: null });
 
@@ -112,10 +114,27 @@ export default function PortalFuncionario() {
     timersRef.current = { tick: null, envio: null };
   };
 
+  const iniciarContagem = (aula) => {
+    clearInterval(timersRef.current.tick);
+    timersRef.current.tick = setInterval(() => {
+      assistidoRef.current += 1;
+    }, 1000);
+    clearInterval(timersRef.current.envio);
+    timersRef.current.envio = setInterval(() => sincronizar(aula), 10000);
+  };
+
+  const pausarContagem = (aula) => {
+    clearInterval(timersRef.current.tick);
+    clearInterval(timersRef.current.envio);
+    sincronizar(aula);
+  };
+
   const abrirAula = async (aula) => {
     pararTimers();
     setAulaAtiva(aula);
+    setAvaliacao(null);
     assistidoRef.current = aula.segundos_assistidos || 0;
+    if (aula.fonte === "upload") return; // <video> nativo cuida dos eventos
     const YT = await carregarYouTubeAPI();
     playerRef.current?.destroy?.();
     playerRef.current = new YT.Player("player-aula", {
@@ -146,7 +165,12 @@ export default function PortalFuncionario() {
   };
 
   const sincronizar = async (aula) => {
-    const duracao = aula.duracao_seg || playerRef.current?.getDuration?.() || 0;
+    const duracao =
+      aula.duracao_seg ||
+      (aula.fonte === "upload"
+        ? videoElRef.current?.duration
+        : playerRef.current?.getDuration?.()) ||
+      0;
     const r = await enviarProgresso(
       cursoAberto.matricula.id,
       aula.id,
@@ -161,7 +185,43 @@ export default function PortalFuncionario() {
         await carregar();
         setCursoAberto(null);
         setAulaAtiva(null);
+      } else if (r.precisa_avaliacao) {
+        // todas as aulas vistas → falta a avaliação final
+        setAvaliacao({ respostas: {}, resultado: null });
+        setAulaAtiva(null);
+        pararTimers();
       }
+    }
+  };
+
+  const enviarAvaliacao = async () => {
+    const questoes = cursoAberto?.questoes || [];
+    const respostas = questoes.map((q) => ({
+      questao_id: q.id,
+      resposta: avaliacao.respostas[q.id],
+    }));
+    if (respostas.some((r) => r.resposta === undefined)) {
+      setAvaliacao((a) => ({ ...a, erro: "Responda todas as questões" }));
+      return;
+    }
+    try {
+      const { data } = await sigo.functions.invoke("portalFuncionario", {
+        acao: "avaliacao",
+        token,
+        matricula_id: cursoAberto.matricula.id,
+        respostas,
+      });
+      if (data?.success === false) throw new Error(data.error);
+      setAvaliacao((a) => ({ ...a, resultado: data, erro: null }));
+      if (data.curso_concluido) {
+        setTimeout(async () => {
+          await carregar();
+          setCursoAberto(null);
+          setAvaliacao(null);
+        }, 2500);
+      }
+    } catch (e) {
+      setAvaliacao((a) => ({ ...a, erro: e?.message || "Erro ao enviar avaliação" }));
     }
   };
 
@@ -218,10 +278,86 @@ export default function PortalFuncionario() {
         </header>
 
         <div className="max-w-3xl mx-auto p-4 space-y-4">
-          {aulaAtiva ? (
+          {avaliacao ? (
+            /* ---------- AVALIAÇÃO FINAL ---------- */
+            <div className="space-y-3">
+              <h2 className="font-semibold text-slate-800 text-lg">📝 Avaliação final</h2>
+              {(cursoAberto.questoes || []).map((q, qi) => (
+                <div key={q.id} className="bg-white border rounded-lg p-3">
+                  <p className="font-medium text-sm mb-2">
+                    {qi + 1}. {q.pergunta}
+                  </p>
+                  <div className="space-y-1">
+                    {(q.opcoes || []).map((o, i) => (
+                      <label key={i} className="flex items-center gap-2 text-sm cursor-pointer p-1">
+                        <input
+                          type="radio"
+                          name={q.id}
+                          checked={avaliacao.respostas[q.id] === i}
+                          onChange={() =>
+                            setAvaliacao((a) => ({
+                              ...a,
+                              respostas: { ...a.respostas, [q.id]: i },
+                            }))
+                          }
+                          disabled={!!avaliacao.resultado?.aprovada}
+                        />
+                        {String.fromCharCode(65 + i)}) {o}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {avaliacao.erro && <p className="text-sm text-red-600">{avaliacao.erro}</p>}
+              {avaliacao.resultado ? (
+                <div
+                  className={`rounded-lg border p-4 text-center ${
+                    avaliacao.resultado.aprovada
+                      ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                      : "bg-red-50 border-red-200 text-red-700"
+                  }`}
+                >
+                  <p className="text-lg font-bold">
+                    Nota: {avaliacao.resultado.nota}% ({avaliacao.resultado.acertos}/
+                    {avaliacao.resultado.total})
+                  </p>
+                  <p>
+                    {avaliacao.resultado.aprovada
+                      ? "🎉 Aprovado! Treinamento concluído."
+                      : `Não atingiu a nota mínima (${avaliacao.resultado.nota_minima}%). Revise as aulas e tente novamente.`}
+                  </p>
+                  {!avaliacao.resultado.aprovada && (
+                    <Button
+                      className="mt-2 bg-slate-900"
+                      onClick={() => setAvaliacao({ respostas: {}, resultado: null })}
+                    >
+                      Tentar novamente
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <Button onClick={enviarAvaliacao} className="w-full bg-slate-900 h-12">
+                  Enviar avaliação
+                </Button>
+              )}
+            </div>
+          ) : aulaAtiva ? (
             <div className="space-y-2">
               <div className="aspect-video bg-black rounded-lg overflow-hidden">
-                <div id="player-aula" className="w-full h-full" />
+                {aulaAtiva.fonte === "upload" && aulaAtiva.video_url ? (
+                  <video
+                    ref={videoElRef}
+                    src={aulaAtiva.video_url}
+                    controls
+                    controlsList="nodownload"
+                    className="w-full h-full"
+                    onPlay={() => iniciarContagem(aulaAtiva)}
+                    onPause={() => pausarContagem(aulaAtiva)}
+                    onEnded={() => pausarContagem(aulaAtiva)}
+                  />
+                ) : (
+                  <div id="player-aula" className="w-full h-full" />
+                )}
               </div>
               <p className="text-sm text-slate-600">
                 <PlayCircle className="w-4 h-4 inline mr-1" />
@@ -231,6 +367,24 @@ export default function PortalFuncionario() {
           ) : (
             <p className="text-sm text-slate-500 py-2">Escolha uma aula para assistir 👇</p>
           )}
+
+          {/* Todas as aulas vistas + curso com prova pendente → botão da avaliação */}
+          {!avaliacao &&
+            aulas.length > 0 &&
+            aulas.every((a) => a.concluida) &&
+            cursoAberto.curso?.tem_avaliacao &&
+            !cursoAberto.matricula?.avaliacao_aprovada && (
+              <Button
+                className="w-full bg-violet-600 hover:bg-violet-700 h-12"
+                onClick={() => {
+                  pararTimers();
+                  setAulaAtiva(null);
+                  setAvaliacao({ respostas: {}, resultado: null });
+                }}
+              >
+                📝 Fazer avaliação final
+              </Button>
+            )}
 
           <div className="space-y-2">
             {aulas.map((a) => (

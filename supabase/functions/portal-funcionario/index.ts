@@ -2,20 +2,20 @@
  * portal-funcionario — Portal do Funcionário (treinamentos EAD).
  *
  * Ações:
- *   { acao:"link", funcionario_id }            [exige sessão de STAFF]
- *     → { success, url_path, token }  (token HMAC scope=funcionario, 30 dias)
+ *   { acao:"link", funcionario_id }                       [exige sessão STAFF]
+ *   { acao:"dados", token }                               [anon + token]
+ *     → funcionário, cursos, aulas (com video_url assinada p/ upload próprio),
+ *       questões da avaliação (SEM gabarito) e estado da avaliação.
+ *   { acao:"progresso", token, matricula_id, aula_id, segundos_assistidos,
+ *     duracao_seg? }
+ *   { acao:"avaliacao", token, matricula_id, respostas:[{questao_id,resposta}] }
+ *     → corrige no servidor, grava nota; aprovação exige nota >= nota_minima.
  *
- *   { acao:"dados", token }                    [anon + token]
- *     → { success, funcionario, empresa_nome, cursos:[{matricula, curso,
- *         aulas:[{...aula, segundos_assistidos, concluida}] }] }
+ * CONCLUSÃO DO CURSO: todas as aulas >=90% assistidas E, se o curso tiver
+ * questões, avaliação aprovada. Aí grava data_conclusao + proxima_renovacao.
  *
- *   { acao:"progresso", token, matricula_id, aula_id, segundos_assistidos }
- *     → upsert monotônico do progresso; aula conclui com >=90% da duração;
- *       curso conclui quando TODAS as aulas concluírem (data + renovação).
- *
- * Segurança: mesmo desenho dos portais fornecedor/cliente — o funcionário
- * NÃO recebe sessão authenticated; todo acesso passa por aqui (service role)
- * validando o token e devolvendo só o escopo dele.
+ * Segurança: funcionário NÃO tem sessão authenticated; tudo passa por aqui
+ * (service role) validando o token HMAC e devolvendo só o escopo dele.
  */
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
@@ -23,6 +23,7 @@ import { signPortalToken, verifyPortalToken } from "../_shared/portal-token.ts";
 import { usuarioDaRequisicao } from "../_shared/usuario-request.ts";
 
 const TTL_LINK = 60 * 60 * 24 * 30; // 30 dias
+const TTL_VIDEO = 60 * 60 * 3; // URL assinada do vídeo: 3h
 const PCT_CONCLUSAO = 0.9;
 
 interface Body {
@@ -32,8 +33,65 @@ interface Body {
   matricula_id?: string;
   aula_id?: string;
   segundos_assistidos?: number;
-  /** informado pelo player do YouTube quando a aula não tem duração cadastrada */
   duracao_seg?: number;
+  respostas?: { questao_id: string; resposta: number }[];
+}
+
+// deno-lint-ignore no-explicit-any
+async function concluirSeCompleto(supabase: any, mat: any) {
+  // todas as aulas concluídas?
+  const [{ data: aulasCurso }, { data: progs }, { data: questoes }, { data: curso }] =
+    await Promise.all([
+      supabase
+        .from("treinamento_aula")
+        .select("id")
+        .eq("curso_id", mat.curso_id)
+        .is("deleted_at", null),
+      supabase
+        .from("treinamento_progresso")
+        .select("aula_id, concluida")
+        .eq("matricula_id", mat.id),
+      supabase
+        .from("treinamento_questao")
+        .select("id")
+        .eq("curso_id", mat.curso_id)
+        .is("deleted_at", null),
+      supabase
+        .from("treinamento_curso")
+        .select("validade_meses")
+        .eq("id", mat.curso_id)
+        .maybeSingle(),
+    ]);
+  const feitas = new Set(
+    // deno-lint-ignore no-explicit-any
+    (progs ?? []).filter((p: any) => p.concluida).map((p: any) => p.aula_id)
+  );
+  // deno-lint-ignore no-explicit-any
+  const aulasOk =
+    (aulasCurso ?? []).length > 0 && (aulasCurso ?? []).every((a: any) => feitas.has(a.id));
+  const precisaAvaliacao = (questoes ?? []).length > 0;
+  const avaliacaoOk = !precisaAvaliacao || mat.avaliacao_aprovada === true;
+
+  if (!aulasOk)
+    return {
+      status: mat.status === "pendente" ? "em_andamento" : mat.status,
+      concluiu: false,
+      precisaAvaliacao,
+    };
+  if (!avaliacaoOk) return { status: "em_andamento", concluiu: false, precisaAvaliacao };
+
+  const hoje = new Date();
+  const patch: Record<string, unknown> = {
+    status: "concluido",
+    data_conclusao: hoje.toISOString().slice(0, 10),
+  };
+  if (curso?.validade_meses) {
+    const renova = new Date(hoje);
+    renova.setMonth(renova.getMonth() + curso.validade_meses);
+    patch.proxima_renovacao = renova.toISOString().slice(0, 10);
+  }
+  await supabase.from("treinamento_matricula").update(patch).eq("id", mat.id);
+  return { status: "concluido", concluiu: true, precisaAvaliacao };
 }
 
 Deno.serve(
@@ -56,7 +114,7 @@ Deno.serve(
       if (!body.funcionario_id) return fail("funcionario_id é obrigatório", 400);
       const { data: func } = await supabase
         .from("funcionario")
-        .select("id, empresa_id, nome_completo")
+        .select("id, empresa_id")
         .eq("id", body.funcionario_id)
         .is("deleted_at", null)
         .maybeSingle();
@@ -68,7 +126,6 @@ Deno.serve(
       return ok({ token, url_path: `/#/PortalFuncionario?token=${encodeURIComponent(token)}` });
     }
 
-    // demais ações exigem token válido de funcionário
     const payload = body.token ? await verifyPortalToken(body.token) : null;
     if (!payload || payload.scope !== "funcionario" || !payload.funcionario_id) {
       return fail("Link inválido ou expirado — peça um novo ao RH", 401);
@@ -96,22 +153,43 @@ Deno.serve(
 
       const cursoIds = [...new Set((mats ?? []).map((m) => m.curso_id))];
       const matIds = (mats ?? []).map((m) => m.id);
-      const [{ data: cursos }, { data: aulas }, { data: prog }] = await Promise.all([
-        cursoIds.length
-          ? supabase.from("treinamento_curso").select("*").in("id", cursoIds)
-          : Promise.resolve({ data: [] }),
-        cursoIds.length
-          ? supabase
-              .from("treinamento_aula")
-              .select("*")
-              .in("curso_id", cursoIds)
-              .is("deleted_at", null)
-              .order("ordem", { ascending: true })
-          : Promise.resolve({ data: [] }),
-        matIds.length
-          ? supabase.from("treinamento_progresso").select("*").in("matricula_id", matIds)
-          : Promise.resolve({ data: [] }),
-      ]);
+      const [{ data: cursos }, { data: aulas }, { data: prog }, { data: questoes }] =
+        await Promise.all([
+          cursoIds.length
+            ? supabase.from("treinamento_curso").select("*").in("id", cursoIds)
+            : Promise.resolve({ data: [] }),
+          cursoIds.length
+            ? supabase
+                .from("treinamento_aula")
+                .select("*")
+                .in("curso_id", cursoIds)
+                .is("deleted_at", null)
+                .order("ordem", { ascending: true })
+            : Promise.resolve({ data: [] }),
+          matIds.length
+            ? supabase.from("treinamento_progresso").select("*").in("matricula_id", matIds)
+            : Promise.resolve({ data: [] }),
+          cursoIds.length
+            ? supabase
+                .from("treinamento_questao")
+                .select("id, curso_id, ordem, pergunta, opcoes") // SEM `correta`!
+                .in("curso_id", cursoIds)
+                .is("deleted_at", null)
+                .order("ordem", { ascending: true })
+            : Promise.resolve({ data: [] }),
+        ]);
+
+      // URLs assinadas dos vídeos hospedados
+      const videoUrl = new Map<string, string>();
+      for (const a of aulas ?? []) {
+        if (a.fonte === "upload" && a.video_ref) {
+          const slash = a.video_ref.indexOf("/");
+          const { data: s } = await supabase.storage
+            .from(a.video_ref.slice(0, slash))
+            .createSignedUrl(a.video_ref.slice(slash + 1), TTL_VIDEO);
+          if (s?.signedUrl) videoUrl.set(a.id, s.signedUrl);
+        }
+      }
 
       const progPor = new Map((prog ?? []).map((p) => [`${p.matricula_id}|${p.aula_id}`, p]));
       const resposta = (mats ?? []).map((m) => {
@@ -124,13 +202,21 @@ Deno.serve(
               id: a.id,
               ordem: a.ordem,
               titulo: a.titulo,
+              fonte: a.fonte || "youtube",
               youtube_id: a.youtube_id,
+              video_url: videoUrl.get(a.id) || null,
               duracao_seg: a.duracao_seg,
               segundos_assistidos: p?.segundos_assistidos ?? 0,
               concluida: p?.concluida ?? false,
             };
           });
-        return { matricula: m, curso, aulas: aulasCurso };
+        const questoesCurso = (questoes ?? []).filter((q) => q.curso_id === m.curso_id);
+        return {
+          matricula: m,
+          curso: curso ? { ...curso, tem_avaliacao: questoesCurso.length > 0 } : curso,
+          aulas: aulasCurso,
+          questoes: questoesCurso,
+        };
       });
 
       return ok({
@@ -154,7 +240,6 @@ Deno.serve(
         .is("deleted_at", null)
         .maybeSingle();
       if (!mat) return fail("Matrícula não encontrada", 404);
-
       const { data: aula } = await supabase
         .from("treinamento_aula")
         .select("id, curso_id, duracao_seg")
@@ -164,7 +249,6 @@ Deno.serve(
         .maybeSingle();
       if (!aula) return fail("Aula não pertence ao curso", 400);
 
-      // duração desconhecida no cadastro: aceita a do player (uma vez)
       const duracaoInformada = Math.floor(Number(body.duracao_seg) || 0);
       if (!aula.duracao_seg && duracaoInformada > 0) {
         await supabase
@@ -181,7 +265,6 @@ Deno.serve(
         .eq("aula_id", aula_id)
         .maybeSingle();
 
-      // monotônico + clamp na duração (se conhecida)
       let novoSeg = Math.max(segundos, atual?.segundos_assistidos ?? 0);
       if (aula.duracao_seg) novoSeg = Math.min(novoSeg, aula.duracao_seg);
       const concluiu =
@@ -207,51 +290,91 @@ Deno.serve(
         return fail("Erro ao salvar progresso", 500);
       }
 
-      // status do curso
-      let statusNovo = mat.status;
-      let cursoConcluido = false;
-      if (mat.status === "pendente") statusNovo = "em_andamento";
+      let resultado = { status: mat.status, concluiu: false, precisaAvaliacao: false };
       if (concluiu) {
-        const [{ data: aulasCurso }, { data: progs }] = await Promise.all([
-          supabase
-            .from("treinamento_aula")
-            .select("id")
-            .eq("curso_id", mat.curso_id)
-            .is("deleted_at", null),
-          supabase
-            .from("treinamento_progresso")
-            .select("aula_id, concluida")
-            .eq("matricula_id", matricula_id),
-        ]);
-        const feitas = new Set((progs ?? []).filter((p) => p.concluida).map((p) => p.aula_id));
-        cursoConcluido = (aulasCurso ?? []).every((a) => feitas.has(a.id));
-        if (cursoConcluido) statusNovo = "concluido";
+        resultado = await concluirSeCompleto(supabase, mat);
+      } else if (mat.status === "pendente") {
+        resultado.status = "em_andamento";
       }
-
-      if (statusNovo !== mat.status) {
-        const patch: Record<string, unknown> = { status: statusNovo };
-        if (statusNovo === "concluido") {
-          const hoje = new Date();
-          patch.data_conclusao = hoje.toISOString().slice(0, 10);
-          const { data: curso } = await supabase
-            .from("treinamento_curso")
-            .select("validade_meses")
-            .eq("id", mat.curso_id)
-            .maybeSingle();
-          if (curso?.validade_meses) {
-            const renova = new Date(hoje);
-            renova.setMonth(renova.getMonth() + curso.validade_meses);
-            patch.proxima_renovacao = renova.toISOString().slice(0, 10);
-          }
-        }
-        await supabase.from("treinamento_matricula").update(patch).eq("id", matricula_id);
+      if (resultado.status !== mat.status && resultado.status !== "concluido") {
+        await supabase
+          .from("treinamento_matricula")
+          .update({ status: resultado.status })
+          .eq("id", matricula_id);
       }
 
       return ok({
         segundos_assistidos: novoSeg,
         aula_concluida: concluiu,
-        curso_concluido: cursoConcluido,
-        status: statusNovo,
+        curso_concluido: resultado.concluiu,
+        precisa_avaliacao: resultado.precisaAvaliacao && !mat.avaliacao_aprovada,
+        status: resultado.status,
+      });
+    }
+
+    // ------------------------------------------------------------ avaliação
+    if (body.acao === "avaliacao") {
+      const { matricula_id } = body;
+      const respostas = body.respostas ?? [];
+      if (!matricula_id || !respostas.length) {
+        return fail("matricula_id e respostas são obrigatórios", 400);
+      }
+      const { data: mat } = await supabase
+        .from("treinamento_matricula")
+        .select("*")
+        .eq("id", matricula_id)
+        .eq("funcionario_id", funcionarioId)
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (!mat) return fail("Matrícula não encontrada", 404);
+
+      const [{ data: questoes }, { data: curso }] = await Promise.all([
+        supabase
+          .from("treinamento_questao")
+          .select("id, correta")
+          .eq("curso_id", mat.curso_id)
+          .is("deleted_at", null),
+        supabase
+          .from("treinamento_curso")
+          .select("nota_minima")
+          .eq("id", mat.curso_id)
+          .maybeSingle(),
+      ]);
+      if (!questoes?.length) return fail("Este curso não tem avaliação", 400);
+
+      const gabarito = new Map(questoes.map((q) => [q.id, q.correta]));
+      let acertos = 0;
+      for (const r of respostas) {
+        if (gabarito.has(r.questao_id) && gabarito.get(r.questao_id) === Number(r.resposta)) {
+          acertos++;
+        }
+      }
+      const nota = Math.round((acertos / questoes.length) * 100);
+      const minima = curso?.nota_minima ?? 70;
+      const aprovada = nota >= minima;
+
+      await supabase
+        .from("treinamento_matricula")
+        .update({
+          nota_avaliacao: nota,
+          avaliacao_aprovada: aprovada,
+          avaliacao_em: new Date().toISOString(),
+        })
+        .eq("id", matricula_id);
+
+      let concluiu = false;
+      if (aprovada) {
+        const r = await concluirSeCompleto(supabase, { ...mat, avaliacao_aprovada: true });
+        concluiu = r.concluiu;
+      }
+
+      return ok({
+        nota,
+        nota_minima: minima,
+        aprovada,
+        acertos,
+        total: questoes.length,
+        curso_concluido: concluiu,
       });
     }
 
