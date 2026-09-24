@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { sigo, supabase, resolveStorageUrl } from "@/api/sigoClient";
 import { normalizarTexto } from "@/lib/busca";
+import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import {
   CHECKLIST_CONTRATACAO,
   statusChecklist,
@@ -104,47 +105,6 @@ const CAMPOS_FORM = [
 ];
 
 const refDoAnexo = (a) => a?.ref || null;
-
-/**
- * Carrega a logomarca da empresa como dataURL + dimensões (pra jsPDF).
- * Aceita ref "bucket/caminho" ou URL pronta; sem logo/erro → null.
- */
-async function logoParaPdf(empresa) {
-  try {
-    if (!empresa?.logo_url) return null;
-    const url = await resolveStorageUrl(empresa.logo_url);
-    if (!url) return null;
-    const blob = await (await fetch(url)).blob();
-    const dataUrl = await new Promise((res, rej) => {
-      const fr = new FileReader();
-      fr.onload = () => res(fr.result);
-      fr.onerror = rej;
-      fr.readAsDataURL(blob);
-    });
-    const img = await new Promise((res, rej) => {
-      const i = new Image();
-      i.onload = () => res(i);
-      i.onerror = rej;
-      i.src = dataUrl;
-    });
-    return { dataUrl, w: img.naturalWidth, h: img.naturalHeight };
-  } catch {
-    return null;
-  }
-}
-
-/** Desenha a logo no topo do PDF e devolve o Y onde o conteúdo pode começar. */
-function desenharLogo(doc, logo, yBase = 12) {
-  if (!logo) return yBase;
-  const alturaMm = 16;
-  const larguraMm = Math.min(60, (logo.w / logo.h) * alturaMm);
-  try {
-    doc.addImage(logo.dataUrl, "PNG", 15, yBase, larguraMm, alturaMm);
-    return yBase + alturaMm + 4;
-  } catch {
-    return yBase;
-  }
-}
 
 // Abre o anexo numa aba nova (URL assinada — bucket é privado)
 async function abrirAnexo(a) {

@@ -39,6 +39,7 @@ import BiometriaFuncionarioPanel from "@/components/seguranca/BiometriaFuncionar
 import SstDashboardTab from "@/components/seguranca/SstDashboardTab";
 import ContratacaoTab from "@/components/seguranca/ContratacaoTab";
 import TreinamentosEadTab from "@/components/seguranca/TreinamentosEadTab";
+import FichaFuncionarioSheet from "@/components/seguranca/FichaFuncionarioSheet";
 import {
   Shield,
   Plus,
@@ -141,6 +142,7 @@ export default function SegurancaTrabalho() {
   const [alertaIA, setAlertaIA] = useState(null); // { ok, mensagem, tipo }
   const [showCaminhaoModal, setShowCaminhaoModal] = useState(false);
   const [funcionariosSelecionadosMassa, setFuncionariosSelecionadosMassa] = useState([]);
+  const [fichaFuncionario, setFichaFuncionario] = useState(null); // Ficha ao clicar no nome
   const [showExportacaoMassa, setShowExportacaoMassa] = useState(false);
   const [showImportarFuncionarios, setShowImportarFuncionarios] = useState(false);
   const [showImportarCertificados, setShowImportarCertificados] = useState(false);
@@ -1413,7 +1415,16 @@ export default function SegurancaTrabalho() {
                               </div>
                             )}
                           </TableCell>
-                          <TableCell className="font-medium">{f.nome_completo}</TableCell>
+                          <TableCell className="font-medium">
+                            <button
+                              type="button"
+                              onClick={() => setFichaFuncionario(f)}
+                              className="text-left text-sky-700 hover:underline"
+                              title="Abrir ficha do funcionário"
+                            >
+                              {f.nome_completo}
+                            </button>
+                          </TableCell>
                           <TableCell className="text-sm">{formatCPF(f.cpf)}</TableCell>
                           <TableCell>
                             {f.funcao_nome ? (
@@ -2378,6 +2389,15 @@ export default function SegurancaTrabalho() {
         onOpenChange={setShowExportacaoMassa}
         funcionariosSelecionados={funcionariosSelecionadosMassa}
         empresaAtiva={empresaAtiva}
+      />
+
+      {/* Ficha do Funcionário (clicou no nome) */}
+      <FichaFuncionarioSheet
+        funcionario={fichaFuncionario}
+        empresaAtiva={empresaAtiva}
+        user={user}
+        onClose={() => setFichaFuncionario(null)}
+        onSalvo={loadData}
       />
 
       {/* ===== MODAIS DA ABA TST ===== */}

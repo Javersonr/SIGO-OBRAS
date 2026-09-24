@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import { normalizarTexto } from "@/lib/busca";
+import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -94,6 +95,9 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
       codigo: cursoSel.codigo || null,
       descricao: cursoSel.descricao || null,
       validade_meses: cursoSel.validade_meses ? Number(cursoSel.validade_meses) : null,
+      carga_horaria_horas: cursoSel.carga_horaria_horas
+        ? Number(cursoSel.carga_horaria_horas)
+        : null,
       ativo: cursoSel.ativo !== false,
     };
     if (cursoSel.id) {
@@ -187,6 +191,131 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
     if (!confirm("Remover esta matrícula?")) return;
     await sigo.entities.TreinamentoMatricula.delete(m.id);
     recarregar();
+  };
+
+  // Lista de Presença: uma folha por DIA de treinamento, padrão 10h/dia
+  // (curso de 40h = 4 dias; carga restante no último dia).
+  const HORAS_DIA = 10;
+  const gerarListasPresenca = async (curso) => {
+    const carga = Number(curso.carga_horaria_horas) || 0;
+    if (!carga) {
+      toast.error("Informe a carga horária do curso antes de gerar as listas");
+      return;
+    }
+    const participantes = matriculas
+      .filter((m) => m.curso_id === curso.id)
+      .map((m) => funcPorId.get(m.funcionario_id))
+      .filter(Boolean);
+    if (!participantes.length) {
+      toast.error("Nenhum funcionário matriculado neste curso");
+      return;
+    }
+    const inicioStr = prompt("Data do 1º dia de treinamento (DD/MM/AAAA):");
+    if (!inicioStr) return;
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(inicioStr.trim());
+    if (!m) {
+      toast.error("Data inválida — use DD/MM/AAAA");
+      return;
+    }
+    const instrutor = prompt("Nome do instrutor (opcional):") || "";
+    const inicio = new Date(+m[3], +m[2] - 1, +m[1]);
+    const dias = Math.ceil(carga / HORAS_DIA);
+
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF();
+    const W = doc.internal.pageSize.getWidth();
+    const logo = await logoParaPdf(empresa);
+
+    const aulasCurso = aulasDoCurso(curso.id);
+
+    for (let dia = 0; dia < dias; dia++) {
+      if (dia > 0) doc.addPage();
+      const data = new Date(inicio);
+      data.setDate(data.getDate() + dia);
+      const horasDoDia = Math.min(HORAS_DIA, carga - dia * HORAS_DIA);
+      let y = desenharLogo(doc, logo, 10);
+      if (!logo) y = 16;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.text("LISTA DE PRESENÇA — TREINAMENTO", W / 2, y + 2, { align: "center" });
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      y += 9;
+      doc.text(
+        `${empresa?.razao_social || empresa?.nome || ""} — CNPJ ${empresa?.cnpj || "-"}` +
+          `${empresa?.endereco ? ` — ${empresa.endereco}` : ""}`,
+        15,
+        y
+      );
+      y += 6;
+      doc.text(
+        `Treinamento: ${curso.nome}${curso.codigo ? ` (${curso.codigo})` : ""} — Carga horária total: ${carga}h — ` +
+          `Modalidade: EAD (plataforma própria, com registro eletrônico individual de conclusão)`,
+        15,
+        y,
+        { maxWidth: W - 30 }
+      );
+      y += 10;
+      doc.text(
+        `Dia ${dia + 1} de ${dias} — Data: ${data.toLocaleDateString("pt-BR")} — ` +
+          `Horário: 07:00 às 12:00 / 13:00 às 18:00 — Carga do dia: ${horasDoDia}h`,
+        15,
+        y
+      );
+      y += 6;
+      if (aulasCurso.length) {
+        const conteudo = "Conteúdo programático: " + aulasCurso.map((a) => a.titulo).join("; ");
+        const linhas = doc.splitTextToSize(conteudo, W - 30);
+        doc.text(linhas, 15, y);
+        y += linhas.length * 4.5 + 3;
+      }
+      // cabeçalho da tabela
+      doc.setFont("helvetica", "bold");
+      doc.text("Nº", 15, y);
+      doc.text("Nome", 24, y);
+      doc.text("CPF", 92, y);
+      doc.text("Função", 124, y);
+      doc.text("Assinatura", 158, y);
+      doc.setFont("helvetica", "normal");
+      y += 2.5;
+      doc.line(15, y, W - 15, y);
+      y += 7;
+      participantes.forEach((f, i) => {
+        if (y > 262) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.text(String(i + 1), 15, y);
+        doc.text((f.nome_completo || "").slice(0, 38), 24, y);
+        doc.text(f.cpf || "-", 92, y);
+        doc.text((f.funcao_nome || "-").slice(0, 20), 124, y, { maxWidth: 32 });
+        doc.line(158, y + 1, W - 15, y + 1);
+        y += 9;
+      });
+      y = Math.max(y + 8, 240);
+      if (y > 262) {
+        doc.addPage();
+        y = 40;
+      }
+      doc.setFontSize(8);
+      doc.text(
+        "Declaramos que os participantes acima realizaram o conteúdo do dia na modalidade EAD, " +
+          "com controle individual de acesso e conclusão registrado eletronicamente na plataforma.",
+        15,
+        y,
+        { maxWidth: W - 30 }
+      );
+      doc.setFontSize(9);
+      y += 14;
+      doc.line(15, y, 95, y);
+      doc.text(`Instrutor${instrutor ? `: ${instrutor}` : ""}`, 15, y + 5);
+      doc.line(115, y, W - 15, y);
+      doc.text("Responsável técnico da empresa", 115, y + 5);
+    }
+    doc.save(
+      `Lista_Presenca_${(curso.nome || "curso").replace(/\s+/g, "_")}_${inicioStr.replaceAll("/", "-")}.pdf`
+    );
+    toast.success(`${dias} folha(s) de presença gerada(s) — ${HORAS_DIA}h/dia`);
   };
 
   // ------------------------------------------------------------------ UI
@@ -357,6 +486,18 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
                       className="mt-0.5"
                     />
                   </div>
+                  <div>
+                    <Label className="text-xs">Carga horária (h)</Label>
+                    <Input
+                      type="number"
+                      value={cursoSel.carga_horaria_horas || ""}
+                      onChange={(e) =>
+                        setCursoSel({ ...cursoSel, carga_horaria_horas: e.target.value })
+                      }
+                      placeholder="Ex.: 40"
+                      className="mt-0.5"
+                    />
+                  </div>
                   <div className="col-span-2">
                     <Label className="text-xs">Descrição</Label>
                     <Input
@@ -417,6 +558,14 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
                       A duração do vídeo é detectada automaticamente na primeira exibição; a aula
                       conclui com 90% do tempo assistido.
                     </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => gerarListasPresenca(cursoSel)}
+                      className="mt-2"
+                    >
+                      <Users className="w-4 h-4 mr-1" /> Listas de Presença (PDF — 10h/dia)
+                    </Button>
                   </div>
                 )}
               </div>
