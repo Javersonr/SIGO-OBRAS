@@ -1,6 +1,8 @@
 import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, resolveStorageUrl, refDoStorage } from "@/api/sigoClient";
+import { refDoUpload } from "@/lib/anexo-ref";
+import ImgStorage from "@/components/ImgStorage";
 import { useEmpresa } from "../Layout";
 import { safeParseJSON } from "@/lib/json-utils";
 import {
@@ -444,8 +446,9 @@ export default function SegurancaTrabalho() {
     if (!file) return;
     setUploadingFoto(true);
     try {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-      setFuncionarioForm({ ...funcionarioForm, foto_url: file_url });
+      // grava a referência "bucket/caminho" (a URL assinada expira em 1h)
+      const res = await sigo.integrations.Core.UploadFile({ file });
+      setFuncionarioForm({ ...funcionarioForm, foto_url: refDoUpload(res) });
       toast.success("Foto enviada com sucesso");
     } catch (error) {
       console.error("Erro ao fazer upload:", error);
@@ -460,11 +463,11 @@ export default function SegurancaTrabalho() {
     if (!file) return;
     setUploadingDoc(true);
     try {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+      const res = await sigo.integrations.Core.UploadFile({ file });
       const docs = safeParseJSON(funcionarioForm[tipo], []);
       docs.push({
         nome: file.name,
-        url: file_url,
+        url: refDoUpload(res),
         tipo: tipo.replace("_anexos", ""),
         data_upload: new Date().toISOString(),
       });
@@ -490,11 +493,11 @@ export default function SegurancaTrabalho() {
     if (!file) return;
     setUploadingDoc(true);
     try {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+      const res = await sigo.integrations.Core.UploadFile({ file });
       const anexos = safeParseJSON(funcionarioForm[tipo], []);
       anexos.push({
         nome: file.name,
-        url: file_url,
+        url: refDoUpload(res),
         data_upload: new Date().toISOString(),
       });
       const novoForm = { ...funcionarioForm, [tipo]: JSON.stringify(anexos) };
@@ -780,10 +783,11 @@ export default function SegurancaTrabalho() {
     return doc.output("blob");
   };
 
-  const analisarDocumentoComIA = async (file_url, tipo_documento) => {
+  // file_ref = referência "bucket/caminho" do Storage (nunca a URL assinada)
+  const analisarDocumentoComIA = async (file_ref, tipo_documento) => {
     try {
       const response = await sigo.functions.invoke("analisarDocumentoSeguranca", {
-        file_url,
+        file_ref,
         tipo_documento,
         nome_funcionario: funcionarioForm.nome_completo,
       });
@@ -811,7 +815,12 @@ export default function SegurancaTrabalho() {
           const anexos = (doc.anexos || []).filter((a) => a && a.url && a.url.trim() !== "");
           for (const anexo of anexos) {
             try {
-              const response = await fetch(anexo.url);
+              // anexo.url = ref "bucket/caminho" (ou URL legada): assina na hora;
+              // Base44/arquivo sumido → null (fica fora do ZIP)
+              const urlArquivo = await resolveStorageUrl(anexo.url);
+              if (!urlArquivo) continue;
+              const response = await fetch(urlArquivo);
+              if (!response.ok) continue;
               const blob = await response.blob();
               if (blob.size === 0) continue;
               let nome = (anexo.nome_arquivo || doc.nome)
@@ -1436,8 +1445,8 @@ export default function SegurancaTrabalho() {
                           </TableCell>
                           <TableCell>
                             {f.foto_url ? (
-                              <img
-                                src={f.foto_url}
+                              <ImgStorage
+                                referencia={f.foto_url}
                                 alt={f.nome_completo}
                                 className="w-10 h-10 rounded-full object-cover"
                               />
@@ -1769,8 +1778,8 @@ export default function SegurancaTrabalho() {
                 <div className="mt-2 flex items-start gap-4">
                   {funcionarioForm.foto_url ? (
                     <div className="relative">
-                      <img
-                        src={funcionarioForm.foto_url}
+                      <ImgStorage
+                        referencia={funcionarioForm.foto_url}
                         alt="Foto"
                         className="w-24 h-24 rounded-full object-cover border-2"
                       />
@@ -2379,7 +2388,8 @@ export default function SegurancaTrabalho() {
                 if (!docs[idx].anexos) docs[idx].anexos = [];
                 dados.documentos.forEach((doc) =>
                   docs[idx].anexos.push({
-                    url: doc.url,
+                    // grava a referência "bucket/caminho"; URL assinada do nosso Storage vira ref
+                    url: doc.ref || refDoStorage(doc.url) || doc.url,
                     nome_arquivo: doc.arquivo,
                     data_upload: new Date().toISOString(),
                     analise_ia: doc.analise,

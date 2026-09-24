@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, supabase } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { ehBase44, refDoUpload } from "@/lib/anexo-ref";
+import { baixarAnexo, baixarUrlPronta } from "@/lib/baixar-anexo";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +26,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import RelatorioObra from "@/components/cliente/RelatorioObra";
+import ImgPortal, { LogoEmpresa } from "@/components/cliente/ImgPortal";
 import AnexoViewer from "@/components/shared/AnexoViewer";
 
 export default function ClientePortal() {
@@ -222,23 +225,39 @@ export default function ClientePortal() {
 
     setUploadingFile(true);
     try {
-      const uploadResult = await sigo.integrations.Core.UploadFile({ file });
-      const fileUrl = uploadResult.file_url || uploadResult.url || uploadResult;
-
+      // Grava a ref "bucket/caminho" (a URL assinada expira em 1h)
       if (credencial) {
-        // Externo (anon): grava via Edge Function service-role no escopo do token
-        await sigo.functions.invoke("portalClienteAcao", {
+        // Externo (anon): sem sessão da empresa o UploadFile não tem permissão
+        // no Storage. A Edge Function prepara um upload assinado na pasta da
+        // empresa do token; o arquivo vai direto ao Storage e depois a função
+        // grava a ref no escopo do token.
+        const { data: prep } = await sigo.functions.invoke("portalClienteAcao", {
+          ...credencial,
+          action: "preparar_upload",
+          nome: file.name,
+        });
+        if (!prep?.success) throw new Error(prep?.error || "Não foi possível preparar o envio");
+        const { error: upErr } = await supabase.storage
+          .from(prep.bucket)
+          .uploadToSignedUrl(prep.path, prep.token, file, {
+            contentType: file.type || "application/octet-stream",
+          });
+        if (upErr) throw upErr;
+        const { data: salvo } = await sigo.functions.invoke("portalClienteAcao", {
           ...credencial,
           action: "upload_arquivo",
-          arquivo: { nome: file.name, url: fileUrl, tipo: file.type, tamanho: file.size },
+          arquivo: { nome: file.name, url: prep.ref, tipo: file.type, tamanho: file.size },
         });
+        if (!salvo?.success) throw new Error(salvo?.error || "Erro ao salvar arquivo");
       } else {
-        // Preview (admin logado): grava direto
+        // Preview (admin logado): upload com a sessão e grava direto
+        const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+        if (!ref) throw new Error("Upload sem referência do arquivo");
         await sigo.entities.ArquivoOportunidade.create({
           empresa_id: tokenData.empresa_id,
           oportunidade_id: tokenData.oportunidade_id,
           nome: file.name,
-          url: fileUrl,
+          url: ref,
           tipo: file.type,
           tamanho: file.size,
           usuario_nome: tokenData.email_cliente || "Cliente",
@@ -253,6 +272,42 @@ export default function ClientePortal() {
       alert("Erro ao fazer upload do arquivo");
     } finally {
       setUploadingFile(false);
+    }
+  };
+
+  // Arquivos/fotos: no banco fica a ref "bucket/caminho". Externo (anon) usa a
+  // URL que a Edge Function já assinou — AnexoViewer/ImgStorage assinariam de
+  // novo com a sessão do visitante, que não tem acesso. Preview (admin) assina
+  // com a própria sessão.
+  const avisarIndisponivel = (ref) => {
+    alert(ehBase44(ref) ? "Arquivo do sistema antigo, indisponível" : "Arquivo indisponível");
+  };
+
+  const handleVisualizarArquivo = (arquivo) => {
+    if (credencial) {
+      if (arquivo.url_assinada) window.open(arquivo.url_assinada, "_blank", "noopener");
+      else avisarIndisponivel(arquivo.url);
+    } else if (arquivo.tipo === "link") {
+      window.open(arquivo.url, "_blank", "noopener");
+    } else {
+      setAnexoVisualizacao(arquivo);
+    }
+  };
+
+  const handleBaixarArquivo = async (arquivo) => {
+    const baixou = credencial
+      ? baixarUrlPronta(arquivo.url_assinada, arquivo.nome)
+      : await baixarAnexo(arquivo.url, arquivo.nome);
+    if (!baixou) avisarIndisponivel(arquivo.url);
+  };
+
+  const handleVisualizarFoto = (diario, foto, idx) => {
+    if (credencial) {
+      const url = diario.fotos_assinadas?.[idx];
+      if (url) window.open(url, "_blank", "noopener");
+      else avisarIndisponivel(foto);
+    } else {
+      setAnexoVisualizacao({ url: foto, nome: `Foto ${idx + 1}`, tipo: "image/jpeg" });
     }
   };
 
@@ -348,11 +403,16 @@ export default function ClientePortal() {
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-slate-200 flex flex-col">
         <div className="p-6 border-b">
-          {empresa?.logo_url ? (
-            <img src={empresa.logo_url} alt={empresa.nome} className="h-10 object-contain" />
-          ) : (
-            <h2 className="text-xl font-bold text-blue-600">vobi</h2>
-          )}
+          {/* sem logo exibível (ex.: Base44) → só o nome da empresa */}
+          <LogoEmpresa
+            empresa={empresa}
+            className="h-10 object-contain"
+            fallback={
+              <h2 className="text-xl font-bold text-blue-600">
+                {empresa?.nome_fantasia || empresa?.nome || "Portal do Cliente"}
+              </h2>
+            }
+          />
         </div>
 
         <nav className="flex-1 p-4 space-y-1">
@@ -660,12 +720,14 @@ export default function ClientePortal() {
                             <p className="text-sm font-medium text-slate-600 mb-2">Fotos</p>
                             <div className="grid grid-cols-4 gap-2">
                               {fotosData.map((foto, idx) => (
-                                <img
+                                <ImgPortal
                                   key={idx}
-                                  src={foto}
+                                  externo={!!credencial}
+                                  referencia={foto}
+                                  assinada={diario.fotos_assinadas?.[idx]}
                                   alt={`Foto ${idx + 1}`}
                                   className="w-full h-32 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
-                                  onClick={() => window.open(foto, "_blank")}
+                                  onClick={() => handleVisualizarFoto(diario, foto, idx)}
                                 />
                               ))}
                             </div>
@@ -728,7 +790,7 @@ export default function ClientePortal() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => setAnexoVisualizacao(arquivo)}
+                            onClick={() => handleVisualizarArquivo(arquivo)}
                             title="Visualizar"
                           >
                             <Eye className="w-4 h-4" />
@@ -736,7 +798,7 @@ export default function ClientePortal() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => window.open(arquivo.url, "_blank")}
+                            onClick={() => handleBaixarArquivo(arquivo)}
                             title="Baixar"
                           >
                             <Download className="w-4 h-4" />

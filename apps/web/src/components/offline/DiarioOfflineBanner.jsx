@@ -2,8 +2,10 @@ import React, { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { WifiOff, Upload, Loader, Wifi } from "lucide-react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, refDoStorage } from "@/api/sigoClient";
 import { toast } from "sonner";
+import { safeParseJSON } from "@/lib/json-utils";
+import { refDoUpload } from "@/lib/anexo-ref";
 import { useDiarioOffline } from "./useDiarioOffline";
 
 export default function DiarioOfflineBanner({ empresaAtiva, onSincronizado }) {
@@ -16,14 +18,20 @@ export default function DiarioOfflineBanner({ empresaAtiva, onSincronizado }) {
     let ok = 0;
     try {
       for (const entrada of entradasPendentes) {
-        // Fazer upload das fotos offline (base64 -> url)
-        let fotosUrls = [];
+        // Fotos já enviadas antes de cair a internet (referências; URL assinada
+        // antiga do nosso Storage vira referência) + upload das fotos offline.
+        // Grava a REFERÊNCIA "bucket/caminho" — a file_url assinada expira em 1h.
+        const fotosAnteriores = safeParseJSON(entrada.fotos, []);
+        const fotosRefs = (Array.isArray(fotosAnteriores) ? fotosAnteriores : [])
+          .filter(Boolean)
+          .map((f) => refDoStorage(f) || f);
         if (entrada.fotos_offline && entrada.fotos_offline.length > 0) {
           for (const dataUrl of entrada.fotos_offline) {
             const blob = await (await fetch(dataUrl)).blob();
             const file = new File([blob], "foto_obra.jpg", { type: "image/jpeg" });
-            const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-            fotosUrls.push(file_url);
+            const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+            if (!ref) throw new Error("Upload da foto sem referência do Storage");
+            fotosRefs.push(ref);
           }
         }
 
@@ -40,7 +48,7 @@ export default function DiarioOfflineBanner({ empresaAtiva, onSincronizado }) {
           observacoes: entrada.observacoes || "",
           problemas: entrada.problemas || "",
           mao_de_obra: entrada.mao_de_obra || "[]",
-          fotos: JSON.stringify(fotosUrls),
+          fotos: JSON.stringify(fotosRefs),
         });
 
         await marcarSincronizado(entrada.id);

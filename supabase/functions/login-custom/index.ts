@@ -21,6 +21,7 @@ import { verifyPassword, hashPassword } from "../_shared/passwords.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { montarSessao } from "../_shared/auth-bridge.ts";
 import { signPortalToken } from "../_shared/portal-token.ts";
+import { mapaLogosAssinados } from "../_shared/logos-assinados.ts";
 
 /**
  * Resolve a credencial pós-login:
@@ -219,6 +220,9 @@ Deno.serve(
       return ok({
         usuario: { ...buildUsuarioResponse(usuario, vinc, empresa), portal_token },
         session,
+        logos_assinados: await mapaLogosAssinados(supabase, [
+          { id: empresa.id, logo_url: empresa.logo_url, empresasPermitidas: [empresa.id] },
+        ]),
       });
     }
 
@@ -236,21 +240,41 @@ Deno.serve(
       return ok({
         usuario: { ...buildUsuarioResponse(usuario, vinc, empresa), portal_token },
         session,
+        logos_assinados: await mapaLogosAssinados(supabase, [
+          { id: empresa.id, logo_url: empresa.logo_url, empresasPermitidas: [empresa.id] },
+        ]),
       });
     }
 
     // 7. Caso 3: múltiplas empresas — devolve lista pro frontend escolher
     const gruposIds = [...new Set(vinculos.map((v) => v.grupo_id).filter(Boolean))];
-    let grupos: unknown[] = [];
+    let grupos: { id: string; nome: string; logo_url?: string | null }[] = [];
     if (gruposIds.length > 0) {
       const { data: gruposData } = await supabase
         .from("grupo_empresarial")
-        .select("id, nome")
+        .select("id, nome, logo_url")
         .in("id", gruposIds);
       grupos = gruposData ?? [];
     }
 
+    // Tela de escolha roda SEM sessão: logos já assinados, num mapa por id
+    // (empresa ou grupo). Logo de grupo só se estiver na pasta de uma empresa
+    // ativa do próprio grupo.
+    const logos_assinados = await mapaLogosAssinados(supabase, [
+      ...empresasAtivas.map((e) => ({
+        id: e.id,
+        logo_url: e.logo_url,
+        empresasPermitidas: [e.id],
+      })),
+      ...grupos.map((g) => ({
+        id: g.id,
+        logo_url: g.logo_url,
+        empresasPermitidas: empresasAtivas.filter((e) => e.grupo_id === g.id).map((e) => e.id),
+      })),
+    ]);
+
     return ok({
+      logos_assinados,
       multiplas_empresas: true,
       empresas: empresasAtivas.map((e) => ({
         ...e,

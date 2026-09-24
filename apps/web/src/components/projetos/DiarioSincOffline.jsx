@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Upload, WifiOff, Loader } from "lucide-react";
 import { toast } from "sonner";
+import { refDoUpload } from "@/lib/anexo-ref";
 import { getFotosOffline, marcarFotoEnviada, removerFotosEnviadas } from "./DiarioCameraModal";
 
 export default function DiarioSincOffline({ onFotosSincronizadas }) {
@@ -37,19 +38,21 @@ export default function DiarioSincOffline({ onFotosSincronizadas }) {
       return;
     }
     setSincronizando(true);
-    const urls = [];
+    // Referências "bucket/caminho" (a file_url assinada expira em 1h)
+    const refs = [];
     try {
       for (const foto of fotosPendentes) {
         const blob = await (await fetch(foto.dataUrl)).blob();
         const file = new File([blob], "foto_obra.jpg", { type: "image/jpeg" });
-        const result = await sigo.integrations.Core.UploadFile({ file });
-        urls.push(result.file_url);
+        const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+        if (!ref) throw new Error("Upload da foto sem referência do Storage");
+        refs.push(ref);
         marcarFotoEnviada(foto.id);
       }
       removerFotosEnviadas();
-      toast.success(`✓ ${urls.length} foto(s) sincronizada(s)!`);
+      toast.success(`✓ ${refs.length} foto(s) sincronizada(s)!`);
       setFotosPendentes([]);
-      onFotosSincronizadas?.(urls);
+      onFotosSincronizadas?.(refs);
     } catch (error) {
       toast.error("Erro ao sincronizar fotos");
     } finally {

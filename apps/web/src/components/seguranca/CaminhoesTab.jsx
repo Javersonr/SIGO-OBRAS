@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
+import ImgStorage from "@/components/ImgStorage";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -115,8 +116,8 @@ export default function CaminhoesTab({
                       >
                         <TableCell>
                           {caminhao.foto_url ? (
-                            <img
-                              src={caminhao.foto_url}
+                            <ImgStorage
+                              referencia={caminhao.foto_url}
                               alt={caminhao.placa}
                               className="w-12 h-12 rounded object-cover"
                             />

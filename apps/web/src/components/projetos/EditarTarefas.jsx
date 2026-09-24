@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { refDoUpload } from "@/lib/anexo-ref";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -356,8 +357,10 @@ export default function EditarTarefas({
 
     setUploading(true);
     try {
-      const result = await sigo.integrations.Core.UploadFile({ file });
-      const fileUrl = result.file_url || result.url || result;
+      // Grava a REFERÊNCIA "bucket/caminho" — a file_url assinada expira em 1h
+      // (o AnexoViewer assina na hora de abrir).
+      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+      if (!ref) throw new Error("upload sem referência do Storage");
 
       // Determinar tipo do arquivo
       let tipo = file.type;
@@ -370,7 +373,7 @@ export default function EditarTarefas({
 
       setDados((prev) => ({
         ...prev,
-        anexos: [...prev.anexos, { url: fileUrl, nome: file.name, tipo: tipo || file.type }],
+        anexos: [...prev.anexos, { url: ref, nome: file.name, tipo: tipo || file.type }],
       }));
       e.target.value = "";
     } catch (error) {

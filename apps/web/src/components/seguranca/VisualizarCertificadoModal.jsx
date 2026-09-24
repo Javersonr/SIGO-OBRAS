@@ -99,10 +99,11 @@ export default function VisualizarCertificadoModal({
               {/* Logo marca d'água */}
               {empresaAtiva?.logo_url && (
                 <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
-                  <img
-                    src={empresaAtiva.logo_url}
+                  <ImgStorage
+                    referencia={empresaAtiva.logo_url}
                     alt="Logo"
                     className="w-64 h-64 object-contain"
+                    fallback={null}
                   />
                 </div>
               )}
@@ -213,10 +214,11 @@ export default function VisualizarCertificadoModal({
                 {/* Logo marca d'água */}
                 {empresaAtiva?.logo_url && (
                   <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
-                    <img
-                      src={empresaAtiva.logo_url}
+                    <ImgStorage
+                      referencia={empresaAtiva.logo_url}
                       alt="Logo"
                       className="w-48 h-48 object-contain"
+                      fallback={null}
                     />
                   </div>
                 )}

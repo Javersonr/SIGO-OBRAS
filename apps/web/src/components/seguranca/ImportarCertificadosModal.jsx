@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
+import { refDoUpload } from "@/lib/anexo-ref";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Upload, CheckCircle2, AlertCircle, Loader2, Eye } from "lucide-react";
@@ -22,11 +23,11 @@ export default function ImportarCertificadosModal({ open, onOpenChange, empresaA
 
     try {
       // Upload do ZIP primeiro
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+      const res = await sigo.integrations.Core.UploadFile({ file });
 
-      // Enviar URL para função backend
+      // Enviar a referência "bucket/caminho" (não a URL assinada) para a função backend
       const response = await sigo.functions.invoke("processarCertificadosComIA", {
-        zipUrl: file_url,
+        zipRef: refDoUpload(res),
         empresaId: empresaAtiva.id,
       });
 

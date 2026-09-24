@@ -8,6 +8,7 @@ import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import EPIEditorPanel from "./EPIEditorPanel";
 import { safeParseJSON } from "@/lib/json-utils";
+import ImgStorage from "@/components/ImgStorage";
 
 export default function VisualizarAutorizacaoFormalCemigModal({
   open,
@@ -405,10 +406,11 @@ export default function VisualizarAutorizacaoFormalCemigModal({
             {/* Logo */}
             <div style={{ marginBottom: "10px" }}>
               {empresaAtiva?.logo_url && (
-                <img
-                  src={empresaAtiva.logo_url}
+                <ImgStorage
+                  referencia={empresaAtiva.logo_url}
                   alt="Logo"
                   style={{ height: "60px", objectFit: "contain" }}
+                  fallback={null}
                 />
               )}
             </div>

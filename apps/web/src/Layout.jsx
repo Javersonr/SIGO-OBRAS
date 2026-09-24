@@ -45,6 +45,7 @@ import { cn } from "@/lib/utils";
 import NotificationsPanel from "./components/NotificationsPanel";
 import ChatPanel from "./components/chat/ChatPanel";
 import MeuPerfilSheet from "./components/MeuPerfilSheet";
+import ImgStorage from "./components/ImgStorage";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -1093,10 +1094,12 @@ export default function Layout({ children, currentPageName }) {
                         <div className="flex items-start gap-4">
                           <div className="w-16 h-16 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
                             {empresa.logo_url ? (
-                              <img
-                                src={empresa.logo_url}
+                              // ref "bucket/caminho" → URL assinada; sem arquivo → ícone
+                              <ImgStorage
+                                referencia={empresa.logo_url}
                                 alt="Logo"
                                 className="w-full h-full object-contain rounded-lg"
+                                fallback={<Building2 className="w-8 h-8 text-slate-400" />}
                               />
                             ) : (
                               <Building2 className="w-8 h-8 text-slate-400" />

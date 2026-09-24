@@ -22,6 +22,7 @@ import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { atualizarAppMetadataEmpresa, emitirSessaoSemSenha } from "../_shared/auth-bridge.ts";
 import { getCallerFromJWT, usuarioCustomDoCaller } from "../_shared/auth-jwt.ts";
+import { mapaLogosAssinados } from "../_shared/logos-assinados.ts";
 
 interface TrocarBody {
   empresa_id?: string;
@@ -91,6 +92,12 @@ Deno.serve(
 
     if (!empresa || !empresa.ativo) return fail("Empresa inativa ou inexistente", 403);
 
+    // Logo já assinado (mapa por id, no nível de cima da resposta — nunca dentro
+    // do objeto empresa) para quem ainda não tem sessão com o novo empresa_id.
+    const logos_assinados = await mapaLogosAssinados(supabase, [
+      { id: empresa.id, logo_url: empresa.logo_url, empresasPermitidas: [empresa.id] },
+    ]);
+
     const perfil = vinc?.perfil ?? "Admin";
 
     // 3. Atualiza app_metadata no Auth (sem mexer na senha) — o auth user é o
@@ -135,9 +142,9 @@ Deno.serve(
       session = await emitirSessaoSemSenha(supabase, caller.email as string);
     } catch (e) {
       console.error("[trocar-empresa] falha ao emitir sessão:", (e as Error)?.message);
-      return ok({ usuario: usuarioResp, session: null, needs_refresh: true });
+      return ok({ usuario: usuarioResp, session: null, needs_refresh: true, logos_assinados });
     }
 
-    return ok({ usuario: usuarioResp, session });
+    return ok({ usuario: usuarioResp, session, logos_assinados });
   })
 );

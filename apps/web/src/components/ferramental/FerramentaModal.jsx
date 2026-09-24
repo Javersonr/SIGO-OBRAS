@@ -1,7 +1,9 @@
 import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
-import { safeUrl } from "@/lib/safe-url";
+import { refDoUpload } from "@/lib/anexo-ref";
+import ImgStorage from "@/components/ImgStorage";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 import { useEmpresa } from "@/Layout";
 import SheetModalComponent from "@/components/ui/sheet-modal";
 import { Button } from "@/components/ui/button";
@@ -53,6 +55,7 @@ export default function FerramentaModal({ open, onOpenChange, ferramenta, onSave
   });
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadingLaudo, setUploadingLaudo] = useState(false);
+  const [verLaudo, setVerLaudo] = useState(false);
   const [saving, setSaving] = useState(false);
   const [caminhoes, setCaminhoes] = useState([]);
   const [camposObrigatorios, setCamposObrigatorios] = useState([]);
@@ -201,8 +204,10 @@ export default function FerramentaModal({ open, onOpenChange, ferramenta, onSave
     if (!file) return;
     try {
       setUploadingLaudo(true);
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-      setFormData((prev) => ({ ...prev, laudo_url: file_url }));
+      // Grava a referência estável "bucket/path" (a URL assinada expira em 1h)
+      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+      if (!ref) throw new Error("Falha no upload");
+      setFormData((prev) => ({ ...prev, laudo_url: ref }));
       toast.success("Laudo anexado com sucesso!");
     } catch (error) {
       console.error("Erro ao fazer upload do laudo:", error);
@@ -223,8 +228,10 @@ export default function FerramentaModal({ open, onOpenChange, ferramenta, onSave
 
     try {
       setUploadingPhoto(true);
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-      setFormData({ ...formData, foto_url: file_url });
+      // Grava a referência estável "bucket/path" (a URL assinada expira em 1h)
+      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+      if (!ref) throw new Error("Falha no upload");
+      setFormData((prev) => ({ ...prev, foto_url: ref }));
       toast.success("Foto enviada com sucesso!");
     } catch (error) {
       console.error("Erro ao fazer upload:", error);
@@ -315,8 +322,8 @@ export default function FerramentaModal({ open, onOpenChange, ferramenta, onSave
           <div className="mt-2">
             {formData.foto_url ? (
               <div className="relative inline-block">
-                <img
-                  src={formData.foto_url}
+                <ImgStorage
+                  referencia={formData.foto_url}
                   alt="Preview"
                   className="w-32 h-32 object-cover rounded-lg border"
                 />
@@ -582,14 +589,13 @@ export default function FerramentaModal({ open, onOpenChange, ferramenta, onSave
                 <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-lg">
                   <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
                   <span className="text-xs text-green-700 font-medium flex-1">Laudo anexado</span>
-                  <a
-                    href={safeUrl(formData.laudo_url)}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => setVerLaudo(true)}
                     className="text-xs text-blue-600 underline"
                   >
                     Ver
-                  </a>
+                  </button>
                   <button
                     onClick={() => setFormData({ ...formData, laudo_url: "" })}
                     className="ml-1 text-slate-400 hover:text-red-500"
@@ -712,6 +718,13 @@ export default function FerramentaModal({ open, onOpenChange, ferramenta, onSave
           />
         </div>
       </div>
+
+      {/* Visualizador do laudo (janela flutuante, portal no body) */}
+      <AnexoViewer
+        anexo={{ url: formData.laudo_url, nome: "Laudo" }}
+        open={verLaudo && !!formData.laudo_url}
+        onOpenChange={setVerLaudo}
+      />
     </SheetModalComponent>
   );
 }

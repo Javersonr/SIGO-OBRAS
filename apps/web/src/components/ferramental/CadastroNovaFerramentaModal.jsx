@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertCircle, Plus } from "lucide-react";
 import { toast } from "sonner";
+import ImgStorage from "@/components/ImgStorage";
 
 export default function CadastroNovaFerramentaModal({
   open,
@@ -105,7 +106,11 @@ export default function CadastroNovaFerramentaModal({
 
         {fotoUrl && (
           <Card className="p-2 bg-slate-50 border-slate-200">
-            <img src={fotoUrl} alt="Ferramenta" className="w-full h-32 object-contain rounded" />
+            <ImgStorage
+              referencia={fotoUrl}
+              alt="Ferramenta"
+              className="w-full h-32 object-contain rounded"
+            />
           </Card>
         )}
 

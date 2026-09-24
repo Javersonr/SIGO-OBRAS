@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { sigo, supabase, resolveStorageUrl } from "@/api/sigoClient";
+import { sigo, supabase } from "@/api/sigoClient";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 import { normalizarTexto } from "@/lib/busca";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import {
@@ -106,13 +107,6 @@ const CAMPOS_FORM = [
 
 const refDoAnexo = (a) => a?.ref || null;
 
-// Abre o anexo numa aba nova (URL assinada — bucket é privado)
-async function abrirAnexo(a) {
-  const url = await resolveStorageUrl(a?.ref);
-  if (url) window.open(url, "_blank");
-  else toast.error("Não foi possível abrir o arquivo");
-}
-
 // "Rafael Pereira de Souza" → "RAFAEL_PEREIRA_DE_SOUZA"
 const slugNome = (s) =>
   normalizarTexto(s || "")
@@ -171,6 +165,9 @@ export default function ContratacaoTab({ empresaAtiva, user, onRegistrado }) {
   const [carregando, setCarregando] = useState(true);
   const [sel, setSel] = useState(null); // contratação aberta no painel
   const [ocupado, setOcupado] = useState(""); // ação em andamento ("ia", "upload", ...)
+  // anexo aberto na janela flutuante (window.open depois do await era barrado pelo bloqueador de pop-up)
+  const [anexoAberto, setAnexoAberto] = useState(null);
+  const abrirAnexo = (a) => setAnexoAberto({ url: a?.ref, nome: a?.nome });
 
   const recarregar = async () => {
     setCarregando(true);
@@ -1095,6 +1092,12 @@ export default function ContratacaoTab({ empresaAtiva, user, onRegistrado }) {
           )}
         </SheetContent>
       </Sheet>
+
+      <AnexoViewer
+        anexo={anexoAberto}
+        open={!!anexoAberto}
+        onOpenChange={(aberto) => !aberto && setAnexoAberto(null)}
+      />
     </div>
   );
 }

@@ -26,6 +26,7 @@ import {
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
+import ImgStorage from "@/components/ImgStorage";
 
 export default function InspecaoDetalheHistoricoModal({ open, onOpenChange, inspecao }) {
   const [ferramentas, setFerramentas] = useState([]);
@@ -304,8 +305,8 @@ export default function InspecaoDetalheHistoricoModal({ open, onOpenChange, insp
           onClick={() => setFotoExpandida(null)}
         >
           <div className="relative max-w-4xl max-h-[90vh] w-full h-full">
-            <img
-              src={fotoExpandida}
+            <ImgStorage
+              referencia={fotoExpandida}
               alt="Foto da ferramenta"
               className="w-full h-full object-contain"
             />

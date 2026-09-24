@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar, User, MapPin, Camera, Zap, Hash, Eye } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import ImgStorage from "@/components/ImgStorage";
 
 export default function HistoricoDetalhesModal({ open, onOpenChange, item }) {
   const [fotoExpandida, setFotoExpandida] = useState(false);
@@ -132,8 +133,8 @@ export default function HistoricoDetalhesModal({ open, onOpenChange, item }) {
             {item.foto_url && (
               <TabsContent value="foto" className="space-y-3">
                 <Card className="p-2 bg-slate-50 border-slate-200 relative">
-                  <img
-                    src={item.foto_url}
+                  <ImgStorage
+                    referencia={item.foto_url}
                     alt="Foto capturada"
                     className="w-full h-48 object-contain rounded cursor-pointer hover:opacity-80 transition"
                     onClick={() => setFotoExpandida(true)}
@@ -169,8 +170,8 @@ export default function HistoricoDetalhesModal({ open, onOpenChange, item }) {
           onClick={() => setFotoExpandida(false)}
         >
           <div className="max-w-2xl max-h-[90vh] relative" onClick={(e) => e.stopPropagation()}>
-            <img
-              src={item.foto_url}
+            <ImgStorage
+              referencia={item.foto_url}
               alt="Foto expandida"
               className="w-full h-full object-contain rounded-lg"
             />

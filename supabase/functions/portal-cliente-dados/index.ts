@@ -12,11 +12,18 @@
  *
  * (O modo "preview" interno NÃO passa por aqui — é o admin logado lendo direto,
  *  já protegido pela RLS da própria sessão.)
+ *
+ * Arquivos (logo, anexos, fotos do diário) ficam no banco como ref
+ * "bucket/caminho"; o cliente não tem sessão da empresa para assinar, então a
+ * resposta traz a URL pronta ao lado do valor original: empresa.logo_url_assinada,
+ * arquivos[].url_assinada e diarios[].fotos_assinadas (mesma ordem de `fotos`).
+ * null = nada a exibir (Base44, arquivo sumido).
  */
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { resolveClienteScope } from "../_shared/portal-cliente-scope.ts";
+import { assinarDaEmpresa, urlParaExibir } from "../_shared/storage-assinar.ts";
 
 // deno-lint-ignore no-explicit-any
 function alias(rows: any[] | null) {
@@ -25,6 +32,20 @@ function alias(rows: any[] | null) {
       r.created_date = r.created_at;
     return r;
   });
+}
+
+/** diario_obra.fotos: jsonb (lista) ou string JSON do legado → lista de refs/URLs. */
+function fotosDoDiario(fotos: unknown): unknown[] {
+  let v = fotos;
+  if (typeof v === "string") {
+    try {
+      v = JSON.parse(v);
+    } catch {
+      return [];
+    }
+  }
+  // deno-lint-ignore no-explicit-any
+  return Array.isArray(v) ? v.map((f: any) => (typeof f === "string" ? f : (f?.url ?? null))) : [];
 }
 
 Deno.serve(
@@ -112,20 +133,40 @@ Deno.serve(
     const sortByCreatedDesc = (a: any, b: any) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
 
+    // Assina tudo de uma vez (só refs da pasta desta empresa)
+    const diarios = alias(diariosRes.data);
+    const assinadas = await assinarDaEmpresa(
+      supabase,
+      [
+        empresa.logo_url,
+        // deno-lint-ignore no-explicit-any
+        ...arquivos.map((a: any) => a.url),
+        // deno-lint-ignore no-explicit-any
+        ...diarios.flatMap((d: any) => fotosDoDiario(d.fotos)),
+      ],
+      empresa_id
+    );
+
     return ok({
-      empresa,
+      empresa: { ...empresa, logo_url_assinada: urlParaExibir(empresa.logo_url, assinadas) },
       oportunidade,
       abas_liberadas: scope.abas,
       email_cliente: scope.email_cliente,
       orcamento_itens: alias(orcamentoItens).sort(sortByOrdem),
       cronograma_etapas: alias(cronogramaEtapas).sort(sortByOrdem),
-      arquivos: alias(arquivos).sort(sortByCreatedDesc),
-      anotacoes: alias(anotacoes).sort(sortByCreatedDesc),
-      // deno-lint-ignore no-explicit-any
-      diarios: alias(diariosRes.data).sort(
+      arquivos: alias(arquivos)
         // deno-lint-ignore no-explicit-any
-        (a: any, b: any) => new Date(b.data).getTime() - new Date(a.data).getTime()
-      ),
+        .map((a: any) => ({ ...a, url_assinada: urlParaExibir(a.url, assinadas) }))
+        .sort(sortByCreatedDesc),
+      anotacoes: alias(anotacoes).sort(sortByCreatedDesc),
+      diarios: diarios
+        // deno-lint-ignore no-explicit-any
+        .map((d: any) => ({
+          ...d,
+          fotos_assinadas: fotosDoDiario(d.fotos).map((f) => urlParaExibir(f, assinadas)),
+        }))
+        // deno-lint-ignore no-explicit-any
+        .sort((a: any, b: any) => new Date(b.data).getTime() - new Date(a.data).getTime()),
     });
   })
 );

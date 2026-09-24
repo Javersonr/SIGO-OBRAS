@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Save, Search } from "lucide-react";
 import TemaCustomizacao from "@/components/configuracoes/TemaCustomizacao";
+import ImgStorage from "@/components/ImgStorage";
 
 export default function EmpresaTab({
   empresaAtiva,
@@ -37,10 +38,13 @@ export default function EmpresaTab({
           <div className="flex items-center gap-4">
             <div className="w-20 h-20 bg-slate-100 rounded-lg flex items-center justify-center overflow-hidden border border-slate-200">
               {empresaData.logo_url ? (
-                <img
-                  src={empresaData.logo_url}
+                <ImgStorage
+                  referencia={empresaData.logo_url}
                   alt="Logo"
                   className="w-full h-full object-contain"
+                  fallback={
+                    <span className="text-slate-400 text-xs text-center">Logo indisponível</span>
+                  }
                 />
               ) : (
                 <span className="text-slate-400 text-xs text-center">Sem logo</span>
@@ -54,7 +58,7 @@ export default function EmpresaTab({
                 </span>
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/png,image/jpeg,image/webp"
                   className="hidden"
                   onChange={handleUploadLogo}
                   disabled={uploadingLogo}

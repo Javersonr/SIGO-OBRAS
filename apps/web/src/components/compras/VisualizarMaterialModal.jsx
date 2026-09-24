@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { sigo } from "@/api/sigoClient";
+import ImgStorage from "@/components/ImgStorage";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -50,8 +51,9 @@ export default function VisualizarMaterialModal({ open, onOpenChange, solicitaca
             {material.foto_url && (
               <Card>
                 <CardContent className="p-4">
-                  <img
-                    src={material.foto_url}
+                  {/* foto_url = ref "bucket/caminho" (ou URL legada): o ImgStorage assina */}
+                  <ImgStorage
+                    referencia={material.foto_url}
                     alt={material.nome}
                     className="w-full h-64 object-cover rounded"
                   />

@@ -53,6 +53,8 @@ import TarefasTimeline from "./TarefasTimeline";
 import VisualizarDiarioModal from "./VisualizarDiarioModal";
 import RelatoriosCronograma from "../oportunidades/RelatoriosCronograma";
 import AnexoViewer from "@/components/shared/AnexoViewer";
+import ImgStorage from "@/components/ImgStorage";
+import { refDoUpload } from "@/lib/anexo-ref";
 import RelatorioDiarioObra from "./RelatorioDiarioObra";
 import { gerarRelatorioDiarioPDF, imprimirDiario } from "./RelatorioPDFDiario";
 
@@ -301,11 +303,12 @@ export default function DiarioObraTab({
     setUploading(true);
     try {
       for (const file of Array.from(files)) {
-        const result = await sigo.integrations.Core.UploadFile({ file });
-        const fileUrl = result.file_url || result.url || result;
+        // Grava a REFERÊNCIA "bucket/caminho" — a file_url assinada expira em 1h
+        const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+        if (!ref) throw new Error("Upload da foto sem referência do Storage");
         setNovoDiario((prev) => ({
           ...prev,
-          fotos: [...prev.fotos, fileUrl],
+          fotos: [...prev.fotos, ref],
         }));
       }
     } catch (error) {
@@ -397,7 +400,7 @@ export default function DiarioObraTab({
     };
 
     if (!isOnline) {
-      // Salvar offline no IndexedDB (fotos já são URLs ou base64)
+      // Salvar offline no IndexedDB (fotos já são referências "bucket/caminho")
       await salvarOffline({ ...dadosDiario, fotos_offline: [] });
       toast.success("📴 Registro salvo offline — será sincronizado quando conectar");
     } else {
@@ -1037,8 +1040,8 @@ export default function DiarioObraTab({
                     <div className="grid grid-cols-4 gap-2 mt-2">
                       {editForm.fotos.map((foto, i) => (
                         <div key={i} className="relative group">
-                          <img
-                            src={foto}
+                          <ImgStorage
+                            referencia={foto}
                             alt={`Foto ${i + 1}`}
                             className="w-full h-24 object-cover rounded"
                           />
@@ -1415,8 +1418,8 @@ export default function DiarioObraTab({
                     <div className="grid grid-cols-4 gap-2 mt-3">
                       {novoDiario.fotos.map((foto, index) => (
                         <div key={index} className="relative group">
-                          <img
-                            src={foto}
+                          <ImgStorage
+                            referencia={foto}
                             alt={`Foto ${index + 1}`}
                             className="w-full h-24 object-cover rounded"
                           />
@@ -1562,9 +1565,9 @@ export default function DiarioObraTab({
                         <Label className="text-slate-600 text-sm">Fotos</Label>
                         <div className="grid grid-cols-4 gap-2 mt-2">
                           {fotosData.map((foto, index) => (
-                            <img
+                            <ImgStorage
                               key={index}
-                              src={foto}
+                              referencia={foto}
                               alt={`Foto ${index + 1}`}
                               className="w-full h-32 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
                               onClick={() =>

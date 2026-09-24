@@ -1,10 +1,16 @@
-import React from "react";
+import React, { useState } from "react";
 import { FileText, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import ImgStorage from "@/components/ImgStorage";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 
 export default function MessageList({ mensagens, loading, currentUserId, usuariosEmpresa }) {
+  // arquivo_url guarda a referência "bucket/caminho" (ou URL legada): o
+  // AnexoViewer assina na hora (URL assinada expira em 1h).
+  const [anexoAberto, setAnexoAberto] = useState(null);
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -96,8 +102,8 @@ export default function MessageList({ mensagens, loading, currentUserId, usuario
                     <div className="flex items-center gap-3">
                       {msg.arquivo_tipo?.includes("image") ? (
                         <div className="w-full">
-                          <img
-                            src={msg.arquivo_url}
+                          <ImgStorage
+                            referencia={msg.arquivo_url}
                             alt={msg.arquivo_nome}
                             className="max-w-full max-h-64 rounded"
                           />
@@ -127,7 +133,13 @@ export default function MessageList({ mensagens, loading, currentUserId, usuario
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => window.open(msg.arquivo_url, "_blank")}
+                            onClick={() =>
+                              setAnexoAberto({
+                                url: msg.arquivo_url,
+                                nome: msg.arquivo_nome,
+                                tipo: msg.arquivo_tipo,
+                              })
+                            }
                             className={isOwn ? "text-white hover:bg-amber-600" : ""}
                           >
                             <Download className="w-4 h-4" />
@@ -148,6 +160,12 @@ export default function MessageList({ mensagens, loading, currentUserId, usuario
           <p>Nenhuma mensagem ainda. Seja o primeiro a enviar!</p>
         </div>
       )}
+
+      <AnexoViewer
+        anexo={anexoAberto}
+        open={!!anexoAberto}
+        onOpenChange={(aberto) => !aberto && setAnexoAberto(null)}
+      />
     </div>
   );
 }

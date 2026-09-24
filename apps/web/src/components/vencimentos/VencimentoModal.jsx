@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { sigo } from "@/api/sigoClient";
+import { refDoUpload } from "@/lib/anexo-ref";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 import { toast } from "sonner";
 import { Upload, X } from "lucide-react";
 
@@ -61,8 +63,10 @@ export default function VencimentoModal({
   });
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [verArquivo, setVerArquivo] = useState(false);
 
   useEffect(() => {
+    setVerArquivo(false);
     if (vencimento) {
       setForm({ ...vencimento });
     } else {
@@ -87,8 +91,10 @@ export default function VencimentoModal({
     if (!file) return;
     setUploading(true);
     try {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-      setForm((f) => ({ ...f, arquivo_url: file_url, arquivo_nome: file.name }));
+      // grava a referência estável "bucket/path" (a URL assinada expira em 1h)
+      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+      if (!ref) throw new Error("Upload sem referência");
+      setForm((f) => ({ ...f, arquivo_url: ref, arquivo_nome: file.name }));
       toast.success("Arquivo anexado");
     } catch {
       toast.error("Erro ao anexar arquivo");
@@ -268,7 +274,7 @@ export default function VencimentoModal({
                     variant="ghost"
                     size="icon"
                     className="h-6 w-6 flex-shrink-0"
-                    onClick={() => window.open(form.arquivo_url, "_blank")}
+                    onClick={() => setVerArquivo(true)}
                   >
                     <Upload className="w-3 h-3 text-blue-500" />
                   </Button>
@@ -327,6 +333,13 @@ export default function VencimentoModal({
             {saving ? "Salvando..." : vencimento ? "Atualizar" : "Cadastrar"}
           </Button>
         </div>
+
+        {/* Visualizador do documento anexado (janela flutuante, portal no body) */}
+        <AnexoViewer
+          anexo={{ url: form.arquivo_url, nome: form.arquivo_nome }}
+          open={verArquivo && !!form.arquivo_url}
+          onOpenChange={setVerArquivo}
+        />
       </SheetContent>
     </Sheet>
   );

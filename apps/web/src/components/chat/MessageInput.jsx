@@ -1,6 +1,7 @@
 import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useRef } from "react";
 import { sigo } from "@/api/sigoClient";
+import { refDoUpload } from "@/lib/anexo-ref";
 import { Send, Paperclip, X, AtSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -52,11 +53,13 @@ export default function MessageInput({ onEnviar, usuariosEmpresa }) {
 
     setUploading(true);
     try {
-      const result = await sigo.integrations.Core.UploadFile({ file });
-      const url = result.file_url || result.url || result;
+      // mensagem_chat.arquivo_url guarda a REFERÊNCIA "bucket/caminho"
+      // (a file_url assinada expira em 1h); a MessageList resolve na hora.
+      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+      if (!ref) throw new Error("Upload sem referência do Storage");
 
       setArquivo({
-        url,
+        url: ref,
         nome: file.name,
         tipo: file.type,
       });

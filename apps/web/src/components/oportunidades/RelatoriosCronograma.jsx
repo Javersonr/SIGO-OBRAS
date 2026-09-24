@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FileText, Download, Printer } from "lucide-react";
+import { resolveStorageUrl } from "@/api/sigoClient";
 
 export default function RelatoriosCronograma({
   etapas = [],
@@ -342,11 +343,13 @@ export default function RelatoriosCronograma({
       doc.rect(0, 0, 297, 40, "F");
 
       // Logo (se existir) - com melhor qualidade
-      if (empresaAtiva?.logo_url) {
+      // logo_url = ref "bucket/caminho" → URL assinada na hora (Base44/sumido → sem logo)
+      const logoSrc = await resolveStorageUrl(empresaAtiva?.logo_url);
+      if (logoSrc) {
         try {
           const img = new Image();
           img.crossOrigin = "Anonymous";
-          img.src = empresaAtiva.logo_url;
+          img.src = logoSrc;
           await new Promise((resolve, reject) => {
             img.onload = () => resolve();
             img.onerror = () => reject();

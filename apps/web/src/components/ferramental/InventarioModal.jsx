@@ -1,5 +1,7 @@
 import React, { useState, useRef } from "react";
 import { sigo } from "@/api/sigoClient";
+import { refDoUpload } from "@/lib/anexo-ref";
+import ImgStorage from "@/components/ImgStorage";
 import jsQR from "jsqr";
 import SheetModalComponent from "@/components/ui/sheet-modal";
 import { Button } from "@/components/ui/button";
@@ -49,6 +51,8 @@ export default function InventarioModal({
   const [cameraAtiva, setCameraAtiva] = useState(false);
   const [capturando, setCapturando] = useState(false);
   const [fotoCapturada, setFotoCapturada] = useState(null);
+  // Referência "bucket/path" da foto capturada já enviada ao Storage (é o que se grava)
+  const [fotoRef, setFotoRef] = useState(null);
   const [localizacaoSelecionada, setLocalizacaoSelecionada] = useState("");
   const [itensInventario, setItensInventario] = useState([]);
   const [ferramentaIdentificada, setFerramentaIdentificada] = useState(null);
@@ -270,6 +274,7 @@ export default function InventarioModal({
       }
       setCameraAtiva(false);
       setFotoCapturada(fotoDataUrl);
+      setFotoRef(null);
       setBuscandoFerramenta(true);
       setStep("resultado");
       setCapturando(false);
@@ -282,10 +287,13 @@ export default function InventarioModal({
           const file = new File([blob], "inventario.jpg", { type: "image/jpeg" });
 
           const uploadRes = await sigo.integrations.Core.UploadFile({ file });
-          const fotoUrl = uploadRes.file_url;
+          // Referência estável "bucket/path" (a URL assinada expira em 1h e a IA lê refs)
+          const ref = refDoUpload(uploadRes);
+          if (!ref) throw new Error("Falha no upload");
+          setFotoRef(ref);
 
           const buscarRes = await sigo.functions.invoke("buscarFerramentaPorFoto", {
-            fotoUrl,
+            fotoUrl: ref,
             empresaAtiva,
           });
 
@@ -362,7 +370,8 @@ export default function InventarioModal({
         localizacao: localizacaoSelecionada,
         usuario_email: user?.email,
         usuario_nome: user?.full_name,
-        foto_url: fotoCapturada,
+        // grava a referência do Storage (não o base64 nem URL assinada)
+        foto_url: fotoCapturada ? fotoRef || null : null,
         tipo_operacao: "Entrada",
         confianca_ia: ferramentaIdentificada.confianca,
         metodo_identificacao: modoCaptura === "qrcode" ? "QR Code" : "Foto",
@@ -768,8 +777,8 @@ export default function InventarioModal({
                   >
                     <div className="flex gap-3">
                       {ferr.foto_url && (
-                        <img
-                          src={ferr.foto_url}
+                        <ImgStorage
+                          referencia={ferr.foto_url}
                           alt={ferr.descricao}
                           className="w-16 h-16 object-contain rounded border"
                         />
@@ -837,8 +846,8 @@ export default function InventarioModal({
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <p className="text-xs text-slate-600 mb-1">Banco</p>
-                    <img
-                      src={ferramentaIdentificada.foto_url}
+                    <ImgStorage
+                      referencia={ferramentaIdentificada.foto_url}
                       alt="Referência"
                       className="w-full h-24 object-contain rounded border"
                     />
@@ -1006,7 +1015,7 @@ export default function InventarioModal({
         <CadastroNovaFerramentaModal
           open={showCadastroNova}
           onOpenChange={setShowCadastroNova}
-          fotoUrl={fotoCapturada}
+          fotoUrl={fotoRef || fotoCapturada}
           tipoIdentificado={tipoIdentificado}
           onCadastrar={handleCadastroNovaFerramenta}
           onCancelar={() => {

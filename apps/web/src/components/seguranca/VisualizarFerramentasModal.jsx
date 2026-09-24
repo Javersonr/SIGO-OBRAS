@@ -6,6 +6,7 @@ import { Download, Settings, Send, Loader2 } from "lucide-react";
 import EPIEditorPanel from "./EPIEditorPanel";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import ImgStorage from "@/components/ImgStorage";
 import { toast } from "sonner";
 
 export default function VisualizarFerramentasModal({
@@ -261,8 +262,9 @@ export default function VisualizarFerramentasModal({
       >
         <div style={{ minWidth: "80px" }}>
           {empresaAtiva?.logo_url && (
-            <img
-              src={empresaAtiva.logo_url}
+            <ImgStorage
+              referencia={empresaAtiva.logo_url}
+              fallback={null}
               alt="Logo"
               style={{
                 maxHeight: `${settings.alturaLogo * 2}px`,
@@ -536,9 +538,11 @@ export default function VisualizarFerramentasModal({
                   }}
                 >
                   {moviStr?.assinatura_url && (
-                    <img
-                      src={moviStr.assinatura_url}
+                    // ref "bucket/path" → URL assinada; indisponível não imprime nada
+                    <ImgStorage
+                      referencia={moviStr.assinatura_url}
                       alt="Assinatura"
+                      fallback={null}
                       style={{ maxHeight: "30px", maxWidth: "100%" }}
                     />
                   )}

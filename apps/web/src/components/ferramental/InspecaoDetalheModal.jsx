@@ -40,6 +40,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import FotografarFerramentaStep from "./FotografarFerramentaStep";
+import ImgStorage from "@/components/ImgStorage";
 import HistoricoInspecaoTab from "./HistoricoInspecaoTab";
 
 export default function InspecaoDetalheModal({
@@ -591,8 +592,8 @@ export default function InspecaoDetalheModal({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm font-semibold text-slate-700 mb-2">📸 Foto de Referência</p>
-                  <img
-                    src={mostrarComparacao.fotoReferencia}
+                  <ImgStorage
+                    referencia={mostrarComparacao.fotoReferencia}
                     alt="Referência"
                     className="w-full h-64 object-contain rounded-lg bg-slate-100 border cursor-pointer hover:opacity-90"
                     onClick={() => setMostrarExpandida(mostrarComparacao.fotoReferencia)}
@@ -600,8 +601,8 @@ export default function InspecaoDetalheModal({
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-slate-700 mb-2">✓ Foto Capturada</p>
-                  <img
-                    src={mostrarComparacao.fotoCapturada}
+                  <ImgStorage
+                    referencia={mostrarComparacao.fotoCapturada}
                     alt="Capturada"
                     className="w-full h-64 object-contain rounded-lg bg-slate-100 border cursor-pointer hover:opacity-90"
                     onClick={() => setMostrarExpandida(mostrarComparacao.fotoCapturada)}
@@ -625,8 +626,8 @@ export default function InspecaoDetalheModal({
           onClick={() => setMostrarExpandida(null)}
         >
           <div className="relative max-w-2xl max-h-[90vh] w-full h-full">
-            <img
-              src={mostrarExpandida}
+            <ImgStorage
+              referencia={mostrarExpandida}
               alt="Foto expandida"
               className="w-full h-full object-contain"
             />

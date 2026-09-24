@@ -4,6 +4,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Download, Settings } from "lucide-react";
 import EPIEditorPanel from "./EPIEditorPanel";
 import { safeParseJSON } from "@/lib/json-utils";
+import ImgStorage from "@/components/ImgStorage";
 
 export default function VisualizarAutorizacaoFormalModal({
   open,
@@ -204,10 +205,11 @@ export default function VisualizarAutorizacaoFormalModal({
                 }}
               >
                 {empresaAtiva?.logo_url && (
-                  <img
-                    src={empresaAtiva.logo_url}
+                  <ImgStorage
+                    referencia={empresaAtiva.logo_url}
                     alt="Logo"
                     style={{ height: "40px", width: "auto", objectFit: "contain" }}
+                    fallback={null}
                   />
                 )}
                 <div style={{ textAlign: "center", flex: 1 }}>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { sigo } from "@/api/sigoClient";
+import { refDoUpload } from "@/lib/anexo-ref";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -83,8 +84,10 @@ export default function CertificadoTab({ empresaAtiva }) {
 
     setEnviando(true);
     try {
-      // 1) Upload do arquivo
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file: arquivo });
+      // 1) Upload do arquivo — grava a referência estável "bucket/path"
+      // (a URL assinada expira em 1h; o worker baixa pelo Storage a partir da ref)
+      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file: arquivo }));
+      if (!ref) throw new Error("Upload sem referência");
 
       // 2) Marcar certificados antigos como inativos
       for (const c of certs.filter((x) => x.ativo)) {
@@ -99,7 +102,7 @@ export default function CertificadoTab({ empresaAtiva }) {
       await sigo.entities.CertificadoEmpresa.create({
         empresa_id: empresaAtiva.id,
         nome_arquivo: arquivo.name,
-        arquivo_url: file_url,
+        arquivo_url: ref,
         senha_encriptada: senha, // TODO: criptografar via RPC pgp_sym_encrypt
         tipo: "A1",
         data_emissao: new Date().toISOString().slice(0, 10),

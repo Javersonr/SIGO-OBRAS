@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, resolveStorageUrl } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
 import { Printer, Filter, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -80,9 +80,13 @@ export default function RelatorioFuncao({ empresaAtiva }) {
     totalItens: funcionariosFiltered.reduce((sum, f) => sum + f.itens.length, 0),
   };
 
-  const handleImprimirFicha = (funcionario) => {
+  const handleImprimirFicha = async (funcionario) => {
+    // Abre a janela ANTES do await (senão o bloqueador de pop-up barra); o logo
+    // é a ref "bucket/caminho" → URL assinada na hora (Base44/sumido → sem logo)
+    const printWindow = window.open("", "", "height=800,width=1200");
+    if (!printWindow) return;
     const funcaoObj = funcoes.find((f) => f.id === funcionario.funcao_id);
-    const logoUrl = empresaAtiva?.logo_url || "";
+    const logoUrl = (await resolveStorageUrl(empresaAtiva?.logo_url)) || "";
 
     const itensFiltrados = [...funcionario.itens].sort((a, b) =>
       (a.ferramenta || a.descricao || "").localeCompare(b.ferramenta || b.descricao || "")
@@ -125,7 +129,6 @@ export default function RelatorioFuncao({ empresaAtiva }) {
       ? funcionario.data_admissao.split("-").reverse().join("/")
       : "";
 
-    const printWindow = window.open("", "", "height=800,width=1200");
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>

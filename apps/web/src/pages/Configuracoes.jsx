@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { sigo } from "@/api/sigoClient";
+import { refDoUpload } from "@/lib/anexo-ref";
 import { useEmpresa } from "../Layout";
 import { safeParseJSON } from "@/lib/json-utils";
 import { Plus, Trash2 } from "lucide-react";
@@ -234,8 +235,13 @@ export default function Configuracoes() {
     if (!file) return;
     setUploadingLogo(true);
     try {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-      setEmpresaData({ ...empresaData, logo_url: file_url });
+      // grava a referência estável "bucket/path" (a URL assinada expira em 1h);
+      // bucket explícito: o nome do arquivo nem sempre tem "logo"
+      const ref = refDoUpload(
+        await sigo.integrations.Core.UploadFile({ file, bucket: "logos-empresa" })
+      );
+      if (!ref) throw new Error("Upload sem referência");
+      setEmpresaData({ ...empresaData, logo_url: ref });
       toast.success("✅ Logo enviado com sucesso", { duration: 3000 });
     } catch (error) {
       console.error("Erro ao fazer upload:", error);

@@ -17,6 +17,7 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import ImgStorage from "@/components/ImgStorage";
 
 export default function InspecaoCaminhaoCampoModal({
   open,
@@ -261,13 +262,19 @@ export default function InspecaoCaminhaoCampoModal({
                         </div>
                       </div>
                       {f.foto_url && (
-                        <img
-                          src={f.foto_url}
-                          alt={f.descricao}
-                          className="w-16 h-16 rounded object-cover cursor-pointer hover:opacity-80"
+                        // botão por fora: continua selecionável mesmo com a foto indisponível
+                        <button
+                          type="button"
                           onClick={() => setFotoReferencia(f.foto_url)}
                           title="Clique para usar como referência"
-                        />
+                          className="flex-shrink-0"
+                        >
+                          <ImgStorage
+                            referencia={f.foto_url}
+                            alt={f.descricao}
+                            className="w-16 h-16 rounded object-cover cursor-pointer hover:opacity-80"
+                          />
+                        </button>
                       )}
                     </div>
                   </Card>
@@ -282,8 +289,8 @@ export default function InspecaoCaminhaoCampoModal({
             <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center">
               {fotoReferencia ? (
                 <div className="relative">
-                  <img
-                    src={fotoReferencia}
+                  <ImgStorage
+                    referencia={fotoReferencia}
                     alt="Referência"
                     className="max-w-full h-auto rounded mx-auto"
                   />

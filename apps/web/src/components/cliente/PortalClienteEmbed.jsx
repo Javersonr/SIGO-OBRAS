@@ -14,7 +14,12 @@ import {
   Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { ehBase44 } from "@/lib/anexo-ref";
+import { baixarAnexo } from "@/lib/baixar-anexo";
 import RelatorioObra from "@/components/cliente/RelatorioObra";
+import ImgStorage from "@/components/ImgStorage";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 
 export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
   const [loading, setLoading] = useState(true);
@@ -25,6 +30,7 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
   const [arquivos, setArquivos] = useState([]);
   const [anotacoes, setAnotacoes] = useState([]);
   const [diarios, setDiarios] = useState([]);
+  const [anexoVisualizacao, setAnexoVisualizacao] = useState(null);
 
   useEffect(() => {
     if (projetoId && empresaAtiva) {
@@ -127,6 +133,15 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
       value || 0
     );
+  };
+
+  // Anexos ficam como ref "bucket/caminho": assina com a sessão na hora de baixar
+  const handleBaixarArquivo = async (arquivo) => {
+    if (!(await baixarAnexo(arquivo.url, arquivo.nome))) {
+      toast.error(
+        ehBase44(arquivo.url) ? "Arquivo do sistema antigo, indisponível" : "Arquivo indisponível"
+      );
+    }
   };
 
   const getClimaIcon = (clima) => {
@@ -318,12 +333,18 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
                             <p className="text-sm font-medium text-slate-600 mb-2">Fotos</p>
                             <div className="grid grid-cols-4 gap-2">
                               {fotosData.map((foto, idx) => (
-                                <img
+                                <ImgStorage
                                   key={idx}
-                                  src={foto}
+                                  referencia={foto}
                                   alt={`Foto ${idx + 1}`}
                                   className="w-full h-32 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
-                                  onClick={() => window.open(foto, "_blank")}
+                                  onClick={() =>
+                                    setAnexoVisualizacao({
+                                      url: foto,
+                                      nome: `Foto ${idx + 1}`,
+                                      tipo: "image/jpeg",
+                                    })
+                                  }
                                 />
                               ))}
                             </div>
@@ -368,7 +389,8 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => window.open(arquivo.url, "_blank")}
+                          onClick={() => handleBaixarArquivo(arquivo)}
+                          title="Baixar"
                         >
                           <Download className="w-4 h-4" />
                         </Button>
@@ -419,6 +441,12 @@ export default function PortalClienteEmbed({ projetoId, empresaAtiva }) {
           )}
         </div>
       </main>
+
+      <AnexoViewer
+        anexo={anexoVisualizacao}
+        open={!!anexoVisualizacao}
+        onOpenChange={(aberto) => !aberto && setAnexoVisualizacao(null)}
+      />
     </div>
   );
 }

@@ -3,7 +3,32 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Button } from "@/components/ui/button";
 import { FileText, Eye, Download } from "lucide-react";
 import { format } from "date-fns";
+import { toast } from "sonner";
+import { resolveStorageUrl } from "@/api/sigoClient";
+import { ehBase44 } from "@/lib/anexo-ref";
 import VisualizadorDocumentoModal from "./VisualizadorDocumentoModal";
+
+/** Baixa o documento: `url` é a referência "bucket/caminho" (ou URL legada). */
+async function baixarDocumento(doc) {
+  const nome = doc.nome_arquivo || doc.nome || "documento";
+  const url = await resolveStorageUrl(doc.url);
+  if (!url) {
+    toast.error(
+      ehBase44(doc.url) ? "Arquivo do sistema antigo, indisponível" : "Arquivo indisponível"
+    );
+    return;
+  }
+  // URL assinada do Storage aceita &download= (força o download sem sair da página)
+  const assinada = /[?&]token=/.test(url);
+  const link = document.createElement("a");
+  link.href = assinada ? `${url}&download=${encodeURIComponent(nome)}` : url;
+  link.download = nome;
+  if (!assinada) {
+    link.target = "_blank";
+    link.rel = "noopener";
+  }
+  link.click();
+}
 
 export default function HistoricoDocumentosModal({ open, onOpenChange, documentos, tipo }) {
   const [documentoSelecionado, setDocumentoSelecionado] = useState(null);
@@ -70,12 +95,7 @@ export default function HistoricoDocumentosModal({ open, onOpenChange, documento
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        const link = document.createElement("a");
-                        link.href = doc.url;
-                        link.download = doc.nome_arquivo || doc.nome || "documento";
-                        link.click();
-                      }}
+                      onClick={() => baixarDocumento(doc)}
                       title="Baixar"
                     >
                       <Download className="w-4 h-4" />

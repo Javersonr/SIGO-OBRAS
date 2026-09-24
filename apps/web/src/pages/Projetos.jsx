@@ -60,6 +60,8 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import * as XLSX from "xlsx";
 import AnexoViewer from "../components/shared/AnexoViewer";
 import CriarMaterialModal from "../components/materiais/CriarMaterialModal";
+import { ehBase44, refDoUpload } from "@/lib/anexo-ref";
+import { baixarAnexo } from "@/lib/baixar-anexo";
 
 export default function Projetos() {
   const navigate = useNavigate();
@@ -316,13 +318,15 @@ export default function Projetos() {
     setUploadingFile(true);
     try {
       const uploadResult = await sigo.integrations.Core.UploadFile({ file });
-      const fileUrl = uploadResult.file_url || uploadResult.url || uploadResult;
+      // grava a ref "bucket/caminho": a file_url assinada expira em 1h
+      const ref = refDoUpload(uploadResult);
+      if (!ref) throw new Error("Upload sem referência do arquivo");
 
       await sigo.entities.ArquivoOportunidade.create({
         empresa_id: empresaAtiva.id,
         projeto_id: selectedProj.id,
         nome: file.name,
-        url: fileUrl,
+        url: ref,
         tipo: file.type,
         tamanho: file.size,
         usuario_nome: user?.full_name || user?.email || "Usuário",
@@ -341,6 +345,15 @@ export default function Projetos() {
   const handleViewFile = (arquivo) => {
     setArquivoPreview(arquivo);
     setShowPreviewArquivo(true);
+  };
+
+  // arquivo.url é a ref "bucket/caminho" (ou link externo): assina na hora
+  const handleBaixarArquivo = async (arquivo) => {
+    if (!(await baixarAnexo(arquivo.url, arquivo.nome))) {
+      alert(
+        ehBase44(arquivo.url) ? "Arquivo do sistema antigo, indisponível" : "Arquivo indisponível"
+      );
+    }
   };
 
   const handleDeleteArquivo = async (arquivoId) => {
@@ -1522,7 +1535,7 @@ export default function Projetos() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => window.open(arquivo.url, "_blank")}
+                                onClick={() => handleBaixarArquivo(arquivo)}
                               >
                                 <Download className="w-4 h-4" />
                               </Button>

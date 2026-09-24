@@ -5,12 +5,32 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Printer } from "lucide-react";
 import AnexoViewer from "@/components/shared/AnexoViewer";
-import { gerarRelatorioDiarioPDF } from "./RelatorioPDFDiario";
+import ImgStorage from "@/components/ImgStorage";
+import { resolveStorageUrl } from "@/api/sigoClient";
+import {
+  gerarRelatorioDiarioPDF,
+  resolverFotosDiario,
+  fotoIndisponivelHTML,
+} from "./RelatorioPDFDiario";
 
 export default function VisualizarDiarioModal({ diario, open, onOpenChange, empresaAtiva }) {
   const [anexoViewer, setAnexoViewer] = useState({ open: false, anexo: null });
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    // abre a janela ANTES de qualquer await (senão o bloqueador de pop-up barra)
+    const janela = window.open("", "_blank");
+    if (!janela) return;
+
+    // Fotos e logo guardam a referência do Storage: URL assinada fresca para imprimir
+    const [fotosResolvidas, logoSrc] = await Promise.all([
+      resolverFotosDiario(fotosData),
+      empresaAtiva?.logo_url ? resolveStorageUrl(empresaAtiva.logo_url) : null,
+    ]);
+    const fotoHTML = (foto, idx, estilo) =>
+      foto.url
+        ? `<img src="${foto.url}" alt="Foto ${idx + 1}" style="${estilo}" />`
+        : fotoIndisponivelHTML(foto.legado, "height:80px;");
+
     const dataFormatada = new Date(diario.data).toLocaleDateString("pt-BR");
     const diaS = new Date(diario.data).toLocaleDateString("pt-BR", { weekday: "long" });
 
@@ -29,14 +49,14 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
         <tr><td colspan="2" style="background:#fbbf24;font-weight:bold;padding:6px 10px;border:1px solid #ccc;">Fotos (${fotosData.length})</td></tr>
         <tr><td colspan="2" style="border:1px solid #ccc;padding:10px;">
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-            ${fotosData.map((foto, idx) => `<div style="page-break-inside:avoid;"><img src="${foto}" alt="Foto ${idx + 1}" style="width:100%;height:auto;display:block;border:1px solid #ddd;border-radius:4px;" /></div>`).join("")}
+            ${fotosResolvidas.map((foto, idx) => `<div style="page-break-inside:avoid;">${fotoHTML(foto, idx, "width:100%;height:auto;display:block;border:1px solid #ddd;border-radius:4px;")}</div>`).join("")}
           </div>
         </td></tr>
       `;
     }
 
-    const logoHTML = empresaAtiva?.logo_url
-      ? `<img src="${empresaAtiva.logo_url}" alt="Logo" style="max-height:80px;max-width:200px;" />`
+    const logoHTML = logoSrc
+      ? `<img src="${logoSrc}" alt="Logo" style="max-height:80px;max-width:200px;" />`
       : `<div style="font-size:22px;font-weight:bold;color:#1e3a8a;">${empresaAtiva?.nome_fantasia || empresaAtiva?.nome || ""}</div>`;
 
     const html = `<!DOCTYPE html>
@@ -162,15 +182,17 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
             ${(() => {
               // agrupar fotos em pares (2 por linha)
               const rows = [];
-              for (let i = 0; i < fotosData.length; i += 2) {
-                const f1 = fotosData[i];
-                const f2 = fotosData[i + 1];
+              const estiloFoto =
+                "width:80%;height:auto;display:block;border:1px solid #ddd;border-radius:4px;";
+              for (let i = 0; i < fotosResolvidas.length; i += 2) {
+                const f1 = fotosResolvidas[i];
+                const f2 = fotosResolvidas[i + 1];
                 rows.push(`<tr style="page-break-inside:avoid;">
                   <td style="border:1px solid #ccc;padding:6px;vertical-align:top;">
-                    <img src="${f1}" alt="Foto ${i + 1}" style="width:80%;height:auto;display:block;border:1px solid #ddd;border-radius:4px;" />
+                    ${fotoHTML(f1, i, estiloFoto)}
                   </td>
                   <td style="border:1px solid #ccc;padding:6px;vertical-align:top;width:50%;">
-                    ${f2 ? `<img src="${f2}" alt="Foto ${i + 2}" style="width:80%;height:auto;display:block;border:1px solid #ddd;border-radius:4px;" />` : ""}
+                    ${f2 ? fotoHTML(f2, i + 1, estiloFoto) : ""}
                   </td>
                 </tr>`);
               }
@@ -198,7 +220,6 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
 </body>
 </html>`;
 
-    const janela = window.open("", "_blank");
     janela.document.write(html);
     janela.document.close();
     setTimeout(() => {
@@ -250,7 +271,16 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
               {/* Logo e Título - esquerda */}
               <div className="flex-1 border-r border-slate-300 p-4 flex flex-col items-center justify-center">
                 {empresaAtiva?.logo_url ? (
-                  <img src={empresaAtiva.logo_url} alt="Logo" className="h-12 mb-2" />
+                  <ImgStorage
+                    referencia={empresaAtiva.logo_url}
+                    alt="Logo"
+                    className="h-12 mb-2"
+                    fallback={
+                      <div className="text-xl font-bold text-amber-600 mb-2">
+                        {empresaAtiva?.nome_fantasia || empresaAtiva?.nome}
+                      </div>
+                    }
+                  />
                 ) : (
                   <div className="text-xl font-bold text-amber-600 mb-2">
                     {empresaAtiva?.nome_fantasia || empresaAtiva?.nome}
@@ -458,8 +488,8 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
                         })
                       }
                     >
-                      <img
-                        src={foto}
+                      <ImgStorage
+                        referencia={foto}
                         alt={`Foto ${index + 1}`}
                         className="w-full h-full object-cover hover:scale-110 transition-transform"
                       />

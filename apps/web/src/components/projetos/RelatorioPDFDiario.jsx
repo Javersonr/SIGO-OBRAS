@@ -1,7 +1,47 @@
 import jsPDF from "jspdf";
 import { safeParseJSON } from "@/lib/json-utils";
+import { resolveStorageUrl } from "@/api/sigoClient";
+import { ehBase44 } from "@/lib/anexo-ref";
 
-export function gerarRelatorioDiarioPDF(diario, empresaAtiva) {
+/**
+ * Fotos do diário guardam a referência "bucket/caminho" (ou URL legada):
+ * gera uma URL assinada fresca na hora de imprimir/gerar PDF.
+ * → [{ url, legado }] — url null = arquivo indisponível (Base44/sumiu).
+ */
+export async function resolverFotosDiario(fotos) {
+  return Promise.all(
+    (fotos || []).map(async (ref) => ({
+      url: await resolveStorageUrl(ref),
+      legado: ehBase44(ref),
+    }))
+  );
+}
+
+/** Caixa (HTML de impressão) no lugar da foto que não dá para mostrar. */
+export function fotoIndisponivelHTML(legado, estiloExtra = "") {
+  const texto = legado ? "Arquivo do sistema antigo, indisponível" : "Arquivo indisponível";
+  return `<div style="display:flex;align-items:center;justify-content:center;text-align:center;background:#f1f5f9;color:#94a3b8;border:1px solid #ddd;border-radius:4px;font-size:10px;padding:6px;${estiloExtra}">${texto}</div>`;
+}
+
+/** Foto do diário → { dataUrl, formato } para o jsPDF (null se indisponível). */
+async function fotoParaPdf(url) {
+  if (!url) return null;
+  try {
+    const blob = await (await fetch(url)).blob();
+    const dataUrl = await new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => res(fr.result);
+      fr.onerror = rej;
+      fr.readAsDataURL(blob);
+    });
+    const formato = /png/i.test(blob.type) ? "PNG" : /webp/i.test(blob.type) ? "WEBP" : "JPEG";
+    return { dataUrl, formato };
+  } catch {
+    return null;
+  }
+}
+
+export async function gerarRelatorioDiarioPDF(diario, empresaAtiva) {
   try {
     const doc = new jsPDF("p", "mm", "a4");
     const larguraTotal = 190;
@@ -137,15 +177,31 @@ export function gerarRelatorioDiarioPDF(diario, empresaAtiva) {
           doc.text(`Fotos (${fotos.length})`, 22, y + 5);
           y += 12;
 
+          // Fotos guardam a referência do Storage: URL assinada fresca → dataURL
+          const resolvidas = await resolverFotosDiario(fotos.slice(0, 6));
+          const imagens = await Promise.all(resolvidas.map((f) => fotoParaPdf(f.url)));
+          const indisponiveis = imagens.filter((img) => !img).length;
+          if (indisponiveis > 0) {
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9);
+            doc.text(
+              `${indisponiveis} foto(s) indisponível(is) (arquivo do sistema antigo ou removido)`,
+              22,
+              y
+            );
+            y += 6;
+          }
+
           // Adicionar miniaturas das fotos (até 2 por linha)
           let fotasAdicionadas = 0;
-          fotos.slice(0, 6).forEach((foto, idx) => {
+          imagens.forEach((img) => {
+            if (!img) return;
             if (y > 250) {
               doc.addPage();
               y = 20;
             }
             try {
-              doc.addImage(foto, "JPEG", 20 + (idx % 2) * 95, y, 85, 60);
+              doc.addImage(img.dataUrl, img.formato, 20 + (fotasAdicionadas % 2) * 95, y, 85, 60);
               fotasAdicionadas++;
               if (fotasAdicionadas % 2 === 0) y += 65;
             } catch (e) {
@@ -167,9 +223,36 @@ export function gerarRelatorioDiarioPDF(diario, empresaAtiva) {
   }
 }
 
-export function imprimirDiario(diario, empresaAtiva) {
+export async function imprimirDiario(diario, empresaAtiva) {
   try {
+    // abre a janela ANTES de qualquer await (senão o bloqueador de pop-up barra)
     const janela = window.open("", "_blank");
+
+    // Fotos guardam a referência do Storage: URL assinada fresca para imprimir
+    let fotosHTML = "";
+    const fotos = diario.fotos ? safeParseJSON(diario.fotos, []) : [];
+    if (Array.isArray(fotos) && fotos.length > 0) {
+      const resolvidas = await resolverFotosDiario(fotos.slice(0, 10));
+      fotosHTML = `
+                      <h3>Fotos (${fotos.length})</h3>
+                      <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 12px;">
+                        ${resolvidas
+                          .map(
+                            (foto, idx) => `
+                          <div>
+                            ${
+                              foto.url
+                                ? `<img src="${foto.url}" alt="Foto ${idx + 1}" style="width: 100%; height: 60px; object-fit: cover; border: 1px solid #ddd; border-radius: 2px;" />`
+                                : fotoIndisponivelHTML(foto.legado, "height: 60px;")
+                            }
+                          </div>
+                        `
+                          )
+                          .join("")}
+                      </div>
+                    `;
+    }
+
     const dataFormatada = new Date(diario.data).toLocaleDateString("pt-BR");
     const diaS = new Date(diario.data).toLocaleDateString("pt-BR", { weekday: "long" });
 
@@ -328,34 +411,7 @@ export function imprimirDiario(diario, empresaAtiva) {
             ${maoDeObraHTML}
 
             <!-- Fotos -->
-            ${(() => {
-              let fotosHTML = "";
-              if (diario.fotos) {
-                try {
-                  const fotos = safeParseJSON(diario.fotos, []);
-                  if (Array.isArray(fotos) && fotos.length > 0) {
-                    fotosHTML = `
-                      <h3>Fotos (${fotos.length})</h3>
-                      <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 12px;">
-                        ${fotos
-                          .slice(0, 10)
-                          .map(
-                            (foto, idx) => `
-                          <div>
-                            <img src="${foto}" alt="Foto ${idx + 1}" style="width: 100%; height: 60px; object-fit: cover; border: 1px solid #ddd; border-radius: 2px;" />
-                          </div>
-                        `
-                          )
-                          .join("")}
-                      </div>
-                    `;
-                  }
-                } catch (e) {
-                  console.error("Erro ao processar fotos:", e);
-                }
-              }
-              return fotosHTML;
-            })()}
+            ${fotosHTML}
 
             <!-- Assinatura -->
             <div style="margin-top: 20px; text-align: center;">

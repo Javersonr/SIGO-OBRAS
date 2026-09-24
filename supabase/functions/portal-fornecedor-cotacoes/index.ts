@@ -8,11 +8,13 @@
  *
  * Entrada:  { portal_token }
  * Resposta: { success, empresa, fornecedor, cotacoes: [{ ...cotacao, participacao }] }
+ *   empresa.logo_url_assinada = URL pronta do logo; null → mostrar só o nome.
  */
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { verifyPortalToken } from "../_shared/portal-token.ts";
+import { comLogoAssinado } from "../_shared/storage-assinar.ts";
 
 // deno-lint-ignore no-explicit-any
 function withCreatedDate(row: any) {
@@ -93,6 +95,10 @@ Deno.serve(
         );
     }
 
-    return ok({ empresa: empresa ?? null, fornecedor: fornecedor ?? null, cotacoes });
+    return ok({
+      empresa: await comLogoAssinado(supabase, empresa ?? null),
+      fornecedor: fornecedor ?? null,
+      cotacoes,
+    });
   })
 );

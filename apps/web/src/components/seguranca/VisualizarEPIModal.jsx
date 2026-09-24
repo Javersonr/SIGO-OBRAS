@@ -7,6 +7,7 @@ import EPIEditorPanel from "./EPIEditorPanel";
 import ImportarTreinamentosZip from "./ImportarTreinamentosZip";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import ImgStorage from "@/components/ImgStorage";
 import { toast } from "sonner";
 
 export default function VisualizarEPIModal({
@@ -311,8 +312,9 @@ export default function VisualizarEPIModal({
       >
         <div style={{ minWidth: "80px" }}>
           {empresaAtiva?.logo_url && (
-            <img
-              src={empresaAtiva.logo_url}
+            <ImgStorage
+              referencia={empresaAtiva.logo_url}
+              fallback={null}
               alt="Logo"
               style={{
                 maxHeight: `${settings.alturaLogo * 2}px`,

@@ -1,5 +1,6 @@
 import { normalizarTexto } from "@/lib/busca";
 import { toast } from "sonner";
+import { resolveStorageUrl } from "@/api/sigoClient";
 
 export async function exportarLaudos(ferramentas, caminhoes, onProgress) {
   const ferramentasComLaudo = ferramentas.filter((f) => f.laudo_url);
@@ -13,6 +14,8 @@ export async function exportarLaudos(ferramentas, caminhoes, onProgress) {
 
   const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
+  // Laudos sem arquivo para baixar (Base44 apagado / objeto sumido do Storage)
+  let indisponiveis = 0;
 
   for (let i = 0; i < ferramentasComLaudo.length; i++) {
     const ferr = ferramentasComLaudo[i];
@@ -37,7 +40,17 @@ export async function exportarLaudos(ferramentas, caminhoes, onProgress) {
     }
 
     try {
-      const resp = await fetch(ferr.laudo_url);
+      // laudo_url guarda a referência "bucket/path": gera URL assinada fresca
+      const url = await resolveStorageUrl(ferr.laudo_url);
+      if (!url) {
+        indisponiveis++;
+        continue;
+      }
+      const resp = await fetch(url);
+      if (!resp.ok) {
+        indisponiveis++;
+        continue;
+      }
       const blob = await resp.blob();
       const ext = normalizarTexto(ferr.laudo_url).includes(normalizarTexto(".pdf")) ? "pdf" : "jpg";
       const descricaoSanitizada = (ferr.descricao || "laudo").replace(/[/\\?%*:|"<>]/g, "-");
@@ -51,6 +64,12 @@ export async function exportarLaudos(ferramentas, caminhoes, onProgress) {
     }
   }
 
+  if (indisponiveis === total) {
+    onProgress?.(null);
+    toast.error("Arquivos dos laudos indisponíveis (sistema antigo ou removidos)");
+    return;
+  }
+
   onProgress?.({ atual: total, total, fase: "Compactando..." });
 
   const content = await zip.generateAsync({ type: "blob" }, (metadata) => {
@@ -61,5 +80,11 @@ export async function exportarLaudos(ferramentas, caminhoes, onProgress) {
   saveAs(content, `laudos_${new Date().toISOString().split("T")[0]}.zip`);
 
   onProgress?.(null);
-  toast.success("Laudos exportados com sucesso!");
+  if (indisponiveis > 0) {
+    toast.warning(
+      `Laudos exportados. ${indisponiveis} arquivo(s) indisponível(is) ficaram de fora (sistema antigo ou removidos).`
+    );
+  } else {
+    toast.success("Laudos exportados com sucesso!");
+  }
 }

@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { format, startOfDay, endOfDay, parseISO } from "date-fns";
 import { toast } from "sonner";
+import ImgStorage from "@/components/ImgStorage";
 
 const tipoAcaoConfig = {
   inspecao_iniciada: {
@@ -268,7 +269,11 @@ export default function HistoricoInspecaoTab({ inspecaoId, empresaId }) {
                   ✕
                 </Button>
               </div>
-              <img src={fotoSelecionada} alt="Foto do histórico" className="w-full rounded-lg" />
+              <ImgStorage
+                referencia={fotoSelecionada}
+                alt="Foto do histórico"
+                className="w-full rounded-lg"
+              />
             </div>
           </Card>
         </div>

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
+import { refDoUpload } from "@/lib/anexo-ref";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -38,11 +39,11 @@ export default function UploadDocumentosRHZip({
 
     try {
       // Upload do ZIP
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+      const res = await sigo.integrations.Core.UploadFile({ file });
 
-      // Processar com IA
+      // Processar com IA — passa a referência "bucket/caminho" (não a URL assinada)
       const response = await sigo.functions.invoke("verificarDocumentosRH", {
-        zipUrl: file_url,
+        zipRef: refDoUpload(res),
         funcionarioId,
         empresaId,
       });

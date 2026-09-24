@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
-import { safeUrl } from "@/lib/safe-url";
 import { safeParseJSON } from "@/lib/json-utils";
+import { refDoUpload } from "@/lib/anexo-ref";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,9 @@ export default function DocumentacaoTab({
   uploadingDoc,
   setUploadingDoc,
 }) {
+  // comprovante aberto na janela flutuante (url = ref "bucket/caminho" ou URL legada)
+  const [anexoAberto, setAnexoAberto] = useState(null);
+
   return (
     <div className="space-y-4 mt-4">
       <div className="grid grid-cols-2 gap-4">
@@ -280,15 +284,19 @@ export default function DocumentacaoTab({
                       </Label>
                       {dep.comprovante_escolar_url ? (
                         <div className="flex items-center gap-2 mt-1">
-                          <a
-                            href={safeUrl(dep.comprovante_escolar_url)}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAnexoAberto({
+                                url: dep.comprovante_escolar_url,
+                                nome: `${dep.nome || `Dependente ${idx + 1}`} - Comprovante Escolar`,
+                              })
+                            }
                             className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
                           >
                             <FileText className="w-3 h-3" />
                             Ver comprovante
-                          </a>
+                          </button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -327,11 +335,12 @@ export default function DocumentacaoTab({
                               if (!file) return;
                               setUploadingDoc(true);
                               try {
-                                const { file_url } = await sigo.integrations.Core.UploadFile({
+                                const res = await sigo.integrations.Core.UploadFile({
                                   file,
                                 });
                                 const deps = safeParseJSON(funcionarioForm.dependentes, []);
-                                deps[idx].comprovante_escolar_url = file_url;
+                                // grava a referência "bucket/caminho" (a URL assinada expira em 1h)
+                                deps[idx].comprovante_escolar_url = refDoUpload(res);
                                 setFuncionarioForm({
                                   ...funcionarioForm,
                                   dependentes: JSON.stringify(deps),
@@ -369,6 +378,12 @@ export default function DocumentacaoTab({
           Adicionar Dependente
         </Button>
       </div>
+
+      <AnexoViewer
+        anexo={anexoAberto}
+        open={!!anexoAberto}
+        onOpenChange={(aberto) => !aberto && setAnexoAberto(null)}
+      />
     </div>
   );
 }

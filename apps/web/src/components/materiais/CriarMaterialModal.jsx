@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { refDoUpload } from "@/lib/anexo-ref";
+import ImgStorage from "@/components/ImgStorage";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -122,8 +124,10 @@ export default function CriarMaterialModal({
     if (!file) return;
     setUploadingFoto(true);
     try {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-      setForm((prev) => ({ ...prev, foto_url: file_url }));
+      // grava a referência estável "bucket/path" (a URL assinada expira em 1h)
+      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+      if (!ref) throw new Error("Upload sem referência");
+      setForm((prev) => ({ ...prev, foto_url: ref }));
     } catch (error) {
       console.error("Erro ao fazer upload:", error);
     } finally {
@@ -174,8 +178,8 @@ export default function CriarMaterialModal({
             <div className="mt-2 flex items-start gap-4">
               {form.foto_url ? (
                 <div className="relative">
-                  <img
-                    src={form.foto_url}
+                  <ImgStorage
+                    referencia={form.foto_url}
                     alt="Material"
                     className="w-32 h-32 object-cover rounded-lg border"
                   />

@@ -1,6 +1,7 @@
 import { normalizarTexto } from "@/lib/busca";
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
+import { refDoUpload } from "@/lib/anexo-ref";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -123,8 +124,10 @@ export default function MateriaisTab({
     if (!file) return;
     setUploadingMaterialFoto(true);
     try {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-      setMaterialForm({ ...materialForm, foto_url: file_url });
+      // grava a referência estável "bucket/path" (a URL assinada expira em 1h)
+      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+      if (!ref) throw new Error("Upload sem referência");
+      setMaterialForm({ ...materialForm, foto_url: ref });
       toast.success("✅ Foto enviada");
     } catch (error) {
       console.error("Erro:", error);

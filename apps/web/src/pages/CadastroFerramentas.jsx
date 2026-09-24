@@ -24,6 +24,7 @@ import {
 import { Wrench, Search, Plus, Edit, Trash2, Image as ImageIcon, Filter } from "lucide-react";
 import { toast } from "sonner";
 import FerramentaModal from "@/components/ferramental/FerramentaModal";
+import ImgStorage from "@/components/ImgStorage";
 
 export default function CadastroFerramentas() {
   const { empresaAtiva } = useEmpresa();
@@ -302,8 +303,8 @@ export default function CadastroFerramentas() {
                       <TableCell>
                         {ferramenta.foto_url ? (
                           <div className="w-10 h-10 bg-slate-100 rounded flex items-center justify-center overflow-hidden">
-                            <img
-                              src={ferramenta.foto_url}
+                            <ImgStorage
+                              referencia={ferramenta.foto_url}
                               alt={ferramenta.descricao}
                               className="w-full h-full object-cover"
                             />

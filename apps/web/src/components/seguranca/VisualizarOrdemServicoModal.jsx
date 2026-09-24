@@ -5,6 +5,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Download, Settings } from "lucide-react";
 import OrdemServicoEditorPanel from "./OrdemServicoEditorPanel";
 import { safeParseJSON } from "@/lib/json-utils";
+import ImgStorage from "@/components/ImgStorage";
 
 export default function VisualizarOrdemServicoModal({
   open,
@@ -203,10 +204,11 @@ export default function VisualizarOrdemServicoModal({
                     }}
                   >
                     {empresaAtiva?.logo_url && (
-                      <img
-                        src={empresaAtiva.logo_url}
+                      <ImgStorage
+                        referencia={empresaAtiva.logo_url}
                         alt="Logo"
                         style={{ height: "114px", width: "auto", flexShrink: 0 }}
+                        fallback={null}
                       />
                     )}
                     <h1
@@ -475,10 +477,11 @@ export default function VisualizarOrdemServicoModal({
                     }}
                   >
                     {empresaAtiva?.logo_url && (
-                      <img
-                        src={empresaAtiva.logo_url}
+                      <ImgStorage
+                        referencia={empresaAtiva.logo_url}
                         alt="Logo"
                         style={{ height: "114px", width: "auto", flexShrink: 0 }}
+                        fallback={null}
                       />
                     )}
                     <h1

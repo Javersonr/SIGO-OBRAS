@@ -1,6 +1,7 @@
 import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, resolveStorageUrl } from "@/api/sigoClient";
+import { extensaoDoArquivo } from "@/lib/anexo-ref";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -98,22 +99,38 @@ export default function EstoqueCaminhaoTab({
     }
     toast.info(`Baixando ${ferrs.length} laudo(s)...`);
     const zip = new JSZip();
+    let incluidos = 0;
     await Promise.all(
       ferrs.map(async (ferr) => {
         try {
-          const response = await fetch(ferr.laudo_url);
+          // laudo_url = ref "bucket/caminho" (ou URL legada): assina na hora;
+          // Base44 apagado / objeto sumido → null (fica fora do ZIP)
+          const url = await resolveStorageUrl(ferr.laudo_url);
+          if (!url) return;
+          const response = await fetch(url);
+          if (!response.ok) return;
           const blob = await response.blob();
-          const ext = ferr.laudo_url.split(".").pop().split("?")[0] || "pdf";
+          const ext = extensaoDoArquivo(ferr.laudo_url) || "pdf";
           zip.file(
             `${(ferr.descricao || "ferramenta").replace(/[^a-zA-Z0-9 ]/g, "").trim()}_${ferr.numero_laudo || "sem_laudo"}.${ext}`,
             blob
           );
+          incluidos++;
         } catch {}
       })
     );
+    if (incluidos === 0) {
+      toast.error("Arquivos dos laudos indisponíveis (sistema antigo ou removidos)");
+      return;
+    }
     const zipBlob = await zip.generateAsync({ type: "blob" });
     saveAs(zipBlob, `laudos_${caminhao.placa}_${new Date().toISOString().split("T")[0]}.zip`);
-    toast.success("ZIP gerado com sucesso!");
+    const faltaram = ferrs.length - incluidos;
+    if (faltaram > 0) {
+      toast.warning(`ZIP gerado. ${faltaram} laudo(s) indisponível(is) ficaram de fora.`);
+    } else {
+      toast.success("ZIP gerado com sucesso!");
+    }
   };
 
   const handleEditCell = (ferr, field) => {

@@ -1,19 +1,11 @@
 import React, { useState } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Upload,
-  FileText,
-  Trash2,
-  Eye,
-  CheckCircle2,
-  Loader2,
-  AlertCircle,
-  X,
-  Download,
-} from "lucide-react";
+import { Upload, FileText, Trash2, Eye, CheckCircle2, Loader2, AlertCircle, X } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { refDoUpload } from "@/lib/anexo-ref";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
@@ -27,8 +19,8 @@ export default function CertificadoAssinadoModal({
   onDatasExtraidas,
 }) {
   const [uploading, setUploading] = useState(false);
-  const [viewerUrl, setViewerUrl] = useState(null);
-  const [viewerAnexoUrl, setViewerAnexoUrl] = useState(null);
+  // certificado aberto na janela flutuante (url = ref "bucket/caminho" ou URL legada)
+  const [anexoAberto, setAnexoAberto] = useState(null);
   const [analisando, setAnalisando] = useState(false);
   const [analiseResultado, setAnaliseResultado] = useState(null);
   const fileInputRef = React.useRef(null);
@@ -52,8 +44,7 @@ export default function CertificadoAssinadoModal({
       setAnalisando(false);
       setAnaliseResultado(null);
       setUploading(false);
-      setViewerUrl(null);
-      setViewerAnexoUrl(null);
+      setAnexoAberto(null);
     }
   }, [open]);
 
@@ -81,7 +72,9 @@ export default function CertificadoAssinadoModal({
     setUploading(true);
     setAnaliseResultado(null);
     try {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+      // referência estável "bucket/caminho" (a URL assinada expira em 1h)
+      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+      if (!ref) throw new Error("Falha no upload");
       toastIdRef.current = toast.loading("Analisando certificado com IA...");
       setAnalisando(true);
 
@@ -92,7 +85,7 @@ export default function CertificadoAssinadoModal({
       };
       try {
         const result = await sigo.functions.invoke("analisarCertificadoComGemini", {
-          file_url,
+          file_ref: ref,
           treinamento_id: treinamento.id,
           funcionario_id: funcionario.id,
         });
@@ -106,7 +99,7 @@ export default function CertificadoAssinadoModal({
         ...todosAnexos,
         {
           nome: `${treinamento.nome} - ${file.name}`,
-          url: file_url,
+          url: ref,
           treinamento_id: treinamento.id,
           treinamento_nome: treinamento.nome,
           data_upload: new Date().toISOString(),
@@ -156,48 +149,12 @@ export default function CertificadoAssinadoModal({
 
   return (
     <>
-      {/* Viewer de arquivo - FORA do Dialog principal para evitar aninhamento */}
-      <Dialog
-        open={!!viewerUrl}
-        onOpenChange={(val) => {
-          if (!val) {
-            setViewerUrl(null);
-            setViewerAnexoUrl(null);
-          }
-        }}
-      >
-        <DialogContent
-          className="p-0 flex flex-col max-w-5xl w-full h-[90vh]"
-          aria-describedby={undefined}
-        >
-          <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
-            <span className="font-medium text-sm">Visualizar Certificado</span>
-            {viewerAnexoUrl && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => {
-                  const l = document.createElement("a");
-                  l.href = viewerAnexoUrl;
-                  l.download = "certificado";
-                  l.click();
-                }}
-                title="Baixar"
-              >
-                <Download className="w-4 h-4" />
-              </Button>
-            )}
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <iframe
-              src={viewerUrl}
-              className="w-full h-full border-0"
-              title="Visualizar Certificado"
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Viewer de arquivo (janela flutuante) - resolve a ref e avisa se for do Base44 */}
+      <AnexoViewer
+        anexo={anexoAberto}
+        open={!!anexoAberto}
+        onOpenChange={(aberto) => !aberto && setAnexoAberto(null)}
+      />
 
       {/* Modal principal - usa Dialog, não Sheet, para não conflitar com Sheet pai */}
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -345,12 +302,7 @@ export default function CertificadoAssinadoModal({
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7"
-                          onClick={() => {
-                            setViewerUrl(
-                              `https://docs.google.com/viewer?url=${encodeURIComponent(anexo.url)}&embedded=true`
-                            );
-                            setViewerAnexoUrl(anexo.url);
-                          }}
+                          onClick={() => setAnexoAberto(anexo)}
                           title="Visualizar"
                         >
                           <Eye className="w-3.5 h-3.5 text-blue-500" />

@@ -2,6 +2,7 @@ import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import ImgStorage from "@/components/ImgStorage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1842,10 +1843,11 @@ export default function FuncaoModal({
                   <div className="pb-4 mb-6 border-b-4 border-black">
                     <div className="flex items-start justify-center gap-6 mb-4">
                       {empresaAtiva?.logo_url && (
-                        <img
-                          src={empresaAtiva.logo_url}
+                        <ImgStorage
+                          referencia={empresaAtiva.logo_url}
                           alt="Logo"
                           className="h-16 object-contain"
+                          fallback={null}
                         />
                       )}
                     </div>
@@ -2204,7 +2206,12 @@ export default function FuncaoModal({
                   {/* Logo e Título */}
                   <div className="flex items-start gap-6 pb-4 border-b-2 border-slate-800">
                     {empresaAtiva?.logo_url && (
-                      <img src={empresaAtiva.logo_url} alt="Logo" className="h-20 object-contain" />
+                      <ImgStorage
+                        referencia={empresaAtiva.logo_url}
+                        alt="Logo"
+                        className="h-20 object-contain"
+                        fallback={null}
+                      />
                     )}
                     <div className="flex-1 text-center">
                       <h2 className="text-sm font-bold">

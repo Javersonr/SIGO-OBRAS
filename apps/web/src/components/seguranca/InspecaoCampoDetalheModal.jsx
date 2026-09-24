@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, refDoStorage } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { refDoUpload } from "@/lib/anexo-ref";
+import ImgStorage from "@/components/ImgStorage";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +29,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+/**
+ * Referência "bucket/caminho" para a IA (ia-processar só lê refs do Storage).
+ * URL antiga do nosso Storage vira ref; outra URL (Base44 apagado) → null.
+ */
+const refParaIA = (valor) => {
+  if (!valor) return null;
+  return refDoStorage(valor) || (/^(https?:|data:|blob:)/i.test(valor) ? null : valor);
+};
+
 export default function InspecaoCampoDetalheModal({
   open,
   onOpenChange,
@@ -52,19 +63,20 @@ export default function InspecaoCampoDetalheModal({
     if (!file) return;
     setUploadingFoto(idx);
     try {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+      // grava a referência "bucket/caminho" (a URL assinada expira em 1h)
+      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
       const novosItens = [...itens];
       novosItens[idx] = {
         ...novosItens[idx],
-        foto_inspecao_url: file_url,
+        foto_inspecao_url: ref,
         status: "pendente",
         resultado_ia: "",
       };
       setItens(novosItens);
 
-      // Analisar com IA automaticamente se tiver foto de referência
-      if (novosItens[idx].foto_referencia_url) {
-        await analisarComIA(novosItens, idx, file_url);
+      // Analisar com IA automaticamente se tiver foto de referência (no nosso Storage)
+      if (refParaIA(novosItens[idx].foto_referencia_url)) {
+        await analisarComIA(novosItens, idx, ref);
       } else {
         await salvarItens(novosItens);
       }
@@ -76,14 +88,15 @@ export default function InspecaoCampoDetalheModal({
     }
   };
 
-  const analisarComIA = async (novosItens, idx, foto_url) => {
+  // foto_ref = referência "bucket/caminho" da foto da inspeção (as fotos vão anexas à IA)
+  const analisarComIA = async (novosItens, idx, foto_ref) => {
     setAnalisando(idx);
     try {
       const item = novosItens[idx];
-      const prompt = `Você é um inspetor de segurança do trabalho especialista. 
-Compare as duas fotos:
-1. Foto de REFERÊNCIA (estado esperado): ${item.foto_referencia_url}
-2. Foto da INSPEÇÃO (estado atual): ${foto_url}
+      const prompt = `Você é um inspetor de segurança do trabalho especialista.
+Compare as duas fotos anexas:
+1. Foto de REFERÊNCIA (estado esperado): a primeira imagem
+2. Foto da INSPEÇÃO (estado atual): a segunda imagem
 
 Item inspecionado: "${item.nome}"
 ${item.descricao ? `Descrição: ${item.descricao}` : ""}
@@ -94,7 +107,7 @@ Responda SOMENTE em JSON: {"status": "conforme" ou "nao_conforme", "descricao": 
 
       const resultado = await sigo.integrations.Core.InvokeLLM({
         prompt,
-        file_urls: [item.foto_referencia_url, foto_url],
+        file_urls: [refParaIA(item.foto_referencia_url), foto_ref],
         response_json_schema: {
           type: "object",
           properties: {
@@ -107,7 +120,7 @@ Responda SOMENTE em JSON: {"status": "conforme" ou "nao_conforme", "descricao": 
       const updated = [...novosItens];
       updated[idx] = {
         ...updated[idx],
-        foto_inspecao_url: foto_url,
+        foto_inspecao_url: foto_ref,
         status: resultado.status === "conforme" ? "conforme" : "nao_conforme",
         resultado_ia: resultado.descricao || "",
       };
@@ -389,8 +402,8 @@ Responda SOMENTE em JSON: {"status": "conforme" ou "nao_conforme", "descricao": 
                     <div className="flex-shrink-0 text-center">
                       <p className="text-xs text-slate-400 mb-1">Referência</p>
                       {item.foto_referencia_url ? (
-                        <img
-                          src={item.foto_referencia_url}
+                        <ImgStorage
+                          referencia={item.foto_referencia_url}
                           alt="Ref"
                           className="w-20 h-20 object-cover rounded-lg border"
                         />
@@ -406,8 +419,8 @@ Responda SOMENTE em JSON: {"status": "conforme" ou "nao_conforme", "descricao": 
                       <p className="text-xs text-slate-400 mb-1">Inspeção</p>
                       {item.foto_inspecao_url ? (
                         <div className="relative w-20 h-20">
-                          <img
-                            src={item.foto_inspecao_url}
+                          <ImgStorage
+                            referencia={item.foto_inspecao_url}
                             alt="Insp"
                             className="w-20 h-20 object-cover rounded-lg border"
                           />

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Printer } from "lucide-react";
 import { format } from "date-fns";
 import { safeParseJSON } from "@/lib/json-utils";
+import { resolveStorageUrl } from "@/api/sigoClient";
 
 export default function ImprimirFichaEntregaModal({ open, onOpenChange, entrega, empresaAtiva }) {
   const [tipoImpressao, setTipoImpressao] = useState("ambos"); // 'ambos', 'ferramentas', 'epis'
@@ -16,8 +17,12 @@ export default function ImprimirFichaEntregaModal({ open, onOpenChange, entrega,
   const ferramentas = itens.filter((i) => i.tipo !== "EPI");
   const epis = itens.filter((i) => i.tipo === "EPI");
 
-  const handleImprimirFerramentas = () => {
-    const logoUrl = empresaAtiva?.logo_url || "";
+  const handleImprimirFerramentas = async () => {
+    // Abre a janela ANTES do await (senão o bloqueador de pop-up barra); o logo
+    // é a ref "bucket/caminho" → URL assinada na hora (Base44/sumido → sem logo)
+    const pw = window.open("", "", "height=800,width=1200");
+    if (!pw) return;
+    const logoUrl = (await resolveStorageUrl(empresaAtiva?.logo_url)) || "";
     const linhasVazias = Math.max(0, 45 - ferramentas.length);
 
     const rowsHtml = ferramentas
@@ -58,7 +63,6 @@ export default function ImprimirFichaEntregaModal({ open, onOpenChange, entrega,
       ? format(new Date(entrega.data_entrega + "T12:00:00"), "dd/MM/yyyy")
       : "";
 
-    const pw = window.open("", "", "height=800,width=1200");
     pw.document.write(`
       <!DOCTYPE html>
       <html>
@@ -192,8 +196,11 @@ export default function ImprimirFichaEntregaModal({ open, onOpenChange, entrega,
     }
   };
 
-  const handleImprimirEPIs = () => {
-    const logoUrl = empresaAtiva?.logo_url || "";
+  const handleImprimirEPIs = async () => {
+    // Abre a janela ANTES do await (senão o bloqueador de pop-up barra)
+    const pw = window.open("", "", "height=800,width=1200");
+    if (!pw) return;
+    const logoUrl = (await resolveStorageUrl(empresaAtiva?.logo_url)) || "";
     const epicsPage1 = epis.slice(0, 45);
     const epicsPage2 = epis.slice(45);
 
@@ -314,7 +321,6 @@ export default function ImprimirFichaEntregaModal({ open, onOpenChange, entrega,
       `;
     };
 
-    const pw = window.open("", "", "height=800,width=1200");
     pw.document.write(`
       <!DOCTYPE html>
       <html>

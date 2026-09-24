@@ -1,7 +1,8 @@
 import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
-import { safeUrl } from "@/lib/safe-url";
+import { refDoUpload } from "@/lib/anexo-ref";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 import { useEmpresa } from "../Layout";
 import {
   Plus,
@@ -143,6 +144,7 @@ export default function Ferramental() {
   const [ferramentaDetalhe, setFerramentaDetalhe] = useState(null);
   const [showInventario, setShowInventario] = useState(false);
   const [uploadingLaudo, setUploadingLaudo] = useState(false);
+  const [laudoAberto, setLaudoAberto] = useState(null);
   const [showLaudoMassaModal, setShowLaudoMassaModal] = useState(false);
   const [salvandoLaudoMassa, setSalvandoLaudoMassa] = useState(false);
   const [laudoMassaObrigatorio, setLaudoMassaObrigatorio] = useState(true);
@@ -1690,14 +1692,14 @@ export default function Ferramental() {
                 <div className="flex items-center gap-2 p-2 border rounded-lg bg-slate-50">
                   <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
                   <span className="text-sm text-slate-700 truncate flex-1">Laudo anexado</span>
-                  <a
-                    href={safeUrl(formData.laudo_url)}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    title="Ver laudo"
+                    onClick={() => setLaudoAberto({ url: formData.laudo_url, nome: "Laudo" })}
                     className="text-blue-600 hover:text-blue-700"
                   >
-                    <Download className="w-4 h-4" />
-                  </a>
+                    <Eye className="w-4 h-4" />
+                  </button>
                   <button
                     onClick={() => setFormData({ ...formData, laudo_url: "" })}
                     className="text-red-500 hover:text-red-600"
@@ -1719,8 +1721,10 @@ export default function Ferramental() {
                       if (!file) return;
                       setUploadingLaudo(true);
                       try {
-                        const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-                        setFormData((prev) => ({ ...prev, laudo_url: file_url }));
+                        // Grava a referência estável "bucket/path" (a URL assinada expira em 1h)
+                        const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+                        if (!ref) throw new Error("Falha no upload");
+                        setFormData((prev) => ({ ...prev, laudo_url: ref }));
                         toast.success("Laudo anexado com sucesso");
                       } catch (err) {
                         toast.error("Erro ao enviar arquivo");
@@ -2263,6 +2267,13 @@ export default function Ferramental() {
         caminhoes={caminhoes}
         empresaAtiva={empresaAtiva}
         onRefresh={loadData}
+      />
+
+      {/* Visualizador do laudo (janela flutuante, portal no body) */}
+      <AnexoViewer
+        anexo={laudoAberto}
+        open={!!laudoAberto}
+        onOpenChange={(v) => !v && setLaudoAberto(null)}
       />
     </div>
   );

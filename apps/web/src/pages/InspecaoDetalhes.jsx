@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import ImgStorage from "@/components/ImgStorage";
 
 export default function InspecaoDetalhes() {
   const navigate = useNavigate();
@@ -212,8 +213,8 @@ export default function InspecaoDetalhes() {
                     onClick={() => setFotoExpandida(ferramenta.foto_url)}
                     className="cursor-pointer hover:opacity-80 transition-opacity"
                   >
-                    <img
-                      src={ferramenta.foto_url}
+                    <ImgStorage
+                      referencia={ferramenta.foto_url}
                       alt={ferramenta.descricao}
                       className="w-16 h-16 rounded-lg object-cover border-2 border-white shadow"
                     />
@@ -275,8 +276,8 @@ export default function InspecaoDetalhes() {
                           className="cursor-pointer hover:opacity-80 transition-opacity group"
                         >
                           <div className="relative">
-                            <img
-                              src={item.foto_url}
+                            <ImgStorage
+                              referencia={item.foto_url}
                               alt={`Item ${itemIdx + 1}`}
                               className="w-24 h-24 rounded-lg object-cover border-2 border-white shadow-md"
                             />
@@ -302,8 +303,8 @@ export default function InspecaoDetalhes() {
           onClick={() => setFotoExpandida(null)}
         >
           <div className="relative max-w-4xl max-h-[90vh] w-full h-full">
-            <img
-              src={fotoExpandida}
+            <ImgStorage
+              referencia={fotoExpandida}
               alt="Foto expandida"
               className="w-full h-full object-contain"
             />

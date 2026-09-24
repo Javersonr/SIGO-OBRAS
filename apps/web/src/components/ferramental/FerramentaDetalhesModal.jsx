@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table";
 import SheetModalComponent from "@/components/ui/sheet-modal";
 import { toast } from "sonner";
+import ImgStorage from "@/components/ImgStorage";
 import { useEmpresa } from "@/Layout";
 
 const statusColors = {
@@ -631,8 +632,8 @@ export default function FerramentaDetalhesModal({
               <div>
                 <h3 className="font-semibold text-slate-800 mb-3">Imagem</h3>
                 <Card className="p-4">
-                  <img
-                    src={ferramentaDetalhes.foto_url}
+                  <ImgStorage
+                    referencia={ferramentaDetalhes.foto_url}
                     alt={ferramentaDetalhes.descricao}
                     className="w-full rounded-lg object-contain max-h-64"
                   />

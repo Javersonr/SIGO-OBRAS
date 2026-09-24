@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { refDoUpload } from "@/lib/anexo-ref";
+import ImgStorage from "@/components/ImgStorage";
 import { useEmpresa } from "../Layout";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -78,8 +80,10 @@ export default function MeuPerfilSheet({ open, onOpenChange }) {
     if (!file) return;
     setUploadingFotoPerfil(true);
     try {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-      setPerfilForm((prev) => ({ ...prev, foto_url: file_url }));
+      // grava a referência estável "bucket/path" (a URL assinada expira em 1h)
+      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+      if (!ref) throw new Error("Upload sem referência");
+      setPerfilForm((prev) => ({ ...prev, foto_url: ref }));
       toast.success("✅ Foto enviada com sucesso");
     } catch (error) {
       toast.error("❌ Erro ao enviar foto");
@@ -233,10 +237,15 @@ export default function MeuPerfilSheet({ open, onOpenChange }) {
                 <div className="mt-2 flex items-start gap-4">
                   {perfilForm.foto_url ? (
                     <div className="relative">
-                      <img
-                        src={perfilForm.foto_url}
+                      <ImgStorage
+                        referencia={perfilForm.foto_url}
                         alt="Avatar"
                         className="w-24 h-24 object-cover rounded-full border-4 border-amber-200"
+                        fallback={
+                          <div className="w-24 h-24 rounded-full border-2 border-dashed border-slate-300 flex items-center justify-center bg-slate-50">
+                            <User className="w-10 h-10 text-slate-300" />
+                          </div>
+                        }
                       />
                       <Button
                         variant="ghost"

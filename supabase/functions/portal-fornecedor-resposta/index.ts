@@ -7,12 +7,14 @@
  * Ações (body.action):
  *   - "impossivel"     { motivo_recusa }
  *   - "upload_arquivo" { arquivo: { nome_arquivo, url_arquivo, tamanho, tipo } }
+ *                      url_arquivo = ref "bucket/caminho" (nunca a URL assinada, que expira)
  *   - "responder"      { respostas: {[item_id]: {valor_unitario, prazo_entrega, observacoes}},
  *                        responsavel, itens: [{id, descricao, quantidade, unidade}] }
  */
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
+import { refDaEmpresa } from "../_shared/storage-assinar.ts";
 
 Deno.serve(
   withCors(async (req) => {
@@ -63,6 +65,10 @@ Deno.serve(
       if (!a.nome_arquivo || !a.url_arquivo) {
         return fail("Arquivo incompleto", 400);
       }
+      // Só ref na pasta da empresa da cotação: o fornecedor não pode apontar
+      // para arquivo de outra empresa (quem exibir vai assinar com service role).
+      const ref = refDaEmpresa(a.url_arquivo, empresaId);
+      if (!ref) return fail("Arquivo inválido", 400);
       const { data: novo, error } = await supabase
         .from("arquivo_cotacao_fornecedor")
         .insert({
@@ -72,7 +78,7 @@ Deno.serve(
           fornecedor_id: cf.fornecedor_id,
           fornecedor_nome: cf.fornecedor_nome,
           nome_arquivo: a.nome_arquivo,
-          url_arquivo: a.url_arquivo,
+          url_arquivo: ref,
           tamanho: a.tamanho ?? null,
           tipo: a.tipo ?? null,
         })

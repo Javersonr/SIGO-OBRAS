@@ -1,5 +1,7 @@
 import React, { useState, useRef } from "react";
 import { sigo } from "@/api/sigoClient";
+import { refDoUpload } from "@/lib/anexo-ref";
+import ImgStorage from "@/components/ImgStorage";
 import jsQR from "jsqr";
 import SheetModal from "@/components/ui/sheet-modal";
 import { Button } from "@/components/ui/button";
@@ -321,6 +323,8 @@ export default function FotografarFerramentaStep({
     if (!fotoCapturada) return;
 
     setValidando(true);
+    // Referência "bucket/path" da foto enviada (é o que se grava; a URL assinada expira em 1h)
+    let fotoRef = null;
     try {
       // Converter data URL para Blob
       const response = await fetch(fotoCapturada);
@@ -339,12 +343,12 @@ export default function FotografarFerramentaStep({
       // Upload da foto
       const uploadRes = await sigo.integrations.Core.UploadFile({ file });
       console.log("Upload realizado:", uploadRes);
-      const fotoUrl = uploadRes.file_url;
-      console.log("URL da foto:", fotoUrl);
+      fotoRef = refDoUpload(uploadRes);
+      if (!fotoRef) throw new Error("Falha no upload da foto");
 
-      // IA do Google valida a ferramenta
+      // IA valida a ferramenta (recebe referências "bucket/path", nunca URL assinada)
       const validacaoResponse = await sigo.functions.invoke("validarFotoComIA", {
-        fotoUrl,
+        fotoUrl: fotoRef,
         fotoOriginalUrl: ferramenta.foto_url,
         ferramenta: {
           descricao: ferramenta.descricao,
@@ -381,7 +385,7 @@ export default function FotografarFerramentaStep({
         valido: validoComPrecisao,
         confianca: confianca,
         motivo: validacao.motivo || "Sem motivo fornecido",
-        fotoUrl,
+        fotoUrl: fotoRef,
         ferramentaId: ferramenta.itemId,
       });
       setStep("resultado");
@@ -405,7 +409,8 @@ export default function FotografarFerramentaStep({
         valido: false,
         confianca: 0,
         motivo: `Erro ao processar: ${mensagemErro}`,
-        fotoUrl: fotoCapturada,
+        // se o upload deu certo e só a IA falhou, arquiva a referência do Storage
+        fotoUrl: fotoRef || fotoCapturada,
       });
       setStep("resultado");
     } finally {
@@ -550,8 +555,8 @@ export default function FotografarFerramentaStep({
                     </Card>
 
                     <Card className="overflow-hidden">
-                      <img
-                        src={ferramDisplay.foto_url}
+                      <ImgStorage
+                        referencia={ferramDisplay.foto_url}
                         alt={ferramDisplay.descricao}
                         className="w-full h-48 object-contain bg-slate-100"
                       />
@@ -655,8 +660,8 @@ export default function FotografarFerramentaStep({
             {ferramenta.foto_url && (
               <Card className="p-3 bg-blue-50 border-blue-200">
                 <p className="text-xs font-semibold text-blue-800 mb-2">📸 Foto de Referência:</p>
-                <img
-                  src={ferramenta.foto_url}
+                <ImgStorage
+                  referencia={ferramenta.foto_url}
                   alt={ferramenta.descricao}
                   className="w-full h-32 object-contain bg-white rounded border"
                 />
@@ -831,16 +836,16 @@ export default function FotografarFerramentaStep({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <p className="text-xs font-semibold text-slate-600 mb-2">Foto de Referência</p>
-                    <img
-                      src={ferramenta.foto_url}
+                    <ImgStorage
+                      referencia={ferramenta.foto_url}
                       alt="Referência"
                       className="w-full h-48 object-contain rounded bg-slate-100 border"
                     />
                   </div>
                   <div>
                     <p className="text-xs font-semibold text-slate-600 mb-2">Foto Capturada</p>
-                    <img
-                      src={resultado.fotoUrl}
+                    <ImgStorage
+                      referencia={resultado.fotoUrl}
                       alt="Capturada"
                       className="w-full h-48 object-contain rounded bg-slate-100 border"
                     />
@@ -849,8 +854,8 @@ export default function FotografarFerramentaStep({
               </Card>
             ) : (
               <div className="relative">
-                <img
-                  src={resultado.fotoUrl}
+                <ImgStorage
+                  referencia={resultado.fotoUrl}
                   alt="Validada"
                   className="w-full max-h-64 object-contain rounded-lg bg-slate-100"
                 />

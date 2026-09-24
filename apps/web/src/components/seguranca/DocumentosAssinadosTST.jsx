@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { refDoUpload } from "@/lib/anexo-ref";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -75,6 +77,7 @@ export default function DocumentosAssinadosTST({
   const [expandido, setExpandido] = useState({});
   const [showHistoricoKey, setShowHistoricoKey] = useState(null);
   const [historicoData, setHistoricoData] = useState([]);
+  const [anexoAberto, setAnexoAberto] = useState(null);
   const callbacks = {
     onVisualizarFerramentas,
     onVisualizarEPI,
@@ -110,10 +113,12 @@ export default function DocumentosAssinadosTST({
     if (!file) return;
     setUploadingDoc(true);
     try {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+      // grava a referência "bucket/caminho" (a URL assinada expira em 1h)
+      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+      if (!ref) throw new Error("Falha no upload");
       const agora = new Date().toISOString();
       const anexos = getAnexos(key);
-      anexos.push({ nome: file.name, url: file_url, data_upload: agora });
+      anexos.push({ nome: file.name, url: ref, data_upload: agora });
       const novoForm = { ...funcionarioForm, [key]: JSON.stringify(anexos) };
       setFuncionarioForm(novoForm);
       handleAutoSave(novoForm);
@@ -131,7 +136,7 @@ export default function DocumentosAssinadosTST({
           tipo_documento: key,
           label_documento: LABEL_MAP[key] || key,
           nome_arquivo: file.name,
-          url: file_url,
+          url: ref,
           data_upload: agora,
           usuario_email: user?.email || "",
           usuario_nome: user?.full_name || "",
@@ -287,7 +292,7 @@ export default function DocumentosAssinadosTST({
                             variant="ghost"
                             size="icon"
                             className="h-6 w-6 flex-shrink-0"
-                            onClick={() => window.open(anexo.url, "_blank")}
+                            onClick={() => setAnexoAberto(anexo)}
                             title="Visualizar arquivo"
                           >
                             <Eye className="w-3 h-3 text-blue-500" />
@@ -319,6 +324,12 @@ export default function DocumentosAssinadosTST({
         }}
         documentos={historicoData}
         tipo={showHistoricoKey ? LABEL_MAP[showHistoricoKey] || showHistoricoKey : ""}
+      />
+
+      <AnexoViewer
+        anexo={anexoAberto}
+        open={!!anexoAberto}
+        onOpenChange={(aberto) => !aberto && setAnexoAberto(null)}
       />
     </>
   );

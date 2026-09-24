@@ -1,7 +1,7 @@
 import React from "react";
 import { sigo } from "@/api/sigoClient";
-import { safeUrl } from "@/lib/safe-url";
 import { safeParseJSON } from "@/lib/json-utils";
+import { refDoUpload } from "@/lib/anexo-ref";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileText, Upload, Eye, Trash2, Clock, Download } from "lucide-react";
@@ -27,6 +27,12 @@ export default function RHTab({
   verificarDocumentosCompletos,
   handleBaixarTodosAnexos,
 }) {
+  // `url` = referência "bucket/caminho" (ou URL legada): o visualizador resolve na hora
+  const abrirDocumento = (nome, url) => {
+    setDocumentoVisualizacao({ nome, url });
+    setShowVisualizadorDocumento(true);
+  };
+
   const renderDocList = (fieldKey, titleNum, title, onHistorico) => {
     const docs = safeParseJSON(funcionarioForm[fieldKey], []);
     return (
@@ -80,14 +86,18 @@ export default function RHTab({
                           if (!file) return;
                           setUploadingDoc(true);
                           try {
-                            const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+                            // grava a referência "bucket/caminho" (a URL assinada expira em 1h)
+                            const ref = refDoUpload(
+                              await sigo.integrations.Core.UploadFile({ file })
+                            );
+                            if (!ref) throw new Error("Falha no upload");
                             const allDocs = safeParseJSON(funcionarioForm[fieldKey], []);
                             const extensao = file.name.split(".").pop();
                             if (!allDocs[idx].anexos) allDocs[idx].anexos = [];
                             const num = allDocs[idx].anexos.length + 1;
                             const nomeCom = num > 1 ? `${num} - ${doc.nome}` : doc.nome;
                             allDocs[idx].anexos.push({
-                              url: file_url,
+                              url: ref,
                               nome_arquivo: `${funcionarioForm.nome_completo} - ${nomeCom}.${extensao}`,
                               data_upload: new Date().toISOString(),
                             });
@@ -100,7 +110,7 @@ export default function RHTab({
                             handleAutoSave(novoForm);
                             setAnalisandoDoc({ idx, tipo: fieldKey });
                             setAlertaIA(null);
-                            analisarDocumentoComIA(file_url, doc.nome).finally(() =>
+                            analisarDocumentoComIA(ref, doc.nome).finally(() =>
                               setAnalisandoDoc(null)
                             );
                             if (
@@ -128,14 +138,13 @@ export default function RHTab({
                         >
                           <div className="flex items-center gap-2 flex-1 min-w-0">
                             <FileText className="w-3 h-3 text-slate-400 flex-shrink-0" />
-                            <a
-                              href={safeUrl(anexo.url)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-blue-600 hover:text-blue-700 truncate"
+                            <button
+                              type="button"
+                              onClick={() => abrirDocumento(anexo.nome_arquivo, anexo.url)}
+                              className="text-xs text-blue-600 hover:text-blue-700 truncate text-left"
                             >
                               {anexo.nome_arquivo}
-                            </a>
+                            </button>
                           </div>
                           <div className="flex items-center gap-1 ml-2">
                             <Button
@@ -143,13 +152,7 @@ export default function RHTab({
                               size="icon"
                               className="h-6 w-6"
                               title="Visualizar"
-                              onClick={() => {
-                                setDocumentoVisualizacao({
-                                  nome: anexo.nome_arquivo,
-                                  url: anexo.url,
-                                });
-                                setShowVisualizadorDocumento(true);
-                              }}
+                              onClick={() => abrirDocumento(anexo.nome_arquivo, anexo.url)}
                             >
                               <Eye className="w-3 h-3 text-blue-500" />
                             </Button>
@@ -234,19 +237,28 @@ export default function RHTab({
                     >
                       <div className="flex items-center gap-2 flex-1">
                         <FileText className="w-4 h-4 text-slate-400" />
-                        <a
-                          href={safeUrl(dep.comprovante_escolar_url)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm hover:text-amber-600"
+                        <button
+                          type="button"
+                          onClick={() =>
+                            abrirDocumento(
+                              `${dep.nome || `Dependente ${depIdx + 1}`} - Comprovante Escolar`,
+                              dep.comprovante_escolar_url
+                            )
+                          }
+                          className="text-sm hover:text-amber-600 text-left"
                         >
                           {dep.nome || `Dependente ${depIdx + 1}`} - Comprovante Escolar
-                        </a>
+                        </button>
                       </div>
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => window.open(dep.comprovante_escolar_url, "_blank")}
+                        onClick={() =>
+                          abrirDocumento(
+                            `${dep.nome || `Dependente ${depIdx + 1}`} - Comprovante Escolar`,
+                            dep.comprovante_escolar_url
+                          )
+                        }
                       >
                         <FileText className="w-4 h-4 text-blue-500" />
                       </Button>

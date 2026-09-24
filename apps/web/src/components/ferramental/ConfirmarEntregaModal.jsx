@@ -5,6 +5,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Button } from "@/components/ui/button";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import ImgStorage from "@/components/ImgStorage";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -237,11 +238,14 @@ export default function ConfirmarEntregaModal({
         }}
       >
         <div style={{ minWidth: "80px" }}>
+          {/* logo_url = ref "bucket/caminho": o ImgStorage assina; a impressão copia o
+              innerHTML já com a URL assinada */}
           {empresaAtiva?.logo_url && (
-            <img
-              src={empresaAtiva.logo_url}
+            <ImgStorage
+              referencia={empresaAtiva.logo_url}
               alt="Logo"
               style={{ maxHeight: "140px", maxWidth: "300px", objectFit: "contain" }}
+              fallback={null}
             />
           )}
         </div>

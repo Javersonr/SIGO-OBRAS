@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { differenceInDays } from "date-fns";
 import VencimentoCard from "../components/vencimentos/VencimentoCard";
 import VencimentoModal from "../components/vencimentos/VencimentoModal";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 
 const FILTROS_STATUS = ["Todos", "Vencido", "A Vencer", "OK"];
 const FILTROS_PRAZO = ["Todos", "Hoje", "7 dias", "15 dias", "30 dias", "60 dias"];
@@ -50,6 +51,8 @@ export default function Vencimentos() {
   const [showModal, setShowModal] = useState(false);
   const [vencimentoEditando, setVencimentoEditando] = useState(null);
   const [estatisticasGrupo, setEstatisticasGrupo] = useState(null);
+  // documento aberto na janela flutuante: { url: ref, nome }
+  const [documentoAberto, setDocumentoAberto] = useState(null);
 
   // Determinar se é Admin Holding: verificar sessonStorage ou contexto
   const customAuth = safeParseJSON(sessionStorage.getItem("custom_auth"), {});
@@ -151,7 +154,9 @@ export default function Vencimentos() {
     }
   };
 
-  const handleVerDocumento = (v) => window.open(v.arquivo_url, "_blank");
+  // arquivo_url guarda a referência "bucket/path" (ou legado) — o AnexoViewer resolve
+  const handleVerDocumento = (v) =>
+    setDocumentoAberto({ url: v.arquivo_url, nome: v.arquivo_nome || v.titulo });
 
   // Filtros
   const vencimentosFiltrados = vencimentos.filter((v) => {
@@ -406,6 +411,12 @@ export default function Vencimentos() {
           onSuccess={loadData}
         />
       )}
+
+      <AnexoViewer
+        anexo={documentoAberto}
+        open={!!documentoAberto}
+        onOpenChange={(v) => !v && setDocumentoAberto(null)}
+      />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Download, Settings } from "lucide-react";
 import EPIEditorPanel from "./EPIEditorPanel";
 import { safeParseJSON } from "@/lib/json-utils";
+import ImgStorage from "@/components/ImgStorage";
 
 export default function VisualizarDireitoRecusaModal({
   open,
@@ -202,10 +203,11 @@ export default function VisualizarDireitoRecusaModal({
               >
                 <div style={{ minWidth: "120px" }}>
                   {empresaAtiva?.logo_url && (
-                    <img
-                      src={empresaAtiva.logo_url}
+                    <ImgStorage
+                      referencia={empresaAtiva.logo_url}
                       alt="Logo"
                       style={{ maxHeight: "80px", width: "auto", objectFit: "contain" }}
+                      fallback={null}
                     />
                   )}
                 </div>

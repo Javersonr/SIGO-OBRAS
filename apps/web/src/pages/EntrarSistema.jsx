@@ -21,6 +21,24 @@ import {
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
+/**
+ * Logo na escolha de empresa (antes da sessão): `src` é a URL que o
+ * login-custom já assinou. Sem URL (sem logo, Base44 apagado, arquivo sumido)
+ * ou erro ao carregar → o mesmo ícone de sempre.
+ */
+function LogoPreSessao({ src, alt }) {
+  const [falhou, setFalhou] = useState(false);
+  if (!src || falhou) return <Building2 className="w-6 h-6 text-slate-500" />;
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className="w-full h-full object-contain rounded-lg"
+      onError={() => setFalhou(true)}
+    />
+  );
+}
+
 export default function EntrarSistema() {
   const navigate = useNavigate();
 
@@ -63,6 +81,9 @@ export default function EntrarSistema() {
     };
   }, []);
   const [empresasDisponiveis, setEmpresasDisponiveis] = useState(null);
+  // { [empresa_id | grupo_id]: urlAssinada | null } — a escolha de empresa roda
+  // SEM sessão, então o login-custom já devolve os logos assinados
+  const [logosAssinados, setLogosAssinados] = useState({});
   const [usuarioBase, setUsuarioBase] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showEsqueciSenha, setShowEsqueciSenha] = useState(false);
@@ -119,6 +140,7 @@ export default function EntrarSistema() {
       if (response.data.success) {
         if (response.data.multiplas_empresas) {
           setEmpresasDisponiveis(response.data.empresas);
+          setLogosAssinados(response.data.logos_assinados || {});
           setUsuarioBase({
             ...response.data.usuario_base,
             grupos: response.data.grupos || [],
@@ -374,15 +396,7 @@ export default function EntrarSistema() {
                       className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-lg transition-all text-left disabled:opacity-50 hover:border-slate-300"
                     >
                       <div className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 bg-slate-100">
-                        {empresa.logo_url ? (
-                          <img
-                            src={empresa.logo_url}
-                            alt={empresa.nome}
-                            className="w-full h-full object-contain rounded-lg"
-                          />
-                        ) : (
-                          <Building2 className="w-6 h-6 text-slate-500" />
-                        )}
+                        <LogoPreSessao src={logosAssinados[empresa.id]} alt={empresa.nome} />
                       </div>
                       <div className="flex-1">
                         <h3 className="font-semibold text-slate-800">{empresa.nome}</h3>
@@ -420,15 +434,7 @@ export default function EntrarSistema() {
                         className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-lg transition-all text-left disabled:opacity-50 hover:border-slate-300"
                       >
                         <div className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 bg-slate-100">
-                          {grupo.logo_url ? (
-                            <img
-                              src={grupo.logo_url}
-                              alt={grupo.nome}
-                              className="w-full h-full object-contain rounded-lg"
-                            />
-                          ) : (
-                            <Building2 className="w-6 h-6 text-slate-500" />
-                          )}
+                          <LogoPreSessao src={logosAssinados[grupo.id]} alt={grupo.nome} />
                         </div>
                         <div className="flex-1">
                           <h3 className="font-semibold text-slate-800">{grupo.nome}</h3>
@@ -449,6 +455,7 @@ export default function EntrarSistema() {
                 variant="ghost"
                 onClick={() => {
                   setEmpresasDisponiveis(null);
+                  setLogosAssinados({});
                   setUsuarioBase(null);
                   setSenha("");
                 }}

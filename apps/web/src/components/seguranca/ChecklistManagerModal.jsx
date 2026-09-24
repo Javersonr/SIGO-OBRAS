@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { refDoUpload } from "@/lib/anexo-ref";
+import ImgStorage from "@/components/ImgStorage";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -130,10 +132,11 @@ export default function ChecklistManagerModal({ open, onOpenChange, empresaAtiva
     if (!file) return;
     setUploadingFoto(idx);
     try {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+      // grava a referência "bucket/caminho" (a URL assinada expira em 1h)
+      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
       setForm((prev) => {
         const itens = [...prev.itens];
-        itens[idx] = { ...itens[idx], foto_referencia_url: file_url };
+        itens[idx] = { ...itens[idx], foto_referencia_url: ref };
         return { ...prev, itens };
       });
       toast.success("Foto de referência enviada");
@@ -461,8 +464,8 @@ export default function ChecklistManagerModal({ open, onOpenChange, empresaAtiva
                       <div className="flex-shrink-0">
                         {item.foto_referencia_url ? (
                           <div className="relative w-16 h-16 rounded-lg overflow-hidden border">
-                            <img
-                              src={item.foto_referencia_url}
+                            <ImgStorage
+                              referencia={item.foto_referencia_url}
                               alt="Ref"
                               className="w-full h-full object-cover"
                             />

@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { refDoUpload } from "@/lib/anexo-ref";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Plus, Upload, Edit, Eye, X, FileText, CheckCircle2, PackageCheck } from "lucide-react";
@@ -39,6 +41,8 @@ export default function TSTTab({
   user,
 }) {
   const [showImportarCertificados, setShowImportarCertificados] = useState(false);
+  // anexo aberto na janela flutuante (url = ref "bucket/caminho" ou URL legada)
+  const [anexoAberto, setAnexoAberto] = useState(null);
   // Sempre usar props externas (modais gerenciados pelo pai para evitar Sheet aninhado)
   const setShowCertificadoAssinado = setShowCertificadoAssinadoProp;
   const setTreinamentoAssinado = setTreinamentoAssinadoProp;
@@ -197,11 +201,13 @@ export default function TSTTab({
                   }
                   setUploadingDoc(true);
                   try {
-                    const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+                    // referência estável "bucket/caminho" (a URL assinada expira em 1h)
+                    const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+                    if (!ref) throw new Error("Falha no upload");
                     const anexos = safeParseJSON(funcionarioForm.treinamentos_anexos, []);
                     anexos.push({
                       nome: nomeArquivo,
-                      url: file_url,
+                      url: ref,
                       treinamento_id: null,
                       treinamento_nome: nomeArquivo,
                       tipo: "extra",
@@ -258,7 +264,7 @@ export default function TSTTab({
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7"
-                      onClick={() => window.open(anexo.url, "_blank")}
+                      onClick={() => setAnexoAberto(anexo)}
                     >
                       <Eye className="w-3 h-3 text-blue-500" />
                     </Button>
@@ -597,6 +603,12 @@ export default function TSTTab({
           onAvancarFuncionario={onAvancarFuncionario}
         />
       )}
+
+      <AnexoViewer
+        anexo={anexoAberto}
+        open={!!anexoAberto}
+        onOpenChange={(aberto) => !aberto && setAnexoAberto(null)}
+      />
     </div>
   );
 }

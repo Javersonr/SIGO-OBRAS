@@ -8,10 +8,13 @@
  *
  * Entrada:  { token, marcar_visualizada? }
  * Resposta: { success, cotacaoFornecedor, cotacao, itens, empresa, respostas }
+ *   empresa.logo_url_assinada = URL pronta do logo (o fornecedor não tem
+ *   sessão da empresa para assinar a ref); null → mostrar só o nome.
  */
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
+import { comLogoAssinado } from "../_shared/storage-assinar.ts";
 
 const normalize = (s: string) => (s || "").toLowerCase().trim().replace(/\s+/g, " ");
 
@@ -135,7 +138,7 @@ Deno.serve(
       cotacaoFornecedor: cotFornecedor,
       cotacao: cotacao ?? null,
       itens: itensEnriquecidos,
-      empresa: empresaRes.data ?? null,
+      empresa: await comLogoAssinado(supabase, empresaRes.data ?? null),
       respostas: respostasRes.data ?? [],
     });
   })

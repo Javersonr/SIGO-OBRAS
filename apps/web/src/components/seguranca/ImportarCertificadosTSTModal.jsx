@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, refDoStorage } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { refDoUpload } from "@/lib/anexo-ref";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Upload, CheckCircle2, AlertCircle, Loader2, X, ArrowRight } from "lucide-react";
@@ -24,7 +25,8 @@ export default function ImportarCertificadosTSTModal({
   const [indiceAtual, setIndiceAtual] = useState(0);
   const [resultadoAtual, setResultadoAtual] = useState(null);
   const [resumoGeral, setResumoGeral] = useState([]);
-  const [zipUrl, setZipUrl] = useState(null);
+  // referência "bucket/caminho" do ZIP (a URL assinada expiraria no meio da fila)
+  const [zipRef, setZipRef] = useState(null);
   const fileInputRef = React.useRef(null);
 
   const handleZipSelect = async (e) => {
@@ -42,8 +44,8 @@ export default function ImportarCertificadosTSTModal({
     try {
       // Upload do ZIP uma única vez
       toast.info("Enviando arquivo ZIP...");
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file: zipFile });
-      setZipUrl(file_url);
+      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file: zipFile }));
+      setZipRef(ref);
 
       // Montar fila: começa pelo funcionário atual, depois os demais (em ordem)
       const outrosFuncionarios = funcionarios.filter(
@@ -54,7 +56,7 @@ export default function ImportarCertificadosTSTModal({
       setIndiceAtual(0);
 
       // Processar primeiro funcionário
-      await processarFuncionario(file_url, fila, 0, []);
+      await processarFuncionario(ref, fila, 0, []);
     } catch (error) {
       console.error("Erro:", error);
       toast.error("Erro ao enviar ZIP");
@@ -63,14 +65,14 @@ export default function ImportarCertificadosTSTModal({
     }
   };
 
-  const processarFuncionario = async (url, fila, idx, resumoAcumulado) => {
+  const processarFuncionario = async (ref, fila, idx, resumoAcumulado) => {
     const func = fila[idx];
     setIndiceAtual(idx);
     setResultadoAtual(null);
 
     try {
       const response = await sigo.functions.invoke("importarCertificadosFuncionario", {
-        zipUrl: url,
+        zipRef: ref,
         funcionarioId: func.id,
         empresaId: empresaAtiva.id,
       });
@@ -118,7 +120,8 @@ export default function ImportarCertificadosTSTModal({
         treinamento_id: r.treinamento_id,
         treinamento_nome: r.match_nome || r.treinamento_nome,
         nome: r.treinamento_nome,
-        url: r.file_url,
+        // grava a referência "bucket/caminho"; URL assinada do nosso Storage vira ref
+        url: r.ref || refDoStorage(r.file_url) || r.file_url,
         tipo: "assinado_importado",
         data_upload: new Date().toISOString(),
         data_inicio: r.data_inicio || "",
@@ -164,7 +167,7 @@ export default function ImportarCertificadosTSTModal({
     // Processar próximo
     setProcessando(true);
     setFase("processando");
-    await processarFuncionario(zipUrl, filaFuncionarios, proximo, resumoGeral);
+    await processarFuncionario(zipRef, filaFuncionarios, proximo, resumoGeral);
   };
 
   const handlePularFuncionario = async () => {
@@ -177,13 +180,13 @@ export default function ImportarCertificadosTSTModal({
     onAvancarFuncionario && onAvancarFuncionario(proximoFunc);
     setProcessando(true);
     setFase("processando");
-    await processarFuncionario(zipUrl, filaFuncionarios, proximo, resumoGeral);
+    await processarFuncionario(zipRef, filaFuncionarios, proximo, resumoGeral);
   };
 
   const handleFechar = () => {
     setFase("upload");
     setZipFile(null);
-    setZipUrl(null);
+    setZipRef(null);
     setResultadoAtual(null);
     setFilaFuncionarios([]);
     setIndiceAtual(0);

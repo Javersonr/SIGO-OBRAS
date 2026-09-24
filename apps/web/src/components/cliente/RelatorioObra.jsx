@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar, Download, Clock, CheckCircle2, AlertTriangle } from "lucide-react";
+import ImgStorage from "@/components/ImgStorage";
 
 export default function RelatorioObra({ etapas, oportunidade, empresa }) {
   const formatDate = (date) => {
@@ -65,8 +66,26 @@ export default function RelatorioObra({ etapas, oportunidade, empresa }) {
             <p className="text-slate-600">{empresa?.nome}</p>
             <p className="text-sm text-slate-500 mt-2">Relatório de Acompanhamento de Obra</p>
           </div>
-          {empresa?.logo_url && (
-            <img src={empresa.logo_url} alt={empresa.nome} className="h-16 object-contain" />
+          {/* Portal do cliente (sem sessão): a Edge Function manda logo_url_assinada.
+              Dentro do app: logo_url é a ref "bucket/caminho", o ImgStorage assina. */}
+          {empresa?.logo_url_assinada ? (
+            <img
+              src={empresa.logo_url_assinada}
+              alt={empresa.nome}
+              className="h-16 object-contain"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+          ) : (
+            empresa?.logo_url && (
+              <ImgStorage
+                referencia={empresa.logo_url}
+                alt={empresa.nome}
+                className="h-16 object-contain"
+                fallback={null}
+              />
+            )
           )}
         </div>
         <p className="text-xs text-slate-500 text-right">

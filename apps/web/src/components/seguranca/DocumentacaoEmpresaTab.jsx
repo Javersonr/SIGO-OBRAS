@@ -1,8 +1,9 @@
 import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
-import { sigo } from "@/api/sigoClient";
-import { safeUrl } from "@/lib/safe-url";
+import { sigo, resolveStorageUrl } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { ehBase44, refDoUpload } from "@/lib/anexo-ref";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 import {
   Plus,
   Upload,
@@ -60,6 +61,28 @@ const STATUS_CORES = {
   Arquivado: "bg-slate-100 text-slate-600",
 };
 
+/** Baixa o anexo: `url` é a referência "bucket/caminho" (ou URL legada). */
+async function baixarAnexo(anexo) {
+  const nome = anexo.nome || "arquivo";
+  const url = await resolveStorageUrl(anexo.url);
+  if (!url) {
+    toast.error(
+      ehBase44(anexo.url) ? "Arquivo do sistema antigo, indisponível" : "Arquivo indisponível"
+    );
+    return;
+  }
+  // URL assinada do Storage aceita &download= (força o download sem sair da página)
+  const assinada = /[?&]token=/.test(url);
+  const link = document.createElement("a");
+  link.href = assinada ? `${url}&download=${encodeURIComponent(nome)}` : url;
+  link.download = nome;
+  if (!assinada) {
+    link.target = "_blank";
+    link.rel = "noopener";
+  }
+  link.click();
+}
+
 function getStatusVencimento(dataVencimento) {
   if (!dataVencimento) return null;
   const hoje = new Date();
@@ -96,6 +119,8 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
   const [saving, setSaving] = useState(false);
   const [showVisualizarModal, setShowVisualizarModal] = useState(false);
   const [docSelecionado, setDocSelecionado] = useState(null);
+  // anexo aberto na janela flutuante (url = ref "bucket/caminho" ou URL legada)
+  const [anexoAberto, setAnexoAberto] = useState(null);
   const [vencimentoEditando, setVencimentoEditando] = useState(null);
   const [showVencimentoModal, setShowVencimentoModal] = useState(false);
   const [showNovoTipo, setShowNovoTipo] = useState(false);
@@ -201,10 +226,15 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
     if (!file) return;
     setUploading(true);
     try {
-      const { file_url } = await sigo.integrations.Core.UploadFile({ file });
+      const res = await sigo.integrations.Core.UploadFile({ file });
       const doc = documentos.find((d) => d.id === docId);
       const anexos = safeParseJSON(doc.anexos, []);
-      anexos.push({ nome: file.name, url: file_url, data_upload: new Date().toISOString() });
+      // grava a referência "bucket/caminho" (a URL assinada expira em 1h)
+      anexos.push({
+        nome: file.name,
+        url: refDoUpload(res),
+        data_upload: new Date().toISOString(),
+      });
       await sigo.entities.DocumentoEmpresa.update(docId, { anexos: JSON.stringify(anexos) });
       toast.success("Arquivo anexado");
       loadDocumentos();
@@ -502,14 +532,13 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
                             >
                               <div className="flex items-center gap-2 flex-1 min-w-0">
                                 <FileText className="w-3 h-3 text-slate-400 flex-shrink-0" />
-                                <a
-                                  href={safeUrl(anexo.url)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-xs text-blue-600 hover:text-blue-700 truncate"
+                                <button
+                                  type="button"
+                                  onClick={() => setAnexoAberto(anexo)}
+                                  className="text-xs text-blue-600 hover:text-blue-700 truncate text-left"
                                 >
                                   {anexo.nome}
-                                </a>
+                                </button>
                                 {anexo.data_upload && (
                                   <span className="text-xs text-slate-400 flex-shrink-0">
                                     {format(new Date(anexo.data_upload), "dd/MM/yy")}
@@ -805,21 +834,21 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
                             className="flex items-center gap-2 p-2 bg-slate-50 rounded"
                           >
                             <FileText className="w-4 h-4 text-slate-400" />
-                            <a
-                              href={safeUrl(anexo.url)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:underline flex-1 truncate"
+                            <button
+                              type="button"
+                              onClick={() => setAnexoAberto(anexo)}
+                              className="text-blue-600 hover:underline flex-1 truncate text-left"
                             >
                               {anexo.nome}
-                            </a>
-                            <a
-                              href={safeUrl(anexo.url)}
-                              download
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => baixarAnexo(anexo)}
                               className="text-slate-500 hover:text-slate-700"
+                              title="Baixar"
                             >
                               <Download className="w-4 h-4" />
-                            </a>
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -1000,6 +1029,12 @@ export default function DocumentacaoEmpresaTab({ empresaAtiva, temPermissao, per
           )}
         </TabsContent>
       </Tabs>
+
+      <AnexoViewer
+        anexo={anexoAberto}
+        open={!!anexoAberto}
+        onOpenChange={(aberto) => !aberto && setAnexoAberto(null)}
+      />
     </div>
   );
 }

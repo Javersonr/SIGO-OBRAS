@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
-import { safeUrl } from "@/lib/safe-url";
+import { refDoUpload } from "@/lib/anexo-ref";
+import AnexoViewer from "@/components/shared/AnexoViewer";
 import { safeParseJSON } from "@/lib/json-utils";
 import { useEmpresa } from "@/Layout";
 import SheetModalComponent from "@/components/ui/sheet-modal";
@@ -48,6 +49,7 @@ export default function FerramentaDetalheModal({ open, onOpenChange, ferramenta,
   });
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [anexosTemp, setAnexosTemp] = useState([]);
+  const [anexoAberto, setAnexoAberto] = useState(null);
 
   useEffect(() => {
     if (open && ferramenta) {
@@ -115,8 +117,10 @@ export default function FerramentaDetalheModal({ open, onOpenChange, ferramenta,
     try {
       const uploaded = [];
       for (const file of files) {
-        const { file_url } = await sigo.integrations.Core.UploadFile({ file });
-        uploaded.push({ nome: file.name, url: file_url, tipo: file.type });
+        // `url` guarda a referência estável "bucket/path" (a URL assinada expira em 1h)
+        const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
+        if (!ref) throw new Error("Falha no upload");
+        uploaded.push({ nome: file.name, url: ref, tipo: file.type });
       }
       setAnexosTemp([...anexosTemp, ...uploaded]);
       toast.success(`${files.length} arquivo(s) anexado(s)`);
@@ -688,16 +692,15 @@ export default function FerramentaDetalheModal({ open, onOpenChange, ferramenta,
                         {anexos.length > 0 && (
                           <div className="flex gap-2 flex-wrap mt-2">
                             {anexos.map((anexo, idx) => (
-                              <a
+                              <button
                                 key={idx}
-                                href={safeUrl(anexo.url)}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                                type="button"
+                                onClick={() => setAnexoAberto(anexo)}
                                 className="flex items-center gap-1 text-xs bg-slate-100 px-2 py-1 rounded hover:bg-slate-200"
                               >
                                 <Paperclip className="w-3 h-3" />
                                 {anexo.nome}
-                              </a>
+                              </button>
                             ))}
                           </div>
                         )}
@@ -715,6 +718,13 @@ export default function FerramentaDetalheModal({ open, onOpenChange, ferramenta,
           </TabsContent>
         </Tabs>
       )}
+
+      {/* Visualizador de anexo da nota (janela flutuante, portal no body) */}
+      <AnexoViewer
+        anexo={anexoAberto}
+        open={!!anexoAberto}
+        onOpenChange={(v) => !v && setAnexoAberto(null)}
+      />
     </SheetModalComponent>
   );
 }
