@@ -29,6 +29,23 @@ window.addEventListener("vite:preloadError", (event) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Links no formato antigo "/#/Pagina?token=..." (hash routing da época do
+// Base44) — portal do funcionário, acesso de fornecedor, links já enviados por
+// WhatsApp/e-mail. O app usa BrowserRouter, que ignora o hash e cairia no
+// login; converte para "/Pagina?token=..." antes do Router montar e também
+// quando um link interno troca só o hash.
+// ---------------------------------------------------------------------------
+function converterLinkComHash() {
+  if (!window.location.hash.startsWith("#/")) return false;
+  window.history.replaceState(null, "", window.location.hash.slice(1));
+  return true;
+}
+converterLinkComHash();
+window.addEventListener("hashchange", () => {
+  if (converterLinkComHash()) window.dispatchEvent(new PopStateEvent("popstate"));
+});
+
 // ErrorBoundary no topo de TUDO: se o Layout/auth/Router quebrar no render,
 // o usuário vê um card com "Recarregar página" em vez de tela 100% branca.
 // (Há também boundaries por página dentro do App, pra isolar telas pesadas.)

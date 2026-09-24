@@ -125,7 +125,7 @@ Deno.serve(
         { scope: "funcionario", empresa_id: func.empresa_id, funcionario_id: func.id },
         TTL_LINK
       );
-      return ok({ token, url_path: `/#/PortalFuncionario?token=${encodeURIComponent(token)}` });
+      return ok({ token, url_path: `/PortalFuncionario?token=${encodeURIComponent(token)}` });
     }
 
     const payload = body.token ? await verifyPortalToken(body.token) : null;
