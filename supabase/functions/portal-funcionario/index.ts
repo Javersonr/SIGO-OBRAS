@@ -76,7 +76,7 @@ interface Body {
   aula_id?: string;
   segundos_assistidos?: number;
   duracao_seg?: number;
-  respostas?: { questao_id: string; resposta: number }[];
+  respostas?: { questao_id: string; resposta: number; ordem_opcoes?: number[] }[];
   ciencia_id?: string;
   pergunta?: string;
 }
@@ -759,6 +759,21 @@ Deno.serve(
       }
 
       const marcada = new Map(respostas.map((r) => [r.questao_id, Number(r.resposta)]));
+      // ordem em que o portal EXIBIU (questões e alternativas são sorteadas)
+      const exibicao = new Map(
+        respostas.map((r, i) => [
+          r.questao_id,
+          {
+            posicao: i + 1,
+            ordem_opcoes:
+              Array.isArray(r.ordem_opcoes) &&
+              r.ordem_opcoes.length <= 12 &&
+              r.ordem_opcoes.every((x) => Number.isInteger(x))
+                ? r.ordem_opcoes
+                : null,
+          },
+        ])
+      );
       const acertou = (q: { id: string; correta: number }) => marcada.get(q.id) === q.correta;
       const acertos = questoes.filter(acertou).length;
       const nota = Math.round((acertos / questoes.length) * 100);
@@ -785,6 +800,8 @@ Deno.serve(
           questao_id: q.id,
           resposta: marcada.has(q.id) ? marcada.get(q.id) : null,
           acertou: acertou(q),
+          posicao_exibida: exibicao.get(q.id)?.posicao ?? null,
+          ordem_opcoes_exibida: exibicao.get(q.id)?.ordem_opcoes ?? null,
         })),
         acertos,
         total: questoes.length,

@@ -27,14 +27,32 @@ function CorrecaoComentada({ item }) {
   );
 }
 
+function embaralhar(lista) {
+  const a = [...lista];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 /**
  * Prova do curso. A correção é feita no servidor (o gabarito nunca vem ao
  * navegador); cada envio vira uma tentativa guardada com a prova como estava.
+ * A ordem das questões e das alternativas é SORTEADA a cada tentativa — as
+ * respostas voltam pelo índice original e a ordem exibida vai junto, para a
+ * trilha de auditoria.
  */
 export default function AvaliacaoPortal({ item, token, fila, tratarErro, onFechar }) {
-  const questoes = item.questoes || [];
+  // sorteio feito uma vez por abertura da prova (estável até fechar/reabrir)
+  const [questoes] = useState(() =>
+    embaralhar(item.questoes || []).map((q) => ({
+      ...q,
+      exibicao: embaralhar((q.opcoes || []).map((texto, indice) => ({ texto, indice }))),
+    }))
+  );
   const av = item.avaliacao || {};
-  const [respostas, setRespostas] = useState({});
+  const [respostas, setRespostas] = useState({}); // questao_id -> índice ORIGINAL
   const [resultado, setResultado] = useState(null);
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -58,7 +76,11 @@ export default function AvaliacaoPortal({ item, token, fila, tratarErro, onFecha
           "avaliacao",
           {
             matricula_id: item.matricula.id,
-            respostas: questoes.map((q) => ({ questao_id: q.id, resposta: respostas[q.id] })),
+            respostas: questoes.map((q) => ({
+              questao_id: q.id,
+              resposta: respostas[q.id],
+              ordem_opcoes: q.exibicao.map((o) => o.indice),
+            })),
           },
           token
         )
@@ -116,18 +138,18 @@ export default function AvaliacaoPortal({ item, token, fila, tratarErro, onFecha
             {qi + 1}. {q.pergunta}
           </p>
           <div className="space-y-1">
-            {(q.opcoes || []).map((o, i) => (
-              <label key={i} className="flex items-start gap-2 text-sm cursor-pointer p-1">
+            {q.exibicao.map((op, pos) => (
+              <label key={op.indice} className="flex items-start gap-2 text-sm cursor-pointer p-1">
                 <input
                   type="radio"
                   name={q.id}
                   className="mt-1"
-                  checked={respostas[q.id] === i}
-                  onChange={() => setRespostas((r) => ({ ...r, [q.id]: i }))}
+                  checked={respostas[q.id] === op.indice}
+                  onChange={() => setRespostas((r) => ({ ...r, [q.id]: op.indice }))}
                   disabled={!!resultado}
                 />
                 <span>
-                  {String.fromCharCode(65 + i)}) {o}
+                  {String.fromCharCode(65 + pos)}) {op.texto}
                 </span>
               </label>
             ))}

@@ -3,6 +3,7 @@ import { sigo, resolveStorageUrl } from "@/api/sigoClient";
 import { normalizarTexto } from "@/lib/busca";
 import { srtParaVtt } from "@/lib/legendas";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
+import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
 import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
 import MatriculaAuditoriaSheet from "@/components/seguranca/MatriculaAuditoriaSheet";
 import DuvidasTutorCard from "@/components/seguranca/DuvidasTutorCard";
@@ -65,6 +66,48 @@ const STATUS_BADGE = {
   concluido: "bg-emerald-100 text-emerald-700 border-emerald-200",
 };
 
+/**
+ * Nome escolhido entre as pessoas salvas em Configurações → Treinamentos.
+ * Se o nome atual não bate com nenhuma, mostra o campo para digitar.
+ */
+function SeletorPessoa({ rotulo, pessoas, formatar, nome, onNome, onEscolher }) {
+  const atual = (nome || "").trim().toLowerCase();
+  const idx = pessoas.findIndex((p) => p.nome.toLowerCase() === atual);
+  const valor = !atual ? "" : idx >= 0 ? String(idx) : "_manual";
+  return (
+    <div>
+      <Label className="text-xs">{rotulo}</Label>
+      <select
+        className="mt-0.5 w-full h-9 rounded-md border border-slate-200 px-2 text-sm bg-white"
+        value={valor}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === "") onNome("");
+          else if (v !== "_manual") onEscolher(pessoas[Number(v)]);
+        }}
+      >
+        <option value="">— escolher dos salvos —</option>
+        {pessoas.map((p, i) => (
+          <option key={p.nome} value={String(i)}>
+            {formatar(p)}
+          </option>
+        ))}
+        <option value="_manual" disabled>
+          digitado manualmente
+        </option>
+      </select>
+      {idx < 0 && (
+        <Input
+          value={nome || ""}
+          onChange={(e) => onNome(e.target.value)}
+          placeholder="ou digite o nome"
+          className="mt-1 h-9"
+        />
+      )}
+    </div>
+  );
+}
+
 export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const [cursos, setCursos] = useState([]);
   const [aulas, setAulas] = useState([]);
@@ -82,11 +125,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const [subindoVideo, setSubindoVideo] = useState(false);
   const [questoes, setQuestoes] = useState([]);
   const [novaQuestao, setNovaQuestao] = useState(null); // {pergunta, opcoes[4], correta}
+  const [treinamentosConfig, setTreinamentosConfig] = useState([]);
 
   const recarregar = async () => {
     setCarregando(true);
     try {
-      const [cs, as, ms, fs, certs] = await Promise.all([
+      const [cs, as, ms, fs, certs, tcfg] = await Promise.all([
         sigo.entities.TreinamentoCurso.filter({ empresa_id: empresaAtiva.id }),
         sigo.entities.TreinamentoAula.filter({ empresa_id: empresaAtiva.id }),
         sigo.entities.TreinamentoMatricula.filter({ empresa_id: empresaAtiva.id }),
@@ -95,12 +139,14 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
           { empresa_id: empresaAtiva.id },
           SEM_SOFT_DELETE
         ),
+        sigo.entities.Treinamento.filter({ empresa_id: empresaAtiva.id }),
       ]);
       setCursos(cs);
       setAulas(as.sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0)));
       setMatriculas(ms);
       setFuncionarios(fs);
       setCertificados(certs);
+      setTreinamentosConfig(tcfg);
     } catch (e) {
       console.error(e);
       toast.error("Erro ao carregar treinamentos");
@@ -115,6 +161,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
 
   const aulasDoCurso = (cursoId) => aulas.filter((a) => a.curso_id === cursoId);
   const funcPorId = useMemo(() => new Map(funcionarios.map((f) => [f.id, f])), [funcionarios]);
+  const pessoas = useMemo(() => pessoasDosTreinamentos(treinamentosConfig), [treinamentosConfig]);
 
   // ------------------------------------------------------------------ cursos
   const salvarCurso = async () => {
@@ -797,13 +844,20 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     />
                   </div>
                   <div>
-                    <Label className="text-xs">Responsável técnico</Label>
-                    <Input
-                      value={cursoSel.responsavel_tecnico_nome || ""}
-                      onChange={(e) =>
-                        setCursoSel({ ...cursoSel, responsavel_tecnico_nome: e.target.value })
+                    <SeletorPessoa
+                      rotulo="Responsável técnico"
+                      pessoas={pessoas.responsaveis}
+                      formatar={(p) => p.nome + (p.registro ? ` · ${p.registro}` : "")}
+                      nome={cursoSel.responsavel_tecnico_nome}
+                      onNome={(v) => setCursoSel({ ...cursoSel, responsavel_tecnico_nome: v })}
+                      onEscolher={(p) =>
+                        setCursoSel({
+                          ...cursoSel,
+                          responsavel_tecnico_nome: p.nome,
+                          responsavel_tecnico_registro:
+                            p.registro || cursoSel.responsavel_tecnico_registro || "",
+                        })
                       }
-                      className="mt-0.5"
                     />
                   </div>
                   <div>
@@ -818,11 +872,20 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     />
                   </div>
                   <div>
-                    <Label className="text-xs">Instrutor</Label>
-                    <Input
-                      value={cursoSel.instrutor_nome || ""}
-                      onChange={(e) => setCursoSel({ ...cursoSel, instrutor_nome: e.target.value })}
-                      className="mt-0.5"
+                    <SeletorPessoa
+                      rotulo="Instrutor"
+                      pessoas={pessoas.instrutores}
+                      formatar={(p) => p.nome + (p.qualificacao ? ` · ${p.qualificacao}` : "")}
+                      nome={cursoSel.instrutor_nome}
+                      onNome={(v) => setCursoSel({ ...cursoSel, instrutor_nome: v })}
+                      onEscolher={(p) =>
+                        setCursoSel({
+                          ...cursoSel,
+                          instrutor_nome: p.nome,
+                          instrutor_qualificacao:
+                            p.qualificacao || cursoSel.instrutor_qualificacao || "",
+                        })
+                      }
                     />
                   </div>
                   <div>
