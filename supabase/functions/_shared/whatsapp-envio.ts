@@ -27,11 +27,31 @@ export function normalizarTelefoneBR(bruto: string): string | null {
   return null; // formato irreconhecível — melhor não enviar pro número errado
 }
 
-export async function enviarWhatsAppTexto(numero: string, texto: string): Promise<void> {
+export function configEvolution(): { url: string; instancia: string; apikey: string } {
   const url = Deno.env.get("EVOLUTION_URL")?.replace(/\/+$/, "");
   const instancia = Deno.env.get("EVOLUTION_INSTANCE");
   const apikey = Deno.env.get("EVOLUTION_APIKEY");
   if (!url || !instancia || !apikey) throw new CanalNaoConfiguradoError();
+  return { url, instancia, apikey };
+}
+
+/** Chamada autenticada à Evolution; `caminho` recebe "{i}" = instância. */
+export async function evolutionApi(
+  caminho: string,
+  init: { method?: string; body?: unknown } = {}
+): Promise<{ status: number; json: any }> {
+  const { url, instancia, apikey } = configEvolution();
+  const resp = await fetch(url + caminho.replace("{i}", encodeURIComponent(instancia)), {
+    method: init.method ?? "GET",
+    headers: { "Content-Type": "application/json", apikey },
+    body: init.body === undefined ? undefined : JSON.stringify(init.body),
+  });
+  const json = await resp.json().catch(() => null);
+  return { status: resp.status, json };
+}
+
+export async function enviarWhatsAppTexto(numero: string, texto: string): Promise<void> {
+  const { url, instancia, apikey } = configEvolution();
 
   const endpoint = `${url}/message/sendText/${encodeURIComponent(instancia)}`;
   const headers = { "Content-Type": "application/json", apikey };

@@ -4,6 +4,8 @@
  * Só SUPER ADMIN. Ações:
  *   { acao: "status" }  → { success, openai: { configurada, final, modelo } }
  *   { acao: "definir", chave_openai?, modelo? } → { success }
+ *   { acao: "whatsapp_status" | "whatsapp_qr" | "whatsapp_desconectar" }
+ *        → { success, whatsapp: { configurado, estado, numero?, nome?, qr? } }
  *
  * A chave NUNCA é retornada (só "configurada" + últimos 4 dígitos).
  * Precedência de leitura: env OPENAI_API_KEY > tabela saas_config.
@@ -11,8 +13,58 @@
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { usuarioDaRequisicao } from "../_shared/usuario-request.ts";
+import { evolutionApi, CanalNaoConfiguradoError } from "../_shared/whatsapp-envio.ts";
 
 const MODELOS_PERMITIDOS = ["gpt-4o-mini", "gpt-4o"];
+
+async function estadoWhatsApp() {
+  const { status, json } = await evolutionApi("/instance/fetchInstances?instanceName={i}");
+  const inst = Array.isArray(json) ? json[0] : null;
+  if (status === 404 || !inst) return { existe: false, estado: "close" };
+  return {
+    existe: true,
+    estado: inst.connectionStatus || "close",
+    numero: inst.connectionStatus === "open" ? (inst.ownerJid || "").split("@")[0] : null,
+    nome: inst.connectionStatus === "open" ? inst.profileName || null : null,
+  };
+}
+
+/**
+ * Conexão do WhatsApp do SaaS (Evolution). O QR é pedido SEM número de
+ * telefone: com número a Evolution troca o código de pareamento a cada ~45s
+ * e o celular recusa o código vencido.
+ */
+async function acaoWhatsApp(acao: string): Promise<Response> {
+  if (acao === "whatsapp_status") {
+    return ok({ whatsapp: { configurado: true, ...(await estadoWhatsApp()) } });
+  }
+
+  if (acao === "whatsapp_qr") {
+    const atual = await estadoWhatsApp();
+    if (atual.estado === "open") return ok({ whatsapp: { configurado: true, ...atual } });
+    if (!atual.existe) {
+      const criada = await evolutionApi("/instance/create", {
+        method: "POST",
+        body: {
+          instanceName: Deno.env.get("EVOLUTION_INSTANCE"),
+          integration: "WHATSAPP-BAILEYS",
+          qrcode: true,
+        },
+      });
+      if (criada.status >= 300) return fail("Não foi possível criar a instância do WhatsApp", 502);
+    }
+    const { status, json } = await evolutionApi("/instance/connect/{i}");
+    if (status >= 300) return fail("Evolution não gerou o QR code", 502);
+    return ok({ whatsapp: { configurado: true, estado: "connecting", qr: json?.base64 ?? null } });
+  }
+
+  if (acao === "whatsapp_desconectar") {
+    await evolutionApi("/instance/logout/{i}", { method: "DELETE" });
+    return ok({ whatsapp: { configurado: true, ...(await estadoWhatsApp()) } });
+  }
+
+  return fail("Ação desconhecida", 400);
+}
 
 Deno.serve(
   withCors(async (req) => {
@@ -28,6 +80,18 @@ Deno.serve(
       body = await req.json();
     } catch {
       return fail("Payload inválido", 400);
+    }
+
+    if (body.acao?.startsWith("whatsapp_")) {
+      try {
+        return await acaoWhatsApp(body.acao);
+      } catch (e) {
+        if (e instanceof CanalNaoConfiguradoError) {
+          return ok({ whatsapp: { configurado: false, estado: "close" } });
+        }
+        console.error("[saas-config] whatsapp:", (e as Error)?.message);
+        return fail("Servidor do WhatsApp indisponível", 502);
+      }
     }
 
     const supabase = createAdminClient();

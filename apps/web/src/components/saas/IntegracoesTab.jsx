@@ -14,10 +14,12 @@ import {
 } from "@/components/ui/select";
 import { Bot, Loader2, Save, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import WhatsAppConexaoCard from "./WhatsAppConexaoCard";
 
 /**
  * Integrações do SaaS (só Sinergia Digital / super admin).
- * Gerencia a chave global da OpenAI usada pelo ia-processar.
+ * Gerencia a chave global da OpenAI usada pelo ia-processar e a conexão do
+ * WhatsApp dos envios automáticos.
  * A chave nunca volta do servidor — só status + últimos 4 dígitos.
  */
 export default function IntegracoesTab() {
@@ -152,6 +154,8 @@ export default function IntegracoesTab() {
           )}
         </CardContent>
       </Card>
+
+      <WhatsAppConexaoCard />
     </div>
   );
 }
