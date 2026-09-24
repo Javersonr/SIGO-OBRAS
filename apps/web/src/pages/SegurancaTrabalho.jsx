@@ -1142,7 +1142,8 @@ export default function SegurancaTrabalho() {
 
         {/* Aba Contratação (esteira com IA — spec RH & Segurança) */}
         <TabsContent value="contratacao">
-          <ContratacaoTab empresaAtiva={empresaAtiva} user={user} />
+          {/* onRegistrado recarrega a lista de funcionários da página */}
+          <ContratacaoTab empresaAtiva={empresaAtiva} user={user} onRegistrado={loadData} />
         </TabsContent>
 
         {/* Aba Treinamentos EAD (cursos YouTube + Portal do Funcionário) */}

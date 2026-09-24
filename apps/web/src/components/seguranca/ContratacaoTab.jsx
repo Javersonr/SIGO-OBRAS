@@ -203,7 +203,7 @@ async function renomearConformeChecklist(nomeCandidato, anexos) {
   return out;
 }
 
-export default function ContratacaoTab({ empresaAtiva, user }) {
+export default function ContratacaoTab({ empresaAtiva, user, onRegistrado }) {
   const [contratacoes, setContratacoes] = useState([]);
   const [funcoes, setFuncoes] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
@@ -609,7 +609,8 @@ export default function ContratacaoTab({ empresaAtiva, user }) {
         registrado_em: new Date().toISOString(),
         funcionario_id: funcionario.id,
       });
-      toast.success("🎉 Funcionário registrado e criado no sistema!");
+      toast.success("🎉 Funcionário registrado! Veja na aba Funcionários.");
+      onRegistrado?.(); // recarrega a lista de funcionários da página
     } catch (e) {
       console.error(e);
       toast.error("Erro ao registrar: " + (e?.message || e));
