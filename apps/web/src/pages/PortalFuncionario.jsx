@@ -22,6 +22,30 @@ import {
  * portal-funcionario, que valida o token e grava com service role.
  */
 
+function CorrecaoComentada({ item }) {
+  if (!item) return null;
+  return (
+    <div
+      className={`mt-2 rounded-md border-l-4 p-2 text-sm ${
+        item.acertou ? "border-emerald-500 bg-emerald-50" : "border-amber-500 bg-amber-50"
+      }`}
+    >
+      <p className="font-medium flex items-center gap-1">
+        {item.acertou ? (
+          <>
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Você acertou
+          </>
+        ) : (
+          <>
+            <XCircle className="w-4 h-4 text-amber-600" /> Resposta certa: {item.resposta_correta}
+          </>
+        )}
+      </p>
+      {item.comentario && <p className="text-slate-700 mt-1">{item.comentario}</p>}
+    </div>
+  );
+}
+
 function tokenDaUrl() {
   const direto = new URLSearchParams(window.location.search).get("token");
   if (direto) return direto;
@@ -213,7 +237,8 @@ export default function PortalFuncionario() {
       });
       if (data?.success === false) throw new Error(data.error);
       setAvaliacao((a) => ({ ...a, resultado: data, erro: null }));
-      if (data.curso_concluido) {
+      // com correção comentada, o funcionário fecha quando terminar de ler
+      if (data.curso_concluido && !data.revisao?.length) {
         setTimeout(async () => {
           await carregar();
           setCursoAberto(null);
@@ -306,6 +331,9 @@ export default function PortalFuncionario() {
                       </label>
                     ))}
                   </div>
+                  <CorrecaoComentada
+                    item={avaliacao.resultado?.revisao?.find((r) => r.questao_id === q.id)}
+                  />
                 </div>
               ))}
               {avaliacao.erro && <p className="text-sm text-red-600">{avaliacao.erro}</p>}
@@ -334,6 +362,23 @@ export default function PortalFuncionario() {
                       Tentar novamente
                     </Button>
                   )}
+                  {avaliacao.resultado.aprovada && avaliacao.resultado.revisao?.length > 0 && (
+                    <>
+                      <p className="text-sm mt-1">
+                        Veja acima a correção comentada de cada questão.
+                      </p>
+                      <Button
+                        className="mt-2 bg-slate-900"
+                        onClick={async () => {
+                          await carregar();
+                          setCursoAberto(null);
+                          setAvaliacao(null);
+                        }}
+                      >
+                        Voltar aos meus treinamentos
+                      </Button>
+                    </>
+                  )}
                 </div>
               ) : (
                 <Button onClick={enviarAvaliacao} className="w-full bg-slate-900 h-12">
@@ -348,13 +393,24 @@ export default function PortalFuncionario() {
                   <video
                     ref={videoElRef}
                     src={aulaAtiva.video_url}
+                    crossOrigin="anonymous"
                     controls
                     controlsList="nodownload"
                     className="w-full h-full"
                     onPlay={() => iniciarContagem(aulaAtiva)}
                     onPause={() => pausarContagem(aulaAtiva)}
                     onEnded={() => pausarContagem(aulaAtiva)}
-                  />
+                  >
+                    {aulaAtiva.legenda_url && (
+                      <track
+                        kind="subtitles"
+                        src={aulaAtiva.legenda_url}
+                        srcLang="pt-BR"
+                        label="Português"
+                        default
+                      />
+                    )}
+                  </video>
                 ) : (
                   <div id="player-aula" className="w-full h-full" />
                 )}

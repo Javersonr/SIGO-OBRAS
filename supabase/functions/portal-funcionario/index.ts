@@ -10,6 +10,7 @@
  *     duracao_seg? }
  *   { acao:"avaliacao", token, matricula_id, respostas:[{questao_id,resposta}] }
  *     → corrige no servidor, grava nota; aprovação exige nota >= nota_minima.
+ *       Aprovado: devolve `revisao` (acertou/resposta correta/comentário).
  *
  * CONCLUSÃO DO CURSO: todas as aulas >=90% assistidas E, se o curso tiver
  * questões, avaliação aprovada. Aí grava data_conclusao + proxima_renovacao.
@@ -180,15 +181,24 @@ Deno.serve(
             : Promise.resolve({ data: [] }),
         ]);
 
-      // URLs assinadas dos vídeos hospedados
-      const videoUrl = new Map<string, string>();
-      for (const a of aulas ?? []) {
-        if (a.fonte === "upload" && a.video_ref) {
-          const slash = a.video_ref.indexOf("/");
-          const { data: s } = await supabase.storage
-            .from(a.video_ref.slice(0, slash))
-            .createSignedUrl(a.video_ref.slice(slash + 1), TTL_VIDEO);
-          if (s?.signedUrl) videoUrl.set(a.id, s.signedUrl);
+      // URLs assinadas dos vídeos hospedados e das legendas, em lote por bucket
+      const refs = (aulas ?? []).flatMap((a) => [
+        ...(a.fonte === "upload" && a.video_ref ? [a.video_ref] : []),
+        ...(a.legenda_ref ? [a.legenda_ref] : []),
+      ]);
+      const porBucket = new Map<string, string[]>();
+      for (const ref of refs) {
+        const slash = ref.indexOf("/");
+        const bucket = ref.slice(0, slash);
+        porBucket.set(bucket, [...(porBucket.get(bucket) ?? []), ref.slice(slash + 1)]);
+      }
+      const assinada = new Map<string, string>();
+      for (const [bucket, caminhos] of porBucket) {
+        const { data: lote } = await supabase.storage
+          .from(bucket)
+          .createSignedUrls(caminhos, TTL_VIDEO);
+        for (const s of lote ?? []) {
+          if (s.signedUrl && s.path) assinada.set(`${bucket}/${s.path}`, s.signedUrl);
         }
       }
 
@@ -205,7 +215,9 @@ Deno.serve(
               titulo: a.titulo,
               fonte: a.fonte || "youtube",
               youtube_id: a.youtube_id,
-              video_url: videoUrl.get(a.id) || null,
+              video_url:
+                a.fonte === "upload" && a.video_ref ? assinada.get(a.video_ref) || null : null,
+              legenda_url: a.legenda_ref ? assinada.get(a.legenda_ref) || null : null,
               duracao_seg: a.duracao_seg,
               segundos_assistidos: p?.segundos_assistidos ?? 0,
               concluida: p?.concluida ?? false,
@@ -378,9 +390,10 @@ Deno.serve(
       const [{ data: questoes }, { data: curso }] = await Promise.all([
         supabase
           .from("treinamento_questao")
-          .select("id, correta")
+          .select("id, ordem, opcoes, correta, comentario")
           .eq("curso_id", mat.curso_id)
-          .is("deleted_at", null),
+          .is("deleted_at", null)
+          .order("ordem", { ascending: true }),
         supabase
           .from("treinamento_curso")
           .select("nota_minima")
@@ -389,13 +402,9 @@ Deno.serve(
       ]);
       if (!questoes?.length) return fail("Este curso não tem avaliação", 400);
 
-      const gabarito = new Map(questoes.map((q) => [q.id, q.correta]));
-      let acertos = 0;
-      for (const r of respostas) {
-        if (gabarito.has(r.questao_id) && gabarito.get(r.questao_id) === Number(r.resposta)) {
-          acertos++;
-        }
-      }
+      const marcada = new Map(respostas.map((r) => [r.questao_id, Number(r.resposta)]));
+      const acertou = (q: { id: string; correta: number }) => marcada.get(q.id) === q.correta;
+      const acertos = questoes.filter(acertou).length;
       const nota = Math.round((acertos / questoes.length) * 100);
       const minima = curso?.nota_minima ?? 70;
       const aprovada = nota >= minima;
@@ -415,6 +424,17 @@ Deno.serve(
         concluiu = r.concluiu;
       }
 
+      // Correção comentada só após aprovar: antes disso, a nova tentativa
+      // viraria cópia do gabarito.
+      const revisao = aprovada
+        ? questoes.map((q) => ({
+            questao_id: q.id,
+            acertou: acertou(q),
+            resposta_correta: (q.opcoes as string[] | null)?.[q.correta] ?? null,
+            comentario: q.comentario ?? null,
+          }))
+        : null;
+
       return ok({
         nota,
         nota_minima: minima,
@@ -422,6 +442,7 @@ Deno.serve(
         acertos,
         total: questoes.length,
         curso_concluido: concluiu,
+        revisao,
       });
     }
 

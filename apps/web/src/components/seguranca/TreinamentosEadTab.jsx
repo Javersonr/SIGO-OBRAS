@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, resolveStorageUrl } from "@/api/sigoClient";
 import { normalizarTexto } from "@/lib/busca";
+import { srtParaVtt } from "@/lib/legendas";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import { dispararWhatsApp } from "@/lib/whatsapp";
 import { Button } from "@/components/ui/button";
@@ -164,6 +165,42 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
     }
   };
 
+  const abrirVideo = async (aula) => {
+    if (aula.fonte !== "upload") {
+      window.open(`https://youtu.be/${aula.youtube_id}`, "_blank", "noopener");
+      return;
+    }
+    // aba aberta já no clique: depois do await o navegador bloquearia o pop-up
+    const aba = window.open("", "_blank");
+    const url = await resolveStorageUrl(aula.video_ref);
+    if (url && aba) {
+      aba.opener = null;
+      aba.location.href = url;
+    } else {
+      aba?.close();
+      toast.error("Não foi possível abrir o vídeo");
+    }
+  };
+
+  const enviarLegenda = async (aula, arquivo) => {
+    if (!arquivo) return;
+    try {
+      const vtt = srtParaVtt(await arquivo.text());
+      const nome = arquivo.name.replace(/\.(srt|vtt)$/i, "") + ".vtt";
+      const res = await sigo.integrations.Core.UploadFile({
+        file: new File([vtt], nome, { type: "text/vtt" }),
+        bucket: "treinamentos",
+      });
+      await sigo.entities.TreinamentoAula.update(aula.id, {
+        legenda_ref: `${res.bucket}/${res.path}`,
+      });
+      toast.success("Legenda anexada");
+      recarregar();
+    } catch (e) {
+      toast.error("Erro ao anexar legenda: " + (e?.message || e));
+    }
+  };
+
   const removerAula = async (aula) => {
     if (!confirm(`Remover a aula "${aula.titulo}"?`)) return;
     await sigo.entities.TreinamentoAula.delete(aula.id);
@@ -197,6 +234,7 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
       pergunta: novaQuestao.pergunta.trim(),
       opcoes: ops,
       correta: Math.min(novaQuestao.correta ?? 0, ops.length - 1),
+      comentario: novaQuestao.comentario?.trim() || null,
     });
     setNovaQuestao(null);
     carregarQuestoes(cursoSel.id);
@@ -436,8 +474,8 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
           })}
           {cursos.length === 0 && (
             <p className="text-sm text-slate-500 col-span-full py-4">
-              Nenhum curso ainda — crie o primeiro e adicione as aulas (vídeos do YouTube não
-              listados).
+              Nenhum curso ainda — crie o primeiro e adicione as aulas (vídeo próprio ou link do
+              YouTube não listado).
             </p>
           )}
         </CardContent>
@@ -617,14 +655,37 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
                         <span className="flex-1">
                           {a.ordem}. {a.titulo}
                         </span>
-                        <a
-                          href={`https://youtu.be/${a.youtube_id}`}
-                          target="_blank"
-                          rel="noreferrer"
+                        {a.legenda_ref && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0"
+                            title="Aula com legenda"
+                          >
+                            CC
+                          </Badge>
+                        )}
+                        <label
+                          className="text-xs text-slate-500 hover:text-slate-800 cursor-pointer"
+                          title="Anexar ou trocar a legenda (.srt ou .vtt)"
+                        >
+                          {a.legenda_ref ? "trocar legenda" : "+ legenda"}
+                          <input
+                            type="file"
+                            accept=".srt,.vtt"
+                            className="hidden"
+                            onChange={(e) => {
+                              enviarLegenda(a, e.target.files?.[0]);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => abrirVideo(a)}
                           className="text-xs text-sky-600 hover:underline"
                         >
                           ver vídeo
-                        </a>
+                        </button>
                         <button onClick={() => removerAula(a)}>
                           <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
                         </button>
@@ -735,6 +796,11 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
                               </li>
                             ))}
                           </ul>
+                          {q.comentario && (
+                            <p className="mt-1 ml-4 text-xs text-slate-500 italic">
+                              💬 {q.comentario}
+                            </p>
+                          )}
                         </div>
                       ))}
                       {novaQuestao && (
@@ -768,6 +834,14 @@ export default function TreinamentosEadTab({ empresaAtiva }) {
                               />
                             </div>
                           ))}
+                          <Input
+                            placeholder="Comentário da resposta (aparece só depois da aprovação)"
+                            value={novaQuestao.comentario || ""}
+                            onChange={(e) =>
+                              setNovaQuestao({ ...novaQuestao, comentario: e.target.value })
+                            }
+                            className="h-9"
+                          />
                           <div className="flex justify-end gap-2">
                             <Button variant="ghost" size="sm" onClick={() => setNovaQuestao(null)}>
                               Cancelar
