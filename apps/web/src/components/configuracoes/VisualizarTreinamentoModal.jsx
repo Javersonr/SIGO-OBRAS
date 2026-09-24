@@ -1,6 +1,7 @@
 import React from "react";
 import { useState, useEffect } from "react";
 import { safeParseJSON } from "@/lib/json-utils";
+import ImgStorage from "@/components/ImgStorage";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -145,8 +146,8 @@ export default function VisualizarTreinamentoModal({ open, onClose, treinamento 
               {dados.instrutor_assinatura_url && (
                 <div>
                   <Label className="text-slate-500 text-xs">Assinatura</Label>
-                  <img
-                    src={dados.instrutor_assinatura_url}
+                  <ImgStorage
+                    referencia={dados.instrutor_assinatura_url}
                     alt="Assinatura"
                     className="mt-2 max-w-xs border rounded"
                   />
@@ -176,8 +177,8 @@ export default function VisualizarTreinamentoModal({ open, onClose, treinamento 
               {dados.engenheiro_responsavel_assinatura_url && (
                 <div>
                   <Label className="text-slate-500 text-xs">Assinatura</Label>
-                  <img
-                    src={dados.engenheiro_responsavel_assinatura_url}
+                  <ImgStorage
+                    referencia={dados.engenheiro_responsavel_assinatura_url}
                     alt="Assinatura"
                     className="mt-2 max-w-xs border rounded"
                   />

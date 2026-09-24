@@ -5,6 +5,7 @@ import { Printer, X } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { gerarCertificadoDoc, parseInstrutor } from "./certificadoLayout";
+import ImgStorage from "@/components/ImgStorage";
 
 export default function VisualizarCertificadoModal({
   open,
@@ -153,8 +154,8 @@ export default function VisualizarCertificadoModal({
                   {/* Instrutor */}
                   <div>
                     {treinamento.instrutor_assinatura_url ? (
-                      <img
-                        src={treinamento.instrutor_assinatura_url}
+                      <ImgStorage
+                        referencia={treinamento.instrutor_assinatura_url}
                         alt="Assinatura Instrutor"
                         className="h-8 mx-auto mb-1 object-contain"
                       />
@@ -178,8 +179,8 @@ export default function VisualizarCertificadoModal({
                   <div>
                     {treinamento.responsavel_tecnico_assinatura_url ||
                     treinamento.engenheiro_responsavel_assinatura_url ? (
-                      <img
-                        src={
+                      <ImgStorage
+                        referencia={
                           treinamento.responsavel_tecnico_assinatura_url ||
                           treinamento.engenheiro_responsavel_assinatura_url
                         }

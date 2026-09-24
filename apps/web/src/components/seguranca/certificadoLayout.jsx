@@ -1,18 +1,23 @@
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { safeParseJSON } from "@/lib/json-utils";
+import { resolveStorageUrl } from "@/api/sigoClient";
 
 const NAVY = [15, 40, 85];
 const GOLD = [196, 155, 50];
 
-export const loadImage = (url) =>
-  new Promise((resolve) => {
+// Aceita URL completa (legado) OU referência "bucket/caminho" do Storage.
+export const loadImage = async (ref) => {
+  const url = await resolveStorageUrl(ref);
+  if (!url) return null;
+  return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = "Anonymous";
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null);
     img.src = url;
   });
+};
 
 export const parseInstrutor = (instrutor_nome, instrutor_cpf) => {
   const parsed = safeParseJSON(instrutor_nome, null);

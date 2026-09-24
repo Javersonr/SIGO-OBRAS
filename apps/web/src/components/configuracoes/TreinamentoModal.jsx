@@ -8,6 +8,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Plus, Trash2, Upload, X } from "lucide-react";
 import { formatCPF } from "@/components/utils/cpfFormatter";
+import ImgStorage from "@/components/ImgStorage";
+
+// Guarda a REFERÊNCIA estável do Storage ("bucket/caminho"), nunca a URL
+// assinada (expira em 1h e deixava a assinatura quebrada no dia seguinte).
+async function subirAssinatura(file) {
+  const res = await sigo.integrations.Core.UploadFile({
+    file,
+    bucket: "assinaturas",
+  });
+  return `${res.bucket}/${res.path}`;
+}
 
 // Parseia instrutores do campo instrutor_nome (suporta JSON array ou string legada)
 const parseInstrutores = (instrutor_nome, instrutor_cpf, instrutor_assinatura_url) => {
@@ -306,10 +317,9 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
                       const file = e.target.files?.[0];
                       if (file) {
                         try {
-                          const { file_url } = await sigo.integrations.Core.UploadFile({ file });
                           setFormData({
                             ...formData,
-                            responsavel_tecnico_assinatura_url: file_url,
+                            responsavel_tecnico_assinatura_url: await subirAssinatura(file),
                           });
                         } catch (error) {
                           console.error("Erro ao fazer upload:", error);
@@ -338,8 +348,8 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
               </div>
               {formData.responsavel_tecnico_assinatura_url && (
                 <div className="mt-2 flex items-center gap-2">
-                  <img
-                    src={formData.responsavel_tecnico_assinatura_url}
+                  <ImgStorage
+                    referencia={formData.responsavel_tecnico_assinatura_url}
                     alt="Assinatura"
                     className="h-12 border rounded"
                   />
@@ -407,10 +417,7 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
                             const file = e.target.files?.[0];
                             if (file) {
                               try {
-                                const { file_url } = await sigo.integrations.Core.UploadFile({
-                                  file,
-                                });
-                                updateInstrutor(idx, "assinatura_url", file_url);
+                                updateInstrutor(idx, "assinatura_url", await subirAssinatura(file));
                               } catch (error) {
                                 console.error("Erro ao fazer upload:", error);
                               }
@@ -436,8 +443,8 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
                     </div>
                     {inst.assinatura_url && (
                       <div className="mt-2 flex items-center gap-2">
-                        <img
-                          src={inst.assinatura_url}
+                        <ImgStorage
+                          referencia={inst.assinatura_url}
                           alt="Assinatura"
                           className="h-12 border rounded"
                         />
