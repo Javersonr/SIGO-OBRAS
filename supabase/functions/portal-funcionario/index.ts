@@ -76,6 +76,7 @@ interface Body {
   aula_id?: string;
   segundos_assistidos?: number;
   duracao_seg?: number;
+  concluir?: boolean;
   respostas?: { questao_id: string; resposta: number; ordem_opcoes?: number[] }[];
   ciencia_id?: string;
   pergunta?: string;
@@ -658,8 +659,21 @@ Deno.serve(
         });
       }
 
+      // vídeo conclui sozinho aos 90% assistidos; apostila (pdf/texto) exige o
+      // tempo de leitura COMPLETO e o clique explícito em "Marcar como lida"
+      const ehVideo = !aula.tipo || aula.tipo === "video";
+      const minimoSeg = ehVideo ? Math.floor(duracao * PCT_CONCLUSAO) : duracao;
+      const atingiuTempo = duracao > 0 && novoSeg >= minimoSeg;
+      if (body.concluir === true && !ehVideo && !atingiuTempo) {
+        const faltam = Math.ceil((duracao - novoSeg) / 60);
+        return fail(`Continue lendo: ainda faltam ${faltam} min do tempo mínimo de leitura.`, 409, {
+          codigo: "TEMPO_LEITURA",
+          segundos_assistidos: novoSeg,
+          faltam_seg: duracao - novoSeg,
+        });
+      }
       const concluiu =
-        atual?.concluida || (duracao ? novoSeg >= Math.floor(duracao * PCT_CONCLUSAO) : false);
+        atual?.concluida || (ehVideo ? atingiuTempo : atingiuTempo && body.concluir === true);
       const { error: upErr } = await supabase.from("treinamento_progresso").upsert(
         {
           empresa_id: empresaId,
@@ -678,6 +692,15 @@ Deno.serve(
 
       let resultado = { status: mat.status, concluiu: false, precisaAvaliacao: false };
       if (concluiu && !atual?.concluida) {
+        if (!ehVideo) {
+          await ev({
+            evento: "apostila_lida",
+            matricula_id: mat.id,
+            curso_id: mat.curso_id,
+            aula_id: aula.id,
+            detalhe: { segundos: novoSeg, minimo: duracao },
+          });
+        }
         await ev({
           evento: "aula_concluida",
           matricula_id: mat.id,
@@ -699,6 +722,7 @@ Deno.serve(
 
       return ok({
         segundos_assistidos: novoSeg,
+        pode_concluir: !ehVideo && atingiuTempo && !concluiu,
         aula_concluida: concluiu,
         curso_concluido: resultado.concluiu,
         precisa_avaliacao: resultado.precisaAvaliacao && !mat.avaliacao_aprovada,

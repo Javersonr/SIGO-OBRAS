@@ -73,7 +73,7 @@ export default function CursoPortal({ item, token, recarregar, onVoltar, onErroS
       chamarPortal("evento", { evento: nome, matricula_id: mat.id, ...extra }, token)
     ).catch(tratarErro);
 
-  const sincronizar = async () => {
+  const sincronizar = async ({ concluir = false } = {}) => {
     const a = aulaRef.current;
     if (!a) return;
     const enviado = assistidoRef.current;
@@ -90,6 +90,7 @@ export default function CursoPortal({ item, token, recarregar, onVoltar, onErroS
             aula_id: a.id,
             segundos_assistidos: Math.floor(enviado),
             duracao_seg: duracaoMidia ? Math.floor(duracaoMidia) : undefined,
+            concluir: concluir || undefined,
           },
           token
         )
@@ -110,6 +111,16 @@ export default function CursoPortal({ item, token, recarregar, onVoltar, onErroS
         );
       }
     } catch (e) {
+      // servidor mede o tempo real: se ainda falta leitura, volta a contar
+      if (e?.codigo === "TEMPO_LEITURA") {
+        if (Number.isFinite(e.extra?.segundos_assistidos)) {
+          assistidoRef.current = e.extra.segundos_assistidos;
+          setSegundosTela(assistidoRef.current);
+        }
+        setErro(e.message);
+        iniciarContagem();
+        return;
+      }
       tratarErro(e);
     }
   };
@@ -369,6 +380,21 @@ export default function CursoPortal({ item, token, recarregar, onVoltar, onErroS
                 </span>
               )}
             </div>
+            {aula.tipo !== "video" && !aula.concluida && (
+              <Button
+                className="w-full h-11 bg-emerald-600 hover:bg-emerald-700"
+                disabled={minimo > 0 && segundosTela < minimo}
+                onClick={async () => {
+                  await pararContagem(false);
+                  sincronizar({ concluir: true });
+                }}
+              >
+                <CheckCircle2 className="w-4 h-4 mr-2" />
+                {minimo > 0 && segundosTela < minimo
+                  ? `Marcar como lida (faltam ${fmtTempo(minimo - segundosTela)})`
+                  : "Marcar como lida — li e compreendi"}
+              </Button>
+            )}
           </div>
         ) : (
           !(mat.status === "concluido") && (

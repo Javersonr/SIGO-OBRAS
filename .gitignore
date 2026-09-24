@@ -105,3 +105,4 @@ coverage/
 *.pid.lock
 .eslintcache
 .stylelintcache
+tools/.tmp-ead/

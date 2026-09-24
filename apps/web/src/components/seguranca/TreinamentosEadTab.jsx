@@ -23,6 +23,9 @@ import {
   MessageCircle,
   Users,
   Video,
+  Pencil,
+  ArrowUp,
+  ArrowDown,
   ClipboardList,
   FileText,
   BookOpen,
@@ -126,6 +129,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const [questoes, setQuestoes] = useState([]);
   const [novaQuestao, setNovaQuestao] = useState(null); // {pergunta, opcoes[4], correta}
   const [treinamentosConfig, setTreinamentosConfig] = useState([]);
+  const [aulaEditando, setAulaEditando] = useState(null); // {id, titulo, modulo, tipo, minutos}
 
   const recarregar = async () => {
     setCarregando(true);
@@ -357,6 +361,39 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
     }
   };
 
+  const moverAula = async (aula, dir) => {
+    const lista = aulasDoCurso(cursoSel.id);
+    const i = lista.findIndex((x) => x.id === aula.id);
+    const alvo = lista[i + dir];
+    if (!alvo) return;
+    await Promise.all([
+      sigo.entities.TreinamentoAula.update(aula.id, { ordem: alvo.ordem }),
+      sigo.entities.TreinamentoAula.update(alvo.id, { ordem: aula.ordem }),
+    ]);
+    recarregar();
+  };
+
+  const salvarAulaEdicao = async () => {
+    const titulo = (aulaEditando.titulo || "").trim();
+    if (!titulo) {
+      toast.error("Informe o título da aula");
+      return;
+    }
+    const patch = { titulo, modulo: (aulaEditando.modulo || "").trim() || null };
+    if (aulaEditando.tipo !== "video") {
+      const seg = Math.round(Number(aulaEditando.minutos || 0) * 60);
+      if (!seg) {
+        toast.error("Informe o tempo mínimo de leitura (minutos)");
+        return;
+      }
+      patch.duracao_seg = seg;
+    }
+    await sigo.entities.TreinamentoAula.update(aulaEditando.id, patch);
+    setAulaEditando(null);
+    toast.success("Aula atualizada");
+    recarregar();
+  };
+
   const removerAula = async (aula) => {
     if (!confirm(`Remover a aula "${aula.titulo}"?`)) return;
     await sigo.entities.TreinamentoAula.delete(aula.id);
@@ -383,15 +420,22 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       toast.error("Informe a pergunta e pelo menos 2 opções");
       return;
     }
-    await sigo.entities.TreinamentoQuestao.create({
-      empresa_id: empresaAtiva.id,
-      curso_id: cursoSel.id,
-      ordem: questoes.length + 1,
+    const dados = {
       pergunta: novaQuestao.pergunta.trim(),
       opcoes: ops,
       correta: Math.min(novaQuestao.correta ?? 0, ops.length - 1),
       comentario: novaQuestao.comentario?.trim() || null,
-    });
+    };
+    if (novaQuestao.id) {
+      await sigo.entities.TreinamentoQuestao.update(novaQuestao.id, dados);
+    } else {
+      await sigo.entities.TreinamentoQuestao.create({
+        ...dados,
+        empresa_id: empresaAtiva.id,
+        curso_id: cursoSel.id,
+        ordem: questoes.length + 1,
+      });
+    }
     setNovaQuestao(null);
     carregarQuestoes(cursoSel.id);
   };
@@ -1042,10 +1086,88 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                                 {a.tipo === "pdf" ? "ver PDF" : "ver vídeo"}
                               </button>
                             )}
+                            <button
+                              title="Subir na ordem"
+                              disabled={i === 0}
+                              onClick={() => moverAula(a, -1)}
+                            >
+                              <ArrowUp
+                                className={`w-4 h-4 ${i === 0 ? "text-slate-200" : "text-slate-400 hover:text-slate-800"}`}
+                              />
+                            </button>
+                            <button
+                              title="Descer na ordem"
+                              disabled={i === lista.length - 1}
+                              onClick={() => moverAula(a, 1)}
+                            >
+                              <ArrowDown
+                                className={`w-4 h-4 ${i === lista.length - 1 ? "text-slate-200" : "text-slate-400 hover:text-slate-800"}`}
+                              />
+                            </button>
+                            <button
+                              title="Editar aula"
+                              onClick={() =>
+                                setAulaEditando({
+                                  id: a.id,
+                                  tipo: a.tipo || "video",
+                                  titulo: a.titulo || "",
+                                  modulo: a.modulo || "",
+                                  minutos: a.duracao_seg ? Math.round(a.duracao_seg / 60) : "",
+                                })
+                              }
+                            >
+                              <Pencil className="w-4 h-4 text-slate-400 hover:text-slate-800" />
+                            </button>
                             <button onClick={() => removerAula(a)}>
                               <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
                             </button>
                           </div>
+                          {aulaEditando?.id === a.id && (
+                            <div className="rounded-lg border p-3 space-y-2 bg-white">
+                              <div className="grid grid-cols-2 gap-2">
+                                <Input
+                                  placeholder="Título"
+                                  value={aulaEditando.titulo}
+                                  onChange={(e) =>
+                                    setAulaEditando({ ...aulaEditando, titulo: e.target.value })
+                                  }
+                                  className="h-9 col-span-2"
+                                />
+                                <Input
+                                  placeholder="Módulo"
+                                  value={aulaEditando.modulo}
+                                  onChange={(e) =>
+                                    setAulaEditando({ ...aulaEditando, modulo: e.target.value })
+                                  }
+                                  className="h-9"
+                                />
+                                {aulaEditando.tipo !== "video" && (
+                                  <Input
+                                    type="number"
+                                    min={1}
+                                    placeholder="Tempo mín. de leitura (min)"
+                                    value={aulaEditando.minutos}
+                                    onChange={(e) =>
+                                      setAulaEditando({ ...aulaEditando, minutos: e.target.value })
+                                    }
+                                    className="h-9"
+                                  />
+                                )}
+                              </div>
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setAulaEditando(null)}
+                                >
+                                  Cancelar
+                                </Button>
+                                <Button size="sm" onClick={salvarAulaEdicao}>
+                                  Salvar aula
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </React.Fragment>
                       );
                     })}
@@ -1225,6 +1347,20 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                             <span className="flex-1 font-medium">
                               {qi + 1}. {q.pergunta}
                             </span>
+                            <button
+                              title="Editar questão"
+                              onClick={() =>
+                                setNovaQuestao({
+                                  id: q.id,
+                                  pergunta: q.pergunta || "",
+                                  opcoes: [...(q.opcoes || []), "", "", "", ""].slice(0, 4),
+                                  correta: q.correta ?? 0,
+                                  comentario: q.comentario || "",
+                                })
+                              }
+                            >
+                              <Pencil className="w-4 h-4 text-slate-400 hover:text-slate-800" />
+                            </button>
                             <button
                               onClick={async () => {
                                 if (!confirm("Excluir esta questão?")) return;
