@@ -16,7 +16,51 @@
  */
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { usuarioDaRequisicao } from "../_shared/usuario-request.ts";
-import { chamarOpenAI } from "../_shared/openai.ts";
+import { chamarOpenAI, lerConfigOpenAI } from "../_shared/openai.ts";
+
+const MODELO_FORTE = "gpt-4o";
+
+/** Conta valores "preenchidos" (não-null/não-vazios) numa estrutura JSON. */
+// deno-lint-ignore no-explicit-any
+function contarPreenchidos(v: any): number {
+  if (v === null || v === undefined || v === "") return 0;
+  if (Array.isArray(v)) return v.reduce((s, x) => s + contarPreenchidos(x), 0);
+  if (typeof v === "object") {
+    return Object.values(v).reduce((s: number, x) => s + contarPreenchidos(x), 0);
+  }
+  return 1;
+}
+
+/**
+ * ESCALONAMENTO AUTOMÁTICO: tenta o modelo configurado (econômico); se o
+ * resultado vier fraco (heurística por ação) ou com erro, refaz no modelo
+ * forte e devolve a resposta mais completa. Pedido do dono: "trocar
+ * automático os modelos quando tiver dificuldade".
+ */
+async function chamarComEscalonamento(
+  opts: { prompt: string; fileRefs?: string[]; jsonSchema?: unknown },
+  // deno-lint-ignore no-explicit-any
+  estaFraco?: (resultado: any) => boolean
+): Promise<{ ok: true; resultado: unknown; modelo: string } | { ok: false; erro: string }> {
+  const { modelo } = await lerConfigOpenAI();
+  const cadeia = [...new Set([modelo, MODELO_FORTE])];
+  let melhor: { resultado: unknown; pontos: number; modelo: string } | null = null;
+  let ultimoErro = "IA indisponível";
+  for (const m of cadeia) {
+    const r = await chamarOpenAI({ ...opts, modelo: m });
+    if (!r.ok) {
+      ultimoErro = r.erro;
+      if (r.erro === "IA_NAO_CONFIGURADA") return r;
+      continue; // erro/JSON inválido → tenta o próximo modelo
+    }
+    const pontos = contarPreenchidos(r.resultado);
+    if (!melhor || pontos > melhor.pontos) melhor = { resultado: r.resultado, pontos, modelo: m };
+    if (!estaFraco || !estaFraco(r.resultado)) break; // bom o suficiente, para aqui
+  }
+  return melhor
+    ? { ok: true, resultado: melhor.resultado, modelo: melhor.modelo }
+    : { ok: false, erro: ultimoErro };
+}
 
 interface Body {
   acao?: string;
@@ -185,7 +229,7 @@ Deno.serve(
           "- CTPS DIGITAL: o número da carteira é o PRÓPRIO CPF do titular — preencha ctps_numero com ele; NUNCA escreva a palavra 'Digital' como número.",
           "- Comprovante de residência (conta de água/luz): endereco, bairro, cep, cidade e estado.",
           "- Título de eleitor: titulo_eleitor (número), titulo_eleitor_zona e titulo_eleitor_secao.",
-          "- Certidão de casamento: estado_civil='Casado' e cônjuge nos dependentes com nome completo, CPF e DATA DE NASCIMENTO (a certidão costuma trazer a data ou a idade dos nubentes — leia o texto corrido com atenção; se só houver idade, deixe null e registre em observacoes).",
+          "- Certidão de casamento: estado_civil='Casado' e cônjuge nos dependentes com nome completo, CPF e DATA DE NASCIMENTO — procure no texto corrido expressões como 'nascida aos 23/05/1998', 'nascido em ...' (se só houver idade, deixe null e registre em observacoes).",
           "Inclua em dependentes o cônjuge e os filhos menores de 21 anos que aparecerem em certidões.",
           checklist.length
             ? `Classifique cada arquivo anexado em UM item deste checklist (ou null se não corresponder): ${checklist.join("; ")}.`
@@ -193,11 +237,19 @@ Deno.serve(
           "Os nomes dos arquivos, na ordem em que foram anexados, são: " +
             (body.file_refs ?? []).map((r) => r.split("/").pop()).join("; "),
         ].join("\n");
-        const r = await chamarOpenAI({
-          prompt,
-          fileRefs: body.file_refs,
-          jsonSchema: SCHEMA_EXTRACAO,
-        });
+        // fraco = faltou o básico OU dependente sem data OU anexo sem classificar
+        // deno-lint-ignore no-explicit-any
+        const extracaoFraca = (res: any) => {
+          if (!res?.campos?.nome_completo || !res?.campos?.cpf) return true;
+          if ((res?.dependentes ?? []).some((d: any) => !d?.data_nascimento)) return true;
+          const cls = res?.classificacao ?? [];
+          const semItem = cls.filter((x: any) => !x?.item_checklist).length;
+          return cls.length > 0 && semItem > cls.length / 2;
+        };
+        const r = await chamarComEscalonamento(
+          { prompt, fileRefs: body.file_refs, jsonSchema: SCHEMA_EXTRACAO },
+          extracaoFraca
+        );
         if (!r.ok) {
           return r.erro === "IA_NAO_CONFIGURADA"
             ? fail("IA não configurada — defina a chave no SaaS Admin → Integrações", 503)
@@ -217,11 +269,14 @@ Deno.serve(
           "Liste como pendência qualquer exame exigido que falte, esteja vencido, ilegível ou com resultado divergente.",
           "aprovado = true somente se não houver NENHUMA pendência.",
         ].join("\n");
-        const r = await chamarOpenAI({
-          prompt,
-          fileRefs: [body.pcmso_ref, ...body.exames_refs],
-          jsonSchema: SCHEMA_PCMSO,
-        });
+        // parecer sem resumo ou sem estrutura clara = fraco → escala pro forte
+        // deno-lint-ignore no-explicit-any
+        const parecerFraco = (res: any) =>
+          typeof res?.aprovado !== "boolean" || !res?.resumo || !Array.isArray(res?.pendencias);
+        const r = await chamarComEscalonamento(
+          { prompt, fileRefs: [body.pcmso_ref, ...body.exames_refs], jsonSchema: SCHEMA_PCMSO },
+          parecerFraco
+        );
         if (!r.ok) {
           return r.erro === "IA_NAO_CONFIGURADA"
             ? fail("IA não configurada — defina a chave no SaaS Admin → Integrações", 503)
