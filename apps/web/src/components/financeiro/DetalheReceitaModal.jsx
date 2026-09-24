@@ -1,10 +1,12 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Edit, X, CheckCircle2 } from "lucide-react";
 import { DadosRecebimentoConta } from "./DadosBancariosPagamento";
+import { hojeLocalISO } from "./utils";
 
 export default function DetalheReceitaModal({
   open,
@@ -15,7 +17,15 @@ export default function DetalheReceitaModal({
   onBaixar,
   empresaAtiva,
 }) {
+  // data do recebimento escolhida pelo usuário (null = seletor fechado)
+  const [dataRecebimento, setDataRecebimento] = useState(null);
+  useEffect(() => {
+    setDataRecebimento(null);
+  }, [receita?.id, open]);
+
   if (!receita) return null;
+  const recebida = receita.status === "pago" || receita.status === "Pago";
+  const venc = (receita.data_vencimento || "").toString().slice(0, 10);
 
   const formatCurrency = (v) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
@@ -172,24 +182,70 @@ export default function DetalheReceitaModal({
         </div>
 
         <div className="border-t p-4 space-y-3">
-          {onBaixar && (
+          {onBaixar && recebida && (
             <Button
-              variant={
-                receita.status === "pago" || receita.status === "Pago" ? "outline" : "default"
-              }
+              variant="outline"
               size="sm"
-              onClick={() => onBaixar(receita)}
-              className={
-                receita.status === "pago" || receita.status === "Pago"
-                  ? "text-blue-600 w-full"
-                  : "bg-green-600 hover:bg-green-700 w-full"
-              }
+              onClick={() => {
+                if (confirm("Desfazer o recebimento desta receita?")) {
+                  onBaixar(receita, { pagar: false });
+                }
+              }}
+              className="text-blue-600 w-full"
             >
               <CheckCircle2 className="w-4 h-4 mr-2" />
-              {receita.status === "pago" || receita.status === "Pago"
-                ? "Desfazer Recebimento"
-                : "Registrar Recebimento"}
+              Desfazer Recebimento
             </Button>
+          )}
+          {onBaixar && !recebida && dataRecebimento === null && (
+            <Button
+              size="sm"
+              onClick={() => setDataRecebimento(hojeLocalISO())}
+              className="bg-green-600 hover:bg-green-700 w-full"
+            >
+              <CheckCircle2 className="w-4 h-4 mr-2" />
+              Registrar Recebimento
+            </Button>
+          )}
+          {onBaixar && !recebida && dataRecebimento !== null && (
+            <div className="rounded-lg border p-3 space-y-2">
+              <Label>Data do recebimento *</Label>
+              <Input
+                type="date"
+                value={dataRecebimento}
+                onChange={(e) => setDataRecebimento(e.target.value)}
+              />
+              {venc && venc !== dataRecebimento && venc <= hojeLocalISO() && (
+                <button
+                  type="button"
+                  onClick={() => setDataRecebimento(venc)}
+                  className="text-xs text-sky-700 hover:underline"
+                >
+                  Usar a data do vencimento ({venc.split("-").reverse().join("/")})
+                </button>
+              )}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setDataRecebimento(null)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  size="sm"
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  disabled={!dataRecebimento}
+                  onClick={() => {
+                    onBaixar(receita, { pagar: true, dataPagamento: dataRecebimento });
+                    setDataRecebimento(null);
+                  }}
+                >
+                  Confirmar recebimento
+                </Button>
+              </div>
+            </div>
           )}
           <div className="flex gap-3">
             <Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1">

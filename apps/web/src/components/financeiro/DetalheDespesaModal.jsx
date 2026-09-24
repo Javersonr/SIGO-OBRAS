@@ -160,7 +160,7 @@ export default function DetalheDespesaModal({
                                   parcelas: JSON.stringify(novasParcelas),
                                 });
 
-                                if (onBaixar) onBaixar(despesa);
+                                if (onBaixar) onBaixar(despesa, { somenteRecarregar: true });
                               } else {
                                 // Abrir modal de pagamento para esta parcela
                                 setDespesaPagamento({
@@ -406,7 +406,7 @@ export default function DetalheDespesaModal({
                   onClick={() => {
                     if (despesa.status === "Realizado") {
                       if (confirm("Desfazer pagamento desta despesa?")) {
-                        onBaixar(despesa);
+                        onBaixar(despesa, { pagar: false });
                       }
                     } else {
                       setShowModalPagamento(true);
@@ -559,7 +559,15 @@ export default function DetalheDespesaModal({
 
             setDespesaPagamento(null);
             setShowModalPagamento(false);
-            if (onBaixar) onBaixar(despesa);
+            // parcela: só recarrega; despesa inteira: baixa com a DATA ESCOLHIDA
+            if (onBaixar) {
+              onBaixar(
+                despesa,
+                despesaPagamento?._parcelaIndex !== undefined
+                  ? { somenteRecarregar: true }
+                  : { pagar: true, dataPagamento }
+              );
+            }
           } catch (err) {
             alert("Erro ao registrar pagamento: " + err.message);
           }

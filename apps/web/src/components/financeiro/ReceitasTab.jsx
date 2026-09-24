@@ -42,7 +42,7 @@ import NovoClienteModal from "../clientes/NovoClienteModal";
 import FiltroRapido from "./FiltroRapido";
 import CardsResumo from "./CardsResumo";
 import BarraProgressoImportacao from "./BarraProgressoImportacao";
-import { parseData, parseValor, formatCurrency } from "./utils";
+import { parseData, parseValor, formatCurrency, hojeLocalISO } from "./utils";
 import SortButton from "../shared/SortButton";
 import SortableTableHeader from "../shared/SortableTableHeader";
 import AnexoViewer from "../shared/AnexoViewer";
@@ -1013,18 +1013,22 @@ export default function ReceitasTab({
   // Set de ids sendo togglados — bloqueia clique duplo que criava 2 ExtratoBancario.
   // useState ficaria mais idiomático mas como precisamos de Set mutável referenciável
   // entre cliques rápidos, usamos useRef através de um state-set.
-  const handleToggleStatus = async (item) => {
+  // `opcoes.pagar` explícito + `opcoes.dataPagamento` = data do recebimento
+  // informada pelo usuário (antes era sempre "hoje").
+  const handleToggleStatus = async (item, opcoes = {}) => {
     if (togglingIds.has(item.id)) return; // já está em processamento
     setTogglingIds((s) => new Set(s).add(item.id));
 
     const isPagoAtual = String(item.status || "").toLowerCase();
     const eraPago = isPagoAtual === "pago" || isPagoAtual === "realizado";
-    const newStatus = eraPago ? "em_aberto" : "pago";
+    const pagar = typeof opcoes.pagar === "boolean" ? opcoes.pagar : !eraPago;
+    const newStatus = pagar ? "pago" : "em_aberto";
+    const dataPagamento = opcoes.dataPagamento || hojeLocalISO();
 
     try {
       await sigo.entities.TransacaoFinanceira.update(item.id, {
         status: newStatus,
-        data_pagamento: newStatus === "pago" ? new Date().toISOString().split("T")[0] : null,
+        data_pagamento: newStatus === "pago" ? dataPagamento : null,
       });
 
       if (newStatus === "pago") {
@@ -1036,7 +1040,7 @@ export default function ReceitasTab({
           await sigo.entities.ExtratoBancario.create({
             empresa_id: empresaAtiva.id,
             conta_id: item.conta_id,
-            data: new Date().toISOString().split("T")[0],
+            data: dataPagamento,
             descricao: item.descricao,
             valor: Math.abs(item.valor),
             tipo: "credito",

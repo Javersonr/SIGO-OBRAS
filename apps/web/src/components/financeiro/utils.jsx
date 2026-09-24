@@ -1,5 +1,14 @@
 // Utilitários compartilhados para o módulo financeiro
 
+/**
+ * Hoje (YYYY-MM-DD) no fuso do navegador. `toISOString()` é UTC: depois das
+ * 21h no Brasil ele já devolve o dia seguinte.
+ */
+export const hojeLocalISO = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+
 export const parseData = (dataStr) => {
   if (!dataStr) return new Date().toISOString().split("T")[0];
 

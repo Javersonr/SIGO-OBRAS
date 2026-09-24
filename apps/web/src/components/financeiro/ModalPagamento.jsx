@@ -13,6 +13,7 @@ import {
 import { CheckCircle2, Upload, X } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
 import { DadosBancariosFornecedor } from "./DadosBancariosPagamento";
+import { hojeLocalISO } from "./utils";
 
 export default function ModalPagamento({
   open,
@@ -28,15 +29,17 @@ export default function ModalPagamento({
   const [uploading, setUploading] = useState(false);
   const [salvando, setSalvando] = useState(false);
 
+  // reinicia A CADA abertura (antes só na 1ª: a despesa seguinte herdava a
+  // data e o comprovante da anterior)
   useEffect(() => {
-    if (open && !dataPagamento) {
-      setDataPagamento(new Date().toISOString().split("T")[0]);
+    if (open) {
+      setDataPagamento(despesa?._parcela?.data_pagamento || hojeLocalISO());
       setFormaPagamento(despesa?.forma_pagamento || "");
       setComprovanteUrl("");
       setUploading(false);
       setSalvando(false);
     }
-  }, [open]);
+  }, [open, despesa?.id, despesa?._parcelaIndex]);
 
   const handleUploadComprovante = async (e) => {
     const file = e.target.files[0];
@@ -163,6 +166,21 @@ export default function ModalPagamento({
               onChange={(e) => setDataPagamento(e.target.value)}
               className="mt-1.5"
             />
+            {(() => {
+              const venc = (despesa?._parcela?.data_vencimento || despesa?.data_vencimento || "")
+                .toString()
+                .slice(0, 10);
+              if (!venc || venc === dataPagamento || venc > hojeLocalISO()) return null;
+              return (
+                <button
+                  type="button"
+                  onClick={() => setDataPagamento(venc)}
+                  className="mt-1.5 text-xs text-sky-700 hover:underline"
+                >
+                  Usar a data do vencimento ({venc.split("-").reverse().join("/")})
+                </button>
+              );
+            })()}
           </div>
 
           {/* Forma de pagamento */}

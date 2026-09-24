@@ -38,7 +38,7 @@ import FiltroRapido from "./FiltroRapido";
 import CardsResumo from "./CardsResumo";
 import BarraProgressoImportacao from "./BarraProgressoImportacao";
 import DetalheDespesaModal from "./DetalheDespesaModal";
-import { parseData, parseValor, formatCurrency } from "./utils";
+import { parseData, parseValor, formatCurrency, hojeLocalISO } from "./utils";
 import SortableTableHeader from "../shared/SortableTableHeader";
 import DespesaModal from "./DespesaModal";
 
@@ -1312,18 +1312,31 @@ export default function DespesasTab({
     }
   };
 
-  const handleToggleStatus = async (item) => {
+  /**
+   * Baixa / estorno da despesa. `opcoes.pagar` (true/false) diz a ação de forma
+   * explícita e `opcoes.dataPagamento` a data escolhida — sem isso a função
+   * alternava a partir do status de uma cópia DESATUALIZADA da despesa e
+   * regravava a data de hoje por cima da data informada no pagamento.
+   * `opcoes.somenteRecarregar` só atualiza a lista (ex.: mudança em parcela).
+   */
+  const handleToggleStatus = async (item, opcoes = {}) => {
+    if (opcoes.somenteRecarregar) {
+      onReload();
+      return;
+    }
     if (togglingIds.has(item.id)) return; // bloqueia clique duplo
     setTogglingIds((s) => new Set(s).add(item.id));
 
     const statusAtual = String(item.status || "").toLowerCase();
     const eraPago = statusAtual === "pago" || statusAtual === "realizado";
-    const newStatus = eraPago ? "em_aberto" : "pago";
+    const pagar = typeof opcoes.pagar === "boolean" ? opcoes.pagar : !eraPago;
+    const newStatus = pagar ? "pago" : "em_aberto";
+    const dataPagamento = opcoes.dataPagamento || hojeLocalISO();
 
     try {
       await sigo.entities.TransacaoFinanceira.update(item.id, {
         status: newStatus,
-        data_pagamento: newStatus === "pago" ? new Date().toISOString().split("T")[0] : null,
+        data_pagamento: newStatus === "pago" ? dataPagamento : null,
       });
 
       // Sincronizar com ExtratoBancario
@@ -1337,7 +1350,7 @@ export default function DespesasTab({
           await sigo.entities.ExtratoBancario.create({
             empresa_id: empresaAtiva.id,
             conta_id: item.conta_id,
-            data: new Date().toISOString().split("T")[0],
+            data: dataPagamento,
             descricao: item.descricao,
             valor: -Math.abs(item.valor),
             tipo: "debito",
