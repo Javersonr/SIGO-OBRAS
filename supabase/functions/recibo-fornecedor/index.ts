@@ -7,9 +7,10 @@
  *       público (token HMAC de 30 dias). Reemitir devolve o MESMO recibo com
  *       token novo — o conteúdo congelado nunca muda.
  *   { acao:"dados", token }          [público]  → recibo para a página pública
- *   { acao:"confirmar", token }      [público]  → quitação (Lei 14.063/2020):
- *       grava quando, IP e aparelho em `evidencia`. Idempotente.
- *   { acao:"contestar", token, motivo } [público] → status contestada
+ *   { acao:"confirmar", token, localizacao? } [público] → quitação (Lei 14.063/2020):
+ *       grava quando, IP, aparelho e a localização informada pelo aparelho
+ *       (se a pessoa permitiu) em `evidencia`. Idempotente.
+ *   { acao:"contestar", token, motivo, localizacao? } [público] → status contestada
  *   { acao:"pdf", token }             [público]  → URL do PDF do recibo QUITADO
  *   { acao:"pdf_quitado", transacao_id } [STAFF] → idem, pelo detalhe da despesa
  *
@@ -26,6 +27,7 @@ import {
   sha256Hex,
 } from "../_shared/portal-funcionario.ts";
 import { BUCKET_RECIBOS, garantirPdfQuitado, type ReciboRow } from "../_shared/recibo-pdf.ts";
+import { lerLocalizacao } from "../_shared/localizacao.ts";
 
 const TTL_LINK = 60 * 60 * 24 * 30; // 30 dias
 const COLUNAS_RECIBO =
@@ -36,6 +38,8 @@ interface Body {
   transacao_id?: string;
   token?: string;
   motivo?: string;
+  /** Geolocation do navegador de quem confirma/contesta (lerLocalizacao valida). */
+  localizacao?: unknown;
 }
 
 Deno.serve(
@@ -249,6 +253,7 @@ Deno.serve(
         metodo: "link_whatsapp_token",
         confirmado_em: new Date().toISOString(),
         ...origemDaRequisicao(req),
+        localizacao: lerLocalizacao(body.localizacao),
       };
       // .neq: duas confirmações simultâneas → só a primeira grava a evidência
       const { data: gravou, error } = await supabase
@@ -306,6 +311,7 @@ Deno.serve(
         metodo: "link_whatsapp_token",
         contestado_em: new Date().toISOString(),
         ...origemDaRequisicao(req),
+        localizacao: lerLocalizacao(body.localizacao),
       };
       // .neq: se uma confirmação gravou no meio, a contestação não a apaga
       const { data: gravou, error } = await supabase

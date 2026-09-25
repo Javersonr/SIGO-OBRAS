@@ -11,6 +11,7 @@ import {
   type PDFPage,
 } from "https://esm.sh/pdf-lib@1.17.1";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { linkMapa, textoLocalizacao } from "./localizacao.ts";
 
 export const BUCKET_RECIBOS = "comprovantes";
 
@@ -332,6 +333,10 @@ export async function gerarPdfReciboQuitado(r: ReciboRow): Promise<Uint8Array> {
     ["Meio", "link individual deste recibo (token assinado), emitido pela empresa pagadora"],
     ["IP de origem", ev.ip || "—"],
     ["Aparelho", aparelho(ev.dispositivo)],
+    ["Localização", textoLocalizacao(ev.localizacao)],
+    ...(linkMapa(ev.localizacao)
+      ? ([["Mapa", linkMapa(ev.localizacao) as string, mono]] as Array<[string, string, PDFFont?]>)
+      : []),
     ["User-agent", ev.dispositivo || "—", mono],
     ["Código do recibo", r.codigo, mono],
     ["Hash SHA-256", r.hash_sha256, mono],
@@ -372,7 +377,8 @@ export async function gerarPdfReciboQuitado(r: ReciboRow): Promise<Uint8Array> {
   paragrafo(
     "Assinatura eletrônica simples (art. 4º, I, da Lei 14.063/2020 e art. 10, § 2º, da MP 2.200-2/2001). " +
       "Quitação nos termos dos arts. 319 e 320 do Código Civil. O registro eletrônico desta confirmação " +
-      "(data e hora, IP, aparelho e hash do conteúdo) é gravado pelo sistema e não pode ser editado pelos usuários.",
+      "(data e hora, IP, aparelho, localização informada pelo aparelho quando autorizada e hash do conteúdo) " +
+      "é gravado pelo sistema e não pode ser editado pelos usuários.",
     reg,
     8.5,
     cinza,

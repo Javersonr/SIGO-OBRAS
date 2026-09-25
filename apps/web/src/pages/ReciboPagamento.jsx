@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, ReceiptText, CheckCircle2, XCircle, ShieldCheck, Download } from "lucide-react";
+import { obterLocalizacao } from "@/lib/localizacao";
 
 const fmtMoeda = (v) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
@@ -27,6 +28,7 @@ export default function ReciboPagamento() {
   const [ocupado, setOcupado] = useState(false);
   const [contestando, setContestando] = useState(false);
   const [motivo, setMotivo] = useState("");
+  const [localizando, setLocalizando] = useState(false);
 
   const chamar = async (acao, extra = {}) => {
     const { data } = await sigo.functions.invoke("reciboFornecedor", { acao, token, ...extra });
@@ -55,6 +57,16 @@ export default function ReciboPagamento() {
     } finally {
       setOcupado(false);
     }
+  };
+
+  // A localização do aparelho entra na evidência se a pessoa permitir; recusa
+  // ou demora não impedem a confirmação (vira um status no recibo).
+  const agirComLocalizacao = async (acao, extra = {}) => {
+    setOcupado(true);
+    setLocalizando(true);
+    const localizacao = await obterLocalizacao();
+    setLocalizando(false);
+    await agir(acao, { ...extra, localizacao });
   };
 
   // PDF do recibo quitado (gerado no servidor) — cópia para o favorecido
@@ -193,7 +205,7 @@ export default function ReciboPagamento() {
                 <Button
                   className="flex-1 bg-amber-600 hover:bg-amber-700"
                   disabled={ocupado || motivo.trim().length < 3}
-                  onClick={() => agir("contestar", { motivo: motivo.trim() })}
+                  onClick={() => agirComLocalizacao("contestar", { motivo: motivo.trim() })}
                 >
                   Enviar contestação
                 </Button>
@@ -205,14 +217,14 @@ export default function ReciboPagamento() {
             <Button
               className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-base"
               disabled={ocupado}
-              onClick={() => agir("confirmar")}
+              onClick={() => agirComLocalizacao("confirmar")}
             >
               {ocupado ? (
                 <Loader2 className="w-5 h-5 mr-2 animate-spin" />
               ) : (
                 <CheckCircle2 className="w-5 h-5 mr-2" />
               )}
-              Confirmo o recebimento (dou quitação)
+              {localizando ? "Pegando a localização…" : "Confirmo o recebimento (dou quitação)"}
             </Button>
             <button
               type="button"
@@ -223,8 +235,9 @@ export default function ReciboPagamento() {
               Algo errado? Contestar
             </button>
             <p className="text-[11px] text-slate-500 text-center">
-              Ao confirmar, ficam registrados data/hora, IP e aparelho — vale como assinatura
-              eletrônica (Lei 14.063/2020 e MP 2.200-2/2001).
+              Ao confirmar, ficam registrados data/hora, IP, aparelho e a localização do aparelho
+              (se você permitir) — vale como assinatura eletrônica (Lei 14.063/2020 e MP
+              2.200-2/2001).
             </p>
           </div>
         )}

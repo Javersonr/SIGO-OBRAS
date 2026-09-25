@@ -165,6 +165,24 @@ export default function ReciboQuitacaoCard({ despesa, onAnexosAlterados }) {
         <p className="text-xs text-slate-500">
           Código <span className="font-mono">{recibo.codigo}</span>
           {recibo.evidencia?.ip ? ` · confirmado do IP ${recibo.evidencia.ip}` : ""}
+          {recibo.evidencia?.localizacao?.status === "concedida" ? (
+            <>
+              {" · "}
+              <a
+                className="underline"
+                href={`https://maps.google.com/?q=${recibo.evidencia.localizacao.lat},${recibo.evidencia.localizacao.lng}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                ver local no mapa
+              </a>
+              {recibo.evidencia.localizacao.precisao_m != null
+                ? ` (±${recibo.evidencia.localizacao.precisao_m} m)`
+                : ""}
+            </>
+          ) : recibo.evidencia?.localizacao?.status === "negada" ? (
+            " · localização não autorizada"
+          ) : null}
         </p>
       )}
 
