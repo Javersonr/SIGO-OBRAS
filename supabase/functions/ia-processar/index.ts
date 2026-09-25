@@ -1,7 +1,8 @@
 /**
  * ia-processar — ponte de IA do SIGO (OpenAI, chave global do SaaS).
  *
- * Exige usuário autenticado (JWT da sessão). Ações:
+ * Exige usuário autenticado (JWT da sessão). A empresa é SEMPRE a do token
+ * (usuario.empresa_id) — nunca do corpo. Ações:
  *
  *   { acao:"llm", prompt, json_schema?, file_refs? }
  *     → { success, resultado }  (JSON parseado quando há schema, senão texto)
@@ -12,24 +13,53 @@
  *   { acao:"validar_exames_pcmso", pcmso_ref, exames_refs, funcao }
  *     → { success, resultado: { aprovado, pendencias[], resumo } }
  *
+ * Leitura de edital (Oportunidades) — ver edital.ts / edital-schemas.ts:
+ *
+ *   { acao:"edital_extrair_parte", nome_arquivo, parte, total_partes,
+ *     paginas:[{n, texto}], imagens?:[{n, data_url:"data:image/jpeg;base64,..."}] }
+ *     → { success, resultado: ParcialEdital, modelo }
+ *     Lê SÓ as páginas enviadas (texto com "=== PÁGINA n ===" + imagens das
+ *     escaneadas); modelo econômico e, se vier fraco/erro, o forte — até ~120 s.
+ *     resultado._origem = {nome_arquivo, parte, total_partes, errata}
+ *     (extensão: devolva junto nas parciais para a errata ter prioridade).
+ *     Limites: 300 mil caracteres, 300 páginas e 30 imagens por parte.
+ *
+ *   { acao:"edital_consolidar", parciais:[ParcialEdital], nomes_arquivos:[string] }
+ *     → { success, resultado: EditalConsolidado, modelo }
+ *     Junta em código (dedup exata, errata vence, conflitos em avisos); só chama
+ *     o modelo forte se houver conflito ou exigência parecida repetida. Sem IA
+ *     (erro/timeout) devolve a junção em código com aviso.
+ *
+ *   { acao:"edital_atende", extraido: EditalConsolidado }
+ *     → { success, resultado: AtendeResultado }
+ *     Carrega o acervo da empresa do token (acervo_perfil / _profissional /
+ *     _atestado / _quantitativo); econômico-financeiro decidido em código;
+ *     técnica e registros pelo modelo forte com totais/tetos calculados em
+ *     código. Sem acervo → 422 { codigo:"SEM_ACERVO" }.
+ *
+ * COTA E CONSUMO das ações edital_* (ia-uso.ts; tabela ia_uso, migração 0114):
+ *   - ANTES de chamar a OpenAI, conta as requisições edital_* da empresa do
+ *     token no dia (fuso de Brasília; sem empresa → as do próprio usuário).
+ *     Chegou na cota → 429 { codigo:"COTA_IA", cota, usadas }. Cota = saas_config
+ *     'ia_cota_edital_dia' (inteiro ≥ 1; ausente/inválido → 400). Super admin
+ *     é isento. Contagem "confere e depois age": requisições em paralelo
+ *     podem passar a cota em poucas unidades.
+ *   - Depois da ação (sucesso, erro ou exceção), grava 1 linha em ia_uso com os
+ *     tokens de entrada/saída de TODAS as chamadas à OpenAI da requisição
+ *     (escalonamento incluído) e o(s) modelo(s). Requisição que não chamou a
+ *     OpenAI (validação, consolidação só em código) não grava nem conta.
+ *   - Falha ao ler/contar (ex.: tabela ainda não criada) libera a ação; falha
+ *     ao gravar vai só para o log — nunca derruba a ação.
+ *
  * Sem chave configurada → 503 "IA não configurada".
  */
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { usuarioDaRequisicao } from "../_shared/usuario-request.ts";
-import { chamarOpenAI, lerConfigOpenAI } from "../_shared/openai.ts";
-
-const MODELO_FORTE = "gpt-4o";
-
-/** Conta valores "preenchidos" (não-null/não-vazios) numa estrutura JSON. */
-// deno-lint-ignore no-explicit-any
-function contarPreenchidos(v: any): number {
-  if (v === null || v === undefined || v === "") return 0;
-  if (Array.isArray(v)) return v.reduce((s, x) => s + contarPreenchidos(x), 0);
-  if (typeof v === "object") {
-    return Object.values(v).reduce((s: number, x) => s + contarPreenchidos(x), 0);
-  }
-  return 1;
-}
+import { chamarOpenAI, lerConfigOpenAI, MODELO_FORTE, validarRef } from "../_shared/openai.ts";
+import { createAdminClient } from "../_shared/supabase-admin.ts";
+import { contarPreenchidos } from "./edital-regras.ts";
+import { editalAtende, editalConsolidar, editalExtrairParte } from "./edital.ts";
+import { ehAcaoEdital, novoMedidor, registrarUso, verificarCotaEdital } from "./ia-uso.ts";
 
 /**
  * ESCALONAMENTO AUTOMÁTICO: tenta o modelo configurado (econômico); se o
@@ -71,6 +101,15 @@ interface Body {
   pcmso_ref?: string;
   exames_refs?: string[];
   funcao?: string;
+  // edital_* (validados em edital.ts)
+  nome_arquivo?: unknown;
+  parte?: unknown;
+  total_partes?: unknown;
+  paginas?: unknown;
+  imagens?: unknown;
+  parciais?: unknown;
+  nomes_arquivos?: unknown;
+  extraido?: unknown;
 }
 
 // Campos do "Formulário para Registro" (modelo oficial da contabilidade).
@@ -200,6 +239,31 @@ Deno.serve(
       return fail("Payload inválido", 400);
     }
 
+    // Arquivos são baixados com service role: só da pasta da empresa do
+    // usuário ("bucket/<empresa_id>/..."). Sem isto, qualquer usuário lia
+    // arquivo de outra empresa pedindo para a IA "transcrever".
+    const refsPedidos = [
+      ...(body.file_refs ?? []),
+      ...(body.pcmso_ref ? [body.pcmso_ref] : []),
+      ...(body.exames_refs ?? []),
+    ];
+    // validarRef recusa "..", "%", "?", "#" etc. (o download com service role
+    // montaria outra URL) — vale inclusive para super admin
+    for (const r of refsPedidos) {
+      let empresaDoRef: string;
+      try {
+        empresaDoRef = validarRef(r).empresaId;
+      } catch {
+        return fail("Referência de arquivo inválida", 403);
+      }
+      if (
+        !usuario.is_super_admin &&
+        empresaDoRef !== String(usuario.empresa_id || "").toLowerCase()
+      ) {
+        return fail("Arquivo de outra empresa", 403);
+      }
+    }
+
     try {
       if (body.acao === "llm") {
         if (!body.prompt) return fail("prompt é obrigatório", 400);
@@ -283,6 +347,28 @@ Deno.serve(
             : fail(r.erro, 502);
         }
         return ok({ resultado: r.resultado });
+      }
+
+      if (ehAcaoEdital(body.acao)) {
+        const acao = body.acao;
+        const admin = createAdminClient();
+        const estouro = await verificarCotaEdital(admin, usuario);
+        if (estouro) {
+          return fail(
+            `Limite diário da IA na leitura de editais atingido para esta empresa (${estouro.usadas} de ${estouro.cota} chamadas hoje) — tente amanhã ou fale com o suporte do SIGO.`,
+            429,
+            { codigo: "COTA_IA", cota: estouro.cota, usadas: estouro.usadas }
+          );
+        }
+        const medidor = novoMedidor();
+        const dados = body as Record<string, unknown>;
+        try {
+          if (acao === "edital_extrair_parte") return await editalExtrairParte(dados, medidor);
+          if (acao === "edital_consolidar") return await editalConsolidar(dados, medidor);
+          return await editalAtende(dados, usuario, medidor);
+        } finally {
+          await registrarUso(admin, usuario, acao, medidor);
+        }
       }
 
       return fail("Ação desconhecida", 400);

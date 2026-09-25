@@ -21,6 +21,7 @@ import __Layout from "./Layout.jsx";
 // Lazy (autenticado): cada chunk só baixa quando o usuário navega pra rota
 const PAGES = {
   EntrarSistema,
+  AcervoTecnico: lazy(() => import("./pages/AcervoTecnico")),
   AcessoFornecedor: lazy(() => import("./pages/AcessoFornecedor")),
   AcessoNegado: lazy(() => import("./pages/AcessoNegado")),
   AuditLogs: lazy(() => import("./pages/AuditLogs")),

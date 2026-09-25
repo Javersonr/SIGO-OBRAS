@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useContext } from "react";
+import React, { useState, useEffect, useRef, createContext, useContext } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { sigo, aplicarSessao, encerrarSessao } from "@/api/sigoClient";
 import { createPageUrl } from "./utils";
@@ -62,6 +62,7 @@ export const useEmpresa = () => {
       perfil: null,
       reloadEmpresaAtiva: () => {},
       temPermissao: () => false,
+      isSuperAdmin: false,
     };
   }
   return context;
@@ -258,31 +259,82 @@ export default function Layout({ children, currentPageName }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, user, currentPageName, navigate]);
 
-  // Polling para notificações não lidas - apenas quando painel está aberto
+  // Contador do sino: antes só era calculado com o painel ABERTO (e o
+  // .subscribe é stub) → o usuário nunca via alerta novo. Agora conta ao
+  // carregar, ao trocar de empresa, ao fechar o painel e a cada 60 s; aba
+  // oculta não consulta (volta a contar quando fica visível). Com o painel
+  // aberto a própria lista mostra as não lidas — recontamos ao fechar e quando
+  // o painel avisa que mudou a leitura (onAlterouLidas → recontarSino).
+  // Só a contagem mais recente vale: sinoSeqRef descarta resposta antiga que
+  // chegue depois de uma mais nova (ex.: recontagem do painel × ciclo de 60 s).
+  const sinoSeqRef = useRef(0);
+  // Total de não lidas; null = falhou ou foi superada por contagem mais nova.
+  const contarNaoLidas = React.useCallback(async () => {
+    const empresaId = empresaAtiva?.id;
+    const email = user?.email;
+    if (!empresaId || !email) return null;
+    const seq = ++sinoSeqRef.current;
+    // Mesmo filtro do NotificationsPanel + lida:false. count() é HEAD (não traz linhas).
+    const criterio = { empresa_id: empresaId, usuario_email: email, lida: false };
+    try {
+      const ent = sigo.entities.Notificacao;
+      const total =
+        typeof ent.count === "function"
+          ? await ent.count(criterio)
+          : (await ent.filter(criterio)).length;
+      return seq === sinoSeqRef.current ? total : null;
+    } catch (error) {
+      console.warn("[Layout] Erro ao contar notificações não lidas:", error?.message || error);
+      return null;
+    }
+  }, [empresaAtiva?.id, user?.email]);
+
+  // Painel marcou/excluiu: reconta o sino na hora (mesmo com o painel aberto).
+  const recontarSino = React.useCallback(async () => {
+    const total = await contarNaoLidas();
+    if (total !== null) setNotificacoesNaoLidas(total);
+  }, [contarNaoLidas]);
+
   useEffect(() => {
-    if (!empresaAtiva || !user || !showNotifications) {
+    const empresaId = empresaAtiva?.id;
+    const email = user?.email;
+    if (!empresaId || !email) {
+      sinoSeqRef.current++; // descarta contagem em voo (saiu da empresa/usuário)
       setNotificacoesNaoLidas(0);
       return;
     }
+    if (showNotifications) return;
 
-    const loadNotificacoesNaoLidas = async () => {
-      try {
-        const notifs = await sigo.entities.Notificacao.filter({
-          empresa_id: empresaAtiva.id,
-          usuario_email: user.email,
-          lida: false,
-        });
-        setNotificacoesNaoLidas(notifs.length);
-      } catch (error) {
-        console.error("Erro ao carregar notificações:", error);
-      }
+    let ativo = true;
+    let timer = null;
+    const contar = async () => {
+      const total = await contarNaoLidas();
+      if (ativo && total !== null) setNotificacoesNaoLidas(total);
+    };
+    const parar = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+    };
+    const iniciar = () => {
+      parar();
+      contar();
+      timer = setInterval(contar, 60000);
+    };
+    const aoMudarVisibilidade = () => {
+      if (document.visibilityState === "hidden") parar();
+      else iniciar();
     };
 
-    loadNotificacoesNaoLidas();
-    const interval = setInterval(loadNotificacoesNaoLidas, 30000);
+    if (document.visibilityState === "hidden") contar();
+    else iniciar();
+    document.addEventListener("visibilitychange", aoMudarVisibilidade);
 
-    return () => clearInterval(interval);
-  }, [empresaAtiva?.id, user?.email, showNotifications]);
+    return () => {
+      ativo = false;
+      parar();
+      document.removeEventListener("visibilitychange", aoMudarVisibilidade);
+    };
+  }, [empresaAtiva?.id, user?.email, showNotifications, contarNaoLidas]);
 
   const handleSelectEmpresa = async (empresa, redirectUrl = null) => {
     try {
@@ -706,6 +758,9 @@ export default function Layout({ children, currentPageName }) {
         temPermissao,
         vinculo,
         modulosLibertados,
+        // is_super_admin da sessão (custom_auth) — a RLS só libera outras
+        // empresas para super admin (super_admin_all); os demais veem a do JWT.
+        isSuperAdmin,
       }}
     >
       <>
@@ -1054,7 +1109,11 @@ export default function Layout({ children, currentPageName }) {
           </main>
 
           {/* Painel de Notificações */}
-          <NotificationsPanel open={showNotifications} onOpenChange={setShowNotifications} />
+          <NotificationsPanel
+            open={showNotifications}
+            onOpenChange={setShowNotifications}
+            onAlterouLidas={recontarSino}
+          />
 
           {/* Painel de Chat */}
           <ChatPanel

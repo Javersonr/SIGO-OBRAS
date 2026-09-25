@@ -12,8 +12,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Shield } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Plus, Shield, Bell } from "lucide-react";
 import ResponsaveisSelect from "../shared/ResponsaveisSelect";
+
+// Item "limpar" dos Selects (Radix não aceita SelectItem com value "")
+const NAO_INFORMADO = "_nao_informado";
 
 export default function FormularioOportunidade({
   formData,
@@ -29,6 +33,7 @@ export default function FormularioOportunidade({
 }) {
   const [showNovaOrigem, setShowNovaOrigem] = React.useState(false);
   const [novaOrigem, setNovaOrigem] = React.useState("");
+  const setCampo = (campo, valor) => setFormData({ ...formData, [campo]: valor });
 
   const formatarMoeda = (valor) => {
     const num =
@@ -236,8 +241,19 @@ export default function FormularioOportunidade({
       <div className="border-t pt-4">
         <h4 className="font-medium text-slate-700 mb-3">Dados da Licitação</h4>
         <div className="space-y-4">
-          {/* Linha 1: Modalidade + Data Licitação + Horário Licitação */}
-          <div className="grid grid-cols-3 gap-4">
+          <div>
+            <Label htmlFor="op-orgao">Órgão</Label>
+            <Input
+              id="op-orgao"
+              value={formData.orgao || ""}
+              onChange={(e) => setCampo("orgao", e.target.value)}
+              placeholder="Ex: Prefeitura Municipal de Araxá"
+              className="mt-1.5"
+            />
+          </div>
+
+          {/* Modalidade + Forma + Critério */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <Label>Modalidade</Label>
               <Select
@@ -254,9 +270,84 @@ export default function FormularioOportunidade({
                   <SelectItem value="pregao">Pregão</SelectItem>
                   <SelectItem value="dispensa">Dispensa</SelectItem>
                   <SelectItem value="inexigibilidade">Inexigibilidade</SelectItem>
+                  <SelectItem value="outra">Outra</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label>Forma</Label>
+              <Select
+                value={formData.licitacao_forma || ""}
+                onValueChange={(v) => setCampo("licitacao_forma", v === NAO_INFORMADO ? "" : v)}
+              >
+                <SelectTrigger className="mt-1.5">
+                  <SelectValue placeholder="Não informada" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="eletronica">Eletrônica</SelectItem>
+                  <SelectItem value="presencial">Presencial</SelectItem>
+                  <SelectItem value={NAO_INFORMADO}>Não informada</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="op-criterio">Critério de julgamento</Label>
+              <Input
+                id="op-criterio"
+                value={formData.licitacao_criterio_julgamento || ""}
+                onChange={(e) => setCampo("licitacao_criterio_julgamento", e.target.value)}
+                placeholder="Ex: Menor preço global"
+                className="mt-1.5"
+              />
+            </div>
+          </div>
+
+          {/* Nº do edital + Processo + Prazo de execução */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <Label htmlFor="op-numero">Nº do edital</Label>
+              <Input
+                id="op-numero"
+                value={formData.licitacao_numero || ""}
+                onChange={(e) => setCampo("licitacao_numero", e.target.value)}
+                placeholder="Ex: 011/2026"
+                className="mt-1.5"
+              />
+            </div>
+            <div>
+              <Label htmlFor="op-processo">Nº do processo</Label>
+              <Input
+                id="op-processo"
+                value={formData.licitacao_processo || ""}
+                onChange={(e) => setCampo("licitacao_processo", e.target.value)}
+                className="mt-1.5"
+              />
+            </div>
+            <div>
+              <Label htmlFor="op-prazo-exec">Prazo de execução</Label>
+              <Input
+                id="op-prazo-exec"
+                value={formData.licitacao_prazo_execucao || ""}
+                onChange={(e) => setCampo("licitacao_prazo_execucao", e.target.value)}
+                placeholder="Ex: 6 meses"
+                className="mt-1.5"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="op-portal">Portal / link da disputa</Label>
+            <Input
+              id="op-portal"
+              value={formData.licitacao_portal || ""}
+              onChange={(e) => setCampo("licitacao_portal", e.target.value)}
+              placeholder="Ex: Portal de Compras Públicas ou https://…"
+              className="mt-1.5"
+            />
+          </div>
+
+          {/* Sessão: data + horário */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <Label>Data da Licitação</Label>
               <Input
@@ -277,8 +368,8 @@ export default function FormularioOportunidade({
             </div>
           </div>
 
-          {/* Linha 2: Data de Impugnação */}
-          <div className="grid grid-cols-3 gap-4">
+          {/* Impugnação: data + horário */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <Label>Data de Impugnação</Label>
               <Input
@@ -291,10 +382,41 @@ export default function FormularioOportunidade({
               />
               <p className="text-xs text-slate-400 mt-1">Aparece no calendário</p>
             </div>
+            <div>
+              <Label>Horário limite da Impugnação</Label>
+              <Input
+                type="time"
+                value={formData.licitacao_horario_impugnacao || ""}
+                onChange={(e) => setCampo("licitacao_horario_impugnacao", e.target.value)}
+                className="mt-1.5"
+              />
+            </div>
           </div>
 
-          {/* Linha 3: Data Limite Proposta + Horário + Garantia */}
-          <div className="grid grid-cols-3 gap-4">
+          {/* Esclarecimento: data + horário */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <Label>Data limite de Esclarecimento</Label>
+              <Input
+                type="date"
+                value={formData.licitacao_data_esclarecimento || ""}
+                onChange={(e) => setCampo("licitacao_data_esclarecimento", e.target.value)}
+                className="mt-1.5"
+              />
+            </div>
+            <div>
+              <Label>Horário limite do Esclarecimento</Label>
+              <Input
+                type="time"
+                value={formData.licitacao_horario_esclarecimento || ""}
+                onChange={(e) => setCampo("licitacao_horario_esclarecimento", e.target.value)}
+                className="mt-1.5"
+              />
+            </div>
+          </div>
+
+          {/* Data Limite Proposta + Horário + Garantia */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <Label>Data Limite da Proposta</Label>
               <Input
@@ -353,6 +475,70 @@ export default function FormularioOportunidade({
                   Necessário garantia
                 </span>
               </label>
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="op-visita">Visita técnica</Label>
+            <Textarea
+              id="op-visita"
+              value={formData.licitacao_visita_tecnica || ""}
+              onChange={(e) => setCampo("licitacao_visita_tecnica", e.target.value)}
+              placeholder="Obrigatória ou facultativa, data, horário e local"
+              className="mt-1.5"
+              rows={2}
+            />
+          </div>
+
+          {/* ME/EPP + alerta de prazos */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <Label>Exclusiva ME/EPP</Label>
+              <Select
+                value={
+                  formData.licitacao_exclusiva_me_epp === true
+                    ? "sim"
+                    : formData.licitacao_exclusiva_me_epp === false
+                      ? "nao"
+                      : ""
+                }
+                onValueChange={(v) =>
+                  setCampo(
+                    "licitacao_exclusiva_me_epp",
+                    v === "sim" ? true : v === "nao" ? false : null
+                  )
+                }
+              >
+                <SelectTrigger className="mt-1.5">
+                  <SelectValue placeholder="Não informado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="sim">Sim</SelectItem>
+                  <SelectItem value="nao">Não</SelectItem>
+                  <SelectItem value={NAO_INFORMADO}>Não informado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="sm:col-span-2 flex items-start gap-3 rounded-lg border border-slate-200 p-3">
+              <Switch
+                id="op-alertar-prazos"
+                checked={!!formData.alertar_prazos}
+                onCheckedChange={(v) => setCampo("alertar_prazos", !!v)}
+                className="mt-0.5 data-[state=checked]:bg-amber-500"
+              />
+              <div>
+                <Label
+                  htmlFor="op-alertar-prazos"
+                  className="flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Bell className="w-4 h-4 text-amber-600" />
+                  Alertar prazos (3, 1 e 0 dias antes)
+                </Label>
+                <p className="text-xs text-slate-500 mt-1">
+                  Avisa os responsáveis e os administradores antes da impugnação, do esclarecimento,
+                  da proposta e da sessão.
+                </p>
+              </div>
             </div>
           </div>
         </div>

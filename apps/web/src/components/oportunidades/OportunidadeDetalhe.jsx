@@ -1,7 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { safeUrl } from "@/lib/safe-url";
+import { analisarAtende } from "@/lib/edital-ia";
+import { useEmpresa } from "@/Layout";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -37,6 +41,8 @@ import {
   ExternalLink,
   Check,
   Building2,
+  Sparkles,
+  Bell,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -50,8 +56,36 @@ import ResponsaveisSelect from "../shared/ResponsaveisSelect";
 import PermissionGate from "../PermissionGate";
 import ChatContextual from "../chat/ChatContextual";
 import DiarioObraTab from "../projetos/DiarioObraTab";
-import VisualizarArquivoModal from "./VisualizarArquivoModal";
+import VisualizadorPDF from "./VisualizadorPDF";
 import PropostasOportunidade from "./PropostasOportunidade";
+import AnexoViewer from "@/components/shared/AnexoViewer";
+import ImgStorage from "@/components/ImgStorage";
+import LerEditalSheet from "@/components/oportunidades/edital/LerEditalSheet";
+import EditalResumoCard from "./EditalResumoCard";
+import DescricaoRica from "./DescricaoRica";
+import { preservarAtende } from "./oportunidade-form";
+
+// "AAAA-MM-DD" → "DD/MM/AAAA" por split (new Date() cai 1 dia no fuso BR)
+const dataBR = (iso) => {
+  const [a, m, d] = String(iso || "")
+    .slice(0, 10)
+    .split("-");
+  return a && m && d ? `${d}/${m}/${a}` : "";
+};
+const dataHoraBR = (data, hora) => (data ? dataBR(data) + (hora ? ` às ${hora}` : "") : "");
+
+const FORMAS_LICITACAO = { eletronica: "Eletrônica", presencial: "Presencial" };
+
+// Categoria do arquivo marcada na leitura do edital
+const CATEGORIAS_ARQUIVO = {
+  edital: "Edital",
+  termo_referencia: "TR",
+  anexo_edital: "Anexo do edital",
+  errata: "Errata",
+};
+
+const ehPdfArquivo = (a) =>
+  !!a && (/pdf/i.test(a.tipo || "") || /\.pdf$/i.test(String(a.nome || "")));
 
 export default function OportunidadeDetalhe({
   open,
@@ -90,6 +124,8 @@ export default function OportunidadeDetalhe({
   onDeleteSelecionados,
   onNovoOrcamentoSelect,
   onOpenModal,
+  onDuplicar, // opcional: abre a cópia como CRIAÇÃO (sem → item escondido)
+  onAnaliseGravada, // opcional: (id, edital_analise) quando o "Atende?" grava
   onDelete,
   onShowStatusConfig,
   onShowSalvarTemplate,
@@ -136,6 +172,17 @@ export default function OportunidadeDetalhe({
   const [perdidoOpen, setPerdidoOpen] = useState(false);
   const [motivoPerda, setMotivoPerda] = useState("");
   const [salvandoPerda, setSalvandoPerda] = useState(false);
+  const [showLerEdital, setShowLerEdital] = useState(false);
+  // IA do edital (ler/reanalisar = análise paga que grava na oportunidade): usa a
+  // permissão REAL da sessão — o CalendarioConsolidado passa
+  // temPermissao={() => true} e perfil="Admin" por props.
+  const sessao = useEmpresa();
+  const podeUsarIaEdital =
+    sessao.perfil === "Admin" || sessao.temPermissao("Oportunidades", "Lista", "editar");
+  // detalhe fechado por fora (excluir/arquivar): não reabre a leitura depois
+  useEffect(() => {
+    if (!open) setShowLerEdital(false);
+  }, [open]);
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
@@ -166,6 +213,62 @@ export default function OportunidadeDetalhe({
       alert("Erro ao marcar como perdido: " + (e?.message || e));
     } finally {
       setSalvandoPerda(false);
+    }
+  };
+
+  // Relê a oportunidade (e os arquivos) depois da leitura do edital.
+  const recarregarOportunidade = async () => {
+    const id = selectedOp?.id;
+    if (!id) return;
+    try {
+      const op = await sigo.entities.Oportunidade.get(id);
+      if (!op) return;
+      // o "Atende?" pode ter gravado (onAnaliseGravada) depois que esta leitura
+      // saiu: não troca a análise conferida pela mesma sem o resultado
+      const mesclar = (atual) => ({
+        ...atual,
+        ...op,
+        edital_analise: preservarAtende(atual.edital_analise, op.edital_analise),
+      });
+      setSelectedOp((prev) => (prev?.id === id ? mesclar(prev) : prev));
+      setOportunidades((prev) => prev.map((o) => (o.id === id ? mesclar(o) : o)));
+      onReloadArquivos?.();
+    } catch (e) {
+      console.error("Erro ao recarregar a oportunidade:", e);
+    }
+  };
+
+  // O "Atende?" da leitura do edital gravou (mesmo com o Sheet já fechado):
+  // atualiza o detalhe e a lista sem nova chamada paga.
+  const handleAnaliseGravada = (id, analise) => {
+    if (!id || !analise) return;
+    setSelectedOp((prev) => (prev?.id === id ? { ...prev, edital_analise: analise } : prev));
+    setOportunidades((prev) =>
+      prev.map((o) => (o.id === id ? { ...o, edital_analise: analise } : o))
+    );
+    onAnaliseGravada?.(id, analise);
+  };
+
+  // "Reanalisar" do card Edital (IA): confere o edital já lido com o acervo atual.
+  const handleReanalisarAtende = async () => {
+    const id = selectedOp?.id;
+    const analise = safeParseJSON(selectedOp?.edital_analise, null);
+    if (!id || !analise?.extraido) {
+      toast.error("Leia o edital antes de conferir o acervo");
+      return;
+    }
+    try {
+      const resultado = await analisarAtende(analise.extraido);
+      const nova = { ...analise, atende: resultado };
+      await sigo.entities.Oportunidade.update(id, { edital_analise: nova });
+      setSelectedOp((prev) => (prev?.id === id ? { ...prev, edital_analise: nova } : prev));
+      setOportunidades((prev) =>
+        prev.map((o) => (o.id === id ? { ...o, edital_analise: nova } : o))
+      );
+      toast.success("Acervo conferido");
+    } catch (e) {
+      console.error("Erro ao conferir o acervo:", e);
+      toast.error(`Erro ao conferir o acervo: ${e?.message || "erro desconhecido"}`);
     }
   };
 
@@ -274,6 +377,7 @@ export default function OportunidadeDetalhe({
       setVisitedTabs(new Set(["geral"]));
       setShowPreviewArquivo(false);
       setArquivoPreview(null);
+      setShowLerEdital(false);
     }
     onOpenChange(val);
   };
@@ -281,6 +385,51 @@ export default function OportunidadeDetalhe({
   if (!open) return null;
 
   const currentStatus = selectedOp ? statusList.find((s) => s.id === selectedOp.status_id) : null;
+
+  // Seção "Dados da Licitação": só o que estiver preenchido
+  const op = selectedOp || {};
+  const licitacaoItens = [
+    { rotulo: "Órgão", valor: op.orgao, largo: true },
+    { rotulo: "Modalidade", valor: formatModalidade(op.licitacao_modalidade), destaque: true },
+    { rotulo: "Nº do edital", valor: op.licitacao_numero },
+    { rotulo: "Processo", valor: op.licitacao_processo },
+    { rotulo: "Forma", valor: FORMAS_LICITACAO[op.licitacao_forma] || op.licitacao_forma },
+    { rotulo: "Critério de julgamento", valor: op.licitacao_criterio_julgamento },
+    { rotulo: "Sessão", valor: dataHoraBR(op.licitacao_data, op.licitacao_horario) },
+    {
+      rotulo: "Proposta até",
+      valor: dataHoraBR(op.licitacao_data_proposta, op.licitacao_horario_proposta),
+    },
+    {
+      rotulo: "Impugnação até",
+      valor: dataHoraBR(op.licitacao_data_impugnacao, op.licitacao_horario_impugnacao),
+    },
+    {
+      rotulo: "Esclarecimento até",
+      valor: dataHoraBR(op.licitacao_data_esclarecimento, op.licitacao_horario_esclarecimento),
+    },
+    { rotulo: "Prazo de execução", valor: op.licitacao_prazo_execucao },
+    { rotulo: "Garantia de proposta", valor: op.licitacao_garantia_proposta ? "Exigida" : null },
+    {
+      rotulo: "Exclusiva ME/EPP",
+      valor:
+        op.licitacao_exclusiva_me_epp === true
+          ? "Sim"
+          : op.licitacao_exclusiva_me_epp === false
+            ? "Não"
+            : null,
+    },
+    { rotulo: "Visita técnica", valor: op.licitacao_visita_tecnica, largo: true },
+  ].filter((i) => i.valor);
+  const portalLicitacao = String(op.licitacao_portal || "").trim();
+  const diasAlerta =
+    Array.isArray(op.alerta_antecedencia_dias) && op.alerta_antecedencia_dias.length
+      ? op.alerta_antecedencia_dias
+      : [3, 1, 0];
+  const textoDiasAlerta =
+    diasAlerta.length > 1
+      ? `${diasAlerta.slice(0, -1).join(", ")} e ${diasAlerta[diasAlerta.length - 1]}`
+      : String(diasAlerta[0]);
 
   return (
     <>
@@ -329,6 +478,12 @@ export default function OportunidadeDetalhe({
                                 <Edit className="w-4 h-4 mr-2" />
                                 Editar
                               </DropdownMenuItem>
+                              {podeUsarIaEdital && (
+                                <DropdownMenuItem onClick={() => setShowLerEdital(true)}>
+                                  <Sparkles className="w-4 h-4 mr-2 text-amber-600" />
+                                  Ler edital com IA
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem onClick={() => onShowClienteView(true)}>
                                 <Eye className="w-4 h-4 mr-2" />
                                 Ver como cliente
@@ -338,18 +493,19 @@ export default function OportunidadeDetalhe({
                                 <Copy className="w-4 h-4 mr-2" />
                                 Salvar como template
                               </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  onOpenModal({
-                                    ...selectedOp,
-                                    nome: (selectedOp.nome || selectedOp.titulo) + " (c\u00f3pia)",
-                                  });
-                                  handleOpenChange(false);
-                                }}
-                              >
-                                <FilePlus className="w-4 h-4 mr-2" />
-                                Duplicar
-                              </DropdownMenuItem>
+                              {onDuplicar && (
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    // c\u00f3pia abre como NOVA (antes: edi\u00e7\u00e3o com o id \u2192 sobrescrevia)
+                                    const original = selectedOp;
+                                    handleOpenChange(false);
+                                    onDuplicar(original);
+                                  }}
+                                >
+                                  <FilePlus className="w-4 h-4 mr-2" />
+                                  Duplicar
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={handleAbrirTransferencia}>
                                 <Building2 className="w-4 h-4 mr-2" />
@@ -525,40 +681,65 @@ export default function OportunidadeDetalhe({
                       </div>
                     </div>
 
-                    {(selectedOp.licitacao_modalidade || selectedOp.licitacao_data) && (
+                    {(licitacaoItens.length > 0 ||
+                      portalLicitacao ||
+                      selectedOp.alertar_prazos) && (
                       <div className="border-t pt-4">
-                        <h4 className="font-medium text-slate-700 mb-3">
-                          {"Dados da Licita\u00e7\u00e3o"}
-                        </h4>
-                        <div className="grid grid-cols-3 gap-4">
-                          {selectedOp.licitacao_modalidade && (
-                            <div>
-                              <Label className="text-slate-500">Modalidade</Label>
-                              <p className="font-medium text-blue-700 mt-1">
-                                {formatModalidade(selectedOp.licitacao_modalidade)}
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                          <h4 className="font-medium text-slate-700">Dados da Licitação</h4>
+                          {selectedOp.alertar_prazos && (
+                            <Badge
+                              variant="outline"
+                              className="gap-1 border-amber-300 bg-amber-50 font-medium text-amber-800"
+                            >
+                              <Bell className="w-3 h-3" />
+                              Alerta de prazos ({textoDiasAlerta} dias antes)
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                          {licitacaoItens.map((item) => (
+                            <div
+                              key={item.rotulo}
+                              className={item.largo ? "col-span-2 sm:col-span-3" : ""}
+                            >
+                              <Label className="text-slate-500">{item.rotulo}</Label>
+                              <p
+                                className={`font-medium mt-1 break-words ${item.destaque ? "text-blue-700" : "text-slate-800"}`}
+                              >
+                                {item.valor}
                               </p>
                             </div>
-                          )}
-                          {selectedOp.licitacao_data && (
-                            <div>
-                              <Label className="text-slate-500">Data</Label>
-                              <p className="font-medium text-slate-800 mt-1">
-                                {new Date(
-                                  selectedOp.licitacao_data + "T00:00:00"
-                                ).toLocaleDateString("pt-BR")}
-                              </p>
-                            </div>
-                          )}
-                          {selectedOp.licitacao_horario && (
-                            <div>
-                              <Label className="text-slate-500">{"Hor\u00e1rio"}</Label>
-                              <p className="font-medium text-slate-800 mt-1">
-                                {selectedOp.licitacao_horario}
-                              </p>
+                          ))}
+                          {portalLicitacao && (
+                            <div className="col-span-2 sm:col-span-3">
+                              <Label className="text-slate-500">Portal / link da disputa</Label>
+                              {/^https?:\/\//i.test(portalLicitacao) ? (
+                                <a
+                                  href={safeUrl(portalLicitacao)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="mt-1 flex items-center gap-1 break-all font-medium text-amber-700 underline"
+                                >
+                                  {portalLicitacao}
+                                  <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                                </a>
+                              ) : (
+                                <p className="font-medium text-slate-800 mt-1 break-words">
+                                  {portalLicitacao}
+                                </p>
+                              )}
                             </div>
                           )}
                         </div>
                       </div>
+                    )}
+
+                    {selectedOp.edital_analise && (
+                      <EditalResumoCard
+                        analise={selectedOp.edital_analise}
+                        onReanalisar={podeUsarIaEdital ? handleReanalisarAtende : undefined}
+                      />
                     )}
 
                     {(selectedOp.cep || selectedOp.endereco) && (
@@ -585,13 +766,12 @@ export default function OportunidadeDetalhe({
                     {selectedOp.descricao && (
                       <div className="border-t pt-4">
                         <Label className="text-slate-500">{"Descri\u00e7\u00e3o"}</Label>
-                        {/* React escapa HTML automaticamente; whitespace-pre-wrap
-                            preserva quebras de linha sem precisar de <br/> manual.
-                            ANTES: dangerouslySetInnerHTML deixava aberto pra XSS
-                            se algum admin colasse HTML/script na descri\u00e7\u00e3o. */}
-                        <div className="mt-2 p-4 bg-slate-50 rounded-lg max-w-none text-sm text-slate-700 whitespace-pre-wrap break-words leading-relaxed">
-                          {selectedOp.descricao}
-                        </div>
+                        {/* HTML do editor rico remontado sem dangerouslySetInnerHTML
+                            (whitelist de tags, ver DescricaoRica) — sem XSS e sem tags cruas. */}
+                        <DescricaoRica
+                          valor={selectedOp.descricao}
+                          className="mt-2 p-4 bg-slate-50 rounded-lg text-sm text-slate-700 leading-relaxed"
+                        />
                       </div>
                     )}
                   </TabsContent>
@@ -1328,8 +1508,8 @@ export default function OportunidadeDetalhe({
                             <div className="flex items-center gap-3">
                               {isImage ? (
                                 <div className="w-12 h-12 rounded overflow-hidden bg-slate-200">
-                                  <img
-                                    src={arq.url}
+                                  <ImgStorage
+                                    referencia={arq.url}
                                     alt={arq.nome}
                                     className="w-full h-full object-cover"
                                   />
@@ -1351,8 +1531,18 @@ export default function OportunidadeDetalhe({
                                   />
                                 </div>
                               )}
-                              <div>
-                                <p className="font-medium text-slate-800">{arq.nome}</p>
+                              <div className="min-w-0">
+                                <p className="font-medium text-slate-800 flex flex-wrap items-center gap-2">
+                                  <span className="break-all">{arq.nome}</span>
+                                  {CATEGORIAS_ARQUIVO[arq.categoria] && (
+                                    <Badge
+                                      variant="outline"
+                                      className="border-amber-300 bg-amber-50 font-medium text-amber-800"
+                                    >
+                                      {CATEGORIAS_ARQUIVO[arq.categoria]}
+                                    </Badge>
+                                  )}
+                                </p>
                                 {isLink && (
                                   <p className="text-xs text-blue-500 truncate max-w-[200px]">
                                     {arq.url}
@@ -1369,7 +1559,9 @@ export default function OportunidadeDetalhe({
                                 <Button
                                   size="icon"
                                   className="h-8 w-8 bg-blue-500 hover:bg-blue-600 text-white"
-                                  onClick={() => window.open(arq.url, "_blank")}
+                                  onClick={() =>
+                                    window.open(safeUrl(arq.url), "_blank", "noopener")
+                                  }
                                 >
                                   <ExternalLink className="w-3 h-3" />
                                 </Button>
@@ -1379,7 +1571,11 @@ export default function OportunidadeDetalhe({
                                   size="icon"
                                   className="h-8 w-8 bg-green-500 hover:bg-green-600 text-white"
                                   onClick={() => {
-                                    setArquivoPreview({ url: arq.url, nome: arq.nome });
+                                    setArquivoPreview({
+                                      url: arq.url,
+                                      nome: arq.nome,
+                                      tipo: arq.tipo,
+                                    });
                                     setShowPreviewArquivo(true);
                                   }}
                                 >
@@ -1505,14 +1701,42 @@ export default function OportunidadeDetalhe({
         </DialogContent>
       </Dialog>
 
-      <VisualizarArquivoModal
-        arquivo={arquivoPreview}
-        open={showPreviewArquivo}
-        onOpenChange={(val) => {
-          setShowPreviewArquivo(val);
-          if (!val) setArquivoPreview(null);
-        }}
-      />
+      {/* Arquivo gravado como ref "bucket/caminho": os dois resolvem a URL assinada na hora */}
+      {showPreviewArquivo && ehPdfArquivo(arquivoPreview) ? (
+        <VisualizadorPDF
+          fileUrl={arquivoPreview.url}
+          fileName={arquivoPreview.nome}
+          onClose={() => {
+            setShowPreviewArquivo(false);
+            setArquivoPreview(null);
+          }}
+        />
+      ) : (
+        <AnexoViewer
+          anexo={arquivoPreview}
+          open={showPreviewArquivo && !!arquivoPreview}
+          onOpenChange={(val) => {
+            setShowPreviewArquivo(val);
+            if (!val) setArquivoPreview(null);
+          }}
+        />
+      )}
+
+      {/* Ler edital com IA (oportunidade existente → atualiza) */}
+      {selectedOp && podeUsarIaEdital && (
+        <LerEditalSheet
+          open={showLerEdital}
+          onOpenChange={(val) => {
+            setShowLerEdital(val);
+            if (!val) recarregarOportunidade();
+          }}
+          empresaAtiva={empresaAtiva}
+          user={user}
+          oportunidade={selectedOp}
+          onConcluido={() => handleTabChange("geral")}
+          onAnaliseGravada={handleAnaliseGravada}
+        />
+      )}
     </>
   );
 }

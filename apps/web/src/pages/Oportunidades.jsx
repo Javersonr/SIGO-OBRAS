@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { sigo } from "@/api/sigoClient";
+import { toast } from "sonner";
 import { useEmpresa } from "../Layout";
 import { safeParseJSON } from "@/lib/json-utils";
+import { refDoUpload } from "@/lib/anexo-ref";
 import { normalizarTexto } from "@/lib/busca";
 import { Plus, Edit, Trash2, Calendar, User, X, FileText, Copy, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -35,9 +38,100 @@ import OportunidadesHeader from "../components/oportunidades/OportunidadesHeader
 import FormularioOportunidade from "../components/oportunidades/FormularioOportunidade";
 import OportunidadeDetalhe from "../components/oportunidades/OportunidadeDetalhe";
 import IniciarFluxoButton from "../components/fluxos/IniciarFluxoButton";
+import LerEditalSheet from "@/components/oportunidades/edital/LerEditalSheet";
+import {
+  nomeDaCopia,
+  parseValorEstimado,
+  preservarAtende,
+  valorEstimadoParaForm,
+} from "@/components/oportunidades/oportunidade-form";
+
+// Campos de texto da licitação (orgao já existia; os demais vêm da 0111).
+const CAMPOS_LICITACAO_TEXTO = [
+  "orgao",
+  "licitacao_numero",
+  "licitacao_processo",
+  "licitacao_portal",
+  "licitacao_forma",
+  "licitacao_horario_impugnacao",
+  "licitacao_data_esclarecimento",
+  "licitacao_horario_esclarecimento",
+  "licitacao_visita_tecnica",
+  "licitacao_criterio_julgamento",
+  "licitacao_prazo_execucao",
+];
+const CAMPOS_LICITACAO = [
+  ...CAMPOS_LICITACAO_TEXTO,
+  "licitacao_exclusiva_me_epp",
+  "alertar_prazos",
+];
+
+/** Valores do formulário a partir da oportunidade (ou vazios, na nova). */
+const camposLicitacaoDoOp = (op = {}) => ({
+  ...Object.fromEntries(CAMPOS_LICITACAO_TEXTO.map((c) => [c, op[c] || ""])),
+  licitacao_exclusiva_me_epp:
+    typeof op.licitacao_exclusiva_me_epp === "boolean" ? op.licitacao_exclusiva_me_epp : null,
+  alertar_prazos: !!op.alertar_prazos,
+});
+
+const valorLicitacao = (campo, v) => {
+  if (campo === "alertar_prazos") return !!v;
+  if (campo === "licitacao_exclusiva_me_epp") return typeof v === "boolean" ? v : null;
+  const t = typeof v === "string" ? v.trim() : v;
+  return t === "" || t === undefined ? null : t;
+};
+
+/**
+ * Campos da licitação p/ o payload do salvar. orgao vai sempre; os da 0111 só
+ * se mudaram em relação ao registro aberto (na criação: se preenchidos) — não
+ * reescreve à toa o que a IA gravou e o salvar comum não depende da migração.
+ */
+function camposLicitacaoParaSalvar(form, original) {
+  const out = {};
+  for (const c of CAMPOS_LICITACAO) {
+    const novo = valorLicitacao(c, form[c]);
+    if (c === "orgao" || novo !== valorLicitacao(c, original?.[c])) out[c] = novo;
+  }
+  return out;
+}
+
+/** formData do FormularioOportunidade a partir de uma oportunidade gravada. */
+const formDataDaOportunidade = (op) => ({
+  titulo: op.nome || op.titulo || "",
+  cliente_id: op.cliente_id || "",
+  status_id: op.status_id || "",
+  origem_id: op.origem_id || "",
+  // número (não string): "1234.5" era lido como pt-BR e virava 12.345
+  valor_estimado: valorEstimadoParaForm(op.valor_estimado),
+  probabilidade: op.probabilidade || 50,
+  data_fechamento_prevista: op.data_fechamento_prevista || "",
+  descricao: op.descricao || "",
+  observacoes: op.observacoes || "",
+  template_id: "",
+  responsaveis_ids: Array.isArray(op.responsaveis_ids)
+    ? op.responsaveis_ids
+    : safeParseJSON(op.responsaveis_ids, []),
+  licitacao_modalidade: op.licitacao_modalidade || "",
+  licitacao_data: op.licitacao_data || "",
+  licitacao_horario: op.licitacao_horario || "",
+  licitacao_data_impugnacao: op.licitacao_data_impugnacao || "",
+  licitacao_data_proposta: op.licitacao_data_proposta || "",
+  licitacao_horario_proposta: op.licitacao_horario_proposta || "",
+  licitacao_garantia_proposta: op.licitacao_garantia_proposta || false,
+  ...camposLicitacaoDoOp(op),
+  cep: op.cep || "",
+  endereco: op.endereco || "",
+  numero: op.numero || "",
+  complemento: op.complemento || "",
+  bairro: op.bairro || "",
+  cidade: op.cidade || "",
+  estado: op.estado || "",
+});
 
 export default function Oportunidades() {
   const { empresaAtiva, perfil, user, temPermissao, vinculo } = useEmpresa();
+  const location = useLocation();
+  const navigate = useNavigate();
   // Permissões da aba calculadas UMA vez (eram chamadas POR LINHA no Kanban e na
   // Lista — com milhares de oportunidades isso travava a página).
   const podeEditarOps = temPermissao("Oportunidades", "Lista", "editar");
@@ -93,6 +187,11 @@ export default function Oportunidades() {
     licitacao_modalidade: "",
     licitacao_data: "",
     licitacao_horario: "",
+    licitacao_data_impugnacao: "",
+    licitacao_data_proposta: "",
+    licitacao_horario_proposta: "",
+    licitacao_garantia_proposta: false,
+    ...camposLicitacaoDoOp(),
     cep: "",
     endereco: "",
     numero: "",
@@ -143,6 +242,9 @@ export default function Oportunidades() {
   });
   const [itensSelecionados, setItensSelecionados] = useState(new Set());
   const [showClienteView, setShowClienteView] = useState(false);
+  const [showLerEdital, setShowLerEdital] = useState(false);
+  // id → edital_analise gravada pelo "Atende?" (ver onAnaliseGravada / loadData)
+  const analisesGravadasRef = React.useRef(new Map());
   const updateTimeoutRef = React.useRef({});
   const fileInputOrcamentoRef = React.useRef(null);
   const [searchResults, setSearchResults] = useState([]);
@@ -153,19 +255,44 @@ export default function Oportunidades() {
     };
   }, []);
 
-  // Abrir oportunidade por URL param (?openId=...)
+  // Abrir oportunidade por URL param (?openId=...) — link das notificações de
+  // prazo. Depende de location.search: o <Link> da notificação navega SEM
+  // remontar a página quando o usuário já está em /Oportunidades (antes lia
+  // window.location só quando a lista mudava e não abria nada).
+  const openIdTratadoRef = React.useRef(null);
   React.useEffect(() => {
-    if (!oportunidades.length) return;
-    const params = new URLSearchParams(window.location.search);
-    const openId = params.get("openId");
-    if (openId) {
-      const op = oportunidades.find((o) => o.id === openId);
-      if (op) {
-        handleOpenDetail(op);
-        window.history.replaceState({}, "", window.location.pathname);
-      }
+    const openId = new URLSearchParams(location.search).get("openId");
+    if (!openId || !empresaAtiva?.id) return;
+    // cada navegação tem location.key próprio: trata uma vez (o re-render
+    // antes do navigate abaixo aplicar não abre de novo)
+    if (openIdTratadoRef.current === location.key) return;
+    openIdTratadoRef.current = location.key;
+    navigate(location.pathname, { replace: true }); // limpa o parâmetro
+
+    const naLista = oportunidades.find((o) => o.id === openId);
+    if (naLista) {
+      handleOpenDetail(naLista);
+      return;
     }
-  }, [oportunidades]);
+    // lista ainda carregando (ou sem ela): busca só a oportunidade
+    sigo.entities.Oportunidade.get(openId)
+      .then((op) => {
+        if (!op) {
+          toast.error("Oportunidade não encontrada (pode ter sido excluída).");
+        } else if (op.empresa_id !== empresaAtiva.id) {
+          toast.error("Esta oportunidade é de outra empresa: troque a empresa ativa para abri-la.");
+        } else {
+          handleOpenDetail(op);
+        }
+      })
+      .catch((error) => {
+        console.error("Erro ao abrir a oportunidade do link:", error);
+        toast.error("Não foi possível abrir a oportunidade do link.");
+      });
+    // handleOpenDetail/oportunidades de propósito fora: roda por navegação
+    // (location.key), não a cada render/recarga da lista
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key, location.search, empresaAtiva?.id]);
 
   // Abrir modal de nova oportunidade por URL param (?new=1&licitacao_data=...)
   React.useEffect(() => {
@@ -193,6 +320,7 @@ export default function Oportunidades() {
         licitacao_data_proposta: "",
         licitacao_horario_proposta: "",
         licitacao_garantia_proposta: false,
+        ...camposLicitacaoDoOp(),
         cep: "",
         endereco: "",
         numero: "",
@@ -220,7 +348,18 @@ export default function Oportunidades() {
         sigo.entities.TemplateOportunidade.filter({ empresa_id: empresaAtiva.id, ativo: true }),
         sigo.entities.UsuarioEmpresa.filter({ empresa_id: empresaAtiva.id, ativo: true }),
       ]);
-      setOportunidades(ops.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
+      // "Atende?" que gravou durante esta leitura: não volta a análise sem o resultado
+      const gravadas = analisesGravadasRef.current;
+      const opsAtuais = gravadas.size
+        ? ops.map((o) =>
+            gravadas.has(o.id)
+              ? { ...o, edital_analise: preservarAtende(gravadas.get(o.id), o.edital_analise) }
+              : o
+          )
+        : ops;
+      setOportunidades(
+        opsAtuais.sort((a, b) => new Date(b.created_date) - new Date(a.created_date))
+      );
       setStatusList(status.sort((a, b) => a.ordem - b.ordem));
       setOrigensList(origens);
       setClientes(clientesList);
@@ -436,41 +575,7 @@ export default function Oportunidades() {
 
   const handleOpenModal = (op = null) => {
     if (op) {
-      setFormData({
-        titulo: op.nome || op.titulo || "",
-        cliente_id: op.cliente_id || "",
-        status_id: op.status_id || "",
-        origem_id: op.origem_id || "",
-        valor_estimado: op.valor_estimado?.toString() || "",
-        probabilidade: op.probabilidade || 50,
-        data_fechamento_prevista: op.data_fechamento_prevista || "",
-        descricao: op.descricao || "",
-        observacoes: op.observacoes || "",
-        template_id: "",
-        responsaveis_ids: Array.isArray(op.responsaveis_ids)
-          ? op.responsaveis_ids
-          : (() => {
-              try {
-                return safeParseJSON(op.responsaveis_ids, []);
-              } catch {
-                return [];
-              }
-            })(),
-        licitacao_modalidade: op.licitacao_modalidade || "",
-        licitacao_data: op.licitacao_data || "",
-        licitacao_horario: op.licitacao_horario || "",
-        licitacao_data_impugnacao: op.licitacao_data_impugnacao || "",
-        licitacao_data_proposta: op.licitacao_data_proposta || "",
-        licitacao_horario_proposta: op.licitacao_horario_proposta || "",
-        licitacao_garantia_proposta: op.licitacao_garantia_proposta || false,
-        cep: op.cep || "",
-        endereco: op.endereco || "",
-        numero: op.numero || "",
-        complemento: op.complemento || "",
-        bairro: op.bairro || "",
-        cidade: op.cidade || "",
-        estado: op.estado || "",
-      });
+      setFormData(formDataDaOportunidade(op));
       setSelectedOp(op);
       setShowTemplateSelection(false);
     } else {
@@ -496,6 +601,7 @@ export default function Oportunidades() {
         licitacao_data_proposta: "",
         licitacao_horario_proposta: "",
         licitacao_garantia_proposta: false,
+        ...camposLicitacaoDoOp(),
         cep: "",
         endereco: "",
         numero: "",
@@ -510,6 +616,18 @@ export default function Oportunidades() {
     setShowModal(true);
   };
 
+  // "Duplicar"/"Copiar": abre como CRIAÇÃO (selectedOp null) com os dados
+  // copiados — sem id, sem a leitura do edital (edital_analise/_em são da
+  // original). Antes abria em edição com o id e o salvar sobrescrevia a original.
+  const handleDuplicar = (op) => {
+    if (!op) return;
+    setFormData({ ...formDataDaOportunidade(op), titulo: nomeDaCopia(op) });
+    setSelectedOp(null);
+    setShowDetail(false);
+    setShowTemplateSelection(false);
+    setShowModal(true);
+  };
+
   const handleOpenDetail = async (op) => {
     // Setar imediatamente sem limpar os dados anteriores (evita flash)
     setSelectedOp(op);
@@ -520,6 +638,30 @@ export default function Oportunidades() {
     });
   };
 
+  // "Abrir oportunidade" no fim da leitura do edital: busca o registro gravado
+  // e abre o detalhe (a lista recarrega quando o Sheet fecha).
+  const handleEditalConcluido = async (id) => {
+    if (!id) return;
+    try {
+      const op = await sigo.entities.Oportunidade.get(id);
+      if (op) handleOpenDetail(op);
+    } catch (error) {
+      console.error("Erro ao abrir oportunidade do edital:", error);
+      toast.error("Oportunidade salva, mas não foi possível abri-la. Recarregue a página.");
+    }
+  };
+
+  // O "Atende?" (análise paga) gravou edital_analise — mesmo com o Sheet já
+  // fechado: atualiza a lista e o detalhe aberto sem reler nem reanalisar.
+  const handleAnaliseGravada = React.useCallback((id, analise) => {
+    if (!id || !analise) return;
+    analisesGravadasRef.current.set(id, analise);
+    setOportunidades((prev) =>
+      prev.map((o) => (o.id === id ? { ...o, edital_analise: analise } : o))
+    );
+    setSelectedOp((prev) => (prev?.id === id ? { ...prev, edital_analise: analise } : prev));
+  }, []);
+
   const handleSave = async () => {
     if (!formData.titulo) return;
     setSaving(true);
@@ -527,10 +669,8 @@ export default function Oportunidades() {
       const cliente = clientes.find((c) => c.id === formData.cliente_id);
       const status = statusList.find((s) => s.id === formData.status_id);
       const origem = origensList.find((o) => o.id === formData.origem_id);
-      const valorEstimado =
-        typeof formData.valor_estimado === "string"
-          ? parseFloat(formData.valor_estimado.replace(/\./g, "").replace(/,/g, ".")) || 0
-          : parseFloat(formData.valor_estimado) || 0;
+      // pt-BR ("1.234,56") só quando houver vírgula; "1234.5" é decimal com ponto
+      const valorEstimado = parseValorEstimado(formData.valor_estimado);
       const data = {
         empresa_id: empresaAtiva.id,
         nome: formData.titulo,
@@ -563,6 +703,7 @@ export default function Oportunidades() {
         licitacao_data_proposta: formData.licitacao_data_proposta || null,
         licitacao_horario_proposta: formData.licitacao_horario_proposta || null,
         licitacao_garantia_proposta: formData.licitacao_garantia_proposta || false,
+        ...camposLicitacaoParaSalvar(formData, selectedOp),
         cep: formData.cep || null,
         endereco: formData.endereco || null,
         numero: formData.numero || null,
@@ -684,8 +825,13 @@ export default function Oportunidades() {
     if (!file || !selectedOp) return;
     setUploadingFile(true);
     try {
-      const uploadResult = await sigo.integrations.Core.UploadFile({ file });
-      const fileUrl = uploadResult.file_url || uploadResult.url || uploadResult;
+      const uploadResult = await sigo.integrations.Core.UploadFile({
+        file,
+        bucket: "anexos-oportunidade",
+      });
+      // Grava a referência "bucket/caminho" — a file_url assinada expira em 1h
+      const fileRef = refDoUpload(uploadResult);
+      if (!fileRef) throw new Error("o envio não devolveu a referência do arquivo");
       let fileType = file.type;
       if (!fileType) {
         const ext = file.name.toLowerCase().split(".").pop();
@@ -702,7 +848,7 @@ export default function Oportunidades() {
         empresa_id: empresaAtiva.id,
         oportunidade_id: selectedOp.id,
         nome: file.name,
-        url: fileUrl,
+        url: fileRef,
         tipo: fileType,
         tamanho: file.size,
         usuario_nome: user?.full_name || user?.email || "Usuário",
@@ -807,7 +953,14 @@ export default function Oportunidades() {
     const template = templates.find((t) => t.id === templateId);
     if (template?.campos_padrao) {
       const campos = safeParseJSON(template.campos_padrao, null);
-      if (campos) setFormData((prev) => ({ ...prev, ...campos, template_id: templateId }));
+      if (campos && typeof campos === "object") {
+        // valor do template pode vir string ("1234.5"): o formulário espera número
+        const valor =
+          "valor_estimado" in campos
+            ? { valor_estimado: valorEstimadoParaForm(campos.valor_estimado) }
+            : {};
+        setFormData((prev) => ({ ...prev, ...campos, ...valor, template_id: templateId }));
+      }
     }
   };
 
@@ -1186,6 +1339,7 @@ export default function Oportunidades() {
     <div className="space-y-6">
       <OportunidadesHeader
         onOpenModal={() => handleOpenModal()}
+        onNovaDoEdital={() => setShowLerEdital(true)}
         onExport={handleExport}
         onStatusConfig={() => setShowStatusConfig(true)}
         onHandleOpenModal={handleOpenModal}
@@ -1362,15 +1516,7 @@ export default function Oportunidades() {
                                             entity={op}
                                             markAsCompleteTitle="Ganhamos - migrar para Projetos"
                                             onMarkAsComplete={podeEditarOps ? handleGanhamos : null}
-                                            onCopy={
-                                              podeCriarOps
-                                                ? (o) =>
-                                                    handleOpenModal({
-                                                      ...o,
-                                                      nome: (o.nome || o.titulo) + " (cópia)",
-                                                    })
-                                                : null
-                                            }
+                                            onCopy={podeCriarOps ? handleDuplicar : null}
                                             onArchive={podeEditarOps ? handleArquivar : null}
                                             onDelete={podeExcluirOps ? handleDelete : null}
                                           />
@@ -1493,15 +1639,7 @@ export default function Oportunidades() {
                           entity={op}
                           markAsCompleteTitle="Ganhamos - migrar para Projetos"
                           onMarkAsComplete={podeEditarOps ? handleGanhamos : null}
-                          onCopy={
-                            podeCriarOps
-                              ? (o) =>
-                                  handleOpenModal({
-                                    ...o,
-                                    nome: (o.nome || o.titulo) + " (cópia)",
-                                  })
-                              : null
-                          }
+                          onCopy={podeCriarOps ? handleDuplicar : null}
                           onArchive={podeEditarOps ? handleArquivar : null}
                           onDelete={podeExcluirOps ? handleDelete : null}
                         />
@@ -1671,6 +1809,8 @@ export default function Oportunidades() {
         onDeleteSelecionados={handleDeleteSelecionados}
         onNovoOrcamentoSelect={handleNovoOrcamentoSelect}
         onOpenModal={handleOpenModal}
+        onDuplicar={podeCriarOps ? handleDuplicar : undefined}
+        onAnaliseGravada={handleAnaliseGravada}
         onDelete={handleDelete}
         onShowStatusConfig={setShowStatusConfig}
         onShowSalvarTemplate={setShowSalvarTemplate}
@@ -1680,6 +1820,25 @@ export default function Oportunidades() {
         setOportunidades={setOportunidades}
         fileInputOrcamentoRef={fileInputOrcamentoRef}
         uploadingFile={uploadingFile}
+      />
+
+      {/* Nova oportunidade a partir do edital (IA) */}
+      <LerEditalSheet
+        open={showLerEdital}
+        onOpenChange={(open) => {
+          setShowLerEdital(open);
+          // salvou e fechou sem "Abrir oportunidade": a lista também precisa refletir
+          if (!open) loadData();
+        }}
+        empresaAtiva={empresaAtiva}
+        user={user}
+        statusInicial={statusList[0]}
+        responsavelInicial={(() => {
+          const meuVinculo = usuariosEmpresa.find((u) => u.usuario_email === user?.email);
+          return meuVinculo ? [meuVinculo.id] : undefined;
+        })()}
+        onConcluido={handleEditalConcluido}
+        onAnaliseGravada={handleAnaliseGravada}
       />
 
       {/* Relatórios do orçamento */}

@@ -3,6 +3,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, DollarSign, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TIPOS_PRAZO, chaveDoDia, eventosPorDia, rotuloEvento } from "@/lib/prazos-licitacao";
+
+// Tipos que levam o valor estimado no chip (os prazos só repetiriam o valor).
+const TIPOS_COM_VALOR = new Set(["sessao", "fechamento"]);
 
 export default function CalendarioOportunidades({
   oportunidades,
@@ -46,19 +50,9 @@ export default function CalendarioOportunidades({
     setCurrentDate(new Date());
   };
 
-  const oportunidadesPorData = useMemo(() => {
-    const map = {};
-    oportunidades.forEach((op) => {
-      // Usar data de licitação se disponível, caso contrário data de fechamento prevista
-      const dataKey = op.licitacao_data || op.data_fechamento_prevista;
-      if (dataKey) {
-        const dateStr = dataKey.split("T")[0];
-        if (!map[dateStr]) map[dateStr] = [];
-        map[dateStr].push(op);
-      }
-    });
-    return map;
-  }, [oportunidades]);
+  // Um evento por prazo: impugnação, esclarecimento, limite da proposta e sessão
+  // (ou fechamento previsto, sem sessão). Proposta = sessão não duplica.
+  const oportunidadesPorData = useMemo(() => eventosPorDia(oportunidades), [oportunidades]);
 
   const days = [];
   let day = new Date(startDate);
@@ -117,7 +111,7 @@ export default function CalendarioOportunidades({
           {/* Dias do Mês */}
           <div className="grid grid-cols-7 gap-2">
             {days.map((day, idx) => {
-              const dateStr = day.toISOString().split("T")[0];
+              const dateStr = chaveDoDia(day);
               const opsNoDia = oportunidadesPorData[dateStr] || [];
               const today = isToday(day);
               const currentMonth = isCurrentMonth(day);
@@ -144,23 +138,35 @@ export default function CalendarioOportunidades({
                   </div>
 
                   <div className="space-y-1">
-                    {opsNoDia.slice(0, 3).map((op) => (
-                      <div
-                        key={op.id}
-                        onClick={() => onSelectOportunidade(op)}
-                        className="p-1.5 rounded text-xs cursor-pointer hover:shadow-md transition-all bg-blue-50 border border-blue-200 hover:border-blue-300"
-                      >
-                        <p className="font-medium text-slate-800 truncate mb-1">
-                          {op.nome || op.titulo}
-                        </p>
-                        {op.valor_estimado > 0 && (
-                          <p className="text-green-600 font-semibold flex items-center gap-1">
-                            <DollarSign className="w-3 h-3" />
-                            {formatCurrency(op.valor_estimado)}
+                    {opsNoDia.slice(0, 3).map((ev) => {
+                      const { op } = ev;
+                      const tipo = TIPOS_PRAZO[ev.tipo];
+                      return (
+                        <div
+                          key={`${op.id}-${ev.tipo}`}
+                          onClick={() => onSelectOportunidade(op)}
+                          title={`${rotuloEvento(ev)} — ${op.nome || op.titulo || ""}`}
+                          className={cn(
+                            "p-1.5 rounded border text-xs cursor-pointer hover:shadow-md transition-all",
+                            tipo.classe
+                          )}
+                        >
+                          <p className="flex items-center gap-1 text-[10px] font-semibold leading-tight mb-0.5">
+                            <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", tipo.ponto)} />
+                            <span className="truncate">{rotuloEvento(ev)}</span>
                           </p>
-                        )}
-                      </div>
-                    ))}
+                          <p className="font-medium text-slate-800 truncate">
+                            {op.nome || op.titulo}
+                          </p>
+                          {TIPOS_COM_VALOR.has(ev.tipo) && op.valor_estimado > 0 && (
+                            <p className="text-green-600 font-semibold flex items-center gap-1 mt-0.5">
+                              <DollarSign className="w-3 h-3" />
+                              {formatCurrency(op.valor_estimado)}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
                     {opsNoDia.length > 3 && (
                       <button
                         className="text-xs text-blue-600 font-medium pl-1 hover:underline"
@@ -212,15 +218,21 @@ export default function CalendarioOportunidades({
                 </button>
               </div>
               <div className="p-2 space-y-1">
-                {opsPopover.map((op) => (
+                {opsPopover.map(({ op, ...ev }) => (
                   <div
-                    key={op.id}
+                    key={`${op.id}-${ev.tipo}`}
                     onClick={() => {
                       onSelectOportunidade(op);
                       setPopoverDia(null);
                     }}
                     className="p-2 rounded-lg text-sm cursor-pointer hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-all"
                   >
+                    <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                      <span
+                        className={cn("w-2 h-2 rounded-full shrink-0", TIPOS_PRAZO[ev.tipo].ponto)}
+                      />
+                      {rotuloEvento(ev)}
+                    </p>
                     <p className="font-medium text-slate-800">{op.nome || op.titulo}</p>
                     {op.cidade && (
                       <p className="text-xs text-slate-500 mt-0.5">
@@ -241,11 +253,13 @@ export default function CalendarioOportunidades({
         })()}
 
       {/* Legenda */}
-      <div className="flex items-center gap-4 text-sm text-slate-600">
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded bg-blue-50 border border-blue-200" />
-          <span>Oportunidade</span>
-        </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-600">
+        {Object.entries(TIPOS_PRAZO).map(([id, tipo]) => (
+          <div key={id} className="flex items-center gap-2">
+            <div className={cn("w-4 h-4 rounded border", tipo.classe)} />
+            <span>{tipo.rotulo}</span>
+          </div>
+        ))}
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 rounded bg-amber-50 border border-amber-300" />
           <span>Hoje</span>
