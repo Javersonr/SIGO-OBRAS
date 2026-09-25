@@ -54,7 +54,34 @@ export function dentroDoPeriodo(dataRef, periodo, hoje = new Date()) {
 
 // Normalização central em lib/busca.js; re-exportada aqui por compatibilidade.
 import { normalizarTexto } from "./busca";
+import { isStatusPago, isStatusPendente, normalizeStatus } from "./financeiro-utils";
 export { normalizarTexto };
+
+// Vencido = vencimento ANTES de hoje (vencer hoje ainda não é atraso).
+function vencido(t, hoje) {
+  const ref = t.data_vencimento || t.data;
+  if (!ref) return false;
+  const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  return parseDataLocal(ref) < inicioHoje;
+}
+
+// O banco guarda "em_aberto" e também "atrasado" (e legados "pendente",
+// "Pago", "recebido"...), mas a lista mostra tudo que não foi pago como
+// "Em aberto". O filtro segue a lista: comparar o texto exato fazia "Em aberto"
+// esconder os atrasados e "Atrasado" esconder os em aberto já vencidos.
+export function casaStatus(t, status, hoje = new Date()) {
+  const s = normalizeStatus(t.status);
+  switch (status) {
+    case "em_aberto":
+      return isStatusPendente(s);
+    case "pago":
+      return isStatusPago(s) || s === "recebido";
+    case "atrasado":
+      return isStatusPendente(s) && (s === "atrasado" || vencido(t, hoje));
+    default:
+      return s === normalizeStatus(status);
+  }
+}
 
 export function filtrarTransacoes(transacoes, filtros = {}, opts = {}) {
   const { tipo, hoje = new Date() } = opts;
@@ -80,7 +107,7 @@ export function filtrarTransacoes(transacoes, filtros = {}, opts = {}) {
   }
 
   if (filtros.status && filtros.status !== "all") {
-    out = out.filter((t) => t.status === filtros.status);
+    out = out.filter((t) => casaStatus(t, filtros.status, hoje));
   }
 
   if (filtros.categoriaId && filtros.categoriaId !== "all") {

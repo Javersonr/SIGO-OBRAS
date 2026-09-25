@@ -89,7 +89,7 @@ export default function FiltroRapido({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos Status</SelectItem>
-            <SelectItem value="em_aberto">Pendente</SelectItem>
+            <SelectItem value="em_aberto">Em aberto</SelectItem>
             <SelectItem value="pago">{tipo === "receitas" ? "Recebido" : "Pago"}</SelectItem>
             <SelectItem value="atrasado">Atrasado</SelectItem>
           </SelectContent>

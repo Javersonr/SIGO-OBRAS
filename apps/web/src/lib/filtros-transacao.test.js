@@ -143,10 +143,38 @@ describe("filtrarTransacoes", () => {
   });
 
   it("status/categoria/projeto, com 'all' = sem filtro", () => {
-    expect(filtrarTransacoes(dados, { status: "pago" }, {})).toHaveLength(1);
+    expect(filtrarTransacoes(dados, { status: "pago" }, {})).toHaveLength(2); // pago + recebido
     expect(filtrarTransacoes(dados, { categoriaId: "c2" }, {})).toHaveLength(1);
     expect(filtrarTransacoes(dados, { projetoId: "p1" }, {})).toHaveLength(2);
     expect(filtrarTransacoes(dados, { status: "all", projetoId: "all" }, {})).toHaveLength(3);
+  });
+
+  it("'Em aberto' pega tudo que não foi pago (em_aberto, atrasado, pendente legado)", () => {
+    const lote = [
+      { descricao: "A", status: "em_aberto", data_vencimento: "2026-06-20" },
+      { descricao: "B", status: "atrasado", data_vencimento: "2026-05-01" },
+      { descricao: "C", status: "Pendente", data_vencimento: "2026-06-30" },
+      { descricao: "D", status: "pago", data_vencimento: "2026-05-01" },
+      { descricao: "E", status: "Pago", data_vencimento: "2026-05-01" },
+      { descricao: "F", status: "cancelado", data_vencimento: "2026-05-01" },
+      { descricao: "G", status: "pre_lancamento", data_vencimento: "2026-05-01" },
+    ];
+    const descr = (status) =>
+      filtrarTransacoes(lote, { status }, { hoje: HOJE }).map((t) => t.descricao);
+    expect(descr("em_aberto")).toEqual(["A", "B", "C"]);
+    expect(descr("pago")).toEqual(["D", "E"]);
+  });
+
+  it("'Atrasado' = não pago e vencido antes de hoje, mesmo gravado como em_aberto", () => {
+    const lote = [
+      { descricao: "vencida em aberto", status: "em_aberto", data_vencimento: "2026-06-14" },
+      { descricao: "vence hoje", status: "em_aberto", data_vencimento: "2026-06-15" },
+      { descricao: "gravada atrasado", status: "atrasado", data_vencimento: "2026-06-20" },
+      { descricao: "paga vencida", status: "pago", data_vencimento: "2026-01-01" },
+      { descricao: "sem data", status: "em_aberto" },
+    ];
+    const r = filtrarTransacoes(lote, { status: "atrasado" }, { hoje: HOJE });
+    expect(r.map((t) => t.descricao)).toEqual(["vencida em aberto", "gravada atrasado"]);
   });
 
   it("período combina com tipo", () => {
