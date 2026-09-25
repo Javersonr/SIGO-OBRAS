@@ -6,17 +6,35 @@
  * Substitui a função legada Base44 `autenticarFornecedor`. Como o Base44 está
  * obsoleto, esta passa a ser a fonte de verdade da autenticação do fornecedor.
  *
- * Migração transparente de senha: a `senha_acesso` legada estava em TEXTO PURO.
- * Validamos texto puro / SHA-256 / bcrypt e, no primeiro login bem-sucedido,
- * regravamos como bcrypt.
+ * Senha: o frontend grava SHA-256 hex (lib/senha-portal.js) e o primeiro login
+ * bem-sucedido regrava como bcrypt. Texto puro NÃO é mais aceito: a comparação
+ * `armazenado === digitado` deixava entrar com o PRÓPRIO hash (quem lê a
+ * tabela, logava como o fornecedor). Conferido em 24/09/2026: nenhuma linha em
+ * texto puro em produção (12 SHA-256).
+ *
+ * Proteções: limite por IP e por e-mail (_shared/limite-tentativas) e bcrypt
+ * fictício quando o acesso não existe — resposta e tempo iguais aos de senha
+ * errada. Obs.: o EntrarSistema tenta este login ANTES do login-custom, então
+ * logins de funcionários também contam no limite por IP daqui (429 aqui só faz
+ * o EntrarSistema seguir para o login-custom).
  *
  * Resposta: { success, fornecedor_id, fornecedor_nome, email, empresa_id, portal_token }
  */
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
-import { verifyPassword, hashPassword } from "../_shared/passwords.ts";
+import { verifyPassword, hashPassword, verificarSenhaFicticia } from "../_shared/passwords.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { signPortalToken } from "../_shared/portal-token.ts";
+import {
+  consumirTentativa,
+  ipDaRequisicao,
+  liberarTentativas,
+  MSG_MUITAS_TENTATIVAS,
+} from "../_shared/limite-tentativas.ts";
+
+const JANELA_SEG = 15 * 60;
+const MAX_POR_IP = 30;
+const MAX_POR_CONTA = 8;
 
 interface Body {
   email?: string;
@@ -40,6 +58,12 @@ Deno.serve(
     if (!email || !senha) return fail("Email e senha são obrigatórios", 400);
 
     const supabase = createAdminClient();
+
+    const limite = await consumirTentativa(supabase, "fornecedor-login", JANELA_SEG, [
+      { tipo: "ip", valor: ipDaRequisicao(req), max: MAX_POR_IP },
+      { tipo: "conta", valor: email, max: MAX_POR_CONTA },
+    ]);
+    if (!limite.permitido) return fail(MSG_MUITAS_TENTATIVAS, 429);
 
     // Busca acesso do fornecedor (tenta lowercase; cai pro original por compat)
     let { data: acesso } = await supabase
@@ -68,18 +92,16 @@ Deno.serve(
       }
     }
 
-    // Mensagem genérica pra não revelar se o email existe
-    if (!acesso) return fail("Credenciais inválidas", 401);
-
-    // Validação de senha: bcrypt / SHA-256 (via verifyPassword) ou texto puro legado
-    const stored = acesso.senha_acesso ?? "";
-    let { ok: senhaOk, needsRehash } = await verifyPassword(senha, stored);
-    if (!senhaOk && stored && stored === senha) {
-      // senha_acesso legada em texto puro
-      senhaOk = true;
-      needsRehash = true;
+    // Mensagem e tempo genéricos pra não revelar se o email existe
+    if (!acesso) {
+      await verificarSenhaFicticia(senha);
+      return fail("Credenciais inválidas", 401);
     }
+
+    // Validação de senha: só bcrypt / SHA-256 (via verifyPassword)
+    const { ok: senhaOk, needsRehash } = await verifyPassword(senha, acesso.senha_acesso ?? "");
     if (!senhaOk) return fail("Credenciais inválidas", 401);
+    await liberarTentativas(supabase, limite);
 
     // Rehash transparente p/ bcrypt
     if (needsRehash) {

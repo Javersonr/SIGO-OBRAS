@@ -48,6 +48,19 @@ export async function verifyPassword(
   return { ok: false, needsRehash: false };
 }
 
+// Hash de uma senha aleatória, gerado uma vez por instância (preguiçoso).
+let hashFicticio: Promise<string> | null = null;
+
+/**
+ * Conta inexistente/inativa paga o MESMO bcrypt de uma conta real: sem isso o
+ * tempo de resposta diz quais e-mails estão cadastrados. O resultado é sempre
+ * descartado.
+ */
+export async function verificarSenhaFicticia(plain: string): Promise<void> {
+  hashFicticio ??= hashPassword(crypto.randomUUID());
+  await bcrypt.compare(plain, await hashFicticio);
+}
+
 /**
  * Gera uma senha provisória aleatória: 12 caracteres, alfanuméricos sem chars
  * confusos (0/O, 1/l, etc.). Garante pelo menos 1 número e 1 maiúscula.

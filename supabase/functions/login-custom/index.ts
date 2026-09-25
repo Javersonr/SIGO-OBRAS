@@ -12,16 +12,32 @@
  *      - Se empresa_id foi passado → valida e retorna usuario com essa empresa
  *   5. Retorna { success, usuario, multiplas_empresas?, empresas?, usuario_base? }
  *
+ * Proteções: limite de tentativas por IP e por e-mail (_shared/limite-tentativas,
+ * 429 igual p/ e-mail cadastrado ou não) e bcrypt fictício quando o usuário não
+ * existe/está inativo — resposta e tempo iguais aos de senha errada.
+ *
  * Compatível com a forma de resposta esperada pelo frontend atual
  * (sessionStorage 'custom_auth'). JWT real será adicionado na Phase 4.
  */
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
-import { verifyPassword, hashPassword } from "../_shared/passwords.ts";
+import { verifyPassword, hashPassword, verificarSenhaFicticia } from "../_shared/passwords.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { montarSessao } from "../_shared/auth-bridge.ts";
 import { signPortalToken } from "../_shared/portal-token.ts";
 import { mapaLogosAssinados } from "../_shared/logos-assinados.ts";
+import {
+  consumirTentativa,
+  ipDaRequisicao,
+  liberarTentativas,
+  MSG_MUITAS_TENTATIVAS,
+} from "../_shared/limite-tentativas.ts";
+
+// Senha errada: 30 por IP e 8 por e-mail a cada 15 min. Login certo devolve a
+// do IP (escritório inteiro atrás de um NAT) e zera a do e-mail.
+const JANELA_SEG = 15 * 60;
+const MAX_POR_IP = 30;
+const MAX_POR_CONTA = 8;
 
 /**
  * Resolve a credencial pós-login:
@@ -114,6 +130,15 @@ Deno.serve(
 
     const supabase = createAdminClient();
 
+    // 0. Limite de tentativas — consumido ANTES de conferir a senha (rajada
+    // paralela não passa do teto). Conta também e-mail não cadastrado, então o
+    // 429 não revela quem existe.
+    const limite = await consumirTentativa(supabase, "login", JANELA_SEG, [
+      { tipo: "ip", valor: ipDaRequisicao(req), max: MAX_POR_IP },
+      { tipo: "conta", valor: email, max: MAX_POR_CONTA },
+    ]);
+    if (!limite.permitido) return fail(MSG_MUITAS_TENTATIVAS, 429);
+
     // 1. Buscar usuário
     const { data: usuario, error: userErr } = await supabase
       .from("usuario_custom")
@@ -130,13 +155,15 @@ Deno.serve(
     }
 
     if (!usuario || !usuario.ativo) {
-      // Mensagem genérica pra não vazar se o email existe
+      // Mensagem E tempo iguais aos de senha errada: não vaza se o email existe
+      await verificarSenhaFicticia(senha);
       return fail("Credenciais inválidas", 401);
     }
 
     // 2. Validar senha
     const { ok: senhaOk, needsRehash } = await verifyPassword(senha, usuario.senha_hash);
     if (!senhaOk) return fail("Credenciais inválidas", 401);
+    await liberarTentativas(supabase, limite);
 
     // Rehash transparente: se era SHA-256 legado, regrava como bcrypt
     // E desliga senha_provisoria — user já provou que sabe a senha original,

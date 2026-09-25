@@ -22,6 +22,7 @@ import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { hashPassword, generateProvisionalPassword } from "../_shared/passwords.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { atualizarSenhaAuth } from "../_shared/auth-bridge.ts";
+import { revogarSessoesAuth } from "../_shared/sessoes-auth.ts";
 import { getCallerFromJWT, usuarioCustomDoCaller } from "../_shared/auth-jwt.ts";
 
 interface RedefinirBody {
@@ -133,6 +134,7 @@ Deno.serve(
         senha_provisoria: flagProvisoria,
         reset_token: null,
         reset_token_expira: null,
+        reset_tentativas: 0,
         updated_at: new Date().toISOString(),
       })
       .eq("id", alvo.id);
@@ -151,6 +153,18 @@ Deno.serve(
       });
     } catch (e) {
       console.error("[redefinir-senha-admin] sync Auth falhou (não-fatal):", (e as Error)?.message);
+    }
+
+    // Senha redefinida = sessões abertas do alvo caem (quem estava com a conta
+    // dele, inclusive por sessão roubada, precisa da senha nova)
+    try {
+      await revogarSessoesAuth(supabase, {
+        email: alvo.email,
+        authUserId: alvo.auth_user_id,
+        senhaNova: novaSenha,
+      });
+    } catch (e) {
+      console.error("[redefinir-senha-admin] revogar sessões (não-fatal):", (e as Error)?.message);
     }
 
     // 5. Audit log (best-effort, não bloqueia o sucesso)

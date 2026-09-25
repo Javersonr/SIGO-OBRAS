@@ -133,10 +133,8 @@ export default function MeuPerfilSheet({ open, onOpenChange }) {
     }
     setAlterandoSenha(true);
     try {
-      // A edge function alterar-senha identifica por usuario_id (email = fallback)
+      // alterar-senha identifica o usuário SÓ pelo token da sessão (vai no invoke)
       const response = await sigo.functions.invoke("alterarSenha", {
-        usuario_id: user.id,
-        email: user.email,
         senha_atual: senhaAtual,
         nova_senha: novaSenha,
       });

@@ -16,7 +16,6 @@ export default function EsqueciSenha() {
   const [etapa, setEtapa] = useState(1); // 1=email, 2=código+senha, 3=sucesso
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
-  const [telefoneMascarado, setTelefoneMascarado] = useState("");
   const [codigo, setCodigo] = useState("");
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmarSenha, setConfirmarSenha] = useState("");
@@ -32,10 +31,10 @@ export default function EsqueciSenha() {
       const response = await sigo.functions.invoke("recuperarSenha", {
         email: email.trim(),
       });
+      // A resposta é a mesma para e-mail cadastrado ou não (não confirma cadastro)
       if (response.data.success !== false) {
-        setTelefoneMascarado(response.data.telefone || "");
         setEtapa(2);
-        setInfo(response.data.message || "Código enviado por WhatsApp.");
+        setInfo(response.data.message || "Se o e-mail estiver cadastrado, enviamos um código.");
       } else {
         setError(response.data.error || "Não foi possível enviar o código");
       }
@@ -113,7 +112,7 @@ export default function EsqueciSenha() {
           <CardDescription>
             {etapa === 1
               ? "Digite seu e-mail para receber um código por WhatsApp"
-              : `Enviamos um código de 6 dígitos por WhatsApp${telefoneMascarado ? ` (${telefoneMascarado})` : ""}`}
+              : "Digite o código de 6 dígitos que chegou no WhatsApp do seu cadastro"}
           </CardDescription>
         </CardHeader>
         <CardContent>
