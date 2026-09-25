@@ -116,6 +116,19 @@ Deno.serve(async (req) => {
   const r = await resolverChave(admin, bearer);
   if (!r.ok) {
     if (r.motivo === "chave_invalida") return naoAutorizado(req, true);
+    if (r.motivo === "indisponivel") {
+      // Falha passageira do banco: nunca é negação, e não vira linha em
+      // mcp_auditoria (auditoria é só para acesso de fato negado).
+      return responder(
+        req,
+        503,
+        {
+          error: "temporarily_unavailable",
+          error_description: "SIGO indisponível no momento. Tente de novo em instantes.",
+        },
+        { "retry-after": "5" }
+      );
+    }
     if (r.empresaId) {
       await auditar(admin, {
         empresa_id: r.empresaId,

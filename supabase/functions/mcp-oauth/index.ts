@@ -72,12 +72,28 @@ Deno.serve(
     if (req.method !== "POST") return fail("Método não permitido", 405);
     const caminho = new URL(req.url).pathname;
     const admin = createAdminClient();
-    if (caminho.endsWith("/register")) return await registrar(req, admin);
-    if (caminho.endsWith("/token")) return await token(req, admin);
-    if (caminho.endsWith("/revoke")) return await revogarToken(req, admin);
+    if (caminho.endsWith("/register"))
+      return await comErroServidor("register", () => registrar(req, admin));
+    if (caminho.endsWith("/token")) return await comErroServidor("token", () => token(req, admin));
+    if (caminho.endsWith("/revoke"))
+      return await comErroServidor("revoke", () => revogarToken(req, admin));
     return await acaoDaTela(req, admin);
   })
 );
+
+/**
+ * Exceção nos endpoints do protocolo OAuth (register/token/revoke) vira
+ * server_error no formato OAuth, com no-store — não o 500 genérico do
+ * withCors, que sai fora do formato OAuth e sem os headers de cache certos.
+ */
+async function comErroServidor(nome: string, fn: () => Promise<Response>): Promise<Response> {
+  try {
+    return await fn();
+  } catch (err) {
+    console.error(`[mcp-oauth] ${nome}:`, (err as Error)?.message ?? String(err));
+    return jsonOAuth(erroOAuth("server_error"), 500);
+  }
+}
 
 // ─── Protocolo ──────────────────────────────────────────────────────────────
 
@@ -132,11 +148,12 @@ async function token(req: Request, admin: Admin): Promise<Response> {
 }
 
 async function autorizacaoAtiva(admin: Admin, id: string) {
-  const { data } = await admin
+  const { data, error } = await admin
     .from("conector_autorizacao")
     .select("id, criado_em, revogado_em, cliente_id, resource")
     .eq("id", id)
     .maybeSingle();
+  if (error) throw new Error(error.message);
   return data && !data.revogado_em ? data : null;
 }
 
@@ -195,20 +212,22 @@ async function trocarCodigo(f: Record<string, string>, admin: Admin): Promise<Re
   }
   if (!cod) {
     // código reaproveitado → provável vazamento: derruba a autorização (RFC 6749 §4.1.2)
-    const { data: usado } = await admin
+    const { data: usado, error: erroUsado } = await admin
       .from("conector_codigo")
       .select("autorizacao_id")
       .eq("codigo_hash", hash)
       .not("usado_em", "is", null)
       .maybeSingle();
+    if (erroUsado) throw new Error(erroUsado.message);
     if (usado) await revogarAutorizacao(admin, usado.autorizacao_id, "codigo_reutilizado");
     return jsonOAuth(erroOAuth("invalid_grant"), 400);
   }
-  const { data: cli } = await admin
+  const { data: cli, error: erroCli } = await admin
     .from("conector_cliente")
     .select("id, client_id")
     .eq("id", cod.cliente_id)
     .maybeSingle();
+  if (erroCli) throw new Error(erroCli.message);
   if (!cli || cli.client_id !== client_id || cod.redirect_uri !== redirect_uri) {
     return jsonOAuth(erroOAuth("invalid_grant"), 400);
   }
@@ -229,20 +248,22 @@ async function renovar(f: Record<string, string>, admin: Admin): Promise<Respons
   if (!refresh_token || !client_id)
     return jsonOAuth(erroOAuth("invalid_request", "Faltam parâmetros"), 400);
   const hash = await hashSegredo(refresh_token);
-  const { data: ch } = await admin
+  const { data: ch, error: erroCh } = await admin
     .from("conector_chave")
     .select("chave_hash, autorizacao_id, familia, expira_em, substituida_em, revogada_em")
     .eq("chave_hash", hash)
     .eq("tipo", "renovacao")
     .maybeSingle();
+  if (erroCh) throw new Error(erroCh.message);
   if (!ch) return jsonOAuth(erroOAuth("invalid_grant"), 400);
   const aut = await autorizacaoAtiva(admin, ch.autorizacao_id);
   if (!aut) return jsonOAuth(erroOAuth("invalid_grant"), 400);
-  const { data: cli } = await admin
+  const { data: cli, error: erroCli } = await admin
     .from("conector_cliente")
     .select("client_id")
     .eq("id", aut.cliente_id)
     .maybeSingle();
+  if (erroCli) throw new Error(erroCli.message);
   if (!cli || cli.client_id !== client_id) return jsonOAuth(erroOAuth("invalid_grant"), 400);
   if (f.resource !== undefined && recursoCanonico(f.resource) !== aut.resource) {
     return jsonOAuth(erroOAuth("invalid_target"), 400);
@@ -261,7 +282,7 @@ async function renovar(f: Record<string, string>, admin: Admin): Promise<Respons
     return jsonOAuth(erroOAuth("invalid_grant"), 400);
   }
   if (decisao !== "ok") return jsonOAuth(erroOAuth("invalid_grant"), 400);
-  const { data: marcada } = await admin
+  const { data: marcada, error: erroMarcada } = await admin
     .from("conector_chave")
     .update({ substituida_em: agoraIso() })
     .eq("chave_hash", hash)
@@ -269,6 +290,7 @@ async function renovar(f: Record<string, string>, admin: Admin): Promise<Respons
     .is("revogada_em", null)
     .select("chave_hash")
     .maybeSingle();
+  if (erroMarcada) throw new Error(erroMarcada.message);
   if (!marcada) return jsonOAuth(erroOAuth("invalid_grant"), 400); // outra renovação chegou antes
   return jsonOAuth(await emitirPar(admin, aut, ch.familia));
 }
@@ -277,17 +299,26 @@ async function revogarToken(req: Request, admin: Admin): Promise<Response> {
   const f = lerFormUnico(await req.text());
   if (!f?.token) return jsonOAuth(erroOAuth("invalid_request"), 400);
   const hash = await hashSegredo(f.token);
-  const { data: ch } = await admin
+  const { data: ch, error } = await admin
     .from("conector_chave")
     .select("autorizacao_id, tipo")
     .eq("chave_hash", hash)
     .maybeSingle();
+  if (error) {
+    // RFC 7009 §2.2.1: falha do servidor é 503, nunca 200 de falso sucesso.
+    console.error("[mcp-oauth] revoke:", error.message);
+    return jsonOAuth(erroOAuth("server_error"), 503);
+  }
   if (ch?.tipo === "acesso") {
-    await admin
+    const { error: e2 } = await admin
       .from("conector_chave")
       .update({ revogada_em: agoraIso() })
       .eq("chave_hash", hash)
       .is("revogada_em", null);
+    if (e2) {
+      console.error("[mcp-oauth] revoke:", e2.message);
+      return jsonOAuth(erroOAuth("server_error"), 503);
+    }
   } else if (ch) {
     await revogarAutorizacao(admin, ch.autorizacao_id, "revogado_pelo_cliente");
   }
