@@ -194,8 +194,8 @@ export default function Layout({ children, currentPageName }) {
           if (userData.grupo_id) {
             setGrupoAtivo(userData.grupo_id);
             try {
-              // Coberto pela policy empresa_mesmo_grupo (migração 0093) —
-              // o asServiceRole do SDK legado foi removido.
+              // Só vêm as empresas do grupo em que o usuário tem vínculo
+              // (policy empresa_dos_meus_vinculos, migração 0120).
               const empresasGrupo = await sigo.entities.Empresa.filter({
                 grupo_id: userData.grupo_id,
                 ativo: true,
