@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Save, User, X, Plus } from "lucide-react";
 import { toast } from "sonner";
+import AppsConectadosCard from "@/components/conector/AppsConectadosCard";
 
 export default function MeuPerfilSheet({ open, onOpenChange }) {
   const { empresaAtiva, user } = useEmpresa();
@@ -438,6 +439,8 @@ export default function MeuPerfilSheet({ open, onOpenChange }) {
               </Button>
             </CardContent>
           </Card>
+
+          <AppsConectadosCard empresaAtiva={empresaAtiva} />
         </div>
       </SheetContent>
     </Sheet>

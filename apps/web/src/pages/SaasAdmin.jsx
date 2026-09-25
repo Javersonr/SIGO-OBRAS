@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -279,6 +280,18 @@ export default function SaasAdmin() {
   const handleCloseEmpresaModal = () => {
     setShowEmpresaModal(false);
     setSelectedEmpresa(null);
+  };
+
+  // Conector do Claude: liberação comercial por empresa (só o super admin
+  // grava em empresa — RLS empresa_super_admin).
+  const alternarConector = async (empresa, ligado) => {
+    try {
+      await sigo.entities.Empresa.update(empresa.id, { conector_claude: ligado });
+      toast.success(`Conector do Claude ${ligado ? "liberado" : "bloqueado"} para ${empresa.nome}`);
+      loadData();
+    } catch (error) {
+      toast.error("Erro ao alterar o conector do Claude");
+    }
   };
 
   const handleSaveEmpresa = async () => {
@@ -838,6 +851,7 @@ export default function SaasAdmin() {
                     <TableHead>Nome</TableHead>
                     <TableHead>CNPJ</TableHead>
                     <TableHead>Email</TableHead>
+                    <TableHead>Conector Claude</TableHead>
                     <TableHead>Ações</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -849,6 +863,13 @@ export default function SaasAdmin() {
                         <TableCell className="font-medium">{empresa.nome}</TableCell>
                         <TableCell>{empresa.cnpj || "-"}</TableCell>
                         <TableCell>{empresa.email}</TableCell>
+                        <TableCell>
+                          <Switch
+                            checked={!!empresa.conector_claude}
+                            onCheckedChange={(v) => alternarConector(empresa, v)}
+                            aria-label={`Conector do Claude para ${empresa.nome}`}
+                          />
+                        </TableCell>
                         <TableCell>
                           <Button
                             variant="ghost"
