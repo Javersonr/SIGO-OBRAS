@@ -11,7 +11,8 @@
  *   3. Limite de senha atual errada por conta (5 a cada 15 min)
  *   4. Valida senha_atual com o hash do banco
  *   5. Atualiza senha_hash = bcrypt(nova) + senha_provisoria = false
- *   6. Sincroniza o Auth e encerra as OUTRAS sessões (a atual continua)
+ *   6. Sincroniza o Auth, encerra TODAS as sessões e devolve `session` nova
+ *      para esta aba continuar logada (o front aplica com aplicarSessao)
  *
  * Diferente do login-custom: este endpoint EXIGE conhecer a senha atual
  * (mesmo se a atual é provisória). Pra reset por admin sem conhecer a senha
@@ -21,9 +22,9 @@
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { verifyPassword, hashPassword } from "../_shared/passwords.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
-import { atualizarSenhaAuth } from "../_shared/auth-bridge.ts";
+import { atualizarSenhaAuth, emitirSessao } from "../_shared/auth-bridge.ts";
 import { getCallerFromJWT, usuarioCustomDoCaller } from "../_shared/auth-jwt.ts";
-import { jwtDaRequisicao, revogarSessoesAuth } from "../_shared/sessoes-auth.ts";
+import { revogarSessoesAuth } from "../_shared/sessoes-auth.ts";
 import {
   consumirTentativa,
   liberarTentativas,
@@ -132,17 +133,28 @@ Deno.serve(
       console.error("[alterar-senha] sync Auth falhou (não-fatal):", (e as Error)?.message);
     }
 
-    // Outras sessões (outro navegador, sessão roubada) caem; esta continua
+    // Todas as sessões caem (outro navegador, sessão roubada) — inclusive a
+    // desta aba: o Auth já faz logout geral em toda troca de senha pelo admin.
     try {
       await revogarSessoesAuth(supabase, {
         email: usuario.email,
         authUserId: usuario.auth_user_id,
-        jwtAtual: jwtDaRequisicao(req),
+        senhaNova: nova_senha,
       });
     } catch (e) {
-      console.error("[alterar-senha] revogar outras sessões (não-fatal):", (e as Error)?.message);
+      console.error("[alterar-senha] revogar sessões (não-fatal):", (e as Error)?.message);
     }
 
-    return ok({ message: "Senha alterada com sucesso", must_change_password: false });
+    // ...então devolve uma sessão nova para quem trocou continuar logado
+    // (o front aplica com aplicarSessao). Só se for do MESMO usuário do Auth.
+    let session = null;
+    try {
+      const nova = await emitirSessao(usuario.email, nova_senha);
+      if (nova?.user?.id && nova.user.id === usuario.auth_user_id) session = nova;
+    } catch (e) {
+      console.error("[alterar-senha] sessão nova (não-fatal):", (e as Error)?.message);
+    }
+
+    return ok({ message: "Senha alterada com sucesso", must_change_password: false, session });
   })
 );

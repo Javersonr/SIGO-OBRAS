@@ -5,12 +5,13 @@
  * até expirar (JWT sem estado, ~1h); getCallerFromJWT já o recusa, pois
  * consulta o Auth, que não acha mais a sessão.
  *
- *  - jwtAtual (o próprio usuário trocando a senha): mantém a sessão dele e
- *    encerra as outras (scope "others").
- *  - sem jwtAtual (reset por código ou pelo admin): o Auth só encerra sessões a
- *    partir de um token do próprio usuário, então emitimos uma sessão
- *    descartável (senha nova; fallback magic link admin-side, sem e-mail) e
- *    encerramos TODAS (scope "global"), inclusive ela.
+ * Quando atualizarSenhaAuth dá certo o próprio Auth já fez logout geral (o
+ * GoTrue encerra todas as sessões em toda troca de senha pelo admin — por isso
+ * cada login-custom também derruba as sessões anteriores). Esta função garante
+ * o mesmo quando a sincronização falhou: o Auth só encerra sessões a partir de
+ * um token do próprio usuário, então emitimos uma sessão descartável (senha
+ * nova; fallback magic link admin-side, sem e-mail) e encerramos TODAS
+ * (scope "global"), inclusive ela.
  *
  * Best-effort: o chamador envolve em try/catch e só registra o erro — a senha
  * já foi trocada e isso não pode virar falha para o usuário.
@@ -24,15 +25,8 @@ export async function revogarSessoesAuth(
     email: string;
     authUserId?: string | null;
     senhaNova?: string;
-    jwtAtual?: string | null;
   }
 ): Promise<void> {
-  if (opts.jwtAtual) {
-    const { error } = await admin.auth.admin.signOut(opts.jwtAtual, "others");
-    if (error) throw error;
-    return;
-  }
-
   const id = opts.authUserId || (await findAuthUserIdByEmail(admin, opts.email));
   if (!id) return; // sem espelho no Auth = nenhuma sessão emitida
 
@@ -59,11 +53,4 @@ export async function revogarSessoesAuth(
 
   const { error } = await admin.auth.admin.signOut(sessao.access_token, "global");
   if (error) throw error;
-}
-
-/** Access token cru do header Authorization (para o scope "others"). */
-export function jwtDaRequisicao(req: Request): string | null {
-  const auth = req.headers.get("authorization") ?? "";
-  const token = auth.replace(/^Bearer\s+/i, "").trim();
-  return token || null;
 }

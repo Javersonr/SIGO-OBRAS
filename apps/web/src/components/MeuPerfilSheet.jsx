@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, aplicarSessao } from "@/api/sigoClient";
 import { refDoUpload } from "@/lib/anexo-ref";
 import ImgStorage from "@/components/ImgStorage";
 import { useEmpresa } from "../Layout";
@@ -139,6 +139,8 @@ export default function MeuPerfilSheet({ open, onOpenChange }) {
         nova_senha: novaSenha,
       });
       if (response.data.success) {
+        // A troca derruba todas as sessões, inclusive esta; a função devolve uma nova
+        await aplicarSessao(response.data.session);
         toast.success("✅ Senha alterada com sucesso!");
         setSenhaAtual("");
         setNovaSenha("");
