@@ -22,6 +22,7 @@ import { verifyPassword, hashPassword, verificarSenhaFicticia } from "../_shared
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { atualizarSenhaAuth } from "../_shared/auth-bridge.ts";
 import { revogarSessoesAuth } from "../_shared/sessoes-auth.ts";
+import { revogarConectorDoUsuario } from "../_shared/conector/revogar.ts";
 import {
   consumirTentativa,
   ipDaRequisicao,
@@ -137,6 +138,15 @@ Deno.serve(
       });
     } catch (e) {
       console.error("[redefinir-senha-codigo] revogar sessões (não-fatal):", (e as Error)?.message);
+    }
+
+    try {
+      await revogarConectorDoUsuario(supabase, usuario.id, "senha_redefinida_codigo");
+    } catch (e) {
+      console.error(
+        "[redefinir-senha-codigo] revogar conector (não-fatal):",
+        (e as Error)?.message
+      );
     }
 
     return ok({ message: "Senha redefinida com sucesso. Faça login com a nova senha." });

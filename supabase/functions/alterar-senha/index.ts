@@ -25,6 +25,7 @@ import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { atualizarSenhaAuth, emitirSessao } from "../_shared/auth-bridge.ts";
 import { getCallerFromJWT, usuarioCustomDoCaller } from "../_shared/auth-jwt.ts";
 import { revogarSessoesAuth } from "../_shared/sessoes-auth.ts";
+import { revogarConectorDoUsuario } from "../_shared/conector/revogar.ts";
 import {
   consumirTentativa,
   liberarTentativas,
@@ -143,6 +144,13 @@ Deno.serve(
       });
     } catch (e) {
       console.error("[alterar-senha] revogar sessões (não-fatal):", (e as Error)?.message);
+    }
+
+    // Conector do Claude: senha nova derruba as conexões (reconecta pelo SIGO)
+    try {
+      await revogarConectorDoUsuario(supabase, usuario.id, "senha_alterada");
+    } catch (e) {
+      console.error("[alterar-senha] revogar conector (não-fatal):", (e as Error)?.message);
     }
 
     // ...então devolve uma sessão nova para quem trocou continuar logado
