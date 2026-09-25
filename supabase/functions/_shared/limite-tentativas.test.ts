@@ -113,3 +113,17 @@ test("liberarTentativas: devolve a do IP e zera a da conta", async () => {
   await liberarTentativas(nada, { permitido: true, chaves: {} });
   assert.equal(nada.chamadas.length, 0);
 });
+
+test("consumirTentativa: com falharFechado, limitador com erro NEGA (conector do Claude)", async () => {
+  const admin = fakeAdmin({ error: { message: "fora do ar" } });
+  const r = await consumirTentativa(
+    admin,
+    "mcp:empresa_atual",
+    3600,
+    [{ tipo: "conta", valor: "u1", max: 60 }],
+    {
+      falharFechado: true,
+    }
+  );
+  assert.equal(r.permitido, false);
+});

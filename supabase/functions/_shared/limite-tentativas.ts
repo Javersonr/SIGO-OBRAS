@@ -85,7 +85,10 @@ export async function consumirTentativa(
   admin: any,
   escopo: string,
   janelaSeg: number,
-  limites: Limite[]
+  limites: Limite[],
+  /** falharFechado: limitador fora do ar NEGA (uso no conector do Claude;
+   *  no login o padrão continua liberando para não trancar ninguém). */
+  opcoes: { falharFechado?: boolean } = {}
 ): Promise<Consumo> {
   const ativos = limites.filter((l) => !!l.valor);
   const chaves = await Promise.all(ativos.map((l) => chaveLimite(escopo, l.tipo, l.valor!)));
@@ -100,7 +103,7 @@ export async function consumirTentativa(
   });
   if (error) {
     console.error(`[limite-tentativas] ${escopo}: limitador indisponível:`, error.message);
-    return { permitido: true, chaves: porTipo };
+    return { permitido: !opcoes.falharFechado, chaves: porTipo };
   }
   return { permitido: data !== false, chaves: porTipo };
 }
