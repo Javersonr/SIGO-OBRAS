@@ -17,6 +17,7 @@
  * errada. Obs.: o EntrarSistema tenta este login ANTES do login-custom, então
  * logins de funcionários também contam no limite por IP daqui (429 aqui só faz
  * o EntrarSistema seguir para o login-custom).
+ * Acesso cujo fornecedor não é da mesma empresa do acesso = credencial inválida.
  *
  * Resposta: { success, fornecedor_id, fornecedor_nome, email, empresa_id, portal_token }
  */
@@ -101,6 +102,31 @@ Deno.serve(
     // Validação de senha: só bcrypt / SHA-256 (via verifyPassword)
     const { ok: senhaOk, needsRehash } = await verifyPassword(senha, acesso.senha_acesso ?? "");
     if (!senhaOk) return fail("Credenciais inválidas", 401);
+
+    // O fornecedor do acesso tem de ser da MESMA empresa do acesso. A RLS só
+    // confere o empresa_id da linha: um acesso apontando para o fornecedor de
+    // outra empresa daria a quem o criou as cotações dela (a trigger da 0118
+    // barra linhas novas assim; aqui cobre o legado).
+    const { data: forn, error: fornErr } = acesso.fornecedor_id
+      ? await supabase
+          .from("fornecedor")
+          .select("nome_razao")
+          .eq("id", acesso.fornecedor_id)
+          .eq("empresa_id", acesso.empresa_id)
+          .maybeSingle()
+      : { data: null, error: null };
+    if (fornErr) {
+      console.error("[portal-fornecedor-login] erro consultando fornecedor:", fornErr.message);
+      return fail("Erro interno", 500);
+    }
+    if (!forn) {
+      console.warn(
+        "[portal-fornecedor-login] acesso",
+        acesso.id,
+        "aponta para fornecedor inexistente ou de outra empresa — recusado"
+      );
+      return fail("Credenciais inválidas", 401);
+    }
     await liberarTentativas(supabase, limite);
 
     // Rehash transparente p/ bcrypt
@@ -119,16 +145,8 @@ Deno.serve(
       }
     }
 
-    // Nome do fornecedor (display) — usa o do acesso; tenta enriquecer pelo cadastro
-    let fornecedorNome = acesso.fornecedor_nome ?? null;
-    if (!fornecedorNome) {
-      const { data: forn } = await supabase
-        .from("fornecedor")
-        .select("nome_razao")
-        .eq("id", acesso.fornecedor_id)
-        .maybeSingle();
-      fornecedorNome = forn?.nome_razao ?? null;
-    }
+    // Nome do fornecedor (display) — usa o do acesso; senão o do cadastro
+    const fornecedorNome = acesso.fornecedor_nome || forn.nome_razao || null;
 
     const portal_token = await signPortalToken({
       scope: "fornecedor",

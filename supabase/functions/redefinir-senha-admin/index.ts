@@ -8,7 +8,9 @@
  *      ignorado (antes decidia quem era o admin — qualquer um se passava por ele).
  *   2. Confirma que o admin está ativo e tem privilégio (perfil "Admin"/Owner
  *      na mesma empresa do alvo, OU is_super_admin). Só super admin redefine a
- *      senha de outro super admin.
+ *      senha de outro super admin — e a de quem tem vínculo ativo em alguma
+ *      empresa onde o chamador NÃO é Admin/Owner (a senha nova abriria também
+ *      essas empresas para quem redefiniu).
  *   3. Se `nova_senha` vier: usa ela (deve ter >= 6 chars)
  *      Se não vier: gera senha aleatória de 12 chars
  *   4. Salva senha_hash + senha_provisoria conforme `forcar_troca`
@@ -115,6 +117,46 @@ Deno.serve(
 
     if (!autorizado) {
       return fail("Sem permissão para redefinir senha deste usuário", 403);
+    }
+
+    // 2b. Alvo com acesso a empresa que o chamador NÃO administra: redefinir
+    //     daria ao chamador a conta do alvo também lá (troca de empresa).
+    //     Só o super admin (suporte SIGO) redefine a senha desse usuário.
+    if (admin.is_super_admin !== true) {
+      const [vincAlvo, vincAdmin] = await Promise.all([
+        supabase
+          .from("usuario_empresa")
+          .select("empresa_id")
+          .eq("usuario_email", String(alvo.email).toLowerCase())
+          .eq("ativo", true)
+          .is("deleted_at", null),
+        supabase
+          .from("usuario_empresa")
+          .select("empresa_id, perfil, is_owner")
+          .eq("usuario_email", String(admin.email).toLowerCase())
+          .eq("ativo", true)
+          .is("deleted_at", null),
+      ]);
+      if (vincAlvo.error || vincAdmin.error) {
+        console.error(
+          "[redefinir-senha-admin] erro lendo vínculos:",
+          vincAlvo.error?.message ?? vincAdmin.error?.message
+        );
+        return fail("Erro interno", 500);
+      }
+      const administradas = new Set(
+        (vincAdmin.data ?? [])
+          .filter((v: { perfil: string | null; is_owner: boolean | null }) =>
+            Boolean(v.is_owner || v.perfil === "Admin")
+          )
+          .map((v: { empresa_id: string }) => v.empresa_id)
+      );
+      const acessoAlheio = (vincAlvo.data ?? []).some(
+        (v: { empresa_id: string }) => !administradas.has(v.empresa_id)
+      );
+      if (acessoAlheio) {
+        return fail("Usuário com acesso a outras empresas: peça ao suporte SIGO", 403);
+      }
     }
 
     // 3. Define a senha: usa a que o admin enviou, ou gera aleatória

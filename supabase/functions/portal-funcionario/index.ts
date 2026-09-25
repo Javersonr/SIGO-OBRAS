@@ -37,6 +37,13 @@ import {
   type EventoPortal,
 } from "../_shared/portal-funcionario.ts";
 import { enviarWhatsAppTexto, normalizarTelefoneBR } from "../_shared/whatsapp-envio.ts";
+import { refDaEmpresa } from "../_shared/storage-assinar.ts";
+import {
+  consumirTentativa,
+  ipDaRequisicao,
+  liberarTentativas,
+  MSG_MUITAS_TENTATIVAS,
+} from "../_shared/limite-tentativas.ts";
 
 const TTL_SESSAO = 60 * 60 * 12;
 const TTL_ARQUIVO = 60 * 60 * 3; // URLs assinadas de vídeo/legenda/PDF
@@ -45,6 +52,10 @@ const TOLERANCIA_SEG = 2; // folga de rede por sinal de progresso
 const MAX_FALHAS_LOGIN = 5;
 const BLOQUEIO_MIN = 15;
 const TEMPO_MINIMO_PADRAO = 60; // aula de PDF/texto sem tempo definido
+// limitador atômico do login (mesmos tetos do login-custom)
+const JANELA_LOGIN_SEG = 15 * 60;
+const MAX_LOGIN_POR_IP = 30;
+const MAX_LOGIN_POR_CONTA = 8;
 
 const EVENTOS_CLIENTE = new Set([
   "abrir_curso",
@@ -92,13 +103,22 @@ const hora = (iso: string) =>
 // deno-lint-ignore no-explicit-any
 type Db = any;
 
-/** Aulas do curso em ordem + quais estão concluídas nesta matrícula. */
-async function trilhaDoCurso(supabase: Db, cursoId: string, matriculaId: string) {
+/**
+ * Aulas do curso em ordem + quais estão concluídas nesta matrícula. Só aulas
+ * da empresa da sessão (curso_id de outra empresa → trilha vazia).
+ */
+async function trilhaDoCurso(
+  supabase: Db,
+  cursoId: string,
+  matriculaId: string,
+  empresaId: string
+) {
   const [{ data: aulas }, { data: progs }] = await Promise.all([
     supabase
       .from("treinamento_aula")
       .select("id, ordem, tipo, duracao_seg")
       .eq("curso_id", cursoId)
+      .eq("empresa_id", empresaId)
       .is("deleted_at", null)
       .order("ordem", { ascending: true }),
     supabase
@@ -122,18 +142,20 @@ function aulaLiberada(trilha: { aulas: any[]; feitas: Set<unknown> }, aulaId: st
 }
 
 // deno-lint-ignore no-explicit-any
-async function concluirSeCompleto(supabase: Db, mat: any) {
+async function concluirSeCompleto(supabase: Db, mat: any, empresaId: string) {
   const [trilha, { data: questoes }, { data: curso }] = await Promise.all([
-    trilhaDoCurso(supabase, mat.curso_id, mat.id),
+    trilhaDoCurso(supabase, mat.curso_id, mat.id, empresaId),
     supabase
       .from("treinamento_questao")
       .select("id")
       .eq("curso_id", mat.curso_id)
+      .eq("empresa_id", empresaId)
       .is("deleted_at", null),
     supabase
       .from("treinamento_curso")
       .select("validade_meses")
       .eq("id", mat.curso_id)
+      .eq("empresa_id", empresaId)
       .maybeSingle(),
   ]);
   const aulasOk =
@@ -157,20 +179,31 @@ async function concluirSeCompleto(supabase: Db, mat: any) {
   return { status: "concluido", concluiu: true, precisaAvaliacao };
 }
 
-/** Assina em lote as referências "bucket/caminho" (vídeo, legenda, PDF). */
-async function assinarRefs(supabase: Db, refs: string[]) {
-  const porBucket = new Map<string, string[]>();
-  for (const ref of new Set(refs.filter(Boolean))) {
+/**
+ * Assina em lote as referências "bucket/caminho" (vídeo, legenda, PDF). Só as
+ * da pasta da empresa da sessão (refDaEmpresa): ref gravada apontando para a
+ * pasta de outra empresa fica sem URL. Mapa ref original → URL assinada.
+ */
+async function assinarRefs(supabase: Db, refs: (string | null | undefined)[], empresaId: string) {
+  const porBucket = new Map<string, Map<string, string[]>>(); // bucket → caminho → originais
+  for (const original of new Set(refs.filter((r): r is string => !!r))) {
+    const ref = refDaEmpresa(original, empresaId);
+    if (!ref) continue;
     const i = ref.indexOf("/");
-    if (i < 1) continue;
-    const b = ref.slice(0, i);
-    porBucket.set(b, [...(porBucket.get(b) ?? []), ref.slice(i + 1)]);
+    const bucket = ref.slice(0, i);
+    const caminho = ref.slice(i + 1);
+    const caminhos = porBucket.get(bucket) ?? new Map<string, string[]>();
+    caminhos.set(caminho, [...(caminhos.get(caminho) ?? []), original]);
+    porBucket.set(bucket, caminhos);
   }
   const assinada = new Map<string, string>();
   for (const [bucket, caminhos] of porBucket) {
-    const { data } = await supabase.storage.from(bucket).createSignedUrls(caminhos, TTL_ARQUIVO);
+    const { data } = await supabase.storage
+      .from(bucket)
+      .createSignedUrls([...caminhos.keys()], TTL_ARQUIVO);
     for (const s of data ?? []) {
-      if (s.signedUrl && s.path) assinada.set(`${bucket}/${s.path}`, s.signedUrl);
+      if (!s?.signedUrl || !s.path) continue;
+      for (const original of caminhos.get(s.path) ?? []) assinada.set(original, s.signedUrl);
     }
   }
   return assinada;
@@ -222,6 +255,16 @@ Deno.serve(
       const senha = body.senha ?? "";
       if (!usuario || !senha) return fail("Informe usuário e senha", 400);
 
+      // Limite de tentativas por IP e por CPF (padrão do login-custom): consumido
+      // ANTES de conferir a senha — rajada paralela não passa do teto (o
+      // contador `tentativas` abaixo é lido-e-gravado, não segura concorrência).
+      // CPF não cadastrado também conta: o 429 não revela quem existe.
+      const limite = await consumirTentativa(supabase, "funcionario-login", JANELA_LOGIN_SEG, [
+        { tipo: "ip", valor: ipDaRequisicao(req), max: MAX_LOGIN_POR_IP },
+        { tipo: "conta", valor: usuario, max: MAX_LOGIN_POR_CONTA },
+      ]);
+      if (!limite.permitido) return fail(MSG_MUITAS_TENTATIVAS, 429, { codigo: "LIMITE" });
+
       const { data: acesso } = await supabase
         .from("funcionario_portal_acesso")
         .select("*")
@@ -268,11 +311,14 @@ Deno.serve(
           { codigo: bloquear ? "BLOQUEADO" : "CREDENCIAIS" }
         );
       }
+      await liberarTentativas(supabase, limite);
 
+      // funcionário da MESMA empresa do acesso (acesso apontando p/ outra = inativo)
       const { data: func } = await supabase
         .from("funcionario")
         .select("nome_completo, deleted_at")
         .eq("id", acesso.funcionario_id)
+        .eq("empresa_id", acesso.empresa_id)
         .maybeSingle();
       if (!func || func.deleted_at) return fail("Cadastro inativo — fale com o RH", 403);
 
@@ -306,7 +352,13 @@ Deno.serve(
       .select("*")
       .eq("funcionario_id", funcionarioId)
       .maybeSingle();
-    if (!acesso || !acesso.ativo || acesso.sessao_versao !== payload.v) {
+    if (
+      !acesso ||
+      !acesso.ativo ||
+      acesso.sessao_versao !== payload.v ||
+      !empresaId ||
+      acesso.empresa_id !== empresaId
+    ) {
       return fail("Sua sessão terminou — entre de novo", 401, { codigo: "SESSAO" });
     }
     const ev = (e: Omit<EventoPortal, "empresa_id" | "funcionario_id">) =>
@@ -360,7 +412,11 @@ Deno.serve(
       return fail("Crie sua senha pessoal para continuar", 403, { codigo: "TROCAR_SENHA" });
     }
 
-    /** Matrícula do próprio funcionário (ou null). */
+    /**
+     * Matrícula do próprio funcionário, na empresa da sessão (ou null). A RLS
+     * só confere o empresa_id da linha, não o curso_id: matrícula da empresa
+     * apontando para curso de OUTRA empresa é descartada.
+     */
     const minhaMatricula = async (id?: string) => {
       if (!id) return null;
       const { data } = await supabase
@@ -368,9 +424,17 @@ Deno.serve(
         .select("*")
         .eq("id", id)
         .eq("funcionario_id", funcionarioId)
+        .eq("empresa_id", empresaId)
         .is("deleted_at", null)
         .maybeSingle();
-      return data;
+      if (!data) return null;
+      const { data: curso } = await supabase
+        .from("treinamento_curso")
+        .select("id")
+        .eq("id", data.curso_id)
+        .eq("empresa_id", empresaId)
+        .maybeSingle();
+      return curso ? data : null;
     };
 
     // ---------------------------------------------------------------- dados
@@ -380,6 +444,7 @@ Deno.serve(
           .from("funcionario")
           .select("id, nome_completo, funcao_nome")
           .eq("id", funcionarioId)
+          .eq("empresa_id", empresaId)
           .maybeSingle(),
         supabase.from("empresa").select("nome, razao_social").eq("id", empresaId).maybeSingle(),
         supabase
@@ -394,6 +459,8 @@ Deno.serve(
       const cursoIds = [...new Set((mats ?? []).map((m: { curso_id: string }) => m.curso_id))];
       const matIds = (mats ?? []).map((m: { id: string }) => m.id);
       const vazio = Promise.resolve({ data: [] });
+      // curso, aulas e questões SÓ da empresa da sessão: matrícula apontando
+      // para curso de outra empresa não traz nada dele (e sai da lista abaixo)
       const [
         { data: cursos },
         { data: aulas },
@@ -403,12 +470,19 @@ Deno.serve(
         { data: certificados },
         { data: duvidas },
       ] = await Promise.all([
-        cursoIds.length ? supabase.from("treinamento_curso").select("*").in("id", cursoIds) : vazio,
+        cursoIds.length
+          ? supabase
+              .from("treinamento_curso")
+              .select("*")
+              .in("id", cursoIds)
+              .eq("empresa_id", empresaId)
+          : vazio,
         cursoIds.length
           ? supabase
               .from("treinamento_aula")
               .select("*")
               .in("curso_id", cursoIds)
+              .eq("empresa_id", empresaId)
               .is("deleted_at", null)
               .order("ordem", { ascending: true })
           : vazio,
@@ -420,6 +494,7 @@ Deno.serve(
               .from("treinamento_questao")
               .select("id, curso_id, ordem, pergunta, opcoes") // SEM gabarito!
               .in("curso_id", cursoIds)
+              .eq("empresa_id", empresaId)
               .is("deleted_at", null)
               .order("ordem", { ascending: true })
           : vazio,
@@ -443,22 +518,27 @@ Deno.serve(
               .from("treinamento_duvida")
               .select("id, curso_id, aula_id, pergunta, resposta, respondida_em, created_at")
               .eq("funcionario_id", funcionarioId)
+              .eq("empresa_id", empresaId)
               .is("deleted_at", null)
               .order("created_at", { ascending: false })
           : vazio,
       ]);
 
       // deno-lint-ignore no-explicit-any
-      const assinada = await assinarRefs(supabase, [
-        // deno-lint-ignore no-explicit-any
-        ...(aulas ?? []).flatMap((a: any) => [
-          a.tipo === "video" && a.fonte === "upload" ? a.video_ref : null,
-          a.legenda_ref,
-          a.tipo === "pdf" ? a.arquivo_ref : null,
-        ]),
-        // deno-lint-ignore no-explicit-any
-        ...(cursos ?? []).map((c: any) => c.projeto_pedagogico_ref),
-      ]);
+      const assinada = await assinarRefs(
+        supabase,
+        [
+          // deno-lint-ignore no-explicit-any
+          ...(aulas ?? []).flatMap((a: any) => [
+            a.tipo === "video" && a.fonte === "upload" ? a.video_ref : null,
+            a.legenda_ref,
+            a.tipo === "pdf" ? a.arquivo_ref : null,
+          ]),
+          // deno-lint-ignore no-explicit-any
+          ...(cursos ?? []).map((c: any) => c.projeto_pedagogico_ref),
+        ],
+        empresaId
+      );
       const url = (ref?: string | null) => (ref ? (assinada.get(ref) ?? null) : null);
       const progPor = new Map(
         // deno-lint-ignore no-explicit-any
@@ -466,8 +546,15 @@ Deno.serve(
       );
       const agora = Date.now();
 
+      // matrícula de curso que não é da empresa fica fora da lista
       // deno-lint-ignore no-explicit-any
-      const resposta = (mats ?? []).map((m: any) => {
+      const cursosDaEmpresa = new Set((cursos ?? []).map((c: any) => c.id));
+      const matsDaEmpresa = (mats ?? []).filter((m: { curso_id: string }) =>
+        cursosDaEmpresa.has(m.curso_id)
+      );
+
+      // deno-lint-ignore no-explicit-any
+      const resposta = matsDaEmpresa.map((m: any) => {
         // deno-lint-ignore no-explicit-any
         const curso: any = (cursos ?? []).find((c: any) => c.id === m.curso_id) || null;
         let anterioresOk = true;
@@ -573,7 +660,7 @@ Deno.serve(
 
       if (nome === "abrir_aula") {
         if (!mat || !body.aula_id) return fail("matricula_id e aula_id são obrigatórios", 400);
-        const trilha = await trilhaDoCurso(supabase, mat.curso_id, mat.id);
+        const trilha = await trilhaDoCurso(supabase, mat.curso_id, mat.id, empresaId);
         if (!trilha.aulas.some((a: { id: string }) => a.id === body.aula_id)) {
           return fail("Aula não pertence ao curso", 400);
         }
@@ -609,7 +696,7 @@ Deno.serve(
     if (body.acao === "progresso") {
       const mat = await minhaMatricula(body.matricula_id);
       if (!mat || !body.aula_id) return fail("Matrícula não encontrada", 404);
-      const trilha = await trilhaDoCurso(supabase, mat.curso_id, mat.id);
+      const trilha = await trilhaDoCurso(supabase, mat.curso_id, mat.id, empresaId);
       // deno-lint-ignore no-explicit-any
       const aula: any = trilha.aulas.find((a: { id: string }) => a.id === body.aula_id);
       if (!aula) return fail("Aula não pertence ao curso", 400);
@@ -622,7 +709,8 @@ Deno.serve(
         await supabase
           .from("treinamento_aula")
           .update({ duracao_seg: informada })
-          .eq("id", aula.id);
+          .eq("id", aula.id)
+          .eq("empresa_id", empresaId);
         aula.duracao_seg = informada;
       }
       const duracao = aula.duracao_seg || (aula.tipo === "video" ? 0 : TEMPO_MINIMO_PADRAO);
@@ -708,7 +796,7 @@ Deno.serve(
           aula_id: aula.id,
           detalhe: { segundos: novoSeg, duracao },
         });
-        resultado = await concluirSeCompleto(supabase, mat);
+        resultado = await concluirSeCompleto(supabase, mat, empresaId);
         if (resultado.concluiu) {
           await ev({ evento: "curso_concluido", matricula_id: mat.id, curso_id: mat.curso_id });
         }
@@ -738,7 +826,7 @@ Deno.serve(
       if (!respostas.length) return fail("Envie as respostas", 400);
       if (mat.avaliacao_aprovada) return fail("Você já foi aprovado nesta avaliação", 409);
 
-      const trilha = await trilhaDoCurso(supabase, mat.curso_id, mat.id);
+      const trilha = await trilhaDoCurso(supabase, mat.curso_id, mat.id, empresaId);
       if (!trilha.aulas.every((a: { id: string }) => trilha.feitas.has(a.id))) {
         return fail("Conclua todas as aulas antes da avaliação", 409);
       }
@@ -747,12 +835,14 @@ Deno.serve(
           .from("treinamento_questao")
           .select("id, ordem, pergunta, opcoes, correta, comentario")
           .eq("curso_id", mat.curso_id)
+          .eq("empresa_id", empresaId)
           .is("deleted_at", null)
           .order("ordem", { ascending: true }),
         supabase
           .from("treinamento_curso")
           .select("nota_minima, max_tentativas, intervalo_tentativa_min")
           .eq("id", mat.curso_id)
+          .eq("empresa_id", empresaId)
           .maybeSingle(),
         supabase
           .from("treinamento_tentativa")
@@ -850,7 +940,11 @@ Deno.serve(
 
       let concluiu = false;
       if (aprovada) {
-        const r = await concluirSeCompleto(supabase, { ...mat, avaliacao_aprovada: true });
+        const r = await concluirSeCompleto(
+          supabase,
+          { ...mat, avaliacao_aprovada: true },
+          empresaId
+        );
         concluiu = r.concluiu;
         if (concluiu) {
           await ev({ evento: "curso_concluido", matricula_id: mat.id, curso_id: mat.curso_id });
@@ -910,11 +1004,17 @@ Deno.serve(
 
       const [{ data: curso }, { data: func }, { data: emp }, { data: aulas }, { data: aprov }] =
         await Promise.all([
-          supabase.from("treinamento_curso").select("*").eq("id", mat.curso_id).maybeSingle(),
+          supabase
+            .from("treinamento_curso")
+            .select("*")
+            .eq("id", mat.curso_id)
+            .eq("empresa_id", empresaId)
+            .maybeSingle(),
           supabase
             .from("funcionario")
             .select("nome_completo, cpf, funcao_nome")
             .eq("id", funcionarioId)
+            .eq("empresa_id", empresaId)
             .maybeSingle(),
           supabase
             .from("empresa")
@@ -925,6 +1025,7 @@ Deno.serve(
             .from("treinamento_aula")
             .select("ordem, modulo, titulo")
             .eq("curso_id", mat.curso_id)
+            .eq("empresa_id", empresaId)
             .is("deleted_at", null)
             .order("ordem", { ascending: true }),
           supabase
@@ -935,6 +1036,7 @@ Deno.serve(
             .order("numero", { ascending: false })
             .limit(1),
         ]);
+      if (!func) return fail("Funcionário não encontrado", 404);
       if (!curso?.carga_horaria_horas) {
         return fail("O curso ainda não tem carga horária definida — procure o RH", 409);
       }
@@ -1026,6 +1128,7 @@ Deno.serve(
         .select("id, status")
         .eq("id", body.ciencia_id)
         .eq("funcionario_id", funcionarioId)
+        .eq("empresa_id", empresaId)
         .is("deleted_at", null)
         .maybeSingle();
       if (!ciencia) return fail("Registro não encontrado", 404);
@@ -1079,8 +1182,14 @@ Deno.serve(
           .from("treinamento_curso")
           .select("nome, tutor_telefone")
           .eq("id", mat.curso_id)
+          .eq("empresa_id", empresaId)
           .maybeSingle(),
-        supabase.from("funcionario").select("nome_completo").eq("id", funcionarioId).maybeSingle(),
+        supabase
+          .from("funcionario")
+          .select("nome_completo")
+          .eq("id", funcionarioId)
+          .eq("empresa_id", empresaId)
+          .maybeSingle(),
       ]);
       const tel = normalizarTelefoneBR(curso?.tutor_telefone ?? "");
       if (tel) {

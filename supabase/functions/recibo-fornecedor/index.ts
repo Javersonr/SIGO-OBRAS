@@ -117,6 +117,7 @@ Deno.serve(
         .from("recibo_pagamento")
         .select("id, codigo, status, dados, confirmada_em")
         .eq("transacao_id", tx.id)
+        .eq("empresa_id", tx.empresa_id)
         .is("deleted_at", null)
         .maybeSingle();
       if (existente) {
@@ -127,6 +128,9 @@ Deno.serve(
         });
       }
 
+      // Fornecedor SÓ da empresa da despesa: a RLS confere o empresa_id da
+      // despesa, não o fornecedor_id — despesa apontando para fornecedor de
+      // outra empresa não pode vazar nome/CNPJ/telefone dele (fica sem cadastro).
       const [{ data: emp }, { data: forn }] = await Promise.all([
         supabase
           .from("empresa")
@@ -138,6 +142,7 @@ Deno.serve(
               .from("fornecedor")
               .select("id, nome_razao, cnpj, telefone")
               .eq("id", tx.fornecedor_id)
+              .eq("empresa_id", tx.empresa_id)
               .maybeSingle()
           : Promise.resolve({ data: null }),
       ]);
@@ -168,7 +173,7 @@ Deno.serve(
           .insert({
             empresa_id: tx.empresa_id,
             transacao_id: tx.id,
-            fornecedor_id: tx.fornecedor_id ?? null,
+            fornecedor_id: forn?.id ?? null, // só o fornecedor validado acima
             codigo,
             hash_sha256: hash,
             dados,
@@ -192,6 +197,7 @@ Deno.serve(
           .from("recibo_pagamento")
           .select("id, codigo, status, dados, confirmada_em")
           .eq("transacao_id", tx.id)
+          .eq("empresa_id", tx.empresa_id)
           .is("deleted_at", null)
           .maybeSingle();
         if (corrida) {
@@ -207,13 +213,20 @@ Deno.serve(
 
     // --------------------------------------------------------------- público
     const payload = body.token ? await verifyPortalToken(body.token) : null;
-    if (!payload || payload.scope !== "recibo_fornecedor" || !payload.recibo_id) {
+    if (
+      !payload ||
+      payload.scope !== "recibo_fornecedor" ||
+      !payload.recibo_id ||
+      !payload.empresa_id
+    ) {
       return fail("Link inválido ou expirado — peça um novo à empresa", 401);
     }
+    // escopo = recibo E empresa do token (assinado pelo servidor)
     const { data: reciboCompleto } = await supabase
       .from("recibo_pagamento")
       .select(COLUNAS_RECIBO)
       .eq("id", payload.recibo_id as string)
+      .eq("empresa_id", payload.empresa_id)
       .is("deleted_at", null)
       .maybeSingle();
     if (!reciboCompleto) return fail("Recibo não encontrado", 404);

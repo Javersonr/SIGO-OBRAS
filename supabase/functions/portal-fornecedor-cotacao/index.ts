@@ -52,29 +52,34 @@ Deno.serve(
       return fail(achou.erro, achou.status, achou.codigo ? { codigo: achou.codigo } : undefined);
     }
     const cotFornecedor = achou.cf;
+    // Escopo = empresa da participação: TODA leitura abaixo filtra por ela (a
+    // RLS não confere ids de referência; linha legada pode apontar para outra)
+    const empresaId = cotFornecedor.empresa_id;
 
     const [cotRes, itensRes, empresaRes, respostasRes] = await Promise.all([
       supabase
         .from("cotacao")
         .select(`${COLS_COTACAO}, solicitacao_id, projeto_id`)
         .eq("id", cotFornecedor.cotacao_id)
-        .eq("empresa_id", cotFornecedor.empresa_id)
+        .eq("empresa_id", empresaId)
         .is("deleted_at", null)
         .maybeSingle(),
       supabase
         .from("cotacao_item")
         .select(COLS_ITEM)
         .eq("cotacao_id", cotFornecedor.cotacao_id)
+        .eq("empresa_id", empresaId)
         .is("deleted_at", null),
       supabase
         .from("empresa")
         .select("id, nome, nome_fantasia, razao_social, logo_url")
-        .eq("id", cotFornecedor.empresa_id)
+        .eq("id", empresaId)
         .maybeSingle(),
       supabase
         .from("cotacao_resposta")
         .select(COLS_RESPOSTA)
         .eq("cotacao_fornecedor_id", cotFornecedor.id)
+        .eq("empresa_id", empresaId)
         .is("deleted_at", null),
     ]);
 
@@ -95,18 +100,21 @@ Deno.serve(
     }
 
     // Enriquecimento de código: SolicitacaoCompraItem + OrcamentoItem (por descrição) + Material
+    // (sempre da empresa da participação — solicitacao_id/projeto_id vêm da cotação)
     const [solItemsRes, orcItemsRes] = await Promise.all([
       solicitacaoId
         ? supabase
             .from("solicitacao_compra_item")
             .select("id, material_id, material_codigo")
             .eq("solicitacao_id", solicitacaoId)
+            .eq("empresa_id", empresaId)
         : Promise.resolve({ data: [] as unknown[] }),
       projetoId
         ? supabase
             .from("orcamento_item")
             .select("id, descricao, codigo")
             .eq("projeto_id", projetoId)
+            .eq("empresa_id", empresaId)
         : Promise.resolve({ data: [] as unknown[] }),
     ]);
 
@@ -139,7 +147,8 @@ Deno.serve(
       const { data: mats } = await supabase
         .from("material")
         .select("id, codigo")
-        .in("id", materialIds as string[]);
+        .in("id", materialIds as string[])
+        .eq("empresa_id", empresaId);
       // deno-lint-ignore no-explicit-any
       (mats ?? []).forEach((m: any) => {
         materialMap[m.id] = m;

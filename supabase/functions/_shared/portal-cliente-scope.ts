@@ -6,6 +6,9 @@
  * Credencial (uma das duas no body):
  *   - { token }        → magic link (token_cliente_oportunidade)
  *   - { portal_token } → login do cliente (HMAC, perfil "Cliente")
+ *
+ * Nos dois casos o projeto/oportunidade do escopo tem de existir NA empresa
+ * do escopo (oportunidadeDaEmpresa) — senão 404, como link inválido.
  */
 import { verifyPortalToken } from "./portal-token.ts";
 
@@ -16,6 +19,8 @@ export interface ClienteScope {
   abas: Record<string, boolean>;
 }
 
+const MSG_LINK_INVALIDO = "Link inválido ou expirado";
+
 // deno-lint-ignore no-explicit-any
 function safeJson(v: any, fallback: any) {
   if (v == null) return fallback;
@@ -25,6 +30,41 @@ function safeJson(v: any, fallback: any) {
   } catch {
     return fallback;
   }
+}
+
+/**
+ * O projeto OU a oportunidade (mesma id) existe na empresa do escopo? A RLS só
+ * confere o empresa_id da linha do token/vínculo, não o do pai: um token da
+ * empresa A apontando para a oportunidade da B entregaria os dados da B.
+ * Erro de consulta = não achou (fecha, não abre).
+ */
+async function oportunidadeDaEmpresa(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  empresaId: string,
+  oportunidadeId: string
+): Promise<boolean> {
+  const [projeto, oportunidade] = await Promise.all([
+    supabase
+      .from("projeto")
+      .select("id")
+      .eq("id", oportunidadeId)
+      .eq("empresa_id", empresaId)
+      .maybeSingle(),
+    supabase
+      .from("oportunidade")
+      .select("id")
+      .eq("id", oportunidadeId)
+      .eq("empresa_id", empresaId)
+      .maybeSingle(),
+  ]);
+  if (projeto.error || oportunidade.error) {
+    console.error(
+      "[portal-cliente-scope] conferindo oportunidade:",
+      projeto.error?.message ?? oportunidade.error?.message
+    );
+  }
+  return !!(projeto.data || oportunidade.data);
 }
 
 export async function resolveClienteScope(
@@ -38,10 +78,15 @@ export async function resolveClienteScope(
     if (!claims || claims.scope !== "cliente" || !claims.oportunidade_id || !claims.empresa_id) {
       return { error: "Sessão do cliente inválida ou expirada", status: 401 };
     }
+    const empresa_id = String(claims.empresa_id);
+    const oportunidade_id = String(claims.oportunidade_id);
+    if (!(await oportunidadeDaEmpresa(supabase, empresa_id, oportunidade_id))) {
+      return { error: MSG_LINK_INVALIDO, status: 404 };
+    }
     return {
       scope: {
-        empresa_id: claims.empresa_id,
-        oportunidade_id: claims.oportunidade_id,
+        empresa_id,
+        oportunidade_id,
         email_cliente: (claims.email as string) ?? null,
         abas: { orcamento: true, obra: true },
       },
@@ -56,9 +101,16 @@ export async function resolveClienteScope(
       .eq("ativo", true)
       .is("deleted_at", null)
       .maybeSingle();
-    if (!row) return { error: "Link inválido ou expirado", status: 404 };
+    if (!row) return { error: MSG_LINK_INVALIDO, status: 404 };
     if (row.expira_em && new Date(row.expira_em).getTime() < Date.now()) {
       return { error: "Este link expirou. Solicite um novo link.", status: 401 };
+    }
+    if (
+      !row.empresa_id ||
+      !row.oportunidade_id ||
+      !(await oportunidadeDaEmpresa(supabase, row.empresa_id, row.oportunidade_id))
+    ) {
+      return { error: MSG_LINK_INVALIDO, status: 404 };
     }
     return {
       scope: {

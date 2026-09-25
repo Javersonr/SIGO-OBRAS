@@ -75,12 +75,14 @@ Deno.serve(
       .maybeSingle();
     if (!empresa) return fail("Empresa não encontrada", 404);
 
-    // Projeto OU Oportunidade (mesma id)
+    // Projeto OU Oportunidade (mesma id) — sempre da empresa do escopo (o
+    // resolveClienteScope já confere; aqui é defesa em profundidade)
     let oportunidade = null;
     const { data: projeto } = await supabase
       .from("projeto")
       .select("*")
       .eq("id", oportunidade_id)
+      .eq("empresa_id", empresa_id)
       .maybeSingle();
     if (projeto) {
       oportunidade = projeto;
@@ -89,6 +91,7 @@ Deno.serve(
         .from("oportunidade")
         .select("*")
         .eq("id", oportunidade_id)
+        .eq("empresa_id", empresa_id)
         .maybeSingle();
       if (!op) return fail("Projeto não encontrado", 404);
       oportunidade = op;
