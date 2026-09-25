@@ -51,6 +51,8 @@ const SUPABASE_FUNCTIONS_REWRITE = {
   reciboFornecedor: "recibo-fornecedor",
   // Disparo de WhatsApp pelo canal do SaaS (Evolution)
   enviarWhatsApp: "enviar-whatsapp",
+  // Conector do Claude (MCP): tela de autorização e apps conectados
+  mcpOauth: "mcp-oauth",
 };
 
 async function invokeFn(nome, payload = {}) {

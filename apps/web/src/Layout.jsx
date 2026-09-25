@@ -147,6 +147,7 @@ export default function Layout({ children, currentPageName }) {
     "Registro",
     "EsqueciSenha",
     "RedefinirSenha",
+    "AutorizarConector",
     "index",
     "Index",
   ];

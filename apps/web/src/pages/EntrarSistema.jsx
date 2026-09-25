@@ -3,6 +3,7 @@ import { sigo, aplicarSessao } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "../utils";
+import { destinoSeguro } from "@/lib/conector";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -41,9 +42,17 @@ function LogoPreSessao({ src, alt }) {
 
 export default function EntrarSistema() {
   const navigate = useNavigate();
+  // ?voltar= : página que pediu o login (ex.: autorização do conector do
+  // Claude). Só caminho interno — destinoSeguro recusa //dominio-externo.
+  const voltar = React.useMemo(
+    () => destinoSeguro(new URLSearchParams(window.location.search).get("voltar")),
+    []
+  );
 
-  // Se já há sessão ativa, redirecionar para Dashboard
+  // Se já há sessão ativa, redirecionar para Dashboard. Com "voltar", a pessoa
+  // entra de novo (a página de destino pediu a sessão) — senão voltaria em loop.
   React.useEffect(() => {
+    if (voltar) return;
     const customAuth = sessionStorage.getItem("custom_auth");
     if (customAuth) {
       try {
@@ -59,7 +68,7 @@ export default function EntrarSistema() {
         sessionStorage.clear();
       }
     }
-  }, [navigate]);
+  }, [navigate, voltar]);
 
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState(() => localStorage.getItem("login_email_salvo") || "");
@@ -163,7 +172,9 @@ export default function EntrarSistema() {
 
         // Cliente externo vai pro portal (usa portal_token, não a sessão tenant)
         const destino = response.data.usuario?.perfil === "Cliente" ? "ClientePortal" : "Dashboard";
-        navigate(createPageUrl(destino), { replace: true });
+        navigate(destino === "Dashboard" && voltar ? voltar : createPageUrl(destino), {
+          replace: true,
+        });
       } else {
         setError(response.data.error || "Credenciais inválidas");
       }
@@ -239,7 +250,7 @@ export default function EntrarSistema() {
       } else if (authData.perfil === "Cliente") {
         navigate(createPageUrl("ClientePortal"), { replace: true });
       } else {
-        navigate(createPageUrl("Dashboard"), { replace: true });
+        navigate(voltar || createPageUrl("Dashboard"), { replace: true });
       }
     } catch (err) {
       console.error("Erro ao selecionar empresa:", err);
