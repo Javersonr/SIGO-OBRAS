@@ -34,6 +34,10 @@ export async function findAuthUserIdByEmail(admin: Admin, email: string): Promis
 /**
  * Garante o auth.users espelho com a senha atual + app_metadata. Retorna o id.
  * app_metadata NÃO é editável pelo usuário (seguro p/ guardar empresa_id/perfil).
+ *
+ * Sem o auth_user_id salvo, reaproveita a conta que já existir com o e-mail —
+ * mas só depois de derrubar as sessões dela (adotarContaPorEmail), porque ela
+ * pode ter vindo de um cadastro público no Auth feito por outra pessoa.
  */
 export async function ensureAuthUser(
   admin: Admin,
@@ -45,36 +49,51 @@ export async function ensureAuthUser(
   }
 ): Promise<string> {
   const { email, senha, appMetadata } = opts;
-  let id = opts.authUserId || (await findAuthUserIdByEmail(admin, email));
+  let id = opts.authUserId || null;
 
-  if (id) {
-    const { error } = await admin.auth.admin.updateUserById(id, {
-      password: senha,
-      email_confirm: true,
-      app_metadata: appMetadata,
-    });
-    if (error) throw error;
-    return id;
+  if (!id) {
+    id = await findAuthUserIdByEmail(admin, email);
+    if (!id) {
+      const { data, error } = await admin.auth.admin.createUser({
+        email,
+        password: senha,
+        email_confirm: true,
+        app_metadata: appMetadata,
+      });
+      if (!error) return data.user.id;
+      // corrida: pode ter sido criado entre a busca e o create
+      id = await findAuthUserIdByEmail(admin, email);
+      if (!id) throw error;
+    }
+    await adotarContaPorEmail(admin, id, email, senha);
   }
 
-  const { data, error } = await admin.auth.admin.createUser({
-    email,
+  const { error } = await admin.auth.admin.updateUserById(id, {
     password: senha,
     email_confirm: true,
     app_metadata: appMetadata,
   });
-  if (error) {
-    // corrida: pode ter sido criado entre a busca e o create
-    id = await findAuthUserIdByEmail(admin, email);
-    if (!id) throw error;
-    await admin.auth.admin.updateUserById(id, {
-      password: senha,
-      email_confirm: true,
-      app_metadata: appMetadata,
-    });
-    return id;
-  }
-  return data.user.id;
+  if (error) throw error;
+  return id;
+}
+
+/**
+ * Conta do Auth achada pelo e-mail, ainda sem vínculo com usuario_custom. Quem a
+ * criou (ex.: signup público com o e-mail de um usuário SIGO) pode ter sessão
+ * aberta nela, e o refresh token passaria a sair com o empresa_id que a ponte
+ * vai gravar. Então: troca a senha SEM app_metadata, abre uma sessão com ela e
+ * faz logout global (derruba todas as sessões e refresh tokens). Qualquer falha
+ * lança antes do app_metadata ser gravado — o próximo login tenta de novo.
+ */
+async function adotarContaPorEmail(admin: Admin, id: string, email: string, senha: string) {
+  const { error: errSenha } = await admin.auth.admin.updateUserById(id, {
+    password: senha,
+    email_confirm: true,
+  });
+  if (errSenha) throw errSenha;
+  const sessao = await emitirSessao(email, senha);
+  const { error: errLogout } = await admin.auth.admin.signOut(sessao.access_token, "global");
+  if (errLogout) throw errLogout;
 }
 
 /** Gera a sessão real (tokens) via signInWithPassword (cliente anon). */
@@ -111,22 +130,20 @@ export async function emitirSessaoSemSenha(admin: Admin, email: string) {
 
 /**
  * Atualiza só o app_metadata (empresa_id/perfil/is_super_admin) do auth.users —
- * sem mexer na senha. Usado na troca de empresa. Retorna o id do auth user, ou
- * null se ainda não existir espelho (nesse caso o chamador deve pedir re-login).
+ * sem mexer na senha. Usado na troca de empresa. Exige o id do auth user (o do
+ * token do chamador): nunca procura a conta pelo e-mail, senão daria empresa_id
+ * a uma conta do Auth que a ponte não criou.
  */
 export async function atualizarAppMetadataEmpresa(
   admin: Admin,
   opts: {
-    email: string;
-    authUserId?: string | null;
+    authUserId: string;
     empresa_id: string;
     perfil: string;
     is_super_admin: boolean;
   }
-): Promise<string | null> {
-  const id = opts.authUserId || (await findAuthUserIdByEmail(admin, opts.email));
-  if (!id) return null;
-  const { error } = await admin.auth.admin.updateUserById(id, {
+): Promise<void> {
+  const { error } = await admin.auth.admin.updateUserById(opts.authUserId, {
     app_metadata: {
       empresa_id: opts.empresa_id,
       perfil: opts.perfil,
@@ -134,7 +151,6 @@ export async function atualizarAppMetadataEmpresa(
     },
   });
   if (error) throw error;
-  return id;
 }
 
 /**

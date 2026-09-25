@@ -104,7 +104,6 @@ Deno.serve(
     //    do próprio token.
     try {
       await atualizarAppMetadataEmpresa(supabase, {
-        email: usuario.email,
         authUserId: caller.user_id,
         empresa_id: empresa.id,
         perfil,

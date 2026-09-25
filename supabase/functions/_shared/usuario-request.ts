@@ -2,29 +2,27 @@
  * usuario-request — identifica o usuário SIGO da requisição.
  *
  * O frontend manda o JWT da sessão Supabase Auth (emitida pelo login-custom
- * via auth-bridge). Validamos o JWT e cruzamos com usuario_custom para saber
- * quem é e se é super admin. null = sem sessão válida.
+ * via auth-bridge). Validamos o JWT e cruzamos com usuario_custom pelo
+ * auth_user_id (usuarioCustomDoCaller) para saber quem é e se é super admin —
+ * nunca só pelo e-mail do token, que um cadastro público no Auth pode repetir.
+ * null = sem sessão válida.
  */
 import { createAdminClient } from "./supabase-admin.ts";
+import { getCallerFromJWT, usuarioCustomDoCaller } from "./auth-jwt.ts";
 
 export async function usuarioDaRequisicao(
   req: Request
 ): Promise<{ email: string; is_super_admin: boolean; empresa_id: string | null } | null> {
-  const auth = req.headers.get("Authorization") ?? "";
-  const jwt = auth.replace(/^Bearer\s+/i, "");
-  if (!jwt) return null;
-  const supabase = createAdminClient();
-  const { data, error } = await supabase.auth.getUser(jwt);
-  const email = data?.user?.email?.toLowerCase();
-  if (error || !email) return null;
-  const { data: uc } = await supabase
-    .from("usuario_custom")
-    .select("email, is_super_admin, ativo")
-    .eq("email", email)
-    .is("deleted_at", null)
-    .maybeSingle();
+  const caller = await getCallerFromJWT(req);
+  if (!caller) return null;
+  let uc;
+  try {
+    uc = await usuarioCustomDoCaller(createAdminClient(), caller, "email, is_super_admin, ativo");
+  } catch (e) {
+    console.error("[usuario-request] erro consultando usuario_custom:", (e as Error)?.message);
+    return null;
+  }
   if (!uc || !uc.ativo) return null;
   // empresa ATIVA da sessão (troca de empresa reemite o JWT com a nova)
-  const empresaId = (data.user.app_metadata?.empresa_id as string | undefined) ?? null;
-  return { email: uc.email, is_super_admin: !!uc.is_super_admin, empresa_id: empresaId };
+  return { email: uc.email, is_super_admin: !!uc.is_super_admin, empresa_id: caller.empresa_id };
 }
