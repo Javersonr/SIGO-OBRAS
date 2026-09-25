@@ -72,3 +72,11 @@ policy = "oneshot"
 
 [analytics]
 enabled = false
+
+# Conector do Claude (MCP): o Claude manda chave opaca do SIGO, não JWT do
+# Supabase — o gateway não pode exigir JWT. Deploy também com --no-verify-jwt.
+[functions.mcp]
+verify_jwt = false
+
+[functions.mcp-oauth]
+verify_jwt = false
