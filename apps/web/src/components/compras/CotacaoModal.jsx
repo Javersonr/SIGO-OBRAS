@@ -182,8 +182,8 @@ export default function CotacaoModal({
         await Promise.all(
           novosFornecedores.map(async (fId) => {
             const fornecedor = fornecedores.find((f) => f.id === fId);
-            const token = btoa(`${cotacaoExistente.id}-${fId}-${Date.now()}`);
 
+            // token do link: o banco gera (32 bytes aleatórios, migração 0113)
             await sigo.entities.CotacaoFornecedor.create({
               empresa_id: empresaAtiva.id,
               cotacao_id: cotacaoExistente.id,
@@ -191,7 +191,6 @@ export default function CotacaoModal({
               fornecedor_nome: fornecedor.nome_razao,
               fornecedor_email: emailsFornecedores[fId] || fornecedor.email,
               status: "Enviada",
-              token: token,
             });
           })
         );
@@ -231,8 +230,8 @@ export default function CotacaoModal({
         await Promise.all(
           fornecedoresSelecionados.map(async (fId) => {
             const fornecedor = fornecedores.find((f) => f.id === fId);
-            const token = btoa(`${cotacao.id}-${fId}-${Date.now()}`);
 
+            // token do link: o banco gera (32 bytes aleatórios, migração 0113)
             await sigo.entities.CotacaoFornecedor.create({
               empresa_id: empresaAtiva.id,
               cotacao_id: cotacao.id,
@@ -240,7 +239,6 @@ export default function CotacaoModal({
               fornecedor_nome: fornecedor.nome_razao,
               fornecedor_email: emailsFornecedores[fId] || fornecedor.email,
               status: "Enviada",
-              token: token,
             });
           })
         );

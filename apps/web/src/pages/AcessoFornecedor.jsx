@@ -21,6 +21,9 @@ export default function AcessoFornecedor() {
   const [respostas, setRespostas] = useState({});
   const [enviando, setEnviando] = useState(false);
   const [enviado, setEnviado] = useState(false);
+  // cotação encerrada / prazo vencido: o servidor recusa resposta; a tela só mostra
+  const [motivoBloqueio, setMotivoBloqueio] = useState(null);
+  const somenteLeitura = enviado || Boolean(motivoBloqueio);
   const [cotacaoFornecedor, setCotacaoFornecedor] = useState(null);
   const [motivoRecusa, setMotivoRecusa] = useState("");
   const [responsavel, setResponsavel] = useState("");
@@ -100,6 +103,7 @@ export default function AcessoFornecedor() {
       setEmpresa(data.empresa);
       setItens((data.itens || []).sort((a, b) => a.descricao?.localeCompare(b.descricao, "pt-BR")));
       setCotacaoFornecedor(data.cotacaoFornecedor);
+      setMotivoBloqueio(data.aceita_respostas === false ? data.motivo_bloqueio : null);
 
       // Mapear respostas já existentes
       const respostasMap = {};
@@ -209,6 +213,7 @@ export default function AcessoFornecedor() {
         }));
         toast.success("Status atualizado");
       } else {
+        if (result.data?.codigo === "COTACAO_ENCERRADA") setMotivoBloqueio(result.data.error);
         toast.error(result.data?.error || "Erro ao atualizar");
       }
     } catch (err) {
@@ -231,22 +236,18 @@ export default function AcessoFornecedor() {
 
     setEnviando(true);
     try {
+      // itens/quantidades o servidor lê da própria cotação
       const result = await sigo.functions.invoke("portalFornecedorResposta", {
         token,
         action: "responder",
         respostas,
         responsavel,
-        itens: itens.map((i) => ({
-          id: i.id,
-          descricao: i.descricao,
-          quantidade: i.quantidade,
-          unidade: i.unidade,
-        })),
       });
       if (result.data?.success) {
         setEnviado(true);
         toast.success("Cotação enviada com sucesso!");
       } else {
+        if (result.data?.codigo === "COTACAO_ENCERRADA") setMotivoBloqueio(result.data.error);
         toast.error(result.data?.error || "Erro ao enviar");
       }
     } catch (err) {
@@ -325,7 +326,10 @@ export default function AcessoFornecedor() {
                 <Calendar className="w-4 h-4 text-slate-400" />
                 <span>
                   Prazo:{" "}
-                  <strong>{new Date(cotacao.data_limite).toLocaleDateString("pt-BR")}</strong>
+                  {/* data pura gravada como meia-noite UTC: em BRT mostraria o dia anterior */}
+                  <strong>
+                    {new Date(cotacao.data_limite).toLocaleDateString("pt-BR", { timeZone: "UTC" })}
+                  </strong>
                 </span>
               </div>
             )}
@@ -337,6 +341,19 @@ export default function AcessoFornecedor() {
             )}
           </CardContent>
         </Card>
+
+        {/* Cotação encerrada / prazo vencido */}
+        {motivoBloqueio && (
+          <Card className="border-slate-300 bg-slate-100">
+            <CardContent className="p-4 flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-slate-600" />
+              <div>
+                <p className="font-medium text-slate-900">Cotação fechada para respostas</p>
+                <p className="text-sm text-slate-700">{motivoBloqueio}</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Status de envio */}
         {enviado && cotacaoFornecedor?.status === "Impossível Responder" && (
@@ -419,7 +436,7 @@ export default function AcessoFornecedor() {
                       onChange={(e) =>
                         handleRespostaChange(item.id, "valor_unitario", e.target.value)
                       }
-                      disabled={enviado}
+                      disabled={somenteLeitura}
                       className="h-8 text-sm text-center"
                     />
                   </div>
@@ -431,7 +448,7 @@ export default function AcessoFornecedor() {
                       onChange={(e) =>
                         handleRespostaChange(item.id, "prazo_entrega", e.target.value)
                       }
-                      disabled={enviado}
+                      disabled={somenteLeitura}
                       className="h-8 text-sm text-center"
                     />
                   </div>
@@ -448,7 +465,7 @@ export default function AcessoFornecedor() {
                       placeholder="..."
                       value={respostas[item.id]?.observacoes || ""}
                       onChange={(e) => handleRespostaChange(item.id, "observacoes", e.target.value)}
-                      disabled={enviado}
+                      disabled={somenteLeitura}
                       className="h-8 text-xs"
                       title="Observações"
                     />
@@ -488,7 +505,7 @@ export default function AcessoFornecedor() {
                         onChange={(e) =>
                           handleRespostaChange(item.id, "valor_unitario", e.target.value)
                         }
-                        disabled={enviado}
+                        disabled={somenteLeitura}
                         className="mt-1 h-8 text-sm"
                       />
                     </div>
@@ -501,7 +518,7 @@ export default function AcessoFornecedor() {
                         onChange={(e) =>
                           handleRespostaChange(item.id, "prazo_entrega", e.target.value)
                         }
-                        disabled={enviado}
+                        disabled={somenteLeitura}
                         className="mt-1 h-8 text-sm"
                       />
                     </div>
@@ -514,7 +531,7 @@ export default function AcessoFornecedor() {
                         onChange={(e) =>
                           handleRespostaChange(item.id, "observacoes", e.target.value)
                         }
-                        disabled={enviado}
+                        disabled={somenteLeitura}
                         className="mt-1 h-8 text-xs"
                       />
                     </div>
@@ -532,7 +549,7 @@ export default function AcessoFornecedor() {
         </Card>
 
         {/* Responsável */}
-        {!enviado && (
+        {!somenteLeitura && (
           <Card>
             <CardContent className="p-4">
               <Label className="text-sm font-medium">Nome do Responsável *</Label>
@@ -547,7 +564,7 @@ export default function AcessoFornecedor() {
         )}
 
         {/* Impossível Responder */}
-        {!enviado && (
+        {!somenteLeitura && (
           <Card className="border-amber-200">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2 text-amber-700">
@@ -576,7 +593,7 @@ export default function AcessoFornecedor() {
       </div>
 
       {/* Botão fixo */}
-      {!enviado && (
+      {!somenteLeitura && (
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t shadow-lg">
           <Button
             onClick={handleEnviarResposta}
