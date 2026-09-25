@@ -37,6 +37,42 @@ export async function getCallerFromJWT(req: Request): Promise<Caller | null> {
 }
 
 /**
+ * Linha de usuario_custom do chamador autenticado (ou null). Casa pelo
+ * auth_user_id que a ponte grava no login. Fallback por e-mail só quando esse
+ * vínculo ainda não foi gravado E o auth user foi provisionado pela ponte
+ * (app_metadata.empresa_id só é escrito com service role) — assim um cadastro
+ * público no Auth com o e-mail de outra pessoa não herda a identidade dela.
+ * `campos` deve incluir o que o chamador precisa (ativo, email, ...).
+ */
+export async function usuarioCustomDoCaller(
+  // deno-lint-ignore no-explicit-any
+  admin: any,
+  caller: Caller,
+  campos: string
+  // deno-lint-ignore no-explicit-any
+): Promise<any | null> {
+  const { data: porAuthId, error } = await admin
+    .from("usuario_custom")
+    .select(campos)
+    .eq("auth_user_id", caller.user_id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) throw error;
+  if (porAuthId) return porAuthId;
+
+  if (!caller.email || !caller.empresa_id) return null;
+  const { data: porEmail, error: errEmail } = await admin
+    .from("usuario_custom")
+    .select(campos)
+    .eq("email", caller.email.toLowerCase())
+    .is("auth_user_id", null)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (errEmail) throw errEmail;
+  return porEmail ?? null;
+}
+
+/**
  * Resolve o empresa_id efetivo de uma chamada: super admin pode operar em
  * qualquer empresa (usa o empresa_id do body, se vier); demais perfis ficam
  * SEMPRE presos à empresa do próprio JWT (fecha cross-tenant via body).

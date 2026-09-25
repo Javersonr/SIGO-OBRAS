@@ -2,10 +2,13 @@
  * redefinir-senha-admin — admin reseta a senha de outro usuário
  *
  * Fluxo:
- *   1. Recebe { admin_id, alvo_id, nova_senha?, forcar_troca? }
- *      OU formato legacy { admin_id, usuario_email, nova_senha? }
- *   2. Confirma que admin_id existe, está ativo e tem privilégio (perfil
- *      "Admin"/"Owner" na mesma empresa do alvo, OU is_super_admin)
+ *   1. Exige o access token do chamador (Authorization: Bearer): o ADMIN é o
+ *      dono do token. Recebe { alvo_id, nova_senha?, forcar_troca? } OU o
+ *      formato legacy { usuario_email, nova_senha? }. `admin_id` do corpo é
+ *      ignorado (antes decidia quem era o admin — qualquer um se passava por ele).
+ *   2. Confirma que o admin está ativo e tem privilégio (perfil "Admin"/Owner
+ *      na mesma empresa do alvo, OU is_super_admin). Só super admin redefine a
+ *      senha de outro super admin.
  *   3. Se `nova_senha` vier: usa ela (deve ter >= 6 chars)
  *      Se não vier: gera senha aleatória de 12 chars
  *   4. Salva senha_hash + senha_provisoria conforme `forcar_troca`
@@ -19,9 +22,9 @@ import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { hashPassword, generateProvisionalPassword } from "../_shared/passwords.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { atualizarSenhaAuth } from "../_shared/auth-bridge.ts";
+import { getCallerFromJWT, usuarioCustomDoCaller } from "../_shared/auth-jwt.ts";
 
 interface RedefinirBody {
-  admin_id?: string;
   alvo_id?: string;
   usuario_email?: string; // formato legacy — frontend antigo manda email do alvo
   nova_senha?: string;
@@ -33,6 +36,9 @@ Deno.serve(
     if (req.method === "OPTIONS") return preflightResponse();
     if (req.method !== "POST") return fail("Método não permitido", 405);
 
+    const caller = await getCallerFromJWT(req);
+    if (!caller) return fail("Sessão inválida ou expirada. Faça login novamente.", 401);
+
     let body: RedefinirBody;
     try {
       body = await req.json();
@@ -40,8 +46,7 @@ Deno.serve(
       return fail("Payload inválido", 400);
     }
 
-    const { admin_id, alvo_id, usuario_email, nova_senha, forcar_troca } = body;
-    if (!admin_id) return fail("admin_id é obrigatório", 400);
+    const { alvo_id, usuario_email, nova_senha, forcar_troca } = body;
     if (!alvo_id && !usuario_email) {
       return fail("Informe alvo_id ou usuario_email do alvo", 400);
     }
@@ -51,28 +56,43 @@ Deno.serve(
 
     const supabase = createAdminClient();
 
-    // 1. Carrega admin e alvo (alvo pode vir por id ou email)
+    // 1. Carrega admin (do TOKEN, nunca do corpo) e alvo (por id ou email)
     const alvoQuery = supabase
       .from("usuario_custom")
-      .select("id, email, nome_completo, empresa_id, ativo, deleted_at, auth_user_id")
+      .select(
+        "id, email, nome_completo, empresa_id, is_super_admin, ativo, deleted_at, auth_user_id"
+      )
       .is("deleted_at", null);
 
-    const [{ data: admin }, { data: alvo }] = await Promise.all([
-      supabase
-        .from("usuario_custom")
-        .select("id, email, nome_completo, empresa_id, is_super_admin, ativo, deleted_at")
-        .eq("id", admin_id)
-        .is("deleted_at", null)
-        .maybeSingle(),
-      alvo_id
-        ? alvoQuery.eq("id", alvo_id).maybeSingle()
-        : alvoQuery.eq("email", (usuario_email || "").toLowerCase().trim()).maybeSingle(),
-    ]);
+    let admin;
+    let alvo;
+    try {
+      const [adminDoToken, { data: alvoData }] = await Promise.all([
+        usuarioCustomDoCaller(
+          supabase,
+          caller,
+          "id, email, nome_completo, empresa_id, is_super_admin, ativo, deleted_at, auth_user_id"
+        ),
+        alvo_id
+          ? alvoQuery.eq("id", alvo_id).maybeSingle()
+          : alvoQuery.eq("email", (usuario_email || "").toLowerCase().trim()).maybeSingle(),
+      ]);
+      admin = adminDoToken;
+      alvo = alvoData;
+    } catch (e) {
+      console.error("[redefinir-senha-admin] erro carregando usuários:", (e as Error)?.message);
+      return fail("Erro interno", 500);
+    }
 
     if (!admin || !admin.ativo) return fail("Admin inválido", 403);
     if (!alvo || !alvo.ativo) return fail("Usuário alvo inválido", 404);
     if (admin.id === alvo.id) {
       return fail("Use alterar-senha para mudar a própria senha", 400);
+    }
+
+    // Admin comum não mexe na senha de super admin (seria tomar a conta dele)
+    if (alvo.is_super_admin === true && admin.is_super_admin !== true) {
+      return fail("Sem permissão para redefinir senha deste usuário", 403);
     }
 
     // 2. Verifica privilégios do admin

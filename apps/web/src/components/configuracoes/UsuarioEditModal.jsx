@@ -25,8 +25,8 @@ import { ESTRUTURA_PERMISSOES } from "@/components/shared/PermissoesGranularesEd
 
 export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, empresaAtiva }) {
   // user vem do Layout — é o admin logado, dono da sessão.
-  // Edge Function 'redefinir-senha-admin' valida que esse id é Admin/Owner/
-  // SuperAdmin antes de aceitar a troca de senha do alvo.
+  // Edge Function 'redefinir-senha-admin' identifica o admin pelo JWT da
+  // sessão (não pelo corpo) e valida que é Admin/Owner/SuperAdmin do alvo.
   const { user: adminLogado } = useEmpresa();
 
   const [form, setForm] = useState({
@@ -267,7 +267,6 @@ export default function UsuarioEditModal({ open, onOpenChange, usuario, onSave, 
     setAlterandoSenhaAdmin(true);
     try {
       const res = await sigo.functions.invoke("redefinirSenhaAdmin", {
-        admin_id: adminLogado.id,
         usuario_email: usuario.usuario_email,
         nova_senha: novaSenhaAdmin,
         forcar_troca: forcarTrocaSenha,

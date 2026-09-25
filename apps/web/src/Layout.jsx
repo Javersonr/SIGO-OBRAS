@@ -309,9 +309,9 @@ export default function Layout({ children, currentPageName }) {
 
       // Etapa 2 segurança: troca a empresa no Supabase Auth e aplica a nova
       // sessão (JWT com o novo empresa_id, que a RLS lê na Etapa 3). Best-effort.
+      // O usuário vem do JWT da sessão atual (functions.invoke anexa o token).
       try {
         const resp = await sigo.functions.invoke("trocarEmpresa", {
-          email: user?.email,
           empresa_id: empresa.id,
         });
         if (resp?.data?.session) {

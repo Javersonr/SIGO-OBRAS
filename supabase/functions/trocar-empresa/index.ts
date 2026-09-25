@@ -2,28 +2,28 @@
  * trocar-empresa — usuário multi-empresa troca a empresa ativa da sessão.
  *
  * Fluxo:
- *   1. Recebe { usuario_id (ou email), empresa_id }
- *   2. Carrega usuario_custom e valida vínculo ativo com a empresa alvo
- *      (usuario_empresa). Super admin pode trocar p/ qualquer empresa ativa.
+ *   1. Exige o access token do chamador (Authorization: Bearer) e identifica o
+ *      usuário SÓ por ele. Recebe { empresa_id } no corpo; usuario_id/email do
+ *      corpo são ignorados (antes eles decidiam de quem era a sessão emitida).
+ *   2. Carrega usuario_custom do chamador e valida vínculo ativo com a empresa
+ *      alvo (usuario_empresa). Super admin pode trocar p/ qualquer empresa ativa.
  *   3. Atualiza app_metadata.empresa_id/perfil no auth.users (não mexe na senha).
  *   4. Emite uma sessão NOVA (sem senha, via magic link admin-side) já com o
  *      novo empresa_id no JWT, e devolve { usuario, session }.
  *
  * Best-effort na emissão de sessão: se falhar, devolve needs_refresh=true para o
  * front chamar supabase.auth.refreshSession() (o refresh relê o app_metadata).
- * Se ainda não existir espelho no Auth, devolve needs_relogin=true.
  *
- * Segurança: hoje usa service role + --no-verify-jwt (igual login-custom). A
- * checagem de "o chamador é mesmo esse usuário" entra na Etapa 4 (validar JWT).
+ * Segurança: service role + --no-verify-jwt (o gateway não valida o JWT), então
+ * a validação do token é feita aqui via getCallerFromJWT.
  */
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { atualizarAppMetadataEmpresa, emitirSessaoSemSenha } from "../_shared/auth-bridge.ts";
+import { getCallerFromJWT, usuarioCustomDoCaller } from "../_shared/auth-jwt.ts";
 
 interface TrocarBody {
-  usuario_id?: string;
-  email?: string;
   empresa_id?: string;
 }
 
@@ -32,6 +32,9 @@ Deno.serve(
     if (req.method === "OPTIONS") return preflightResponse();
     if (req.method !== "POST") return fail("Método não permitido", 405);
 
+    const caller = await getCallerFromJWT(req);
+    if (!caller) return fail("Sessão inválida ou expirada. Faça login novamente.", 401);
+
     let body: TrocarBody;
     try {
       body = await req.json();
@@ -39,30 +42,30 @@ Deno.serve(
       return fail("Payload inválido", 400);
     }
 
-    const empresaId = (body.empresa_id ?? "").trim();
-    const emailBody = (body.email ?? "").trim().toLowerCase();
-    if (!empresaId || (!body.usuario_id && !emailBody)) {
-      return fail("Informe usuario_id (ou email) e empresa_id", 400);
-    }
+    const empresaId = String(body.empresa_id ?? "").trim();
+    if (!empresaId) return fail("Informe empresa_id", 400);
 
     const supabase = createAdminClient();
 
-    // 1. Carrega o usuário
-    const userQuery = supabase
-      .from("usuario_custom")
-      .select(
+    // 1. Carrega o usuário do TOKEN (nunca do corpo)
+    let usuario;
+    try {
+      usuario = await usuarioCustomDoCaller(
+        supabase,
+        caller,
         "id, email, nome_completo, empresa_id, is_super_admin, ativo, deleted_at, auth_user_id"
-      )
-      .is("deleted_at", null);
-    const { data: usuario, error: userErr } = await (body.usuario_id
-      ? userQuery.eq("id", body.usuario_id).maybeSingle()
-      : userQuery.eq("email", emailBody).maybeSingle());
-
-    if (userErr) {
+      );
+    } catch (userErr) {
       console.error("Erro consultando usuario_custom:", userErr);
       return fail("Erro interno", 500);
     }
-    if (!usuario || !usuario.ativo) return fail("Usuário inválido", 404);
+    if (!usuario || !usuario.ativo) return fail("Usuário inválido", 403);
+    // O magic link do passo 4 é gerado pelo e-mail: ele tem que ser o do auth
+    // user do token, senão a sessão emitida seria de outra conta.
+    if ((caller.email ?? "").toLowerCase() !== String(usuario.email).toLowerCase()) {
+      console.error("[trocar-empresa] e-mail do token diverge de usuario_custom", usuario.id);
+      return fail("Usuário inválido", 403);
+    }
 
     // 2. Valida vínculo com a empresa alvo (super admin dispensa vínculo)
     const { data: vinc } = await supabase
@@ -90,12 +93,12 @@ Deno.serve(
 
     const perfil = vinc?.perfil ?? "Admin";
 
-    // 3. Atualiza app_metadata no Auth (sem mexer na senha)
-    let authUserId: string | null = null;
+    // 3. Atualiza app_metadata no Auth (sem mexer na senha) — o auth user é o
+    //    do próprio token.
     try {
-      authUserId = await atualizarAppMetadataEmpresa(supabase, {
+      await atualizarAppMetadataEmpresa(supabase, {
         email: usuario.email,
-        authUserId: usuario.auth_user_id,
+        authUserId: caller.user_id,
         empresa_id: empresa.id,
         perfil,
         is_super_admin: !!usuario.is_super_admin,
@@ -103,6 +106,14 @@ Deno.serve(
     } catch (e) {
       console.error("[trocar-empresa] falha ao atualizar app_metadata:", (e as Error)?.message);
       return fail("Não foi possível atualizar a sessão", 500);
+    }
+
+    // Persiste auth_user_id se o vínculo ainda não estava gravado
+    if (usuario.auth_user_id !== caller.user_id) {
+      await supabase
+        .from("usuario_custom")
+        .update({ auth_user_id: caller.user_id })
+        .eq("id", usuario.id);
     }
 
     const usuarioResp = {
@@ -118,23 +129,10 @@ Deno.serve(
       grupo_id: vinc?.grupo_id ?? empresa.grupo_id ?? null,
     };
 
-    // Sem espelho no Auth ainda → front precisa relogar pra ter sessão
-    if (!authUserId) {
-      return ok({ usuario: usuarioResp, session: null, needs_relogin: true });
-    }
-
-    // Persiste auth_user_id se descobrimos agora
-    if (authUserId !== usuario.auth_user_id) {
-      await supabase
-        .from("usuario_custom")
-        .update({ auth_user_id: authUserId })
-        .eq("id", usuario.id);
-    }
-
     // 4. Emite sessão nova já com o empresa_id atualizado (best-effort)
     let session = null;
     try {
-      session = await emitirSessaoSemSenha(supabase, usuario.email);
+      session = await emitirSessaoSemSenha(supabase, caller.email as string);
     } catch (e) {
       console.error("[trocar-empresa] falha ao emitir sessão:", (e as Error)?.message);
       return ok({ usuario: usuarioResp, session: null, needs_refresh: true });
