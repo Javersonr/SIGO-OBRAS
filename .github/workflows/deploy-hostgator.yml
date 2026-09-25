@@ -52,6 +52,7 @@ jobs:
           ls -la apps/web/dist
           test -f apps/web/dist/index.html || (echo "::error::dist/index.html ausente"; exit 1)
           test -f apps/web/dist/.htaccess || (echo "::error::dist/.htaccess ausente (esqueceu public/.htaccess?)"; exit 1)
+          test -f apps/web/dist/.well-known/oauth-authorization-server
 
       # Deploy via lftp — ferramenta nativa Linux, controle preciso de paths.
       # Substituiu o SamKirkland/FTP-Deploy-Action que tinha bug criando
@@ -93,6 +94,8 @@ jobs:
               --exclude-glob 'C:/' \
               --exclude-glob 'C:/**' \
               ./ /;
+            mkdir -pf /.well-known;
+            put -O /.well-known .well-known/oauth-authorization-server;
             bye;
           "
           echo "::notice::✅ Deploy concluído via lftp"

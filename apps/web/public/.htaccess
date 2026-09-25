@@ -107,3 +107,16 @@
 <FilesMatch "(^\.env|^\.git|composer\.json|package\.json|package-lock\.json|vite\.config\.js|tsconfig\.json)$">
   Require all denied
 </FilesMatch>
+
+# ============================================================================
+# 7. Metadata OAuth do conector do Claude (arquivo sem extensão em /.well-known/)
+#    O Claude busca https://www.sigoobras.com.br/.well-known/oauth-authorization-server
+#    e precisa de 200 + application/json (sem cair no index.html do SPA).
+# ============================================================================
+<Files "oauth-authorization-server">
+  ForceType application/json
+  <IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+    Header set Cache-Control "public, max-age=300"
+  </IfModule>
+</Files>
