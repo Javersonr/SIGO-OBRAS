@@ -41,6 +41,7 @@ não grava (bug separado, registrado).
     - 400 `API_KEY_INVALID` → "Chave inválida";
     - 403 → "Chave sem permissão";
     - 402/429 → "Sem crédito ou limite atingido";
+    - 404 → "Modelo não encontrado no Google (código 404)";
     - outros → "Google indisponível (código N)".
 
 ### 2.2 Cliente Gemini (`supabase/functions/_shared/gemini.ts` + regras puras em `gemini-regras.ts`)
@@ -48,7 +49,6 @@ não grava (bug separado, registrado).
 - **Chamada:** `POST https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent`
   com o header `x-goog-api-key`.
 - **Corpo:**
-  - `systemInstruction` (opcional);
   - `contents:[{role:"user", parts}]`;
   - `generationConfig.maxOutputTokens`;
   - `thinkingConfig.thinkingLevel` quando pedido;
@@ -91,7 +91,7 @@ não grava (bug separado, registrado).
 ### 2.3 Porta única (`supabase/functions/_shared/ia.ts`)
 
 - `chamarIA(opts & { nivel?: "padrao" | "forte" })` → resposta com `provedor` e `modelo`.
-- **Configuração:** lê as duas configs uma vez por requisição (chaves e modelos do Gemini e do OpenAI).
+- **Configuração:** lê as configs do Gemini e do OpenAI (chaves e modelos) numa consulta leve a cada chamada de `chamarIA`.
 - **Ordem de tentativa:**
   1. Gemini, se houver chave;
   2. OpenAI, se houver chave e o Gemini falhou (qualquer `ok:false`) ou não está configurado.
@@ -196,7 +196,7 @@ não grava (bug separado, registrado).
   - `data_vencimento` = primeiro vencimento, senão a emissão;
   - `forma_pagamento` (na receita, só se for uma das opções dela);
   - `descricao` = "NF-e 123 - FORNECEDOR" / "Recibo - NOME" / etc.;
-  - `numero_documento` = número ou chave;
+  - `numero_documento` = chave de 44 dígitos quando existir (a Nota de Devolução procura por ela), senão o número;
   - `chave_nfe` só na despesa.
 - **Pessoa:** fornecedor (despesa) ou cliente (receita) casado **pelos dígitos** do documento. Se não
   achar, cai para o nome normalizado (igual e sem acento). Achou → id e nome no patch. Não achou →
