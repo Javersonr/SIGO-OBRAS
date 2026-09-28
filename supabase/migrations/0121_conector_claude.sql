@@ -1,6 +1,9 @@
 -- ============================================================================
 -- 0121_conector_claude.sql — conector do Claude (MCP): autorização própria
 --
+-- JÁ APLICADA em 25/09/2026 — não reaplicar: religaria o conector/módulo que o
+-- SaaS Admin tenha desligado (o update do fim liga empresa.conector_claude).
+--
 -- O SIGO é o servidor de autorização do conector (spec 2026-09-25): chaves
 -- OPACAS (aqui só o SHA-256), presas a UMA empresa escolhida na tela de
 -- autorização. Tabelas só-servidor (Edge Functions mcp e mcp-oauth, service

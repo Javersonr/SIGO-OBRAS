@@ -3,6 +3,9 @@
 -- conferido em produção) passa a liberar Oportunidades, e a SG Ligth ganha os
 -- mesmos status de oportunidade da Sinergia Construções (ordem/cor/tipo).
 -- Idempotente: não duplica status se a empresa já tiver algum.
+--
+-- JÁ APLICADA em 25/09/2026 — não reaplicar: religaria o conector/módulo que o
+-- SaaS Admin tenha desligado (o update liga Oportunidades no plano "Fábrica").
 
 update public.plano
    set modulos_liberados = (
