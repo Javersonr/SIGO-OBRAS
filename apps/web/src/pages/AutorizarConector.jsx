@@ -11,13 +11,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AlertTriangle, Check, Loader2, ShieldCheck, X } from "lucide-react";
-import { lerPedidoAutorizacao } from "@/lib/conector";
+import { erroDeSessao, lerPedidoAutorizacao, sessaoCustomConfere } from "@/lib/conector";
 
 /**
  * Tela de autorização do conector do Claude (authorization_endpoint do
- * servidor OAuth do SIGO). Pública no Layout: confere sozinha a sessão do
- * Supabase; sem sessão, vai ao login com ?voltar= e retorna para cá.
- * Quem valida tudo é o mcp-oauth (cliente, redirect, empresa, PKCE).
+ * servidor OAuth do SIGO). Pública no Layout: confere sozinha a sessão —
+ * a do Supabase E o custom_auth desta aba, do mesmo usuário (sessão "zumbi"
+ * do Supabase no localStorage não basta); sem isso, vai ao login com ?voltar=
+ * e retorna para cá. Quem valida tudo é o mcp-oauth (cliente, redirect,
+ * empresa, PKCE).
+ *
+ * Erros: só o de sessão (401 `codigo: "sessao_invalida"`) oferece "Entrar no
+ * SIGO de novo"; os outros (pedido inválido, senha provisória, serviço fora
+ * do ar) mandam voltar ao Claude e conectar de novo.
  */
 
 const PODE = [
@@ -39,10 +45,20 @@ function irParaLogin() {
   window.location.replace(`/EntrarSistema?voltar=${encodeURIComponent(voltar)}`);
 }
 
+function lerCustomAuth() {
+  try {
+    return sessionStorage.getItem("custom_auth");
+  } catch {
+    return null;
+  }
+}
+
 export default function AutorizarConector() {
   const { pedido, faltando } = useMemo(() => lerPedidoAutorizacao(window.location.search), []);
   const [estado, setEstado] = useState("carregando"); // carregando | pronto | enviando | erro
   const [erro, setErro] = useState("");
+  const [erroSessao, setErroSessao] = useState(false); // só ele leva ao login
+  const [naoFechou, setNaoFechou] = useState(false);
   const [ctx, setCtx] = useState(null);
   const [empresaId, setEmpresaId] = useState("");
 
@@ -53,11 +69,15 @@ export default function AutorizarConector() {
         setErro(
           `Pedido de autorização incompleto (faltam: ${faltando.join(", ")}). Volte ao Claude e tente conectar de novo.`
         );
+        setErroSessao(false);
         setEstado("erro");
         return;
       }
       const sessao = supabase ? (await supabase.auth.getSession()).data?.session : null;
-      if (!sessao) {
+      // Sessão do Supabase sozinha não basta: precisa do login desta aba
+      // (custom_auth) do mesmo usuário — senão é sessão "zumbi" (navegador
+      // reaberto) e ninguém digitou a senha.
+      if (!sessao || !sessaoCustomConfere(lerCustomAuth(), sessao.user?.email)) {
         irParaLogin();
         return;
       }
@@ -69,11 +89,13 @@ export default function AutorizarConector() {
       if (cancelado) return;
       if (data?.success === false) {
         setErro(data.error || "Não foi possível abrir a autorização.");
+        setErroSessao(erroDeSessao(data));
         setEstado("erro");
         return;
       }
       setCtx(data);
-      if (data.empresas?.length === 1) setEmpresaId(data.empresas[0].id);
+      // Empresa NUNCA pré-selecionada (nem quando só há uma): a escolha é um
+      // passo consciente contra link de autorização mandado por outra pessoa.
       setEstado("pronto");
     })();
     return () => {
@@ -95,10 +117,18 @@ export default function AutorizarConector() {
     const { data } = await sigo.functions.invoke("mcpOauth", payload);
     if (data?.success === false || !data?.redirect_url) {
       setErro(data?.error || "Não foi possível concluir.");
+      setErroSessao(erroDeSessao(data));
       setEstado("erro");
       return;
     }
     window.location.assign(data.redirect_url);
+  };
+
+  // A tela costuma abrir numa aba/janela do Claude: fechar devolve a pessoa a
+  // ele. O navegador só deixa fechar a aba aberta por script — senão, avisa.
+  const voltarAoClaude = () => {
+    window.close();
+    setTimeout(() => setNaoFechou(true), 300);
   };
 
   const trocarUsuario = async () => {
@@ -133,9 +163,20 @@ export default function AutorizarConector() {
               <p className="flex gap-2 text-sm text-red-700">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> {erro}
               </p>
-              <Button variant="outline" onClick={irParaLogin}>
-                Entrar no SIGO de novo
-              </Button>
+              {erroSessao ? (
+                <Button variant="outline" onClick={irParaLogin}>
+                  Entrar no SIGO de novo
+                </Button>
+              ) : (
+                <Button variant="outline" onClick={voltarAoClaude}>
+                  Volte ao Claude e conecte de novo
+                </Button>
+              )}
+              {!erroSessao && naoFechou && (
+                <p className="text-xs text-slate-500">
+                  Feche esta aba e peça a conexão de novo no seu Claude.
+                </p>
+              )}
             </div>
           )}
 
@@ -146,6 +187,15 @@ export default function AutorizarConector() {
                 <button type="button" className="underline" onClick={trocarUsuario}>
                   Não é você?
                 </button>
+              </p>
+
+              <p
+                role="note"
+                className="flex gap-2 text-sm font-medium text-amber-900 bg-amber-50 border border-amber-300 rounded p-3"
+              >
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                Só clique em Permitir se você acabou de pedir a conexão no seu Claude. Se recebeu
+                este link de outra pessoa, clique em Negar.
               </p>
 
               {ctx.empresas.length === 0 ? (

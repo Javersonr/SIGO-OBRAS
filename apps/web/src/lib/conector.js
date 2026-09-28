@@ -3,6 +3,7 @@
  * conector, link de instalação no claude.ai, comandos do Claude Code, destino
  * seguro depois do login e leitura do pedido OAuth da tela de autorização.
  */
+import { safeParseJSON } from "./json-utils";
 
 export const NOME_CONECTOR = "SIGO Obras";
 
@@ -63,4 +64,30 @@ export function lerPedidoAutorizacao(search) {
     if (v != null) pedido[k] = v;
   }
   return { pedido, faltando: OBRIGATORIOS.filter((k) => !pedido[k]) };
+}
+
+/**
+ * A tela de autorização só vale com a sessão do SIGO NESTA aba: o
+ * `custom_auth` do sessionStorage (id + e-mail) do MESMO usuário da sessão do
+ * Supabase. A sessão do Supabase sozinha fica no localStorage e se renova
+ * sozinha depois que o navegador fecha ("zumbi"): sem esta conferência, quem
+ * abrisse aquele navegador emitiria uma conexão de 90 dias em nome do dono.
+ */
+export function sessaoCustomConfere(customAuthBruto, emailSessao) {
+  const dados = safeParseJSON(customAuthBruto, null);
+  if (!dados || typeof dados !== "object" || Array.isArray(dados)) return false;
+  if (!dados.id || typeof dados.email !== "string" || !dados.email) return false;
+  if (typeof emailSessao !== "string" || !emailSessao) return false;
+  return dados.email.trim().toLowerCase() === emailSessao.trim().toLowerCase();
+}
+
+/**
+ * Erro do mcp-oauth que pede login de novo: 401 com `codigo: "sessao_invalida"`
+ * (ou a mensagem "Sessão inválida…"). Qualquer outro erro (pedido inválido,
+ * senha provisória, serviço fora do ar) NÃO se resolve entrando de novo.
+ */
+export function erroDeSessao(data) {
+  if (!data || typeof data !== "object") return false;
+  if (data.codigo === "sessao_invalida") return true;
+  return /sess[aã]o inv[aá]lida/i.test(String(data.error ?? ""));
 }

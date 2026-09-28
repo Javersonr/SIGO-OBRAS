@@ -16,6 +16,10 @@ import {
  * Meu Perfil → Claude (IA): conectar o próprio Claude ao SIGO, gerar chave
  * para o Claude Code e desconectar. Cada usuário conecta o seu; a empresa
  * precisa estar liberada (SaaS Admin → Conector Claude).
+ *
+ * Piloto: o card NÃO aparece quando a empresa ativa não está liberada — a não
+ * ser que o usuário já tenha conexões (de outra empresa), para poder sempre
+ * desconectar. Erro ao carregar vira uma linha discreta, nunca "não liberado".
  */
 
 const URL_MCP = urlConector(import.meta.env.VITE_SUPABASE_URL);
@@ -24,6 +28,7 @@ const dataHora = (iso) =>
 
 export default function AppsConectadosCard({ empresaAtiva }) {
   const [dados, setDados] = useState(null);
+  const [erroCarga, setErroCarga] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const [gerando, setGerando] = useState(false);
   const [chaveNova, setChaveNova] = useState(null);
@@ -31,8 +36,12 @@ export default function AppsConectadosCard({ empresaAtiva }) {
   const carregar = async () => {
     setCarregando(true);
     const { data } = await sigo.functions.invoke("mcpOauth", { acao: "listar" });
-    if (data?.success === false) toast.error(data.error || "Erro ao carregar os apps conectados");
-    else setDados(data);
+    if (data?.success === false) {
+      setErroCarga(true);
+    } else {
+      setErroCarga(false);
+      setDados(data);
+    }
     setCarregando(false);
   };
 
@@ -79,7 +88,12 @@ export default function AppsConectadosCard({ empresaAtiva }) {
     carregar();
   };
 
-  const nomeEmpresa = empresaAtiva?.nome_fantasia || empresaAtiva?.nome || "esta empresa";
+  const temConexoes = !!dados?.autorizacoes?.length;
+
+  // Ainda carregando (sem saber se a empresa está liberada) ou empresa fora
+  // do piloto sem nenhuma conexão: nada de card.
+  if (!dados && !erroCarga) return null;
+  if (dados && !liberada && !temConexoes) return null;
 
   return (
     <Card>
@@ -94,13 +108,19 @@ export default function AppsConectadosCard({ empresaAtiva }) {
           só acessa a empresa escolhida na autorização, e você pode desconectar quando quiser.
         </p>
 
-        {carregando && !dados ? (
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <Loader2 className="w-4 h-4 animate-spin" /> Carregando…
-          </div>
-        ) : !liberada ? (
-          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3">
-            O conector do Claude não está liberado para {nomeEmpresa}. Fale com o suporte do SIGO.
+        {erroCarga && (
+          <p className="text-xs text-slate-500">
+            Não foi possível carregar as conexões do Claude.{" "}
+            <button type="button" className="underline" onClick={carregar} disabled={carregando}>
+              Tentar de novo
+            </button>
+          </p>
+        )}
+
+        {!dados ? null : !liberada ? (
+          <p className="text-sm text-slate-500">
+            Para conectar um Claude novo, entre numa empresa com o conector liberado. Você ainda
+            pode desconectar as conexões abaixo.
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
@@ -154,37 +174,39 @@ export default function AppsConectadosCard({ empresaAtiva }) {
           </div>
         )}
 
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-slate-700">Conexões ativas</p>
-          {!dados?.autorizacoes?.length ? (
-            <p className="text-sm text-slate-500">Nenhuma conexão.</p>
-          ) : (
-            dados.autorizacoes.map((a) => (
-              <div
-                key={a.id}
-                className="flex items-center justify-between gap-3 border rounded p-2 text-sm"
-              >
-                <div className="min-w-0">
-                  <p className="font-medium truncate">
-                    {a.app} · {a.empresa}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    Conectado em {dataHora(a.criado_em)} · último uso {dataHora(a.ultimo_uso)}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-red-600"
-                  onClick={() => revogar(a)}
-                  aria-label={`Desconectar ${a.app}`}
+        {dados && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-slate-700">Conexões ativas</p>
+            {!temConexoes ? (
+              <p className="text-sm text-slate-500">Nenhuma conexão.</p>
+            ) : (
+              dados.autorizacoes.map((a) => (
+                <div
+                  key={a.id}
+                  className="flex items-center justify-between gap-3 border rounded p-2 text-sm"
                 >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-            ))
-          )}
-        </div>
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">
+                      {a.app} · {a.empresa}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Conectado em {dataHora(a.criado_em)} · último uso {dataHora(a.ultimo_uso)}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-red-600"
+                    onClick={() => revogar(a)}
+                    aria-label={`Desconectar ${a.app}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

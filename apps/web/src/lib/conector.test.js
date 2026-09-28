@@ -3,8 +3,10 @@ import {
   comandoClaudeCode,
   comandoClaudeCodeOAuth,
   destinoSeguro,
+  erroDeSessao,
   lerPedidoAutorizacao,
   linkInstalacaoClaude,
+  sessaoCustomConfere,
   urlConector,
 } from "./conector";
 
@@ -62,5 +64,55 @@ describe("conector do Claude (front)", () => {
       "code_challenge",
       "code_challenge_method",
     ]);
+  });
+});
+
+describe("tela de autorização: sessão e erros", () => {
+  const custom = (o) => JSON.stringify(o);
+
+  it("sessaoCustomConfere exige o custom_auth da aba com id e o MESMO e-mail da sessão", () => {
+    const raw = custom({ id: "u1", email: "Joao@X.com", empresa_id: "e1" });
+    expect(sessaoCustomConfere(raw, "joao@x.com")).toBe(true);
+    expect(sessaoCustomConfere(raw, "JOAO@X.COM")).toBe(true);
+    // e-mail diferente: sessão do Supabase de outra pessoa
+    expect(sessaoCustomConfere(raw, "outro@x.com")).toBe(false);
+  });
+
+  it("sessaoCustomConfere recusa sessão 'zumbi' (sessionStorage vazio ou inválido)", () => {
+    expect(sessaoCustomConfere(null, "joao@x.com")).toBe(false); // aba nova / navegador reaberto
+    expect(sessaoCustomConfere("", "joao@x.com")).toBe(false);
+    expect(sessaoCustomConfere("{corrompido", "joao@x.com")).toBe(false);
+    expect(sessaoCustomConfere(custom({ email: "joao@x.com" }), "joao@x.com")).toBe(false); // sem id
+    expect(sessaoCustomConfere(custom({ id: "u1" }), "joao@x.com")).toBe(false); // sem e-mail
+    expect(sessaoCustomConfere(custom({ id: "u1", email: "joao@x.com" }), "")).toBe(false);
+    expect(sessaoCustomConfere(custom({ id: "u1", email: "joao@x.com" }), undefined)).toBe(false);
+    expect(sessaoCustomConfere("[]", "joao@x.com")).toBe(false);
+  });
+
+  it("erroDeSessao: só o erro de sessão manda para o login", () => {
+    expect(erroDeSessao({ success: false, codigo: "sessao_invalida", error: "x" })).toBe(true);
+    expect(
+      erroDeSessao({
+        success: false,
+        error: "Sessão inválida ou expirada. Entre no SIGO de novo.",
+      })
+    ).toBe(true);
+    expect(
+      erroDeSessao({
+        success: false,
+        error: "Pedido de autorização inválido: aplicativo ou endereço de retorno não reconhecido.",
+      })
+    ).toBe(false);
+    expect(
+      erroDeSessao({
+        success: false,
+        error: "Troque sua senha provisória antes de conectar o Claude",
+      })
+    ).toBe(false);
+    expect(erroDeSessao({ success: false, error: "Serviço indisponível, tente de novo" })).toBe(
+      false
+    );
+    expect(erroDeSessao(null)).toBe(false);
+    expect(erroDeSessao(undefined)).toBe(false);
   });
 });
