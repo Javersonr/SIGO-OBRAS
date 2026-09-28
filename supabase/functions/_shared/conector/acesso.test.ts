@@ -6,6 +6,7 @@ import {
   empresaLiberada,
   lerPermissoes,
   modulosDoPlano,
+  revogadaPelaTrocaDeSenha,
   temPermissaoServidor,
   type EntradaAcesso,
 } from "./acesso.ts";
@@ -106,6 +107,39 @@ test("avaliarAcesso: ordem das negações", () => {
       motivo
     );
   }
+});
+
+test("revogadaPelaTrocaDeSenha: autorização criada ANTES da troca de senha", () => {
+  assert.equal(revogadaPelaTrocaDeSenha("2026-09-20T10:00:00Z", "2026-09-25T10:00:00Z"), true);
+  assert.equal(revogadaPelaTrocaDeSenha("2026-09-26T10:00:00Z", "2026-09-25T10:00:00Z"), false);
+  // senha nunca trocada desde a 0124 (coluna nula) ou autorização sem data
+  assert.equal(revogadaPelaTrocaDeSenha("2026-09-20T10:00:00Z", null), false);
+  assert.equal(revogadaPelaTrocaDeSenha("2026-09-20T10:00:00Z", undefined), false);
+  assert.equal(revogadaPelaTrocaDeSenha(undefined, "2026-09-25T10:00:00Z"), false);
+  // mesmo instante não revoga (só o que é estritamente anterior)
+  assert.equal(revogadaPelaTrocaDeSenha("2026-09-25T10:00:00Z", "2026-09-25T10:00:00Z"), false);
+  // formatos do Postgres (+00:00, microssegundos) e do JS (Z, milissegundos)
+  assert.equal(
+    revogadaPelaTrocaDeSenha("2026-09-25T10:00:00.123456+00:00", "2026-09-25T10:00:00.500Z"),
+    true
+  );
+});
+
+test("avaliarAcesso: troca de senha depois da autorização → chave_invalida (revogação implícita)", () => {
+  const e = base();
+  e.autorizacao = { ...e.autorizacao!, criado_em: "2026-09-20T10:00:00Z" };
+  e.usuario = { ...e.usuario!, senha_alterada_em: "2026-09-25T10:00:00Z" };
+  assert.deepEqual(avaliarAcesso(e, AGORA), { ok: false, motivo: "chave_invalida" });
+});
+
+test("avaliarAcesso: autorização criada depois da troca de senha segue valendo", () => {
+  const e = base();
+  e.autorizacao = { ...e.autorizacao!, criado_em: "2026-09-26T10:00:00Z" };
+  e.usuario = { ...e.usuario!, senha_alterada_em: "2026-09-25T10:00:00Z" };
+  assert.deepEqual(avaliarAcesso(e, AGORA), { ok: true });
+  // senha nunca trocada (coluna nula) também vale
+  e.usuario = { ...e.usuario!, senha_alterada_em: null };
+  assert.deepEqual(avaliarAcesso(e, AGORA), { ok: true });
 });
 
 test("avaliarAcesso: Admin DESATIVADO não passa (ativo antes do atalho de Admin)", () => {

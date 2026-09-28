@@ -99,10 +99,33 @@ export const MENSAGEM_NEGACAO: Record<Negacao, string> = {
   sem_modulo: "A assinatura desta empresa não inclui o módulo Oportunidades.",
 };
 
+/**
+ * Revogação IMPLÍCITA pela troca de senha (migração 0124): autorização criada
+ * antes de usuario_custom.senha_alterada_em conta como revogada, mesmo que a
+ * revogação explícita (revogarConectorDoUsuario) tenha falhado. Sem data de
+ * troca (coluna nula) ou sem data de criação, não revoga.
+ */
+export function revogadaPelaTrocaDeSenha(
+  criadoEm: string | null | undefined,
+  senhaAlteradaEm: string | null | undefined
+): boolean {
+  if (!criadoEm || !senhaAlteradaEm) return false;
+  return new Date(criadoEm).getTime() < new Date(senhaAlteradaEm).getTime();
+}
+
 export interface EntradaAcesso {
   chave: { expira_em: string; revogada_em: string | null } | null;
-  autorizacao: { usuario_email: string; revogado_em: string | null } | null;
-  usuario: { email: string; ativo: boolean | null; deleted_at: string | null } | null;
+  autorizacao: {
+    usuario_email: string;
+    revogado_em: string | null;
+    criado_em?: string;
+  } | null;
+  usuario: {
+    email: string;
+    ativo: boolean | null;
+    deleted_at: string | null;
+    senha_alterada_em?: string | null;
+  } | null;
   vinculo: Vinculo | null;
   empresa: EmpresaConector | null;
   modulosDosPlanos: Record<string, boolean>[];
@@ -118,7 +141,8 @@ export function avaliarAcesso(
     e.chave.revogada_em ||
     new Date(e.chave.expira_em).getTime() <= agora.getTime() ||
     !e.autorizacao ||
-    e.autorizacao.revogado_em
+    e.autorizacao.revogado_em ||
+    revogadaPelaTrocaDeSenha(e.autorizacao.criado_em, e.usuario?.senha_alterada_em)
   ) {
     return nega("chave_invalida");
   }

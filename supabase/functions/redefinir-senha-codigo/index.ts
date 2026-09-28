@@ -100,6 +100,7 @@ Deno.serve(
     // Uso único: só grava se o token conferido ainda for o vigente (duas
     // chamadas certas em paralelo → só a primeira troca a senha).
     const novoHash = await hashPassword(novaSenha);
+    const agora = new Date().toISOString();
     const { data: gravado, error: upErr } = await supabase
       .from("usuario_custom")
       .update({
@@ -108,7 +109,9 @@ Deno.serve(
         reset_token: null,
         reset_token_expira: null,
         reset_tentativas: 0,
-        updated_at: new Date().toISOString(),
+        // revogação implícita do conector do Claude (0124)
+        senha_alterada_em: agora,
+        updated_at: agora,
       })
       .eq("id", usuario.id)
       .eq("reset_token", usuario.reset_token)
@@ -140,6 +143,8 @@ Deno.serve(
       console.error("[redefinir-senha-codigo] revogar sessões (não-fatal):", (e as Error)?.message);
     }
 
+    // Conector do Claude cai junto. Limpeza explícita; se falhar, a revogação
+    // implícita (senha_alterada_em) já vale.
     try {
       await revogarConectorDoUsuario(supabase, usuario.id, "senha_redefinida_codigo");
     } catch (e) {

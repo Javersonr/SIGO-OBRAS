@@ -168,6 +168,7 @@ Deno.serve(
     const novaSenha = usouSenhaCustomizada ? senhaEnviada : generateProvisionalPassword();
     const flagProvisoria = usouSenhaCustomizada ? Boolean(forcar_troca) : true;
     const novoHash = await hashPassword(novaSenha);
+    const agora = new Date().toISOString();
 
     // 4. Atualiza alvo
     const { error: updateErr } = await supabase
@@ -178,7 +179,9 @@ Deno.serve(
         reset_token: null,
         reset_token_expira: null,
         reset_tentativas: 0,
-        updated_at: new Date().toISOString(),
+        // revogação implícita do conector do Claude (0124)
+        senha_alterada_em: agora,
+        updated_at: agora,
       })
       .eq("id", alvo.id);
 
@@ -210,7 +213,8 @@ Deno.serve(
       console.error("[redefinir-senha-admin] revogar sessões (não-fatal):", (e as Error)?.message);
     }
 
-    // Conector do Claude do alvo cai junto (quem tinha a conta também tinha o Claude)
+    // Conector do Claude do alvo cai junto (quem tinha a conta também tinha o Claude).
+    // Limpeza explícita; se falhar, a revogação implícita (senha_alterada_em) já vale.
     try {
       await revogarConectorDoUsuario(supabase, alvo.id, "senha_redefinida_admin");
     } catch (e) {

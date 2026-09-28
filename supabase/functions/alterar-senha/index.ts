@@ -105,6 +105,7 @@ Deno.serve(
     await liberarTentativas(supabase, limite);
 
     const novoHash = await hashPassword(nova_senha);
+    const agora = new Date().toISOString();
     const { error: updateErr } = await supabase
       .from("usuario_custom")
       .update({
@@ -114,7 +115,10 @@ Deno.serve(
         reset_token: null,
         reset_token_expira: null,
         reset_tentativas: 0,
-        updated_at: new Date().toISOString(),
+        // revogação implícita do conector do Claude (0124): autorizações
+        // anteriores a esta data caem mesmo se a revogação explícita falhar
+        senha_alterada_em: agora,
+        updated_at: agora,
       })
       .eq("id", usuario.id);
 
@@ -146,7 +150,8 @@ Deno.serve(
       console.error("[alterar-senha] revogar sessões (não-fatal):", (e as Error)?.message);
     }
 
-    // Conector do Claude: senha nova derruba as conexões (reconecta pelo SIGO)
+    // Conector do Claude: senha nova derruba as conexões (reconecta pelo SIGO).
+    // Limpeza explícita; se falhar, a revogação implícita (senha_alterada_em) já vale.
     try {
       await revogarConectorDoUsuario(supabase, usuario.id, "senha_alterada");
     } catch (e) {

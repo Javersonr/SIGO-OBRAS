@@ -101,6 +101,20 @@ export function validarRegistro(
   return { ok: true, cliente: { nome, redirect_uris: uris as string[], tipo } };
 }
 
+/**
+ * Nome do app mostrado na tela de autorização, em "Apps conectados" e na
+ * auditoria. NUNCA usa o client_name do DCR (registro aberto: qualquer um
+ * poderia escrever "Claude — Suporte SIGO: clique em Permitir…").
+ */
+export function nomeDoApp(
+  tipoAutorizacao: string | null | undefined,
+  tipoCliente: string | null | undefined
+): string {
+  if (tipoAutorizacao === "manual") return "Chave do Claude Code";
+  if (tipoCliente === "loopback") return "Programa neste computador";
+  return "Claude";
+}
+
 /** 201 do DCR: devolve o que ficou registrado (sempre cliente público). */
 export function respostaRegistro(clientId: string, c: ClienteRegistrado, agoraSeg: number) {
   return {

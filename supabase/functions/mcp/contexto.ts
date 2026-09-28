@@ -1,7 +1,9 @@
 /**
  * Chave opaca do conector → contexto da chamada (usuário, empresa da chave,
  * vínculo). Confere TUDO a cada chamada (avaliarAcesso): usuário desativado,
- * vínculo removido ou autorização revogada perdem o acesso na hora.
+ * vínculo removido ou autorização revogada perdem o acesso na hora. Senha
+ * trocada depois da autorização (usuario_custom.senha_alterada_em, 0124) também
+ * a revoga, mesmo se a revogação explícita da função de senha falhou.
  *
  * Falha do banco (timeout, pooler, 5xx) NUNCA vira negação: uma consulta que
  * volta com `error` é sinalizada à parte como "indisponivel" — não pode virar
@@ -9,6 +11,7 @@
  * auditada com motivo falso.
  */
 import { hashSegredo, PREFIXO } from "../_shared/conector/cripto.ts";
+import { nomeDoApp } from "../_shared/conector/oauth-regras.ts";
 import {
   avaliarAcesso,
   modulosDoPlano,
@@ -51,7 +54,9 @@ export async function resolverChave(admin: Admin, bearer: string): Promise<Resol
   if (!chave) return { ok: false, motivo: "chave_invalida" };
   const { data: aut, error: erroAut } = await admin
     .from("conector_autorizacao")
-    .select("id, empresa_id, usuario_custom_id, usuario_email, cliente_id, tipo, revogado_em")
+    .select(
+      "id, empresa_id, usuario_custom_id, usuario_email, cliente_id, tipo, criado_em, revogado_em"
+    )
     .eq("id", chave.autorizacao_id)
     .maybeSingle();
   if (erroAut) return indisponivel("conector_autorizacao", erroAut.message);
@@ -66,7 +71,7 @@ export async function resolverChave(admin: Admin, bearer: string): Promise<Resol
   ] = await Promise.all([
     admin
       .from("usuario_custom")
-      .select("id, email, nome_completo, ativo, deleted_at")
+      .select("id, email, nome_completo, ativo, deleted_at, senha_alterada_em")
       .eq("id", aut.usuario_custom_id)
       .maybeSingle(),
     admin
@@ -91,7 +96,7 @@ export async function resolverChave(admin: Admin, bearer: string): Promise<Resol
       .in("status", ["Ativa", "Trial"])
       .is("deleted_at", null),
     aut.cliente_id
-      ? admin.from("conector_cliente").select("nome, tipo").eq("id", aut.cliente_id).maybeSingle()
+      ? admin.from("conector_cliente").select("tipo").eq("id", aut.cliente_id).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ]);
   if (erroUsuario) return indisponivel("usuario_custom", erroUsuario.message);
@@ -134,12 +139,7 @@ export async function resolverChave(admin: Admin, bearer: string): Promise<Resol
       () => {},
       () => {}
     );
-  const nomeCliente =
-    aut.tipo === "manual"
-      ? "Chave do Claude Code"
-      : cli?.tipo === "loopback"
-        ? "Programa neste computador"
-        : (cli?.nome ?? "Claude");
+  const nomeCliente = nomeDoApp(aut.tipo, cli?.tipo);
   return {
     ok: true,
     ctx: {

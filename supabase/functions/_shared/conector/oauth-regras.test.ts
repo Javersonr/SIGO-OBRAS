@@ -9,6 +9,7 @@ import {
   lerFormUnico,
   montarRedirectErro,
   montarRedirectSucesso,
+  nomeDoApp,
   respostaRegistro,
   validarPedidoAutorizacao,
   validarRegistro,
@@ -188,4 +189,13 @@ test("decidirRenovacao: ok, expirada, revogada, reuso (tolerado/revogar), limite
     decidirRenovacao({ ...base, inicio_autorizacao: "2026-06-01T00:00:00Z" }, agora),
     "invalida"
   );
+});
+
+test("nomeDoApp: claude é sempre 'Claude' (o client_name do DCR nunca aparece)", () => {
+  assert.equal(nomeDoApp("oauth", "claude"), "Claude");
+  assert.equal(nomeDoApp("oauth", "loopback"), "Programa neste computador");
+  assert.equal(nomeDoApp("manual", null), "Chave do Claude Code");
+  // cliente apagado (cliente_id → null) ou tipo desconhecido
+  assert.equal(nomeDoApp("oauth", null), "Claude");
+  assert.equal(nomeDoApp("oauth", undefined), "Claude");
 });

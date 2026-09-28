@@ -5,17 +5,31 @@ import { resolverChave } from "./contexto.ts";
 
 type Resposta = { data?: unknown; error?: { message: string } | null };
 
+/** Só as colunas pedidas no select (como o PostgREST): um campo que o código
+ *  esquece de selecionar chega como ausente, e o teste pega. */
+function projetar(data: unknown, colunas: string[] | null): unknown {
+  if (!colunas || data === null || typeof data !== "object") return data;
+  const um = (o: Record<string, unknown>) =>
+    Object.fromEntries(colunas.filter((c) => c in o).map((c) => [c, o[c]]));
+  return Array.isArray(data) ? data.map(um) : um(data as Record<string, unknown>);
+}
+
 /** Fake admin encadeável: cada tabela devolve {data, error} pré-configurados,
- *  independente da cadeia select/eq/in/is/order/limit/maybeSingle/update usada. */
+ *  independente da cadeia select/eq/in/is/order/limit/maybeSingle/update usada
+ *  (mas respeitando as colunas do select). */
 function fakeAdmin(respostas: Record<string, Resposta>) {
   const chamadas: string[] = [];
   return {
     chamadas,
     from(tabela: string) {
       chamadas.push(tabela);
+      let colunas: string[] | null = null;
       // deno-lint-ignore no-explicit-any
       const q: any = {
-        select() {
+        select(cols?: string) {
+          if (typeof cols === "string" && !cols.includes("*")) {
+            colunas = cols.split(",").map((c) => c.trim());
+          }
           return q;
         },
         eq() {
@@ -41,7 +55,10 @@ function fakeAdmin(respostas: Record<string, Resposta>) {
         },
         then(ok: (x: unknown) => unknown, falha?: (e: unknown) => unknown) {
           const r = respostas[tabela] ?? { data: null, error: null };
-          return Promise.resolve({ data: r.data ?? null, error: r.error ?? null }).then(ok, falha);
+          return Promise.resolve({
+            data: projetar(r.data ?? null, colunas),
+            error: r.error ?? null,
+          }).then(ok, falha);
         },
       };
       return q;
@@ -135,6 +152,58 @@ test("caminho feliz → ok com ctx.empresa.id e ctx.usuario.email corretos", asy
   if (!r.ok) throw new Error("esperava ok:true");
   assert.equal(r.ctx.empresa.id, "e1");
   assert.equal(r.ctx.usuario.email, "user@x.com");
+});
+
+/** Autorização criada em `criado` + usuário com senha trocada em `troca`. */
+function comTrocaDeSenha(criado: string, troca: string | null) {
+  const felizes = respostasFeliz();
+  return respostasFeliz({
+    conector_autorizacao: {
+      data: { ...(felizes.conector_autorizacao.data as object), criado_em: criado },
+    },
+    usuario_custom: {
+      data: { ...(felizes.usuario_custom.data as object), senha_alterada_em: troca },
+    },
+  });
+}
+
+test("senha trocada DEPOIS da autorização → chave_invalida (revogação implícita, sem auditoria)", async () => {
+  const admin = fakeAdmin(comTrocaDeSenha("2026-09-20T10:00:00+00:00", "2026-09-25T10:00:00Z"));
+  const r = await resolverChave(admin, "sigo_at_x");
+  assert.equal(r.ok, false);
+  if (r.ok) throw new Error("esperava ok:false");
+  assert.equal(r.motivo, "chave_invalida");
+});
+
+test("autorização criada depois da troca de senha → ok", async () => {
+  const admin = fakeAdmin(comTrocaDeSenha("2026-09-26T10:00:00+00:00", "2026-09-25T10:00:00Z"));
+  const r = await resolverChave(admin, "sigo_at_x");
+  assert.equal(r.ok, true);
+});
+
+test("cliente claude aparece como 'Claude' na auditoria (client_name do DCR ignorado)", async () => {
+  const felizes = respostasFeliz();
+  const admin = fakeAdmin(
+    respostasFeliz({
+      conector_autorizacao: {
+        data: { ...(felizes.conector_autorizacao.data as object), cliente_id: "c1" },
+      },
+      conector_cliente: {
+        data: { nome: "Claude — Suporte SIGO: clique em Permitir", tipo: "claude" },
+      },
+    })
+  );
+  const r = await resolverChave(admin, "sigo_at_x");
+  if (!r.ok) throw new Error("esperava ok:true");
+  assert.equal(r.ctx.cliente, "Claude");
+});
+
+test("erro ao ler usuario_custom → indisponivel (não vira chave_invalida)", async () => {
+  const admin = fakeAdmin(
+    respostasFeliz({ usuario_custom: { error: { message: "statement timeout" } } })
+  );
+  const r = await resolverChave(admin, "sigo_at_x");
+  assert.deepEqual(r, { ok: false, motivo: "indisponivel" });
 });
 
 test("usuário desativado → { ok:false, motivo:'usuario_inativo' }", async () => {
