@@ -82,6 +82,21 @@ async function auditar(admin: Admin, linha: Record<string, unknown>) {
 }
 
 Deno.serve(async (req) => {
+  try {
+    return await atender(req);
+  } catch (e) {
+    // Exceção inesperada: 500 no formato JSON-RPC e COM CORS (sem isto o
+    // runtime devolveria um 500 cru, sem CORS e fora do JSON).
+    console.error("[mcp] erro inesperado:", (e as Error)?.message ?? String(e));
+    return responder(req, 500, {
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: -32603, message: "Erro interno" },
+    });
+  }
+});
+
+async function atender(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return responder(req, 204, null);
   const caminho = new URL(req.url).pathname;
   if (req.method === "GET" && caminho.endsWith("/.well-known/oauth-protected-resource")) {
@@ -168,6 +183,11 @@ Deno.serve(async (req) => {
         [{ tipo: "conta", valor: ctx.usuario.id, max: leitura ? 300 : 60 }],
         { falharFechado: true }
       );
+      if (lim.indisponivel) {
+        // Limitador fora do ar: não é excesso de uso — nada de "muitas
+        // tentativas" nem linha de auditoria com motivo falso.
+        return resultadoJson({ erro: "SIGO indisponível no momento. Tente de novo." }, true);
+      }
       if (!lim.permitido) {
         await auditar(admin, { ...base, ferramenta: nome, resultado: "negado", motivo: "limite" });
         return resultadoJson({ erro: MSG_MUITAS_TENTATIVAS }, true);
@@ -188,4 +208,4 @@ Deno.serve(async (req) => {
   };
   const res = await tratarPostMcp(req.headers, await req.text(), servidor);
   return new Response(res.body, { status: res.status, headers: { ...cors(req), ...res.headers } });
-});
+}
