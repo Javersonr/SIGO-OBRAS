@@ -116,14 +116,68 @@ test("liberarTentativas: devolve a do IP e zera a da conta", async () => {
 
 test("consumirTentativa: com falharFechado, limitador com erro NEGA (conector do Claude)", async () => {
   const admin = fakeAdmin({ error: { message: "fora do ar" } });
+  const erroOriginal = console.error;
+  console.error = () => {};
+  try {
+    const r = await consumirTentativa(
+      admin,
+      "mcp:empresa_atual",
+      3600,
+      [{ tipo: "conta", valor: "u1", max: 60 }],
+      {
+        falharFechado: true,
+      }
+    );
+    assert.equal(r.permitido, false);
+  } finally {
+    console.error = erroOriginal;
+  }
+});
+
+test("consumirTentativa: falharFechado + erro → indisponivel (não é 'muitas tentativas')", async () => {
+  const admin = fakeAdmin({ error: { message: "fora do ar" } });
+  const erroOriginal = console.error;
+  console.error = () => {};
+  try {
+    const r = await consumirTentativa(
+      admin,
+      "mcp-oauth:token",
+      3600,
+      [{ tipo: "ip", valor: "200.1.2.3", max: 3000 }],
+      { falharFechado: true }
+    );
+    assert.equal(r.permitido, false);
+    assert.equal(r.indisponivel, true);
+    assert.match(r.chaves.ip ?? "", /^[a-f0-9]{64}$/);
+  } finally {
+    console.error = erroOriginal;
+  }
+});
+
+test("consumirTentativa: limite estourado de verdade NÃO é indisponivel", async () => {
+  const admin = fakeAdmin({ data: false });
   const r = await consumirTentativa(
     admin,
-    "mcp:empresa_atual",
+    "mcp-oauth:token",
     3600,
-    [{ tipo: "conta", valor: "u1", max: 60 }],
-    {
-      falharFechado: true,
-    }
+    [{ tipo: "ip", valor: "200.1.2.3", max: 3000 }],
+    { falharFechado: true }
   );
   assert.equal(r.permitido, false);
+  assert.ok(!r.indisponivel);
+});
+
+test("consumirTentativa: sem falharFechado, erro segue liberando e sem indisponivel (login)", async () => {
+  const admin = fakeAdmin({ error: { message: "fora do ar" } });
+  const erroOriginal = console.error;
+  console.error = () => {};
+  try {
+    const r = await consumirTentativa(admin, "login", 900, [
+      { tipo: "conta", valor: "a@b.com", max: 8 },
+    ]);
+    assert.equal(r.permitido, true);
+    assert.ok(!r.indisponivel);
+  } finally {
+    console.error = erroOriginal;
+  }
 });

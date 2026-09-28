@@ -25,6 +25,10 @@ export interface Limite {
 
 export interface Consumo {
   permitido: boolean;
+  /** Só com falharFechado: o limitador caiu (erro na RPC) — a negação é por
+   *  indisponibilidade, NÃO por excesso. Quem chama responde 503, nunca 429
+   *  "muitas tentativas" nem auditoria de limite. */
+  indisponivel?: boolean;
   chaves: Partial<Record<TipoLimite, string>>;
 }
 
@@ -78,7 +82,8 @@ export async function chaveLimite(
 /**
  * Consome 1 tentativa de cada limite (IP e/ou conta) numa janela de
  * `janelaSeg`. Limitador fora do ar NÃO derruba a autenticação (a conferência
- * da senha segue valendo) — só registra o erro.
+ * da senha segue valendo) — só registra o erro. Com `falharFechado` (conector
+ * do Claude), limitador fora do ar NEGA e marca `indisponivel: true`.
  */
 export async function consumirTentativa(
   // deno-lint-ignore no-explicit-any
@@ -103,7 +108,8 @@ export async function consumirTentativa(
   });
   if (error) {
     console.error(`[limite-tentativas] ${escopo}: limitador indisponível:`, error.message);
-    return { permitido: !opcoes.falharFechado, chaves: porTipo };
+    if (opcoes.falharFechado) return { permitido: false, indisponivel: true, chaves: porTipo };
+    return { permitido: true, chaves: porTipo };
   }
   return { permitido: data !== false, chaves: porTipo };
 }
