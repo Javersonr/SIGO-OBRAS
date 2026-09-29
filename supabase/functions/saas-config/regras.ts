@@ -8,9 +8,27 @@
  *     Usa o mesmo configDeLinhas da porta de IA (ia-nucleo.ts), então o que o
  *     SaaS Admin mostra é exatamente o que o chamarIA vai usar. A chave nunca
  *     sai daqui: só os 4 últimos caracteres.
+ *   - statusCotas: linhas de saas_config → limites diários de IA por empresa
+ *     (edital e demais ações). Usa o lerCota/padrões/chaves de
+ *     ia-processar/ia-uso.ts — o que o SaaS Admin mostra é o que a
+ *     ia-processar vai cobrar. validarDefinir aceita cota_edital_dia e
+ *     cota_geral_dia (inteiros de 1 a 100000, ambos opcionais).
  */
 import { configDeLinhas } from "../_shared/ia-nucleo.ts";
 import { MODELOS_GEMINI_FORTE, MODELOS_GEMINI_PADRAO } from "../_shared/gemini-regras.ts";
+import {
+  CHAVE_COTA_EDITAL,
+  CHAVE_COTA_GERAL,
+  COTA_EDITAL_PADRAO,
+  COTA_GERAL_PADRAO,
+  lerCota,
+} from "../ia-processar/ia-uso.ts";
+
+const COTA_MINIMA = 1;
+const COTA_MAXIMA = 100000;
+
+/** chaves de saas_config das cotas (o status lê estas junto com as da IA) */
+export const CHAVES_COTA: readonly string[] = [CHAVE_COTA_EDITAL, CHAVE_COTA_GERAL];
 
 export const MODELOS_OPENAI: readonly string[] = ["gpt-4o-mini", "gpt-4o"];
 
@@ -20,6 +38,8 @@ export interface CorpoDefinir {
   chave_gemini?: unknown;
   gemini_modelo?: unknown;
   gemini_modelo_forte?: unknown;
+  cota_edital_dia?: unknown;
+  cota_geral_dia?: unknown;
 }
 
 export type LinhaConfig = { chave: string; valor: string };
@@ -32,8 +52,16 @@ export interface StatusGemini {
   modelo_forte: string;
 }
 
+/** limites diários de IA por empresa, os valores efetivos (com os padrões) */
+export interface StatusCotas {
+  edital_dia: number;
+  geral_dia: number;
+}
+
 const textoAparado = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 const textoExato = (v: unknown): string => (typeof v === "string" ? v : "");
+const cotaValida = (v: unknown): v is number =>
+  typeof v === "number" && Number.isInteger(v) && v >= COTA_MINIMA && v <= COTA_MAXIMA;
 
 export function validarDefinir(
   body: CorpoDefinir
@@ -87,6 +115,25 @@ export function validarDefinir(
     linhas.push({ chave: "gemini_modelo_forte", valor: modelo });
   }
 
+  if (body.cota_edital_dia !== undefined) {
+    if (!cotaValida(body.cota_edital_dia)) {
+      return {
+        ok: false,
+        erro: `Limite diário de leitura de editais inválido (informe um número inteiro de ${COTA_MINIMA} a ${COTA_MAXIMA})`,
+      };
+    }
+    linhas.push({ chave: CHAVE_COTA_EDITAL, valor: String(body.cota_edital_dia) });
+  }
+  if (body.cota_geral_dia !== undefined) {
+    if (!cotaValida(body.cota_geral_dia)) {
+      return {
+        ok: false,
+        erro: `Limite diário das demais ações de IA inválido (informe um número inteiro de ${COTA_MINIMA} a ${COTA_MAXIMA})`,
+      };
+    }
+    linhas.push({ chave: CHAVE_COTA_GERAL, valor: String(body.cota_geral_dia) });
+  }
+
   if (linhas.length === 0) return { ok: false, erro: "Nada para definir" };
   return { ok: true, linhas };
 }
@@ -103,5 +150,13 @@ export function statusGemini(
     origem: env.GEMINI_API_KEY?.trim() ? "secret" : chave ? "painel" : null,
     modelo: g.modelo,
     modelo_forte: g.modeloForte,
+  };
+}
+
+export function statusCotas(linhas: { chave: string; valor: unknown }[]): StatusCotas {
+  const valorDe = (chave: string) => linhas.find((l) => l.chave === chave)?.valor;
+  return {
+    edital_dia: lerCota(valorDe(CHAVE_COTA_EDITAL), COTA_EDITAL_PADRAO),
+    geral_dia: lerCota(valorDe(CHAVE_COTA_GERAL), COTA_GERAL_PADRAO),
   };
 }

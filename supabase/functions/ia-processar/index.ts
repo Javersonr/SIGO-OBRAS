@@ -21,7 +21,8 @@
  *     PDF, JPG, JPEG, PNG ou WEBP da empresa do token (HEIC → 400 pedindo
  *     JPEG). Nível padrão e, se vier fraco (sem valor total ou sem a pessoa
  *     do lançamento), o forte — 60 s por nível. Saída normalizada no servidor
- *     (CPF/CNPJ, chave de NF-e com DV, datas, valores, parcelas). Sem cota.
+ *     (CPF/CNPJ, chave de NF-e com DV, datas, valores, parcelas). Entra na
+ *     cota geral diária (ver COTA abaixo).
  *
  * Leitura de edital (Oportunidades) — ver edital.ts / edital-schemas.ts:
  *
@@ -55,13 +56,17 @@
  *     (_shared/ia-precos.ts; null se nenhum modelo tem preço). Requisição que
  *     não chamou a IA (validação, consolidação só em código) não grava.
  *
- * COTA só das ações edital_*:
- *   - ANTES de chamar a IA, conta as requisições edital_* da empresa do
+ * COTA diária por empresa — duas, cada uma contando só as suas ações:
+ *   - edital_*: cota do edital, saas_config 'ia_cota_edital_dia' (padrão 400);
+ *   - llm, extrair_documentos, validar_exames_pcmso e financeiro_ler_documento:
+ *     cota geral, saas_config 'ia_cota_geral_dia' (padrão 300).
+ *   - ANTES de chamar a IA, conta as requisições dessas ações da empresa do
  *     token no dia (fuso de Brasília; sem empresa → as do próprio usuário).
- *     Chegou na cota → 429 { codigo:"COTA_IA", cota, usadas }. Cota = saas_config
- *     'ia_cota_edital_dia' (inteiro ≥ 1; ausente/inválido → 400). Super admin
- *     é isento. Contagem "confere e depois age": requisições em paralelo
- *     podem passar a cota em poucas unidades.
+ *     Chegou na cota → 429 { codigo:"COTA_IA", cota, usadas }. Cota = inteiro
+ *     ≥ 1 na chave do saas_config (ausente/inválido → o padrão), ajustável no
+ *     SaaS Admin → Integrações. Super admin é isento. Contagem "confere e
+ *     depois age": requisições em paralelo podem passar a cota em poucas
+ *     unidades.
  *   - Falha ao ler/contar (ex.: tabela ainda não criada) libera a ação; falha
  *     ao gravar vai só para o log — nunca derruba a ação.
  *
@@ -78,9 +83,11 @@ import { lerDocumentoFinanceiro } from "./financeiro-ler.ts";
 import {
   contabilizar,
   ehAcaoEdital,
+  ehAcaoGeral,
   novoMedidor,
   registrarUso,
   verificarCotaEdital,
+  verificarCotaGeral,
 } from "./ia-uso.ts";
 
 interface Body {
@@ -265,6 +272,18 @@ Deno.serve(
     const medidor = novoMedidor();
 
     try {
+      // cota geral (300/dia por empresa) das 4 ações abaixo; o edital tem a dele
+      if (ehAcaoGeral(body.acao)) {
+        const estouro = await verificarCotaGeral(admin, usuario);
+        if (estouro) {
+          return fail(
+            `Limite diário de uso da IA atingido para esta empresa (${estouro.usadas} de ${estouro.cota} chamadas hoje) — tente amanhã ou fale com o suporte do SIGO.`,
+            429,
+            { codigo: "COTA_IA", cota: estouro.cota, usadas: estouro.usadas }
+          );
+        }
+      }
+
       if (body.acao === "llm") {
         if (!body.prompt) return fail("prompt é obrigatório", 400);
         const r = await chamarIA({

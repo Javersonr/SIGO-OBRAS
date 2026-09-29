@@ -4,9 +4,13 @@
  * Só SUPER ADMIN. Ações:
  *   { acao: "status" }
  *        → { success, openai: { configurada, final, origem, modelo },
- *            gemini: { configurada, final, origem, modelo, modelo_forte } }
+ *            gemini: { configurada, final, origem, modelo, modelo_forte },
+ *            cotas: { edital_dia, geral_dia } }   (limites diários de IA por
+ *            empresa, valores efetivos: sem chave ou inválida = 400 e 300)
  *   { acao: "definir", chave_openai?, modelo?, chave_gemini?, gemini_modelo?,
- *     gemini_modelo_forte? } → { success }   (validação em regras.ts)
+ *     gemini_modelo_forte?, cota_edital_dia?, cota_geral_dia? } → { success }
+ *        (validação em regras.ts; cotas = inteiro de 1 a 100000, gravadas em
+ *        saas_config ia_cota_edital_dia / ia_cota_geral_dia)
  *   { acao: "testar_gemini" } → { success, gemini_teste: { ok, mensagem } }
  *        (GET do modelo padrão com a chave em uso — env ou painel —, 10 s)
  *   { acao: "whatsapp_status" | "whatsapp_qr" | "whatsapp_desconectar" }
@@ -22,7 +26,13 @@ import { evolutionApi, CanalNaoConfiguradoError } from "../_shared/whatsapp-envi
 import { testarChaveGemini } from "../_shared/gemini.ts";
 import { lerConfigIA } from "../_shared/ia.ts";
 import { CHAVES_CONFIG_IA } from "../_shared/ia-nucleo.ts";
-import { statusGemini, validarDefinir, type CorpoDefinir } from "./regras.ts";
+import {
+  CHAVES_COTA,
+  statusCotas,
+  statusGemini,
+  validarDefinir,
+  type CorpoDefinir,
+} from "./regras.ts";
 
 async function estadoWhatsApp() {
   const { status, json } = await evolutionApi("/instance/fetchInstances?instanceName={i}");
@@ -107,7 +117,7 @@ Deno.serve(
       const { data } = await supabase
         .from("saas_config")
         .select("chave, valor")
-        .in("chave", CHAVES_CONFIG_IA);
+        .in("chave", [...CHAVES_CONFIG_IA, ...CHAVES_COTA]);
       const linhas = data ?? [];
       const mapa = new Map(linhas.map((r) => [r.chave, r.valor]));
       const chave = Deno.env.get("OPENAI_API_KEY") || mapa.get("openai_api_key") || "";
@@ -119,6 +129,7 @@ Deno.serve(
           modelo: mapa.get("openai_modelo") || "gpt-4o-mini",
         },
         gemini: statusGemini(linhas, { GEMINI_API_KEY: Deno.env.get("GEMINI_API_KEY") }),
+        cotas: statusCotas(linhas),
       });
     }
 

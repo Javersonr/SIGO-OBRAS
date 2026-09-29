@@ -1,7 +1,13 @@
 // Roda com Node 23.6+ (type stripping):  node --test supabase/functions/saas-config/regras.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MODELOS_OPENAI, statusGemini, validarDefinir } from "./regras.ts";
+import {
+  CHAVES_COTA,
+  MODELOS_OPENAI,
+  statusCotas,
+  statusGemini,
+  validarDefinir,
+} from "./regras.ts";
 
 const CHAVE_GEMINI = "AIzaSyTESTE0000000000000000000000001234";
 
@@ -71,6 +77,53 @@ test("definir: OpenAI mantém as regras de hoje", () => {
   });
 });
 
+test("definir: cotas diárias de IA, inteiro de 1 a 100000, gravadas como texto", () => {
+  assert.deepEqual(validarDefinir({ cota_edital_dia: 1, cota_geral_dia: 100000 }), {
+    ok: true,
+    linhas: [
+      { chave: "ia_cota_edital_dia", valor: "1" },
+      { chave: "ia_cota_geral_dia", valor: "100000" },
+    ],
+  });
+  // as duas são opcionais: quem não veio não é mexido
+  assert.deepEqual(validarDefinir({ cota_geral_dia: 250 }), {
+    ok: true,
+    linhas: [{ chave: "ia_cota_geral_dia", valor: "250" }],
+  });
+  assert.deepEqual(validarDefinir({ cota_edital_dia: 400 }), {
+    ok: true,
+    linhas: [{ chave: "ia_cota_edital_dia", valor: "400" }],
+  });
+  // junto com outros campos
+  assert.deepEqual(validarDefinir({ gemini_modelo: "gemini-3.8-flash", cota_geral_dia: 300 }), {
+    ok: true,
+    linhas: [
+      { chave: "gemini_modelo", valor: "gemini-3.8-flash" },
+      { chave: "ia_cota_geral_dia", valor: "300" },
+    ],
+  });
+});
+
+test("definir: cota fora de 1..100000, fracionada ou que não é número é recusada", () => {
+  const erroEdital =
+    "Limite diário de leitura de editais inválido (informe um número inteiro de 1 a 100000)";
+  const erroGeral =
+    "Limite diário das demais ações de IA inválido (informe um número inteiro de 1 a 100000)";
+  for (const ruim of [0, 100001, 12.5, -3, "abc", "", "50", null, NaN, Infinity, true, [10], {}]) {
+    assert.deepEqual(validarDefinir({ cota_edital_dia: ruim }), { ok: false, erro: erroEdital });
+    assert.deepEqual(validarDefinir({ cota_geral_dia: ruim }), { ok: false, erro: erroGeral });
+  }
+  // uma inválida recusa o pedido inteiro (nada é gravado), mesmo com a outra boa
+  assert.deepEqual(validarDefinir({ cota_edital_dia: 400, cota_geral_dia: 0 }), {
+    ok: false,
+    erro: erroGeral,
+  });
+  assert.deepEqual(validarDefinir({ chave_gemini: CHAVE_GEMINI, cota_edital_dia: 100001 }), {
+    ok: false,
+    erro: erroEdital,
+  });
+});
+
 test("definir: tudo junto sai na ordem; corpo vazio é recusado", () => {
   const r = validarDefinir({
     chave_openai: "sk-teste000000000000000000",
@@ -78,6 +131,8 @@ test("definir: tudo junto sai na ordem; corpo vazio é recusado", () => {
     chave_gemini: CHAVE_GEMINI,
     gemini_modelo: "gemini-3.1-flash-lite",
     gemini_modelo_forte: "gemini-3.8-flash",
+    cota_edital_dia: 500,
+    cota_geral_dia: 200,
   });
   assert.equal(r.ok, true);
   assert.deepEqual(r.ok && r.linhas.map((l) => l.chave), [
@@ -86,6 +141,8 @@ test("definir: tudo junto sai na ordem; corpo vazio é recusado", () => {
     "gemini_api_key",
     "gemini_modelo",
     "gemini_modelo_forte",
+    "ia_cota_edital_dia",
+    "ia_cota_geral_dia",
   ]);
   assert.deepEqual(validarDefinir({}), { ok: false, erro: "Nada para definir" });
 });
@@ -132,5 +189,38 @@ test("statusGemini: painel, secret, não configurada e modelo fora da lista; nun
       modelo: "gemini-3.5-flash-lite",
       modelo_forte: "gemini-3.8-flash",
     }
+  );
+});
+
+test("statusCotas: valores efetivos; sem chave ou inválida valem os padrões 400 e 300", () => {
+  assert.deepEqual([...CHAVES_COTA], ["ia_cota_edital_dia", "ia_cota_geral_dia"]);
+  assert.deepEqual(statusCotas([]), { edital_dia: 400, geral_dia: 300 });
+  assert.deepEqual(
+    statusCotas([
+      { chave: "ia_cota_edital_dia", valor: "50" },
+      { chave: "ia_cota_geral_dia", valor: " 1000 " },
+    ]),
+    { edital_dia: 50, geral_dia: 1000 }
+  );
+  // só uma configurada: a outra fica no padrão
+  assert.deepEqual(statusCotas([{ chave: "ia_cota_geral_dia", valor: "120" }]), {
+    edital_dia: 400,
+    geral_dia: 120,
+  });
+  // inválida (0, texto, decimal, vazia) → padrão; outras chaves são ignoradas
+  assert.deepEqual(
+    statusCotas([
+      { chave: "ia_cota_edital_dia", valor: "0" },
+      { chave: "ia_cota_geral_dia", valor: "abc" },
+      { chave: "gemini_modelo", valor: "gemini-3.8-flash" },
+    ]),
+    { edital_dia: 400, geral_dia: 300 }
+  );
+  assert.deepEqual(
+    statusCotas([
+      { chave: "ia_cota_edital_dia", valor: "2.5" },
+      { chave: "ia_cota_geral_dia", valor: null },
+    ]),
+    { edital_dia: 400, geral_dia: 300 }
   );
 });

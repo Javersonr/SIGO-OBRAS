@@ -4,7 +4,11 @@
  *
  * As listas repetem MODELOS_GEMINI_PADRAO / MODELOS_GEMINI_FORTE do servidor
  * (supabase/functions/_shared/gemini-regras.ts): quem valida é a função
- * saas-config; aqui é só o que aparece no seletor.
+ * saas-config; aqui é só o que aparece no seletor. O mesmo vale para os
+ * limites diários de IA por empresa (card "Limites diários de IA por
+ * empresa"): os padrões e o intervalo repetem os de ia-processar/ia-uso.ts e
+ * saas-config/regras.ts; o servidor é quem manda (o status devolve os
+ * valores efetivos).
  */
 
 export const GEMINI_MODELO_PADRAO = "gemini-3.5-flash-lite";
@@ -48,4 +52,24 @@ export function resultadoTesteGemini(data) {
     return { ok: false, mensagem: "Resposta inesperada do servidor" };
   }
   return { ok: t.ok === true, mensagem: t.mensagem };
+}
+
+/** padrões de exibição quando o servidor ainda não mandou as cotas (iguais aos dele) */
+export const COTA_EDITAL_PADRAO = 400;
+export const COTA_GERAL_PADRAO = 300;
+const COTA_MINIMA = 1;
+const COTA_MAXIMA = 100000;
+
+/**
+ * Campo de limite diário → { ok: true, valor } (inteiro de 1 a 100000, com
+ * espaços nas pontas) ou { ok: false, erro } com a mensagem para o usuário.
+ */
+export function validarCota(texto) {
+  const t = String(texto ?? "").trim();
+  if (!/^-?\d+$/.test(t)) return { ok: false, erro: "Informe um número inteiro" };
+  const valor = Number(t);
+  if (valor < COTA_MINIMA || valor > COTA_MAXIMA) {
+    return { ok: false, erro: `Informe um valor de ${COTA_MINIMA} a ${COTA_MAXIMA}` };
+  }
+  return { ok: true, valor };
 }

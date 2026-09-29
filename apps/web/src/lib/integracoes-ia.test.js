@@ -4,8 +4,11 @@ import {
   GEMINI_MODELO_PADRAO,
   OPCOES_GEMINI_FORTE,
   OPCOES_GEMINI_PADRAO,
+  COTA_EDITAL_PADRAO,
+  COTA_GERAL_PADRAO,
   payloadGemini,
   resultadoTesteGemini,
+  validarCota,
 } from "./integracoes-ia";
 
 const STATUS = {
@@ -133,5 +136,47 @@ describe("resultadoTesteGemini (botão Testar)", () => {
       ok: false,
       mensagem: "Resposta inesperada do servidor",
     });
+  });
+});
+
+describe("validarCota (limites diários de IA por empresa)", () => {
+  it("aceita inteiro de 1 a 100000, com espaços", () => {
+    expect(validarCota("1")).toEqual({ ok: true, valor: 1 });
+    expect(validarCota("100000")).toEqual({ ok: true, valor: 100000 });
+    expect(validarCota("  300 ")).toEqual({ ok: true, valor: 300 });
+    expect(validarCota("007")).toEqual({ ok: true, valor: 7 });
+    // o campo pode entregar número em vez de texto
+    expect(validarCota(250)).toEqual({ ok: true, valor: 250 });
+  });
+
+  it("vazio ou que não é inteiro pede um número inteiro", () => {
+    const erro = { ok: false, erro: "Informe um número inteiro" };
+    for (const t of [
+      "",
+      "   ",
+      null,
+      undefined,
+      "abc",
+      "12.5",
+      "12,5",
+      "1e3",
+      "0x10",
+      "3 4",
+      12.5,
+    ]) {
+      expect(validarCota(t)).toEqual(erro);
+    }
+  });
+
+  it("fora de 1 a 100000 diz o intervalo", () => {
+    const erro = { ok: false, erro: "Informe um valor de 1 a 100000" };
+    for (const t of ["0", "100001", "-5", "99999999999999999999", 0, 100001]) {
+      expect(validarCota(t)).toEqual(erro);
+    }
+  });
+
+  it("os padrões de exibição são os do servidor (edital 400, demais 300)", () => {
+    expect(COTA_EDITAL_PADRAO).toBe(400);
+    expect(COTA_GERAL_PADRAO).toBe(300);
   });
 });

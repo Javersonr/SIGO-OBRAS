@@ -3,14 +3,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  ACOES_EDITAL,
+  ACOES_GERAIS,
   COTA_EDITAL_PADRAO,
+  COTA_GERAL_PADRAO,
   contabilizar,
   ehAcaoEdital,
+  ehAcaoGeral,
   inicioDoDiaBR,
   lerCota,
   novoMedidor,
   registrarUso,
   verificarCotaEdital,
+  verificarCotaGeral,
 } from "./ia-uso.ts";
 
 /** cliente falso: registra filtros/inserts e devolve o que o teste mandar */
@@ -59,6 +64,31 @@ test("ehAcaoEdital só para as 3 ações de edital", () => {
   assert.equal(ehAcaoEdital("edital_atende"), true);
   assert.equal(ehAcaoEdital("edital_xyz"), false);
   assert.equal(ehAcaoEdital("llm"), false);
+});
+
+test("ehAcaoGeral só para as 4 ações da cota geral", () => {
+  for (const acao of ["llm", "extrair_documentos", "validar_exames_pcmso"]) {
+    assert.equal(ehAcaoGeral(acao), true);
+  }
+  assert.equal(ehAcaoGeral("financeiro_ler_documento"), true);
+  assert.deepEqual(
+    [...ACOES_GERAIS],
+    ["llm", "extrair_documentos", "validar_exames_pcmso", "financeiro_ler_documento"]
+  );
+  // edital tem cota própria: nunca entra na geral
+  assert.equal(ehAcaoGeral("edital_consolidar"), false);
+  assert.equal(ehAcaoGeral("edital_atende"), false);
+  assert.equal(ehAcaoGeral("xyz"), false);
+  assert.equal(ehAcaoGeral(""), false);
+  assert.equal(ehAcaoGeral(undefined), false);
+  assert.equal(ehAcaoGeral(null), false);
+  assert.equal(ehAcaoGeral(42), false);
+  assert.equal(ehAcaoGeral(["llm"]), false);
+  // as duas listas nunca se sobrepõem (uma requisição conta em uma cota só)
+  assert.equal(
+    ACOES_EDITAL.some((a) => (ACOES_GERAIS as readonly string[]).includes(a)),
+    false
+  );
 });
 
 test("contabilizar soma tokens/modelos/custo e ignora 'sem chave'", () => {
@@ -157,6 +187,16 @@ test("lerCota: inteiro ≥ 1, senão o padrão", () => {
   assert.equal(lerCota("2.5"), COTA_EDITAL_PADRAO);
 });
 
+test("lerCota: o padrão é o 2º parâmetro (edital 400, geral 300)", () => {
+  assert.equal(COTA_EDITAL_PADRAO, 400);
+  assert.equal(COTA_GERAL_PADRAO, 300);
+  assert.equal(lerCota(undefined, COTA_GERAL_PADRAO), 300);
+  assert.equal(lerCota("0", COTA_GERAL_PADRAO), 300);
+  assert.equal(lerCota("abc", 7), 7);
+  assert.equal(lerCota(" 25 ", COTA_GERAL_PADRAO), 25);
+  assert.equal(lerCota(80, COTA_GERAL_PADRAO), 80);
+});
+
 test("cota: abaixo libera, chegou recusa, super admin isento, erro libera", async () => {
   const agora = new Date("2026-09-24T15:00:00Z");
   let f = clienteFalso({ usadas: 399 });
@@ -201,6 +241,101 @@ test("cota: abaixo libera, chegou recusa, super admin isento, erro libera", asyn
     semEmp.ops.find(([o]) => o === "eq"),
     ["eq", ["usuario_email", "a@b.com"]]
   );
+});
+
+test("cota do edital: lê ia_cota_edital_dia e conta só as ações edital_*", async () => {
+  const agora = new Date("2026-09-24T15:00:00Z");
+  const f = clienteFalso({ usadas: 5, cota: "5" });
+  assert.deepEqual(await verificarCotaEdital(f.cliente, usuario, agora), { cota: 5, usadas: 5 });
+  const cfg = f.chamadas.find((c) => c.tabela === "saas_config")!;
+  assert.deepEqual(
+    cfg.ops.find(([o]) => o === "eq"),
+    ["eq", ["chave", "ia_cota_edital_dia"]]
+  );
+  const cont = f.chamadas.find((c) => c.tabela === "ia_uso")!;
+  assert.deepEqual(
+    cont.ops.find(([o]) => o === "in"),
+    ["in", ["acao", [...ACOES_EDITAL]]]
+  );
+  // cota inválida no banco → padrão do edital (400), nunca o da geral (300)
+  const g = clienteFalso({ usadas: 350, cota: "abc" });
+  assert.equal(await verificarCotaEdital(g.cliente, usuario, agora), null);
+});
+
+test("cota geral: padrão 300 quando não há chave; chegou recusa, abaixo libera", async () => {
+  const agora = new Date("2026-09-24T15:00:00Z");
+  let f = clienteFalso({ usadas: 299 });
+  assert.equal(await verificarCotaGeral(f.cliente, usuario, agora), null);
+  f = clienteFalso({ usadas: 300 });
+  assert.deepEqual(await verificarCotaGeral(f.cliente, usuario, agora), {
+    cota: COTA_GERAL_PADRAO,
+    usadas: 300,
+  });
+  f = clienteFalso({ usadas: 1_000 });
+  assert.deepEqual(await verificarCotaGeral(f.cliente, usuario, agora), {
+    cota: 300,
+    usadas: 1_000,
+  });
+  // chave presente mas inválida → também o padrão da geral
+  f = clienteFalso({ usadas: 300, cota: "0" });
+  assert.deepEqual(await verificarCotaGeral(f.cliente, usuario, agora), { cota: 300, usadas: 300 });
+});
+
+test("cota geral: lê ia_cota_geral_dia do saas_config", async () => {
+  const agora = new Date("2026-09-24T15:00:00Z");
+  let f = clienteFalso({ usadas: 10, cota: "10" });
+  assert.deepEqual(await verificarCotaGeral(f.cliente, usuario, agora), { cota: 10, usadas: 10 });
+  const cfg = f.chamadas.find((c) => c.tabela === "saas_config")!;
+  assert.deepEqual(
+    cfg.ops.find(([o]) => o === "eq"),
+    ["eq", ["chave", "ia_cota_geral_dia"]]
+  );
+  // cota maior que o padrão vale (a do painel manda)
+  f = clienteFalso({ usadas: 300, cota: "500" });
+  assert.equal(await verificarCotaGeral(f.cliente, usuario, agora), null);
+  f = clienteFalso({ usadas: 500, cota: "500" });
+  assert.deepEqual(await verificarCotaGeral(f.cliente, usuario, agora), { cota: 500, usadas: 500 });
+});
+
+test("cota geral: conta só as ações gerais da empresa, hoje (fuso de Brasília)", async () => {
+  const agora = new Date("2026-09-24T15:00:00Z");
+  let f = clienteFalso({ usadas: 0 });
+  await verificarCotaGeral(f.cliente, usuario, agora);
+  const cont = f.chamadas.find((c) => c.tabela === "ia_uso")!;
+  assert.deepEqual(
+    cont.ops.find(([o]) => o === "in"),
+    ["in", ["acao", [...ACOES_GERAIS]]]
+  );
+  assert.deepEqual(
+    cont.ops.find(([o]) => o === "eq"),
+    ["eq", ["empresa_id", "emp-1"]]
+  );
+  assert.deepEqual(
+    cont.ops.find(([o]) => o === "gte"),
+    ["gte", ["criado_em", "2026-09-24T00:00:00-03:00"]]
+  );
+  // sem empresa: as do próprio usuário (como a cota do edital)
+  f = clienteFalso({ usadas: 0 });
+  await verificarCotaGeral(f.cliente, { ...usuario, empresa_id: null }, agora);
+  const semEmp = f.chamadas.find((c) => c.tabela === "ia_uso")!;
+  assert.deepEqual(
+    semEmp.ops.find(([o]) => o === "is"),
+    ["is", ["empresa_id", null]]
+  );
+  assert.deepEqual(
+    semEmp.ops.find(([o]) => o === "eq"),
+    ["eq", ["usuario_email", "a@b.com"]]
+  );
+});
+
+test("cota geral: super admin isento (nem consulta) e erro ao contar libera", async () => {
+  let f = clienteFalso({ usadas: 10_000 });
+  assert.equal(await verificarCotaGeral(f.cliente, { ...usuario, is_super_admin: true }), null);
+  assert.equal(f.chamadas.length, 0);
+  f = clienteFalso({ erroContagem: 'relation "public.ia_uso" does not exist' });
+  assert.equal(await verificarCotaGeral(f.cliente, usuario), null);
+  f = clienteFalso({ lanca: true });
+  assert.equal(await verificarCotaGeral(f.cliente, usuario), null);
 });
 
 test("registrarUso: grava a soma; sem chamada não grava; erro não propaga", async () => {

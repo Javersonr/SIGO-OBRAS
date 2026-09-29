@@ -1,15 +1,22 @@
 /**
- * ia-uso — consumo da IA e cota diária das ações edital_* (tabela public.ia_uso,
+ * ia-uso — consumo da IA e cotas diárias por empresa (tabela public.ia_uso,
  * migrações 0114_ia_uso_cota.sql e 0123_ia_uso_provedor_custo.sql).
  *
  *   - 1 linha por requisição que chegou a chamar a IA (Gemini e/ou OpenAI),
  *     com os tokens de TODAS as chamadas da requisição somados (fallback de
  *     provedor, escalonamento etc.), o(s) provedor(es), o(s) modelo(s) e o
  *     custo estimado em US$ (ia-precos.ts; null se nenhum modelo tem preço);
- *   - ANTES de chamar a IA nas ações edital_*: linhas edital_* da empresa no
- *     dia (fuso de Brasília) ≥ cota → a ação é recusada (429 COTA_IA). Cota =
- *     saas_config 'ia_cota_edital_dia' (inteiro ≥ 1) ou COTA_EDITAL_PADRAO.
- *     Super admin isento (mas o uso dele também é gravado).
+ *   - DUAS cotas por dia (fuso de Brasília), cada uma contando só as suas ações
+ *     (uma requisição conta numa cota só):
+ *       · edital_*  → saas_config 'ia_cota_edital_dia', padrão COTA_EDITAL_PADRAO
+ *         (400): verificarCotaEdital;
+ *       · llm, extrair_documentos, validar_exames_pcmso e
+ *         financeiro_ler_documento → saas_config 'ia_cota_geral_dia', padrão
+ *         COTA_GERAL_PADRAO (300): verificarCotaGeral.
+ *     ANTES de chamar a IA: linhas da empresa no dia ≥ cota → a ação é
+ *     recusada (429 COTA_IA). Cota = inteiro ≥ 1 ou o padrão. Super admin
+ *     isento (mas o uso dele também é gravado). As duas usam a mesma
+ *     verificarCota (contar, ler a cota, isentar e liberar em caso de erro).
  *   - Falha ao ler a cota/contar (ex.: migração ainda não aplicada) libera a
  *     ação; falha ao gravar só vai para o log — nunca derruba a ação.
  *
@@ -25,6 +32,19 @@ export type AcaoEdital = (typeof ACOES_EDITAL)[number];
 
 export const ehAcaoEdital = (acao: unknown): acao is AcaoEdital =>
   typeof acao === "string" && (ACOES_EDITAL as readonly string[]).includes(acao);
+
+export const COTA_GERAL_PADRAO = 300;
+export const CHAVE_COTA_GERAL = "ia_cota_geral_dia";
+/** as demais ações de IA da ia-processar (o edital tem cota própria) */
+export const ACOES_GERAIS = [
+  "llm",
+  "extrair_documentos",
+  "validar_exames_pcmso",
+  "financeiro_ler_documento",
+] as const;
+
+export const ehAcaoGeral = (acao: unknown): boolean =>
+  typeof acao === "string" && (ACOES_GERAIS as readonly string[]).includes(acao);
 
 export interface UsuarioUso {
   email: string;
@@ -110,9 +130,9 @@ export function inicioDoDiaBR(agora = new Date()): string {
 }
 
 /** valor de saas_config → cota (inteiro ≥ 1); ausente/inválido → padrão */
-export function lerCota(valor: unknown): number {
+export function lerCota(valor: unknown, padrao = COTA_EDITAL_PADRAO): number {
   const n = typeof valor === "number" ? valor : Number(String(valor ?? "").trim());
-  return Number.isInteger(n) && n >= 1 ? n : COTA_EDITAL_PADRAO;
+  return Number.isInteger(n) && n >= 1 ? n : padrao;
 }
 
 // supabase-js com service role (tipado solto de propósito: sem imports aqui)
@@ -127,34 +147,72 @@ function doDono(q: any, u: UsuarioUso) {
     : q.is("empresa_id", null).eq("usuario_email", u.email);
 }
 
+/** o que muda entre as cotas: a chave no saas_config, o padrão e as ações contadas */
+interface RegraCota {
+  chave: string;
+  padrao: number;
+  acoes: readonly string[];
+}
+
+type EstouroCota = { cota: number; usadas: number } | null;
+
 /**
  * null = pode seguir; { cota, usadas } = passou da cota do dia.
  * Erro de leitura → libera (a cota é freio de custo, não pode parar o SaaS).
  */
-export async function verificarCotaEdital(
+async function verificarCota(
   admin: Cliente,
   u: UsuarioUso,
-  agora = new Date()
-): Promise<{ cota: number; usadas: number } | null> {
+  regra: RegraCota,
+  agora: Date
+): Promise<EstouroCota> {
   if (u.is_super_admin) return null;
   try {
     const [cfg, cont] = await Promise.all([
-      admin.from("saas_config").select("valor").eq("chave", CHAVE_COTA_EDITAL).maybeSingle(),
+      admin.from("saas_config").select("valor").eq("chave", regra.chave).maybeSingle(),
       doDono(admin.from("ia_uso").select("id", { count: "exact", head: true }), u)
-        .in("acao", [...ACOES_EDITAL])
+        .in("acao", [...regra.acoes])
         .gte("criado_em", inicioDoDiaBR(agora)),
     ]);
     if (cont?.error) {
       console.warn("[ia-processar] cota: falha ao contar ia_uso —", cont.error.message);
       return null;
     }
-    const cota = lerCota(cfg?.error ? null : cfg?.data?.valor);
+    const cota = lerCota(cfg?.error ? null : cfg?.data?.valor, regra.padrao);
     const usadas = Number(cont?.count) || 0;
     return usadas >= cota ? { cota, usadas } : null;
   } catch (e) {
     console.warn("[ia-processar] cota: erro —", (e as Error)?.message);
     return null;
   }
+}
+
+/** cota diária das ações edital_* (saas_config 'ia_cota_edital_dia', padrão 400) */
+export function verificarCotaEdital(
+  admin: Cliente,
+  u: UsuarioUso,
+  agora = new Date()
+): Promise<EstouroCota> {
+  return verificarCota(
+    admin,
+    u,
+    { chave: CHAVE_COTA_EDITAL, padrao: COTA_EDITAL_PADRAO, acoes: ACOES_EDITAL },
+    agora
+  );
+}
+
+/** cota diária das demais ações de IA (saas_config 'ia_cota_geral_dia', padrão 300) */
+export function verificarCotaGeral(
+  admin: Cliente,
+  u: UsuarioUso,
+  agora = new Date()
+): Promise<EstouroCota> {
+  return verificarCota(
+    admin,
+    u,
+    { chave: CHAVE_COTA_GERAL, padrao: COTA_GERAL_PADRAO, acoes: ACOES_GERAIS },
+    agora
+  );
 }
 
 /** grava o consumo da requisição (só se chamou a IA); erro vai só para o log */

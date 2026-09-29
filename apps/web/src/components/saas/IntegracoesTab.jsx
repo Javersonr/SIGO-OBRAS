@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   Bot,
   CheckCircle2,
+  Gauge,
   Loader2,
   PlugZap,
   RefreshCw,
@@ -26,12 +27,15 @@ import {
 import { toast } from "sonner";
 import WhatsAppConexaoCard from "./WhatsAppConexaoCard";
 import {
+  COTA_EDITAL_PADRAO,
+  COTA_GERAL_PADRAO,
   GEMINI_MODELO_FORTE,
   GEMINI_MODELO_PADRAO,
   OPCOES_GEMINI_FORTE,
   OPCOES_GEMINI_PADRAO,
   payloadGemini,
   resultadoTesteGemini,
+  validarCota,
 } from "@/lib/integracoes-ia";
 
 /**
@@ -237,14 +241,144 @@ function CardGemini({ status, carregando, onSalvo }) {
 }
 
 /**
+ * Card dos limites diários de IA por empresa: um para a leitura de editais e
+ * outro para as demais ações (documentos, exames, assistentes). Valores
+ * efetivos vêm do status; Salvar valida os dois campos e manda só as cotas.
+ */
+function CardLimitesIA({ cotas, carregando, onSalvo }) {
+  const editalServidor = String(cotas?.edital_dia ?? COTA_EDITAL_PADRAO);
+  const geralServidor = String(cotas?.geral_dia ?? COTA_GERAL_PADRAO);
+  const [edital, setEdital] = useState(editalServidor);
+  const [geral, setGeral] = useState(geralServidor);
+  const [salvando, setSalvando] = useState(false);
+
+  useEffect(() => {
+    setEdital(editalServidor);
+    setGeral(geralServidor);
+  }, [editalServidor, geralServidor]);
+
+  const vEdital = validarCota(edital);
+  const vGeral = validarCota(geral);
+  const mudou = edital.trim() !== editalServidor || geral.trim() !== geralServidor;
+
+  const salvar = async () => {
+    if (!vEdital.ok || !vGeral.ok) return;
+    setSalvando(true);
+    try {
+      const { data } = await sigo.functions.invoke("saasConfig", {
+        acao: "definir",
+        cota_edital_dia: vEdital.valor,
+        cota_geral_dia: vGeral.valor,
+      });
+      if (data?.success !== false) {
+        toast.success("Limites salvos");
+        onSalvo();
+      } else {
+        toast.error(data?.error || "Erro ao salvar os limites");
+      }
+    } catch (e) {
+      toast.error("Erro ao salvar os limites");
+      console.error(e);
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Gauge className="w-5 h-5 text-amber-600" /> Limites diários de IA por empresa
+        </CardTitle>
+        <CardDescription>
+          Máximo de chamadas de IA que cada empresa pode fazer por dia (o dia vira à meia-noite de
+          Brasília). Passou do limite, a ação é recusada até o dia seguinte. O super admin não tem
+          limite.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {carregando ? (
+          <div className="flex items-center gap-2 text-slate-500 py-4">
+            <Loader2 className="w-4 h-4 animate-spin" /> Carregando...
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="cota-edital">Leitura de editais (por dia)</Label>
+                <Input
+                  id="cota-edital"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={100000}
+                  step={1}
+                  value={edital}
+                  onChange={(e) => setEdital(e.target.value)}
+                  className="mt-1"
+                />
+                {vEdital.ok ? (
+                  <p className="text-xs text-slate-400 mt-1">
+                    Leitura e "Atende?" dos editais. Padrão {COTA_EDITAL_PADRAO}.
+                  </p>
+                ) : (
+                  <p className="text-xs text-red-600 mt-1">{vEdital.erro}</p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="cota-geral">Demais ações de IA (por dia)</Label>
+                <Input
+                  id="cota-geral"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={100000}
+                  step={1}
+                  value={geral}
+                  onChange={(e) => setGeral(e.target.value)}
+                  className="mt-1"
+                />
+                {vGeral.ok ? (
+                  <p className="text-xs text-slate-400 mt-1">
+                    Ler documento no Financeiro, ficha do funcionário, exames (PCMSO) e assistentes.
+                    Padrão {COTA_GERAL_PADRAO}.
+                  </p>
+                ) : (
+                  <p className="text-xs text-red-600 mt-1">{vGeral.erro}</p>
+                )}
+              </div>
+            </div>
+
+            <Button
+              onClick={salvar}
+              disabled={salvando || !mudou || !vEdital.ok || !vGeral.ok}
+              className="bg-slate-900 hover:bg-slate-800"
+            >
+              {salvando ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4 mr-2" />
+              )}
+              Salvar
+            </Button>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
  * Integrações do SaaS (só Sinergia Digital / super admin).
  * Gerencia as chaves globais de IA usadas pelo ia-processar — Gemini (padrão)
- * e OpenAI (reserva) — e a conexão do WhatsApp dos envios automáticos.
+ * e OpenAI (reserva) —, os limites diários de IA por empresa e a conexão do
+ * WhatsApp dos envios automáticos.
  * As chaves nunca voltam do servidor — só status + últimos 4 dígitos.
  */
 export default function IntegracoesTab() {
   const [status, setStatus] = useState(null);
   const [statusGemini, setStatusGemini] = useState(null);
+  const [cotas, setCotas] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [novaChave, setNovaChave] = useState("");
@@ -258,6 +392,7 @@ export default function IntegracoesTab() {
         setStatus(data.openai);
         setModelo(data.openai?.modelo || "gpt-4o-mini");
         setStatusGemini(data.gemini || null);
+        setCotas(data.cotas || null);
       } else {
         toast.error(data?.error || "Erro ao carregar status");
       }
@@ -377,6 +512,8 @@ export default function IntegracoesTab() {
           )}
         </CardContent>
       </Card>
+
+      <CardLimitesIA cotas={cotas} carregando={carregando} onSalvo={carregar} />
 
       <WhatsAppConexaoCard />
     </div>
