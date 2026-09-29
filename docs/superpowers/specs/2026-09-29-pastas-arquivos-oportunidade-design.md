@@ -25,7 +25,7 @@ A aba Arquivos é uma lista plana, em ordem de envio. Numa licitação ficam 40 
 
 ## 3. Dados
 
-Migração `0125_pastas_arquivos.sql`, só aditiva e idempotente:
+Migração `0130_pastas_arquivos.sql`, só aditiva e idempotente:
 
 ```sql
 alter table public.arquivo_oportunidade add column if not exists pasta text;
@@ -99,7 +99,7 @@ A atualização roda depois da migração, filtrada pelo id da oportunidade e da
 1. **Testes:**
    - Vitest para `pastas-arquivo.js`: regra de pasta, ordem, deduplicação, validação de nome e agrupamento com pasta vazia;
    - depois `npm run lint` e `npm run build`.
-2. **Migração:** `supabase db query --linked -f supabase/migrations/0125_pastas_arquivos.sql`, que é aditiva.
+2. **Migração:** `supabase db query --linked -f supabase/migrations/0130_pastas_arquivos.sql`, que é aditiva.
 3. **Publicação:** commit e push em `master` publicam o site.
 4. **Dados de Itatinga:** SQL da §6.
 

@@ -42,7 +42,7 @@ Cada arquivo tem "Mover para…" e o envio já escolhe a pasta.
 | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `apps/web/src/lib/pastas-arquivo.js` (novo)                                                     | Regra pura: pastas padrão, pasta de cada arquivo, lista ordenada, agrupamento, validação de nome e leitura do jsonb |
 | `apps/web/src/lib/pastas-arquivo.test.js` (novo)                                                | Testes Vitest da regra                                                                                              |
-| `supabase/migrations/0125_pastas_arquivos.sql` (novo)                                           | Colunas `pasta` e `pastas_arquivos`                                                                                 |
+| `supabase/migrations/0130_pastas_arquivos.sql` (novo)                                           | Colunas `pasta` e `pastas_arquivos`                                                                                 |
 | `apps/web/src/components/oportunidades/ArquivosPastas.jsx` (novo)                               | Pastas recolhíveis, "Nova pasta" e apagar pasta extra vazia; a linha do arquivo vem do pai                          |
 | `apps/web/src/components/oportunidades/OportunidadeDetalhe.jsx` (alterar ~l.1416-1603, 315-335) | Usa `ArquivosPastas`, seletor de pasta no envio, "Mover para…", criar e apagar pasta                                |
 | `apps/web/src/pages/Oportunidades.jsx` (alterar `handleUploadFile`, ~l.823-864)                 | Recebe a pasta e grava `pasta` no `ArquivoOportunidade.create`                                                      |
@@ -319,7 +319,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Arquivos:**
 
-- Criar: `supabase/migrations/0125_pastas_arquivos.sql`. Antes de criar, rode `ls supabase/migrations | tail -3`; se a `0125` já existir, use o próximo número livre.
+- Criar: `supabase/migrations/0130_pastas_arquivos.sql`. Antes de criar, rode `ls supabase/migrations | tail -3`; se a `0125` já existir, use o próximo número livre.
 
 **Interfaces:**
 
@@ -329,7 +329,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ```sql
 -- ============================================================================
--- 0125_pastas_arquivos.sql — pastas na aba Arquivos da oportunidade
+-- 0130_pastas_arquivos.sql — pastas na aba Arquivos da oportunidade
 --   (spec docs/superpowers/specs/2026-09-29-pastas-arquivos-oportunidade-design.md)
 --
 --   arquivo_oportunidade.pasta      nome da pasta; null = regra do front
@@ -353,13 +353,13 @@ comment on column public.oportunidade.pastas_arquivos is
 
 - [ ] **Passo 2: conferir a sintaxe sem aplicar**
 
-Rodar: `grep -c "add column if not exists" supabase/migrations/0125_pastas_arquivos.sql`
+Rodar: `grep -c "add column if not exists" supabase/migrations/0130_pastas_arquivos.sql`
 Esperado: `2`
 
 - [ ] **Passo 3: commit**
 
 ```bash
-git add supabase/migrations/0125_pastas_arquivos.sql
+git add supabase/migrations/0130_pastas_arquivos.sql
 git commit -m "feat(db): 0125 — colunas de pasta dos arquivos da oportunidade
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -762,7 +762,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - [ ] **Passo 1: aplicar a migração ANTES do push**
 
 ```bash
-cd /c/Users/javer/sigoobras-base && supabase db query --linked -f supabase/migrations/0125_pastas_arquivos.sql
+cd /c/Users/javer/sigoobras-base && supabase db query --linked -f supabase/migrations/0130_pastas_arquivos.sql
 ```
 
 Conferir:
