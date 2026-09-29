@@ -29,6 +29,7 @@ Causa-raiz combinada:
 `licitacoes-triagem`, `config-licitacao`, `vincular-pasta-oportunidade` usam service-role e `--no-verify-jwt`, recebendo `empresa_id` no body sem validar vínculo do usuário → cross-tenant. `vincular-pasta-oportunidade` (`listar_pendentes`) vaza oportunidades de TODAS as empresas. CORS `Access-Control-Allow-Origin: *`.
 
 - **Correção:** validar JWT + `usuario_empresa` ativo, ou derivar `empresa_id` do JWT. Restringir CORS às origens do SaaS.
+- **`vincular-pasta-oportunidade` (set/2026):** o único chamador encontrado era o Agente de Licitações (Cowork), que migrou para o OneDrive (função legada; 0 links do Drive gravados no banco). Publicada DESATIVADA em 25/09/2026 (v6, sem o secret → 503 para todos). Passou a exigir o header `x-agente-secret` = secret `VINCULAR_PASTA_SECRET` (comparação em tempo constante); sem o secret configurado responde 503 (fail closed). `vincular` também só aceita `pasta_url` https.
 
 ### CRÍTICO/ALTA — Autorização só no front + fallback "Admin"
 

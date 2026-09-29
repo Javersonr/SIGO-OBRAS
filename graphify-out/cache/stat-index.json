@@ -1,0 +1,2964 @@
+{
+  "C:\\Users\\javer\\sigoobras-base\\.claude\\settings.json": {
+    "size": 615,
+    "mtime_ns": 1779666341859509200,
+    "word_count": 60,
+    "hash": "704954fdc1c0ca9dc4b7755a8613b1c96d438d1ef4debe51afd6856a5266052f"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\.claude\\skills\\agente-licitacoes\\SKILL.md": {
+    "size": 4136,
+    "mtime_ns": 1780497531670793800,
+    "word_count": 615,
+    "hash": "08fe00d59c44030a47fe28df96b82c1a3aad1f8136c358ce0453fab14614b9de"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\.claude\\skills\\lancamentos-financeiros-sigo\\SKILL.md": {
+    "size": 7205,
+    "mtime_ns": 1780558774172734300,
+    "word_count": 1039,
+    "hash": "331485827cfcf4ba847ded74d3c0fa42deb9ce4c1f907e1f707c2bf1e4677b1b"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\.github\\FUNDING.yml": {
+    "size": 284,
+    "mtime_ns": 1779805238260055100,
+    "word_count": 15,
+    "hash": "61be27c80549621fb65cb462c2795820f5ac46559ad661b7ee2c82d045bcc52e"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\.github\\ISSUE_TEMPLATE\\bug_report.yml": {
+    "size": 2405,
+    "mtime_ns": 1779805138735665600,
+    "word_count": 281,
+    "hash": "bf6f30b61b8d042e1cf51ef1d6dec6889d939fab48f40270e3d110a034f1989a"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\.github\\ISSUE_TEMPLATE\\config.yml": {
+    "size": 520,
+    "mtime_ns": 1779805151465699600,
+    "word_count": 51,
+    "hash": "4b544516da853c5df7e83fb19bf5900b6dc017bd812ee24f299dc5fdb1bb6810"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\.github\\ISSUE_TEMPLATE\\feature_request.yml": {
+    "size": 1693,
+    "mtime_ns": 1779805147854274500,
+    "word_count": 203,
+    "hash": "0304557eca4ef58580941f0d54efc5008b15ea6a657075c15124803b56aa1e56"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\.github\\PULL_REQUEST_TEMPLATE.md": {
+    "size": 1551,
+    "mtime_ns": 1779805126066652000,
+    "word_count": 258,
+    "hash": "38628e834d1b07bf25f31daee5a29507f41c5f6190639525c2a7e17d6bb123a2"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\.github\\dependabot.yml": {
+    "size": 3226,
+    "mtime_ns": 1779805168218082300,
+    "word_count": 231,
+    "hash": "f3e62e94f5afc6332acc4a9a408dc1a657feb1d36d68e470baa950893f9823fd"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\.github\\workflows\\README.md": {
+    "size": 3370,
+    "mtime_ns": 1779805510822312700,
+    "word_count": 362,
+    "hash": "ee1117cd96264a4500abbf157bae527fea86e565b689275e7c8bbcfe4a24fefd"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\.github\\workflows\\ci.yml": {
+    "size": 5822,
+    "mtime_ns": 1779973607121135200,
+    "word_count": 591,
+    "hash": "ac7a8298ac4ecde6d3a31b86ba5ed131bdfb08b3bcbc6ebc6776682841f6f754"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\.github\\workflows\\deploy-hostgator.yml": {
+    "size": 3714,
+    "mtime_ns": 1779973620532286500,
+    "word_count": 391,
+    "hash": "9a482464040c3aed89cbc791acf65b8a81d906c6823ae5f9e3b888a81b12443a"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\.husky\\commit-msg": {
+    "size": 121,
+    "mtime_ns": 1779805072955764300,
+    "word_count": 17,
+    "hash": "60096f9c79eda049808e1c61ea8b2307317512e484e11403bf616e539d241f8a"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\.husky\\pre-commit": {
+    "size": 104,
+    "mtime_ns": 1779805487444181600,
+    "word_count": 15,
+    "hash": "1c58ce17632fcb7e8e11d83bb1f31d6a6994f9e0434860e8f14973a7583c155e"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\.lintstagedrc.json": {
+    "size": 240,
+    "mtime_ns": 1779805071990067600,
+    "word_count": 14,
+    "hash": "5bcac717f7bc028078948bd1810510b3c664f1820dbba4265ca4953fbcaa3306"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\.prettierrc.json": {
+    "size": 786,
+    "mtime_ns": 1779805048152375000,
+    "word_count": 74,
+    "hash": "40de0f2eb40d054b0441d535699b35604a537a2c62f3f87c63ead5b4e14b0cf1"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\CHANGELOG.md": {
+    "size": 2054,
+    "mtime_ns": 1779824716411920400,
+    "word_count": 240,
+    "hash": "4aefa46b14497c99fdcbea20fa5ddcf4cd1516bf82b313d73dd7ecfedf255fcb"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\CONTRIBUTING.md": {
+    "size": 3433,
+    "mtime_ns": 1779825057353839400,
+    "word_count": 461,
+    "hash": "165ed7e7348fba612049ae872fe2741cb6a00a188b68217a15271dad210019c3"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\README.md": {
+    "size": 8760,
+    "mtime_ns": 1779824782505538300,
+    "word_count": 850,
+    "hash": "de7b86c1a1fd1f102cb20cc25b719f7fc605fb099d9b69a3371989a703968bcd"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\SECURITY.md": {
+    "size": 1588,
+    "mtime_ns": 1779805510340231100,
+    "word_count": 216,
+    "hash": "9470f338871418950af8b4d5acae737423985c7bfe86abc537c0fb627f8aaf49"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\README.md": {
+    "size": 2304,
+    "mtime_ns": 1779825380903815800,
+    "word_count": 314,
+    "hash": "e9166f4c89695037119af0b4f34ca2f4e4fd8af9a561b4928b5ebd74c360aec1"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\components.json": {
+    "size": 445,
+    "mtime_ns": 1779834216411677700,
+    "word_count": 38,
+    "hash": "964cd9d3ae0c22c49cbd7ca40707b41af26c6816610e77420b35e502662f850f"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\eslint.config.js": {
+    "size": 1950,
+    "mtime_ns": 1780996584445906500,
+    "word_count": 156
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\index.html": {
+    "size": 639,
+    "mtime_ns": 1779825380974752300,
+    "word_count": 57,
+    "hash": "095e499dca483be269850e466de3083faa27844f4506a77fb19840c45d0d1dcb"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\jsconfig.json": {
+    "size": 556,
+    "mtime_ns": 1779828301242291300,
+    "word_count": 46,
+    "hash": "e4fc74e9116e7aaf6846cd6b85d48fcff5eab22c40528ba6f497c8ce6b837c16"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\knip.json": {
+    "size": 240,
+    "mtime_ns": 1780957239481071400,
+    "word_count": 17,
+    "hash": "995a5805f50b40a7a9a807f97e493f006fa87cfbb467550cfca93c8d2a2506da"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\package.json": {
+    "size": 3202,
+    "mtime_ns": 1781520569403835900,
+    "word_count": 210,
+    "hash": "e3ca40ea9b15f71826018f5b93dcd3c48b006c36d92ca923ea134c272deb3c6c"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\postcss.config.js": {
+    "size": 81,
+    "mtime_ns": 1779834216568727700,
+    "word_count": 11
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\public\\favicon.svg": {
+    "size": 306,
+    "mtime_ns": 1779824637136213900,
+    "word_count": 25,
+    "hash": "d96c00f3122cbc76e70f958f4e2677e1be5fe35557c696abe4c5c0ac92e3029a"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\public\\manifest.json": {
+    "size": 361,
+    "mtime_ns": 1779824638957238100,
+    "word_count": 36,
+    "hash": "cc48167ad7df99b3ff04eb260f5ebd0cfd972d291f3b00b19c2cacfbbffd7e2a"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\App.jsx": {
+    "size": 2770,
+    "mtime_ns": 1779974143428246400,
+    "word_count": 271
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\Layout.jsx": {
+    "size": 44889,
+    "mtime_ns": 1782989074291401400,
+    "word_count": 3859
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\api\\sigoClient.js": {
+    "size": 9080,
+    "mtime_ns": 1782478028317611800,
+    "word_count": 1135
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ErrorBoundary.jsx": {
+    "size": 6612,
+    "mtime_ns": 1780952938042223500,
+    "word_count": 740
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\MeuPerfilSheet.jsx": {
+    "size": 14802,
+    "mtime_ns": 1779833392197986600,
+    "word_count": 1106
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\NotificationsPanel.jsx": {
+    "size": 11242,
+    "mtime_ns": 1779832888738831000,
+    "word_count": 864
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\PermissionGate.jsx": {
+    "size": 1681,
+    "mtime_ns": 1779806517397002400,
+    "word_count": 208
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\camera\\FullscreenCamera.jsx": {
+    "size": 11094,
+    "mtime_ns": 1779832955220446300,
+    "word_count": 980
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\chat\\ChannelList.jsx": {
+    "size": 3942,
+    "mtime_ns": 1779806521463440600,
+    "word_count": 296
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\chat\\ChatContextual.jsx": {
+    "size": 8773,
+    "mtime_ns": 1779832876687956000,
+    "word_count": 754
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\chat\\ChatPanel.jsx": {
+    "size": 8110,
+    "mtime_ns": 1779983901612717700,
+    "word_count": 530
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\chat\\ChatWindow.jsx": {
+    "size": 4926,
+    "mtime_ns": 1780955234238700500,
+    "word_count": 455
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\chat\\MessageInput.jsx": {
+    "size": 5456,
+    "mtime_ns": 1779833399794653200,
+    "word_count": 476
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\chat\\MessageList.jsx": {
+    "size": 5674,
+    "mtime_ns": 1779806524157581500,
+    "word_count": 386
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\chat\\NovoCanal.jsx": {
+    "size": 10900,
+    "mtime_ns": 1779833401734277800,
+    "word_count": 800
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\cliente\\PortalClienteEmbed.jsx": {
+    "size": 16352,
+    "mtime_ns": 1779983891691109500,
+    "word_count": 1132
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\cliente\\RelatorioObra.jsx": {
+    "size": 13163,
+    "mtime_ns": 1779808640819149000,
+    "word_count": 932
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\clientes\\NovoClienteModal.jsx": {
+    "size": 12172,
+    "mtime_ns": 1782986381040946800,
+    "word_count": 804
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\compras\\AdicionarItensCotacaoModal.jsx": {
+    "size": 20612,
+    "mtime_ns": 1779833408130246200,
+    "word_count": 1238
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\compras\\AprovacaoModal.jsx": {
+    "size": 32463,
+    "mtime_ns": 1779996960333347000,
+    "word_count": 2063
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\compras\\ComparacaoPrecos.jsx": {
+    "size": 56908,
+    "mtime_ns": 1779832877116582200,
+    "word_count": 3776
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\compras\\ComprasHeader.jsx": {
+    "size": 652,
+    "mtime_ns": 1779806526926312000,
+    "word_count": 60
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\compras\\ConferirRecebimentoModal.jsx": {
+    "size": 10435,
+    "mtime_ns": 1781294476095872700,
+    "word_count": 837
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\compras\\ConfirmacaoExclusaoModal.jsx": {
+    "size": 13054,
+    "mtime_ns": 1779833410298926400,
+    "word_count": 997
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\compras\\CotacaoModal.jsx": {
+    "size": 32312,
+    "mtime_ns": 1779832877235212400,
+    "word_count": 1918
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\compras\\HistoricoTab.jsx": {
+    "size": 22265,
+    "mtime_ns": 1779833411705450900,
+    "word_count": 1302
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\compras\\ImportarItensSolicitacao.jsx": {
+    "size": 10028,
+    "mtime_ns": 1779806528025129700,
+    "word_count": 837
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\compras\\LinksModal.jsx": {
+    "size": 27136,
+    "mtime_ns": 1779833413345317800,
+    "word_count": 1783
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\compras\\PedidoDiretoModal.jsx": {
+    "size": 4989,
+    "mtime_ns": 1781294217147128700,
+    "word_count": 399
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\compras\\SolicitacaoModal.jsx": {
+    "size": 34356,
+    "mtime_ns": 1782989243762344600,
+    "word_count": 2347
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\compras\\VisualizarCatalogModal.jsx": {
+    "size": 5153,
+    "mtime_ns": 1779833414944066400,
+    "word_count": 371
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\compras\\VisualizarMaterialModal.jsx": {
+    "size": 4294,
+    "mtime_ns": 1779832877617856400,
+    "word_count": 295
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\AprovacaoConfigTab.jsx": {
+    "size": 10283,
+    "mtime_ns": 1779998197688249500,
+    "word_count": 770
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\CaminhoesConfigTab.jsx": {
+    "size": 17751,
+    "mtime_ns": 1779832877765245500,
+    "word_count": 1045
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\ClientesTab.jsx": {
+    "size": 27994,
+    "mtime_ns": 1782986380673243900,
+    "word_count": 1867
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\EPIListaModelo.jsx": {
+    "size": 7654,
+    "mtime_ns": 1779983826750549400,
+    "word_count": 520
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\EmpresaTab.jsx": {
+    "size": 8637,
+    "mtime_ns": 1779834218931049100,
+    "word_count": 515
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\FluxosTab.jsx": {
+    "size": 21152,
+    "mtime_ns": 1780959464114455600,
+    "word_count": 1740
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\FornecedoresTab.jsx": {
+    "size": 29870,
+    "mtime_ns": 1782986380848515200,
+    "word_count": 1951
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\FuncaoModal.jsx": {
+    "size": 112157,
+    "mtime_ns": 1779985099596437400,
+    "word_count": 6208
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\FuncoesTab.jsx": {
+    "size": 26534,
+    "mtime_ns": 1779983823757647000,
+    "word_count": 1907
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\KitsTab.jsx": {
+    "size": 13750,
+    "mtime_ns": 1779833425215620700,
+    "word_count": 949
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\MaoDeObraTab.jsx": {
+    "size": 20996,
+    "mtime_ns": 1780954545879189600,
+    "word_count": 1192
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\MateriaisTab.jsx": {
+    "size": 33319,
+    "mtime_ns": 1780954539149350100,
+    "word_count": 2619
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\OrdenServicoCEMIGModal.jsx": {
+    "size": 16777,
+    "mtime_ns": 1779983817557464700,
+    "word_count": 922
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\SalarioInput.jsx": {
+    "size": 680,
+    "mtime_ns": 1779834219838239900,
+    "word_count": 72
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\SelecionarTreinamentoModal.jsx": {
+    "size": 10070,
+    "mtime_ns": 1779983814316733200,
+    "word_count": 557
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\TemaCustomizacao.jsx": {
+    "size": 5191,
+    "mtime_ns": 1779983809731959600,
+    "word_count": 427
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\TreinamentoModal.jsx": {
+    "size": 19162,
+    "mtime_ns": 1779983804475411100,
+    "word_count": 1227
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\UsuarioEditModal.jsx": {
+    "size": 28310,
+    "mtime_ns": 1782954934452801400,
+    "word_count": 1963
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\UsuariosTab.jsx": {
+    "size": 7322,
+    "mtime_ns": 1779975397128736700,
+    "word_count": 467
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\VisualizarTreinamentoModal.jsx": {
+    "size": 9217,
+    "mtime_ns": 1779983797767240100,
+    "word_count": 664
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\configuracoes\\useBulkOperations.jsx": {
+    "size": 4584,
+    "mtime_ns": 1779834220077619900,
+    "word_count": 530
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\contabilidade\\AliquotasTab.jsx": {
+    "size": 10797,
+    "mtime_ns": 1780005081114306400,
+    "word_count": 883
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\contabilidade\\CertificadoTab.jsx": {
+    "size": 11648,
+    "mtime_ns": 1780005081406485900,
+    "word_count": 1055
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\contabilidade\\IssMunicipiosTab.jsx": {
+    "size": 11040,
+    "mtime_ns": 1780005081374538600,
+    "word_count": 853
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\contabilidade\\RegrasNcmTab.jsx": {
+    "size": 12661,
+    "mtime_ns": 1780005081487482700,
+    "word_count": 952
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\dashboard\\AlertasVencimento.jsx": {
+    "size": 8833,
+    "mtime_ns": 1779984798659967800,
+    "word_count": 787
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\dashboard\\CalendarioConsolidado.jsx": {
+    "size": 24967,
+    "mtime_ns": 1779833402723562000,
+    "word_count": 1912
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\dashboard\\DashboardIAAnalise.jsx": {
+    "size": 3749,
+    "mtime_ns": 1779833405199658400,
+    "word_count": 363
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\dashboard\\widgets\\WidgetDashCompras.jsx": {
+    "size": 6071,
+    "mtime_ns": 1779832880066382900,
+    "word_count": 509
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\dashboard\\widgets\\WidgetDashEstoque.jsx": {
+    "size": 21197,
+    "mtime_ns": 1779967317889353300,
+    "word_count": 1677
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\dashboard\\widgets\\WidgetDashFerramental.jsx": {
+    "size": 19399,
+    "mtime_ns": 1779833408267051300,
+    "word_count": 1530
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\dashboard\\widgets\\WidgetDashFinanceiro.jsx": {
+    "size": 7444,
+    "mtime_ns": 1779832880381216400,
+    "word_count": 706
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\dashboard\\widgets\\WidgetDashOportunidades.jsx": {
+    "size": 7454,
+    "mtime_ns": 1779972852257820200,
+    "word_count": 631
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\dashboard\\widgets\\WidgetDashProjetos.jsx": {
+    "size": 6865,
+    "mtime_ns": 1779832880552455300,
+    "word_count": 545
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\dashboard\\widgets\\WidgetDashSeguranca.jsx": {
+    "size": 7381,
+    "mtime_ns": 1779833410374992500,
+    "word_count": 659
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\estoque\\BaixaReservaModal.jsx": {
+    "size": 6866,
+    "mtime_ns": 1779996873934493600,
+    "word_count": 570
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\estoque\\EstoqueCaminhaoTab.jsx": {
+    "size": 16154,
+    "mtime_ns": 1779832881301543800,
+    "word_count": 1072
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\estoque\\ImportarMovimentacoesModal.jsx": {
+    "size": 17394,
+    "mtime_ns": 1779833417506753700,
+    "word_count": 1348
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\estoque\\NotaDevolucaoModal.jsx": {
+    "size": 31581,
+    "mtime_ns": 1779983916014788500,
+    "word_count": 2056
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\estoque\\ReservaDetalheModal.jsx": {
+    "size": 3601,
+    "mtime_ns": 1779834221364130100,
+    "word_count": 237
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\estoque\\ReservaMateriaisModal.jsx": {
+    "size": 8280,
+    "mtime_ns": 1779833419271054200,
+    "word_count": 615
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\AgendarManutencaoModal.jsx": {
+    "size": 4820,
+    "mtime_ns": 1779833421713349100,
+    "word_count": 384
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\AlertasConformidadeFerramental.jsx": {
+    "size": 7863,
+    "mtime_ns": 1779976862333083500,
+    "word_count": 678
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\BarraAcoesMassa.jsx": {
+    "size": 5250,
+    "mtime_ns": 1779833424846532800,
+    "word_count": 448
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\CadastroNovaFerramentaModal.jsx": {
+    "size": 5231,
+    "mtime_ns": 1779834221645297200,
+    "word_count": 391
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\CodigoDuplicadoModal.jsx": {
+    "size": 8267,
+    "mtime_ns": 1779833425626245600,
+    "word_count": 635
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\ConciliacaoModal.jsx": {
+    "size": 2987,
+    "mtime_ns": 1779834221735995600,
+    "word_count": 201
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\ConfiguracaoManutencaoModal.jsx": {
+    "size": 8809,
+    "mtime_ns": 1779833426410151400,
+    "word_count": 617
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\ConfirmarEntregaModal.jsx": {
+    "size": 39362,
+    "mtime_ns": 1782414818693185700,
+    "word_count": 3061
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\ConteudoAbas.jsx": {
+    "size": 1882,
+    "mtime_ns": 1779834222010049100,
+    "word_count": 109
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\DefinirObrigatorioModal.jsx": {
+    "size": 11969,
+    "mtime_ns": 1779976890536285100,
+    "word_count": 1014
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\EntregasTab.jsx": {
+    "size": 13680,
+    "mtime_ns": 1779976904119633000,
+    "word_count": 928
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\ExportarLaudosProgress.jsx": {
+    "size": 1152,
+    "mtime_ns": 1779806557145597000,
+    "word_count": 120
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\FerramentaDetalheModal.jsx": {
+    "size": 29005,
+    "mtime_ns": 1780581666313664300,
+    "word_count": 1760
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\FerramentaDetalhesModal.jsx": {
+    "size": 29734,
+    "mtime_ns": 1779833395607363200,
+    "word_count": 1556
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\FerramentaModal.jsx": {
+    "size": 24934,
+    "mtime_ns": 1780581666240702000,
+    "word_count": 1832
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\FotografarFerramentaStep.jsx": {
+    "size": 34695,
+    "mtime_ns": 1779832882268655500,
+    "word_count": 2617
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\GerenciadorCaminhoesModal.jsx": {
+    "size": 24464,
+    "mtime_ns": 1779976933358965000,
+    "word_count": 1428
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\HistoricoDetalhesModal.jsx": {
+    "size": 7884,
+    "mtime_ns": 1779834222643512900,
+    "word_count": 555
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\HistoricoInspecaoTab.jsx": {
+    "size": 8980,
+    "mtime_ns": 1780954533398109300,
+    "word_count": 681
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\HistoricoInventarioFilters.jsx": {
+    "size": 5288,
+    "mtime_ns": 1780954496403841600,
+    "word_count": 360
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\ImprimirFichaEntregaModal.jsx": {
+    "size": 22823,
+    "mtime_ns": 1779976937742655800,
+    "word_count": 1641
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\InspecaoCaminhaoCampoModal.jsx": {
+    "size": 18041,
+    "mtime_ns": 1779976944937709200,
+    "word_count": 1194
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\InspecaoCampoTab.jsx": {
+    "size": 20333,
+    "mtime_ns": 1779832882465829800,
+    "word_count": 1295
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\InspecaoDetalheHistoricoModal.jsx": {
+    "size": 11859,
+    "mtime_ns": 1779832882583006300,
+    "word_count": 814
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\InspecaoDetalheModal.jsx": {
+    "size": 26626,
+    "mtime_ns": 1779976949023176700,
+    "word_count": 1587
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\InventarioModal.jsx": {
+    "size": 36524,
+    "mtime_ns": 1779832883143428300,
+    "word_count": 2478
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\ListaFerramentalCaminhao.jsx": {
+    "size": 7265,
+    "mtime_ns": 1779834223218752400,
+    "word_count": 826
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\ManutencaoDetalheModal.jsx": {
+    "size": 6931,
+    "mtime_ns": 1779806526438670700,
+    "word_count": 449
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\ManutencaoEditarModal.jsx": {
+    "size": 9038,
+    "mtime_ns": 1779976992406189600,
+    "word_count": 664
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\ManutencaoTab.jsx": {
+    "size": 18703,
+    "mtime_ns": 1779977011718987800,
+    "word_count": 1356
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\MovimentacaoModal.jsx": {
+    "size": 61913,
+    "mtime_ns": 1779977033347388400,
+    "word_count": 4014
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\MovimentacoesTab.jsx": {
+    "size": 21915,
+    "mtime_ns": 1779833413022648000,
+    "word_count": 1595
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\NitgenCapture.jsx": {
+    "size": 4431,
+    "mtime_ns": 1779834223732058000,
+    "word_count": 411
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\ObrigatoriosUnificadosTab.jsx": {
+    "size": 11732,
+    "mtime_ns": 1779977040355013700,
+    "word_count": 934
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\QRCodeGenerator.jsx": {
+    "size": 3713,
+    "mtime_ns": 1779834223848374500,
+    "word_count": 300
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\ReciboMovimentacao.jsx": {
+    "size": 4629,
+    "mtime_ns": 1779834223927368800,
+    "word_count": 471
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\RelatorioFerramentaisPorCaminhao.jsx": {
+    "size": 10667,
+    "mtime_ns": 1779832883847545100,
+    "word_count": 656
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\RelatorioFerramental.jsx": {
+    "size": 24419,
+    "mtime_ns": 1779806530718876700,
+    "word_count": 1572
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\RelatorioFuncao.jsx": {
+    "size": 17905,
+    "mtime_ns": 1779977060888099600,
+    "word_count": 1407
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\ScannerCodigoBarras.jsx": {
+    "size": 21336,
+    "mtime_ns": 1779832884985276400,
+    "word_count": 1341
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\VerificacaoSerieModal.jsx": {
+    "size": 3617,
+    "mtime_ns": 1779834224328794200,
+    "word_count": 304
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\VincularMassaCarrosselModal.jsx": {
+    "size": 11546,
+    "mtime_ns": 1779832885858635200,
+    "word_count": 876
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\useExportarLaudos.jsx": {
+    "size": 2430,
+    "mtime_ns": 1779834224276536100,
+    "word_count": 241
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\useNitgen.jsx": {
+    "size": 2933,
+    "mtime_ns": 1779834224295863400,
+    "word_count": 326
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ferramental\\useVinculosObrigatorios.jsx": {
+    "size": 1736,
+    "mtime_ns": 1779977050349343700,
+    "word_count": 204
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\AcrescentarPreLancamentoModal.jsx": {
+    "size": 9439,
+    "mtime_ns": 1780409320147497100,
+    "word_count": 749
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\ApuracaoResultados.jsx": {
+    "size": 9372,
+    "mtime_ns": 1779834224533735900,
+    "word_count": 744
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\AssistenteIA.jsx": {
+    "size": 6532,
+    "mtime_ns": 1779832886011037700,
+    "word_count": 557
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\AssociarMateriaisModal.jsx": {
+    "size": 24366,
+    "mtime_ns": 1780954783172931400,
+    "word_count": 1697
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\BalancoPatrimonial.jsx": {
+    "size": 8041,
+    "mtime_ns": 1780408509755466900,
+    "word_count": 717
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\BarraProgressoImportacao.jsx": {
+    "size": 1747,
+    "mtime_ns": 1779834224650851400,
+    "word_count": 150
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\CalendarioFinanceiro.jsx": {
+    "size": 17357,
+    "mtime_ns": 1780409533021588200,
+    "word_count": 1408
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\CapturaComprovanteCamera.jsx": {
+    "size": 2607,
+    "mtime_ns": 1779832955262138600,
+    "word_count": 236
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\CardsResumo.jsx": {
+    "size": 3318,
+    "mtime_ns": 1780410072087172100,
+    "word_count": 327
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\ConciliacaoBancaria.jsx": {
+    "size": 28108,
+    "mtime_ns": 1782411671537858800,
+    "word_count": 2024
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\ConfirmacaoDadosExtraidos.jsx": {
+    "size": 6432,
+    "mtime_ns": 1779834224890728300,
+    "word_count": 481
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\ContasExtratosTab.jsx": {
+    "size": 11581,
+    "mtime_ns": 1779832886531719800,
+    "word_count": 815
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\DRERelatorio.jsx": {
+    "size": 8429,
+    "mtime_ns": 1780408325800437600,
+    "word_count": 768
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\DesfazerConciliacaoModal.jsx": {
+    "size": 4620,
+    "mtime_ns": 1780409346167505700,
+    "word_count": 408
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\DespesaModal.jsx": {
+    "size": 73824,
+    "mtime_ns": 1782412325958864100,
+    "word_count": 4348
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\DespesasTab.jsx": {
+    "size": 79772,
+    "mtime_ns": 1783458481588417700,
+    "word_count": 6475
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\DetalheDespesaModal.jsx": {
+    "size": 22494,
+    "mtime_ns": 1779982797740953400,
+    "word_count": 1311
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\DetalheReceitaModal.jsx": {
+    "size": 8117,
+    "mtime_ns": 1779972852557776800,
+    "word_count": 530
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\EditarPreLancamentoComDespesaModal.jsx": {
+    "size": 5343,
+    "mtime_ns": 1779979175976539100,
+    "word_count": 454
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\EvolucaoDespesas.jsx": {
+    "size": 7618,
+    "mtime_ns": 1779806538811675600,
+    "word_count": 644
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\FechamentoCaixaModal.jsx": {
+    "size": 17395,
+    "mtime_ns": 1780581667104485900,
+    "word_count": 1285
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\FiltroRapido.jsx": {
+    "size": 5435,
+    "mtime_ns": 1779806539158702700,
+    "word_count": 438
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\FiltrosAvancados.jsx": {
+    "size": 8612,
+    "mtime_ns": 1780409917486241900,
+    "word_count": 622
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\FluxoCaixaRelatorio.jsx": {
+    "size": 7615,
+    "mtime_ns": 1780409837134550000,
+    "word_count": 681
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\FluxoContaDetalhado.jsx": {
+    "size": 12138,
+    "mtime_ns": 1779832887209944300,
+    "word_count": 959
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\GerenciadorPreLancamentosOffline.jsx": {
+    "size": 6975,
+    "mtime_ns": 1779982449697294800,
+    "word_count": 466
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\GraficosComparativos.jsx": {
+    "size": 8646,
+    "mtime_ns": 1780409757109675400,
+    "word_count": 804
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\HistoricoFechamentosCaixa.jsx": {
+    "size": 39263,
+    "mtime_ns": 1780581669563457200,
+    "word_count": 2651
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\ImportarFerramentasModal.jsx": {
+    "size": 8899,
+    "mtime_ns": 1779832887394950400,
+    "word_count": 630
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\IndicesFinanceiros.jsx": {
+    "size": 15788,
+    "mtime_ns": 1780409817110504300,
+    "word_count": 1404
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\InsightsIA.jsx": {
+    "size": 11663,
+    "mtime_ns": 1779833389785207600,
+    "word_count": 964
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\IntegracaoBancaria.jsx": {
+    "size": 14885,
+    "mtime_ns": 1779832887511562000,
+    "word_count": 1055
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\ModalPagamento.jsx": {
+    "size": 8118,
+    "mtime_ns": 1782412228589839800,
+    "word_count": 611
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\NovoPreLancamentoModal.jsx": {
+    "size": 6188,
+    "mtime_ns": 1779832887609632000,
+    "word_count": 473
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\PlanoContas.jsx": {
+    "size": 11803,
+    "mtime_ns": 1779832887672533300,
+    "word_count": 932
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\PreLancamentosAReconciliar.jsx": {
+    "size": 34700,
+    "mtime_ns": 1780410073533928900,
+    "word_count": 2547
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\PreLancamentosTab.jsx": {
+    "size": 18785,
+    "mtime_ns": 1782406571126706300,
+    "word_count": 1494
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\ReceitasTab.jsx": {
+    "size": 79192,
+    "mtime_ns": 1782412261713452700,
+    "word_count": 5901
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\ReconciliacaoComDespesaModal.jsx": {
+    "size": 7649,
+    "mtime_ns": 1779979150003008300,
+    "word_count": 650
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\RecorrentesTab.jsx": {
+    "size": 19553,
+    "mtime_ns": 1780408747784679500,
+    "word_count": 1413
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\RegrasConciliacao.jsx": {
+    "size": 10824,
+    "mtime_ns": 1779982799561371200,
+    "word_count": 753
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\RelatoriosCustomizados.jsx": {
+    "size": 8129,
+    "mtime_ns": 1779979054177303200,
+    "word_count": 607
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\RelatoriosTab.jsx": {
+    "size": 8266,
+    "mtime_ns": 1780409934834265000,
+    "word_count": 628
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\ResumoTab.jsx": {
+    "size": 8822,
+    "mtime_ns": 1779806521380129700,
+    "word_count": 588
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\SelecionarProjetoeConta.jsx": {
+    "size": 8338,
+    "mtime_ns": 1779979015572080400,
+    "word_count": 716
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\SugestoesVisualizacao.jsx": {
+    "size": 5728,
+    "mtime_ns": 1779832888310394800,
+    "word_count": 517
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\TransferenciasTab.jsx": {
+    "size": 8517,
+    "mtime_ns": 1780409249835909500,
+    "word_count": 666
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\hooks\\useOfflineSync.jsx": {
+    "size": 4530,
+    "mtime_ns": 1779834226027801300,
+    "word_count": 434
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\financeiro\\utils.jsx": {
+    "size": 3863,
+    "mtime_ns": 1779834227190684400,
+    "word_count": 462
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\fluxos\\IniciarFluxoButton.jsx": {
+    "size": 5350,
+    "mtime_ns": 1781187555734915800,
+    "word_count": 525
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\fornecedores\\NovoFornecedorConfigSheet.jsx": {
+    "size": 9357,
+    "mtime_ns": 1782986381215168300,
+    "word_count": 600
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\manufatura\\ApontamentoTab.jsx": {
+    "size": 14308,
+    "mtime_ns": 1782952753545290000,
+    "word_count": 1001
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\manufatura\\CentrosTab.jsx": {
+    "size": 8562,
+    "mtime_ns": 1782936802677978300,
+    "word_count": 618
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\manufatura\\EngenhariaTab.jsx": {
+    "size": 22247,
+    "mtime_ns": 1782952754025007600,
+    "word_count": 1581
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\manufatura\\ManutencaoTab.jsx": {
+    "size": 21287,
+    "mtime_ns": 1782952754387204600,
+    "word_count": 1377
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\manufatura\\MrpTab.jsx": {
+    "size": 9440,
+    "mtime_ns": 1782936837396125700,
+    "word_count": 759
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\manufatura\\OeeTab.jsx": {
+    "size": 8409,
+    "mtime_ns": 1782936967504450800,
+    "word_count": 636
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\manufatura\\OrdensTab.jsx": {
+    "size": 24332,
+    "mtime_ns": 1782952755135439600,
+    "word_count": 1620
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\manufatura\\QualidadeTab.jsx": {
+    "size": 12133,
+    "mtime_ns": 1782952755215577700,
+    "word_count": 848
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\materiais\\CriarMaterialModal.jsx": {
+    "size": 14332,
+    "mtime_ns": 1779832888587850000,
+    "word_count": 1021
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\notificacoes\\ConfiguracaoNotificacoes.jsx": {
+    "size": 10340,
+    "mtime_ns": 1779983921459500400,
+    "word_count": 870
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\offline\\DiarioOfflineBanner.jsx": {
+    "size": 3820,
+    "mtime_ns": 1779832888776469200,
+    "word_count": 362
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\offline\\useDiarioOffline.jsx": {
+    "size": 3399,
+    "mtime_ns": 1779834227581186500,
+    "word_count": 336
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\oportunidades\\BuscaAvancada.jsx": {
+    "size": 10722,
+    "mtime_ns": 1779974267036251500,
+    "word_count": 855
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\oportunidades\\CalendarioOportunidades.jsx": {
+    "size": 9793,
+    "mtime_ns": 1779806526726648900,
+    "word_count": 762
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\oportunidades\\EtapaModal.jsx": {
+    "size": 9782,
+    "mtime_ns": 1779834227759324200,
+    "word_count": 531
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\oportunidades\\FormularioOportunidade.jsx": {
+    "size": 16253,
+    "mtime_ns": 1779974243237792600,
+    "word_count": 1016
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\oportunidades\\OportunidadeDetalhe.jsx": {
+    "size": 78100,
+    "mtime_ns": 1782763341971778000,
+    "word_count": 3707
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\oportunidades\\OportunidadesHeader.jsx": {
+    "size": 1916,
+    "mtime_ns": 1779834228037641500,
+    "word_count": 127
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\oportunidades\\PropostasOportunidade.jsx": {
+    "size": 7131,
+    "mtime_ns": 1781290393056701100,
+    "word_count": 607
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\oportunidades\\RelatorioOportunidades.jsx": {
+    "size": 14013,
+    "mtime_ns": 1781288853111133000,
+    "word_count": 1061
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\oportunidades\\RelatoriosCronograma.jsx": {
+    "size": 39777,
+    "mtime_ns": 1779806529682499300,
+    "word_count": 3300
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\oportunidades\\RelatoriosOrcamento.jsx": {
+    "size": 20746,
+    "mtime_ns": 1779834228306330800,
+    "word_count": 1761
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\oportunidades\\ResultadosTab.jsx": {
+    "size": 9043,
+    "mtime_ns": 1779833419714811500,
+    "word_count": 624
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\oportunidades\\VisualizadorPDF.jsx": {
+    "size": 4455,
+    "mtime_ns": 1779834228379288100,
+    "word_count": 323
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\oportunidades\\VisualizarArquivoModal.jsx": {
+    "size": 3678,
+    "mtime_ns": 1779806530520803200,
+    "word_count": 290
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\BuscaAvancada.jsx": {
+    "size": 9539,
+    "mtime_ns": 1779975406039058400,
+    "word_count": 781
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\DiarioCameraModal.jsx": {
+    "size": 2803,
+    "mtime_ns": 1779975660424838400,
+    "word_count": 284
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\DiarioObraTab.jsx": {
+    "size": 62947,
+    "mtime_ns": 1779975432019000000,
+    "word_count": 3937
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\DiarioSincOffline.jsx": {
+    "size": 3640,
+    "mtime_ns": 1779832889408350600,
+    "word_count": 330
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\EditarTarefas.jsx": {
+    "size": 39026,
+    "mtime_ns": 1779975459765782100,
+    "word_count": 2440
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\FinanceiroTab.jsx": {
+    "size": 4430,
+    "mtime_ns": 1779833426218029800,
+    "word_count": 311
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\MedicoesTab.jsx": {
+    "size": 16968,
+    "mtime_ns": 1781359929368660500,
+    "word_count": 1278
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\OrcamentoTab.jsx": {
+    "size": 43405,
+    "mtime_ns": 1782764013333407100,
+    "word_count": 3066
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\ProjetoDetailHeader.jsx": {
+    "size": 5642,
+    "mtime_ns": 1779975504486204800,
+    "word_count": 356
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\ProjetoFormSheet.jsx": {
+    "size": 28131,
+    "mtime_ns": 1781000120313179700,
+    "word_count": 1705
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\RelatorioDiarioObra.jsx": {
+    "size": 23680,
+    "mtime_ns": 1779975653120279900,
+    "word_count": 1798
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\RelatorioPDFDiario.jsx": {
+    "size": 14341,
+    "mtime_ns": 1779975633660745300,
+    "word_count": 1258
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\ReservarItensOrcamentoModal.jsx": {
+    "size": 12900,
+    "mtime_ns": 1782413884277023500,
+    "word_count": 987
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\ResumoFinanceiroTab.jsx": {
+    "size": 8694,
+    "mtime_ns": 1779806537214216500,
+    "word_count": 705
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\StatusOrigensSheet.jsx": {
+    "size": 8945,
+    "mtime_ns": 1779833395412629300,
+    "word_count": 549
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\TarefasCalendario.jsx": {
+    "size": 13055,
+    "mtime_ns": 1779832889842083600,
+    "word_count": 1122
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\TarefasKanban.jsx": {
+    "size": 17290,
+    "mtime_ns": 1779976147426649200,
+    "word_count": 1171
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\TarefasTimeline.jsx": {
+    "size": 16160,
+    "mtime_ns": 1779975574211241600,
+    "word_count": 1279
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\VisualizarDiarioModal.jsx": {
+    "size": 22878,
+    "mtime_ns": 1779975593490982300,
+    "word_count": 1554
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\projetos\\boletimMedicaoPdf.js": {
+    "size": 5945,
+    "mtime_ns": 1781738461521591000,
+    "word_count": 724
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\relatorios\\ExportButtons.jsx": {
+    "size": 2603,
+    "mtime_ns": 1779806540658688900,
+    "word_count": 281
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\relatorios\\FiltrosRelatorio.jsx": {
+    "size": 2577,
+    "mtime_ns": 1779806541252532700,
+    "word_count": 159
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\relatorios\\KpiCard.jsx": {
+    "size": 2424,
+    "mtime_ns": 1779834229590658700,
+    "word_count": 224
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\relatorios\\RelatorioCompras.jsx": {
+    "size": 8124,
+    "mtime_ns": 1779806542345707200,
+    "word_count": 680
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\relatorios\\RelatorioEstoque.jsx": {
+    "size": 9436,
+    "mtime_ns": 1779832889990644000,
+    "word_count": 787
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\relatorios\\RelatorioFinanceiro.jsx": {
+    "size": 9841,
+    "mtime_ns": 1779832890031480400,
+    "word_count": 862
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\relatorios\\RelatorioProjetos.jsx": {
+    "size": 9579,
+    "mtime_ns": 1779806544084738900,
+    "word_count": 755
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\relatorios\\RelatorioSeguranca.jsx": {
+    "size": 13573,
+    "mtime_ns": 1779833404407430600,
+    "word_count": 1081
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\relatorios\\RelatorioVendas.jsx": {
+    "size": 9295,
+    "mtime_ns": 1779806547502909200,
+    "word_count": 758
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\saas\\ExportacaoDadosTab.jsx": {
+    "size": 14362,
+    "mtime_ns": 1779833405016875800,
+    "word_count": 1257
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\saas\\GruposEmpresariaisTab.jsx": {
+    "size": 20436,
+    "mtime_ns": 1779833407578226200,
+    "word_count": 1386
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\saas\\PermissoesTab.jsx": {
+    "size": 24614,
+    "mtime_ns": 1782413727902249000,
+    "word_count": 1765
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\saas\\UsuarioEmpresaModal.jsx": {
+    "size": 12098,
+    "mtime_ns": 1779975488824189200,
+    "word_count": 954
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\AlertaDocumentosRH.jsx": {
+    "size": 3693,
+    "mtime_ns": 1779806514919883900,
+    "word_count": 351
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\BiometriaFuncionarioPanel.jsx": {
+    "size": 8193,
+    "mtime_ns": 1779976609418343300,
+    "word_count": 601
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\CaminhoesTab.jsx": {
+    "size": 10634,
+    "mtime_ns": 1779833411458250200,
+    "word_count": 527
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\CertificadoAssinadoModal.jsx": {
+    "size": 14581,
+    "mtime_ns": 1779976602094800100,
+    "word_count": 1002
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\ChecklistManagerModal.jsx": {
+    "size": 22235,
+    "mtime_ns": 1779976498972874100,
+    "word_count": 1593
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\DocumentacaoEmpresaTab.jsx": {
+    "size": 45831,
+    "mtime_ns": 1780581666733634300,
+    "word_count": 2874
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\DocumentacaoTab.jsx": {
+    "size": 14310,
+    "mtime_ns": 1780581666576672300,
+    "word_count": 799
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\DocumentosAssinadosTST.jsx": {
+    "size": 11689,
+    "mtime_ns": 1779976605348594200,
+    "word_count": 826
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\EPIEditorPanel.jsx": {
+    "size": 10496,
+    "mtime_ns": 1779834230738332300,
+    "word_count": 806
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\ExportacaoMassaModal.jsx": {
+    "size": 10389,
+    "mtime_ns": 1779832890635494000,
+    "word_count": 940
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\GerarCertificadosLoteModal.jsx": {
+    "size": 9067,
+    "mtime_ns": 1779833416643933800,
+    "word_count": 695
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\HistoricoDocumentosModal.jsx": {
+    "size": 3867,
+    "mtime_ns": 1779834230835690700,
+    "word_count": 272
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\ImportarCertificadosModal.jsx": {
+    "size": 9049,
+    "mtime_ns": 1779833417243629700,
+    "word_count": 614
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\ImportarCertificadosTSTModal.jsx": {
+    "size": 18822,
+    "mtime_ns": 1779976616489140800,
+    "word_count": 1416
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\ImportarFuncionariosModal.jsx": {
+    "size": 18128,
+    "mtime_ns": 1779832890859763100,
+    "word_count": 1785
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\ImportarTreinamentosZip.jsx": {
+    "size": 11294,
+    "mtime_ns": 1779832890908663200,
+    "word_count": 703
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\InspecaoCampoDetalheModal.jsx": {
+    "size": 21907,
+    "mtime_ns": 1779976633190991900,
+    "word_count": 1717
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\InspecaoCampoFormModal.jsx": {
+    "size": 9176,
+    "mtime_ns": 1779976636860362700,
+    "word_count": 705
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\InspecaoCampoTab.jsx": {
+    "size": 12422,
+    "mtime_ns": 1779833422321861400,
+    "word_count": 906
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\LiberacoesSSTAtivas.jsx": {
+    "size": 8236,
+    "mtime_ns": 1781294873339740700,
+    "word_count": 690
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\OrdemServicoEditorPanel.jsx": {
+    "size": 4615,
+    "mtime_ns": 1779834231243123300,
+    "word_count": 346
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\RHTab.jsx": {
+    "size": 11503,
+    "mtime_ns": 1780581667032860400,
+    "word_count": 652
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\SolicitacaoEPIModal.jsx": {
+    "size": 10715,
+    "mtime_ns": 1779833424265188100,
+    "word_count": 758
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\SolicitacoesEntregaTab.jsx": {
+    "size": 17619,
+    "mtime_ns": 1779976644976894800,
+    "word_count": 1192
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\SolicitarEntregaCaminhaoModal.jsx": {
+    "size": 23565,
+    "mtime_ns": 1779976641414151100,
+    "word_count": 1522
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\SolicitarEntregaFerramentasModal.jsx": {
+    "size": 40802,
+    "mtime_ns": 1781130824587878700,
+    "word_count": 3108
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\TSTTab.jsx": {
+    "size": 27175,
+    "mtime_ns": 1779976501133226700,
+    "word_count": 1475
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\UploadDocumentosRHZip.jsx": {
+    "size": 11355,
+    "mtime_ns": 1779832891547697800,
+    "word_count": 721
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\VisualizadorDocumentoModal.jsx": {
+    "size": 4082,
+    "mtime_ns": 1779834231678533000,
+    "word_count": 327
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\VisualizarAutorizacaoFormalCemigModal.jsx": {
+    "size": 29884,
+    "mtime_ns": 1779978824158747000,
+    "word_count": 2290
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\VisualizarAutorizacaoFormalModal.jsx": {
+    "size": 15288,
+    "mtime_ns": 1779976730263388800,
+    "word_count": 1112
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\VisualizarCertificadoModal.jsx": {
+    "size": 10363,
+    "mtime_ns": 1779834231849302000,
+    "word_count": 696
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\VisualizarDireitoRecusaModal.jsx": {
+    "size": 16116,
+    "mtime_ns": 1779976803733967300,
+    "word_count": 1290
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\VisualizarEPIModal.jsx": {
+    "size": 25854,
+    "mtime_ns": 1779976822132196800,
+    "word_count": 1921
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\VisualizarFerramentasModal.jsx": {
+    "size": 25303,
+    "mtime_ns": 1779976715214248000,
+    "word_count": 1891
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\VisualizarOrdemServicoModal.jsx": {
+    "size": 28593,
+    "mtime_ns": 1779976698192456600,
+    "word_count": 1846
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\seguranca\\certificadoLayout.jsx": {
+    "size": 11631,
+    "mtime_ns": 1779976598522474500,
+    "word_count": 1346
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\shared\\AnexoViewer.jsx": {
+    "size": 3942,
+    "mtime_ns": 1782412201894144700,
+    "word_count": 338
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\shared\\BuscarCnpjButton.jsx": {
+    "size": 1717,
+    "mtime_ns": 1782986266904410900,
+    "word_count": 208
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\shared\\EntityActions.jsx": {
+    "size": 1813,
+    "mtime_ns": 1779834232244802200,
+    "word_count": 136
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\shared\\EntityCombobox.jsx": {
+    "size": 4177,
+    "mtime_ns": 1780997924224011900,
+    "word_count": 442
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\shared\\PermissoesGranularesEditor.jsx": {
+    "size": 12066,
+    "mtime_ns": 1782954882395794600,
+    "word_count": 1119
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\shared\\ResponsaveisSelect.jsx": {
+    "size": 5179,
+    "mtime_ns": 1779983913930802500,
+    "word_count": 428
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\shared\\RichTextEditor.jsx": {
+    "size": 1607,
+    "mtime_ns": 1779834232400128300,
+    "word_count": 153
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\shared\\SortButton.jsx": {
+    "size": 2328,
+    "mtime_ns": 1779834232442223000,
+    "word_count": 192
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\shared\\SortableTableHeader.jsx": {
+    "size": 1442,
+    "mtime_ns": 1779834232424854800,
+    "word_count": 154
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\alert.jsx": {
+    "size": 1335,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 131
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\avatar.jsx": {
+    "size": 1043,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 102
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\badge.jsx": {
+    "size": 990,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 89
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\button.jsx": {
+    "size": 1678,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 153
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\card.jsx": {
+    "size": 1440,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 155
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\checkbox.jsx": {
+    "size": 880,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 74
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\command.jsx": {
+    "size": 3897,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 309
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\dialog.jsx": {
+    "size": 3235,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 248
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\dropdown-menu.jsx": {
+    "size": 6157,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 427
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\input.jsx": {
+    "size": 690,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 66
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\label.jsx": {
+    "size": 525,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 58
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\popover.jsx": {
+    "size": 1166,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 87
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\progress.jsx": {
+    "size": 667,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 67
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\scroll-area.jsx": {
+    "size": 1362,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 108
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\select.jsx": {
+    "size": 4677,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 333
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\separator.jsx": {
+    "size": 600,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 64
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\sheet-modal.jsx": {
+    "size": 1390,
+    "mtime_ns": 1779832941793112900,
+    "word_count": 132
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\sheet.jsx": {
+    "size": 3625,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 295
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\skeleton.jsx": {
+    "size": 227,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 27
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\switch.jsx": {
+    "size": 1025,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 79
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\table.jsx": {
+    "size": 2231,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 214
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\tabs.jsx": {
+    "size": 1529,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 126
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\textarea.jsx": {
+    "size": 587,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 58
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\toast.jsx": {
+    "size": 3804,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 306
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\toaster.jsx": {
+    "size": 785,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 67
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\ui\\use-toast.jsx": {
+    "size": 3379,
+    "mtime_ns": 1779666958000000000,
+    "word_count": 369
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\utils\\cpfFormatter.jsx": {
+    "size": 930,
+    "mtime_ns": 1779834232482968800,
+    "word_count": 118
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\vencimentos\\VencimentoCard.jsx": {
+    "size": 4819,
+    "mtime_ns": 1779806529933881000,
+    "word_count": 346
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\vencimentos\\VencimentoModal.jsx": {
+    "size": 10518,
+    "mtime_ns": 1779833429511097000,
+    "word_count": 810
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\components\\vencimentos\\VencimentosContratos.jsx": {
+    "size": 12217,
+    "mtime_ns": 1779806530440340200,
+    "word_count": 981
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\NavigationTracker.jsx": {
+    "size": 1371,
+    "mtime_ns": 1779984636006726100,
+    "word_count": 157
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\PageNotFound.jsx": {
+    "size": 3304,
+    "mtime_ns": 1779833389634728100,
+    "word_count": 298
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\app-params.js": {
+    "size": 2396,
+    "mtime_ns": 1779833390435416700,
+    "word_count": 246
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\cnpj.js": {
+    "size": 3374,
+    "mtime_ns": 1782986524349848000,
+    "word_count": 426
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\csv.js": {
+    "size": 3344,
+    "mtime_ns": 1781740318037204100,
+    "word_count": 531
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\csv.test.js": {
+    "size": 2439,
+    "mtime_ns": 1781740019502597700,
+    "word_count": 245
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\documentos-funcionario.js": {
+    "size": 1699,
+    "mtime_ns": 1779976347269009100,
+    "word_count": 225
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\documentos-funcionario.test.js": {
+    "size": 1860,
+    "mtime_ns": 1781738506100004700,
+    "word_count": 179
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\filtros-transacao.js": {
+    "size": 2833,
+    "mtime_ns": 1781783539285618400,
+    "word_count": 343
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\filtros-transacao.test.js": {
+    "size": 4567,
+    "mtime_ns": 1781783877088650400,
+    "word_count": 436
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\financeiro-utils.js": {
+    "size": 2549,
+    "mtime_ns": 1780408292059872800,
+    "word_count": 291
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\financeiro-utils.test.js": {
+    "size": 4497,
+    "mtime_ns": 1781520643134995000,
+    "word_count": 344
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\formatters.js": {
+    "size": 1339,
+    "mtime_ns": 1779967682777835600,
+    "word_count": 179
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\formatters.test.js": {
+    "size": 1568,
+    "mtime_ns": 1781520785657177900,
+    "word_count": 154
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\json-utils.js": {
+    "size": 988,
+    "mtime_ns": 1779972905075500200,
+    "word_count": 138
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\json-utils.test.js": {
+    "size": 1461,
+    "mtime_ns": 1781520659094281400,
+    "word_count": 152
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\layout-context.js": {
+    "size": 395,
+    "mtime_ns": 1779834232940617100,
+    "word_count": 49
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\medicao-calc.js": {
+    "size": 1448,
+    "mtime_ns": 1781738439629051900,
+    "word_count": 202
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\medicao-calc.test.js": {
+    "size": 2097,
+    "mtime_ns": 1781738486600455200,
+    "word_count": 213
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\parcelas.js": {
+    "size": 1700,
+    "mtime_ns": 1781739003249220200,
+    "word_count": 263
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\parcelas.test.js": {
+    "size": 1550,
+    "mtime_ns": 1781739290936306900,
+    "word_count": 141
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\perfis-fabrica.js": {
+    "size": 3812,
+    "mtime_ns": 1782978822680320500,
+    "word_count": 381
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\query-client.js": {
+    "size": 209,
+    "mtime_ns": 1779834232976284700,
+    "word_count": 23
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\safe-url.js": {
+    "size": 1060,
+    "mtime_ns": 1780581504126986500,
+    "word_count": 144
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\safe-url.test.js": {
+    "size": 1445,
+    "mtime_ns": 1781520671050010800,
+    "word_count": 90
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\sc-draft.js": {
+    "size": 2153,
+    "mtime_ns": 1780000288651757800,
+    "word_count": 278
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\lib\\utils.js": {
+    "size": 191,
+    "mtime_ns": 1779834232987570800,
+    "word_count": 26
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\main.jsx": {
+    "size": 1768,
+    "mtime_ns": 1780488046607016200,
+    "word_count": 228
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages.config.js": {
+    "size": 3258,
+    "mtime_ns": 1782955001328204400,
+    "word_count": 299
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\AcessoFornecedor.jsx": {
+    "size": 22423,
+    "mtime_ns": 1780564050149384500,
+    "word_count": 1574
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\AcessoNegado.jsx": {
+    "size": 3573,
+    "mtime_ns": 1779832892287930900,
+    "word_count": 319
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\AuditLogs.jsx": {
+    "size": 10374,
+    "mtime_ns": 1780954397975751100,
+    "word_count": 755
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\CadastroFerramentas.jsx": {
+    "size": 14058,
+    "mtime_ns": 1779832892529857900,
+    "word_count": 896
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\Chat.jsx": {
+    "size": 4819,
+    "mtime_ns": 1779982878566098700,
+    "word_count": 397
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\ClientePortal.jsx": {
+    "size": 32478,
+    "mtime_ns": 1780564189003539000,
+    "word_count": 2293
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\Compras.jsx": {
+    "size": 65553,
+    "mtime_ns": 1782990454283162500,
+    "word_count": 4243
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\Configuracoes.jsx": {
+    "size": 53831,
+    "mtime_ns": 1783455426783126200,
+    "word_count": 4311
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\Contabilidade.jsx": {
+    "size": 21907,
+    "mtime_ns": 1780005081641944900,
+    "word_count": 1526
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\Dashboard.jsx": {
+    "size": 10245,
+    "mtime_ns": 1779973250168120300,
+    "word_count": 907
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\DashboardInspecoes.jsx": {
+    "size": 12990,
+    "mtime_ns": 1780996524957503500,
+    "word_count": 1003
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\EntrarSistema.jsx": {
+    "size": 25984,
+    "mtime_ns": 1780564505398696100,
+    "word_count": 1911
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\EsqueciSenha.jsx": {
+    "size": 4528,
+    "mtime_ns": 1779833409334243100,
+    "word_count": 363
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\Estoque.jsx": {
+    "size": 76054,
+    "mtime_ns": 1780999824552030200,
+    "word_count": 4418
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\Ferramental.jsx": {
+    "size": 87604,
+    "mtime_ns": 1780581666519343100,
+    "word_count": 6058
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\Financeiro.jsx": {
+    "size": 12490,
+    "mtime_ns": 1779974053376183400,
+    "word_count": 1008
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\FornecedorLogin.jsx": {
+    "size": 5270,
+    "mtime_ns": 1780563998931880100,
+    "word_count": 450
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\GrupoConsolidado.jsx": {
+    "size": 7885,
+    "mtime_ns": 1781177197786840300,
+    "word_count": 685
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\HistoricoCotacoes.jsx": {
+    "size": 23076,
+    "mtime_ns": 1780564041515300900,
+    "word_count": 1562
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\HistoricoInspecoes.jsx": {
+    "size": 21275,
+    "mtime_ns": 1779982909063653700,
+    "word_count": 1507
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\HistoricoInventario.jsx": {
+    "size": 12050,
+    "mtime_ns": 1779833416010256300,
+    "word_count": 877
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\InspecaoDetalhes.jsx": {
+    "size": 12337,
+    "mtime_ns": 1779982911086734200,
+    "word_count": 844
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\InspecaoFerramenta.jsx": {
+    "size": 18153,
+    "mtime_ns": 1779982912401381000,
+    "word_count": 1176
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\Manufatura.jsx": {
+    "size": 5055,
+    "mtime_ns": 1782936536998659500,
+    "word_count": 406
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\MinhasPendencias.jsx": {
+    "size": 11919,
+    "mtime_ns": 1781186725363823600,
+    "word_count": 1104
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\Oportunidades.jsx": {
+    "size": 73375,
+    "mtime_ns": 1783103380727968000,
+    "word_count": 5334
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\PainelMetas.jsx": {
+    "size": 15449,
+    "mtime_ns": 1782978823009040100,
+    "word_count": 1329
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\PrimeiroAcesso.jsx": {
+    "size": 6369,
+    "mtime_ns": 1779833418625266100,
+    "word_count": 523
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\Projetos.jsx": {
+    "size": 75283,
+    "mtime_ns": 1782407020105854100,
+    "word_count": 4745
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\RedefinirSenha.jsx": {
+    "size": 6997,
+    "mtime_ns": 1779833420339223300,
+    "word_count": 542
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\Registro.jsx": {
+    "size": 6083,
+    "mtime_ns": 1779833420850954300,
+    "word_count": 464
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\RelatorioVencimentos.jsx": {
+    "size": 2121,
+    "mtime_ns": 1779832894834599400,
+    "word_count": 202
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\Relatorios.jsx": {
+    "size": 8194,
+    "mtime_ns": 1779973000824661500,
+    "word_count": 658
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\ReservasEstoque.jsx": {
+    "size": 4983,
+    "mtime_ns": 1779832894900615000,
+    "word_count": 393
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\SaasAdmin.jsx": {
+    "size": 61932,
+    "mtime_ns": 1779982987574850900,
+    "word_count": 3778
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\SegurancaTrabalho.jsx": {
+    "size": 105519,
+    "mtime_ns": 1781294930786009800,
+    "word_count": 6949
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\Vencimentos.jsx": {
+    "size": 15639,
+    "mtime_ns": 1779982982000611900,
+    "word_count": 1267
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\pages\\index.jsx": {
+    "size": 1031,
+    "mtime_ns": 1779982997467153200,
+    "word_count": 98
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\src\\utils\\index.ts": {
+    "size": 96,
+    "mtime_ns": 1779834235774721100,
+    "word_count": 12
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\tailwind.config.js": {
+    "size": 2712,
+    "mtime_ns": 1779834235786835400,
+    "word_count": 168
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\vite.config.js": {
+    "size": 1665,
+    "mtime_ns": 1779832980486524000,
+    "word_count": 198
+  },
+  "C:\\Users\\javer\\sigoobras-base\\apps\\web\\vitest.config.js": {
+    "size": 752,
+    "mtime_ns": 1781520551653427500,
+    "word_count": 106
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\ANALISE-METODOLOGIA-ENGENHARIA-2026-06.md": {
+    "size": 879,
+    "mtime_ns": 1781176285008056300,
+    "word_count": 118,
+    "hash": "03c92be9be307016521fed77d6bcd4a7399f7c3d6295a1d4532339905fccadf0"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\AUDITORIA-VARREDURA-2026-06.md": {
+    "size": 8081,
+    "mtime_ns": 1780954224659234200,
+    "word_count": 799,
+    "hash": "ecc5b809b41907d3541aee3adda2627b0a1849c446c364cd6dd5d1d05dced247"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\AUTH-FLUXO.md": {
+    "size": 9995,
+    "mtime_ns": 1779824725466346300,
+    "word_count": 1118,
+    "hash": "30a8a4a98b9f859c651c37cf000238eb4838fae5ef74908d428f4e69b007e196"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\CUTOVER-PASSO-A-PASSO.md": {
+    "size": 25282,
+    "mtime_ns": 1779825381387355500,
+    "word_count": 3240,
+    "hash": "6662faa0ec947499d5c06aeb208c5df1f90893cbfb35c026a2fa3a8453af0e32"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\DEPLOY-CLOUDFLARE-PAGES.md": {
+    "size": 8866,
+    "mtime_ns": 1779805511257129300,
+    "word_count": 1148,
+    "hash": "80b986a4b10b439c66b5ac15daa156d68fca7278e97e13f824883cc9bd5e4ad9"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\DEPLOY-HOSTGATOR.md": {
+    "size": 9970,
+    "mtime_ns": 1779825106702938800,
+    "word_count": 1199,
+    "hash": "b17dc04b9a0de9b78669c9327e6c887e44e37fd9cc48eefb8fc16ec538708780"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\DEPLOY-SUPABASE.md": {
+    "size": 8229,
+    "mtime_ns": 1779825118195705800,
+    "word_count": 1032,
+    "hash": "88ef189397bdde24d4bc386f68a0075c9f17a9a87a54127e9c46c868710d0b83"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\DNS-CHECKLIST-HOSTGATOR.md": {
+    "size": 16963,
+    "mtime_ns": 1779825381659609300,
+    "word_count": 1675,
+    "hash": "1abf8a6102d239104513ef2f404bf05d89290d09d84a521ce92e410870c859de"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\ESTADO-DO-PROJETO.md": {
+    "size": 15220,
+    "mtime_ns": 1780523855288916100,
+    "word_count": 1889,
+    "hash": "c6f90c59b838c421e06848d4bdd1d1fc7bf3fef2e43a97132cd05ab7af1a582d"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\MAPA-PROCESSOS-LICITACAO-OBRA.md": {
+    "size": 7423,
+    "mtime_ns": 1780587910353550800,
+    "word_count": 957,
+    "hash": "5e81cf43f232181d26356281f5b0ef437834908336b1c2ff1bd0f55074335f03"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\MIGRATION-CHECKLIST.md": {
+    "size": 2689,
+    "mtime_ns": 1779825091393835700,
+    "word_count": 403,
+    "hash": "c85246ab52c6d975819953305ceb7035474b7dd9aa3151728583eeaf61374ed1"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\MODULO-SEGURANCA.md": {
+    "size": 13477,
+    "mtime_ns": 1780523242654010300,
+    "word_count": 1530,
+    "hash": "8edf3b43ca8cae494d01800b60509867e52f24021caab6c7fbe4fedb463faa49"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\PLANO-SEGURANCA-MULTITENANT.md": {
+    "size": 4915,
+    "mtime_ns": 1780559953485361900,
+    "word_count": 704,
+    "hash": "bbfcac1a18b0bc4f5552e5bd0904572ed21aec7fb8d0e622e1e9ceae6a3120ee"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\PROGRAMA-MELHORIAS-2026-06.md": {
+    "size": 8479,
+    "mtime_ns": 1781783941396366700,
+    "word_count": 1136,
+    "hash": "120a83a788569c839967a5f6f04626ecf9c9dd743d9903fa3a875de0e0953c44"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\README.md": {
+    "size": 4534,
+    "mtime_ns": 1779825381714760900,
+    "word_count": 448,
+    "hash": "1e92195945deec0bb25be24a5e11ab528c139fb7e8048dfb1b17355306c6e1b6"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\REVISAO-FLUXO-LICITACAO-OBRA.md": {
+    "size": 11794,
+    "mtime_ns": 1780587492750727900,
+    "word_count": 1337,
+    "hash": "9a5b7df29b3a176212a6b271167d21d518fb8e6e42df74a2c622cfa1e2b8f5b1"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\REVISAO-OPORTUNIDADES.md": {
+    "size": 9178,
+    "mtime_ns": 1780559693490952800,
+    "word_count": 1106,
+    "hash": "31452bed6f4ea9351f88e821f6a64f5425e8777bf39f0e51cb6281f99fe7328c"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\REVISAO-SENIOR-2026-06.md": {
+    "size": 6638,
+    "mtime_ns": 1780996397627541700,
+    "word_count": 893,
+    "hash": "45809aa3bdd63146e8d1bb9adb7089bfa1b8f867afd418d827dc7db6bde95e18"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\ROADMAP.md": {
+    "size": 6210,
+    "mtime_ns": 1779825381752721500,
+    "word_count": 846,
+    "hash": "4076167a63ab6658b000fabefea570121adad1a306f5c043ac1942bf896b0953"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\SCHEMA.md": {
+    "size": 12565,
+    "mtime_ns": 1779825381789495300,
+    "word_count": 791,
+    "hash": "c8e5147c2fba342bb68b030df6ab6ecf4d548c5ff0af1c1f3face11148b574fe"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\SPEC-MOTOR-FLUXOS-APROVACAO.md": {
+    "size": 21668,
+    "mtime_ns": 1780685969598231600,
+    "word_count": 2826,
+    "hash": "8cf00ca242c13a5416d0405e6224a83cfd37a27810282498b52134b6ea6c4790"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\mapa-processos.html": {
+    "size": 61112,
+    "mtime_ns": 1780666473264333400,
+    "word_count": 5894,
+    "hash": "f9158ee1b64ac17df2c490b6cfbcb68f22b5db3189a729448c040ec82ee1496b"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\seguranca\\etapa3\\0048_reenable_rls.sql": {
+    "size": 5376,
+    "mtime_ns": 1780563819794237600,
+    "word_count": 623,
+    "hash": "2446f37944369beb1f4af34c41f1fd9b528577762d87b9684b8cf7e7a3c54a91"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\seguranca\\etapa3\\0048_rollback_disable_rls.sql": {
+    "size": 1028,
+    "mtime_ns": 1780563819867876600,
+    "word_count": 126,
+    "hash": "1f8c1f43c7befd56cfd1ffbc8334abc4f07147ec53eee2ac98755251d49019cf"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\docs\\seguranca\\etapa3\\README.md": {
+    "size": 10679,
+    "mtime_ns": 1780578421920854900,
+    "word_count": 1328,
+    "hash": "a40b89fcedead08f83aa7e6aaf420d2b37d8337629f0b570e7c623959c4c9118"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\legacy\\README.md": {
+    "size": 1294,
+    "mtime_ns": 1781010551313038500,
+    "word_count": 167,
+    "hash": "a6122995307a32551f6134859635770e42300044bed0e580477dd3d5634ec35b"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\legacy\\base44\\SCHEMA-COMPLETO-API.md": {
+    "size": 7970,
+    "mtime_ns": 1779825192392155400,
+    "word_count": 981,
+    "hash": "e2bfe2ae109a39ac07ceadbb0ead29cf22ca3bd93d4c9bf9616232b7796895d8"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\package.json": {
+    "size": 2080,
+    "mtime_ns": 1779833079430931600,
+    "word_count": 165,
+    "hash": "2af91c1bcb6f2a465606c5addabfba269aa878096e19668732d4d2fa5ee8224c"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\shared\\README.md": {
+    "size": 878,
+    "mtime_ns": 1779824934919233900,
+    "word_count": 117,
+    "hash": "ebf72c8a414df60d61ca8101c26bb4a8c109aeb16e5f46b38841618b44938362"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\shared\\sdk\\README.md": {
+    "size": 4403,
+    "mtime_ns": 1779825381838467400,
+    "word_count": 411,
+    "hash": "31a6243748a35b43a0463edd004a34ba83428135aed6be98012c0c4b052c69b3"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\shared\\sdk\\package.json": {
+    "size": 419,
+    "mtime_ns": 1779668619147367900,
+    "word_count": 43,
+    "hash": "96f8959c01a8faf44a91c9260c2e47654c8c4ee08116c1eccfb2c80b0a31cb6a"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\shared\\sdk\\smoke-test.mjs": {
+    "size": 4597,
+    "mtime_ns": 1779834236894729300,
+    "word_count": 517
+  },
+  "C:\\Users\\javer\\sigoobras-base\\shared\\sdk\\src\\auth.js": {
+    "size": 2331,
+    "mtime_ns": 1779834236918319600,
+    "word_count": 246
+  },
+  "C:\\Users\\javer\\sigoobras-base\\shared\\sdk\\src\\client.js": {
+    "size": 940,
+    "mtime_ns": 1779668735040263100,
+    "word_count": 100
+  },
+  "C:\\Users\\javer\\sigoobras-base\\shared\\sdk\\src\\entities.js": {
+    "size": 5257,
+    "mtime_ns": 1779834236965504800,
+    "word_count": 623
+  },
+  "C:\\Users\\javer\\sigoobras-base\\shared\\sdk\\src\\functions.js": {
+    "size": 1148,
+    "mtime_ns": 1779668706074888200,
+    "word_count": 137
+  },
+  "C:\\Users\\javer\\sigoobras-base\\shared\\sdk\\src\\index.js": {
+    "size": 1572,
+    "mtime_ns": 1779668742394133200,
+    "word_count": 179
+  },
+  "C:\\Users\\javer\\sigoobras-base\\shared\\sdk\\src\\integrations.js": {
+    "size": 5458,
+    "mtime_ns": 1779834237007103600,
+    "word_count": 551
+  },
+  "C:\\Users\\javer\\sigoobras-base\\shared\\sdk\\src\\name-mapper.js": {
+    "size": 1751,
+    "mtime_ns": 1779668649179114900,
+    "word_count": 189
+  },
+  "C:\\Users\\javer\\sigoobras-base\\shared\\sdk\\src\\query.js": {
+    "size": 4014,
+    "mtime_ns": 1779668667696604800,
+    "word_count": 510
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\README.md": {
+    "size": 1153,
+    "mtime_ns": 1779825381854496400,
+    "word_count": 156,
+    "hash": "d7a02b1be87cd7437888238ade0aaf4f3487aad87add52c0b92eb4312f81919c"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\_shared\\auth-bridge.ts": {
+    "size": 6494,
+    "mtime_ns": 1780560769967873000,
+    "word_count": 861
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\_shared\\auth-jwt.ts": {
+    "size": 1793,
+    "mtime_ns": 1780581288611439500,
+    "word_count": 236
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\_shared\\cors.ts": {
+    "size": 3714,
+    "mtime_ns": 1781178956115680800,
+    "word_count": 472
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\_shared\\keywords.ts": {
+    "size": 1413,
+    "mtime_ns": 1780499640388755700,
+    "word_count": 191
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\_shared\\oportunidade-status.ts": {
+    "size": 1573,
+    "mtime_ns": 1780586857343981600,
+    "word_count": 201
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\_shared\\passwords.ts": {
+    "size": 2422,
+    "mtime_ns": 1779829554423271100,
+    "word_count": 339
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\_shared\\portal-cliente-scope.ts": {
+    "size": 2419,
+    "mtime_ns": 1780563723497890900,
+    "word_count": 284
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\_shared\\portal-token.ts": {
+    "size": 3729,
+    "mtime_ns": 1780563545230784100,
+    "word_count": 495
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\_shared\\supabase-admin.ts": {
+    "size": 627,
+    "mtime_ns": 1779829554464595600,
+    "word_count": 77
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\alterar-senha\\index.ts": {
+    "size": 3941,
+    "mtime_ns": 1781179116274841600,
+    "word_count": 456
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\login-custom\\index.ts": {
+    "size": 9650,
+    "mtime_ns": 1781179117416055200,
+    "word_count": 1065
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\portal-cliente-acao\\index.ts": {
+    "size": 3088,
+    "mtime_ns": 1781179117532552900,
+    "word_count": 348
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\portal-cliente-dados\\index.ts": {
+    "size": 4565,
+    "mtime_ns": 1781179117615053900,
+    "word_count": 472
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\portal-fornecedor-cotacao\\index.ts": {
+    "size": 5255,
+    "mtime_ns": 1781179117894848000,
+    "word_count": 501
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\portal-fornecedor-cotacoes\\index.ts": {
+    "size": 3433,
+    "mtime_ns": 1781179118242053500,
+    "word_count": 372
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\portal-fornecedor-login\\index.ts": {
+    "size": 4179,
+    "mtime_ns": 1781179118324600700,
+    "word_count": 463
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\portal-fornecedor-resposta\\index.ts": {
+    "size": 5505,
+    "mtime_ns": 1781179118388414300,
+    "word_count": 512
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\redefinir-senha-admin\\index.ts": {
+    "size": 6343,
+    "mtime_ns": 1781179118460003600,
+    "word_count": 700
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\trocar-empresa\\index.ts": {
+    "size": 5134,
+    "mtime_ns": 1781179118510066900,
+    "word_count": 573
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\functions\\vincular-pasta-oportunidade\\index.ts": {
+    "size": 5494,
+    "mtime_ns": 1781179118594439600,
+    "word_count": 583
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0001_helpers_e_auth.sql": {
+    "size": 10443,
+    "mtime_ns": 1779664319521375400,
+    "word_count": 996,
+    "hash": "2adbc24696da7154fd88f0fd99c287f7f19e9d61925014f19e55623f256d20b3"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0002_permissoes_auditoria.sql": {
+    "size": 7333,
+    "mtime_ns": 1779664350669846300,
+    "word_count": 621,
+    "hash": "1adc693d5f6a545117c7019906aae9446fc3273a45b1c4f58b136fd5e82bb410"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0003_cadastros_catalogos.sql": {
+    "size": 7853,
+    "mtime_ns": 1779664380042153300,
+    "word_count": 702,
+    "hash": "fb2f095b60694034c24cf62d6be7cf8ac94fc5192546e875b0b62e6e1a8e5a55"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0004_crm_oportunidades.sql": {
+    "size": 6600,
+    "mtime_ns": 1779664406929735200,
+    "word_count": 572,
+    "hash": "b73acc62c7574fb6450c9380ae87416d4188fd6cc996d70b8c4317ad51ae50e6"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0005_projetos_orcamento.sql": {
+    "size": 10503,
+    "mtime_ns": 1779664451264086400,
+    "word_count": 955,
+    "hash": "e7ace4629be8ee2292b85777b58c3d9edb6e2d6cd8977bceb469a4070bc67cfe"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0006_estoque.sql": {
+    "size": 12312,
+    "mtime_ns": 1779664503121287200,
+    "word_count": 1118,
+    "hash": "e262cc802d73eeeae8a4145e9580c767d4e33ed23a6d6df59728b4f1185a3690"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0007_compras.sql": {
+    "size": 12388,
+    "mtime_ns": 1779664552809399400,
+    "word_count": 1079,
+    "hash": "f980f05a73f09c64b22bfa54afd8ef2904da4efc1b355295c65f794af45773c6"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0008_ferramental_inspecoes.sql": {
+    "size": 20614,
+    "mtime_ns": 1779664629207446800,
+    "word_count": 1780,
+    "hash": "6f9336ccaafef64c0ddec155354711cc254e2b6870571a3b1f60642a962b6bb4"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0009_rh_sst.sql": {
+    "size": 10524,
+    "mtime_ns": 1779664675690837100,
+    "word_count": 928,
+    "hash": "2eea2b9cfd69fe7678283597ddce8a1cbe5721278b6fdcc49fdca3d4a0c9bcbe"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0010_financeiro_core.sql": {
+    "size": 11301,
+    "mtime_ns": 1779664720837477500,
+    "word_count": 1010,
+    "hash": "300b6e4de5392367b78fdc2eba0ca53e70a1817ff4906eb045f185e8c18d88cf"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0011_financeiro_extras.sql": {
+    "size": 11258,
+    "mtime_ns": 1779664768952239600,
+    "word_count": 1005,
+    "hash": "72b657c8c170c766def7fcb7ab21b8decc98e9013d9559cfa22fb656082371c2"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0012_saas.sql": {
+    "size": 5127,
+    "mtime_ns": 1779664793967346600,
+    "word_count": 460,
+    "hash": "669f141d788a511b9773732a08c9dc9a767dd48bd27ac88c1558afafaa33f5d7"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0013_notif_chat_relatorios.sql": {
+    "size": 6059,
+    "mtime_ns": 1779664824429520200,
+    "word_count": 534,
+    "hash": "0fd28ae1435cb3b34e546d58d7f2d4bdb1900db334dae47630a6fafc5a961424"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0014_rls_policies.sql": {
+    "size": 10503,
+    "mtime_ns": 1779668272929521800,
+    "word_count": 851,
+    "hash": "cadac030e66e0574f2508319e7607f75197dd6081d463c3a6cd049f38dba6f5b"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0015_storage_buckets.sql": {
+    "size": 9141,
+    "mtime_ns": 1779668332143409600,
+    "word_count": 791,
+    "hash": "a16bee15796e5fe198ee27cce5734a1f2fa8ddf8aa48fd187c59185e8e49b1bc"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0016_senha_provisoria.sql": {
+    "size": 4029,
+    "mtime_ns": 1779824736887130900,
+    "word_count": 438,
+    "hash": "b6d1923d5d6bdd4e5db4accb0a1422cad251aa4a14eaa7c474bd3176e6e3c6be"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0017_drop_unused_no_refs.sql": {
+    "size": 3007,
+    "mtime_ns": 1779828672741316200,
+    "word_count": 330,
+    "hash": "56d9b90b6d37c2033f2540d265f766da9e183a1cf2cb30dc04ddc1e309342955"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0018_relax_for_legacy_data.sql": {
+    "size": 7669,
+    "mtime_ns": 1779921731293710300,
+    "word_count": 702,
+    "hash": "656203142f4c18765aa1ad58bc1a5231e8e3b2d66c7975e02d30180d36d13828"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0019_relax_for_legacy_data_round2.sql": {
+    "size": 6488,
+    "mtime_ns": 1779921822186820500,
+    "word_count": 504,
+    "hash": "a6b035f68950302d6c5432abfd9d46206130894afcdcb2d5f7164f0ba8222ca3"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0020_relax_for_legacy_data_round3.sql": {
+    "size": 1142,
+    "mtime_ns": 1779921885690230100,
+    "word_count": 121,
+    "hash": "7c868f837735fb74939d7b609549787ab5d33ca36c18936f4bacaabd4d6e5c22"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0021_relax_for_legacy_data_round4.sql": {
+    "size": 3152,
+    "mtime_ns": 1779929994587851400,
+    "word_count": 295,
+    "hash": "ee18886ff456bd3caa1cbd250be94d3a431f87c8ff28ad1a16318d06270dc4c6"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0022_relax_for_legacy_data_final.sql": {
+    "size": 1304,
+    "mtime_ns": 1779930111481394500,
+    "word_count": 140,
+    "hash": "725f27cb0850e651e5058ab7f5b138b452db23f2706c202250f745e5332a73d0"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0023_relax_for_legacy_data_last.sql": {
+    "size": 873,
+    "mtime_ns": 1779930245333760300,
+    "word_count": 80,
+    "hash": "379aac5556e0955381a590ac6c658c601cc4ea38d9358396c301359287cfd871"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0024_relax_for_legacy_data_truly_last.sql": {
+    "size": 224,
+    "mtime_ns": 1779930305565522100,
+    "word_count": 28,
+    "hash": "6afbe866131f58602963102480c5f62c3fbc2bb2e919de201d6a2bf9e0c0bd2b"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0025_drop_projeto_fk.sql": {
+    "size": 121,
+    "mtime_ns": 1779930374492116500,
+    "word_count": 12,
+    "hash": "4b67c7f43d0398c8f2c6af523a65caa72b0c8e35b30d22c27f0d93e70b24f981"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0026_disable_rls_temporarily.sql": {
+    "size": 1804,
+    "mtime_ns": 1779964220870879300,
+    "word_count": 249,
+    "hash": "b44078c3077729d234b1bdae504a387868db3a3ae75b719ede7826c782ebf485"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0027_estoque_integridade.sql": {
+    "size": 22500,
+    "mtime_ns": 1779995272908408800,
+    "word_count": 1868,
+    "hash": "fdcc288da813529dea3c2efa14b3839356c0428bb5cba9a61dcd1093f8b4004c"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0028_compras_aprovacao.sql": {
+    "size": 23641,
+    "mtime_ns": 1779996085716276400,
+    "word_count": 2059,
+    "hash": "795437d4eb1a9b8dce10f2c4ddfd0e15bc7b542d88d4641462bbaa73cad3b056"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0029_sincronizar_projeto_oportunidade.sql": {
+    "size": 10298,
+    "mtime_ns": 1779999379343156600,
+    "word_count": 1106,
+    "hash": "a9a1e138b218007323781a06d1d6c606ab4c23344527f13e353118b0e607bbb5"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0030_fix_sincronizar_projeto_jsonb_safe.sql": {
+    "size": 8151,
+    "mtime_ns": 1779999911783011100,
+    "word_count": 871,
+    "hash": "67498ddfec8891ab97f5324872e4274f03ad343cd6b9d962490a20a36943e7ae"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0031_contabilidade_nfe.sql": {
+    "size": 10920,
+    "mtime_ns": 1780002657595755600,
+    "word_count": 1145,
+    "hash": "4c4d7c710cd1a8c8840db88c51b7fba3e378f263f7d137fe726399902469bc32"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0032_fix_backfill_nfe.sql": {
+    "size": 1264,
+    "mtime_ns": 1780002625160037800,
+    "word_count": 136,
+    "hash": "35815ac7272e3d354bb2a4f4b855f492d61fee1e5893cc1821bc5ceba9831117"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0033_config_fiscal.sql": {
+    "size": 10537,
+    "mtime_ns": 1780003912063397300,
+    "word_count": 1126,
+    "hash": "9c041203dcf2bb4248988b18f4cf22d8fd5f0aa4d5d26e3a9f6fff5686977c51"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0034_transferencia_atomica.sql": {
+    "size": 5875,
+    "mtime_ns": 1780408893912541200,
+    "word_count": 659,
+    "hash": "55ee2061463a67ac3adbc1a63def95709f945bc537be6ab6f09c5982ded291fc"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0035_recalc_saldo_conta.sql": {
+    "size": 7145,
+    "mtime_ns": 1780409598062070200,
+    "word_count": 784,
+    "hash": "a64f819ba5e1ce83a37297ea04099fe952aa26fc718b911931129cae41c2ba96"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0036_automacao_infra.sql": {
+    "size": 6701,
+    "mtime_ns": 1780437636707030200,
+    "word_count": 853,
+    "hash": "55bba8626089cc6e52ea027849f2db03c29683fc6a1414051122296945c2d568"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0037_automacao_financeiro.sql": {
+    "size": 8796,
+    "mtime_ns": 1780437768858395000,
+    "word_count": 1012,
+    "hash": "157d745b24c47119b0cc69c0a0eab266b61fac6ab38a74fd88c9e878ef7449d2"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0038_automacao_estoque.sql": {
+    "size": 4888,
+    "mtime_ns": 1780438088701857400,
+    "word_count": 521,
+    "hash": "a7184ea446f985f647c98267e20754348889ac06b62690b3e7465c7b920b01d0"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0039_automacao_sst_ferramental.sql": {
+    "size": 7759,
+    "mtime_ns": 1780438261305405100,
+    "word_count": 836,
+    "hash": "d83cb0a3dc81932307a797fb7289acda251b53431a08f76cabd68b13041f52e9"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0040_automacao_compras_crm_projetos.sql": {
+    "size": 7209,
+    "mtime_ns": 1780438419798985100,
+    "word_count": 771,
+    "hash": "cddf7c93d0a5a362254d8875548590b8af827ca7a901e3a8b81ec47ad6edc6a8"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0041_licitacoes.sql": {
+    "size": 4827,
+    "mtime_ns": 1780446893957089900,
+    "word_count": 501,
+    "hash": "601a0e4c1725784ce60b3f7cadd3fb90710a4c6ece77c8e59abb2faa76b648b1"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0042_cron_licitacoes.sql": {
+    "size": 1590,
+    "mtime_ns": 1780447163161044400,
+    "word_count": 135,
+    "hash": "03715edd371486f3173fa2c860a6eb5f9a86146aa19ba85048ddb4100a8f287b"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0043_licitacoes_triagem.sql": {
+    "size": 2552,
+    "mtime_ns": 1780491278566650800,
+    "word_count": 284,
+    "hash": "4798a6424e8329528a2fd66f154fa7dcd1ac11faf5546b2b09af168a11a188c6"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0044_licitacao_fonte.sql": {
+    "size": 841,
+    "mtime_ns": 1780496030007194300,
+    "word_count": 95,
+    "hash": "56719eb41043410e5de0608b859a9fb9e0174ffe930360cb6f6051a4100cb242"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0045_cron_licitacoes_pncp.sql": {
+    "size": 1482,
+    "mtime_ns": 1780496268247720800,
+    "word_count": 113,
+    "hash": "d67760eafcd5dff0b51fbed0f908f05fa75adce1f0ce554c21dc03d25ae7fcc6"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0046_licitacoes_status_simples.sql": {
+    "size": 1279,
+    "mtime_ns": 1780515070568815800,
+    "word_count": 140,
+    "hash": "7873a99ab58c320145a76bed3d700d964c480514f68aafb15215ecbdbe2ba8a9"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0047_arquivo_oportunidade_enviado_por_cliente.sql": {
+    "size": 796,
+    "mtime_ns": 1780563776815900500,
+    "word_count": 84,
+    "hash": "f1c40d7999299d1f13aeffd40768c48936936610c8365e9e77ae7753fcc6ab42"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0048_reenable_rls.sql": {
+    "size": 3455,
+    "mtime_ns": 1780574861706399000,
+    "word_count": 387,
+    "hash": "72d586b76cad86a1a1dd6db5ff35c94e0be3329cf939725ed876734424d51417"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0049_hardening_grants.sql": {
+    "size": 2148,
+    "mtime_ns": 1780580367913753000,
+    "word_count": 290,
+    "hash": "21e5f32dd990381a0f1fab131f985a8dbae324ae0bda8bcb1ecfe61bf6416260"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0050_oportunidade_motivo_perda.sql": {
+    "size": 582,
+    "mtime_ns": 1780586961651193800,
+    "word_count": 55,
+    "hash": "b66ce2137613d1bab90798bcc297281ee6e823ebc0bece6245c0bc78d5e5a6d4"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0051_fluxo_templates.sql": {
+    "size": 3398,
+    "mtime_ns": 1780958983835560500,
+    "word_count": 354,
+    "hash": "dcb7031eb9d1ddf55008b564dec822851ef14943e0b9df281db43200695cd03b"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0052_fluxo_motor.sql": {
+    "size": 27415,
+    "mtime_ns": 1781004007483146500,
+    "word_count": 2683,
+    "hash": "19b9cc06ff73ab57043b4d65764b100ccf9497692d08c626c336ae7669100a04"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0053_fluxo_motor_fix_notificacao.sql": {
+    "size": 5009,
+    "mtime_ns": 1781004471469120900,
+    "word_count": 580,
+    "hash": "77368bcf0c765d7e0bb7e8674f264c03d43d310c978d27c0c0263cef1641e533"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0054_compras_aprovacao_fix_notificacao.sql": {
+    "size": 12039,
+    "mtime_ns": 1781005337993246800,
+    "word_count": 1171,
+    "hash": "ea0db55a509fd5cf1ed4983ba21fb40c107743432a6caae9b9a4e5f537f5c205"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0055_transacao_oportunidade.sql": {
+    "size": 1392,
+    "mtime_ns": 1781028973687345400,
+    "word_count": 167,
+    "hash": "aad7a17fbecb2cc1fe7ccacdf5b68fc3484ae127cd01db14080e902866a6d017"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0056_hardening_revoke_anon.sql": {
+    "size": 2007,
+    "mtime_ns": 1781129105614503400,
+    "word_count": 226,
+    "hash": "e6dce950c354e55587b4ee1b970ef7453b13c603dd3b5e62cf94ef545010382a"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0057_sst_bloqueio_apto.sql": {
+    "size": 6126,
+    "mtime_ns": 1781129664315413300,
+    "word_count": 665,
+    "hash": "9b3afed376938dda56d6d25642b3696f0a5a88fdc0dae6bb9949aa28eaf4c65e"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0058_medicao_margem_obra.sql": {
+    "size": 10964,
+    "mtime_ns": 1781131189101144400,
+    "word_count": 1203,
+    "hash": "da99c83908cef185ca1a8dfeab7452925517212953b41971095613c7441254fd"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0059_consolidado_grupo.sql": {
+    "size": 4549,
+    "mtime_ns": 1781176669605994700,
+    "word_count": 493,
+    "hash": "5f6a30335aac4aa3638006ce508f490c3dee5a1a17aca7eac5585248cd951896"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0060_unique_soft_delete.sql": {
+    "size": 3598,
+    "mtime_ns": 1781183873199684900,
+    "word_count": 363,
+    "hash": "5f77af4da05ce4f268c278af1345d468e2f5c05f705d21a54560c94f2a906091"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0061_identidade_backend.sql": {
+    "size": 13245,
+    "mtime_ns": 1781184074307634900,
+    "word_count": 1424,
+    "hash": "602563d53766529dafb80f8f2786395b63d88d5f30fd5099093601210bc0f94a"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0062_compras_identidade_backend.sql": {
+    "size": 10952,
+    "mtime_ns": 1781277371080754700,
+    "word_count": 1109,
+    "hash": "f62b422ba766240196297caf350670118033bc854ecb364ac81e663806acc726"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0063_compras_perfis_jsonb_safe.sql": {
+    "size": 10637,
+    "mtime_ns": 1781277520751854200,
+    "word_count": 1048,
+    "hash": "3ed51155e46a0493a5aad0a68ff58dfd15419111d1f027c9ba1e5cc26fcb8b9e"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0064_medicao_impostos_retidos.sql": {
+    "size": 9670,
+    "mtime_ns": 1781285959584992400,
+    "word_count": 1170,
+    "hash": "f698b204c5ff55abe82a8c12ebf5071e49b5ec5a9d854e958992e8aeb360f750"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0065_winrate_orgao.sql": {
+    "size": 2552,
+    "mtime_ns": 1781288528410149800,
+    "word_count": 284,
+    "hash": "5ca0bc55ac6a4171a29ea0422d092de1d1e383f2d962c7c55b1c564e42182ba1"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0066_proposta_versionada.sql": {
+    "size": 3570,
+    "mtime_ns": 1781290145637562000,
+    "word_count": 385,
+    "hash": "376039cbb822e8f70d57ebcb0129ca9899b0452814868edcdce0fa00a7fc0d3f"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0067_gerar_pedido_direto_identidade.sql": {
+    "size": 4141,
+    "mtime_ns": 1781292008847871000,
+    "word_count": 446,
+    "hash": "1204aee59fa83a5ed34a246f17c67854e06ccccbbf03949a0b9ca700c42b084d"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0068_recebimento_compra.sql": {
+    "size": 8373,
+    "mtime_ns": 1781293237086434700,
+    "word_count": 891,
+    "hash": "cd86dcb7be5e2838e8adfb406bfe8447a39b033056be05078cc4641d58606816"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0069_estoque_saldo_nulls_not_distinct.sql": {
+    "size": 1729,
+    "mtime_ns": 1781293788032295600,
+    "word_count": 223,
+    "hash": "b79dbb180ac64f189ab0812ed71c13728b1729de3f47b5e4d87205c29acc3f11"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0070_gerar_pedido_direto_fornecedor_nome.sql": {
+    "size": 4338,
+    "mtime_ns": 1781293897098155600,
+    "word_count": 468,
+    "hash": "ad5139a7b22e39ccf6d9534f0679b8db5187371fec19c6ec169a86353be4ba1c"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0071_sst_liberacao_notifica_revoga.sql": {
+    "size": 5989,
+    "mtime_ns": 1781294696752029600,
+    "word_count": 676,
+    "hash": "486ab6d5b99acad375fba3479945e0c91198ff5949ace84fae0a02a85f1506c7"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0072_extrato_bancario_campos_frontend.sql": {
+    "size": 1440,
+    "mtime_ns": 1782394649573013500,
+    "word_count": 195,
+    "hash": "71468734e1f27a710bf04042a9e3c7eb34b485cedb1b7e06c83669bd6b7fa73b"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0073_transacao_anexos_tipo_receita.sql": {
+    "size": 1310,
+    "mtime_ns": 1782405868968604000,
+    "word_count": 175,
+    "hash": "b7c0026567121ef8b7f259c0b7389dafd45e1d21f1981b4cb19d9485e5fd68ba"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0074_conciliacao_campos.sql": {
+    "size": 1425,
+    "mtime_ns": 1782406583866095700,
+    "word_count": 166,
+    "hash": "30d86adc496c4a5b612a091b3cc666c4f6ffd4303b81aacfbd8cefd8e6dcd30d"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0075_colunas_outros_modulos.sql": {
+    "size": 1984,
+    "mtime_ns": 1782414529945659000,
+    "word_count": 231,
+    "hash": "69d5a34bf6f4a9e6c5f2bd9e3cc5fff33cbd1deca0961762326ff7abb7c9e9d6"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0076_manufatura_item_master.sql": {
+    "size": 4602,
+    "mtime_ns": 1782926919603693500,
+    "word_count": 356,
+    "hash": "d1672706dcfdb826f00f080e68ed0ce4059449ed2dbf10df688a2f9152c884f3"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0077_manufatura_engenharia.sql": {
+    "size": 8329,
+    "mtime_ns": 1782926947141437200,
+    "word_count": 655,
+    "hash": "d0b8a7741db94df5d35f4c8c31ca1d6ae66b2805c58f97886e7fedd2c0fca60f"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0078_manufatura_producao.sql": {
+    "size": 20955,
+    "mtime_ns": 1782952593032111000,
+    "word_count": 1817,
+    "hash": "8b358e80357c2783b47d48a1ab8f1faa1c52facaa98f2abc15f4c3efa9fee5c1"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0079_manufatura_custos.sql": {
+    "size": 6853,
+    "mtime_ns": 1782935494578570400,
+    "word_count": 631,
+    "hash": "723005fd05f47eec09a9d675daed86cd5482b23ab26bef2476cd83f10f872385"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0080_manufatura_mrp.sql": {
+    "size": 13451,
+    "mtime_ns": 1782935541965947200,
+    "word_count": 1206,
+    "hash": "afea0739d060222413463753a7f8294acbf8aa80af4cd9677460c33c87693c82"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0081_manufatura_qualidade_manutencao.sql": {
+    "size": 9264,
+    "mtime_ns": 1782952558103730100,
+    "word_count": 728,
+    "hash": "a56664e9f725f8201440e28fe0c06c903d63cf9e974d1f73bc8b989cfeef4fe5"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0082_manufatura_oee_views.sql": {
+    "size": 6819,
+    "mtime_ns": 1782935607413869400,
+    "word_count": 569,
+    "hash": "11a0db909427b79d24412d2a9b6c236370ecd2351638c757c9a5e457a023645f"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0083_fabrica_perfis_metas.sql": {
+    "size": 5793,
+    "mtime_ns": 1782954818425580300,
+    "word_count": 533,
+    "hash": "0d631fa16a2c9f64553fd5b78c08d4e34544fabf409db93d8ab191cd45f7b286"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0083_remove_licitacoes.sql": {
+    "size": 1676,
+    "mtime_ns": 1783455793482987600,
+    "word_count": 209,
+    "hash": "d65c4361eafd99051f0c9517900973c69566dd97e6dbba6d42d80d02b15df8f2"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\supabase\\migrations\\0084_compras_colunas_frontend.sql": {
+    "size": 1227,
+    "mtime_ns": 1782989013891640700,
+    "word_count": 138,
+    "hash": "1aeda63154bfaf77fc36d782404c321fbe6de6c4b3b47095fe1b21503263d6d0"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\tools\\README.md": {
+    "size": 2178,
+    "mtime_ns": 1779825381883410300,
+    "word_count": 292,
+    "hash": "a7a5424beb4ef89f5eeed66bd9de116d0971ed85d50a24a8958ad970e73c956d"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\tools\\RESUME-validacao-0054.md": {
+    "size": 2631,
+    "mtime_ns": 1781176285963043700,
+    "word_count": 362,
+    "hash": "4e7a0a4e2f9967404525c0c7994f749bdd274df11b48b3387edbecfe25f8660c"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\tools\\create-super-admin.mjs": {
+    "size": 4194,
+    "mtime_ns": 1779830674031838500,
+    "word_count": 419
+  },
+  "C:\\Users\\javer\\sigoobras-base\\tools\\export-legacy.mjs": {
+    "size": 13152,
+    "mtime_ns": 1779833428574632100,
+    "word_count": 1346
+  },
+  "C:\\Users\\javer\\sigoobras-base\\tools\\import-dump.mjs": {
+    "size": 17576,
+    "mtime_ns": 1779930435136575400,
+    "word_count": 1559
+  },
+  "C:\\Users\\javer\\sigoobras-base\\tools\\inspect-xlsx.mjs": {
+    "size": 13425,
+    "mtime_ns": 1779828328513094000,
+    "word_count": 1207
+  },
+  "C:\\Users\\javer\\sigoobras-base\\tools\\package.json": {
+    "size": 477,
+    "mtime_ns": 1779920837191478900,
+    "word_count": 38,
+    "hash": "aab4bdba5fb9b9119a83d05ab4b587cbb6b40e925b750d2f0c3f681e5e1da849"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\tools\\seed-from-xlsx.mjs": {
+    "size": 9820,
+    "mtime_ns": 1779834237470501000,
+    "word_count": 1000
+  },
+  "C:\\Users\\javer\\sigoobras-base\\tools\\sincronizar-lagoa-formosa.sql": {
+    "size": 2248,
+    "mtime_ns": 1779999498512433100,
+    "word_count": 269,
+    "hash": "5b61ccb98e830697381d36d3e4fece2e46e2c0d86ffd046e01682624eba229a7"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\tools\\smoke-compras-aprovacao.sql": {
+    "size": 8042,
+    "mtime_ns": 1781277548888005800,
+    "word_count": 964,
+    "hash": "c32e035668f050cb28f057298c5ec6769a7e1b1cc632f5f332712841287bd7e2"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\tools\\smoke-fluxo-motor.sql": {
+    "size": 6044,
+    "mtime_ns": 1781004110777204900,
+    "word_count": 730,
+    "hash": "cef6a470728ce5dbb6877b98d500a4dca58e69041cdff991bac1bc111093157b"
+  },
+  "C:\\Users\\javer\\sigoobras-base\\workers\\README.md": {
+    "size": 788,
+    "mtime_ns": 1779824946464190900,
+    "word_count": 112,
+    "hash": "92f65072755ff8d910e62ffb86e4acd5e24371e0d5d490ca41a036c3e34be5e8"
+  }
+}

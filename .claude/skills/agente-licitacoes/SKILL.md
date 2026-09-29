@@ -85,3 +85,6 @@ contrato/minuta.
   `vincular-pasta-oportunidade`. Migramos para o **OneDrive** (estrutura
   numerada por empresa/ano que a Sinergia já usa). Aquela função e a pasta do
   Google Drive ficam como legado.
+- A função legada agora exige o header `x-agente-secret` (= secret
+  `VINCULAR_PASTA_SECRET` do Supabase, ≥ 32 caracteres); sem o secret
+  configurado ela responde 503 (desativada). Não chamar com a anon key.
