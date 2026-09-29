@@ -109,6 +109,10 @@ export function criarChamarGemini(deps: DepsGemini) {
       if (!r.ok) {
         const e = erroHttpGemini(r.status, j);
         if (e.tentarFormatoLegado && !legado) {
+          console.warn(
+            `[gemini] 400 nos campos novos (${modelo}) — repetindo no formato legado:`,
+            e.erro
+          );
           legado = true;
           continue;
         }

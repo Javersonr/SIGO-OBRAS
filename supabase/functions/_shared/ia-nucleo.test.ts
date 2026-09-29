@@ -1,7 +1,13 @@
 // Roda com Node 23.6+ (type stripping):  node --test supabase/functions/_shared/ia-nucleo.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CHAVES_CONFIG_IA, configDeLinhas, criarChamarIA, type ConfigIA } from "./ia-nucleo.ts";
+import {
+  CHAVES_CONFIG_IA,
+  configDeLinhas,
+  criarChamarIA,
+  PRAZO_GEMINI_SEM_TIMEOUT_MS,
+  type ConfigIA,
+} from "./ia-nucleo.ts";
 import type { OpcoesIA, RespostaIA } from "./ia-tipos.ts";
 
 const CFG: ConfigIA = {
@@ -178,6 +184,17 @@ test("timeout: o OpenAI recebe só o tempo que sobrou", async () => {
   );
   await b.chamarIA({ prompt: "p" });
   assert.equal(b.log.o[0].timeoutMs, undefined);
+});
+
+test("sem timeoutMs: só a tentativa do Gemini ganha o prazo padrão de 60 s; a OpenAI (reserva) continua sem prazo", async () => {
+  const { chamarIA, log } = montar(
+    CFG,
+    async (o) => FALHA("gemini", o.modelo),
+    async (o) => OK("openai", o.modelo)
+  );
+  await chamarIA({ prompt: "p" });
+  assert.equal(log.g[0].timeoutMs, PRAZO_GEMINI_SEM_TIMEOUT_MS);
+  assert.equal(log.o[0].timeoutMs, undefined);
 });
 
 test("timeout: Gemini gastou mais da metade → devolve o erro, sem OpenAI", async () => {

@@ -257,6 +257,7 @@ Deno.serve(
           prompt: body.prompt,
           jsonSchema: body.json_schema,
           fileRefs: body.file_refs,
+          esforco: "low",
         });
         contabilizar(medidor, r);
         if (!r.ok) return falhaIA(r);
@@ -295,7 +296,7 @@ Deno.serve(
         };
         const r = await chamarComEscalonamento(
           chamarIA,
-          { prompt, fileRefs: body.file_refs, jsonSchema: SCHEMA_EXTRACAO },
+          { prompt, fileRefs: body.file_refs, jsonSchema: SCHEMA_EXTRACAO, esforco: "low" },
           extracaoFraca,
           medidor
         );
@@ -320,7 +321,12 @@ Deno.serve(
           typeof res?.aprovado !== "boolean" || !res?.resumo || !Array.isArray(res?.pendencias);
         const r = await chamarComEscalonamento(
           chamarIA,
-          { prompt, fileRefs: [body.pcmso_ref, ...body.exames_refs], jsonSchema: SCHEMA_PCMSO },
+          {
+            prompt,
+            fileRefs: [body.pcmso_ref, ...body.exames_refs],
+            jsonSchema: SCHEMA_PCMSO,
+            esforco: "low",
+          },
           parecerFraco,
           medidor
         );

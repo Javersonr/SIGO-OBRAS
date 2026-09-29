@@ -37,4 +37,6 @@ comment on column public.ia_uso.acao is
 comment on table public.ia_uso is
   'Consumo da IA (Gemini/OpenAI) por requisição da ia-processar: tokens somados de todas as chamadas, provedor, modelo e custo estimado. Base da cota diária das ações edital_* (saas_config ia_cota_edital_dia). Escrita só service role.';
 
+notify pgrst, 'reload schema';
+
 select 'ok' as res;

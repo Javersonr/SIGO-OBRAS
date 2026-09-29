@@ -29,6 +29,11 @@ export async function lerConfigIA(): Promise<ConfigIA> {
 
 export const chamarIA: (o: OpcoesIA) => Promise<RespostaIA> = criarChamarIA({
   lerConfig: lerConfigIA,
-  chamarGemini,
+  chamarGemini: async (o) => {
+    const r = await chamarGemini(o);
+    if (!r.ok)
+      console.warn(`[ia] Gemini falhou (${r.modelo ?? o.modelo}, ${r.motivo ?? "?"}): ${r.erro}`);
+    return r;
+  },
   chamarOpenAI: async (o) => ({ ...(await chamarOpenAI(o)), provedor: "openai" as const }),
 });

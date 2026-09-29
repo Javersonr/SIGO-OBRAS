@@ -43,6 +43,13 @@ export const CHAVES_CONFIG_IA = [
 export const OPENAI_MODELO_PADRAO = "gpt-4o-mini";
 /** igual a MODELO_FORTE de openai.ts (aqui sem importar: openai.ts usa Deno/esm.sh) */
 export const OPENAI_MODELO_FORTE = "gpt-4o";
+/**
+ * Quando o chamador não dá timeoutMs, só a tentativa do Gemini ganha este
+ * prazo (a regra da metade e a chamada da OpenAI continuam sem prazo nesse
+ * caso — caminho só-OpenAI idêntico ao de hoje). Sem isto, um Gemini travado
+ * nunca cairia para a OpenAI.
+ */
+export const PRAZO_GEMINI_SEM_TIMEOUT_MS = 60_000;
 
 /**
  * Linhas de saas_config + env → ConfigIA. Env (GEMINI_API_KEY / OPENAI_API_KEY)
@@ -82,7 +89,12 @@ export function criarChamarIA(deps: DepsIA): (o: OpcoesIA) => Promise<RespostaIA
 
     if (cfg.gemini.apiKey) {
       const modelo = forte ? cfg.gemini.modeloForte : cfg.gemini.modelo;
-      const r = await deps.chamarGemini({ ...o, modelo, apiKey: cfg.gemini.apiKey });
+      const r = await deps.chamarGemini({
+        ...o,
+        modelo,
+        apiKey: cfg.gemini.apiKey,
+        timeoutMs: o.timeoutMs ?? PRAZO_GEMINI_SEM_TIMEOUT_MS,
+      });
       const g: RespostaIA = { ...r, modelo: r.modelo || modelo, provedor: "gemini" };
       tentativas.push(g);
       if (g.ok) return final(g);
