@@ -61,23 +61,85 @@ test("ehAcaoEdital só para as 3 ações de edital", () => {
   assert.equal(ehAcaoEdital("llm"), false);
 });
 
-test("contabilizar soma tokens/modelos e ignora 'sem chave'", () => {
+test("contabilizar soma tokens/modelos/custo e ignora 'sem chave'", () => {
   const m = novoMedidor();
   contabilizar(m, {
     ok: true,
+    provedor: "openai",
     modelo: "gpt-4o-mini",
     usage: { input_tokens: 100, output_tokens: 10 },
   });
-  contabilizar(m, { ok: false, motivo: "timeout", modelo: "gpt-4o" });
-  contabilizar(m, { ok: true, modelo: "gpt-4o", usage: { input_tokens: 50, output_tokens: 5 } });
+  contabilizar(m, { ok: false, motivo: "timeout", provedor: "openai", modelo: "gpt-4o" });
+  contabilizar(m, {
+    ok: true,
+    provedor: "openai",
+    modelo: "gpt-4o",
+    usage: { input_tokens: 50, output_tokens: 5 },
+  });
   contabilizar(m, { ok: false, motivo: "config" });
   assert.deepEqual(m, {
     chamadas: 3,
     tokens_entrada: 150,
     tokens_saida: 15,
     modelos: ["gpt-4o-mini", "gpt-4o"],
+    provedores: ["openai"],
+    // 100×0,15 + 10×0,60 = 21 µUS$; timeout sem usage = 0; 50×2,50 + 5×10 = 175 µUS$
+    custo_usd: 0.000196,
+    custo_conhecido: true,
   });
   contabilizar(undefined, { ok: true }); // sem medidor: não quebra
+});
+
+test("contabilizar percorre as tentativas do chamarIA (Gemini falhou → OpenAI)", () => {
+  const m = novoMedidor();
+  const openai = {
+    ok: true,
+    provedor: "openai",
+    modelo: "gpt-4o-mini",
+    usage: { input_tokens: 1000, output_tokens: 100 },
+  };
+  contabilizar(m, {
+    ...openai,
+    tentativas: [
+      {
+        ok: false,
+        motivo: "http",
+        provedor: "gemini",
+        modelo: "gemini-3.5-flash-lite",
+        usage: { input_tokens: 2000, output_tokens: 0 },
+      },
+      openai,
+    ],
+  });
+  // a resposta final NÃO é somada de novo (ela já está nas tentativas)
+  assert.deepEqual(m, {
+    chamadas: 2,
+    tokens_entrada: 3000,
+    tokens_saida: 100,
+    modelos: ["gemini-3.5-flash-lite", "gpt-4o-mini"],
+    provedores: ["gemini", "openai"],
+    // 2000×0,30 = 600 µUS$ + (1000×0,15 + 100×0,60) = 210 µUS$
+    custo_usd: 0.00081,
+    custo_conhecido: true,
+  });
+  // tentativas vazias ou só "sem chave": nada é somado
+  const vazio = novoMedidor();
+  contabilizar(vazio, { ok: false, motivo: "config", tentativas: [] });
+  contabilizar(vazio, { ok: false, tentativas: [{ ok: false, motivo: "config" }] });
+  assert.deepEqual(vazio, novoMedidor());
+});
+
+test("contabilizar: modelo sem preço não inventa custo", () => {
+  const m = novoMedidor();
+  contabilizar(m, {
+    ok: true,
+    provedor: "openai",
+    modelo: "gpt-5",
+    usage: { input_tokens: 10, output_tokens: 1 },
+  });
+  assert.equal(m.chamadas, 1);
+  assert.equal(m.custo_usd, 0);
+  assert.equal(m.custo_conhecido, false);
 });
 
 test("inicioDoDiaBR usa o dia de Brasília", () => {
@@ -147,16 +209,52 @@ test("registrarUso: grava a soma; sem chamada não grava; erro não propaga", as
   await registrarUso(f.cliente, usuario, "edital_atende", m);
   assert.equal(f.inserts.length, 0);
 
-  contabilizar(m, { ok: true, modelo: "gpt-4o", usage: { input_tokens: 7, output_tokens: 3 } });
+  contabilizar(m, {
+    ok: true,
+    provedor: "gemini",
+    modelo: "gemini-3.5-flash-lite",
+    usage: { input_tokens: 1000, output_tokens: 100 },
+  });
+  contabilizar(m, {
+    ok: true,
+    provedor: "openai",
+    modelo: "gpt-4o",
+    usage: { input_tokens: 1000, output_tokens: 100 },
+  });
   await registrarUso(f.cliente, usuario, "edital_atende", m);
   assert.deepEqual(f.inserts, [
     {
       empresa_id: "emp-1",
       usuario_email: "a@b.com",
       acao: "edital_atende",
-      modelo: "gpt-4o",
-      tokens_entrada: 7,
-      tokens_saida: 3,
+      provedor: "gemini,openai",
+      modelo: "gemini-3.5-flash-lite,gpt-4o",
+      tokens_entrada: 2000,
+      tokens_saida: 200,
+      // (1000×0,30 + 100×2,50) + (1000×2,50 + 100×10) = 550 + 3500 µUS$
+      custo_usd: 0.00405,
+    },
+  ]);
+
+  // nenhum modelo com preço → custo_usd null (não 0); sem provedor → null
+  const semPreco = novoMedidor();
+  contabilizar(semPreco, {
+    ok: true,
+    modelo: "gpt-5",
+    usage: { input_tokens: 5, output_tokens: 5 },
+  });
+  f = clienteFalso({});
+  await registrarUso(f.cliente, usuario, "llm", semPreco);
+  assert.deepEqual(f.inserts, [
+    {
+      empresa_id: "emp-1",
+      usuario_email: "a@b.com",
+      acao: "llm",
+      provedor: null,
+      modelo: "gpt-5",
+      tokens_entrada: 5,
+      tokens_saida: 5,
+      custo_usd: null,
     },
   ]);
   f = clienteFalso({ erroInsert: "permission denied" });

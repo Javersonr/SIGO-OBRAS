@@ -1,18 +1,22 @@
 /**
  * ia-uso — consumo da IA e cota diária das ações edital_* (tabela public.ia_uso,
- * migração 0114_ia_uso_cota.sql).
+ * migrações 0114_ia_uso_cota.sql e 0123_ia_uso_provedor_custo.sql).
  *
- *   - 1 linha por requisição edital_* que chegou a chamar a OpenAI, com os
- *     tokens de TODAS as chamadas da requisição somados (escalonamento etc.);
- *   - ANTES de chamar a OpenAI: linhas da empresa no dia (fuso de Brasília)
- *     ≥ cota → a ação é recusada (429 COTA_IA). Cota = saas_config
- *     'ia_cota_edital_dia' (inteiro ≥ 1) ou COTA_EDITAL_PADRAO. Super admin
- *     isento (mas o uso dele também é gravado).
+ *   - 1 linha por requisição que chegou a chamar a IA (Gemini e/ou OpenAI),
+ *     com os tokens de TODAS as chamadas da requisição somados (fallback de
+ *     provedor, escalonamento etc.), o(s) provedor(es), o(s) modelo(s) e o
+ *     custo estimado em US$ (ia-precos.ts; null se nenhum modelo tem preço);
+ *   - ANTES de chamar a IA nas ações edital_*: linhas edital_* da empresa no
+ *     dia (fuso de Brasília) ≥ cota → a ação é recusada (429 COTA_IA). Cota =
+ *     saas_config 'ia_cota_edital_dia' (inteiro ≥ 1) ou COTA_EDITAL_PADRAO.
+ *     Super admin isento (mas o uso dele também é gravado).
  *   - Falha ao ler a cota/contar (ex.: migração ainda não aplicada) libera a
  *     ação; falha ao gravar só vai para o log — nunca derruba a ação.
  *
- * Sem imports: o cliente (service role) vem de quem chama — testável em Node.
+ * Só importa ../_shared/ia-precos.ts (puro); o cliente (service role) vem de
+ * quem chama — testável em Node.
  */
+import { custoUsd } from "../_shared/ia-precos.ts";
 
 export const COTA_EDITAL_PADRAO = 400;
 export const CHAVE_COTA_EDITAL = "ia_cota_edital_dia";
@@ -29,11 +33,17 @@ export interface UsuarioUso {
 }
 
 export interface MedidorUso {
-  /** chamadas à OpenAI que chegaram a sair (inclui erro/timeout) */
+  /** chamadas a um provedor de IA que chegaram a sair (inclui erro/timeout) */
   chamadas: number;
   tokens_entrada: number;
   tokens_saida: number;
   modelos: string[];
+  /** provedores chamados, na ordem ("gemini", "openai") */
+  provedores: string[];
+  /** soma do custo estimado (US$) das chamadas com preço conhecido */
+  custo_usd: number;
+  /** false = nenhuma chamada tinha preço conhecido → grava custo_usd null */
+  custo_conhecido: boolean;
 }
 
 export const novoMedidor = (): MedidorUso => ({
@@ -41,29 +51,51 @@ export const novoMedidor = (): MedidorUso => ({
   tokens_entrada: 0,
   tokens_saida: 0,
   modelos: [],
+  provedores: [],
+  custo_usd: 0,
+  custo_conhecido: false,
 });
 
-/** o que interessa de RespostaOpenAI (ok ou não) */
+/** o que interessa de RespostaIA (ok ou não) — ver _shared/ia-tipos.ts */
 interface RespostaComUso {
   ok: boolean;
   motivo?: string;
   modelo?: string;
+  provedor?: string;
   usage?: { input_tokens: number; output_tokens: number };
+  /** chamarIA: TODAS as respostas da chamada (Gemini e reserva), na ordem */
+  tentativas?: RespostaComUso[];
 }
 
-/** soma uma resposta ao medidor; "config" (sem chave) não chegou a chamar a OpenAI */
+/**
+ * Soma uma resposta ao medidor. Com `tentativas` (chamarIA), soma cada uma
+ * delas — a resposta final já está na lista e não é somada de novo; sem,
+ * soma a própria resposta. "config" (sem chave) não chegou a chamar a IA.
+ */
 export function contabilizar(
   m: MedidorUso | undefined,
   r: RespostaComUso,
   modeloPedido?: string
 ): void {
   if (!m) return;
-  if (!r.ok && r.motivo === "config") return;
-  m.chamadas++;
-  m.tokens_entrada += Math.max(0, Math.round(Number(r.usage?.input_tokens) || 0));
-  m.tokens_saida += Math.max(0, Math.round(Number(r.usage?.output_tokens) || 0));
-  const modelo = r.modelo || modeloPedido;
-  if (modelo && !m.modelos.includes(modelo)) m.modelos.push(modelo);
+  const lista = r.tentativas?.length ? r.tentativas : [r];
+  for (const t of lista) {
+    if (!t.ok && t.motivo === "config") continue;
+    m.chamadas++;
+    const entrada = Math.max(0, Math.round(Number(t.usage?.input_tokens) || 0));
+    const saida = Math.max(0, Math.round(Number(t.usage?.output_tokens) || 0));
+    m.tokens_entrada += entrada;
+    m.tokens_saida += saida;
+    const modelo = t.modelo || modeloPedido;
+    if (modelo && !m.modelos.includes(modelo)) m.modelos.push(modelo);
+    if (t.provedor && !m.provedores.includes(t.provedor)) m.provedores.push(t.provedor);
+    const custo = custoUsd(modelo, { input_tokens: entrada, output_tokens: saida });
+    if (custo !== null) {
+      // soma em micro-dólar para não acumular erro de ponto flutuante
+      m.custo_usd = Math.round((m.custo_usd + custo) * 1_000_000) / 1_000_000;
+      m.custo_conhecido = true;
+    }
+  }
 }
 
 /** 00:00 de hoje em Brasília (UTC−3; sem horário de verão desde 2019), em ISO */
@@ -125,7 +157,7 @@ export async function verificarCotaEdital(
   }
 }
 
-/** grava o consumo da requisição (só se chamou a OpenAI); erro vai só para o log */
+/** grava o consumo da requisição (só se chamou a IA); erro vai só para o log */
 export async function registrarUso(
   admin: Cliente,
   u: UsuarioUso,
@@ -138,9 +170,11 @@ export async function registrarUso(
       empresa_id: u.empresa_id,
       usuario_email: u.email,
       acao,
+      provedor: m.provedores.join(",").slice(0, 100) || null,
       modelo: m.modelos.join(",").slice(0, 200) || null,
       tokens_entrada: m.tokens_entrada,
       tokens_saida: m.tokens_saida,
+      custo_usd: m.custo_conhecido ? m.custo_usd : null,
     });
     if (error) console.warn("[ia-processar] ia_uso: falha ao gravar —", error.message);
   } catch (e) {
