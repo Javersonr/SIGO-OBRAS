@@ -77,6 +77,10 @@ export default function DespesasTab({
   // idem para o FORMULÁRIO: anexos de uma despesa que chegam depois de abrir
   // outra não podem cair no formulário errado (e ser apagados/copiados ao salvar)
   const anexosFormRef = useRef(null);
+  // "sessão" do formulário: muda a cada handleOpen (inclusive despesa nova → despesa nova, em que o
+  // anexosFormRef é null nas duas). Um upload que termina depois de o formulário ter sido reaberto
+  // é de outra sessão e é descartado, em vez de cair na lista da despesa que está aberta agora.
+  const sessaoFormRef = useRef(0);
   const [sortConfig, setSortConfig] = useState({ field: "data_vencimento", direction: "desc" });
   const [showModal, setShowModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -229,6 +233,8 @@ export default function DespesasTab({
 
   const handleAnexoUpload = async (e) => {
     const files = Array.from(e.target.files);
+    // formulário aberto agora: se for outro quando o upload terminar, o resultado é descartado
+    const sessao = sessaoFormRef.current;
     try {
       // uploads em paralelo (eram em série, 1 por vez → lento com vários arquivos)
       const novosAnexos = await Promise.all(
@@ -240,6 +246,9 @@ export default function DespesasTab({
           return { nome: file.name, url: ref, tipo: file.type };
         })
       );
+      // formulário cancelado/trocado durante o upload: o arquivo não é desta despesa (fica órfão no
+      // Storage, como o do "Ler documento" descartado)
+      if (sessaoFormRef.current !== sessao) return;
       // nunca guarda anexo sem url (evita NOT NULL em transacao_anexo no save)
       const validos = novosAnexos.filter((a) => a.url);
       if (validos.length < novosAnexos.length) {
@@ -248,6 +257,7 @@ export default function DespesasTab({
       setAnexos((prev) => [...prev, ...validos]);
     } catch (err) {
       console.error("[DespesasTab] erro upload anexo:", err);
+      if (sessaoFormRef.current !== sessao) return; // ninguém espera este aviso
       alert("❌ Erro ao enviar anexo: " + (err?.message || "tente novamente"));
     }
   };
@@ -795,6 +805,7 @@ export default function DespesasTab({
   const handleOpen = (item = null) => {
     setSelectedItem(item);
     anexosFormRef.current = item?.id ?? null;
+    sessaoFormRef.current += 1;
     setAnexosCarregados(false);
 
     if (item) {
@@ -819,6 +830,9 @@ export default function DespesasTab({
         chave_nfe: item.chave_nfe || "",
       });
 
+      // zera a lista antes da carga: o que sobrou de outro formulário (ex.: upload que terminou com
+      // a tela já fechada) não pode ser mantido pela mescla e gravado nesta despesa
+      setAnexos([]);
       loadAnexos(item.id);
       // Carregar parcelas se existirem
       if (item.parcelado && item.parcelas) {
