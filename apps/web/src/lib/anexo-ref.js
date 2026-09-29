@@ -59,3 +59,15 @@ export function ehPdf(ref, tipo) {
   if (ext) return ext === "pdf";
   return /pdf/i.test(String(tipo || ""));
 }
+
+/**
+ * Lista de anexos do formulário com o anexo que JÁ SUBIU no fim (o "Ler documento" sobe o arquivo
+ * uma vez só e entrega { nome, url: ref, tipo }). Devolve a mesma lista quando não há o que
+ * acrescentar: sem `url` (transacao_anexo.url é NOT NULL) ou com a mesma referência já na lista.
+ */
+export function acrescentarAnexoPronto(lista, anexo) {
+  const atual = lista || [];
+  if (!anexo?.url) return atual;
+  if (atual.some((a) => a?.url === anexo.url)) return atual;
+  return [...atual, anexo];
+}

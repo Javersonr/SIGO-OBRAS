@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
-import { refDoUpload, nomeDoArquivo, extensaoDoArquivo, ehImagem, ehPdf } from "@/lib/anexo-ref";
+import {
+  acrescentarAnexoPronto,
+  refDoUpload,
+  nomeDoArquivo,
+  extensaoDoArquivo,
+  ehImagem,
+  ehPdf,
+} from "@/lib/anexo-ref";
 import DespesaModal from "./DespesaModal";
 
 /** Mime do comprovante pela extensão da ref; sem extensão, costuma ser foto. */
@@ -101,6 +108,11 @@ export default function EditarPreLancamentoComDespesaModal({
     setAnexos((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // anexo que já subiu no "Ler documento" (ref "bucket/path"): entra sem novo upload
+  const adicionarAnexoPronto = (anexo) => {
+    setAnexos((prev) => acrescentarAnexoPronto(prev, anexo));
+  };
+
   const handleNumeroParcelasChange = (num) => {
     setNumeroParcelas(parseInt(num) || 1);
     setParcelas([]);
@@ -165,6 +177,9 @@ export default function EditarPreLancamentoComDespesaModal({
       anexos={anexos}
       handleAnexoUpload={handleAnexoUpload}
       handleRemoverAnexo={handleRemoverAnexo}
+      adicionarAnexoPronto={adicionarAnexoPronto}
+      // o salvar só atualiza os dados básicos do pré-lançamento: sem parcelas, itens nem chave
+      salvaDadosDoDocumento={false}
       handleSave={handleSave}
       empresaAtiva={empresaAtiva}
       onReload={() => {}}

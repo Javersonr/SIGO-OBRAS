@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { acharPessoa, montarPreenchimento } from "./documento-financeiro";
+import { acharPessoa, adequarLeituraAoContexto, montarPreenchimento } from "./documento-financeiro";
 
 /** DocumentoFiscal completo (formato do contrato) com os campos sobrescritos. */
 function doc(extra = {}) {
@@ -354,5 +354,97 @@ describe("acharPessoa", () => {
     expect(acharPessoa(fornecedores, alvo(" jose da  silva ", null), "cnpj")?.id).toBe("f3");
     expect(acharPessoa(fornecedores, alvo("Outro", "12345678909"), "cnpj")).toBeNull();
     expect(acharPessoa([], alvo(null, null), "cnpj")).toBeNull();
+  });
+});
+
+describe("adequarLeituraAoContexto", () => {
+  const parcelas = [1, 2, 3].map((n) => ({
+    numero: n,
+    valor: 100,
+    data_vencimento: `2026-10-${String(n * 10).padStart(2, "0")}`,
+    status: "em_aberto",
+  }));
+  const itens = [{ descricao: "CABO 2,5MM", quantidade: 10 }];
+  const leitura = (extra) => ({ parcelas, itens, avisos: ["Valor lido com dúvida"], ...extra });
+
+  it("despesa nova: entra tudo e a tela ajusta o parcelamento", () => {
+    const r = adequarLeituraAoContexto(leitura(), {});
+    expect(r).toEqual({
+      parcelas,
+      itens,
+      avisos: ["Valor lido com dúvida"],
+      tocaParcelamento: true,
+    });
+  });
+
+  it("edição: ignora as duplicatas, avisa e não mexe no parcelamento", () => {
+    const r = adequarLeituraAoContexto(leitura(), { edicao: true });
+    expect(r.tocaParcelamento).toBe(false);
+    expect(r.parcelas).toEqual([]);
+    expect(r.avisos).toEqual([
+      "Valor lido com dúvida",
+      "O documento traz 3 vencimentos, mas o parcelamento não foi alterado na edição.",
+    ]);
+    // os itens da nota continuam valendo (despesa que ainda não teve entrada de estoque)
+    expect(r.itens).toEqual(itens);
+  });
+
+  it("edição com um vencimento só (o montarPreenchimento devolve parcelas vazias): sem aviso", () => {
+    const r = adequarLeituraAoContexto(leitura({ parcelas: [] }), { edicao: true });
+    expect(r.tocaParcelamento).toBe(false);
+    expect(r.avisos).toEqual(["Valor lido com dúvida"]);
+  });
+
+  it("edição de despesa que já gerou entrada de estoque: não carrega os itens da nota", () => {
+    const r = adequarLeituraAoContexto(leitura(), { edicao: true, jaGerouEstoque: true });
+    expect(r.itens).toEqual([]);
+    expect(r.avisos).toContain(
+      "Esta despesa já gerou entrada de estoque: os itens da nota não foram carregados."
+    );
+  });
+
+  it("já gerou estoque, mas o documento não tem itens: sem aviso", () => {
+    const r = adequarLeituraAoContexto(leitura({ itens: [] }), {
+      edicao: true,
+      jaGerouEstoque: true,
+    });
+    expect(r.avisos).toEqual(["Valor lido com dúvida", expect.stringContaining("3 vencimentos")]);
+  });
+
+  it("pré-lançamento e reconciliação (não gravam parcelas nem itens): só o valor e o vencimento", () => {
+    const r = adequarLeituraAoContexto(leitura(), { salvaDadosDoDocumento: false });
+    expect(r.tocaParcelamento).toBe(false);
+    expect(r.parcelas).toEqual([]);
+    expect(r.itens).toEqual([]);
+    expect(r.avisos).toEqual([
+      "Valor lido com dúvida",
+      "O documento traz 3 vencimentos, mas esta tela não divide em parcelas: confira o valor e o vencimento.",
+    ]);
+  });
+
+  it("não altera a leitura recebida", () => {
+    const entrada = leitura();
+    adequarLeituraAoContexto(entrada, { edicao: true, jaGerouEstoque: true });
+    expect(entrada).toEqual(leitura());
+  });
+
+  it("a partir do documento: NF-e com 3 duplicatas vira parcelas só na despesa nova", () => {
+    const montado = montarPreenchimento(
+      doc({
+        vencimentos: [
+          { numero: "001", data: "2026-10-10", valor: 100 },
+          { numero: "002", data: "2026-11-10", valor: 100 },
+          { numero: "003", data: "2026-12-10", valor: 100.1 },
+        ],
+        itens: [{ descricao: "CABO", quantidade: 1, valor_unitario: 300.1, valor_total: 300.1 }],
+      }),
+      { tipo: "despesa" }
+    );
+    expect(adequarLeituraAoContexto(montado, {}).parcelas).toHaveLength(3);
+    const edicao = adequarLeituraAoContexto(montado, { edicao: true });
+    expect(edicao.parcelas).toEqual([]);
+    expect(edicao.itens).toHaveLength(1);
+    // o patch (valor total, vencimento da 1ª duplicata) segue o mesmo nos dois casos
+    expect(montado.patch).toMatchObject({ valor: "300.10", data_vencimento: "2026-10-10" });
   });
 });

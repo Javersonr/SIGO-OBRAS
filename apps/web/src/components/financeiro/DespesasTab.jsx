@@ -33,7 +33,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sigo, supabase } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
-import { refDoUpload } from "@/lib/anexo-ref";
+import { acrescentarAnexoPronto, refDoUpload } from "@/lib/anexo-ref";
 import { lerXmlFiscal, textoDoXml } from "@/lib/nfe-xml";
 import { acharPessoa } from "@/lib/documento-financeiro";
 import { cadastroDoXml, lancamentoDoXml } from "@/lib/importacao-xml";
@@ -247,7 +247,7 @@ export default function DespesasTab({
 
   // anexo que já subiu no "Ler documento" (ref "bucket/path"): entra sem novo upload
   const adicionarAnexoPronto = (anexo) => {
-    if (anexo?.url) setAnexos((prev) => [...prev, anexo]);
+    setAnexos((prev) => acrescentarAnexoPronto(prev, anexo));
   };
 
   const handleExportarExcel = async () => {

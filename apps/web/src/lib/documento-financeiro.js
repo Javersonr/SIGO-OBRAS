@@ -199,3 +199,53 @@ export function montarPreenchimento(doc, { tipo, pessoas = [], categorias = [] }
 
   return { patch, parcelas, itens, pessoaSugerida, avisos: [...(doc.avisos || [])] };
 }
+
+/**
+ * O que da leitura vale no lugar onde o formulário está aberto. Puro.
+ *
+ *  - `edicao` (despesa que já existe): o parcelamento dela fica como está. Voltar para 1 parcela
+ *    ou trocar as parcelas faria o salvar apagar/reescrever os lançamentos das parcelas no
+ *    extrato. As duplicatas do documento não viram parcelas (e o usuário é avisado).
+ *  - `jaGerouEstoque`: a despesa já teve entrada de estoque; os itens da nota não voltam para
+ *    "Associar materiais" (um novo salvar lançaria a entrada em dobro).
+ *  - `salvaDadosDoDocumento: false` (pré-lançamento e reconciliação): o pai grava só os campos
+ *    básicos, então parcelas e itens da nota (estoque) não seriam gravados.
+ *
+ * @param {{ parcelas: object[], itens: object[], avisos: string[] }} leitura saída do montarPreenchimento
+ * @param {{ edicao?: boolean, jaGerouEstoque?: boolean, salvaDadosDoDocumento?: boolean }} contexto
+ * @returns {{ parcelas: object[], itens: object[], avisos: string[], tocaParcelamento: boolean }}
+ *   tocaParcelamento: a tela pode ligar/desligar o parcelamento a partir da leitura
+ */
+export function adequarLeituraAoContexto(
+  { parcelas = [], itens = [], avisos = [] } = {},
+  { edicao = false, jaGerouEstoque = false, salvaDadosDoDocumento = true } = {}
+) {
+  const nota = [...avisos];
+
+  if (!salvaDadosDoDocumento) {
+    if (parcelas.length > 1) {
+      nota.push(
+        `O documento traz ${parcelas.length} vencimentos, mas esta tela não divide em parcelas: ` +
+          "confira o valor e o vencimento."
+      );
+    }
+    return { parcelas: [], itens: [], avisos: nota, tocaParcelamento: false };
+  }
+
+  if (!edicao) return { parcelas, itens, avisos: nota, tocaParcelamento: true };
+
+  if (parcelas.length > 1) {
+    nota.push(
+      `O documento traz ${parcelas.length} vencimentos, mas o parcelamento não foi alterado na edição.`
+    );
+  }
+  if (jaGerouEstoque && itens.length > 0) {
+    nota.push("Esta despesa já gerou entrada de estoque: os itens da nota não foram carregados.");
+  }
+  return {
+    parcelas: [],
+    itens: jaGerouEstoque ? [] : itens,
+    avisos: nota,
+    tocaParcelamento: false,
+  };
+}

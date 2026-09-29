@@ -32,7 +32,11 @@ import ImgStorage from "@/components/ImgStorage";
 import AnexoViewer from "@/components/shared/AnexoViewer";
 import EntityCombobox from "@/components/shared/EntityCombobox";
 import { categoriaDoFornecedor } from "@/lib/categorias-fornecedor";
-import { ehDocumentoFiscal, montarPreenchimento } from "@/lib/documento-financeiro";
+import {
+  adequarLeituraAoContexto,
+  ehDocumentoFiscal,
+  montarPreenchimento,
+} from "@/lib/documento-financeiro";
 import { dadosIniciaisCadastro } from "@/lib/ler-documento";
 import AssociarMateriaisModal from "./AssociarMateriaisModal";
 import LerDocumentoButton, { ConferirLeitura, PessoaNaoCadastrada } from "./LerDocumentoButton";
@@ -68,8 +72,13 @@ export default function DespesaModal({
   onDesfazerConciliacao,
   podeEditar,
   // anexo que já subiu no "Ler documento" ({ nome, url: ref, tipo }). Sem esta
-  // prop (pré-lançamento, reconciliação) o botão "Ler documento" não aparece.
+  // prop o botão "Ler documento" não aparece (nova despesa, edição, pré-lançamento
+  // e reconciliação passam).
   adicionarAnexoPronto,
+  // false quando o pai grava só os campos básicos (pré-lançamento e reconciliação: não gravam
+  // parcelas, itens da nota nem chave/número do documento). Aí a leitura não liga o
+  // parcelamento, não abre "Associar materiais" e não checa duplicidade da chave da NF-e.
+  salvaDadosDoDocumento = true,
 }) {
   // tipoDespesa pode vir do parent ou ser local — usamos local fallback.
   const [tipoDespesaLocal, setTipoDespesaLocal] = useState(tipoDespesaProp || "geral");
@@ -152,16 +161,23 @@ export default function DespesaModal({
   // o usuário conferir — nada é salvo aqui. A leitura sobrescreve os campos
   // que o documento trouxe e mantém os demais.
   const aplicarDocumentoLido = ({ documento, anexo }) => {
-    const {
-      patch,
-      parcelas: parcelasLidas,
-      itens,
-      pessoaSugerida,
-      avisos,
-    } = montarPreenchimento(documento, {
+    const montado = montarPreenchimento(documento, {
       tipo: "despesa",
       pessoas: fornecedoresLocais,
       categorias,
+    });
+    const { patch, pessoaSugerida } = montado;
+    // Na edição o parcelamento da despesa não muda; pré-lançamento e reconciliação não gravam
+    // parcelas nem itens da nota (ver adequarLeituraAoContexto).
+    const {
+      parcelas: parcelasLidas,
+      itens,
+      avisos,
+      tocaParcelamento,
+    } = adequarLeituraAoContexto(montado, {
+      edicao: Boolean(selectedItem),
+      jaGerouEstoque: Boolean(selectedItem?.gerou_entrada_estoque),
+      salvaDadosDoDocumento,
     });
     const { categoria_id: categoriaId, categoria_nome: categoriaNome, ...resto } = patch;
     setForm((prev) => ({
@@ -175,16 +191,18 @@ export default function DespesaModal({
 
     // duplicatas/vencimentos → parcelas. O handleNumeroParcelasChange do pai
     // ainda enxerga o form antigo; o setParcelas logo depois é o que vale.
-    if (parcelasLidas.length > 1) {
-      handleNumeroParcelasChange(parcelasLidas.length);
-      setParcelas(parcelasLidas);
-      setPermitirParcelamento(true);
-      setMostrarParcelas(true);
-    } else if (patch.valor && permitirParcelamento) {
-      // as parcelas na tela eram do valor anterior
-      handleNumeroParcelasChange(1);
-      setPermitirParcelamento(false);
-      setMostrarParcelas(false);
+    if (tocaParcelamento) {
+      if (parcelasLidas.length > 1) {
+        handleNumeroParcelasChange(parcelasLidas.length);
+        setParcelas(parcelasLidas);
+        setPermitirParcelamento(true);
+        setMostrarParcelas(true);
+      } else if (patch.valor && permitirParcelamento) {
+        // as parcelas na tela eram do valor anterior
+        handleNumeroParcelasChange(1);
+        setPermitirParcelamento(false);
+        setMostrarParcelas(false);
+      }
     }
 
     // "Nota nº" só para documento fiscal: boleto, recibo e PIX não são nota (e o número deles
@@ -266,9 +284,10 @@ export default function DespesaModal({
   }, [empresaAtiva?.id]);
 
   // Re-verifica duplicidade quando o usuário edita a chave manualmente.
+  // Pré-lançamento e reconciliação não gravam a chave: o aviso "vai falhar no banco" seria falso.
   useEffect(() => {
     const chave = form?.chave_nfe;
-    if (!chave || !empresaAtiva?.id) {
+    if (!chave || !empresaAtiva?.id || !salvaDadosDoDocumento) {
       setTransacaoDuplicada(null);
       return;
     }
@@ -287,7 +306,7 @@ export default function DespesaModal({
     return () => {
       cancelled = true;
     };
-  }, [form?.chave_nfe, empresaAtiva?.id, selectedItem?.id]);
+  }, [form?.chave_nfe, empresaAtiva?.id, selectedItem?.id, salvaDadosDoDocumento]);
 
   const fornecedoresOrdenados = useMemo(() => {
     return [...fornecedoresLocais].sort((a, b) =>
@@ -369,8 +388,8 @@ export default function DespesaModal({
 
           <div className="p-6 flex-1 overflow-y-auto">
             <div className="space-y-6">
-              {/* LER DOCUMENTO — só na despesa nova e quando o pai recebe o anexo pronto */}
-              {adicionarAnexoPronto && !selectedItem && (
+              {/* LER DOCUMENTO — nova despesa e edição, sempre que o pai recebe o anexo pronto */}
+              {adicionarAnexoPronto && (
                 <div className="space-y-2">
                   <LerDocumentoButton
                     tipo="despesa"

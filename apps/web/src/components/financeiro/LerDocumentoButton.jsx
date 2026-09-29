@@ -95,10 +95,17 @@ export default function LerDocumentoButton({ tipo, onLido, disabled, className }
       if (vivo.current) setEtapa(null);
     }
 
-    // Fora do try: um erro no preenchimento do pai não vira "Não foi possível ler o documento".
+    // Fora do try da leitura: um erro no preenchimento do pai não vira "Não foi possível ler o
+    // documento", e sem este try/catch ele sumiria como promessa rejeitada sem aviso ao usuário.
     // (O arquivo que já subiu fica sem uso no Storage quando a leitura é descartada.)
     if (!vivo.current) return;
-    onLido({ documento, anexo: { nome: arquivo.name, url: ref, tipo: destino.mimeType } });
+    try {
+      onLido({ documento, anexo: { nome: arquivo.name, url: ref, tipo: destino.mimeType } });
+    } catch (err) {
+      console.error("[LerDocumentoButton] erro ao preencher o formulário:", err);
+      toast.error("Não foi possível preencher o formulário: " + (err?.message || "tente de novo"));
+      return;
+    }
     toast.success("Documento lido — confira os campos antes de salvar.");
   };
 

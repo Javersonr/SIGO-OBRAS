@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { sigo, refDoStorage } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
-import { refDoUpload, nomeDoArquivo, extensaoDoArquivo, ehImagem, ehPdf } from "@/lib/anexo-ref";
+import {
+  acrescentarAnexoPronto,
+  refDoUpload,
+  nomeDoArquivo,
+  extensaoDoArquivo,
+  ehImagem,
+  ehPdf,
+} from "@/lib/anexo-ref";
 import DespesaModal from "./DespesaModal";
 
 /** Mime do comprovante pela extensão da ref; sem extensão, costuma ser foto. */
@@ -138,6 +145,11 @@ export default function ReconciliacaoComDespesaModal({
     setAnexos((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // anexo que já subiu no "Ler documento" (ref "bucket/path"): entra sem novo upload
+  const adicionarAnexoPronto = (anexo) => {
+    setAnexos((prev) => acrescentarAnexoPronto(prev, anexo));
+  };
+
   const handleSave = async () => {
     if (!form.valor || !form.data_vencimento || !form.conta_id || !form.descricao) {
       alert(
@@ -227,6 +239,10 @@ export default function ReconciliacaoComDespesaModal({
       anexos={anexos}
       handleAnexoUpload={handleAnexoUpload}
       handleRemoverAnexo={handleRemoverAnexo}
+      adicionarAnexoPronto={adicionarAnexoPronto}
+      // parcelas e tipo de despesa acima são vazios e o salvar não grava itens nem chave:
+      // a leitura não liga parcelamento nem abre "Associar materiais"
+      salvaDadosDoDocumento={false}
       handleSave={handleSave}
       empresaAtiva={empresaAtiva}
       onReload={() => {}}
