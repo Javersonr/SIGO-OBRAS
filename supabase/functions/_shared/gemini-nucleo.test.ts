@@ -159,6 +159,63 @@ test("erros: 429 sem crédito (http), 503 (rede), falha de rede, tempo esgotado"
   assert.equal(tempo.modelo, "gemini-3.5-flash-lite");
 });
 
+test("403 com a chave suspensa: a mensagem do Google nunca devolve a chave (R-1)", async () => {
+  const chaveReal = "AIzaSyFAKE1234567890EXEMPLOCHAVE";
+  const f = fetchFalso([
+    {
+      status: 403,
+      json: {
+        error: {
+          message: `Permission denied: Consumer 'api_key:${chaveReal}' has been suspended.`,
+        },
+      },
+    },
+  ]);
+  const r = await criarChamarGemini({ baixarRef, fetch: f.fetch })({
+    modelo: "gemini-3.5-flash-lite",
+    apiKey: chaveReal,
+    prompt: "p",
+  });
+  assert.equal(r.ok, false);
+  assert.equal(!r.ok && r.motivo, "http");
+  const bruto = JSON.stringify(r);
+  assert.ok(!bruto.includes(chaveReal), `resposta não pode conter a chave: ${bruto}`);
+  assert.ok(!bruto.includes("api_key:AIza"), `resposta não pode conter api_key:<token>: ${bruto}`);
+  assert.match(!r.ok ? r.erro : "", /Chave do Gemini sem permissão/);
+});
+
+test("400 legado com a chave na mensagem: o aviso do console também mascara (R-1)", async () => {
+  const chaveReal = "AIzaSyOUTRAFAKE9876543210EXEMPLO";
+  const erroCampo = {
+    status: 400,
+    json: {
+      error: {
+        code: 400,
+        message: `Invalid JSON payload received. Unknown name "responseFormat" (api_key:${chaveReal}).`,
+      },
+    },
+  };
+  const f = fetchFalso([erroCampo, OK_JSON]);
+  const avisos: unknown[][] = [];
+  const warnOriginal = console.warn;
+  console.warn = (...args: unknown[]) => avisos.push(args);
+  try {
+    const r = await criarChamarGemini({ baixarRef, fetch: f.fetch })({
+      modelo: "gemini-3.5-flash-lite",
+      apiKey: chaveReal,
+      prompt: "p",
+      jsonSchema: { type: "object" },
+    });
+    assert.equal(r.ok, true);
+  } finally {
+    console.warn = warnOriginal;
+  }
+  assert.equal(avisos.length, 1);
+  const textoAviso = JSON.stringify(avisos[0]);
+  assert.ok(!textoAviso.includes(chaveReal), `aviso não pode conter a chave: ${textoAviso}`);
+  assert.ok(!textoAviso.includes("api_key:AIza"), `aviso não pode conter api_key:<token>`);
+});
+
 test("arquivo ou entrada que o Gemini não lê: falha 'config' sem chamar o Google", async () => {
   const f = fetchFalso([OK_JSON]);
   const chamar = criarChamarGemini({ baixarRef, fetch: f.fetch });

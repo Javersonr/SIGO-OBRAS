@@ -32,6 +32,17 @@ function ehTimeout(e: unknown): boolean {
   return nome === "TimeoutError" || nome === "AbortError";
 }
 
+/**
+ * R-1: o texto de erro do Google pode trazer a própria chave (ex.: 403
+ * "Permission denied: Consumer 'api_key:AIza…' has been suspended."). Mascara
+ * na origem — vale para o log e para o erro devolvido ao chamador (que pode
+ * virar a resposta 502 ao usuário via falhaIA).
+ */
+function ocultarChave(texto: string, apiKey: string): string {
+  const semChaveConfigurada = apiKey ? texto.split(apiKey).join(`…${apiKey.slice(-4)}`) : texto;
+  return semChaveConfigurada.replace(/api_key:[^\s'"]+/gi, "api_key:[oculta]");
+}
+
 export function criarChamarGemini(deps: DepsGemini) {
   return async function chamarGemini(
     o: OpcoesIA & { modelo: string; apiKey: string }
@@ -67,7 +78,7 @@ export function criarChamarGemini(deps: DepsGemini) {
     const segundos = Math.ceil((o.timeoutMs ?? 0) / 1000);
     const falha = (erro: string, motivo: string): RespostaIA => ({
       ok: false,
-      erro,
+      erro: ocultarChave(erro, o.apiKey),
       motivo,
       modelo,
       provedor: "gemini",
@@ -111,7 +122,7 @@ export function criarChamarGemini(deps: DepsGemini) {
         if (e.tentarFormatoLegado && !legado) {
           console.warn(
             `[gemini] 400 nos campos novos (${modelo}) — repetindo no formato legado:`,
-            e.erro
+            ocultarChave(e.erro, o.apiKey)
           );
           legado = true;
           continue;
