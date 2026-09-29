@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { mesclarDadosIniciais } from "@/lib/ler-documento";
 import { toast } from "sonner";
 
 const formatCNPJ = (value) => {
@@ -49,10 +50,26 @@ const FORM_INICIAL = {
   observacoes: "",
 };
 
-export default function NovoClienteModal({ open, onOpenChange, empresaAtiva, onClienteCriado }) {
-  const [form, setForm] = useState(FORM_INICIAL);
+export default function NovoClienteModal({
+  open,
+  onOpenChange,
+  empresaAtiva,
+  onClienteCriado,
+  // { nome_razao, documento, endereco } lidos de um documento (Financeiro →
+  // Ler documento); o pai guarda em estado (referência estável)
+  dadosIniciais,
+}) {
+  const [form, setForm] = useState(() =>
+    mesclarDadosIniciais(FORM_INICIAL, dadosIniciais, "documento")
+  );
   const [saving, setSaving] = useState(false);
   const [buscandoCep, setBuscandoCep] = useState(false);
+
+  React.useEffect(() => {
+    if (open && dadosIniciais) {
+      setForm(mesclarDadosIniciais(FORM_INICIAL, dadosIniciais, "documento"));
+    }
+  }, [open, dadosIniciais]);
 
   const buscarCep = async (cep) => {
     const cepLimpo = cep.replace(/\D/g, "");

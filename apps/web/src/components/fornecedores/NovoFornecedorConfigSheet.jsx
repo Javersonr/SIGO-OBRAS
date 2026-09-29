@@ -5,6 +5,7 @@ import BuscarCnpjButton from "@/components/shared/BuscarCnpjButton";
 import InputTelefone from "@/components/shared/InputTelefone";
 import CategoriasFornecedorSelect from "@/components/fornecedores/CategoriasFornecedorSelect";
 import { formatarTelefone, mensagemTelefoneInvalido, telefoneValido } from "@/lib/telefone";
+import { mesclarDadosIniciais } from "@/lib/ler-documento";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -45,13 +46,17 @@ export default function NovoFornecedorConfigSheet({
   onOpenChange,
   empresaAtiva,
   onFornecedorCriado,
+  // { nome_razao, cnpj, endereco } lidos de um documento (Financeiro → Ler
+  // documento); o pai guarda em estado (referência estável) e passa null no
+  // cadastro em branco
+  dadosIniciais,
 }) {
   const [form, setForm] = useState(FORM_VAZIO);
   const [saving, setSaving] = useState(false);
 
   React.useEffect(() => {
-    if (open) setForm(FORM_VAZIO);
-  }, [open]);
+    if (open) setForm(mesclarDadosIniciais(FORM_VAZIO, dadosIniciais, "cnpj"));
+  }, [open, dadosIniciais]);
 
   const handleSave = async () => {
     if (!form.nome_razao) return;
