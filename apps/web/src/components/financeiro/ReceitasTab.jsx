@@ -37,6 +37,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { sigo } from "@/api/sigoClient";
 import { refDoUpload } from "@/lib/anexo-ref";
+import { lerXmlFiscal, textoDoXml } from "@/lib/nfe-xml";
+import { acharPessoa, montarPreenchimento } from "@/lib/documento-financeiro";
+import { cadastroDoXml, lancamentoDoXml } from "@/lib/importacao-xml";
+import { dadosIniciaisCadastro } from "@/lib/ler-documento";
 import * as XLSX from "xlsx";
 import { createPortal } from "react-dom";
 import NovoClienteModal from "../clientes/NovoClienteModal";
@@ -48,6 +52,7 @@ import SortButton from "../shared/SortButton";
 import SortableTableHeader from "../shared/SortableTableHeader";
 import AnexoViewer from "../shared/AnexoViewer";
 import DetalheReceitaModal, { anexosDaReceita } from "./DetalheReceitaModal";
+import LerDocumentoButton, { ConferirLeitura, PessoaNaoCadastrada } from "./LerDocumentoButton";
 
 export default function ReceitasTab({
   empresaAtiva,
@@ -115,6 +120,10 @@ export default function ReceitasTab({
     observacoes: "",
   });
   const [showNovoCliente, setShowNovoCliente] = useState(false);
+  // cadastro rápido com os dados lidos (null = cadastro em branco, pelo "+")
+  const [dadosNovoCliente, setDadosNovoCliente] = useState(null);
+  // última leitura do "Ler documento": { pessoaSugerida, duvidosos, avisos }
+  const [leitura, setLeitura] = useState(null);
   const [showNovoCentroCusto, setShowNovoCentroCusto] = useState(false);
   const [novoCentroCusto, setNovoCentroCusto] = useState({ nome: "", codigo: "" });
   const [centrosCusto, setCentrosCusto] = useState([]);
@@ -254,6 +263,28 @@ export default function ReceitasTab({
     setAnexos(anexos.filter((_, i) => i !== index));
   };
 
+  // "Ler documento" na nova receita: preenche o formulário para conferir (nada
+  // é salvo aqui). A pessoa da receita é o destinatário/tomador (quem paga).
+  const aplicarDocumentoLido = ({ documento, anexo }) => {
+    const {
+      patch,
+      parcelas: parcelasLidas,
+      pessoaSugerida,
+      avisos,
+    } = montarPreenchimento(documento, { tipo: "receita", pessoas: clientesLocais });
+    setForm((prev) => ({ ...prev, ...patch }));
+    if (parcelasLidas.length > 1) {
+      // handleNumeroParcelasChange ainda enxerga o form antigo; o setParcelas
+      // logo depois é o que vale
+      handleNumeroParcelasChange(parcelasLidas.length);
+      setParcelas(parcelasLidas);
+    } else if (patch.valor && numeroParcelas > 1) {
+      handleNumeroParcelasChange(1); // as parcelas na tela eram do valor anterior
+    }
+    setAnexos((prev) => [...prev, anexo]);
+    setLeitura({ pessoaSugerida, duvidosos: documento.duvidosos || [], avisos });
+  };
+
   const handleExportarExcel = async () => {
     setImportacao({ ativo: true, total: transacoesIniciais.length, processados: 0, erros: 0 });
 
@@ -345,214 +376,60 @@ export default function ReceitasTab({
     XLSX.writeFile(wb, "Modelo_Importacao_Receitas.xlsx");
   };
 
+  // "Importar XML / NF-e" da lista: cria a receita direto, sem abrir o
+  // formulário. Mesmo leitor do "Ler documento" (lerXmlFiscal); o cliente é o
+  // destinatário/tomador, casado pelos DÍGITOS do CPF/CNPJ e depois pelo nome;
+  // sem cadastro e com CPF/CNPJ → cria o cliente (como antes).
   const handleImportarXML = async (e) => {
-    const file = e.target.files[0];
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const xmlText = evt.target.result;
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-
-        // Verificar erros de parsing
-        const parserError = xmlDoc.getElementsByTagName("parsererror");
-        if (parserError.length > 0) {
-          alert(
-            "❌ Arquivo XML mal formatado ou corrompido.\n\nO arquivo não pôde ser lido corretamente."
-          );
-          e.target.value = "";
-          return;
-        }
-
-        // Função auxiliar para buscar tags em qualquer namespace
-        const getTag = (tagName) => {
-          return (
-            xmlDoc.getElementsByTagName(tagName)[0] ||
-            xmlDoc.getElementsByTagNameNS("*", tagName)[0]
-          );
-        };
-
-        const getText = (element, tagName) => {
-          if (!element) return null;
-          const tag =
-            element.getElementsByTagName(tagName)[0] ||
-            element.getElementsByTagNameNS("*", tagName)[0];
-          return tag?.textContent || null;
-        };
-
-        // DETECTAR TIPO DE NOTA
-        // 1. Tentar NF-e (Nota Fiscal de Produto)
-        let nfeNode = getTag("NFe") || getTag("nfeProc") || getTag("nfe");
-        let infNFeNode = getTag("infNFe");
-
-        // 2. Tentar NFS-e (Nota Fiscal de Serviço)
-        let nfseNode = getTag("CompNfse") || getTag("Nfse") || getTag("nfse");
-        let infNfseNode = getTag("InfNfse") || getTag("infNfse");
-
-        // Verificar se é NF-e
-        if (nfeNode || infNFeNode) {
-          setImportacao({ ativo: true, total: 1, processados: 0, erros: 0 });
-
-          const ide = getTag("ide");
-          const emit = getTag("emit");
-          const dest = getTag("dest");
-          const ICMSTot = getTag("ICMSTot");
-
-          // IMPORTANTE: Para receita, o DESTINATÁRIO é quem está pagando (cliente)
-          const clienteNome = getText(dest, "xNome") || "Cliente Desconhecido";
-          const clienteCNPJ = getText(dest, "CNPJ") || getText(dest, "CPF") || "";
-
-          const dataEmissao = (
-            getText(ide, "dhEmi") ||
-            getText(ide, "dEmi") ||
-            new Date().toISOString()
-          ).split("T")[0];
-          const numeroNFe = getText(ide, "nNF") || "S/N";
-          const valorTotal = parseFloat(getText(ICMSTot, "vNF") || "0");
-
-          if (valorTotal === 0) {
-            alert("⚠️ NF-e sem valor total detectado.\n\nVerifique se o XML está completo.");
-            setImportacao({ ativo: false, total: 0, processados: 0, erros: 0 });
-            e.target.value = "";
-            return;
-          }
-
-          // Buscar ou criar cliente
-          let clientesEncontrados = await sigo.entities.Cliente.filter({
-            empresa_id: empresaAtiva.id,
-            documento: clienteCNPJ,
-          });
-
-          let cliente;
-          if (clienteCNPJ && clientesEncontrados.length === 0) {
-            cliente = await sigo.entities.Cliente.create({
-              empresa_id: empresaAtiva.id,
-              nome_razao: clienteNome,
-              documento: clienteCNPJ,
-              tipo_pessoa: clienteCNPJ.length > 11 ? "PJ" : "PF",
-            });
-          } else if (clienteCNPJ) {
-            cliente = clientesEncontrados[0];
-          }
-
-          // Criar receita
-          await sigo.entities.TransacaoFinanceira.create({
-            empresa_id: empresaAtiva.id,
-            tipo: "receita",
-            conta_id: contas[0]?.id,
-            conta_nome: contas[0]?.nome,
-            cliente_id: cliente?.id || null,
-            cliente_nome: clienteNome,
-            valor: valorTotal,
-            data: dataEmissao,
-            data_vencimento: dataEmissao,
-            descricao: `NF-e ${numeroNFe} - ${clienteNome}`,
-            status: "em_aberto",
-            observacoes: `Importado de XML - NF-e ${numeroNFe}`,
-          });
-
-          setImportacao({ ativo: false, total: 0, processados: 0, erros: 0 });
-          alert(
-            `✅ NF-e importada com sucesso!\n\nCliente: ${clienteNome}\nNúmero: ${numeroNFe}\nValor: ${formatCurrency(valorTotal)}`
-          );
-          onReload();
-        }
-        // Verificar se é NFS-e
-        else if (nfseNode || infNfseNode) {
-          setImportacao({ ativo: true, total: 1, processados: 0, erros: 0 });
-
-          const infNfse = infNfseNode || nfseNode;
-          const tomador = getTag("TomadorServico") || getTag("tomadorServico");
-          const servico = getTag("Servico") || getTag("servico");
-          const valores = getTag("Valores") || getTag("valores");
-
-          const clienteNome =
-            getText(tomador, "RazaoSocial") ||
-            getText(tomador, "razaoSocial") ||
-            "Cliente Desconhecido";
-          const clienteCNPJ =
-            getText(tomador, "Cnpj") ||
-            getText(tomador, "cnpj") ||
-            getText(tomador, "Cpf") ||
-            getText(tomador, "cpf") ||
-            "";
-
-          const dataEmissao = (
-            getText(infNfse, "DataEmissao") ||
-            getText(infNfse, "dataEmissao") ||
-            new Date().toISOString()
-          ).split("T")[0];
-          const numeroNFSe = getText(infNfse, "Numero") || getText(infNfse, "numero") || "S/N";
-          const valorTotal = parseFloat(
-            getText(valores, "ValorServicos") || getText(valores, "valorServicos") || "0"
-          );
-
-          if (valorTotal === 0) {
-            alert("⚠️ NFS-e sem valor detectado.\n\nVerifique se o XML está completo.");
-            setImportacao({ ativo: false, total: 0, processados: 0, erros: 0 });
-            e.target.value = "";
-            return;
-          }
-
-          // Buscar ou criar cliente
-          let clientesEncontrados = await sigo.entities.Cliente.filter({
-            empresa_id: empresaAtiva.id,
-            documento: clienteCNPJ,
-          });
-
-          let cliente;
-          if (clienteCNPJ && clientesEncontrados.length === 0) {
-            cliente = await sigo.entities.Cliente.create({
-              empresa_id: empresaAtiva.id,
-              nome_razao: clienteNome,
-              documento: clienteCNPJ,
-              tipo_pessoa: clienteCNPJ.length > 11 ? "PJ" : "PF",
-            });
-          } else if (clienteCNPJ) {
-            cliente = clientesEncontrados[0];
-          }
-
-          // Criar receita
-          await sigo.entities.TransacaoFinanceira.create({
-            empresa_id: empresaAtiva.id,
-            tipo: "receita",
-            conta_id: contas[0]?.id,
-            conta_nome: contas[0]?.nome,
-            cliente_id: cliente?.id || null,
-            cliente_nome: clienteNome,
-            valor: valorTotal,
-            data: dataEmissao,
-            data_vencimento: dataEmissao,
-            descricao: `NFS-e ${numeroNFSe} - ${clienteNome}`,
-            status: "em_aberto",
-            observacoes: `Importado de XML - NFS-e ${numeroNFSe}`,
-          });
-
-          setImportacao({ ativo: false, total: 0, processados: 0, erros: 0 });
-          alert(
-            `✅ NFS-e importada com sucesso!\n\nCliente: ${clienteNome}\nNúmero: ${numeroNFSe}\nValor: ${formatCurrency(valorTotal)}`
-          );
-          onReload();
-        } else {
-          alert(
-            "❌ Arquivo XML não reconhecido.\n\nFormatos aceitos:\n• NF-e (Nota Fiscal Eletrônica de Produto)\n• NFS-e (Nota Fiscal de Serviço Eletrônica)\n\nVerifique se o arquivo foi baixado corretamente da prefeitura ou SEFAZ."
-          );
-          e.target.value = "";
-          return;
-        }
-      } catch (error) {
-        console.error("Erro ao processar XML:", error);
-        setImportacao({ ativo: false, total: 0, processados: 0, erros: 0 });
+    try {
+      const doc = lerXmlFiscal(await textoDoXml(file));
+      if (!doc) {
         alert(
-          `❌ Erro ao processar arquivo XML.\n\nDetalhes: ${error.message}\n\nVerifique se o arquivo está correto.`
+          "❌ Arquivo XML não reconhecido.\n\nFormatos aceitos:\n• NF-e / NFC-e (Nota Fiscal Eletrônica de Produto)\n• NFS-e (Nota Fiscal de Serviço Eletrônica)\n\nVerifique se o arquivo foi baixado corretamente da prefeitura ou SEFAZ."
         );
-      } finally {
-        e.target.value = "";
+        return;
       }
-    };
-    reader.readAsText(file);
+      if (!(doc.valor_total > 0)) {
+        alert("⚠️ Nota sem valor total.\n\nVerifique se o XML está completo.");
+        return;
+      }
+
+      setImportacao({ ativo: true, total: 1, processados: 0, erros: 0 });
+
+      const cadastrados = await sigo.entities.Cliente.filter({ empresa_id: empresaAtiva.id });
+      let cliente = acharPessoa(cadastrados, doc.destinatario, "documento");
+      const novo = cliente ? null : cadastroDoXml(doc, "receita");
+      if (novo) {
+        cliente = await sigo.entities.Cliente.create({ empresa_id: empresaAtiva.id, ...novo });
+      }
+
+      const { registro, duplicatas, rotulo } = lancamentoDoXml(doc, {
+        tipo: "receita",
+        pessoa: cliente,
+        conta: contas[0],
+        empresaId: empresaAtiva.id,
+        hoje: hojeLocalISO(),
+      });
+      await sigo.entities.TransacaoFinanceira.create(registro);
+
+      alert(
+        `✅ ${rotulo} importada com sucesso!\n\nCliente: ${registro.cliente_nome}\nNúmero: ${doc.numero || "S/N"}\nValor: ${formatCurrency(registro.valor)}` +
+          (duplicatas > 1
+            ? `\n\nA nota tem ${duplicatas} duplicatas: a receita foi lançada inteira no 1º vencimento. Para lançar parcelado, use Nova Receita → Ler documento.`
+            : "")
+      );
+      onReload();
+    } catch (err) {
+      console.error("[ReceitasTab] erro ao importar XML:", err);
+      alert("❌ Erro ao importar o XML: " + (err?.message || "tente novamente"));
+    } finally {
+      setImportacao({ ativo: false, total: 0, processados: 0, erros: 0 });
+      input.value = "";
+    }
   };
 
   const handleImportarExcel = async (e) => {
@@ -847,6 +724,7 @@ export default function ReceitasTab({
   };
 
   const handleOpen = (item = null) => {
+    setLeitura(null);
     if (item) {
       setForm({
         conta_id: item.conta_id || "",
@@ -1437,20 +1315,18 @@ export default function ReceitasTab({
             <p className="text-sm text-slate-500">Registre uma nova receita do sistema</p>
           </SheetHeader>
 
-          <label
-            htmlFor="importar-xml-modal"
-            className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-center gap-2 my-4 cursor-pointer hover:bg-blue-100 transition-colors"
-          >
-            <Upload className="w-4 h-4 text-blue-600" />
-            <span className="text-sm text-blue-700 font-medium">Importar XML ou NF-e</span>
-          </label>
-          <input
-            type="file"
-            id="importar-xml-modal"
-            accept=".xml"
-            onChange={handleImportarXML}
-            className="hidden"
-          />
+          {/* LER DOCUMENTO — só na receita nova; preenche para conferir, não salva */}
+          {!selectedItem && (
+            <div className="my-4 space-y-2">
+              <LerDocumentoButton
+                tipo="receita"
+                onLido={aplicarDocumentoLido}
+                disabled={saving}
+                className="w-full border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+              />
+              <ConferirLeitura duvidosos={leitura?.duvidosos} avisos={leitura?.avisos} />
+            </div>
+          )}
 
           <div className="space-y-6 py-4">
             <div>
@@ -1583,11 +1459,26 @@ export default function ReceitasTab({
                     <Button
                       size="icon"
                       className="bg-green-600 hover:bg-green-700 shrink-0"
-                      onClick={() => setShowNovoCliente(true)}
+                      onClick={() => {
+                        setDadosNovoCliente(null);
+                        setShowNovoCliente(true);
+                      }}
                     >
                       <Plus className="w-4 h-4" />
                     </Button>
                   </div>
+                  {!form.cliente_id && (
+                    <PessoaNaoCadastrada
+                      rotulo="Cliente"
+                      pessoa={leitura?.pessoaSugerida}
+                      onCadastrar={() => {
+                        setDadosNovoCliente(
+                          dadosIniciaisCadastro(leitura.pessoaSugerida, "documento")
+                        );
+                        setShowNovoCliente(true);
+                      }}
+                    />
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -1973,8 +1864,10 @@ export default function ReceitasTab({
             open={showNovoCliente}
             onOpenChange={setShowNovoCliente}
             empresaAtiva={empresaAtiva}
+            dadosIniciais={dadosNovoCliente}
             onClienteCriado={(cliente) => {
               setClientesLocais((prev) => [...prev, cliente]);
+              setLeitura((prev) => (prev ? { ...prev, pessoaSugerida: null } : prev));
               setForm((prev) => ({
                 ...prev,
                 cliente_id: cliente.id,
