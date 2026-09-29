@@ -2,20 +2,27 @@
  * saas-config — configurações globais do SaaS (Sinergia Digital).
  *
  * Só SUPER ADMIN. Ações:
- *   { acao: "status" }  → { success, openai: { configurada, final, modelo } }
- *   { acao: "definir", chave_openai?, modelo? } → { success }
+ *   { acao: "status" }
+ *        → { success, openai: { configurada, final, origem, modelo },
+ *            gemini: { configurada, final, origem, modelo, modelo_forte } }
+ *   { acao: "definir", chave_openai?, modelo?, chave_gemini?, gemini_modelo?,
+ *     gemini_modelo_forte? } → { success }   (validação em regras.ts)
+ *   { acao: "testar_gemini" } → { success, gemini_teste: { ok, mensagem } }
+ *        (GET do modelo padrão com a chave em uso — env ou painel —, 10 s)
  *   { acao: "whatsapp_status" | "whatsapp_qr" | "whatsapp_desconectar" }
  *        → { success, whatsapp: { configurado, estado, numero?, nome?, qr? } }
  *
- * A chave NUNCA é retornada (só "configurada" + últimos 4 dígitos).
- * Precedência de leitura: env OPENAI_API_KEY > tabela saas_config.
+ * As chaves NUNCA são retornadas (só "configurada" + últimos 4 dígitos).
+ * Precedência de leitura: env OPENAI_API_KEY / GEMINI_API_KEY > tabela saas_config.
  */
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { usuarioDaRequisicao } from "../_shared/usuario-request.ts";
 import { evolutionApi, CanalNaoConfiguradoError } from "../_shared/whatsapp-envio.ts";
-
-const MODELOS_PERMITIDOS = ["gpt-4o-mini", "gpt-4o"];
+import { testarChaveGemini } from "../_shared/gemini.ts";
+import { lerConfigIA } from "../_shared/ia.ts";
+import { CHAVES_CONFIG_IA } from "../_shared/ia-nucleo.ts";
+import { statusGemini, validarDefinir, type CorpoDefinir } from "./regras.ts";
 
 async function estadoWhatsApp() {
   const { status, json } = await evolutionApi("/instance/fetchInstances?instanceName={i}");
@@ -75,7 +82,7 @@ Deno.serve(
     if (!usuario) return fail("Sessão inválida", 401);
     if (!usuario.is_super_admin) return fail("Acesso restrito ao super admin", 403);
 
-    let body: { acao?: string; chave_openai?: string; modelo?: string };
+    let body: { acao?: string } & CorpoDefinir;
     try {
       body = await req.json();
     } catch {
@@ -100,8 +107,9 @@ Deno.serve(
       const { data } = await supabase
         .from("saas_config")
         .select("chave, valor")
-        .in("chave", ["openai_api_key", "openai_modelo"]);
-      const mapa = new Map((data ?? []).map((r) => [r.chave, r.valor]));
+        .in("chave", CHAVES_CONFIG_IA);
+      const linhas = data ?? [];
+      const mapa = new Map(linhas.map((r) => [r.chave, r.valor]));
       const chave = Deno.env.get("OPENAI_API_KEY") || mapa.get("openai_api_key") || "";
       return ok({
         openai: {
@@ -110,26 +118,24 @@ Deno.serve(
           origem: Deno.env.get("OPENAI_API_KEY") ? "secret" : chave ? "painel" : null,
           modelo: mapa.get("openai_modelo") || "gpt-4o-mini",
         },
+        gemini: statusGemini(linhas, { GEMINI_API_KEY: Deno.env.get("GEMINI_API_KEY") }),
       });
     }
 
+    if (body.acao === "testar_gemini") {
+      // mesma chave e mesmo modelo que o chamarIA vai usar (env > painel)
+      const cfg = await lerConfigIA();
+      if (!cfg.gemini.apiKey) {
+        return ok({ gemini_teste: { ok: false, mensagem: "Nenhuma chave do Gemini salva" } });
+      }
+      return ok({ gemini_teste: await testarChaveGemini(cfg.gemini.apiKey, cfg.gemini.modelo) });
+    }
+
     if (body.acao === "definir") {
-      const upserts: { chave: string; valor: string; updated_at: string }[] = [];
+      const validado = validarDefinir(body);
+      if (!validado.ok) return fail(validado.erro, 400);
       const agora = new Date().toISOString();
-      if (body.chave_openai !== undefined) {
-        const chave = (body.chave_openai ?? "").trim();
-        if (!chave.startsWith("sk-") || chave.length < 20) {
-          return fail("Chave OpenAI inválida (deve começar com sk-)", 400);
-        }
-        upserts.push({ chave: "openai_api_key", valor: chave, updated_at: agora });
-      }
-      if (body.modelo !== undefined) {
-        if (!MODELOS_PERMITIDOS.includes(body.modelo ?? "")) {
-          return fail(`Modelo deve ser um de: ${MODELOS_PERMITIDOS.join(", ")}`, 400);
-        }
-        upserts.push({ chave: "openai_modelo", valor: body.modelo!, updated_at: agora });
-      }
-      if (upserts.length === 0) return fail("Nada para definir", 400);
+      const upserts = validado.linhas.map((l) => ({ ...l, updated_at: agora }));
       const { error } = await supabase.from("saas_config").upsert(upserts, { onConflict: "chave" });
       if (error) {
         console.error("[saas-config] upsert:", error);
