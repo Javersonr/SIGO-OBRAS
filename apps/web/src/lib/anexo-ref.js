@@ -78,15 +78,23 @@ export function acrescentarAnexoPronto(lista, anexo) {
  * referência "bucket/caminho", nunca a URL assinada). Devolve os ids a remover (gravados que saíram da
  * lista) e os anexos a criar. O recibo quitado gerado pelo servidor (pode ter chegado com o formulário
  * aberto) nunca é removido daqui.
+ *
+ * `listaCarregada: false` = a lista do formulário não veio do banco (a consulta ao abrir a edição falhou
+ * ou ainda não terminou): então "não está na lista" não quer dizer "foi retirado". Nada é removido, os
+ * anexos novos continuam sendo criados, e `remocaoPulada` avisa que havia o que remover (para o toast).
  */
-export function planejarSincronizacaoAnexos(existentes, anexos) {
+export function planejarSincronizacaoAnexos(existentes, anexos, { listaCarregada = true } = {}) {
   const lista = anexos || [];
-  const remover = (existentes || [])
+  const candidatos = (existentes || [])
     .filter((e) => !String(e?.url || "").includes("/recibos/recibo-quitado-"))
     .filter((e) => !lista.some((a) => a?.id === e.id))
     .map((e) => e.id);
   const criar = lista
     .filter((a) => !a?.id)
     .map((a) => ({ nome: a.nome, url: a.url, tipo: a.tipo || "comprovante" }));
-  return { remover, criar };
+  return {
+    remover: listaCarregada ? candidatos : [],
+    criar,
+    remocaoPulada: !listaCarregada && candidatos.length > 0,
+  };
 }

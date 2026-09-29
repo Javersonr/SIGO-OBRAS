@@ -45,18 +45,20 @@ describe("planejarSincronizacaoAnexos", () => {
     expect(plano).toEqual({
       remover: [],
       criar: [{ nome: nota.nome, url: nota.url, tipo: nota.tipo }],
+      remocaoPulada: false,
     });
   });
 
   it("anexo que estava gravado e saiu da lista vira remoção", () => {
     const plano = planejarSincronizacaoAnexos([gravadoNota, gravadoFoto], [gravadoFoto]);
-    expect(plano).toEqual({ remover: ["a1"], criar: [] });
+    expect(plano).toEqual({ remover: ["a1"], criar: [], remocaoPulada: false });
   });
 
   it("sem mudança: nada a criar nem a remover", () => {
     expect(planejarSincronizacaoAnexos([gravadoNota], [gravadoNota])).toEqual({
       remover: [],
       criar: [],
+      remocaoPulada: false,
     });
   });
 
@@ -82,10 +84,15 @@ describe("planejarSincronizacaoAnexos", () => {
   });
 
   it("listas ausentes (undefined/null) valem como vazias", () => {
-    expect(planejarSincronizacaoAnexos(undefined, null)).toEqual({ remover: [], criar: [] });
+    expect(planejarSincronizacaoAnexos(undefined, null)).toEqual({
+      remover: [],
+      criar: [],
+      remocaoPulada: false,
+    });
     expect(planejarSincronizacaoAnexos(null, [nota])).toEqual({
       remover: [],
       criar: [{ nome: nota.nome, url: nota.url, tipo: nota.tipo }],
+      remocaoPulada: false,
     });
   });
 
@@ -95,5 +102,41 @@ describe("planejarSincronizacaoAnexos", () => {
     planejarSincronizacaoAnexos(existentes, anexos);
     expect(existentes).toEqual([gravadoNota]);
     expect(anexos).toEqual([nota]);
+  });
+
+  describe("lista de anexos que não carregou (listaCarregada: false)", () => {
+    const naoCarregada = { listaCarregada: false };
+
+    it("nada é removido: a lista vazia do formulário não diz que o anexo foi retirado", () => {
+      const plano = planejarSincronizacaoAnexos([gravadoNota, gravadoFoto], [], naoCarregada);
+      expect(plano.remover).toEqual([]);
+      expect(plano.remocaoPulada).toBe(true);
+    });
+
+    it("os anexos novos continuam sendo criados", () => {
+      const plano = planejarSincronizacaoAnexos([gravadoNota], [nota], naoCarregada);
+      expect(plano).toEqual({
+        remover: [],
+        criar: [{ nome: nota.nome, url: nota.url, tipo: nota.tipo }],
+        remocaoPulada: true,
+      });
+    });
+
+    it("não avisa quando não havia nada a remover (só o recibo quitado, ou banco vazio)", () => {
+      const recibo = {
+        id: "r1",
+        nome: "Recibo quitado",
+        url: "comprovantes/emp/recibos/recibo-quitado-123.pdf",
+        tipo: "application/pdf",
+      };
+      expect(planejarSincronizacaoAnexos([recibo], [], naoCarregada).remocaoPulada).toBe(false);
+      expect(planejarSincronizacaoAnexos([], [nota], naoCarregada).remocaoPulada).toBe(false);
+    });
+
+    it("listaCarregada true (ou sem a opção) mantém a remoção normal", () => {
+      const plano = planejarSincronizacaoAnexos([gravadoNota], [], { listaCarregada: true });
+      expect(plano).toEqual({ remover: ["a1"], criar: [], remocaoPulada: false });
+      expect(planejarSincronizacaoAnexos([gravadoNota], []).remover).toEqual(["a1"]);
+    });
   });
 });

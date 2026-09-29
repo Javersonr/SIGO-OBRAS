@@ -72,6 +72,10 @@ export default function DespesasTab({
   // idem para o FORMULÁRIO: anexos de uma despesa que chegam depois de abrir
   // outra não podem cair no formulário errado (e ser apagados/copiados ao salvar)
   const anexosFormRef = useRef(null);
+  // true só depois que a lista de anexos DESTA edição veio do banco. Se a consulta falhar (ou ainda
+  // não terminou), a lista do formulário fica vazia e o salvar não pode tomar isso por "o usuário
+  // retirou tudo": a remoção de anexos gravados é pulada (os novos continuam sendo criados).
+  const anexosCarregadosOkRef = useRef(false);
   const [sortConfig, setSortConfig] = useState({ field: "data_vencimento", direction: "desc" });
   const [showModal, setShowModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -784,6 +788,7 @@ export default function DespesasTab({
   const handleOpen = (item = null) => {
     setSelectedItem(item);
     anexosFormRef.current = item?.id ?? null;
+    anexosCarregadosOkRef.current = false;
 
     if (item) {
       setForm({
@@ -860,8 +865,12 @@ export default function DespesasTab({
       });
       if (anexosFormRef.current !== transacaoId) return;
       setAnexos(anexosDb.map((a) => ({ id: a.id, nome: a.nome, url: a.url, tipo: a.tipo })));
+      anexosCarregadosOkRef.current = true;
     } catch {
-      if (anexosFormRef.current === transacaoId) setAnexos([]);
+      if (anexosFormRef.current === transacaoId) {
+        anexosCarregadosOkRef.current = false;
+        setAnexos([]);
+      }
     }
   };
 
@@ -947,7 +956,14 @@ export default function DespesasTab({
         empresa_id: empresaAtiva.id,
         transacao_id: transacaoId,
       });
-      const { remover, criar } = planejarSincronizacaoAnexos(anexosExistentes, anexos);
+      const { remover, criar, remocaoPulada } = planejarSincronizacaoAnexos(
+        anexosExistentes,
+        anexos,
+        { listaCarregada: anexosCarregadosOkRef.current }
+      );
+      if (remocaoPulada) {
+        toast.warning("Os anexos anteriores não puderam ser conferidos; nenhum foi removido");
+      }
 
       for (const id of remover) {
         await sigo.entities.TransacaoAnexo.delete(id);
