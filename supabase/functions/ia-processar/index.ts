@@ -1,5 +1,6 @@
 /**
- * ia-processar — ponte de IA do SIGO (OpenAI, chave global do SaaS).
+ * ia-processar — ponte de IA do SIGO: Gemini como padrão e OpenAI de reserva
+ * (chaves globais do SaaS Admin; porta única chamarIA em _shared/ia.ts).
  *
  * Exige usuário autenticado (JWT da sessão). A empresa é SEMPRE a do token
  * (usuario.empresa_id) — nunca do corpo. Ações:
@@ -19,7 +20,7 @@
  *     paginas:[{n, texto}], imagens?:[{n, data_url:"data:image/jpeg;base64,..."}] }
  *     → { success, resultado: ParcialEdital, modelo }
  *     Lê SÓ as páginas enviadas (texto com "=== PÁGINA n ===" + imagens das
- *     escaneadas); modelo econômico e, se vier fraco/erro, o forte — até ~120 s.
+ *     escaneadas); nível padrão e, se vier fraco/erro, o forte — até ~120 s.
  *     resultado._origem = {nome_arquivo, parte, total_partes, errata}
  *     (extensão: devolva junto nas parciais para a errata ter prioridade).
  *     Limites: 300 mil caracteres, 300 páginas e 30 imagens por parte.
@@ -37,60 +38,40 @@
  *     técnica e registros pelo modelo forte com totais/tetos calculados em
  *     código. Sem acervo → 422 { codigo:"SEM_ACERVO" }.
  *
- * COTA E CONSUMO das ações edital_* (ia-uso.ts; tabela ia_uso, migração 0114):
- *   - ANTES de chamar a OpenAI, conta as requisições edital_* da empresa do
+ * CONSUMO de TODAS as ações de IA (ia-uso.ts; tabela ia_uso, migrações 0114/0123):
+ *   - Depois da ação (sucesso, erro ou exceção), grava 1 linha em ia_uso com os
+ *     tokens de entrada/saída de TODAS as chamadas à IA da requisição
+ *     (fallback Gemini → OpenAI e escalonamento padrão → forte incluídos),
+ *     o(s) provedor(es), o(s) modelo(s) e o custo estimado em US$
+ *     (_shared/ia-precos.ts; null se nenhum modelo tem preço). Requisição que
+ *     não chamou a IA (validação, consolidação só em código) não grava.
+ *
+ * COTA só das ações edital_*:
+ *   - ANTES de chamar a IA, conta as requisições edital_* da empresa do
  *     token no dia (fuso de Brasília; sem empresa → as do próprio usuário).
  *     Chegou na cota → 429 { codigo:"COTA_IA", cota, usadas }. Cota = saas_config
  *     'ia_cota_edital_dia' (inteiro ≥ 1; ausente/inválido → 400). Super admin
  *     é isento. Contagem "confere e depois age": requisições em paralelo
  *     podem passar a cota em poucas unidades.
- *   - Depois da ação (sucesso, erro ou exceção), grava 1 linha em ia_uso com os
- *     tokens de entrada/saída de TODAS as chamadas à OpenAI da requisição
- *     (escalonamento incluído) e o(s) modelo(s). Requisição que não chamou a
- *     OpenAI (validação, consolidação só em código) não grava nem conta.
  *   - Falha ao ler/contar (ex.: tabela ainda não criada) libera a ação; falha
  *     ao gravar vai só para o log — nunca derruba a ação.
  *
- * Sem chave configurada → 503 "IA não configurada".
+ * Sem chave nenhuma (nem Gemini nem OpenAI) → 503 "IA não configurada".
  */
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { usuarioDaRequisicao } from "../_shared/usuario-request.ts";
-import { chamarOpenAI, lerConfigOpenAI, MODELO_FORTE, validarRef } from "../_shared/openai.ts";
+import { validarRef } from "../_shared/openai.ts";
+import { chamarIA } from "../_shared/ia.ts";
 import { createAdminClient } from "../_shared/supabase-admin.ts";
-import { contarPreenchidos } from "./edital-regras.ts";
-import { editalAtende, editalConsolidar, editalExtrairParte } from "./edital.ts";
-import { ehAcaoEdital, novoMedidor, registrarUso, verificarCotaEdital } from "./ia-uso.ts";
-
-/**
- * ESCALONAMENTO AUTOMÁTICO: tenta o modelo configurado (econômico); se o
- * resultado vier fraco (heurística por ação) ou com erro, refaz no modelo
- * forte e devolve a resposta mais completa. Pedido do dono: "trocar
- * automático os modelos quando tiver dificuldade".
- */
-async function chamarComEscalonamento(
-  opts: { prompt: string; fileRefs?: string[]; jsonSchema?: unknown },
-  // deno-lint-ignore no-explicit-any
-  estaFraco?: (resultado: any) => boolean
-): Promise<{ ok: true; resultado: unknown; modelo: string } | { ok: false; erro: string }> {
-  const { modelo } = await lerConfigOpenAI();
-  const cadeia = [...new Set([modelo, MODELO_FORTE])];
-  let melhor: { resultado: unknown; pontos: number; modelo: string } | null = null;
-  let ultimoErro = "IA indisponível";
-  for (const m of cadeia) {
-    const r = await chamarOpenAI({ ...opts, modelo: m });
-    if (!r.ok) {
-      ultimoErro = r.erro;
-      if (r.erro === "IA_NAO_CONFIGURADA") return r;
-      continue; // erro/JSON inválido → tenta o próximo modelo
-    }
-    const pontos = contarPreenchidos(r.resultado);
-    if (!melhor || pontos > melhor.pontos) melhor = { resultado: r.resultado, pontos, modelo: m };
-    if (!estaFraco || !estaFraco(r.resultado)) break; // bom o suficiente, para aqui
-  }
-  return melhor
-    ? { ok: true, resultado: melhor.resultado, modelo: melhor.modelo }
-    : { ok: false, erro: ultimoErro };
-}
+import { editalAtende, editalConsolidar, editalExtrairParte, falhaIA } from "./edital.ts";
+import { chamarComEscalonamento } from "./escalonamento.ts";
+import {
+  contabilizar,
+  ehAcaoEdital,
+  novoMedidor,
+  registrarUso,
+  verificarCotaEdital,
+} from "./ia-uso.ts";
 
 interface Body {
   acao?: string;
@@ -264,19 +245,21 @@ Deno.serve(
       }
     }
 
+    // consumo: toda chamada à IA desta requisição soma no medidor, gravado no
+    // finally (ok, erro ou exceção); sem chamada à IA não grava nada
+    const admin = createAdminClient();
+    const medidor = novoMedidor();
+
     try {
       if (body.acao === "llm") {
         if (!body.prompt) return fail("prompt é obrigatório", 400);
-        const r = await chamarOpenAI({
+        const r = await chamarIA({
           prompt: body.prompt,
           jsonSchema: body.json_schema,
           fileRefs: body.file_refs,
         });
-        if (!r.ok) {
-          return r.erro === "IA_NAO_CONFIGURADA"
-            ? fail("IA não configurada — defina a chave no SaaS Admin → Integrações", 503)
-            : fail(r.erro, 502);
-        }
+        contabilizar(medidor, r);
+        if (!r.ok) return falhaIA(r);
         return ok({ resultado: r.resultado });
       }
 
@@ -311,14 +294,12 @@ Deno.serve(
           return cls.length > 0 && semItem > cls.length / 2;
         };
         const r = await chamarComEscalonamento(
+          chamarIA,
           { prompt, fileRefs: body.file_refs, jsonSchema: SCHEMA_EXTRACAO },
-          extracaoFraca
+          extracaoFraca,
+          medidor
         );
-        if (!r.ok) {
-          return r.erro === "IA_NAO_CONFIGURADA"
-            ? fail("IA não configurada — defina a chave no SaaS Admin → Integrações", 503)
-            : fail(r.erro, 502);
-        }
+        if (!r.ok) return falhaIA(r);
         return ok({ resultado: r.resultado });
       }
 
@@ -338,20 +319,17 @@ Deno.serve(
         const parecerFraco = (res: any) =>
           typeof res?.aprovado !== "boolean" || !res?.resumo || !Array.isArray(res?.pendencias);
         const r = await chamarComEscalonamento(
+          chamarIA,
           { prompt, fileRefs: [body.pcmso_ref, ...body.exames_refs], jsonSchema: SCHEMA_PCMSO },
-          parecerFraco
+          parecerFraco,
+          medidor
         );
-        if (!r.ok) {
-          return r.erro === "IA_NAO_CONFIGURADA"
-            ? fail("IA não configurada — defina a chave no SaaS Admin → Integrações", 503)
-            : fail(r.erro, 502);
-        }
+        if (!r.ok) return falhaIA(r);
         return ok({ resultado: r.resultado });
       }
 
       if (ehAcaoEdital(body.acao)) {
         const acao = body.acao;
-        const admin = createAdminClient();
         const estouro = await verificarCotaEdital(admin, usuario);
         if (estouro) {
           return fail(
@@ -360,21 +338,19 @@ Deno.serve(
             { codigo: "COTA_IA", cota: estouro.cota, usadas: estouro.usadas }
           );
         }
-        const medidor = novoMedidor();
         const dados = body as Record<string, unknown>;
-        try {
-          if (acao === "edital_extrair_parte") return await editalExtrairParte(dados, medidor);
-          if (acao === "edital_consolidar") return await editalConsolidar(dados, medidor);
-          return await editalAtende(dados, usuario, medidor);
-        } finally {
-          await registrarUso(admin, usuario, acao, medidor);
-        }
+        if (acao === "edital_extrair_parte") return await editalExtrairParte(dados, medidor);
+        if (acao === "edital_consolidar") return await editalConsolidar(dados, medidor);
+        return await editalAtende(dados, usuario, medidor);
       }
 
       return fail("Ação desconhecida", 400);
     } catch (e) {
       console.error("[ia-processar]", (e as Error)?.message);
       return fail((e as Error)?.message || "Erro interno", 500);
+    } finally {
+      // TODA ação de IA grava o consumo; registrarUso ignora medidor sem chamada
+      await registrarUso(admin, usuario, String(body.acao ?? ""), medidor);
     }
   })
 );

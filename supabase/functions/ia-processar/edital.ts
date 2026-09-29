@@ -6,15 +6,16 @@
  * nunca passamos de ~120 s (AbortSignal.timeout + corte do escalonamento).
  *
  * Consumo: cada ação recebe um MedidorUso (ia-uso.ts) e soma nele o usage de
- * TODA chamada à OpenAI (ok ou não); o index grava em ia_uso e aplica a cota.
+ * TODA chamada à IA (ok ou não, Gemini e reserva OpenAI); o index grava em
+ * ia_uso e aplica a cota.
+ *
+ * Motor: chamarIA (_shared/ia.ts) com nível "padrao" ou "forte" — provedor e
+ * modelo de cada nível vêm do SaaS Admin. O fallback Gemini → OpenAI acontece
+ * DENTRO do timeoutMs de cada chamada, então o orçamento acima vale igual.
  */
 import { fail, ok } from "../_shared/cors.ts";
-import {
-  chamarOpenAI,
-  lerConfigOpenAI,
-  MODELO_FORTE,
-  type RespostaOpenAI,
-} from "../_shared/openai.ts";
+import { chamarIA } from "../_shared/ia.ts";
+import type { NivelIA, RespostaIA } from "../_shared/ia-tipos.ts";
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import {
   SCHEMA_ATENDE_TECNICO,
@@ -75,7 +76,8 @@ const GRUPOS = [
   "outros_documentos",
 ] as const;
 
-function falhaIA(r: { erro: string }) {
+/** erro da IA → resposta HTTP (sem chave nenhuma = 503 com a orientação) */
+export function falhaIA(r: { erro: string }) {
   return r.erro === "IA_NAO_CONFIGURADA"
     ? fail("IA não configurada — defina a chave no SaaS Admin → Integrações", 503)
     : fail(r.erro, 502);
@@ -213,34 +215,33 @@ export async function editalExtrairParte(body: Obj, medidor?: MedidorUso): Promi
     .filter((p) => p.texto.length < 30 && !comImagem.has(p.n))
     .map((p) => `Página ${p.n} sem texto legível e sem imagem (escaneada?) — confira no PDF.`);
 
-  // escalonamento: econômico → forte, dentro do orçamento de tempo
-  const { modelo } = await lerConfigOpenAI();
-  const cadeia = [...new Set([modelo, MODELO_FORTE])];
+  // escalonamento: nível padrão → forte, dentro do orçamento de tempo
+  const niveis: NivelIA[] = ["padrao", "forte"];
   const inicio = Date.now();
   let melhor: { ed: EditalConsolidado; pontos: number; modelo: string } | null = null;
-  let ultimoErro: RespostaOpenAI | null = null;
-  // "fraca" que o modelo FORTE também devolveu (lista vazia confirmada): não
+  let ultimoErro: Extract<RespostaIA, { ok: false }> | null = null;
+  // "fraca" que o nível FORTE também devolveu (lista vazia confirmada): não
   // vira aviso de leitura incompleta — a menção no texto não era exigência
   const confirmadosForte = new Set<MotivoFraca>();
-  for (let i = 0; i < cadeia.length; i++) {
+  for (let i = 0; i < niveis.length; i++) {
     const decorrido = Date.now() - inicio;
     if (i > 0 && decorrido > ESCALONA_ATE_MS) break; // o 1º já comeu o tempo
-    const r = await chamarOpenAI({
+    const r = await chamarIA({
       prompt,
       inputsExtras,
       jsonSchema: schemaEdital(),
       nomeSchema: "edital_parcial",
       strict: true,
-      modelo: cadeia[i],
+      nivel: niveis[i],
       timeoutMs: i === 0 ? TIMEOUT_1A_MS : Math.min(TIMEOUT_1A_MS, ORCAMENTO_MS - decorrido),
       maxOutputTokens: 12_000,
       esforco: "low",
     });
-    contabilizar(medidor, r, cadeia[i]);
+    contabilizar(medidor, r);
     if (!r.ok) {
       if (r.erro === "IA_NAO_CONFIGURADA") return falhaIA(r);
       ultimoErro = r;
-      console.warn("[ia-processar] edital_extrair_parte", cadeia[i], r.erro);
+      console.warn("[ia-processar] edital_extrair_parte", niveis[i], r.modelo ?? "?", r.erro);
       continue; // erro/timeout/cortada → tenta o forte, se der tempo
     }
     const ed = sanearEdital(r.resultado);
@@ -249,7 +250,7 @@ export async function editalExtrairParte(body: Obj, medidor?: MedidorUso): Promi
     const pontos = contarPreenchidos(util);
     if (!melhor || pontos > melhor.pontos) melhor = { ed, pontos, modelo: r.modelo };
     const motivos = motivosFraca(ed, textoTotal, imagens.length > 0);
-    if (r.modelo === MODELO_FORTE) {
+    if (niveis[i] === "forte") {
       for (const m of motivos) if (m !== "quase_vazia") confirmadosForte.add(m);
     }
     if (!motivos.length) break;
@@ -344,17 +345,17 @@ export async function editalConsolidar(body: Obj, medidor?: MedidorUso): Promise
         ),
       ];
   const prompt = `${promptConsolidacao(arquivos, j.conflitos)}\n\nRASCUNHO (JSON):\n${JSON.stringify(rascunhoParaModelo(j))}`;
-  const r = await chamarOpenAI({
+  const r = await chamarIA({
     prompt,
     jsonSchema: schemaEdital({ semItens: true }),
     nomeSchema: "edital_consolidado",
     strict: true,
-    modelo: MODELO_FORTE,
+    nivel: "forte",
     timeoutMs: TIMEOUT_UNICA_MS,
     maxOutputTokens: 12_000,
     esforco: "low",
   });
-  contabilizar(medidor, r, MODELO_FORTE);
+  contabilizar(medidor, r);
   if (!r.ok) {
     if (r.erro === "IA_NAO_CONFIGURADA") return falhaIA(r);
     // sem o modelo, a junção em código já é um resultado válido (nada se perde)
@@ -558,17 +559,17 @@ export async function editalAtende(
       "════ ACERVO DA EMPRESA ════",
       blocoAcervo(acervo, apelidos, totais, empresa, detalhes),
     ].join("\n");
-    const r = await chamarOpenAI({
+    const r = await chamarIA({
       prompt,
       jsonSchema: SCHEMA_ATENDE_TECNICO,
       nomeSchema: "atende_tecnico",
       strict: true,
-      modelo: MODELO_FORTE,
+      nivel: "forte",
       timeoutMs: TIMEOUT_UNICA_MS,
       maxOutputTokens: 8_000,
       esforco: "low",
     });
-    contabilizar(medidor, r, MODELO_FORTE);
+    contabilizar(medidor, r);
     if (!r.ok) return falhaIA(r);
     const o = obj(r.resultado);
     resposta = {
