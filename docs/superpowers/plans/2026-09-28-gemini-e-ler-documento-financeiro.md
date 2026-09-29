@@ -10354,3 +10354,117 @@ git push origin master
 ```
 
 Expected: um commit `revert(financeiro): desfaz o "Ler documento" nas telas de despesa e receita` e o deploy do front concluído (`gh run watch`); o Financeiro volta ao "Importar NFe (XML)" antigo. As libs das Tasks 9 e 10 ficam sem uso, sem efeito para o usuário.
+
+---
+
+## Adendo de 29/09/2026: Tasks 17 e 18 (executar ANTES da Task 16)
+
+Decisões do Javerson em 29/09, depois da revisão final da Parte B:
+
+- **Cota diária geral de IA:** as ações sem limite (`llm`, `extrair_documentos`, `validar_exames_pcmso` e `financeiro_ler_documento`) ganham um limite por empresa de **300 requisições por dia**. Ele é configurável no SaaS Admin, junto com a cota do edital (400). O pedido veio da sessão de segurança: hoje qualquer usuário usaria a chave do SaaS sem teto.
+- **"Ler documento" em todos os usos do `DespesaModal`:** o antigo "Importar NFe (XML)" saiu da edição de despesa, do pré-lançamento e da reconciliação. O botão novo passa a aparecer também nesses lugares, sempre com o aviso "Confira os campos".
+
+Estas duas tasks não trazem o código pronto. Os requisitos abaixo são exatos, e o implementador segue os padrões do código vizinho citado. Nenhuma migração é necessária.
+
+### Task 17: Cota diária geral de IA por empresa (300/dia) e limites no SaaS Admin
+
+**Files:**
+
+- Modify: `supabase/functions/ia-processar/ia-uso.ts` (cota) e `supabase/functions/ia-processar/ia-uso.test.ts`
+- Modify: `supabase/functions/ia-processar/index.ts` (checagem antes das 4 ações; doc do cabeçalho)
+- Modify: `supabase/functions/saas-config/regras.ts`, `supabase/functions/saas-config/regras.test.ts` e `supabase/functions/saas-config/index.ts` (status e definir das cotas)
+- Modify: `apps/web/src/lib/integracoes-ia.js`, `apps/web/src/lib/integracoes-ia.test.js` e `apps/web/src/components/saas/IntegracoesTab.jsx` (card "Limites diários de IA por empresa")
+
+**Interfaces:**
+
+- Produces (`ia-uso.ts`):
+  - `export const COTA_GERAL_PADRAO = 300;`
+  - `export const CHAVE_COTA_GERAL = "ia_cota_geral_dia";`
+  - `export const ACOES_GERAIS = ["llm", "extrair_documentos", "validar_exames_pcmso", "financeiro_ler_documento"] as const;`
+  - `export function ehAcaoGeral(acao: unknown): boolean`
+  - `export function lerCota(valor: unknown, padrao = COTA_EDITAL_PADRAO): number`: o padrão vira 2º parâmetro; as chamadas antigas continuam iguais.
+  - `export async function verificarCotaGeral(admin, u: UsuarioUso, agora = new Date()): Promise<{ cota: number; usadas: number } | null>`
+  - `verificarCotaEdital` mantém a assinatura e o comportamento. As duas usam uma função interna comum, `verificarCota(admin, u, { chave, padrao, acoes }, agora)`, sem duplicar a lógica de contar, ler a cota, isentar o super admin e liberar em caso de erro.
+- Produces (`saas-config`):
+  - `status` devolve também `cotas: { edital_dia: number, geral_dia: number }`, com os valores efetivos. Quando a chave não existe ou é inválida, valem os padrões 400 e 300.
+  - `definir` aceita `cota_edital_dia` e `cota_geral_dia`, os dois opcionais, com inteiro de 1 a 100000. Outro valor → 400 com mensagem clara.
+  - As cotas são gravadas em `saas_config` (`ia_cota_edital_dia` e `ia_cota_geral_dia`) pelo mesmo upsert das outras chaves.
+  - A validação fica pura, em `regras.ts`.
+- Produces (front):
+  - Em `integracoes-ia.js`: `validarCota(texto): { ok: true, valor } | { ok: false, erro }`. Aceita inteiro de 1 a 100000, com espaços; vazio dá erro "Informe um número inteiro".
+  - No `IntegracoesTab.jsx`: um card "Limites diários de IA por empresa", no mesmo estilo dos cards existentes, com:
+    - dois campos, "Leitura de editais (por dia)" e "Demais ações de IA (por dia)", preenchidos pelo `status`;
+    - o botão Salvar, que chama `definir` só com as cotas.
+
+**Requisitos:**
+
+1. **Checagem no `index.ts`:**
+   - Onde: antes da cadeia de ações, depois da autenticação e da validação da empresa.
+   - Se `ehAcaoGeral(body.acao)`, chamar `verificarCotaGeral(admin, usuario)`.
+   - Estourado → `fail("Limite diário de uso da IA atingido para esta empresa (U de C chamadas hoje) — tente amanhã ou fale com o suporte do SIGO.", 429, { codigo: "COTA_IA", cota, usadas })`, no mesmo formato da cota do edital.
+   - Como no edital, o super admin é isento, e um erro ao contar libera a ação.
+   - Atualizar o comentário "COTA só das ações edital\_\*" do cabeçalho para descrever as duas cotas.
+2. **Contagem da cota geral:**
+   - só as linhas de `ia_uso` do dia (fuso de Brasília) com `acao` em `ACOES_GERAIS`;
+   - da empresa do token, ou do próprio usuário quando não houver empresa, como o `doDono` atual.
+   - A cota do edital continua contando só `ACOES_EDITAL`.
+3. **TDD no `ia-uso.test.ts`**, com o mesmo cliente falso dos testes atuais. Casos da cota geral:
+   - usa o padrão 300 quando não há chave;
+   - lê `ia_cota_geral_dia`;
+   - filtra `.in("acao", ACOES_GERAIS)`;
+   - estoura quando `usadas >= cota`;
+   - isenta o super admin;
+   - libera quando a contagem dá erro.
+
+   Os testes atuais da cota do edital continuam passando sem mudança. `ehAcaoGeral` é testada com as 4 ações, com `edital_consolidar` e com lixo.
+
+4. **TDD da validação das cotas:**
+   - no `regras.test.ts` da `saas-config`, com 1, 100000, 0, 100001, 12.5, "abc" e ausente (ausente = não mexe);
+   - no `integracoes-ia.test.js`, para `validarCota`.
+5. **Comandos:**
+   - `node --test supabase/functions/_shared/*.test.ts supabase/functions/ia-processar/*.test.ts supabase/functions/saas-config/*.test.ts` (fail 0);
+   - `cd apps/web && npx vitest run`;
+   - `npx eslint src/components/saas/IntegracoesTab.jsx`;
+   - `npm run build > /dev/null && echo BUILD_OK`.
+6. **Nada de produção:** a publicação da `ia-processar` e da `saas-config` é na Task 16. Commit: `feat(ia): cota diária de 300 chamadas por empresa nas demais ações de IA, configurável no SaaS Admin`.
+
+### Task 18: "Ler documento" também na edição de despesa, no pré-lançamento e na reconciliação
+
+**Files:**
+
+- Modify: `apps/web/src/components/financeiro/DespesaModal.jsx` (a condição que exibe o botão, hoje `adicionarAnexoPronto && !selectedItem`)
+- Modify: os pais do `DespesaModal` que hoje não passam `adicionarAnexoPronto`:
+  - `apps/web/src/components/financeiro/PreLancamentosAReconciliar.jsx`;
+  - `apps/web/src/components/financeiro/CalendarioFinanceiro.jsx`;
+  - `apps/web/src/components/financeiro/HistoricoFechamentosCaixa.jsx`;
+  - os modais de pré-lançamento e reconciliação que embrulham o `DespesaModal`, se forem outros arquivos. Confira com `grep -rn "<DespesaModal" apps/web/src`.
+- Test: se surgir lógica pura nova (ex.: acrescentar anexo pronto sem duplicar), ela fica em `apps/web/src/lib/`, com teste Vitest.
+
+**Requisitos:**
+
+1. **Exibição do botão:**
+   - O botão "Ler documento", com o texto de ajuda e o `ConferirLeitura`, aparece sempre que o pai passa `adicionarAnexoPronto`, **também na edição** (com `selectedItem` preenchido).
+   - Na edição, a leitura continua sobrescrevendo só os campos que o documento trouxe.
+   - O aviso "Confira os campos" aparece como na despesa nova.
+2. **`adicionarAnexoPronto` em todos os pais:**
+   - Todos os pais do `DespesaModal` passam a função, no mesmo padrão do `DespesasTab.jsx`.
+   - A função recebe `{ nome, url: ref, tipo }` do anexo que já subiu e o acrescenta à lista de anexos do formulário daquele pai.
+   - Sem novo upload, e sem duplicar se o mesmo `url` já estiver na lista.
+   - Grava sempre o `ref`, nunca a URL assinada.
+3. **Gravação:**
+   - Nada é gravado antes do Salvar de cada tela.
+   - O fluxo de salvar de cada pai (pré-lançamento, reconciliação, calendário, histórico de fechamentos) não muda.
+4. **Não quebrar:**
+   - a edição de despesa existente;
+   - as parcelas;
+   - os anexos;
+   - a Nota de Devolução;
+   - a conciliação e a desconciliação.
+5. **Comandos e commit:**
+   - `cd apps/web && npx vitest run`;
+   - `npx eslint <arquivos .jsx alterados>`;
+   - `npm run build > /dev/null && echo BUILD_OK`.
+
+   Nada de produção. Commit: `feat(financeiro): "Ler documento" também na edição, no pré-lançamento e na reconciliação`.
+
+6. **Relatório:** liste cada pai do `DespesaModal` e como ficou (se passa `adicionarAnexoPronto` ou, se não, por quê), para o roteiro de teste da Task 16.
