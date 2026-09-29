@@ -9,7 +9,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Building2, Calendar, Package, Check, AlertCircle, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
-import { refDoUpload } from "@/lib/anexo-ref";
 
 export default function AcessoFornecedor() {
   const navigate = useNavigate();
@@ -27,8 +26,6 @@ export default function AcessoFornecedor() {
   const [cotacaoFornecedor, setCotacaoFornecedor] = useState(null);
   const [motivoRecusa, setMotivoRecusa] = useState("");
   const [responsavel, setResponsavel] = useState("");
-  const [arquivosAnexados, setArquivosAnexados] = useState([]);
-  const [uploadingFiles, setUploadingFiles] = useState(false);
   const [token, setToken] = useState(null);
 
   useEffect(() => {
@@ -156,41 +153,10 @@ export default function AcessoFornecedor() {
     }));
   };
 
-  // Obs.: não há campo de arquivo na tela usando este handler, e o fornecedor
-  // entra sem sessão da empresa (o UploadFile exige). Se voltar a ser usado,
-  // o upload precisa de URL de envio assinada pela Edge Function (como no
-  // portal do cliente) e a tabela arquivo_cotacao_fornecedor (dropada na 0017).
-  const handleFileUpload = async (e) => {
-    const files = Array.from(e.target.files);
-    if (files.length === 0 || !cotacaoFornecedor) return;
-
-    setUploadingFiles(true);
-    try {
-      for (const file of files) {
-        // grava a ref "bucket/caminho" (a file_url assinada expira em 1h)
-        const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file }));
-        if (!ref) throw new Error("Upload sem referência do arquivo");
-        const arquivo = await sigo.functions.invoke("portalFornecedorResposta", {
-          token,
-          action: "upload_arquivo",
-          arquivo: {
-            nome_arquivo: file.name,
-            url_arquivo: ref,
-            tamanho: file.size,
-            tipo: file.type,
-          },
-        });
-        if (arquivo?.data?.arquivo) {
-          setArquivosAnexados((prev) => [...prev, arquivo.data.arquivo]);
-        }
-      }
-      toast.success(`${files.length} arquivo(s) anexado(s)!`);
-    } catch (err) {
-      toast.error("Erro ao anexar arquivos");
-    } finally {
-      setUploadingFiles(false);
-    }
-  };
+  // Sem anexo de arquivo no portal do fornecedor: a ação "upload_arquivo" saiu
+  // do portal-fornecedor-resposta (a tabela arquivo_cotacao_fornecedor foi
+  // dropada na 0017). Se voltar, precisa de URL de envio assinada pela Edge
+  // Function (como no portal do cliente) e de tabela nova.
 
   const handleMarcarImpossivel = async () => {
     if (!motivoRecusa.trim()) {

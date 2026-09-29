@@ -19,6 +19,15 @@
  * o EntrarSistema seguir para o login-custom).
  * Acesso cujo fornecedor não é da mesma empresa do acesso = credencial inválida.
  *
+ * Mesmo e-mail em mais de uma linha (o fornecedor atende várias empresas, ou
+ * outra empresa cadastrou o e-mail dele): confere a senha linha a linha, na
+ * ordem de criação, e fica com a PRIMEIRA que bate — uma linha alheia com senha
+ * diferente não trava o login. O limite de tentativas é consumido uma vez por
+ * login, não por linha.
+ *
+ * O token leva `acesso_id`: o portal-fornecedor-cotacoes confere a cada chamada
+ * se esse acesso continua ativo (revogação imediata).
+ *
  * Resposta: { success, fornecedor_id, fornecedor_nome, email, empresa_id, portal_token }
  */
 
@@ -36,6 +45,12 @@ import {
 const JANELA_SEG = 15 * 60;
 const MAX_POR_IP = 30;
 const MAX_POR_CONTA = 8;
+// Teto de linhas conferidas por login (cada uma pode custar um bcrypt): muitas
+// linhas com o mesmo e-mail não viram lentidão/negação do login
+const MAX_ACESSOS_POR_EMAIL = 10;
+
+const COLS_ACESSO =
+  "id, empresa_id, fornecedor_id, fornecedor_email, fornecedor_nome, senha_acesso, ativo";
 
 interface Body {
   email?: string;
@@ -66,42 +81,43 @@ Deno.serve(
     ]);
     if (!limite.permitido) return fail(MSG_MUITAS_TENTATIVAS, 429);
 
-    // Busca acesso do fornecedor (tenta lowercase; cai pro original por compat)
-    let { data: acesso } = await supabase
+    // TODAS as linhas ativas com o e-mail (lowercase + o digitado, por compat
+    // com e-mail gravado com maiúsculas), em ordem estável de criação.
+    // Não usa maybeSingle: com 2+ linhas ele dá erro e ninguém entra.
+    const orig = (body.email ?? "").trim();
+    const { data: acessos, error: acessoErr } = await supabase
       .from("fornecedor_acesso")
-      .select(
-        "id, empresa_id, fornecedor_id, fornecedor_email, fornecedor_nome, senha_acesso, ativo"
-      )
-      .eq("fornecedor_email", email)
+      .select(COLS_ACESSO)
+      .in("fornecedor_email", [...new Set([email, orig])])
       .eq("ativo", true)
       .is("deleted_at", null)
-      .maybeSingle();
-
-    if (!acesso) {
-      const orig = (body.email ?? "").trim();
-      if (orig !== email) {
-        const r = await supabase
-          .from("fornecedor_acesso")
-          .select(
-            "id, empresa_id, fornecedor_id, fornecedor_email, fornecedor_nome, senha_acesso, ativo"
-          )
-          .eq("fornecedor_email", orig)
-          .eq("ativo", true)
-          .is("deleted_at", null)
-          .maybeSingle();
-        acesso = r.data;
-      }
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(MAX_ACESSOS_POR_EMAIL);
+    if (acessoErr) {
+      console.error("[portal-fornecedor-login] erro consultando acesso:", acessoErr.message);
+      return fail("Erro interno", 500);
     }
 
     // Mensagem e tempo genéricos pra não revelar se o email existe
-    if (!acesso) {
+    if (!acessos || acessos.length === 0) {
       await verificarSenhaFicticia(senha);
       return fail("Credenciais inválidas", 401);
     }
 
-    // Validação de senha: só bcrypt / SHA-256 (via verifyPassword)
-    const { ok: senhaOk, needsRehash } = await verifyPassword(senha, acesso.senha_acesso ?? "");
-    if (!senhaOk) return fail("Credenciais inválidas", 401);
+    // Validação de senha: só bcrypt / SHA-256 (via verifyPassword). Fica com a
+    // primeira linha cuja senha confere.
+    let acesso: NonNullable<typeof acessos>[number] | null = null;
+    let needsRehash = false;
+    for (const linha of acessos) {
+      const r = await verifyPassword(senha, linha.senha_acesso ?? "");
+      if (r.ok) {
+        acesso = linha;
+        needsRehash = r.needsRehash;
+        break;
+      }
+    }
+    if (!acesso) return fail("Credenciais inválidas", 401);
 
     // O fornecedor do acesso tem de ser da MESMA empresa do acesso. A RLS só
     // confere o empresa_id da linha: um acesso apontando para o fornecedor de
@@ -153,6 +169,8 @@ Deno.serve(
       empresa_id: acesso.empresa_id,
       fornecedor_id: acesso.fornecedor_id,
       email: acesso.fornecedor_email,
+      // linha exata que autenticou: revogada/apagada → sessão cai (cotacoes)
+      acesso_id: acesso.id,
     });
 
     return ok({

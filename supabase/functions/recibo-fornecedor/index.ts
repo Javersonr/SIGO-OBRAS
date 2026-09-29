@@ -28,10 +28,36 @@ import {
 } from "../_shared/portal-funcionario.ts";
 import { BUCKET_RECIBOS, garantirPdfQuitado, type ReciboRow } from "../_shared/recibo-pdf.ts";
 import { lerLocalizacao } from "../_shared/localizacao.ts";
+import { temPermissaoServidor, type Vinculo } from "../_shared/conector/acesso.ts";
 
 const TTL_LINK = 60 * 60 * 24 * 30; // 30 dias
 const COLUNAS_RECIBO =
   "id, empresa_id, transacao_id, codigo, hash_sha256, dados, status, confirmada_em, evidencia, contestacao, pdf_ref";
+
+/**
+ * Vínculo ATIVO do chamador na empresa da sessão (e-mail do usuário do JWT +
+ * empresa do JWT). null = sem vínculo. Erro de leitura lança (vira 500).
+ */
+async function vinculoDoChamador(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  email: string,
+  empresaId: string | null
+): Promise<Vinculo | null> {
+  if (!empresaId) return null;
+  const { data, error } = await supabase
+    .from("usuario_empresa")
+    .select("perfil, is_owner, permissoes, ativo, deleted_at")
+    .eq("usuario_email", email.toLowerCase())
+    .eq("empresa_id", empresaId)
+    .eq("ativo", true)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error("usuario_empresa: " + error.message);
+  return data ?? null;
+}
 
 interface Body {
   acao?: string;
@@ -112,6 +138,17 @@ Deno.serve(
       if (!tx) return fail("Despesa não encontrada", 404);
       if (!staff.is_super_admin && tx.empresa_id !== staff.empresa_id) {
         return fail("Despesa de outra empresa", 403);
+      }
+      // Mesmo perfil que vê o card do recibo no front (DetalheDespesaModal):
+      // aba Despesas do Financeiro, ou a aba Financeiro do projeto (só despesa
+      // vinculada a projeto). Admin/dono passam em temPermissaoServidor.
+      if (!staff.is_super_admin) {
+        const vinculo = await vinculoDoChamador(supabase, staff.email, staff.empresa_id);
+        const pode =
+          !!vinculo &&
+          (temPermissaoServidor(vinculo, "Financeiro", "Despesas") ||
+            (!!tx.projeto_id && temPermissaoServidor(vinculo, "Projetos", "Financeiro")));
+        if (!pode) return fail("Sem permissão para emitir recibo", 403);
       }
       const statusPago = ["pago", "realizado"].includes(String(tx.status || "").toLowerCase());
       if (!statusPago) return fail("Registre o pagamento antes de emitir o recibo", 409);

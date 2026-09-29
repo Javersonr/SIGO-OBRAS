@@ -8,6 +8,10 @@
  *   { acao:"redefinir", funcionario_id }             → { usuario, senha_provisoria }
  *   { acao:"ativo", funcionario_id, ativo:boolean }  → { ativo }
  *
+ * Permissão (espelha a aba Funcionários de RH & Segurança, onde fica a ficha
+ * com o AcessoPortalCard): super admin, Admin, dono ou permissão na aba.
+ * "status" basta ver a aba; criar/redefinir/ativar exigem a função "editar".
+ *
  * A senha provisória volta UMA vez (para o RH entregar); no primeiro acesso o
  * funcionário cria a própria senha, que ninguém do RH conhece.
  */
@@ -15,11 +19,17 @@ import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { usuarioDaRequisicao } from "../_shared/usuario-request.ts";
 import { hashPassword } from "../_shared/passwords.ts";
+import { temPermissaoServidor, type Vinculo } from "../_shared/conector/acesso.ts";
 import {
   normalizarUsuario,
   gerarSenhaProvisoria,
   registrarEvento,
 } from "../_shared/portal-funcionario.ts";
+
+// mesmo módulo/aba do front (pages/SegurancaTrabalho.jsx → aba Funcionários)
+const MODULO = "Segurança do Trabalho";
+const ABA = "Funcionários";
+const ACOES_ESCRITA = new Set(["criar", "redefinir", "ativo"]);
 
 interface Body {
   acao?: string;
@@ -27,6 +37,31 @@ interface Body {
   funcionario_id?: string;
   usuario?: string;
   ativo?: boolean;
+}
+
+/**
+ * Vínculo ATIVO do chamador na empresa da sessão (e-mail do usuário do JWT +
+ * empresa do JWT). null = sem vínculo. Erro de leitura lança (vira 500).
+ */
+async function vinculoDoChamador(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  email: string,
+  empresaId: string | null
+): Promise<Vinculo | null> {
+  if (!empresaId) return null;
+  const { data, error } = await supabase
+    .from("usuario_empresa")
+    .select("perfil, is_owner, permissoes, ativo, deleted_at")
+    .eq("usuario_email", email.toLowerCase())
+    .eq("empresa_id", empresaId)
+    .eq("ativo", true)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error("usuario_empresa: " + error.message);
+  return data ?? null;
 }
 
 Deno.serve(
@@ -43,9 +78,26 @@ Deno.serve(
     } catch {
       return fail("Payload inválido", 400);
     }
+    const acao = body.acao ?? "";
+    if (acao !== "status" && !ACOES_ESCRITA.has(acao)) return fail("Ação desconhecida", 400);
     const supabase = createAdminClient();
 
-    if (body.acao === "status") {
+    // Antes: qualquer usuário da empresa (Compras, Estoque...) redefinia a
+    // senha de qualquer funcionário e recebia a provisória. Agora: ver a aba
+    // para qualquer ação; "editar" para o que altera o acesso (logo antes de
+    // alterar, para o 409 "já tem acesso" do avisarNoPortal seguir igual).
+    let podeEditar = true;
+    if (!staff.is_super_admin) {
+      const vinculo = await vinculoDoChamador(supabase, staff.email, staff.empresa_id);
+      if (!vinculo || !temPermissaoServidor(vinculo, MODULO, ABA)) {
+        return fail("Sem permissão para gerenciar o acesso ao Portal do Funcionário", 403);
+      }
+      podeEditar = temPermissaoServidor(vinculo, MODULO, ABA, "editar");
+    }
+    const semEdicao = () =>
+      fail("Sem permissão para alterar o acesso ao Portal do Funcionário", 403);
+
+    if (acao === "status") {
       // super admin consulta a empresa aberta na tela; os demais, só a da sessão
       const empresaId =
         staff.is_super_admin && body.empresa_id ? body.empresa_id : staff.empresa_id;
@@ -94,6 +146,7 @@ Deno.serve(
 
     if (body.acao === "criar") {
       if (atual) return fail("Este funcionário já tem acesso — use Redefinir senha", 409);
+      if (!podeEditar) return semEdicao();
       const usuario = normalizarUsuario(body.usuario || func.cpf || "");
       if (!usuario) {
         return fail("Funcionário sem CPF cadastrado — informe um usuário", 400);
@@ -126,6 +179,7 @@ Deno.serve(
     }
 
     if (!atual) return fail("Este funcionário ainda não tem acesso ao portal", 404);
+    if (!podeEditar) return semEdicao(); // redefinir / ativo
 
     if (body.acao === "redefinir") {
       const senha = gerarSenhaProvisoria();

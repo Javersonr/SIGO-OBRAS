@@ -56,6 +56,13 @@ const TEMPO_MINIMO_PADRAO = 60; // aula de PDF/texto sem tempo definido
 const JANELA_LOGIN_SEG = 15 * 60;
 const MAX_LOGIN_POR_IP = 30;
 const MAX_LOGIN_POR_CONTA = 8;
+// Antes de a senha conferir, TODA falha de login responde igual (401): a
+// resposta não revela se o CPF existe, está bloqueado ou desativado.
+const MSG_CREDENCIAIS = "Credenciais inválidas: confira o usuário (CPF) e a senha.";
+// cada dúvida manda WhatsApp ao tutor pelo canal único do SaaS
+const JANELA_DUVIDA_SEG = 60 * 60;
+const MAX_DUVIDAS_POR_HORA = 10;
+const MAX_DETALHE = 2000; // caracteres do JSON do detalhe de um evento
 
 const EVENTOS_CLIENTE = new Set([
   "abrir_curso",
@@ -141,16 +148,79 @@ function aulaLiberada(trilha: { aulas: any[]; feitas: Set<unknown> }, aulaId: st
   return false;
 }
 
+/** A aula existe (não apagada) e é do curso, na empresa da sessão. */
+async function aulaDoCurso(supabase: Db, aulaId: string, cursoId: string, empresaId: string) {
+  const { data } = await supabase
+    .from("treinamento_aula")
+    .select("id")
+    .eq("id", aulaId)
+    .eq("curso_id", cursoId)
+    .eq("empresa_id", empresaId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  return !!data;
+}
+
+/**
+ * Detalhe do evento vindo do navegador, limitado: objeto pequeno passa como
+ * veio; o resto vira { cortado, tamanho, json } com o JSON serializado cortado.
+ */
+function detalheLimitado(d: unknown): Record<string, unknown> | null {
+  if (d === null || d === undefined) return null;
+  let json: string | undefined;
+  try {
+    json = JSON.stringify(d);
+  } catch {
+    return { invalido: true };
+  }
+  if (json === undefined) return null;
+  const objeto = typeof d === "object" && !Array.isArray(d);
+  if (objeto && json.length <= MAX_DETALHE) return d as Record<string, unknown>;
+  return {
+    cortado: json.length > MAX_DETALHE,
+    tamanho: json.length,
+    json: json.slice(0, MAX_DETALHE),
+  };
+}
+
+/**
+ * Conclusão recalculada só com o que o SERVIDOR grava: todas as aulas da
+ * trilha concluídas no progresso e, se o curso tem prova, uma tentativa
+ * APROVADA desta matrícula neste curso. Não usa matricula.status nem
+ * avaliacao_aprovada (a empresa grava a matrícula pela API).
+ */
 // deno-lint-ignore no-explicit-any
-async function concluirSeCompleto(supabase: Db, mat: any, empresaId: string) {
-  const [trilha, { data: questoes }, { data: curso }] = await Promise.all([
+async function situacaoReal(supabase: Db, mat: any, empresaId: string) {
+  const [trilha, { data: questoes }, { data: aprovadas }] = await Promise.all([
     trilhaDoCurso(supabase, mat.curso_id, mat.id, empresaId),
     supabase
       .from("treinamento_questao")
       .select("id")
       .eq("curso_id", mat.curso_id)
       .eq("empresa_id", empresaId)
-      .is("deleted_at", null),
+      .is("deleted_at", null)
+      .limit(1),
+    supabase
+      .from("treinamento_tentativa")
+      .select("numero, nota")
+      .eq("matricula_id", mat.id)
+      .eq("curso_id", mat.curso_id)
+      .eq("empresa_id", empresaId)
+      .eq("aprovada", true)
+      .order("numero", { ascending: false })
+      .limit(1),
+  ]);
+  const aulasOk =
+    trilha.aulas.length > 0 && trilha.aulas.every((a: { id: string }) => trilha.feitas.has(a.id));
+  const temAvaliacao = (questoes ?? []).length > 0;
+  const aprovacao: { numero: number; nota: number } | null = aprovadas?.[0] ?? null;
+  return { aulasOk, temAvaliacao, aprovacao, concluido: aulasOk && (!temAvaliacao || !!aprovacao) };
+}
+
+// deno-lint-ignore no-explicit-any
+async function concluirSeCompleto(supabase: Db, mat: any, empresaId: string) {
+  const [sit, { data: curso }] = await Promise.all([
+    situacaoReal(supabase, mat, empresaId),
     supabase
       .from("treinamento_curso")
       .select("validade_meses")
@@ -158,13 +228,11 @@ async function concluirSeCompleto(supabase: Db, mat: any, empresaId: string) {
       .eq("empresa_id", empresaId)
       .maybeSingle(),
   ]);
-  const aulasOk =
-    trilha.aulas.length > 0 && trilha.aulas.every((a: { id: string }) => trilha.feitas.has(a.id));
-  const precisaAvaliacao = (questoes ?? []).length > 0;
-  const avaliacaoOk = !precisaAvaliacao || mat.avaliacao_aprovada === true;
   // precisaAvaliacao = "é a hora da prova": só quando TODAS as aulas terminaram
-  if (!aulasOk) return { status: "em_andamento", concluiu: false, precisaAvaliacao: false };
-  if (!avaliacaoOk) return { status: "em_andamento", concluiu: false, precisaAvaliacao };
+  if (!sit.aulasOk) return { status: "em_andamento", concluiu: false, precisaAvaliacao: false };
+  if (!sit.concluido) {
+    return { status: "em_andamento", concluiu: false, precisaAvaliacao: sit.temAvaliacao };
+  }
   const hoje = new Date();
   const patch: Record<string, unknown> = {
     status: "concluido",
@@ -176,7 +244,7 @@ async function concluirSeCompleto(supabase: Db, mat: any, empresaId: string) {
     patch.proxima_renovacao = renova.toISOString().slice(0, 10);
   }
   await supabase.from("treinamento_matricula").update(patch).eq("id", mat.id);
-  return { status: "concluido", concluiu: true, precisaAvaliacao };
+  return { status: "concluido", concluiu: true, precisaAvaliacao: false };
 }
 
 /**
@@ -270,9 +338,12 @@ Deno.serve(
         .select("*")
         .eq("usuario", usuario)
         .maybeSingle();
+      // Mesma resposta para CPF inexistente, senha errada, acesso bloqueado ou
+      // desativado: 423/403 só depois de a senha conferir (enumeração de CPF).
+      const credenciaisInvalidas = () => fail(MSG_CREDENCIAIS, 401, { codigo: "CREDENCIAIS" });
       if (!acesso) {
         await verifyPassword(senha, HASH_FICTICIO);
-        return fail("Usuário ou senha incorretos", 401, { codigo: "CREDENCIAIS" });
+        return credenciaisInvalidas();
       }
       const ev = (e: Omit<EventoPortal, "empresa_id" | "funcionario_id">) =>
         registrarEvento(supabase, req, {
@@ -281,18 +352,11 @@ Deno.serve(
           ...e,
         });
 
-      if (acesso.bloqueado_ate && Date.parse(acesso.bloqueado_ate) > Date.now()) {
-        return fail(
-          `Acesso bloqueado por senhas erradas. Tente de novo às ${hora(acesso.bloqueado_ate)} ou fale com o RH.`,
-          423,
-          { codigo: "BLOQUEADO" }
-        );
-      }
-      if (!acesso.ativo)
-        return fail("Acesso desativado — fale com o RH", 403, { codigo: "DESATIVADO" });
-
+      const bloqueado = !!acesso.bloqueado_ate && Date.parse(acesso.bloqueado_ate) > Date.now();
       const { ok: senhaOk } = await verifyPassword(senha, acesso.senha_hash);
       if (!senhaOk) {
+        // bloqueado ou desativado: não conta falha (como antes)
+        if (bloqueado || !acesso.ativo) return credenciaisInvalidas();
         const tentativas = acesso.tentativas + 1;
         const bloquear = tentativas >= MAX_FALHAS_LOGIN;
         const bloqueadoAte = bloquear
@@ -303,14 +367,19 @@ Deno.serve(
           .update({ tentativas: bloquear ? 0 : tentativas, bloqueado_ate: bloqueadoAte })
           .eq("funcionario_id", acesso.funcionario_id);
         await ev({ evento: "login_falha", detalhe: { tentativa: tentativas, bloqueou: bloquear } });
+        return credenciaisInvalidas();
+      }
+
+      // senha certa: agora pode dizer o motivo
+      if (bloqueado) {
         return fail(
-          bloquear
-            ? `Muitas senhas erradas — acesso bloqueado até ${hora(bloqueadoAte!)}.`
-            : "Usuário ou senha incorretos",
-          401,
-          { codigo: bloquear ? "BLOQUEADO" : "CREDENCIAIS" }
+          `Acesso bloqueado por senhas erradas. Tente de novo às ${hora(acesso.bloqueado_ate)} ou fale com o RH.`,
+          423,
+          { codigo: "BLOQUEADO" }
         );
       }
+      if (!acesso.ativo)
+        return fail("Acesso desativado — fale com o RH", 403, { codigo: "DESATIVADO" });
       await liberarTentativas(supabase, limite);
 
       // funcionário da MESMA empresa do acesso (acesso apontando p/ outra = inativo)
@@ -657,6 +726,13 @@ Deno.serve(
       if (!EVENTOS_CLIENTE.has(nome)) return fail("Evento inválido", 400);
       const mat = await minhaMatricula(body.matricula_id);
       if (body.matricula_id && !mat) return fail("Matrícula não encontrada", 404);
+      // aula informada tem de ser do curso da matrícula (na empresa da sessão)
+      if (body.aula_id && nome !== "abrir_aula") {
+        if (!mat) return fail("matricula_id é obrigatório com aula_id", 400);
+        if (!(await aulaDoCurso(supabase, body.aula_id, mat.curso_id, empresaId))) {
+          return fail("Aula não pertence ao curso", 400);
+        }
+      }
 
       if (nome === "abrir_aula") {
         if (!mat || !body.aula_id) return fail("matricula_id e aula_id são obrigatórios", 400);
@@ -687,7 +763,7 @@ Deno.serve(
         matricula_id: mat?.id ?? null,
         curso_id: mat?.curso_id ?? null,
         aula_id: body.aula_id ?? null,
-        detalhe: body.detalhe ?? null,
+        detalhe: detalheLimitado(body.detalhe),
       });
       return ok({ registrado: true });
     }
@@ -940,11 +1016,8 @@ Deno.serve(
 
       let concluiu = false;
       if (aprovada) {
-        const r = await concluirSeCompleto(
-          supabase,
-          { ...mat, avaliacao_aprovada: true },
-          empresaId
-        );
+        // concluirSeCompleto confere a tentativa aprovada recém-gravada
+        const r = await concluirSeCompleto(supabase, mat, empresaId);
         concluiu = r.concluiu;
         if (concluiu) {
           await ev({ evento: "curso_concluido", matricula_id: mat.id, curso_id: mat.curso_id });
@@ -985,10 +1058,8 @@ Deno.serve(
     // Emissão = assinatura eletrônica do aluno: ele confirma a declaração com
     // a SENHA pessoal (só ele conhece), e o servidor registra quando/de onde.
     if (body.acao === "certificado") {
-      const mat = await minhaMatricula(body.matricula_id);
+      let mat = await minhaMatricula(body.matricula_id);
       if (!mat) return fail("Matrícula não encontrada", 404);
-      if (mat.status !== "concluido")
-        return fail("Conclua o curso antes de emitir o certificado", 409);
 
       const { data: existente } = await supabase
         .from("treinamento_certificado")
@@ -999,43 +1070,47 @@ Deno.serve(
         return ok({ certificado: { ...existente, revogado: !!existente.revogado_em } });
       }
 
+      // NR-1: conclusão recalculada aqui (progresso + tentativa aprovada), não
+      // pelo status da matrícula, que a empresa grava pela API.
+      const sit = await situacaoReal(supabase, mat, empresaId);
+      if (!sit.concluido) return fail("Conclua o curso antes de emitir o certificado", 409);
+
       const { ok: senhaOk } = await verifyPassword(body.senha ?? "", acesso.senha_hash);
       if (!senhaOk) return fail("Senha incorreta — a assinatura não foi feita", 400);
 
-      const [{ data: curso }, { data: func }, { data: emp }, { data: aulas }, { data: aprov }] =
-        await Promise.all([
-          supabase
-            .from("treinamento_curso")
-            .select("*")
-            .eq("id", mat.curso_id)
-            .eq("empresa_id", empresaId)
-            .maybeSingle(),
-          supabase
-            .from("funcionario")
-            .select("nome_completo, cpf, funcao_nome")
-            .eq("id", funcionarioId)
-            .eq("empresa_id", empresaId)
-            .maybeSingle(),
-          supabase
-            .from("empresa")
-            .select("nome, razao_social, cnpj")
-            .eq("id", empresaId)
-            .maybeSingle(),
-          supabase
-            .from("treinamento_aula")
-            .select("ordem, modulo, titulo")
-            .eq("curso_id", mat.curso_id)
-            .eq("empresa_id", empresaId)
-            .is("deleted_at", null)
-            .order("ordem", { ascending: true }),
-          supabase
-            .from("treinamento_tentativa")
-            .select("numero, nota")
-            .eq("matricula_id", mat.id)
-            .eq("aprovada", true)
-            .order("numero", { ascending: false })
-            .limit(1),
-        ]);
+      // matrícula sem o status/data que o servidor grava ao concluir: regrava
+      // antes de montar o certificado (conclusão e validade vêm dela)
+      if (mat.status !== "concluido" || !mat.data_conclusao) {
+        await concluirSeCompleto(supabase, mat, empresaId);
+        mat = (await minhaMatricula(mat.id)) ?? mat;
+      }
+
+      const [{ data: curso }, { data: func }, { data: emp }, { data: aulas }] = await Promise.all([
+        supabase
+          .from("treinamento_curso")
+          .select("*")
+          .eq("id", mat.curso_id)
+          .eq("empresa_id", empresaId)
+          .maybeSingle(),
+        supabase
+          .from("funcionario")
+          .select("nome_completo, cpf, funcao_nome")
+          .eq("id", funcionarioId)
+          .eq("empresa_id", empresaId)
+          .maybeSingle(),
+        supabase
+          .from("empresa")
+          .select("nome, razao_social, cnpj")
+          .eq("id", empresaId)
+          .maybeSingle(),
+        supabase
+          .from("treinamento_aula")
+          .select("ordem, modulo, titulo")
+          .eq("curso_id", mat.curso_id)
+          .eq("empresa_id", empresaId)
+          .is("deleted_at", null)
+          .order("ordem", { ascending: true }),
+      ]);
       if (!func) return fail("Funcionário não encontrado", 404);
       if (!curso?.carga_horaria_horas) {
         return fail("O curso ainda não tem carga horária definida — procure o RH", 409);
@@ -1058,7 +1133,9 @@ Deno.serve(
           conclusao: mat.data_conclusao,
           validade: mat.proxima_renovacao ?? null,
         },
-        avaliacao: aprov?.[0] ? { nota: aprov[0].nota, tentativa: aprov[0].numero } : null,
+        avaliacao: sit.aprovacao
+          ? { nota: sit.aprovacao.nota, tentativa: sit.aprovacao.numero }
+          : null,
         instrutor: {
           nome: curso.instrutor_nome ?? null,
           qualificacao: curso.instrutor_qualificacao ?? null,
@@ -1155,6 +1232,20 @@ Deno.serve(
       if (pergunta.length > 2000) return fail("Dúvida longa demais (máx. 2000 caracteres)", 400);
       const mat = await minhaMatricula(body.matricula_id);
       if (!mat) return fail("Matrícula não encontrada", 404);
+      if (body.aula_id && !(await aulaDoCurso(supabase, body.aula_id, mat.curso_id, empresaId))) {
+        return fail("Aula não pertence ao curso", 400);
+      }
+      // cada dúvida vira um WhatsApp ao tutor: teto por funcionário
+      const limite = await consumirTentativa(supabase, "portal-duvida", JANELA_DUVIDA_SEG, [
+        { tipo: "conta", valor: funcionarioId, max: MAX_DUVIDAS_POR_HORA },
+      ]);
+      if (!limite.permitido) {
+        return fail(
+          "Você enviou muitas dúvidas em pouco tempo. Aguarde um pouco e envie de novo.",
+          429,
+          { codigo: "LIMITE" }
+        );
+      }
 
       const { data: duvida, error } = await supabase
         .from("treinamento_duvida")

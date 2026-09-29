@@ -14,19 +14,30 @@
  *
  * Upload do cliente: sem sessão da empresa, a RLS do Storage barra o envio
  * direto. "preparar_upload" devolve um upload ASSINADO para um caminho gerado
- * aqui, na pasta da empresa do escopo; o navegador envia o arquivo
- * (uploadToSignedUrl) e grava a ref com "upload_arquivo".
+ * aqui, na pasta do portal dentro da empresa do escopo
+ * (templates/<empresa>/portal-cliente/<oportunidade>/<aaaa>/<mm>/<uuid>-<nome>);
+ * o navegador envia o arquivo (uploadToSignedUrl) e grava a ref com
+ * "upload_arquivo", que SÓ aceita ref dessa pasta. Limite: 30 preparos por hora
+ * por escopo (empresa:oportunidade).
  */
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { resolveClienteScope } from "../_shared/portal-cliente-scope.ts";
 import { refDaEmpresa } from "../_shared/storage-assinar.ts";
+import { consumirTentativa, MSG_MUITAS_TENTATIVAS } from "../_shared/limite-tentativas.ts";
 
 // Mesmo bucket do upload interno de arquivos sem tipo específico (UploadFile →
 // "templates"): aceita qualquer formato até 50 MB. O anexos-oportunidade só
 // aceita PDF/JPEG/PNG e barraria planilha, DWG etc.
 const BUCKET_UPLOAD_CLIENTE = "templates";
+// Teto generoso de uploads do portal (cada preparo = 1 URL de envio assinada)
+const JANELA_UPLOAD_SEG = 60 * 60;
+const MAX_UPLOADS_POR_ESCOPO = 30;
+
+/** Pasta do portal (dentro do bucket): arquivo do cliente não se mistura com os internos. */
+const pastaDoPortal = (empresaId: string, oportunidadeId: string) =>
+  `${empresaId}/portal-cliente/${oportunidadeId}/`;
 
 Deno.serve(
   withCors(async (req) => {
@@ -50,12 +61,22 @@ Deno.serve(
 
     // --- Preparar upload (URL de envio assinada) ---------------------------
     if (body.action === "preparar_upload") {
+      // Freio: sem ele, um link vazado vira depósito ilimitado no Storage
+      const limite = await consumirTentativa(supabase, "portal-cliente-upload", JANELA_UPLOAD_SEG, [
+        {
+          tipo: "conta",
+          valor: `${empresa_id}:${oportunidade_id}`,
+          max: MAX_UPLOADS_POR_ESCOPO,
+        },
+      ]);
+      if (!limite.permitido) return fail(MSG_MUITAS_TENTATIVAS, 429);
+
       const nome = String(body.nome ?? "").slice(0, 150);
       const seguro = nome.replace(/[^a-zA-Z0-9._-]/g, "_") || "arquivo";
       const agora = new Date();
       const mes = String(agora.getMonth() + 1).padStart(2, "0");
-      // <empresa_id>/<aaaa>/<mm>/<uuid>-<nome>: mesmo formato do UploadFile
-      const caminho = `${empresa_id}/${agora.getFullYear()}/${mes}/${crypto.randomUUID()}-${seguro}`;
+      // <empresa_id>/portal-cliente/<oportunidade_id>/<aaaa>/<mm>/<uuid>-<nome>
+      const caminho = `${pastaDoPortal(empresa_id, oportunidade_id)}${agora.getFullYear()}/${mes}/${crypto.randomUUID()}-${seguro}`;
       const { data, error: upErr } = await supabase.storage
         .from(BUCKET_UPLOAD_CLIENTE)
         .createSignedUploadUrl(caminho);
@@ -75,11 +96,14 @@ Deno.serve(
     if (body.action === "upload_arquivo") {
       const a = body.arquivo || {};
       if (!a.nome || !a.url) return fail("Arquivo incompleto", 400);
-      // Só ref do bucket de upload do cliente, na pasta desta empresa: o portal
-      // assina com service role o que estiver gravado — URL solta, caminho de
-      // outra empresa ou de outro bucket (RH, biometria...) viraria vazamento.
+      // Só ref da pasta do portal DESTA empresa e oportunidade: o portal assina
+      // com service role o que estiver gravado — URL solta, caminho de outra
+      // empresa, de outro bucket (RH, biometria...) ou arquivo interno da
+      // empresa em templates/<empresa>/ viraria vazamento. (refDaEmpresa já
+      // barra "." / ".." / "//", então o prefixo não tem como ser escapado.)
       const ref = refDaEmpresa(a.url, empresa_id);
-      if (!ref || !ref.startsWith(`${BUCKET_UPLOAD_CLIENTE}/`)) {
+      const prefixo = `${BUCKET_UPLOAD_CLIENTE}/${pastaDoPortal(empresa_id, oportunidade_id)}`;
+      if (!ref || !ref.startsWith(prefixo)) {
         return fail("Arquivo inválido", 400);
       }
       const { data, error: insErr } = await supabase

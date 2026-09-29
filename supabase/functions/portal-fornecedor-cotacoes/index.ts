@@ -10,6 +10,11 @@
  * dois: o fornecedor tem de ser da empresa do token e cada participação e
  * cotação também (linha legada apontando para outra empresa fica de fora).
  *
+ * Revogação: a cada chamada confere se o fornecedor_acesso que gerou o token
+ * continua ativo e não apagado (acesso_id do token — tokens antigos, sem ele,
+ * pela empresa + fornecedor + e-mail). Desativou/apagou o acesso, trocou o
+ * e-mail ou o fornecedor dele → 401 na hora, sem esperar o `exp` (12h).
+ *
  * Service role enxerga tudo: a resposta leva SÓ as colunas listadas abaixo —
  * nada de select("*"). Resultado da cotação (vencedor, valor aprovado) só vai
  * quando o vencedor é o próprio fornecedor; concorrente nunca aparece.
@@ -62,6 +67,27 @@ Deno.serve(
     const supabase = createAdminClient();
     const fornecedorId = claims.fornecedor_id as string;
     const empresaId = claims.empresa_id as string;
+
+    // O acesso que emitiu o token ainda vale? (erro de consulta = fecha, 500)
+    let acessoQ = supabase
+      .from("fornecedor_acesso")
+      .select("id")
+      .eq("empresa_id", empresaId)
+      .eq("fornecedor_id", fornecedorId)
+      .eq("ativo", true)
+      .is("deleted_at", null);
+    if (typeof claims.acesso_id === "string" && claims.acesso_id) {
+      acessoQ = acessoQ.eq("id", claims.acesso_id);
+    }
+    if (typeof claims.email === "string" && claims.email) {
+      acessoQ = acessoQ.eq("fornecedor_email", claims.email);
+    }
+    const { data: acessoAtivo, error: acessoErr } = await acessoQ.limit(1);
+    if (acessoErr) {
+      console.error("[portal-fornecedor-cotacoes] conferindo acesso:", acessoErr.message);
+      return fail("Erro ao carregar cotações", 500);
+    }
+    if (!acessoAtivo || acessoAtivo.length === 0) return fail(MSG_SESSAO_INVALIDA, 401);
 
     // Cabeçalho (empresa + fornecedor) e participações — tudo no escopo do token
     const [empresaRes, fornecedorRes, participacoesRes] = await Promise.all([

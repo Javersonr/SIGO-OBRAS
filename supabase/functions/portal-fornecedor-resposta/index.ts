@@ -10,17 +10,17 @@
  *
  * Ações (body.action):
  *   - "impossivel"     { motivo_recusa }
- *   - "upload_arquivo" { arquivo: { nome_arquivo, url_arquivo, tamanho, tipo } }
- *                      url_arquivo = ref "bucket/caminho" (nunca a URL assinada, que expira)
  *   - "responder"      { respostas: {[item_id]: {valor_unitario, prazo_entrega, observacoes}} }
  *                      Itens, descrição e quantidade vêm de cotacao_item (o body
  *                      `itens` do front antigo é ignorado): valor_total = unitário
  *                      × quantidade real; item de outra cotação não é gravado.
+ *
+ * (A antiga "upload_arquivo" saiu: gravava em arquivo_cotacao_fornecedor, dropada
+ *  na 0017, e a tela não tem campo de arquivo. Ação desconhecida → 400.)
  */
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
-import { refDaEmpresa } from "../_shared/storage-assinar.ts";
 import {
   motivoCotacaoFechada,
   participacaoPorToken,
@@ -48,7 +48,7 @@ Deno.serve(
     const achou = await participacaoPorToken(
       supabase,
       token,
-      "id, cotacao_id, empresa_id, fornecedor_id, fornecedor_nome"
+      "id, cotacao_id, empresa_id, fornecedor_id"
     );
     if ("erro" in achou) {
       return fail(achou.erro, achou.status, achou.codigo ? { codigo: achou.codigo } : undefined);
@@ -81,38 +81,6 @@ Deno.serve(
         })
         .eq("id", cf.id);
       return ok({});
-    }
-
-    // --- Ação: Upload de arquivo ------------------------------------------
-    if (action === "upload_arquivo") {
-      const a = body.arquivo || {};
-      if (!a.nome_arquivo || !a.url_arquivo) {
-        return fail("Arquivo incompleto", 400);
-      }
-      // Só ref na pasta da empresa da cotação: o fornecedor não pode apontar
-      // para arquivo de outra empresa (quem exibir vai assinar com service role).
-      const ref = refDaEmpresa(a.url_arquivo, empresaId);
-      if (!ref) return fail("Arquivo inválido", 400);
-      const { data: novo, error } = await supabase
-        .from("arquivo_cotacao_fornecedor")
-        .insert({
-          empresa_id: empresaId,
-          cotacao_id: cotacaoId,
-          cotacao_fornecedor_id: cf.id,
-          fornecedor_id: cf.fornecedor_id,
-          fornecedor_nome: cf.fornecedor_nome,
-          nome_arquivo: a.nome_arquivo,
-          url_arquivo: ref,
-          tamanho: a.tamanho ?? null,
-          tipo: a.tipo ?? null,
-        })
-        .select()
-        .single();
-      if (error) {
-        console.error("[portal-fornecedor-resposta] upload erro:", error.message);
-        return fail("Erro ao salvar arquivo", 500);
-      }
-      return ok({ arquivo: novo });
     }
 
     // --- Ação: Responder cotação ------------------------------------------

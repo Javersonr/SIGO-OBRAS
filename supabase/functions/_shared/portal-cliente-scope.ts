@@ -9,6 +9,12 @@
  *
  * Nos dois casos o projeto/oportunidade do escopo tem de existir NA empresa
  * do escopo (oportunidadeDaEmpresa) — senão 404, como link inválido.
+ *
+ * Revogação: o magic link confere `ativo` a cada chamada; o portal_token (12h)
+ * confere a cada chamada se o vínculo "Cliente" que o gerou continua ativo —
+ * desativar/apagar o vínculo derruba a sessão na hora, sem esperar o `exp`.
+ *
+ * `abas` sai normalizado: { orcamento?: true, obra?: true } (só `true` libera).
  */
 import { verifyPortalToken } from "./portal-token.ts";
 
@@ -20,6 +26,7 @@ export interface ClienteScope {
 }
 
 const MSG_LINK_INVALIDO = "Link inválido ou expirado";
+const MSG_SESSAO_INVALIDA = "Sessão do cliente inválida ou expirada";
 
 // deno-lint-ignore no-explicit-any
 function safeJson(v: any, fallback: any) {
@@ -30,6 +37,48 @@ function safeJson(v: any, fallback: any) {
   } catch {
     return fallback;
   }
+}
+
+/**
+ * abas_liberadas do magic link → { aba: true }. O banco tem objeto
+ * ({"obra": true, "orcamento": true}); o default da coluna é lista ('[]'),
+ * então ["obra"] também vale. Qualquer outro valor (string, "true"...) = fechada.
+ */
+function normalizarAbas(v: unknown): Record<string, boolean> {
+  const bruto = safeJson(v, {});
+  const abas: Record<string, boolean> = {};
+  if (Array.isArray(bruto)) {
+    for (const a of bruto) if (typeof a === "string" && a) abas[a] = true;
+  } else if (bruto && typeof bruto === "object") {
+    for (const [k, val] of Object.entries(bruto)) if (val === true) abas[k] = true;
+  }
+  return abas;
+}
+
+/**
+ * O vínculo "Cliente" que emitiu o portal_token continua valendo? (e-mail e
+ * empresa do token, projeto = oportunidade do escopo, ativo, não apagado).
+ * Erro de consulta = não achou (fecha, não abre).
+ */
+async function vinculoClienteAtivo(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  email: string,
+  empresaId: string,
+  oportunidadeId: string
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("usuario_empresa")
+    .select("id")
+    .eq("usuario_email", email)
+    .eq("empresa_id", empresaId)
+    .eq("projeto_id", oportunidadeId)
+    .eq("perfil", "Cliente")
+    .eq("ativo", true)
+    .is("deleted_at", null)
+    .limit(1);
+  if (error) console.error("[portal-cliente-scope] conferindo vínculo:", error.message);
+  return !error && Array.isArray(data) && data.length > 0;
 }
 
 /**
@@ -75,11 +124,23 @@ export async function resolveClienteScope(
 ): Promise<{ scope?: ClienteScope; error?: string; status?: number }> {
   if (body?.portal_token) {
     const claims = await verifyPortalToken(body.portal_token);
-    if (!claims || claims.scope !== "cliente" || !claims.oportunidade_id || !claims.empresa_id) {
-      return { error: "Sessão do cliente inválida ou expirada", status: 401 };
+    if (
+      !claims ||
+      claims.scope !== "cliente" ||
+      !claims.oportunidade_id ||
+      !claims.empresa_id ||
+      typeof claims.email !== "string" ||
+      !claims.email
+    ) {
+      return { error: MSG_SESSAO_INVALIDA, status: 401 };
     }
     const empresa_id = String(claims.empresa_id);
     const oportunidade_id = String(claims.oportunidade_id);
+    // o login-custom busca o vínculo pelo e-mail em minúsculas
+    const email = claims.email.trim().toLowerCase();
+    if (!(await vinculoClienteAtivo(supabase, email, empresa_id, oportunidade_id))) {
+      return { error: MSG_SESSAO_INVALIDA, status: 401 };
+    }
     if (!(await oportunidadeDaEmpresa(supabase, empresa_id, oportunidade_id))) {
       return { error: MSG_LINK_INVALIDO, status: 404 };
     }
@@ -87,7 +148,8 @@ export async function resolveClienteScope(
       scope: {
         empresa_id,
         oportunidade_id,
-        email_cliente: (claims.email as string) ?? null,
+        email_cliente: claims.email,
+        // login do cliente: libera as duas abas (como antes)
         abas: { orcamento: true, obra: true },
       },
     };
@@ -117,7 +179,7 @@ export async function resolveClienteScope(
         empresa_id: row.empresa_id,
         oportunidade_id: row.oportunidade_id,
         email_cliente: row.email_cliente ?? null,
-        abas: safeJson(row.abas_liberadas, {}),
+        abas: normalizarAbas(row.abas_liberadas),
       },
     };
   }
