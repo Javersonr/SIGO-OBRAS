@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { acrescentarAnexoPronto } from "./anexo-ref";
+import { acrescentarAnexoPronto, planejarSincronizacaoAnexos } from "./anexo-ref";
 
 const nota = { nome: "nota.pdf", url: "comprovantes/emp/1-nota.pdf", tipo: "application/pdf" };
 const foto = { nome: "cupom.jpg", url: "comprovantes/emp/2-cupom.jpg", tipo: "image/jpeg" };
@@ -33,5 +33,67 @@ describe("acrescentarAnexoPronto", () => {
     expect(acrescentarAnexoPronto(undefined, nota)).toEqual([nota]);
     expect(acrescentarAnexoPronto(null, nota)).toEqual([nota]);
     expect(acrescentarAnexoPronto(undefined, null)).toEqual([]);
+  });
+});
+
+describe("planejarSincronizacaoAnexos", () => {
+  const gravadoNota = { id: "a1", ...nota };
+  const gravadoFoto = { id: "a2", ...foto };
+
+  it("anexo novo (sem id) vira criação, com nome, url (ref) e tipo", () => {
+    const plano = planejarSincronizacaoAnexos([gravadoFoto], [gravadoFoto, nota]);
+    expect(plano).toEqual({
+      remover: [],
+      criar: [{ nome: nota.nome, url: nota.url, tipo: nota.tipo }],
+    });
+  });
+
+  it("anexo que estava gravado e saiu da lista vira remoção", () => {
+    const plano = planejarSincronizacaoAnexos([gravadoNota, gravadoFoto], [gravadoFoto]);
+    expect(plano).toEqual({ remover: ["a1"], criar: [] });
+  });
+
+  it("sem mudança: nada a criar nem a remover", () => {
+    expect(planejarSincronizacaoAnexos([gravadoNota], [gravadoNota])).toEqual({
+      remover: [],
+      criar: [],
+    });
+  });
+
+  it("recibo quitado do servidor nunca é removido, mesmo fora da lista do formulário", () => {
+    const recibo = {
+      id: "r1",
+      nome: "Recibo quitado",
+      url: "comprovantes/emp/recibos/recibo-quitado-123.pdf",
+      tipo: "application/pdf",
+    };
+    const plano = planejarSincronizacaoAnexos([recibo, gravadoNota], []);
+    expect(plano.remover).toEqual(["a1"]);
+  });
+
+  it("sem tipo grava 'comprovante'", () => {
+    const plano = planejarSincronizacaoAnexos(
+      [],
+      [{ nome: "x.pdf", url: "comprovantes/emp/x.pdf" }]
+    );
+    expect(plano.criar).toEqual([
+      { nome: "x.pdf", url: "comprovantes/emp/x.pdf", tipo: "comprovante" },
+    ]);
+  });
+
+  it("listas ausentes (undefined/null) valem como vazias", () => {
+    expect(planejarSincronizacaoAnexos(undefined, null)).toEqual({ remover: [], criar: [] });
+    expect(planejarSincronizacaoAnexos(null, [nota])).toEqual({
+      remover: [],
+      criar: [{ nome: nota.nome, url: nota.url, tipo: nota.tipo }],
+    });
+  });
+
+  it("não altera as listas de entrada", () => {
+    const existentes = [gravadoNota];
+    const anexos = [nota];
+    planejarSincronizacaoAnexos(existentes, anexos);
+    expect(existentes).toEqual([gravadoNota]);
+    expect(anexos).toEqual([nota]);
   });
 });

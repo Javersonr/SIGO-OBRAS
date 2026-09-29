@@ -33,7 +33,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sigo, supabase } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
-import { acrescentarAnexoPronto, refDoUpload } from "@/lib/anexo-ref";
+import { acrescentarAnexoPronto, planejarSincronizacaoAnexos, refDoUpload } from "@/lib/anexo-ref";
 import { lerXmlFiscal, textoDoXml } from "@/lib/nfe-xml";
 import { acharPessoa } from "@/lib/documento-financeiro";
 import { cadastroDoXml, lancamentoDoXml } from "@/lib/importacao-xml";
@@ -939,6 +939,29 @@ export default function DespesasTab({
     // Usada depois pra criar EstoqueMovimento (entrada via NFe).
     let transacaoSalva = null;
 
+    // Edição (cenários 2 e 3): grava os anexos novos (sem id) e remove os que saíram da lista.
+    // O que vai para o banco é a REFERÊNCIA "bucket/caminho" do upload (anexo.url), nunca a URL
+    // assinada; o recibo quitado gerado pelo servidor nunca é removido daqui.
+    const sincronizarAnexos = async (transacaoId) => {
+      const anexosExistentes = await sigo.entities.TransacaoAnexo.filter({
+        empresa_id: empresaAtiva.id,
+        transacao_id: transacaoId,
+      });
+      const { remover, criar } = planejarSincronizacaoAnexos(anexosExistentes, anexos);
+
+      for (const id of remover) {
+        await sigo.entities.TransacaoAnexo.delete(id);
+      }
+
+      for (const anexo of criar) {
+        await sigo.entities.TransacaoAnexo.create({
+          empresa_id: empresaAtiva.id,
+          transacao_id: transacaoId,
+          ...anexo,
+        });
+      }
+    };
+
     // CENÁRIO 1: Nova despesa com parcelamento
     if (temParcelamento && !selectedItem) {
       // Criar uma única despesa com as parcelas dentro
@@ -1086,6 +1109,9 @@ export default function DespesasTab({
           );
         }
       }
+
+      // Anexos: os novos (ex.: o documento do "Ler documento") e os retirados, como no cenário 3
+      await sincronizarAnexos(selectedItem.id);
     }
     // CENÁRIO 3: Edição simples (sem parcelamento)
     else if (selectedItem) {
@@ -1114,32 +1140,8 @@ export default function DespesasTab({
         }
       }
 
-      // Gerenciar anexos - remover e recriar
-      const anexosExistentes = await sigo.entities.TransacaoAnexo.filter({
-        empresa_id: empresaAtiva.id,
-        transacao_id: selectedItem.id,
-      });
-
-      for (const anexo of anexosExistentes) {
-        // recibo quitado é gerado/anexado pelo servidor (pode ter chegado com o
-        // formulário aberto): nunca é removido por aqui
-        if (String(anexo.url || "").includes("/recibos/recibo-quitado-")) continue;
-        if (!anexos.find((a) => a.id === anexo.id)) {
-          await sigo.entities.TransacaoAnexo.delete(anexo.id);
-        }
-      }
-
-      for (const anexo of anexos) {
-        if (!anexo.id) {
-          await sigo.entities.TransacaoAnexo.create({
-            empresa_id: empresaAtiva.id,
-            transacao_id: selectedItem.id,
-            nome: anexo.nome,
-            url: anexo.url,
-            tipo: anexo.tipo || "comprovante",
-          });
-        }
-      }
+      // Gerenciar anexos - remover os retirados e criar os novos
+      await sincronizarAnexos(selectedItem.id);
     }
     // CENÁRIO 4: Nova despesa simples (sem parcelamento)
     else {

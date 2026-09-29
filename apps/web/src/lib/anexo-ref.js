@@ -71,3 +71,22 @@ export function acrescentarAnexoPronto(lista, anexo) {
   if (atual.some((a) => a?.url === anexo.url)) return atual;
   return [...atual, anexo];
 }
+
+/**
+ * O que gravar em transacao_anexo ao salvar a EDIÇÃO de uma despesa: `existentes` são as linhas que já
+ * estão no banco e `anexos` a lista do formulário (com `id` = já gravado; sem `id` = novo, cuja `url` é a
+ * referência "bucket/caminho", nunca a URL assinada). Devolve os ids a remover (gravados que saíram da
+ * lista) e os anexos a criar. O recibo quitado gerado pelo servidor (pode ter chegado com o formulário
+ * aberto) nunca é removido daqui.
+ */
+export function planejarSincronizacaoAnexos(existentes, anexos) {
+  const lista = anexos || [];
+  const remover = (existentes || [])
+    .filter((e) => !String(e?.url || "").includes("/recibos/recibo-quitado-"))
+    .filter((e) => !lista.some((a) => a?.id === e.id))
+    .map((e) => e.id);
+  const criar = lista
+    .filter((a) => !a?.id)
+    .map((a) => ({ nome: a.nome, url: a.url, tipo: a.tipo || "comprovante" }));
+  return { remover, criar };
+}

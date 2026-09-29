@@ -97,10 +97,11 @@ export default function LerDocumentoButton({ tipo, onLido, disabled, className }
 
     // Fora do try da leitura: um erro no preenchimento do pai não vira "Não foi possível ler o
     // documento", e sem este try/catch ele sumiria como promessa rejeitada sem aviso ao usuário.
+    // O await cobre também um onLido assíncrono (a rejeição cai no catch, não escapa).
     // (O arquivo que já subiu fica sem uso no Storage quando a leitura é descartada.)
     if (!vivo.current) return;
     try {
-      onLido({ documento, anexo: { nome: arquivo.name, url: ref, tipo: destino.mimeType } });
+      await onLido({ documento, anexo: { nome: arquivo.name, url: ref, tipo: destino.mimeType } });
     } catch (err) {
       console.error("[LerDocumentoButton] erro ao preencher o formulário:", err);
       toast.error("Não foi possível preencher o formulário: " + (err?.message || "tente de novo"));
