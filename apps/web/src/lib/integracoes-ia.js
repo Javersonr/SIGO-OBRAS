@@ -6,9 +6,9 @@
  * (supabase/functions/_shared/gemini-regras.ts): quem valida é a função
  * saas-config; aqui é só o que aparece no seletor. O mesmo vale para os
  * limites diários de IA por empresa (card "Limites diários de IA por
- * empresa"): os padrões e o intervalo repetem os de ia-processar/ia-uso.ts e
- * saas-config/regras.ts; o servidor é quem manda (o status devolve os
- * valores efetivos).
+ * empresa"): os padrões e o intervalo repetem os de
+ * supabase/functions/_shared/ia-cotas.ts (padrões) e saas-config/regras.ts
+ * (intervalo); o servidor é quem manda (o status devolve os valores efetivos).
  */
 
 export const GEMINI_MODELO_PADRAO = "gemini-3.5-flash-lite";

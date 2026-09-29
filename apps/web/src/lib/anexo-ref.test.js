@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { acrescentarAnexoPronto, planejarSincronizacaoAnexos } from "./anexo-ref";
+import {
+  acrescentarAnexoPronto,
+  mesclarAnexosCarregados,
+  planejarSincronizacaoAnexos,
+} from "./anexo-ref";
 
 const nota = { nome: "nota.pdf", url: "comprovantes/emp/1-nota.pdf", tipo: "application/pdf" };
 const foto = { nome: "cupom.jpg", url: "comprovantes/emp/2-cupom.jpg", tipo: "image/jpeg" };
@@ -138,5 +142,58 @@ describe("planejarSincronizacaoAnexos", () => {
       expect(plano).toEqual({ remover: ["a1"], criar: [], remocaoPulada: false });
       expect(planejarSincronizacaoAnexos([gravadoNota], []).remover).toEqual(["a1"]);
     });
+  });
+});
+
+describe("mesclarAnexosCarregados", () => {
+  const gravadoNota = { id: "a1", ...nota };
+  const gravadoFoto = { id: "a2", ...foto };
+  const novo = { nome: "novo.pdf", url: "comprovantes/emp/3-novo.pdf", tipo: "application/pdf" };
+
+  it("lista do banco primeiro, depois os anexos novos (sem id) que o usuário já acrescentou", () => {
+    expect(mesclarAnexosCarregados([gravadoNota, gravadoFoto], [novo])).toEqual([
+      gravadoNota,
+      gravadoFoto,
+      novo,
+    ]);
+  });
+
+  it("não repete um anexo novo cuja referência já veio do banco", () => {
+    const igualAoGravado = { nome: "nota.pdf", url: nota.url, tipo: nota.tipo };
+    expect(mesclarAnexosCarregados([gravadoNota], [igualAoGravado, novo])).toEqual([
+      gravadoNota,
+      novo,
+    ]);
+  });
+
+  it("anexos da lista anterior que têm id (já gravados) são substituídos pelos do banco", () => {
+    const antigoComId = { id: "z9", nome: "velho.pdf", url: "comprovantes/emp/9-velho.pdf" };
+    expect(mesclarAnexosCarregados([gravadoNota], [antigoComId, novo])).toEqual([
+      gravadoNota,
+      novo,
+    ]);
+  });
+
+  it("carga que falhou (nada carregado): só ficam os anexos novos", () => {
+    const antigoComId = { id: "z9", nome: "velho.pdf", url: "comprovantes/emp/9-velho.pdf" };
+    expect(mesclarAnexosCarregados([], [antigoComId, novo])).toEqual([novo]);
+  });
+
+  it("sem anexos novos, devolve só os do banco", () => {
+    expect(mesclarAnexosCarregados([gravadoNota], [])).toEqual([gravadoNota]);
+  });
+
+  it("listas ausentes (undefined/null) valem como vazias", () => {
+    expect(mesclarAnexosCarregados(undefined, undefined)).toEqual([]);
+    expect(mesclarAnexosCarregados(null, [novo])).toEqual([novo]);
+    expect(mesclarAnexosCarregados([gravadoNota], null)).toEqual([gravadoNota]);
+  });
+
+  it("não altera as listas de entrada", () => {
+    const carregados = [gravadoNota];
+    const atuais = [novo];
+    mesclarAnexosCarregados(carregados, atuais);
+    expect(carregados).toEqual([gravadoNota]);
+    expect(atuais).toEqual([novo]);
   });
 });

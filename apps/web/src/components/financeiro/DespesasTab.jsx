@@ -33,7 +33,12 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sigo, supabase } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
-import { acrescentarAnexoPronto, planejarSincronizacaoAnexos, refDoUpload } from "@/lib/anexo-ref";
+import {
+  acrescentarAnexoPronto,
+  mesclarAnexosCarregados,
+  planejarSincronizacaoAnexos,
+  refDoUpload,
+} from "@/lib/anexo-ref";
 import { lerXmlFiscal, textoDoXml } from "@/lib/nfe-xml";
 import { acharPessoa } from "@/lib/documento-financeiro";
 import { cadastroDoXml, lancamentoDoXml } from "@/lib/importacao-xml";
@@ -72,10 +77,6 @@ export default function DespesasTab({
   // idem para o FORMULÁRIO: anexos de uma despesa que chegam depois de abrir
   // outra não podem cair no formulário errado (e ser apagados/copiados ao salvar)
   const anexosFormRef = useRef(null);
-  // true só depois que a lista de anexos DESTA edição veio do banco. Se a consulta falhar (ou ainda
-  // não terminou), a lista do formulário fica vazia e o salvar não pode tomar isso por "o usuário
-  // retirou tudo": a remoção de anexos gravados é pulada (os novos continuam sendo criados).
-  const anexosCarregadosOkRef = useRef(false);
   const [sortConfig, setSortConfig] = useState({ field: "data_vencimento", direction: "desc" });
   const [showModal, setShowModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -139,6 +140,12 @@ export default function DespesasTab({
   const [numeroParcelas, setNumeroParcelas] = useState(1);
   const [parcelas, setParcelas] = useState([]);
   const [anexos, setAnexos] = useState([]);
+  // true só depois que a lista de anexos DESTA edição veio do banco. É ESTADO (não ref) para chegar
+  // ao handleSave junto com `anexos`, na mesma renderização: o salvar usa a lista do clique e não
+  // pode misturá-la com um sinal que mudou depois. Falha ou carga em andamento = false: a lista do
+  // formulário está vazia por falta de dados e o salvar não pode tomar isso por "retirou tudo"
+  // (a remoção de anexos gravados é pulada; os novos continuam sendo criados).
+  const [anexosCarregados, setAnexosCarregados] = useState(false);
   // Bloqueia clique duplo no toggle de status (criava 2 ExtratoBancario).
   const [togglingIds, setTogglingIds] = useState(() => new Set());
 
@@ -788,7 +795,7 @@ export default function DespesasTab({
   const handleOpen = (item = null) => {
     setSelectedItem(item);
     anexosFormRef.current = item?.id ?? null;
-    anexosCarregadosOkRef.current = false;
+    setAnexosCarregados(false);
 
     if (item) {
       setForm({
@@ -864,17 +871,32 @@ export default function DespesasTab({
         transacao_id: transacaoId,
       });
       if (anexosFormRef.current !== transacaoId) return;
-      setAnexos(anexosDb.map((a) => ({ id: a.id, nome: a.nome, url: a.url, tipo: a.tipo })));
-      anexosCarregadosOkRef.current = true;
-    } catch {
+      const carregados = anexosDb.map((a) => ({
+        id: a.id,
+        nome: a.nome,
+        url: a.url,
+        tipo: a.tipo,
+      }));
+      // lista e sinal no mesmo lote (React 18); os anexos novos que o usuário já acrescentou
+      // enquanto a consulta corria (upload, "Ler documento") não são descartados
+      setAnexos((prev) => mesclarAnexosCarregados(carregados, prev));
+      setAnexosCarregados(true);
+    } catch (err) {
       if (anexosFormRef.current === transacaoId) {
-        anexosCarregadosOkRef.current = false;
-        setAnexos([]);
+        console.error("[DespesasTab] erro ao carregar anexos:", err);
+        setAnexos((prev) => mesclarAnexosCarregados([], prev));
+        setAnexosCarregados(false);
+        toast.error("Não foi possível carregar os anexos desta despesa");
       }
     }
   };
 
   const handleSave = async (extras = {}) => {
+    // Sinal do clique: `anexos` e `anexosCarregados` são da mesma renderização e o salvar só usa
+    // este valor. Não ler o estado/ref de novo depois de um await: uma carga que termina no meio
+    // do salvar mudaria o sinal sem mudar a lista e apagaria os anexos gravados.
+    const listaCarregada = anexosCarregados;
+
     if (!form.valor || !form.data_vencimento || !form.conta_id || !form.descricao) {
       alert(
         "Por favor, preencha todos os campos obrigatórios (Descrição, Valor, Data Vencimento, Conta)."
@@ -959,7 +981,7 @@ export default function DespesasTab({
       const { remover, criar, remocaoPulada } = planejarSincronizacaoAnexos(
         anexosExistentes,
         anexos,
-        { listaCarregada: anexosCarregadosOkRef.current }
+        { listaCarregada }
       );
       if (remocaoPulada) {
         toast.warning("Os anexos anteriores não puderam ser conferidos; nenhum foi removido");

@@ -98,3 +98,18 @@ export function planejarSincronizacaoAnexos(existentes, anexos, { listaCarregada
     remocaoPulada: !listaCarregada && candidatos.length > 0,
   };
 }
+
+/**
+ * Lista do formulário quando a consulta dos anexos da despesa termina: os anexos do banco (`carregados`)
+ * e, depois deles, os NOVOS (sem `id`) que o usuário já acrescentou enquanto a consulta corria (upload
+ * manual ou "Ler documento"), sem repetir uma referência que já veio do banco. Os itens da lista anterior
+ * que têm `id` são descartados (valem os do banco). Com `carregados` vazio (a consulta falhou), sobram só
+ * os anexos novos.
+ */
+export function mesclarAnexosCarregados(carregados, atuais) {
+  const doBanco = carregados || [];
+  const novos = (atuais || []).filter(
+    (a) => a && !a.id && !doBanco.some((c) => c?.url && c.url === a.url)
+  );
+  return [...doBanco, ...novos];
+}
