@@ -824,7 +824,7 @@ export default function SaasAdmin() {
           <TabsTrigger value="integracoes">Integrações</TabsTrigger>
         </TabsList>
 
-        {/* Integrações (chave OpenAI global) */}
+        {/* Integrações (IA: Gemini padrão + OpenAI reserva; WhatsApp) */}
         <TabsContent value="integracoes">
           <IntegracoesTab />
         </TabsContent>
