@@ -2,21 +2,19 @@
 // ou com Deno:                           deno test supabase/functions/ia-processar/ia-uso.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as cotas from "../_shared/ia-cotas.ts";
 import {
   ACOES_EDITAL,
   ACOES_GERAIS,
-  COTA_EDITAL_PADRAO,
   COTA_GERAL_PADRAO,
   contabilizar,
-  ehAcaoEdital,
-  ehAcaoGeral,
   inicioDoDiaBR,
-  lerCota,
   novoMedidor,
   registrarUso,
   verificarCotaEdital,
   verificarCotaGeral,
 } from "./ia-uso.ts";
+import * as uso from "./ia-uso.ts";
 
 /** cliente falso: registra filtros/inserts e devolve o que o teste mandar */
 function clienteFalso(opts: {
@@ -60,35 +58,22 @@ function clienteFalso(opts: {
 
 const usuario = { email: "a@b.com", is_super_admin: false, empresa_id: "emp-1" };
 
-test("ehAcaoEdital só para as 3 ações de edital", () => {
-  assert.equal(ehAcaoEdital("edital_atende"), true);
-  assert.equal(ehAcaoEdital("edital_xyz"), false);
-  assert.equal(ehAcaoEdital("llm"), false);
-});
-
-test("ehAcaoGeral só para as 4 ações da cota geral", () => {
-  for (const acao of ["llm", "extrair_documentos", "validar_exames_pcmso"]) {
-    assert.equal(ehAcaoGeral(acao), true);
+test("ia-uso reexporta as constantes e funções puras de _shared/ia-cotas (mesmas referências)", () => {
+  // as próprias funções são testadas em _shared/ia-cotas.test.ts
+  for (const nome of [
+    "ACOES_EDITAL",
+    "ACOES_GERAIS",
+    "CHAVE_COTA_EDITAL",
+    "CHAVE_COTA_GERAL",
+    "COTA_EDITAL_PADRAO",
+    "COTA_GERAL_PADRAO",
+    "ehAcaoEdital",
+    "ehAcaoGeral",
+    "lerCota",
+  ] as const) {
+    assert.ok(nome in cotas, `${nome} existe em _shared/ia-cotas`);
+    assert.equal(uso[nome], cotas[nome], nome);
   }
-  assert.equal(ehAcaoGeral("financeiro_ler_documento"), true);
-  assert.deepEqual(
-    [...ACOES_GERAIS],
-    ["llm", "extrair_documentos", "validar_exames_pcmso", "financeiro_ler_documento"]
-  );
-  // edital tem cota própria: nunca entra na geral
-  assert.equal(ehAcaoGeral("edital_consolidar"), false);
-  assert.equal(ehAcaoGeral("edital_atende"), false);
-  assert.equal(ehAcaoGeral("xyz"), false);
-  assert.equal(ehAcaoGeral(""), false);
-  assert.equal(ehAcaoGeral(undefined), false);
-  assert.equal(ehAcaoGeral(null), false);
-  assert.equal(ehAcaoGeral(42), false);
-  assert.equal(ehAcaoGeral(["llm"]), false);
-  // as duas listas nunca se sobrepõem (uma requisição conta em uma cota só)
-  assert.equal(
-    ACOES_EDITAL.some((a) => (ACOES_GERAIS as readonly string[]).includes(a)),
-    false
-  );
 });
 
 test("contabilizar soma tokens/modelos/custo e ignora 'sem chave'", () => {
@@ -176,25 +161,6 @@ test("inicioDoDiaBR usa o dia de Brasília", () => {
   // 02:00 UTC de 25/09 = 23:00 de 24/09 em Brasília
   assert.equal(inicioDoDiaBR(new Date("2026-09-25T02:00:00Z")), "2026-09-24T00:00:00-03:00");
   assert.equal(inicioDoDiaBR(new Date("2026-09-25T03:00:00Z")), "2026-09-25T00:00:00-03:00");
-});
-
-test("lerCota: inteiro ≥ 1, senão o padrão", () => {
-  assert.equal(lerCota("50"), 50);
-  assert.equal(lerCota(" 1000 "), 1000);
-  assert.equal(lerCota("0"), COTA_EDITAL_PADRAO);
-  assert.equal(lerCota("abc"), COTA_EDITAL_PADRAO);
-  assert.equal(lerCota(null), COTA_EDITAL_PADRAO);
-  assert.equal(lerCota("2.5"), COTA_EDITAL_PADRAO);
-});
-
-test("lerCota: o padrão é o 2º parâmetro (edital 400, geral 300)", () => {
-  assert.equal(COTA_EDITAL_PADRAO, 400);
-  assert.equal(COTA_GERAL_PADRAO, 300);
-  assert.equal(lerCota(undefined, COTA_GERAL_PADRAO), 300);
-  assert.equal(lerCota("0", COTA_GERAL_PADRAO), 300);
-  assert.equal(lerCota("abc", 7), 7);
-  assert.equal(lerCota(" 25 ", COTA_GERAL_PADRAO), 25);
-  assert.equal(lerCota(80, COTA_GERAL_PADRAO), 80);
 });
 
 test("cota: abaixo libera, chegou recusa, super admin isento, erro libera", async () => {

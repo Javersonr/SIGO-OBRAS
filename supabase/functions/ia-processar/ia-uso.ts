@@ -20,31 +20,35 @@
  *   - Falha ao ler a cota/contar (ex.: migração ainda não aplicada) libera a
  *     ação; falha ao gravar só vai para o log — nunca derruba a ação.
  *
- * Só importa ../_shared/ia-precos.ts (puro); o cliente (service role) vem de
- * quem chama — testável em Node.
+ * As constantes e funções puras das cotas (padrões, chaves, listas de ações, ehAcao*, lerCota)
+ * ficam em ../_shared/ia-cotas.ts — a saas-config importa de lá — e são reexportadas daqui.
+ *
+ * Só importa ../_shared/ia-precos.ts e ../_shared/ia-cotas.ts (puros); o cliente (service role)
+ * vem de quem chama — testável em Node.
  */
 import { custoUsd } from "../_shared/ia-precos.ts";
+import {
+  ACOES_EDITAL,
+  ACOES_GERAIS,
+  CHAVE_COTA_EDITAL,
+  CHAVE_COTA_GERAL,
+  COTA_EDITAL_PADRAO,
+  COTA_GERAL_PADRAO,
+  lerCota,
+} from "../_shared/ia-cotas.ts";
 
-export const COTA_EDITAL_PADRAO = 400;
-export const CHAVE_COTA_EDITAL = "ia_cota_edital_dia";
-export const ACOES_EDITAL = ["edital_extrair_parte", "edital_consolidar", "edital_atende"] as const;
-export type AcaoEdital = (typeof ACOES_EDITAL)[number];
-
-export const ehAcaoEdital = (acao: unknown): acao is AcaoEdital =>
-  typeof acao === "string" && (ACOES_EDITAL as readonly string[]).includes(acao);
-
-export const COTA_GERAL_PADRAO = 300;
-export const CHAVE_COTA_GERAL = "ia_cota_geral_dia";
-/** as demais ações de IA da ia-processar (o edital tem cota própria) */
-export const ACOES_GERAIS = [
-  "llm",
-  "extrair_documentos",
-  "validar_exames_pcmso",
-  "financeiro_ler_documento",
-] as const;
-
-export const ehAcaoGeral = (acao: unknown): boolean =>
-  typeof acao === "string" && (ACOES_GERAIS as readonly string[]).includes(acao);
+export {
+  ACOES_EDITAL,
+  ACOES_GERAIS,
+  CHAVE_COTA_EDITAL,
+  CHAVE_COTA_GERAL,
+  COTA_EDITAL_PADRAO,
+  COTA_GERAL_PADRAO,
+  ehAcaoEdital,
+  ehAcaoGeral,
+  lerCota,
+} from "../_shared/ia-cotas.ts";
+export type { AcaoEdital } from "../_shared/ia-cotas.ts";
 
 export interface UsuarioUso {
   email: string;
@@ -127,12 +131,6 @@ export function inicioDoDiaBR(agora = new Date()): string {
     day: "2-digit",
   }).format(agora);
   return `${dia}T00:00:00-03:00`;
-}
-
-/** valor de saas_config → cota (inteiro ≥ 1); ausente/inválido → padrão */
-export function lerCota(valor: unknown, padrao = COTA_EDITAL_PADRAO): number {
-  const n = typeof valor === "number" ? valor : Number(String(valor ?? "").trim());
-  return Number.isInteger(n) && n >= 1 ? n : padrao;
 }
 
 // supabase-js com service role (tipado solto de propósito: sem imports aqui)

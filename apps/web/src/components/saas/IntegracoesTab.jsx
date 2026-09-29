@@ -246,8 +246,11 @@ function CardGemini({ status, carregando, onSalvo }) {
  * efetivos vêm do status; Salvar valida os dois campos e manda só as cotas.
  */
 function CardLimitesIA({ cotas, carregando, onSalvo }) {
-  const editalServidor = String(cotas?.edital_dia ?? COTA_EDITAL_PADRAO);
-  const geralServidor = String(cotas?.geral_dia ?? COTA_GERAL_PADRAO);
+  // Sem `cotas` o status não trouxe os limites (falha ao carregar): mostrar 400/300 pareceria o
+  // valor configurado e um Salvar sobrescreveria o que está de fato no banco. Fica desabilitado.
+  const indisponivel = !cotas;
+  const editalServidor = cotas ? String(cotas.edital_dia ?? COTA_EDITAL_PADRAO) : "";
+  const geralServidor = cotas ? String(cotas.geral_dia ?? COTA_GERAL_PADRAO) : "";
   const [edital, setEdital] = useState(editalServidor);
   const [geral, setGeral] = useState(geralServidor);
   const [salvando, setSalvando] = useState(false);
@@ -259,10 +262,14 @@ function CardLimitesIA({ cotas, carregando, onSalvo }) {
 
   const vEdital = validarCota(edital);
   const vGeral = validarCota(geral);
-  const mudou = edital.trim() !== editalServidor || geral.trim() !== geralServidor;
+  // compara o NÚMERO (validarCota), não o texto: "007" e "7" são o mesmo limite
+  const mudou =
+    vEdital.ok &&
+    vGeral.ok &&
+    (vEdital.valor !== Number(editalServidor) || vGeral.valor !== Number(geralServidor));
 
   const salvar = async () => {
-    if (!vEdital.ok || !vGeral.ok) return;
+    if (indisponivel || !vEdital.ok || !vGeral.ok) return;
     setSalvando(true);
     try {
       const { data } = await sigo.functions.invoke("saasConfig", {
@@ -303,6 +310,11 @@ function CardLimitesIA({ cotas, carregando, onSalvo }) {
           </div>
         ) : (
           <>
+            {indisponivel && (
+              <p className="text-sm text-red-600" role="alert">
+                Não foi possível carregar os limites
+              </p>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <Label htmlFor="cota-edital">Leitura de editais (por dia)</Label>
@@ -315,9 +327,11 @@ function CardLimitesIA({ cotas, carregando, onSalvo }) {
                   step={1}
                   value={edital}
                   onChange={(e) => setEdital(e.target.value)}
+                  disabled={indisponivel}
+                  placeholder="—"
                   className="mt-1"
                 />
-                {vEdital.ok ? (
+                {vEdital.ok || indisponivel ? (
                   <p className="text-xs text-slate-400 mt-1">
                     Leitura e "Atende?" dos editais. Padrão {COTA_EDITAL_PADRAO}.
                   </p>
@@ -336,9 +350,11 @@ function CardLimitesIA({ cotas, carregando, onSalvo }) {
                   step={1}
                   value={geral}
                   onChange={(e) => setGeral(e.target.value)}
+                  disabled={indisponivel}
+                  placeholder="—"
                   className="mt-1"
                 />
-                {vGeral.ok ? (
+                {vGeral.ok || indisponivel ? (
                   <p className="text-xs text-slate-400 mt-1">
                     Ler documento no Financeiro, ficha do funcionário, exames (PCMSO) e assistentes.
                     Padrão {COTA_GERAL_PADRAO}.
@@ -351,7 +367,7 @@ function CardLimitesIA({ cotas, carregando, onSalvo }) {
 
             <Button
               onClick={salvar}
-              disabled={salvando || !mudou || !vEdital.ok || !vGeral.ok}
+              disabled={indisponivel || salvando || !mudou}
               className="bg-slate-900 hover:bg-slate-800"
             >
               {salvando ? (

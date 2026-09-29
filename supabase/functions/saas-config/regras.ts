@@ -10,8 +10,9 @@
  *     sai daqui: só os 4 últimos caracteres.
  *   - statusCotas: linhas de saas_config → limites diários de IA por empresa
  *     (edital e demais ações). Usa o lerCota/padrões/chaves de
- *     ia-processar/ia-uso.ts — o que o SaaS Admin mostra é o que a
- *     ia-processar vai cobrar. validarDefinir aceita cota_edital_dia e
+ *     _shared/ia-cotas.ts (o mesmo módulo que a ia-processar/ia-uso.ts reexporta)
+ *     — o que o SaaS Admin mostra é o que a ia-processar vai cobrar, sem
+ *     depender de outra pasta de função. validarDefinir aceita cota_edital_dia e
  *     cota_geral_dia (inteiros de 1 a 100000, ambos opcionais).
  */
 import { configDeLinhas } from "../_shared/ia-nucleo.ts";
@@ -22,7 +23,7 @@ import {
   COTA_EDITAL_PADRAO,
   COTA_GERAL_PADRAO,
   lerCota,
-} from "../ia-processar/ia-uso.ts";
+} from "../_shared/ia-cotas.ts";
 
 const COTA_MINIMA = 1;
 const COTA_MAXIMA = 100000;
