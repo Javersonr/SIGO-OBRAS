@@ -53,6 +53,7 @@ const PAGES = {
   PrimeiroAcesso: lazy(() => import("./pages/PrimeiroAcesso")),
   Projetos: lazy(() => import("./pages/Projetos")),
   RedefinirSenha: lazy(() => import("./pages/RedefinirSenha")),
+  TrocarSenha: lazy(() => import("./pages/TrocarSenha")),
   Registro: lazy(() => import("./pages/Registro")),
   RelatorioVencimentos: lazy(() => import("./pages/RelatorioVencimentos")),
   Relatorios: lazy(() => import("./pages/Relatorios")),

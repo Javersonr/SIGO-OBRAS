@@ -23,6 +23,14 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 
 /**
+ * Senha provisória (must_change_password do login-custom) → tela TrocarSenha.
+ * Cliente fica de fora: entra só com portal_token, sem sessão do Auth para
+ * chamar alterar-senha.
+ */
+const precisaTrocarSenha = (usuario) =>
+  usuario?.must_change_password === true && usuario?.perfil !== "Cliente";
+
+/**
  * Logo na escolha de empresa (antes da sessão): `src` é a URL que o
  * login-custom já assinou. Sem URL (sem logo, Base44 apagado, arquivo sumido)
  * ou erro ao carregar → o mesmo ícone de sempre.
@@ -170,6 +178,12 @@ export default function EntrarSistema() {
           localStorage.removeItem("login_email_salvo");
         }
 
+        // Senha provisória: troca obrigatória antes de qualquer outra tela
+        if (precisaTrocarSenha(response.data.usuario)) {
+          navigate(createPageUrl("TrocarSenha"), { replace: true });
+          return;
+        }
+
         // Cliente externo vai pro portal (usa portal_token, não a sessão tenant)
         const destino = response.data.usuario?.perfil === "Cliente" ? "ClientePortal" : "Dashboard";
         navigate(destino === "Dashboard" && voltar ? voltar : createPageUrl(destino), {
@@ -238,14 +252,17 @@ export default function EntrarSistema() {
           empresa_id: empresa.id,
           empresa_nome: empresa.nome,
           grupo_id: usuarioBase?.grupo_selecionado || usuarioBase?.grupo_id || null,
+          must_change_password: usuarioBase.must_change_password === true,
         };
       }
 
       sessionStorage.setItem("custom_auth", JSON.stringify(authData));
       sessionStorage.setItem("empresa_ativa", empresa.id);
 
-      // Redireciona conforme o perfil
-      if (authData.perfil === "Fornecedor") {
+      // Redireciona conforme o perfil (senha provisória troca antes de tudo)
+      if (precisaTrocarSenha(authData)) {
+        navigate(createPageUrl("TrocarSenha"), { replace: true });
+      } else if (authData.perfil === "Fornecedor") {
         navigate(createPageUrl("HistoricoCotacoes"), { replace: true });
       } else if (authData.perfil === "Cliente") {
         navigate(createPageUrl("ClientePortal"), { replace: true });

@@ -147,6 +147,8 @@ export default function Layout({ children, currentPageName }) {
     "Registro",
     "EsqueciSenha",
     "RedefinirSenha",
+    // Sem menu/sidebar; a própria página exige o login (custom_auth)
+    "TrocarSenha",
     "AutorizarConector",
     "index",
     "Index",
@@ -189,6 +191,16 @@ export default function Layout({ children, currentPageName }) {
           const userData = safeParseJSON(customAuth, {});
           if (!userData.id || !userData.empresa_id || !userData.email) {
             throw new Error("Dados de autenticação inválidos");
+          }
+
+          // Senha provisória (must_change_password do login): nada do sistema
+          // abre antes da troca. Cliente não tem sessão do Auth p/ trocar aqui.
+          if (userData.must_change_password === true && userData.perfil !== "Cliente") {
+            if (isMounted) {
+              setLoading(false);
+              navigate(createPageUrl("TrocarSenha"), { replace: true });
+            }
+            return;
           }
 
           // Se tem grupo_id, carregar empresas do grupo
