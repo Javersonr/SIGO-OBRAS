@@ -31,8 +31,11 @@ import { ehBase44, ehImagem, ehPdf } from "@/lib/anexo-ref";
 import ImgStorage from "@/components/ImgStorage";
 import AnexoViewer from "@/components/shared/AnexoViewer";
 import EntityCombobox from "@/components/shared/EntityCombobox";
-import { categoriaDoFornecedor } from "@/components/fornecedores/CategoriasFornecedorSelect";
+import { categoriaDoFornecedor } from "@/lib/categorias-fornecedor";
+import { montarPreenchimento } from "@/lib/documento-financeiro";
+import { dadosIniciaisCadastro } from "@/lib/ler-documento";
 import AssociarMateriaisModal from "./AssociarMateriaisModal";
+import LerDocumentoButton, { ConferirLeitura, PessoaNaoCadastrada } from "./LerDocumentoButton";
 import NovoFornecedorConfigSheet from "../fornecedores/NovoFornecedorConfigSheet";
 import ModalPagamento from "./ModalPagamento";
 import ImportarFerramentasModal from "./ImportarFerramentasModal";
@@ -64,6 +67,9 @@ export default function DespesaModal({
   onDuplicar,
   onDesfazerConciliacao,
   podeEditar,
+  // anexo que já subiu no "Ler documento" ({ nome, url: ref, tipo }). Sem esta
+  // prop (pré-lançamento, reconciliação) o botão "Ler documento" não aparece.
+  adicionarAnexoPronto,
 }) {
   // tipoDespesa pode vir do parent ou ser local — usamos local fallback.
   const [tipoDespesaLocal, setTipoDespesaLocal] = useState(tipoDespesaProp || "geral");
@@ -95,6 +101,10 @@ export default function DespesaModal({
     valor_unitario: 0,
   });
   const [showNovoFornecedor, setShowNovoFornecedor] = useState(false);
+  // cadastro rápido com os dados lidos (null = cadastro em branco, pelo "+")
+  const [dadosNovoFornecedor, setDadosNovoFornecedor] = useState(null);
+  // última leitura: { pessoaSugerida, duvidosos, avisos }
+  const [leitura, setLeitura] = useState(null);
 
   // Dados bancários do fornecedor: editáveis aqui mesmo e SALVOS NO CADASTRO
   // do fornecedor (valem pra todas as despesas dele), não na despesa.
@@ -138,152 +148,80 @@ export default function DespesaModal({
   // anexo aberto na janela flutuante (AnexoViewer): { url: ref, nome, tipo }
   const [anexoAberto, setAnexoAberto] = useState(null);
 
-  const handleImportarXML = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  // "Ler documento" (XML sem IA; PDF/foto pela IA): preenche o formulário para
+  // o usuário conferir — nada é salvo aqui. A leitura sobrescreve os campos
+  // que o documento trouxe e mantém os demais.
+  const aplicarDocumentoLido = ({ documento, anexo }) => {
+    const {
+      patch,
+      parcelas: parcelasLidas,
+      itens,
+      pessoaSugerida,
+      avisos,
+    } = montarPreenchimento(documento, {
+      tipo: "despesa",
+      pessoas: fornecedoresLocais,
+      categorias,
+    });
+    const { categoria_id: categoriaId, categoria_nome: categoriaNome, ...resto } = patch;
+    setForm((prev) => ({
+      ...prev,
+      ...resto,
+      // categoria já escolhida fica (igual à escolha do fornecedor no combobox)
+      ...(categoriaId && !prev.categoria_id
+        ? { categoria_id: categoriaId, categoria_nome: categoriaNome }
+        : {}),
+    }));
 
-    try {
-      await sigo.integrations.Core.UploadFile({ file }); // upload registra comprovante
-      // Processar o XML localmente para extrair dados
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        try {
-          const xmlText = event.target.result;
-          const parser = new DOMParser();
-          const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-
-          // Extrair dados da nota fiscal
-          const nfeProc =
-            xmlDoc.getElementsByTagName("nfeProc")[0] || xmlDoc.getElementsByTagName("NFe")[0];
-          const infNFe = nfeProc?.getElementsByTagName("infNFe")[0];
-          const ide = infNFe?.getElementsByTagName("ide")[0];
-          const emit = infNFe?.getElementsByTagName("emit")[0];
-          const total = infNFe?.getElementsByTagName("total")[0];
-          const ICMSTot = total?.getElementsByTagName("ICMSTot")[0];
-
-          // Preencher dados da nota
-          const numeroNota = ide?.getElementsByTagName("nNF")[0]?.textContent || "";
-          const dataEmissao =
-            ide?.getElementsByTagName("dhEmi")[0]?.textContent?.split("T")[0] || "";
-          const valorTotal = ICMSTot?.getElementsByTagName("vNF")[0]?.textContent || "";
-          const cnpjFornecedor = emit?.getElementsByTagName("CNPJ")[0]?.textContent || "";
-          const nomeFornecedor = emit?.getElementsByTagName("xNome")[0]?.textContent || "";
-
-          // Buscar fornecedor no sistema
-          const fornecedorEncontrado = fornecedores.find(
-            (f) => f.cnpj?.replace(/\D/g, "") === cnpjFornecedor.replace(/\D/g, "")
-          );
-
-          // Extrair chave NF-e (44 dígitos)
-          const protNFe = xmlDoc.getElementsByTagName("protNFe")[0];
-          const infProt = protNFe?.getElementsByTagName("infProt")[0];
-          const chaveNFe =
-            infProt?.getElementsByTagName("chNFe")[0]?.textContent ||
-            infNFe?.getAttribute("Id")?.replace("NFe", "") ||
-            "";
-
-          // Extrair endereço do emitente para devolução futura
-          const enderEmit = emit?.getElementsByTagName("enderEmit")[0];
-          const ieEmit = emit?.getElementsByTagName("IE")[0]?.textContent || "";
-          const enderecoEmit = {
-            cnpj: cnpjFornecedor,
-            nome: nomeFornecedor,
-            ie: ieEmit,
-            logradouro: enderEmit?.getElementsByTagName("xLgr")[0]?.textContent || "",
-            numero: enderEmit?.getElementsByTagName("nro")[0]?.textContent || "",
-            bairro: enderEmit?.getElementsByTagName("xBairro")[0]?.textContent || "",
-            municipio: enderEmit?.getElementsByTagName("xMun")[0]?.textContent || "",
-            uf: enderEmit?.getElementsByTagName("UF")[0]?.textContent || "",
-            cep: enderEmit?.getElementsByTagName("CEP")[0]?.textContent || "",
-          };
-
-          // Salvar dados do emitente para uso na devolução
-          sessionStorage.setItem(
-            `nfe_emit_${chaveNFe || numeroNota}`,
-            JSON.stringify(enderecoEmit)
-          );
-
-          // Atualizar form com dados da nota
-          setNotaFiscal({
-            numero: numeroNota,
-            chave: chaveNFe,
-            dataEmissao: dataEmissao,
-            dataEntrada: new Date().toISOString().split("T")[0],
-            valorNota: valorTotal,
-            statusAprovacao: "pendente",
-          });
-
-          setForm((prev) => ({
-            ...prev,
-            valor: valorTotal,
-            fornecedor_id: fornecedorEncontrado?.id || "",
-            descricao: `Nota Fiscal ${numeroNota} - ${nomeFornecedor}`,
-            numero_documento: chaveNFe || numeroNota,
-            chave_nfe: chaveNFe || null,
-          }));
-
-          // Verificar duplicidade da chave NFe ANTES de prosseguir
-          if (chaveNFe && empresaAtiva?.id) {
-            try {
-              const existentes = await sigo.entities.TransacaoFinanceira.filter({
-                empresa_id: empresaAtiva.id,
-                chave_nfe: chaveNFe,
-              });
-              const naoEhEssa = existentes.filter((t) => t.id !== selectedItem?.id);
-              if (naoEhEssa.length > 0) {
-                setTransacaoDuplicada(naoEhEssa[0]);
-              } else {
-                setTransacaoDuplicada(null);
-              }
-            } catch (err) {
-              console.warn("Falha ao verificar duplicidade NFe:", err);
-            }
-          }
-
-          // Extrair itens da nota (incluindo EAN e NCM)
-          const det = infNFe?.getElementsByTagName("det");
-          const itens = [];
-
-          if (det) {
-            for (let i = 0; i < det.length; i++) {
-              const prod = det[i].getElementsByTagName("prod")[0];
-              const item = {
-                descricao: prod?.getElementsByTagName("xProd")[0]?.textContent || "",
-                codigo: prod?.getElementsByTagName("cProd")[0]?.textContent || "",
-                ean: prod?.getElementsByTagName("cEAN")[0]?.textContent || "",
-                ncm: prod?.getElementsByTagName("NCM")[0]?.textContent || "",
-                unidade: prod?.getElementsByTagName("uCom")[0]?.textContent || "UN",
-                quantidade: parseFloat(prod?.getElementsByTagName("qCom")[0]?.textContent || 0),
-                valor_unitario: parseFloat(
-                  prod?.getElementsByTagName("vUnCom")[0]?.textContent || 0
-                ),
-                valor_total: parseFloat(prod?.getElementsByTagName("vProd")[0]?.textContent || 0),
-              };
-              itens.push(item);
-            }
-          }
-
-          setItensNota(itens);
-
-          // Adicionar anexo
-          handleAnexoUpload({ target: { files: [file] } });
-
-          // Se for material e tiver itens, abrir modal de associação
-          if (itens.length > 0) {
-            setTipoDespesa("material");
-            setShowAssociarMateriais(true);
-          }
-
-          alert("Nota fiscal importada com sucesso!");
-        } catch {
-          alert("Erro ao processar XML da nota fiscal. Verifique o arquivo.");
-        }
-      };
-
-      reader.readAsText(file);
-    } catch {
-      alert("Erro ao importar nota fiscal");
+    // duplicatas/vencimentos → parcelas. O handleNumeroParcelasChange do pai
+    // ainda enxerga o form antigo; o setParcelas logo depois é o que vale.
+    if (parcelasLidas.length > 1) {
+      handleNumeroParcelasChange(parcelasLidas.length);
+      setParcelas(parcelasLidas);
+      setPermitirParcelamento(true);
+      setMostrarParcelas(true);
+    } else if (patch.valor && permitirParcelamento) {
+      // as parcelas na tela eram do valor anterior
+      handleNumeroParcelasChange(1);
+      setPermitirParcelamento(false);
+      setMostrarParcelas(false);
     }
+
+    if (documento.numero || documento.chave) {
+      setNotaFiscal((prev) => ({
+        ...prev,
+        numero: documento.numero || "",
+        chave: documento.chave || "",
+        dataEmissao: documento.data_emissao || "",
+        dataEntrada: prev.dataEntrada || new Date().toLocaleDateString("en-CA"),
+        valorNota: patch.valor || "",
+      }));
+    }
+    // emitente para a Nota de Devolução (ela procura pelo numero_documento = chave)
+    if (documento.chave) {
+      try {
+        sessionStorage.setItem(
+          `nfe_emit_${documento.chave}`,
+          JSON.stringify({
+            cnpj: documento.emitente?.documento || "",
+            nome: documento.emitente?.nome || "",
+            ie: documento.emitente?.ie || "",
+          })
+        );
+      } catch {
+        /* sessionStorage indisponível: a devolução pede os dados à mão */
+      }
+    }
+
+    // itens de nota de produto → associar materiais (entrada de estoque), como antes
+    setItensNota(itens);
+    if (itens.length > 0 && ["nfe", "nfce", "cupom"].includes(documento.tipo)) {
+      setTipoDespesa("material");
+      setShowAssociarMateriais(true);
+    }
+
+    adicionarAnexoPronto(anexo);
+    setLeitura({ pessoaSugerida, duvidosos: documento.duvidosos || [], avisos });
   };
 
   useEffect(() => {
@@ -429,6 +367,22 @@ export default function DespesaModal({
 
           <div className="p-6 flex-1 overflow-y-auto">
             <div className="space-y-6">
+              {/* LER DOCUMENTO — só na despesa nova e quando o pai recebe o anexo pronto */}
+              {adicionarAnexoPronto && !selectedItem && (
+                <div className="space-y-2">
+                  <LerDocumentoButton
+                    tipo="despesa"
+                    onLido={aplicarDocumentoLido}
+                    className="w-full border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                  />
+                  <p className="text-xs text-slate-500">
+                    O XML da nota é lido sem IA; PDF ou foto (DANFE, NFS-e, cupom, recibo, boleto,
+                    PIX) é lido pela IA. Nada é salvo antes de você clicar em Salvar.
+                  </p>
+                  <ConferirLeitura duvidosos={leitura?.duvidosos} avisos={leitura?.avisos} />
+                </div>
+              )}
+
               {/* INFORMAÇÕES DA DESPESA */}
               <div>
                 <h3 className="text-sm font-semibold text-slate-700 uppercase mb-4 pb-2 border-b">
@@ -535,11 +489,26 @@ export default function DespesaModal({
                         <Button
                           size="icon"
                           className="bg-red-600 hover:bg-red-700 shrink-0"
-                          onClick={() => setShowNovoFornecedor(true)}
+                          onClick={() => {
+                            setDadosNovoFornecedor(null);
+                            setShowNovoFornecedor(true);
+                          }}
                         >
                           <Plus className="w-4 h-4" />
                         </Button>
                       </div>
+                      {!form.fornecedor_id && (
+                        <PessoaNaoCadastrada
+                          rotulo="Fornecedor"
+                          pessoa={leitura?.pessoaSugerida}
+                          onCadastrar={() => {
+                            setDadosNovoFornecedor(
+                              dadosIniciaisCadastro(leitura.pessoaSugerida, "cnpj")
+                            );
+                            setShowNovoFornecedor(true);
+                          }}
+                        />
+                      )}
                       {form.fornecedor_id && (
                         <div className="mt-2">
                           <Label className="text-xs text-slate-500">
@@ -683,34 +652,16 @@ export default function DespesaModal({
               {/* DADOS DE NOTA FISCAL */}
               <div>
                 <h3 className="text-sm font-semibold text-slate-700 uppercase mb-4 pb-2 border-b">
-                  Anexar NFe (Opcional)
+                  Nota Fiscal (Opcional)
                 </h3>
 
                 <div className="space-y-4">
                   <div>
-                    <Label>Nota Fiscal Eletrônica (XML)</Label>
-                    <div className="flex gap-2 mt-1.5">
-                      <input
-                        type="file"
-                        accept=".xml"
-                        onChange={handleImportarXML}
-                        className="hidden"
-                        id="import-xml-nfe"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => document.getElementById("import-xml-nfe").click()}
-                      >
-                        <Upload className="w-4 h-4 mr-2" />
-                        Importar NFe (XML)
-                      </Button>
-                    </div>
+                    {/* o XML da NF-e agora entra pelo "Ler documento" no topo */}
                     {notaFiscal.numero && (
-                      <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-sm">
+                      <div className="p-2 bg-green-50 border border-green-200 rounded text-sm">
                         <p className="text-green-700">
-                          NFe #{notaFiscal.numero} importada com sucesso
+                          Nota nº {notaFiscal.numero} lida do documento
                         </p>
                       </div>
                     )}
@@ -1534,13 +1485,18 @@ export default function DespesaModal({
           open={showNovoFornecedor}
           onOpenChange={setShowNovoFornecedor}
           empresaAtiva={empresaAtiva}
+          dadosIniciais={dadosNovoFornecedor}
           onFornecedorCriado={(fornecedor) => {
             setFornecedoresLocais((prev) => [...prev, fornecedor]);
+            // categoria vazia → a do cadastro (igual à escolha no combobox)
+            const cat = categoriaDoFornecedor(fornecedor, categoriasOrdenadas);
             setForm((prev) => ({
               ...prev,
               fornecedor_id: fornecedor.id,
               fornecedor_nome: fornecedor.nome_razao,
+              ...(cat && !prev.categoria_id && { categoria_id: cat.id, categoria_nome: cat.nome }),
             }));
+            setLeitura((prev) => (prev ? { ...prev, pessoaSugerida: null } : prev));
             if (onReload) onReload();
           }}
         />

@@ -34,6 +34,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { sigo, supabase } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
 import { refDoUpload } from "@/lib/anexo-ref";
+import { lerXmlFiscal, textoDoXml } from "@/lib/nfe-xml";
+import { acharPessoa } from "@/lib/documento-financeiro";
+import { cadastroDoXml, lancamentoDoXml } from "@/lib/importacao-xml";
 import { baixarReciboQuitado } from "@/lib/recibo-quitado";
 import { toast } from "sonner";
 
@@ -242,6 +245,11 @@ export default function DespesasTab({
     setAnexos(anexos.filter((_, i) => i !== index));
   };
 
+  // anexo que já subiu no "Ler documento" (ref "bucket/path"): entra sem novo upload
+  const adicionarAnexoPronto = (anexo) => {
+    if (anexo?.url) setAnexos((prev) => [...prev, anexo]);
+  };
+
   const handleExportarExcel = async () => {
     const despesasExportar = transacoesIniciais.filter(
       (t) => (t.tipo || "").toLowerCase() === "despesa"
@@ -340,130 +348,74 @@ export default function DespesasTab({
     link.click();
   };
 
+  // "Importar XML / NF-e" da lista: cria a despesa direto, sem abrir o
+  // formulário. Mesmo leitor do "Ler documento" (lerXmlFiscal: NF-e, NFC-e e
+  // NFS-e); fornecedor casado pelos DÍGITOS do CNPJ/CPF e depois pelo nome (a
+  // busca exata pelo texto do CNPJ criava fornecedor duplicado); grava chave_nfe.
   const handleImportarXML = async (e) => {
-    const file = e.target.files[0];
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const xmlText = evt.target.result;
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+    try {
+      const doc = lerXmlFiscal(await textoDoXml(file));
+      if (!doc) {
+        alert(
+          "❌ Arquivo XML não reconhecido.\n\nEnvie o XML de uma NF-e, NFC-e ou NFS-e (baixado da SEFAZ, da prefeitura ou enviado pelo fornecedor)."
+        );
+        return;
+      }
+      if (!(doc.valor_total > 0)) {
+        alert("⚠️ Nota sem valor total.\n\nVerifique se o XML está completo.");
+        return;
+      }
 
-        // Verificar se é NF-e válida - aceitar diversos formatos
-        const nfeNode =
-          xmlDoc.getElementsByTagName("NFe")[0] ||
-          xmlDoc.getElementsByTagName("nfeProc")[0] ||
-          xmlDoc.getElementsByTagName("nfe")[0] ||
-          xmlDoc.getElementsByTagNameNS("*", "NFe")[0] ||
-          xmlDoc.getElementsByTagNameNS("*", "nfeProc")[0];
+      setImportacao({ ativo: true, total: 1, processados: 0, erros: 0 });
 
-        const infNFeNode =
-          xmlDoc.getElementsByTagName("infNFe")[0] ||
-          xmlDoc.getElementsByTagNameNS("*", "infNFe")[0];
-
-        if (!nfeNode && !infNFeNode) {
-          alert(
-            "❌ Arquivo XML inválido. Não foi possível identificar como NF-e.\n\nVerifique se o arquivo é uma Nota Fiscal Eletrônica válida."
-          );
+      // a mesma NF-e duas vezes seria barrada pelo índice único (empresa, chave_nfe)
+      if (doc.chave) {
+        const jaLancadas = await sigo.entities.TransacaoFinanceira.filter({
+          empresa_id: empresaAtiva.id,
+          chave_nfe: doc.chave,
+        });
+        if (jaLancadas.length > 0) {
+          alert(`⚠️ Esta NF-e já foi lançada: ${jaLancadas[0].descricao || "(sem descrição)"}`);
           return;
         }
-
-        setImportacao({ ativo: true, total: 1, processados: 0, erros: 0 });
-
-        // Extrair dados da NF-e - buscar em múltiplos namespaces
-        const getTag = (tagName) => {
-          return (
-            xmlDoc.getElementsByTagName(tagName)[0] ||
-            xmlDoc.getElementsByTagNameNS("*", tagName)[0]
-          );
-        };
-
-        const infNFe = getTag("infNFe");
-        const emit = getTag("emit");
-        const total = getTag("total");
-        const ICMSTot = getTag("ICMSTot");
-        const ide = getTag("ide");
-
-        const fornecedorNome =
-          emit?.getElementsByTagName("xNome")[0]?.textContent ||
-          emit?.getElementsByTagNameNS("*", "xNome")[0]?.textContent ||
-          "Fornecedor Desconhecido";
-
-        const fornecedorCNPJ =
-          emit?.getElementsByTagName("CNPJ")[0]?.textContent ||
-          emit?.getElementsByTagNameNS("*", "CNPJ")[0]?.textContent ||
-          "";
-
-        const dataEmissao = (
-          ide?.getElementsByTagName("dhEmi")[0]?.textContent ||
-          ide?.getElementsByTagNameNS("*", "dhEmi")[0]?.textContent ||
-          ide?.getElementsByTagName("dEmi")[0]?.textContent ||
-          ide?.getElementsByTagNameNS("*", "dEmi")[0]?.textContent ||
-          new Date().toISOString()
-        ).split("T")[0];
-
-        const numeroNFe =
-          ide?.getElementsByTagName("nNF")[0]?.textContent ||
-          ide?.getElementsByTagNameNS("*", "nNF")[0]?.textContent ||
-          "";
-
-        const valorTotal = parseFloat(
-          ICMSTot?.getElementsByTagName("vNF")[0]?.textContent ||
-            ICMSTot?.getElementsByTagNameNS("*", "vNF")[0]?.textContent ||
-            "0"
-        );
-
-        // Buscar ou criar fornecedor
-        let fornecedores = await sigo.entities.Fornecedor.filter({
-          empresa_id: empresaAtiva.id,
-          cnpj: fornecedorCNPJ,
-        });
-
-        let fornecedor;
-        if (fornecedores.length === 0) {
-          fornecedor = await sigo.entities.Fornecedor.create({
-            empresa_id: empresaAtiva.id,
-            nome_razao: fornecedorNome,
-            cnpj: fornecedorCNPJ,
-            tipo_pessoa: "PJ",
-          });
-        } else {
-          fornecedor = fornecedores[0];
-        }
-
-        // Criar despesa
-        const despesaData = {
-          empresa_id: empresaAtiva.id,
-          tipo: "Despesa",
-          conta_id: contas[0]?.id,
-          conta_nome: contas[0]?.nome,
-          fornecedor_id: fornecedor.id,
-          fornecedor_nome: fornecedor.nome_razao,
-          valor: valorTotal,
-          data: dataEmissao,
-          data_vencimento: dataEmissao,
-          descricao: `NF-e ${numeroNFe} - ${fornecedorNome}`,
-          status: "em_aberto",
-          observacoes: `Importado de XML - NF-e ${numeroNFe}`,
-        };
-
-        await sigo.entities.TransacaoFinanceira.create(despesaData);
-
-        setImportacao({ ativo: false, total: 0, processados: 0, erros: 0 });
-        alert(
-          `✅ NF-e importada com sucesso!\n\nFornecedor: ${fornecedorNome}\nValor: ${formatCurrency(valorTotal)}`
-        );
-        onReload();
-      } catch {
-        setImportacao({ ativo: false, total: 0, processados: 0, erros: 0 });
-        alert("❌ Erro ao processar arquivo XML. Verifique se é uma NF-e válida.");
-      } finally {
-        e.target.value = "";
       }
-    };
-    reader.readAsText(file);
+
+      const cadastrados = await sigo.entities.Fornecedor.filter({ empresa_id: empresaAtiva.id });
+      const fornecedor =
+        acharPessoa(cadastrados, doc.emitente, "cnpj") ||
+        (await sigo.entities.Fornecedor.create({
+          empresa_id: empresaAtiva.id,
+          ...cadastroDoXml(doc, "despesa"),
+        }));
+
+      const { registro, duplicatas, rotulo } = lancamentoDoXml(doc, {
+        tipo: "despesa",
+        pessoa: fornecedor,
+        conta: contas[0],
+        categorias,
+        empresaId: empresaAtiva.id,
+        hoje: hojeLocalISO(),
+      });
+      await sigo.entities.TransacaoFinanceira.create(registro);
+
+      alert(
+        `✅ ${rotulo} importada com sucesso!\n\nFornecedor: ${registro.fornecedor_nome}\nValor: ${formatCurrency(registro.valor)}` +
+          (duplicatas > 1
+            ? `\n\nA nota tem ${duplicatas} duplicatas: a despesa foi lançada inteira no 1º vencimento. Para lançar parcelado, use Nova Despesa → Ler documento.`
+            : "")
+      );
+      onReload();
+    } catch (err) {
+      console.error("[DespesasTab] erro ao importar XML:", err);
+      alert("❌ Erro ao importar o XML: " + (err?.message || "tente novamente"));
+    } finally {
+      setImportacao({ ativo: false, total: 0, processados: 0, erros: 0 });
+      input.value = "";
+    }
   };
 
   const handleImportarExcel = async (e) => {
@@ -850,6 +802,9 @@ export default function DespesasTab({
         descricao: item.descricao || "",
         status: item.status || "em_aberto",
         forma_pagamento: item.forma_pagamento || "",
+        // sem os dois no form, salvar a edição apagava a chave e o nº do documento
+        numero_documento: item.numero_documento || "",
+        chave_nfe: item.chave_nfe || "",
       });
 
       loadAnexos(item.id);
@@ -884,6 +839,8 @@ export default function DespesasTab({
         descricao: "",
         status: "em_aberto",
         forma_pagamento: "",
+        numero_documento: "",
+        chave_nfe: "",
       });
       setAnexos([]);
       setNumeroParcelas(1);
@@ -972,6 +929,8 @@ export default function DespesasTab({
       status: form.status,
       forma_pagamento: form.forma_pagamento || null,
       chave_nfe: chaveNfe || null,
+      // "Ler documento" preenche: chave da NF-e (44 dígitos) ou o número do documento
+      numero_documento: form.numero_documento || null,
     };
 
     const temParcelamento = numeroParcelas > 1 && parcelas.length > 0;
@@ -2188,6 +2147,7 @@ export default function DespesasTab({
           anexos={anexos}
           handleAnexoUpload={handleAnexoUpload}
           handleRemoverAnexo={handleRemoverAnexo}
+          adicionarAnexoPronto={adicionarAnexoPronto}
           handleSave={handleSave}
           empresaAtiva={empresaAtiva}
           onReload={onReload}
