@@ -117,18 +117,30 @@ export function validarRef(ref: unknown): { bucket: string; path: string; empres
   return { bucket: segs[0], path: segs.slice(1).join("/"), empresaId: segs[1].toLowerCase() };
 }
 
-/** Baixa um ref "bucket/caminho" e devolve o item de input pra OpenAI. */
-export async function refParaInput(ref: string): Promise<Record<string, unknown>> {
+/**
+ * Baixa um ref "bucket/caminho" (validarRef + service role) e devolve nome,
+ * MIME (assinatura dos bytes > extensão > tipo do Storage) e bytes. Acima de
+ * 15MB lança. Usado pela OpenAI (refParaInput) e pelo Gemini (gemini.ts).
+ */
+export async function baixarRef(
+  ref: string
+): Promise<{ nome: string; mime: string; bytes: Uint8Array }> {
   const { bucket, path } = validarRef(ref);
   const supabase = createAdminClient();
   const { data, error } = await supabase.storage.from(bucket).download(path);
   if (error || !data) throw new Error(`download falhou (${ref}): ${error?.message ?? "vazio"}`);
-  const buf = new Uint8Array(await data.arrayBuffer());
-  if (buf.byteLength > LIMITE_ARQUIVO) throw new Error(`arquivo ${ref} acima de 15MB`);
+  const bytes = new Uint8Array(await data.arrayBuffer());
+  if (bytes.byteLength > LIMITE_ARQUIVO) throw new Error(`arquivo ${ref} acima de 15MB`);
   const nome = path.split("/").pop() || "arquivo";
   const ext = nome.includes(".") ? (nome.split(".").pop() || "").toLowerCase() : "";
   const mime =
-    mimePelosBytes(buf) || MIME_POR_EXTENSAO[ext] || data.type || "application/octet-stream";
+    mimePelosBytes(bytes) || MIME_POR_EXTENSAO[ext] || data.type || "application/octet-stream";
+  return { nome, mime, bytes };
+}
+
+/** Baixa um ref "bucket/caminho" e devolve o item de input pra OpenAI. */
+export async function refParaInput(ref: string): Promise<Record<string, unknown>> {
+  const { nome, mime, bytes: buf } = await baixarRef(ref);
 
   if (mime.startsWith("image/")) {
     return { type: "input_image", image_url: `data:${mime};base64,${paraBase64(buf)}` };
