@@ -14,6 +14,15 @@
  *   { acao:"validar_exames_pcmso", pcmso_ref, exames_refs, funcao }
  *     → { success, resultado: { aprovado, pendencias[], resumo } }
  *
+ * Financeiro — "Ler documento" (financeiro-ler.ts / financeiro-documento.ts):
+ *
+ *   { acao:"financeiro_ler_documento", file_ref, tipo:"despesa"|"receita" }
+ *     → { success, documento: DocumentoFiscal }  (origem "ia"; nada é gravado)
+ *     PDF, JPG, JPEG, PNG ou WEBP da empresa do token (HEIC → 400 pedindo
+ *     JPEG). Nível padrão e, se vier fraco (sem valor total ou sem a pessoa
+ *     do lançamento), o forte — 60 s por nível. Saída normalizada no servidor
+ *     (CPF/CNPJ, chave de NF-e com DV, datas, valores, parcelas). Sem cota.
+ *
  * Leitura de edital (Oportunidades) — ver edital.ts / edital-schemas.ts:
  *
  *   { acao:"edital_extrair_parte", nome_arquivo, parte, total_partes,
@@ -65,6 +74,7 @@ import { chamarIA } from "../_shared/ia.ts";
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { editalAtende, editalConsolidar, editalExtrairParte, falhaIA } from "./edital.ts";
 import { chamarComEscalonamento } from "./escalonamento.ts";
+import { lerDocumentoFinanceiro } from "./financeiro-ler.ts";
 import {
   contabilizar,
   ehAcaoEdital,
@@ -82,6 +92,9 @@ interface Body {
   pcmso_ref?: string;
   exames_refs?: string[];
   funcao?: string;
+  // financeiro_ler_documento (validados em financeiro-ler.ts)
+  file_ref?: unknown;
+  tipo?: unknown;
   // edital_* (validados em edital.ts)
   nome_arquivo?: unknown;
   parte?: unknown;
@@ -227,6 +240,7 @@ Deno.serve(
       ...(body.file_refs ?? []),
       ...(body.pcmso_ref ? [body.pcmso_ref] : []),
       ...(body.exames_refs ?? []),
+      ...(body.file_ref ? [body.file_ref] : []),
     ];
     // validarRef recusa "..", "%", "?", "#" etc. (o download com service role
     // montaria outra URL) — vale inclusive para super admin
@@ -332,6 +346,18 @@ Deno.serve(
         );
         if (!r.ok) return falhaIA(r);
         return ok({ resultado: r.resultado });
+      }
+
+      if (body.acao === "financeiro_ler_documento") {
+        // ref já conferida acima (mesma empresa do token); formato, tipo e
+        // escalonamento padrão → forte em financeiro-ler.ts; uso gravado no finally
+        const r = await lerDocumentoFinanceiro(
+          chamarIA,
+          { file_ref: body.file_ref, tipo: body.tipo },
+          medidor
+        );
+        if (!r.ok) return r.entrada ? fail(r.erro, 400) : falhaIA(r);
+        return ok({ documento: r.documento });
       }
 
       if (ehAcaoEdital(body.acao)) {
