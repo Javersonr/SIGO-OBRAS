@@ -37,6 +37,19 @@ const limpo = (s) =>
 
 const chaveNome = (s) => normalizarTexto(limpo(s) || "");
 
+// tipos que são documento fiscal (recibo, boleto, PIX e "outro" não são)
+const TIPOS_FISCAIS = ["nfe", "nfce", "nfse", "cupom"];
+
+/**
+ * O documento lido é fiscal? Com chave de NF-e ou de um dos tipos nfe, nfce, nfse, cupom.
+ * Só nesse caso o número do documento vira `numero_documento` / "Nota nº" (o "Regime Contábil"
+ * dos relatórios filtra por esse campo).
+ * @param {{ tipo?: string|null, chave?: string|null }|null|undefined} doc
+ */
+export function ehDocumentoFiscal(doc) {
+  return Boolean(limpo(doc?.chave)) || TIPOS_FISCAIS.includes(doc?.tipo);
+}
+
 /**
  * Pessoa cadastrada (fornecedor ou cliente) do documento: primeiro pelos
  * DÍGITOS do CPF/CNPJ (o cadastro pode ter pontuação), depois pelo nome
@@ -114,9 +127,14 @@ export function montarPreenchimento(doc, { tipo, pessoas = [], categorias = [] }
 
   if (despesa) {
     if (doc.chave) patch.chave_nfe = doc.chave;
-    // chave primeiro: a Nota de Devolução procura despesas com numero_documento de 44 dígitos
-    const numeroDocumento = limpo(doc.chave) || limpo(doc.numero);
-    if (numeroDocumento) patch.numero_documento = numeroDocumento;
+    // Só documento fiscal vira numero_documento: o "Regime Contábil" dos relatórios (DRE, balanço,
+    // fluxo...) considera "com nota fiscal" toda despesa que tem esse campo. Boleto, recibo, PIX e
+    // "outro" ficam sem (o número continua na descrição). Chave primeiro: a Nota de Devolução
+    // procura despesas com numero_documento de 44 dígitos.
+    if (ehDocumentoFiscal(doc)) {
+      const numeroDocumento = limpo(doc.chave) || limpo(doc.numero);
+      if (numeroDocumento) patch.numero_documento = numeroDocumento;
+    }
   }
 
   let pessoaSugerida = null;

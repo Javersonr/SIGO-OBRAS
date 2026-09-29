@@ -32,7 +32,7 @@ import ImgStorage from "@/components/ImgStorage";
 import AnexoViewer from "@/components/shared/AnexoViewer";
 import EntityCombobox from "@/components/shared/EntityCombobox";
 import { categoriaDoFornecedor } from "@/lib/categorias-fornecedor";
-import { montarPreenchimento } from "@/lib/documento-financeiro";
+import { ehDocumentoFiscal, montarPreenchimento } from "@/lib/documento-financeiro";
 import { dadosIniciaisCadastro } from "@/lib/ler-documento";
 import AssociarMateriaisModal from "./AssociarMateriaisModal";
 import LerDocumentoButton, { ConferirLeitura, PessoaNaoCadastrada } from "./LerDocumentoButton";
@@ -187,7 +187,9 @@ export default function DespesaModal({
       setMostrarParcelas(false);
     }
 
-    if (documento.numero || documento.chave) {
+    // "Nota nº" só para documento fiscal: boleto, recibo e PIX não são nota (e o número deles
+    // também não vira numero_documento — ver montarPreenchimento)
+    if (ehDocumentoFiscal(documento) && (documento.numero || documento.chave)) {
       setNotaFiscal((prev) => ({
         ...prev,
         numero: documento.numero || "",

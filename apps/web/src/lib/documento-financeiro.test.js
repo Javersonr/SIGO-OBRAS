@@ -161,6 +161,65 @@ describe("montarPreenchimento — despesa", () => {
     expect(r.patch).not.toHaveProperty("chave_nfe");
   });
 
+  // O "Regime Contábil" dos relatórios filtra por numero_documento: só documento fiscal ganha número.
+  it.each([
+    ["boleto", "123456"],
+    ["recibo", "77"],
+    ["comprovante_pix", "9001"],
+    ["outro", "5"],
+  ])("%s com número e sem chave NÃO preenche numero_documento", (tipo, numero) => {
+    const r = montarPreenchimento(
+      doc({
+        origem: "ia",
+        tipo,
+        numero,
+        chave: null,
+        emitente: { nome: "JOSE DA SILVA", documento: null, ie: null, endereco: null },
+        vencimentos: [{ numero: null, data: "2026-10-05", valor: 89.9 }],
+      }),
+      { tipo: "despesa", pessoas: fornecedores }
+    );
+    expect(r.patch).not.toHaveProperty("numero_documento");
+    expect(r.patch).not.toHaveProperty("chave_nfe");
+    expect(r.patch.descricao).toContain(numero);
+  });
+
+  it.each([
+    ["nfse", "8801"],
+    ["cupom", "55"],
+    ["nfce", "302"],
+  ])("%s sem chave preenche numero_documento com o número", (tipo, numero) => {
+    const r = montarPreenchimento(doc({ origem: "ia", tipo, chave: null, numero }), {
+      tipo: "despesa",
+      pessoas: fornecedores,
+    });
+    expect(r.patch.numero_documento).toBe(numero);
+  });
+
+  it("qualquer tipo COM chave de NF-e preenche numero_documento e chave_nfe", () => {
+    const chave = "35260911222333000181550010000012341123456787";
+    const r = montarPreenchimento(doc({ origem: "ia", tipo: "outro", chave, numero: "1234" }), {
+      tipo: "despesa",
+      pessoas: fornecedores,
+    });
+    expect(r.patch).toMatchObject({ numero_documento: chave, chave_nfe: chave });
+  });
+
+  it("boleto com número: a descrição continua trazendo o número", () => {
+    const r = montarPreenchimento(
+      doc({
+        origem: "ia",
+        tipo: "boleto",
+        numero: "123",
+        chave: null,
+        emitente: { nome: "Provedor Net", documento: null, ie: null, endereco: null },
+      }),
+      { tipo: "despesa", pessoas: fornecedores }
+    );
+    expect(r.patch.descricao).toBe("Boleto 123 - Provedor Net");
+    expect(r.patch).not.toHaveProperty("numero_documento");
+  });
+
   it("fornecedor não cadastrado: sugere o cadastro e limpa a seleção anterior", () => {
     const r = montarPreenchimento(
       doc({

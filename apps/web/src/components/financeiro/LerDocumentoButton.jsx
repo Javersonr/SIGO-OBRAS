@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AlertTriangle, FileSearch, Loader2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,18 @@ export default function LerDocumentoButton({ tipo, onLido, disabled, className }
   const inputRef = useRef(null);
   const [etapa, setEtapa] = useState(null); // null | "enviando" | "lendo"
 
+  // A leitura pode durar até ~2 min. Se a tela (o formulário) fechar nesse meio tempo, o botão
+  // desmonta e o resultado é descartado: onLido usa os setters do PAI, que continuam valendo e
+  // aplicariam o documento no lançamento que estiver aberto depois. O useEffect marca true de
+  // novo ao montar porque o StrictMode (dev) monta, desmonta e monta o componente.
+  const vivo = useRef(true);
+  useEffect(() => {
+    vivo.current = true;
+    return () => {
+      vivo.current = false;
+    };
+  }, []);
+
   const enviar = async (arquivo, destino) => {
     setEtapa("enviando");
     const ref = refDoUpload(
@@ -51,9 +63,9 @@ export default function LerDocumentoButton({ tipo, onLido, disabled, className }
       toast.error(destino.erro);
       return;
     }
+    let documento;
+    let ref;
     try {
-      let documento;
-      let ref;
       if (destino.modo === "xml") {
         documento = lerXmlFiscal(await textoDoXml(arquivo));
         if (!documento) {
@@ -73,13 +85,21 @@ export default function LerDocumentoButton({ tipo, onLido, disabled, className }
         documento = data?.documento;
         if (!documento) throw new Error("a leitura não devolveu os dados");
       }
-      onLido({ documento, anexo: { nome: arquivo.name, url: ref, tipo: destino.mimeType } });
-      toast.success("Documento lido — confira os campos antes de salvar.");
     } catch (err) {
-      toast.error("Não foi possível ler o documento: " + (err?.message || "tente de novo"));
+      // tela já fechada: ninguém está esperando este aviso
+      if (vivo.current) {
+        toast.error("Não foi possível ler o documento: " + (err?.message || "tente de novo"));
+      }
+      return;
     } finally {
-      setEtapa(null);
+      if (vivo.current) setEtapa(null);
     }
+
+    // Fora do try: um erro no preenchimento do pai não vira "Não foi possível ler o documento".
+    // (O arquivo que já subiu fica sem uso no Storage quando a leitura é descartada.)
+    if (!vivo.current) return;
+    onLido({ documento, anexo: { nome: arquivo.name, url: ref, tipo: destino.mimeType } });
+    toast.success("Documento lido — confira os campos antes de salvar.");
   };
 
   const ocupado = etapa !== null;
