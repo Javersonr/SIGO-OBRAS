@@ -185,9 +185,10 @@ Assim a conta de hoje (quantidade × unitário × (1+bdi) × (1+imposto)) dá o 
 - validade em dias (padrão 60);
 - local (padrão: cidade/UF da empresa);
 - data (padrão: hoje);
-- ☑ "Registrar como nova versão da proposta".
+- ☑ "Registrar como nova versão da proposta";
+- **representante legal** (nome, cargo e CPF): vem preenchido com `empresa.representante_*` e pode ser editado só para esta exportação, sem gravar na empresa. O nome é obrigatório para exportar. O CPF, se informado, tem de ser válido.
 
-Sem o representante legal preenchido, o diálogo avisa e aponta para Configurações → Empresa, e não exporta.
+Motivo de editar no diálogo: em produção, só o super admin grava na tabela `empresa` (RLS `empresa_super_admin`; conferido em 29/09). O Admin de uma empresa cliente não conseguiria preencher o representante em Configurações.
 
 **Conteúdo (o mesmo nos dois formatos):**
 
@@ -215,6 +216,7 @@ Sem o representante legal preenchido, o diálogo avisa e aponta para Configuraç
   - subtotal da etapa = `SUBTOTAL(9, H<primeira>:H<última>)`, cobrindo o bloco contíguo da etapa;
   - total geral = `SUBTOTAL(9, H<todas>)`. O `SUBTOTAL` ignora os subtotais de dentro do intervalo, então as etapas aninhadas não contam duas vezes.
 - Mesmo nome de arquivo, com `.xlsx`.
+- **Sem negrito no Excel:** a versão gratuita do SheetJS (0.18.5) não grava estilo. A linha de etapa sai com o texto em maiúsculas, como na planilha da prefeitura, e é reconhecida pela numeração e pelo subtotal. O negrito fica só no PDF.
 
 **Registrar versão:** cria `proposta_oportunidade` com:
 
@@ -222,14 +224,15 @@ Sem o representante legal preenchido, o diálogo avisa e aponta para Configuraç
 - `descricao` = `Orçamento com desconto de X% (real Y%) — N itens`;
 - `status` = `Rascunho`.
 
-O trigger de imutabilidade da tabela não muda.
+O trigger de imutabilidade da tabela não muda. Hoje a lista de propostas (`PropostasOportunidade.jsx`, na aba Geral) só mostra as ações para `Enviada`. Por isso, a versão em `Rascunho` ganha o botão **"Marcar enviada"**, que muda só o `status`, o que o trigger permite.
 
 ## 10. Representante legal (Configurações → Empresa)
 
 - Seção nova "Representante legal" no `EmpresaTab.jsx`: Nome, Cargo e CPF (com máscara e validação de dígitos).
 - Se o nome estiver vazio, o campo sugere o `responsavel_principal`.
-- Grava em `empresa.representante_*`. Quem pode editar é quem já edita os dados da empresa.
+- Grava em `empresa.representante_*`. Quem pode editar é quem já edita os dados da empresa: hoje, pela RLS, só o super admin. O diálogo de exportação cobre as outras empresas (§9).
 - As declarações da etapa das pastas vão reaproveitar esses campos.
+- **Ordem de publicação:** o Salvar da aba Empresa manda todos os campos. Se o front subir antes da `0127`, o salvamento falha, com PGRST204. A migração sobe sempre antes do push (§14).
 
 ## 11. Etapas nas telas e ordem no Projeto
 
@@ -238,8 +241,20 @@ O trigger de imutabilidade da tabela não muda.
   - linha de etapa em negrito, sem quantidade e sem preço, com o subtotal;
   - ações de editar ou apagar uma etapa ficam só no apagar;
   - os totais das telas ignoram as linhas de etapa.
-- **Projeto (`Projetos.jsx:209-216`):** se algum item tiver `numero` ou `ordem`, ordenar por `ordem`. Se não tiver (dados antigos), mantém a ordem alfabética de hoje.
-- **Portal do cliente:** o plano confere como o portal mostra itens com valores nulos. `portal-cliente-dados` e `ClientePortal.jsx` estão com a sessão de segurança; qualquer ajuste ali é combinado com ela.
+- **Projeto (`Projetos.jsx:209-216`):**
+  - se algum item tiver `numero` (orçamento importado), ordenar por `ordem`, com desempate por `numero`;
+  - senão, mantém a ordem alfabética de hoje. Todos os criadores antigos gravam `ordem`, e usar `ordem` sempre mudaria a ordem de quase todo projeto existente.
+  - Com `numero`, o rótulo `item` passa a ser o `numero`, e não a posição.
+- **Novo item** (oportunidade): grava `ordem = max + 1`, não 0, para não cair no meio da lista importada.
+- **Templates de orçamento** (salvar e aplicar, na oportunidade e no projeto): levam também `numero`, `etapa`, `fonte` e `valor_unitario_ref`.
+- **Outros consumidores ignoram as linhas de etapa:** Solicitação de compra a partir do orçamento (`SolicitacaoModal.jsx` e `onCreateSolicitacao` do `Projetos.jsx`) e Relatórios do orçamento (`RelatoriosOrcamento.jsx`, que recebe a lista já sem etapas). A soma do `v_margem_projeto` já ignora `valor_total` nulo.
+- **Total da linha:** a fórmula do total, hoje repetida sem arredondar (5 lugares no `OportunidadeDetalhe.jsx`, `Oportunidades.jsx:1178` e `OrcamentoTab.jsx:96,377`), passa a usar o helper de `orcamento-desconto.js`, com arredondamento em 2 casas.
+- **Gravações pendentes:** a edição por campo grava a linha inteira depois de 1,5 s (`updateTimeoutRef`). Importar e aplicar o desconto cancelam esses timers antes de gravar.
+- **Permissão da aba (erro herdado):**
+  - a aba confere `temPermissao("Oportunidades","Orcamento")`, sem cedilha, e o catálogo usa "Orçamento";
+  - `aba="Orçamento"` em atributo JSX vira texto literal.
+  - Na prática, só Admin, owner e super admin veem a aba. A correção aceita as duas grafias, "Orçamento" e "Orcamento", e passa `aba` como expressão JS.
+- **Portal do cliente:** as etapas aparecem como linhas de R$ 0,00 e o portal corta orçamentos acima de 1.000 linhas (`max_rows`). `portal-cliente-dados` e `ClientePortal.jsx` estão com a sessão de segurança: fica fora desta entrega, anotado para combinar com ela.
 
 ## 12. Organização do código
 
