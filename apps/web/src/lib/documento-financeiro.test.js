@@ -1,0 +1,299 @@
+import { describe, it, expect } from "vitest";
+import { acharPessoa, montarPreenchimento } from "./documento-financeiro";
+
+/** DocumentoFiscal completo (formato do contrato) com os campos sobrescritos. */
+function doc(extra = {}) {
+  return {
+    origem: "xml",
+    tipo: "nfe",
+    numero: "1234",
+    chave: "35260911222333000181550010000012341123456787",
+    data_emissao: "2026-09-10",
+    valor_total: 300.1,
+    emitente: {
+      nome: "ELETRICA M&M LTDA",
+      documento: "11222333000181",
+      ie: "123456789110",
+      endereco: "RUA DAS FLORES, 100 - CENTRO - SAO PAULO/SP - CEP 01001-000",
+    },
+    destinatario: { nome: "CONSTRUTORA EXEMPLO LTDA", documento: "11444777000161" },
+    vencimentos: [],
+    forma_pagamento: null,
+    descricao: "VENDA DE MERCADORIA",
+    itens: [],
+    avisos: [],
+    duvidosos: [],
+    ...extra,
+  };
+}
+
+const categorias = [
+  { id: "r1", nome: "Material Elétrico", tipo: "Receita" },
+  { id: "d1", nome: "Material Elétrico", tipo: "Despesa" },
+  { id: "d2", nome: "Combustível", tipo: "Despesa" },
+];
+
+const fornecedores = [
+  { id: "f1", nome_razao: "ELETRICA M&M LTDA", cnpj: "99.888.777/0001-66" },
+  {
+    id: "f2",
+    nome_razao: "Elétrica MM (matriz)",
+    cnpj: "11.222.333/0001-81",
+    categorias: '["Material Eletrico"]',
+  },
+  { id: "f3", nome_razao: "José da Silva", cnpj: "" },
+];
+
+describe("montarPreenchimento — despesa", () => {
+  it("NF-e: fornecedor pelos DÍGITOS do CNPJ (antes do nome), categoria de despesa, parcelas e itens", () => {
+    const r = montarPreenchimento(
+      doc({
+        forma_pagamento: "boleto",
+        vencimentos: [
+          { numero: "002", data: "2026-11-10", valor: 100 },
+          { numero: "001", data: "2026-10-10", valor: 100.1 },
+          { numero: "003", data: "2026-12-10", valor: 100 },
+        ],
+        itens: [
+          {
+            descricao: "CABO 2,5MM",
+            codigo: "CAB-25",
+            ean: null,
+            ncm: "85444900",
+            unidade: null,
+            quantidade: 2,
+            valor_unitario: 150,
+            valor_total: 300,
+          },
+        ],
+      }),
+      { tipo: "despesa", pessoas: fornecedores, categorias }
+    );
+    expect(r.patch).toEqual({
+      valor: "300.10",
+      data_competencia: "2026-09-10",
+      data_vencimento: "2026-10-10",
+      forma_pagamento: "boleto",
+      descricao: "NF-e 1234 - ELETRICA M&M LTDA",
+      chave_nfe: "35260911222333000181550010000012341123456787",
+      numero_documento: "35260911222333000181550010000012341123456787",
+      fornecedor_id: "f2",
+      fornecedor_nome: "Elétrica MM (matriz)",
+      categoria_id: "d1",
+      categoria_nome: "Material Elétrico",
+    });
+    expect(r.parcelas).toEqual([
+      {
+        numero: 1,
+        valor: 100.1,
+        data_vencimento: "2026-10-10",
+        data_pagamento: null,
+        status: "em_aberto",
+      },
+      {
+        numero: 2,
+        valor: 100,
+        data_vencimento: "2026-11-10",
+        data_pagamento: null,
+        status: "em_aberto",
+      },
+      {
+        numero: 3,
+        valor: 100,
+        data_vencimento: "2026-12-10",
+        data_pagamento: null,
+        status: "em_aberto",
+      },
+    ]);
+    expect(r.itens).toEqual([
+      {
+        descricao: "CABO 2,5MM",
+        codigo: "CAB-25",
+        ean: "",
+        ncm: "85444900",
+        unidade: "UN",
+        quantidade: 2,
+        valor_unitario: 150,
+        valor_total: 300,
+      },
+    ]);
+    expect(r.pessoaSugerida).toBeNull();
+    expect(r.avisos).toEqual([]);
+  });
+
+  it("recibo sem CPF/CNPJ: fornecedor pelo NOME normalizado; vencimento lido; sem parcelas", () => {
+    const r = montarPreenchimento(
+      doc({
+        origem: "ia",
+        tipo: "recibo",
+        numero: null,
+        chave: null,
+        valor_total: 450,
+        emitente: { nome: "JOSE  DA SILVA", documento: null, ie: null, endereco: null },
+        vencimentos: [{ numero: null, data: "2026-09-20", valor: 450 }],
+        forma_pagamento: "dinheiro",
+      }),
+      { tipo: "despesa", pessoas: fornecedores, categorias }
+    );
+    expect(r.patch).toEqual({
+      valor: "450.00",
+      data_competencia: "2026-09-10",
+      data_vencimento: "2026-09-20",
+      forma_pagamento: "dinheiro",
+      descricao: "Recibo - JOSE DA SILVA",
+      fornecedor_id: "f3",
+      fornecedor_nome: "José da Silva",
+    });
+    expect(r.parcelas).toEqual([]);
+  });
+
+  it("sem vencimento: data de vencimento = emissão; número do documento sem chave", () => {
+    const r = montarPreenchimento(doc({ tipo: "cupom", chave: null, numero: "55" }), {
+      tipo: "despesa",
+      pessoas: fornecedores,
+    });
+    expect(r.patch).toMatchObject({
+      data_competencia: "2026-09-10",
+      data_vencimento: "2026-09-10",
+      descricao: "Cupom fiscal 55 - ELETRICA M&M LTDA",
+      numero_documento: "55",
+    });
+    expect(r.patch).not.toHaveProperty("chave_nfe");
+  });
+
+  it("fornecedor não cadastrado: sugere o cadastro e limpa a seleção anterior", () => {
+    const r = montarPreenchimento(
+      doc({
+        emitente: {
+          nome: "NOVO FORNECEDOR LTDA",
+          documento: "11444777000161",
+          ie: null,
+          endereco: "RUA B, 1 - CENTRO",
+        },
+        avisos: ["XML sem o protocolo de autorização da SEFAZ: confira se a nota foi autorizada."],
+      }),
+      { tipo: "despesa", pessoas: fornecedores, categorias }
+    );
+    expect(r.patch).toMatchObject({ fornecedor_id: "", fornecedor_nome: "NOVO FORNECEDOR LTDA" });
+    expect(r.patch).not.toHaveProperty("categoria_id");
+    expect(r.pessoaSugerida).toEqual({
+      nome: "NOVO FORNECEDOR LTDA",
+      documento: "11444777000161",
+      endereco: "RUA B, 1 - CENTRO",
+    });
+    expect(r.avisos).toEqual([
+      "XML sem o protocolo de autorização da SEFAZ: confira se a nota foi autorizada.",
+    ]);
+  });
+
+  it("boleto sem total: valor pela soma dos vencimentos e forma boleto pelo tipo", () => {
+    const r = montarPreenchimento(
+      doc({
+        origem: "ia",
+        tipo: "boleto",
+        numero: null,
+        chave: null,
+        data_emissao: null,
+        valor_total: null,
+        emitente: { nome: null, documento: null, ie: null, endereco: null },
+        vencimentos: [{ numero: null, data: "2026-10-05", valor: 89.9 }],
+        descricao: "Mensalidade internet",
+      }),
+      { tipo: "despesa", pessoas: fornecedores }
+    );
+    expect(r.patch).toEqual({
+      valor: "89.90",
+      data_vencimento: "2026-10-05",
+      forma_pagamento: "boleto",
+      descricao: "Boleto - Mensalidade internet",
+    });
+    expect(r.pessoaSugerida).toBeNull();
+  });
+
+  it("documento nulo → nada a preencher", () => {
+    expect(montarPreenchimento(null, { tipo: "despesa" })).toEqual({
+      patch: {},
+      parcelas: [],
+      itens: [],
+      pessoaSugerida: null,
+      avisos: [],
+    });
+  });
+});
+
+describe("montarPreenchimento — receita", () => {
+  const clientes = [
+    { id: "c1", nome_razao: "Construtora Exemplo", documento: "11.444.777/0001-61" },
+    { id: "c2", nome_razao: "ELETRICA M&M LTDA", documento: "11222333000181" },
+  ];
+
+  it("cliente = destinatário por dígitos; sem chave/categoria; cartão não entra; parcelas de receita", () => {
+    const r = montarPreenchimento(
+      doc({
+        tipo: "nfse",
+        numero: "2026000000123",
+        chave: null,
+        forma_pagamento: "cartao",
+        vencimentos: [
+          { numero: "1", data: "2026-10-10", valor: 150.05 },
+          { numero: "2", data: "2026-11-10", valor: 150.05 },
+        ],
+      }),
+      { tipo: "receita", pessoas: clientes, categorias }
+    );
+    expect(r.patch).toEqual({
+      valor: "300.10",
+      data_competencia: "2026-09-10",
+      data_vencimento: "2026-10-10",
+      descricao: "NFS-e 2026000000123 - CONSTRUTORA EXEMPLO LTDA",
+      cliente_id: "c1",
+      cliente_nome: "Construtora Exemplo",
+    });
+    expect(r.parcelas).toEqual([
+      {
+        numero: 1,
+        valor: 150.05,
+        data_vencimento: "2026-10-10",
+        data_pagamento: "",
+        status: "em_aberto",
+      },
+      {
+        numero: 2,
+        valor: 150.05,
+        data_vencimento: "2026-11-10",
+        data_pagamento: "",
+        status: "em_aberto",
+      },
+    ]);
+  });
+
+  it("cliente não cadastrado → pessoaSugerida com o documento do destinatário", () => {
+    const r = montarPreenchimento(
+      doc({
+        destinatario: { nome: "PREFEITURA DE EXEMPLO", documento: "12345678909" },
+        forma_pagamento: "pix",
+      }),
+      { tipo: "receita", pessoas: clientes }
+    );
+    expect(r.patch).toMatchObject({
+      cliente_id: "",
+      cliente_nome: "PREFEITURA DE EXEMPLO",
+      forma_pagamento: "pix",
+    });
+    expect(r.pessoaSugerida).toEqual({
+      nome: "PREFEITURA DE EXEMPLO",
+      documento: "12345678909",
+      endereco: null,
+    });
+  });
+});
+
+describe("acharPessoa", () => {
+  it("dígitos primeiro, nome (sem acento/caixa/espaços extras) depois, senão null", () => {
+    const alvo = (nome, documento) => ({ nome, documento });
+    expect(acharPessoa(fornecedores, alvo("x", "11222333000181"), "cnpj")?.id).toBe("f2");
+    expect(acharPessoa(fornecedores, alvo(" jose da  silva ", null), "cnpj")?.id).toBe("f3");
+    expect(acharPessoa(fornecedores, alvo("Outro", "12345678909"), "cnpj")).toBeNull();
+    expect(acharPessoa([], alvo(null, null), "cnpj")).toBeNull();
+  });
+});
