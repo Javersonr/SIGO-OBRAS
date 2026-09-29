@@ -820,7 +820,8 @@ export default function Oportunidades() {
     loadOrcamentoData(selectedOp.id);
   };
 
-  const handleUploadFile = async (e) => {
+  // pasta: destino na aba Arquivos (null = regra padrão: edital → Edital, resto → Outros)
+  const handleUploadFile = async (e, pasta = null) => {
     const file = e.target.files?.[0];
     if (!file || !selectedOp) return;
     setUploadingFile(true);
@@ -851,6 +852,7 @@ export default function Oportunidades() {
         url: fileRef,
         tipo: fileType,
         tamanho: file.size,
+        pasta: pasta || null,
         usuario_nome: user?.full_name || user?.email || "Usuário",
       });
       await loadOrcamentoData(selectedOp.id);

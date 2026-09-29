@@ -43,6 +43,7 @@ import {
   Building2,
   Sparkles,
   Bell,
+  Folder,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -62,6 +63,8 @@ import AnexoViewer from "@/components/shared/AnexoViewer";
 import ImgStorage from "@/components/ImgStorage";
 import LerEditalSheet from "@/components/oportunidades/edital/LerEditalSheet";
 import EditalResumoCard from "./EditalResumoCard";
+import ArquivosPastas from "./ArquivosPastas";
+import { PASTA_OUTROS, lerPastasExtras, listarPastas, pastaDoArquivo } from "@/lib/pastas-arquivo";
 import DescricaoRica from "./DescricaoRica";
 import { preservarAtende } from "./oportunidade-form";
 
@@ -169,6 +172,54 @@ export default function OportunidadeDetalhe({
   const [activeTab, setActiveTab] = useState("geral");
   const [visitedTabs, setVisitedTabs] = useState(new Set(["geral"]));
   const fileInputArquivosRef = useRef(null);
+  // Pasta atual da aba Arquivos: destino do upload/link e primeira aberta
+  const [pastaAtual, setPastaAtual] = useState(PASTA_OUTROS);
+  const pastasExtras = lerPastasExtras(selectedOp?.pastas_arquivos);
+  const pastasArquivos = listarPastas(pastasExtras, arquivos || []);
+
+  // Outra oportunidade aberta: a pasta de destino volta para Outros
+  useEffect(() => {
+    setPastaAtual(PASTA_OUTROS);
+  }, [selectedOp?.id]);
+
+  const gravarPastasExtras = async (novas) => {
+    await sigo.entities.Oportunidade.update(selectedOp.id, { pastas_arquivos: novas });
+    const aplicar = (o) => (o?.id === selectedOp.id ? { ...o, pastas_arquivos: novas } : o);
+    setSelectedOp?.((prev) => aplicar(prev));
+    setOportunidades?.((prev) => (Array.isArray(prev) ? prev.map(aplicar) : prev));
+  };
+
+  const handleCriarPasta = async (nome) => {
+    try {
+      await gravarPastasExtras([...pastasExtras, nome]);
+      setPastaAtual(nome);
+      toast.success(`Pasta "${nome}" criada`);
+      return true;
+    } catch (e) {
+      toast.error(`Não foi possível criar a pasta: ${e?.message || "erro"}`);
+      return false;
+    }
+  };
+
+  const handleApagarPasta = async (nome) => {
+    if (!confirm(`Apagar a pasta "${nome}"?`)) return;
+    try {
+      await gravarPastasExtras(pastasExtras.filter((p) => p !== nome));
+      if (pastaAtual === nome) setPastaAtual(PASTA_OUTROS);
+    } catch (e) {
+      toast.error(`Não foi possível apagar a pasta: ${e?.message || "erro"}`);
+    }
+  };
+
+  const handleMoverArquivo = async (arq, pasta) => {
+    try {
+      await sigo.entities.ArquivoOportunidade.update(arq.id, { pasta });
+      toast.success(`"${arq.nome}" movido para ${pasta}`);
+      onReloadArquivos();
+    } catch (e) {
+      toast.error(`Não foi possível mover: ${e?.message || "erro"}`);
+    }
+  };
   const [perdidoOpen, setPerdidoOpen] = useState(false);
   const [motivoPerda, setMotivoPerda] = useState("");
   const [salvandoPerda, setSalvandoPerda] = useState(false);
@@ -325,6 +376,7 @@ export default function OportunidadeDetalhe({
       nome,
       url: linkUrl.trim(),
       tipo: "link",
+      pasta: pastaAtual,
       usuario_nome: user?.full_name || "",
     });
     setLinkUrl("");
@@ -1422,9 +1474,25 @@ export default function OportunidadeDetalhe({
                           ref={fileInputArquivosRef}
                           type="file"
                           className="hidden"
-                          onChange={onUploadFile}
+                          onChange={(e) => onUploadFile(e, pastaAtual)}
                           accept=".pdf,.png,.jpg,.jpeg,.gif,.doc,.docx,.xls,.xlsx"
                         />
+                        <Select value={pastaAtual} onValueChange={setPastaAtual}>
+                          <SelectTrigger
+                            className="h-9 w-[210px]"
+                            title="Pasta onde o upload/link é gravado"
+                          >
+                            <Folder className="mr-1 h-4 w-4 text-amber-500" />
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {pastasArquivos.map((p) => (
+                              <SelectItem key={p} value={p}>
+                                {p}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <Button
                           size="sm"
                           variant="outline"
@@ -1483,8 +1551,15 @@ export default function OportunidadeDetalhe({
                         </div>
                       </div>
                     )}
-                    <div className="space-y-2">
-                      {arquivos.map((arq) => {
+                    <ArquivosPastas
+                      key={selectedOp?.id}
+                      arquivos={arquivos}
+                      pastas={pastasArquivos}
+                      pastaAtual={pastaAtual}
+                      onAbrirPasta={setPastaAtual}
+                      onCriarPasta={handleCriarPasta}
+                      onApagarPasta={handleApagarPasta}
+                      renderArquivo={(arq) => {
                         const isLink = arq.tipo === "link";
                         const isPdf =
                           !isLink &&
@@ -1501,10 +1576,7 @@ export default function OportunidadeDetalhe({
                           isLink &&
                           (arq.url?.includes("drive.google") || arq.url?.includes("docs.google"));
                         return (
-                          <div
-                            key={arq.id}
-                            className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
-                          >
+                          <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
                             <div className="flex items-center gap-3">
                               {isImage ? (
                                 <div className="w-12 h-12 rounded overflow-hidden bg-slate-200">
@@ -1582,6 +1654,29 @@ export default function OportunidadeDetalhe({
                                   <Eye className="w-3 h-3" />
                                 </Button>
                               )}
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Mover para outra pasta"
+                                  >
+                                    <Folder className="w-4 h-4 text-amber-600" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  {pastasArquivos
+                                    .filter((p) => p !== pastaDoArquivo(arq))
+                                    .map((p) => (
+                                      <DropdownMenuItem
+                                        key={p}
+                                        onClick={() => handleMoverArquivo(arq, p)}
+                                      >
+                                        Mover para {p}
+                                      </DropdownMenuItem>
+                                    ))}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -1592,14 +1687,8 @@ export default function OportunidadeDetalhe({
                             </div>
                           </div>
                         );
-                      })}
-                      {arquivos.length === 0 && (
-                        <div className="text-center py-12 text-slate-500">
-                          <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                          <p>Nenhum arquivo enviado</p>
-                        </div>
-                      )}
-                    </div>
+                      }}
+                    />
                   </TabsContent>
 
                   {/* ABA ANOTAÇÕES */}
