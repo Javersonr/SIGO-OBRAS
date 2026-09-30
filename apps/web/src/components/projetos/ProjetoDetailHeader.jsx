@@ -88,7 +88,7 @@ export default function ProjetoDetailHeader({
                     className="text-orange-600"
                   >
                     <Archive className="w-4 h-4 mr-2" />
-                    Arquivar
+                    {selectedProj?.arquivado ? "Desarquivar" : "Arquivar"}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   {(perfil === "Admin" || temPermissao("Projetos", "Lista", "excluir")) && (

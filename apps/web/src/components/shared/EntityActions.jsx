@@ -48,7 +48,7 @@ export default function EntityActions({
           variant="ghost"
           size="icon"
           className={buttonSize}
-          title="Arquivar"
+          title={entity?.arquivado ? "Desarquivar" : "Arquivar"}
           onClick={(e) => {
             e.stopPropagation();
             onArchive(entity);

@@ -17,6 +17,7 @@ import {
   Upload,
   User as UserIcon,
   Trash2,
+  Archive,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -144,6 +145,7 @@ export default function Projetos() {
   const [colunasConfig, setColunasConfig] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [filtroMeus, setFiltroMeus] = useState(true);
+  const [showArquivados, setShowArquivados] = useState(false);
   const [sortConfig, setSortConfig] = useState({ field: "created_date", direction: "desc" });
 
   // Define loadData ANTES de usá-la
@@ -402,11 +404,25 @@ export default function Projetos() {
     await sigo.entities.Projeto.delete(proj.id);
   };
 
+  // arquiva ou desarquiva (o mesmo botão serve aos dois, como em Oportunidades)
   const handleArchive = async (proj) => {
-    if (!confirm("Deseja arquivar este projeto?")) return;
-    setProjetos((prev) => prev.map((p) => (p.id === proj.id ? { ...p, arquivado: true } : p)));
-    await sigo.entities.Projeto.update(proj.id, { arquivado: true });
-    setShowDetail(false);
+    const novoArquivado = !proj.arquivado;
+    if (!confirm(`Deseja ${novoArquivado ? "arquivar" : "desarquivar"} este projeto?`)) return;
+    setProjetos((prev) =>
+      prev.map((p) => (p.id === proj.id ? { ...p, arquivado: novoArquivado } : p))
+    );
+    if (selectedProj?.id === proj.id) {
+      setSelectedProj((prev) => (prev ? { ...prev, arquivado: novoArquivado } : prev));
+    }
+    try {
+      await sigo.entities.Projeto.update(proj.id, { arquivado: novoArquivado });
+    } catch (err) {
+      console.error("[Projetos] erro ao arquivar/desarquivar:", err);
+      alert("❌ Não foi possível alterar o projeto. Tente novamente.");
+      loadData();
+      return;
+    }
+    if (novoArquivado) setShowDetail(false);
   };
 
   const handleExport = () => {
@@ -642,8 +658,8 @@ export default function Projetos() {
       });
     }
 
-    // Filtrar projetos não arquivados
-    filtered = filtered.filter((proj) => !proj.arquivado);
+    // Arquivados só aparecem com "Ver Arquivados" ligado
+    if (!showArquivados) filtered = filtered.filter((proj) => !proj.arquivado);
 
     if (filterStatus !== "all") {
       filtered = filtered.filter((proj) => proj.status_id === filterStatus);
@@ -681,6 +697,7 @@ export default function Projetos() {
     filterStatus,
     sortConfig,
     filtroMeus,
+    showArquivados,
     perfil,
     temPermissoesGranulares,
     user,
@@ -777,6 +794,15 @@ export default function Projetos() {
         >
           <UserIcon className="w-4 h-4" />
           {filtroMeus || temPermissoesGranulares ? "Meus" : "Todos"}
+        </Button>
+        <Button
+          variant={showArquivados ? "default" : "outline"}
+          size="sm"
+          onClick={() => setShowArquivados(!showArquivados)}
+          className="gap-2"
+        >
+          <Archive className="w-4 h-4" />
+          {showArquivados ? "Ocultar Arquivados" : "Ver Arquivados"}
         </Button>
         <SortButton
           sortOptions={[
@@ -883,6 +909,11 @@ export default function Projetos() {
                                       <h4 className="font-medium text-slate-800 mb-2 line-clamp-2">
                                         {proj.nome}
                                       </h4>
+                                      {proj.arquivado && (
+                                        <Badge variant="secondary" className="mb-2 text-xs">
+                                          Arquivado
+                                        </Badge>
+                                      )}
 
                                       {podeVerValores && (
                                         <div className="text-lg font-bold text-green-600 mb-2">
@@ -1031,6 +1062,11 @@ export default function Projetos() {
                     >
                       <td className="px-4 py-3">
                         <p className="font-medium text-slate-800">{proj.nome}</p>
+                        {proj.arquivado && (
+                          <Badge variant="secondary" className="mt-1 text-xs">
+                            Arquivado
+                          </Badge>
+                        )}
                       </td>
                       <td className="px-4 py-3 font-medium text-green-600">
                         {podeVerValores ? formatCurrency(proj.valor_estimado) : "-"}
