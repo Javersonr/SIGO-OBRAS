@@ -9,11 +9,18 @@
  * para cima. O total da linha é ARREDONDADO (meio para cima) em 2 casas.
  */
 
-/** number, ou string numérica ("12.5"); vazio, null, undefined ou inválido → null. */
+/** Texto numérico estrito: ponto decimal, sinal opcional; sem expoente, vírgula nem milhar. */
+const NUMERO_ESTRITO = /^\s*[-+]?(\d+\.?\d*|\.\d+)\s*$/;
+
+/**
+ * number finito, ou string numérica estrita ("12.5", ".5", "5.", " 2 ", "-3"); vazio, null,
+ * undefined e qualquer outra coisa → null. Não lê prefixo: "12abc", "1,5" e "1.234,56" são
+ * inválidos (parseFloat leria 12, 1 e 1,234 em silêncio).
+ */
 function paraNumero(valor) {
   if (valor === null || valor === undefined || valor === "") return null;
-  const n = typeof valor === "number" ? valor : parseFloat(valor);
-  return Number.isFinite(n) ? n : null;
+  const n = typeof valor === "string" ? (NUMERO_ESTRITO.test(valor) ? Number(valor) : NaN) : valor;
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
 }
 
 /** Inteiro na escala pedida (100 = centavos), com o meio arredondado para longe do zero. */
@@ -29,24 +36,30 @@ function centavos(valor) {
 
 /**
  * Unitário com desconto, cortado na 2ª casa.
- * `ref` com até 4 casas e `pct` com até 2 casas (0 a 99,99).
+ * `ref` com até 4 casas e `pct` com até 2 casas (0 a 99,99), os dois NUMBER.
+ * Entrada inválida lança RangeError em vez de virar 0% (preço cheio gravado como proposta):
+ * `pct` que não seja número finito de 0 a 99,99 e `ref` que não seja número finito ou seja
+ * negativo (sem coerção: null, undefined e texto também lançam). Quem tem o texto do campo
+ * converte antes com `validarDesconto(...).valor`.
  * Ex.: precoComDesconto(10.48, 12.35) → 9.18 (10,48 × 0,8765 = 9,18572).
  */
 export function precoComDesconto(ref, pct) {
-  const refDezmil = BigInt(escalar(Number(ref), 10000));
-  const fator = BigInt(10000 - escalar(Number(pct) || 0, 100));
+  if (typeof pct !== "number" || !Number.isFinite(pct) || pct < 0 || pct > 99.99) {
+    throw new RangeError("Desconto fora de 0 a 99,99%");
+  }
+  if (typeof ref !== "number" || !Number.isFinite(ref) || ref < 0) {
+    throw new RangeError("Preço de referência inválido");
+  }
+  const refDezmil = BigInt(escalar(ref, 10000));
+  const fator = BigInt(10000 - escalar(pct, 100));
   // refDezmil × fator está em unidades de 1e-8; ÷ 1e6 → centavos. A divisão de
   // BigInt descarta a fração: é o corte (ref ≥ 0).
   const cents = (refDezmil * fator) / 1000000n;
   return Number(cents) / 100;
 }
 
-/**
- * Total da linha = arredondar(quantidade × unitário, 2), meio para cima.
- * `quantidade` até 3 casas, `unitario` até 4. null se faltar um dos dois.
- * Ex.: totalLinha(125.5, 9.18) → 1152.09.
- */
-export function totalLinha(quantidade, unitario) {
+/** Total da linha em CENTAVOS inteiros (a conta de `totalLinha`); null se faltar um dos dois. */
+function totalLinhaCentavos(quantidade, unitario) {
   const q = paraNumero(quantidade);
   const u = paraNumero(unitario);
   if (q === null || u === null) return null;
@@ -54,7 +67,18 @@ export function totalLinha(quantidade, unitario) {
   const negativo = p < 0n;
   const abs = negativo ? -p : p;
   const cents = (abs + 50000n) / 100000n;
-  return Number(negativo ? -cents : cents) / 100;
+  return Number(negativo ? -cents : cents);
+}
+
+/**
+ * Total da linha = arredondar(quantidade × unitário, 2), meio para cima.
+ * `quantidade` até 3 casas, `unitario` até 4 (number ou string numérica estrita).
+ * null se faltar um dos dois ou se um deles for texto inválido.
+ * Ex.: totalLinha(125.5, 9.18) → 1152.09.
+ */
+export function totalLinha(quantidade, unitario) {
+  const cents = totalLinhaCentavos(quantidade, unitario);
+  return cents === null ? null : cents / 100;
 }
 
 /**
@@ -87,13 +111,15 @@ export function validarDesconto(entrada) {
   if (decimais.replace(/0+$/, "").length > 2) {
     return { ok: false, erro: "Use no máximo 2 casas decimais" };
   }
-  return { ok: true, valor: Math.round(valor * 100) / 100 };
+  return { ok: true, valor: Math.round(valor * 100) / 100 || 0 }; // `|| 0`: "-0" não vira −0
 }
 
 /**
  * Recalcula os itens importados (os que têm preço de referência) com o desconto.
  * Etapas e itens sem referência (incluídos à mão) ficam de fora.
  * Devolve só o que muda: [{ id, valor_unitario, valor_total }].
+ * `pct` precisa ser um number de 0 a 99,99 (use `validarDesconto` antes): um valor inválido
+ * lança RangeError (de `precoComDesconto`), nunca grava o preço cheio.
  */
 export function aplicarDesconto(itens, pct) {
   const saida = [];
@@ -162,7 +188,7 @@ export function resumoOrcamento(itens) {
       itensSemReferencia++;
       continue;
     }
-    refCents += centavos(totalLinha(item.quantidade, item.valor_unitario_ref));
+    refCents += totalLinhaCentavos(item.quantidade, item.valor_unitario_ref) ?? 0;
     propostaComRefCents += total;
   }
   const descontoReal =
