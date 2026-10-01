@@ -498,125 +498,135 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   // (curso de 40h = 4 dias; carga restante no último dia).
   const HORAS_DIA = 10;
   const gerarListasPresenca = async (curso) => {
-    const carga = Number(curso.carga_horaria_horas) || 0;
-    if (!carga) {
-      toast.error("Informe a carga horária do curso antes de gerar as listas");
-      return;
-    }
-    const participantes = matriculas
-      .filter((m) => m.curso_id === curso.id)
-      .map((m) => funcPorId.get(m.funcionario_id))
-      .filter(Boolean);
-    if (!participantes.length) {
-      toast.error("Nenhum funcionário matriculado neste curso");
-      return;
-    }
-    const inicioStr = prompt("Data do 1º dia de treinamento (DD/MM/AAAA):");
-    if (!inicioStr) return;
-    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(inicioStr.trim());
-    if (!m) {
-      toast.error("Data inválida — use DD/MM/AAAA");
-      return;
-    }
-    const instrutor = prompt("Nome do instrutor (opcional):") || "";
-    const inicio = new Date(+m[3], +m[2] - 1, +m[1]);
-    const dias = Math.ceil(carga / HORAS_DIA);
-
-    const { jsPDF } = await import("jspdf");
-    const doc = new jsPDF();
-    const W = doc.internal.pageSize.getWidth();
-    const logo = await logoParaPdf(empresa);
-
-    const aulasCurso = aulasDoCurso(curso.id);
-
-    for (let dia = 0; dia < dias; dia++) {
-      if (dia > 0) doc.addPage();
-      const data = new Date(inicio);
-      data.setDate(data.getDate() + dia);
-      const horasDoDia = Math.min(HORAS_DIA, carga - dia * HORAS_DIA);
-      let y = desenharLogo(doc, logo, 10);
-      if (!logo) y = 16;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(13);
-      doc.text("LISTA DE PRESENÇA — TREINAMENTO", W / 2, y + 2, { align: "center" });
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      y += 9;
-      doc.text(
-        `${empresa?.razao_social || empresa?.nome || ""} — CNPJ ${empresa?.cnpj || "-"}` +
-          `${empresa?.endereco ? ` — ${empresa.endereco}` : ""}`,
-        15,
-        y
-      );
-      y += 6;
-      doc.text(
-        `Treinamento: ${curso.nome}${curso.codigo ? ` (${curso.codigo})` : ""} — Carga horária total: ${carga}h — ` +
-          `Modalidade: EAD (plataforma própria, com registro eletrônico individual de conclusão)`,
-        15,
-        y,
-        { maxWidth: W - 30 }
-      );
-      y += 10;
-      doc.text(
-        `Dia ${dia + 1} de ${dias} — Data: ${data.toLocaleDateString("pt-BR")} — ` +
-          `Horário: 07:00 às 12:00 / 13:00 às 18:00 — Carga do dia: ${horasDoDia}h`,
-        15,
-        y
-      );
-      y += 6;
-      if (aulasCurso.length) {
-        const conteudo = "Conteúdo programático: " + aulasCurso.map((a) => a.titulo).join("; ");
-        const linhas = doc.splitTextToSize(conteudo, W - 30);
-        doc.text(linhas, 15, y);
-        y += linhas.length * 4.5 + 3;
+    try {
+      const carga = Number(curso.carga_horaria_horas) || 0;
+      if (!carga) {
+        toast.error("Informe a carga horária do curso antes de gerar as listas");
+        return;
       }
-      // cabeçalho da tabela
-      doc.setFont("helvetica", "bold");
-      doc.text("Nº", 15, y);
-      doc.text("Nome", 24, y);
-      doc.text("CPF", 92, y);
-      doc.text("Função", 124, y);
-      doc.text("Assinatura", 158, y);
-      doc.setFont("helvetica", "normal");
-      y += 2.5;
-      doc.line(15, y, W - 15, y);
-      y += 7;
-      participantes.forEach((f, i) => {
+      const participantes = matriculas
+        .filter((m) => m.curso_id === curso.id)
+        .map((m) => funcPorId.get(m.funcionario_id))
+        .filter(Boolean);
+      if (!participantes.length) {
+        toast.error("Nenhum funcionário matriculado neste curso");
+        return;
+      }
+      const inicioStr = prompt("Data do 1º dia de treinamento (DD/MM/AAAA):");
+      if (!inicioStr) return;
+      const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(inicioStr.trim());
+      if (!m) {
+        toast.error("Data inválida — use DD/MM/AAAA");
+        return;
+      }
+      const instrutor = prompt("Nome do instrutor (opcional):") || "";
+      const inicio = new Date(+m[3], +m[2] - 1, +m[1]);
+      const dias = Math.ceil(carga / HORAS_DIA);
+
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF();
+      const W = doc.internal.pageSize.getWidth();
+      const logo = await logoParaPdf(empresaAtiva);
+
+      const aulasCurso = aulasDoCurso(curso.id);
+
+      for (let dia = 0; dia < dias; dia++) {
+        if (dia > 0) doc.addPage();
+        const data = new Date(inicio);
+        data.setDate(data.getDate() + dia);
+        const horasDoDia = Math.min(HORAS_DIA, carga - dia * HORAS_DIA);
+        let y = desenharLogo(doc, logo, 10);
+        if (!logo) y = 16;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(13);
+        doc.text("LISTA DE PRESENÇA — TREINAMENTO", W / 2, y + 2, { align: "center" });
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        y += 9;
+        doc.text(
+          `${empresaAtiva?.razao_social || empresaAtiva?.nome || ""} — CNPJ ${empresaAtiva?.cnpj || "-"}` +
+            `${empresaAtiva?.endereco ? ` — ${empresaAtiva.endereco}` : ""}`,
+          15,
+          y
+        );
+        y += 6;
+        doc.text(
+          `Treinamento: ${curso.nome}${curso.codigo ? ` (${curso.codigo})` : ""} — Carga horária total: ${carga}h — ` +
+            `Modalidade: EAD (plataforma própria, com registro eletrônico individual de conclusão)`,
+          15,
+          y,
+          { maxWidth: W - 30 }
+        );
+        y += 10;
+        doc.text(
+          `Dia ${dia + 1} de ${dias} — Data: ${data.toLocaleDateString("pt-BR")} — ` +
+            `Horário: 07:00 às 12:00 / 13:00 às 18:00 — Carga do dia: ${horasDoDia}h`,
+          15,
+          y
+        );
+        y += 6;
+        if (aulasCurso.length) {
+          const conteudo = "Conteúdo programático: " + aulasCurso.map((a) => a.titulo).join("; ");
+          const linhas = doc.splitTextToSize(conteudo, W - 30);
+          doc.text(linhas, 15, y);
+          y += linhas.length * 4.5 + 3;
+        }
+        // cabeçalho da tabela
+        doc.setFont("helvetica", "bold");
+        doc.text("Nº", 15, y);
+        doc.text("Nome", 24, y);
+        doc.text("CPF", 92, y);
+        doc.text("Função", 124, y);
+        doc.text("Assinatura", 158, y);
+        doc.setFont("helvetica", "normal");
+        y += 2.5;
+        doc.line(15, y, W - 15, y);
+        y += 7;
+        participantes.forEach((f, i) => {
+          if (y > 262) {
+            doc.addPage();
+            y = 20;
+          }
+          doc.text(String(i + 1), 15, y);
+          doc.text((f.nome_completo || "").slice(0, 38), 24, y);
+          doc.text(f.cpf || "-", 92, y);
+          doc.text((f.funcao_nome || "-").slice(0, 20), 124, y, { maxWidth: 32 });
+          doc.line(158, y + 1, W - 15, y + 1);
+          y += 9;
+        });
+        y = Math.max(y + 8, 240);
         if (y > 262) {
           doc.addPage();
-          y = 20;
+          y = 40;
         }
-        doc.text(String(i + 1), 15, y);
-        doc.text((f.nome_completo || "").slice(0, 38), 24, y);
-        doc.text(f.cpf || "-", 92, y);
-        doc.text((f.funcao_nome || "-").slice(0, 20), 124, y, { maxWidth: 32 });
-        doc.line(158, y + 1, W - 15, y + 1);
-        y += 9;
-      });
-      y = Math.max(y + 8, 240);
-      if (y > 262) {
-        doc.addPage();
-        y = 40;
+        doc.setFontSize(8);
+        doc.text(
+          "Declaramos que os participantes acima realizaram o conteúdo do dia na modalidade EAD, " +
+            "com controle individual de acesso e conclusão registrado eletronicamente na plataforma.",
+          15,
+          y,
+          { maxWidth: W - 30 }
+        );
+        doc.setFontSize(9);
+        y += 14;
+        doc.line(15, y, 95, y);
+        doc.text(`Instrutor${instrutor ? `: ${instrutor}` : ""}`, 15, y + 5);
+        doc.line(115, y, W - 15, y);
+        doc.text(curso.responsavel_tecnico_nome || "Responsável técnico", 115, y + 5, {
+          maxWidth: W - 130,
+        });
+        if (curso.responsavel_tecnico_registro) {
+          doc.text(curso.responsavel_tecnico_registro, 115, y + 10, { maxWidth: W - 130 });
+        }
       }
-      doc.setFontSize(8);
-      doc.text(
-        "Declaramos que os participantes acima realizaram o conteúdo do dia na modalidade EAD, " +
-          "com controle individual de acesso e conclusão registrado eletronicamente na plataforma.",
-        15,
-        y,
-        { maxWidth: W - 30 }
+      doc.save(
+        `Lista_Presenca_${(curso.nome || "curso").replace(/\s+/g, "_")}_${inicioStr.replaceAll("/", "-")}.pdf`
       );
-      doc.setFontSize(9);
-      y += 14;
-      doc.line(15, y, 95, y);
-      doc.text(`Instrutor${instrutor ? `: ${instrutor}` : ""}`, 15, y + 5);
-      doc.line(115, y, W - 15, y);
-      doc.text("Responsável técnico da empresa", 115, y + 5);
+      toast.success(`${dias} folha(s) de presença gerada(s) — ${HORAS_DIA}h/dia`);
+    } catch (erro) {
+      console.error("Erro ao gerar listas de presença:", erro);
+      toast.error("Não foi possível gerar as listas de presença. Tente novamente.");
     }
-    doc.save(
-      `Lista_Presenca_${(curso.nome || "curso").replace(/\s+/g, "_")}_${inicioStr.replaceAll("/", "-")}.pdf`
-    );
-    toast.success(`${dias} folha(s) de presença gerada(s) — ${HORAS_DIA}h/dia`);
   };
 
   // ------------------------------------------------------------------ UI
