@@ -75,6 +75,7 @@ As etapas aparecem na oportunidade e no projeto, na ordem da planilha.
 - Com orçamento numerado, o filtro de tipo fica escondido e o filtro efetivo vale "all".
 - A ferramenta do conector, o Portal do cliente (etapas como R$ 0,00 e corte em 1.000 linhas) e as pastas ficam fora desta entrega. O Portal do cliente é da sessão de segurança.
 - Conferido: no "Ganho", os itens mudam de dono **na mesma linha**, e as colunas novas vão junto sem mudar código.
+- **Contas estritas (revisão da Task 1, 01/10; decisão do Javerson).** `precoComDesconto` lança `RangeError` com desconto fora de 0 a 99,99 ou referência inválida (antes virava 0%, e a proposta saía a preço cheio), e o texto numérico das contas é estrito, sem `parseFloat` (`"1,5"`, `"12abc"` e `"1e3"` viram vazio; `".5"` e `"5."` valem). Chamadores conferidos: **Task 4** usa `descontoPct ?? 0` explícito (nulo/ausente = 0; o resto vai ao `precoComDesconto`, não ao `validarDesconto`, que recusa vazio); **Task 5** já validava com `validarDesconto` e ganhou `try/catch` ao redor do `aplicarDesconto` e da montagem dos registros da importação (antes de apagar qualquer item); **Tasks 2, 7, 8, 6 e 11** passam number (ou texto de `<input type="number">`), sem mudança de código (ver a observação na Task 6).
 
 ---
 
@@ -86,7 +87,7 @@ As etapas aparecem na oportunidade e no projeto, na ordem da planilha.
 (cd apps/web && npx vitest run 2>&1 | tail -5)
 ```
 
-Anote as linhas `Test Files  N passed` e `Tests  M passed`. Ao fim da Task 3 devem ser `N + 3` arquivos e `M + 49` testes, sem falhas.
+Anote as linhas `Test Files  N passed` e `Tests  M passed`. Ao fim da Task 3 devem ser `N + 3` arquivos e `M + 62` testes, sem falhas.
 
 **Regras para as três tasks:**
 
@@ -108,13 +109,19 @@ Anote as linhas `Test Files  N passed` e `Tests  M passed`. Ao fim da Task 3 dev
 
 - Consumes: nada.
 - Produces (assinaturas do contrato):
-  - `precoComDesconto(ref: number, pct: number): number` — unitário cortado na 2ª casa (BigInt).
-  - `totalLinha(quantidade: number|null, unitario: number|null): number|null` — arredondamento meio para cima em 2 casas; `null` se faltar um dos dois. Aceita também string numérica (`"125.5"`), porque a edição por campo da tabela guarda o texto do input no estado; string vazia ou inválida conta como `null`.
+  - `precoComDesconto(ref: number, pct: number): number` — unitário cortado na 2ª casa (BigInt). **Lança `RangeError`** ("Desconto fora de 0 a 99,99%") se `pct` não for `number` finito de 0 a 99,99 e ("Preço de referência inválido") se `ref` não for `number` finito ou for negativo. Não converte nada: `null`, `undefined` e texto também lançam (quem tem o texto do campo usa `validarDesconto(...).valor` antes).
+  - `totalLinha(quantidade: number|null, unitario: number|null): number|null` — arredondamento meio para cima em 2 casas; `null` se faltar um dos dois. Aceita também string numérica **estrita** (`"125.5"`, `".5"`, `"5."`, com espaços nas pontas e sinal), porque a edição por campo da tabela guarda o texto do input no estado; string vazia ou inválida (`"abc"`, `"1,5"`, `"12abc"`, `"1.234,56"`, `"1e3"`) conta como `null`.
   - `totalLinhaLegado({ quantidade, valor_unitario, bdi, imposto }): number` — `totalLinha(q, u) ?? 0` sem BDI e imposto; senão a fórmula antiga arredondada em 2 casas.
-  - `validarDesconto(entrada: string|number): { ok: true, valor: number } | { ok: false, erro: string }` — com as 4 mensagens do contrato. Também aceita um `%` no fim e ignora zeros à direita (`"12,350"` vale 12,35).
-  - `aplicarDesconto(itens: ItemOrc[], pct: number): Array<{ id, valor_unitario: number, valor_total: number }>` — só `!etapa` com `valor_unitario_ref != null`; `valor_total` é `totalLinha(...) ?? 0`.
+  - `validarDesconto(entrada: string|number): { ok: true, valor: number } | { ok: false, erro: string }` — com as 4 mensagens do contrato. Também aceita um `%` no fim e ignora zeros à direita (`"12,350"` vale 12,35); `"-0"` vale `0` (não `-0`).
+  - `aplicarDesconto(itens: ItemOrc[], pct: number): Array<{ id, valor_unitario: number, valor_total: number }>` — só `!etapa` com `valor_unitario_ref != null`; `valor_total` é `totalLinha(...) ?? 0`. `pct` é o `valor` (number) de `validarDesconto`: fora de 0 a 99,99 ou com referência negativa num item, **propaga o `RangeError`** do `precoComDesconto` (nunca grava o preço cheio).
   - `subtotaisEtapas(itens): Record<string, number>` — chave = `numero` da etapa, soma em centavos.
   - `resumoOrcamento(itens): { totalReferencia: number, totalProposta: number, descontoReal: number, itensSemReferencia: number, qtdItens: number, qtdEtapas: number }` — **`itensSemReferencia` é a CONTAGEM** (número), para o texto "N itens sem preço de referência não recebem o desconto".
+
+**Decisões da correção (01/10/2026, Javerson; a revisão achou o defeito no código antigo deste plano):**
+
+- **Entrada inválida é recusada, não vira 0.** Antes, `Number(pct) || 0` transformava desconto `NaN`, `"12,35"` ou `"abc"` em 0% e a proposta era gravada a preço cheio, com aviso de sucesso. Agora `precoComDesconto` lança `RangeError`, sem o `|| 0` e sem `Number()` nessas linhas, e o `aplicarDesconto` propaga. Quem chama trata o erro (Task 4: `descontoPct ?? 0` explícito; Task 5: `try/catch`).
+- **Texto numérico estrito.** O `paraNumero` não usa mais `parseFloat` (que lia `"1,5"` como 1, `"12abc"` como 12 e `"1.234,56"` como 1,234). Vale `/^\s*[-+]?(\d+\.?\d*|\.\d+)\s*$/`: aceita `".5"` (como o usuário digita 0,5) e `"5."`; **expoente (`"1e3"`) não é aceito**, por decisão. O resto vira `null`.
+- **Menores da revisão:** o teste do BigInt usa dois casos que um `Number` não acerta (`totalLinha(442591.303, 86956.6132)` = 38486240740.65 e `totalLinha(571643.263, 30695)` = 17546589957.79, conferidos com BigInt independente, a partir do texto decimal); o teste "nunca passa da referência" ganhou o limite inferior; `validarDesconto("-0")` devolve 0; `resumoOrcamento` não converte duas vezes (helper interno `totalLinhaCentavos`). Resultados com entrada válida não mudaram (200 mil sorteios contra a versão anterior, sem divergência).
 
 - [ ] **Step 1: Escrever o teste que falha**
 
@@ -151,12 +158,37 @@ describe("precoComDesconto", () => {
     expect(precoComDesconto(10.48, 99.99)).toBe(0); // 0,001048
     expect(precoComDesconto(1234.5678, 99.99)).toBe(0.12); // 0,12345678
   });
-  it("nunca passa de referência × (1 − d)", () => {
+  it("nunca passa de referência × (1 − d) e fica a menos de 1 centavo dele (é o corte)", () => {
     for (const ref of [0.01, 0.29, 1.005, 10.48, 99.9999, 2827.92]) {
       const unit = precoComDesconto(ref, 12.35);
       expect(unit).toBeLessThanOrEqual(ref * 0.8765 + 1e-9);
+      expect(unit + 0.01).toBeGreaterThan(ref * 0.8765 - 1e-9);
       expect(Math.round(unit * 100) / 100).toBe(unit);
     }
+  });
+  it("bordas válidas: referência 0 e desconto 0 ou 99,99", () => {
+    expect(precoComDesconto(0, 0)).toBe(0);
+    expect(precoComDesconto(0, 99.99)).toBe(0);
+    expect(precoComDesconto(10.48, 99.99)).toBe(0);
+  });
+  it("desconto fora de 0 a 99,99 ou que não seja número finito lança RangeError", () => {
+    expect(() => precoComDesconto(10, NaN)).toThrow(RangeError);
+    expect(() => precoComDesconto(10, Infinity)).toThrow(RangeError);
+    expect(() => precoComDesconto(10, 100)).toThrow("Desconto fora de 0 a 99,99%");
+    expect(() => precoComDesconto(10, 99.991)).toThrow(RangeError);
+    expect(() => precoComDesconto(10, -1)).toThrow(RangeError);
+    expect(() => precoComDesconto(10, "12,35")).toThrow(RangeError);
+    expect(() => precoComDesconto(10, "12.35")).toThrow(RangeError);
+    expect(() => precoComDesconto(10, undefined)).toThrow(RangeError);
+    expect(() => precoComDesconto(10, null)).toThrow(RangeError);
+  });
+  it("referência que não seja número finito, ou seja negativa, lança RangeError (sem coerção)", () => {
+    expect(() => precoComDesconto(undefined, 10)).toThrow("Preço de referência inválido");
+    expect(() => precoComDesconto(null, 10)).toThrow(RangeError);
+    expect(() => precoComDesconto(NaN, 10)).toThrow(RangeError);
+    expect(() => precoComDesconto(Infinity, 10)).toThrow(RangeError);
+    expect(() => precoComDesconto("10.48", 10)).toThrow(RangeError);
+    expect(() => precoComDesconto(-10, 10)).toThrow(RangeError);
   });
 });
 
@@ -175,11 +207,34 @@ describe("totalLinha", () => {
   });
   it("produto acima de 2^53 (BigInt)", () => {
     expect(totalLinha(123456.789, 98765.4321)).toBe(12193263111.26);
+    // Conferidos com BigInt independente (produto exato em 1e-7). Em ponto flutuante dá ,66 no
+    // primeiro; com inteiros em Number dá ,66 no primeiro e ,78 no segundo (que é meio exato).
+    expect(totalLinha(442591.303, 86956.6132)).toBe(38486240740.65); // 384862407406549996 (resto 49996)
+    expect(totalLinha(571643.263, 30695)).toBe(17546589957.79); // 175465899577850000 (resto 50000)
   });
   it("null quando falta quantidade ou unitário; zero é zero", () => {
     expect(totalLinha(null, 10)).toBeNull();
     expect(totalLinha(10, undefined)).toBeNull();
     expect(totalLinha(0, 10)).toBe(0);
+  });
+  it("aceita string numérica estrita (como o input guarda o texto)", () => {
+    expect(totalLinha("125.5", "9.18")).toBe(1152.09);
+    expect(totalLinha(".5", 10)).toBe(5); // 0,5 digitado sem o zero
+    expect(totalLinha("5.", 2)).toBe(10);
+    expect(totalLinha(" 2 ", "3.5")).toBe(7);
+  });
+  it("string vazia ou inválida conta como null, sem ler prefixo", () => {
+    expect(totalLinha("", 3)).toBeNull();
+    expect(totalLinha("   ", 3)).toBeNull();
+    expect(totalLinha("abc", 3)).toBeNull();
+    expect(totalLinha("1,5", 2)).toBeNull(); // parseFloat leria 1
+    expect(totalLinha("12abc", 2)).toBeNull(); // parseFloat leria 12
+    expect(totalLinha("10 un", 2)).toBeNull();
+    expect(totalLinha("1.234,56", 1)).toBeNull(); // parseFloat leria 1,234
+    expect(totalLinha("1e3", 1)).toBeNull(); // expoente não é aceito (decisão)
+    expect(totalLinha(2, "1,5")).toBeNull();
+    expect(totalLinha(NaN, 2)).toBeNull();
+    expect(totalLinha(2, Infinity)).toBeNull();
   });
 });
 
@@ -211,6 +266,11 @@ describe("validarDesconto", () => {
     expect(validarDesconto("99,99")).toEqual({ ok: true, valor: 99.99 });
     expect(validarDesconto("12,350")).toEqual({ ok: true, valor: 12.35 });
   });
+  it('"-0" vale 0 (não −0)', () => {
+    const r = validarDesconto("-0");
+    expect(r.ok).toBe(true);
+    expect(Object.is(r.valor, 0)).toBe(true);
+  });
   it("mensagens de erro", () => {
     expect(validarDesconto("")).toEqual({ ok: false, erro: "Informe o desconto em %" });
     expect(validarDesconto("   ")).toEqual({ ok: false, erro: "Informe o desconto em %" });
@@ -240,6 +300,30 @@ describe("aplicarDesconto", () => {
       { id: "i1", valor_unitario: 10.48, valor_total: 1315.24 },
     ]);
   });
+  it("propaga o erro do desconto inválido em vez de gravar o preço cheio", () => {
+    const itens = [{ id: "i1", etapa: false, quantidade: 2, valor_unitario_ref: 10 }];
+    expect(() => aplicarDesconto(itens, "abc")).toThrow(RangeError);
+    expect(() => aplicarDesconto(itens, "12,35")).toThrow(RangeError);
+    expect(() => aplicarDesconto(itens, 100)).toThrow(RangeError);
+    expect(() => aplicarDesconto(itens, NaN)).toThrow(RangeError);
+    expect(() => aplicarDesconto(itens, undefined)).toThrow(RangeError);
+  });
+  it("propaga o erro da referência negativa", () => {
+    const itens = [{ id: "i1", etapa: false, quantidade: 2, valor_unitario_ref: -10 }];
+    expect(() => aplicarDesconto(itens, 10)).toThrow("Preço de referência inválido");
+  });
+  it("aceita referência e quantidade em string numérica estrita", () => {
+    const itens = [{ id: "i1", etapa: false, quantidade: "125.5", valor_unitario_ref: "10.48" }];
+    expect(aplicarDesconto(itens, 12.35)).toEqual([
+      { id: "i1", valor_unitario: 9.18, valor_total: 1152.09 },
+    ]);
+  });
+  it("quantidade ausente grava total 0 (e o unitário com desconto)", () => {
+    const itens = [{ id: "i1", etapa: false, quantidade: null, valor_unitario_ref: 10.48 }];
+    expect(aplicarDesconto(itens, 12.35)).toEqual([
+      { id: "i1", valor_unitario: 9.18, valor_total: 0 },
+    ]);
+  });
 });
 
 describe("subtotaisEtapas", () => {
@@ -260,6 +344,15 @@ describe("subtotaisEtapas", () => {
     expect(sub["1.2"]).toBe(0.2);
     expect(sub["1.20"]).toBe(5);
     expect(sub["2"]).toBe(0);
+  });
+  it("valor_total em string numérica soma; inválido ou nulo não vira dinheiro", () => {
+    const itens = [
+      { numero: "1", etapa: true },
+      { numero: "1.1", etapa: false, valor_total: "100.10" },
+      { numero: "1.2", etapa: false, valor_total: "1.234,56" },
+      { numero: "1.3", etapa: false, valor_total: null },
+    ];
+    expect(subtotaisEtapas(itens)["1"]).toBe(100.1);
   });
 });
 
@@ -292,6 +385,37 @@ describe("resumoOrcamento", () => {
       qtdItens: 2,
       qtdEtapas: 1,
     });
+  });
+  it("referência com várias linhas: soma os totais da referência em centavos", () => {
+    const itens = [
+      { numero: "1", etapa: true },
+      { etapa: false, quantidade: 100, valor_unitario_ref: 0.29, valor_total: 20 },
+      { etapa: false, quantidade: 3, valor_unitario_ref: 0.1, valor_total: 0.2 },
+      { etapa: false, quantidade: null, valor_unitario_ref: 5, valor_total: 0 },
+      { etapa: false, quantidade: "2.5", valor_unitario_ref: "4", valor_total: 8 },
+    ];
+    expect(resumoOrcamento(itens)).toEqual({
+      totalReferencia: 39.3, // 29 + 0,30 + 0 + 10
+      totalProposta: 28.2,
+      descontoReal: 28.24, // 1 − 28,20 ÷ 39,30 = 28,2443%
+      itensSemReferencia: 0,
+      qtdItens: 4,
+      qtdEtapas: 1,
+    });
+  });
+  it("valor_total em texto inválido não vira dinheiro", () => {
+    const itens = [
+      {
+        numero: "1.1",
+        etapa: false,
+        quantidade: 1,
+        valor_unitario_ref: 10,
+        valor_total: "1.234,56",
+      },
+    ];
+    const r = resumoOrcamento(itens);
+    expect(r.totalProposta).toBe(0);
+    expect(r.totalReferencia).toBe(10);
   });
   it("sem referência, desconto real 0", () => {
     expect(resumoOrcamento([])).toEqual({
@@ -331,11 +455,18 @@ Crie `apps/web/src/lib/orcamento-desconto.js`:
  * para cima. O total da linha é ARREDONDADO (meio para cima) em 2 casas.
  */
 
-/** number, ou string numérica ("12.5"); vazio, null, undefined ou inválido → null. */
+/** Texto numérico estrito: ponto decimal, sinal opcional; sem expoente, vírgula nem milhar. */
+const NUMERO_ESTRITO = /^\s*[-+]?(\d+\.?\d*|\.\d+)\s*$/;
+
+/**
+ * number finito, ou string numérica estrita ("12.5", ".5", "5.", " 2 ", "-3"); vazio, null,
+ * undefined e qualquer outra coisa → null. Não lê prefixo: "12abc", "1,5" e "1.234,56" são
+ * inválidos (parseFloat leria 12, 1 e 1,234 em silêncio).
+ */
 function paraNumero(valor) {
   if (valor === null || valor === undefined || valor === "") return null;
-  const n = typeof valor === "number" ? valor : parseFloat(valor);
-  return Number.isFinite(n) ? n : null;
+  const n = typeof valor === "string" ? (NUMERO_ESTRITO.test(valor) ? Number(valor) : NaN) : valor;
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
 }
 
 /** Inteiro na escala pedida (100 = centavos), com o meio arredondado para longe do zero. */
@@ -351,24 +482,30 @@ function centavos(valor) {
 
 /**
  * Unitário com desconto, cortado na 2ª casa.
- * `ref` com até 4 casas e `pct` com até 2 casas (0 a 99,99).
+ * `ref` com até 4 casas e `pct` com até 2 casas (0 a 99,99), os dois NUMBER.
+ * Entrada inválida lança RangeError em vez de virar 0% (preço cheio gravado como proposta):
+ * `pct` que não seja número finito de 0 a 99,99 e `ref` que não seja número finito ou seja
+ * negativo (sem coerção: null, undefined e texto também lançam). Quem tem o texto do campo
+ * converte antes com `validarDesconto(...).valor`.
  * Ex.: precoComDesconto(10.48, 12.35) → 9.18 (10,48 × 0,8765 = 9,18572).
  */
 export function precoComDesconto(ref, pct) {
-  const refDezmil = BigInt(escalar(Number(ref), 10000));
-  const fator = BigInt(10000 - escalar(Number(pct) || 0, 100));
+  if (typeof pct !== "number" || !Number.isFinite(pct) || pct < 0 || pct > 99.99) {
+    throw new RangeError("Desconto fora de 0 a 99,99%");
+  }
+  if (typeof ref !== "number" || !Number.isFinite(ref) || ref < 0) {
+    throw new RangeError("Preço de referência inválido");
+  }
+  const refDezmil = BigInt(escalar(ref, 10000));
+  const fator = BigInt(10000 - escalar(pct, 100));
   // refDezmil × fator está em unidades de 1e-8; ÷ 1e6 → centavos. A divisão de
   // BigInt descarta a fração: é o corte (ref ≥ 0).
   const cents = (refDezmil * fator) / 1000000n;
   return Number(cents) / 100;
 }
 
-/**
- * Total da linha = arredondar(quantidade × unitário, 2), meio para cima.
- * `quantidade` até 3 casas, `unitario` até 4. null se faltar um dos dois.
- * Ex.: totalLinha(125.5, 9.18) → 1152.09.
- */
-export function totalLinha(quantidade, unitario) {
+/** Total da linha em CENTAVOS inteiros (a conta de `totalLinha`); null se faltar um dos dois. */
+function totalLinhaCentavos(quantidade, unitario) {
   const q = paraNumero(quantidade);
   const u = paraNumero(unitario);
   if (q === null || u === null) return null;
@@ -376,7 +513,18 @@ export function totalLinha(quantidade, unitario) {
   const negativo = p < 0n;
   const abs = negativo ? -p : p;
   const cents = (abs + 50000n) / 100000n;
-  return Number(negativo ? -cents : cents) / 100;
+  return Number(negativo ? -cents : cents);
+}
+
+/**
+ * Total da linha = arredondar(quantidade × unitário, 2), meio para cima.
+ * `quantidade` até 3 casas, `unitario` até 4 (number ou string numérica estrita).
+ * null se faltar um dos dois ou se um deles for texto inválido.
+ * Ex.: totalLinha(125.5, 9.18) → 1152.09.
+ */
+export function totalLinha(quantidade, unitario) {
+  const cents = totalLinhaCentavos(quantidade, unitario);
+  return cents === null ? null : cents / 100;
 }
 
 /**
@@ -409,13 +557,15 @@ export function validarDesconto(entrada) {
   if (decimais.replace(/0+$/, "").length > 2) {
     return { ok: false, erro: "Use no máximo 2 casas decimais" };
   }
-  return { ok: true, valor: Math.round(valor * 100) / 100 };
+  return { ok: true, valor: Math.round(valor * 100) / 100 || 0 }; // `|| 0`: "-0" não vira −0
 }
 
 /**
  * Recalcula os itens importados (os que têm preço de referência) com o desconto.
  * Etapas e itens sem referência (incluídos à mão) ficam de fora.
  * Devolve só o que muda: [{ id, valor_unitario, valor_total }].
+ * `pct` precisa ser um number de 0 a 99,99 (use `validarDesconto` antes): um valor inválido
+ * lança RangeError (de `precoComDesconto`), nunca grava o preço cheio.
  */
 export function aplicarDesconto(itens, pct) {
   const saida = [];
@@ -484,7 +634,7 @@ export function resumoOrcamento(itens) {
       itensSemReferencia++;
       continue;
     }
-    refCents += centavos(totalLinha(item.quantidade, item.valor_unitario_ref));
+    refCents += totalLinhaCentavos(item.quantidade, item.valor_unitario_ref) ?? 0;
     propostaComRefCents += total;
   }
   const descontoReal =
@@ -506,7 +656,7 @@ export function resumoOrcamento(itens) {
 (cd apps/web && npx vitest run src/lib/orcamento-desconto.test.js)
 ```
 
-Esperado: `Test Files  1 passed (1)` e `Tests  18 passed (18)`.
+Esperado: `Test Files  1 passed (1)` e `Tests  31 passed (31)`.
 
 - [ ] **Step 5: Formatar e commitar**
 
@@ -520,7 +670,8 @@ feat(orcamento): contas do desconto em centavos (corte do unitário, total arred
 precoComDesconto corta o unitário na 2ª casa e totalLinha arredonda qtd × unitário em 2 casas,
 com inteiros e BigInt (0,29 × 100 = 29,00). Também aplicarDesconto, subtotaisEtapas,
 resumoOrcamento, validarDesconto e totalLinhaLegado para as telas com BDI por linha.
-Spec 2026-09-29 §8.
+Spec 2026-09-29 §8. Desconto ou referência inválidos lançam RangeError (não viram 0%) e o texto
+numérico é estrito, sem parseFloat: "1,5", "12abc" e "1e3" contam como vazio.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
@@ -1484,7 +1635,7 @@ export function lerArquivoModelo(buffer) {
 (cd apps/web && npx vitest run src/lib/orcamento-modelo.test.js src/lib/orcamento-desconto.test.js)
 ```
 
-Esperado: `Test Files  2 passed (2)` e `Tests  44 passed (44)` (26 do modelo + 18 da Task 1).
+Esperado: `Test Files  2 passed (2)` e `Tests  57 passed (57)` (26 do modelo + 31 da Task 1).
 
 - [ ] **Step 5: Formatar e commitar**
 
@@ -1907,7 +2058,7 @@ npx prettier --check apps/web/public/skills/orcamento-prefeitura-sigo/SKILL.md a
 
 Esperado:
 
-- vitest: `N + 3` arquivos e `M + 49` testes da linha de base, todos passando;
+- vitest: `N + 3` arquivos e `M + 62` testes da linha de base, todos passando;
 - `SKILL.md` e `BUILD_OK` (o Vite copia `public/**` para `dist/`, que o deploy publica; `dist/` está no `.gitignore`);
 - `All matched files use Prettier code style!` (o CI roda `format:check`, que cobre `.md`).
 
@@ -1945,11 +2096,11 @@ Esperado: o commit sai e o `git log` mostra `feat(orcamento): skill do Claude or
 **Interfaces:**
 
 - Consumes (Task 1, `apps/web/src/lib/orcamento-desconto.js`):
-  - `precoComDesconto(ref: number, pct: number): number` (unitário cortado na 2ª casa);
+  - `precoComDesconto(ref: number, pct: number): number` (unitário cortado na 2ª casa; lança `RangeError` se `pct` não for number de 0 a 99,99 ou se `ref` não for number finito não negativo);
   - `totalLinha(quantidade: number|null, unitario: number|null): number|null` (arredondado em 2 casas; `null` se faltar um dos dois).
 - Consumes (tipos do contrato): `ItemModelo = { linha, numero, etapa, codigo, fonte, descricao, unidade, quantidade, valor_unitario_ref, total_informado }` (Task 2) e `InfoOrcamento = { orgao, objeto, edital, data_base, bdi, fonte, total_prefeitura, observacoes }`.
 - Produces (`apps/web/src/lib/orcamento-registros.js`, tudo export nomeado):
-  - `montarRegistrosImportacao(itensModelo: ItemModelo[], { empresaId, oportunidadeId, descontoPct }): object[]` — 17 chaves em **todos** os registros: `empresa_id, oportunidade_id, numero, item, etapa, tipo, codigo, fonte, descricao, unidade, quantidade, valor_unitario_ref, valor_unitario, bdi, imposto, valor_total, ordem`;
+  - `montarRegistrosImportacao(itensModelo: ItemModelo[], { empresaId, oportunidadeId, descontoPct }): object[]` — `descontoPct` nulo ou ausente vale 0 (`?? 0` explícito); qualquer outro valor que não seja number de 0 a 99,99 faz o `precoComDesconto` lançar `RangeError` (não vira 0%). 17 chaves em **todos** os registros: `empresa_id, oportunidade_id, numero, item, etapa, tipo, codigo, fonte, descricao, unidade, quantidade, valor_unitario_ref, valor_unitario, bdi, imposto, valor_total, ordem`;
   - `montarInfoOrcamento(info: InfoOrcamento, { arquivoNome, importadoEm }): object` — as 8 chaves de `InfoOrcamento` + `arquivo_nome` + `importado_em`;
   - `emLotes(lista, tamanho = 200): Array<Array>`;
   - `proximaOrdem(itens): number`;
@@ -2137,6 +2288,11 @@ describe("montarRegistrosImportacao", () => {
     });
     expect(c.valor_unitario).toBe(7.12);
     expect(c.valor_unitario_ref).toBe(7.1299);
+  });
+
+  it("desconto inválido lança em vez de gravar o preço cheio (só nulo ou ausente vale 0)", () => {
+    const monta = (descontoPct) => () => montarRegistrosImportacao([ITEM], { ...CTX, descontoPct });
+    for (const ruim of ["12,35", "abc", NaN, 100, -1]) expect(monta(ruim)).toThrow(RangeError);
   });
 
   it("código e fonte ausentes viram null; ordem segue a posição na planilha", () => {
@@ -2362,7 +2518,9 @@ import { precoComDesconto, totalLinha } from "./orcamento-desconto";
  * `linha` e `total_informado` não são colunas: ficam de fora.
  */
 export function montarRegistrosImportacao(itensModelo, { empresaId, oportunidadeId, descontoPct }) {
-  const pct = Number(descontoPct) || 0;
+  // nulo ou ausente = sem desconto; o resto vai direto ao precoComDesconto, que recusa (RangeError)
+  // o que não for number de 0 a 99,99 em vez de gravar o preço cheio como se fosse a proposta
+  const pct = descontoPct ?? 0;
   return (itensModelo || []).map((it, indice) => {
     const etapa = it.etapa === true;
     const ref = etapa ? null : (it.valor_unitario_ref ?? null);
@@ -2518,9 +2676,9 @@ cd apps/web && npx vitest run src/lib/orcamento-registros.test.js
 Expected:
 
 ```
-✓ src/lib/orcamento-registros.test.js (23 tests)
+✓ src/lib/orcamento-registros.test.js (24 tests)
 Test Files  1 passed (1)
-     Tests  23 passed (23)
+     Tests  24 passed (24)
 ```
 
 - [ ] **Step 7: Suíte inteira e formatação**
@@ -2530,7 +2688,7 @@ cd apps/web && npx vitest run 2>&1 | tail -4
 cd ../.. && npx prettier --check apps/web/src/lib/orcamento-registros.js apps/web/src/lib/orcamento-registros.test.js
 ```
 
-Expected: a suíte com **1 arquivo e 23 testes a mais** que a linha de base do Step 1, todos passando; Prettier `All matched files use Prettier code style!`.
+Expected: a suíte com **1 arquivo e 24 testes a mais** que a linha de base do Step 1, todos passando; Prettier `All matched files use Prettier code style!`.
 
 - [ ] **Step 8: Commit (só os 3 caminhos da task)**
 
@@ -2568,7 +2726,7 @@ Expected: `3 files changed`, só esses três caminhos.
 
 **Interfaces:**
 
-- Consumes (Task 1, `@/lib/orcamento-desconto`): `validarDesconto(entrada): { ok: true, valor } | { ok: false, erro }`, `aplicarDesconto(itens, pct): Array<{ id, valor_unitario, valor_total }>`, `resumoOrcamento(itens): { totalReferencia, totalProposta, descontoReal, itensSemReferencia, qtdItens, qtdEtapas }` (`itensSemReferencia` é **quantidade**, número).
+- Consumes (Task 1, `@/lib/orcamento-desconto`): `validarDesconto(entrada): { ok: true, valor } | { ok: false, erro }`, `aplicarDesconto(itens, pct): Array<{ id, valor_unitario, valor_total }>` (`pct` = o `valor` number do `validarDesconto`; fora de 0 a 99,99, ou com referência negativa num item, lança `RangeError`), `resumoOrcamento(itens): { totalReferencia, totalProposta, descontoReal, itensSemReferencia, qtdItens, qtdEtapas }` (`itensSemReferencia` é **quantidade**, número).
 - Consumes (Task 2, `@/lib/orcamento-modelo`, por **import dinâmico** para não pôr o `xlsx` no chunk do Dashboard): `gerarModelo(): XLSX.WorkBook`, `lerArquivoModelo(buffer): { itens, info, erros, avisos, totais: { referencia, prefeitura, qtdEtapas, qtdItens } }`.
 - Consumes (Task 3, `@/lib/skill-orcamento`): `CAMINHO_SKILL`, `textoSkillValido(texto): boolean`, `montarZipSkill(JSZip, texto, tipo = "blob")`.
 - Consumes (Task 4, `@/lib/orcamento-registros`): `montarRegistrosImportacao`, `montarInfoOrcamento`, `emLotes`, `ordenarItensOportunidade`, `cancelarGravacoesPendentes`.
@@ -2580,6 +2738,8 @@ Expected: `3 files changed`, só esses três caminhos.
 **Decisão (card "Importar" do estado vazio):** o estado de abertura do diálogo é **elevado ao `OportunidadeDetalhe`** (`importarAberto`/`setImportarAberto`) e passado à barra por `importarAberto` + `onImportarAbertoChange`. O card "Importar" chama `abrirImportacaoPlanilha()` (confere `podeEditarOrcamento`, senão toast de erro) em vez de `onNovoOrcamentoSelect("importar")` (o CSV antigo). Os cards "Começar do zero" e "Utilizar modelo" não mudam. O `CalendarioConsolidado` usa o mesmo `OportunidadeDetalhe` e não precisa de prop nova: a barra grava direto pelo `sigo.entities` e atualiza o estado pelos setters que o `CC` já passa (`setSelectedOp={setOportunidadeDetalhe}`, `setOportunidades={setOportunidadesDoDetalhe}`, `setOrcamentoItens`, `updateTimeoutRef`). O dropdown "Ações" antigo (CSV) continua até a Task 9.
 
 **Sem `Select` nos componentes novos** (o desconto é um `Input`), então não há problema de `z-index` do `SelectContent` dentro do `Dialog`.
+
+**Entrada inválida nas contas (correção da Task 1, 01/10):** `precoComDesconto`/`aplicarDesconto` lançam `RangeError` em vez de tratar desconto ou referência inválidos como 0%. A barra já chamava `validarDesconto` antes e passa só o `valor` (number); o `aplicarDesconto` agora fica num `try/catch` que mostra o erro e sai sem gravar nada (uma referência negativa vinda do banco, por exemplo). No diálogo, a montagem dos registros também fica num `try/catch`, **antes** de apagar os itens atuais: se o desconto salvo na oportunidade estiver fora de 0 a 99,99% (a coluna é `numeric(5,2)`, sem CHECK), a importação para com um aviso e nada é apagado nem gravado.
 
 - [ ] **Step 1: Linha de base do lint**
 
@@ -2715,12 +2875,23 @@ export default function ImportarPlanilhaOrcamentoDialog({
     cancelarGravacoesPendentes(updateTimeoutRef);
     const empresaId = empresaAtiva.id;
     const oportunidadeId = selectedOp.id;
-    const registros = montarRegistrosImportacao(resultado.itens, {
-      empresaId,
-      oportunidadeId,
-      descontoPct,
-    });
-    const lotes = emLotes(registros, 200);
+    let lotes;
+    try {
+      const registros = montarRegistrosImportacao(resultado.itens, {
+        empresaId,
+        oportunidadeId,
+        descontoPct,
+      });
+      lotes = emLotes(registros, 200);
+    } catch (err) {
+      // desconto salvo fora de 0 a 99,99% ou preço de referência inválido (RangeError):
+      // ainda não apagou nem gravou nada
+      console.error("Erro ao montar os registros da importação:", err);
+      toast.error(
+        `Não foi possível importar: ${err?.message || "dados inválidos"}. Nada foi alterado.`
+      );
+      return;
+    }
 
     setGravando(true);
     const idToast = toast.loading("Importando o orçamento…");
@@ -3014,8 +3185,16 @@ export default function OrcamentoLicitacaoBarra({
       toast.error(validacao.erro);
       return;
     }
-    const pct = validacao.valor;
-    const alteracoes = aplicarDesconto(orcamentoItens || [], pct);
+    const pct = validacao.valor; // number de 0 a 99,99, o que o aplicarDesconto exige
+    let alteracoes;
+    try {
+      alteracoes = aplicarDesconto(orcamentoItens || [], pct);
+    } catch (e) {
+      // preço de referência inválido (ex.: negativo) em algum item: nada foi gravado
+      console.error("Erro ao calcular o desconto:", e);
+      toast.error(`Nada foi alterado: ${e?.message || "erro ao calcular o desconto"}`);
+      return;
+    }
     if (alteracoes.length > 0 && !window.confirm(AVISO_APLICAR)) return;
 
     cancelarGravacoesPendentes(updateTimeoutRef);
@@ -3439,6 +3618,7 @@ Expected: `3 files changed`, só esses três caminhos.
   - item importado: mantém `numero`, `fonte`, `valor_unitario_ref` e o tipo nulo;
   - etapa: fica sem unidade, quantidade e valores, como na importação.
 - **Observação (conferência M4; sem mudança de código).** A troca 7.3 (e o import de `totalLinhaLegado` da 7.1) põe o arredondamento na importação CSV antiga do `Oportunidades.jsx`, e a Task 9 apaga esse handler inteiro (trocas 5.5 e 5.6). É um passo que se desfaz depois, mas cada commit fica coerente e as contagens de `grep` abaixo foram conferidas nesse estado intermediário.
+- **Observação (conferência das contas estritas da Task 1, 01/10; sem mudança de código).** O `totalLinhaLegado` usa o mesmo `paraNumero` estrito do `totalLinha`: texto como `"1,5"`, `"12abc"` ou `"1e3"` conta como vazio (0), em vez de ser lido pelo prefixo. Nesta task isso não aparece: o `onChange` converte com `parseFloat(e.target.value) || 0` (number); no `handleUpdateItem`, `qtd`, `vlrUnit`, `bdi` e `imp` são `parseFloat(...) || 0` ou o valor do item; e a importação CSV usa `parseFloat(...) || 0`. O que o `handleUpdateItem` guarda no estado (`{ ...item, [field]: value }`) é o texto do `<input type="number">`, que usa ponto, nunca vírgula (`"125.5"`, `".5"`, `""`), e o `paraNumero` lê. Resta uma única diferença: se alguém digitar um expoente à mão (`1e3`) num campo numérico, o texto fica no estado e a linha vale 0 no `totalLinhaLegado` até o campo ser digitado de novo; antes o JS multiplicava `"1e3"` como 1000. Se isso incomodar, a saída é converter no `handleUpdateItem` como o `OrcamentoTab` já faz (`processedValue = parseFloat(value) || 0`), o que fica fora do escopo.
 
 - [ ] **Step 1: Linha de base**
 
@@ -4323,7 +4503,7 @@ Convenções desta parte:
 - Comandos com `cd apps/web` partem da raiz do repositório (`C:\Users\javer\sigoobras-base`); os de `git` e `npx prettier`, da raiz.
 - Trocas old→new: aplique com a ferramenta **Edit** (os arquivos estão em LF, pelo `.gitattributes` com `eol=lf`, e o Edit só troca o que casar exatamente). Cada `old` abaixo foi conferido como **único** no arquivo no estado em que as Tasks 5 e 6 o deixam.
 - Outras sessões mexem no repositório: nunca `git add -A`; commit só dos caminhos da task.
-- O código abaixo foi rodado em 29/09 numa pasta temporária fora do repositório (Vitest 3.2.6 do repo, jspdf 2.5.2, jspdf-autotable 3.8.4, xlsx 0.18.5), com as libs das Tasks 1 e 4 já criadas: 31 testes passando, Prettier sem mudança, ESLint sem aviso novo.
+- O código abaixo foi rodado em 29/09 numa pasta temporária fora do repositório (Vitest 3.2.6 do repo, jspdf 2.5.2, jspdf-autotable 3.8.4, xlsx 0.18.5), com as libs das Tasks 1 e 4 já criadas (a Task 1 ainda sem as correções de 01/10, que não mudam nada do que esta parte usa): 31 testes passando, Prettier sem mudança, ESLint sem aviso novo.
 
 ---
 
@@ -7365,6 +7545,7 @@ Expected: o commit `feat(configuracoes): representante legal da empresa (nome, c
 **Decisões desta task (o contrato não cobria):**
 
 - **Conversão em projeto ("Ganho"), conferida (conferência M6; sem mudança de código).** `migrarOportunidadeParaProjeto` (`pages/Oportunidades.jsx`, por volta das linhas 429 a 497) **move** os itens com `OrcamentoItem.update(id, { projeto_id, oportunidade_id: null })`, na mesma linha. Por isso `numero`, `etapa`, `fonte`, `valor_unitario_ref` e `ordem` vão junto para o projeto, e nada nessa função precisa mudar. O roteiro H da Task 12 (Step 13) confere na tela.
+- **Contas estritas da Task 1 (conferência de 01/10; sem mudança de código).** O `handleUpdate` do `OrcamentoTab` já converte com `parseFloat(value) || 0` (number) antes de chamar o `totalLinhaLegado`, a importação CSV (`:377`) usa `parseFloat(...) || 0` e o autocomplete (`:791-798`) passa `item.quantidade || 0` (number no estado desta aba) e o preço do material (number do banco). O `item.valor_total` que o `subtotaisEtapas` e o `resumoOrcamento` somam também vem como number. Nada a ajustar.
 - **`loadOrcamentoData`.** Troca o `sort` e o `forEach` que **mutavam** os itens por `ordenarItensProjeto(itens).map((item, index) => ({ ...item, item: rotuloItem(item, index) }))`. Sem `numero`, `rotuloItem` devolve `String(index + 1)`: é o mesmo rótulo de hoje, na mesma ordem alfabética.
 - **Linha de etapa e filtro.** São iguais aos da Task 6, inclusive o filtro efetivo, e a tabela do Projeto também tem 11 colunas. A etapa usa o `handleDelete` do próprio `OrcamentoTab`.
 - **Exportações CSV e PDF do Projeto.**
