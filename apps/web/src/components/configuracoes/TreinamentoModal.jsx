@@ -9,6 +9,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Plus, Trash2, Upload, X } from "lucide-react";
 import { formatCPF } from "@/components/utils/cpfFormatter";
 import ImgStorage from "@/components/ImgStorage";
+import { toast } from "sonner";
+import { modelosDeTreinamento } from "@/lib/treinamento-catalogo";
 
 // Guarda a REFERÊNCIA estável do Storage ("bucket/caminho"), nunca a URL
 // assinada (expira em 1h e deixava a assinatura quebrada no dia seguinte).
@@ -37,7 +39,66 @@ const parseInstrutores = (instrutor_nome, instrutor_cpf, instrutor_assinatura_ur
   return [{ nome: "", cpf: "", formacao: "", assinatura_url: "" }];
 };
 
-export default function TreinamentoModal({ open, onClose, treinamento, empresaAtiva, onSave }) {
+export default function TreinamentoModal({
+  open,
+  onClose,
+  treinamento: treinamentoInicial,
+  empresaAtiva,
+  onSave,
+}) {
+  const [treinamento, setTreinamento] = useState(treinamentoInicial);
+  const [carregandoModelo, setCarregandoModelo] = useState(false);
+  const [erroModelo, setErroModelo] = useState(false);
+  const [modelosDisponiveis, setModelosDisponiveis] = useState([]);
+  const [vinculoModelo, setVinculoModelo] = useState("");
+  useEffect(() => {
+    let cancelado = false;
+    setVinculoModelo("");
+    setModelosDisponiveis([]);
+    if (open && treinamentoInicial?.funcao_id && !treinamentoInicial.modelo_treinamento_id) {
+      sigo.entities.Treinamento.filter({ empresa_id: empresaAtiva.id })
+        .then((dados) => {
+          if (!cancelado) setModelosDisponiveis(modelosDeTreinamento(dados));
+        })
+        .catch(() => {
+          if (!cancelado) toast.error("Não foi possível consultar os modelos");
+        });
+    }
+    return () => {
+      cancelado = true;
+    };
+  }, [open, treinamentoInicial, empresaAtiva?.id]);
+  useEffect(() => {
+    let cancelado = false;
+    setErroModelo(false);
+    if (!open || !treinamentoInicial?.modelo_treinamento_id) {
+      setTreinamento(treinamentoInicial);
+      setCarregandoModelo(false);
+      return;
+    }
+    setCarregandoModelo(true);
+    sigo.entities.Treinamento.filter({
+      id: treinamentoInicial.modelo_treinamento_id,
+      empresa_id: empresaAtiva.id,
+    })
+      .then((modelos) => {
+        if (cancelado) return;
+        if (!modelos[0] || modelos[0].deleted_at) throw new Error("Modelo indisponível");
+        setTreinamento(modelos[0]);
+      })
+      .catch(() => {
+        if (!cancelado) {
+          setErroModelo(true);
+          toast.error("Não foi possível carregar o cadastro central");
+        }
+      })
+      .finally(() => {
+        if (!cancelado) setCarregandoModelo(false);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [open, treinamentoInicial, empresaAtiva?.id]);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     nome: "",
@@ -103,6 +164,23 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
   };
 
   const handleSave = async () => {
+    if (carregandoModelo || erroModelo) return;
+    if (vinculoModelo && treinamentoInicial?.id) {
+      setLoading(true);
+      try {
+        await sigo.entities.Treinamento.update(treinamentoInicial.id, {
+          modelo_treinamento_id: vinculoModelo,
+        });
+        onSave();
+        onClose();
+        toast.success("Treinamento vinculado ao cadastro central");
+      } catch (error) {
+        toast.error("Erro ao vincular: " + error.message);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     if (!formData.nome.trim()) {
       alert("Preencha o nome do treinamento");
       return;
@@ -137,7 +215,7 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
             .filter(Boolean)
             .join("|") || "",
         empresa_id: empresaAtiva.id,
-        funcao_id: treinamento ? treinamento.funcao_id : null,
+        funcao_id: treinamento?.funcao_id || null,
         usar_como_modelo: treinamento ? treinamento.usar_como_modelo : true,
       };
 
@@ -145,41 +223,6 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
 
       if (treinamento) {
         await sigo.entities.Treinamento.update(treinamento.id, data);
-
-        // Propagar atualizações para treinamentos vinculados às funções com o mesmo nome/código
-        try {
-          const vinculados = await sigo.entities.Treinamento.filter({
-            empresa_id: empresaAtiva.id,
-            nome: treinamento.nome,
-          });
-          const paraAtualizar = vinculados.filter(
-            (t) =>
-              t.id !== treinamento.id &&
-              t.funcao_id &&
-              (t.codigo || "") === (treinamento.codigo || "")
-          );
-          if (paraAtualizar.length > 0) {
-            const camposParaPropagar = {
-              nome: data.nome,
-              codigo: data.codigo,
-              carga_horaria: data.carga_horaria,
-              conteudo_programatico: data.conteudo_programatico,
-              validade_meses: data.validade_meses,
-              obrigatorio: data.obrigatorio,
-              instrutor_nome: data.instrutor_nome,
-              instrutor_cpf: data.instrutor_cpf,
-              instrutor_assinatura_url: data.instrutor_assinatura_url,
-              responsavel_tecnico_nome: data.responsavel_tecnico_nome,
-              responsavel_tecnico_criacao: data.responsavel_tecnico_criacao,
-              responsavel_tecnico_assinatura_url: data.responsavel_tecnico_assinatura_url,
-            };
-            await Promise.all(
-              paraAtualizar.map((t) => sigo.entities.Treinamento.update(t.id, camposParaPropagar))
-            );
-          }
-        } catch (syncErr) {
-          console.warn("Erro ao propagar atualização para funções:", syncErr);
-        }
       } else {
         await sigo.entities.Treinamento.create(data);
       }
@@ -206,6 +249,42 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {treinamentoInicial?.funcao_id && !treinamentoInicial.modelo_treinamento_id && (
+            <div className="rounded border border-amber-200 bg-amber-50 p-3 space-y-2">
+              <Label>Vincular treinamento legado ao cadastro central</Label>
+              <select
+                className="h-10 w-full rounded border bg-white px-2 text-sm"
+                value={vinculoModelo}
+                onChange={(e) => setVinculoModelo(e.target.value)}
+              >
+                <option value="">Selecionar modelo...</option>
+                {modelosDisponiveis.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.codigo ? `${m.codigo} — ` : ""}
+                    {m.nome}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-600">
+                Ao selecionar e salvar, este treinamento recebe os dados do modelo central. Datas,
+                anexos e exigência da função são preservados. Revise as diferenças antes de
+                vincular.
+              </p>
+            </div>
+          )}
+          {treinamentoInicial?.modelo_treinamento_id && (
+            <p className="rounded border border-sky-200 bg-sky-50 p-3 text-sm">
+              Você está editando o cadastro central deste treinamento. As alterações serão aplicadas
+              às funções e cursos vinculados. Datas e certificados já emitidos serão preservados.
+            </p>
+          )}
+          {(carregandoModelo || erroModelo) && (
+            <p role="status" className="text-sm text-slate-600">
+              {erroModelo
+                ? "Cadastro central indisponível. Feche e tente novamente."
+                : "Carregando cadastro central..."}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Nome do Treinamento *</Label>
@@ -473,7 +552,7 @@ export default function TreinamentoModal({ open, onClose, treinamento, empresaAt
         <div className="p-6 border-t flex gap-2">
           <Button
             onClick={handleSave}
-            disabled={loading || !formData.nome.trim()}
+            disabled={loading || carregandoModelo || erroModelo || !formData.nome.trim()}
             className="flex-1 bg-amber-500 hover:bg-amber-600"
           >
             {loading ? "Salvando..." : treinamento ? "Atualizar" : "Criar"}

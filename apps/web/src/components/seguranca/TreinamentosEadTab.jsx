@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { sigo, resolveStorageUrl } from "@/api/sigoClient";
 import { normalizarTexto } from "@/lib/busca";
+import {
+  modelosDeTreinamento,
+  modelosSemCurso,
+  dadosCursoDoModelo,
+} from "@/lib/treinamento-catalogo";
 import { normalizarQuestao } from "@/lib/ead-questao";
 import { parseDuracao, formatDuracao, lerDuracaoVideo } from "@/lib/ead-duracao";
 import { requisitosDoCurso, tempoObrigatorioSeg } from "@/lib/ead-requisitos";
@@ -183,12 +188,17 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
 
   // ------------------------------------------------------------------ cursos
   const salvarCurso = async () => {
+    if (!cursoSel?.modelo_treinamento_id) {
+      toast.error("Selecione o treinamento do cadastro central antes de salvar o curso");
+      return;
+    }
     if (!cursoSel?.nome?.trim()) {
       toast.error("Dê um nome ao curso");
       return;
     }
     const dados = {
       empresa_id: empresaAtiva.id,
+      modelo_treinamento_id: cursoSel.modelo_treinamento_id || null,
       nome: cursoSel.nome.trim(),
       codigo: cursoSel.codigo || null,
       descricao: cursoSel.descricao || null,
@@ -713,6 +723,34 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
               Abrir Portal do Funcionário
             </a>
           </p>
+          {modelosSemCurso(treinamentosConfig, cursos).length > 0 && (
+            <div className="col-span-full rounded-lg border border-sky-200 bg-sky-50 p-3 space-y-2">
+              <p className="text-sm font-medium">
+                Treinamentos do cadastro central ainda sem curso no portal
+              </p>
+              <p className="text-xs text-slate-600">
+                Selecione um treinamento para preparar suas aulas e avaliação. O curso começa como
+                rascunho.
+              </p>
+              <select
+                aria-label="Preparar curso do cadastro central"
+                className="w-full h-10 rounded border bg-white px-2 text-sm"
+                value=""
+                onChange={(e) => {
+                  const modelo = treinamentosConfig.find((t) => t.id === e.target.value);
+                  if (modelo) setCursoSel({ ...dadosCursoDoModelo(modelo), ativo: false });
+                }}
+              >
+                <option value="">Selecionar treinamento...</option>
+                {modelosSemCurso(treinamentosConfig, cursos).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.codigo ? `${t.codigo} — ` : ""}
+                    {t.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {cursos.map((c) => {
             const qtdAulas = aulasDoCurso(c.id).length;
             return (
@@ -876,10 +914,40 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                 <SheetTitle>{cursoSel.id ? "Editar curso" : "Novo curso"}</SheetTitle>
               </SheetHeader>
               <div className="space-y-4 py-4">
+                <div className="rounded-lg border bg-sky-50 p-3 space-y-2">
+                  <Label>Treinamento do cadastro central</Label>
+                  <select
+                    aria-label="Treinamento do cadastro central"
+                    className="w-full h-10 rounded border bg-white px-2 text-sm"
+                    value={cursoSel.modelo_treinamento_id || ""}
+                    onChange={(e) => {
+                      const modelo = treinamentosConfig.find((t) => t.id === e.target.value);
+                      setCursoSel((prev) =>
+                        modelo
+                          ? { ...prev, ...dadosCursoDoModelo(modelo) }
+                          : { ...prev, modelo_treinamento_id: null }
+                      );
+                    }}
+                  >
+                    <option value="">Selecionar treinamento...</option>
+                    {modelosDeTreinamento(treinamentosConfig).map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.codigo ? `${t.codigo} — ` : ""}
+                        {t.nome}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-600">
+                    Cursos vinculados recebem nome, código, carga horária, validade e conteúdo do
+                    cadastro em Configurações → Funções → Treinamentos. Edite esses dados lá para
+                    atualizar todas as funções.
+                  </p>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">
                     <Label className="text-xs">Nome do curso</Label>
                     <Input
+                      disabled={!!cursoSel.modelo_treinamento_id}
                       value={cursoSel.nome || ""}
                       onChange={(e) => setCursoSel({ ...cursoSel, nome: e.target.value })}
                       placeholder="Ex.: NR10 Básico"
@@ -889,6 +957,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                   <div>
                     <Label className="text-xs">Código</Label>
                     <Input
+                      disabled={!!cursoSel.modelo_treinamento_id}
                       value={cursoSel.codigo || ""}
                       onChange={(e) => setCursoSel({ ...cursoSel, codigo: e.target.value })}
                       placeholder="Ex.: TTRP-0011"
@@ -899,6 +968,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     <Label className="text-xs">Validade (meses)</Label>
                     <Input
                       type="number"
+                      disabled={!!cursoSel.modelo_treinamento_id}
                       value={cursoSel.validade_meses || ""}
                       onChange={(e) => setCursoSel({ ...cursoSel, validade_meses: e.target.value })}
                       placeholder="Ex.: 24"
@@ -909,6 +979,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     <Label className="text-xs">Carga horária (h)</Label>
                     <Input
                       type="number"
+                      disabled={!!cursoSel.modelo_treinamento_id}
                       value={cursoSel.carga_horaria_horas || ""}
                       onChange={(e) =>
                         setCursoSel({ ...cursoSel, carga_horaria_horas: e.target.value })
@@ -1029,6 +1100,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     </Label>
                     <Textarea
                       rows={4}
+                      disabled={!!cursoSel.modelo_treinamento_id}
                       value={cursoSel.conteudo_programatico || ""}
                       onChange={(e) =>
                         setCursoSel({ ...cursoSel, conteudo_programatico: e.target.value })

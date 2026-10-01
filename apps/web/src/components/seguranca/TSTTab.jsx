@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
 import { refDoUpload } from "@/lib/anexo-ref";
@@ -41,6 +41,32 @@ export default function TSTTab({
   user,
 }) {
   const [showImportarCertificados, setShowImportarCertificados] = useState(false);
+  const [portalTreinamentos, setPortalTreinamentos] = useState(null);
+  useEffect(() => {
+    let cancelado = false;
+    setPortalTreinamentos(null);
+    if (!empresaAtiva?.id || !selectedFuncionario?.id) return;
+    Promise.all([
+      sigo.entities.TreinamentoCurso.filter({ empresa_id: empresaAtiva.id }),
+      sigo.entities.TreinamentoMatricula.filter({
+        empresa_id: empresaAtiva.id,
+        funcionario_id: selectedFuncionario.id,
+      }),
+      sigo.entities.TreinamentoCertificado.filter(
+        { empresa_id: empresaAtiva.id, funcionario_id: selectedFuncionario.id },
+        { includeDeleted: true }
+      ),
+    ])
+      .then(([cursos, matriculas, certificados]) => {
+        if (!cancelado) setPortalTreinamentos({ cursos, matriculas, certificados });
+      })
+      .catch(() => {
+        if (!cancelado) setPortalTreinamentos({ erro: true });
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [empresaAtiva?.id, selectedFuncionario?.id]);
   // anexo aberto na janela flutuante (url = ref "bucket/caminho" ou URL legada)
   const [anexoAberto, setAnexoAberto] = useState(null);
   // Sempre usar props externas (modais gerenciados pelo pai para evitar Sheet aninhado)
@@ -322,6 +348,20 @@ export default function TSTTab({
             {treinamentosDaFuncao.map((treinamento) => {
               const anexosDeste = getAnexosDeTreinamento(treinamento.id);
               const temAnexo = anexosDeste.length > 0;
+              const modeloId =
+                treinamento.modelo_treinamento_id ||
+                (!treinamento.funcao_id ? treinamento.id : null);
+              const cursosPortal =
+                portalTreinamentos?.cursos?.filter(
+                  (c) => modeloId && c.modelo_treinamento_id === modeloId
+                ) || [];
+              const idsCursosPortal = new Set(cursosPortal.map((c) => c.id));
+              const certificadoPortal = portalTreinamentos?.certificados?.some(
+                (c) => idsCursosPortal.has(c.curso_id) && !c.revogado_em
+              );
+              const matriculaPortal = portalTreinamentos?.matriculas?.find((m) =>
+                idsCursosPortal.has(m.curso_id)
+              );
 
               return (
                 <Card key={treinamento.id} className="border-slate-200">
@@ -331,6 +371,21 @@ export default function TSTTab({
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <h4 className="font-semibold text-slate-800">{treinamento.nome}</h4>
+                          <p className="text-xs text-sky-700 mt-1">
+                            {!modeloId
+                              ? "Cadastro legado: vínculo com o treinamento central pendente"
+                              : !portalTreinamentos
+                                ? "Consultando curso no portal..."
+                                : portalTreinamentos.erro
+                                  ? "Não foi possível consultar o portal"
+                                  : certificadoPortal
+                                    ? "Portal: certificado emitido — confira a validade no histórico"
+                                    : matriculaPortal
+                                      ? `Portal: matrícula ${matriculaPortal.status || "registrada"}`
+                                      : cursosPortal.length
+                                        ? "Portal: curso vinculado, funcionário ainda sem matrícula"
+                                        : "Portal: aulas e avaliação ainda não cadastradas"}
+                          </p>
                           {treinamento.codigo && (
                             <p className="text-xs text-slate-500">Código: {treinamento.codigo}</p>
                           )}

@@ -65,6 +65,7 @@ export default function SelecionarTreinamentoModal({
           ) : (
             <div className="space-y-2">
               {treinamentosDisponiveis
+                .filter((t) => !t.funcao_id && !t.modelo_treinamento_id && t.ativo !== false)
                 .filter((t) => {
                   const busca = buscaTreinamento.toLowerCase().trim();
                   if (!busca) return true;
@@ -133,6 +134,8 @@ export default function SelecionarTreinamentoModal({
                                   // Criar um novo treinamento vinculado à função com TODOS os dados
                                   await sigo.entities.Treinamento.create({
                                     empresa_id: empresaAtiva.id,
+                                    modelo_treinamento_id:
+                                      treinamento.modelo_treinamento_id || treinamento.id,
                                     funcao_id: funcao.id,
                                     nome: treinamento.nome,
                                     codigo: treinamento.codigo,

@@ -567,13 +567,7 @@ export default function SegurancaTrabalho() {
         empresa_id: empresaAtiva.id,
         funcao_id,
       });
-      if (treinamentos.length === 0) {
-        const modelos = await sigo.entities.Treinamento.filter({
-          empresa_id: empresaAtiva.id,
-          usar_como_modelo: true,
-        });
-        treinamentos = modelos.filter((t) => t.ativo !== false);
-      }
+      treinamentos = treinamentos.filter((t) => t.ativo !== false);
       setTreinamentosDaFuncao(
         treinamentos.sort((a, b) => (a.nome || "").localeCompare(b.nome || ""))
       );
