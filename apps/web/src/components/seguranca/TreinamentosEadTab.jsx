@@ -869,7 +869,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
 
       {/* Sheet: curso + aulas */}
       <Sheet open={!!cursoSel} onOpenChange={(v) => !v && setCursoSel(null)}>
-        <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
+        <SheetContent className="left-0 w-full max-w-none overflow-y-auto sm:max-w-none lg:left-0 lg:w-full">
           {cursoSel && (
             <>
               <SheetHeader>
