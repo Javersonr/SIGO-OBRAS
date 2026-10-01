@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { sigo, resolveStorageUrl } from "@/api/sigoClient";
 import { normalizarTexto } from "@/lib/busca";
+import { normalizarQuestao } from "@/lib/ead-questao";
 import { srtParaVtt } from "@/lib/legendas";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
@@ -415,17 +416,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   }, [cursoSel?.id]);
 
   const salvarQuestao = async () => {
-    const ops = (novaQuestao?.opcoes || []).map((o) => (o || "").trim()).filter(Boolean);
-    if (!novaQuestao?.pergunta?.trim() || ops.length < 2) {
-      toast.error("Informe a pergunta e pelo menos 2 opções");
+    const resultado = normalizarQuestao(novaQuestao);
+    if (!resultado.ok) {
+      toast.error(resultado.erro);
       return;
     }
-    const dados = {
-      pergunta: novaQuestao.pergunta.trim(),
-      opcoes: ops,
-      correta: Math.min(novaQuestao.correta ?? 0, ops.length - 1),
-      comentario: novaQuestao.comentario?.trim() || null,
-    };
+    const dados = resultado.dados;
     if (novaQuestao.id) {
       await sigo.entities.TreinamentoQuestao.update(novaQuestao.id, dados);
     } else {
@@ -433,7 +429,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
         ...dados,
         empresa_id: empresaAtiva.id,
         curso_id: cursoSel.id,
-        ordem: questoes.length + 1,
+        ordem: Math.max(0, ...questoes.map((q) => Number(q.ordem) || 0)) + 1,
       });
     }
     setNovaQuestao(null);
@@ -1363,7 +1359,10 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                                 setNovaQuestao({
                                   id: q.id,
                                   pergunta: q.pergunta || "",
-                                  opcoes: [...(q.opcoes || []), "", "", "", ""].slice(0, 4),
+                                  opcoes:
+                                    Array.isArray(q.opcoes) && q.opcoes.length >= 2
+                                      ? [...q.opcoes]
+                                      : ["", ""],
                                   correta: q.correta ?? 0,
                                   comentario: q.comentario || "",
                                 })
@@ -1431,8 +1430,41 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                                 }}
                                 className="h-8"
                               />
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label={`Remover opção ${String.fromCharCode(65 + i)}`}
+                                disabled={novaQuestao.opcoes.length <= 2}
+                                onClick={() =>
+                                  setNovaQuestao({
+                                    ...novaQuestao,
+                                    opcoes: novaQuestao.opcoes.filter((_, indice) => indice !== i),
+                                    correta:
+                                      novaQuestao.correta === i
+                                        ? -1
+                                        : novaQuestao.correta > i
+                                          ? novaQuestao.correta - 1
+                                          : novaQuestao.correta,
+                                  })
+                                }
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
                             </div>
                           ))}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={novaQuestao.opcoes.length >= 6}
+                            onClick={() =>
+                              setNovaQuestao({
+                                ...novaQuestao,
+                                opcoes: [...novaQuestao.opcoes, ""],
+                              })
+                            }
+                          >
+                            <Plus className="w-4 h-4 mr-1" /> Adicionar alternativa
+                          </Button>
                           <Input
                             placeholder="Comentário da resposta (aparece só depois da aprovação)"
                             value={novaQuestao.comentario || ""}
