@@ -76,8 +76,15 @@ export default function CertificadoPortal({ item, token, evento, recarregar, tra
   if (!item.pode_emitir_certificado) {
     return (
       <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-        🎉 Curso concluído. O certificado fica disponível assim que o RH definir a carga horária do
-        curso.
+        <p>Curso concluído. O certificado aguarda a regularização destes requisitos pelo RH:</p>
+        <ul className="list-disc pl-5 mt-2 space-y-1">
+          {(item.pendencias_certificado?.length
+            ? item.pendencias_certificado
+            : ["Aguarde a revisão do curso pelo RH"]
+          ).map((texto) => (
+            <li key={texto}>{texto}</li>
+          ))}
+        </ul>
       </div>
     );
   }

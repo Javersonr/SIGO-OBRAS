@@ -38,6 +38,8 @@ import {
 } from "../_shared/portal-funcionario.ts";
 import { enviarWhatsAppTexto, normalizarTelefoneBR } from "../_shared/whatsapp-envio.ts";
 import { refDaEmpresa } from "../_shared/storage-assinar.ts";
+import { carregarDocumentos, funcionarioPodeEntrar } from "./documentos.ts";
+import { requisitosDoCurso, duracaoParaProgresso } from "./requisitos.ts";
 import {
   consumirTentativa,
   ipDaRequisicao,
@@ -252,7 +254,12 @@ async function concluirSeCompleto(supabase: Db, mat: any, empresaId: string) {
  * da pasta da empresa da sessão (refDaEmpresa): ref gravada apontando para a
  * pasta de outra empresa fica sem URL. Mapa ref original → URL assinada.
  */
-async function assinarRefs(supabase: Db, refs: (string | null | undefined)[], empresaId: string) {
+async function assinarRefs(
+  supabase: Db,
+  refs: (string | null | undefined)[],
+  empresaId: string,
+  ttl = TTL_ARQUIVO
+) {
   const porBucket = new Map<string, Map<string, string[]>>(); // bucket → caminho → originais
   for (const original of new Set(refs.filter((r): r is string => !!r))) {
     const ref = refDaEmpresa(original, empresaId);
@@ -268,7 +275,7 @@ async function assinarRefs(supabase: Db, refs: (string | null | undefined)[], em
   for (const [bucket, caminhos] of porBucket) {
     const { data } = await supabase.storage
       .from(bucket)
-      .createSignedUrls([...caminhos.keys()], TTL_ARQUIVO);
+      .createSignedUrls([...caminhos.keys()], ttl);
     for (const s of data ?? []) {
       if (!s?.signedUrl || !s.path) continue;
       for (const original of caminhos.get(s.path) ?? []) assinada.set(original, s.signedUrl);
@@ -385,11 +392,11 @@ Deno.serve(
       // funcionário da MESMA empresa do acesso (acesso apontando p/ outra = inativo)
       const { data: func } = await supabase
         .from("funcionario")
-        .select("nome_completo, deleted_at")
+        .select("nome_completo, ativo, deleted_at")
         .eq("id", acesso.funcionario_id)
         .eq("empresa_id", acesso.empresa_id)
         .maybeSingle();
-      if (!func || func.deleted_at) return fail("Cadastro inativo — fale com o RH", 403);
+      if (!funcionarioPodeEntrar(func)) return fail("Cadastro inativo — fale com o RH", 403);
 
       await supabase
         .from("funcionario_portal_acesso")
@@ -437,6 +444,17 @@ Deno.serve(
         ...e,
       });
 
+    const { data: funcionarioSessao, error: erroFuncionarioSessao } = await supabase
+      .from("funcionario")
+      .select("id, ativo, deleted_at")
+      .eq("id", funcionarioId)
+      .eq("empresa_id", empresaId)
+      .maybeSingle();
+    if (erroFuncionarioSessao) return fail("Não foi possível validar seu acesso", 503);
+    if (!funcionarioPodeEntrar(funcionarioSessao)) {
+      return fail("Cadastro inativo — fale com o RH", 401, { codigo: "SESSAO" });
+    }
+
     // --------------------------------------------------------- trocar senha
     if (body.acao === "trocar_senha") {
       const nova = body.nova_senha ?? "";
@@ -473,12 +491,32 @@ Deno.serve(
     }
 
     if (body.acao === "logout") {
+      const { error } = await supabase
+        .from("funcionario_portal_acesso")
+        .update({ sessao_versao: acesso.sessao_versao + 1 })
+        .eq("funcionario_id", funcionarioId)
+        .eq("empresa_id", empresaId)
+        .eq("sessao_versao", acesso.sessao_versao);
+      if (error) return fail("Não foi possível encerrar sua sessão", 500);
       await ev({ evento: "logout" });
       return ok({ message: "Até logo" });
     }
 
     if (acesso.senha_provisoria) {
       return fail("Crie sua senha pessoal para continuar", 403, { codigo: "TROCAR_SENHA" });
+    }
+
+    // Nenhum ID do corpo é usado: documentos sempre pertencem ao token validado.
+    if (body.acao === "documentos") {
+      try {
+        return ok(
+          await carregarDocumentos(supabase, funcionarioId, empresaId, (refs, empresa) =>
+            assinarRefs(supabase, refs, empresa, 300)
+          )
+        );
+      } catch {
+        return fail("Não foi possível carregar seus documentos. Tente novamente.", 500);
+      }
     }
 
     /**
@@ -668,6 +706,15 @@ Deno.serve(
             : 0;
         // deno-lint-ignore no-explicit-any
         const cert: any = (certificados ?? []).find((c: any) => c.matricula_id === m.id) || null;
+        const pendencias = requisitosDoCurso({
+          curso: curso || {},
+          aulas: (aulas ?? []).filter((a: { curso_id: string }) => a.curso_id === m.curso_id),
+          questoes: questoesCurso,
+        }).filter((r) => r.bloqueia && !r.ok);
+        const concluidoReal =
+          aulasCurso.length > 0 &&
+          aulasCurso.every((a: { concluida: boolean }) => a.concluida) &&
+          (questoesCurso.length === 0 || tents.some((t: { aprovada: boolean }) => t.aprovada));
         return {
           matricula: m,
           curso: curso && {
@@ -696,8 +743,8 @@ Deno.serve(
             hash_sha256: cert.hash_sha256,
             revogado: !!cert.revogado_em,
           },
-          pode_emitir_certificado:
-            m.status === "concluido" && !cert && !!curso?.carga_horaria_horas,
+          pode_emitir_certificado: concluidoReal && !cert && pendencias.length === 0,
+          pendencias_certificado: pendencias.map((r) => r.texto),
           // deno-lint-ignore no-explicit-any
           duvidas: (duvidas ?? []).filter((d: any) => d.curso_id === m.curso_id),
         };
@@ -780,16 +827,12 @@ Deno.serve(
         return fail("Conclua a aula anterior primeiro", 409, { codigo: "AULA_BLOQUEADA" });
       }
 
-      const informada = Math.floor(Number(body.duracao_seg) || 0);
-      if (aula.tipo === "video" && !aula.duracao_seg && informada > 0) {
-        await supabase
-          .from("treinamento_aula")
-          .update({ duracao_seg: informada })
-          .eq("id", aula.id)
-          .eq("empresa_id", empresaId);
-        aula.duracao_seg = informada;
+      const duracao = duracaoParaProgresso(aula, TEMPO_MINIMO_PADRAO);
+      if (duracao === null) {
+        return fail("Esta aula está sem duração cadastrada — avise o RH", 409, {
+          codigo: "AULA_SEM_DURACAO",
+        });
       }
-      const duracao = aula.duracao_seg || (aula.tipo === "video" ? 0 : TEMPO_MINIMO_PADRAO);
 
       const { data: atual } = await supabase
         .from("treinamento_progresso")
@@ -826,7 +869,7 @@ Deno.serve(
       // vídeo conclui sozinho aos 90% assistidos; apostila (pdf/texto) exige o
       // tempo de leitura COMPLETO e o clique explícito em "Marcar como lida"
       const ehVideo = !aula.tipo || aula.tipo === "video";
-      const minimoSeg = ehVideo ? Math.floor(duracao * PCT_CONCLUSAO) : duracao;
+      const minimoSeg = ehVideo ? Math.ceil(duracao * PCT_CONCLUSAO) : duracao;
       const atingiuTempo = duracao > 0 && novoSeg >= minimoSeg;
       if (body.concluir === true && !ehVideo && !atingiuTempo) {
         const faltam = Math.ceil((duracao - novoSeg) / 60);
@@ -1105,16 +1148,32 @@ Deno.serve(
           .maybeSingle(),
         supabase
           .from("treinamento_aula")
-          .select("ordem, modulo, titulo")
+          .select(
+            "ordem, modulo, titulo, tipo, fonte, video_ref, youtube_id, arquivo_ref, conteudo_texto, duracao_seg"
+          )
           .eq("curso_id", mat.curso_id)
           .eq("empresa_id", empresaId)
           .is("deleted_at", null)
           .order("ordem", { ascending: true }),
       ]);
       if (!func) return fail("Funcionário não encontrado", 404);
-      if (!curso?.carga_horaria_horas) {
-        return fail("O curso ainda não tem carga horária definida — procure o RH", 409);
-      }
+      const { count: nQuestoes, error: erroQuestoes } = await supabase
+        .from("treinamento_questao")
+        .select("id", { count: "exact", head: true })
+        .eq("curso_id", mat.curso_id)
+        .eq("empresa_id", empresaId)
+        .is("deleted_at", null);
+      if (erroQuestoes) return fail("Não foi possível validar os requisitos do curso", 503);
+      const pendencias = requisitosDoCurso({
+        curso: curso || {},
+        aulas: aulas || [],
+        questoes: Array.from({ length: nQuestoes || 0 }, () => ({})),
+      }).filter((r) => r.bloqueia && !r.ok);
+      if (pendencias.length)
+        return fail("O certificado aguarda a regularização do curso pelo RH", 409, {
+          codigo: "REQUISITOS",
+          pendencias: pendencias.map((r) => r.texto),
+        });
 
       const dados = {
         aluno: { nome: func?.nome_completo, cpf: func?.cpf, funcao: func?.funcao_nome ?? null },

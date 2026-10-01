@@ -4,6 +4,7 @@ import AnexoViewer from "@/components/shared/AnexoViewer";
 import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
 import { copiarOuOferecer } from "@/lib/whatsapp";
 import AcessoPortalCard from "@/components/seguranca/AcessoPortalCard";
+import DocumentosPortalCard from "@/components/seguranca/DocumentosPortalCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -265,6 +266,12 @@ export default function FichaFuncionarioSheet({
               funcionario={funcionario}
               empresaAtiva={empresaAtiva}
               onMudou={onAcessoMudou}
+            />
+            <DocumentosPortalCard
+              key={`${empresaAtiva.id}:${funcionario.id}`}
+              funcionario={funcionario}
+              empresaAtiva={empresaAtiva}
+              onSalvo={onSalvo}
             />
 
             {/* Documentos pessoais */}

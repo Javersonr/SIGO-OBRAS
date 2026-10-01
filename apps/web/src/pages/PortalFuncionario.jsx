@@ -15,6 +15,7 @@ import {
 import { chamarPortal, sessaoPortal, fmtData } from "@/components/portal-funcionario/api";
 import { LoginPortal, TrocarSenhaPortal } from "@/components/portal-funcionario/LoginPortal";
 import CursoPortal from "@/components/portal-funcionario/CursoPortal";
+import DocumentosPortal from "@/components/portal-funcionario/DocumentosPortal";
 
 /**
  * Portal do Funcionário — treinamentos EAD, ciência de entregas e certificados.
@@ -96,6 +97,7 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [matriculaAberta, setMatriculaAberta] = useState(null);
+  const [aba, setAba] = useState("cursos");
 
   const carregar = useCallback(async () => {
     try {
@@ -130,7 +132,7 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
         <div className="flex items-center gap-2 text-slate-500">
-          <Loader2 className="w-5 h-5 animate-spin" /> Carregando seus treinamentos...
+          <Loader2 className="w-5 h-5 animate-spin" /> Carregando seu portal...
         </div>
       </div>
     );
@@ -189,106 +191,133 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
       </header>
 
       <div className="max-w-3xl mx-auto p-4 space-y-3">
-        {erro && (
-          <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
-            <XCircle className="w-4 h-4 shrink-0" /> {erro}
-          </div>
+        <nav aria-label="Áreas do portal" className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {[
+            ["cursos", "Cursos"],
+            ["advertencias", "Advertências"],
+            ["documentacao", "Documentação"],
+            ["contracheque", "Contracheques"],
+            ["folha_ponto", "Folhas de ponto"],
+          ].map(([valor, rotulo]) => (
+            <Button
+              key={valor}
+              variant={aba === valor ? "default" : "outline"}
+              aria-pressed={aba === valor}
+              onClick={() => setAba(valor)}
+              className={`h-11 text-xs sm:text-sm ${aba === valor ? "bg-slate-900 text-white hover:bg-slate-800" : "bg-white text-slate-700"}`}
+            >
+              {rotulo}
+            </Button>
+          ))}
+        </nav>
+        {aba !== "cursos" && (
+          <DocumentosPortal token={token} categoria={aba} onErroSessao={onErroSessao} />
         )}
+        {aba === "cursos" && (
+          <>
+            {erro && (
+              <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                <XCircle className="w-4 h-4 shrink-0" /> {erro}
+              </div>
+            )}
 
-        {pendentes.length > 0 && (
-          <Card className="border-amber-300">
-            <CardContent className="p-4 space-y-3">
-              <p className="font-semibold text-amber-800">
-                📋 Você tem entregas aguardando sua ciência:
-              </p>
-              {pendentes.map((c) => (
-                <div key={c.id} className="border rounded-lg p-3 bg-amber-50 space-y-2">
-                  <p className="text-sm">
-                    <Badge variant="outline" className="mr-2">
-                      {c.tipo}
-                    </Badge>
-                    {c.descricao}
+            {pendentes.length > 0 && (
+              <Card className="border-amber-300">
+                <CardContent className="p-4 space-y-3">
+                  <p className="font-semibold text-amber-800">
+                    📋 Você tem entregas aguardando sua ciência:
                   </p>
-                  {Array.isArray(c.itens) && c.itens.length > 0 && (
-                    <ul className="text-sm text-slate-700 list-disc pl-5">
-                      {c.itens.map((it, i) => (
-                        <li key={i}>
-                          {it.quantidade ? `${it.quantidade}× ` : ""}
-                          {it.descricao || it.nome}
-                          {it.codigo ? ` (${it.codigo})` : ""}
-                          {it.ca ? ` · CA ${it.ca}` : ""}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <Button
-                    className="w-full bg-emerald-600 hover:bg-emerald-700"
-                    onClick={() => darCiencia(c.id)}
-                  >
-                    <CheckCircle2 className="w-4 h-4 mr-1" /> Confirmo o recebimento (dou ciência)
-                  </Button>
-                  <p className="text-[11px] text-amber-700">
-                    Ao confirmar, ficam registrados seu login, data/hora e aparelho — vale como
-                    assinatura eletrônica (Lei 14.063/2020).
-                  </p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+                  {pendentes.map((c) => (
+                    <div key={c.id} className="border rounded-lg p-3 bg-amber-50 space-y-2">
+                      <p className="text-sm">
+                        <Badge variant="outline" className="mr-2">
+                          {c.tipo}
+                        </Badge>
+                        {c.descricao}
+                      </p>
+                      {Array.isArray(c.itens) && c.itens.length > 0 && (
+                        <ul className="text-sm text-slate-700 list-disc pl-5">
+                          {c.itens.map((it, i) => (
+                            <li key={i}>
+                              {it.quantidade ? `${it.quantidade}× ` : ""}
+                              {it.descricao || it.nome}
+                              {it.codigo ? ` (${it.codigo})` : ""}
+                              {it.ca ? ` · CA ${it.ca}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <Button
+                        className="w-full bg-emerald-600 hover:bg-emerald-700"
+                        onClick={() => darCiencia(c.id)}
+                      >
+                        <CheckCircle2 className="w-4 h-4 mr-1" /> Confirmo o recebimento (dou
+                        ciência)
+                      </Button>
+                      <p className="text-[11px] text-amber-700">
+                        Ao confirmar, ficam registrados seu login, data/hora e aparelho — vale como
+                        assinatura eletrônica (Lei 14.063/2020).
+                      </p>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
+            {cursos.length === 0 && (
+              <Card>
+                <CardContent className="p-10 text-center text-slate-500">
+                  <GraduationCap className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                  Nenhum treinamento atribuído a você no momento.
+                </CardContent>
+              </Card>
+            )}
+
+            {cursos.map((c) => {
+              const total = c.aulas.length;
+              const feitas = c.aulas.filter((a) => a.concluida).length;
+              const m = c.matricula;
+              const concluido = m.status === "concluido";
+              return (
+                <Card key={m.id}>
+                  <CardContent className="p-4 flex items-center gap-4">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-slate-800">{c.curso?.nome}</p>
+                      <p className="text-xs text-slate-500">
+                        {concluido
+                          ? `Concluído em ${fmtData(m.data_conclusao)}` +
+                            (m.proxima_renovacao
+                              ? ` · renovar até ${fmtData(m.proxima_renovacao)}`
+                              : "")
+                          : `${feitas}/${total} aulas concluídas`}
+                      </p>
+                      <div className="h-2 bg-slate-100 rounded-full mt-2 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${concluido ? "bg-emerald-500" : "bg-amber-500"}`}
+                          style={{ width: `${total ? Math.round((feitas / total) * 100) : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => setMatriculaAberta(m.id)}
+                      className={`shrink-0 ${concluido ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-900"}`}
+                    >
+                      {concluido ? (
+                        <>
+                          <Award className="w-4 h-4 mr-1" /> Certificado
+                        </>
+                      ) : m.status === "pendente" ? (
+                        "Começar"
+                      ) : (
+                        "Continuar"
+                      )}
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </>
         )}
-
-        {cursos.length === 0 && (
-          <Card>
-            <CardContent className="p-10 text-center text-slate-500">
-              <GraduationCap className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-              Nenhum treinamento atribuído a você no momento.
-            </CardContent>
-          </Card>
-        )}
-
-        {cursos.map((c) => {
-          const total = c.aulas.length;
-          const feitas = c.aulas.filter((a) => a.concluida).length;
-          const m = c.matricula;
-          const concluido = m.status === "concluido";
-          return (
-            <Card key={m.id}>
-              <CardContent className="p-4 flex items-center gap-4">
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-800">{c.curso?.nome}</p>
-                  <p className="text-xs text-slate-500">
-                    {concluido
-                      ? `Concluído em ${fmtData(m.data_conclusao)}` +
-                        (m.proxima_renovacao
-                          ? ` · renovar até ${fmtData(m.proxima_renovacao)}`
-                          : "")
-                      : `${feitas}/${total} aulas concluídas`}
-                  </p>
-                  <div className="h-2 bg-slate-100 rounded-full mt-2 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${concluido ? "bg-emerald-500" : "bg-amber-500"}`}
-                      style={{ width: `${total ? Math.round((feitas / total) * 100) : 0}%` }}
-                    />
-                  </div>
-                </div>
-                <Button
-                  onClick={() => setMatriculaAberta(m.id)}
-                  className={`shrink-0 ${concluido ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-900"}`}
-                >
-                  {concluido ? (
-                    <>
-                      <Award className="w-4 h-4 mr-1" /> Certificado
-                    </>
-                  ) : m.status === "pendente" ? (
-                    "Começar"
-                  ) : (
-                    "Continuar"
-                  )}
-                </Button>
-              </CardContent>
-            </Card>
-          );
-        })}
       </div>
     </div>
   );

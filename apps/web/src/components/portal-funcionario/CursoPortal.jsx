@@ -77,10 +77,6 @@ export default function CursoPortal({ item, token, recarregar, onVoltar, onErroS
     const a = aulaRef.current;
     if (!a) return;
     const enviado = assistidoRef.current;
-    const duracaoMidia =
-      a.tipo === "video"
-        ? videoElRef.current?.duration || playerRef.current?.getDuration?.() || 0
-        : 0;
     try {
       const r = await fila(() =>
         chamarPortal(
@@ -89,7 +85,6 @@ export default function CursoPortal({ item, token, recarregar, onVoltar, onErroS
             matricula_id: mat.id,
             aula_id: a.id,
             segundos_assistidos: Math.floor(enviado),
-            duracao_seg: duracaoMidia ? Math.floor(duracaoMidia) : undefined,
             concluir: concluir || undefined,
           },
           token

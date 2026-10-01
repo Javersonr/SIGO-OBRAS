@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { sigo, resolveStorageUrl } from "@/api/sigoClient";
 import { normalizarTexto } from "@/lib/busca";
 import { normalizarQuestao } from "@/lib/ead-questao";
+import { parseDuracao, formatDuracao, lerDuracaoVideo } from "@/lib/ead-duracao";
+import { requisitosDoCurso, tempoObrigatorioSeg } from "@/lib/ead-requisitos";
 import { srtParaVtt } from "@/lib/legendas";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
@@ -51,6 +53,7 @@ const NOVA_AULA = {
   tipo: "video",
   texto: "",
   minutos: "",
+  duracao: "",
 };
 
 // aceita URL completa ou ID puro do YouTube
@@ -128,6 +131,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const [subindoProjeto, setSubindoProjeto] = useState(false);
   const [subindoVideo, setSubindoVideo] = useState(false);
   const [questoes, setQuestoes] = useState([]);
+  const [todasQuestoes, setTodasQuestoes] = useState([]);
   const [novaQuestao, setNovaQuestao] = useState(null); // {pergunta, opcoes[4], correta}
   const [treinamentosConfig, setTreinamentosConfig] = useState([]);
   const [aulaEditando, setAulaEditando] = useState(null); // {id, titulo, modulo, tipo, minutos}
@@ -135,7 +139,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const recarregar = async () => {
     setCarregando(true);
     try {
-      const [cs, as, ms, fs, certs, tcfg] = await Promise.all([
+      const [cs, as, ms, fs, certs, tcfg, qs] = await Promise.all([
         sigo.entities.TreinamentoCurso.filter({ empresa_id: empresaAtiva.id }),
         sigo.entities.TreinamentoAula.filter({ empresa_id: empresaAtiva.id }),
         sigo.entities.TreinamentoMatricula.filter({ empresa_id: empresaAtiva.id }),
@@ -145,6 +149,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
           SEM_SOFT_DELETE
         ),
         sigo.entities.Treinamento.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.TreinamentoQuestao.filter({ empresa_id: empresaAtiva.id }),
       ]);
       setCursos(cs);
       setAulas(as.sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0)));
@@ -152,6 +157,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       setFuncionarios(fs);
       setCertificados(certs);
       setTreinamentosConfig(tcfg);
+      setTodasQuestoes(qs);
     } catch (e) {
       console.error(e);
       toast.error("Erro ao carregar treinamentos");
@@ -165,6 +171,13 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   }, [empresaAtiva?.id]);
 
   const aulasDoCurso = (cursoId) => aulas.filter((a) => a.curso_id === cursoId);
+  const requisitos = (curso) =>
+    requisitosDoCurso({
+      curso,
+      aulas: aulasDoCurso(curso.id),
+      questoes: todasQuestoes.filter((q) => q.curso_id === curso.id),
+    });
+  const pendenciasCurso = (curso) => requisitos(curso).filter((r) => r.bloqueia && !r.ok);
   const funcPorId = useMemo(() => new Map(funcionarios.map((f) => [f.id, f])), [funcionarios]);
   const pessoas = useMemo(() => pessoasDosTreinamentos(treinamentosConfig), [treinamentosConfig]);
 
@@ -200,6 +213,14 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       tutor_telefone: cursoSel.tutor_telefone?.trim() || null,
       ativo: cursoSel.ativo !== false,
     };
+    if (
+      dados.ativo &&
+      !cursos.find((c) => c.id === cursoSel.id)?.ativo &&
+      pendenciasCurso({ ...cursoSel, ...dados }).length
+    ) {
+      toast.error("Regularize os requisitos do curso antes de publicar");
+      return;
+    }
     if (cursoSel.id) {
       await sigo.entities.TreinamentoCurso.update(cursoSel.id, dados);
     } else {
@@ -263,6 +284,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       } else if (novaAula.arquivo) {
         // HOSPEDAGEM PRÓPRIA: vídeo sobe pro bucket 'treinamentos' (até 1GB)
         setSubindoVideo(true);
+        const duracao_seg = await lerDuracaoVideo(novaAula.arquivo);
         const res = await sigo.integrations.Core.UploadFile({
           file: novaAula.arquivo,
           bucket: "treinamentos",
@@ -272,6 +294,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
           fonte: "upload",
           video_ref: `${res.bucket}/${res.path}`,
           youtube_id: null,
+          duracao_seg,
         });
       } else {
         const ytId = extrairYouTubeId(novaAula.url);
@@ -279,7 +302,17 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
           toast.error("Anexe o vídeo OU informe um link válido do YouTube");
           return;
         }
-        await sigo.entities.TreinamentoAula.create({ ...base, fonte: "youtube", youtube_id: ytId });
+        const duracao_seg = parseDuracao(novaAula.duracao);
+        if (!duracao_seg) {
+          toast.error("Informe a duração do vídeo em mm:ss");
+          return;
+        }
+        await sigo.entities.TreinamentoAula.create({
+          ...base,
+          fonte: "youtube",
+          youtube_id: ytId,
+          duracao_seg,
+        });
       }
       // mantém o módulo para a próxima aula do mesmo bloco
       setNovaAula({ ...NOVA_AULA, modulo: novaAula.modulo, tipo: novaAula.tipo });
@@ -388,6 +421,13 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
         return;
       }
       patch.duracao_seg = seg;
+    } else {
+      const seg = parseDuracao(aulaEditando.duracao);
+      if (!seg) {
+        toast.error("Informe a duração do vídeo em mm:ss");
+        return;
+      }
+      patch.duracao_seg = seg;
     }
     await sigo.entities.TreinamentoAula.update(aulaEditando.id, patch);
     setAulaEditando(null);
@@ -408,6 +448,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       curso_id: cursoId,
     });
     setQuestoes(qs.sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0)));
+    setTodasQuestoes((anteriores) => [...anteriores.filter((q) => q.curso_id !== cursoId), ...qs]);
   };
 
   useEffect(() => {
@@ -440,6 +481,11 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const matricular = async () => {
     if (!matForm.curso_id || matForm.funcionario_ids.length === 0) {
       toast.error("Escolha o curso e ao menos um funcionário");
+      return;
+    }
+    const curso = cursos.find((c) => c.id === matForm.curso_id);
+    if (!curso || curso.ativo === false || pendenciasCurso(curso).length) {
+      toast.error("Este curso ainda tem requisitos pendentes para novas matrículas");
       return;
     }
     const jaMatriculados = new Set(
@@ -648,13 +694,25 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
           </CardTitle>
           <Button
             size="sm"
-            onClick={() => setCursoSel({ nome: "", validade_meses: "", ativo: true })}
+            onClick={() => setCursoSel({ nome: "", validade_meses: "", ativo: false })}
             className="bg-slate-900 hover:bg-slate-800"
           >
             <Plus className="w-4 h-4 mr-1" /> Novo curso
           </Button>
         </CardHeader>
         <CardContent className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <p className="col-span-full text-sm text-slate-500">
+            Cadastre o curso e envie vídeos, apostilas PDF e questões nesta área. Para enviar
+            contracheques e folhas de ponto, abra a ficha em Funcionários.{" "}
+            <a
+              href="/PortalFuncionario"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sky-700 underline"
+            >
+              Abrir Portal do Funcionário
+            </a>
+          </p>
           {cursos.map((c) => {
             const qtdAulas = aulasDoCurso(c.id).length;
             return (
@@ -664,6 +722,11 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                 className="text-left rounded-lg border border-slate-200 p-3 hover:border-slate-400 bg-white"
               >
                 <p className="font-medium text-slate-800">{c.nome}</p>
+                {c.ativo !== false && pendenciasCurso(c).length > 0 && (
+                  <Badge variant="outline" className="mt-1 text-amber-700">
+                    Publicado com pendências
+                  </Badge>
+                )}
                 <p className="text-xs text-slate-500 mt-1">
                   {c.codigo ? c.codigo + " · " : ""}
                   {qtdAulas} aula(s)
@@ -1013,7 +1076,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     <Switch
                       id="curso-publicado"
                       checked={cursoSel.ativo !== false}
-                      onCheckedChange={(v) => setCursoSel({ ...cursoSel, ativo: v })}
+                      disabled={cursoSel.ativo === false && pendenciasCurso(cursoSel).length > 0}
+                      onCheckedChange={(v) => {
+                        if (v && pendenciasCurso(cursoSel).length)
+                          return toast.error("Regularize os requisitos antes de publicar");
+                        setCursoSel({ ...cursoSel, ativo: v });
+                      }}
                     />
                     <div>
                       <Label htmlFor="curso-publicado" className="text-sm">
@@ -1024,6 +1092,29 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                         gabarito.
                       </p>
                     </div>
+                  </div>
+                  <div className="col-span-2 rounded-lg border p-3 space-y-2">
+                    <h3 className="font-semibold text-sm">
+                      Requisitos para publicar e emitir certificado
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Conteúdo medido:{" "}
+                      {formatDuracao(tempoObrigatorioSeg(aulasDoCurso(cursoSel.id)))} (min:seg) ·
+                      Carga declarada: {cursoSel.carga_horaria_horas || 0} h
+                    </p>
+                    <ul className="text-xs space-y-1">
+                      {requisitos(cursoSel)
+                        .filter((r) => !r.ok)
+                        .map((r) => (
+                          <li
+                            key={r.codigo}
+                            className={r.bloqueia ? "text-amber-700" : "text-slate-500"}
+                          >
+                            {r.bloqueia ? "Pendente: " : "Revisar: "}
+                            {r.texto}
+                          </li>
+                        ))}
+                    </ul>
                   </div>
                 </div>
                 <Button onClick={salvarCurso} className="bg-slate-900 hover:bg-slate-800">
@@ -1119,6 +1210,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                                   titulo: a.titulo || "",
                                   modulo: a.modulo || "",
                                   minutos: a.duracao_seg ? Math.round(a.duracao_seg / 60) : "",
+                                  duracao: a.duracao_seg ? formatDuracao(a.duracao_seg) : "",
                                 })
                               }
                             >
@@ -1147,6 +1239,16 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                                   }
                                   className="h-9"
                                 />
+                                {aulaEditando.tipo === "video" && (
+                                  <Input
+                                    placeholder="Duração do vídeo (mm:ss)"
+                                    aria-label="Duração do vídeo em minutos e segundos"
+                                    value={aulaEditando.duracao}
+                                    onChange={(e) =>
+                                      setAulaEditando({ ...aulaEditando, duracao: e.target.value })
+                                    }
+                                  />
+                                )}
                                 {aulaEditando.tipo !== "video" && (
                                   <Input
                                     type="number"
@@ -1302,6 +1404,17 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                             disabled={!!novaAula.arquivo}
                             className="h-9"
                           />
+                          {!novaAula.arquivo && (
+                            <Input
+                              placeholder="Duração (mm:ss)"
+                              aria-label="Duração do vídeo do YouTube"
+                              value={novaAula.duracao}
+                              onChange={(e) =>
+                                setNovaAula({ ...novaAula, duracao: e.target.value })
+                              }
+                              className="h-9"
+                            />
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
@@ -1319,8 +1432,8 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     </div>
                     <p className="text-xs text-slate-400">
                       Aulas abrem em ordem. Vídeo conclui com 90% do tempo assistido (a duração é
-                      detectada na primeira exibição); PDF e texto, com o tempo mínimo de leitura. O
-                      tempo só conta com a tela do aluno aberta.
+                      cadastrada pelo RH); PDF e texto, com o tempo mínimo de leitura. O tempo só
+                      conta com a tela do aluno aberta.
                     </p>
                     <Button
                       variant="outline"
@@ -1512,7 +1625,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
               >
                 <option value="">Selecionar...</option>
                 {cursos
-                  .filter((c) => c.ativo !== false)
+                  .filter((c) => c.ativo !== false && pendenciasCurso(c).length === 0)
                   .map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.nome}
