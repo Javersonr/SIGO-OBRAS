@@ -95,6 +95,7 @@ export default function CursoPortal({
   item,
   token,
   recarregar,
+  empresaLogoUrl = null,
   dadosCarregadosEm,
   abrirProximaAula = false,
   onVoltar,
@@ -683,10 +684,12 @@ export default function CursoPortal({
           </div>
         )}
 
-        {(mat.status === "concluido" || item.certificado) && (
+        {/* durante a prova o certificado sai da frente: o aluno só vê as questões */}
+        {modo !== "avaliacao" && (mat.status === "concluido" || item.certificado) && (
           <CertificadoPortal
             item={item}
             token={token}
+            empresaLogoUrl={empresaLogoUrl}
             evento={evento}
             recarregar={atualizarAulas}
             tratarErro={tratarErro}

@@ -37,7 +37,7 @@ import {
   type EventoPortal,
 } from "../_shared/portal-funcionario.ts";
 import { enviarWhatsAppTexto, normalizarTelefoneBR } from "../_shared/whatsapp-envio.ts";
-import { refDaEmpresa } from "../_shared/storage-assinar.ts";
+import { assinarDaEmpresa, refDaEmpresa } from "../_shared/storage-assinar.ts";
 import { carregarDocumentos, funcionarioPodeEntrar } from "./documentos.ts";
 import { requisitosDoCurso, duracaoParaProgresso } from "./requisitos.ts";
 import {
@@ -49,6 +49,7 @@ import {
   cursoPublicado,
   datasDeConclusao,
   detalheLimitado,
+  logoAssinadoParaPdf,
   proximaTentativaEm,
   situacaoDasTentativas,
   situacaoDaTrilha,
@@ -525,7 +526,11 @@ Deno.serve(
           .eq("id", funcionarioId)
           .eq("empresa_id", empresaId)
           .maybeSingle(),
-        supabase.from("empresa").select("nome, razao_social").eq("id", empresaId).maybeSingle(),
+        supabase
+          .from("empresa")
+          .select("nome, razao_social, logo_url")
+          .eq("id", empresaId)
+          .maybeSingle(),
         supabase
           .from("treinamento_matricula")
           .select("*")
@@ -740,9 +745,19 @@ Deno.serve(
         .order("created_at", { ascending: false })
         .limit(30);
 
+      // Logo da empresa para o PDF do certificado (T15): URL assinada só da pasta da empresa da
+      // sessão. Só vale a chamada ao Storage quando o aluno tem certificado para baixar; quem
+      // emite um agora recarrega os `dados` e recebe o logo junto.
+      const empresaLogoUrl = (certificados ?? []).length
+        ? await logoAssinadoParaPdf(emp?.logo_url, (refs) =>
+            assinarDaEmpresa(supabase, refs, empresaId)
+          )
+        : null;
+
       return ok({
         funcionario: func,
         empresa_nome: emp?.nome || emp?.razao_social || "",
+        empresa_logo_url: empresaLogoUrl,
         cursos: resposta,
         ciencias: ciencias ?? [],
       });

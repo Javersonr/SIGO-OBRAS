@@ -5,9 +5,10 @@
  * e chama estas funções, que podem ser testadas no Node (`regras.test.ts`).
  * O tempo entra por parâmetro (`agora`, em ms), nunca por `Date.now()` aqui.
  *
- * Saíram do `index.ts` sem mudar comportamento. Duas regras ainda são as de hoje
- * de propósito (o handoff corrige em tarefa própria): `datasDeConclusao` usa o dia
- * em UTC (T8) e `corrigirProva` converte a resposta com `Number()`.
+ * Saíram do `index.ts` sem mudar comportamento (a exceção é `logoAssinadoParaPdf`, que já
+ * nasceu aqui, na T15). Duas regras ainda são as de hoje de propósito (o handoff corrige em
+ * tarefa própria): `datasDeConclusao` usa o dia em UTC (T8) e `corrigirProva` converte a
+ * resposta com `Number()`.
  */
 
 /** Vídeo conclui sozinho a partir de 90% assistidos. */
@@ -210,4 +211,27 @@ export function detalheLimitado(d: unknown): Record<string, unknown> | null {
     tamanho: json.length,
     json: json.slice(0, MAX_DETALHE),
   };
+}
+
+/**
+ * URL assinada do logo da empresa para o PDF do certificado baixado pelo aluno (T15), ou null
+ * (o PDF sai sem logo). O banco guarda a referência "bucket/caminho": só ela vira URL. URL do
+ * Base44 (arquivo perdido), link externo, imagem embutida, valor vazio e ref de outra empresa
+ * ficam sem logo. `assinar` é o `assinarDaEmpresa` ligado à empresa da sessão: ele só assina a
+ * pasta dela, então o que ficar fora do mapa devolvido não tem logo. Falha ao assinar também
+ * vira null: o logo é só enfeite e nunca derruba o `dados` (a tela inicial do portal).
+ */
+export async function logoAssinadoParaPdf(
+  logoUrl: unknown,
+  assinar: (refs: string[]) => Promise<Map<string, string>>
+): Promise<string | null> {
+  if (typeof logoUrl !== "string") return null;
+  const ref = logoUrl.trim();
+  if (!ref || /base44\./i.test(ref)) return null;
+  try {
+    const assinadas = await assinar([ref]);
+    return assinadas.get(ref) || null;
+  } catch {
+    return null;
+  }
 }

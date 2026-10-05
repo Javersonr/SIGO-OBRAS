@@ -4,17 +4,31 @@ import { Input } from "@/components/ui/input";
 import { Award, Loader2, FileDown, PenLine } from "lucide-react";
 import { chamarPortal, fmtData } from "./api";
 import { baixarCertificadoPdf } from "@/lib/certificado-ead";
+import { AVISO_SEM_LOGO, mensagemFalhaCertificado } from "@/lib/certificado-ead-falhas";
+import { logoParaPdfDeUrl } from "@/lib/pdf-empresa";
 
 /**
  * Certificado do curso concluído. Emitir = ASSINAR: o funcionário confirma a
  * declaração digitando a própria senha, e o servidor registra quando e de onde.
+ * `empresaLogoUrl` = URL do logo já assinada pelo servidor (`dados.empresa_logo_url`), para o PDF
+ * sair igual ao que o RH baixa; null = a empresa não tem logo que o portal consiga mostrar.
  */
-export default function CertificadoPortal({ item, token, evento, recarregar, tratarErro }) {
+export default function CertificadoPortal({
+  item,
+  token,
+  empresaLogoUrl = null,
+  evento,
+  recarregar,
+  tratarErro,
+}) {
   const cert = item.certificado;
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
   const [assinando, setAssinando] = useState(false);
   const [baixando, setBaixando] = useState(false);
+  // falha ao gerar o PDF (aluno precisa ler) e aviso de PDF que saiu sem o logotipo
+  const [erroPdf, setErroPdf] = useState("");
+  const [avisoPdf, setAvisoPdf] = useState("");
 
   const assinar = async (e) => {
     e.preventDefault();
@@ -33,10 +47,19 @@ export default function CertificadoPortal({ item, token, evento, recarregar, tra
   };
 
   const baixar = async () => {
+    setErroPdf("");
+    setAvisoPdf("");
     setBaixando(true);
     try {
+      // sem logo carregado o PDF sai sem ele (o aluno é avisado abaixo); o QR, não: falha = erro
+      const logo = await logoParaPdfDeUrl(empresaLogoUrl);
+      const { logoDesenhado } = await baixarCertificadoPdf(cert, { logo });
+      // a trilha só registra "Baixou o certificado" quando o PDF de fato saiu
       evento("abrir_certificado");
-      await baixarCertificadoPdf(cert);
+      if (empresaLogoUrl && !logoDesenhado) setAvisoPdf(AVISO_SEM_LOGO);
+    } catch (e) {
+      console.error("[certificado] falha ao baixar:", e);
+      setErroPdf(mensagemFalhaCertificado(e));
     } finally {
       setBaixando(false);
     }
@@ -69,6 +92,16 @@ export default function CertificadoPortal({ item, token, evento, recarregar, tra
           )}
           Baixar certificado (PDF)
         </Button>
+        {erroPdf && (
+          <p role="alert" className="text-sm text-red-700">
+            {erroPdf}
+          </p>
+        )}
+        {avisoPdf && (
+          <p role="status" className="text-sm text-amber-800">
+            {avisoPdf}
+          </p>
+        )}
       </div>
     );
   }

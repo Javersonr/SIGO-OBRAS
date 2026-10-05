@@ -8,6 +8,12 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { QRCodeCanvas } from "qrcode.react";
 import { urlPublica } from "@/lib/url-publica";
+import {
+  ErroCertificado,
+  MSG_QR_FALHOU,
+  MSG_SEM_BIBLIOTECA_PDF,
+  aguardarResultado,
+} from "@/lib/certificado-ead-falhas";
 
 export const urlValidacao = (codigo) =>
   urlPublica(`/ValidarCertificado?codigo=${encodeURIComponent(codigo)}`);
@@ -26,24 +32,31 @@ const fmtCnpj = (cnpj) => {
     : cnpj || "";
 };
 
+/**
+ * PNG (data URL) do QR, ou null se não ficou pronto em ~3 s. O QRCodeCanvas só desenha num efeito
+ * do React, depois de criar o canvas: um canvas ainda transparente (alfa 0 no 1º pixel) NÃO é o QR,
+ * porque o desenho começa pintando o fundo de branco. Sem essa conferência saía um QR em branco.
+ */
 async function qrPng(texto) {
   const div = document.createElement("div");
   div.style.cssText = "position:fixed;left:-9999px;top:0";
   document.body.appendChild(div);
   const root = createRoot(div);
-  root.render(
-    React.createElement(QRCodeCanvas, { value: texto, size: 240, level: "M", marginSize: 1 })
-  );
-  // o QRCodeCanvas desenha num efeito; espera o canvas ficar pronto
-  let png = null;
-  for (let i = 0; i < 20 && !png; i++) {
-    await new Promise((r) => setTimeout(r, 25));
-    const c = div.querySelector("canvas");
-    if (c && c.width) png = c.toDataURL("image/png");
+  try {
+    root.render(
+      React.createElement(QRCodeCanvas, { value: texto, size: 240, level: "M", marginSize: 1 })
+    );
+    return await aguardarResultado(() => {
+      const c = div.querySelector("canvas");
+      if (!c || !c.width) return null;
+      const ctx = c.getContext("2d");
+      if (!ctx || ctx.getImageData(0, 0, 1, 1).data[3] === 0) return null;
+      return c.toDataURL("image/png");
+    });
+  } finally {
+    root.unmount();
+    div.remove();
   }
-  root.unmount();
-  div.remove();
-  return png;
 }
 
 /** Linhas do conteúdo programático: texto do curso ou aulas por módulo. */
@@ -67,17 +80,37 @@ function linhasConteudo(curso) {
 }
 
 /**
+ * Gera e baixa o PDF. Falha prevista = `ErroCertificado` (mensagem pronta para o aluno): o gerador de
+ * PDF não carregou ou o QR de validação não ficou pronto (o PDF NUNCA sai sem o QR em silêncio).
+ * Quem chama mostra `mensagemFalhaCertificado(erro)`. O logo é só enfeite: se o PDF não o aceitar,
+ * o certificado sai sem ele e o retorno diz (`logoDesenhado`).
+ *
  * @param {object} cert { codigo, dados, assinatura_aluno, emitido_em, hash_sha256, revogado }
- * @param {{ logo?: {dataUrl, formato, w, h} }} [opcoes]
+ * @param {{ logo?: {dataUrl, formato, w, h}, gerarQr?: (url: string) => Promise<string|null>,
+ *   salvar?: (doc: object, nome: string) => void }} [opcoes] `gerarQr` e `salvar` existem para o teste
+ *   (sem DOM e sem disco); no app valem o QR do navegador e o download do jsPDF.
+ * @returns {Promise<{ logoDesenhado: boolean }>}
  */
 export async function baixarCertificadoPdf(cert, opcoes = {}) {
-  const { jsPDF } = await import("jspdf");
+  let jsPDF;
+  try {
+    ({ jsPDF } = await import("jspdf"));
+  } catch (e) {
+    console.error("[certificado] não carregou o gerador de PDF:", e);
+    throw new ErroCertificado(MSG_SEM_BIBLIOTECA_PDF, "SEM_BIBLIOTECA");
+  }
   const d = cert.dados || {};
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const W = 297;
   const H = 210;
   const url = urlValidacao(cert.codigo);
-  const qr = await qrPng(url);
+  let qr = null;
+  try {
+    qr = await (opcoes.gerarQr || qrPng)(url);
+  } catch (e) {
+    console.error("[certificado] erro ao gerar o QR:", e);
+  }
+  if (!qr) throw new ErroCertificado(MSG_QR_FALHOU, "QR_FALHOU");
 
   const moldura = () => {
     doc.setDrawColor(30, 41, 59);
@@ -95,15 +128,21 @@ export async function baixarCertificadoPdf(cert, opcoes = {}) {
     doc.setFontSize(6);
     doc.text(`SHA-256: ${cert.hash_sha256 || ""}`, 18, H - 13.5);
     // alias "qr" = mesma imagem nas duas páginas (o jsPDF grava uma vez só)
-    if (qr) doc.addImage(qr, "PNG", W - 44, H - 44, 28, 28, "qr", "FAST");
+    doc.addImage(qr, "PNG", W - 44, H - 44, 28, 28, "qr", "FAST");
   };
 
   // ------------------------------------------------------------------ frente
   moldura();
+  let logoDesenhado = false;
   if (opcoes.logo?.dataUrl) {
-    const h = 16;
-    const w = Math.min(50, (opcoes.logo.w / opcoes.logo.h) * h || 40);
-    doc.addImage(opcoes.logo.dataUrl, opcoes.logo.formato || "PNG", 18, 16, w, h);
+    try {
+      const h = 16;
+      const w = Math.min(50, (opcoes.logo.w / opcoes.logo.h) * h || 40);
+      doc.addImage(opcoes.logo.dataUrl, opcoes.logo.formato || "PNG", 18, 16, w, h);
+      logoDesenhado = true;
+    } catch (e) {
+      console.error("[certificado] o PDF não aceitou o logo da empresa:", e);
+    }
   }
   if (cert.revogado) {
     doc.setTextColor(220, 38, 38);
@@ -241,5 +280,8 @@ export async function baixarCertificadoPdf(cert, opcoes = {}) {
   rodape();
 
   const nome = (d.aluno?.nome || "certificado").replace(/[^\p{L}\p{N}]+/gu, "_");
-  doc.save(`Certificado_${nome}_${cert.codigo}.pdf`);
+  const arquivo = `Certificado_${nome}_${cert.codigo}.pdf`;
+  if (opcoes.salvar) opcoes.salvar(doc, arquivo);
+  else doc.save(arquivo);
+  return { logoDesenhado };
 }

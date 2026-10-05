@@ -178,6 +178,7 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
         item={item}
         token={token}
         recarregar={carregar}
+        empresaLogoUrl={dados?.empresa_logo_url || null}
         dadosCarregadosEm={() => carregadoEmRef.current}
         abrirProximaAula={aberta.continuar}
         onErroSessao={onErroSessao}

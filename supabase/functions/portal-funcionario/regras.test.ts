@@ -11,10 +11,12 @@ import {
   cursoPublicado,
   datasDeConclusao,
   detalheLimitado,
+  logoAssinadoParaPdf,
   proximaTentativaEm,
   situacaoDasTentativas,
   situacaoDaTrilha,
 } from "./regras.ts";
+import { assinarDaEmpresa } from "../_shared/storage-assinar.ts";
 
 // Dados sintéticos: nenhum identificador ou nome real.
 const trilhaDe = (ids: string[], feitas: string[]) => ({
@@ -653,4 +655,90 @@ test("cursoPublicado: campo ausente ou nulo (legado) conta como publicado", () =
   assert.equal(cursoPublicado({ ativo: null }), true);
   assert.equal(cursoPublicado(null), true);
   assert.equal(cursoPublicado(undefined), true);
+});
+
+// ------------------------------------------------------ logoAssinadoParaPdf
+// Dados sintéticos: empresas "empresa-a" e "empresa-b", logo "logo.png".
+const assinarSempre = (url: string) => async (refs: string[]) =>
+  new Map(refs.map((r) => [r, url] as [string, string]));
+
+test("logoAssinadoParaPdf: referência da pasta da empresa vira a URL assinada", async () => {
+  const pedidos: string[][] = [];
+  const url = await logoAssinadoParaPdf("empresas/empresa-a/logo.png", async (refs) => {
+    pedidos.push(refs);
+    return new Map([["empresas/empresa-a/logo.png", "https://assinada.exemplo/logo?token=t"]]);
+  });
+  assert.equal(url, "https://assinada.exemplo/logo?token=t");
+  assert.deepEqual(pedidos, [["empresas/empresa-a/logo.png"]]);
+});
+
+test("logoAssinadoParaPdf: URL do Base44 (arquivo perdido) fica sem logo e nem tenta assinar", async () => {
+  let chamou = false;
+  const assinar = async () => {
+    chamou = true;
+    return new Map<string, string>();
+  };
+  assert.equal(await logoAssinadoParaPdf("https://base44.app/api/files/logo.png", assinar), null);
+  assert.equal(await logoAssinadoParaPdf("HTTPS://Files.BASE44.com/logo.png", assinar), null);
+  assert.equal(chamou, false);
+});
+
+test("logoAssinadoParaPdf: vazio, espaços ou valor que não é texto ficam sem logo", async () => {
+  let chamou = false;
+  const assinar = async () => {
+    chamou = true;
+    return new Map<string, string>();
+  };
+  for (const v of [null, undefined, "", "   ", 0, {}, ["empresas/empresa-a/logo.png"]]) {
+    assert.equal(await logoAssinadoParaPdf(v, assinar), null);
+  }
+  assert.equal(chamou, false);
+});
+
+test("logoAssinadoParaPdf: o que o helper não assinou (link externo, outra empresa) fica sem logo", async () => {
+  const naoAssina = async () => new Map<string, string>();
+  assert.equal(await logoAssinadoParaPdf("https://site.exemplo/logo.png", naoAssina), null);
+  assert.equal(await logoAssinadoParaPdf("empresas/empresa-b/logo.png", naoAssina), null);
+  assert.equal(await logoAssinadoParaPdf("data:image/png;base64,AAAA", naoAssina), null);
+});
+
+test("logoAssinadoParaPdf: falha ao assinar não derruba o `dados` (o PDF sai sem logo)", async () => {
+  const quebra = async () => {
+    throw new Error("storage fora do ar");
+  };
+  assert.equal(await logoAssinadoParaPdf("empresas/empresa-a/logo.png", quebra), null);
+  assert.equal(await logoAssinadoParaPdf("empresas/empresa-a/logo.png", assinarSempre("")), null);
+});
+
+// Com o helper de verdade (`assinarDaEmpresa`) e um Storage de mentira: só a pasta da empresa da sessão.
+const storageDeMentira = () => ({
+  storage: {
+    from: (bucket: string) => ({
+      createSignedUrls: async (caminhos: string[], ttl: number) => ({
+        data: caminhos.map((path) => ({
+          path,
+          signedUrl: `https://assinada.exemplo/${bucket}/${path}?ttl=${ttl}`,
+        })),
+        error: null,
+      }),
+    }),
+  },
+});
+
+test("logoAssinadoParaPdf + assinarDaEmpresa: assina a pasta da empresa e barra a de outra", async () => {
+  const supabase = storageDeMentira();
+  const assinar = (empresaId: string) => (refs: string[]) =>
+    assinarDaEmpresa(supabase, refs, empresaId);
+  const propria = await logoAssinadoParaPdf("empresas/empresa-a/logo.png", assinar("empresa-a"));
+  assert.match(
+    String(propria),
+    /^https:\/\/assinada\.exemplo\/empresas\/empresa-a\/logo\.png\?ttl=/
+  );
+  const alheia = await logoAssinadoParaPdf("empresas/empresa-b/logo.png", assinar("empresa-a"));
+  assert.equal(alheia, null);
+  const escapando = await logoAssinadoParaPdf(
+    "empresas/empresa-a/../empresa-b/x.png",
+    assinar("empresa-a")
+  );
+  assert.equal(escapando, null);
 });

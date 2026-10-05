@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, FileDown, Download, Award, Ban, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { baixarCertificadoPdf } from "@/lib/certificado-ead";
+import { mensagemFalhaCertificado } from "@/lib/certificado-ead-falhas";
 import { logoParaPdf } from "@/lib/pdf-empresa";
 import { numerarAulas } from "@/lib/portal-curso";
 
@@ -163,8 +164,13 @@ export default function MatriculaAuditoriaSheet({
   };
 
   const baixar = async () => {
-    const logo = await logoParaPdf(empresaAtiva);
-    await baixarCertificadoPdf({ ...certificado, revogado: !!certificado.revogado_em }, { logo });
+    try {
+      const logo = await logoParaPdf(empresaAtiva);
+      await baixarCertificadoPdf({ ...certificado, revogado: !!certificado.revogado_em }, { logo });
+    } catch (e) {
+      console.error("[certificado] falha ao baixar:", e);
+      toast.error(mensagemFalhaCertificado(e));
+    }
   };
 
   const revogar = async () => {
