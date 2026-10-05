@@ -1044,7 +1044,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
             aulas={aulasDoCurso(m.curso_id)}
             empresaAtiva={empresaAtiva}
             user={user}
-            onClose={() => setMatriculaDetalheId(null)}
+            // Ao fechar, recarrega: revogar o certificado nos Detalhes não avisa a tela (só liberar
+            // tentativa avisa), e a lixeira da matrícula depende do certificado estar revogado (T20).
+            onClose={() => {
+              setMatriculaDetalheId(null);
+              recarregar();
+            }}
             onMudou={recarregar}
           />
         );
