@@ -42,7 +42,7 @@ function fimDoBloco(linhas, i) {
   return j;
 }
 
-function cabecalhoDoDocumento(dados) {
+export function cabecalhoDoDocumento(dados) {
   const emp = dados.empresa || {};
   const referencia = [
     dados.dataBase ? `Data-base: ${dados.dataBase}` : "",
@@ -63,7 +63,7 @@ function cabecalhoDoDocumento(dados) {
   };
 }
 
-function linhasAssinatura(rep) {
+export function linhasAssinatura(rep) {
   return [rep?.nome || "", rep?.cargo || "", rep?.cpf ? `CPF: ${rep.cpf}` : ""].filter(Boolean);
 }
 
@@ -192,7 +192,7 @@ export function montarPlanilhaProposta(dados) {
 const EXTRAS_WINANSI = "€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ";
 const TROCAS_PDF = { "≤": "<=", "≥": ">=", Ω: "ohm", "⌀": "Ø", "′": "'", "″": '"', "\t": " " };
 
-function textoPdf(valor) {
+export function textoPdf(valor) {
   return Array.from(String(valor ?? "").normalize("NFC"))
     .map((ch) => {
       if (TROCAS_PDF[ch] !== undefined) return TROCAS_PDF[ch];
@@ -334,8 +334,11 @@ export function gerarPdfProposta(dados, { jsPDF, autoTable }) {
 
 // -------------------------------------------------------------- downloads
 
-/** Gera e baixa o PDF (jspdf e jspdf-autotable carregados só no clique). */
-export async function baixarPropostaPdf(dados, nomeArquivo) {
+/**
+ * jsPDF e jspdf-autotable carregados só no clique (import dinâmico). Também
+ * usado pelo cronograma físico-financeiro (lib/cronograma-export.js).
+ */
+export async function carregarJsPdf() {
   const [{ jsPDF }, modAutoTable] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
   // o pacote é UMD/CommonJS: conforme o empacotador, a função vem em
   // `default` ou em `default.default`
@@ -344,7 +347,12 @@ export async function baixarPropostaPdf(dados, nomeArquivo) {
       ? modAutoTable.default
       : modAutoTable.default?.default;
   if (typeof autoTable !== "function") throw new Error("jspdf-autotable não carregou");
-  gerarPdfProposta(dados, { jsPDF, autoTable }).save(nomeArquivo);
+  return { jsPDF, autoTable };
+}
+
+/** Gera e baixa o PDF. */
+export async function baixarPropostaPdf(dados, nomeArquivo) {
+  gerarPdfProposta(dados, await carregarJsPdf()).save(nomeArquivo);
 }
 
 /** Gera e baixa o Excel. */

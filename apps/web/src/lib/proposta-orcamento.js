@@ -221,6 +221,53 @@ function bdiComPercentual(bdi) {
 }
 
 /**
+ * Cabeçalho comum aos documentos da licitação (proposta de preços e cronograma
+ * físico-financeiro):
+ * { empresa: { nome, cnpj, endereco, contato }, orgao, objeto, edital, localData,
+ *   representante: { nome, cargo, cpf } }
+ *
+ * - órgão/objeto/edital: de orcamento_info; se faltar, dos campos da licitação da
+ *   oportunidade (orgao; licitacao_numero/licitacao_processo). O objeto cai por último no
+ *   nome da oportunidade (nome, ou titulo). O que não existir fica null e não sai.
+ * - localData: "<local>, <dd de mês de aaaa>" (opcoes.local e opcoes.dataISO).
+ */
+export function montarCabecalhoLicitacao({
+  info,
+  oportunidade,
+  empresa,
+  representante,
+  opcoes,
+} = {}) {
+  const inf = info || {};
+  const op = oportunidade || {};
+  const opc = opcoes || {};
+  const rep = representante || {};
+  const data = dataPorExtenso(opc.dataISO);
+  const local = texto(opc.local);
+  const edital =
+    texto(inf.edital) ||
+    [
+      texto(op.licitacao_numero) && `Edital ${texto(op.licitacao_numero)}`,
+      texto(op.licitacao_processo) && `Processo ${texto(op.licitacao_processo)}`,
+    ]
+      .filter(Boolean)
+      .join(" - ");
+
+  return {
+    empresa: montarEmpresa(empresa),
+    orgao: texto(inf.orgao) || texto(op.orgao) || null,
+    objeto: texto(inf.objeto) || texto(op.nome) || texto(op.titulo) || null,
+    edital: edital || null,
+    localData: [local, data].filter(Boolean).join(", "),
+    representante: {
+      nome: texto(rep.nome),
+      cargo: texto(rep.cargo),
+      cpf: texto(rep.cpf) ? formatarCpf(rep.cpf) : "",
+    },
+  };
+}
+
+/**
  * Tudo o que o PDF e o Excel mostram, já calculado (DadosProposta):
  * { empresa: { nome, cnpj, endereco, contato }, titulo, orgao, objeto, edital,
  *   dataBase, bdi, linhas, totalGeral, totalExtenso, validade, localData,
@@ -238,9 +285,7 @@ function bdiComPercentual(bdi) {
  */
 export function montarDadosProposta({ itens, info, oportunidade, empresa, representante, opcoes }) {
   const inf = info || {};
-  const op = oportunidade || {};
   const opc = opcoes || {};
-  const rep = representante || {};
 
   // Mesma ordem e mesmo rótulo (`item.item`) da tela; devolve lista nova, `itens` fica intacta.
   const ordenados = ordenarItensOportunidade(itens);
@@ -281,35 +326,22 @@ export function montarDadosProposta({ itens, info, oportunidade, empresa, repres
 
   const totalGeral = totalCentavos / 100;
   const dias = Number(opc.validadeDias) || 0;
-  const data = dataPorExtenso(opc.dataISO);
-  const local = texto(opc.local);
-  const edital =
-    texto(inf.edital) ||
-    [
-      texto(op.licitacao_numero) && `Edital ${texto(op.licitacao_numero)}`,
-      texto(op.licitacao_processo) && `Processo ${texto(op.licitacao_processo)}`,
-    ]
-      .filter(Boolean)
-      .join(" - ");
+  const cab = montarCabecalhoLicitacao({ info, oportunidade, empresa, representante, opcoes });
 
   return {
-    empresa: montarEmpresa(empresa),
+    empresa: cab.empresa,
     titulo: "Proposta de preços",
-    orgao: texto(inf.orgao) || texto(op.orgao) || null,
-    objeto: texto(inf.objeto) || texto(op.nome) || texto(op.titulo) || null,
-    edital: edital || null,
+    orgao: cab.orgao,
+    objeto: cab.objeto,
+    edital: cab.edital,
     dataBase: texto(inf.data_base) || null,
     bdi: bdiComPercentual(inf.bdi),
     linhas,
     totalGeral,
     totalExtenso: valorPorExtenso(totalGeral),
     validade: `Validade da proposta: ${dias} ${dias === 1 ? "dia" : "dias"}`,
-    localData: [local, data].filter(Boolean).join(", "),
-    representante: {
-      nome: texto(rep.nome),
-      cargo: texto(rep.cargo),
-      cpf: texto(rep.cpf) ? formatarCpf(rep.cpf) : "",
-    },
+    localData: cab.localData,
+    representante: cab.representante,
   };
 }
 

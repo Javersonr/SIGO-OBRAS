@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { montarDadosProposta } from "./proposta-orcamento";
-import { gerarPdfProposta, montarPlanilhaProposta } from "./proposta-export";
+import { carregarJsPdf, gerarPdfProposta, montarPlanilhaProposta } from "./proposta-export";
 
 const item = (id, numero, ordem, quantidade, valor_unitario, valor_total, extra = {}) => ({
   id,
@@ -162,6 +162,21 @@ describe("montarPlanilhaProposta", () => {
 
 // jsPDF no PC do escritório (i3) é lento: folga no tempo-limite dos testes de PDF
 const LIMITE_PDF = 20000;
+
+describe("carregarJsPdf", () => {
+  it(
+    "carrega o jsPDF e a função do autoTable por import dinâmico",
+    async () => {
+      const carregado = await carregarJsPdf();
+      expect(typeof carregado.jsPDF).toBe("function");
+      expect(typeof carregado.autoTable).toBe("function");
+      const doc = new carregado.jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      carregado.autoTable(doc, { head: [["Item"]], body: [["1"]] });
+      expect(doc.lastAutoTable.finalY).toBeGreaterThan(0);
+    },
+    LIMITE_PDF
+  );
+});
 
 describe("gerarPdfProposta", () => {
   it(
