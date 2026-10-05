@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { agruparPorPasta, ehPastaPadrao, nomePastaValido } from "@/lib/pastas-arquivo";
+import { agruparPorPasta, ehPastaPadrao, mesmaPasta, nomePastaValido } from "@/lib/pastas-arquivo";
 
 /**
  * Arquivos da oportunidade agrupados em pastas recolhíveis
@@ -35,15 +35,15 @@ export default function ArquivosPastas({
   const grupos = agruparPorPasta(arquivos, pastas);
 
   const alternar = (pasta) => {
+    // decide fora do updater: o updater do setState não pode ter efeito colateral (setState do pai)
+    const abrir = !abertas.has(pasta);
     setAbertas((prev) => {
       const nova = new Set(prev);
-      if (nova.has(pasta)) nova.delete(pasta);
-      else {
-        nova.add(pasta);
-        onAbrirPasta?.(pasta);
-      }
+      if (abrir) nova.add(pasta);
+      else nova.delete(pasta);
       return nova;
     });
+    if (abrir) onAbrirPasta?.(pasta);
   };
 
   const cancelar = () => {
@@ -120,9 +120,13 @@ export default function ArquivosPastas({
 
       {grupos.map(({ pasta, arquivos: lista }) => {
         const aberta = abertas.has(pasta);
+        const atual = mesmaPasta(pasta, pastaAtual);
         const podeApagar = !ehPastaPadrao(pasta) && lista.length === 0;
         return (
-          <div key={pasta} className="rounded-lg border border-slate-200">
+          <div
+            key={pasta}
+            className={`rounded-lg border ${atual ? "border-amber-300 bg-amber-50/40" : "border-slate-200"}`}
+          >
             <div className="flex items-center gap-2 px-3 py-2">
               <button
                 type="button"
@@ -140,11 +144,17 @@ export default function ArquivosPastas({
                 ) : (
                   <Folder className="h-5 w-5 text-amber-500" />
                 )}
-                <span
-                  className={`font-medium ${pasta === pastaAtual ? "text-slate-900" : "text-slate-700"}`}
-                >
+                <span className={`font-medium ${atual ? "text-slate-900" : "text-slate-700"}`}>
                   {pasta}
                 </span>
+                {atual && (
+                  <span
+                    className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+                    title="Pasta onde o próximo upload ou link é gravado"
+                  >
+                    pasta atual
+                  </span>
+                )}
                 <span className="text-xs text-slate-500">
                   {lista.length === 0
                     ? "vazia"

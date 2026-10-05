@@ -64,7 +64,14 @@ import ImgStorage from "@/components/ImgStorage";
 import LerEditalSheet from "@/components/oportunidades/edital/LerEditalSheet";
 import EditalResumoCard from "./EditalResumoCard";
 import ArquivosPastas from "./ArquivosPastas";
-import { PASTA_OUTROS, lerPastasExtras, listarPastas, pastaDoArquivo } from "@/lib/pastas-arquivo";
+import {
+  PASTA_OUTROS,
+  lerPastasExtras,
+  listarPastas,
+  mesmaPasta,
+  pastaDoArquivo,
+  pastaParaGravar,
+} from "@/lib/pastas-arquivo";
 import DescricaoRica from "./DescricaoRica";
 import { preservarAtende } from "./oportunidade-form";
 
@@ -172,15 +179,13 @@ export default function OportunidadeDetalhe({
   const [activeTab, setActiveTab] = useState("geral");
   const [visitedTabs, setVisitedTabs] = useState(new Set(["geral"]));
   const fileInputArquivosRef = useRef(null);
-  // Pasta atual da aba Arquivos: destino do upload/link e primeira aberta
-  const [pastaAtual, setPastaAtual] = useState(PASTA_OUTROS);
+  // Pasta atual da aba Arquivos: destino do upload/link e primeira aberta. Guarda de qual
+  // oportunidade ela é: ao abrir outra, volta para Outros já no primeiro render (sem efeito).
+  const [destinoPasta, setDestinoPasta] = useState({ opId: null, pasta: PASTA_OUTROS });
+  const pastaAtual = destinoPasta.opId === selectedOp?.id ? destinoPasta.pasta : PASTA_OUTROS;
+  const setPastaAtual = (pasta) => setDestinoPasta({ opId: selectedOp?.id, pasta });
   const pastasExtras = lerPastasExtras(selectedOp?.pastas_arquivos);
   const pastasArquivos = listarPastas(pastasExtras, arquivos || []);
-
-  // Outra oportunidade aberta: a pasta de destino volta para Outros
-  useEffect(() => {
-    setPastaAtual(PASTA_OUTROS);
-  }, [selectedOp?.id]);
 
   const gravarPastasExtras = async (novas) => {
     await sigo.entities.Oportunidade.update(selectedOp.id, { pastas_arquivos: novas });
@@ -204,8 +209,8 @@ export default function OportunidadeDetalhe({
   const handleApagarPasta = async (nome) => {
     if (!confirm(`Apagar a pasta "${nome}"?`)) return;
     try {
-      await gravarPastasExtras(pastasExtras.filter((p) => p !== nome));
-      if (pastaAtual === nome) setPastaAtual(PASTA_OUTROS);
+      await gravarPastasExtras(pastasExtras.filter((p) => !mesmaPasta(p, nome)));
+      if (mesmaPasta(pastaAtual, nome)) setPastaAtual(PASTA_OUTROS);
     } catch (e) {
       toast.error(`Não foi possível apagar a pasta: ${e?.message || "erro"}`);
     }
@@ -213,7 +218,10 @@ export default function OportunidadeDetalhe({
 
   const handleMoverArquivo = async (arq, pasta) => {
     try {
-      await sigo.entities.ArquivoOportunidade.update(arq.id, { pasta });
+      // "Outros" grava null (segue a regra da categoria); só um edital movido para Outros grava o nome
+      await sigo.entities.ArquivoOportunidade.update(arq.id, {
+        pasta: pastaParaGravar(pasta, arq.categoria),
+      });
       toast.success(`"${arq.nome}" movido para ${pasta}`);
       onReloadArquivos();
     } catch (e) {
@@ -370,19 +378,24 @@ export default function OportunidadeDetalhe({
     const nome =
       linkNome.trim() ||
       (isOneDrive ? "Link OneDrive" : isGDrive ? "Link Google Drive" : "Link externo");
-    await sigo.entities.ArquivoOportunidade.create({
-      empresa_id: empresaAtiva.id,
-      oportunidade_id: selectedOp.id,
-      nome,
-      url: linkUrl.trim(),
-      tipo: "link",
-      pasta: pastaAtual,
-      usuario_nome: user?.full_name || "",
-    });
-    setLinkUrl("");
-    setLinkNome("");
-    setShowAddLink(false);
-    onReloadArquivos();
+    try {
+      await sigo.entities.ArquivoOportunidade.create({
+        empresa_id: empresaAtiva.id,
+        oportunidade_id: selectedOp.id,
+        nome,
+        url: linkUrl.trim(),
+        tipo: "link",
+        // "Outros" grava null: um edital lido depois pela IA cai em "Edital" pela regra da categoria
+        pasta: pastaParaGravar(pastaAtual),
+        usuario_nome: user?.full_name || "",
+      });
+      setLinkUrl("");
+      setLinkNome("");
+      setShowAddLink(false);
+      onReloadArquivos();
+    } catch (e) {
+      toast.error(`Não foi possível salvar o link: ${e?.message || "erro"}`);
+    }
   };
 
   // Reset tab quando abre nova oportunidade
@@ -1467,9 +1480,9 @@ export default function OportunidadeDetalhe({
 
                   {/* ABA ARQUIVOS */}
                   <TabsContent value="arquivos" className="space-y-4 mt-4">
-                    <div className="flex justify-between items-center">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <h3 className="font-semibold text-slate-800">Arquivos</h3>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         <input
                           ref={fileInputArquivosRef}
                           type="file"
@@ -1666,7 +1679,7 @@ export default function OportunidadeDetalhe({
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
                                   {pastasArquivos
-                                    .filter((p) => p !== pastaDoArquivo(arq))
+                                    .filter((p) => !mesmaPasta(p, pastaDoArquivo(arq)))
                                     .map((p) => (
                                       <DropdownMenuItem
                                         key={p}

@@ -45,6 +45,7 @@ import {
   preservarAtende,
   valorEstimadoParaForm,
 } from "@/components/oportunidades/oportunidade-form";
+import { pastaParaGravar } from "@/lib/pastas-arquivo";
 
 // Campos de texto da licitação (orgao já existia; os demais vêm da 0111).
 const CAMPOS_LICITACAO_TEXTO = [
@@ -820,7 +821,8 @@ export default function Oportunidades() {
     loadOrcamentoData(selectedOp.id);
   };
 
-  // pasta: destino na aba Arquivos (null = regra padrão: edital → Edital, resto → Outros)
+  // pasta: destino escolhido na aba Arquivos. "Outros" (ou vazio) grava null, para valer a regra
+  // da categoria (um edital lido depois pela IA cai em "Edital").
   const handleUploadFile = async (e, pasta = null) => {
     const file = e.target.files?.[0];
     if (!file || !selectedOp) return;
@@ -852,7 +854,7 @@ export default function Oportunidades() {
         url: fileRef,
         tipo: fileType,
         tamanho: file.size,
-        pasta: pasta || null,
+        pasta: pastaParaGravar(pasta),
         usuario_nome: user?.full_name || user?.email || "Usuário",
       });
       await loadOrcamentoData(selectedOp.id);

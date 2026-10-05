@@ -709,7 +709,18 @@ export default function CalendarioConsolidado() {
         onAddNota={async () => {}}
         onDeleteArquivo={async () => {}}
         onUploadFile={async () => {}}
-        onReloadArquivos={() => {}}
+        onReloadArquivos={async () => {
+          // "Mover para…" e "Adicionar link" gravam e pedem a lista nova (antes era no-op)
+          const op = oportunidadeDetalhe;
+          if (!op) return;
+          try {
+            const arqs = await sigo.entities.ArquivoOportunidade.filter({
+              empresa_id: op.empresa_id,
+              oportunidade_id: op.id,
+            });
+            setArquivos(arqs.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
+          } catch {}
+        }}
         onLimparOrcamento={async () => {}}
         onExportarExcel={() => {}}
         onExportarPDF={async () => {}}
