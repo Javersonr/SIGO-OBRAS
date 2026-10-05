@@ -54,18 +54,29 @@ export function normalizarIp(bruto: string): string {
 }
 
 /**
- * IP do cliente. O gateway do Supabase CONCATENA o X-Forwarded-For que o
- * cliente mandar ("falso, ip-real"), então vale a entrada mais à DIREITA — a
- * primeira é forjável e deixaria girar o limite por requisição.
+ * IP do cliente como o gateway entregou, sem normalizar. O gateway do Supabase
+ * CONCATENA o X-Forwarded-For que o cliente mandar ("falso, ip-real"), então
+ * vale a entrada mais à DIREITA — a primeira é forjável e deixaria girar o
+ * limite por requisição (e falsificar o IP gravado na trilha, na prova, no
+ * certificado e na ciência). Sem X-Forwarded-For, cai para o x-real-ip; sem
+ * nenhum dos dois, null (cf-connecting-ip é do cliente e não vale).
  */
-export function ipDaRequisicao(req: Request): string | null {
+export function ipBrutoDaRequisicao(req: Request): string | null {
   const xff = req.headers.get("x-forwarded-for") ?? "";
   const ultimo = xff
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
     .pop();
-  const bruto = ultimo || req.headers.get("x-real-ip")?.trim() || "";
+  return ultimo || req.headers.get("x-real-ip")?.trim() || null;
+}
+
+/**
+ * IP do cliente para o limitador: o IP bruto normalizado (IPv6 reduzido ao
+ * /64). Quem grava o endereço como evidência usa `ipBrutoDaRequisicao`.
+ */
+export function ipDaRequisicao(req: Request): string | null {
+  const bruto = ipBrutoDaRequisicao(req);
   return bruto ? normalizarIp(bruto) : null;
 }
 

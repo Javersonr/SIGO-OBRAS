@@ -2,6 +2,8 @@
  * Regras compartilhadas do Portal do Funcionário (login + trilha de auditoria).
  */
 
+import { ipBrutoDaRequisicao } from "./limite-tentativas.ts";
+
 /** CPF digitado com ou sem pontuação vira só dígitos; outro usuário, minúsculo. */
 export function normalizarUsuario(bruto: string): string {
   const u = (bruto || "").trim().toLowerCase();
@@ -46,12 +48,18 @@ export function motivoSenhaInvalida(nova: string, usuario: string): string | nul
   return null;
 }
 
+/**
+ * Origem gravada como evidência (trilha, tentativa da prova, assinatura do
+ * certificado, ciência, recibo do fornecedor). O IP é o da entrada mais à
+ * direita do X-Forwarded-For (a única que o cliente não forja) e fica completo:
+ * IPv6 não é reduzido ao /64, que é só do limitador de tentativas.
+ */
 export function origemDaRequisicao(req: Request): {
   ip: string | null;
   dispositivo: string | null;
 } {
   return {
-    ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
+    ip: ipBrutoDaRequisicao(req),
     dispositivo: req.headers.get("user-agent")?.slice(0, 400) || null,
   };
 }
