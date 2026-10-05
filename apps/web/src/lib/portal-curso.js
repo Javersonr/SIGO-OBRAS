@@ -288,6 +288,124 @@ export function limparRascunhosPortal(storage) {
   });
 }
 
+// ------------------------------------- prova sorteada pelo servidor (T16)
+
+const ehInteiroNaoNegativo = (v) => Number.isInteger(v) && v >= 0;
+
+/** `ordem` é uma permutação de 0..n-1 (cada alternativa aparece uma vez). */
+const ehPermutacao = (ordem, n) =>
+  Array.isArray(ordem) &&
+  ordem.length === n &&
+  ordem.every((i) => ehInteiroNaoNegativo(i) && i < n) &&
+  new Set(ordem).size === n;
+
+/**
+ * A prova que o servidor sorteou (ação `iniciar_avaliacao`), pronta para a tela, ou null se a resposta
+ * não tem a forma esperada (a tela mostra o problema em vez de quebrar). O servidor já manda as
+ * questões e as alternativas na ordem em que são mostradas; `ordem_opcoes` diz o índice ORIGINAL de
+ * cada alternativa, e é por ele que a resposta volta (e que o rascunho guardado no aparelho vale mesmo
+ * quando a prova é sorteada de novo).
+ *
+ * Cada questão sai como `{ id, pergunta, opcoes, exibicao: [{ texto, indice }] }`. Gabarito e
+ * comentário só passam na prévia do RT (`previa: true`); o aluno nunca os recebe, mesmo que a resposta
+ * os trouxesse.
+ */
+export function provaParaTela(resposta, { previa = false } = {}) {
+  const lista = resposta?.questoes;
+  if (!Array.isArray(lista) || lista.length === 0) return null;
+  if (!Number.isInteger(resposta.tentativa) || resposta.tentativa < 1) return null;
+  const questoes = [];
+  for (const q of lista) {
+    const valida =
+      q &&
+      typeof q.id === "string" &&
+      q.id !== "" &&
+      typeof q.pergunta === "string" &&
+      Array.isArray(q.opcoes) &&
+      q.opcoes.length > 0 &&
+      ehPermutacao(q.ordem_opcoes, q.opcoes.length);
+    if (!valida) return null;
+    questoes.push({
+      id: q.id,
+      pergunta: q.pergunta,
+      opcoes: [...q.opcoes],
+      exibicao: q.opcoes.map((texto, posicao) => ({ texto, indice: q.ordem_opcoes[posicao] })),
+      ...(previa ? { correta: q.correta, comentario: q.comentario ?? null } : {}),
+    });
+  }
+  return {
+    tentativa: resposta.tentativa,
+    tentativasMax: resposta.tentativas_max ?? null,
+    notaMinima: resposta.nota_minima ?? null,
+    questoes,
+  };
+}
+
+const CODIGOS_PROVA_DESATUALIZADA = new Set(["PROVA_NAO_INICIADA", "PROVA_ALTERADA"]);
+
+/**
+ * O servidor recusou o envio porque a prova aberta não vale mais (não foi iniciada nesta tentativa, ou
+ * o RH mudou as questões no meio): a tela abre a prova de novo e mantém as respostas que ainda valem.
+ */
+export function provaPrecisaReabrir(erro) {
+  return CODIGOS_PROVA_DESATUALIZADA.has(erro?.codigo);
+}
+
+/** Aviso mostrado depois de reabrir a prova (ver `provaPrecisaReabrir`). */
+export function avisoDaProvaReaberta(erro) {
+  if (erro?.codigo === "PROVA_ALTERADA") {
+    return "O RH alterou as questões enquanto você respondia: a prova foi aberta de novo. Confira suas respostas e envie.";
+  }
+  return "Esta prova não estava mais aberta: ela foi aberta de novo. Confira suas respostas e envie.";
+}
+
+const MSG_TENTATIVAS_ESGOTADAS =
+  "Você usou todas as tentativas. Procure o RH para liberar uma nova.";
+
+/**
+ * O que a tela diz depois do envio da prova. O servidor só manda a nota e os acertos ao APROVADO; o
+ * reprovado vê "insatisfatório", a nota mínima, as tentativas e a próxima liberação (nota e acertos
+ * deixariam deduzir o gabarito). Se o servidor mandar a nota ao reprovado, a tela a mostra.
+ * `tentativas` conta as que restam (null se o curso não tem limite) e `esgotada` diz que não resta nenhuma
+ * (a tela então não promete "nova tentativa liberada em...").
+ */
+export function resumoDoResultado(resultado) {
+  const r = resultado && typeof resultado === "object" ? resultado : {};
+  const aprovada = r.aprovada === true;
+  let placar = null;
+  if (Number.isFinite(r.nota)) {
+    placar =
+      Number.isFinite(r.acertos) && Number.isFinite(r.total)
+        ? `Nota: ${r.nota}% (${r.acertos}/${r.total})`
+        : `Nota: ${r.nota}%`;
+  }
+  if (aprovada) {
+    return {
+      aprovada,
+      titulo: placar ?? "Resultado: satisfatório",
+      mensagem: "🎉 Aprovado! Veja abaixo a correção comentada.",
+      tentativas: null,
+      esgotada: false,
+    };
+  }
+  let tentativas = null;
+  let esgotada = false;
+  if (Number.isInteger(r.tentativas_max) && Number.isInteger(r.tentativa)) {
+    const restam = r.tentativas_max - r.tentativa;
+    esgotada = restam <= 0;
+    tentativas = esgotada
+      ? MSG_TENTATIVAS_ESGOTADAS
+      : `Você ainda tem ${restam} ${restam === 1 ? "tentativa" : "tentativas"}.`;
+  }
+  return {
+    aprovada,
+    titulo: placar ?? "Resultado: insatisfatório",
+    mensagem: `Não atingiu a nota mínima (${r.nota_minima}%).`,
+    tentativas,
+    esgotada,
+  };
+}
+
 // ------------------------------------------------ nova tentativa da prova
 
 /** Maior espera que o `setTimeout` aceita (acima disso dispara na hora). */

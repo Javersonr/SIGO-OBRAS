@@ -13,9 +13,13 @@
  *   trocar_senha { nova_senha, senha_atual? }   logout
  *   dados                                       evento { evento, matricula_id?, aula_id?, detalhe? }
  *   progresso { matricula_id, aula_id, segundos_assistidos }  (a duração vem do cadastro da aula)
- *   avaliacao { matricula_id, respostas:[{questao_id,resposta}] }
+ *   iniciar_avaliacao { matricula_id }          → sorteia a prova NO SERVIDOR (sem gabarito)
+ *   avaliacao { matricula_id, respostas:[{questao_id,resposta}] }  (exige iniciar_avaliacao antes)
  *   certificado { matricula_id, senha }          ciencia { ciencia_id }
  *   duvida { matricula_id, aula_id?, pergunta }
+ *
+ * `dados` não leva as questões (saem sorteadas em iniciar_avaliacao) e só assina URL e manda o texto das
+ * aulas LIBERADAS: a aula bloqueada vai na lista, mas sem conteúdo (T16).
  *
  * Trilha de auditoria (NR-1, Anexo II): todo acesso e atividade vira uma linha
  * em treinamento_evento com data/hora DO SERVIDOR, IP e dispositivo. O tempo
@@ -30,6 +34,7 @@ import { hashPassword, verifyPassword } from "../_shared/passwords.ts";
 import {
   normalizarUsuario,
   motivoSenhaInvalida,
+  inteiroAleatorioSeguro,
   registrarEvento,
   origemDaRequisicao,
   gerarCodigoCertificado,
@@ -43,19 +48,31 @@ import { carregarDocumentos, funcionarioPodeEntrar } from "./documentos.ts";
 import { confirmarCiencia } from "./ciencia.ts";
 import { requisitosDoCurso, duracaoParaProgresso } from "./requisitos.ts";
 import {
+  EVENTO_PROVA_INICIADA,
   NOTA_MINIMA_PADRAO,
+  TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG,
   aulaLiberada,
+  aulasParaAluno,
   comRastroDeFalha,
   conclusaoDaAula,
   corrigirProva,
   creditarTempo,
   cursoPublicado,
   datasDeConclusao,
+  detalheDaProvaIniciada,
   detalheLimitado,
+  inicioDaProva,
   logoAssinadoParaPdf,
+  matriculaParaAluno,
+  type ProgressoDaAula,
+  provaDaOrdem,
   proximaTentativaEm,
+  refsDasAulasLiberadas,
+  respostaDaCorrecao,
   situacaoDasTentativas,
   situacaoDaTrilha,
+  sortearProva,
+  validarEnvio,
 } from "./regras.ts";
 import {
   consumirTentativa,
@@ -110,7 +127,7 @@ interface Body {
   aula_id?: string;
   segundos_assistidos?: number;
   concluir?: boolean;
-  respostas?: { questao_id: string; resposta: number; ordem_opcoes?: number[] }[];
+  respostas?: unknown;
   ciencia_id?: string;
   pergunta?: string;
 }
@@ -124,6 +141,19 @@ const hora = (iso: string) =>
 
 // deno-lint-ignore no-explicit-any
 type Db = any;
+
+/** O que `prepararProva` devolve: a resposta de recusa, ou o que a prova precisa. */
+type FalhaOuProva =
+  | { falha: Response }
+  | {
+      falha: null;
+      // deno-lint-ignore no-explicit-any
+      questoes: any[];
+      // deno-lint-ignore no-explicit-any
+      curso: any;
+      usadas: number;
+      max: number | null;
+    };
 
 /**
  * Aulas do curso em ordem + quais estão concluídas nesta matrícula. Só aulas
@@ -576,14 +606,15 @@ Deno.serve(
         matIds.length
           ? supabase.from("treinamento_progresso").select("*").in("matricula_id", matIds)
           : vazio,
+        // só para contar (tem_avaliacao e total_questoes): o texto e as alternativas saem apenas em
+        // iniciar_avaliacao, já sorteados, e o gabarito nunca sai antes da aprovação (T16)
         cursoIds.length
           ? supabase
               .from("treinamento_questao")
-              .select("id, curso_id, ordem, pergunta, opcoes") // SEM gabarito!
+              .select("id, curso_id")
               .in("curso_id", cursoIds)
               .eq("empresa_id", empresaId)
               .is("deleted_at", null)
-              .order("ordem", { ascending: true })
           : vazio,
         matIds.length
           ? supabase
@@ -611,22 +642,6 @@ Deno.serve(
           : vazio,
       ]);
 
-      // deno-lint-ignore no-explicit-any
-      const assinada = await assinarRefs(
-        supabase,
-        [
-          // deno-lint-ignore no-explicit-any
-          ...(aulas ?? []).flatMap((a: any) => [
-            a.tipo === "video" && a.fonte === "upload" ? a.video_ref : null,
-            a.legenda_ref,
-            a.tipo === "pdf" ? a.arquivo_ref : null,
-          ]),
-          // deno-lint-ignore no-explicit-any
-          ...(cursos ?? []).map((c: any) => c.projeto_pedagogico_ref),
-        ],
-        empresaId
-      );
-      const url = (ref?: string | null) => (ref ? (assinada.get(ref) ?? null) : null);
       const progPor = new Map(
         // deno-lint-ignore no-explicit-any
         (prog ?? []).map((p: any) => [`${p.matricula_id}|${p.aula_id}`, p])
@@ -639,40 +654,41 @@ Deno.serve(
       const matsDaEmpresa = (mats ?? []).filter((m: { curso_id: string }) =>
         cursosDaEmpresa.has(m.curso_id)
       );
+      // aulas do curso e progresso desta matrícula (a regra de liberação está em regras.ts)
+      // deno-lint-ignore no-explicit-any
+      const aulasDoCurso = (cursoId: string) =>
+        (aulas ?? []).filter((a: any) => a.curso_id === cursoId);
+      const progressoDa =
+        (matriculaId: string) =>
+        (aulaId: string): ProgressoDaAula =>
+          progPor.get(`${matriculaId}|${aulaId}`) as ProgressoDaAula;
+
+      // Só as aulas LIBERADAS têm arquivo assinado (T16): a URL vale 3 h e pode ser repassada, então
+      // aula bloqueada não ganha URL. A próxima aula recebe a sua quando for liberada (o portal
+      // recarrega os dados ao concluir uma aula).
+      const assinada = await assinarRefs(
+        supabase,
+        [
+          ...matsDaEmpresa.flatMap((m: { id: string; curso_id: string }) =>
+            refsDasAulasLiberadas(aulasDoCurso(m.curso_id), progressoDa(m.id))
+          ),
+          // deno-lint-ignore no-explicit-any
+          ...(cursos ?? []).map((c: any) => c.projeto_pedagogico_ref),
+        ],
+        empresaId
+      );
+      const url = (ref?: string | null) => (ref ? (assinada.get(ref) ?? null) : null);
 
       // deno-lint-ignore no-explicit-any
       const resposta = matsDaEmpresa.map((m: any) => {
         // deno-lint-ignore no-explicit-any
         const curso: any = (cursos ?? []).find((c: any) => c.id === m.curso_id) || null;
-        let anterioresOk = true;
-        const aulasCurso = (aulas ?? [])
-          // deno-lint-ignore no-explicit-any
-          .filter((a: any) => a.curso_id === m.curso_id)
-          // deno-lint-ignore no-explicit-any
-          .map((a: any) => {
-            // deno-lint-ignore no-explicit-any
-            const p: any = progPor.get(`${m.id}|${a.id}`);
-            const concluida = p?.concluida ?? false;
-            const liberada = anterioresOk;
-            anterioresOk = anterioresOk && concluida;
-            return {
-              id: a.id,
-              ordem: a.ordem,
-              modulo: a.modulo,
-              tipo: a.tipo || "video",
-              titulo: a.titulo,
-              fonte: a.fonte || "youtube",
-              youtube_id: a.youtube_id,
-              video_url: a.tipo === "video" && a.fonte === "upload" ? url(a.video_ref) : null,
-              legenda_url: url(a.legenda_ref),
-              arquivo_url: a.tipo === "pdf" ? url(a.arquivo_ref) : null,
-              conteudo_texto: a.tipo === "texto" ? a.conteudo_texto : null,
-              duracao_seg: a.duracao_seg || (a.tipo === "video" ? null : TEMPO_MINIMO_PADRAO),
-              segundos_assistidos: p?.segundos_assistidos ?? 0,
-              concluida,
-              liberada,
-            };
-          });
+        const aulasCurso = aulasParaAluno({
+          aulas: aulasDoCurso(m.curso_id),
+          progresso: progressoDa(m.id),
+          urlDe: url,
+          tempoMinimoPadrao: TEMPO_MINIMO_PADRAO,
+        });
         // deno-lint-ignore no-explicit-any
         const questoesCurso = (questoes ?? []).filter((q: any) => q.curso_id === m.curso_id);
         // deno-lint-ignore no-explicit-any
@@ -703,7 +719,8 @@ Deno.serve(
           aprovacao: tents.find((t: any) => t.aprovada) ?? null,
         }).concluido;
         return {
-          matricula: m,
+          // a nota de quem ainda não foi aprovado não vai ao navegador (T16)
+          matricula: matriculaParaAluno(m),
           curso: curso && {
             id: curso.id,
             nome: curso.nome,
@@ -716,8 +733,9 @@ Deno.serve(
             ativo: cursoPublicado(curso),
           },
           aulas: aulasCurso,
-          questoes: questoesCurso,
+          // as questões NÃO vão aqui (T16): saem sorteadas, sem gabarito, em iniciar_avaliacao
           avaliacao: {
+            total_questoes: questoesCurso.length,
             tentativas_usadas: tents.length,
             tentativas_max: max,
             limite_atingido: esgotada && !m.avaliacao_aprovada,
@@ -945,21 +963,35 @@ Deno.serve(
     }
 
     // ------------------------------------------------------------ avaliação
-    if (body.acao === "avaliacao") {
-      const respostas = body.respostas ?? [];
-      const mat = await minhaMatricula(body.matricula_id);
-      if (!mat) return fail("Matrícula não encontrada", 404);
-      if (!respostas.length) return fail("Envie as respostas", 400);
-      if (mat.avaliacao_aprovada) return fail("Você já foi aprovado nesta avaliação", 409);
+    // A prova é do SERVIDOR (T16). `iniciar_avaliacao` confere se o aluno pode fazê-la, sorteia a ordem
+    // das questões e das alternativas (sorteio criptográfico), grava o sorteio na trilha (evento
+    // `avaliacao_iniciada`, com a hora do servidor) e devolve as questões SEM gabarito. `avaliacao` só
+    // aceita o envio de uma prova iniciada nesta tentativa e completa, e corrige com a ordem que o
+    // servidor gravou: o navegador não escolhe a ordem, não define o início nem o tempo.
 
+    /**
+     * Confere se a matrícula pode fazer a prova AGORA e traz o que ela precisa. As duas ações recusam
+     * pelos mesmos motivos (já aprovado, aulas por concluir, sem questões, tentativas esgotadas,
+     * intervalo correndo). `comGabarito`: só a correção carrega `correta` e `comentario`; abrir a
+     * prova nunca os lê.
+     */
+    // deno-lint-ignore no-explicit-any
+    const prepararProva = async (mat: any, comGabarito: boolean): Promise<FalhaOuProva> => {
+      if (mat.avaliacao_aprovada) {
+        return { falha: fail("Você já foi aprovado nesta avaliação", 409) };
+      }
       const trilha = await trilhaDoCurso(supabase, mat.curso_id, mat.id, empresaId);
       if (!trilha.aulas.every((a: { id: string }) => trilha.feitas.has(a.id))) {
-        return fail("Conclua todas as aulas antes da avaliação", 409);
+        return { falha: fail("Conclua todas as aulas antes da avaliação", 409) };
       }
       const [{ data: questoes }, { data: curso }, { data: anteriores }] = await Promise.all([
         supabase
           .from("treinamento_questao")
-          .select("id, ordem, pergunta, opcoes, correta, comentario")
+          .select(
+            comGabarito
+              ? "id, ordem, pergunta, opcoes, correta, comentario"
+              : "id, ordem, pergunta, opcoes"
+          )
           .eq("curso_id", mat.curso_id)
           .eq("empresa_id", empresaId)
           .is("deleted_at", null)
@@ -976,7 +1008,7 @@ Deno.serve(
           .eq("matricula_id", mat.id)
           .order("numero", { ascending: false }),
       ]);
-      if (!questoes?.length) return fail("Este curso não tem avaliação", 400);
+      if (!questoes?.length) return { falha: fail("Este curso não tem avaliação", 400) };
 
       const usadas = anteriores?.length ?? 0;
       const tentativas = situacaoDasTentativas({
@@ -986,42 +1018,114 @@ Deno.serve(
         ultima: anteriores?.[0],
         agora: Date.now(),
       });
-      const max = tentativas.max;
       if (tentativas.esgotada) {
-        return fail("Você usou todas as tentativas. Procure o RH para liberar uma nova.", 403, {
-          codigo: "LIMITE_TENTATIVAS",
-        });
+        return {
+          falha: fail("Você usou todas as tentativas. Procure o RH para liberar uma nova.", 403, {
+            codigo: "LIMITE_TENTATIVAS",
+          }),
+        };
       }
       if (tentativas.aguardarAte !== null) {
         const libera = tentativas.aguardarAte;
-        return fail(
-          `Nova tentativa liberada às ${hora(new Date(libera).toISOString())}. Revise as aulas enquanto isso.`,
-          429,
-          { codigo: "AGUARDAR", liberada_em: new Date(libera).toISOString() }
-        );
+        return {
+          falha: fail(
+            `Nova tentativa liberada às ${hora(new Date(libera).toISOString())}. Revise as aulas enquanto isso.`,
+            429,
+            { codigo: "AGUARDAR", liberada_em: new Date(libera).toISOString() }
+          ),
+        };
+      }
+      // deno-lint-ignore no-explicit-any
+      return { falha: null, questoes: questoes as any[], curso, usadas, max: tentativas.max };
+    };
+
+    /** O último início de prova gravado nesta matrícula (a linha da trilha), ou erro de leitura. */
+    // deno-lint-ignore no-explicit-any
+    const ultimoInicioDaProva = (mat: any) =>
+      supabase
+        .from("treinamento_evento")
+        .select("created_at, detalhe")
+        .eq("matricula_id", mat.id)
+        .eq("empresa_id", empresaId)
+        .eq("evento", EVENTO_PROVA_INICIADA)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (body.acao === "iniciar_avaliacao") {
+      const mat = await minhaMatricula(body.matricula_id);
+      if (!mat) return fail("Matrícula não encontrada", 404);
+      const preparo = await prepararProva(mat, false);
+      if (preparo.falha) return preparo.falha;
+      const { questoes, curso, max } = preparo;
+      const numero = preparo.usadas + 1;
+
+      // Prova já aberta nesta tentativa (o aluno recarregou a página ou voltou às aulas e abriu de novo):
+      // mantém o mesmo sorteio e a hora do primeiro início, e não grava outro evento. Se o RH mexeu nas
+      // questões nesse meio tempo, a ordem gravada não confere e a prova é sorteada de novo.
+      const { data: gravado, error: erroLeitura } = await ultimoInicioDaProva(mat);
+      if (erroLeitura) return fail("Não foi possível abrir a prova. Tente de novo.", 503);
+      const inicio = inicioDaProva(gravado);
+      let prova =
+        inicio && inicio.tentativa === numero ? provaDaOrdem(questoes, inicio.ordem) : null;
+      if (!prova) {
+        prova = sortearProva(questoes, inteiroAleatorioSeguro);
+        const gravou = await ev({
+          evento: EVENTO_PROVA_INICIADA,
+          matricula_id: mat.id,
+          curso_id: mat.curso_id,
+          detalhe: detalheDaProvaIniciada({ tentativa: numero, agora: Date.now(), prova }),
+        });
+        // sem o início na trilha o envio seria recusado: melhor nem abrir a prova
+        if (!gravou) return fail("Não foi possível abrir a prova. Tente de novo.", 503);
       }
 
-      // ordem em que o portal EXIBIU (questões e alternativas são sorteadas)
+      return ok({
+        tentativa: numero,
+        tentativas_max: max,
+        nota_minima: curso?.nota_minima ?? NOTA_MINIMA_PADRAO,
+        // só o que o aluno vê: sem `correta`, sem `comentario`
+        questoes: prova.map(({ id, pergunta, opcoes, ordem_opcoes }) => ({
+          id,
+          pergunta,
+          opcoes,
+          ordem_opcoes,
+        })),
+      });
+    }
+
+    if (body.acao === "avaliacao") {
+      const mat = await minhaMatricula(body.matricula_id);
+      if (!mat) return fail("Matrícula não encontrada", 404);
+      const preparo = await prepararProva(mat, true);
+      if (preparo.falha) return preparo.falha;
+      const { questoes, curso, max } = preparo;
+      const numero = preparo.usadas + 1;
+
+      // início desta tentativa, resposta de todas as questões e tempo mínimo (regras em regras.ts)
+      const { data: gravado, error: erroLeitura } = await ultimoInicioDaProva(mat);
+      if (erroLeitura) return fail("Não foi possível validar a prova. Tente de novo.", 503);
+      const envio = validarEnvio({
+        questoes,
+        respostas: body.respostas,
+        inicio: inicioDaProva(gravado),
+        numero,
+        agora: Date.now(),
+        tempoMinimoPorQuestaoSeg: TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG,
+      });
+      if (!envio.ok) {
+        return fail(envio.mensagem, envio.status, { codigo: envio.codigo, ...envio.extra });
+      }
+
+      // a ordem exibida é a que o SERVIDOR sorteou (não a que o navegador diz ter mostrado)
       const exibicao = new Map(
-        respostas.map((r, i) => [
-          r.questao_id,
-          {
-            posicao: i + 1,
-            ordem_opcoes:
-              Array.isArray(r.ordem_opcoes) &&
-              r.ordem_opcoes.length <= 12 &&
-              r.ordem_opcoes.every((x) => Number.isInteger(x))
-                ? r.ordem_opcoes
-                : null,
-          },
-        ])
+        envio.prova.map((q, i) => [q.id, { posicao: i + 1, ordem_opcoes: q.ordem_opcoes }])
       );
       const { marcada, acertou, acertos, nota, minima, aprovada } = corrigirProva({
         questoes,
-        respostas,
+        respostas: envio.respostas,
         notaMinima: curso?.nota_minima,
       });
-      const numero = usadas + 1;
 
       const { error: tErr } = await supabase.from("treinamento_tentativa").insert({
         empresa_id: empresaId,
@@ -1040,7 +1144,7 @@ Deno.serve(
         // deno-lint-ignore no-explicit-any
         respostas: questoes.map((q: any) => ({
           questao_id: q.id,
-          resposta: marcada.has(q.id) ? marcada.get(q.id) : null,
+          resposta: marcada.get(q.id) ?? null,
           acertou: acertou(q),
           posicao_exibida: exibicao.get(q.id)?.posicao ?? null,
           ordem_opcoes_exibida: exibicao.get(q.id)?.ordem_opcoes ?? null,
@@ -1090,18 +1194,22 @@ Deno.serve(
       const liberaMs = proximaTentativaEm(aprovada, curso?.intervalo_tentativa_min, Date.now());
       const liberaEm = liberaMs !== null ? new Date(liberaMs).toISOString() : null;
 
-      return ok({
-        nota,
-        nota_minima: minima,
-        aprovada,
-        acertos,
-        total: questoes.length,
-        tentativa: numero,
-        tentativas_max: max,
-        proxima_em: liberaEm,
-        curso_concluido: concluiu,
-        revisao,
-      });
+      // Reprovado: só "insatisfatório", tentativas e próxima liberação (sem nota, acertos e total, que
+      // permitem deduzir o gabarito); o RH vê tudo na trilha. Aprovado: como antes. Regra em regras.ts.
+      return ok(
+        respostaDaCorrecao({
+          aprovada,
+          nota,
+          notaMinima: minima,
+          acertos,
+          total: questoes.length,
+          tentativa: numero,
+          tentativasMax: max,
+          proximaEm: liberaEm,
+          cursoConcluido: concluiu,
+          revisao,
+        })
+      );
     }
 
     // ---------------------------------------------------------- certificado

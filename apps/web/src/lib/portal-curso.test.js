@@ -27,6 +27,10 @@ import {
   msTemporizadorProva,
   provaAguardando,
   mensagemDeFalha,
+  provaParaTela,
+  provaPrecisaReabrir,
+  avisoDaProvaReaberta,
+  resumoDoResultado,
   urlDoProjetoPedagogico,
   abrirProjetoPedagogico,
 } from "./portal-curso";
@@ -831,5 +835,205 @@ describe("mensagemDeFalha (erro de rede em português)", () => {
     for (const vazio of [null, undefined, {}, new Error(""), "x".repeat(0)]) {
       expect(mensagemDeFalha(vazio)).toMatch(/tente de novo/i);
     }
+  });
+});
+
+// ------------------------------------------------ prova sorteada pelo servidor (T16)
+
+/** O que a ação `iniciar_avaliacao` devolve: questões já sorteadas e SEM gabarito. */
+const respostaIniciar = () => ({
+  success: true,
+  tentativa: 2,
+  tentativas_max: 3,
+  nota_minima: 70,
+  questoes: [
+    { id: "q2", pergunta: "Segunda?", opcoes: ["c", "a", "b"], ordem_opcoes: [2, 0, 1] },
+    { id: "q1", pergunta: "Primeira?", opcoes: ["y", "x"], ordem_opcoes: [1, 0] },
+  ],
+});
+const comQuestoes = (questoes) => ({ ...respostaIniciar(), questoes });
+
+describe("provaParaTela (a prova que o servidor sorteou, pronta para a tela)", () => {
+  it("mantém a ordem do servidor e liga cada texto ao índice ORIGINAL da alternativa", () => {
+    const prova = provaParaTela(respostaIniciar());
+    expect(prova.tentativa).toBe(2);
+    expect(prova.tentativasMax).toBe(3);
+    expect(prova.notaMinima).toBe(70);
+    expect(prova.questoes.map((q) => q.id)).toEqual(["q2", "q1"]); // ordem do servidor
+    expect(prova.questoes[0].exibicao).toEqual([
+      { texto: "c", indice: 2 },
+      { texto: "a", indice: 0 },
+      { texto: "b", indice: 1 },
+    ]);
+    expect(prova.questoes[0].pergunta).toBe("Segunda?");
+    // `opcoes` serve à conferência do rascunho (respostasValidas): tem o tamanho da questão
+    expect(prova.questoes[0].opcoes).toHaveLength(3);
+  });
+
+  it("o aluno nunca recebe gabarito nem comentário, nem se a resposta os trouxesse", () => {
+    const comGabarito = respostaIniciar();
+    comGabarito.questoes[0].correta = 0;
+    comGabarito.questoes[0].comentario = "Comentário reservado";
+    const prova = provaParaTela(comGabarito);
+    expect(JSON.stringify(prova)).not.toContain("Comentário reservado");
+    for (const q of prova.questoes) {
+      expect("correta" in q).toBe(false);
+      expect("comentario" in q).toBe(false);
+    }
+  });
+
+  it("na prévia do RT o gabarito e o comentário passam", () => {
+    const resposta = respostaIniciar();
+    resposta.questoes[0].correta = 0;
+    resposta.questoes[0].comentario = "Comentário do RT";
+    const prova = provaParaTela(resposta, { previa: true });
+    expect(prova.questoes[0].correta).toBe(0);
+    expect(prova.questoes[0].comentario).toBe("Comentário do RT");
+    expect(prova.questoes[1].comentario).toBeNull();
+  });
+
+  it("resposta malformada vira null (a tela mostra o problema em vez de quebrar)", () => {
+    const questao = (mudancas) => ({
+      id: "q1",
+      pergunta: "P",
+      opcoes: ["a", "b"],
+      ordem_opcoes: [0, 1],
+      ...mudancas,
+    });
+    const ruins = [
+      null,
+      undefined,
+      {},
+      { questoes: [] },
+      { questoes: "q1" },
+      { ...respostaIniciar(), tentativa: 0 },
+      { ...respostaIniciar(), tentativa: "2" },
+      comQuestoes([questao({ ordem_opcoes: undefined })]), // sem a ordem
+      comQuestoes([questao({ ordem_opcoes: [0] })]), // tamanho diferente
+      comQuestoes([questao({ ordem_opcoes: [0, 0] })]), // repetido
+      comQuestoes([questao({ ordem_opcoes: [0, 2] })]), // fora do intervalo
+      comQuestoes([questao({ opcoes: [], ordem_opcoes: [] })]), // sem alternativas
+      comQuestoes([questao({ id: "" })]),
+      comQuestoes([questao({ pergunta: 5 })]),
+      comQuestoes([null]),
+    ];
+    for (const ruim of ruins) expect(provaParaTela(ruim), JSON.stringify(ruim)).toBeNull();
+  });
+
+  it("não altera a resposta recebida", () => {
+    const resposta = respostaIniciar();
+    const copia = JSON.parse(JSON.stringify(resposta));
+    provaParaTela(resposta);
+    expect(resposta).toEqual(copia);
+  });
+
+  it("o rascunho guardado vale para a prova sorteada (a resposta é pelo índice original)", () => {
+    const prova = provaParaTela(respostaIniciar());
+    const storage = criarStorage();
+    guardarRascunhoProva(storage, "m1", prova.tentativa, { q2: 2, q1: 0 });
+    expect(lerRascunhoProva(storage, "m1", prova.tentativa, prova.questoes)).toEqual({
+      q2: 2,
+      q1: 0,
+    });
+    // um novo sorteio da mesma prova (outra ordem) continua aceitando as mesmas respostas
+    const outraOrdem = provaParaTela(
+      comQuestoes([
+        { id: "q1", pergunta: "Primeira?", opcoes: ["x", "y"], ordem_opcoes: [0, 1] },
+        { id: "q2", pergunta: "Segunda?", opcoes: ["a", "b", "c"], ordem_opcoes: [0, 1, 2] },
+      ])
+    );
+    expect(lerRascunhoProva(storage, "m1", 2, outraOrdem.questoes)).toEqual({ q2: 2, q1: 0 });
+  });
+});
+
+describe("provaPrecisaReabrir e avisoDaProvaReaberta (envio recusado porque a prova não vale mais)", () => {
+  it("só os dois códigos de prova desatualizada pedem para abrir a prova de novo", () => {
+    expect(provaPrecisaReabrir({ codigo: "PROVA_NAO_INICIADA" })).toBe(true);
+    expect(provaPrecisaReabrir({ codigo: "PROVA_ALTERADA" })).toBe(true);
+    const outros = ["RESPOSTAS_INCOMPLETAS", "TEMPO_MINIMO_PROVA", "LIMITE_TENTATIVAS", "AGUARDAR"];
+    for (const outro of [...outros, "SESSAO", null, undefined]) {
+      expect(provaPrecisaReabrir({ codigo: outro })).toBe(false);
+    }
+    expect(provaPrecisaReabrir(null)).toBe(false);
+    expect(provaPrecisaReabrir(new Error("sem código"))).toBe(false);
+  });
+
+  it("cada motivo tem o seu aviso, em português", () => {
+    expect(avisoDaProvaReaberta({ codigo: "PROVA_ALTERADA" })).toMatch(/RH alterou as questões/);
+    expect(avisoDaProvaReaberta({ codigo: "PROVA_NAO_INICIADA" })).toMatch(/aberta de novo/);
+    expect(avisoDaProvaReaberta({ codigo: "OUTRO" })).toMatch(/aberta de novo/);
+  });
+});
+
+describe("resumoDoResultado (o que a tela diz depois de enviar a prova)", () => {
+  it("aprovado vê a nota, os acertos e o convite à correção comentada", () => {
+    const r = resumoDoResultado({
+      aprovada: true,
+      nota: 80,
+      acertos: 4,
+      total: 5,
+      nota_minima: 70,
+    });
+    expect(r.aprovada).toBe(true);
+    expect(r.titulo).toBe("Nota: 80% (4/5)");
+    expect(r.mensagem).toMatch(/Aprovado/);
+    expect(r.tentativas).toBeNull();
+    expect(r.esgotada).toBe(false);
+  });
+
+  it("reprovado sem nota (como o servidor responde hoje) vê só 'insatisfatório'", () => {
+    const r = resumoDoResultado({
+      aprovada: false,
+      resultado: "insatisfatorio",
+      nota_minima: 70,
+      tentativa: 1,
+      tentativas_max: 3,
+    });
+    expect(r.aprovada).toBe(false);
+    expect(r.titulo).toBe("Resultado: insatisfatório");
+    expect(r.mensagem).toBe("Não atingiu a nota mínima (70%).");
+    expect(r.tentativas).toBe("Você ainda tem 2 tentativas.");
+    expect(r.esgotada).toBe(false);
+    // nada de nota, acertos ou total na tela
+    expect(JSON.stringify(r)).not.toMatch(/Nota:|\d\/\d/);
+  });
+
+  it("conta as tentativas que restam, no singular e no plural", () => {
+    const base = { aprovada: false, nota_minima: 70, tentativas_max: 3 };
+    const restam = (tentativa) => resumoDoResultado({ ...base, tentativa }).tentativas;
+    expect(restam(2)).toBe("Você ainda tem 1 tentativa.");
+    expect(restam(1)).toBe("Você ainda tem 2 tentativas.");
+  });
+
+  it("acabaram as tentativas: manda procurar o RH", () => {
+    const r = resumoDoResultado({
+      aprovada: false,
+      nota_minima: 70,
+      tentativa: 3,
+      tentativas_max: 3,
+    });
+    expect(r.tentativas).toBe("Você usou todas as tentativas. Procure o RH para liberar uma nova.");
+    expect(r.esgotada).toBe(true); // a tela não promete "nova tentativa liberada em..."
+  });
+
+  it("sem limite de tentativas não há contagem", () => {
+    const base = { aprovada: false, nota_minima: 70, tentativa: 4 };
+    expect(resumoDoResultado({ ...base, tentativas_max: null }).tentativas).toBeNull();
+    expect(resumoDoResultado(base).tentativas).toBeNull();
+    expect(resumoDoResultado(base).esgotada).toBe(false);
+  });
+
+  it("se o servidor voltar a mandar a nota ao reprovado, a tela mostra", () => {
+    const completa = { aprovada: false, nota: 40, acertos: 2, total: 5, nota_minima: 70 };
+    expect(resumoDoResultado(completa).titulo).toBe("Nota: 40% (2/5)");
+    expect(resumoDoResultado({ aprovada: false, nota: 40, nota_minima: 70 }).titulo).toBe(
+      "Nota: 40%"
+    );
+  });
+
+  it("resposta incompleta não quebra: aprovado sem nota diz 'satisfatório'", () => {
+    expect(resumoDoResultado({ aprovada: true }).titulo).toBe("Resultado: satisfatório");
+    expect(resumoDoResultado(null).aprovada).toBe(false);
+    expect(resumoDoResultado({}).titulo).toBe("Resultado: insatisfatório");
   });
 });

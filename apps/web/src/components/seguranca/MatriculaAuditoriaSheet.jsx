@@ -32,6 +32,7 @@ const ROTULO_EVENTO = {
   progresso_ajustado: "Tempo informado acima do real — ajustado pelo servidor",
   aula_concluida: "Concluiu a aula",
   avaliacao_inicio: "Abriu a avaliação",
+  avaliacao_iniciada: "Prova aberta (ordem sorteada pelo servidor)",
   avaliacao_envio: "Enviou a avaliação",
   curso_concluido: "Concluiu o curso",
   certificado_assinado: "Assinou o certificado",
@@ -54,6 +55,7 @@ function descreverDetalhe(e) {
   const d = e.detalhe || {};
   if (e.evento === "avaliacao_envio")
     return `tentativa ${d.tentativa} · nota ${d.nota}% · ${d.aprovada ? "aprovado" : "reprovado"}`;
+  if (e.evento === "avaliacao_iniciada") return `tentativa ${d.tentativa}`;
   if (e.evento === "progresso_ajustado") return `pediu +${d.pedido}s, aceito +${d.aceito}s`;
   if (e.evento === "login_falha")
     return d.bloqueou ? "acesso bloqueado por 15 min" : `tentativa ${d.tentativa}`;

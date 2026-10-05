@@ -974,7 +974,11 @@ export default function CursoPortal({
           !mat.avaliacao_aprovada && (
             <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 space-y-2">
               <p className="text-sm text-violet-900">
-                📝 Avaliação final · nota mínima {av.nota_minima}%
+                📝 Avaliação final
+                {av.total_questoes
+                  ? ` · ${av.total_questoes} ${av.total_questoes === 1 ? "questão" : "questões"}`
+                  : ""}{" "}
+                · nota mínima {av.nota_minima}%
                 {av.tentativas_max
                   ? ` · tentativa ${av.tentativas_usadas + 1} de ${av.tentativas_max}`
                   : ""}

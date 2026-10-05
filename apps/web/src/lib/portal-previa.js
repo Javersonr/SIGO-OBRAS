@@ -9,6 +9,9 @@
  * - `refsDaPrevia`: quais arquivos (referências "bucket/caminho") a tela do RH precisa assinar;
  * - `montarItemPrevia`: o "item" do curso no formato da ação `dados` do portal, mas com todas as aulas
  *   liberadas e as questões COM gabarito e comentário (só o RT vê);
+ * - `sortearPrevia`: o sorteio da prova, no formato da ação `iniciar_avaliacao` do servidor (a prova
+ *   deixou de ser sorteada no navegador do aluno, T16; aqui o sorteio é local porque a prévia não fala
+ *   com o servidor);
  * - `corrigirPrevia`: correção da prova, a mesma conta de `corrigirProva` (portal-funcionario/regras.ts);
  * - `criarApiPrevia`: a API injetada.
  *
@@ -22,6 +25,8 @@ export const ID_MATRICULA_PREVIA = "previa";
 /** Mesmos padrões do servidor (portal-funcionario/index.ts e regras.ts). */
 const NOTA_MINIMA_PADRAO = 70;
 const TEMPO_MINIMO_PADRAO = 60; // aula de PDF/texto sem tempo definido
+/** Espelha REPROVADO_VE_NOTA do servidor (regras.ts): o reprovado só vê "insatisfatório". */
+const REPROVADO_VE_NOTA = false;
 
 /**
  * Nota mínima como o servidor a usa (`nota_minima ?? 70`): só ausente (ou o texto vazio do formulário)
@@ -135,6 +140,7 @@ export function montarItemPrevia({ curso, aulas, questoes, urls } = {}) {
     aulas: aulasPrevia,
     questoes: questoesPrevia,
     avaliacao: {
+      total_questoes: questoesPrevia.length,
       tentativas_usadas: 0,
       tentativas_max: Number.isFinite(limite) && limite > 0 ? Math.floor(limite) : null,
       limite_atingido: false,
@@ -146,6 +152,44 @@ export function montarItemPrevia({ curso, aulas, questoes, urls } = {}) {
     pendencias_certificado: [],
     duvidas: [],
   };
+}
+
+/** Inteiro sorteado em [0, n). Na prévia o sorteio pode ser o do navegador: nada aqui vale como prova. */
+const sorteioDoNavegador = (n) => Math.floor(Math.random() * n);
+
+/** Fisher–Yates numa cópia. */
+function embaralhar(itens, aleatorio) {
+  const a = [...itens];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = aleatorio(i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/**
+ * A prova sorteada da prévia, no formato que o servidor devolve em `iniciar_avaliacao`: questões na ordem
+ * sorteada, `opcoes` já na ordem mostrada e `ordem_opcoes` com o índice ORIGINAL de cada posição. Só a
+ * prévia leva também `correta` (índice original) e `comentario`, porque o RT vê o gabarito. `aleatorio(n)`
+ * devolve um inteiro em [0, n) (nos testes, um sorteio conhecido).
+ */
+export function sortearPrevia(questoes, aleatorio = sorteioDoNavegador) {
+  const sorteadas = lista(questoes).map((q) => {
+    const opcoes = opcoesDaQuestao(q.opcoes);
+    const ordem = embaralhar(
+      opcoes.map((_, i) => i),
+      aleatorio
+    );
+    return {
+      id: q.id,
+      pergunta: q.pergunta,
+      opcoes: ordem.map((i) => opcoes[i]),
+      ordem_opcoes: ordem,
+      correta: q.correta,
+      comentario: q.comentario ?? null,
+    };
+  });
+  return embaralhar(sorteadas, aleatorio);
 }
 
 /** Resposta marcada como índice, ou NaN se a questão ficou sem resposta. */
@@ -182,8 +226,10 @@ function erroDaPrevia() {
  * components/portal-funcionario/api.js). Nunca usa a rede.
  * - `evento`: aceito e descartado (nenhuma trilha);
  * - `progresso`: devolve o tempo recebido e NUNCA conclui a aula (nada fica gravado);
+ * - `iniciar_avaliacao`: sorteia a prova aqui (`sortearPrevia`), com gabarito e comentário para o RT;
  * - `avaliacao`: corrige aqui, com o gabarito do item; a correção comentada só vem na aprovação (como
- *   no servidor: o RT já vê o gabarito na própria questão) e a nova tentativa não espera intervalo;
+ *   no servidor: o RT já vê o gabarito na própria questão), o reprovado vê só "insatisfatório" (como o
+ *   aluno) e a nova tentativa não espera intervalo;
  * - o resto (dúvida, certificado, ciência, login...) falha com `codigo: "PREVIA"`.
  */
 export function criarApiPrevia({ item } = {}) {
@@ -204,6 +250,14 @@ export function criarApiPrevia({ item } = {}) {
           precisa_avaliacao: false,
         };
       }
+      case "iniciar_avaliacao":
+        return {
+          success: true,
+          tentativa: 1,
+          tentativas_max: avaliacao.tentativas_max ?? null,
+          nota_minima: notaMinimaDe(avaliacao.nota_minima),
+          questoes: sortearPrevia(questoes),
+        };
       case "avaliacao": {
         const { acertou, acertos, total, nota, minima, aprovada } = corrigirPrevia({
           questoes,
@@ -212,11 +266,11 @@ export function criarApiPrevia({ item } = {}) {
         });
         return {
           success: true,
-          nota,
-          nota_minima: minima,
+          resultado: aprovada ? "satisfatorio" : "insatisfatorio",
           aprovada,
-          acertos,
-          total,
+          // como o servidor: nota, acertos e total só para o aprovado
+          ...(aprovada || REPROVADO_VE_NOTA ? { nota, acertos, total } : {}),
+          nota_minima: minima,
           tentativa: 1,
           tentativas_max: avaliacao.tentativas_max ?? null,
           proxima_em: null,

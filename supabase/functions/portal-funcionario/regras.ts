@@ -8,7 +8,10 @@
  * Saíram do `index.ts` sem mudar comportamento (a exceção é `logoAssinadoParaPdf`, que já
  * nasceu aqui, na T15). Duas regras ainda são as de hoje de propósito (o handoff corrige em
  * tarefa própria): `datasDeConclusao` usa o dia em UTC (T8) e `corrigirProva` converte a
- * resposta com `Number()`.
+ * resposta com `Number()` (o envio já chega validado por `validarEnvio`, que só deixa passar inteiro).
+ *
+ * A T16 acrescentou, no fim do arquivo, a prova no servidor (sorteio, início, validação do envio e
+ * resposta da correção) e a regra das aulas bloqueadas sem conteúdo.
  */
 
 /** Vídeo conclui sozinho a partir de 90% assistidos. */
@@ -259,4 +262,477 @@ export function comRastroDeFalha<A extends unknown[], R>(
       throw erro;
     }
   };
+}
+
+// ============================================================================
+// Prova no servidor (T16)
+// ============================================================================
+// O navegador deixou de sortear a prova e de dizer a ordem exibida: o servidor sorteia ao abrir a
+// prova (`iniciar_avaliacao`), grava o sorteio na trilha (evento `avaliacao_iniciada`) e confere o
+// envio contra esse sorteio. O gabarito nunca sai do servidor antes da aprovação.
+
+/**
+ * Evento de servidor gravado ao abrir a prova, com a ordem sorteada. Não está em `EVENTOS_CLIENTE`:
+ * o navegador não consegue gravar um evento com este nome.
+ */
+export const EVENTO_PROVA_INICIADA = "avaliacao_iniciada";
+
+/**
+ * DECISÃO D10 em aberto: tempo mínimo (em segundos, POR QUESTÃO) entre abrir a prova e enviá-la.
+ * 0 = sem mínimo, como era antes da T16. O mecanismo está pronto e testado: o valor sugerido pelo
+ * handoff é 10, mas quem decide é o Javerson. Trocar o número aqui e publicar a função basta.
+ */
+export const TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG = 0;
+
+/**
+ * DECISÃO D10 em aberto: o reprovado vê a nota, os acertos e o total? `false` = só "insatisfatório",
+ * as tentativas e a próxima liberação (T16, item 3: acertos e total, em prova de 5 ou 6 questões,
+ * deixam deduzir o gabarito); o RH vê tudo na trilha. `true` devolve o comportamento antigo.
+ */
+export const REPROVADO_VE_NOTA = false;
+
+/** Questão sorteada para uma tentativa: sem gabarito, com as alternativas na ordem mostrada. */
+export interface QuestaoSorteada {
+  id: string;
+  pergunta: string;
+  /** textos das alternativas, na ORDEM EM QUE SÃO MOSTRADAS */
+  opcoes: string[];
+  /** índice ORIGINAL (o do banco) da alternativa de cada posição; a resposta volta por esse índice */
+  ordem_opcoes: number[];
+}
+
+/** Sorteio de uma questão como fica gravado na trilha. */
+export interface OrdemDaQuestao {
+  questao_id: string;
+  ordem_opcoes: number[];
+}
+
+/** O que a trilha guardou ao abrir a prova. */
+export interface InicioDaProva {
+  tentativa: number;
+  /** quando o servidor abriu a prova (ms) */
+  iniciadaEm: number;
+  /** questões na ordem em que foram mostradas */
+  ordem: OrdemDaQuestao[];
+}
+
+/** `opcoes` é jsonb: lista, texto JSON (legado) ou quebrado (vira lista vazia). */
+function opcoesDaQuestao(opcoes: unknown): string[] {
+  let lista = opcoes;
+  if (typeof lista === "string") {
+    try {
+      lista = JSON.parse(lista);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(lista)) return [];
+  return lista.map((o) => (typeof o === "string" ? o : String(o ?? "")));
+}
+
+function sortear(n: number, aleatorio: (n: number) => number) {
+  const j = aleatorio(n);
+  if (!Number.isInteger(j) || j < 0 || j >= n) throw new RangeError("sorteio fora do intervalo");
+  return j;
+}
+
+/** Fisher–Yates: embaralha uma cópia, com um sorteio uniforme de verdade (se `aleatorio` for). */
+function embaralhar<T>(itens: T[], aleatorio: (n: number) => number): T[] {
+  const a = [...itens];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = sortear(i + 1, aleatorio);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/**
+ * Sorteia a prova de UMA tentativa: a ordem das questões e a das alternativas de cada uma. Devolve só
+ * `id`, `pergunta`, `opcoes` (já na ordem mostrada) e `ordem_opcoes` (índice original de cada
+ * posição), nunca o gabarito nem o comentário, mesmo que a questão chegue com eles. `aleatorio(n)`
+ * devolve um inteiro em [0, n) e entra por parâmetro: o servidor passa o sorteio criptográfico
+ * (`inteiroAleatorioSeguro`) e o teste passa um sorteio conhecido. Valor fora do intervalo é erro.
+ */
+export function sortearProva(
+  questoes: { id: string; pergunta?: unknown; opcoes?: unknown }[],
+  aleatorio: (n: number) => number
+): QuestaoSorteada[] {
+  const sorteadas = questoes.map((q) => {
+    const opcoes = opcoesDaQuestao(q.opcoes);
+    const ordem = embaralhar(
+      opcoes.map((_, i) => i),
+      aleatorio
+    );
+    return {
+      id: q.id,
+      pergunta: String(q.pergunta ?? ""),
+      opcoes: ordem.map((i) => opcoes[i]),
+      ordem_opcoes: ordem,
+    };
+  });
+  return embaralhar(sorteadas, aleatorio);
+}
+
+/** O sorteio de cada questão, no formato que vai para a trilha (sem os textos). */
+export function ordemDaProva(prova: QuestaoSorteada[]): OrdemDaQuestao[] {
+  return prova.map((q) => ({ questao_id: q.id, ordem_opcoes: [...q.ordem_opcoes] }));
+}
+
+const ehPermutacao = (lista: unknown, n: number): lista is number[] =>
+  Array.isArray(lista) &&
+  lista.length === n &&
+  lista.every((i) => Number.isInteger(i) && i >= 0 && i < n) &&
+  new Set(lista).size === n;
+
+/**
+ * Refaz a prova mostrada ao aluno a partir da ordem gravada na trilha e das questões de HOJE, ou
+ * null se as duas não conferem: questão que sumiu, que apareceu, repetida, ou alternativas que
+ * mudaram de quantidade (o RH mexeu na prova depois do sorteio).
+ */
+export function provaDaOrdem(
+  questoes: { id: string; pergunta?: unknown; opcoes?: unknown }[],
+  ordem: unknown
+): QuestaoSorteada[] | null {
+  if (!Array.isArray(ordem) || ordem.length !== questoes.length) return null;
+  const porId = new Map(questoes.map((q) => [q.id, q]));
+  const vistas = new Set<string>();
+  const prova: QuestaoSorteada[] = [];
+  for (const item of ordem) {
+    const id = item && typeof item === "object" ? (item as OrdemDaQuestao).questao_id : undefined;
+    const q = typeof id === "string" ? porId.get(id) : undefined;
+    if (!q || vistas.has(q.id)) return null;
+    vistas.add(q.id);
+    const opcoes = opcoesDaQuestao(q.opcoes);
+    const indices = (item as OrdemDaQuestao).ordem_opcoes;
+    if (!ehPermutacao(indices, opcoes.length)) return null;
+    prova.push({
+      id: q.id,
+      pergunta: String(q.pergunta ?? ""),
+      opcoes: indices.map((i) => opcoes[i]),
+      ordem_opcoes: [...indices],
+    });
+  }
+  return prova;
+}
+
+/**
+ * `detalhe` do evento `avaliacao_iniciada`: de qual tentativa é, quando o servidor abriu a prova (a
+ * hora é do servidor), o tempo mínimo que valia na ocasião e o sorteio. `inicioDaProva` lê isto.
+ */
+export function detalheDaProvaIniciada(p: {
+  tentativa: number;
+  agora: number;
+  prova: QuestaoSorteada[];
+  tempoMinimoPorQuestaoSeg?: number;
+}) {
+  return {
+    tentativa: p.tentativa,
+    iniciada_em: new Date(p.agora).toISOString(),
+    tempo_minimo_seg: tempoMinimoDaProva(p.prova.length, p.tempoMinimoPorQuestaoSeg),
+    prova: ordemDaProva(p.prova),
+  };
+}
+
+const ordemGravadaValida = (x: unknown): x is OrdemDaQuestao =>
+  !!x &&
+  typeof x === "object" &&
+  typeof (x as OrdemDaQuestao).questao_id === "string" &&
+  Array.isArray((x as OrdemDaQuestao).ordem_opcoes) &&
+  (x as OrdemDaQuestao).ordem_opcoes.every((i) => Number.isInteger(i));
+
+/**
+ * Lê uma linha da trilha (`treinamento_evento`) do tipo `avaliacao_iniciada`. null se o detalhe não
+ * tem a forma esperada ou não há hora: a prova conta como não iniciada. A hora vale a do detalhe;
+ * sem ela, a da linha (`created_at`).
+ */
+export function inicioDaProva(
+  evento: { created_at?: unknown; detalhe?: unknown } | null | undefined
+): InicioDaProva | null {
+  const d = evento?.detalhe;
+  if (!d || typeof d !== "object" || Array.isArray(d)) return null;
+  const detalhe = d as Record<string, unknown>;
+  const tentativa = detalhe.tentativa;
+  if (typeof tentativa !== "number" || !Number.isInteger(tentativa) || tentativa < 1) return null;
+  const ordem = detalhe.prova;
+  if (!Array.isArray(ordem) || !ordem.every(ordemGravadaValida)) return null;
+  const iniciadaEm = [detalhe.iniciada_em, evento?.created_at]
+    .map((h) => (typeof h === "string" ? Date.parse(h) : Number.NaN))
+    .find((ms) => Number.isFinite(ms));
+  if (iniciadaEm === undefined) return null;
+  return {
+    tentativa,
+    iniciadaEm,
+    ordem: ordem.map((o) => ({ questao_id: o.questao_id, ordem_opcoes: [...o.ordem_opcoes] })),
+  };
+}
+
+/** Tempo mínimo (s) da prova toda: segundos por questão vezes o número de questões. */
+function tempoMinimoDaProva(
+  totalQuestoes: number,
+  porQuestaoSeg: number | undefined = TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG
+) {
+  const porQuestao = Number.isFinite(porQuestaoSeg) ? Math.max(0, porQuestaoSeg) : 0;
+  return porQuestao * totalQuestoes;
+}
+
+const textoDaEspera = (seg: number) => (seg >= 120 ? `${Math.ceil(seg / 60)} min` : `${seg} s`);
+
+export type EnvioValido = {
+  ok: true;
+  /** a prova como foi mostrada: ordem das questões e das alternativas sorteadas pelo servidor */
+  prova: QuestaoSorteada[];
+  /** uma resposta (índice ORIGINAL da alternativa) por questão, na ordem da prova */
+  respostas: { questao_id: string; resposta: number }[];
+};
+
+export type EnvioRecusado = {
+  ok: false;
+  status: number;
+  codigo: string;
+  mensagem: string;
+  extra?: Record<string, unknown>;
+};
+
+/**
+ * Confere o envio da prova ANTES de corrigir. Recusa, nesta ordem:
+ * 1. prova não aberta nesta tentativa (409 `PROVA_NAO_INICIADA`): sem `avaliacao_iniciada`, ou com
+ *    o início de outra tentativa (o de uma já enviada não vale para a próxima);
+ * 2. questões que mudaram desde o sorteio (409 `PROVA_ALTERADA`);
+ * 3. questão sem resposta válida (400 `RESPOSTAS_INCOMPLETAS`): só vale número inteiro dentro das
+ *    alternativas, e `null`, texto, fração ou índice fora do intervalo não valem (antes `null`
+ *    era lido como 0);
+ * 4. envio antes do tempo mínimo desde a abertura (409 `TEMPO_MINIMO_PROVA`).
+ * Resposta de questão que não é da prova é ignorada; se a questão vem repetida, vale a última.
+ * `numero` é o da tentativa que seria gravada agora (as já feitas + 1).
+ */
+export function validarEnvio(p: {
+  questoes: { id: string; pergunta?: unknown; opcoes?: unknown }[];
+  respostas: unknown;
+  inicio: InicioDaProva | null;
+  numero: number;
+  agora: number;
+  tempoMinimoPorQuestaoSeg?: number;
+}): EnvioValido | EnvioRecusado {
+  const recusa = (
+    status: number,
+    codigo: string,
+    mensagem: string,
+    extra?: Record<string, unknown>
+  ): EnvioRecusado => ({ ok: false, status, codigo, mensagem, ...(extra ? { extra } : {}) });
+
+  const { inicio } = p;
+  if (!inicio || inicio.tentativa !== p.numero) {
+    return recusa(
+      409,
+      "PROVA_NAO_INICIADA",
+      "Abra a prova de novo para enviar as respostas: esta tentativa não foi iniciada."
+    );
+  }
+  const prova = provaDaOrdem(p.questoes, inicio.ordem);
+  if (!prova) {
+    return recusa(
+      409,
+      "PROVA_ALTERADA",
+      "As questões desta prova foram alteradas pelo RH enquanto você respondia. Abra a prova de novo."
+    );
+  }
+
+  const marcadas = new Map<string, unknown>();
+  for (const r of Array.isArray(p.respostas) ? p.respostas : []) {
+    const id = r && typeof r === "object" ? (r as { questao_id?: unknown }).questao_id : undefined;
+    if (typeof id === "string") marcadas.set(id, (r as { resposta?: unknown }).resposta);
+  }
+  const respostas: { questao_id: string; resposta: number }[] = [];
+  for (const q of prova) {
+    const v = marcadas.get(q.id);
+    if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < q.opcoes.length) {
+      respostas.push({ questao_id: q.id, resposta: v });
+    }
+  }
+  const faltam = prova.length - respostas.length;
+  if (faltam > 0) {
+    return recusa(
+      400,
+      "RESPOSTAS_INCOMPLETAS",
+      `Responda todas as questões antes de enviar: ${faltam === 1 ? "falta 1" : `faltam ${faltam}`}.`,
+      { faltam }
+    );
+  }
+
+  const minimoSeg = tempoMinimoDaProva(prova.length, p.tempoMinimoPorQuestaoSeg);
+  const decorridoSeg = Math.max(0, (p.agora - inicio.iniciadaEm) / 1000);
+  if (decorridoSeg < minimoSeg) {
+    const faltamSeg = Math.ceil(minimoSeg - decorridoSeg);
+    return recusa(
+      409,
+      "TEMPO_MINIMO_PROVA",
+      `Releia as questões antes de enviar: o envio é liberado em ${textoDaEspera(faltamSeg)}.`,
+      { faltam_seg: faltamSeg }
+    );
+  }
+  return { ok: true, prova, respostas };
+}
+
+/**
+ * Resposta da ação `avaliacao` depois de corrigir. Aprovado: tudo, como antes (nota, acertos, total
+ * e a correção comentada) mais o conceito `satisfatorio`. Reprovado: só `insatisfatorio`, a nota
+ * mínima, as tentativas e a próxima liberação; sem nota, acertos, total nem correção comentada (o RH
+ * vê tudo na trilha). `reprovadoVeNota` abre a nota ao reprovado (D10); a correção comentada nunca.
+ */
+export function respostaDaCorrecao(
+  p: {
+    aprovada: boolean;
+    nota: number;
+    notaMinima: number;
+    acertos: number;
+    total: number;
+    tentativa: number;
+    tentativasMax: number | null;
+    proximaEm: string | null;
+    cursoConcluido: boolean;
+    revisao: unknown;
+  },
+  reprovadoVeNota: boolean = REPROVADO_VE_NOTA
+) {
+  const comum = {
+    nota_minima: p.notaMinima,
+    tentativa: p.tentativa,
+    tentativas_max: p.tentativasMax,
+    proxima_em: p.proximaEm,
+  };
+  if (p.aprovada) {
+    return {
+      resultado: "satisfatorio",
+      aprovada: true,
+      nota: p.nota,
+      acertos: p.acertos,
+      total: p.total,
+      ...comum,
+      curso_concluido: p.cursoConcluido,
+      revisao: p.revisao,
+    };
+  }
+  return {
+    resultado: "insatisfatorio",
+    aprovada: false,
+    ...(reprovadoVeNota ? { nota: p.nota, acertos: p.acertos, total: p.total } : {}),
+    ...comum,
+    curso_concluido: false,
+    revisao: null,
+  };
+}
+
+/**
+ * A matrícula como o aluno a recebe em `dados`. A nota da última tentativa não sai enquanto ele não
+ * foi aprovado (senão esconder a nota na resposta da prova não adiantaria: ela estaria aqui).
+ */
+export function matriculaParaAluno<T extends { avaliacao_aprovada?: boolean | null }>(
+  matricula: T,
+  reprovadoVeNota: boolean = REPROVADO_VE_NOTA
+): T & { nota_avaliacao?: unknown } {
+  if (reprovadoVeNota || matricula.avaliacao_aprovada) return matricula;
+  return { ...matricula, nota_avaliacao: null };
+}
+
+// -------------------------------------------------- aulas bloqueadas sem conteúdo (T16)
+
+export interface AulaDoBanco {
+  id: string;
+  ordem?: unknown;
+  modulo?: unknown;
+  tipo?: string | null;
+  titulo?: unknown;
+  fonte?: string | null;
+  youtube_id?: string | null;
+  video_ref?: string | null;
+  legenda_ref?: string | null;
+  arquivo_ref?: string | null;
+  conteudo_texto?: string | null;
+  duracao_seg?: number | null;
+}
+
+/** Progresso gravado de uma aula nesta matrícula (undefined = nunca abriu). */
+export type ProgressoDaAula =
+  | { concluida?: boolean | null; segundos_assistidos?: number | null }
+  | null
+  | undefined;
+
+/**
+ * Bloqueio linear de todas as aulas de uma matrícula, na ordem recebida: cada uma só está liberada
+ * se todas as anteriores estão concluídas. Mesma regra de `aulaLiberada`.
+ */
+export function liberacaoDasAulas(
+  aulas: { id: string }[],
+  progresso: (aulaId: string) => ProgressoDaAula
+) {
+  let anterioresOk = true;
+  return aulas.map((a) => {
+    const concluida = !!progresso(a.id)?.concluida;
+    const liberada = anterioresOk;
+    anterioresOk = anterioresOk && concluida;
+    return { id: a.id, concluida, liberada };
+  });
+}
+
+/** Referências de arquivo que a aula pode ter, por tipo: vídeo próprio, legenda e apostila. */
+function refsDaAula(a: AulaDoBanco) {
+  return {
+    video: a.tipo === "video" && a.fonte === "upload" ? a.video_ref : null,
+    legenda: a.legenda_ref,
+    arquivo: a.tipo === "pdf" ? a.arquivo_ref : null,
+  };
+}
+
+/**
+ * Referências "bucket/caminho" que o `dados` assina para uma matrícula: SÓ as das aulas liberadas.
+ * As URLs valem 3 horas e podem ser repassadas, então aula bloqueada não ganha URL nenhuma.
+ */
+export function refsDasAulasLiberadas(
+  aulas: AulaDoBanco[],
+  progresso: (aulaId: string) => ProgressoDaAula
+): string[] {
+  const liberacao = liberacaoDasAulas(aulas, progresso);
+  const refs = new Set<string>();
+  aulas.forEach((a, i) => {
+    if (!liberacao[i].liberada) return;
+    const { video, legenda, arquivo } = refsDaAula(a);
+    for (const ref of [video, legenda, arquivo]) if (ref) refs.add(ref);
+  });
+  return [...refs];
+}
+
+/**
+ * Aulas de uma matrícula como o aluno as recebe em `dados`. A lista vem inteira (título, módulo,
+ * tipo, duração, conclusão e se está liberada), mas só a aula LIBERADA leva `video_url`,
+ * `legenda_url`, `arquivo_url`, `conteudo_texto` e `youtube_id`; nas bloqueadas esses campos vão
+ * nulos e `urlDe` nem é consultado. `urlDe` devolve a URL assinada de uma referência (ou null).
+ */
+export function aulasParaAluno(p: {
+  aulas: AulaDoBanco[];
+  progresso: (aulaId: string) => ProgressoDaAula;
+  urlDe: (ref?: string | null) => string | null;
+  tempoMinimoPadrao: number;
+}) {
+  const liberacao = liberacaoDasAulas(p.aulas, p.progresso);
+  return p.aulas.map((a, i) => {
+    const { concluida, liberada } = liberacao[i];
+    const refs = refsDaAula(a);
+    return {
+      id: a.id,
+      ordem: a.ordem,
+      modulo: a.modulo,
+      tipo: a.tipo || "video",
+      titulo: a.titulo,
+      fonte: a.fonte || "youtube",
+      youtube_id: liberada ? (a.youtube_id ?? null) : null,
+      video_url: liberada ? p.urlDe(refs.video) : null,
+      legenda_url: liberada ? p.urlDe(refs.legenda) : null,
+      arquivo_url: liberada ? p.urlDe(refs.arquivo) : null,
+      conteudo_texto: liberada && a.tipo === "texto" ? (a.conteudo_texto ?? null) : null,
+      duracao_seg: a.duracao_seg || (a.tipo === "video" ? null : p.tempoMinimoPadrao),
+      segundos_assistidos: p.progresso(a.id)?.segundos_assistidos ?? 0,
+      concluida,
+      liberada,
+    };
+  });
 }

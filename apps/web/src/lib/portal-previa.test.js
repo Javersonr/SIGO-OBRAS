@@ -4,8 +4,10 @@ import {
   refsDaPrevia,
   montarItemPrevia,
   corrigirPrevia,
+  sortearPrevia,
   criarApiPrevia,
 } from "./portal-previa";
+import { provaParaTela } from "./portal-curso";
 
 // dados sintéticos: nada de produção
 const curso = {
@@ -181,6 +183,7 @@ describe("montarItemPrevia", () => {
     expect(item.questoes[0]).toMatchObject({ correta: 0, comentario: "Porque sim" });
     expect(item.questoes[1].opcoes).toEqual(["a", "b", "c"]);
     expect(item.curso.tem_avaliacao).toBe(true);
+    expect(item.avaliacao.total_questoes).toBe(2);
   });
 
   it("opções vindas como texto JSON (legado) ou inválidas não quebram", () => {
@@ -207,6 +210,7 @@ describe("montarItemPrevia", () => {
   it("a prévia nunca mostra o selo de curso despublicado nem esgota tentativas", () => {
     expect(item.curso.ativo).toBe(true);
     expect(item.avaliacao).toEqual({
+      total_questoes: 2,
       tentativas_usadas: 0,
       tentativas_max: 3,
       limite_atingido: false,
@@ -251,6 +255,60 @@ describe("montarItemPrevia", () => {
     const antes = JSON.stringify({ curso, aulas, questoes });
     montarItemPrevia({ curso, aulas, questoes, urls });
     expect(JSON.stringify({ curso, aulas, questoes })).toBe(antes);
+  });
+});
+
+describe("sortearPrevia (o sorteio da prova na prévia)", () => {
+  it("devolve cada questão uma vez, com as alternativas embaralhadas e o mapa de volta", () => {
+    for (let i = 0; i < 100; i++) {
+      const sorteada = sortearPrevia(questoes);
+      expect(sorteada.map((q) => q.id).sort()).toEqual(["q1", "q2"]);
+      for (const q of sorteada) {
+        const original = questoes.find((o) => o.id === q.id);
+        expect([...q.ordem_opcoes].sort()).toEqual(original.opcoes.map((_, k) => k));
+        expect(q.opcoes).toEqual(q.ordem_opcoes.map((k) => original.opcoes[k]));
+        // a alternativa certa é pelo índice ORIGINAL, que não muda com o sorteio
+        expect(q.correta).toBe(original.correta);
+        expect(q.comentario).toBe(original.comentario ?? null);
+      }
+    }
+  });
+
+  it("com sorteio que sempre devolve 0 a ordem gira uma casa (igual ao servidor)", () => {
+    const sorteada = sortearPrevia(questoes, () => 0);
+    // as questões vieram [q2, q1]: com duas questões, girar uma casa as inverte
+    expect(sorteada.map((q) => q.id)).toEqual(["q1", "q2"]);
+    expect(sorteada[0].ordem_opcoes).toEqual([1, 0]); // q1 tem 2 alternativas
+    expect(sorteada[1].ordem_opcoes).toEqual([1, 2, 0]); // q2 tem 3
+  });
+
+  it("sorteio que sempre devolve o último mantém a ordem original", () => {
+    const sorteada = sortearPrevia(questoes, (n) => n - 1);
+    expect(sorteada.map((q) => q.id)).toEqual(["q2", "q1"]); // a ordem em que vieram
+    expect(sorteada[0].ordem_opcoes).toEqual([0, 1, 2]);
+  });
+
+  it("usa o sorteio do navegador quando não recebe outro, sem alterar o que recebeu", () => {
+    const copia = JSON.parse(JSON.stringify(questoes));
+    const sorteio = vi.spyOn(Math, "random").mockReturnValue(0);
+    const sorteada = sortearPrevia(questoes);
+    sorteio.mockRestore();
+    expect(sorteada).toHaveLength(2);
+    expect(questoes).toEqual(copia);
+  });
+
+  it("alternativas em texto JSON (legado), inválidas ou sem questões não quebram", () => {
+    const r = sortearPrevia(
+      [
+        { id: "x", pergunta: "?", opcoes: JSON.stringify(["um", "dois"]), correta: 1 },
+        { id: "y", pergunta: "?", opcoes: "não é json", correta: 0 },
+      ],
+      () => 0
+    );
+    expect(r.find((q) => q.id === "x").opcoes).toEqual(["dois", "um"]);
+    expect(r.find((q) => q.id === "y").opcoes).toEqual([]);
+    expect(sortearPrevia(undefined)).toEqual([]);
+    expect(sortearPrevia(null, () => 0)).toEqual([]);
   });
 });
 
@@ -320,6 +378,7 @@ describe("criarApiPrevia", () => {
     const acoes = [
       "evento",
       "progresso",
+      "iniciar_avaliacao",
       "avaliacao",
       "duvida",
       "certificado",
@@ -392,7 +451,7 @@ describe("criarApiPrevia", () => {
     expect(r).toMatchObject({ nota: 0, nota_minima: 0, aprovada: true });
   });
 
-  it("reprovado: sem espera para nova tentativa e sem correção comentada (como o aluno vê)", async () => {
+  it("reprovado: sem espera, sem correção comentada e sem nota, acertos nem total (como o aluno vê)", async () => {
     const api = criarApiPrevia({ item });
     const r = await api.chamarPortal("avaliacao", {
       respostas: [
@@ -400,7 +459,42 @@ describe("criarApiPrevia", () => {
         { questao_id: "q2", resposta: 0 },
       ],
     });
-    expect(r).toMatchObject({ nota: 0, aprovada: false, proxima_em: null, revisao: null });
+    expect(r).toMatchObject({
+      resultado: "insatisfatorio",
+      aprovada: false,
+      nota_minima: 70,
+      tentativa: 1,
+      proxima_em: null,
+      revisao: null,
+    });
+    for (const chave of ["nota", "acertos", "total"]) expect(chave in r).toBe(false);
+  });
+
+  it("aprovado recebe nota, acertos e o conceito satisfatório", async () => {
+    const api = criarApiPrevia({ item });
+    const r = await api.chamarPortal("avaliacao", {
+      respostas: [
+        { questao_id: "q1", resposta: 0 },
+        { questao_id: "q2", resposta: 2 },
+      ],
+    });
+    expect(r).toMatchObject({ resultado: "satisfatorio", aprovada: true, nota: 100, acertos: 2 });
+  });
+
+  it("iniciar_avaliacao entrega a prova sorteada, no formato do servidor, com gabarito só para o RT", async () => {
+    const api = criarApiPrevia({ item });
+    const r = await api.chamarPortal("iniciar_avaliacao", { matricula_id: ID_MATRICULA_PREVIA });
+    expect(r).toMatchObject({ success: true, tentativa: 1, tentativas_max: 3, nota_minima: 70 });
+    expect(r.questoes.map((q) => q.id).sort()).toEqual(["q1", "q2"]);
+    // a tela da prévia lê isso com provaParaTela({ previa: true }) e enxerga o gabarito
+    const prova = provaParaTela(r, { previa: true });
+    expect(prova).not.toBeNull();
+    const q1 = prova.questoes.find((q) => q.id === "q1");
+    expect(q1.correta).toBe(0);
+    expect(q1.comentario).toBe("Porque sim");
+    // o gabarito (índice original) aponta a mesma alternativa, onde ela cair na tela
+    const certa = q1.exibicao.find((o) => o.indice === q1.correta);
+    expect(certa.texto).toBe("a");
   });
 
   it("o que só existe com aluno de verdade falha com mensagem clara, sem código de sessão", async () => {

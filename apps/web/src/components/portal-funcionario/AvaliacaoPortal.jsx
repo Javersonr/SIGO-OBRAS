@@ -3,13 +3,23 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { apiPortal, fmtDataHora, armazenamentoPortal } from "./api";
 import {
+  avisoDaProvaReaberta,
   guardarRascunhoProva,
   lerRascunhoProva,
   limparRascunhoProva,
   mensagemDeFalha,
+  provaParaTela,
+  provaPrecisaReabrir,
+  resumoDoResultado,
   resumoRespostas,
   textoSairDaProva,
 } from "@/lib/portal-curso";
+
+const MSG_PROVA_INVALIDA =
+  "A prova chegou incompleta. Tente de novo; se continuar, avise o RH para conferir as questões do curso.";
+
+// O servidor já decidiu: tentar de novo não adianta (a tela de aulas mostra a situação atual)
+const SEM_NOVA_TENTATIVA = new Set(["LIMITE_TENTATIVAS", "AGUARDAR"]);
 
 function CorrecaoComentada({ item }) {
   if (!item) return null;
@@ -35,29 +45,20 @@ function CorrecaoComentada({ item }) {
   );
 }
 
-function embaralhar(lista) {
-  const a = [...lista];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
 /**
- * Prova do curso. A correção é feita no servidor (o gabarito nunca vem ao
- * navegador); cada envio vira uma tentativa guardada com a prova como estava.
- * A ordem das questões e das alternativas é SORTEADA a cada tentativa — as
- * respostas voltam pelo índice original e a ordem exibida vai junto, para a
- * trilha de auditoria.
+ * Prova do curso. A prova é do SERVIDOR: ao abrir, a tela pede `iniciar_avaliacao`, e o servidor sorteia
+ * a ordem das questões e das alternativas, registra o início na trilha e devolve as questões SEM
+ * gabarito. O navegador não sorteia nem informa a ordem exibida. A correção também é no servidor (o
+ * gabarito só aparece depois de aprovado); cada envio vira uma tentativa guardada com a prova como estava.
+ * O reprovado vê só "insatisfatório", as tentativas e a próxima liberação.
  *
- * As respostas da tentativa em andamento ficam guardadas no navegador (por matrícula e
- * tentativa): recarregar a página ou voltar às aulas não as perde. Como as respostas são
- * pelo índice ORIGINAL da alternativa, valem mesmo com o novo sorteio da ordem.
+ * Esta peça só abre a prova (carregando, erro, ou a prova pronta); a prova em si é `ProvaEmAndamento`.
+ * Se o servidor recusar o envio porque a prova não vale mais (não estava iniciada nesta tentativa, ou o
+ * RH mexeu nas questões), a prova é aberta de novo e as respostas que ainda valem continuam marcadas.
  *
- * `api` é injetada (padrão: o portal de verdade). Na prévia do responsável técnico (`api.previa`) as
- * questões chegam COM `correta` e `comentario`: a tela marca o gabarito e mostra o comentário (só o RT
- * vê), a correção é feita na hora, sem servidor, e nada é guardado no aparelho.
+ * `api` é injetada (padrão: o portal de verdade). Na prévia do responsável técnico (`api.previa`) o
+ * sorteio é local e as questões chegam COM `correta` e `comentario`: a tela marca o gabarito e mostra o
+ * comentário (só o RT vê), a correção é feita na hora, sem servidor, e nada é guardado no aparelho.
  */
 export default function AvaliacaoPortal({
   item,
@@ -69,19 +70,112 @@ export default function AvaliacaoPortal({
 }) {
   const { chamarPortal } = api;
   const previa = api.previa === true;
+  // { fase: "carregando" } | { fase: "erro", mensagem, definitivo } | { fase: "pronta", prova, abertura, aviso }
+  const [estado, setEstado] = useState({ fase: "carregando" });
+  const abrindoRef = useRef(false); // uma abertura por vez (duplo clique, recarga)
+  const aberturasRef = useRef(0); // remonta a prova quando ela é aberta de novo
+
+  const abrirProva = async (aviso = "") => {
+    if (abrindoRef.current) return;
+    abrindoRef.current = true;
+    setEstado({ fase: "carregando" });
+    try {
+      const resposta = await fila(() =>
+        chamarPortal("iniciar_avaliacao", { matricula_id: item.matricula.id }, token)
+      );
+      const prova = provaParaTela(resposta, { previa });
+      if (!prova) throw new Error(MSG_PROVA_INVALIDA);
+      aberturasRef.current += 1;
+      setEstado({ fase: "pronta", prova, abertura: aberturasRef.current, aviso });
+    } catch (e) {
+      if (e?.codigo === "SESSAO" || e?.codigo === "TROCAR_SENHA") tratarErro(e);
+      else {
+        setEstado({
+          fase: "erro",
+          mensagem: mensagemDeFalha(e),
+          definitivo: SEM_NOVA_TENTATIVA.has(e?.codigo),
+        });
+      }
+    } finally {
+      abrindoRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    abrirProva();
+  }, []);
+
+  if (estado.fase === "pronta") {
+    return (
+      <ProvaEmAndamento
+        key={estado.abertura}
+        prova={estado.prova}
+        aviso={estado.aviso}
+        item={item}
+        token={token}
+        fila={fila}
+        tratarErro={tratarErro}
+        onFechar={onFechar}
+        onReabrir={abrirProva}
+        api={api}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <h2 className="font-semibold text-slate-800 text-lg">📝 Avaliação final</h2>
+      {estado.fase === "carregando" ? (
+        <p role="status" className="flex items-center gap-2 text-sm text-slate-500">
+          <Loader2 className="w-4 h-4 animate-spin" /> Preparando a prova...
+        </p>
+      ) : (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-3">
+          <p className="text-sm text-red-700">{estado.mensagem}</p>
+          <div className="flex gap-2">
+            <Button variant="outline" className="bg-white" onClick={onFechar}>
+              Voltar às aulas
+            </Button>
+            {!estado.definitivo && (
+              <Button className="flex-1 bg-slate-900" onClick={() => abrirProva()}>
+                Tentar de novo
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A prova já aberta: questões e alternativas na ordem que o servidor sorteou (`prova`, de
+ * `provaParaTela`). As respostas da tentativa em andamento ficam guardadas no navegador (por matrícula e
+ * tentativa): recarregar a página ou voltar às aulas não as perde. Como as respostas vão pelo índice
+ * ORIGINAL da alternativa, valem mesmo quando a prova é sorteada de novo.
+ */
+export function ProvaEmAndamento({
+  prova,
+  aviso = "",
+  item,
+  token,
+  fila,
+  tratarErro,
+  onFechar,
+  onReabrir,
+  api = apiPortal,
+}) {
+  const { chamarPortal } = api;
+  const previa = api.previa === true;
   const armazenamento = () => (previa ? null : armazenamentoPortal());
   const raizRef = useRef(null);
-  // sorteio feito uma vez por abertura da prova (estável até fechar/reabrir)
-  const [questoes] = useState(() =>
-    embaralhar(item.questoes || []).map((q) => ({
-      ...q,
-      exibicao: embaralhar((q.opcoes || []).map((texto, indice) => ({ texto, indice }))),
-    }))
-  );
+  const questoes = prova.questoes;
   const av = item.avaliacao || {};
   const matriculaId = item.matricula.id;
-  // número da tentativa que está sendo feita; depois de enviada, a próxima começa sem rascunho
-  const [tentativa] = useState(() => (av.tentativas_usadas ?? 0) + 1);
+  // número da tentativa que o servidor abriu; depois de enviada, a próxima começa sem rascunho
+  const tentativa = prova.tentativa;
+  const notaMinima = prova.notaMinima ?? av.nota_minima;
+  const tentativasMax = prova.tentativasMax ?? av.tentativas_max;
   const [respostas, setRespostas] = useState(() =>
     lerRascunhoProva(armazenamento(), matriculaId, tentativa, questoes)
   ); // questao_id -> índice ORIGINAL
@@ -95,12 +189,7 @@ export default function AvaliacaoPortal({
 
   const resumo = resumoRespostas(questoes, respostas);
   const respondeu = (q) => Number.isInteger(respostas[q.id]);
-
-  useEffect(() => {
-    fila(() =>
-      chamarPortal("evento", { evento: "avaliacao_inicio", matricula_id: item.matricula.id }, token)
-    ).catch(() => {});
-  }, []);
+  const final = resultado ? resumoDoResultado(resultado) : null;
 
   // cada resposta marcada vai para o navegador (a prova já enviada não deixa rascunho)
   useEffect(() => {
@@ -128,16 +217,13 @@ export default function AvaliacaoPortal({
     setErro("");
     setEnviando(true);
     try {
+      // só o que o aluno marcou: a ordem exibida e o início da prova são do servidor
       const r = await fila(() =>
         chamarPortal(
           "avaliacao",
           {
             matricula_id: item.matricula.id,
-            respostas: questoes.map((q) => ({
-              questao_id: q.id,
-              resposta: respostas[q.id],
-              ordem_opcoes: q.exibicao.map((o) => o.indice),
-            })),
+            respostas: questoes.map((q) => ({ questao_id: q.id, resposta: respostas[q.id] })),
           },
           token
         )
@@ -150,6 +236,8 @@ export default function AvaliacaoPortal({
       else window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
       if (e.codigo === "SESSAO" || e.codigo === "TROCAR_SENHA") tratarErro(e);
+      // a prova aberta não vale mais: abre de novo, com as respostas que ainda valem
+      else if (provaPrecisaReabrir(e)) onReabrir(avisoDaProvaReaberta(e));
       else setErro(mensagemDeFalha(e));
     } finally {
       setEnviando(false);
@@ -166,11 +254,18 @@ export default function AvaliacaoPortal({
     <div ref={raizRef} className="space-y-3">
       <h2 className="font-semibold text-slate-800 text-lg">📝 Avaliação final</h2>
       <p className="text-sm text-slate-500">
-        Nota mínima {av.nota_minima}%
-        {av.tentativas_max
-          ? ` · tentativa ${resultado?.tentativa ?? av.tentativas_usadas + 1} de ${av.tentativas_max}`
-          : ""}
+        Nota mínima {notaMinima}%
+        {tentativasMax ? ` · tentativa ${tentativa} de ${tentativasMax}` : ""}
       </p>
+
+      {aviso && (
+        <p
+          role="status"
+          className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900"
+        >
+          {aviso}
+        </p>
+      )}
 
       {!resultado && (
         <div className="sticky top-0 z-10 -mx-4 px-4 py-2 bg-slate-50/95 backdrop-blur border-b border-slate-200">
@@ -203,29 +298,24 @@ export default function AvaliacaoPortal({
         </p>
       )}
 
-      {resultado && (
+      {final && (
         <div
           className={`rounded-lg border p-4 text-center ${
-            resultado.aprovada
+            final.aprovada
               ? "bg-emerald-50 border-emerald-200 text-emerald-800"
               : "bg-red-50 border-red-200 text-red-700"
           }`}
         >
-          <p className="text-lg font-bold">
-            Nota: {resultado.nota}% ({resultado.acertos}/{resultado.total})
-          </p>
-          <p>
-            {resultado.aprovada
-              ? "🎉 Aprovado! Veja abaixo a correção comentada."
-              : `Não atingiu a nota mínima (${resultado.nota_minima}%).`}
-          </p>
-          {!resultado.aprovada && resultado.proxima_em && (
+          <p className="text-lg font-bold">{final.titulo}</p>
+          <p>{final.mensagem}</p>
+          {final.tentativas && <p className="text-sm mt-1">{final.tentativas}</p>}
+          {!final.aprovada && !final.esgotada && resultado.proxima_em && (
             <p className="text-sm mt-1">
               Revise as aulas. Nova tentativa liberada em {fmtDataHora(resultado.proxima_em)}.
             </p>
           )}
           <Button className="mt-3 bg-slate-900" onClick={onFechar}>
-            {resultado.aprovada ? "Continuar" : "Voltar às aulas"}
+            {final.aprovada ? "Continuar" : "Voltar às aulas"}
           </Button>
         </div>
       )}

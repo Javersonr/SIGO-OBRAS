@@ -74,17 +74,38 @@ export interface EventoPortal {
   detalhe?: Record<string, unknown> | null;
 }
 
-/** Grava na trilha de auditoria. Nunca derruba a ação principal. */
+/**
+ * Grava na trilha de auditoria. Nunca derruba a ação principal. Devolve se o evento ficou gravado:
+ * quase todo chamador ignora, mas quem depende da linha (a prova só abre se o início ficou na trilha)
+ * confere.
+ */
 export async function registrarEvento(
   // deno-lint-ignore no-explicit-any
   supabase: any,
   req: Request,
   e: EventoPortal
-): Promise<void> {
+): Promise<boolean> {
   const { error } = await supabase
     .from("treinamento_evento")
     .insert({ ...e, ...origemDaRequisicao(req) });
   if (error) console.error("[portal-funcionario] evento:", e.evento, error.message);
+  return !error;
+}
+
+/**
+ * Inteiro uniforme em [0, n) com o sorteio criptográfico (`crypto.getRandomValues`), sem o viés do
+ * `% n` simples: valores do topo que não completam uma volta de n são descartados e sorteados de novo.
+ * Serve ao sorteio da prova (a ordem das questões e das alternativas é decidida no servidor).
+ */
+export function inteiroAleatorioSeguro(n: number): number {
+  if (!Number.isInteger(n) || n < 1 || n > 2 ** 32) throw new RangeError("n inválido");
+  if (n === 1) return 0;
+  const limite = Math.floor(2 ** 32 / n) * n; // maior múltiplo de n que cabe em 32 bits
+  const buf = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(buf);
+  } while (buf[0] >= limite);
+  return buf[0] % n;
 }
 
 /** Código do certificado: 12 caracteres em 3 blocos (ex.: K7QM-2XRA-94TD). */

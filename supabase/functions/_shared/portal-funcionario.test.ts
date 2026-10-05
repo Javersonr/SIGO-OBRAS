@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import {
   HASH_VERSAO_CANONICO,
   hashDoCertificado,
+  inteiroAleatorioSeguro,
   jsonCanonico,
   origemDaRequisicao,
   registrarEvento,
@@ -238,4 +239,38 @@ test("hash do certificado: sobrevive à ida e volta pelo jsonb (undefined some, 
     await hashDoCertificado(CERT.codigo, comUndefined, CERT.assinatura),
     await hashDoCertificado(CERT.codigo, idaEVolta, CERT.assinatura)
   );
+});
+
+test("registrarEvento: diz se gravou (a prova só abre se o início ficou na trilha)", async (t) => {
+  const erro = t.mock.method(console, "error", () => {});
+  assert.equal(await registrarEvento(fakeSupabase(), req({}), EVENTO), true);
+  assert.equal(await registrarEvento(fakeSupabase({ message: "falhou" }), req({}), EVENTO), false);
+  assert.equal(erro.mock.callCount(), 1);
+});
+
+// --------------------------------------------------------- inteiroAleatorioSeguro
+test("inteiroAleatorioSeguro: sempre dentro de [0, n) e cobre todos os valores", () => {
+  for (const n of [1, 2, 3, 4, 7, 15, 100]) {
+    const vistos = new Set<number>();
+    for (let i = 0; i < 2000; i++) {
+      const v = inteiroAleatorioSeguro(n);
+      assert.ok(Number.isInteger(v) && v >= 0 && v < n, `n=${n} v=${v}`);
+      vistos.add(v);
+    }
+    if (n <= 15) assert.equal(vistos.size, n, `n=${n}: faltou algum valor em 2000 sorteios`);
+  }
+  assert.equal(inteiroAleatorioSeguro(1), 0);
+});
+
+test("inteiroAleatorioSeguro: sem viés visível (3 valores em 6000 sorteios ficam perto de 2000)", () => {
+  const cont = [0, 0, 0];
+  for (let i = 0; i < 6000; i++) cont[inteiroAleatorioSeguro(3)]++;
+  // desvio-padrão ~ 36: a faixa de 1700 a 2300 é de mais de 8 desvios (o teste não oscila)
+  for (const c of cont) assert.ok(c > 1700 && c < 2300, `contagens: ${cont}`);
+});
+
+test("inteiroAleatorioSeguro: não aceita n inválido", () => {
+  for (const ruim of [0, -1, 1.5, Number.NaN, Infinity, 2 ** 32 + 1]) {
+    assert.throws(() => inteiroAleatorioSeguro(ruim), RangeError, String(ruim));
+  }
 });

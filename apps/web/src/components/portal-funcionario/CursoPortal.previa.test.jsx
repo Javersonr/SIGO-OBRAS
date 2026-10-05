@@ -28,9 +28,10 @@ vi.mock("@/api/sigoClient", () => ({
 
 import { sigo } from "@/api/sigoClient";
 import CursoPortal from "./CursoPortal";
-import AvaliacaoPortal from "./AvaliacaoPortal";
+import AvaliacaoPortal, { ProvaEmAndamento } from "./AvaliacaoPortal";
 import DuvidasPortal from "./DuvidasPortal";
 import { montarItemPrevia, criarApiPrevia } from "@/lib/portal-previa";
+import { provaParaTela } from "@/lib/portal-curso";
 
 /**
  * Primeira tela da prévia do RT ("Ver como aluno", T28) e do portal de verdade, só com dados sintéticos.
@@ -67,12 +68,25 @@ const apiPrevia = criarApiPrevia({ item: itemPrevia });
 const semOperacao = () => {};
 const fila = (tarefa) => tarefa();
 
-// O que o servidor devolve a um aluno matriculado: aulas em ordem linear e questões SEM gabarito.
+// O que o servidor devolve a um aluno matriculado: aulas em ordem linear e NENHUMA questão (a prova só
+// chega sorteada, sem gabarito, quando o aluno a abre: ação `iniciar_avaliacao`).
+const { questoes: _questoesDaPrevia, ...itemSemQuestoes } = itemPrevia;
 const itemReal = {
-  ...itemPrevia,
+  ...itemSemQuestoes,
   matricula: { id: "m1", status: "em_andamento", avaliacao_aprovada: false },
   aulas: itemPrevia.aulas.map((a, i) => ({ ...a, liberada: i === 0 })),
-  questoes: itemPrevia.questoes.map(({ correta: _correta, comentario: _comentario, ...q }) => q),
+};
+
+// A resposta da ação `iniciar_avaliacao` do servidor: questões sorteadas e SEM gabarito.
+const respostaIniciar = {
+  success: true,
+  tentativa: 1,
+  tentativas_max: 3,
+  nota_minima: 70,
+  questoes: [
+    { id: "q2", pergunta: "Segunda?", opcoes: ["c", "a", "b"], ordem_opcoes: [2, 0, 1] },
+    { id: "q1", pergunta: "Primeira?", opcoes: ["b", "a"], ordem_opcoes: [1, 0] },
+  ],
 };
 
 // Tag de abertura do primeiro <elemento> do HTML (null se não houver) e botão pelo texto dele.
@@ -117,8 +131,26 @@ describe("prévia do curso para o RT", () => {
     expect(html).toContain("tentativa 1 de 3");
   });
 
-  it("a prova mostra o gabarito e o comentário só na prévia", () => {
+  it("a prova mostra o gabarito e o comentário só na prévia", async () => {
+    // a prova da prévia é sorteada pela API injetada, como o servidor faria para o aluno
+    const sorteada = await apiPrevia.chamarPortal("iniciar_avaliacao", {});
     const prova = renderToStaticMarkup(
+      <ProvaEmAndamento
+        prova={provaParaTela(sorteada, { previa: true })}
+        item={itemPrevia}
+        api={apiPrevia}
+        fila={fila}
+        tratarErro={semOperacao}
+        onFechar={semOperacao}
+        onReabrir={semOperacao}
+      />
+    );
+    expect((prova.match(/gabarito<\/span>/g) || []).length).toBe(2); // uma por questão
+    expect(prova).toContain("Comentário reservado");
+  });
+
+  it("a prova só abre depois de o servidor sortear: antes disso não há questão na tela", () => {
+    const html = renderToStaticMarkup(
       <AvaliacaoPortal
         item={itemPrevia}
         api={apiPrevia}
@@ -127,8 +159,9 @@ describe("prévia do curso para o RT", () => {
         onFechar={semOperacao}
       />
     );
-    expect((prova.match(/gabarito<\/span>/g) || []).length).toBe(2); // uma por questão
-    expect(prova).toContain("Comentário reservado");
+    expect(html).toContain("Preparando a prova");
+    expect(html).not.toContain("Primeira?");
+    expect(html).not.toContain("Segunda?");
   });
 
   it("a dúvida ao tutor aparece, mas desativada", () => {
@@ -168,18 +201,82 @@ describe("portal do aluno (sem API injetada)", () => {
     expect(html).not.toContain("Fazer avaliação final"); // só depois de concluir as aulas
   });
 
-  it("a prova do aluno não mostra gabarito, nem se a questão trouxesse `correta`", () => {
-    const comGabarito = { ...itemReal, questoes: itemPrevia.questoes };
+  it("a prova do aluno mostra as questões na ordem do servidor e não tem gabarito", () => {
     const prova = renderToStaticMarkup(
-      <AvaliacaoPortal
-        item={comGabarito}
+      <ProvaEmAndamento
+        prova={provaParaTela(respostaIniciar)}
+        item={itemReal}
         fila={fila}
         tratarErro={semOperacao}
         onFechar={semOperacao}
+        onReabrir={semOperacao}
+      />
+    );
+    // ordem das questões e das alternativas: a do servidor
+    expect(prova.indexOf("Segunda?")).toBeGreaterThan(-1);
+    expect(prova.indexOf("Segunda?")).toBeLessThan(prova.indexOf("Primeira?"));
+    expect(prova).toMatch(/A\) c<[\s\S]*B\) a<[\s\S]*C\) b</);
+    expect(prova).toContain("0 de 2 respondidas");
+    expect(prova).toContain("tentativa 1 de 3");
+    expect(prova).not.toContain("gabarito");
+  });
+
+  it("a prova do aluno não mostra gabarito nem comentário, nem se a resposta os trouxesse", () => {
+    const comGabarito = {
+      ...respostaIniciar,
+      questoes: respostaIniciar.questoes.map((q) => ({
+        ...q,
+        correta: 0,
+        comentario: "Comentário reservado",
+      })),
+    };
+    const prova = renderToStaticMarkup(
+      <ProvaEmAndamento
+        prova={provaParaTela(comGabarito)}
+        item={itemReal}
+        fila={fila}
+        tratarErro={semOperacao}
+        onFechar={semOperacao}
+        onReabrir={semOperacao}
       />
     );
     expect(prova).not.toContain("gabarito");
     expect(prova).not.toContain("Comentário reservado");
+  });
+
+  it("avisa que a prova foi aberta de novo quando recebe o aviso", () => {
+    const prova = renderToStaticMarkup(
+      <ProvaEmAndamento
+        prova={provaParaTela(respostaIniciar)}
+        aviso="A prova foi aberta de novo."
+        item={itemReal}
+        fila={fila}
+        tratarErro={semOperacao}
+        onFechar={semOperacao}
+        onReabrir={semOperacao}
+      />
+    );
+    expect(prova).toContain("A prova foi aberta de novo.");
+  });
+
+  it("o cartão da avaliação diz quantas questões tem, sem receber nenhuma questão", () => {
+    const concluido = {
+      ...itemReal,
+      aulas: itemReal.aulas.map((a) => ({ ...a, concluida: true, liberada: true })),
+      avaliacao: { ...itemReal.avaliacao, total_questoes: 2 },
+    };
+    expect("questoes" in concluido).toBe(false);
+    const html = renderToStaticMarkup(
+      <CursoPortal
+        item={concluido}
+        token="token"
+        recarregar={async () => null}
+        onVoltar={semOperacao}
+        onErroSessao={semOperacao}
+      />
+    );
+    expect(html).toContain("Avaliação final · 2 questões · nota mínima 70%");
+    expect(botaoComTexto(html, "Fazer avaliação final")).not.toBeNull();
   });
 
   it("a dúvida ao tutor fica ativa para escrever", () => {

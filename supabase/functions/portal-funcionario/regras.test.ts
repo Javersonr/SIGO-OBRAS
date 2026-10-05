@@ -1,21 +1,35 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  EVENTO_PROVA_INICIADA,
   MAX_DETALHE,
   PCT_CONCLUSAO,
+  REPROVADO_VE_NOTA,
+  TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG,
   TOLERANCIA_SEG,
   aulaLiberada,
+  aulasParaAluno,
   conclusaoDaAula,
   comRastroDeFalha,
   corrigirProva,
   creditarTempo,
   cursoPublicado,
   datasDeConclusao,
+  detalheDaProvaIniciada,
   detalheLimitado,
+  inicioDaProva,
+  liberacaoDasAulas,
   logoAssinadoParaPdf,
+  matriculaParaAluno,
+  ordemDaProva,
   proximaTentativaEm,
+  provaDaOrdem,
+  refsDasAulasLiberadas,
+  respostaDaCorrecao,
   situacaoDasTentativas,
   situacaoDaTrilha,
+  sortearProva,
+  validarEnvio,
 } from "./regras.ts";
 import { assinarDaEmpresa } from "../_shared/storage-assinar.ts";
 
@@ -429,7 +443,7 @@ test("corrigirProva: resposta numérica em texto vale; texto não numérico erra
 
 test("corrigirProva: resposta null vira 0 (comportamento atual, anotado fora do escopo da T3)", () => {
   // Number(null) === 0: a questão em branco que tem a alternativa 0 como correta acerta.
-  // O portal nunca envia null (bloqueia envio com questão em branco); só chamada direta à API.
+  // Desde a T16 o validarEnvio recusa null (400) antes da correção, então isto não chega mais aqui.
   const r = corrigirProva({ questoes: prova([0]), respostas: resp(null), notaMinima: 70 });
   assert.equal(r.marcada.get("q1"), 0);
   assert.equal(r.acertos, 1);
@@ -822,4 +836,794 @@ test("comRastroDeFalha: registrar que também falha não esconde o erro de verda
     () => assinar(["x"]),
     (e) => e === erro
   );
+});
+
+// ============================================================================
+// Prova no servidor (T16): sorteio, início, validação do envio e resposta
+// ============================================================================
+// Dados sintéticos: nenhum identificador, nome ou texto de curso reais.
+const BANCO = [
+  {
+    id: "q1",
+    pergunta: "Pergunta 1",
+    opcoes: ["a1", "b1", "c1", "d1"],
+    correta: 2,
+    comentario: "x",
+  },
+  { id: "q2", pergunta: "Pergunta 2", opcoes: ["a2", "b2", "c2"], correta: 0, comentario: "y" },
+  { id: "q3", pergunta: "Pergunta 3", opcoes: ["a3", "b3"], correta: 1, comentario: "z" },
+];
+const semBanco = BANCO.map(({ id, opcoes }) => ({ id, opcoes })); // o que o envio confere
+// Gerador pseudoaleatório determinístico (mulberry32): o teste não depende do acaso.
+function semente(s: number) {
+  let a = s >>> 0;
+  return (n: number) => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return Math.floor((((t ^ (t >>> 14)) >>> 0) / 4294967296) * n);
+  };
+}
+
+// ------------------------------------------------------------- sortearProva
+test("sortearProva: devolve cada questão uma vez, com as alternativas embaralhadas e o mapa de volta", () => {
+  for (let s = 1; s <= 200; s++) {
+    const sorteada = sortearProva(BANCO, semente(s));
+    assert.deepEqual(sorteada.map((q) => q.id).sort(), ["q1", "q2", "q3"]);
+    for (const q of sorteada) {
+      const original = BANCO.find((b) => b.id === q.id)!;
+      assert.equal(q.pergunta, original.pergunta);
+      // é uma permutação dos índices originais...
+      assert.deepEqual(
+        [...q.ordem_opcoes].sort(),
+        original.opcoes.map((_, i) => i)
+      );
+      // ...e cada texto mostrado é o da alternativa que o índice aponta
+      assert.deepEqual(
+        q.opcoes,
+        q.ordem_opcoes.map((i) => original.opcoes[i])
+      );
+    }
+  }
+});
+
+test("sortearProva: com sorteio que sempre devolve 0 a ordem gira uma casa (resultado conhecido)", () => {
+  const sorteada = sortearProva(BANCO, () => 0);
+  assert.deepEqual(
+    sorteada.map((q) => q.id),
+    ["q2", "q3", "q1"]
+  );
+  assert.deepEqual(
+    sorteada.map((q) => q.ordem_opcoes),
+    [
+      [1, 2, 0],
+      [1, 0],
+      [1, 2, 3, 0],
+    ]
+  );
+});
+
+test("sortearProva: sorteio que sempre devolve o último mantém a ordem original", () => {
+  const sorteada = sortearProva(BANCO, (n) => n - 1);
+  assert.deepEqual(
+    sorteada.map((q) => q.id),
+    ["q1", "q2", "q3"]
+  );
+  assert.deepEqual(
+    sorteada.map((q) => q.ordem_opcoes),
+    [
+      [0, 1, 2, 3],
+      [0, 1, 2],
+      [0, 1],
+    ]
+  );
+});
+
+test("sortearProva: sementes diferentes dão ordens diferentes (não é sempre a mesma prova)", () => {
+  const ordens = new Set<string>();
+  for (let s = 1; s <= 50; s++) {
+    ordens.add(JSON.stringify(sortearProva(BANCO, semente(s)).map((q) => [q.id, q.ordem_opcoes])));
+  }
+  assert.ok(ordens.size > 20, `só ${ordens.size} ordens diferentes em 50 sorteios`);
+});
+
+test("sortearProva: nunca devolve o gabarito nem o comentário, mesmo se a questão vier com eles", () => {
+  const sorteada = sortearProva(BANCO, semente(7));
+  for (const q of sorteada) {
+    assert.deepEqual(Object.keys(q).sort(), ["id", "opcoes", "ordem_opcoes", "pergunta"]);
+  }
+  const texto = JSON.stringify(sorteada);
+  assert.equal(texto.includes("correta"), false);
+  assert.equal(texto.includes("comentario"), false);
+});
+
+test("sortearProva: não altera o que recebe", () => {
+  const copia = JSON.parse(JSON.stringify(BANCO));
+  sortearProva(BANCO, semente(3));
+  assert.deepEqual(BANCO, copia);
+});
+
+test("sortearProva: alternativas guardadas como texto JSON (legado) e prova vazia", () => {
+  const legado = [{ id: "q1", pergunta: "P", opcoes: JSON.stringify(["x", "y", "z"]) }];
+  const sorteada = sortearProva(legado, () => 0);
+  assert.deepEqual(sorteada[0].opcoes, ["y", "z", "x"]);
+  assert.deepEqual(
+    sortearProva([], () => 0),
+    []
+  );
+  const quebrada = sortearProva([{ id: "q1", pergunta: "P", opcoes: "não é json" }], () => 0);
+  assert.deepEqual(quebrada[0].opcoes, []);
+  assert.deepEqual(quebrada[0].ordem_opcoes, []);
+});
+
+test("sortearProva: sorteio fora do intervalo é erro, não resultado silencioso", () => {
+  for (const ruim of [() => 99, () => -1, () => 1.5, () => Number.NaN]) {
+    assert.throws(() => sortearProva(BANCO, ruim), /sorteio/i);
+  }
+});
+
+// ----------------------------------------------- provaDaOrdem / ordemDaProva
+const ORDEM = [
+  { questao_id: "q2", ordem_opcoes: [2, 0, 1] },
+  { questao_id: "q3", ordem_opcoes: [1, 0] },
+  { questao_id: "q1", ordem_opcoes: [3, 2, 1, 0] },
+];
+const comOrdem = (primeira: Record<string, unknown>) => [primeira, ORDEM[1], ORDEM[2]];
+
+test("provaDaOrdem: refaz a prova na ordem que o servidor gravou", () => {
+  const prova = provaDaOrdem(BANCO, ORDEM);
+  assert.ok(prova);
+  assert.deepEqual(
+    prova.map((q) => q.id),
+    ["q2", "q3", "q1"]
+  );
+  assert.deepEqual(prova[0].opcoes, ["c2", "a2", "b2"]);
+  assert.deepEqual(prova[2].opcoes, ["d1", "c1", "b1", "a1"]);
+  assert.deepEqual(prova[2].ordem_opcoes, [3, 2, 1, 0]);
+});
+
+test("provaDaOrdem: o que sai de sortearProva volta igual (ordemDaProva é a ida)", () => {
+  const sorteada = sortearProva(BANCO, semente(11));
+  assert.deepEqual(provaDaOrdem(BANCO, ordemDaProva(sorteada)), sorteada);
+});
+
+test("provaDaOrdem: ordem que não bate com as questões de hoje vira null", () => {
+  assert.equal(provaDaOrdem(BANCO, ORDEM.slice(1)), null); // faltou questão
+  assert.equal(provaDaOrdem(BANCO, [...ORDEM, { questao_id: "q4", ordem_opcoes: [0] }]), null);
+  assert.equal(provaDaOrdem(BANCO, [ORDEM[0], ORDEM[0], ORDEM[1]]), null); // repetida
+  assert.equal(provaDaOrdem(BANCO, comOrdem({ ...ORDEM[0], questao_id: "q9" })), null);
+  // número de alternativas mudou depois do sorteio
+  assert.equal(provaDaOrdem(BANCO, comOrdem({ ...ORDEM[0], ordem_opcoes: [1, 0] })), null);
+  // não é permutação: repete ou passa do intervalo
+  assert.equal(provaDaOrdem(BANCO, comOrdem({ ...ORDEM[0], ordem_opcoes: [0, 0, 1] })), null);
+  assert.equal(provaDaOrdem(BANCO, comOrdem({ ...ORDEM[0], ordem_opcoes: [0, 1, 3] })), null);
+  assert.equal(provaDaOrdem(BANCO, comOrdem({ ...ORDEM[0], ordem_opcoes: [0, 1, "2"] })), null);
+  assert.equal(provaDaOrdem(BANCO, null as never), null);
+  assert.equal(provaDaOrdem(BANCO, "q1" as never), null);
+});
+
+// ------------------------------------------- detalheDaProvaIniciada / inicioDaProva
+test("o início da prova gravado volta lido do jeito que foi gravado", () => {
+  const prova = sortearProva(BANCO, semente(5));
+  const detalhe = detalheDaProvaIniciada({ tentativa: 2, agora: T0, prova });
+  assert.equal(detalhe.tentativa, 2);
+  assert.equal(detalhe.iniciada_em, "2026-10-05T12:00:00.000Z");
+  // o que vai para o jsonb passa por JSON e volta igual
+  const lido = inicioDaProva({
+    created_at: "2026-10-05T12:00:01.000Z",
+    detalhe: JSON.parse(JSON.stringify(detalhe)),
+  });
+  assert.deepEqual(lido, { tentativa: 2, iniciadaEm: T0, ordem: ordemDaProva(prova) });
+});
+
+test("inicioDaProva: a hora do início é a do detalhe; sem ela, a da linha", () => {
+  const base = { tentativa: 1, prova: ORDEM };
+  const criado = "2026-10-05T13:00:00.000Z";
+  assert.equal(
+    inicioDaProva({ created_at: criado, detalhe: base })?.iniciadaEm,
+    Date.parse(criado)
+  );
+  assert.equal(
+    inicioDaProva({
+      created_at: criado,
+      detalhe: { ...base, iniciada_em: "2026-10-05T12:30:00.000Z" },
+    })?.iniciadaEm,
+    Date.parse("2026-10-05T12:30:00.000Z")
+  );
+  // hora do detalhe inválida: usa a da linha
+  assert.equal(
+    inicioDaProva({ created_at: criado, detalhe: { ...base, iniciada_em: "ontem" } })?.iniciadaEm,
+    Date.parse(criado)
+  );
+  // sem hora nenhuma, não há como medir o tempo
+  assert.equal(inicioDaProva({ detalhe: base }), null);
+});
+
+test("inicioDaProva: detalhe quebrado vira null (a prova conta como não iniciada)", () => {
+  const ok = { tentativa: 1, iniciada_em: "2026-10-05T12:00:00.000Z", prova: ORDEM };
+  assert.ok(inicioDaProva({ detalhe: ok }));
+  for (const ruim of [
+    null,
+    undefined,
+    "texto",
+    [],
+    { ...ok, tentativa: 0 },
+    { ...ok, tentativa: 1.5 },
+    { ...ok, tentativa: "1" },
+    { ...ok, prova: null },
+    { ...ok, prova: "q1" },
+    { ...ok, prova: [{ questao_id: 1, ordem_opcoes: [0] }] },
+    { ...ok, prova: [{ questao_id: "q1", ordem_opcoes: "012" }] },
+    { ...ok, prova: [{ questao_id: "q1", ordem_opcoes: [0, "1"] }] },
+  ]) {
+    assert.equal(inicioDaProva({ detalhe: ruim }), null, JSON.stringify(ruim));
+  }
+  assert.equal(inicioDaProva(null), null);
+  assert.equal(inicioDaProva(undefined), null);
+});
+
+// -------------------------------------------------------------- validarEnvio
+const INICIO = { tentativa: 1, iniciadaEm: T0, ordem: ORDEM };
+const COMPLETAS = [
+  { questao_id: "q1", resposta: 0 },
+  { questao_id: "q2", resposta: 1 },
+  { questao_id: "q3", resposta: 1 },
+];
+const envio = (mudancas: Record<string, unknown> = {}) =>
+  validarEnvio({
+    questoes: semBanco,
+    respostas: COMPLETAS,
+    inicio: INICIO,
+    numero: 1,
+    agora: T0 + 5000,
+    ...mudancas,
+  } as Parameters<typeof validarEnvio>[0]);
+const recusa = (r: ReturnType<typeof validarEnvio>) => {
+  assert.equal(r.ok, false);
+  return r as Extract<typeof r, { ok: false }>;
+};
+
+test("validarEnvio: prova iniciada e completa é aceita, na ordem que o servidor sorteou", () => {
+  const r = envio();
+  assert.equal(r.ok, true);
+  if (!r.ok) return;
+  assert.deepEqual(
+    r.prova.map((q) => q.id),
+    ["q2", "q3", "q1"]
+  );
+  assert.deepEqual(r.prova[0].ordem_opcoes, [2, 0, 1]);
+  // uma resposta por questão, na ordem da prova, só com número inteiro
+  assert.deepEqual(r.respostas, [
+    { questao_id: "q2", resposta: 1 },
+    { questao_id: "q3", resposta: 1 },
+    { questao_id: "q1", resposta: 0 },
+  ]);
+});
+
+test("validarEnvio: sem início da prova é recusada (409 PROVA_NAO_INICIADA)", () => {
+  const r = recusa(envio({ inicio: null }));
+  assert.equal(r.status, 409);
+  assert.equal(r.codigo, "PROVA_NAO_INICIADA");
+  assert.match(r.mensagem, /prova/i);
+});
+
+test("validarEnvio: o início tem de ser DESTA tentativa; o de uma tentativa já enviada não vale", () => {
+  // tentativa 1 já foi enviada: a próxima é a 2, e o início gravado ainda é o da 1
+  assert.equal(recusa(envio({ numero: 2 })).codigo, "PROVA_NAO_INICIADA");
+  // início de uma tentativa que ainda não chegou também não vale
+  const adiante = recusa(envio({ inicio: { ...INICIO, tentativa: 3 }, numero: 2 }));
+  assert.equal(adiante.codigo, "PROVA_NAO_INICIADA");
+  assert.equal(envio({ inicio: { ...INICIO, tentativa: 2 }, numero: 2 }).ok, true);
+});
+
+test("validarEnvio: o RH mexeu nas questões depois do início: 409 PROVA_ALTERADA", () => {
+  const nova = [...semBanco, { id: "q4", opcoes: ["a", "b"] }];
+  const r = recusa(envio({ questoes: nova }));
+  assert.equal(r.status, 409);
+  assert.equal(r.codigo, "PROVA_ALTERADA");
+  assert.equal(recusa(envio({ questoes: semBanco.slice(1) })).codigo, "PROVA_ALTERADA");
+  const menosOpcoes = [{ id: "q1", opcoes: ["a1", "b1"] }, ...semBanco.slice(1)];
+  assert.equal(recusa(envio({ questoes: menosOpcoes })).codigo, "PROVA_ALTERADA");
+});
+
+test("validarEnvio: falta resposta: 400 RESPOSTAS_INCOMPLETAS com quantas faltam", () => {
+  const r = recusa(envio({ respostas: COMPLETAS.slice(0, 2) }));
+  assert.equal(r.status, 400);
+  assert.equal(r.codigo, "RESPOSTAS_INCOMPLETAS");
+  assert.equal(r.extra?.faltam, 1);
+  assert.match(r.mensagem, /falta 1\b/);
+  const duas = recusa(envio({ respostas: COMPLETAS.slice(0, 1) }));
+  assert.equal(duas.extra?.faltam, 2);
+  assert.match(duas.mensagem, /faltam 2\b/);
+});
+
+test("validarEnvio: sem lista de respostas, vazia ou de tipo errado, todas faltam", () => {
+  for (const respostas of [undefined, null, [], "q1", { q1: 0 }, 5]) {
+    const r = recusa(envio({ respostas }));
+    assert.equal(r.codigo, "RESPOSTAS_INCOMPLETAS");
+    assert.equal(r.extra?.faltam, 3);
+  }
+});
+
+test("validarEnvio: só inteiro dentro das alternativas conta como resposta (null deixa de valer 0)", () => {
+  const com = (resposta: unknown) =>
+    envio({ respostas: [{ questao_id: "q1", resposta }, ...COMPLETAS.slice(1)] });
+  // q1 tem 4 alternativas: 0..3 valem
+  for (const valida of [0, 1, 3]) assert.equal(com(valida).ok, true, String(valida));
+  const invalidas = [null, undefined, "0", "", true, 4, -1, 1.5, Number.NaN, Infinity, [0], {}];
+  for (const ruim of invalidas) {
+    const r = recusa(com(ruim));
+    assert.equal(r.codigo, "RESPOSTAS_INCOMPLETAS", String(ruim));
+    assert.equal(r.extra?.faltam, 1);
+  }
+});
+
+test("validarEnvio: resposta de questão que não é da prova é ignorada; a repetida vale pela última", () => {
+  const extra = envio({ respostas: [...COMPLETAS, { questao_id: "q-alheia", resposta: 0 }] });
+  assert.equal(extra.ok, true);
+  if (extra.ok) assert.equal(extra.respostas.length, 3);
+  // só a questão alheia respondida: as da prova continuam faltando
+  const alheia = recusa(envio({ respostas: [{ questao_id: "q-alheia", resposta: 0 }] }));
+  assert.equal(alheia.extra?.faltam, 3);
+  const repetida = envio({ respostas: [{ questao_id: "q1", resposta: 3 }, ...COMPLETAS] });
+  assert.equal(repetida.ok, true);
+  if (repetida.ok) {
+    assert.equal(repetida.respostas.find((r) => r.questao_id === "q1")?.resposta, 0);
+  }
+});
+
+test("validarEnvio: itens soltos na lista (null, número) não derrubam a validação", () => {
+  assert.equal(envio({ respostas: [null, 5, "x", ...COMPLETAS] }).ok, true);
+});
+
+test("validarEnvio: tempo mínimo desde o início, por questão, quando configurado", () => {
+  // 10 s por questão, 3 questões: 30 s
+  const regra = { tempoMinimoPorQuestaoSeg: 10 };
+  const cedo = recusa(envio({ ...regra, agora: T0 + 10_000 }));
+  assert.equal(cedo.status, 409);
+  assert.equal(cedo.codigo, "TEMPO_MINIMO_PROVA");
+  assert.equal(cedo.extra?.faltam_seg, 20);
+  assert.match(cedo.mensagem, /20 s/);
+  // fração de segundo sobe: falta 0,5 s -> 1 s
+  assert.equal(recusa(envio({ ...regra, agora: T0 + 29_500 })).extra?.faltam_seg, 1);
+  // no instante exato e depois, passa
+  assert.equal(envio({ ...regra, agora: T0 + 30_000 }).ok, true);
+  assert.equal(envio({ ...regra, agora: T0 + 3_600_000 }).ok, true);
+});
+
+test("validarEnvio: tempo mínimo longo é dito em minutos", () => {
+  const r = recusa(envio({ tempoMinimoPorQuestaoSeg: 120, agora: T0 })); // 6 min no total
+  assert.equal(r.extra?.faltam_seg, 360);
+  assert.match(r.mensagem, /6 min/);
+});
+
+test("validarEnvio: relógio do início no futuro conta como zero decorrido (e não libera antes da hora)", () => {
+  const r = recusa(
+    envio({
+      tempoMinimoPorQuestaoSeg: 10,
+      inicio: { ...INICIO, iniciadaEm: T0 + 60_000 },
+      agora: T0,
+    })
+  );
+  assert.equal(r.codigo, "TEMPO_MINIMO_PROVA");
+  assert.equal(r.extra?.faltam_seg, 30);
+});
+
+test("validarEnvio: sem mínimo configurado não há espera (padrão de hoje, D10 decide)", () => {
+  assert.equal(TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG, 0);
+  // envio no mesmo instante do início, usando o padrão do módulo
+  assert.equal(envio({ agora: T0 }).ok, true);
+  for (const invalido of [0, -5, Number.NaN, undefined]) {
+    const r = envio({ tempoMinimoPorQuestaoSeg: invalido, agora: T0 });
+    assert.equal(r.ok, true, String(invalido));
+  }
+});
+
+test("validarEnvio: a ordem das recusas é início, prova alterada, respostas, tempo", () => {
+  const faltando = COMPLETAS.slice(0, 1);
+  const regra = { tempoMinimoPorQuestaoSeg: 10, agora: T0 };
+  // sem início vence tudo
+  const semInicio = recusa(envio({ ...regra, inicio: null, respostas: faltando }));
+  assert.equal(semInicio.codigo, "PROVA_NAO_INICIADA");
+  // prova alterada vence resposta faltando
+  const alterada = recusa(envio({ ...regra, questoes: semBanco.slice(1), respostas: faltando }));
+  assert.equal(alterada.codigo, "PROVA_ALTERADA");
+  // resposta faltando vence o tempo
+  assert.equal(recusa(envio({ ...regra, respostas: faltando })).codigo, "RESPOSTAS_INCOMPLETAS");
+  assert.equal(recusa(envio(regra)).codigo, "TEMPO_MINIMO_PROVA");
+});
+
+test("validarEnvio: o envio aceito corrige com corrigirProva sem mudar a conta de hoje", () => {
+  const r = envio();
+  assert.ok(r.ok);
+  if (!r.ok) return;
+  const res = corrigirProva({ questoes: BANCO, respostas: r.respostas, notaMinima: 70 });
+  // q1 marcou 0 (certa é 2): erra; q2 marcou 1 (certa 0): erra; q3 marcou 1 (certa 1): acerta
+  assert.equal(res.acertos, 1);
+  assert.equal(res.nota, 33);
+});
+
+// ------------------------------------------------------------ respostaDaCorrecao
+const REVISAO = [{ questao_id: "q1", acertou: true, resposta_correta: "c1", comentario: "x" }];
+const CORRECAO = {
+  nota: 80,
+  notaMinima: 70,
+  acertos: 4,
+  total: 5,
+  tentativa: 2,
+  tentativasMax: 3,
+  proximaEm: null,
+  cursoConcluido: true,
+  revisao: REVISAO,
+};
+
+test("respostaDaCorrecao: aprovado recebe tudo, como hoje, com o conceito satisfatório", () => {
+  const r = respostaDaCorrecao({ ...CORRECAO, aprovada: true });
+  assert.deepEqual(r, {
+    resultado: "satisfatorio",
+    aprovada: true,
+    nota: 80,
+    nota_minima: 70,
+    acertos: 4,
+    total: 5,
+    tentativa: 2,
+    tentativas_max: 3,
+    proxima_em: null,
+    curso_concluido: true,
+    revisao: REVISAO,
+  });
+});
+
+test("respostaDaCorrecao: reprovado recebe só 'insatisfatório', tentativas e próxima liberação", () => {
+  const r = respostaDaCorrecao({
+    ...CORRECAO,
+    aprovada: false,
+    nota: 40,
+    acertos: 2,
+    cursoConcluido: false,
+    revisao: null,
+    proximaEm: "2026-10-05T12:30:00.000Z",
+  });
+  assert.deepEqual(r, {
+    resultado: "insatisfatorio",
+    aprovada: false,
+    nota_minima: 70,
+    tentativa: 2,
+    tentativas_max: 3,
+    proxima_em: "2026-10-05T12:30:00.000Z",
+    curso_concluido: false,
+    revisao: null,
+  });
+  // nada que sirva para deduzir o gabarito: nem nota, nem acertos, nem total
+  for (const chave of ["nota", "acertos", "total"]) assert.equal(chave in r, false, chave);
+});
+
+test("respostaDaCorrecao: reprovado nunca leva a correção comentada, mesmo se vier preenchida", () => {
+  const r = respostaDaCorrecao({ ...CORRECAO, aprovada: false, revisao: REVISAO });
+  assert.equal(r.revisao, null);
+  assert.equal(r.curso_concluido, false);
+});
+
+test("respostaDaCorrecao: mostrar a nota ao reprovado é uma constante (D10); o padrão esconde", () => {
+  assert.equal(REPROVADO_VE_NOTA, false);
+  const aberto = respostaDaCorrecao(
+    { ...CORRECAO, aprovada: false, nota: 40, acertos: 2, revisao: null, cursoConcluido: false },
+    true
+  );
+  assert.equal(aberto.nota, 40);
+  assert.equal(aberto.acertos, 2);
+  assert.equal(aberto.total, 5);
+  assert.equal(aberto.resultado, "insatisfatorio");
+  assert.equal(aberto.revisao, null); // a correção comentada continua só para o aprovado
+});
+
+// ---------------------------------------------------------- matriculaParaAluno
+test("matriculaParaAluno: a nota de quem ainda não foi aprovado não sai nos dados", () => {
+  const m = {
+    id: "m1",
+    status: "em_andamento",
+    avaliacao_aprovada: false,
+    nota_avaliacao: 40,
+    tentativas_extras: 1,
+  };
+  const para = matriculaParaAluno(m);
+  assert.equal(para.nota_avaliacao, null);
+  assert.equal(para.id, "m1");
+  assert.equal(para.tentativas_extras, 1);
+  assert.equal(m.nota_avaliacao, 40); // o original não é alterado
+});
+
+test("matriculaParaAluno: o aprovado vê a própria nota; a regra pode ser aberta pela constante", () => {
+  const aprovada = { id: "m1", avaliacao_aprovada: true, nota_avaliacao: 90 };
+  assert.equal(matriculaParaAluno(aprovada).nota_avaliacao, 90);
+  const reprovada = { id: "m1", avaliacao_aprovada: false, nota_avaliacao: 40 };
+  assert.equal(matriculaParaAluno(reprovada, true).nota_avaliacao, 40);
+  // sem nota gravada continua sem nota (null/ausente)
+  assert.equal(matriculaParaAluno({ id: "m1", avaliacao_aprovada: null }).nota_avaliacao, null);
+});
+
+// -------------------------------- aulas: liberação, URLs e texto só para as liberadas
+const aulaBase = {
+  modulo: null,
+  fonte: "upload",
+  youtube_id: null,
+  video_ref: null,
+  legenda_ref: null,
+  arquivo_ref: null,
+  conteudo_texto: null,
+  duracao_seg: null,
+};
+const AULAS = [
+  {
+    ...aulaBase,
+    id: "a1",
+    ordem: 1,
+    modulo: "M1",
+    tipo: "video",
+    titulo: "Aula 1",
+    video_ref: "treinamentos/e/v1.mp4",
+    legenda_ref: "treinamentos/e/v1.vtt",
+    duracao_seg: 120,
+  },
+  {
+    ...aulaBase,
+    id: "a2",
+    ordem: 2,
+    modulo: "M1",
+    tipo: "pdf",
+    titulo: "Aula 2",
+    arquivo_ref: "treinamentos/e/apostila.pdf",
+    duracao_seg: 600,
+  },
+  {
+    ...aulaBase,
+    id: "a3",
+    ordem: 3,
+    modulo: "M2",
+    tipo: "texto",
+    titulo: "Aula 3",
+    conteudo_texto: "Texto reservado da aula 3",
+  },
+  {
+    ...aulaBase,
+    id: "a4",
+    ordem: 4,
+    modulo: "M2",
+    tipo: "video",
+    titulo: "Aula 4",
+    fonte: "youtube",
+    youtube_id: "ID_YT_4",
+    video_ref: "treinamentos/e/v4.mp4",
+    legenda_ref: "treinamentos/e/v4.vtt",
+  },
+  {
+    ...aulaBase,
+    id: "a5",
+    ordem: 5,
+    tipo: "pdf",
+    titulo: "Aula 5",
+    legenda_ref: "treinamentos/e/leg5.vtt",
+    arquivo_ref: "treinamentos/e/ap5.pdf",
+    duracao_seg: 300,
+  },
+];
+const progDe =
+  (concluidas: string[], segundos: Record<string, number> = {}) =>
+  (id: string) =>
+    concluidas.includes(id) || id in segundos
+      ? { concluida: concluidas.includes(id), segundos_assistidos: segundos[id] ?? 0 }
+      : undefined;
+const assinadaEm = (ref?: string | null) => (ref ? `https://assinada.exemplo/${ref}` : null);
+
+test("liberacaoDasAulas: cada aula só libera com todas as anteriores concluídas", () => {
+  const lib = liberacaoDasAulas(AULAS, progDe(["a1", "a2"]));
+  assert.deepEqual(
+    lib.map((a) => [a.id, a.concluida, a.liberada]),
+    [
+      ["a1", true, true],
+      ["a2", true, true],
+      ["a3", false, true],
+      ["a4", false, false],
+      ["a5", false, false],
+    ]
+  );
+});
+
+test("liberacaoDasAulas: aula concluída adiante não pula a pendente; nada concluído libera só a primeira", () => {
+  const pulou = liberacaoDasAulas(AULAS, progDe(["a1", "a3"]));
+  assert.deepEqual(
+    pulou.map((a) => a.liberada),
+    [true, true, false, false, false]
+  );
+  const nada = liberacaoDasAulas(AULAS, progDe([]));
+  assert.deepEqual(
+    nada.map((a) => a.liberada),
+    [true, false, false, false, false]
+  );
+  assert.deepEqual(liberacaoDasAulas([], progDe([])), []);
+});
+
+test("liberacaoDasAulas: dá o mesmo que aulaLiberada, aula a aula", () => {
+  const ids = AULAS.map((a) => a.id);
+  for (const feitas of [[], ["a1"], ["a1", "a2"], ["a1", "a3"], ["a1", "a2", "a3", "a4"], ids]) {
+    const lib = liberacaoDasAulas(AULAS, progDe(feitas));
+    const trilha = { aulas: ids.map((id) => ({ id })), feitas: new Set<unknown>(feitas) };
+    for (const a of lib) assert.equal(a.liberada, aulaLiberada(trilha, a.id), `${feitas}/${a.id}`);
+  }
+});
+
+test("refsDasAulasLiberadas: só as aulas liberadas têm arquivo para assinar", () => {
+  // a1 e a2 concluídas: libera a3 (sem arquivo); a4 e a5 estão bloqueadas
+  assert.deepEqual(refsDasAulasLiberadas(AULAS, progDe(["a1", "a2"])).sort(), [
+    "treinamentos/e/apostila.pdf",
+    "treinamentos/e/v1.mp4",
+    "treinamentos/e/v1.vtt",
+  ]);
+  // nada concluído: só a primeira
+  assert.deepEqual(refsDasAulasLiberadas(AULAS, progDe([])).sort(), [
+    "treinamentos/e/v1.mp4",
+    "treinamentos/e/v1.vtt",
+  ]);
+});
+
+test("refsDasAulasLiberadas: segue as mesmas regras de tipo de hoje e não traz vazios", () => {
+  const todas = refsDasAulasLiberadas(AULAS, progDe(AULAS.map((a) => a.id)));
+  assert.deepEqual(todas.sort(), [
+    // a4 é YouTube: o video_ref dela não é assinado, só a legenda
+    "treinamentos/e/ap5.pdf",
+    "treinamentos/e/apostila.pdf",
+    "treinamentos/e/leg5.vtt",
+    "treinamentos/e/v1.mp4",
+    "treinamentos/e/v1.vtt",
+    "treinamentos/e/v4.vtt",
+  ]);
+  assert.deepEqual(refsDasAulasLiberadas([], progDe([])), []);
+});
+
+test("aulasParaAluno: aula bloqueada vai sem URL, sem texto e sem vídeo; a lista continua completa", () => {
+  const aulas = aulasParaAluno({
+    aulas: AULAS,
+    progresso: progDe(["a1", "a2"]),
+    urlDe: assinadaEm,
+    tempoMinimoPadrao: 60,
+  });
+  assert.equal(aulas.length, 5);
+  for (const bloqueada of aulas.filter((a) => !a.liberada)) {
+    assert.equal(bloqueada.video_url, null, bloqueada.id);
+    assert.equal(bloqueada.legenda_url, null, bloqueada.id);
+    assert.equal(bloqueada.arquivo_url, null, bloqueada.id);
+    assert.equal(bloqueada.conteudo_texto, null, bloqueada.id);
+    assert.equal(bloqueada.youtube_id, null, bloqueada.id);
+  }
+  assert.deepEqual(
+    aulas.map((a) => a.liberada),
+    [true, true, true, false, false]
+  );
+  // o que o aluno precisa para ver a lista continua lá
+  const a4 = aulas[3];
+  assert.equal(a4.titulo, "Aula 4");
+  assert.equal(a4.modulo, "M2");
+  assert.equal(a4.ordem, 4);
+  assert.equal(a4.tipo, "video");
+  assert.equal(a4.fonte, "youtube");
+  assert.equal(a4.concluida, false);
+  // e nada do que é reservado aparece nas aulas que não estão liberadas
+  const texto = JSON.stringify(aulas.filter((a) => !a.liberada));
+  assert.equal(texto.includes("Texto reservado"), false);
+  assert.equal(texto.includes("ID_YT_4"), false);
+  assert.equal(texto.includes("assinada.exemplo"), false);
+});
+
+test("aulasParaAluno: vídeo próprio e texto de aula bloqueada não vazam; o da liberada, sim", () => {
+  const aulas = [
+    { ...aulaBase, id: "b1", tipo: "video", titulo: "B1", video_ref: "treinamentos/e/b1.mp4" },
+    { ...aulaBase, id: "b2", tipo: "video", titulo: "B2", video_ref: "treinamentos/e/b2.mp4" },
+    { ...aulaBase, id: "b3", tipo: "texto", titulo: "B3", conteudo_texto: "Texto reservado B3" },
+  ];
+  const [b1, b2, b3] = aulasParaAluno({
+    aulas,
+    progresso: progDe([]),
+    urlDe: assinadaEm,
+    tempoMinimoPadrao: 60,
+  });
+  assert.equal(b1.video_url, "https://assinada.exemplo/treinamentos/e/b1.mp4");
+  assert.equal(b2.video_url, null);
+  assert.equal(b3.conteudo_texto, null);
+  assert.deepEqual(refsDasAulasLiberadas(aulas, progDe([])), ["treinamentos/e/b1.mp4"]);
+  // concluída a primeira, a segunda recebe o vídeo e a terceira ainda não recebe o texto
+  const depois = aulasParaAluno({
+    aulas,
+    progresso: progDe(["b1"]),
+    urlDe: assinadaEm,
+    tempoMinimoPadrao: 60,
+  });
+  assert.equal(depois[1].video_url, "https://assinada.exemplo/treinamentos/e/b2.mp4");
+  assert.equal(depois[2].conteudo_texto, null);
+  // concluídas as duas primeiras, o texto da terceira é liberado
+  const fim = aulasParaAluno({
+    aulas,
+    progresso: progDe(["b1", "b2"]),
+    urlDe: assinadaEm,
+    tempoMinimoPadrao: 60,
+  });
+  assert.equal(fim[2].conteudo_texto, "Texto reservado B3");
+});
+
+test("aulasParaAluno: aula liberada recebe as URLs e o texto, e a concluída continua liberada", () => {
+  const aulas = aulasParaAluno({
+    aulas: AULAS,
+    progresso: progDe(["a1", "a2"], { a1: 118 }),
+    urlDe: assinadaEm,
+    tempoMinimoPadrao: 60,
+  });
+  const [a1, a2, a3] = aulas;
+  assert.equal(a1.video_url, "https://assinada.exemplo/treinamentos/e/v1.mp4");
+  assert.equal(a1.legenda_url, "https://assinada.exemplo/treinamentos/e/v1.vtt");
+  assert.equal(a1.arquivo_url, null);
+  assert.equal(a1.concluida, true);
+  assert.equal(a1.segundos_assistidos, 118);
+  assert.equal(a2.arquivo_url, "https://assinada.exemplo/treinamentos/e/apostila.pdf");
+  assert.equal(a2.video_url, null);
+  assert.equal(a3.conteudo_texto, "Texto reservado da aula 3");
+  assert.equal(a3.concluida, false);
+  assert.equal(a3.segundos_assistidos, 0);
+});
+
+test("aulasParaAluno: nenhum arquivo de aula bloqueada chega a ser pedido ao assinador", () => {
+  const pedidos: (string | null | undefined)[] = [];
+  const urlDe = (ref?: string | null) => {
+    pedidos.push(ref);
+    return assinadaEm(ref);
+  };
+  aulasParaAluno({ aulas: AULAS, progresso: progDe([]), urlDe, tempoMinimoPadrao: 60 });
+  // só a aula 1 está liberada: nenhuma referência de a2..a5 foi consultada
+  assert.deepEqual(pedidos.filter(Boolean).sort(), [
+    "treinamentos/e/v1.mp4",
+    "treinamentos/e/v1.vtt",
+  ]);
+});
+
+test("aulasParaAluno: YouTube liberado leva o id; vídeo próprio nunca; duração e tipo como hoje", () => {
+  const todas = aulasParaAluno({
+    aulas: AULAS,
+    progresso: progDe(AULAS.map((a) => a.id)),
+    urlDe: assinadaEm,
+    tempoMinimoPadrao: 60,
+  });
+  const a4 = todas[3];
+  assert.equal(a4.youtube_id, "ID_YT_4");
+  assert.equal(a4.video_url, null); // fonte youtube: o video_ref não vira URL
+  assert.equal(a4.legenda_url, "https://assinada.exemplo/treinamentos/e/v4.vtt");
+  assert.equal(a4.duracao_seg, null); // vídeo sem duração segue sem duração (o portal avisa)
+  assert.equal(todas[2].duracao_seg, 60); // texto sem tempo definido usa o padrão
+  assert.equal(todas[0].duracao_seg, 120);
+  assert.equal(todas[4].arquivo_url, "https://assinada.exemplo/treinamentos/e/ap5.pdf");
+  assert.equal(todas[4].modulo, null);
+});
+
+test("aulasParaAluno: aula sem tipo (legado) aparece como vídeo, sem URL de vídeo, como hoje", () => {
+  const legado = [
+    {
+      id: "x1",
+      titulo: "Antiga",
+      fonte: null,
+      video_ref: "treinamentos/e/x.mp4",
+      legenda_ref: null,
+    },
+  ];
+  const [a] = aulasParaAluno({
+    aulas: legado,
+    progresso: progDe([]),
+    urlDe: assinadaEm,
+    tempoMinimoPadrao: 60,
+  });
+  assert.equal(a.tipo, "video");
+  assert.equal(a.fonte, "youtube");
+  assert.equal(a.video_url, null); // como hoje: só tipo "video" com fonte "upload" assina o vídeo
+  assert.equal(a.duracao_seg, 60); // como hoje: sem tipo explícito não é "vídeo sem duração"
+  assert.equal(a.liberada, true);
+});
+
+test("o evento da prova iniciada tem um nome só do servidor", () => {
+  assert.equal(EVENTO_PROVA_INICIADA, "avaliacao_iniciada");
 });
