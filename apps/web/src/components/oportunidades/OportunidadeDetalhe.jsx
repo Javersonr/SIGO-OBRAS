@@ -54,11 +54,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import ResponsaveisSelect from "../shared/ResponsaveisSelect";
-import PermissionGate from "../PermissionGate";
+import PermissionGate, { usePermission } from "../PermissionGate";
 import ChatContextual from "../chat/ChatContextual";
 import DiarioObraTab from "../projetos/DiarioObraTab";
 import VisualizadorPDF from "./VisualizadorPDF";
 import PropostasOportunidade from "./PropostasOportunidade";
+import OrcamentoLicitacaoBarra from "./OrcamentoLicitacaoBarra";
 import AnexoViewer from "@/components/shared/AnexoViewer";
 import ImgStorage from "@/components/ImgStorage";
 import LerEditalSheet from "@/components/oportunidades/edital/LerEditalSheet";
@@ -232,20 +233,43 @@ export default function OportunidadeDetalhe({
   const [motivoPerda, setMotivoPerda] = useState("");
   const [salvandoPerda, setSalvandoPerda] = useState(false);
   const [showLerEdital, setShowLerEdital] = useState(false);
+  // Diálogo "Importar planilha" do orçamento: o estado fica aqui porque a barra
+  // do orçamento E o card "Importar" do estado vazio abrem o mesmo diálogo.
+  const [importarAberto, setImportarAberto] = useState(false);
   // IA do edital (ler/reanalisar = análise paga que grava na oportunidade): usa a
   // permissão REAL da sessão — o CalendarioConsolidado passa
   // temPermissao={() => true} e perfil="Admin" por props.
   const sessao = useEmpresa();
   const podeUsarIaEdital =
     sessao.perfil === "Admin" || sessao.temPermissao("Oportunidades", "Lista", "editar");
+  // Orçamento (barra da licitação e card "Importar"): permissão REAL da sessão,
+  // aceitando "Orçamento" (catálogo) e "Orcamento" (grafia antiga do trigger).
+  const { can, isAdmin } = usePermission();
+  const podeEditarOrcamento =
+    isAdmin ||
+    can("Oportunidades", "Orçamento", "editar") ||
+    can("Oportunidades", "Orcamento", "editar");
   // detalhe fechado por fora (excluir/arquivar): não reabre a leitura depois
   useEffect(() => {
-    if (!open) setShowLerEdital(false);
+    if (!open) {
+      setShowLerEdital(false);
+      setImportarAberto(false);
+    }
   }, [open]);
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
     setVisitedTabs((prev) => new Set([...prev, tab]));
+  };
+
+  // Card "Importar" do estado vazio: abre o diálogo da planilha (modelo SIGO)
+  // da barra do orçamento, no lugar do seletor de CSV antigo.
+  const abrirImportacaoPlanilha = () => {
+    if (!podeEditarOrcamento) {
+      toast.error("Sem permissão para editar o orçamento");
+      return;
+    }
+    setImportarAberto(true);
   };
 
   // Marca a oportunidade como Perdida: move para o status tipo "perdido",
@@ -853,6 +877,19 @@ export default function OportunidadeDetalhe({
                           onChange={onImportarOrcamento}
                         />
 
+                        <OrcamentoLicitacaoBarra
+                          selectedOp={selectedOp}
+                          setSelectedOp={setSelectedOp}
+                          setOportunidades={setOportunidades}
+                          orcamentoItens={orcamentoItens}
+                          setOrcamentoItens={setOrcamentoItens}
+                          empresaAtiva={empresaAtiva}
+                          updateTimeoutRef={updateTimeoutRef}
+                          podeEditar={podeEditarOrcamento}
+                          importarAberto={importarAberto}
+                          onImportarAbertoChange={setImportarAberto}
+                        />
+
                         {orcamentoItens.length > 0 && (
                           <div className="flex items-center justify-between gap-4 border-b pb-4 flex-wrap">
                             <div className="flex items-center gap-2">
@@ -996,7 +1033,11 @@ export default function OportunidadeDetalhe({
                                 <Card
                                   key={tipo}
                                   className={`cursor-pointer hover:shadow-lg transition-all group`}
-                                  onClick={() => onNovoOrcamentoSelect(tipo)}
+                                  onClick={() =>
+                                    tipo === "importar"
+                                      ? abrirImportacaoPlanilha()
+                                      : onNovoOrcamentoSelect(tipo)
+                                  }
                                 >
                                   <CardContent className="p-8 flex flex-col items-center text-center">
                                     <div
