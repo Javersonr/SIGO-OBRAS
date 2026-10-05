@@ -953,7 +953,7 @@ export default function OportunidadeDetalhe({
                                 funcao="editar"
                               >
                                 <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
+                                  <DropdownMenuTrigger asChild disabled={aplicandoDesconto}>
                                     <Button
                                       variant="outline"
                                       className="gap-2"
