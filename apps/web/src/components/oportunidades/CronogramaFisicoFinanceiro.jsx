@@ -25,6 +25,7 @@ import {
 } from "@/lib/cronograma-ff";
 import { criarFilaGravacao } from "@/lib/fila-gravacao";
 import ImportarCronogramaDialog from "./ImportarCronogramaDialog";
+import { BotaoExportarCronograma } from "./ExportarCronogramaDialog";
 
 const SEM_ITENS = "Importe o orçamento com etapas para montar o cronograma.";
 const SEM_ETAPAS =
@@ -474,7 +475,12 @@ export default function CronogramaFisicoFinanceiro({
               </Button>
             </>
           )}
-          {/* EXPORTAR_CRONOGRAMA */}
+          <BotaoExportarCronograma
+            selectedOp={selectedOp}
+            empresaAtiva={empresaAtiva}
+            etapas={etapas}
+            cronograma={cronograma}
+          />
         </div>
       </div>
 
