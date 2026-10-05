@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ordenarItensOportunidade } from "./orcamento-registros";
 import {
   descricaoVersaoProposta,
   montarDadosProposta,
@@ -228,6 +229,18 @@ describe("montarDadosProposta", () => {
       "item",
     ]);
     expect(d.linhas.map((l) => l.nivel)).toEqual([1, 2, 3, 3, 2, 1, 2, 1]);
+  });
+
+  it("ordem e rótulo são os de ordenarItensOportunidade (a mesma da tela)", () => {
+    // lista embaralhada (a ordem inversa) e outra sem `ordem`, só com o desempate pelo número
+    const invertidos = [...ITENS].reverse();
+    const semOrdem = ITENS.map((i) => ({ ...i, ordem: null }));
+    for (const lista of [invertidos, semOrdem]) {
+      const { linhas } = dados({ itens: lista });
+      expect(linhas.map((l) => l.numero)).toEqual(
+        ordenarItensOportunidade(lista).map((i) => i.item)
+      );
+    }
   });
 
   it("etapa leva o subtotal; item leva quantidade, unitário e total", () => {

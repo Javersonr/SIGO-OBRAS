@@ -10,7 +10,7 @@ import { formatarCpf, validarCpf } from "./cpf";
 import { formatarCpfCnpj } from "./ler-documento";
 import { formatarTelefone } from "./telefone";
 import { subtotaisEtapas } from "./orcamento-desconto";
-import { compararNumeroItem, rotuloItem } from "./orcamento-registros";
+import { ordenarItensOportunidade } from "./orcamento-registros";
 
 // ------------------------------------------------------ valor por extenso
 // Port de supabase/functions/_shared/recibo-pdf.ts (valorPorExtenso), sem os tipos.
@@ -226,9 +226,10 @@ function bdiComPercentual(bdi) {
  *   dataBase, bdi, linhas, totalGeral, totalExtenso, validade, localData,
  *   representante: { nome, cargo, cpf } }
  *
- * - linhas: todos os itens (com ou sem preço de referência), na ordem de `ordem`
- *   (desempate pelo número), como LinhaProposta { tipo: "etapa"|"item", numero,
- *   codigo, fonte, descricao, unidade, quantidade, valorUnitario, total, nivel }.
+ * - linhas: todos os itens (com ou sem preço de referência), na ordem e com o rótulo de
+ *   ordenarItensOportunidade (a mesma da tela: `ordem`, desempate pelo número), como
+ *   LinhaProposta { tipo: "etapa"|"item", numero, codigo, fonte, descricao, unidade,
+ *   quantidade, valorUnitario, total, nivel }.
  *   Na etapa, total = subtotal (subtotaisEtapas) e nivel = nº de segmentos do número.
  * - totalGeral = Σ valor_total dos itens (sem as etapas), somado em centavos.
  * - órgão/objeto/edital: de orcamento_info; se faltar, dos campos da licitação da
@@ -241,14 +242,13 @@ export function montarDadosProposta({ itens, info, oportunidade, empresa, repres
   const opc = opcoes || {};
   const rep = representante || {};
 
-  const ordenados = [...(itens || [])].sort(
-    (a, b) => (a.ordem ?? 0) - (b.ordem ?? 0) || compararNumeroItem(a.numero, b.numero)
-  );
+  // Mesma ordem e mesmo rótulo (`item.item`) da tela; devolve lista nova, `itens` fica intacta.
+  const ordenados = ordenarItensOportunidade(itens);
   const subtotais = subtotaisEtapas(ordenados);
 
   let totalCentavos = 0;
-  const linhas = ordenados.map((item, indice) => {
-    const numero = rotuloItem(item, indice);
+  const linhas = ordenados.map((item) => {
+    const numero = item.item;
     const nivel = String(numero).split(".").length;
     const base = {
       numero,
