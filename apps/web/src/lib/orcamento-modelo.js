@@ -12,6 +12,7 @@
 import * as XLSX from "xlsx";
 import { normalizarTexto } from "@/lib/busca";
 import { totalLinha } from "@/lib/orcamento-desconto";
+import { ABA_CRONOGRAMA, cabecalhoCronograma } from "@/lib/cronograma-modelo";
 
 export const ABA_ORCAMENTO = "Orçamento";
 export const ABA_INFORMACOES = "Informações";
@@ -304,7 +305,10 @@ export function lerNumeroBR(valor) {
   return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : NaN;
 }
 
-/** Modelo em branco: aba Orçamento (cabeçalho + coluna A como Texto) e aba Informações. */
+/**
+ * Modelo em branco: aba Orçamento (cabeçalho + coluna A como Texto), aba Informações e aba
+ * Cronograma (opcional; Item | Descrição | Mês 1…Mês 12, coluna A como Texto).
+ */
 export function gerarModelo() {
   const orcamento = XLSX.utils.aoa_to_sheet([CABECALHOS_MODELO]);
   for (let r = 1; r <= LINHAS_MODELO; r++) {
@@ -335,9 +339,20 @@ export function gerarModelo() {
     e: { r: ROTULOS_INFO.length - 1, c: 1 },
   });
   informacoes["!cols"] = [{ wch: 26 }, { wch: 80 }];
+  const cabecalho = cabecalhoCronograma(12);
+  const cronograma = XLSX.utils.aoa_to_sheet([cabecalho]);
+  for (let r = 1; r <= LINHAS_MODELO; r++) {
+    cronograma[XLSX.utils.encode_cell({ r, c: 0 })] = { t: "s", v: "", z: "@" };
+  }
+  cronograma["!ref"] = XLSX.utils.encode_range({
+    s: { r: 0, c: 0 },
+    e: { r: LINHAS_MODELO, c: cabecalho.length - 1 },
+  });
+  cronograma["!cols"] = [{ wch: 10 }, { wch: 50 }, ...cabecalho.slice(2).map(() => ({ wch: 9 }))];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, orcamento, ABA_ORCAMENTO);
   XLSX.utils.book_append_sheet(wb, informacoes, ABA_INFORMACOES);
+  XLSX.utils.book_append_sheet(wb, cronograma, ABA_CRONOGRAMA);
   return wb;
 }
 

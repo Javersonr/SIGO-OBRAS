@@ -12,6 +12,7 @@ import {
   lerPlanilhaModelo,
   lerArquivoModelo,
 } from "./orcamento-modelo";
+import { ABA_CRONOGRAMA, cabecalhoCronograma } from "./cronograma-modelo";
 
 const CAB = CABECALHOS_MODELO;
 const NBSP = String.fromCharCode(0xa0);
@@ -86,9 +87,9 @@ describe("lerNumeroBR", () => {
 });
 
 describe("gerarModelo", () => {
-  it("duas abas, cabeçalho, coluna A como Texto e rótulos", () => {
+  it("três abas, cabeçalho, coluna A como Texto e rótulos", () => {
     const wb = XLSX.read(comoArquivo(gerarModelo()), { type: "array", cellNF: true });
-    expect(wb.SheetNames).toEqual([ABA_ORCAMENTO, ABA_INFORMACOES]);
+    expect(wb.SheetNames).toEqual([ABA_ORCAMENTO, ABA_INFORMACOES, ABA_CRONOGRAMA]);
     const orc = wb.Sheets[ABA_ORCAMENTO];
     expect(XLSX.utils.sheet_to_json(orc, { header: 1 })[0]).toEqual(CAB);
     expect(orc.A2.z).toBe("@");
@@ -109,6 +110,17 @@ describe("gerarModelo", () => {
       if (i + 1 === linhaTotal) expect(info[`B${i + 1}`]?.z).not.toBe("@");
       else expect(info[`B${i + 1}`].z).toBe("@");
     });
+  });
+  it("aba Cronograma: Item, Descrição e Mês 1 a Mês 12, coluna A como Texto", () => {
+    const wb = XLSX.read(comoArquivo(gerarModelo()), { type: "array", cellNF: true });
+    const cron = wb.Sheets[ABA_CRONOGRAMA];
+    expect(XLSX.utils.sheet_to_json(cron, { header: 1 })[0]).toEqual(cabecalhoCronograma(12));
+    expect(cron.N1.v).toBe("Mês 12");
+    expect(cron.A2.z).toBe("@");
+    expect(cron.A501.z).toBe("@");
+    expect(cron["!ref"]).toBe("A1:N501");
+    const larguras = gerarModelo().Sheets[ABA_CRONOGRAMA]["!cols"].map((c) => c.wch);
+    expect(larguras).toEqual([10, 50, ...new Array(12).fill(9)]);
   });
 });
 
