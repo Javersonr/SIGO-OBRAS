@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { reordenarAulas, matriculasNovas } from "./ead-gestao";
+import {
+  reordenarAulas,
+  matriculasNovas,
+  podeRemoverMatricula,
+  MSG_REVOGUE_ANTES,
+  textoConfirmarRemocao,
+} from "./ead-gestao";
 
 const aula = (id, ordem) => ({ id, ordem });
 
@@ -120,5 +126,94 @@ describe("matriculasNovas", () => {
       novas: [],
       ignorados: 0,
     });
+  });
+});
+
+describe("podeRemoverMatricula (T20)", () => {
+  const mat = { id: "m1", status: "concluido" };
+  const certValido = { id: "c1", matricula_id: "m1", codigo: "AAAA-BBBB-CCCC", revogado_em: null };
+  const certRevogado = { ...certValido, revogado_em: "2026-10-01T12:00:00Z" };
+
+  it("bloqueia quando o certificado está emitido e não foi revogado", () => {
+    expect(podeRemoverMatricula(mat, certValido)).toBe(false);
+  });
+
+  it("libera quando o certificado já foi revogado", () => {
+    expect(podeRemoverMatricula(mat, certRevogado)).toBe(true);
+  });
+
+  it("libera quando não há certificado (curso em andamento ou concluído sem assinatura)", () => {
+    expect(podeRemoverMatricula({ id: "m2", status: "em_andamento" }, null)).toBe(true);
+    expect(podeRemoverMatricula({ id: "m3", status: "pendente" }, undefined)).toBe(true);
+    expect(podeRemoverMatricula(mat, undefined)).toBe(true);
+  });
+
+  it("trata revogado_em ausente como certificado válido (não revogado)", () => {
+    expect(podeRemoverMatricula(mat, { id: "c1", matricula_id: "m1" })).toBe(false);
+  });
+
+  it("sem matrícula não há o que remover", () => {
+    expect(podeRemoverMatricula(null, null)).toBe(false);
+    expect(podeRemoverMatricula(undefined, certRevogado)).toBe(false);
+  });
+
+  it("a mensagem de bloqueio manda revogar antes e diz onde", () => {
+    expect(MSG_REVOGUE_ANTES).toMatch(/revogue/i);
+    expect(MSG_REVOGUE_ANTES).toMatch(/certificado/i);
+    expect(MSG_REVOGUE_ANTES).toMatch(/revogar/i);
+  });
+});
+
+describe("textoConfirmarRemocao (T20)", () => {
+  const base = { nomeFuncionario: "Fulano de Tal", nomeCurso: "NR-10 Básico" };
+
+  it("cita o funcionário e o curso", () => {
+    const t = textoConfirmarRemocao({ ...base, matricula: { status: "pendente" } });
+    expect(t).toContain("Fulano de Tal");
+    expect(t).toContain("NR-10 Básico");
+  });
+
+  it("sempre diz o que acontece com progresso, tentativas e nova matrícula", () => {
+    for (const status of ["pendente", "em_andamento", "concluido"]) {
+      const t = textoConfirmarRemocao({ ...base, matricula: { status } });
+      expect(t).toMatch(/progresso/i);
+      expect(t).toMatch(/tentativas/i);
+      expect(t).toMatch(/portal/i);
+      expect(t).toMatch(/do zero/i);
+    }
+  });
+
+  it("curso em andamento: avisa que o andamento deixa de aparecer", () => {
+    const t = textoConfirmarRemocao({ ...base, matricula: { status: "em_andamento" } });
+    expect(t).toMatch(/em andamento/i);
+  });
+
+  it("curso ainda não iniciado: diz que ele não começou", () => {
+    const t = textoConfirmarRemocao({ ...base, matricula: { status: "pendente" } });
+    expect(t).toMatch(/ainda não iniciou/i);
+  });
+
+  it("concluído sem certificado: avisa que perde a conclusão e não poderá assinar", () => {
+    const t = textoConfirmarRemocao({ ...base, matricula: { status: "concluido" } });
+    expect(t).toMatch(/concluiu/i);
+    expect(t).toMatch(/não assinou/i);
+    expect(t).toMatch(/não poderá/i);
+  });
+
+  it("certificado revogado: diz que ele segue como revogado na consulta pública", () => {
+    const t = textoConfirmarRemocao({
+      ...base,
+      matricula: { status: "concluido" },
+      certificado: { revogado_em: "2026-10-01T12:00:00Z" },
+    });
+    expect(t).toMatch(/revogado/i);
+    expect(t).toMatch(/consulta pública/i);
+    expect(t).not.toMatch(/não assinou/i);
+  });
+
+  it("tolera nome e curso ausentes", () => {
+    const t = textoConfirmarRemocao({ matricula: { status: "pendente" } });
+    expect(t).toContain("este funcionário");
+    expect(t).toContain("este curso");
   });
 });

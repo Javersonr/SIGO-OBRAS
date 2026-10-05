@@ -10,7 +10,13 @@ import { normalizarQuestao } from "@/lib/ead-questao";
 import { parseDuracao, formatDuracao, lerDuracaoVideo, videoSemDuracao } from "@/lib/ead-duracao";
 import { requisitosDoCurso, tempoObrigatorioSeg } from "@/lib/ead-requisitos";
 import { numerarAulas } from "@/lib/portal-curso";
-import { reordenarAulas, matriculasNovas } from "@/lib/ead-gestao";
+import {
+  reordenarAulas,
+  matriculasNovas,
+  podeRemoverMatricula,
+  textoConfirmarRemocao,
+  MSG_REVOGUE_ANTES,
+} from "@/lib/ead-gestao";
 import { srtParaVtt } from "@/lib/legendas";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
@@ -634,10 +640,34 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
     }
   };
 
+  // Matrícula com certificado emitido e não revogado não sai (T20): o curso sumiria do portal e da
+  // tela, mas o certificado seguiria válido na consulta pública. Antes de apagar, o certificado é
+  // lido de novo no banco: o aluno pode ter assinado depois da última carga da tela.
+  const certificadoDaMatricula = (m) => certificados.find((x) => x.matricula_id === m.id);
   const removerMatricula = async (m) => {
-    if (!confirm("Remover esta matrícula?")) return;
+    if (!podeRemoverMatricula(m, certificadoDaMatricula(m))) {
+      toast.error(MSG_REVOGUE_ANTES);
+      return;
+    }
+    const texto = textoConfirmarRemocao({
+      matricula: m,
+      certificado: certificadoDaMatricula(m),
+      nomeFuncionario: funcPorId.get(m.funcionario_id)?.nome_completo,
+      nomeCurso: cursos.find((c) => c.id === m.curso_id)?.nome,
+    });
+    if (!confirm(texto)) return;
     await gravar(`remover-matricula-${m.id}`, "Erro ao remover a matrícula", async () => {
+      const [atual] = await sigo.entities.TreinamentoCertificado.filter(
+        { empresa_id: empresaAtiva.id, matricula_id: m.id },
+        SEM_SOFT_DELETE
+      );
+      if (!podeRemoverMatricula(m, atual)) {
+        toast.error(MSG_REVOGUE_ANTES);
+        recarregar();
+        return;
+      }
       await sigo.entities.TreinamentoMatricula.delete(m.id);
+      toast.success("Matrícula removida");
       recarregar();
     });
   };
@@ -956,9 +986,28 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                         >
                           <MessageCircle className="w-4 h-4 text-emerald-600 hover:text-emerald-800" />
                         </button>
-                        <button title="Remover matrícula" onClick={() => removerMatricula(m)}>
-                          <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
-                        </button>
+                        {(() => {
+                          const bloqueada = !podeRemoverMatricula(m, certificadoDaMatricula(m));
+                          return (
+                            <button
+                              title={
+                                bloqueada
+                                  ? "Revogue o certificado antes de remover a matrícula"
+                                  : "Remover matrícula"
+                              }
+                              aria-disabled={bloqueada}
+                              onClick={() => removerMatricula(m)}
+                            >
+                              <Trash2
+                                className={
+                                  bloqueada
+                                    ? "w-4 h-4 text-slate-300 cursor-not-allowed"
+                                    : "w-4 h-4 text-slate-400 hover:text-red-500"
+                                }
+                              />
+                            </button>
+                          );
+                        })()}
                       </div>
                     </td>
                   </tr>
