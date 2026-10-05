@@ -236,6 +236,13 @@ export function textoPdf(valor) {
 // --------------------------------------------------- layout em comum (PDF)
 // Usado pela proposta e pelo cronograma físico-financeiro (lib/cronograma-export.js).
 
+/** Espaço (mm) entre linhas de texto: o `entre` padrão do escritor. */
+export const ENTRE_LINHAS_PDF = 4.2;
+/** O escritor abre página nova quando a linha cairia abaixo de `alt - RODAPE_PDF` (mm). */
+const RODAPE_PDF = 16;
+/** Espaço (mm) entre o traço da assinatura e a primeira linha do representante. */
+const ESPACO_TRACO_PDF = 5;
+
 /**
  * Documento A4 paisagem e o escritor de linhas de texto: `doc`, `larg`, `alt`, `M` (margem),
  * `util` (largura útil), `y` (posição da próxima linha, em mm) e `escrever(texto, opcoes)`,
@@ -253,13 +260,16 @@ export function criarPdf(jsPDF) {
     M,
     util: larg - 2 * M,
     y: 14,
-    escrever(texto, { tamanho = 9, negrito = false, alinhar = "left", entre = 4.2 } = {}) {
+    escrever(
+      texto,
+      { tamanho = 9, negrito = false, alinhar = "left", entre = ENTRE_LINHAS_PDF } = {}
+    ) {
       doc.setFont("helvetica", negrito ? "bold" : "normal");
       doc.setFontSize(tamanho);
       const partes = doc.splitTextToSize(textoPdf(texto), pdf.util);
       const x = alinhar === "center" ? larg / 2 : M;
       partes.forEach((p) => {
-        if (pdf.y > alt - 16) {
+        if (pdf.y > alt - RODAPE_PDF) {
           doc.addPage();
           pdf.y = 14;
         }
@@ -287,13 +297,29 @@ export function escreverTopoPdf(pdf, cab, titulo) {
   pdf.y += 2;
 }
 
+/** Altura (mm) que `escreverAssinaturaPdf` ocupa a partir do `y`, com o mesmo `espacoAntes`. */
+export function alturaAssinaturaPdf(representante, { espacoAntes = 18 } = {}) {
+  return espacoAntes + ESPACO_TRACO_PDF + linhasAssinatura(representante).length * ENTRE_LINHAS_PDF;
+}
+
+/**
+ * Abre página nova se um bloco de `mm` de altura, a partir do `y`, não couber acima do
+ * rodapé: o bloco inteiro vai para a página seguinte, em vez de se partir no meio.
+ */
+export function garantirEspaco(pdf, mm) {
+  if (pdf.y + mm > pdf.alt - RODAPE_PDF) {
+    pdf.doc.addPage();
+    pdf.y = 20;
+  }
+}
+
 /** Traço e linhas do representante; `espacoAntes` (mm) é o espaço para assinar. */
 export function escreverAssinaturaPdf(pdf, representante, { espacoAntes = 18 } = {}) {
   pdf.y += espacoAntes;
   pdf.doc.setDrawColor(60);
   pdf.doc.setLineWidth(0.3);
   pdf.doc.line(pdf.larg / 2 - 45, pdf.y, pdf.larg / 2 + 45, pdf.y);
-  pdf.y += 5;
+  pdf.y += ESPACO_TRACO_PDF;
   linhasAssinatura(representante).forEach((t, i) =>
     pdf.escrever(t, { tamanho: 9, negrito: i === 0, alinhar: "center" })
   );

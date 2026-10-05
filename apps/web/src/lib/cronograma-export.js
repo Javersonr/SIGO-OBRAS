@@ -17,6 +17,8 @@ import * as XLSX from "xlsx";
 import { normalizarCronograma, resumoCronograma } from "./cronograma-ff";
 import { montarCabecalhoLicitacao, nomeArquivoProposta } from "./proposta-orcamento";
 import {
+  ENTRE_LINHAS_PDF,
+  alturaAssinaturaPdf,
   cabecalhoDoDocumento,
   carregarJsPdf,
   criarPdf,
@@ -25,6 +27,7 @@ import {
   escreverAssinaturaPlanilha,
   escreverTopoPdf,
   escreverTopoPlanilha,
+  garantirEspaco,
   numerarPaginasPdf,
   textoPdf,
 } from "./proposta-export";
@@ -224,6 +227,8 @@ const FOLGA = 0.5;
 // quebra na horizontal, a etapa fica fixa em `etapa`; sem ela, ocupa o que sobra, no mínimo
 // `etapaMin`. Calibradas para 12 meses caberem numa página até R$ 9.999.999,99 de total.
 const LARGURA = { item: 8, etapa: 45, etapaMin: 30, valor: 18, peso: 12, mes: 14 };
+// espaço (mm) para assinar, entre o local/data e o traço (a proposta usa 18)
+const ESPACO_ASSINAR = 16;
 
 const doisDecimais = (v) =>
   (Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -254,7 +259,7 @@ function larguraDaColuna(doc, textos, minimo) {
  */
 export function gerarPdfCronograma(dados, { jsPDF, autoTable }) {
   const pdf = criarPdf(jsPDF);
-  const { doc, M, alt, util } = pdf;
+  const { doc, M, util } = pdf;
   escreverTopoPdf(pdf, linhasDoTopo(dados), dados.titulo || TITULO_CRONOGRAMA);
 
   const resumo = dados.resumo || { linhas: [], meses: [], totalCentavos: 0 };
@@ -332,13 +337,15 @@ export function gerarPdfCronograma(dados, { jsPDF, autoTable }) {
   });
 
   pdf.y = (doc.lastAutoTable?.finalY ?? pdf.y) + 8;
-  // local/data e assinatura não se partem
-  if (pdf.y > alt - 45) {
-    doc.addPage();
-    pdf.y = 20;
-  }
+  // local/data e assinatura não se partem: sem espaço para o bloco inteiro, vão juntos
+  // para a página seguinte
+  garantirEspaco(
+    pdf,
+    (dados.localData ? ENTRE_LINHAS_PDF : 0) +
+      alturaAssinaturaPdf(dados.representante, { espacoAntes: ESPACO_ASSINAR })
+  );
   if (dados.localData) pdf.escrever(dados.localData, { tamanho: 9 });
-  escreverAssinaturaPdf(pdf, dados.representante, { espacoAntes: 16 });
+  escreverAssinaturaPdf(pdf, dados.representante, { espacoAntes: ESPACO_ASSINAR });
   numerarPaginasPdf(pdf, dados.empresa?.nome);
   return doc;
 }

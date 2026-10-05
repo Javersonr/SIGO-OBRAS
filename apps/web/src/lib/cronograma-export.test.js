@@ -342,6 +342,23 @@ function numerosQuebrados(doc) {
   return quebrados;
 }
 
+/** autoTable que, depois de desenhar, fixa onde a tabela terminou (`finalY`, em mm). */
+function terminandoEm(finalY) {
+  return (doc, opcoes) => {
+    autoTable(doc, opcoes);
+    doc.lastAutoTable.finalY = finalY;
+  };
+}
+
+/** Página (1 a N) em que o texto sai no PDF; 0 se não sai em nenhuma. */
+function paginaDoTexto(doc, texto) {
+  const paginas = doc.internal.pages;
+  for (let p = 1; p < paginas.length; p++) {
+    if (paginas[p].join("\n").includes(texto)) return p;
+  }
+  return 0;
+}
+
 describe("gerarPdfCronograma", () => {
   it(
     "4 meses: uma página, sem quebra horizontal, com o rodapé da tabela",
@@ -452,6 +469,37 @@ describe("gerarPdfCronograma", () => {
       expect(saida.match(/\(Etapa\) Tj/g).length).toBeGreaterThanOrEqual(2);
       // a última célula absorve os centavos: 17 × 55,50 + 56,50 = 1.000,00
       expect(chamadas[0].body[0][4 + 17]).toBe("56,50\n5,65%");
+    },
+    LIMITE_PDF
+  );
+
+  it(
+    "local/data e assinatura nunca se partem entre páginas, onde quer que a tabela termine",
+    () => {
+      const bloco = [
+        "05 de outubro de 2026",
+        "Fulano de Tal",
+        "Sócio-administrador",
+        "CPF: 529.982.247-25",
+      ];
+      const semData = { ...OPCOES, local: "" };
+      // finalY (mm): sobra espaço (100), faixa em que a assinatura não cabe mais (152,5 a 165,
+      // onde o nome ficava na página 1 e o CPF na 2) e quase no rodapé (180 e 190)
+      for (const finalY of [100, 150, 152.5, 155, 157, 160, 165, 170, 180, 190]) {
+        for (const extra of [{}, { opcoes: semData }]) {
+          const doc = gerarPdfCronograma(dados(extra), { jsPDF, autoTable: terminandoEm(finalY) });
+          const textos = extra.opcoes ? bloco.slice(1) : bloco;
+          const paginas = textos.map((t) => paginaDoTexto(doc, t));
+          expect(paginas[0], `finalY ${finalY}`).toBeGreaterThan(0);
+          expect(paginas, `finalY ${finalY}`).toEqual(textos.map(() => paginas[0]));
+        }
+      }
+      // com espaço, tudo na página 1; com a tabela no fim da página, bloco inteiro na 2
+      const cabe = gerarPdfCronograma(dados(), { jsPDF, autoTable: terminandoEm(100) });
+      expect(cabe.getNumberOfPages()).toBe(1);
+      const nao = gerarPdfCronograma(dados(), { jsPDF, autoTable: terminandoEm(155) });
+      expect(nao.getNumberOfPages()).toBe(2);
+      expect(paginaDoTexto(nao, "CPF: 529.982.247-25")).toBe(2);
     },
     LIMITE_PDF
   );
