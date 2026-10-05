@@ -6,6 +6,7 @@ import { KeyRound, Loader2, Copy, MessageCircle, RefreshCw, Power } from "lucide
 import { toast } from "sonner";
 import { copiarOuOferecer, copiarTexto, dispararWhatsApp } from "@/lib/whatsapp";
 import { acessoPortal, textoCredenciais, statusAcesso } from "@/lib/portal-funcionario-acesso";
+import { useConfirmar } from "@/components/shared/ConfirmarDialog";
 
 const fmtDataHora = (iso) =>
   iso
@@ -28,6 +29,7 @@ export default function AcessoPortalCard({ funcionario, empresaAtiva, onMudou })
   const [credenciais, setCredenciais] = useState(null); // {usuario, senha}
   const [usuarioManual, setUsuarioManual] = useState("");
   const [ocupado, setOcupado] = useState(false);
+  const [confirmar, dialogoConfirmar] = useConfirmar();
 
   const carregar = async () => {
     try {
@@ -65,13 +67,15 @@ export default function AcessoPortalCard({ funcionario, empresaAtiva, onMudou })
       toast.success("Acesso criado");
     });
 
-  const redefinir = () => {
-    if (
-      !window.confirm(
-        `Gerar nova senha provisória para ${funcionario.nome_completo}? A senha atual deixa de valer e ele terá de criar outra no próximo acesso.`
-      )
-    )
-      return;
+  const redefinir = async () => {
+    const confirmado = await confirmar({
+      titulo: "Gerar nova senha provisória?",
+      texto:
+        `${funcionario.nome_completo}: a senha atual deixa de valer e ele terá de criar outra ` +
+        "no próximo acesso. A nova senha provisória aparece uma única vez, para você entregar.",
+      rotuloConfirmar: "Gerar nova senha",
+    });
+    if (!confirmado) return;
     executar(async () => {
       const r = await acessoPortal.redefinir(funcionario.id);
       setCredenciais({ usuario: r.usuario, senha: r.senha_provisoria });
@@ -79,10 +83,17 @@ export default function AcessoPortalCard({ funcionario, empresaAtiva, onMudou })
     });
   };
 
-  const alternarAtivo = () => {
+  const alternarAtivo = async () => {
     const desativar = acesso?.ativo;
-    if (desativar && !window.confirm("Desativar o acesso? O funcionário sai do portal na hora."))
-      return;
+    if (desativar) {
+      const confirmado = await confirmar({
+        titulo: "Desativar o acesso?",
+        texto: `${funcionario.nome_completo} sai do portal na hora e só volta a entrar se você reativar o acesso.`,
+        rotuloConfirmar: "Desativar",
+        destrutivo: true,
+      });
+      if (!confirmado) return;
+    }
     executar(async () => {
       await acessoPortal.ativo(funcionario.id, !desativar);
       toast.success(desativar ? "Acesso desativado" : "Acesso reativado");
@@ -206,6 +217,7 @@ export default function AcessoPortalCard({ funcionario, empresaAtiva, onMudou })
           </div>
         </div>
       )}
+      {dialogoConfirmar}
     </div>
   );
 }

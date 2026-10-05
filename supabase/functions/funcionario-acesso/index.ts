@@ -5,6 +5,7 @@
  * sessão (super admin passa). Ações:
  *   { acao:"status", empresa_id? }                   → { acessos:[...] } da empresa
  *   { acao:"criar", funcionario_id, usuario? }       → { usuario, senha_provisoria }
+ *                                                      (já tem acesso: 409 com `codigo: "JA_TEM_ACESSO"`)
  *   { acao:"redefinir", funcionario_id }             → { usuario, senha_provisoria }
  *   { acao:"ativo", funcionario_id, ativo:boolean }  → { ativo }
  *
@@ -85,7 +86,7 @@ Deno.serve(
     // Antes: qualquer usuário da empresa (Compras, Estoque...) redefinia a
     // senha de qualquer funcionário e recebia a provisória. Agora: ver a aba
     // para qualquer ação; "editar" para o que altera o acesso (logo antes de
-    // alterar, para o 409 "já tem acesso" do avisarNoPortal seguir igual).
+    // alterar, para o 409 JA_TEM_ACESSO do avisarNoPortal seguir igual).
     let podeEditar = true;
     if (!staff.is_super_admin) {
       const vinculo = await vinculoDoChamador(supabase, staff.email, staff.empresa_id);
@@ -145,7 +146,12 @@ Deno.serve(
       });
 
     if (body.acao === "criar") {
-      if (atual) return fail("Este funcionário já tem acesso — use Redefinir senha", 409);
+      // `codigo`: é por ele que o front (avisarNoPortal) reconhece este caso; o texto pode mudar
+      if (atual) {
+        return fail("Este funcionário já tem acesso — use Redefinir senha", 409, {
+          codigo: "JA_TEM_ACESSO",
+        });
+      }
       if (!podeEditar) return semEdicao();
       const usuario = normalizarUsuario(body.usuario || func.cpf || "");
       if (!usuario) {

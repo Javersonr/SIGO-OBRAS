@@ -9,9 +9,20 @@ import { urlPublica } from "@/lib/url-publica";
 
 export const urlPortal = () => urlPublica("/PortalFuncionario");
 
+/**
+ * Código que o `funcionario-acesso` devolve (HTTP 409) quando o funcionário já tem login. O front
+ * decide por ele, nunca pelo texto da mensagem: o texto é para o RH ler e pode mudar.
+ */
+export const CODIGO_JA_TEM_ACESSO = "JA_TEM_ACESSO";
+
 async function chamar(acao, dados = {}) {
   const { data } = await sigo.functions.invoke("funcionarioAcesso", { acao, ...dados });
-  if (data?.success === false) throw new Error(data.error || "Erro no acesso ao portal");
+  if (data?.success === false) {
+    const erro = new Error(data.error || "Erro no acesso ao portal");
+    // o sigoClient mantém no `data` os campos extras do erro do servidor (ex.: `codigo`)
+    if (data.codigo) erro.codigo = data.codigo;
+    throw erro;
+  }
   return data;
 }
 
@@ -43,7 +54,7 @@ export async function avisarNoPortal(funcionario, aviso) {
   try {
     credenciais = await acessoPortal.criar(funcionario.id);
   } catch (e) {
-    if (!/já tem acesso/i.test(e.message)) throw e;
+    if (e?.codigo !== CODIGO_JA_TEM_ACESSO) throw e;
   }
   const partes = [aviso, `Acesse: ${urlPortal()}`];
   partes.push(

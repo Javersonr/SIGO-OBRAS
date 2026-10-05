@@ -21,6 +21,7 @@ import { srtParaVtt } from "@/lib/legendas";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
 import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
+import { useConfirmar } from "@/components/shared/ConfirmarDialog";
 import MatriculaAuditoriaSheet from "@/components/seguranca/MatriculaAuditoriaSheet";
 import DuvidasTutorCard from "@/components/seguranca/DuvidasTutorCard";
 import PreviaAlunoCurso from "@/components/seguranca/PreviaAlunoCurso";
@@ -47,7 +48,9 @@ import {
   FileText,
   BookOpen,
   Award,
+  ChevronDown,
   Eye,
+  Info,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -84,6 +87,12 @@ function extrairYouTubeId(texto) {
 const porOrdem = (lista) => [...lista].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
 
 const fmtData = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
+
+// a pergunta inteira pode ser longa: a confirmação mostra só o começo, o bastante para reconhecê-la
+const resumoDaPergunta = (pergunta) => {
+  const t = String(pergunta || "").trim();
+  return t.length > 160 ? `${t.slice(0, 160)}...` : t;
+};
 
 const STATUS_BADGE = {
   pendente: "bg-slate-100 text-slate-600",
@@ -154,6 +163,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const [novaQuestao, setNovaQuestao] = useState(null); // {pergunta, opcoes[4], correta}
   const [treinamentosConfig, setTreinamentosConfig] = useState([]);
   const [aulaEditando, setAulaEditando] = useState(null); // {id, titulo, modulo, tipo, minutos}
+  const [confirmar, dialogoConfirmar] = useConfirmar();
 
   // Só a 1ª carga (e a troca de empresa) mostra o spinner no lugar da tela. Gravar e recarregar
   // atualiza os dados por baixo, sem desmontar os painéis abertos nem o cartão de dúvidas.
@@ -520,7 +530,13 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   };
 
   const removerAula = async (aula) => {
-    if (!confirm(`Remover a aula "${aula.titulo}"?`)) return;
+    const confirmado = await confirmar({
+      titulo: "Remover a aula?",
+      texto: `Remover a aula "${aula.titulo}" deste curso?`,
+      rotuloConfirmar: "Remover aula",
+      destrutivo: true,
+    });
+    if (!confirmado) return;
     await gravar(`remover-aula-${aula.id}`, "Erro ao remover a aula", async () => {
       await sigo.entities.TreinamentoAula.delete(aula.id);
       setAulaEditando((atual) => (atual?.id === aula.id ? null : atual));
@@ -579,7 +595,15 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   };
 
   const excluirQuestao = async (q) => {
-    if (!confirm("Excluir esta questão?")) return;
+    const confirmado = await confirmar({
+      titulo: "Excluir esta questão?",
+      texto: q.pergunta
+        ? `Excluir da avaliação a questão "${resumoDaPergunta(q.pergunta)}"?`
+        : "Excluir esta questão da avaliação?",
+      rotuloConfirmar: "Excluir questão",
+      destrutivo: true,
+    });
+    if (!confirmado) return;
     await gravar(`excluir-questao-${q.id}`, "Erro ao excluir a questão", async () => {
       await sigo.entities.TreinamentoQuestao.delete(q.id);
       setNovaQuestao((atual) => (atual?.id === q.id ? null : atual));
@@ -663,7 +687,13 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       nomeFuncionario: funcPorId.get(m.funcionario_id)?.nome_completo,
       nomeCurso: cursos.find((c) => c.id === m.curso_id)?.nome,
     });
-    if (!confirm(texto)) return;
+    const confirmado = await confirmar({
+      titulo: "Remover matrícula",
+      texto,
+      rotuloConfirmar: "Remover matrícula",
+      destrutivo: true,
+    });
+    if (!confirmado) return;
     await gravar(`remover-matricula-${m.id}`, "Erro ao remover a matrícula", async () => {
       const [atual] = await sigo.entities.TreinamentoCertificado.filter(
         { empresa_id: empresaAtiva.id, matricula_id: m.id },
@@ -857,6 +887,30 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
               Abrir Portal do Funcionário
             </a>
           </p>
+          <details className="group col-span-full rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+            <summary className="flex cursor-pointer items-center gap-2 font-medium text-slate-700">
+              <Info className="w-4 h-4 shrink-0" />
+              Curso EAD ou treinamento por função: qual é a diferença?
+              <ChevronDown className="ml-auto w-4 h-4 shrink-0 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-2 space-y-2">
+              <p>
+                <strong>Treinamentos por função</strong> (Configurações → Funções → Treinamentos)
+                dizem quais treinamentos cada função exige. É onde o RH registra as datas e os
+                certificados dos treinamentos já feitos, presenciais ou importados.
+              </p>
+              <p>
+                <strong>Cursos EAD</strong> (esta tela) são o conteúdo online que o funcionário faz
+                no Portal do Funcionário: aulas em ordem, prova e certificado emitido e conferível
+                pelo próprio sistema.
+              </p>
+              <p>
+                Os dois partem do mesmo cadastro central de treinamentos (nome, código, carga
+                horária e validade), mas são registros separados: concluir um curso EAD não lança o
+                treinamento na função nem substitui o certificado de um treinamento presencial.
+              </p>
+            </div>
+          </details>
           {modelosSemCurso(treinamentosConfig, cursos).length > 0 && (
             <div className="col-span-full rounded-lg border border-sky-200 bg-sky-50 p-3 space-y-2">
               <p className="text-sm font-medium">
@@ -948,6 +1002,8 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
               {matriculas.map((m) => {
                 const f = funcPorId.get(m.funcionario_id);
                 const curso = cursos.find((c) => c.id === m.curso_id);
+                // a tabela tem centenas de linhas iguais: o rótulo diz de quem é a matrícula
+                const quem = f?.nome_completo ? ` de ${f.nome_completo}` : "";
                 return (
                   <tr key={m.id} className="border-b last:border-0 hover:bg-slate-50">
                     <td className="py-2 pr-3 font-medium text-slate-800">
@@ -983,13 +1039,17 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     <td className="py-2">
                       <div className="flex gap-2">
                         <button
+                          type="button"
                           title="Detalhes: tempo por aula, tentativas, trilha de acessos e certificado"
+                          aria-label={`Detalhes da matrícula${quem}`}
                           onClick={() => setMatriculaDetalheId(m.id)}
                         >
                           <ClipboardList className="w-4 h-4 text-slate-600 hover:text-slate-900" />
                         </button>
                         <button
+                          type="button"
                           title="Avisar pelo WhatsApp (cria o acesso ao portal se ainda não tiver)"
+                          aria-label={`Avisar no WhatsApp${quem}`}
                           onClick={() => avisarFuncionario(f)}
                         >
                           <MessageCircle className="w-4 h-4 text-emerald-600 hover:text-emerald-800" />
@@ -998,10 +1058,16 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                           const bloqueada = !podeRemoverMatricula(m, certificadoDaMatricula(m));
                           return (
                             <button
+                              type="button"
                               title={
                                 bloqueada
                                   ? "Revogue o certificado antes de remover a matrícula"
                                   : "Remover matrícula"
+                              }
+                              aria-label={
+                                bloqueada
+                                  ? `Remover matrícula${quem} (bloqueado: revogue o certificado antes)`
+                                  : `Remover matrícula${quem}`
                               }
                               aria-disabled={bloqueada}
                               onClick={() => removerMatricula(m)}
@@ -1440,7 +1506,9 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                               </button>
                             )}
                             <button
+                              type="button"
                               title="Subir na ordem"
+                              aria-label={`Subir a aula ${a.numero} na ordem`}
                               disabled={i === 0 || gravando.has("ordem")}
                               onClick={() => moverAula(a, -1)}
                             >
@@ -1449,7 +1517,9 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                               />
                             </button>
                             <button
+                              type="button"
                               title="Descer na ordem"
+                              aria-label={`Descer a aula ${a.numero} na ordem`}
                               disabled={i === lista.length - 1 || gravando.has("ordem")}
                               onClick={() => moverAula(a, 1)}
                             >
@@ -1458,7 +1528,9 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                               />
                             </button>
                             <button
+                              type="button"
                               title="Editar aula"
+                              aria-label={`Editar a aula ${a.numero}`}
                               onClick={() =>
                                 setAulaEditando({
                                   id: a.id,
@@ -1472,7 +1544,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                             >
                               <Pencil className="w-4 h-4 text-slate-400 hover:text-slate-800" />
                             </button>
-                            <button onClick={() => removerAula(a)}>
+                            <button
+                              type="button"
+                              title="Remover aula"
+                              aria-label={`Remover a aula ${a.numero}`}
+                              onClick={() => removerAula(a)}
+                            >
                               <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
                             </button>
                           </div>
@@ -1626,6 +1703,8 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                             <Button
                               size="sm"
                               variant="outline"
+                              title="Adicionar aula"
+                              aria-label="Adicionar aula"
                               onClick={adicionarAula}
                               disabled={subindoVideo}
                             >
@@ -1678,6 +1757,8 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                           <Button
                             size="sm"
                             variant="outline"
+                            title="Adicionar aula"
+                            aria-label="Adicionar aula"
                             onClick={adicionarAula}
                             disabled={subindoVideo}
                           >
@@ -1727,7 +1808,9 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                               {qi + 1}. {q.pergunta}
                             </span>
                             <button
+                              type="button"
                               title="Editar questão"
+                              aria-label={`Editar a questão ${qi + 1}`}
                               onClick={() =>
                                 setNovaQuestao({
                                   id: q.id,
@@ -1743,7 +1826,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                             >
                               <Pencil className="w-4 h-4 text-slate-400 hover:text-slate-800" />
                             </button>
-                            <button title="Excluir questão" onClick={() => excluirQuestao(q)}>
+                            <button
+                              type="button"
+                              title="Excluir questão"
+                              aria-label={`Excluir a questão ${qi + 1}`}
+                              onClick={() => excluirQuestao(q)}
+                            >
                               <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
                             </button>
                           </div>
@@ -1786,6 +1874,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                                 checked={novaQuestao.correta === i}
                                 onChange={() => setNovaQuestao({ ...novaQuestao, correta: i })}
                                 title="Marcar como correta"
+                                aria-label={`Marcar a opção ${String.fromCharCode(65 + i)} como correta`}
                               />
                               <Input
                                 placeholder={`Opção ${String.fromCharCode(65 + i)}`}
@@ -1945,6 +2034,8 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
           </div>
         </SheetContent>
       </Sheet>
+
+      {dialogoConfirmar}
     </div>
   );
 }
