@@ -40,11 +40,13 @@ Idioma do projeto: **português do Brasil** (textos de tela, comentários, commi
    Trabalhe numa branch própria (`codex/tNN-tema`), num clone ou worktree separado, nunca no checkout principal nem com
    commit em `master`. Não faça push nem abra PR: a entrega é o commit na branch, e o merge é do Javerson.
 4. **Migrações:** sempre arquivo novo (nunca edite migração já existente), idempotente, terminando em
-   `select 'ok' as res;`, com cabeçalho em português explicando o porquê. Número = próximo livre: `0125`–`0129` estão
-   reservados (branch `fix/financeiro-auditoria-2026-09`) e `0130` já existe duas vezes (`master` e
-   `feat/pastas-arquivos`). Use `0131` em diante **e confirme o número com o Javerson** antes do commit. Antes de numerar,
-   confira `ls supabase/migrations`, `git ls-tree -r --name-only <branch> supabase/migrations` de cada branch e as
-   reservas escritas em `docs/superpowers/{specs,plans}` (um plano já em `master` também reserva o `0127`). Quem aplica é
+   `select 'ok' as res;`, com cabeçalho em português explicando o porquê. Número = próximo livre. Situação em 05/10:
+   `0125`–`0129` reservados (branch `fix/financeiro-auditoria-2026-09`; o `0127` também é do plano do Orçamento),
+   `0130` = integridade do EAD, `0131` = cadastro integrado de treinamentos, `0132` = pastas dos Arquivos (as três já
+   aplicadas) e `0133` reservado ao cronograma físico-financeiro. Use `0134` em diante **e confirme o número com o
+   Javerson** antes do commit. Antes de numerar, confira `ls supabase/migrations`,
+   `git ls-tree -r --name-only <branch> supabase/migrations` de cada branch e as reservas escritas em
+   `docs/superpowers/{specs,plans}`. Quem aplica é
    o Javerson, com `supabase db query --linked -f <arquivo.sql>`. **Nunca `db push`.**
 5. **Multiempresa:** toda tabela de negócio tem `empresa_id uuid not null`; RLS compara com `current_empresa_id()`
    (lido do `app_metadata` do JWT). Coluna nova que aponta para outra tabela de negócio ganha o trigger
