@@ -4,6 +4,7 @@ import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import { safeParseJSON } from "@/lib/json-utils";
 import { salvarDraftSC } from "@/lib/sc-draft";
+import { ordenarItensProjeto, rotuloItem, semEtapas } from "@/lib/orcamento-registros";
 import { createPageUrl } from "../utils";
 import {
   Plus,
@@ -208,14 +209,12 @@ export default function Projetos() {
       sigo.entities.OrcamentoColunaConfig.filter({ empresa_id: empresaAtiva.id }),
     ]);
 
-    const sortedItens = itens.sort((a, b) => {
-      const descA = (a.descricao || "").toLowerCase();
-      const descB = (b.descricao || "").toLowerCase();
-      return descA.localeCompare(descB);
-    });
-    sortedItens.forEach((item, index) => {
-      item.item = (index + 1).toString();
-    });
+    // Orçamento importado (itens com `numero`): na ordem da planilha, com o rótulo
+    // `item` = `numero`. Sem numeração: a ordem alfabética e o rótulo de sempre.
+    const sortedItens = ordenarItensProjeto(itens).map((item, index) => ({
+      ...item,
+      item: rotuloItem(item, index),
+    }));
 
     setOrcamentoItens(sortedItens);
     setCronogramaEtapas(etapas.sort((a, b) => a.ordem - b.ordem));
@@ -1434,9 +1433,11 @@ export default function Projetos() {
                       loadOrcamentoData={loadOrcamentoData}
                       formatCurrency={formatCurrency}
                       onShowStatusConfig={() => setShowStatusConfig(true)}
-                      onCreateSolicitacao={(itensOrc) => {
+                      onCreateSolicitacao={(itensMarcados) => {
+                        // Linha de etapa (título do orçamento importado) não se compra.
+                        const itensOrc = semEtapas(itensMarcados);
                         // Exige seleção explícita (decisão UX: "só itens marcados").
-                        if (!itensOrc || itensOrc.length === 0) {
+                        if (itensOrc.length === 0) {
                           alert(
                             "Marque ao menos 1 item do orçamento (checkbox) antes de solicitar compra."
                           );

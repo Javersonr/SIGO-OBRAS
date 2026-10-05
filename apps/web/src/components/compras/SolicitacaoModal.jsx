@@ -1,6 +1,7 @@
 import { normalizarTexto } from "@/lib/busca";
 import React from "react";
 import { safeParseJSON } from "@/lib/json-utils";
+import { semEtapas } from "@/lib/orcamento-registros";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -210,7 +211,7 @@ export default function SolicitacaoModal({
   const carregarOrcamentoProjeto = async (projetoId) => {
     setLoadingOrcamento(true);
     try {
-      const [orcamentoItens, todosPedidosItems, reservasAtivas] = await Promise.all([
+      const [orcamentoTodos, todosPedidosItems, reservasAtivas] = await Promise.all([
         sigo.entities.OrcamentoItem.filter({
           empresa_id: empresaAtiva.id,
           projeto_id: projetoId,
@@ -222,6 +223,8 @@ export default function SolicitacaoModal({
           status: "Ativa",
         }),
       ]);
+      // Linha de etapa (título do orçamento importado) não vira item de compra
+      const orcamentoItens = semEtapas(orcamentoTodos);
 
       // Index dos preços do orçamento pra sugerir em edições futuras
       const porMaterial = {};
@@ -307,7 +310,8 @@ export default function SolicitacaoModal({
       // Index de preços pra sugestão posterior
       const porMaterial = {};
       const porDescricao = {};
-      todosOrcamentos.flat().forEach((item) => {
+      // Linha de etapa (título do orçamento importado) não vira item de compra
+      semEtapas(todosOrcamentos.flat()).forEach((item) => {
         if (item.valor_unitario != null) {
           if (item.material_id) porMaterial[item.material_id] = item.valor_unitario;
           if (item.descricao) porDescricao[item.descricao.toLowerCase()] = item.valor_unitario;

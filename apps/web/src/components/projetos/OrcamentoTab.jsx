@@ -3,6 +3,9 @@ import React from "react";
 import { createPortal } from "react-dom";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { subtotaisEtapas, totalLinhaLegado } from "@/lib/orcamento-desconto";
+import { rotuloItem, semEtapas } from "@/lib/orcamento-registros";
+import { montarRegistroTemplate } from "@/lib/orcamento-template";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -93,7 +96,12 @@ export default function OrcamentoTab({
       const vlrUnit = field === "valor_unitario" ? processedValue : item.valor_unitario || 0;
       const bdi = field === "bdi" ? processedValue : item.bdi || 0;
       const imp = field === "imposto" ? processedValue : item.imposto || 0;
-      updatedData.valor_total = qtd * vlrUnit * (1 + bdi / 100) * (1 + imp / 100);
+      updatedData.valor_total = totalLinhaLegado({
+        quantidade: qtd,
+        valor_unitario: vlrUnit,
+        bdi,
+        imposto: imp,
+      });
     }
     setOrcamentoItens((prev) => prev.map((i) => (i.id === itemId ? updatedData : i)));
     const key = `${itemId}-${field}`;
@@ -159,17 +167,23 @@ export default function OrcamentoTab({
   const handleExportCSV = () => {
     const csv = [
       ["Nº", "Descrição", "Código", "Unid.", "Qtd", "Vlr Unit.", "BDI %", "Imp. %", "Vlr Total"],
-      ...orcamentoItens.map((item, idx) => [
-        idx + 1,
-        item.descricao || "",
-        item.codigo || "",
-        item.unidade || "",
-        item.quantidade || 0,
-        item.valor_unitario || 0,
-        item.bdi || 0,
-        item.imposto || 0,
-        item.valor_total || 0,
-      ]),
+      // Etapa (orçamento importado): só o número e o título. Sem o subtotal, para a
+      // soma da coluna no Excel não contar em dobro.
+      ...orcamentoItens.map((item, idx) =>
+        item.etapa
+          ? [rotuloItem(item, idx), item.descricao || "", "", "", "", "", "", "", ""]
+          : [
+              rotuloItem(item, idx),
+              item.descricao || "",
+              item.codigo || "",
+              item.unidade || "",
+              item.quantidade || 0,
+              item.valor_unitario || 0,
+              item.bdi || 0,
+              item.imposto || 0,
+              item.valor_total || 0,
+            ]
+      ),
     ]
       .map((row) =>
         row
@@ -216,7 +230,16 @@ export default function OrcamentoTab({
         doc.addPage();
         y = 20;
       }
-      doc.text((idx + 1).toString(), 14, y);
+      if (item.etapa) {
+        // Etapa (orçamento importado): título em negrito, sem quantidade nem valores
+        doc.setFont(undefined, "bold");
+        doc.text(rotuloItem(item, idx), 14, y);
+        doc.text((item.descricao || "").substring(0, 120), 25, y);
+        doc.setFont(undefined, "normal");
+        y += 6;
+        return;
+      }
+      doc.text(rotuloItem(item, idx), 14, y);
       doc.text((item.descricao || "").substring(0, 40), 25, y);
       doc.text(item.codigo || "-", 100, y);
       doc.text(item.unidade || "-", 130, y);
@@ -374,7 +397,7 @@ export default function OrcamentoTab({
             valor_unitario,
             bdi,
             imposto,
-            valor_total: quantidade * valor_unitario * (1 + bdi / 100) * (1 + imposto / 100),
+            valor_total: totalLinhaLegado({ quantidade, valor_unitario, bdi, imposto }),
             material_id: mat?.id || null,
             ordem: idx,
           });
@@ -422,21 +445,12 @@ export default function OrcamentoTab({
       const itens = safeParseJSON(template.campos_padrao, []);
       if (!Array.isArray(itens) || itens.length === 0) return;
       await sigo.entities.OrcamentoItem.bulkCreate(
-        itens.map((item, idx) => ({
-          empresa_id: empresaAtiva.id,
-          projeto_id: selectedProj.id,
-          item: (idx + 1).toString(),
-          tipo: item.tipo || "Material",
-          descricao: item.descricao || "",
-          codigo: item.codigo || "",
-          unidade: item.unidade || "UN",
-          quantidade: item.quantidade || 0,
-          valor_unitario: item.valor_unitario || 0,
-          bdi: item.bdi || 0,
-          imposto: item.imposto || 0,
-          valor_total: item.valor_total || 0,
-          ordem: idx,
-        }))
+        itens.map((item, idx) =>
+          montarRegistroTemplate(item, idx, {
+            empresa_id: empresaAtiva.id,
+            projeto_id: selectedProj.id,
+          })
+        )
       );
       loadOrcamentoData(selectedProj.id);
       setShowAplicarTemplate(false);
@@ -446,9 +460,14 @@ export default function OrcamentoTab({
     }
   };
 
+  // Orçamento importado (itens com `numero`): sem filtro de tipo (vale "Todos",
+  // porque o item importado tem tipo nulo) e com o subtotal de cada etapa.
+  const orcamentoNumerado = orcamentoItens.some((i) => i.numero);
+  const filtroTipoEfetivo = orcamentoNumerado ? "all" : filtroTipo;
   const itensFiltrados = orcamentoItens.filter(
-    (i) => filtroTipo === "all" || i.tipo === filtroTipo
+    (i) => filtroTipoEfetivo === "all" || i.tipo === filtroTipoEfetivo
   );
+  const subtotalPorEtapa = orcamentoNumerado ? subtotaisEtapas(orcamentoItens) : {};
 
   return (
     <div className="space-y-4">
@@ -493,17 +512,19 @@ export default function OrcamentoTab({
                 </Button>
               </>
             )}
-            <Select value={filtroTipo} onValueChange={setFiltroTipo}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Tipo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os tipos</SelectItem>
-                <SelectItem value="Material">Material</SelectItem>
-                <SelectItem value="Mão de Obra">Mão de Obra</SelectItem>
-                <SelectItem value="Ferramental">Ferramental</SelectItem>
-              </SelectContent>
-            </Select>
+            {!orcamentoNumerado && (
+              <Select value={filtroTipo} onValueChange={setFiltroTipo}>
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="Tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os tipos</SelectItem>
+                  <SelectItem value="Material">Material</SelectItem>
+                  <SelectItem value="Mão de Obra">Mão de Obra</SelectItem>
+                  <SelectItem value="Ferramental">Ferramental</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -693,15 +714,53 @@ export default function OrcamentoTab({
               <tbody>
                 {itensFiltrados.map((item, index) => {
                   const podeEditar = true; // todos podem editar itens do orçamento do projeto
-                  const filteredMats = materiais.filter(
-                    (m) =>
-                      normalizarTexto(m.nome_item).includes(
-                        normalizarTexto(itemSearchTerm.toLowerCase())
-                      ) ||
-                      normalizarTexto(m.codigo).includes(
-                        normalizarTexto(itemSearchTerm.toLowerCase())
-                      )
-                  );
+                  // Etapa (título do orçamento importado): número, descrição, subtotal dos
+                  // itens e lixeira, sem inputs. 11 colunas, como o cabeçalho: a descrição
+                  // ocupa de Descrição a Imp. %.
+                  if (item.etapa) {
+                    return (
+                      <tr key={item.id} className="border-b bg-slate-100 font-semibold">
+                        <td className="px-3 py-2"></td>
+                        <td className="px-3 py-2 text-center text-xs text-slate-700">
+                          {rotuloItem(item, index)}
+                        </td>
+                        <td colSpan={7} className="px-3 py-2 text-xs text-slate-800">
+                          {item.descricao || ""}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <span className="text-xs text-slate-800 whitespace-nowrap">
+                            {formatCurrency(subtotalPorEtapa[item.numero] ?? 0)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            title="Excluir etapa"
+                            onClick={() => handleDelete(item.id)}
+                            disabled={!podeEditar}
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  }
+                  // Materiais do autocomplete: só na linha em edição. Em toda linha, custava
+                  // linhas × materiais a cada tecla (orçamento importado tem milhares de linhas).
+                  const filteredMats =
+                    showSuggestions && editingItemId === item.id && itemSearchTerm
+                      ? materiais.filter(
+                          (m) =>
+                            normalizarTexto(m.nome_item).includes(
+                              normalizarTexto(itemSearchTerm.toLowerCase())
+                            ) ||
+                            normalizarTexto(m.codigo).includes(
+                              normalizarTexto(itemSearchTerm.toLowerCase())
+                            )
+                        )
+                      : [];
                   return (
                     <tr
                       key={item.id}
@@ -719,7 +778,9 @@ export default function OrcamentoTab({
                           }}
                         />
                       </td>
-                      <td className="px-3 py-2 text-center text-xs text-slate-500">{index + 1}</td>
+                      <td className="px-3 py-2 text-center text-xs text-slate-500">
+                        {rotuloItem(item, index)}
+                      </td>
                       <td
                         className="px-3 py-2 relative min-w-[300px]"
                         data-item-id={item.id}
@@ -788,14 +849,7 @@ export default function OrcamentoTab({
                                             setItemSearchTerm("");
                                             setShowSuggestions(false);
                                             setEditingItemId(null);
-                                            const qtd = item.quantidade || 0;
-                                            const bdi = item.bdi || 0;
-                                            const imp = item.imposto || 0;
-                                            const valor_total =
-                                              qtd *
-                                              valorUnitario *
-                                              (1 + bdi / 100) *
-                                              (1 + imp / 100);
+                                            const valor_total = totalLinhaLegado(updated);
                                             await sigo.entities.OrcamentoItem.update(item.id, {
                                               descricao: m.nome_item,
                                               codigo: m.codigo || "",
@@ -947,7 +1001,7 @@ export default function OrcamentoTab({
           </div>
           <div className="p-6 flex-1 overflow-y-auto">
             <RelatoriosOrcamento
-              orcamentoItens={orcamentoItens || []}
+              orcamentoItens={semEtapas(orcamentoItens)}
               nomeOrcamento={selectedProj?.nome || ""}
               clienteNome={selectedProj?.cliente_nome || ""}
             />
