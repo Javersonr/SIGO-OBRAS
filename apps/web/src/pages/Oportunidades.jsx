@@ -6,6 +6,9 @@ import { useEmpresa } from "../Layout";
 import { safeParseJSON } from "@/lib/json-utils";
 import { refDoUpload } from "@/lib/anexo-ref";
 import { normalizarTexto } from "@/lib/busca";
+import { totalLinhaLegado } from "@/lib/orcamento-desconto";
+import { proximaOrdem, rotuloItem, semEtapas } from "@/lib/orcamento-registros";
+import { montarRegistroTemplate } from "@/lib/orcamento-template";
 import { Plus, Edit, Trash2, Calendar, User, X, FileText, Copy, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -551,7 +554,7 @@ export default function Oportunidades() {
     // Usar índice imutavelmente (não modificar objetos originais)
     const sorted = itens
       .sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0))
-      .map((item, i) => ({ ...item, item: (i + 1).toString() }));
+      .map((item, i) => ({ ...item, item: rotuloItem(item, i) }));
     setOrcamentoItens(sorted);
     setCronogramaEtapas(etapas.sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0)));
     setArquivos(arqs.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
@@ -1179,7 +1182,12 @@ export default function Oportunidades() {
               valor_unitario: vlr,
               bdi,
               imposto: imp,
-              valor_total: qtd * vlr * (1 + bdi / 100) * (1 + imp / 100),
+              valor_total: totalLinhaLegado({
+                quantidade: qtd,
+                valor_unitario: vlr,
+                bdi,
+                imposto: imp,
+              }),
               ordem: idx,
             };
           })
@@ -1224,7 +1232,8 @@ export default function Oportunidades() {
         bdi: 0,
         imposto: 0,
         valor_total: 0,
-        ordem: 0,
+        // no fim da lista, e não no meio de um orçamento importado
+        ordem: proximaOrdem(orcamentoItens),
       });
       loadOrcamentoData(selectedOp.id);
     } else if (tipo === "modelo") {
@@ -1256,21 +1265,12 @@ export default function Oportunidades() {
       const itens = safeParseJSON(template.campos_padrao, []);
       if (!Array.isArray(itens) || itens.length === 0) return;
       await sigo.entities.OrcamentoItem.bulkCreate(
-        itens.map((item, i) => ({
-          empresa_id: empresaAtiva.id,
-          oportunidade_id: selectedOp.id,
-          item: (i + 1).toString(),
-          tipo: item.tipo || "Material",
-          descricao: item.descricao || "",
-          codigo: item.codigo || "",
-          unidade: item.unidade || "UN",
-          quantidade: item.quantidade || 0,
-          valor_unitario: item.valor_unitario || 0,
-          bdi: item.bdi || 0,
-          imposto: item.imposto || 0,
-          valor_total: item.valor_total || 0,
-          ordem: i,
-        }))
+        itens.map((item, i) =>
+          montarRegistroTemplate(item, i, {
+            empresa_id: empresaAtiva.id,
+            oportunidade_id: selectedOp.id,
+          })
+        )
       );
       loadOrcamentoData(selectedOp.id);
       setShowAplicarTemplate(false);
@@ -1855,7 +1855,7 @@ export default function Oportunidades() {
           </div>
           <div className="p-6 flex-1 overflow-y-auto">
             <RelatoriosOrcamento
-              orcamentoItens={orcamentoItens || []}
+              orcamentoItens={semEtapas(orcamentoItens)}
               nomeOrcamento={selectedOp?.nome || selectedOp?.titulo || ""}
               clienteNome={selectedOp?.cliente_nome || ""}
             />

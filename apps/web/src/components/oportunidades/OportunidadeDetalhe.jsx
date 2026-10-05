@@ -5,6 +5,8 @@ import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
 import { safeUrl } from "@/lib/safe-url";
 import { analisarAtende } from "@/lib/edital-ia";
+import { subtotaisEtapas, totalLinhaLegado } from "@/lib/orcamento-desconto";
+import { rotuloItem } from "@/lib/orcamento-registros";
 import { useEmpresa } from "@/Layout";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -374,15 +376,24 @@ export default function OportunidadeDetalhe({
   const handleUpdateItem = (itemId, field, value) => {
     const item = orcamentoItens.find((i) => i.id === itemId);
     if (!item) return;
-    const updatedData = { ...item, [field]: value };
     const numFields = ["quantidade", "valor_unitario", "bdi", "imposto"];
-    if (numFields.includes(field)) {
-      const qtd = field === "quantidade" ? parseFloat(value) || 0 : item.quantidade || 0;
-      const vlrUnit =
-        field === "valor_unitario" ? parseFloat(value) || 0 : item.valor_unitario || 0;
-      const bdi = field === "bdi" ? parseFloat(value) || 0 : item.bdi || 0;
-      const imp = field === "imposto" ? parseFloat(value) || 0 : item.imposto || 0;
-      updatedData.valor_total = qtd * vlrUnit * (1 + bdi / 100) * (1 + imp / 100);
+    const ehNumerico = numFields.includes(field);
+    // Campo numérico entra no estado e no banco como número (texto vazio ou inválido
+    // vira 0, como no OrcamentoTab): um "1e3" digitado à mão não fica como texto,
+    // que a conta estrita do total leria como vazio e gravaria total 0.
+    const valorFinal = ehNumerico ? parseFloat(value) || 0 : value;
+    const updatedData = { ...item, [field]: valorFinal };
+    if (ehNumerico) {
+      const qtd = field === "quantidade" ? valorFinal : item.quantidade || 0;
+      const vlrUnit = field === "valor_unitario" ? valorFinal : item.valor_unitario || 0;
+      const bdi = field === "bdi" ? valorFinal : item.bdi || 0;
+      const imp = field === "imposto" ? valorFinal : item.imposto || 0;
+      updatedData.valor_total = totalLinhaLegado({
+        quantidade: qtd,
+        valor_unitario: vlrUnit,
+        bdi,
+        imposto: imp,
+      });
     }
     setOrcamentoItens((prev) => prev.map((i) => (i.id === itemId ? updatedData : i)));
     const key = `${itemId}-${field}`;
@@ -519,6 +530,13 @@ export default function OportunidadeDetalhe({
     diasAlerta.length > 1
       ? `${diasAlerta.slice(0, -1).join(", ")} e ${diasAlerta[diasAlerta.length - 1]}`
       : String(diasAlerta[0]);
+
+  // Aba Orçamento: com orçamento importado (itens com `numero`), o filtro de tipo
+  // some e vale "Todos" (item importado tem tipo nulo), e cada etapa mostra o
+  // subtotal dos seus itens.
+  const orcamentoNumerado = (orcamentoItens || []).some((i) => i.numero);
+  const filtroTipoEfetivo = orcamentoNumerado ? "all" : filtroTipoOrcamento;
+  const subtotalPorEtapa = orcamentoNumerado ? subtotaisEtapas(orcamentoItens) : {};
 
   return (
     <>
@@ -702,7 +720,9 @@ export default function OportunidadeDetalhe({
                       <TabsTrigger value="geral" className="flex-shrink-0 text-xs sm:text-sm">
                         Geral
                       </TabsTrigger>
-                      {(perfil === "Admin" || temPermissao("Oportunidades", "Orcamento")) && (
+                      {(perfil === "Admin" ||
+                        temPermissao("Oportunidades", "Orçamento") ||
+                        temPermissao("Oportunidades", "Orcamento")) && (
                         <TabsTrigger value="orcamento" className="flex-shrink-0 text-xs sm:text-sm">
                           {"Or\u00e7amento"}
                         </TabsTrigger>
@@ -904,27 +924,27 @@ export default function OportunidadeDetalhe({
                                   Excluir {itensSelecionados.size}
                                 </Button>
                               )}
-                              <Select
-                                value={filtroTipoOrcamento}
-                                onValueChange={setFiltroTipoOrcamento}
-                              >
-                                <SelectTrigger className="w-[150px]">
-                                  <SelectValue placeholder="Tipo" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="all">Todos</SelectItem>
-                                  <SelectItem value="Material">Material</SelectItem>
-                                  <SelectItem value="M\u00e3o de Obra">
-                                    {"M\u00e3o de Obra"}
-                                  </SelectItem>
-                                  <SelectItem value="Ferramental">Ferramental</SelectItem>
-                                </SelectContent>
-                              </Select>
+                              {!orcamentoNumerado && (
+                                <Select
+                                  value={filtroTipoOrcamento}
+                                  onValueChange={setFiltroTipoOrcamento}
+                                >
+                                  <SelectTrigger className="w-[150px]">
+                                    <SelectValue placeholder="Tipo" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="all">Todos</SelectItem>
+                                    <SelectItem value="Material">Material</SelectItem>
+                                    <SelectItem value={"Mão de Obra"}>Mão de Obra</SelectItem>
+                                    <SelectItem value="Ferramental">Ferramental</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              )}
                             </div>
                             <div className="flex items-center gap-2">
                               <PermissionGate
                                 modulo="Oportunidades"
-                                aba="Or\u00e7amento"
+                                aba={"Orçamento"}
                                 funcao="editar"
                               >
                                 <DropdownMenu>
@@ -982,7 +1002,7 @@ export default function OportunidadeDetalhe({
                               </PermissionGate>
                               <PermissionGate
                                 modulo="Oportunidades"
-                                aba="Or\u00e7amento"
+                                aba={"Orçamento"}
                                 funcao="gerar_pdf"
                               >
                                 <Button
@@ -1080,22 +1100,22 @@ export default function OportunidadeDetalhe({
                                       checked={
                                         orcamentoItens.filter(
                                           (i) =>
-                                            filtroTipoOrcamento === "all" ||
-                                            i.tipo === filtroTipoOrcamento
+                                            filtroTipoEfetivo === "all" ||
+                                            i.tipo === filtroTipoEfetivo
                                         ).length > 0 &&
                                         orcamentoItens
                                           .filter(
                                             (i) =>
-                                              filtroTipoOrcamento === "all" ||
-                                              i.tipo === filtroTipoOrcamento
+                                              filtroTipoEfetivo === "all" ||
+                                              i.tipo === filtroTipoEfetivo
                                           )
                                           .every((i) => itensSelecionados.has(i.id))
                                       }
                                       onChange={(e) => {
                                         const vis = orcamentoItens.filter(
                                           (i) =>
-                                            filtroTipoOrcamento === "all" ||
-                                            i.tipo === filtroTipoOrcamento
+                                            filtroTipoEfetivo === "all" ||
+                                            i.tipo === filtroTipoEfetivo
                                         );
                                         setItensSelecionados(
                                           e.target.checked
@@ -1139,14 +1159,52 @@ export default function OportunidadeDetalhe({
                                 {orcamentoItens
                                   .filter(
                                     (item) =>
-                                      filtroTipoOrcamento === "all" ||
-                                      item.tipo === filtroTipoOrcamento
+                                      filtroTipoEfetivo === "all" || item.tipo === filtroTipoEfetivo
                                   )
                                   .map((item, index) => {
                                     const podeEditar =
                                       perfil === "Admin" ||
                                       !item.created_by ||
                                       item.created_by === user?.email;
+                                    // Etapa (título do orçamento importado): número, descrição,
+                                    // subtotal dos itens e lixeira, sem inputs. 11 colunas, como o
+                                    // cabeçalho: a descrição ocupa de Descrição a Imp. %.
+                                    if (item.etapa) {
+                                      return (
+                                        <tr
+                                          key={item.id}
+                                          className="border-b bg-slate-100 font-semibold"
+                                        >
+                                          <td className="px-3 py-2"></td>
+                                          <td className="px-3 py-2 text-center text-xs text-slate-700">
+                                            {rotuloItem(item, index)}
+                                          </td>
+                                          <td
+                                            colSpan={7}
+                                            className="px-3 py-2 text-xs text-slate-800"
+                                          >
+                                            {item.descricao || ""}
+                                          </td>
+                                          <td className="px-3 py-2 text-right">
+                                            <span className="text-xs text-slate-800 whitespace-nowrap">
+                                              {formatCurrency(subtotalPorEtapa[item.numero] ?? 0)}
+                                            </span>
+                                          </td>
+                                          <td className="px-3 py-2">
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-7 w-7"
+                                              title="Excluir etapa"
+                                              onClick={() => onDeleteOrcamentoItem(item.id)}
+                                              disabled={!podeEditar}
+                                            >
+                                              <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                                            </Button>
+                                          </td>
+                                        </tr>
+                                      );
+                                    }
                                     return (
                                       <tr
                                         key={item.id}
@@ -1164,7 +1222,7 @@ export default function OportunidadeDetalhe({
                                           />
                                         </td>
                                         <td className="px-3 py-2 text-center text-xs text-slate-500">
-                                          {index + 1}
+                                          {rotuloItem(item, index)}
                                         </td>
                                         <td className="px-3 py-2 min-w-[300px]">
                                           <div
@@ -1343,15 +1401,8 @@ export default function OportunidadeDetalhe({
                                             disabled={!podeEditar}
                                             onChange={(e) => {
                                               const v = parseFloat(e.target.value) || 0;
-                                              const u = {
-                                                ...item,
-                                                quantidade: v,
-                                                valor_total:
-                                                  v *
-                                                  (item.valor_unitario || 0) *
-                                                  (1 + (item.bdi || 0) / 100) *
-                                                  (1 + (item.imposto || 0) / 100),
-                                              };
+                                              const u = { ...item, quantidade: v };
+                                              u.valor_total = totalLinhaLegado(u);
                                               setOrcamentoItens((prev) =>
                                                 prev.map((i) => (i.id === item.id ? u : i))
                                               );
@@ -1373,15 +1424,8 @@ export default function OportunidadeDetalhe({
                                             disabled={!podeEditar}
                                             onChange={(e) => {
                                               const v = parseFloat(e.target.value) || 0;
-                                              const u = {
-                                                ...item,
-                                                valor_unitario: v,
-                                                valor_total:
-                                                  (item.quantidade || 0) *
-                                                  v *
-                                                  (1 + (item.bdi || 0) / 100) *
-                                                  (1 + (item.imposto || 0) / 100),
-                                              };
+                                              const u = { ...item, valor_unitario: v };
+                                              u.valor_total = totalLinhaLegado(u);
                                               setOrcamentoItens((prev) =>
                                                 prev.map((i) => (i.id === item.id ? u : i))
                                               );
@@ -1403,15 +1447,8 @@ export default function OportunidadeDetalhe({
                                             disabled={!podeEditar}
                                             onChange={(e) => {
                                               const v = parseFloat(e.target.value) || 0;
-                                              const u = {
-                                                ...item,
-                                                bdi: v,
-                                                valor_total:
-                                                  (item.quantidade || 0) *
-                                                  (item.valor_unitario || 0) *
-                                                  (1 + v / 100) *
-                                                  (1 + (item.imposto || 0) / 100),
-                                              };
+                                              const u = { ...item, bdi: v };
+                                              u.valor_total = totalLinhaLegado(u);
                                               setOrcamentoItens((prev) =>
                                                 prev.map((i) => (i.id === item.id ? u : i))
                                               );
@@ -1429,15 +1466,8 @@ export default function OportunidadeDetalhe({
                                             disabled={!podeEditar}
                                             onChange={(e) => {
                                               const v = parseFloat(e.target.value) || 0;
-                                              const u = {
-                                                ...item,
-                                                imposto: v,
-                                                valor_total:
-                                                  (item.quantidade || 0) *
-                                                  (item.valor_unitario || 0) *
-                                                  (1 + (item.bdi || 0) / 100) *
-                                                  (1 + v / 100),
-                                              };
+                                              const u = { ...item, imposto: v };
+                                              u.valor_total = totalLinhaLegado(u);
                                               setOrcamentoItens((prev) =>
                                                 prev.map((i) => (i.id === item.id ? u : i))
                                               );
@@ -1491,8 +1521,8 @@ export default function OportunidadeDetalhe({
                                       orcamentoItens
                                         .filter(
                                           (i) =>
-                                            filtroTipoOrcamento === "all" ||
-                                            i.tipo === filtroTipoOrcamento
+                                            filtroTipoEfetivo === "all" ||
+                                            i.tipo === filtroTipoEfetivo
                                         )
                                         .reduce((s, i) => s + (i.valor_total || 0), 0)
                                     )}
