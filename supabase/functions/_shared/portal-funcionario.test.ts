@@ -118,6 +118,31 @@ test("registrarEvento: a trilha grava o IP mais à direita, não o forjado", asy
   assert.equal(supabase.linhas[0].linha.empresa_id, "empresa-teste");
 });
 
+test("registrarEvento: evento do servidor não manda origem (vale o default 'servidor' do banco)", async () => {
+  const supabase = fakeSupabase();
+  await registrarEvento(supabase, req({}), EVENTO);
+  assert.equal("origem" in supabase.linhas[0].linha, false);
+});
+
+test("registrarEvento: evento relatado pelo navegador grava origem 'navegador'", async () => {
+  const supabase = fakeSupabase();
+  await registrarEvento(supabase, req({}), { ...EVENTO, evento: "play", origem: "navegador" });
+  assert.equal(supabase.linhas[0].linha.origem, "navegador");
+  assert.equal(supabase.linhas[0].linha.evento, "play");
+});
+
+test("registrarEvento: a origem do evento não vem do detalhe que o navegador manda", async () => {
+  const supabase = fakeSupabase();
+  await registrarEvento(supabase, req({}), {
+    ...EVENTO,
+    evento: "play",
+    detalhe: { origem: "servidor" },
+    origem: "navegador",
+  });
+  assert.equal(supabase.linhas[0].linha.origem, "navegador");
+  assert.deepEqual(supabase.linhas[0].linha.detalhe, { origem: "servidor" });
+});
+
 test("registrarEvento: falha ao gravar não derruba a ação principal", async (t) => {
   const erro = t.mock.method(console, "error", () => {});
   const supabase = fakeSupabase({ message: "falhou" });

@@ -9,6 +9,11 @@ import { baixarCertificadoPdf } from "@/lib/certificado-ead";
 import { mensagemFalhaCertificado } from "@/lib/certificado-ead-falhas";
 import { logoParaPdf } from "@/lib/pdf-empresa";
 import { numerarAulas } from "@/lib/portal-curso";
+import {
+  ROTULO_ORIGEM_NAVEGADOR,
+  eventoInformadoPeloNavegador,
+  origemDoEvento,
+} from "@/lib/ead-trilha";
 
 // tabelas só de inclusão (sem deleted_at): o SDK precisa de includeDeleted
 const SEM_SOFT_DELETE = { includeDeleted: true };
@@ -135,7 +140,16 @@ export default function MatriculaAuditoriaSheet({
 
   const exportarCsv = () => {
     const linhas = [
-      ["data_hora_servidor", "evento", "descricao", "aula", "detalhe", "ip", "dispositivo"],
+      [
+        "data_hora_servidor",
+        "evento",
+        "descricao",
+        "aula",
+        "detalhe",
+        "ip",
+        "dispositivo",
+        "origem",
+      ],
       ...eventos.map((e) => [
         new Date(e.created_at).toLocaleString("pt-BR"),
         e.evento,
@@ -144,6 +158,7 @@ export default function MatriculaAuditoriaSheet({
         e.detalhe ? JSON.stringify(e.detalhe) : "",
         e.ip || "",
         e.dispositivo || "",
+        origemDoEvento(e),
       ]),
     ];
     const csv = linhas
@@ -387,6 +402,9 @@ export default function MatriculaAuditoriaSheet({
               </div>
               <p className="text-xs text-slate-500 mb-2">
                 Data e hora do servidor. Inclui os acessos ao portal (login, senha) do funcionário.
+                Os eventos com o selo “{ROTULO_ORIGEM_NAVEGADOR}” são relatos do aparelho do aluno
+                (abrir a aula, play, pausa, sair da tela): o servidor registra a hora e o IP, mas
+                não confirma que aconteceu. Os demais o servidor viu e decidiu.
               </p>
               <div className="max-h-96 overflow-y-auto border rounded-md">
                 <table className="w-full text-xs">
@@ -411,6 +429,15 @@ export default function MatriculaAuditoriaSheet({
                           )}
                           {descreverDetalhe(e) && (
                             <span className="text-slate-500"> · {descreverDetalhe(e)}</span>
+                          )}
+                          {eventoInformadoPeloNavegador(e) && (
+                            <Badge
+                              variant="outline"
+                              className="ml-2 px-1.5 py-0 text-[10px] font-normal bg-amber-50 text-amber-700 border-amber-200"
+                              title="O navegador do aluno relatou este evento; o servidor só registrou a hora e o IP."
+                            >
+                              {ROTULO_ORIGEM_NAVEGADOR}
+                            </Badge>
                           )}
                         </td>
                         <td className="py-1 px-2 text-slate-400 whitespace-nowrap">{e.ip || ""}</td>

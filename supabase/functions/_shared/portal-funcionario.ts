@@ -64,6 +64,14 @@ export function origemDaRequisicao(req: Request): {
   };
 }
 
+/**
+ * De onde vem o conteúdo do evento (coluna `treinamento_evento.origem`, migração 0135).
+ * `servidor`: o servidor viu e decidiu (login, aula concluída, prova aberta, certificado...).
+ * `navegador`: o navegador do aluno INFORMOU (abriu a aula, play, pausa, saiu da aba...): o servidor
+ * só carimba a hora e o IP. A tela de auditoria do RH marca esses eventos.
+ */
+export type OrigemEvento = "servidor" | "navegador";
+
 export interface EventoPortal {
   empresa_id: string;
   funcionario_id: string;
@@ -72,12 +80,17 @@ export interface EventoPortal {
   curso_id?: string | null;
   aula_id?: string | null;
   detalhe?: Record<string, unknown> | null;
+  /**
+   * Só a ação `evento` do portal (o navegador relata o que aconteceu) passa `navegador`. Sem
+   * `origem`, a coluna não vai no INSERT e vale o default `servidor` do banco.
+   */
+  origem?: OrigemEvento;
 }
 
 /**
  * Grava na trilha de auditoria. Nunca derruba a ação principal. Devolve se o evento ficou gravado:
  * quase todo chamador ignora, mas quem depende da linha (a prova só abre se o início ficou na trilha)
- * confere.
+ * confere. A trilha é só de inclusão: o banco recusa UPDATE e DELETE (migração 0135).
  */
 export async function registrarEvento(
   // deno-lint-ignore no-explicit-any

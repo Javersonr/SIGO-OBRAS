@@ -25,6 +25,9 @@
  * em treinamento_evento com data/hora DO SERVIDOR, IP e dispositivo. O tempo
  * assistido informado pelo navegador é limitado pelo relógio do servidor
  * (ultimo_sinal_em), então não dá para "declarar" tempo que não passou.
+ * A trilha é só de inclusão (0135): treinamento_evento, treinamento_tentativa e
+ * treinamento_certificado só recebem INSERT daqui; o banco recusa UPDATE/DELETE.
+ * Os eventos que o navegador relata (ação `evento`) levam origem "navegador".
  */
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
@@ -833,6 +836,8 @@ Deno.serve(
         curso_id: mat?.curso_id ?? null,
         aula_id: body.aula_id ?? null,
         detalhe: detalheLimitado(body.detalhe),
+        // quem relata é o navegador do aluno: o servidor só carimba a hora e o IP (T17)
+        origem: "navegador",
       });
       return ok({ registrado: true });
     }
