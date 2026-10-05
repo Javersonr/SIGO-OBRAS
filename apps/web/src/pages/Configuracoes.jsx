@@ -3,6 +3,7 @@ import { sigo } from "@/api/sigoClient";
 import { refDoUpload } from "@/lib/anexo-ref";
 import { useEmpresa } from "../Layout";
 import { safeParseJSON } from "@/lib/json-utils";
+import { prepararRepresentanteEmpresa } from "@/lib/representante-empresa";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -138,6 +139,9 @@ export default function Configuracoes() {
       cidade: empresaAtiva.cidade || "",
       estado: empresaAtiva.estado || "",
       responsavel_principal: empresaAtiva.responsavel_principal || "",
+      representante_nome: empresaAtiva.representante_nome || "",
+      representante_cargo: empresaAtiva.representante_cargo || "",
+      representante_cpf: empresaAtiva.representante_cpf || "",
       observacoes: empresaAtiva.observacoes || "",
       logo_url: empresaAtiva.logo_url || "",
       tema_cores: empresaAtiva.tema_cores,
@@ -217,9 +221,16 @@ export default function Configuracoes() {
 
   // Empresa handlers
   const handleSaveEmpresa = async () => {
+    // representante legal: CPF opcional, mas com dígitos verificadores certos
+    const conferido = prepararRepresentanteEmpresa(empresaData);
+    if (!conferido.ok) {
+      toast.error(conferido.erro, { duration: 5000 });
+      return;
+    }
     setSavingEmpresa(true);
     try {
-      await sigo.entities.Empresa.update(empresaAtiva.id, empresaData);
+      await sigo.entities.Empresa.update(empresaAtiva.id, conferido.dados);
+      setEmpresaData(conferido.dados);
       await reloadEmpresaAtiva();
       toast.success("✅ Dados da empresa salvos com sucesso", { duration: 3000 });
     } catch (error) {

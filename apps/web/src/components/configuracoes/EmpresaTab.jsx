@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Save, Search } from "lucide-react";
 import TemaCustomizacao from "@/components/configuracoes/TemaCustomizacao";
 import ImgStorage from "@/components/ImgStorage";
+import { formatarCpf } from "@/lib/cpf";
 
 export default function EmpresaTab({
   empresaAtiva,
@@ -228,6 +229,67 @@ export default function EmpresaTab({
               }
               className="mt-1.5"
             />
+          </div>
+
+          {/* Representante legal: assina a proposta de preços do orçamento */}
+          <div>
+            <h4 className="font-medium text-slate-700">Representante legal</h4>
+            <p className="text-xs text-slate-500 mb-3">
+              Assina a proposta de preços exportada no orçamento das oportunidades.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label>Nome</Label>
+                <Input
+                  value={empresaData.representante_nome || ""}
+                  onChange={(e) =>
+                    setEmpresaData({ ...empresaData, representante_nome: e.target.value })
+                  }
+                  placeholder={empresaData.responsavel_principal || "Nome completo"}
+                  className="mt-1.5"
+                />
+                {!empresaData.representante_nome && empresaData.responsavel_principal && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEmpresaData({
+                        ...empresaData,
+                        representante_nome: empresaData.responsavel_principal,
+                      })
+                    }
+                    className="mt-1 text-xs text-amber-700 hover:underline"
+                  >
+                    Usar o responsável principal
+                  </button>
+                )}
+              </div>
+              <div>
+                <Label>Cargo</Label>
+                <Input
+                  value={empresaData.representante_cargo || ""}
+                  onChange={(e) =>
+                    setEmpresaData({ ...empresaData, representante_cargo: e.target.value })
+                  }
+                  placeholder="Sócio-administrador"
+                  className="mt-1.5"
+                />
+              </div>
+              <div>
+                <Label>CPF</Label>
+                <Input
+                  value={empresaData.representante_cpf || ""}
+                  onChange={(e) =>
+                    setEmpresaData({
+                      ...empresaData,
+                      representante_cpf: formatarCpf(e.target.value),
+                    })
+                  }
+                  inputMode="numeric"
+                  placeholder="000.000.000-00"
+                  className="mt-1.5"
+                />
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
