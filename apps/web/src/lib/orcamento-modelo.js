@@ -52,6 +52,22 @@ const LINHAS_MODELO = 500;
 /** A aba Informações é curta; não varre além disso. */
 const LIMITE_LINHAS_INFO = 200;
 
+/**
+ * Tetos das colunas do banco (orcamento_item): quantidade numeric(14,3), valor_unitario e
+ * valor_unitario_ref numeric(14,4), valor_total numeric(14,2). Acima disso o INSERT estoura
+ * depois de a importação já ter apagado o orçamento antigo.
+ */
+const LIMITE_QUANTIDADE = 1e11;
+const LIMITE_PRECO = 1e10;
+const LIMITE_TOTAL = 1e12;
+/**
+ * Dígitos significativos que um número do Excel guarda sem ruído. Os valores dentro dos tetos
+ * acima têm no máximo 14 dígitos (99999999999,999), então cortar em 15 nunca mexe num valor
+ * legítimo e limpa o resto de uma fórmula, em qualquer tamanho (10.48 * 1.1 = 11.528000000000002;
+ * 1234568.5 * 1.07 = 1320988.2950000002, que um corte em casas fixas não limparia).
+ */
+const CIFRAS_RUIDO = 15;
+
 const CAMPO_POR_CABECALHO = {
   Item: "item",
   Código: "codigo",
@@ -113,9 +129,27 @@ function valorDaCelula(cel) {
   return cel.v;
 }
 
+/**
+ * Número que o Excel formatou como data (digitar 1/10 vira 1-Oct). Com `cellNF` a célula traz
+ * o formato (`z`) e quem decide é o SSF (d-mmm, mmm-yy, dd/mm/yyyy...): o texto exibido (`w`)
+ * só casa com alguns deles. Sem `z` (workbook em memória), `w` com três números separados por
+ * / ou - fica como reserva.
+ */
+function formatoData(cel) {
+  if (cel?.t !== "n" || typeof cel.v !== "number") return false;
+  if (typeof cel.z === "string") return XLSX.SSF.is_date(cel.z);
+  return /\d+[/-]\d+[/-]\d+/.test(String(cel.w ?? ""));
+}
+
 function lerCampoNumerico(cel, rotulo) {
   if (formulaSemValor(cel)) {
     return { valor: null, erro: `${rotulo} é uma fórmula sem valor salvo; grave o número` };
+  }
+  if (formatoData(cel)) {
+    return {
+      valor: null,
+      erro: `${rotulo} virou data no Excel ("${cel.w ?? cel.v}"); formate como Número e digite de novo`,
+    };
   }
   const bruto = valorDaCelula(cel);
   const valor = lerNumeroBR(bruto);
@@ -128,6 +162,11 @@ function casasDecimais(v) {
   const m = /^(\d+)(?:\.(\d+))?(?:e([+-]\d+))?$/i.exec(String(Math.abs(v)));
   if (!m) return 0;
   return Math.max(0, (m[2] || "").length - Number(m[3] || 0));
+}
+
+/** Tira o ruído de ponto flutuante de uma fórmula (11.528000000000002 → 11.528). */
+function semRuido(v) {
+  return Number(v.toPrecision(CIFRAS_RUIDO));
 }
 
 /** Arredonda (meio para cima) sem o erro de 1.005 × 100 = 100.49999… */
@@ -178,17 +217,27 @@ function infoVazia() {
   };
 }
 
-/** Valor de texto da aba Informações: data curta do Excel vira dd/mm/aaaa; % e número em pt-BR. */
+/**
+ * Data do Excel como texto: dd/mm/aaaa, ou mm/aaaa quando o formato não mostra o dia (mmm-yy,
+ * mm/yyyy), porque a data-base de uma tabela de preços é mês/ano e não se inventa um "01/".
+ * Sem formato salvo (workbook em memória) fica dd/mm/aaaa.
+ */
+function dataComoTexto(cel) {
+  const d = XLSX.SSF.parse_date_code(cel.v);
+  const dois = (n) => String(n).padStart(2, "0");
+  // Tira "textos entre aspas", [locale] e \escapes antes de procurar o d de dia.
+  const semLiterais = String(cel.z ?? "").replace(/"[^"]*"|\[[^\]]*\]|\\./g, "");
+  return typeof cel.z !== "string" || /d/i.test(semLiterais)
+    ? `${dois(d.d)}/${dois(d.m)}/${d.y}`
+    : `${dois(d.m)}/${d.y}`;
+}
+
+/** Texto da aba Informações: data do Excel vira dd/mm/aaaa (ou mm/aaaa); % e número em pt-BR. */
 function textoInfo(cel) {
   if (semValor(cel)) return "";
   if (cel.t === "n") {
-    const w = String(cel.w ?? "");
-    if (/^\d{1,2}\/\d{1,2}\/\d{2}$/.test(w)) {
-      const d = XLSX.SSF.parse_date_code(cel.v);
-      const dois = (n) => String(n).padStart(2, "0");
-      return `${dois(d.d)}/${dois(d.m)}/${d.y}`;
-    }
-    if (w.endsWith("%")) return `${formatar(cel.v * 100, 0, 4, false)}%`;
+    if (formatoData(cel)) return dataComoTexto(cel);
+    if (String(cel.w ?? "").endsWith("%")) return `${formatar(cel.v * 100, 0, 4, false)}%`;
     return formatar(cel.v, 0, 10, false);
   }
   return textoCelula(cel);
@@ -218,6 +267,10 @@ function lerInformacoes(wb, avisos) {
       else info.total_prefeitura = valor;
     } else {
       info[chave] = textoInfo(cel) || null;
+      // Número puro na Data-base (45901): não dá para saber se era data; vai como o número.
+      if (chave === "data_base" && info[chave] !== null && cel?.t === "n" && !formatoData(cel)) {
+        avisos.push(`Informações, linha ${r + 1}: Data-base numérica (${info[chave]}) — confira.`);
+      }
     }
   }
   return info;
@@ -272,6 +325,15 @@ export function gerarModelo() {
     { wch: 16 },
   ];
   const informacoes = XLSX.utils.aoa_to_sheet(ROTULOS_INFO.map((rotulo) => [rotulo]));
+  // Coluna B como Texto (menos o total, que é número): "09/2025" não vira data no Excel.
+  ROTULOS_INFO.forEach((rotulo, r) => {
+    if (CHAVES_INFO[rotulo] === "total_prefeitura") return;
+    informacoes[XLSX.utils.encode_cell({ r, c: 1 })] = { t: "s", v: "", z: "@" };
+  });
+  informacoes["!ref"] = XLSX.utils.encode_range({
+    s: { r: 0, c: 0 },
+    e: { r: ROTULOS_INFO.length - 1, c: 1 },
+  });
   informacoes["!cols"] = [{ wch: 26 }, { wch: 80 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, orcamento, ABA_ORCAMENTO);
@@ -343,7 +405,7 @@ export function lerPlanilhaModelo(wb) {
 
     const celItem = celula(ws, r, col.item);
     const itemNumerico = celItem?.t === "n" && typeof celItem.v === "number";
-    const virouData = itemNumerico && /\d+[/-]\d+[/-]\d+/.test(String(celItem.w ?? ""));
+    const virouData = itemNumerico && formatoData(celItem);
     let numero = textoCelula(celItem);
     if (itemNumerico && !virouData && !Number.isInteger(celItem.v)) {
       numero = String(celItem.v);
@@ -354,7 +416,7 @@ export function lerPlanilhaModelo(wb) {
     }
     if (virouData) {
       erros.push(
-        `Linha ${n}: Item virou data no Excel ("${celItem.w}"); ` +
+        `Linha ${n}: Item virou data no Excel ("${celItem.w ?? celItem.v}"); ` +
           `formate a coluna A como Texto e digite de novo.`
       );
     } else if (!numero) {
@@ -384,22 +446,36 @@ export function lerPlanilhaModelo(wb) {
       if (preco.valor === null) erros.push(`Linha ${n}: Quantidade sem Preço unitário.`);
       else if (qtd.valor === null) erros.push(`Linha ${n}: Preço unitário sem Quantidade.`);
       else {
-        quantidade = qtd.valor;
-        ref = preco.valor;
-        if (casasDecimais(quantidade) > 3) {
+        // O ruído de fórmula sai antes de contar as casas, senão vira aviso falso. Acima do teto
+        // não se arredonda nem se avisa: o valor já é erro de limite (e 1e30 não tem "3 casas").
+        quantidade = semRuido(qtd.valor);
+        ref = semRuido(preco.valor);
+        if (Math.abs(quantidade) < LIMITE_QUANTIDADE && casasDecimais(quantidade) > 3) {
           quantidade = arredondarCasas(quantidade, 3);
           avisos.push(
             `Linha ${n}: Quantidade com mais de 3 casas; arredondada para ${formatar(quantidade, 0, 3)}.`
           );
         }
-        if (casasDecimais(ref) > 4) {
+        if (Math.abs(ref) < LIMITE_PRECO && casasDecimais(ref) > 4) {
           ref = arredondarCasas(ref, 4);
           avisos.push(
             `Linha ${n}: Preço unitário com mais de 4 casas; arredondado para ${formatar(ref, 2, 4)}.`
           );
         }
-        if (quantidade <= 0) erros.push(`Linha ${n}: Quantidade deve ser maior que zero.`);
-        if (ref < 0) erros.push(`Linha ${n}: Preço unitário negativo.`);
+        if (quantidade >= LIMITE_QUANTIDADE) {
+          erros.push(
+            `Linha ${n}: Quantidade acima do limite (menos de ${formatar(LIMITE_QUANTIDADE, 0, 0)}).`
+          );
+        } else if (quantidade <= 0) {
+          erros.push(`Linha ${n}: Quantidade deve ser maior que zero.`);
+        }
+        if (ref >= LIMITE_PRECO) {
+          erros.push(
+            `Linha ${n}: Preço unitário acima do limite (menos de ${formatar(LIMITE_PRECO, 0, 0)}).`
+          );
+        } else if (ref < 0) {
+          erros.push(`Linha ${n}: Preço unitário negativo.`);
+        }
       }
     }
 
@@ -410,9 +486,19 @@ export function lerPlanilhaModelo(wb) {
     if (erros.length > errosAntes) continue;
 
     const unidade = textoOuNull(celula(ws, r, col.unidade));
+    if (etapa && (unidade !== null || totalInformado !== null)) {
+      avisos.push(`Linha ${n}: linha sem quantidade e preço tratada como etapa — confira.`);
+    }
     if (!etapa) {
-      if (unidade === null) avisos.push(`Linha ${n}: item sem unidade.`);
+      // Quantidade e preço já estão abaixo dos tetos: a conta em BigInt não lança.
       const calculado = totalLinha(quantidade, ref);
+      if (calculado >= LIMITE_TOTAL) {
+        erros.push(
+          `Linha ${n}: Total da linha acima do limite (menos de ${formatar(LIMITE_TOTAL, 0, 0)}).`
+        );
+        continue;
+      }
+      if (unidade === null) avisos.push(`Linha ${n}: item sem unidade.`);
       refCents += Math.round(calculado * 100);
       if (
         totalInformado !== null &&
@@ -483,12 +569,13 @@ export function lerPlanilhaModelo(wb) {
 /**
  * Lê o arquivo (ArrayBuffer/Uint8Array de `await file.arrayBuffer()`) e valida.
  * `sheetStubs` mantém a célula de fórmula sem valor salvo, para acusar o erro em vez
- * de tratar a linha como etapa.
+ * de tratar a linha como etapa. `cellNF` traz o formato (`z`) de cada célula, que é como se
+ * reconhece o número que o Excel transformou em data (Item, Quantidade, Preço, Data-base).
  */
 export function lerArquivoModelo(buffer) {
   let wb;
   try {
-    wb = XLSX.read(buffer, { type: "array", sheetStubs: true });
+    wb = XLSX.read(buffer, { type: "array", sheetStubs: true, cellNF: true });
   } catch {
     return {
       itens: [],

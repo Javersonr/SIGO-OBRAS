@@ -101,6 +101,15 @@ describe("gerarModelo", () => {
     const r = lerPlanilhaModelo(gerarModelo());
     expect(r.erros).toEqual([`Nenhum item com Quantidade e Preço unitário na aba "Orçamento".`]);
   });
+  it("aba Informações: coluna B como Texto, exceto o total da prefeitura", () => {
+    const wb = XLSX.read(comoArquivo(gerarModelo()), { type: "array", cellNF: true });
+    const info = wb.Sheets[ABA_INFORMACOES];
+    const linhaTotal = ROTULOS_INFO.indexOf("Total da prefeitura (R$)") + 1;
+    ROTULOS_INFO.forEach((_, i) => {
+      if (i + 1 === linhaTotal) expect(info[`B${i + 1}`]?.z).not.toBe("@");
+      else expect(info[`B${i + 1}`].z).toBe("@");
+    });
+  });
 });
 
 describe("lerPlanilhaModelo — caminho feliz", () => {
@@ -179,6 +188,79 @@ describe("lerPlanilhaModelo — caminho feliz", () => {
     expect(r.info.data_base).toBe("01/09/2025");
     expect(r.info.bdi).toBe("23,96%");
   });
+  // O formato (z) decide: com dia → dd/mm/aaaa; sem dia (tabela de preços é mês/ano) → mm/aaaa.
+  it.each([
+    ["m/d/yy", "01/09/2025"],
+    ["dd/mm/yyyy", "01/09/2025"],
+    ["d-mmm-yy", "01/09/2025"],
+    ["d-mmm", "01/09/2025"],
+    ["mm-dd-yy", "01/09/2025"],
+    ["[$-416]d/m/yyyy", "01/09/2025"],
+    ["mm/yyyy", "09/2025"],
+    ["mmm-yy", "09/2025"],
+    ["mmm/yy", "09/2025"],
+    ['mmmm" de "yyyy', "09/2025"],
+  ])("Data-base numérica com formato %s vira %s", (z, esperado) => {
+    const wb = montarWb(ORC_OK, [["Data-base", 0]]);
+    wb.Sheets[ABA_INFORMACOES].B1 = { t: "n", v: 45901, z };
+    const r = lerArquivoModelo(comoArquivo(wb));
+    expect(r.info.data_base).toBe(esperado);
+    expect(r.avisos).toEqual([]);
+  });
+  it("Data-base em número puro (General) vira o texto do número e avisa", () => {
+    const wb = montarWb(ORC_OK, [
+      ["Órgão", "Prefeitura"],
+      ["Data-base", 0],
+    ]);
+    wb.Sheets[ABA_INFORMACOES].B2 = { t: "n", v: 45901, z: "General" };
+    const r = lerArquivoModelo(comoArquivo(wb));
+    expect(r.info.data_base).toBe("45901");
+    expect(r.avisos).toEqual(["Informações, linha 2: Data-base numérica (45901) — confira."]);
+  });
+  it("Data-base digitada como texto fica como está, sem aviso", () => {
+    const wb = montarWb(ORC_OK, [["Data-base", 0]]);
+    wb.Sheets[ABA_INFORMACOES].B1 = { t: "s", v: "09/2025", z: "@" };
+    const r = lerArquivoModelo(comoArquivo(wb));
+    expect(r.info.data_base).toBe("09/2025");
+    expect(r.avisos).toEqual([]);
+  });
+  it("Data-base numérica sem formato salvo (workbook em memória) segue o texto exibido", () => {
+    const wb = montarWb(ORC_OK, [["Data-base", 0]]);
+    wb.Sheets[ABA_INFORMACOES].B1 = { t: "n", v: 45901, w: "9/1/25" };
+    expect(lerPlanilhaModelo(wb).info.data_base).toBe("01/09/2025");
+  });
+  it("ruído de ponto flutuante de fórmula não gera aviso de casas decimais", () => {
+    // Os produtos de fórmula vêm com resto: 11.528000000000002, 1320988.2950000002 (cortar em
+    // 10 casas fixas não limparia este, de 7 dígitos inteiros) e 109.89000000000001.
+    expect(10.48 * 1.1).not.toBe(11.528);
+    expect(1234568.5 * 1.07).not.toBe(1320988.295);
+    expect(99.9 * 1.1).not.toBe(109.89);
+    const r = lerPlanilhaModelo(
+      montarWb([
+        CAB,
+        ["1", null, null, "Etapa"],
+        ["1.1", null, null, "A", "m", 10.48 * 1.1, 0.1 + 0.2],
+        ["1.2", null, null, "B", "m", 1234568.5 * 1.07, 99.9 * 1.1],
+      ])
+    );
+    expect(r.erros).toEqual([]);
+    expect(r.avisos).toEqual([]);
+    expect(r.itens[1]).toMatchObject({ quantidade: 11.528, valor_unitario_ref: 0.3 });
+    expect(r.itens[2]).toMatchObject({ quantidade: 1320988.295, valor_unitario_ref: 109.89 });
+  });
+  it("mais de 3 (ou 4) casas de verdade continuam avisando, com o ruído já limpo", () => {
+    const r = lerPlanilhaModelo(
+      montarWb([
+        CAB,
+        ["1", null, null, "Etapa"],
+        ["1.1", null, null, "A", "m", 2.3456 * 1.1, 0.00005],
+      ])
+    );
+    expect(r.avisos).toEqual([
+      "Linha 3: Quantidade com mais de 3 casas; arredondada para 2,58.",
+      "Linha 3: Preço unitário com mais de 4 casas; arredondado para 0,0001.",
+    ]);
+  });
 });
 
 describe("lerPlanilhaModelo — erros", () => {
@@ -224,6 +306,109 @@ describe("lerPlanilhaModelo — erros", () => {
       'Linha 3: Item virou data no Excel ("10/1/26"); formate a coluna A como Texto e digite de novo.',
       `Nenhum item com Quantidade e Preço unitário na aba "Orçamento".`,
     ]);
+  });
+  // O Excel decide pelo formato da célula: d-mmm ("1/10" → 1-Oct) e mmm-yy não passam por
+  // `w` com três números, então é o `z` (cellNF) que vale.
+  it.each(["m/d/yy", "dd/mm/yyyy", "d-mmm", "d-mmm-yy", "mmm-yy", "mm/yyyy"])(
+    "Item que o Excel transformou em data (formato %s)",
+    (z) => {
+      const wb = montarWb([CAB, ["1", null, null, "Etapa"], [0, null, null, "A", "m", 1, 1]]);
+      wb.Sheets[ABA_ORCAMENTO].A3 = { t: "n", v: 46296, z };
+      const erros = lerArquivoModelo(comoArquivo(wb)).erros;
+      expect(erros[0]).toMatch(/^Linha 3: Item virou data no Excel \(".+"\); formate a coluna A/);
+    }
+  );
+  it.each(["General", "0.00", "0%", "@", '0 "dias"'])(
+    "Item numérico com formato %s não é data",
+    (z) => {
+      const wb = montarWb([CAB, ["1", null, null, "Etapa"], [0, null, null, "A", "m", 1, 1]]);
+      wb.Sheets[ABA_ORCAMENTO].A3 = { t: "n", v: 2, z };
+      const r = lerArquivoModelo(comoArquivo(wb));
+      expect(r.erros.join("\n")).not.toContain("virou data");
+    }
+  );
+  it("Item em data sem formato salvo (workbook em memória): vale o texto exibido", () => {
+    const wb = montarWb([CAB, ["1", null, null, "Etapa"], [0, null, null, "A", "m", 1, 1]]);
+    wb.Sheets[ABA_ORCAMENTO].A3 = { t: "n", v: 46296, w: "10/1/26" };
+    expect(lerPlanilhaModelo(wb).erros[0]).toBe(
+      'Linha 3: Item virou data no Excel ("10/1/26"); formate a coluna A como Texto e digite de novo.'
+    );
+  });
+  it("Quantidade e Preço com formato de data são erro (e Total é só aviso)", () => {
+    const wb = montarWb([
+      CAB,
+      ["1", null, null, "Etapa"],
+      ["1.1", null, null, "A", "m", 0, 0, 0],
+      ["1.2", null, null, "B", "m", 1, 1, 0],
+    ]);
+    const orc = wb.Sheets[ABA_ORCAMENTO];
+    orc.F3 = { t: "n", v: 46023, z: "d-mmm" }; // 1/1 digitado como quantidade
+    orc.G3 = { t: "n", v: 46023, z: "mmm-yy" };
+    orc.H4 = { t: "n", v: 46023, z: "dd/mm/yyyy" };
+    const r = lerArquivoModelo(comoArquivo(wb));
+    expect(r.erros).toEqual([
+      'Linha 3: Quantidade virou data no Excel ("1-Jan"); formate como Número e digite de novo.',
+      'Linha 3: Preço unitário virou data no Excel ("Jan-26"); formate como Número e digite de novo.',
+    ]);
+    expect(r.itens.map((i) => i.linha)).toEqual([2, 4]); // o item da linha 4 segue, sem o Total
+    expect(r.avisos[0]).toMatch(
+      /^Linha 4: Total \(R\$\) virou data no Excel \(".+"\);.*foi ignorado\.$/
+    );
+  });
+  // Os tetos são os das colunas do banco (numeric 14,3 / 14,4 / 14,2): acima deles o INSERT da
+  // importação estoura depois de o orçamento antigo já ter sido apagado.
+  it("Quantidade acima do limite (1e11) é erro, sem lançar", () => {
+    const r = lerPlanilhaModelo(
+      montarWb([
+        CAB,
+        ["1", null, null, "A", "m", 1e11, 1],
+        ["2", null, null, "B", "m", 1e308, 1e308],
+        ["3", null, null, "C", "m", 99999999999.9996, 1], // arredondada a 3 casas dá 1e11
+        ["4", null, null, "D", "m", 99999999999.999, 0.01], // a maior que cabe: passa
+      ])
+    );
+    expect(r.erros).toEqual([
+      "Linha 2: Quantidade acima do limite (menos de 100.000.000.000).",
+      "Linha 3: Quantidade acima do limite (menos de 100.000.000.000).",
+      "Linha 3: Preço unitário acima do limite (menos de 10.000.000.000).",
+      "Linha 4: Quantidade acima do limite (menos de 100.000.000.000).",
+    ]);
+    expect(r.itens.map((i) => i.linha)).toEqual([5]);
+  });
+  it("Preço unitário acima do limite (1e10) é erro, sem lançar", () => {
+    const r = lerPlanilhaModelo(
+      montarWb([
+        CAB,
+        ["1", null, null, "A", "m", 1, 1e10],
+        ["2", null, null, "B", "m", 1, 1e308],
+        ["3", null, null, "C", "m", 0.001, 9999999999.99995], // arredondado a 4 casas dá 1e10
+        ["4", null, null, "D", "m", 0.001, 9999999999.9999], // o maior que cabe: passa
+      ])
+    );
+    expect(r.erros).toEqual([
+      "Linha 2: Preço unitário acima do limite (menos de 10.000.000.000).",
+      "Linha 3: Preço unitário acima do limite (menos de 10.000.000.000).",
+      "Linha 4: Preço unitário acima do limite (menos de 10.000.000.000).",
+    ]);
+    expect(r.itens.map((i) => i.linha)).toEqual([5]);
+  });
+  it("Total da linha acima do limite (1e12) é erro, sem lançar", () => {
+    const r = lerPlanilhaModelo(
+      montarWb([
+        CAB,
+        ["1", null, null, "A", "m", 1e6, 1e6], // total 1e12 exato
+        ["2", null, null, "B", "m", 5e10, 5e9], // cada um abaixo do limite, total 2,5e20
+        ["3", null, null, "C", "m", 99999999999.999, 9999999999.9999], // os dois no máximo
+        ["4", null, null, "D", "m", 999999.999, 999999.9999], // total logo abaixo de 1e12: passa
+      ])
+    );
+    expect(r.erros).toEqual([
+      "Linha 2: Total da linha acima do limite (menos de 1.000.000.000.000).",
+      "Linha 3: Total da linha acima do limite (menos de 1.000.000.000.000).",
+      "Linha 4: Total da linha acima do limite (menos de 1.000.000.000.000).",
+    ]);
+    expect(r.itens.map((i) => i.linha)).toEqual([5]);
+    expect(r.totais.referencia).toBeLessThan(1e12);
   });
   it("quantidade ≤ 0, preço < 0, texto não numérico e só um dos dois", () => {
     const r = lerPlanilhaModelo(
@@ -302,6 +487,15 @@ describe("lerPlanilhaModelo — avisos", () => {
       "Soma dos itens (R$ 19.434,76) difere do Total da prefeitura (R$ 19.500,00) em R$ 65,24.",
     ]);
   });
+  it("Total da prefeitura que o Excel transformou em data é ignorado, com aviso", () => {
+    const wb = montarWb(ORC_OK, [["Total da prefeitura (R$)", 0]]);
+    wb.Sheets[ABA_INFORMACOES].B1 = { t: "n", v: 46023, z: "d-mmm" };
+    const r = lerArquivoModelo(comoArquivo(wb));
+    expect(r.info.total_prefeitura).toBeNull();
+    expect(r.avisos).toEqual([
+      'Informações: Total da prefeitura (R$) virou data no Excel ("1-Jan"); formate como Número e digite de novo; foi ignorado.',
+    ]);
+  });
   it("quantidade com mais de 3 casas e preço com mais de 4 casas são arredondados", () => {
     const r = lerPlanilhaModelo(
       montarWb([CAB, ["1", null, null, "Etapa"], ["1.1", null, null, "A", "m", 2.3456, 10.48475]])
@@ -352,6 +546,23 @@ describe("lerPlanilhaModelo — avisos", () => {
     expect(r.avisos).toEqual(["Linha 3: item sem unidade.", "Linha 4: item sem unidade."]);
     expect(r.itens.map((i) => i.unidade)).toEqual([null, null, null, "m"]);
     expect(r.totais).toMatchObject({ qtdEtapas: 1, qtdItens: 3 });
+  });
+  it("linha sem quantidade e preço, mas com Unidade ou Total, vira etapa e avisa", () => {
+    const r = lerPlanilhaModelo(
+      montarWb([
+        CAB,
+        ["1", null, null, "Etapa só com texto"],
+        ["1.1", null, null, "Tem unidade", "un"],
+        ["1.2", null, null, "Tem total", null, null, null, 100],
+        ["1.3", null, null, "Item", "m", 1, 1],
+      ])
+    );
+    expect(r.erros).toEqual([]);
+    expect(r.avisos).toEqual([
+      "Linha 3: linha sem quantidade e preço tratada como etapa — confira.",
+      "Linha 4: linha sem quantidade e preço tratada como etapa — confira.",
+    ]);
+    expect(r.itens.map((i) => i.etapa)).toEqual([true, true, true, false]);
   });
   it("sequência normal com etapas aninhadas não avisa", () => {
     const r = lerPlanilhaModelo(
