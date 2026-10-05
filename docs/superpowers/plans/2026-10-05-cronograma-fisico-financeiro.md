@@ -60,7 +60,7 @@
 - **Exportar entre as Tasks 5 e 6:** a Task 5 deixa a âncora `{/* EXPORTAR_CRONOGRAMA */}` na barra de botões, fora de qualquer condição de `podeEditar`; a Task 6 troca a âncora pelo `BotaoExportarCronograma` (export extra do `ExportarCronogramaDialog.jsx`), visível também para quem só vê a aba, que exporta o estado local do quadro (o `selectedOp` pode estar atrás da tela).
 - **Imbé de Minas (Task 7):** a planilha feita à mão não redistribui a curva: copia as 5 parcelas preenchidas do CFF de 12 parcelas. O equivalente no SIGO é **Meses 12 → 5**; o roteiro mostra também o **Reperiodizar 12 → 5** como o outro critério, com a diferença explicada. O arquivo de teste promove os grupos 1.1 a 1.6 do edital a etapas 1 a 6.
 - **Onde se trabalha:** no `master` do checkout principal, como o plano do Orçamento (a base dele está lá, ainda não publicada), com commit parcial por task; a Task 7 trata o risco de outra sessão publicar antes (Step 1) e só publica com o OK do Javerson.
-- **Conferência de 05/10** (cópia do `master` `37ad85c` fora do repositório): as Tasks 1 a 6 aplicadas em ordem, com todas as âncoras únicas no momento da troca; Prettier sem mudança; Vitest com 40 arquivos e 515 testes (base 36/433; a Task 1 ganhou depois 1 teste de `lerPercentual` com `number`, e a suíte passou a 516; a Task 2 ganhou depois 1 teste da faixa arredondada da célula numérica, e a suíte passou a 517; a Task 2 passou depois a mover os utilitários de célula para o `xlsx-celulas.js`, conferido no worktree com Vitest, lint e build, sem mudar nenhuma contagem; a Task 4 passou depois a medir as colunas do PDF pelo maior texto (12 meses numa página até R$ 9.999.999,99), a dividir o esqueleto de layout do PDF e do Excel com a proposta e a testar o número que não quebra, com 1 teste a mais, e a suíte passou a 518, conferida no worktree com Vitest, lint e build); `npm run lint`, `no-undef` e `vite build` sem erro, com os chunks esperados; o código Python da skill e os números da Task 7 (Itatinga e Imbé) recalculados sobre cópias das planilhas.
+- **Conferência de 05/10** (cópia do `master` `37ad85c` fora do repositório): as Tasks 1 a 6 aplicadas em ordem, com todas as âncoras únicas no momento da troca; Prettier sem mudança; Vitest com 40 arquivos e 515 testes (base 36/433; a Task 1 ganhou depois 1 teste de `lerPercentual` com `number`, e a suíte passou a 516; a Task 2 ganhou depois 1 teste da faixa arredondada da célula numérica, e a suíte passou a 517; a Task 2 passou depois a mover os utilitários de célula para o `xlsx-celulas.js`, conferido no worktree com Vitest, lint e build, sem mudar nenhuma contagem; a Task 4 passou depois a medir as colunas do PDF pelo maior texto (12 meses numa página até R$ 9.999.999,99), a dividir o esqueleto de layout do PDF e do Excel com a proposta e a testar o número que não quebra, com 1 teste a mais, e a suíte passou a 518, conferida no worktree com Vitest, lint e build; a Task 4 passou depois a não partir local/data e assinatura entre páginas (`garantirEspaco` e `alturaAssinaturaPdf`), com 1 teste a mais, e a suíte passou a 519, conferida no worktree com Vitest, lint e build); `npm run lint`, `no-undef` e `vite build` sem erro, com os chunks esperados; o código Python da skill e os números da Task 7 (Itatinga e Imbé) recalculados sobre cópias das planilhas.
 
 ---
 
@@ -79,8 +79,8 @@ Anote as linhas `Test Files  N passed` e `Tests  M passed`. A suíte cresce assi
 | Task 1      | `N + 1`  | `M + 37` | 37 e 470            |
 | Task 2      | `N + 2`  | `M + 57` | 38 e 490            |
 | Task 3      | `N + 2`  | `M + 58` | 38 e 491            |
-| Task 4      | `N + 3`  | `M + 77` | 39 e 510            |
-| Tasks 5 e 6 | `N + 4`  | `M + 85` | 40 e 518            |
+| Task 4      | `N + 3`  | `M + 78` | 39 e 511            |
+| Tasks 5 e 6 | `N + 4`  | `M + 86` | 40 e 519            |
 
 **Regras para todas as tasks:**
 
@@ -2439,7 +2439,7 @@ Os números de linha são do `master` de 05/10 (commit `37ad85c`) e só orientam
   - `proposta-orcamento.js`: `montarCabecalhoLicitacao({ info, oportunidade, empresa, representante, opcoes }): { empresa, orgao, objeto, edital, localData, representante }`, a lógica que estava dentro de `montarDadosProposta` (que passa a chamá-la; o resultado dela não muda);
   - `proposta-export.js`: passam a ser exportadas `cabecalhoDoDocumento(dados): { empresa: string[], licitacao: string[] }`, `linhasAssinatura(rep): string[]` e `textoPdf(valor): string` (já existiam), e a nova `carregarJsPdf(): Promise<{ jsPDF, autoTable }>` (o import dinâmico com o ajuste UMD que estava dentro do `baixarPropostaPdf`);
   - `proposta-export.js`, o esqueleto de layout que estava dentro de `gerarPdfProposta` e `montarPlanilhaProposta` (que passam a usá-lo; os arquivos da proposta não mudam):
-    - PDF: `criarPdf(jsPDF): { doc, larg, alt, M, util, y, escrever(texto, opcoes) }` (A4 paisagem; o `y` é a posição da próxima linha, em mm), `escreverTopoPdf(pdf, cab, titulo)`, `escreverAssinaturaPdf(pdf, representante, { espacoAntes = 18 })` e `numerarPaginasPdf(pdf, nomeEmpresa)` ("Página X de Y" e o nome da empresa);
+    - PDF: `criarPdf(jsPDF): { doc, larg, alt, M, util, y, escrever(texto, opcoes) }` (A4 paisagem; o `y` é a posição da próxima linha, em mm), `escreverTopoPdf(pdf, cab, titulo)`, `escreverAssinaturaPdf(pdf, representante, { espacoAntes = 18 })`, `alturaAssinaturaPdf(representante, { espacoAntes = 18 })` (a altura, em mm, que a assinatura ocupa), `garantirEspaco(pdf, mm)` (abre página nova se um bloco de `mm` de altura não couber acima do rodapé), `ENTRE_LINHAS_PDF` (4,2 mm, o `entre` padrão do escritor) e `numerarPaginasPdf(pdf, nomeEmpresa)` ("Página X de Y" e o nome da empresa);
     - Excel: `criarPlanilha(): { ws, r, gravar(linha, coluna, celula), linhaDeTexto(valor) }` (o `r` é a próxima linha, 0-based), `escreverTopoPlanilha(pl, cab, titulo)` e `escreverAssinaturaPlanilha(pl, representante)`.
 
 **Decisões desta task (o contrato não cobria):**
@@ -2458,8 +2458,9 @@ Os números de linha são do `master` de 05/10 (commit `37ad85c`) e só orientam
   - o rodapé (4 linhas) sai em negrito com fundo cinza;
   - larguras: cada coluna (Item, Valor da etapa, % do total e os meses) tem a largura do maior texto dela em negrito (o do rodapé), com o padding e uma folga de 0,5 mm, e nunca menos que 8, 18, 12 e 14 mm; a Etapa ocupa o que sobra, no mínimo 30 mm (45 mm fixos quando a tabela quebra na horizontal). Assim o número nunca quebra em 2 linhas, e **12 meses cabem numa página até R$ 9.999.999,99 de total** (com 12 meses de 16,8 mm, Item 8, Valor 18, % do total 12 e 30 mm de etapa, a soma é 269,6 mm, abaixo dos 273 mm úteis);
   - `horizontalPageBreak` liga com **mais de 12 meses** (contrato) **ou** quando as colunas não cabem na largura útil (12 meses com total de dezenas de milhões de reais, por exemplo); `horizontalPageBreakRepeat: [0, 1]` sempre;
-  - "Página X de Y" e o nome da empresa no rodapé, como na proposta.
-- **Teste do PDF:** um espião em volta do `autoTable` confere as opções e o corpo; o texto do PDF (`doc.output()`, sem compressão) confere a repetição do cabeçalho "Etapa" na página seguinte. Conferido no rascunho com jspdf 2.5.2 + jspdf-autotable 3.8.4: 18 meses e 3 etapas → 2 páginas (Mês 1–12 com Valor e % do total; Mês 13–18 com Item e Etapa repetidos); 12 meses com R$ 99 mil, R$ 250 mil, R$ 1,2 mi e R$ 9.999.999,99 → 1 página; R$ 12,3 mi em 12 meses → 2 páginas, sem número quebrado em nenhum caso. O teste lê as células da tabela do autoTable (`doc.lastAutoTable.body`) para provar que nenhum número ocupou 2 linhas.
+  - "Página X de Y" e o nome da empresa no rodapé, como na proposta;
+  - **local/data e assinatura nunca se partem entre páginas:** antes de escrevê-los, `garantirEspaco` pede a altura do bloco inteiro (a linha do local/data, os 16 mm para assinar, os 5 mm do traço e as linhas do representante: 37,8 mm com 3 linhas, com a data) e, se não couber acima do rodapé (a 16 mm do fim da página), o bloco todo vai para a página seguinte. A conta vem do que `escreverAssinaturaPdf` escreve (`alturaAssinaturaPdf`), não de uma constante: o limite fixo `alt - 45` do rascunho deixava o nome na página 1 e o CPF sozinho na 2 quando a tabela terminava entre ~152 e 157 mm (um cronograma de 9 etapas com o cabeçalho padrão já caía aí). A proposta mantém o limite dela (`alt - 70`), e o PDF e a planilha dela não mudam.
+- **Teste do PDF:** um espião em volta do `autoTable` confere as opções e o corpo; o texto do PDF (`doc.output()`, sem compressão) confere a repetição do cabeçalho "Etapa" na página seguinte. Conferido no rascunho com jspdf 2.5.2 + jspdf-autotable 3.8.4: 18 meses e 3 etapas → 2 páginas (Mês 1–12 com Valor e % do total; Mês 13–18 com Item e Etapa repetidos); 12 meses com R$ 99 mil, R$ 250 mil, R$ 1,2 mi e R$ 9.999.999,99 → 1 página; R$ 12,3 mi em 12 meses → 2 páginas, sem número quebrado em nenhum caso. O teste lê as células da tabela do autoTable (`doc.lastAutoTable.body`) para provar que nenhum número ocupou 2 linhas. Para a assinatura, um autoTable envolvido fixa `doc.lastAutoTable.finalY` (de 100 a 190 mm, com e sem local/data) e o teste confere, em `doc.internal.pages`, que a data, o nome, o cargo e o "CPF:" saem na mesma página (falha com o limite antigo, em 152,5 mm).
 
 - [ ] **Step 1: Linha de base e número da migração**
 
@@ -2868,6 +2869,23 @@ function numerosQuebrados(doc) {
   return quebrados;
 }
 
+/** autoTable que, depois de desenhar, fixa onde a tabela terminou (`finalY`, em mm). */
+function terminandoEm(finalY) {
+  return (doc, opcoes) => {
+    autoTable(doc, opcoes);
+    doc.lastAutoTable.finalY = finalY;
+  };
+}
+
+/** Página (1 a N) em que o texto sai no PDF; 0 se não sai em nenhuma. */
+function paginaDoTexto(doc, texto) {
+  const paginas = doc.internal.pages;
+  for (let p = 1; p < paginas.length; p++) {
+    if (paginas[p].join("\n").includes(texto)) return p;
+  }
+  return 0;
+}
+
 describe("gerarPdfCronograma", () => {
   it(
     "4 meses: uma página, sem quebra horizontal, com o rodapé da tabela",
@@ -2978,6 +2996,37 @@ describe("gerarPdfCronograma", () => {
       expect(saida.match(/\(Etapa\) Tj/g).length).toBeGreaterThanOrEqual(2);
       // a última célula absorve os centavos: 17 × 55,50 + 56,50 = 1.000,00
       expect(chamadas[0].body[0][4 + 17]).toBe("56,50\n5,65%");
+    },
+    LIMITE_PDF
+  );
+
+  it(
+    "local/data e assinatura nunca se partem entre páginas, onde quer que a tabela termine",
+    () => {
+      const bloco = [
+        "05 de outubro de 2026",
+        "Fulano de Tal",
+        "Sócio-administrador",
+        "CPF: 529.982.247-25",
+      ];
+      const semData = { ...OPCOES, local: "" };
+      // finalY (mm): sobra espaço (100), faixa em que a assinatura não cabe mais (152,5 a 165,
+      // onde o nome ficava na página 1 e o CPF na 2) e quase no rodapé (180 e 190)
+      for (const finalY of [100, 150, 152.5, 155, 157, 160, 165, 170, 180, 190]) {
+        for (const extra of [{}, { opcoes: semData }]) {
+          const doc = gerarPdfCronograma(dados(extra), { jsPDF, autoTable: terminandoEm(finalY) });
+          const textos = extra.opcoes ? bloco.slice(1) : bloco;
+          const paginas = textos.map((t) => paginaDoTexto(doc, t));
+          expect(paginas[0], `finalY ${finalY}`).toBeGreaterThan(0);
+          expect(paginas, `finalY ${finalY}`).toEqual(textos.map(() => paginas[0]));
+        }
+      }
+      // com espaço, tudo na página 1; com a tabela no fim da página, bloco inteiro na 2
+      const cabe = gerarPdfCronograma(dados(), { jsPDF, autoTable: terminandoEm(100) });
+      expect(cabe.getNumberOfPages()).toBe(1);
+      const nao = gerarPdfCronograma(dados(), { jsPDF, autoTable: terminandoEm(155) });
+      expect(nao.getNumberOfPages()).toBe(2);
+      expect(paginaDoTexto(nao, "CPF: 529.982.247-25")).toBe(2);
     },
     LIMITE_PDF
   );
@@ -3509,6 +3558,13 @@ new:
 // --------------------------------------------------- layout em comum (PDF)
 // Usado pela proposta e pelo cronograma físico-financeiro (lib/cronograma-export.js).
 
+/** Espaço (mm) entre linhas de texto: o `entre` padrão do escritor. */
+export const ENTRE_LINHAS_PDF = 4.2;
+/** O escritor abre página nova quando a linha cairia abaixo de `alt - RODAPE_PDF` (mm). */
+const RODAPE_PDF = 16;
+/** Espaço (mm) entre o traço da assinatura e a primeira linha do representante. */
+const ESPACO_TRACO_PDF = 5;
+
 /**
  * Documento A4 paisagem e o escritor de linhas de texto: `doc`, `larg`, `alt`, `M` (margem),
  * `util` (largura útil), `y` (posição da próxima linha, em mm) e `escrever(texto, opcoes)`,
@@ -3526,13 +3582,16 @@ export function criarPdf(jsPDF) {
     M,
     util: larg - 2 * M,
     y: 14,
-    escrever(texto, { tamanho = 9, negrito = false, alinhar = "left", entre = 4.2 } = {}) {
+    escrever(
+      texto,
+      { tamanho = 9, negrito = false, alinhar = "left", entre = ENTRE_LINHAS_PDF } = {}
+    ) {
       doc.setFont("helvetica", negrito ? "bold" : "normal");
       doc.setFontSize(tamanho);
       const partes = doc.splitTextToSize(textoPdf(texto), pdf.util);
       const x = alinhar === "center" ? larg / 2 : M;
       partes.forEach((p) => {
-        if (pdf.y > alt - 16) {
+        if (pdf.y > alt - RODAPE_PDF) {
           doc.addPage();
           pdf.y = 14;
         }
@@ -3560,13 +3619,29 @@ export function escreverTopoPdf(pdf, cab, titulo) {
   pdf.y += 2;
 }
 
+/** Altura (mm) que `escreverAssinaturaPdf` ocupa a partir do `y`, com o mesmo `espacoAntes`. */
+export function alturaAssinaturaPdf(representante, { espacoAntes = 18 } = {}) {
+  return espacoAntes + ESPACO_TRACO_PDF + linhasAssinatura(representante).length * ENTRE_LINHAS_PDF;
+}
+
+/**
+ * Abre página nova se um bloco de `mm` de altura, a partir do `y`, não couber acima do
+ * rodapé: o bloco inteiro vai para a página seguinte, em vez de se partir no meio.
+ */
+export function garantirEspaco(pdf, mm) {
+  if (pdf.y + mm > pdf.alt - RODAPE_PDF) {
+    pdf.doc.addPage();
+    pdf.y = 20;
+  }
+}
+
 /** Traço e linhas do representante; `espacoAntes` (mm) é o espaço para assinar. */
 export function escreverAssinaturaPdf(pdf, representante, { espacoAntes = 18 } = {}) {
   pdf.y += espacoAntes;
   pdf.doc.setDrawColor(60);
   pdf.doc.setLineWidth(0.3);
   pdf.doc.line(pdf.larg / 2 - 45, pdf.y, pdf.larg / 2 + 45, pdf.y);
-  pdf.y += 5;
+  pdf.y += ESPACO_TRACO_PDF;
   linhasAssinatura(representante).forEach((t, i) =>
     pdf.escrever(t, { tamanho: 9, negrito: i === 0, alinhar: "center" })
   );
@@ -3764,6 +3839,8 @@ import * as XLSX from "xlsx";
 import { normalizarCronograma, resumoCronograma } from "./cronograma-ff";
 import { montarCabecalhoLicitacao, nomeArquivoProposta } from "./proposta-orcamento";
 import {
+  ENTRE_LINHAS_PDF,
+  alturaAssinaturaPdf,
   cabecalhoDoDocumento,
   carregarJsPdf,
   criarPdf,
@@ -3772,6 +3849,7 @@ import {
   escreverAssinaturaPlanilha,
   escreverTopoPdf,
   escreverTopoPlanilha,
+  garantirEspaco,
   numerarPaginasPdf,
   textoPdf,
 } from "./proposta-export";
@@ -3971,6 +4049,8 @@ const FOLGA = 0.5;
 // quebra na horizontal, a etapa fica fixa em `etapa`; sem ela, ocupa o que sobra, no mínimo
 // `etapaMin`. Calibradas para 12 meses caberem numa página até R$ 9.999.999,99 de total.
 const LARGURA = { item: 8, etapa: 45, etapaMin: 30, valor: 18, peso: 12, mes: 14 };
+// espaço (mm) para assinar, entre o local/data e o traço (a proposta usa 18)
+const ESPACO_ASSINAR = 16;
 
 const doisDecimais = (v) =>
   (Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -4001,7 +4081,7 @@ function larguraDaColuna(doc, textos, minimo) {
  */
 export function gerarPdfCronograma(dados, { jsPDF, autoTable }) {
   const pdf = criarPdf(jsPDF);
-  const { doc, M, alt, util } = pdf;
+  const { doc, M, util } = pdf;
   escreverTopoPdf(pdf, linhasDoTopo(dados), dados.titulo || TITULO_CRONOGRAMA);
 
   const resumo = dados.resumo || { linhas: [], meses: [], totalCentavos: 0 };
@@ -4079,13 +4159,15 @@ export function gerarPdfCronograma(dados, { jsPDF, autoTable }) {
   });
 
   pdf.y = (doc.lastAutoTable?.finalY ?? pdf.y) + 8;
-  // local/data e assinatura não se partem
-  if (pdf.y > alt - 45) {
-    doc.addPage();
-    pdf.y = 20;
-  }
+  // local/data e assinatura não se partem: sem espaço para o bloco inteiro, vão juntos
+  // para a página seguinte
+  garantirEspaco(
+    pdf,
+    (dados.localData ? ENTRE_LINHAS_PDF : 0) +
+      alturaAssinaturaPdf(dados.representante, { espacoAntes: ESPACO_ASSINAR })
+  );
   if (dados.localData) pdf.escrever(dados.localData, { tamanho: 9 });
-  escreverAssinaturaPdf(pdf, dados.representante, { espacoAntes: 16 });
+  escreverAssinaturaPdf(pdf, dados.representante, { espacoAntes: ESPACO_ASSINAR });
   numerarPaginasPdf(pdf, dados.empresa?.nome);
   return doc;
 }
@@ -4112,9 +4194,9 @@ export async function baixarCronogramaExcel(dados, nomeArquivo) {
 Expected:
 
 ```
-✓ src/lib/cronograma-export.test.js (18 tests)
+✓ src/lib/cronograma-export.test.js (19 tests)
 Test Files  1 passed (1)
-     Tests  18 passed (18)
+     Tests  19 passed (19)
 ```
 
 (O teste de 60 meses leva de 1 a 4 s no i3; o limite é de 20 s, como na proposta.)
@@ -4126,7 +4208,7 @@ Test Files  1 passed (1)
 npx prettier --check apps/web/src/lib/cronograma-export.js apps/web/src/lib/cronograma-export.test.js apps/web/src/lib/proposta-orcamento.js apps/web/src/lib/proposta-export.js apps/web/src/lib/proposta-export.test.js
 ```
 
-Expected: a suíte com **1 arquivo e 19 testes a mais** que a linha de base do Step 1 (18 do `cronograma-export` e 1 do `carregarJsPdf`), todos passando; Prettier `All matched files use Prettier code style!` (o `.sql` fica fora: o Prettier do projeto não tem parser de SQL).
+Expected: a suíte com **1 arquivo e 20 testes a mais** que a linha de base do Step 1 (19 do `cronograma-export` e 1 do `carregarJsPdf`), todos passando; Prettier `All matched files use Prettier code style!` (o `.sql` fica fora: o Prettier do projeto não tem parser de SQL).
 
 - [ ] **Step 10: Commit (só os 6 caminhos da task)**
 
@@ -4142,13 +4224,15 @@ feat(cronograma): migração 0133 e exportação do cronograma físico-financeir
   cronograma), nome do arquivo, Excel com 2 linhas por etapa e rodapé em SUM com o valor
   em cache, e PDF A4 paisagem com as colunas medidas pelo maior texto (12 meses numa
   página até R$ 9.999.999,99) que quebra na horizontal acima de 12 meses, ou se não couber,
-  repetindo Item e Etapa, com "Página X de Y"
+  repetindo Item e Etapa, com "Página X de Y"; local/data e assinatura nunca se partem
+  entre páginas (garantirEspaco pede a altura do bloco inteiro)
 - proposta-orcamento: montarCabecalhoLicitacao sai de montarDadosProposta e é exportada
 - proposta-export: exporta cabecalhoDoDocumento, linhasAssinatura e textoPdf; o import
   dinâmico do jsPDF vira carregarJsPdf; o esqueleto do PDF e da planilha (criarPdf,
   escreverTopoPdf, escreverAssinaturaPdf, numerarPaginasPdf, criarPlanilha,
-  escreverTopoPlanilha e escreverAssinaturaPlanilha) sai de gerarPdfProposta e
-  montarPlanilhaProposta e é usado também pelo cronograma; a saída da proposta não muda
+  escreverTopoPlanilha e escreverAssinaturaPlanilha, mais alturaAssinaturaPdf e
+  garantirEspaco) sai de gerarPdfProposta e montarPlanilhaProposta e é usado também pelo
+  cronograma; a saída da proposta não muda
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
@@ -4217,7 +4301,7 @@ Expected:
 
 - `git status --short`: arquivos de outras sessões podem aparecer (ex.: `.claude/launch.json`); não mexa neles;
 - `6`, `1` e `1`. Se não bater, **pare**: os nomes vêm das Tasks 1 e 2;
-- Vitest sem falha. Anote `Test Files N passed` e `Tests M passed`; com a linha de base de 05/10 (36/433) e as Tasks 1 a 4, são **39 e 510**;
+- Vitest sem falha. Anote `Test Files N passed` e `Tests M passed`; com a linha de base de 05/10 (36/433) e as Tasks 1 a 4, são **39 e 511**;
 - ESLint: só o aviso que já existia, e `exit 0`:
 
 ```
@@ -5396,7 +5480,7 @@ Expected:
 (cd apps/web && npx vitest run 2>&1 | tail -5)
 ```
 
-Expected: `N + 1` arquivos e `M + 8` testes do Step 1, todos passando (com a base de 05/10: **40 e 518**).
+Expected: `N + 1` arquivos e `M + 8` testes do Step 1, todos passando (com a base de 05/10: **40 e 519**).
 
 - [ ] **Step 13: Commit (só os 6 caminhos da task)**
 
@@ -6021,7 +6105,7 @@ git diff -z --name-only --diff-filter=ACMR origin/master...HEAD | xargs -0 npx p
 
 Expected:
 
-- Vitest: a linha de base anotada antes da Task 1 mais **4 arquivos e 85 testes**, sem `failed`. Os 85 são: Task 1, 37; Task 2, 20; Task 3, 1; Task 4, 19; Task 5, 8. Com a base de 05/10, ficam **40 arquivos e 518 testes**;
+- Vitest: a linha de base anotada antes da Task 1 mais **4 arquivos e 86 testes**, sem `failed`. Os 86 são: Task 1, 37; Task 2, 20; Task 3, 1; Task 4, 20; Task 5, 8. Com a base de 05/10, ficam **40 arquivos e 519 testes**;
 - `LINT_OK`;
 - `no-undef`: só o aviso antigo `'cronogramaEtapas' is defined but never used` e `exit 0`;
 - `BUILD_OK`;
