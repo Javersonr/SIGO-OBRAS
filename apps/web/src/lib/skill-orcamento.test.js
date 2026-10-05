@@ -8,6 +8,8 @@ import {
   CABECALHOS_MODELO,
   ROTULOS_INFO,
 } from "./orcamento-modelo";
+import { ABA_CRONOGRAMA, cabecalhoCronograma } from "./cronograma-modelo";
+import { MAX_MESES } from "./cronograma-ff";
 
 const skill = readFileSync(
   new URL("../../public/skills/orcamento-prefeitura-sigo/SKILL.md", import.meta.url),
@@ -37,6 +39,19 @@ describe("SKILL.md", () => {
     expect(lista("ROTULOS_INFO")).toEqual(ROTULOS_INFO);
     expect(python).toContain(`ws.title = "${ABA_ORCAMENTO}"`);
     expect(python).toContain(`create_sheet("${ABA_INFORMACOES}")`);
+  });
+  it("aba Cronograma com o nome, o cabeçalho e o limite de meses do SIGO", () => {
+    for (const texto of [ABA_CRONOGRAMA, ...cabecalhoCronograma(2)]) {
+      expect(skill).toContain(texto);
+    }
+    const python = /```python\n([\s\S]*?)\n```/.exec(skill)[1];
+    const fixo = /^CABECALHO_CRONOGRAMA = (\[[^\]]*\])/m.exec(python)[1];
+    expect(JSON.parse(fixo)).toEqual(cabecalhoCronograma(0)); // ["Item", "Descrição"]
+    const mes1 = cabecalhoCronograma(1)[2]; // "Mês 1"
+    expect(python).toContain(`PREFIXO_MES = "${mes1.slice(0, -1)}"`);
+    expect(python).toContain(`create_sheet("${ABA_CRONOGRAMA}")`);
+    expect(python).toContain(`MAX_MESES = ${MAX_MESES}`);
+    expect(python).toContain(`["Orçamento", "Informações", "${ABA_CRONOGRAMA}"]`);
   });
 });
 
