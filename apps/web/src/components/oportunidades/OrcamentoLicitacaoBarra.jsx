@@ -124,6 +124,13 @@ export default function OrcamentoLicitacaoBarra({
 
   const handleAplicar = async () => {
     if (!opId || !empresaAtiva?.id) return;
+    // Edição por campo ainda no debounce de 1,5 s (ou gravando: a chave só sai do mapa depois do
+    // await). Cancelar o timer perderia a edição, e o desconto recalculado a partir do estado
+    // local deixaria o banco com a quantidade antiga e o total novo. Espera gravar e aplica de novo.
+    if (Object.keys(updateTimeoutRef?.current || {}).length > 0) {
+      toast.info("Aguarde a gravação da última edição e aplique de novo");
+      return;
+    }
     const validacao = validarDesconto(desconto);
     if (!validacao.ok) {
       toast.error(validacao.erro);
