@@ -15,6 +15,8 @@ import { chamarPortal, criarFila, fmtTempo, fmtDataHora } from "./api";
 import AvaliacaoPortal from "./AvaliacaoPortal";
 import CertificadoPortal from "./CertificadoPortal";
 import DuvidasPortal from "./DuvidasPortal";
+import ApostilaPdf from "./ApostilaPdf";
+import { leituraPodeContar, urlApostilaValida } from "@/lib/apostila-pdf";
 
 // IFrame API do YouTube, carregada uma única vez
 let ytApiPromise = null;
@@ -59,6 +61,8 @@ export default function CursoPortal({ item, token, recarregar, onVoltar, onErroS
   const videoElRef = useRef(null);
   const playerRef = useRef(null);
   const aulaRef = useRef(null);
+  // estado da apostila (PDF) da aula aberta: o tempo de leitura só corre com ela na tela
+  const estadoPdfRef = useRef({ aulaId: null, estado: "carregando" });
 
   const aula = aulas.find((a) => a.id === aulaId) || null;
   aulaRef.current = aula;
@@ -120,6 +124,29 @@ export default function CursoPortal({ item, token, recarregar, onVoltar, onErroS
     }
   };
 
+  // leitura (PDF/texto) pode contar agora? PDF: só com URL válida e a apostila aberta na tela
+  const leituraLiberada = (a) =>
+    leituraPodeContar(
+      a,
+      estadoPdfRef.current.aulaId === a?.id ? estadoPdfRef.current.estado : "carregando"
+    );
+
+  // o leitor da apostila avisa quando abriu, está carregando ou falhou
+  const aoMudarEstadoPdf = (aulaId, estado) => {
+    estadoPdfRef.current = { aulaId, estado };
+    const a = aulaRef.current;
+    if (!a || a.id !== aulaId || a.concluida) return;
+    if (leituraLiberada(a)) iniciarContagem();
+    else pararContagem();
+  };
+
+  // URL assinada nova (a de 3 h pode vencer) para o "Tentar de novo" da apostila
+  const urlNovaDaApostila = async (aulaIdDaApostila) => {
+    const dados = await recarregar();
+    const curso = dados?.cursos?.find((c) => c.matricula?.id === mat.id);
+    return curso?.aulas?.find((x) => x.id === aulaIdDaApostila)?.arquivo_url ?? null;
+  };
+
   function iniciarContagem() {
     if (contandoRef.current || document.hidden) return;
     contandoRef.current = true;
@@ -158,8 +185,9 @@ export default function CursoPortal({ item, token, recarregar, onVoltar, onErroS
     setModo("aulas");
     setAulaId(a.id);
     aulaRef.current = a;
-    // leitura (PDF/texto) conta enquanto a aula está aberta e a aba visível
-    if (a.tipo !== "video" && !a.concluida) iniciarContagem();
+    // leitura (PDF/texto) conta enquanto a aula está aberta e a aba visível; a apostila em
+    // PDF só começa a contar quando o leitor avisa que ela abriu (aoMudarEstadoPdf)
+    if (a.tipo !== "video" && !a.concluida && leituraLiberada(a)) iniciarContagem();
   };
 
   // YouTube: monta o player quando a aula é do tipo link
@@ -203,7 +231,7 @@ export default function CursoPortal({ item, token, recarregar, onVoltar, onErroS
         evento("aba_oculta", { aula_id: a?.id });
       } else {
         evento("aba_visivel", { aula_id: a?.id });
-        if (a && a.tipo !== "video" && !a.concluida) iniciarContagem();
+        if (a && a.tipo !== "video" && !a.concluida && leituraLiberada(a)) iniciarContagem();
       }
     };
     document.addEventListener("visibilitychange", onVis);
@@ -240,6 +268,8 @@ export default function CursoPortal({ item, token, recarregar, onVoltar, onErroS
   }
 
   const minimo = aula?.duracao_seg || 0;
+  // PDF sem URL: o leitor mostra "Apostila indisponível" e não há contador nem "marcar como lida"
+  const apostilaIndisponivel = aula?.tipo === "pdf" && !urlApostilaValida(aula.arquivo_url);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -349,10 +379,12 @@ export default function CursoPortal({ item, token, recarregar, onVoltar, onErroS
               </div>
             )}
             {aula.tipo === "pdf" && (
-              <iframe
-                title={aula.titulo}
-                src={aula.arquivo_url || "about:blank"}
-                className="w-full h-[70vh] rounded-lg border bg-white"
+              <ApostilaPdf
+                key={aula.id}
+                url={aula.arquivo_url}
+                titulo={aula.titulo}
+                onEstado={(estado) => aoMudarEstadoPdf(aula.id, estado)}
+                obterUrlNova={() => urlNovaDaApostila(aula.id)}
               />
             )}
             {aula.tipo === "texto" && (
@@ -366,7 +398,7 @@ export default function CursoPortal({ item, token, recarregar, onVoltar, onErroS
                 <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
                   concluída
                 </Badge>
-              ) : (
+              ) : apostilaIndisponivel ? null : (
                 <span>
                   {aula.tipo === "video" ? "Assistido" : "Tempo de leitura"}:{" "}
                   {fmtTempo(segundosTela)}
@@ -375,7 +407,7 @@ export default function CursoPortal({ item, token, recarregar, onVoltar, onErroS
                 </span>
               )}
             </div>
-            {aula.tipo !== "video" && !aula.concluida && (
+            {aula.tipo !== "video" && !aula.concluida && !apostilaIndisponivel && (
               <Button
                 className="w-full h-11 bg-emerald-600 hover:bg-emerald-700"
                 disabled={minimo > 0 && segundosTela < minimo}
