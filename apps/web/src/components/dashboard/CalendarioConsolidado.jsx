@@ -95,7 +95,6 @@ export default function CalendarioConsolidado() {
   const [itensSelecionados, setItensSelecionados] = useState(new Set());
   const [filtroTipoOrcamento, setFiltroTipoOrcamento] = useState("all");
   const updateTimeoutRef = useRef({});
-  const fileInputRef = useRef(null);
   const [uploadingFile, setUploadingFile] = useState(false);
 
   useEffect(() => {
@@ -722,10 +721,6 @@ export default function CalendarioConsolidado() {
           } catch {}
         }}
         onLimparOrcamento={async () => {}}
-        onExportarExcel={() => {}}
-        onExportarPDF={async () => {}}
-        onBaixarModelo={() => {}}
-        onImportarOrcamento={async () => {}}
         onDeleteOrcamentoItem={async () => {}}
         onDeleteSelecionados={async () => {}}
         onNovoOrcamentoSelect={async () => {}}
@@ -737,7 +732,6 @@ export default function CalendarioConsolidado() {
         onShowRelatoriosOrcamento={() => {}}
         onShowClienteView={() => {}}
         setOportunidades={setOportunidadesDoDetalhe}
-        fileInputOrcamentoRef={fileInputRef}
         uploadingFile={uploadingFile}
       />
     </div>

@@ -35,7 +35,6 @@ import {
   Calendar,
   User,
   FileText,
-  Download,
   Plus,
   Upload,
   FileSpreadsheet,
@@ -129,10 +128,6 @@ export default function OportunidadeDetalhe({
   onDeleteArquivo,
   onUploadFile,
   onLimparOrcamento,
-  onExportarExcel,
-  onExportarPDF,
-  onBaixarModelo,
-  onImportarOrcamento,
   onDeleteOrcamentoItem,
   onDeleteSelecionados,
   onNovoOrcamentoSelect,
@@ -146,7 +141,6 @@ export default function OportunidadeDetalhe({
   onShowRelatoriosOrcamento,
   onShowClienteView,
   setOportunidades,
-  fileInputOrcamentoRef,
   uploadingFile,
   onReloadArquivos,
 }) {
@@ -889,14 +883,6 @@ export default function OportunidadeDetalhe({
                   <TabsContent value="orcamento" className="mt-4 space-y-4">
                     {visitedTabs.has("orcamento") && (
                       <div className="space-y-4">
-                        <input
-                          ref={fileInputOrcamentoRef}
-                          type="file"
-                          className="hidden"
-                          accept=".csv"
-                          onChange={onImportarOrcamento}
-                        />
-
                         <OrcamentoLicitacaoBarra
                           selectedOp={selectedOp}
                           setSelectedOp={setSelectedOp}
@@ -906,6 +892,7 @@ export default function OportunidadeDetalhe({
                           empresaAtiva={empresaAtiva}
                           updateTimeoutRef={updateTimeoutRef}
                           podeEditar={podeEditarOrcamento}
+                          user={user}
                           importarAberto={importarAberto}
                           onImportarAbertoChange={setImportarAberto}
                         />
@@ -968,26 +955,6 @@ export default function OportunidadeDetalhe({
                                     >
                                       <Copy className="w-4 h-4 text-indigo-600" />
                                       Aplicar Template
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem onClick={onBaixarModelo} className="gap-2">
-                                      <Download className="w-4 h-4 text-purple-600" />
-                                      Baixar Modelo
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onClick={() => fileInputOrcamentoRef.current?.click()}
-                                      className="gap-2"
-                                    >
-                                      <Download className="w-4 h-4 text-blue-600" />
-                                      Importar Planilha
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={onExportarExcel} className="gap-2">
-                                      <FileText className="w-4 h-4 text-green-600" />
-                                      Exportar Excel
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={onExportarPDF} className="gap-2">
-                                      <FileText className="w-4 h-4 text-red-600" />
-                                      Exportar PDF
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Download, Loader2, Sparkles, Upload } from "lucide-react";
+import { Download, FileDown, Loader2, Sparkles, Upload } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
 } from "@/lib/orcamento-registros";
 import { CAMINHO_SKILL, montarZipSkill, textoSkillValido } from "@/lib/skill-orcamento";
 import ImportarPlanilhaOrcamentoDialog from "./ImportarPlanilhaOrcamentoDialog";
+import ExportarPropostaDialog from "./ExportarPropostaDialog";
 
 const AVISO_APLICAR =
   "Recalcula todos os itens importados a partir do preço da prefeitura; ajustes feitos à mão nesses itens serão substituídos.";
@@ -49,6 +50,7 @@ export default function OrcamentoLicitacaoBarra({
   podeEditar,
   importarAberto,
   onImportarAbertoChange,
+  user,
 }) {
   const [importarInterno, setImportarInterno] = useState(false);
   const dialogoAberto = importarAberto ?? importarInterno;
@@ -63,6 +65,7 @@ export default function OrcamentoLicitacaoBarra({
 
   const [aplicando, setAplicando] = useState(false);
   const [baixandoSkill, setBaixandoSkill] = useState(false);
+  const [exportarAberto, setExportarAberto] = useState(false);
 
   const resumo = useMemo(() => resumoOrcamento(orcamentoItens || []), [orcamentoItens]);
   const qtdSemReferencia = resumo.itensSemReferencia;
@@ -222,7 +225,25 @@ export default function OrcamentoLicitacaoBarra({
               Importar planilha
             </Button>
           )}
-          {/* Exportar proposta: botão e diálogo entram aqui (Task 9) */}
+          {temItens && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setExportarAberto(true)}
+              disabled={aplicando}
+            >
+              <FileDown className="w-4 h-4" />
+              Exportar proposta
+            </Button>
+          )}
+          <ExportarPropostaDialog
+            open={exportarAberto}
+            onOpenChange={setExportarAberto}
+            selectedOp={selectedOp}
+            empresaAtiva={empresaAtiva}
+            orcamentoItens={orcamentoItens}
+            user={user}
+          />
         </div>
         {podeEditar && (
           <div className="flex items-end gap-2">

@@ -3,7 +3,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { sigo } from "@/api/sigoClient";
 import { toast } from "sonner";
-import { FileSignature, Loader2, Plus, ThumbsUp, ThumbsDown, ExternalLink } from "lucide-react";
+import {
+  FileSignature,
+  Loader2,
+  Plus,
+  ThumbsUp,
+  ThumbsDown,
+  ExternalLink,
+  Send,
+} from "lucide-react";
 
 const fmtBRL = (v) =>
   (parseFloat(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -153,7 +161,7 @@ export default function PropostasOportunidade({ oportunidadeId, empresaAtiva, us
               <span className="text-xs text-slate-500 truncate">
                 {p.descricao || ""}
                 {p.criado_por_nome ? ` — ${p.criado_por_nome}` : ""}
-                {p.data_envio
+                {p.data_envio && p.status !== "Rascunho"
                   ? ` em ${new Date(p.data_envio + "T12:00:00").toLocaleDateString("pt-BR")}`
                   : ""}
               </span>
@@ -167,6 +175,20 @@ export default function PropostasOportunidade({ oportunidadeId, empresaAtiva, us
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
+                )}
+                {p.status === "Rascunho" && (
+                  <button
+                    title="Marcar enviada"
+                    onClick={() => {
+                      if (window.confirm(`Marcar a proposta v${p.versao} como enviada?`)) {
+                        handleStatus(p, "Enviada");
+                      }
+                    }}
+                    className="flex items-center gap-1 rounded px-1.5 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    Marcar enviada
+                  </button>
                 )}
                 {i === 0 && p.status === "Enviada" && (
                   <>

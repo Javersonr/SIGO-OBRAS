@@ -6,7 +6,6 @@ import { useEmpresa } from "../Layout";
 import { safeParseJSON } from "@/lib/json-utils";
 import { refDoUpload } from "@/lib/anexo-ref";
 import { normalizarTexto } from "@/lib/busca";
-import { totalLinhaLegado } from "@/lib/orcamento-desconto";
 import { proximaOrdem, rotuloItem, semEtapas } from "@/lib/orcamento-registros";
 import { montarRegistroTemplate } from "@/lib/orcamento-template";
 import { Plus, Edit, Trash2, Calendar, User, X, FileText, Copy, Archive } from "lucide-react";
@@ -250,7 +249,6 @@ export default function Oportunidades() {
   // id → edital_analise gravada pelo "Atende?" (ver onAnaliseGravada / loadData)
   const analisesGravadasRef = React.useRef(new Map());
   const updateTimeoutRef = React.useRef({});
-  const fileInputOrcamentoRef = React.useRef(null);
   const [searchResults, setSearchResults] = useState([]);
 
   React.useEffect(() => {
@@ -1060,152 +1058,6 @@ export default function Oportunidades() {
     return f[m] || m.toUpperCase();
   };
 
-  const handleExportarOrcamentoExcel = () => {
-    const headers = [
-      "Nº",
-      "Descrição",
-      "Código",
-      "Unid.",
-      "Qtd",
-      "Vlr Unit.",
-      "BDI %",
-      "Imp. %",
-      "Vlr Total",
-    ];
-    const rows = orcamentoItens.map((item, i) => [
-      i + 1,
-      item.descricao || "",
-      item.codigo || "",
-      item.unidade || "",
-      item.quantidade || 0,
-      item.valor_unitario || 0,
-      item.bdi || 0,
-      item.imposto || 0,
-      item.valor_total || 0,
-    ]);
-    const csv = [headers, ...rows].map((r) => r.map((c) => String(c)).join(";")).join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `orcamento_${new Date().toISOString().split("T")[0]}.csv`;
-    link.click();
-  };
-
-  const handleExportarOrcamentoPDF = async () => {
-    const { jsPDF } = await import("jspdf");
-    const doc = new jsPDF("landscape");
-    doc.setFontSize(14);
-    doc.text(`Orçamento: ${selectedOp?.nome || selectedOp?.titulo || ""}`, 14, 15);
-    doc.setFontSize(9);
-    let y = 30;
-    [
-      "Nº",
-      "Descrição",
-      "Código",
-      "Unid.",
-      "Qtd",
-      "Vlr Unit.",
-      "BDI %",
-      "Imp. %",
-      "Vlr Total",
-    ].forEach((h, i) => {
-      doc.text(h, 14 + i * 30, y);
-    });
-    y += 7;
-    orcamentoItens.forEach((item, idx) => {
-      if (y > 190) {
-        doc.addPage();
-        y = 20;
-      }
-      const row = [
-        idx + 1,
-        (item.descricao || "").substring(0, 20),
-        item.codigo || "-",
-        item.unidade || "-",
-        item.quantidade || 0,
-        `R$${(item.valor_unitario || 0).toFixed(2)}`,
-        item.bdi || 0,
-        item.imposto || 0,
-        `R$${(item.valor_total || 0).toFixed(2)}`,
-      ];
-      row.forEach((v, i) => doc.text(String(v), 14 + i * 30, y));
-      y += 6;
-    });
-    doc.save(`orcamento_${new Date().toISOString().split("T")[0]}.pdf`);
-  };
-
-  const handleBaixarModeloOrcamento = () => {
-    const csv =
-      "Descrição;Código;Unidade;Quantidade;Valor Unitário;BDI %;Imposto %\nExemplo Material;MAT001;UN;10;100,00;25;18";
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "modelo_importacao_orcamento.csv";
-    link.click();
-  };
-
-  const handleImportarOrcamento = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedOp) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        let text = event.target.result;
-        if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
-        const firstLine = text.split(/\r?\n/)[0] || "";
-        const sep =
-          (firstLine.match(/\t/g) || []).length > 0
-            ? "\t"
-            : (firstLine.match(/;/g) || []).length > 0
-              ? ";"
-              : ",";
-        const rows = text
-          .split(/\r?\n/)
-          .filter((r) => r.trim())
-          .slice(1);
-        const itens = rows
-          .map((row, idx) => {
-            const vals = row.split(sep);
-            const descricao = vals[0]?.trim();
-            if (!descricao) return null;
-            const qtd = parseFloat((vals[3] || "0").replace(",", ".")) || 0;
-            const vlr = parseFloat((vals[4] || "0").replace(",", ".")) || 0;
-            const bdi = parseFloat((vals[5] || "0").replace(",", ".")) || 0;
-            const imp = parseFloat((vals[6] || "0").replace(",", ".")) || 0;
-            return {
-              empresa_id: empresaAtiva.id,
-              oportunidade_id: selectedOp.id,
-              descricao,
-              codigo: vals[1]?.trim() || "",
-              unidade: vals[2]?.trim() || "UN",
-              quantidade: qtd,
-              valor_unitario: vlr,
-              bdi,
-              imposto: imp,
-              valor_total: totalLinhaLegado({
-                quantidade: qtd,
-                valor_unitario: vlr,
-                bdi,
-                imposto: imp,
-              }),
-              ordem: idx,
-            };
-          })
-          .filter(Boolean);
-        if (itens.length > 0) {
-          await sigo.entities.OrcamentoItem.bulkCreate(itens);
-          loadOrcamentoData(selectedOp.id);
-          alert(`${itens.length} itens importados!`);
-        }
-      } catch (err) {
-        console.error(err);
-        alert("Erro ao importar planilha");
-      }
-    };
-    reader.readAsText(file, "UTF-8");
-    e.target.value = "";
-  };
-
   const handleLimparOrcamento = async () => {
     if (!confirm("⚠️ Isso irá apagar TODOS os itens do orçamento. Continuar?")) return;
     if (!selectedOp) return;
@@ -1238,8 +1090,6 @@ export default function Oportunidades() {
       loadOrcamentoData(selectedOp.id);
     } else if (tipo === "modelo") {
       setShowAplicarTemplate(true);
-    } else if (tipo === "importar") {
-      fileInputOrcamentoRef.current?.click();
     }
   };
 
@@ -1805,10 +1655,6 @@ export default function Oportunidades() {
         onUploadFile={handleUploadFile}
         onReloadArquivos={() => loadOrcamentoData(selectedOp.id)}
         onLimparOrcamento={handleLimparOrcamento}
-        onExportarExcel={handleExportarOrcamentoExcel}
-        onExportarPDF={handleExportarOrcamentoPDF}
-        onBaixarModelo={handleBaixarModeloOrcamento}
-        onImportarOrcamento={handleImportarOrcamento}
         onDeleteOrcamentoItem={handleDeleteOrcamentoItem}
         onDeleteSelecionados={handleDeleteSelecionados}
         onNovoOrcamentoSelect={handleNovoOrcamentoSelect}
@@ -1822,7 +1668,6 @@ export default function Oportunidades() {
         onShowRelatoriosOrcamento={setShowRelatoriosOrcamento}
         onShowClienteView={setShowClienteView}
         setOportunidades={setOportunidades}
-        fileInputOrcamentoRef={fileInputOrcamentoRef}
         uploadingFile={uploadingFile}
       />
 
