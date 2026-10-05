@@ -7,6 +7,7 @@ import { Loader2, FileDown, Download, Award, Ban, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { baixarCertificadoPdf } from "@/lib/certificado-ead";
 import { logoParaPdf } from "@/lib/pdf-empresa";
+import { numerarAulas } from "@/lib/portal-curso";
 
 // tabelas só de inclusão (sem deleted_at): o SDK precisa de includeDeleted
 const SEM_SOFT_DELETE = { includeDeleted: true };
@@ -118,7 +119,9 @@ export default function MatriculaAuditoriaSheet({
     if (matricula?.id) carregar();
   }, [matricula?.id]);
 
-  const tituloAula = new Map((aulas || []).map((a) => [a.id, `${a.ordem}. ${a.titulo}`]));
+  // numeração pela posição na lista (1, 2, 3...), a mesma que o aluno vê no portal
+  const aulasNumeradas = numerarAulas(aulas);
+  const tituloAula = new Map(aulasNumeradas.map((a) => [a.id, `${a.numero}. ${a.titulo}`]));
   const progPorAula = new Map(progresso.map((p) => [p.aula_id, p]));
   const totalAssistido = progresso.reduce((s, p) => s + (p.segundos_assistidos || 0), 0);
 
@@ -213,12 +216,12 @@ export default function MatriculaAuditoriaSheet({
               <h3 className="font-semibold text-slate-800 mb-2">Aulas</h3>
               <table className="w-full">
                 <tbody>
-                  {(aulas || []).map((a) => {
+                  {aulasNumeradas.map((a) => {
                     const p = progPorAula.get(a.id);
                     return (
                       <tr key={a.id} className="border-b last:border-0">
                         <td className="py-1.5 pr-2">
-                          {a.ordem}. {a.titulo}
+                          {a.numero}. {a.titulo}
                         </td>
                         <td className="py-1.5 pr-2 text-slate-600 whitespace-nowrap">
                           {fmtTempo(p?.segundos_assistidos)}

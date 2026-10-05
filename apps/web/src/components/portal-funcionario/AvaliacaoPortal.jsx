@@ -1,7 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
-import { chamarPortal, fmtDataHora } from "./api";
+import { chamarPortal, fmtDataHora, armazenamentoPortal } from "./api";
+import {
+  guardarRascunhoProva,
+  lerRascunhoProva,
+  limparRascunhoProva,
+  mensagemDeFalha,
+  resumoRespostas,
+} from "@/lib/portal-curso";
 
 function CorrecaoComentada({ item }) {
   if (!item) return null;
@@ -42,6 +49,10 @@ function embaralhar(lista) {
  * A ordem das questões e das alternativas é SORTEADA a cada tentativa — as
  * respostas voltam pelo índice original e a ordem exibida vai junto, para a
  * trilha de auditoria.
+ *
+ * As respostas da tentativa em andamento ficam guardadas no navegador (por matrícula e
+ * tentativa): recarregar a página ou voltar às aulas não as perde. Como as respostas são
+ * pelo índice ORIGINAL da alternativa, valem mesmo com o novo sorteio da ordem.
  */
 export default function AvaliacaoPortal({ item, token, fila, tratarErro, onFechar }) {
   // sorteio feito uma vez por abertura da prova (estável até fechar/reabrir)
@@ -52,10 +63,22 @@ export default function AvaliacaoPortal({ item, token, fila, tratarErro, onFecha
     }))
   );
   const av = item.avaliacao || {};
-  const [respostas, setRespostas] = useState({}); // questao_id -> índice ORIGINAL
+  const matriculaId = item.matricula.id;
+  // número da tentativa que está sendo feita; depois de enviada, a próxima começa sem rascunho
+  const [tentativa] = useState(() => (av.tentativas_usadas ?? 0) + 1);
+  const [respostas, setRespostas] = useState(() =>
+    lerRascunhoProva(armazenamentoPortal(), matriculaId, tentativa, questoes)
+  ); // questao_id -> índice ORIGINAL
+  const [recuperadas] = useState(() => Object.keys(respostas).length);
   const [resultado, setResultado] = useState(null);
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
+  // depois de tentar enviar incompleta, as questões sem resposta ficam destacadas
+  const [destacarFaltas, setDestacarFaltas] = useState(false);
+  const [confirmandoSaida, setConfirmandoSaida] = useState(false);
+
+  const resumo = resumoRespostas(questoes, respostas);
+  const respondeu = (q) => Number.isInteger(respostas[q.id]);
 
   useEffect(() => {
     fila(() =>
@@ -63,9 +86,27 @@ export default function AvaliacaoPortal({ item, token, fila, tratarErro, onFecha
     ).catch(() => {});
   }, []);
 
+  // cada resposta marcada vai para o navegador (a prova já enviada não deixa rascunho)
+  useEffect(() => {
+    if (resultado) return;
+    guardarRascunhoProva(armazenamentoPortal(), matriculaId, tentativa, respostas);
+  }, [respostas, resultado]);
+
+  const irParaQuestao = (id) => {
+    const el = document.getElementById(`questao-${id}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    el?.focus({ preventScroll: true });
+  };
+
   const enviar = async () => {
-    if (questoes.some((q) => respostas[q.id] === undefined)) {
-      setErro("Responda todas as questões antes de enviar");
+    if (resumo.faltam > 0) {
+      setDestacarFaltas(true);
+      setErro(
+        `Responda todas as questões antes de enviar: ${
+          resumo.faltam === 1 ? "falta 1" : `faltam ${resumo.faltam}`
+        } (a primeira sem resposta é a questão ${resumo.primeiraSemResposta + 1}).`
+      );
+      irParaQuestao(questoes[resumo.primeiraSemResposta].id);
       return;
     }
     setErro("");
@@ -85,14 +126,22 @@ export default function AvaliacaoPortal({ item, token, fila, tratarErro, onFecha
           token
         )
       );
+      limparRascunhoProva(armazenamentoPortal(), matriculaId, tentativa);
       setResultado(r);
+      setDestacarFaltas(false);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
       if (e.codigo === "SESSAO" || e.codigo === "TROCAR_SENHA") tratarErro(e);
-      else setErro(e.message);
+      else setErro(mensagemDeFalha(e));
     } finally {
       setEnviando(false);
     }
+  };
+
+  const pedirSaida = () => {
+    // sem nenhuma resposta não há o que perder; com respostas, o aluno confirma antes de sair
+    if (resumo.respondidas > 0) setConfirmandoSaida(true);
+    else onFechar();
   };
 
   return (
@@ -104,6 +153,37 @@ export default function AvaliacaoPortal({ item, token, fila, tratarErro, onFecha
           ? ` · tentativa ${resultado?.tentativa ?? av.tentativas_usadas + 1} de ${av.tentativas_max}`
           : ""}
       </p>
+
+      {!resultado && (
+        <div className="sticky top-0 z-10 -mx-4 px-4 py-2 bg-slate-50/95 backdrop-blur border-b border-slate-200">
+          <div className="flex items-center justify-between gap-2 text-sm">
+            <span className="font-medium text-slate-800">
+              {resumo.respondidas} de {resumo.total} respondidas
+            </span>
+            {resumo.faltam > 0 && (
+              <span className="text-xs text-slate-500">
+                {resumo.faltam === 1 ? "falta 1 questão" : `faltam ${resumo.faltam} questões`}
+              </span>
+            )}
+          </div>
+          <div className="h-1.5 bg-slate-200 rounded-full mt-1.5 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-violet-500 transition-[width]"
+              style={{
+                width: `${resumo.total ? Math.round((resumo.respondidas * 100) / resumo.total) : 0}%`,
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {!resultado && recuperadas > 0 && (
+        <p className="text-xs text-slate-500">
+          {recuperadas === 1
+            ? "Recuperamos a resposta que você já tinha marcado nesta prova."
+            : `Recuperamos as ${recuperadas} respostas que você já tinha marcado nesta prova.`}
+        </p>
+      )}
 
       {resultado && (
         <div
@@ -132,44 +212,86 @@ export default function AvaliacaoPortal({ item, token, fila, tratarErro, onFecha
         </div>
       )}
 
-      {questoes.map((q, qi) => (
-        <div key={q.id} className="bg-white border rounded-lg p-3">
-          <p className="font-medium text-sm mb-2">
-            {qi + 1}. {q.pergunta}
-          </p>
-          <div className="space-y-1">
-            {q.exibicao.map((op, pos) => (
-              <label key={op.indice} className="flex items-start gap-2 text-sm cursor-pointer p-1">
-                <input
-                  type="radio"
-                  name={q.id}
-                  className="mt-1"
-                  checked={respostas[q.id] === op.indice}
-                  onChange={() => setRespostas((r) => ({ ...r, [q.id]: op.indice }))}
-                  disabled={!!resultado}
-                />
-                <span>
-                  {String.fromCharCode(65 + pos)}) {op.texto}
-                </span>
-              </label>
-            ))}
+      {questoes.map((q, qi) => {
+        const faltando = destacarFaltas && !resultado && !respondeu(q);
+        return (
+          <div
+            key={q.id}
+            id={`questao-${q.id}`}
+            tabIndex={-1}
+            className={`bg-white border rounded-lg p-3 outline-none ${
+              faltando ? "border-red-300 ring-1 ring-red-200" : ""
+            }`}
+          >
+            <p className="font-medium text-sm mb-2">
+              {qi + 1}. {q.pergunta}
+            </p>
+            <div className="space-y-1">
+              {q.exibicao.map((op, pos) => (
+                <label
+                  key={op.indice}
+                  className="flex items-start gap-2 text-sm cursor-pointer p-1"
+                >
+                  <input
+                    type="radio"
+                    name={q.id}
+                    className="mt-1"
+                    checked={respostas[q.id] === op.indice}
+                    onChange={() => setRespostas((r) => ({ ...r, [q.id]: op.indice }))}
+                    disabled={!!resultado}
+                  />
+                  <span>
+                    {String.fromCharCode(65 + pos)}) {op.texto}
+                  </span>
+                </label>
+              ))}
+            </div>
+            {faltando && <p className="text-xs text-red-600 mt-1">Falta responder esta questão.</p>}
+            <CorrecaoComentada item={resultado?.revisao?.find((r) => r.questao_id === q.id)} />
           </div>
-          <CorrecaoComentada item={resultado?.revisao?.find((r) => r.questao_id === q.id)} />
-        </div>
-      ))}
+        );
+      })}
 
-      {erro && <p className="text-sm text-red-600">{erro}</p>}
-      {!resultado && (
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={onFechar} disabled={enviando}>
-            Voltar
-          </Button>
-          <Button onClick={enviar} className="flex-1 bg-slate-900 h-11" disabled={enviando}>
-            {enviando && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            Enviar avaliação
-          </Button>
-        </div>
+      {erro && (
+        <p role="alert" className="text-sm text-red-600">
+          {erro}
+        </p>
       )}
+      {!resultado &&
+        (confirmandoSaida ? (
+          <div
+            role="alert"
+            className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2"
+          >
+            <p className="text-sm text-amber-900">
+              Voltar às aulas? Você já respondeu {resumo.respondidas} de {resumo.total} questões. As
+              respostas ficam guardadas neste aparelho e voltam quando você abrir a prova de novo,
+              mas a prova só vale depois de enviada.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1 bg-white"
+                onClick={() => setConfirmandoSaida(false)}
+              >
+                Continuar a prova
+              </Button>
+              <Button className="flex-1 bg-slate-900" onClick={onFechar}>
+                Voltar às aulas
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={pedirSaida} disabled={enviando}>
+              Voltar
+            </Button>
+            <Button onClick={enviar} className="flex-1 bg-slate-900 h-11" disabled={enviando}>
+              {enviando && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Enviar avaliação
+            </Button>
+          </div>
+        ))}
     </div>
   );
 }

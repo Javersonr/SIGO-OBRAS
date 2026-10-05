@@ -14,8 +14,9 @@ import {
   RefreshCw,
   RotateCcw,
   Loader2,
+  ChevronRight,
 } from "lucide-react";
-import { chamarPortal, criarFila, fmtTempo, fmtDataHora } from "./api";
+import { chamarPortal, criarFila, fmtTempo, fmtDataHora, armazenamentoPortal } from "./api";
 import AvaliacaoPortal from "./AvaliacaoPortal";
 import CertificadoPortal from "./CertificadoPortal";
 import DuvidasPortal from "./DuvidasPortal";
@@ -39,6 +40,19 @@ import {
   rotuloProgressoVideo,
   velocidadeNormal,
 } from "@/lib/portal-video";
+import {
+  aulaSeguinte,
+  cursoDespublicado,
+  guardarPosicao,
+  lerPosicao,
+  mensagemDeFalha,
+  msAteLiberar,
+  numerarAulas,
+  posicaoParaRetomar,
+  progressoDoCurso,
+  proximaAulaPendente,
+  provaAguardando,
+} from "@/lib/portal-curso";
 
 // IFrame API do YouTube, carregada uma única vez (falha = rejeita com mensagem e deixa tentar de novo)
 let carregadorYouTube = null;
@@ -82,6 +96,7 @@ export default function CursoPortal({
   token,
   recarregar,
   dadosCarregadosEm,
+  abrirProximaAula = false,
   onVoltar,
   onErroSessao,
 }) {
@@ -101,6 +116,10 @@ export default function CursoPortal({
   // URLs de vídeo/legenda de cada aula, travadas na que abriu a aula: refazer os dados (concluir
   // aula, dúvida...) assina URLs novas, e trocar o src no meio do vídeo o recarregaria do início
   const [midiasDaAula, setMidiasDaAula] = useState({});
+  // a última busca dos dados falhou: o aluno lê o problema e tem o botão "Tentar de novo"
+  const [falhaRecarga, setFalhaRecarga] = useState(false);
+  // relógio que só serve para refazer a conta quando acaba o intervalo da próxima tentativa da prova
+  const [agora, setAgora] = useState(() => Date.now());
 
   const fila = useMemo(() => criarFila(), []);
   const assistidoRef = useRef(0);
@@ -113,6 +132,8 @@ export default function CursoPortal({
   const renovandoRef = useRef(false);
   const renovacaoAutoRef = useRef({}); // aulaId -> quando o player renovou o acesso sozinho
   const retomadaRef = useRef(null); // { posicao }: o vídeo trocou de URL e volta a este segundo
+  const posicaoInicialRef = useRef(null); // { aulaId, seg }: onde o aluno parou ao abrir a aula
+  const abriuProximaRef = useRef(false);
   // estado da apostila (PDF) da aula aberta: o tempo de leitura só corre com ela na tela
   const estadoPdfRef = useRef({ aulaId: null, estado: "carregando" });
 
@@ -121,7 +142,23 @@ export default function CursoPortal({
 
   const tratarErro = (e) => {
     if (e?.codigo === "SESSAO" || e?.codigo === "TROCAR_SENHA") onErroSessao(e);
-    else setErro(e?.message || "Erro no portal");
+    else setErro(mensagemDeFalha(e));
+  };
+
+  // Busca os dados de novo. Se falhar, o aluno LÊ o problema (antes a falha passava em silêncio e a tela
+  // dizia que a próxima aula já estava liberada) e tem o botão "Tentar de novo".
+  const atualizarAulas = async () => {
+    const dados = await recarregar();
+    setFalhaRecarga(!dados);
+    return dados;
+  };
+
+  // posição atual do vídeo no aparelho, para retomar de onde o aluno parou (só aula de vídeo ainda não concluída)
+  const guardarPosicaoAtual = () => {
+    const a = aulaRef.current;
+    if (!a || a.tipo !== "video" || a.concluida) return;
+    const segundos = videoElRef.current?.currentTime ?? playerRef.current?.getCurrentTime?.();
+    guardarPosicao(armazenamentoPortal(), mat.id, a.id, segundos);
   };
 
   const evento = (nome, extra = {}) =>
@@ -133,6 +170,7 @@ export default function CursoPortal({
   const sincronizar = async ({ concluir = false, fim = false } = {}) => {
     const a = aulaRef.current;
     if (!a) return;
+    guardarPosicaoAtual();
     const enviado = assistidoRef.current;
     try {
       const r = await fila(() =>
@@ -153,13 +191,16 @@ export default function CursoPortal({
       setSegundosTela(assistidoRef.current);
       if (r.aula_concluida && !a.concluida) {
         pararContagem(false);
-        await recarregar();
+        const novos = await atualizarAulas();
+        // sem os dados novos a tela não sabe o que foi liberado: só afirma o que o servidor confirmou
         setAviso(
-          r.curso_concluido
-            ? "🎉 Curso concluído!"
-            : r.precisa_avaliacao
-              ? "✅ Todas as aulas concluídas — agora faça a avaliação final."
-              : "✅ Aula concluída — a próxima já está liberada."
+          !novos
+            ? "✅ Aula concluída."
+            : r.curso_concluido
+              ? "🎉 Curso concluído!"
+              : r.precisa_avaliacao
+                ? "✅ Todas as aulas concluídas — agora faça a avaliação final."
+                : "✅ Aula concluída — a próxima já está liberada."
         );
       } else if (fim && a.tipo === "video" && !r.aula_concluida) {
         // acabou com menos do mínimo contado (2x, 1,5x, trechos pulados): diz quanto foi contado
@@ -218,6 +259,7 @@ export default function CursoPortal({
 
   function pararContagem(enviar = true) {
     if (!contandoRef.current) return undefined;
+    guardarPosicaoAtual(); // o vídeo estava tocando: guarda o ponto em que parou
     contandoRef.current = false;
     clearInterval(timersRef.current.tick);
     clearInterval(timersRef.current.envio);
@@ -259,6 +301,19 @@ export default function CursoPortal({
     }
     assistidoRef.current = a.segundos_assistidos || 0;
     setSegundosTela(assistidoRef.current);
+    // vídeo: volta ao ponto em que o aluno parou (posição guardada no aparelho; sem ela, o tempo já contado)
+    posicaoInicialRef.current =
+      a.tipo === "video"
+        ? {
+            aulaId: a.id,
+            seg: posicaoParaRetomar({
+              salva: lerPosicao(armazenamentoPortal(), mat.id, a.id),
+              segundosAssistidos: a.segundos_assistidos,
+              duracao: a.duracao_seg,
+              concluida: a.concluida,
+            }),
+          }
+        : null;
     setMidiasDaAula((m) => ({
       ...m,
       [a.id]: { video_url: a.video_url ?? null, legenda_url: a.legenda_url ?? null },
@@ -323,7 +378,19 @@ export default function CursoPortal({
   // o <video> carregou a URL nova: volta ao segundo em que estava e avisa que renovou
   const aoCarregarMetadados = (el) => {
     const retomada = retomadaRef.current;
-    if (!retomada) return;
+    if (!retomada) {
+      // primeira vez que a aula carrega: volta ao ponto em que o aluno parou da última vez
+      const inicial = posicaoInicialRef.current;
+      if (inicial && inicial.aulaId === aulaRef.current?.id && inicial.seg > 0) {
+        posicaoInicialRef.current = null;
+        const limite = Number.isFinite(el.duration) ? Math.max(0, el.duration - 1) : inicial.seg;
+        el.currentTime = Math.min(inicial.seg, limite);
+        setAviso(
+          `Retomamos o vídeo de onde você parou (${fmtTempo(inicial.seg)}). Aperte o play para continuar.`
+        );
+      }
+      return;
+    }
     retomadaRef.current = null;
     if (retomada.posicao > 0) {
       const limite = Number.isFinite(el.duration) ? Math.max(0, el.duration - 1) : retomada.posicao;
@@ -381,9 +448,23 @@ export default function CursoPortal({
         const alvo = document.createElement("div");
         alvo.className = "w-full h-full";
         contenedor.appendChild(alvo);
+        // retoma de onde o aluno parou (o YouTube aceita o segundo inicial em `start`)
+        const inicial = posicaoInicialRef.current;
+        const inicioSeg = inicial?.aulaId === aula.id ? inicial.seg : 0;
+        if (inicioSeg > 0) {
+          posicaoInicialRef.current = null;
+          setAviso(
+            `Retomamos o vídeo de onde você parou (${fmtTempo(inicioSeg)}). Aperte o play para continuar.`
+          );
+        }
         player = new YT.Player(alvo, {
           videoId: aula.youtube_id,
-          playerVars: { rel: 0, modestbranding: 1, playsinline: 1 },
+          playerVars: {
+            rel: 0,
+            modestbranding: 1,
+            playsinline: 1,
+            ...(inicioSeg > 0 ? { start: inicioSeg } : {}),
+          },
           events: {
             onStateChange: (ev) => {
               if (ev.data === YT.PlayerState.PLAYING) {
@@ -458,21 +539,52 @@ export default function CursoPortal({
     };
   }, []);
 
+  // "Começar"/"Continuar" no painel: abre direto na próxima aula pendente (depois do evento abrir_curso,
+  // porque os dois entram na mesma fila)
+  useEffect(() => {
+    if (!abrirProximaAula || abriuProximaRef.current) return;
+    abriuProximaRef.current = true;
+    const proxima = proximaAulaPendente(aulas);
+    if (proxima) abrirAula(proxima);
+  }, []);
+
+  // A nova tentativa da prova libera sozinha: quando o intervalo acaba, o botão volta a ficar ativo
+  // (sem isto a conta só era refeita se o aluno mexesse na tela). Também refaz a conta quando a aba
+  // volta a ficar visível, porque o celular pausa temporizadores com a tela apagada.
+  useEffect(() => {
+    const espera = msAteLiberar(item.avaliacao?.proxima_em, Date.now());
+    if (!espera) return undefined;
+    const timer = setTimeout(() => setAgora(Date.now()), espera + 300);
+    const aoVoltar = () => {
+      if (!document.hidden) setAgora(Date.now());
+    };
+    document.addEventListener("visibilitychange", aoVoltar);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", aoVoltar);
+    };
+  }, [item.avaliacao?.proxima_em, agora]);
+
   const voltar = async () => {
     await pararContagem();
     onVoltar();
   };
 
-  const feitas = aulas.filter((a) => a.concluida).length;
-  const todasFeitas = aulas.length > 0 && feitas === aulas.length;
+  const aulasNumeradas = numerarAulas(aulas);
+  const { feitas, semAulas } = progressoDoCurso(aulas);
+  const todasFeitas = !semAulas && feitas === aulas.length;
   const av = item.avaliacao || {};
-  const aguardando = av.proxima_em && new Date(av.proxima_em) > new Date();
+  const aguardando = provaAguardando(av.proxima_em, Date.now());
   const podeFazerProva =
     todasFeitas && item.curso?.tem_avaliacao && !mat.avaliacao_aprovada && !av.limite_atingido;
+  const proximaPendente = proximaAulaPendente(aulas);
+  const numeroDaAula = (a) => aulasNumeradas.find((x) => x.id === a?.id)?.numero;
+  // botão "Próxima aula": só depois de concluir a aula aberta (as aulas seguem em ordem)
+  const seguinte = aula?.concluida ? aulaSeguinte(aulas, aula.id) : null;
 
   // aulas agrupadas por módulo, na ordem
   const grupos = [];
-  for (const a of aulas) {
+  for (const a of aulasNumeradas) {
     const ultimo = grupos[grupos.length - 1];
     if (!ultimo || ultimo.modulo !== (a.modulo || null)) {
       grupos.push({ modulo: a.modulo || null, aulas: [a] });
@@ -542,12 +654,41 @@ export default function CursoPortal({
           </div>
         )}
 
+        {falhaRecarga && (
+          <div
+            role="alert"
+            className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700"
+          >
+            <span className="flex-1">
+              Não foi possível atualizar o curso agora. Verifique sua conexão: a lista de aulas pode
+              estar desatualizada (a próxima aula pode já estar liberada).
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="shrink-0 bg-white"
+              onClick={atualizarAulas}
+            >
+              <RefreshCw /> Tentar de novo
+            </Button>
+          </div>
+        )}
+        {mat.status !== "concluido" && cursoDespublicado(item.curso) && (
+          <div
+            role="status"
+            className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+          >
+            O RH despublicou este curso (pode estar em revisão). Em caso de dúvida, fale com o RH.
+          </div>
+        )}
+
         {(mat.status === "concluido" || item.certificado) && (
           <CertificadoPortal
             item={item}
             token={token}
             evento={evento}
-            recarregar={recarregar}
+            recarregar={atualizarAulas}
             tratarErro={tratarErro}
           />
         )}
@@ -559,7 +700,7 @@ export default function CursoPortal({
             fila={fila}
             tratarErro={tratarErro}
             onFechar={async () => {
-              await recarregar();
+              await atualizarAulas();
               setModo("aulas");
             }}
           />
@@ -687,10 +828,42 @@ export default function CursoPortal({
                   : "Marcar como lida — li e compreendi"}
               </Button>
             )}
+            {seguinte && (
+              <Button
+                type="button"
+                className="w-full h-11 bg-slate-900 hover:bg-slate-800"
+                onClick={() => abrirAula(seguinte)}
+              >
+                Próxima aula: {numeroDaAula(seguinte)}. {seguinte.titulo}
+                <ChevronRight className="w-4 h-4 ml-1 shrink-0" />
+              </Button>
+            )}
+          </div>
+        ) : semAulas ? (
+          // curso sem nenhuma aula: o aluno lê o que houve em vez de ficar diante de uma tela vazia
+          <div
+            role="status"
+            className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
+          >
+            Este curso ainda não tem aulas cadastradas. Avise o RH para liberar o conteúdo; seu
+            progresso não é afetado.
           </div>
         ) : (
-          !(mat.status === "concluido") && (
-            <p className="text-sm text-slate-500 py-2">Escolha a próxima aula liberada 👇</p>
+          mat.status !== "concluido" &&
+          !todasFeitas && (
+            <div className="rounded-lg border bg-white p-3 space-y-2">
+              <p className="text-sm text-slate-600">Escolha uma aula liberada na lista abaixo.</p>
+              {proximaPendente && (
+                <Button
+                  type="button"
+                  className="w-full h-11 bg-slate-900 hover:bg-slate-800"
+                  onClick={() => abrirAula(proximaPendente)}
+                >
+                  Continuar: {numeroDaAula(proximaPendente)}. {proximaPendente.titulo}
+                  <ChevronRight className="w-4 h-4 ml-1 shrink-0" />
+                </Button>
+              )}
+            </div>
           )
         )}
 
@@ -755,7 +928,7 @@ export default function CursoPortal({
                       <Lock className="w-5 h-5 text-slate-400 shrink-0" />
                     )}
                     <span className="flex-1 text-sm">
-                      {a.ordem}. {a.titulo}
+                      {a.numero}. {a.titulo}
                     </span>
                     {!a.liberada && (
                       <span className="text-[11px] text-slate-400">conclua a anterior</span>
@@ -771,7 +944,7 @@ export default function CursoPortal({
           item={item}
           token={token}
           aulaId={aulaId}
-          recarregar={recarregar}
+          recarregar={atualizarAulas}
           tratarErro={tratarErro}
         />
       </div>

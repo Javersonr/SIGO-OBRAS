@@ -8,6 +8,7 @@ import {
   conclusaoDaAula,
   corrigirProva,
   creditarTempo,
+  cursoPublicado,
   datasDeConclusao,
   detalheLimitado,
   proximaTentativaEm,
@@ -639,4 +640,17 @@ test("detalheLimitado: o que não serializa vira { invalido: true } ou null", ()
     null
   );
   assert.equal(detalheLimitado(Symbol("s")), null);
+});
+
+// ----------------------------------------------------------- cursoPublicado
+test("cursoPublicado: só `ativo === false` é curso despublicado", () => {
+  assert.equal(cursoPublicado({ ativo: true }), true);
+  assert.equal(cursoPublicado({ ativo: false }), false);
+});
+
+test("cursoPublicado: campo ausente ou nulo (legado) conta como publicado", () => {
+  assert.equal(cursoPublicado({}), true);
+  assert.equal(cursoPublicado({ ativo: null }), true);
+  assert.equal(cursoPublicado(null), true);
+  assert.equal(cursoPublicado(undefined), true);
 });

@@ -46,6 +46,7 @@ import {
   conclusaoDaAula,
   corrigirProva,
   creditarTempo,
+  cursoPublicado,
   datasDeConclusao,
   detalheLimitado,
   proximaTentativaEm,
@@ -703,6 +704,8 @@ Deno.serve(
             carga_horaria_horas: curso.carga_horaria_horas,
             projeto_pedagogico_url: url(curso.projeto_pedagogico_ref),
             tem_avaliacao: questoesCurso.length > 0,
+            // o portal mostra um selo quando o RH despublicou o curso (T14)
+            ativo: cursoPublicado(curso),
           },
           aulas: aulasCurso,
           questoes: questoesCurso,

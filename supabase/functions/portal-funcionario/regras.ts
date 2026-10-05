@@ -183,6 +183,14 @@ export function datasDeConclusao(hoje: Date, validadeMeses?: number | null) {
 }
 
 /**
+ * O curso está publicado? O portal mostra um selo quando o RH o despublicou (T14).
+ * Só `ativo === false` conta como despublicado: campo ausente ou nulo (legado) é publicado.
+ */
+export function cursoPublicado(curso: { ativo?: boolean | null } | null | undefined) {
+  return curso?.ativo !== false;
+}
+
+/**
  * Detalhe do evento vindo do navegador, limitado: objeto pequeno passa como
  * veio; o resto vira { cortado, tamanho, json } com o JSON serializado cortado.
  */

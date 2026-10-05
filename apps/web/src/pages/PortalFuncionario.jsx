@@ -11,8 +11,22 @@ import {
   KeyRound,
   Award,
   XCircle,
+  RefreshCw,
 } from "lucide-react";
-import { chamarPortal, sessaoPortal, fmtData } from "@/components/portal-funcionario/api";
+import {
+  chamarPortal,
+  sessaoPortal,
+  fmtData,
+  armazenamentoPortal,
+} from "@/components/portal-funcionario/api";
+import {
+  agruparMatriculas,
+  cursoDespublicado,
+  ehRenovacao,
+  limparRascunhosPortal,
+  mensagemDeFalha,
+  progressoDoCurso,
+} from "@/lib/portal-curso";
 import { LoginPortal, TrocarSenhaPortal } from "@/components/portal-funcionario/LoginPortal";
 import CursoPortal from "@/components/portal-funcionario/CursoPortal";
 import DocumentosPortal from "@/components/portal-funcionario/DocumentosPortal";
@@ -45,6 +59,9 @@ export default function PortalFuncionario() {
 
   const sair = (mensagem) => {
     if (sessao?.token && !mensagem) chamarPortal("logout", {}, sessao.token).catch(() => {});
+    // saída pedida pelo aluno: o que o portal guardou no aparelho (posição do vídeo, respostas da prova)
+    // sai junto; sessão que caiu mantém, para ele retomar de onde parou ao entrar de novo
+    if (!mensagem) limparRascunhosPortal(armazenamentoPortal());
     atualizarSessao(null);
     setAviso(mensagem || "");
     setAlterandoSenha(false);
@@ -95,8 +112,12 @@ export default function PortalFuncionario() {
 function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(true);
+  const [tentando, setTentando] = useState(false);
+  // falha ao buscar os dados (rede, servidor) x falha de uma ação do painel (ciência)
+  const [erroCarga, setErroCarga] = useState("");
   const [erro, setErro] = useState("");
-  const [matriculaAberta, setMatriculaAberta] = useState(null);
+  // matrícula aberta; `continuar` = o aluno apertou "Começar"/"Continuar": abre direto na próxima aula
+  const [aberta, setAberta] = useState(null);
   const [aba, setAba] = useState("cursos");
   // quando os dados (e as URLs assinadas de vídeo/PDF, que valem 3 h) foram pedidos pela última vez
   const carregadoEmRef = useRef(0);
@@ -107,11 +128,11 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
       const d = await chamarPortal("dados", {}, token);
       carregadoEmRef.current = pedidoEm;
       setDados(d);
-      setErro("");
+      setErroCarga("");
       return d;
     } catch (e) {
       if (e.codigo === "SESSAO" || e.codigo === "TROCAR_SENHA") onErroSessao(e);
-      else setErro(e.message);
+      else setErroCarga(mensagemDeFalha(e));
       return null;
     } finally {
       setCarregando(false);
@@ -122,13 +143,20 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
     carregar();
   }, [carregar]);
 
+  const tentarDeNovo = async () => {
+    setTentando(true);
+    await carregar();
+    setTentando(false);
+  };
+
   const darCiencia = async (id) => {
+    setErro("");
     try {
       await chamarPortal("ciencia", { ciencia_id: id }, token);
       await carregar();
     } catch (e) {
       if (e.codigo === "SESSAO") onErroSessao(e);
-      else setErro(e.message);
+      else setErro(mensagemDeFalha(e));
     }
   };
 
@@ -142,7 +170,7 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
     );
   }
 
-  const item = matriculaAberta && dados?.cursos?.find((c) => c.matricula.id === matriculaAberta);
+  const item = aberta && dados?.cursos?.find((c) => c.matricula.id === aberta.id);
   if (item) {
     return (
       <CursoPortal
@@ -151,9 +179,10 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
         token={token}
         recarregar={carregar}
         dadosCarregadosEm={() => carregadoEmRef.current}
+        abrirProximaAula={aberta.continuar}
         onErroSessao={onErroSessao}
         onVoltar={() => {
-          setMatriculaAberta(null);
+          setAberta(null);
           carregar();
         }}
       />
@@ -161,7 +190,77 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
   }
 
   const cursos = dados?.cursos || [];
+  const { andamento, concluidos } = agruparMatriculas(cursos);
   const pendentes = (dados?.ciencias || []).filter((c) => c.status === "pendente");
+
+  const cartaoDoCurso = (c) => {
+    const { total, feitas, percentual, semAulas } = progressoDoCurso(c.aulas);
+    const m = c.matricula;
+    const concluido = m.status === "concluido";
+    const renovacao = ehRenovacao(c, cursos);
+    const despublicado = !concluido && cursoDespublicado(c.curso);
+    return (
+      <Card key={m.id}>
+        <CardContent className="p-4 flex items-center gap-4">
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-slate-800">{c.curso?.nome}</p>
+            {(renovacao || despublicado) && (
+              <div className="flex flex-wrap gap-1.5 mt-1">
+                {renovacao && (
+                  <Badge variant="outline" className="text-[11px]">
+                    Renovação
+                  </Badge>
+                )}
+                {despublicado && (
+                  <Badge variant="outline" className="text-[11px] text-amber-700 border-amber-300">
+                    Curso despublicado
+                  </Badge>
+                )}
+              </div>
+            )}
+            <p className="text-xs text-slate-500 mt-0.5">
+              {concluido
+                ? `Concluído em ${fmtData(m.data_conclusao)}` +
+                  (m.proxima_renovacao ? ` · renovar até ${fmtData(m.proxima_renovacao)}` : "")
+                : semAulas
+                  ? "Este curso ainda não tem aulas cadastradas — avise o RH"
+                  : `${feitas}/${total} aulas concluídas`}
+            </p>
+            {despublicado && (
+              <p className="text-xs text-amber-700 mt-0.5">
+                O RH despublicou este curso (pode estar em revisão). Em caso de dúvida, fale com o
+                RH.
+              </p>
+            )}
+            <div className="h-2 bg-slate-100 rounded-full mt-2 overflow-hidden">
+              <div
+                className={`h-full rounded-full ${concluido ? "bg-emerald-500" : "bg-amber-500"}`}
+                style={{ width: `${concluido ? 100 : percentual}%` }}
+              />
+            </div>
+          </div>
+          <Button
+            onClick={() => setAberta({ id: m.id, continuar: !concluido })}
+            className={`shrink-0 ${concluido ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-900"}`}
+          >
+            {concluido ? (
+              <>
+                <Award className="w-4 h-4 mr-1" /> Certificado
+              </>
+            ) : m.status === "pendente" ? (
+              "Começar"
+            ) : (
+              "Continuar"
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const tituloGrupo = (texto) => (
+    <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500 pt-1">{texto}</h2>
+  );
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -171,10 +270,14 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
             <HardHat className="w-6 h-6" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-semibold truncate">{dados?.funcionario?.nome_completo}</p>
-            <p className="text-xs text-slate-300 truncate">
-              {dados?.empresa_nome} · Portal do Funcionário
+            <p className="font-semibold truncate">
+              {dados?.funcionario?.nome_completo || "Portal do Funcionário"}
             </p>
+            {dados && (
+              <p className="text-xs text-slate-300 truncate">
+                {dados.empresa_nome} · Portal do Funcionário
+              </p>
+            )}
           </div>
           <button
             onClick={onAlterarSenha}
@@ -226,101 +329,112 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
               </div>
             )}
 
-            {pendentes.length > 0 && (
-              <Card className="border-amber-300">
-                <CardContent className="p-4 space-y-3">
-                  <p className="font-semibold text-amber-800">
-                    📋 Você tem entregas aguardando sua ciência:
+            {/* falha ao buscar os dados: sem a mensagem de "nenhum treinamento" (não é lista vazia) */}
+            {!dados ? (
+              <Card className="border-red-200">
+                <CardContent role="alert" className="p-8 text-center space-y-3">
+                  <XCircle className="w-10 h-10 mx-auto text-red-300" />
+                  <p className="font-semibold text-slate-800">
+                    Não foi possível carregar seus treinamentos
                   </p>
-                  {pendentes.map((c) => (
-                    <div key={c.id} className="border rounded-lg p-3 bg-amber-50 space-y-2">
-                      <p className="text-sm">
-                        <Badge variant="outline" className="mr-2">
-                          {c.tipo}
-                        </Badge>
-                        {c.descricao}
-                      </p>
-                      {Array.isArray(c.itens) && c.itens.length > 0 && (
-                        <ul className="text-sm text-slate-700 list-disc pl-5">
-                          {c.itens.map((it, i) => (
-                            <li key={i}>
-                              {it.quantidade ? `${it.quantidade}× ` : ""}
-                              {it.descricao || it.nome}
-                              {it.codigo ? ` (${it.codigo})` : ""}
-                              {it.ca ? ` · CA ${it.ca}` : ""}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      <Button
-                        className="w-full bg-emerald-600 hover:bg-emerald-700"
-                        onClick={() => darCiencia(c.id)}
-                      >
-                        <CheckCircle2 className="w-4 h-4 mr-1" /> Confirmo o recebimento (dou
-                        ciência)
-                      </Button>
-                      <p className="text-[11px] text-amber-700">
-                        Ao confirmar, ficam registrados seu login, data/hora e aparelho — vale como
-                        assinatura eletrônica (Lei 14.063/2020).
-                      </p>
-                    </div>
-                  ))}
+                  <p className="text-sm text-red-700">{erroCarga || mensagemDeFalha(null)}</p>
+                  <Button onClick={tentarDeNovo} disabled={tentando} className="bg-slate-900">
+                    {tentando ? (
+                      <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4 mr-1" />
+                    )}
+                    Tentar de novo
+                  </Button>
                 </CardContent>
               </Card>
-            )}
-
-            {cursos.length === 0 && (
-              <Card>
-                <CardContent className="p-10 text-center text-slate-500">
-                  <GraduationCap className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-                  Nenhum treinamento atribuído a você no momento.
-                </CardContent>
-              </Card>
-            )}
-
-            {cursos.map((c) => {
-              const total = c.aulas.length;
-              const feitas = c.aulas.filter((a) => a.concluida).length;
-              const m = c.matricula;
-              const concluido = m.status === "concluido";
-              return (
-                <Card key={m.id}>
-                  <CardContent className="p-4 flex items-center gap-4">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-slate-800">{c.curso?.nome}</p>
-                      <p className="text-xs text-slate-500">
-                        {concluido
-                          ? `Concluído em ${fmtData(m.data_conclusao)}` +
-                            (m.proxima_renovacao
-                              ? ` · renovar até ${fmtData(m.proxima_renovacao)}`
-                              : "")
-                          : `${feitas}/${total} aulas concluídas`}
-                      </p>
-                      <div className="h-2 bg-slate-100 rounded-full mt-2 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${concluido ? "bg-emerald-500" : "bg-amber-500"}`}
-                          style={{ width: `${total ? Math.round((feitas / total) * 100) : 0}%` }}
-                        />
-                      </div>
-                    </div>
+            ) : (
+              <>
+                {erroCarga && (
+                  <div
+                    role="alert"
+                    className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700"
+                  >
+                    <XCircle className="w-4 h-4 shrink-0" />
+                    <span className="flex-1">
+                      Não foi possível atualizar a lista agora; o que aparece pode estar
+                      desatualizado. {erroCarga}
+                    </span>
                     <Button
-                      onClick={() => setMatriculaAberta(m.id)}
-                      className={`shrink-0 ${concluido ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-900"}`}
+                      size="sm"
+                      variant="outline"
+                      onClick={tentarDeNovo}
+                      disabled={tentando}
+                      className="shrink-0 bg-white"
                     >
-                      {concluido ? (
-                        <>
-                          <Award className="w-4 h-4 mr-1" /> Certificado
-                        </>
-                      ) : m.status === "pendente" ? (
-                        "Começar"
+                      {tentando ? (
+                        <Loader2 className="w-4 h-4 mr-1 animate-spin" />
                       ) : (
-                        "Continuar"
+                        <RefreshCw className="w-4 h-4 mr-1" />
                       )}
+                      Tentar de novo
                     </Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                  </div>
+                )}
+
+                {pendentes.length > 0 && (
+                  <Card className="border-amber-300">
+                    <CardContent className="p-4 space-y-3">
+                      <p className="font-semibold text-amber-800">
+                        📋 Você tem entregas aguardando sua ciência:
+                      </p>
+                      {pendentes.map((c) => (
+                        <div key={c.id} className="border rounded-lg p-3 bg-amber-50 space-y-2">
+                          <p className="text-sm">
+                            <Badge variant="outline" className="mr-2">
+                              {c.tipo}
+                            </Badge>
+                            {c.descricao}
+                          </p>
+                          {Array.isArray(c.itens) && c.itens.length > 0 && (
+                            <ul className="text-sm text-slate-700 list-disc pl-5">
+                              {c.itens.map((it, i) => (
+                                <li key={i}>
+                                  {it.quantidade ? `${it.quantidade}× ` : ""}
+                                  {it.descricao || it.nome}
+                                  {it.codigo ? ` (${it.codigo})` : ""}
+                                  {it.ca ? ` · CA ${it.ca}` : ""}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          <Button
+                            className="w-full bg-emerald-600 hover:bg-emerald-700"
+                            onClick={() => darCiencia(c.id)}
+                          >
+                            <CheckCircle2 className="w-4 h-4 mr-1" /> Confirmo o recebimento (dou
+                            ciência)
+                          </Button>
+                          <p className="text-[11px] text-amber-700">
+                            Ao confirmar, ficam registrados seu login, data/hora e aparelho — vale
+                            como assinatura eletrônica (Lei 14.063/2020).
+                          </p>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {cursos.length === 0 && (
+                  <Card>
+                    <CardContent className="p-10 text-center text-slate-500">
+                      <GraduationCap className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                      Nenhum treinamento atribuído a você no momento.
+                    </CardContent>
+                  </Card>
+                )}
+
+                {andamento.length > 0 && concluidos.length > 0 && tituloGrupo("Em andamento")}
+                {andamento.map(cartaoDoCurso)}
+                {concluidos.length > 0 && tituloGrupo("Concluídos")}
+                {concluidos.map(cartaoDoCurso)}
+              </>
+            )}
           </>
         )}
       </div>

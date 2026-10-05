@@ -31,6 +31,18 @@ export const sessaoPortal = {
   },
 };
 
+/**
+ * `localStorage` do navegador ou null (modo privado/bloqueado: acessar já pode lançar). Serve ao que o
+ * portal guarda no aparelho para não perder o andamento: posição do vídeo e respostas da prova.
+ */
+export function armazenamentoPortal() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 export class ErroPortal extends Error {
   constructor(mensagem, codigo, extra) {
     super(mensagem);

@@ -9,6 +9,7 @@ import {
 import { normalizarQuestao } from "@/lib/ead-questao";
 import { parseDuracao, formatDuracao, lerDuracaoVideo, videoSemDuracao } from "@/lib/ead-duracao";
 import { requisitosDoCurso, tempoObrigatorioSeg } from "@/lib/ead-requisitos";
+import { numerarAulas } from "@/lib/portal-curso";
 import { srtParaVtt } from "@/lib/legendas";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
@@ -1198,7 +1199,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     <h4 className="font-semibold text-slate-800 flex items-center gap-2">
                       <Video className="w-4 h-4" /> Aulas
                     </h4>
-                    {aulasDoCurso(cursoSel.id).map((a, i, lista) => {
+                    {numerarAulas(aulasDoCurso(cursoSel.id)).map((a, i, lista) => {
                       const Icone =
                         a.tipo === "pdf" ? FileText : a.tipo === "texto" ? BookOpen : Video;
                       const novoModulo = a.modulo && a.modulo !== lista[i - 1]?.modulo;
@@ -1212,7 +1213,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                           <div className="flex items-center gap-2 text-sm bg-slate-50 rounded p-2">
                             <Icone className="w-4 h-4 text-slate-400 shrink-0" />
                             <span className="flex-1">
-                              {a.ordem}. {a.titulo}
+                              {a.numero}. {a.titulo}
                               {a.tipo !== "video" && a.duracao_seg ? (
                                 <span className="text-xs text-slate-400">
                                   {" "}
