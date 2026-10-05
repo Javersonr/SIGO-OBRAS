@@ -9,13 +9,25 @@
  * Spec: docs/superpowers/specs/2026-10-05-cronograma-fisico-financeiro-design.md §7.
  *
  * O cabeçalho (empresa, órgão, objeto, edital, local/data e representante), o nome do
- * arquivo e o carregamento do jsPDF são os da proposta de preços. Este módulo importa
+ * arquivo, o carregamento do jsPDF e o esqueleto dos arquivos (topo, assinatura, rodapé
+ * "Página X de Y", escritor de linhas) são os da proposta de preços. Este módulo importa
  * o xlsx: no navegador, entra só por import dinâmico (no clique do "Gerar").
  */
 import * as XLSX from "xlsx";
 import { normalizarCronograma, resumoCronograma } from "./cronograma-ff";
 import { montarCabecalhoLicitacao, nomeArquivoProposta } from "./proposta-orcamento";
-import { cabecalhoDoDocumento, carregarJsPdf, linhasAssinatura, textoPdf } from "./proposta-export";
+import {
+  cabecalhoDoDocumento,
+  carregarJsPdf,
+  criarPdf,
+  criarPlanilha,
+  escreverAssinaturaPdf,
+  escreverAssinaturaPlanilha,
+  escreverTopoPdf,
+  escreverTopoPlanilha,
+  numerarPaginasPdf,
+  textoPdf,
+} from "./proposta-export";
 
 export const TITULO_CRONOGRAMA = "Cronograma físico-financeiro";
 const ABA = "Cronograma";
@@ -114,33 +126,20 @@ function somaDasCelulas(coluna, linhas) {
  *   1º mês até o mês.
  */
 export function montarPlanilhaCronograma(dados) {
-  const ws = {};
-  let r = 0; // próxima linha (0-based)
-  const gravar = (linha, coluna, celula) => {
-    ws[XLSX.utils.encode_cell({ r: linha, c: coluna })] = celula;
-  };
-  const linhaDeTexto = (valor) => {
-    if (valor) gravar(r, 0, { t: "s", v: String(valor) });
-    r++;
-  };
-
-  const topo = linhasDoTopo(dados);
-  topo.empresa.forEach(linhaDeTexto);
-  r++;
-  linhaDeTexto(String(dados.titulo || TITULO_CRONOGRAMA).toUpperCase());
-  topo.licitacao.forEach(linhaDeTexto);
-  r++;
+  const pl = criarPlanilha();
+  const { ws, gravar, linhaDeTexto } = pl;
+  escreverTopoPlanilha(pl, linhasDoTopo(dados), dados.titulo || TITULO_CRONOGRAMA);
 
   const resumo = dados.resumo || { linhas: [], meses: [], totalCentavos: 0 };
   const nMeses = resumo.meses.length;
-  cabecalhoTabela(nMeses).forEach((h, c) => gravar(r, c, { t: "s", v: h }));
-  r++;
+  cabecalhoTabela(nMeses).forEach((h, c) => gravar(pl.r, c, { t: "s", v: h }));
+  pl.r++;
 
   const linhasReais = []; // número (1-based) da linha de R$ de cada etapa
   const mesclas = [];
   resumo.linhas.forEach((l) => {
-    const lr = r; // R$
-    const lp = r + 1; // %
+    const lr = pl.r; // R$
+    const lp = pl.r + 1; // %
     linhasReais.push(lr + 1);
     for (let c = 0; c < COL_MES; c++) mesclas.push({ s: { r: lr, c }, e: { r: lp, c } });
     gravar(lr, 0, { t: "s", v: String(l.numero ?? "") });
@@ -152,11 +151,11 @@ export function montarPlanilhaCronograma(dados) {
       gravar(lr, COL_MES + j, { t: "n", v: l.valores[j] / 100, z: FMT_MOEDA });
       gravar(lp, COL_MES + j, { t: "n", v: p / 100, z: FMT_PCT });
     });
-    r += 2;
+    pl.r += 2;
   });
 
   // rodapé: 4 linhas, a partir de `f` (0-based); nF = número da linha "Total do mês"
-  const f = r;
+  const f = pl.r;
   const nF = f + 1;
   const mes1 = XLSX.utils.encode_col(COL_MES); // coluna do Mês 1 ("E")
   const temEtapas = linhasReais.length > 0;
@@ -198,16 +197,14 @@ export function montarPlanilhaCronograma(dados) {
       z: FMT_PCT,
     });
   });
-  r = f + ROTULOS_RODAPE.length + 1;
+  pl.r = f + ROTULOS_RODAPE.length + 1;
 
   linhaDeTexto(dados.localData);
-  r += 2;
-  linhaDeTexto("_______________________________________");
-  linhasAssinatura(dados.representante).forEach(linhaDeTexto);
+  escreverAssinaturaPlanilha(pl, dados.representante);
 
   ws["!ref"] = XLSX.utils.encode_range({
     s: { r: 0, c: 0 },
-    e: { r: Math.max(r - 1, 0), c: COL_MES - 1 + Math.max(nMeses, 1) },
+    e: { r: Math.max(pl.r - 1, 0), c: COL_MES - 1 + Math.max(nMeses, 1) },
   });
   if (mesclas.length) ws["!merges"] = mesclas;
   ws["!cols"] = [{ wch: 8 }, { wch: 45 }, { wch: 16 }, { wch: 10 }];
@@ -221,12 +218,30 @@ export function montarPlanilhaCronograma(dados) {
 
 const FONTE_TABELA = 7;
 const PADDING = 1;
-const LARGURA = { item: 12, etapa: 45, etapaMin: 40, valor: 24, peso: 15, mesMin: 14 };
+// sobra (mm) sobre o texto mais largo da coluna: o autoTable quebra a linha se ele não couber
+const FOLGA = 0.5;
+// Larguras mínimas (mm) das colunas; cada uma cresce se o maior texto dela pedir mais. Com a
+// quebra na horizontal, a etapa fica fixa em `etapa`; sem ela, ocupa o que sobra, no mínimo
+// `etapaMin`. Calibradas para 12 meses caberem numa página até R$ 9.999.999,99 de total.
+const LARGURA = { item: 8, etapa: 45, etapaMin: 30, valor: 18, peso: 12, mes: 14 };
 
 const doisDecimais = (v) =>
   (Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const moeda = (centavos) => doisDecimais((Number(centavos) || 0) / 100);
 const percentual = (v) => `${doisDecimais(v)}%`;
+
+/**
+ * Largura (mm) da coluna: a do maior texto em negrito (as linhas das células contam uma a
+ * uma), com o padding e a folga; nunca menos que `minimo`.
+ */
+function larguraDaColuna(doc, textos, minimo) {
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(FONTE_TABELA);
+  const maior = textos
+    .flatMap((t) => String(t).split("\n"))
+    .reduce((m, t) => Math.max(m, doc.getTextWidth(t)), 0);
+  return Math.max(minimo, Math.ceil((maior + 2 * PADDING + FOLGA) * 10) / 10);
+}
 
 /**
  * PDF do cronograma (A4 paisagem). `jsPDF` e `autoTable` vêm de fora (carregarJsPdf no
@@ -238,44 +253,9 @@ const percentual = (v) => `${doisDecimais(v)}%`;
  * Item e Etapa (horizontalPageBreak e horizontalPageBreakRepeat).
  */
 export function gerarPdfCronograma(dados, { jsPDF, autoTable }) {
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  const larg = doc.internal.pageSize.getWidth();
-  const alt = doc.internal.pageSize.getHeight();
-  const M = 12;
-  const util = larg - 2 * M;
-  let y = 14;
-
-  const escrever = (
-    texto,
-    { tamanho = 9, negrito = false, alinhar = "left", entre = 4.2 } = {}
-  ) => {
-    doc.setFont("helvetica", negrito ? "bold" : "normal");
-    doc.setFontSize(tamanho);
-    const partes = doc.splitTextToSize(textoPdf(texto), util);
-    const x = alinhar === "center" ? larg / 2 : M;
-    partes.forEach((p) => {
-      if (y > alt - 16) {
-        doc.addPage();
-        y = 14;
-      }
-      doc.text(p, x, y, { align: alinhar });
-      y += entre;
-    });
-  };
-
-  const topo = linhasDoTopo(dados);
-  topo.empresa.forEach((t, i) =>
-    escrever(t, i === 0 ? { tamanho: 12, negrito: true, entre: 5.5 } : { tamanho: 8.5 })
-  );
-  y += 3;
-  escrever(String(dados.titulo || TITULO_CRONOGRAMA).toUpperCase(), {
-    tamanho: 13,
-    negrito: true,
-    alinhar: "center",
-    entre: 7,
-  });
-  topo.licitacao.forEach((t) => escrever(t, { tamanho: 9 }));
-  y += 2;
+  const pdf = criarPdf(jsPDF);
+  const { doc, M, alt, util } = pdf;
+  escreverTopoPdf(pdf, linhasDoTopo(dados), dados.titulo || TITULO_CRONOGRAMA);
 
   const resumo = dados.resumo || { linhas: [], meses: [], totalCentavos: 0 };
   const n = resumo.meses.length;
@@ -302,33 +282,30 @@ export function gerarPdfCronograma(dados, { jsPDF, autoTable }) {
     tipos.push("rodape");
   });
 
-  // largura de um mês: o maior texto dos meses em negrito (o do rodapé), com folga
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(FONTE_TABELA);
-  const maiorTexto = corpo.reduce(
-    (max, linha) =>
-      linha
-        .slice(COL_MES)
-        .flatMap((t) => String(t).split("\n"))
-        .reduce((m, t) => Math.max(m, doc.getTextWidth(t)), max),
-    0
+  // larguras pelo maior texto de cada coluna em negrito (o do rodapé), com folga
+  const textosDa = (c) => corpo.map((linha) => linha[c]);
+  const largItem = larguraDaColuna(doc, textosDa(0), LARGURA.item);
+  const largValor = larguraDaColuna(doc, textosDa(2), LARGURA.valor);
+  const largPeso = larguraDaColuna(doc, textosDa(3), LARGURA.peso);
+  const largMes = larguraDaColuna(
+    doc,
+    corpo.flatMap((linha) => linha.slice(COL_MES)),
+    LARGURA.mes
   );
-  const largMes = Math.max(LARGURA.mesMin, Math.ceil((maiorTexto + 2 * PADDING + 1) * 10) / 10);
-  const quebra =
-    n > 12 || LARGURA.item + LARGURA.etapaMin + LARGURA.valor + LARGURA.peso + n * largMes > util;
+  const quebra = n > 12 || largItem + LARGURA.etapaMin + largValor + largPeso + n * largMes > util;
 
   const columnStyles = {
-    0: { cellWidth: LARGURA.item },
+    0: { cellWidth: largItem },
     1: quebra
       ? { cellWidth: LARGURA.etapa }
       : { cellWidth: "auto", minCellWidth: LARGURA.etapaMin },
-    2: { cellWidth: LARGURA.valor, halign: "right" },
-    3: { cellWidth: LARGURA.peso, halign: "right" },
+    2: { cellWidth: largValor, halign: "right" },
+    3: { cellWidth: largPeso, halign: "right" },
   };
   for (let j = 0; j < n; j++) columnStyles[COL_MES + j] = { cellWidth: largMes, halign: "right" };
 
   autoTable(doc, {
-    startY: y,
+    startY: pdf.y,
     head: [cabecalhoTabela(n)],
     body: corpo,
     theme: "grid",
@@ -354,32 +331,15 @@ export function gerarPdfCronograma(dados, { jsPDF, autoTable }) {
     },
   });
 
-  y = (doc.lastAutoTable?.finalY ?? y) + 8;
+  pdf.y = (doc.lastAutoTable?.finalY ?? pdf.y) + 8;
   // local/data e assinatura não se partem
-  if (y > alt - 45) {
+  if (pdf.y > alt - 45) {
     doc.addPage();
-    y = 20;
+    pdf.y = 20;
   }
-  if (dados.localData) escrever(dados.localData, { tamanho: 9 });
-  y += 16;
-  doc.setDrawColor(60);
-  doc.setLineWidth(0.3);
-  doc.line(larg / 2 - 45, y, larg / 2 + 45, y);
-  y += 5;
-  linhasAssinatura(dados.representante).forEach((t, i) =>
-    escrever(t, { tamanho: 9, negrito: i === 0, alinhar: "center" })
-  );
-
-  const total = doc.getNumberOfPages();
-  for (let p = 1; p <= total; p++) {
-    doc.setPage(p);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(100);
-    doc.text(textoPdf(dados.empresa?.nome || ""), M, alt - 7);
-    doc.text(`Página ${p} de ${total}`, larg - M, alt - 7, { align: "right" });
-    doc.setTextColor(0);
-  }
+  if (dados.localData) pdf.escrever(dados.localData, { tamanho: 9 });
+  escreverAssinaturaPdf(pdf, dados.representante, { espacoAntes: 16 });
+  numerarPaginasPdf(pdf, dados.empresa?.nome);
   return doc;
 }
 

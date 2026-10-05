@@ -67,6 +67,45 @@ export function linhasAssinatura(rep) {
   return [rep?.nome || "", rep?.cargo || "", rep?.cpf ? `CPF: ${rep.cpf}` : ""].filter(Boolean);
 }
 
+// ------------------------------------------------- layout em comum (Excel)
+// Usado pela proposta e pelo cronograma físico-financeiro (lib/cronograma-export.js):
+// o que muda no cabeçalho, no rodapé ou na assinatura vale para os dois documentos.
+
+/**
+ * Escritor da planilha: `ws` (a aba), `r` (próxima linha, 0-based), `gravar(linha, coluna,
+ * celula)` e `linhaDeTexto(valor)` (texto na coluna A; valor vazio só pula a linha).
+ */
+export function criarPlanilha() {
+  const pl = {
+    ws: {},
+    r: 0,
+    gravar(linha, coluna, celula) {
+      pl.ws[XLSX.utils.encode_cell({ r: linha, c: coluna })] = celula;
+    },
+    linhaDeTexto(valor) {
+      if (valor) pl.gravar(pl.r, 0, { t: "s", v: String(valor) });
+      pl.r++;
+    },
+  };
+  return pl;
+}
+
+/** Topo: empresa, título em maiúsculas e dados da licitação (`cab` = cabecalhoDoDocumento). */
+export function escreverTopoPlanilha(pl, cab, titulo) {
+  cab.empresa.forEach(pl.linhaDeTexto);
+  pl.r++;
+  pl.linhaDeTexto(String(titulo).toUpperCase());
+  cab.licitacao.forEach(pl.linhaDeTexto);
+  pl.r++;
+}
+
+/** Linha de assinatura e as do representante, 2 linhas abaixo da última escrita. */
+export function escreverAssinaturaPlanilha(pl, representante) {
+  pl.r += 2;
+  pl.linhaDeTexto("_______________________________________");
+  linhasAssinatura(representante).forEach(pl.linhaDeTexto);
+}
+
 // ------------------------------------------------------------------ Excel
 
 /**
@@ -82,28 +121,15 @@ export function linhasAssinatura(rep) {
  *     do intervalo (as etapas aninhadas não contam duas vezes).
  */
 export function montarPlanilhaProposta(dados) {
-  const ws = {};
-  let r = 0; // próxima linha (0-based)
-  const gravar = (linha, coluna, celula) => {
-    ws[XLSX.utils.encode_cell({ r: linha, c: coluna })] = celula;
-  };
-  const linhaDeTexto = (valor) => {
-    if (valor) gravar(r, 0, { t: "s", v: String(valor) });
-    r++;
-  };
+  const pl = criarPlanilha();
+  const { ws, gravar, linhaDeTexto } = pl;
+  escreverTopoPlanilha(pl, cabecalhoDoDocumento(dados), dados.titulo || "Proposta de preços");
 
-  const cab = cabecalhoDoDocumento(dados);
-  cab.empresa.forEach(linhaDeTexto);
-  r++;
-  linhaDeTexto(String(dados.titulo || "Proposta de preços").toUpperCase());
-  cab.licitacao.forEach(linhaDeTexto);
-  r++;
-
-  CABECALHO.forEach((h, c) => gravar(r, c, { t: "s", v: h }));
-  r++;
+  CABECALHO.forEach((h, c) => gravar(pl.r, c, { t: "s", v: h }));
+  pl.r++;
 
   const linhas = dados.linhas || [];
-  const primeira = r;
+  const primeira = pl.r;
   linhas.forEach((l, i) => {
     const lin = primeira + i;
     const n = lin + 1; // número da linha no Excel
@@ -146,11 +172,11 @@ export function montarPlanilhaProposta(dados) {
         : { t: "n", v: l.total, z: FMT_MOEDA }
     );
   });
-  r = primeira + linhas.length;
+  pl.r = primeira + linhas.length;
 
-  gravar(r, 3, { t: "s", v: "VALOR GLOBAL DA PROPOSTA (R$)" });
+  gravar(pl.r, 3, { t: "s", v: "VALOR GLOBAL DA PROPOSTA (R$)" });
   gravar(
-    r,
+    pl.r,
     7,
     linhas.length
       ? {
@@ -161,15 +187,16 @@ export function montarPlanilhaProposta(dados) {
         }
       : { t: "n", v: dados.totalGeral, z: FMT_MOEDA }
   );
-  r += 2;
+  pl.r += 2;
   linhaDeTexto(`Valor global por extenso: ${dados.totalExtenso}`);
   linhaDeTexto(dados.validade);
   linhaDeTexto(dados.localData);
-  r += 2;
-  linhaDeTexto("_______________________________________");
-  linhasAssinatura(dados.representante).forEach(linhaDeTexto);
+  escreverAssinaturaPlanilha(pl, dados.representante);
 
-  ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(r - 1, 0), c: 7 } });
+  ws["!ref"] = XLSX.utils.encode_range({
+    s: { r: 0, c: 0 },
+    e: { r: Math.max(pl.r - 1, 0), c: 7 },
+  });
   ws["!cols"] = [
     { wch: 10 },
     { wch: 12 },
@@ -206,6 +233,87 @@ export function textoPdf(valor) {
     .join("");
 }
 
+// --------------------------------------------------- layout em comum (PDF)
+// Usado pela proposta e pelo cronograma físico-financeiro (lib/cronograma-export.js).
+
+/**
+ * Documento A4 paisagem e o escritor de linhas de texto: `doc`, `larg`, `alt`, `M` (margem),
+ * `util` (largura útil), `y` (posição da próxima linha, em mm) e `escrever(texto, opcoes)`,
+ * que avança o `y` e abre página nova perto do rodapé.
+ */
+export function criarPdf(jsPDF) {
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const larg = doc.internal.pageSize.getWidth();
+  const alt = doc.internal.pageSize.getHeight();
+  const M = 12;
+  const pdf = {
+    doc,
+    larg,
+    alt,
+    M,
+    util: larg - 2 * M,
+    y: 14,
+    escrever(texto, { tamanho = 9, negrito = false, alinhar = "left", entre = 4.2 } = {}) {
+      doc.setFont("helvetica", negrito ? "bold" : "normal");
+      doc.setFontSize(tamanho);
+      const partes = doc.splitTextToSize(textoPdf(texto), pdf.util);
+      const x = alinhar === "center" ? larg / 2 : M;
+      partes.forEach((p) => {
+        if (pdf.y > alt - 16) {
+          doc.addPage();
+          pdf.y = 14;
+        }
+        doc.text(p, x, pdf.y, { align: alinhar });
+        pdf.y += entre;
+      });
+    },
+  };
+  return pdf;
+}
+
+/** Topo: empresa, título em maiúsculas e dados da licitação (`cab` = cabecalhoDoDocumento). */
+export function escreverTopoPdf(pdf, cab, titulo) {
+  cab.empresa.forEach((t, i) =>
+    pdf.escrever(t, i === 0 ? { tamanho: 12, negrito: true, entre: 5.5 } : { tamanho: 8.5 })
+  );
+  pdf.y += 3;
+  pdf.escrever(String(titulo).toUpperCase(), {
+    tamanho: 13,
+    negrito: true,
+    alinhar: "center",
+    entre: 7,
+  });
+  cab.licitacao.forEach((t) => pdf.escrever(t, { tamanho: 9 }));
+  pdf.y += 2;
+}
+
+/** Traço e linhas do representante; `espacoAntes` (mm) é o espaço para assinar. */
+export function escreverAssinaturaPdf(pdf, representante, { espacoAntes = 18 } = {}) {
+  pdf.y += espacoAntes;
+  pdf.doc.setDrawColor(60);
+  pdf.doc.setLineWidth(0.3);
+  pdf.doc.line(pdf.larg / 2 - 45, pdf.y, pdf.larg / 2 + 45, pdf.y);
+  pdf.y += 5;
+  linhasAssinatura(representante).forEach((t, i) =>
+    pdf.escrever(t, { tamanho: 9, negrito: i === 0, alinhar: "center" })
+  );
+}
+
+/** Rodapé de todas as páginas: nome da empresa e "Página X de Y". */
+export function numerarPaginasPdf(pdf, nomeEmpresa) {
+  const { doc, larg, alt, M } = pdf;
+  const total = doc.getNumberOfPages();
+  for (let p = 1; p <= total; p++) {
+    doc.setPage(p);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.text(textoPdf(nomeEmpresa || ""), M, alt - 7);
+    doc.text(`Página ${p} de ${total}`, larg - M, alt - 7, { align: "right" });
+    doc.setTextColor(0);
+  }
+}
+
 const fmt = (v, min, max) =>
   v == null || v === ""
     ? ""
@@ -216,48 +324,13 @@ const fmt = (v, min, max) =>
  * dinâmico no navegador; import normal no teste).
  */
 export function gerarPdfProposta(dados, { jsPDF, autoTable }) {
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  const larg = doc.internal.pageSize.getWidth();
-  const alt = doc.internal.pageSize.getHeight();
-  const M = 12;
-  const util = larg - 2 * M;
-  let y = 14;
-
-  const escrever = (
-    texto,
-    { tamanho = 9, negrito = false, alinhar = "left", entre = 4.2 } = {}
-  ) => {
-    doc.setFont("helvetica", negrito ? "bold" : "normal");
-    doc.setFontSize(tamanho);
-    const partes = doc.splitTextToSize(textoPdf(texto), util);
-    const x = alinhar === "center" ? larg / 2 : M;
-    partes.forEach((p) => {
-      if (y > alt - 16) {
-        doc.addPage();
-        y = 14;
-      }
-      doc.text(p, x, y, { align: alinhar });
-      y += entre;
-    });
-  };
-
-  const cab = cabecalhoDoDocumento(dados);
-  cab.empresa.forEach((t, i) =>
-    escrever(t, i === 0 ? { tamanho: 12, negrito: true, entre: 5.5 } : { tamanho: 8.5 })
-  );
-  y += 3;
-  escrever(String(dados.titulo || "Proposta de preços").toUpperCase(), {
-    tamanho: 13,
-    negrito: true,
-    alinhar: "center",
-    entre: 7,
-  });
-  cab.licitacao.forEach((t) => escrever(t, { tamanho: 9 }));
-  y += 2;
+  const pdf = criarPdf(jsPDF);
+  const { doc, M, alt, escrever } = pdf;
+  escreverTopoPdf(pdf, cabecalhoDoDocumento(dados), dados.titulo || "Proposta de preços");
 
   const linhas = dados.linhas || [];
   autoTable(doc, {
-    startY: y,
+    startY: pdf.y,
     head: [CABECALHO],
     body: linhas.map((l) => [
       textoPdf(l.numero),
@@ -294,11 +367,11 @@ export function gerarPdfProposta(dados, { jsPDF, autoTable }) {
     },
   });
 
-  y = (doc.lastAutoTable?.finalY ?? y) + 7;
+  pdf.y = (doc.lastAutoTable?.finalY ?? pdf.y) + 7;
   // bloco final (total, extenso, validade, local/data, assinatura) não se parte
-  if (y > alt - 70) {
+  if (pdf.y > alt - 70) {
     doc.addPage();
-    y = 20;
+    pdf.y = 20;
   }
   escrever(`Valor global da proposta: R$ ${fmt(dados.totalGeral, 2, 2)}`, {
     tamanho: 10,
@@ -306,29 +379,12 @@ export function gerarPdfProposta(dados, { jsPDF, autoTable }) {
     entre: 5,
   });
   escrever(`(${dados.totalExtenso})`, { tamanho: 9, entre: 4.5 });
-  y += 2;
+  pdf.y += 2;
   escrever(dados.validade, { tamanho: 9 });
   if (dados.localData) escrever(dados.localData, { tamanho: 9 });
 
-  y += 18;
-  doc.setDrawColor(60);
-  doc.setLineWidth(0.3);
-  doc.line(larg / 2 - 45, y, larg / 2 + 45, y);
-  y += 5;
-  linhasAssinatura(dados.representante).forEach((t, i) =>
-    escrever(t, { tamanho: 9, negrito: i === 0, alinhar: "center" })
-  );
-
-  const total = doc.getNumberOfPages();
-  for (let p = 1; p <= total; p++) {
-    doc.setPage(p);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(100);
-    doc.text(textoPdf(dados.empresa?.nome || ""), M, alt - 7);
-    doc.text(`Página ${p} de ${total}`, larg - M, alt - 7, { align: "right" });
-    doc.setTextColor(0);
-  }
+  escreverAssinaturaPdf(pdf, dados.representante);
+  numerarPaginasPdf(pdf, dados.empresa?.nome);
   return doc;
 }
 

@@ -56,12 +56,12 @@ function dados({ etapas = ETAPAS, cronograma = CRONOGRAMA, ...extra } = {}) {
   });
 }
 
-/** n etapas de R$ 1.000,00 com a mesma linha de % */
-function muitas(n, linha) {
+/** n etapas (R$ 1.000,00 cada, se não disser outro valor) com a mesma linha de % */
+function muitas(n, linha, centavos = 100_000) {
   const etapas = [];
   const pct = {};
   for (let i = 1; i <= n; i++) {
-    etapas.push({ numero: String(i), descricao: `Etapa ${i}`, centavos: 100_000 });
+    etapas.push({ numero: String(i), descricao: `Etapa ${i}`, centavos });
     pct[String(i)] = [...linha];
   }
   return { etapas, cronograma: { meses: linha.length, pct } };
@@ -326,6 +326,22 @@ function espiao() {
   return { fn, chamadas };
 }
 
+/**
+ * Células (fora a da etapa) cujo texto o autoTable partiu em mais linhas do que as do texto
+ * original: um número que não coube na coluna.
+ */
+function numerosQuebrados(doc) {
+  const quebrados = [];
+  for (const linha of doc.lastAutoTable.body) {
+    for (const [coluna, cel] of Object.entries(linha.cells)) {
+      if (Number(coluna) !== 1 && cel.text.length > String(cel.raw).split("\n").length) {
+        quebrados.push(String(cel.raw));
+      }
+    }
+  }
+  return quebrados;
+}
+
 describe("gerarPdfCronograma", () => {
   it(
     "4 meses: uma página, sem quebra horizontal, com o rodapé da tabela",
@@ -376,14 +392,45 @@ describe("gerarPdfCronograma", () => {
   );
 
   it(
-    "12 meses que cabem na largura: sem quebra horizontal",
+    "12 meses numa página só, sem quebra horizontal, até R$ 9.999.999,99 de total",
     () => {
-      const { etapas, cronograma } = muitas(3, [8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9]);
+      const linha = [8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9];
+      // [etapas, centavos por etapa]: R$ 250 mil, R$ 1,2 mi e o maior total que cabe
+      for (const [n, centavos] of [
+        [2, 12_500_000],
+        [2, 60_000_000],
+        [3, 333_333_333],
+      ]) {
+        const { etapas, cronograma } = muitas(n, linha, centavos);
+        const { fn, chamadas } = espiao();
+        const doc = gerarPdfCronograma(dados({ etapas, cronograma }), { jsPDF, autoTable: fn });
+        expect(chamadas[0].horizontalPageBreak).toBe(false);
+        expect(doc.getNumberOfPages()).toBe(1);
+        expect(numerosQuebrados(doc)).toEqual([]);
+        expect(doc.output()).toContain("Mês 12");
+      }
+    },
+    LIMITE_PDF
+  );
+
+  it(
+    "R$ 150 milhões: o número nunca quebra em 2 linhas; sem espaço nos 12 meses, quebra na horizontal",
+    () => {
+      const total = 5_000_000_000; // por etapa: 3 etapas = R$ 150.000.000,00
+      const quatro = muitas(3, [25, 25, 25, 25], total);
       const { fn, chamadas } = espiao();
-      const doc = gerarPdfCronograma(dados({ etapas, cronograma }), { jsPDF, autoTable: fn });
+      const docQuatro = gerarPdfCronograma(dados(quatro), { jsPDF, autoTable: fn });
       expect(chamadas[0].horizontalPageBreak).toBe(false);
-      expect(doc.getNumberOfPages()).toBe(1);
-      expect(doc.output()).toContain("Mês 12");
+      expect(docQuatro.getNumberOfPages()).toBe(1);
+      expect(numerosQuebrados(docQuatro)).toEqual([]);
+      expect(docQuatro.output()).toContain("150.000.000,00");
+
+      const doze = muitas(3, [8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9], total);
+      const outro = espiao();
+      const docDoze = gerarPdfCronograma(dados(doze), { jsPDF, autoTable: outro.fn });
+      expect(outro.chamadas[0].horizontalPageBreak).toBe(true);
+      expect(docDoze.getNumberOfPages()).toBeGreaterThan(1);
+      expect(numerosQuebrados(docDoze)).toEqual([]);
     },
     LIMITE_PDF
   );
