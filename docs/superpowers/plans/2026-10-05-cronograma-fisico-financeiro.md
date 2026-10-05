@@ -46,7 +46,7 @@
 ## Decisões registradas na redação
 
 - **Ordem do orçamento:** o contrato fala em `ordemDoItem`, que não existe; as etapas saem na ordem do `ordenarItensOportunidade` (`ordem`, nula como 0, depois `numero`), a mesma da tela do orçamento (Task 1).
-- **Contas estritas (Task 1):** `lerPercentual` devolve `null` para vazio e `NaN` para texto inválido, sinal, milhar ou valor fora de 0–100; `ajustarMeses`, `reperiodizarLinha` e `reperiodizar` lançam `RangeError` com N fora de 1 a 60; `normalizarCronograma` com `meses` 0 devolve `pct: {}`; `todasFecham` é `false` sem etapas; nenhuma função preenche `atualizado_em` (quem grava põe a data).
+- **Contas estritas (Task 1):** `lerPercentual` devolve `null` para vazio e `NaN` para texto inválido, sinal, milhar ou valor fora de 0–100 (o arredondamento em 2 casas vem antes da conferência da faixa); `ajustarMeses`, `reperiodizarLinha` e `reperiodizar` lançam `RangeError` com N fora de 1 a 60; `normalizarCronograma` com `meses` 0 devolve `pct: {}`; `todasFecham` é `false` sem etapas; nenhuma função preenche `atualizado_em` (quem grava põe a data).
 - **Leitura da aba (Task 2):** `lerArquivoCronograma` lê com `sheetStubs: true` além do `cellNF` do contrato (fórmula sem valor salvo vira erro, não 0); aba sem linhas e nenhuma linha com etapa do orçamento são **erros** fora da lista da spec, para a importação não trocar o cronograma atual por um vazio; Mês faltando, Mês repetido, colunas além do Mês 60 e linha sem Item são avisos extras.
 - **Sem dependência circular (Task 2):** `orcamento-modelo.js` importa o nome e o cabeçalho de `cronograma-modelo.js`, que não importa `orcamento-modelo.js` e repete 7 utilitários pequenos de célula.
 - **Skill mais estrita que o SIGO (Task 3):** o código Python exige Item em texto e % numérico, porque quem grava é o próprio código; `pct_da_linha` converte R$ em % com a diferença no último mês com valor.
@@ -60,7 +60,7 @@
 - **Exportar entre as Tasks 5 e 6:** a Task 5 deixa a âncora `{/* EXPORTAR_CRONOGRAMA */}` na barra de botões, fora de qualquer condição de `podeEditar`; a Task 6 troca a âncora pelo `BotaoExportarCronograma` (export extra do `ExportarCronogramaDialog.jsx`), visível também para quem só vê a aba, que exporta o estado local do quadro (o `selectedOp` pode estar atrás da tela).
 - **Imbé de Minas (Task 7):** a planilha feita à mão não redistribui a curva: copia as 5 parcelas preenchidas do CFF de 12 parcelas. O equivalente no SIGO é **Meses 12 → 5**; o roteiro mostra também o **Reperiodizar 12 → 5** como o outro critério, com a diferença explicada. O arquivo de teste promove os grupos 1.1 a 1.6 do edital a etapas 1 a 6.
 - **Onde se trabalha:** no `master` do checkout principal, como o plano do Orçamento (a base dele está lá, ainda não publicada), com commit parcial por task; a Task 7 trata o risco de outra sessão publicar antes (Step 1) e só publica com o OK do Javerson.
-- **Conferência de 05/10** (cópia do `master` `37ad85c` fora do repositório): as Tasks 1 a 6 aplicadas em ordem, com todas as âncoras únicas no momento da troca; Prettier sem mudança; Vitest com 40 arquivos e 515 testes (base 36/433); `npm run lint`, `no-undef` e `vite build` sem erro, com os chunks esperados; o código Python da skill e os números da Task 7 (Itatinga e Imbé) recalculados sobre cópias das planilhas.
+- **Conferência de 05/10** (cópia do `master` `37ad85c` fora do repositório): as Tasks 1 a 6 aplicadas em ordem, com todas as âncoras únicas no momento da troca; Prettier sem mudança; Vitest com 40 arquivos e 515 testes (base 36/433; a Task 1 ganhou depois 1 teste de `lerPercentual` com `number`, e a suíte passou a 516); `npm run lint`, `no-undef` e `vite build` sem erro, com os chunks esperados; o código Python da skill e os números da Task 7 (Itatinga e Imbé) recalculados sobre cópias das planilhas.
 
 ---
 
@@ -76,11 +76,11 @@ Anote as linhas `Test Files  N passed` e `Tests  M passed`. A suíte cresce assi
 
 | Fim da task | Arquivos | Testes   | Com a base de 05/10 |
 | ----------- | -------- | -------- | ------------------- |
-| Task 1      | `N + 1`  | `M + 36` | 37 e 469            |
-| Task 2      | `N + 2`  | `M + 55` | 38 e 488            |
-| Task 3      | `N + 2`  | `M + 56` | 38 e 489            |
-| Task 4      | `N + 3`  | `M + 74` | 39 e 507            |
-| Tasks 5 e 6 | `N + 4`  | `M + 82` | 40 e 515            |
+| Task 1      | `N + 1`  | `M + 37` | 37 e 470            |
+| Task 2      | `N + 2`  | `M + 56` | 38 e 489            |
+| Task 3      | `N + 2`  | `M + 57` | 38 e 490            |
+| Task 4      | `N + 3`  | `M + 75` | 39 e 508            |
+| Tasks 5 e 6 | `N + 4`  | `M + 83` | 40 e 516            |
 
 **Regras para todas as tasks:**
 
@@ -112,7 +112,7 @@ Anote as linhas `Test Files  N passed` e `Tests  M passed`. A suíte cresce assi
   - `MAX_MESES = 60`.
   - `etapasDoOrcamento(itens): EtapaCron[]` — linhas com `etapa === true` e `numero` sem ponto, na ordem do `ordenarItensOportunidade`; `centavos = Math.round(subtotaisEtapas(itens)[numero] * 100)`, ou 0. Ignora `null` na lista e, com `numero` repetido, fica com o primeiro.
   - `normalizarCronograma(obj): Cronograma` — `{}`, `null`, array ou não objeto → `{ meses: 0, pct: {} }`; `meses` inteiro de 0 a 60 (fração cortada, fora da faixa vai ao limite); **com `meses` 0, `pct` fica `{}`**; cada array cortado ou completado com 0; valor que não é `number` de 0 a 100 vira 0, e o resto fica com 2 casas; chave cujo valor não é array sai; `origem` (`"importado"`/`"manual"`), `arquivo_nome` e `atualizado_em` (strings) só ficam quando válidos.
-  - `lerPercentual(entrada): number|null` — aceita `number`, `"12,5"`, `"12.5"`, `"12,5%"`, `",5"` e espaços; vazio (`null`, `undefined`, `""`, só espaços, `"%"`) → `null`; texto inválido, com sinal ou milhar, e **valor fora de 0 a 100 → `NaN`** (assim o `Number.isNaN` da grade cobre tudo); arredonda em 2 casas, meio para cima (`"33,335"` → 33,34).
+  - `lerPercentual(entrada): number|null` — aceita `number`, `"12,5"`, `"12.5"`, `"12,5%"`, `",5"` e espaços; vazio (`null`, `undefined`, `""`, só espaços, `"%"`) → `null`; texto inválido, com sinal ou milhar, e **valor fora de 0 a 100 → `NaN`** (assim o `Number.isNaN` da grade cobre tudo); arredonda em 2 casas, meio para cima (`"33,335"` → 33,34), **antes** de conferir a faixa e também para `number` (`100.004` → 100; `100.005` → `NaN`, porque vira 100,01; `-0.004` → 0); texto com sinal continua `NaN`.
   - `somaCentesimos(linha): number` e `linhaFecha(linha): boolean` (`=== 10000`).
   - `valoresDaLinha(linha, centavosEtapa): number[]` — célula = `Math.round(centavos × centésimos ÷ 10000)` (BigInt quando o produto passa de 2^53); se a linha fecha, o último mês com % > 0 recebe `centavosEtapa − soma dos outros`.
   - `resumoCronograma(etapas, cron): { linhas, meses, totalCentavos, todasFecham, orfas }` — `linhas[i] = { numero, descricao, centavos, peso, pct, valores, fecha, diferenca }` (etapa sem linha no cronograma = zeros; `diferenca = (10000 − soma) ÷ 100`, negativa quando passa de 100); `meses[j] = { centavos, pct, acumCentavos, acumPct }`, os % sobre `totalCentavos` com 2 casas (0 com total zero); **`todasFecham` é `false` sem etapas**; `orfas` na ordem do `compararNumeroItem`.
@@ -242,6 +242,15 @@ describe("lerPercentual", () => {
     expect(lerPercentual(1.005)).toBe(1.01);
     expect(lerPercentual("33,3333")).toBe(33.33);
     expect(lerPercentual("100,004")).toBe(100);
+  });
+  it("number arredonda em 2 casas antes de conferir a faixa; texto com sinal continua inválido", () => {
+    expect(lerPercentual(100.004)).toBe(100);
+    expect(lerPercentual(100.005)).toBeNaN(); // vira 100,01
+    expect(lerPercentual(-0.004)).toBe(0);
+    expect(Object.is(lerPercentual(-0.004), 0)).toBe(true); // sem −0
+    expect(lerPercentual(-0.006)).toBeNaN(); // vira −0,01
+    expect(lerPercentual("-0,004")).toBeNaN();
+    expect(lerPercentual("-0.004")).toBeNaN();
   });
 });
 
@@ -625,7 +634,8 @@ export function normalizarCronograma(obj) {
 /**
  * % digitado na grade: number, "12,5", "12.5", "12,5%", com espaços.
  * Vazio (null, undefined, "", só espaços, "%") → null. Texto que não seja número, sinal,
- * milhar ou valor fora de 0 a 100 → NaN. O resultado vem com 2 casas (33,335 → 33,34).
+ * milhar ou valor fora de 0 a 100 → NaN. O resultado vem com 2 casas (33,335 → 33,34), e o
+ * arredondamento vem antes da faixa: 100,004 → 100, mas 100,005 → 100,01 → NaN.
  */
 export function lerPercentual(entrada) {
   if (entrada === null || entrada === undefined) return null;
@@ -796,7 +806,7 @@ export function reperiodizar(cron, novoN) {
 (cd apps/web && npx vitest run src/lib/cronograma-ff.test.js)
 ```
 
-Esperado: `Test Files  1 passed (1)` e `Tests  36 passed (36)`.
+Esperado: `Test Files  1 passed (1)` e `Tests  37 passed (37)`.
 
 - [ ] **Step 5: Formatar e commitar**
 
@@ -1589,7 +1599,7 @@ new:
 Esperado:
 
 - `Test Files  2 passed (2)` e `Tests  79 passed (79)` (18 do cronograma e 61 do modelo, que tinha 60);
-- a suíte inteira com `N + 2` arquivos e `M + 55` testes da linha de base, sem falhas.
+- a suíte inteira com `N + 2` arquivos e `M + 56` testes da linha de base, sem falhas.
 
 - [ ] **Step 8: Formatar e commitar**
 
@@ -2207,7 +2217,7 @@ npx prettier --check apps/web/public/skills/orcamento-prefeitura-sigo/SKILL.md a
 
 Esperado:
 
-- vitest: `N + 2` arquivos e `M + 56` testes da linha de base, todos passando;
+- vitest: `N + 2` arquivos e `M + 57` testes da linha de base, todos passando;
 - `SKILL.md` e `BUILD_OK`;
 - `All matched files use Prettier code style!` (o CI roda `format:check`, que cobre `.md`).
 
@@ -3633,7 +3643,7 @@ Expected:
 
 - `git status --short`: arquivos de outras sessões podem aparecer (ex.: `.claude/launch.json`); não mexa neles;
 - `6`, `1` e `1`. Se não bater, **pare**: os nomes vêm das Tasks 1 e 2;
-- Vitest sem falha. Anote `Test Files N passed` e `Tests M passed`; com a linha de base de 05/10 (36/433) e as Tasks 1 a 4, são **39 e 507**;
+- Vitest sem falha. Anote `Test Files N passed` e `Tests M passed`; com a linha de base de 05/10 (36/433) e as Tasks 1 a 4, são **39 e 508**;
 - ESLint: só o aviso que já existia, e `exit 0`:
 
 ```
@@ -4812,7 +4822,7 @@ Expected:
 (cd apps/web && npx vitest run 2>&1 | tail -5)
 ```
 
-Expected: `N + 1` arquivos e `M + 8` testes do Step 1, todos passando (com a base de 05/10: **40 e 515**).
+Expected: `N + 1` arquivos e `M + 8` testes do Step 1, todos passando (com a base de 05/10: **40 e 516**).
 
 - [ ] **Step 13: Commit (só os 6 caminhos da task)**
 
@@ -5437,7 +5447,7 @@ git diff -z --name-only --diff-filter=ACMR origin/master...HEAD | xargs -0 npx p
 
 Expected:
 
-- Vitest: a linha de base anotada antes da Task 1 mais **4 arquivos e 82 testes**, sem `failed`. Os 82 são: Task 1, 36; Task 2, 19; Task 3, 1; Task 4, 18; Task 5, 8. Com a base de 05/10, ficam **40 arquivos e 515 testes**;
+- Vitest: a linha de base anotada antes da Task 1 mais **4 arquivos e 83 testes**, sem `failed`. Os 83 são: Task 1, 37; Task 2, 19; Task 3, 1; Task 4, 18; Task 5, 8. Com a base de 05/10, ficam **40 arquivos e 516 testes**;
 - `LINT_OK`;
 - `no-undef`: só o aviso antigo `'cronogramaEtapas' is defined but never used` e `exit 0`;
 - `BUILD_OK`;
