@@ -195,6 +195,23 @@ export default function CronogramaFisicoFinanceiro({
   paiRef.current = { setSelectedOp, setOportunidades };
   const cancelarEdicaoRef = useRef(false);
 
+  // Esc numa célula só desfaz a edição, sem fechar o detalhe da oportunidade. O Sheet (Radix)
+  // escuta o Esc em captura no document e fecha a gaveta se o evento não vier com
+  // defaultPrevented; a captura na window roda antes (padrão do AnexoViewer e da janela flutuante).
+  useEffect(() => {
+    const aoTeclarEsc = (e) => {
+      if (e.key !== "Escape" || e.isComposing) return;
+      const alvo = e.target;
+      if (!alvo?.closest?.("[data-celula-cronograma]")) return;
+      e.preventDefault();
+      cancelarEdicaoRef.current = true;
+      alvo.blur(); // o onBlur lê a marca, descarta o texto digitado e a limpa
+      cancelarEdicaoRef.current = false; // se o blur não rodou o onBlur, não deixa a marca presa
+    };
+    window.addEventListener("keydown", aoTeclarEsc, true);
+    return () => window.removeEventListener("keydown", aoTeclarEsc, true);
+  }, []);
+
   const aplicarLocal = (novo) => {
     cronogramaRef.current = novo;
     setCronograma(novo);
@@ -399,6 +416,7 @@ export default function CronogramaFisicoFinanceiro({
             type="text"
             inputMode="decimal"
             aria-label={`Etapa ${linha.numero}, Mês ${mes + 1} (%)`}
+            data-celula-cronograma
             value={emEdicao ? edicao.texto : textoPct}
             onFocus={(e) => {
               setEdicao({ numero: linha.numero, mes, texto: textoPct });
@@ -411,10 +429,6 @@ export default function CronogramaFisicoFinanceiro({
             onBlur={(e) => confirmarCelula(linha.numero, mes, e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") e.currentTarget.blur();
-              if (e.key === "Escape") {
-                cancelarEdicaoRef.current = true;
-                e.currentTarget.blur();
-              }
             }}
             className={`h-7 w-20 rounded border px-1.5 text-right text-sm focus:border-blue-500 focus:text-slate-900 focus:outline-none ${
               pct ? "border-slate-300 text-slate-800" : "border-slate-200 text-slate-400"
