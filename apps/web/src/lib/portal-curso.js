@@ -363,9 +363,10 @@ const MSG_TENTATIVAS_ESGOTADAS =
   "Você usou todas as tentativas. Procure o RH para liberar uma nova.";
 
 /**
- * O que a tela diz depois do envio da prova. O servidor só manda a nota e os acertos ao APROVADO; o
- * reprovado vê "insatisfatório", a nota mínima, as tentativas e a próxima liberação (nota e acertos
- * deixariam deduzir o gabarito). Se o servidor mandar a nota ao reprovado, a tela a mostra.
+ * O que a tela diz depois do envio da prova. O reprovado vê "insatisfatório", a nota mínima, as
+ * tentativas e a próxima liberação. A nota e os acertos vêm do servidor conforme a D10 (em aberto,
+ * `REPROVADO_VE_NOTA` em regras.ts): a tela os mostra quando vierem e fica só no "insatisfatório"
+ * quando o servidor os esconde (eles deixariam deduzir o gabarito).
  * `tentativas` conta as que restam (null se o curso não tem limite) e `esgotada` diz que não resta nenhuma
  * (a tela então não promete "nova tentativa liberada em...").
  */

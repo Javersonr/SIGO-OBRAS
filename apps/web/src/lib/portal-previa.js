@@ -25,8 +25,11 @@ export const ID_MATRICULA_PREVIA = "previa";
 /** Mesmos padrões do servidor (portal-funcionario/index.ts e regras.ts). */
 const NOTA_MINIMA_PADRAO = 70;
 const TEMPO_MINIMO_PADRAO = 60; // aula de PDF/texto sem tempo definido
-/** Espelha REPROVADO_VE_NOTA do servidor (regras.ts): o reprovado só vê "insatisfatório". */
-const REPROVADO_VE_NOTA = false;
+/**
+ * Espelha REPROVADO_VE_NOTA do servidor (regras.ts, D10 em aberto): `true` = o reprovado também recebe
+ * nota, acertos e total (comportamento de antes da T16); `false` = só "insatisfatório".
+ */
+const REPROVADO_VE_NOTA = true;
 
 /**
  * Nota mínima como o servidor a usa (`nota_minima ?? 70`): só ausente (ou o texto vazio do formulário)
@@ -228,8 +231,8 @@ function erroDaPrevia() {
  * - `progresso`: devolve o tempo recebido e NUNCA conclui a aula (nada fica gravado);
  * - `iniciar_avaliacao`: sorteia a prova aqui (`sortearPrevia`), com gabarito e comentário para o RT;
  * - `avaliacao`: corrige aqui, com o gabarito do item; a correção comentada só vem na aprovação (como
- *   no servidor: o RT já vê o gabarito na própria questão), o reprovado vê só "insatisfatório" (como o
- *   aluno) e a nova tentativa não espera intervalo;
+ *   no servidor: o RT já vê o gabarito na própria questão), o reprovado recebe o mesmo que o aluno
+ *   (`REPROVADO_VE_NOTA`) e a nova tentativa não espera intervalo;
  * - o resto (dúvida, certificado, ciência, login...) falha com `codigo: "PREVIA"`.
  */
 export function criarApiPrevia({ item } = {}) {
@@ -268,7 +271,7 @@ export function criarApiPrevia({ item } = {}) {
           success: true,
           resultado: aprovada ? "satisfatorio" : "insatisfatorio",
           aprovada,
-          // como o servidor: nota, acertos e total só para o aprovado
+          // como o servidor: nota, acertos e total para o aprovado e, se REPROVADO_VE_NOTA, o reprovado
           ...(aprovada || REPROVADO_VE_NOTA ? { nota, acertos, total } : {}),
           nota_minima: minima,
           tentativa: 1,

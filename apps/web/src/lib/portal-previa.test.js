@@ -451,7 +451,7 @@ describe("criarApiPrevia", () => {
     expect(r).toMatchObject({ nota: 0, nota_minima: 0, aprovada: true });
   });
 
-  it("reprovado: sem espera, sem correção comentada e sem nota, acertos nem total (como o aluno vê)", async () => {
+  it("reprovado: sem espera, sem correção comentada e com nota, acertos e total (D10 em aberto: como o aluno vê)", async () => {
     const api = criarApiPrevia({ item });
     const r = await api.chamarPortal("avaliacao", {
       respostas: [
@@ -466,8 +466,11 @@ describe("criarApiPrevia", () => {
       tentativa: 1,
       proxima_em: null,
       revisao: null,
+      // REPROVADO_VE_NOTA = true (padrão enquanto a D10 não decide): o reprovado vê a nota, como antes
+      nota: 0,
+      acertos: 0,
+      total: 2,
     });
-    for (const chave of ["nota", "acertos", "total"]) expect(chave in r).toBe(false);
   });
 
   it("aprovado recebe nota, acertos e o conceito satisfatório", async () => {

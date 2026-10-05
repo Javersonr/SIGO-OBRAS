@@ -1194,8 +1194,9 @@ Deno.serve(
       const liberaMs = proximaTentativaEm(aprovada, curso?.intervalo_tentativa_min, Date.now());
       const liberaEm = liberaMs !== null ? new Date(liberaMs).toISOString() : null;
 
-      // Reprovado: só "insatisfatório", tentativas e próxima liberação (sem nota, acertos e total, que
-      // permitem deduzir o gabarito); o RH vê tudo na trilha. Aprovado: como antes. Regra em regras.ts.
+      // Reprovado: "insatisfatório", tentativas e próxima liberação; nota, acertos e total só enquanto
+      // REPROVADO_VE_NOTA (D10 em aberto; fora, eles deixam deduzir o gabarito). Aprovado: como antes.
+      // Regra em regras.ts.
       return ok(
         respostaDaCorrecao({
           aprovada,

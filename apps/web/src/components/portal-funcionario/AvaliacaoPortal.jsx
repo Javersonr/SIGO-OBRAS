@@ -50,7 +50,8 @@ function CorrecaoComentada({ item }) {
  * a ordem das questões e das alternativas, registra o início na trilha e devolve as questões SEM
  * gabarito. O navegador não sorteia nem informa a ordem exibida. A correção também é no servidor (o
  * gabarito só aparece depois de aprovado); cada envio vira uma tentativa guardada com a prova como estava.
- * O reprovado vê só "insatisfatório", as tentativas e a próxima liberação.
+ * O reprovado vê "insatisfatório", as tentativas e a próxima liberação (e a nota, enquanto o servidor a
+ * mandar: D10 em aberto, `REPROVADO_VE_NOTA` em regras.ts).
  *
  * Esta peça só abre a prova (carregando, erro, ou a prova pronta); a prova em si é `ProvaEmAndamento`.
  * Se o servidor recusar o envio porque a prova não vale mais (não estava iniciada nesta tentativa, ou o

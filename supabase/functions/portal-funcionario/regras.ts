@@ -285,11 +285,14 @@ export const EVENTO_PROVA_INICIADA = "avaliacao_iniciada";
 export const TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG = 0;
 
 /**
- * DECISÃO D10 em aberto: o reprovado vê a nota, os acertos e o total? `false` = só "insatisfatório",
- * as tentativas e a próxima liberação (T16, item 3: acertos e total, em prova de 5 ou 6 questões,
- * deixam deduzir o gabarito); o RH vê tudo na trilha. `true` devolve o comportamento antigo.
+ * DECISÃO D10 em aberto: o reprovado vê a nota, os acertos e o total? O padrão `true` mantém o
+ * comportamento de antes da T16 (o reprovado recebe nota, acertos e total) até a D10 ser decidida.
+ * `false` = só "insatisfatório", as tentativas e a próxima liberação: fecha a dedução do gabarito
+ * (acertos e total, em prova de 5 ou 6 questões, deixam deduzir as respostas certas; T16, item 3);
+ * o RH vê tudo na trilha. Trocar o valor aqui e publicar a função basta (a prévia do RT espelha o
+ * valor em `apps/web/src/lib/portal-previa.js`).
  */
-export const REPROVADO_VE_NOTA = false;
+export const REPROVADO_VE_NOTA = true;
 
 /** Questão sorteada para uma tentativa: sem gabarito, com as alternativas na ordem mostrada. */
 export interface QuestaoSorteada {
@@ -575,9 +578,10 @@ export function validarEnvio(p: {
 
 /**
  * Resposta da ação `avaliacao` depois de corrigir. Aprovado: tudo, como antes (nota, acertos, total
- * e a correção comentada) mais o conceito `satisfatorio`. Reprovado: só `insatisfatorio`, a nota
- * mínima, as tentativas e a próxima liberação; sem nota, acertos, total nem correção comentada (o RH
- * vê tudo na trilha). `reprovadoVeNota` abre a nota ao reprovado (D10); a correção comentada nunca.
+ * e a correção comentada) mais o conceito `satisfatorio`. Reprovado: `insatisfatorio`, a nota mínima,
+ * as tentativas e a próxima liberação, mais nota, acertos e total quando `reprovadoVeNota` (padrão
+ * `REPROVADO_VE_NOTA`, D10 em aberto); com `false` o reprovado não recebe nota, acertos nem total
+ * (o RH vê tudo na trilha). A correção comentada só vai ao aprovado, qualquer que seja o valor.
  */
 export function respostaDaCorrecao(
   p: {
@@ -623,7 +627,8 @@ export function respostaDaCorrecao(
 }
 
 /**
- * A matrícula como o aluno a recebe em `dados`. A nota da última tentativa não sai enquanto ele não
+ * A matrícula como o aluno a recebe em `dados`. Com `reprovadoVeNota` (padrão `REPROVADO_VE_NOTA`,
+ * D10 em aberto) ela vai inteira. Com `false`, a nota da última tentativa não sai enquanto ele não
  * foi aprovado (senão esconder a nota na resposta da prova não adiantaria: ela estaria aqui).
  */
 export function matriculaParaAluno<T extends { avaliacao_aprovada?: boolean | null }>(

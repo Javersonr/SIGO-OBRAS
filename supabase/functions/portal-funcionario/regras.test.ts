@@ -1274,16 +1274,19 @@ test("respostaDaCorrecao: aprovado recebe tudo, como hoje, com o conceito satisf
   });
 });
 
-test("respostaDaCorrecao: reprovado recebe só 'insatisfatório', tentativas e próxima liberação", () => {
-  const r = respostaDaCorrecao({
-    ...CORRECAO,
-    aprovada: false,
-    nota: 40,
-    acertos: 2,
-    cursoConcluido: false,
-    revisao: null,
-    proximaEm: "2026-10-05T12:30:00.000Z",
-  });
+test("respostaDaCorrecao: com REPROVADO_VE_NOTA = false o reprovado recebe só 'insatisfatório', tentativas e liberação", () => {
+  const r = respostaDaCorrecao(
+    {
+      ...CORRECAO,
+      aprovada: false,
+      nota: 40,
+      acertos: 2,
+      cursoConcluido: false,
+      revisao: null,
+      proximaEm: "2026-10-05T12:30:00.000Z",
+    },
+    false
+  );
   assert.deepEqual(r, {
     resultado: "insatisfatorio",
     aprovada: false,
@@ -1299,26 +1302,39 @@ test("respostaDaCorrecao: reprovado recebe só 'insatisfatório', tentativas e p
 });
 
 test("respostaDaCorrecao: reprovado nunca leva a correção comentada, mesmo se vier preenchida", () => {
-  const r = respostaDaCorrecao({ ...CORRECAO, aprovada: false, revisao: REVISAO });
-  assert.equal(r.revisao, null);
-  assert.equal(r.curso_concluido, false);
+  for (const veNota of [undefined, true, false]) {
+    const r = respostaDaCorrecao({ ...CORRECAO, aprovada: false, revisao: REVISAO }, veNota);
+    assert.equal(r.revisao, null, String(veNota));
+    assert.equal(r.curso_concluido, false, String(veNota));
+  }
 });
 
-test("respostaDaCorrecao: mostrar a nota ao reprovado é uma constante (D10); o padrão esconde", () => {
-  assert.equal(REPROVADO_VE_NOTA, false);
-  const aberto = respostaDaCorrecao(
-    { ...CORRECAO, aprovada: false, nota: 40, acertos: 2, revisao: null, cursoConcluido: false },
-    true
-  );
-  assert.equal(aberto.nota, 40);
-  assert.equal(aberto.acertos, 2);
-  assert.equal(aberto.total, 5);
-  assert.equal(aberto.resultado, "insatisfatorio");
-  assert.equal(aberto.revisao, null); // a correção comentada continua só para o aprovado
+test("respostaDaCorrecao: mostrar a nota ao reprovado é uma constante (D10); o padrão é o comportamento atual", () => {
+  // D10 em aberto: até o Javerson decidir, o reprovado continua vendo nota, acertos e total
+  assert.equal(REPROVADO_VE_NOTA, true);
+  const reprovado = {
+    ...CORRECAO,
+    aprovada: false,
+    nota: 40,
+    acertos: 2,
+    revisao: null,
+    cursoConcluido: false,
+  };
+  const padrao = respostaDaCorrecao(reprovado); // sem o 2º argumento: vale a constante
+  assert.equal(padrao.nota, 40);
+  assert.equal(padrao.acertos, 2);
+  assert.equal(padrao.total, 5);
+  assert.equal(padrao.resultado, "insatisfatorio");
+  assert.equal(padrao.revisao, null); // a correção comentada continua só para o aprovado
+  assert.deepEqual(padrao, respostaDaCorrecao(reprovado, true));
+  // `false` fecha a dedução do gabarito: nem nota, nem acertos, nem total
+  const fechado = respostaDaCorrecao(reprovado, false);
+  for (const chave of ["nota", "acertos", "total"]) assert.equal(chave in fechado, false, chave);
+  assert.equal(fechado.resultado, "insatisfatorio");
 });
 
 // ---------------------------------------------------------- matriculaParaAluno
-test("matriculaParaAluno: a nota de quem ainda não foi aprovado não sai nos dados", () => {
+test("matriculaParaAluno: com REPROVADO_VE_NOTA = false a nota de quem ainda não foi aprovado não sai", () => {
   const m = {
     id: "m1",
     status: "em_andamento",
@@ -1326,20 +1342,34 @@ test("matriculaParaAluno: a nota de quem ainda não foi aprovado não sai nos da
     nota_avaliacao: 40,
     tentativas_extras: 1,
   };
-  const para = matriculaParaAluno(m);
+  const para = matriculaParaAluno(m, false);
   assert.equal(para.nota_avaliacao, null);
   assert.equal(para.id, "m1");
   assert.equal(para.tentativas_extras, 1);
   assert.equal(m.nota_avaliacao, 40); // o original não é alterado
 });
 
-test("matriculaParaAluno: o aprovado vê a própria nota; a regra pode ser aberta pela constante", () => {
-  const aprovada = { id: "m1", avaliacao_aprovada: true, nota_avaliacao: 90 };
-  assert.equal(matriculaParaAluno(aprovada).nota_avaliacao, 90);
+test("matriculaParaAluno: o padrão (REPROVADO_VE_NOTA = true) entrega a matrícula como está", () => {
   const reprovada = { id: "m1", avaliacao_aprovada: false, nota_avaliacao: 40 };
+  assert.equal(matriculaParaAluno(reprovada).nota_avaliacao, 40);
   assert.equal(matriculaParaAluno(reprovada, true).nota_avaliacao, 40);
+});
+
+test("matriculaParaAluno: o aprovado vê a própria nota com a regra aberta ou fechada", () => {
+  const aprovada = { id: "m1", avaliacao_aprovada: true, nota_avaliacao: 90 };
+  for (const veNota of [undefined, true, false]) {
+    assert.equal(matriculaParaAluno(aprovada, veNota).nota_avaliacao, 90, String(veNota));
+  }
   // sem nota gravada continua sem nota (null/ausente)
-  assert.equal(matriculaParaAluno({ id: "m1", avaliacao_aprovada: null }).nota_avaliacao, null);
+  assert.equal(
+    matriculaParaAluno({ id: "m1", avaliacao_aprovada: null }, false).nota_avaliacao,
+    null
+  );
+  // o padrão não mexe na matrícula: sem nota gravada, o campo continua ausente
+  assert.equal(
+    "nota_avaliacao" in matriculaParaAluno({ id: "m1", avaliacao_aprovada: null }),
+    false
+  );
 });
 
 // -------------------------------- aulas: liberação, URLs e texto só para as liberadas
