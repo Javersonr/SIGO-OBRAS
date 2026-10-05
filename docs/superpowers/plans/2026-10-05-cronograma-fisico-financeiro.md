@@ -6,7 +6,7 @@
 
 **Architecture:**
 
-- **Lógica pura em `apps/web/src/lib/`, testada com Vitest:** `cronograma-ff.js` (contas inteiras: % em centésimos, R$ em centavos, meses e reperiodização), `cronograma-modelo.js` (leitura da aba `Cronograma` e a 3ª aba do `gerarModelo`), `cronograma-export.js` (PDF e Excel, com o cabeçalho, o nome do arquivo e o jsPDF da proposta) e `fila-gravacao.js` (gravação com espera, em ordem).
+- **Lógica pura em `apps/web/src/lib/`, testada com Vitest:** `cronograma-ff.js` (contas inteiras: % em centésimos, R$ em centavos, meses e reperiodização), `cronograma-modelo.js` (leitura da aba `Cronograma` e a 3ª aba do `gerarModelo`), `xlsx-celulas.js` (utilitários de célula do SheetJS, compartilhados com o `orcamento-modelo.js`), `cronograma-export.js` (PDF e Excel, com o cabeçalho, o nome do arquivo e o jsPDF da proposta) e `fila-gravacao.js` (gravação com espera, em ordem).
 - **Tela:** `CronogramaFisicoFinanceiro.jsx`, `ImportarCronogramaDialog.jsx` e `ExportarCronogramaDialog.jsx` em `components/oportunidades/`, ligados no `OportunidadeDetalhe.jsx` (aba Planejamento, acima do `DiarioObraTab`). O quadro grava o objeto inteiro em `oportunidade.cronograma_ff` (migração aditiva `0133`); o R$ nunca é gravado.
 - **Skill do Claude** `orcamento-prefeitura-sigo`: seção Cronograma e o código Python com a 3ª aba. Nenhuma Edge Function nova ou alterada.
 
@@ -48,7 +48,7 @@
 - **Ordem do orçamento:** o contrato fala em `ordemDoItem`, que não existe; as etapas saem na ordem do `ordenarItensOportunidade` (`ordem`, nula como 0, depois `numero`), a mesma da tela do orçamento (Task 1).
 - **Contas estritas (Task 1):** `lerPercentual` devolve `null` para vazio e `NaN` para texto inválido, sinal, milhar ou valor fora de 0–100 (o arredondamento em 2 casas vem antes da conferência da faixa); `ajustarMeses`, `reperiodizarLinha` e `reperiodizar` lançam `RangeError` com N fora de 1 a 60; `normalizarCronograma` com `meses` 0 devolve `pct: {}`; `todasFecham` é `false` sem etapas; nenhuma função preenche `atualizado_em` (quem grava põe a data).
 - **Leitura da aba (Task 2):** `lerArquivoCronograma` lê com `sheetStubs: true` além do `cellNF` do contrato (fórmula sem valor salvo vira erro, não 0); aba sem linhas e nenhuma linha com etapa do orçamento são **erros** fora da lista da spec, para a importação não trocar o cronograma atual por um vazio; Mês faltando, Mês repetido, colunas além do Mês 60 e linha sem Item são avisos extras; na célula numérica a faixa de 0 a 100 vale sobre o % já arredondado em 2 casas, como no `lerPercentual` (100,004 vira 100,00 com aviso; 100,005 é erro).
-- **Sem dependência circular (Task 2):** `orcamento-modelo.js` importa o nome e o cabeçalho de `cronograma-modelo.js`, que não importa `orcamento-modelo.js` e repete 7 utilitários pequenos de célula.
+- **Sem dependência circular e sem cópia (Task 2):** `orcamento-modelo.js` importa o nome e o cabeçalho de `cronograma-modelo.js`, que não importa `orcamento-modelo.js`; os utilitários de célula (`normalizarRotulo`, `acharAba`, `celula`, `formulaSemValor`, `semValor`, `vazia`, `textoCelula` e `formatoData`) saem do `orcamento-modelo.js` para o módulo neutro `xlsx-celulas.js`, que os dois importam. Uma cópia já tinha divergido no `formatoData` (sem `z`, o do orçamento reconhece a data pelo texto exibido).
 - **Skill mais estrita que o SIGO (Task 3):** o código Python exige Item em texto e % numérico, porque quem grava é o próprio código; `pct_da_linha` converte R$ em % com a diferença no último mês com valor.
 - **Sem cópia da proposta (Task 4):** `montarCabecalhoLicitacao` sai de dentro de `montarDadosProposta` (o resultado da proposta não muda) e `cabecalhoDoDocumento`, `linhasAssinatura`, `textoPdf` e o novo `carregarJsPdf` passam a ser exportados por `proposta-export.js`; `nomeArquivoCronograma` reaproveita `nomeArquivoProposta`.
 - **Excel (Task 4):** cada etapa em 2 linhas com Item, Etapa, Valor e % do total mesclados; % gravado como fração com formato `0.00%`; mês com 0% em branco; acima de 255 etapas, `SUM` de `SUM`s.
@@ -60,7 +60,7 @@
 - **Exportar entre as Tasks 5 e 6:** a Task 5 deixa a âncora `{/* EXPORTAR_CRONOGRAMA */}` na barra de botões, fora de qualquer condição de `podeEditar`; a Task 6 troca a âncora pelo `BotaoExportarCronograma` (export extra do `ExportarCronogramaDialog.jsx`), visível também para quem só vê a aba, que exporta o estado local do quadro (o `selectedOp` pode estar atrás da tela).
 - **Imbé de Minas (Task 7):** a planilha feita à mão não redistribui a curva: copia as 5 parcelas preenchidas do CFF de 12 parcelas. O equivalente no SIGO é **Meses 12 → 5**; o roteiro mostra também o **Reperiodizar 12 → 5** como o outro critério, com a diferença explicada. O arquivo de teste promove os grupos 1.1 a 1.6 do edital a etapas 1 a 6.
 - **Onde se trabalha:** no `master` do checkout principal, como o plano do Orçamento (a base dele está lá, ainda não publicada), com commit parcial por task; a Task 7 trata o risco de outra sessão publicar antes (Step 1) e só publica com o OK do Javerson.
-- **Conferência de 05/10** (cópia do `master` `37ad85c` fora do repositório): as Tasks 1 a 6 aplicadas em ordem, com todas as âncoras únicas no momento da troca; Prettier sem mudança; Vitest com 40 arquivos e 515 testes (base 36/433; a Task 1 ganhou depois 1 teste de `lerPercentual` com `number`, e a suíte passou a 516; a Task 2 ganhou depois 1 teste da faixa arredondada da célula numérica, e a suíte passou a 517); `npm run lint`, `no-undef` e `vite build` sem erro, com os chunks esperados; o código Python da skill e os números da Task 7 (Itatinga e Imbé) recalculados sobre cópias das planilhas.
+- **Conferência de 05/10** (cópia do `master` `37ad85c` fora do repositório): as Tasks 1 a 6 aplicadas em ordem, com todas as âncoras únicas no momento da troca; Prettier sem mudança; Vitest com 40 arquivos e 515 testes (base 36/433; a Task 1 ganhou depois 1 teste de `lerPercentual` com `number`, e a suíte passou a 516; a Task 2 ganhou depois 1 teste da faixa arredondada da célula numérica, e a suíte passou a 517; a Task 2 passou depois a mover os utilitários de célula para o `xlsx-celulas.js`, conferido no worktree com Vitest, lint e build, sem mudar nenhuma contagem); `npm run lint`, `no-undef` e `vite build` sem erro, com os chunks esperados; o código Python da skill e os números da Task 7 (Itatinga e Imbé) recalculados sobre cópias das planilhas.
 
 ---
 
@@ -836,15 +836,16 @@ Esperado: o Prettier não muda nada (`unchanged`), o commit sai e o `git log` mo
 **Files:**
 
 - Create: `apps/web/src/lib/cronograma-modelo.js`
+- Create: `apps/web/src/lib/xlsx-celulas.js` (os utilitários de célula do `orcamento-modelo.js`, exportados)
 - Test: `apps/web/src/lib/cronograma-modelo.test.js`
-- Modify: `apps/web/src/lib/orcamento-modelo.js` (import e `gerarModelo`, linhas 14 e 307-342)
+- Modify: `apps/web/src/lib/orcamento-modelo.js` (imports, utilitários de célula e `gerarModelo`, linhas 13-14, 84-143 e 307-342)
 - Modify: `apps/web/src/lib/orcamento-modelo.test.js` (import e `describe("gerarModelo")`, linhas 13-14 e 88-113)
 
 **Interfaces:**
 
 - Consumes:
   - `MAX_MESES`, `lerPercentual` e `somaCentesimos` (Task 1);
-  - `normalizarTexto` de `./busca` (a mesma comparação de rótulos do `orcamento-modelo.js`);
+  - `acharAba`, `celula`, `formatoData`, `formulaSemValor`, `normalizarRotulo`, `textoCelula` e `vazia` de `./xlsx-celulas` (novo; são os do `orcamento-modelo.js`, a mesma comparação de rótulos e a mesma regra de data);
   - SheetJS `xlsx` 0.18.5 (`XLSX.read` com `cellNF`, `XLSX.SSF.is_date`).
 - Produces (nomes do contrato):
   - `ABA_CRONOGRAMA = "Cronograma"`;
@@ -855,7 +856,8 @@ Esperado: o Prettier não muda nada (`unchanged`), o commit sai e o `git log` mo
     - `numerosEtapas` = `etapasDoOrcamento(itens).map((e) => e.numero)`;
   - `lerArquivoCronograma(buffer, numerosEtapas)` — `XLSX.read(buffer, { type: "array", cellNF: true, sheetStubs: true })`; arquivo que não é planilha → `{ cronograma: null, erros: ["Não foi possível ler o arquivo como planilha Excel (.xlsx)."], avisos: [], resumo: { meses: 0, linhas: 0, ignoradas: 0, faltando: 0 } }`. O `sheetStubs` (além do `cellNF` do contrato) é o mesmo do `lerArquivoModelo`: mantém a fórmula sem valor salvo, para acusar o erro em vez de ler 0.
   - `gerarModelo()` (já existe em `orcamento-modelo.js`) passa a ter 3 abas: `Orçamento`, `Informações` e `Cronograma` (`cabecalhoCronograma(12)`, coluna A em Texto nas linhas 2 a 501, como a aba Orçamento).
-- **Sem dependência circular:** `orcamento-modelo.js` importa `ABA_CRONOGRAMA` e `cabecalhoCronograma` de `cronograma-modelo.js`, e este **não** importa `orcamento-modelo.js`. Por isso ele repete 7 utilitários pequenos de célula (`normalizarRotulo`, `acharAba`, `celula`, `formulaSemValor`, `vazia`, `textoCelula`, `formatoData`); a leitura do número é a do `lerPercentual` (Task 1), não uma cópia do `lerNumeroBR`.
+  - `xlsx-celulas.js` (novo) exporta `normalizarRotulo`, `acharAba`, `celula`, `formulaSemValor`, `semValor`, `vazia`, `textoCelula` e `formatoData`, movidos sem mudança do `orcamento-modelo.js`; quem os usa importa de lá.
+- **Sem dependência circular e sem cópia:** `orcamento-modelo.js` importa `ABA_CRONOGRAMA` e `cabecalhoCronograma` de `cronograma-modelo.js`, e este **não** importa `orcamento-modelo.js`. Os utilitários de célula ficam num módulo neutro, `xlsx-celulas.js` (só importa o `xlsx` e `./busca`), que os dois importam; o `orcamento-modelo.js` apaga as suas cópias. A leitura do número é a do `lerPercentual` (Task 1), não uma cópia do `lerNumeroBR`.
 - **Regras de leitura (spec §6) e as mensagens exatas:**
   - cabeçalho na linha 1, em qualquer ordem, sem acento, maiúsculas nem espaços extras (`MES 2`, `mês  3` e `Mes1` valem); meses = maior n de `Mês n`;
   - valores: número de 0 a 100, com a faixa conferida sobre o valor já arredondado em 2 casas (100,004 vira 100,00 com o aviso de casas a mais; 100,005 é erro); número não finito (NaN) é `"NaN" não é um número`; texto pt-BR (`12,5`, `12.5%`, `25 %`, com espaços nas pontas ou não); célula com formato de % (`z` com `%` fora de aspas, colchetes e escapes; sem `z`, o texto exibido terminado em `%`), que vale × 100 (`0,07` → 7, sem o ruído `7.000000000000001`); vazio = 0;
@@ -1040,18 +1042,20 @@ describe("lerAbaCronograma — erros", () => {
     expect(r.cronograma).toBeNull();
     expect(r.erros).toEqual(["Linha 4: Item 1 repetido (já está na linha 2)."]);
   });
-  it("fórmula sem valor salvo, data, booleano e NaN numa célula de mês", () => {
-    const wb = montarWb([CAB4, ["1", "A", 0, 0, 0, 0]]);
+  it("fórmula sem valor salvo, data (com e sem `z`), booleano e NaN numa célula de mês", () => {
+    const wb = montarWb([cabecalhoCronograma(5), ["1", "A", 0, 0, 0, 0, 0]]);
     const ws = wb.Sheets[ABA_CRONOGRAMA];
     ws.C2 = { t: "z", f: "10*2" };
     ws.D2 = { t: "n", v: 46296, z: "m/d/yy", w: "10/1/26" };
     ws.E2 = { t: "b", v: true, w: "TRUE" };
     ws.F2 = { t: "n", v: NaN }; // número não finito (arquivo malformado)
+    ws.G2 = { t: "n", v: 46296, w: "10/1/26" }; // sem `z` (em memória): vale o texto exibido
     expect(lerAbaCronograma(wb, ["1"]).erros).toEqual([
       "Linha 2, Mês 1: fórmula sem valor salvo; grave o número.",
       'Linha 2, Mês 2: virou data no Excel ("10/1/26"); formate como Número.',
       'Linha 2, Mês 3: "TRUE" não é um número.',
       'Linha 2, Mês 4: "NaN" não é um número.',
+      'Linha 2, Mês 5: virou data no Excel ("10/1/26"); formate como Número.',
     ]);
   });
   it("aba vazia (modelo em branco) ou sem nenhuma etapa do orçamento", () => {
@@ -1236,7 +1240,71 @@ new:
 
 Esperado: `Error: Cannot find module './cronograma-modelo'` (nos dois arquivos) e `Test Files  2 failed (2)`.
 
-- [ ] **Step 4: Implementar a leitura**
+- [ ] **Step 4: Implementar a leitura (utilitários de célula compartilhados e `cronograma-modelo.js`)**
+
+Crie `apps/web/src/lib/xlsx-celulas.js` (são os utilitários de célula que o `orcamento-modelo.js` já tinha, agora exportados; o Step 6 apaga as cópias de lá):
+
+<!-- prettier-ignore -->
+```js
+/**
+ * Utilitários de célula do SheetJS (.xlsx) comuns à leitura do orçamento
+ * (`orcamento-modelo.js`) e da aba Cronograma (`cronograma-modelo.js`): achar a aba, comparar
+ * rótulos, ler o texto de uma célula e reconhecer fórmula sem valor salvo, célula vazia e data.
+ *
+ * Módulo neutro: só importa o `xlsx` e a busca, para os dois lerem com a mesma regra sem
+ * dependência circular (o `orcamento-modelo.js` importa o `cronograma-modelo.js` para o
+ * `gerarModelo`).
+ */
+import * as XLSX from "xlsx";
+import { normalizarTexto } from "./busca";
+
+export function normalizarRotulo(s) {
+  return normalizarTexto(s).replace(/\s+/g, " ").trim();
+}
+
+export function acharAba(wb, nome) {
+  const alvo = normalizarRotulo(nome);
+  return (wb?.SheetNames || []).find((n) => normalizarRotulo(n) === alvo);
+}
+
+export function celula(ws, r, c) {
+  return c === undefined ? undefined : ws[XLSX.utils.encode_cell({ r, c })];
+}
+
+/** Fórmula gravada sem o valor calculado (openpyxl faz isso); com sheetStubs vem t "z". */
+export function formulaSemValor(cel) {
+  return Boolean(cel?.f) && (cel.t === "z" || cel.v === undefined || cel.v === null);
+}
+
+export function semValor(cel) {
+  return !cel || cel.t === "z" || cel.v === undefined || cel.v === null;
+}
+
+export function vazia(cel) {
+  if (formulaSemValor(cel)) return false;
+  if (semValor(cel)) return true;
+  return typeof cel.v === "string" && cel.v.trim() === "";
+}
+
+/** Texto das colunas de texto. Número inteiro vira "93358" (o `w` podia vir "9.3E+4"). */
+export function textoCelula(cel) {
+  if (semValor(cel)) return "";
+  if (cel.t === "n" && Number.isInteger(cel.v)) return String(cel.v);
+  return String(cel.w ?? cel.v).trim();
+}
+
+/**
+ * Número que o Excel formatou como data (digitar 1/10 vira 1-Oct). Com `cellNF` a célula traz
+ * o formato (`z`) e quem decide é o SSF (d-mmm, mmm-yy, dd/mm/yyyy...): o texto exibido (`w`)
+ * só casa com alguns deles. Sem `z` (workbook em memória), `w` com três números separados por
+ * / ou - fica como reserva.
+ */
+export function formatoData(cel) {
+  if (cel?.t !== "n" || typeof cel.v !== "number") return false;
+  if (typeof cel.z === "string") return XLSX.SSF.is_date(cel.z);
+  return /\d+[/-]\d+[/-]\d+/.test(String(cel.w ?? ""));
+}
+```
 
 Crie `apps/web/src/lib/cronograma-modelo.js`:
 
@@ -1248,15 +1316,23 @@ Crie `apps/web/src/lib/cronograma-modelo.js`:
  * docs/superpowers/specs/2026-10-05-cronograma-fisico-financeiro-design.md §6).
  *
  * `orcamento-modelo.js` importa daqui o nome e o cabeçalho para o `gerarModelo`; por isso este
- * arquivo NÃO importa `orcamento-modelo.js` (sem dependência circular) e repete os poucos
- * utilitários de célula de que precisa.
+ * arquivo NÃO importa `orcamento-modelo.js` (sem dependência circular): os utilitários de célula
+ * que os dois usam ficam em `xlsx-celulas.js`.
  *
  * Funções puras: recebem o workbook do SheetJS (ou o ArrayBuffer do arquivo) e devolvem
  * { cronograma, erros, avisos, resumo }. Mensagens por linha usam a linha do Excel.
  */
 import * as XLSX from "xlsx";
-import { normalizarTexto } from "./busca";
 import { MAX_MESES, lerPercentual, somaCentesimos } from "./cronograma-ff";
+import {
+  acharAba,
+  celula,
+  formatoData,
+  formulaSemValor,
+  normalizarRotulo,
+  textoCelula,
+  vazia,
+} from "./xlsx-celulas";
 
 export const ABA_CRONOGRAMA = "Cronograma";
 
@@ -1266,37 +1342,6 @@ export function cabecalhoCronograma(meses = 12) {
 }
 
 // ---------------------------------------------------------------- utilidades
-
-function normalizarRotulo(s) {
-  return normalizarTexto(s).replace(/\s+/g, " ").trim();
-}
-
-function acharAba(wb, nome) {
-  const alvo = normalizarRotulo(nome);
-  return (wb?.SheetNames || []).find((n) => normalizarRotulo(n) === alvo);
-}
-
-function celula(ws, r, c) {
-  return c === undefined ? undefined : ws[XLSX.utils.encode_cell({ r, c })];
-}
-
-/** Fórmula gravada sem o valor calculado (openpyxl faz isso); com sheetStubs vem t "z". */
-function formulaSemValor(cel) {
-  return Boolean(cel?.f) && (cel.t === "z" || cel.v === undefined || cel.v === null);
-}
-
-function vazia(cel) {
-  if (formulaSemValor(cel)) return false;
-  if (!cel || cel.t === "z" || cel.v === undefined || cel.v === null) return true;
-  return typeof cel.v === "string" && cel.v.trim() === "";
-}
-
-/** Texto do Item. Número inteiro vira "1" (o `w` podia vir "1.0" ou "1E+0"). */
-function textoCelula(cel) {
-  if (vazia(cel) || formulaSemValor(cel)) return "";
-  if (cel.t === "n" && Number.isInteger(cel.v)) return String(cel.v);
-  return String(cel.w ?? cel.v).trim();
-}
 
 /** Formato da célula sem "textos", [cores/locale] e \escapes (0"%" não é percentual). */
 function formatoLimpo(cel) {
@@ -1309,10 +1354,6 @@ function formatoPercentual(cel) {
   if (z !== null) return z.includes("%");
   const exibido = String(cel?.w ?? "").trim();
   return exibido.endsWith("%");
-}
-
-function formatoData(cel) {
-  return typeof cel?.z === "string" && XLSX.SSF.is_date(cel.z);
 }
 
 function formatar(v, minimo, maximo) {
@@ -1542,16 +1583,17 @@ Esperado: 3 falhas, todas pela aba que o `gerarModelo` ainda não cria:
 
 e `Tests  3 failed | 77 passed (80)`.
 
-- [ ] **Step 6: A 3ª aba no `gerarModelo` (3 trocas old→new com a ferramenta Edit em `apps/web/src/lib/orcamento-modelo.js`)**
+- [ ] **Step 6: A 3ª aba no `gerarModelo` e os utilitários de célula compartilhados (5 trocas old→new com a ferramenta Edit em `apps/web/src/lib/orcamento-modelo.js`)**
 
-A aba usa o mesmo `LINHAS_MODELO` (500) da aba Orçamento para a coluna A em Texto. Aplique cada troca com a ferramenta **Edit**, na ordem.
+A aba usa o mesmo `LINHAS_MODELO` (500) da aba Orçamento para a coluna A em Texto. As trocas 2.7 e 2.8 apagam do `orcamento-modelo.js` os utilitários de célula que agora vêm de `xlsx-celulas.js` (só movem código). Aplique cada troca com a ferramenta **Edit**, na ordem.
 
-2.4 — import do nome e do cabeçalho da aba (linha 14)
+2.4 — imports: a aba Cronograma e os utilitários de célula (linhas 13-14; o `normalizarTexto` deixa de ser usado aqui)
 
 old:
 
 <!-- prettier-ignore -->
 ```js
+import { normalizarTexto } from "@/lib/busca";
 import { totalLinha } from "@/lib/orcamento-desconto";
 ```
 
@@ -1561,6 +1603,16 @@ new:
 ```js
 import { totalLinha } from "@/lib/orcamento-desconto";
 import { ABA_CRONOGRAMA, cabecalhoCronograma } from "@/lib/cronograma-modelo";
+import {
+  acharAba,
+  celula,
+  formatoData,
+  formulaSemValor,
+  normalizarRotulo,
+  semValor,
+  textoCelula,
+  vazia,
+} from "@/lib/xlsx-celulas";
 ```
 
 2.5 — comentário do `gerarModelo` (linha 307)
@@ -1617,6 +1669,90 @@ new:
   return wb;
 ```
 
+2.7 — os utilitários de célula saem do `orcamento-modelo.js` (linhas 84-120)
+
+old:
+
+<!-- prettier-ignore -->
+```js
+// ---------------------------------------------------------------- utilidades
+
+function normalizarRotulo(s) {
+  return normalizarTexto(s).replace(/\s+/g, " ").trim();
+}
+
+function acharAba(wb, nome) {
+  const alvo = normalizarRotulo(nome);
+  return (wb?.SheetNames || []).find((n) => normalizarRotulo(n) === alvo);
+}
+
+function celula(ws, r, c) {
+  return c === undefined ? undefined : ws[XLSX.utils.encode_cell({ r, c })];
+}
+
+/** Fórmula gravada sem o valor calculado (openpyxl faz isso); com sheetStubs vem t "z". */
+function formulaSemValor(cel) {
+  return Boolean(cel?.f) && (cel.t === "z" || cel.v === undefined || cel.v === null);
+}
+
+function semValor(cel) {
+  return !cel || cel.t === "z" || cel.v === undefined || cel.v === null;
+}
+
+function vazia(cel) {
+  if (formulaSemValor(cel)) return false;
+  if (semValor(cel)) return true;
+  return typeof cel.v === "string" && cel.v.trim() === "";
+}
+
+/** Texto das colunas de texto. Número inteiro vira "93358" (o `w` podia vir "9.3E+4"). */
+function textoCelula(cel) {
+  if (semValor(cel)) return "";
+  if (cel.t === "n" && Number.isInteger(cel.v)) return String(cel.v);
+  return String(cel.w ?? cel.v).trim();
+}
+
+function textoOuNull(cel) {
+```
+
+new:
+
+<!-- prettier-ignore -->
+```js
+// ---------------------------------------------------------------- utilidades
+// (achar aba, rótulo, célula vazia, texto, fórmula sem valor e data vêm de lib/xlsx-celulas.js)
+
+function textoOuNull(cel) {
+```
+
+2.8 — o `formatoData` sai também (linhas 131-143)
+
+old:
+
+<!-- prettier-ignore -->
+```js
+/**
+ * Número que o Excel formatou como data (digitar 1/10 vira 1-Oct). Com `cellNF` a célula traz
+ * o formato (`z`) e quem decide é o SSF (d-mmm, mmm-yy, dd/mm/yyyy...): o texto exibido (`w`)
+ * só casa com alguns deles. Sem `z` (workbook em memória), `w` com três números separados por
+ * / ou - fica como reserva.
+ */
+function formatoData(cel) {
+  if (cel?.t !== "n" || typeof cel.v !== "number") return false;
+  if (typeof cel.z === "string") return XLSX.SSF.is_date(cel.z);
+  return /\d+[/-]\d+[/-]\d+/.test(String(cel.w ?? ""));
+}
+
+function lerCampoNumerico(
+```
+
+new:
+
+<!-- prettier-ignore -->
+```js
+function lerCampoNumerico(
+```
+
 - [ ] **Step 7: Rodar e ver passar**
 
 ```bash
@@ -1632,24 +1768,25 @@ Esperado:
 - [ ] **Step 8: Formatar e commitar**
 
 ```bash
-npx prettier --write apps/web/src/lib/cronograma-modelo.js apps/web/src/lib/cronograma-modelo.test.js apps/web/src/lib/orcamento-modelo.js apps/web/src/lib/orcamento-modelo.test.js
+npx prettier --write apps/web/src/lib/cronograma-modelo.js apps/web/src/lib/cronograma-modelo.test.js apps/web/src/lib/xlsx-celulas.js apps/web/src/lib/orcamento-modelo.js apps/web/src/lib/orcamento-modelo.test.js
 git status --short
-git add apps/web/src/lib/cronograma-modelo.js apps/web/src/lib/cronograma-modelo.test.js
-git commit -F - -- apps/web/src/lib/cronograma-modelo.js apps/web/src/lib/cronograma-modelo.test.js apps/web/src/lib/orcamento-modelo.js apps/web/src/lib/orcamento-modelo.test.js <<'EOF'
+git add apps/web/src/lib/cronograma-modelo.js apps/web/src/lib/cronograma-modelo.test.js apps/web/src/lib/xlsx-celulas.js
+git commit -F - -- apps/web/src/lib/cronograma-modelo.js apps/web/src/lib/cronograma-modelo.test.js apps/web/src/lib/xlsx-celulas.js apps/web/src/lib/orcamento-modelo.js apps/web/src/lib/orcamento-modelo.test.js <<'EOF'
 feat(cronograma): leitura da aba Cronograma do modelo SIGO e a 3ª aba no modelo em branco
 
 cronograma-modelo.js lê a aba Cronograma (Item, Descrição, Mês 1…Mês N, até 60) com % em
 número, texto pt-BR ou formato de %, com erros que bloqueiam e avisos (linha que não fecha
 100,00, Item sem etapa, etapa sem linha, mais de 2 casas). Aba vazia também é erro, para não
 trocar o cronograma atual por nada. O gerarModelo ganha a aba Cronograma com Mês 1 a Mês 12 e a
-coluna A como Texto. Spec 2026-10-05 §6.
+coluna A como Texto. Os utilitários de célula (aba, rótulo, texto, vazia, fórmula sem valor, data)
+saem do orcamento-modelo.js para xlsx-celulas.js, que os dois módulos importam. Spec 2026-10-05 §6.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
 git log --oneline -1
 ```
 
-Esperado: o Prettier não muda nada, o commit sai com os 4 arquivos e o `git log` mostra `feat(cronograma): leitura da aba Cronograma do modelo SIGO e a 3ª aba no modelo em branco`.
+Esperado: o Prettier não muda nada, o commit sai com os 5 arquivos e o `git log` mostra `feat(cronograma): leitura da aba Cronograma do modelo SIGO e a 3ª aba no modelo em branco`.
 
 ---
 
@@ -5960,7 +6097,7 @@ Expected:
 - o `--stat` só com estes arquivos:
   - os de `ALVO`;
   - os testes que esses commits alteraram (`orcamento-modelo.test.js` e `skill-orcamento.test.js`);
-  - os arquivos que eles criaram (`fila-gravacao.js` e `cronograma-modelo.js`, cada um com o seu teste), que saem;
+  - os arquivos que eles criaram (`fila-gravacao.js` e `cronograma-modelo.js`, cada um com o seu teste, e `xlsx-celulas.js`), que saem;
 - Vitest sem `failed`, com 2 arquivos e 29 testes a menos que no Step 2 (os da Task 2, os da Task 5 e o da Task 3);
 - `LINT_OK` e `BUILD_OK`.
 
