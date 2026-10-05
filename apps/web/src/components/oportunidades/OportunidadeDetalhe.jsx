@@ -232,6 +232,15 @@ export default function OportunidadeDetalhe({
   // Diálogo "Importar planilha" do orçamento: o estado fica aqui porque a barra
   // do orçamento E o card "Importar" do estado vazio abrem o mesmo diálogo.
   const [importarAberto, setImportarAberto] = useState(false);
+  // "Aplicar" desconto gravando (a barra avisa): a tabela fica só leitura até terminar, senão uma
+  // edição no meio deixa preço e total da linha incoerentes. O ref serve ao handleUpdateItem, que
+  // também roda de callbacks atrasados (o blur da descrição) e não pode ler o estado do render.
+  const [aplicandoDesconto, setAplicandoDesconto] = useState(false);
+  const aplicandoDescontoRef = useRef(false);
+  const mudarAplicandoDesconto = (aplicando) => {
+    aplicandoDescontoRef.current = aplicando;
+    setAplicandoDesconto(aplicando);
+  };
   // IA do edital (ler/reanalisar = análise paga que grava na oportunidade): usa a
   // permissão REAL da sessão — o CalendarioConsolidado passa
   // temPermissao={() => true} e perfil="Admin" por props.
@@ -368,6 +377,10 @@ export default function OportunidadeDetalhe({
   };
 
   const handleUpdateItem = (itemId, field, value) => {
+    if (aplicandoDescontoRef.current) {
+      toast.info("Aguarde o desconto terminar de aplicar para editar a tabela");
+      return;
+    }
     const item = orcamentoItens.find((i) => i.id === itemId);
     if (!item) return;
     const numFields = ["quantidade", "valor_unitario", "bdi", "imposto"];
@@ -392,12 +405,15 @@ export default function OportunidadeDetalhe({
     setOrcamentoItens((prev) => prev.map((i) => (i.id === itemId ? updatedData : i)));
     const key = `${itemId}-${field}`;
     clearTimeout(updateTimeoutRef.current[key]);
-    updateTimeoutRef.current[key] = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       try {
         await sigo.entities.OrcamentoItem.update(itemId, updatedData);
       } catch {}
-      delete updateTimeoutRef.current[key];
+      // A chave fica no mapa até a gravação terminar (é o que o Aplicar enxerga como pendente).
+      // Uma reedição durante a gravação em voo põe um timer novo na mesma chave: não apague o dele.
+      if (updateTimeoutRef.current[key] === timer) delete updateTimeoutRef.current[key];
     }, 1500);
+    updateTimeoutRef.current[key] = timer;
   };
 
   const handleSalvarLink = async () => {
@@ -895,6 +911,7 @@ export default function OportunidadeDetalhe({
                           user={user}
                           importarAberto={importarAberto}
                           onImportarAbertoChange={setImportarAberto}
+                          onAplicandoChange={mudarAplicandoDesconto}
                         />
 
                         {orcamentoItens.length > 0 && (
@@ -906,6 +923,7 @@ export default function OportunidadeDetalhe({
                                   size="sm"
                                   className="gap-1"
                                   onClick={onDeleteSelecionados}
+                                  disabled={aplicandoDesconto}
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                   Excluir {itensSelecionados.size}
@@ -936,7 +954,11 @@ export default function OportunidadeDetalhe({
                               >
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
-                                    <Button variant="outline" className="gap-2">
+                                    <Button
+                                      variant="outline"
+                                      className="gap-2"
+                                      disabled={aplicandoDesconto}
+                                    >
                                       <FileText className="w-4 h-4" />
                                       {"A\u00e7\u00f5es"}
                                     </Button>
@@ -1129,10 +1151,12 @@ export default function OportunidadeDetalhe({
                                       filtroTipoEfetivo === "all" || item.tipo === filtroTipoEfetivo
                                   )
                                   .map((item, index) => {
-                                    const podeEditar =
+                                    const permissaoLinha =
                                       perfil === "Admin" ||
                                       !item.created_by ||
                                       item.created_by === user?.email;
+                                    // durante o Aplicar a tabela inteira fica só leitura
+                                    const podeEditar = !aplicandoDesconto && permissaoLinha;
                                     // Etapa (título do orçamento importado): número, descrição,
                                     // subtotal dos itens e lixeira, sem inputs. 11 colunas, como o
                                     // cabeçalho: a descrição ocupa de Descrição a Imp. %.
@@ -1237,7 +1261,7 @@ export default function OportunidadeDetalhe({
                                                 }, 200);
                                               }}
                                               placeholder={
-                                                podeEditar
+                                                permissaoLinha
                                                   ? "Clique para editar..."
                                                   : "Sem permissão"
                                               }
@@ -1472,6 +1496,7 @@ export default function OportunidadeDetalhe({
                                       size="sm"
                                       className="gap-1 text-xs text-blue-600 hover:text-blue-800"
                                       onClick={() => onNovoOrcamentoSelect("zero")}
+                                      disabled={aplicandoDesconto}
                                     >
                                       <Plus className="w-3.5 h-3.5" />
                                       Novo item

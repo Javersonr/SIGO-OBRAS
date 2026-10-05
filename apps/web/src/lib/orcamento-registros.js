@@ -150,6 +150,16 @@ export function semEtapas(itens) {
 }
 
 /**
+ * Há gravação por campo pendente (debounce de 1,5 s) ou em voo? A chave do
+ * handleUpdateItem só sai do mapa depois do await do update, então "mapa não
+ * vazio" cobre as duas fases. Só consulta: não cancela nem apaga nada.
+ */
+export function temGravacaoPendente(ref) {
+  const pendentes = ref?.current;
+  return !!pendentes && typeof pendentes === "object" && Object.keys(pendentes).length > 0;
+}
+
+/**
  * Cancela as gravações por campo ainda pendentes (debounce de 1,5 s do
  * handleUpdateItem, que regrava a LINHA INTEIRA). Chamar antes de importar ou
  * aplicar o desconto, senão a linha antiga volta por cima. Devolve quantas havia.

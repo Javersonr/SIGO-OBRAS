@@ -10,6 +10,7 @@ import {
   ordenarItensOportunidade,
   semEtapas,
   cancelarGravacoesPendentes,
+  temGravacaoPendente,
 } from "./orcamento-registros";
 
 const ETAPA = {
@@ -294,5 +295,40 @@ describe("cancelarGravacoesPendentes", () => {
     expect(cancelarGravacoesPendentes(undefined)).toBe(0);
     expect(cancelarGravacoesPendentes({ current: null })).toBe(0);
     expect(cancelarGravacoesPendentes({ current: {} })).toBe(0);
+  });
+});
+
+describe("temGravacaoPendente", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("true quando há timer no mapa, e não cancela nem apaga nada", () => {
+    vi.useFakeTimers();
+    const gravar = vi.fn();
+    const ref = { current: {} };
+    ref.current["i1-quantidade"] = setTimeout(gravar, 1500);
+    expect(temGravacaoPendente(ref)).toBe(true);
+    expect(Object.keys(ref.current)).toEqual(["i1-quantidade"]);
+    vi.advanceTimersByTime(2000);
+    expect(gravar).toHaveBeenCalledTimes(1);
+  });
+
+  it("false com o mapa vazio, depois de cancelar ou quando a última chave sai", () => {
+    vi.useFakeTimers();
+    const ref = { current: {} };
+    expect(temGravacaoPendente(ref)).toBe(false);
+    ref.current["i1-quantidade"] = setTimeout(() => {}, 1500);
+    ref.current["i2-valor_unitario"] = setTimeout(() => {}, 1500);
+    delete ref.current["i1-quantidade"];
+    expect(temGravacaoPendente(ref)).toBe(true);
+    cancelarGravacoesPendentes(ref);
+    expect(temGravacaoPendente(ref)).toBe(false);
+  });
+
+  it("ref ausente, nulo ou fora do formato não lança", () => {
+    expect(temGravacaoPendente(undefined)).toBe(false);
+    expect(temGravacaoPendente(null)).toBe(false);
+    expect(temGravacaoPendente({})).toBe(false);
+    expect(temGravacaoPendente({ current: null })).toBe(false);
+    expect(temGravacaoPendente({ current: "x" })).toBe(false);
   });
 });

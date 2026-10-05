@@ -11,6 +11,7 @@ import {
   cancelarGravacoesPendentes,
   emLotes,
   ordenarItensOportunidade,
+  temGravacaoPendente,
 } from "@/lib/orcamento-registros";
 import { CAMINHO_SKILL, montarZipSkill, textoSkillValido } from "@/lib/skill-orcamento";
 import ImportarPlanilhaOrcamentoDialog from "./ImportarPlanilhaOrcamentoDialog";
@@ -38,6 +39,8 @@ const formatPct = (v) =>
  * `importarAberto`/`onImportarAbertoChange` são opcionais: o
  * OportunidadeDetalhe os passa para o card "Importar" do estado vazio abrir o
  * mesmo diálogo; sem eles a barra usa estado próprio.
+ * `onAplicandoChange(bool)` é opcional: avisa quando o Aplicar começa e termina, para o
+ * OportunidadeDetalhe travar a tabela enquanto o desconto grava.
  */
 export default function OrcamentoLicitacaoBarra({
   selectedOp,
@@ -50,6 +53,7 @@ export default function OrcamentoLicitacaoBarra({
   podeEditar,
   importarAberto,
   onImportarAbertoChange,
+  onAplicandoChange,
   user,
 }) {
   const [importarInterno, setImportarInterno] = useState(false);
@@ -63,7 +67,11 @@ export default function OrcamentoLicitacaoBarra({
     setDesconto(pctParaCampo(pctSalvo));
   }, [opId, pctSalvo]);
 
-  const [aplicando, setAplicando] = useState(false);
+  const [aplicando, setAplicandoLocal] = useState(false);
+  const setAplicando = (valor) => {
+    setAplicandoLocal(valor);
+    onAplicandoChange?.(valor);
+  };
   const [baixandoSkill, setBaixandoSkill] = useState(false);
   const [exportarAberto, setExportarAberto] = useState(false);
 
@@ -130,7 +138,7 @@ export default function OrcamentoLicitacaoBarra({
     // Edição por campo ainda no debounce de 1,5 s (ou gravando: a chave só sai do mapa depois do
     // await). Cancelar o timer perderia a edição, e o desconto recalculado a partir do estado
     // local deixaria o banco com a quantidade antiga e o total novo. Espera gravar e aplica de novo.
-    if (Object.keys(updateTimeoutRef?.current || {}).length > 0) {
+    if (temGravacaoPendente(updateTimeoutRef)) {
       toast.info("Aguarde a gravação da última edição e aplique de novo");
       return;
     }
@@ -167,6 +175,17 @@ export default function OrcamentoLicitacaoBarra({
         );
         feitos += lote.length;
         toast.loading(`Aplicando o desconto… ${feitos} de ${alteracoes.length}`, { id: idToast });
+      }
+      // Uma edição escapou da trava durante a gravação: o timer dela regrava a linha inteira com
+      // o preço de antes do desconto. Mostra o que há no banco e pede para aplicar de novo (o
+      // Aplicar espera essa gravação terminar). O % só é gravado numa aplicação completa.
+      if (temGravacaoPendente(updateTimeoutRef)) {
+        await recarregarItens();
+        toast.warning(
+          "Uma edição foi feita durante o Aplicar. Aguarde a gravação dela e aplique o desconto de novo",
+          { id: idToast, duration: 10000 }
+        );
+        return;
       }
       const porId = new Map(alteracoes.map((a) => [a.id, a]));
       setOrcamentoItens((prev) =>
