@@ -4277,7 +4277,7 @@ Os números de linha são do `master` de 05/10 (`37ad85c`) e só orientam: use s
 - **Fila de gravação em lib testada.** O quadro grava o objeto inteiro a cada célula. Com rede lenta, duas gravações podiam chegar fora de ordem e deixar no banco o valor mais velho. A fila grava só o último valor 1 s depois da última célula, uma gravação de cada vez e na ordem. Na falha, descarta o que veio depois (contém a edição que falhou), e o quadro volta ao último gravado com toast.
 - **Gravação na hora** (sem a espera de 1 s): Importar, Meses, Reperiodizar e apagar linha órfã. Ao sair do quadro (troca de oportunidade ou de aba, detalhe fechado), a edição que esperava o 1 s é gravada na hora.
 - **Origem e data:** toda mudança grava `atualizado_em` (ISO). Editar célula, Meses, Reperiodizar e apagar linha marcam `origem: "manual"` (mantêm `arquivo_nome`); Importar marca `"importado"` com o nome do arquivo. A legenda do quadro mostra meses, total, origem e data.
-- **Células:** `12,5`, `12.5` e `12,5%` valem; vazio numa etapa com linha = 0; numa etapa sem linha, a célula continua vazia (a linha só nasce com um valor); texto inválido dá toast e a célula volta. Enter grava, Esc desfaz. O R$ das células vai sem o prefixo "R$" (o cabeçalho diz Valor (R$)), para caber em 60 meses.
+- **Células:** `12,5`, `12.5` e `12,5%` valem; vazio numa etapa com linha = 0; numa etapa sem linha, a célula continua vazia (a linha só nasce com um valor); texto inválido dá toast e a célula volta. Enter grava, Esc desfaz **sem fechar o detalhe da oportunidade**: o quadro roda dentro do `Sheet` (Radix), que fecha no Esc em captura no `document`, então um `keydown` em captura na `window` (padrão do `AnexoViewer`) trata o Esc das células (inputs com `data-celula-cronograma`) com `preventDefault`, e um 2º Esc, fora de célula, fecha o detalhe. O R$ das células vai sem o prefixo "R$" (o cabeçalho diz Valor (R$)), para caber em 60 meses.
 - **Meses e Reperiodizar** abrem o mesmo diálogo pequeno, que pede o N (1 a 60). O "Meses" usa o texto de confirmação da spec ("Os meses M+1 a N têm valores. Cortar mesmo assim? (as linhas deixam de fechar 100%)"; com um mês só, "O mês N tem valores."). O Reperiodizar sempre confirma.
 - **Botões:** Importar, Meses e Reperiodizar só para quem edita e só com etapas no orçamento; Reperiodizar desabilitado sem meses. A âncora do Exportar fica fora dessas condições.
 - **Linha órfã:** cinza, só leitura, com a lixeira para quem edita (pede confirmação). Não entra nos totais (o `resumoCronograma` só soma as etapas do orçamento).
@@ -4965,6 +4965,23 @@ export default function CronogramaFisicoFinanceiro({
   paiRef.current = { setSelectedOp, setOportunidades };
   const cancelarEdicaoRef = useRef(false);
 
+  // Esc numa célula só desfaz a edição, sem fechar o detalhe da oportunidade. O Sheet (Radix)
+  // escuta o Esc em captura no document e fecha a gaveta se o evento não vier com
+  // defaultPrevented; a captura na window roda antes (padrão do AnexoViewer e da janela flutuante).
+  useEffect(() => {
+    const aoTeclarEsc = (e) => {
+      if (e.key !== "Escape" || e.isComposing) return;
+      const alvo = e.target;
+      if (!alvo?.closest?.("[data-celula-cronograma]")) return;
+      e.preventDefault();
+      cancelarEdicaoRef.current = true;
+      alvo.blur(); // o onBlur lê a marca, descarta o texto digitado e a limpa
+      cancelarEdicaoRef.current = false; // se o blur não rodou o onBlur, não deixa a marca presa
+    };
+    window.addEventListener("keydown", aoTeclarEsc, true);
+    return () => window.removeEventListener("keydown", aoTeclarEsc, true);
+  }, []);
+
   const aplicarLocal = (novo) => {
     cronogramaRef.current = novo;
     setCronograma(novo);
@@ -5169,6 +5186,7 @@ export default function CronogramaFisicoFinanceiro({
             type="text"
             inputMode="decimal"
             aria-label={`Etapa ${linha.numero}, Mês ${mes + 1} (%)`}
+            data-celula-cronograma
             value={emEdicao ? edicao.texto : textoPct}
             onFocus={(e) => {
               setEdicao({ numero: linha.numero, mes, texto: textoPct });
@@ -5181,10 +5199,6 @@ export default function CronogramaFisicoFinanceiro({
             onBlur={(e) => confirmarCelula(linha.numero, mes, e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") e.currentTarget.blur();
-              if (e.key === "Escape") {
-                cancelarEdicaoRef.current = true;
-                e.currentTarget.blur();
-              }
             }}
             className={`h-7 w-20 rounded border px-1.5 text-right text-sm focus:border-blue-500 focus:text-slate-900 focus:outline-none ${
               pct ? "border-slate-300 text-slate-800" : "border-slate-200 text-slate-400"
@@ -5443,14 +5457,17 @@ new:
 grep -c "{/\* EXPORTAR_CRONOGRAMA \*/}" apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx
 grep -c '^import ImportarCronogramaDialog from "./ImportarCronogramaDialog";$' apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx
 grep -cE "const etapas = |const \[cronograma, setCronograma\] = " apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx
+grep -c "data-celula-cronograma" apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx
 npx prettier --check apps/web/src/lib/fila-gravacao.js apps/web/src/lib/fila-gravacao.test.js apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx apps/web/src/components/oportunidades/ImportarCronogramaDialog.jsx apps/web/src/components/oportunidades/ImportarPlanilhaOrcamentoDialog.jsx apps/web/src/components/oportunidades/OportunidadeDetalhe.jsx
 ```
 
 Expected:
 
 - ESLint: o mesmo aviso do Step 1, agora na linha `118:3` (o import novo empurrou uma linha), `0 errors` e `exit 0`. Aviso novo, ou erro de `no-undef`, é defeito desta task;
-- `1`, `1` e `2` (a Task 6 confere os mesmos números antes de mexer no quadro);
+- `1`, `1`, `2` e `2` (a Task 6 confere os três primeiros números antes de mexer no quadro; o quarto é o atributo `data-celula-cronograma` do input mais o seletor do Esc, que precisam andar juntos);
 - Prettier: `All matched files use Prettier code style!`.
+
+Conferido em 05/10 num harness descartável no Chrome (Radix Dialog com uma célula dentro, sem o Supabase): sem o `keydown` em captura na `window`, o Esc na célula fecha o diálogo; com ele, a célula volta ao valor de antes, o diálogo continua aberto, o Enter ainda grava e um 2º Esc, fora de célula, fecha o diálogo.
 
 Conferido em 05/10 numa cópia do `apps/web` fora do repositório, com as Tasks 1 e 2 aplicadas:
 
@@ -6379,7 +6396,7 @@ Conferência (consulta do Step 6). Expected na linha de Itatinga:
 | 2   | Mês 4 = `15,5%`                                                                       | "100,50%" e "passa 0,50", em vermelho.                                                                                                                                                                                                                                                                                                  |
 | 3   | Mês 4 = `abc`                                                                         | Toast `"abc" não é um % de 0 a 100 (até 2 casas, ex.: 12,5)`; a célula volta a 15,50.                                                                                                                                                                                                                                                   |
 | 4   | Mês 4 = `15`, Enter. Esperar 2 s, **F5**, abrir a oportunidade de novo → Planejamento | Verde 100,00% e os valores do Step 7. Depois do F5, continua 20/35/30/15, e a legenda diz "ajustado na tela".                                                                                                                                                                                                                           |
-| 5   | Começar a digitar `99` no Mês 1 e apertar **Esc**                                     | A célula volta a 20,00, sem gravar.                                                                                                                                                                                                                                                                                                     |
+| 5   | Começar a digitar `99` no Mês 1 e apertar **Esc**                                     | A célula volta a 20,00, sem gravar, e o detalhe da oportunidade continua aberto (um 2º Esc, fora de célula, fecha o detalhe).                                                                                                                                                                                                           |
 | 6   | Aba Orçamento: Desconto `0` → Aplicar → OK. Voltar ao Planejamento                    | Os % não mudam. Valor 1.617.244,73; células 323.448,95 · 566.035,66 · 485.173,42 · 242.586,70; Acumulado (R$) do Mês 4 = 1.617.244,73.                                                                                                                                                                                                  |
 | 7   | Desconto `12,35` → Aplicar → OK → Planejamento                                        | Volta aos valores do Step 7.                                                                                                                                                                                                                                                                                                            |
 | 8   | **Meses** → `6` → **Mudar**                                                           | Sem confirmação. Toast "Cronograma com 6 meses"; Mês 5 e Mês 6 com 0,00 e a linha ainda 100,00%.                                                                                                                                                                                                                                        |
