@@ -829,12 +829,16 @@ export default function CursoPortal({
               </Button>
             )}
             {seguinte && (
+              // o título inteiro vai no rótulo: o Button tem whitespace-nowrap, então quebra a linha
+              // (whitespace-normal), cresce em altura (h-auto) e a seta fica fixa à direita
               <Button
                 type="button"
-                className="w-full h-11 bg-slate-900 hover:bg-slate-800"
+                className="w-full h-auto min-h-11 py-2 whitespace-normal bg-slate-900 hover:bg-slate-800"
                 onClick={() => abrirAula(seguinte)}
               >
-                Próxima aula: {numeroDaAula(seguinte)}. {seguinte.titulo}
+                <span className="min-w-0 flex-1 text-left break-words">
+                  Próxima aula: {numeroDaAula(seguinte)}. {seguinte.titulo}
+                </span>
                 <ChevronRight className="w-4 h-4 ml-1 shrink-0" />
               </Button>
             )}
@@ -854,12 +858,15 @@ export default function CursoPortal({
             <div className="rounded-lg border bg-white p-3 space-y-2">
               <p className="text-sm text-slate-600">Escolha uma aula liberada na lista abaixo.</p>
               {proximaPendente && (
+                // mesmo tratamento do "Próxima aula": título longo quebra linha em vez de vazar
                 <Button
                   type="button"
-                  className="w-full h-11 bg-slate-900 hover:bg-slate-800"
+                  className="w-full h-auto min-h-11 py-2 whitespace-normal bg-slate-900 hover:bg-slate-800"
                   onClick={() => abrirAula(proximaPendente)}
                 >
-                  Continuar: {numeroDaAula(proximaPendente)}. {proximaPendente.titulo}
+                  <span className="min-w-0 flex-1 text-left break-words">
+                    Continuar: {numeroDaAula(proximaPendente)}. {proximaPendente.titulo}
+                  </span>
                   <ChevronRight className="w-4 h-4 ml-1 shrink-0" />
                 </Button>
               )}
