@@ -12,7 +12,7 @@
  * Ações com sessão ({ token }):
  *   trocar_senha { nova_senha, senha_atual? }   logout
  *   dados                                       evento { evento, matricula_id?, aula_id?, detalhe? }
- *   progresso { matricula_id, aula_id, segundos_assistidos, duracao_seg? }
+ *   progresso { matricula_id, aula_id, segundos_assistidos }  (a duração vem do cadastro da aula)
  *   avaliacao { matricula_id, respostas:[{questao_id,resposta}] }
  *   certificado { matricula_id, senha }          ciencia { ciencia_id }
  *   duvida { matricula_id, aula_id?, pergunta }
@@ -104,7 +104,6 @@ interface Body {
   matricula_id?: string;
   aula_id?: string;
   segundos_assistidos?: number;
-  duracao_seg?: number;
   concluir?: boolean;
   respostas?: { questao_id: string; resposta: number; ordem_opcoes?: number[] }[];
   ciencia_id?: string;

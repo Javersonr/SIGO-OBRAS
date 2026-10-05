@@ -8,6 +8,15 @@ export function formatDuracao(segundos) {
   const seg = Math.max(0, Math.round(Number(segundos) || 0));
   return `${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, "0")}`;
 }
+/**
+ * Vídeo sem duração cadastrada: o servidor responde AULA_SEM_DURACAO e o aluno não conclui a aula.
+ * Mesma regra de duracaoParaProgresso (supabase/functions/portal-funcionario/requisitos.ts).
+ */
+export function videoSemDuracao(aula) {
+  if (!aula || (aula.tipo && aula.tipo !== "video")) return false;
+  const duracao = Number(aula.duracao_seg);
+  return !(Number.isFinite(duracao) && duracao > 0);
+}
 export function lerDuracaoVideo(file) {
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");

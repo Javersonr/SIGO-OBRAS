@@ -7,7 +7,7 @@ import {
   dadosCursoDoModelo,
 } from "@/lib/treinamento-catalogo";
 import { normalizarQuestao } from "@/lib/ead-questao";
-import { parseDuracao, formatDuracao, lerDuracaoVideo } from "@/lib/ead-duracao";
+import { parseDuracao, formatDuracao, lerDuracaoVideo, videoSemDuracao } from "@/lib/ead-duracao";
 import { requisitosDoCurso, tempoObrigatorioSeg } from "@/lib/ead-requisitos";
 import { srtParaVtt } from "@/lib/legendas";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
@@ -1220,6 +1220,15 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                                 </span>
                               ) : null}
                             </span>
+                            {videoSemDuracao(a) && (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] px-1.5 py-0 text-amber-700 border-amber-300"
+                                title="Vídeo sem duração cadastrada: o aluno não consegue concluir esta aula. Edite a aula e informe a duração (mm:ss)."
+                              >
+                                sem duração
+                              </Badge>
+                            )}
                             {a.tipo === "video" && a.legenda_ref && (
                               <Badge
                                 variant="outline"
