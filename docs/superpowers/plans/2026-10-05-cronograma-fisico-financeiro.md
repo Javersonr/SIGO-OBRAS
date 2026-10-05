@@ -6,7 +6,7 @@
 
 **Architecture:**
 
-- **Lógica pura em `apps/web/src/lib/`, testada com Vitest:** `cronograma-ff.js` (contas inteiras: % em centésimos, R$ em centavos, meses e reperiodização), `cronograma-modelo.js` (leitura da aba `Cronograma` e a 3ª aba do `gerarModelo`), `xlsx-celulas.js` (utilitários de célula do SheetJS, compartilhados com o `orcamento-modelo.js`), `cronograma-export.js` (PDF e Excel, com o cabeçalho, o nome do arquivo e o jsPDF da proposta) e `fila-gravacao.js` (gravação com espera, em ordem).
+- **Lógica pura em `apps/web/src/lib/`, testada com Vitest:** `cronograma-ff.js` (contas inteiras: % em centésimos, R$ em centavos, meses e reperiodização), `cronograma-modelo.js` (leitura da aba `Cronograma` e a 3ª aba do `gerarModelo`), `xlsx-celulas.js` (utilitários de célula do SheetJS, compartilhados com o `orcamento-modelo.js`), `cronograma-export.js` (PDF e Excel, com o cabeçalho, o nome do arquivo, o jsPDF e o esqueleto de layout da proposta) e `fila-gravacao.js` (gravação com espera, em ordem).
 - **Tela:** `CronogramaFisicoFinanceiro.jsx`, `ImportarCronogramaDialog.jsx` e `ExportarCronogramaDialog.jsx` em `components/oportunidades/`, ligados no `OportunidadeDetalhe.jsx` (aba Planejamento, acima do `DiarioObraTab`). O quadro grava o objeto inteiro em `oportunidade.cronograma_ff` (migração aditiva `0133`); o R$ nunca é gravado.
 - **Skill do Claude** `orcamento-prefeitura-sigo`: seção Cronograma e o código Python com a 3ª aba. Nenhuma Edge Function nova ou alterada.
 
@@ -50,9 +50,9 @@
 - **Leitura da aba (Task 2):** `lerArquivoCronograma` lê com `sheetStubs: true` além do `cellNF` do contrato (fórmula sem valor salvo vira erro, não 0); aba sem linhas e nenhuma linha com etapa do orçamento são **erros** fora da lista da spec, para a importação não trocar o cronograma atual por um vazio; Mês faltando, Mês repetido, colunas além do Mês 60 e linha sem Item são avisos extras; na célula numérica a faixa de 0 a 100 vale sobre o % já arredondado em 2 casas, como no `lerPercentual` (100,004 vira 100,00 com aviso; 100,005 é erro).
 - **Sem dependência circular e sem cópia (Task 2):** `orcamento-modelo.js` importa o nome e o cabeçalho de `cronograma-modelo.js`, que não importa `orcamento-modelo.js`; os utilitários de célula (`normalizarRotulo`, `acharAba`, `celula`, `formulaSemValor`, `semValor`, `vazia`, `textoCelula` e `formatoData`) saem do `orcamento-modelo.js` para o módulo neutro `xlsx-celulas.js`, que os dois importam. Uma cópia já tinha divergido no `formatoData` (sem `z`, o do orçamento reconhece a data pelo texto exibido).
 - **Skill mais estrita que o SIGO (Task 3):** o código Python exige Item em texto e % numérico, porque quem grava é o próprio código; `pct_da_linha` converte R$ em % com a diferença no último mês com valor.
-- **Sem cópia da proposta (Task 4):** `montarCabecalhoLicitacao` sai de dentro de `montarDadosProposta` (o resultado da proposta não muda) e `cabecalhoDoDocumento`, `linhasAssinatura`, `textoPdf` e o novo `carregarJsPdf` passam a ser exportados por `proposta-export.js`; `nomeArquivoCronograma` reaproveita `nomeArquivoProposta`.
+- **Sem cópia da proposta (Task 4):** `montarCabecalhoLicitacao` sai de dentro de `montarDadosProposta` (o resultado da proposta não muda) e `cabecalhoDoDocumento`, `linhasAssinatura`, `textoPdf` e o novo `carregarJsPdf` passam a ser exportados por `proposta-export.js`; `nomeArquivoCronograma` reaproveita `nomeArquivoProposta`. O esqueleto de layout também é um só: `criarPdf` (A4 paisagem e escritor de linhas), `escreverTopoPdf`, `escreverAssinaturaPdf`, `numerarPaginasPdf` e, no Excel, `criarPlanilha`, `escreverTopoPlanilha` e `escreverAssinaturaPlanilha` saem de `gerarPdfProposta` e `montarPlanilhaProposta`, que passam a usá-los (PDF e planilha da proposta idênticos aos de antes, conferidos byte a byte, fora a data de criação do PDF); uma mudança de margem, fonte, rodapé ou assinatura vale para os dois documentos.
 - **Excel (Task 4):** cada etapa em 2 linhas com Item, Etapa, Valor e % do total mesclados; % gravado como fração com formato `0.00%`; mês com 0% em branco; acima de 255 etapas, `SUM` de `SUM`s.
-- **PDF (Task 4):** cada etapa é **uma** linha da tabela com o R$ e o % em duas linhas de texto (o par não se separa na quebra de página); a quebra horizontal liga com mais de 12 meses **ou** quando os meses não cabem na largura útil.
+- **PDF (Task 4):** cada etapa é **uma** linha da tabela com o R$ e o % em duas linhas de texto (o par não se separa na quebra de página); a quebra horizontal liga com mais de 12 meses **ou** quando as colunas não cabem na largura útil. As colunas Item, Valor, % do total e meses têm a largura do maior texto delas (em negrito, com folga de 0,5 mm) e mínimos pequenos, calibrados para **12 meses caberem numa página até R$ 9.999.999,99 de total** (acima disso a tabela de 12 meses pode quebrar na horizontal; o número nunca quebra em 2 linhas).
 - **Linha órfã fora da exportação e dos totais:** `resumoCronograma` só soma as etapas do orçamento.
 - **Fila de gravação (Task 5, lib extra testada):** grava só o último valor 1 s depois da última célula, uma gravação de cada vez e em ordem; Importar, Meses, Reperiodizar e apagar linha órfã gravam na hora; ao sair do quadro, a edição pendente é gravada na hora; na falha, descarta o que veio depois e a tela volta ao último gravado.
 - **Origem e data:** toda gravação põe `atualizado_em`; célula, Meses, Reperiodizar e apagar linha marcam `origem: "manual"` (mantêm `arquivo_nome`); Importar marca `"importado"` com o nome do arquivo.
@@ -60,7 +60,7 @@
 - **Exportar entre as Tasks 5 e 6:** a Task 5 deixa a âncora `{/* EXPORTAR_CRONOGRAMA */}` na barra de botões, fora de qualquer condição de `podeEditar`; a Task 6 troca a âncora pelo `BotaoExportarCronograma` (export extra do `ExportarCronogramaDialog.jsx`), visível também para quem só vê a aba, que exporta o estado local do quadro (o `selectedOp` pode estar atrás da tela).
 - **Imbé de Minas (Task 7):** a planilha feita à mão não redistribui a curva: copia as 5 parcelas preenchidas do CFF de 12 parcelas. O equivalente no SIGO é **Meses 12 → 5**; o roteiro mostra também o **Reperiodizar 12 → 5** como o outro critério, com a diferença explicada. O arquivo de teste promove os grupos 1.1 a 1.6 do edital a etapas 1 a 6.
 - **Onde se trabalha:** no `master` do checkout principal, como o plano do Orçamento (a base dele está lá, ainda não publicada), com commit parcial por task; a Task 7 trata o risco de outra sessão publicar antes (Step 1) e só publica com o OK do Javerson.
-- **Conferência de 05/10** (cópia do `master` `37ad85c` fora do repositório): as Tasks 1 a 6 aplicadas em ordem, com todas as âncoras únicas no momento da troca; Prettier sem mudança; Vitest com 40 arquivos e 515 testes (base 36/433; a Task 1 ganhou depois 1 teste de `lerPercentual` com `number`, e a suíte passou a 516; a Task 2 ganhou depois 1 teste da faixa arredondada da célula numérica, e a suíte passou a 517; a Task 2 passou depois a mover os utilitários de célula para o `xlsx-celulas.js`, conferido no worktree com Vitest, lint e build, sem mudar nenhuma contagem); `npm run lint`, `no-undef` e `vite build` sem erro, com os chunks esperados; o código Python da skill e os números da Task 7 (Itatinga e Imbé) recalculados sobre cópias das planilhas.
+- **Conferência de 05/10** (cópia do `master` `37ad85c` fora do repositório): as Tasks 1 a 6 aplicadas em ordem, com todas as âncoras únicas no momento da troca; Prettier sem mudança; Vitest com 40 arquivos e 515 testes (base 36/433; a Task 1 ganhou depois 1 teste de `lerPercentual` com `number`, e a suíte passou a 516; a Task 2 ganhou depois 1 teste da faixa arredondada da célula numérica, e a suíte passou a 517; a Task 2 passou depois a mover os utilitários de célula para o `xlsx-celulas.js`, conferido no worktree com Vitest, lint e build, sem mudar nenhuma contagem; a Task 4 passou depois a medir as colunas do PDF pelo maior texto (12 meses numa página até R$ 9.999.999,99), a dividir o esqueleto de layout do PDF e do Excel com a proposta e a testar o número que não quebra, com 1 teste a mais, e a suíte passou a 518, conferida no worktree com Vitest, lint e build); `npm run lint`, `no-undef` e `vite build` sem erro, com os chunks esperados; o código Python da skill e os números da Task 7 (Itatinga e Imbé) recalculados sobre cópias das planilhas.
 
 ---
 
@@ -79,8 +79,8 @@ Anote as linhas `Test Files  N passed` e `Tests  M passed`. A suíte cresce assi
 | Task 1      | `N + 1`  | `M + 37` | 37 e 470            |
 | Task 2      | `N + 2`  | `M + 57` | 38 e 490            |
 | Task 3      | `N + 2`  | `M + 58` | 38 e 491            |
-| Task 4      | `N + 3`  | `M + 76` | 39 e 509            |
-| Tasks 5 e 6 | `N + 4`  | `M + 84` | 40 e 517            |
+| Task 4      | `N + 3`  | `M + 77` | 39 e 510            |
+| Tasks 5 e 6 | `N + 4`  | `M + 85` | 40 e 518            |
 
 **Regras para todas as tasks:**
 
@@ -2417,7 +2417,7 @@ Esperado: o commit sai com os 2 arquivos e o `git log` mostra `feat(cronograma):
 - Create: `apps/web/src/lib/cronograma-export.js`
 - Test: `apps/web/src/lib/cronograma-export.test.js`
 - Modify: `apps/web/src/lib/proposta-orcamento.js` (antes do JSDoc de `montarDadosProposta` `:223`; início dela `:240-245`; fim `:283-314`)
-- Modify: `apps/web/src/lib/proposta-export.js` (`cabecalhoDoDocumento` `:45`, `linhasAssinatura` `:66`, `textoPdf` `:195`, `baixarPropostaPdf` `:337-348`)
+- Modify: `apps/web/src/lib/proposta-export.js` (`cabecalhoDoDocumento` `:45`, `linhasAssinatura` `:66`, antes da seção do Excel `:70`, `montarPlanilhaProposta` `:84-186`, `textoPdf` `:195`, antes do `fmt` `:209`, `gerarPdfProposta` `:218-333`, `baixarPropostaPdf` `:337-348`)
 - Modify: `apps/web/src/lib/proposta-export.test.js` (import `:6`; depois do `LIMITE_PDF` `:163-164`)
 
 Os números de linha são do `master` de 05/10 (commit `37ad85c`) e só orientam: use sempre o texto das âncoras.
@@ -2437,11 +2437,14 @@ Os números de linha são do `master` de 05/10 (commit `37ad85c`) e só orientam
   - **extra (fora do contrato):** `TITULO_CRONOGRAMA = "Cronograma físico-financeiro"`.
 - Produces (**extras, fora do contrato**, para não copiar código da proposta):
   - `proposta-orcamento.js`: `montarCabecalhoLicitacao({ info, oportunidade, empresa, representante, opcoes }): { empresa, orgao, objeto, edital, localData, representante }`, a lógica que estava dentro de `montarDadosProposta` (que passa a chamá-la; o resultado dela não muda);
-  - `proposta-export.js`: passam a ser exportadas `cabecalhoDoDocumento(dados): { empresa: string[], licitacao: string[] }`, `linhasAssinatura(rep): string[]` e `textoPdf(valor): string` (já existiam), e a nova `carregarJsPdf(): Promise<{ jsPDF, autoTable }>` (o import dinâmico com o ajuste UMD que estava dentro do `baixarPropostaPdf`).
+  - `proposta-export.js`: passam a ser exportadas `cabecalhoDoDocumento(dados): { empresa: string[], licitacao: string[] }`, `linhasAssinatura(rep): string[]` e `textoPdf(valor): string` (já existiam), e a nova `carregarJsPdf(): Promise<{ jsPDF, autoTable }>` (o import dinâmico com o ajuste UMD que estava dentro do `baixarPropostaPdf`);
+  - `proposta-export.js`, o esqueleto de layout que estava dentro de `gerarPdfProposta` e `montarPlanilhaProposta` (que passam a usá-lo; os arquivos da proposta não mudam):
+    - PDF: `criarPdf(jsPDF): { doc, larg, alt, M, util, y, escrever(texto, opcoes) }` (A4 paisagem; o `y` é a posição da próxima linha, em mm), `escreverTopoPdf(pdf, cab, titulo)`, `escreverAssinaturaPdf(pdf, representante, { espacoAntes = 18 })` e `numerarPaginasPdf(pdf, nomeEmpresa)` ("Página X de Y" e o nome da empresa);
+    - Excel: `criarPlanilha(): { ws, r, gravar(linha, coluna, celula), linhaDeTexto(valor) }` (o `r` é a próxima linha, 0-based), `escreverTopoPlanilha(pl, cab, titulo)` e `escreverAssinaturaPlanilha(pl, representante)`.
 
 **Decisões desta task (o contrato não cobria):**
 
-- **Sem cópia da proposta:** o cabeçalho (empresa, órgão, objeto, edital com o mesmo fallback, local/data e representante com CPF formatado) vem de `montarCabecalhoLicitacao`; as linhas de texto do topo, da assinatura e o saneamento para a fonte do PDF vêm de `cabecalhoDoDocumento`, `linhasAssinatura` e `textoPdf`; o nome do arquivo é o de `nomeArquivoProposta` com o prefixo trocado; o jsPDF é carregado por `carregarJsPdf`. A data-base e o BDI não saem no cronograma (`cabecalhoDoDocumento` só os mostra quando existem em `dados`). O topo ganha a linha `Prazo de execução: N meses`.
+- **Sem cópia da proposta:** o cabeçalho (empresa, órgão, objeto, edital com o mesmo fallback, local/data e representante com CPF formatado) vem de `montarCabecalhoLicitacao`; as linhas de texto do topo, da assinatura e o saneamento para a fonte do PDF vêm de `cabecalhoDoDocumento`, `linhasAssinatura` e `textoPdf`; o esqueleto dos dois arquivos (escritor de linhas do PDF e da planilha, topo, assinatura e "Página X de Y") vem de `criarPdf`, `escreverTopoPdf`, `escreverAssinaturaPdf`, `numerarPaginasPdf`, `criarPlanilha`, `escreverTopoPlanilha` e `escreverAssinaturaPlanilha`, os mesmos que a proposta usa (só o espaço para assinar no PDF é próprio: 16 mm, `espacoAntes`); o nome do arquivo é o de `nomeArquivoProposta` com o prefixo trocado; o jsPDF é carregado por `carregarJsPdf`. A data-base e o BDI não saem no cronograma (`cabecalhoDoDocumento` só os mostra quando existem em `dados`). O topo ganha a linha `Prazo de execução: N meses`.
 - **Etapa órfã** (linha do cronograma sem etapa no orçamento) não sai no arquivo: `resumoCronograma` só devolve as etapas do orçamento.
 - **Excel:**
   - colunas A Item · B Etapa · C Valor da etapa (R$) · D % do total · E… Mês 1…N;
@@ -2453,10 +2456,10 @@ Os números de linha são do `master` de 05/10 (commit `37ad85c`) e só orientam
 - **PDF:**
   - cada etapa é **uma** linha da tabela com 2 linhas de texto por mês (`"2.000,00\n20,00%"`): R$ em cima e % embaixo, sem o risco de o par se separar numa quebra de página (`rowPageBreak: "avoid"`);
   - o rodapé (4 linhas) sai em negrito com fundo cinza;
-  - largura do mês = o maior texto dos meses em negrito, com folga (mínimo 14 mm);
-  - `horizontalPageBreak` liga com **mais de 12 meses** (contrato) **ou** quando os meses não cabem na largura útil (valores na casa do milhão em 12 meses); `horizontalPageBreakRepeat: [0, 1]` sempre;
+  - larguras: cada coluna (Item, Valor da etapa, % do total e os meses) tem a largura do maior texto dela em negrito (o do rodapé), com o padding e uma folga de 0,5 mm, e nunca menos que 8, 18, 12 e 14 mm; a Etapa ocupa o que sobra, no mínimo 30 mm (45 mm fixos quando a tabela quebra na horizontal). Assim o número nunca quebra em 2 linhas, e **12 meses cabem numa página até R$ 9.999.999,99 de total** (com 12 meses de 16,8 mm, Item 8, Valor 18, % do total 12 e 30 mm de etapa, a soma é 269,6 mm, abaixo dos 273 mm úteis);
+  - `horizontalPageBreak` liga com **mais de 12 meses** (contrato) **ou** quando as colunas não cabem na largura útil (12 meses com total de dezenas de milhões de reais, por exemplo); `horizontalPageBreakRepeat: [0, 1]` sempre;
   - "Página X de Y" e o nome da empresa no rodapé, como na proposta.
-- **Teste do PDF:** um espião em volta do `autoTable` confere as opções e o corpo; o texto do PDF (`doc.output()`, sem compressão) confere a repetição do cabeçalho "Etapa" na página seguinte. Conferido no rascunho com jspdf 2.5.2 + jspdf-autotable 3.8.4: 18 meses e 3 etapas → 2 páginas (Mês 1–10 com Valor e % do total; Mês 11–18 com Item e Etapa repetidos).
+- **Teste do PDF:** um espião em volta do `autoTable` confere as opções e o corpo; o texto do PDF (`doc.output()`, sem compressão) confere a repetição do cabeçalho "Etapa" na página seguinte. Conferido no rascunho com jspdf 2.5.2 + jspdf-autotable 3.8.4: 18 meses e 3 etapas → 2 páginas (Mês 1–12 com Valor e % do total; Mês 13–18 com Item e Etapa repetidos); 12 meses com R$ 99 mil, R$ 250 mil, R$ 1,2 mi e R$ 9.999.999,99 → 1 página; R$ 12,3 mi em 12 meses → 2 páginas, sem número quebrado em nenhum caso. O teste lê as células da tabela do autoTable (`doc.lastAutoTable.body`) para provar que nenhum número ocupou 2 linhas.
 
 - [ ] **Step 1: Linha de base e número da migração**
 
@@ -2579,12 +2582,12 @@ function dados({ etapas = ETAPAS, cronograma = CRONOGRAMA, ...extra } = {}) {
   });
 }
 
-/** n etapas de R$ 1.000,00 com a mesma linha de % */
-function muitas(n, linha) {
+/** n etapas (R$ 1.000,00 cada, se não disser outro valor) com a mesma linha de % */
+function muitas(n, linha, centavos = 100_000) {
   const etapas = [];
   const pct = {};
   for (let i = 1; i <= n; i++) {
-    etapas.push({ numero: String(i), descricao: `Etapa ${i}`, centavos: 100_000 });
+    etapas.push({ numero: String(i), descricao: `Etapa ${i}`, centavos });
     pct[String(i)] = [...linha];
   }
   return { etapas, cronograma: { meses: linha.length, pct } };
@@ -2849,6 +2852,22 @@ function espiao() {
   return { fn, chamadas };
 }
 
+/**
+ * Células (fora a da etapa) cujo texto o autoTable partiu em mais linhas do que as do texto
+ * original: um número que não coube na coluna.
+ */
+function numerosQuebrados(doc) {
+  const quebrados = [];
+  for (const linha of doc.lastAutoTable.body) {
+    for (const [coluna, cel] of Object.entries(linha.cells)) {
+      if (Number(coluna) !== 1 && cel.text.length > String(cel.raw).split("\n").length) {
+        quebrados.push(String(cel.raw));
+      }
+    }
+  }
+  return quebrados;
+}
+
 describe("gerarPdfCronograma", () => {
   it(
     "4 meses: uma página, sem quebra horizontal, com o rodapé da tabela",
@@ -2899,14 +2918,45 @@ describe("gerarPdfCronograma", () => {
   );
 
   it(
-    "12 meses que cabem na largura: sem quebra horizontal",
+    "12 meses numa página só, sem quebra horizontal, até R$ 9.999.999,99 de total",
     () => {
-      const { etapas, cronograma } = muitas(3, [8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9]);
+      const linha = [8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9];
+      // [etapas, centavos por etapa]: R$ 250 mil, R$ 1,2 mi e o maior total que cabe
+      for (const [n, centavos] of [
+        [2, 12_500_000],
+        [2, 60_000_000],
+        [3, 333_333_333],
+      ]) {
+        const { etapas, cronograma } = muitas(n, linha, centavos);
+        const { fn, chamadas } = espiao();
+        const doc = gerarPdfCronograma(dados({ etapas, cronograma }), { jsPDF, autoTable: fn });
+        expect(chamadas[0].horizontalPageBreak).toBe(false);
+        expect(doc.getNumberOfPages()).toBe(1);
+        expect(numerosQuebrados(doc)).toEqual([]);
+        expect(doc.output()).toContain("Mês 12");
+      }
+    },
+    LIMITE_PDF
+  );
+
+  it(
+    "R$ 150 milhões: o número nunca quebra em 2 linhas; sem espaço nos 12 meses, quebra na horizontal",
+    () => {
+      const total = 5_000_000_000; // por etapa: 3 etapas = R$ 150.000.000,00
+      const quatro = muitas(3, [25, 25, 25, 25], total);
       const { fn, chamadas } = espiao();
-      const doc = gerarPdfCronograma(dados({ etapas, cronograma }), { jsPDF, autoTable: fn });
+      const docQuatro = gerarPdfCronograma(dados(quatro), { jsPDF, autoTable: fn });
       expect(chamadas[0].horizontalPageBreak).toBe(false);
-      expect(doc.getNumberOfPages()).toBe(1);
-      expect(doc.output()).toContain("Mês 12");
+      expect(docQuatro.getNumberOfPages()).toBe(1);
+      expect(numerosQuebrados(docQuatro)).toEqual([]);
+      expect(docQuatro.output()).toContain("150.000.000,00");
+
+      const doze = muitas(3, [8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9], total);
+      const outro = espiao();
+      const docDoze = gerarPdfCronograma(dados(doze), { jsPDF, autoTable: outro.fn });
+      expect(outro.chamadas[0].horizontalPageBreak).toBe(true);
+      expect(docDoze.getNumberOfPages()).toBeGreaterThan(1);
+      expect(numerosQuebrados(docDoze)).toEqual([]);
     },
     LIMITE_PDF
   );
@@ -3026,9 +3076,9 @@ TypeError: (0 , carregarJsPdf) is not a function
 Test Files  2 failed (2)
 ```
 
-- [ ] **Step 5: Exportar as partes da proposta (7 trocas com Edit)**
+- [ ] **Step 5: Exportar as partes da proposta (14 trocas com Edit)**
 
-Aplique cada troca com a ferramenta **Edit**: os arquivos estão em LF e cada `old` abaixo aparece **uma única vez** no arquivo atual (conferido no `master` de 05/10). Aplique na ordem (5.1 antes de 5.2 e 5.3: depois da 5.1 o trecho `const op = oportunidade || {};` aparece duas vezes, mas os `old` da 5.2 e da 5.3 continuam únicos).
+Aplique cada troca com a ferramenta **Edit**: os arquivos estão em LF e cada `old` abaixo aparece **uma única vez** no arquivo atual (conferido no `master` de 05/10). Aplique na ordem (5.1 antes de 5.2 e 5.3: depois da 5.1 o trecho `const op = oportunidade || {};` aparece duas vezes, mas os `old` da 5.2 e da 5.3 continuam únicos). As trocas 5.4 a 5.7 exportam o que o cronograma reaproveita; as 5.8 a 5.14 tiram do `gerarPdfProposta` e do `montarPlanilhaProposta` o esqueleto de layout (escritor de linhas, topo, assinatura e "Página X de Y") para o cronograma usar o mesmo código, sem cópia. Aplique 5.8 a 5.14 depois da 5.7 e na ordem: os `old` seguem o arquivo já com as 5.4 a 5.7.
 
 5.1 — `apps/web/src/lib/proposta-orcamento.js`: a função nova, logo antes do JSDoc de `montarDadosProposta` (`:223`)
 
@@ -3278,15 +3328,410 @@ export async function baixarPropostaPdf(dados, nomeArquivo) {
 }
 ```
 
+5.8 — `apps/web/src/lib/proposta-export.js`: escritor, topo e assinatura da planilha, em comum com o cronograma (antes da seção do Excel)
+
+old:
+
+<!-- prettier-ignore -->
+```js
+// ------------------------------------------------------------------ Excel
+
+/**
+ * Pasta de trabalho com a aba "Proposta"
+```
+
+new:
+
+<!-- prettier-ignore -->
+```js
+// ------------------------------------------------- layout em comum (Excel)
+// Usado pela proposta e pelo cronograma físico-financeiro (lib/cronograma-export.js):
+// o que muda no cabeçalho, no rodapé ou na assinatura vale para os dois documentos.
+
+/**
+ * Escritor da planilha: `ws` (a aba), `r` (próxima linha, 0-based), `gravar(linha, coluna,
+ * celula)` e `linhaDeTexto(valor)` (texto na coluna A; valor vazio só pula a linha).
+ */
+export function criarPlanilha() {
+  const pl = {
+    ws: {},
+    r: 0,
+    gravar(linha, coluna, celula) {
+      pl.ws[XLSX.utils.encode_cell({ r: linha, c: coluna })] = celula;
+    },
+    linhaDeTexto(valor) {
+      if (valor) pl.gravar(pl.r, 0, { t: "s", v: String(valor) });
+      pl.r++;
+    },
+  };
+  return pl;
+}
+
+/** Topo: empresa, título em maiúsculas e dados da licitação (`cab` = cabecalhoDoDocumento). */
+export function escreverTopoPlanilha(pl, cab, titulo) {
+  cab.empresa.forEach(pl.linhaDeTexto);
+  pl.r++;
+  pl.linhaDeTexto(String(titulo).toUpperCase());
+  cab.licitacao.forEach(pl.linhaDeTexto);
+  pl.r++;
+}
+
+/** Linha de assinatura e as do representante, 2 linhas abaixo da última escrita. */
+export function escreverAssinaturaPlanilha(pl, representante) {
+  pl.r += 2;
+  pl.linhaDeTexto("_______________________________________");
+  linhasAssinatura(representante).forEach(pl.linhaDeTexto);
+}
+
+// ------------------------------------------------------------------ Excel
+
+/**
+ * Pasta de trabalho com a aba "Proposta"
+```
+
+5.9 — `proposta-export.js`: início de `montarPlanilhaProposta` (usa o escritor e o topo comuns)
+
+old:
+
+<!-- prettier-ignore -->
+```js
+  const ws = {};
+  let r = 0; // próxima linha (0-based)
+  const gravar = (linha, coluna, celula) => {
+    ws[XLSX.utils.encode_cell({ r: linha, c: coluna })] = celula;
+  };
+  const linhaDeTexto = (valor) => {
+    if (valor) gravar(r, 0, { t: "s", v: String(valor) });
+    r++;
+  };
+
+  const cab = cabecalhoDoDocumento(dados);
+  cab.empresa.forEach(linhaDeTexto);
+  r++;
+  linhaDeTexto(String(dados.titulo || "Proposta de preços").toUpperCase());
+  cab.licitacao.forEach(linhaDeTexto);
+  r++;
+
+  CABECALHO.forEach((h, c) => gravar(r, c, { t: "s", v: h }));
+  r++;
+
+  const linhas = dados.linhas || [];
+  const primeira = r;
+```
+
+new:
+
+<!-- prettier-ignore -->
+```js
+  const pl = criarPlanilha();
+  const { ws, gravar, linhaDeTexto } = pl;
+  escreverTopoPlanilha(pl, cabecalhoDoDocumento(dados), dados.titulo || "Proposta de preços");
+
+  CABECALHO.forEach((h, c) => gravar(pl.r, c, { t: "s", v: h }));
+  pl.r++;
+
+  const linhas = dados.linhas || [];
+  const primeira = pl.r;
+```
+
+5.10 — `proposta-export.js`: a linha do valor global em `montarPlanilhaProposta`
+
+old:
+
+<!-- prettier-ignore -->
+```js
+  r = primeira + linhas.length;
+
+  gravar(r, 3, { t: "s", v: "VALOR GLOBAL DA PROPOSTA (R$)" });
+  gravar(
+    r,
+    7,
+```
+
+new:
+
+<!-- prettier-ignore -->
+```js
+  pl.r = primeira + linhas.length;
+
+  gravar(pl.r, 3, { t: "s", v: "VALOR GLOBAL DA PROPOSTA (R$)" });
+  gravar(
+    pl.r,
+    7,
+```
+
+5.11 — `proposta-export.js`: fim de `montarPlanilhaProposta` (assinatura comum e `!ref`)
+
+old:
+
+<!-- prettier-ignore -->
+```js
+  r += 2;
+  linhaDeTexto(`Valor global por extenso: ${dados.totalExtenso}`);
+  linhaDeTexto(dados.validade);
+  linhaDeTexto(dados.localData);
+  r += 2;
+  linhaDeTexto("_______________________________________");
+  linhasAssinatura(dados.representante).forEach(linhaDeTexto);
+
+  ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(r - 1, 0), c: 7 } });
+```
+
+new:
+
+<!-- prettier-ignore -->
+```js
+  pl.r += 2;
+  linhaDeTexto(`Valor global por extenso: ${dados.totalExtenso}`);
+  linhaDeTexto(dados.validade);
+  linhaDeTexto(dados.localData);
+  escreverAssinaturaPlanilha(pl, dados.representante);
+
+  ws["!ref"] = XLSX.utils.encode_range({
+    s: { r: 0, c: 0 },
+    e: { r: Math.max(pl.r - 1, 0), c: 7 },
+  });
+```
+
+5.12 — `proposta-export.js`: escritor de linhas, topo, assinatura e numeração de páginas do PDF, em comum com o cronograma (antes do `fmt`)
+
+old:
+
+<!-- prettier-ignore -->
+```js
+const fmt = (v, min, max) =>
+```
+
+new:
+
+<!-- prettier-ignore -->
+```js
+// --------------------------------------------------- layout em comum (PDF)
+// Usado pela proposta e pelo cronograma físico-financeiro (lib/cronograma-export.js).
+
+/**
+ * Documento A4 paisagem e o escritor de linhas de texto: `doc`, `larg`, `alt`, `M` (margem),
+ * `util` (largura útil), `y` (posição da próxima linha, em mm) e `escrever(texto, opcoes)`,
+ * que avança o `y` e abre página nova perto do rodapé.
+ */
+export function criarPdf(jsPDF) {
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const larg = doc.internal.pageSize.getWidth();
+  const alt = doc.internal.pageSize.getHeight();
+  const M = 12;
+  const pdf = {
+    doc,
+    larg,
+    alt,
+    M,
+    util: larg - 2 * M,
+    y: 14,
+    escrever(texto, { tamanho = 9, negrito = false, alinhar = "left", entre = 4.2 } = {}) {
+      doc.setFont("helvetica", negrito ? "bold" : "normal");
+      doc.setFontSize(tamanho);
+      const partes = doc.splitTextToSize(textoPdf(texto), pdf.util);
+      const x = alinhar === "center" ? larg / 2 : M;
+      partes.forEach((p) => {
+        if (pdf.y > alt - 16) {
+          doc.addPage();
+          pdf.y = 14;
+        }
+        doc.text(p, x, pdf.y, { align: alinhar });
+        pdf.y += entre;
+      });
+    },
+  };
+  return pdf;
+}
+
+/** Topo: empresa, título em maiúsculas e dados da licitação (`cab` = cabecalhoDoDocumento). */
+export function escreverTopoPdf(pdf, cab, titulo) {
+  cab.empresa.forEach((t, i) =>
+    pdf.escrever(t, i === 0 ? { tamanho: 12, negrito: true, entre: 5.5 } : { tamanho: 8.5 })
+  );
+  pdf.y += 3;
+  pdf.escrever(String(titulo).toUpperCase(), {
+    tamanho: 13,
+    negrito: true,
+    alinhar: "center",
+    entre: 7,
+  });
+  cab.licitacao.forEach((t) => pdf.escrever(t, { tamanho: 9 }));
+  pdf.y += 2;
+}
+
+/** Traço e linhas do representante; `espacoAntes` (mm) é o espaço para assinar. */
+export function escreverAssinaturaPdf(pdf, representante, { espacoAntes = 18 } = {}) {
+  pdf.y += espacoAntes;
+  pdf.doc.setDrawColor(60);
+  pdf.doc.setLineWidth(0.3);
+  pdf.doc.line(pdf.larg / 2 - 45, pdf.y, pdf.larg / 2 + 45, pdf.y);
+  pdf.y += 5;
+  linhasAssinatura(representante).forEach((t, i) =>
+    pdf.escrever(t, { tamanho: 9, negrito: i === 0, alinhar: "center" })
+  );
+}
+
+/** Rodapé de todas as páginas: nome da empresa e "Página X de Y". */
+export function numerarPaginasPdf(pdf, nomeEmpresa) {
+  const { doc, larg, alt, M } = pdf;
+  const total = doc.getNumberOfPages();
+  for (let p = 1; p <= total; p++) {
+    doc.setPage(p);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.text(textoPdf(nomeEmpresa || ""), M, alt - 7);
+    doc.text(`Página ${p} de ${total}`, larg - M, alt - 7, { align: "right" });
+    doc.setTextColor(0);
+  }
+}
+
+const fmt = (v, min, max) =>
+```
+
+5.13 — `proposta-export.js`: início de `gerarPdfProposta`
+
+old:
+
+<!-- prettier-ignore -->
+```js
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const larg = doc.internal.pageSize.getWidth();
+  const alt = doc.internal.pageSize.getHeight();
+  const M = 12;
+  const util = larg - 2 * M;
+  let y = 14;
+
+  const escrever = (
+    texto,
+    { tamanho = 9, negrito = false, alinhar = "left", entre = 4.2 } = {}
+  ) => {
+    doc.setFont("helvetica", negrito ? "bold" : "normal");
+    doc.setFontSize(tamanho);
+    const partes = doc.splitTextToSize(textoPdf(texto), util);
+    const x = alinhar === "center" ? larg / 2 : M;
+    partes.forEach((p) => {
+      if (y > alt - 16) {
+        doc.addPage();
+        y = 14;
+      }
+      doc.text(p, x, y, { align: alinhar });
+      y += entre;
+    });
+  };
+
+  const cab = cabecalhoDoDocumento(dados);
+  cab.empresa.forEach((t, i) =>
+    escrever(t, i === 0 ? { tamanho: 12, negrito: true, entre: 5.5 } : { tamanho: 8.5 })
+  );
+  y += 3;
+  escrever(String(dados.titulo || "Proposta de preços").toUpperCase(), {
+    tamanho: 13,
+    negrito: true,
+    alinhar: "center",
+    entre: 7,
+  });
+  cab.licitacao.forEach((t) => escrever(t, { tamanho: 9 }));
+  y += 2;
+
+  const linhas = dados.linhas || [];
+  autoTable(doc, {
+    startY: y,
+```
+
+new:
+
+<!-- prettier-ignore -->
+```js
+  const pdf = criarPdf(jsPDF);
+  const { doc, M, alt, escrever } = pdf;
+  escreverTopoPdf(pdf, cabecalhoDoDocumento(dados), dados.titulo || "Proposta de preços");
+
+  const linhas = dados.linhas || [];
+  autoTable(doc, {
+    startY: pdf.y,
+```
+
+5.14 — `proposta-export.js`: fim de `gerarPdfProposta`
+
+old:
+
+<!-- prettier-ignore -->
+```js
+  y = (doc.lastAutoTable?.finalY ?? y) + 7;
+  // bloco final (total, extenso, validade, local/data, assinatura) não se parte
+  if (y > alt - 70) {
+    doc.addPage();
+    y = 20;
+  }
+  escrever(`Valor global da proposta: R$ ${fmt(dados.totalGeral, 2, 2)}`, {
+    tamanho: 10,
+    negrito: true,
+    entre: 5,
+  });
+  escrever(`(${dados.totalExtenso})`, { tamanho: 9, entre: 4.5 });
+  y += 2;
+  escrever(dados.validade, { tamanho: 9 });
+  if (dados.localData) escrever(dados.localData, { tamanho: 9 });
+
+  y += 18;
+  doc.setDrawColor(60);
+  doc.setLineWidth(0.3);
+  doc.line(larg / 2 - 45, y, larg / 2 + 45, y);
+  y += 5;
+  linhasAssinatura(dados.representante).forEach((t, i) =>
+    escrever(t, { tamanho: 9, negrito: i === 0, alinhar: "center" })
+  );
+
+  const total = doc.getNumberOfPages();
+  for (let p = 1; p <= total; p++) {
+    doc.setPage(p);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.text(textoPdf(dados.empresa?.nome || ""), M, alt - 7);
+    doc.text(`Página ${p} de ${total}`, larg - M, alt - 7, { align: "right" });
+    doc.setTextColor(0);
+  }
+  return doc;
+```
+
+new:
+
+<!-- prettier-ignore -->
+```js
+  pdf.y = (doc.lastAutoTable?.finalY ?? pdf.y) + 7;
+  // bloco final (total, extenso, validade, local/data, assinatura) não se parte
+  if (pdf.y > alt - 70) {
+    doc.addPage();
+    pdf.y = 20;
+  }
+  escrever(`Valor global da proposta: R$ ${fmt(dados.totalGeral, 2, 2)}`, {
+    tamanho: 10,
+    negrito: true,
+    entre: 5,
+  });
+  escrever(`(${dados.totalExtenso})`, { tamanho: 9, entre: 4.5 });
+  pdf.y += 2;
+  escrever(dados.validade, { tamanho: 9 });
+  if (dados.localData) escrever(dados.localData, { tamanho: 9 });
+
+  escreverAssinaturaPdf(pdf, dados.representante);
+  numerarPaginasPdf(pdf, dados.empresa?.nome);
+  return doc;
+```
+
 Confira:
 
 ```bash
 grep -c "^export function \(cabecalhoDoDocumento\|linhasAssinatura\|textoPdf\)\|^export async function carregarJsPdf" apps/web/src/lib/proposta-export.js
 grep -c "montarCabecalhoLicitacao" apps/web/src/lib/proposta-orcamento.js
 grep -c "const op = \|const rep = " apps/web/src/lib/proposta-orcamento.js
+grep -c "^export function \(criarPdf\|escreverTopoPdf\|escreverAssinaturaPdf\|numerarPaginasPdf\|criarPlanilha\|escreverTopoPlanilha\|escreverAssinaturaPlanilha\)" apps/web/src/lib/proposta-export.js
 ```
 
-Expected: `4`, `2` (a declaração e a chamada em `montarDadosProposta`) e `2` (só dentro da função nova).
+Expected: `4`, `2` (a declaração e a chamada em `montarDadosProposta`), `2` (só dentro da função nova) e `7` (os helpers de layout).
 
 - [ ] **Step 6: A proposta continua igual**
 
@@ -3294,7 +3739,7 @@ Expected: `4`, `2` (a declaração e a chamada em `montarDadosProposta`) e `2` (
 (cd apps/web && npx vitest run src/lib/proposta-orcamento.test.js src/lib/proposta-export.test.js)
 ```
 
-Expected: `proposta-orcamento.test.js (16 tests)` e `proposta-export.test.js (10 tests)` passando (`Test Files 2 passed (2)`, `Tests 26 passed (26)`): os 16 + 9 de antes, sem mudança, e o teste novo do `carregarJsPdf`.
+Expected: `proposta-orcamento.test.js (16 tests)` e `proposta-export.test.js (10 tests)` passando (`Test Files 2 passed (2)`, `Tests 26 passed (26)`): os 16 + 9 de antes, sem mudança, e o teste novo do `carregarJsPdf`. Como o layout saiu de dentro do `gerarPdfProposta` e do `montarPlanilhaProposta`, esses testes são o que segura a regressão (conferido no rascunho: o PDF e a planilha da proposta saem idênticos aos da versão anterior, byte a byte, fora a data de criação do PDF, com 0, 2, 12 e 30 etapas).
 
 - [ ] **Step 7: Implementar `apps/web/src/lib/cronograma-export.js`**
 
@@ -3311,13 +3756,25 @@ Expected: `proposta-orcamento.test.js (16 tests)` e `proposta-export.test.js (10
  * Spec: docs/superpowers/specs/2026-10-05-cronograma-fisico-financeiro-design.md §7.
  *
  * O cabeçalho (empresa, órgão, objeto, edital, local/data e representante), o nome do
- * arquivo e o carregamento do jsPDF são os da proposta de preços. Este módulo importa
+ * arquivo, o carregamento do jsPDF e o esqueleto dos arquivos (topo, assinatura, rodapé
+ * "Página X de Y", escritor de linhas) são os da proposta de preços. Este módulo importa
  * o xlsx: no navegador, entra só por import dinâmico (no clique do "Gerar").
  */
 import * as XLSX from "xlsx";
 import { normalizarCronograma, resumoCronograma } from "./cronograma-ff";
 import { montarCabecalhoLicitacao, nomeArquivoProposta } from "./proposta-orcamento";
-import { cabecalhoDoDocumento, carregarJsPdf, linhasAssinatura, textoPdf } from "./proposta-export";
+import {
+  cabecalhoDoDocumento,
+  carregarJsPdf,
+  criarPdf,
+  criarPlanilha,
+  escreverAssinaturaPdf,
+  escreverAssinaturaPlanilha,
+  escreverTopoPdf,
+  escreverTopoPlanilha,
+  numerarPaginasPdf,
+  textoPdf,
+} from "./proposta-export";
 
 export const TITULO_CRONOGRAMA = "Cronograma físico-financeiro";
 const ABA = "Cronograma";
@@ -3416,33 +3873,20 @@ function somaDasCelulas(coluna, linhas) {
  *   1º mês até o mês.
  */
 export function montarPlanilhaCronograma(dados) {
-  const ws = {};
-  let r = 0; // próxima linha (0-based)
-  const gravar = (linha, coluna, celula) => {
-    ws[XLSX.utils.encode_cell({ r: linha, c: coluna })] = celula;
-  };
-  const linhaDeTexto = (valor) => {
-    if (valor) gravar(r, 0, { t: "s", v: String(valor) });
-    r++;
-  };
-
-  const topo = linhasDoTopo(dados);
-  topo.empresa.forEach(linhaDeTexto);
-  r++;
-  linhaDeTexto(String(dados.titulo || TITULO_CRONOGRAMA).toUpperCase());
-  topo.licitacao.forEach(linhaDeTexto);
-  r++;
+  const pl = criarPlanilha();
+  const { ws, gravar, linhaDeTexto } = pl;
+  escreverTopoPlanilha(pl, linhasDoTopo(dados), dados.titulo || TITULO_CRONOGRAMA);
 
   const resumo = dados.resumo || { linhas: [], meses: [], totalCentavos: 0 };
   const nMeses = resumo.meses.length;
-  cabecalhoTabela(nMeses).forEach((h, c) => gravar(r, c, { t: "s", v: h }));
-  r++;
+  cabecalhoTabela(nMeses).forEach((h, c) => gravar(pl.r, c, { t: "s", v: h }));
+  pl.r++;
 
   const linhasReais = []; // número (1-based) da linha de R$ de cada etapa
   const mesclas = [];
   resumo.linhas.forEach((l) => {
-    const lr = r; // R$
-    const lp = r + 1; // %
+    const lr = pl.r; // R$
+    const lp = pl.r + 1; // %
     linhasReais.push(lr + 1);
     for (let c = 0; c < COL_MES; c++) mesclas.push({ s: { r: lr, c }, e: { r: lp, c } });
     gravar(lr, 0, { t: "s", v: String(l.numero ?? "") });
@@ -3454,11 +3898,11 @@ export function montarPlanilhaCronograma(dados) {
       gravar(lr, COL_MES + j, { t: "n", v: l.valores[j] / 100, z: FMT_MOEDA });
       gravar(lp, COL_MES + j, { t: "n", v: p / 100, z: FMT_PCT });
     });
-    r += 2;
+    pl.r += 2;
   });
 
   // rodapé: 4 linhas, a partir de `f` (0-based); nF = número da linha "Total do mês"
-  const f = r;
+  const f = pl.r;
   const nF = f + 1;
   const mes1 = XLSX.utils.encode_col(COL_MES); // coluna do Mês 1 ("E")
   const temEtapas = linhasReais.length > 0;
@@ -3500,16 +3944,14 @@ export function montarPlanilhaCronograma(dados) {
       z: FMT_PCT,
     });
   });
-  r = f + ROTULOS_RODAPE.length + 1;
+  pl.r = f + ROTULOS_RODAPE.length + 1;
 
   linhaDeTexto(dados.localData);
-  r += 2;
-  linhaDeTexto("_______________________________________");
-  linhasAssinatura(dados.representante).forEach(linhaDeTexto);
+  escreverAssinaturaPlanilha(pl, dados.representante);
 
   ws["!ref"] = XLSX.utils.encode_range({
     s: { r: 0, c: 0 },
-    e: { r: Math.max(r - 1, 0), c: COL_MES - 1 + Math.max(nMeses, 1) },
+    e: { r: Math.max(pl.r - 1, 0), c: COL_MES - 1 + Math.max(nMeses, 1) },
   });
   if (mesclas.length) ws["!merges"] = mesclas;
   ws["!cols"] = [{ wch: 8 }, { wch: 45 }, { wch: 16 }, { wch: 10 }];
@@ -3523,12 +3965,30 @@ export function montarPlanilhaCronograma(dados) {
 
 const FONTE_TABELA = 7;
 const PADDING = 1;
-const LARGURA = { item: 12, etapa: 45, etapaMin: 40, valor: 24, peso: 15, mesMin: 14 };
+// sobra (mm) sobre o texto mais largo da coluna: o autoTable quebra a linha se ele não couber
+const FOLGA = 0.5;
+// Larguras mínimas (mm) das colunas; cada uma cresce se o maior texto dela pedir mais. Com a
+// quebra na horizontal, a etapa fica fixa em `etapa`; sem ela, ocupa o que sobra, no mínimo
+// `etapaMin`. Calibradas para 12 meses caberem numa página até R$ 9.999.999,99 de total.
+const LARGURA = { item: 8, etapa: 45, etapaMin: 30, valor: 18, peso: 12, mes: 14 };
 
 const doisDecimais = (v) =>
   (Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const moeda = (centavos) => doisDecimais((Number(centavos) || 0) / 100);
 const percentual = (v) => `${doisDecimais(v)}%`;
+
+/**
+ * Largura (mm) da coluna: a do maior texto em negrito (as linhas das células contam uma a
+ * uma), com o padding e a folga; nunca menos que `minimo`.
+ */
+function larguraDaColuna(doc, textos, minimo) {
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(FONTE_TABELA);
+  const maior = textos
+    .flatMap((t) => String(t).split("\n"))
+    .reduce((m, t) => Math.max(m, doc.getTextWidth(t)), 0);
+  return Math.max(minimo, Math.ceil((maior + 2 * PADDING + FOLGA) * 10) / 10);
+}
 
 /**
  * PDF do cronograma (A4 paisagem). `jsPDF` e `autoTable` vêm de fora (carregarJsPdf no
@@ -3540,44 +4000,9 @@ const percentual = (v) => `${doisDecimais(v)}%`;
  * Item e Etapa (horizontalPageBreak e horizontalPageBreakRepeat).
  */
 export function gerarPdfCronograma(dados, { jsPDF, autoTable }) {
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  const larg = doc.internal.pageSize.getWidth();
-  const alt = doc.internal.pageSize.getHeight();
-  const M = 12;
-  const util = larg - 2 * M;
-  let y = 14;
-
-  const escrever = (
-    texto,
-    { tamanho = 9, negrito = false, alinhar = "left", entre = 4.2 } = {}
-  ) => {
-    doc.setFont("helvetica", negrito ? "bold" : "normal");
-    doc.setFontSize(tamanho);
-    const partes = doc.splitTextToSize(textoPdf(texto), util);
-    const x = alinhar === "center" ? larg / 2 : M;
-    partes.forEach((p) => {
-      if (y > alt - 16) {
-        doc.addPage();
-        y = 14;
-      }
-      doc.text(p, x, y, { align: alinhar });
-      y += entre;
-    });
-  };
-
-  const topo = linhasDoTopo(dados);
-  topo.empresa.forEach((t, i) =>
-    escrever(t, i === 0 ? { tamanho: 12, negrito: true, entre: 5.5 } : { tamanho: 8.5 })
-  );
-  y += 3;
-  escrever(String(dados.titulo || TITULO_CRONOGRAMA).toUpperCase(), {
-    tamanho: 13,
-    negrito: true,
-    alinhar: "center",
-    entre: 7,
-  });
-  topo.licitacao.forEach((t) => escrever(t, { tamanho: 9 }));
-  y += 2;
+  const pdf = criarPdf(jsPDF);
+  const { doc, M, alt, util } = pdf;
+  escreverTopoPdf(pdf, linhasDoTopo(dados), dados.titulo || TITULO_CRONOGRAMA);
 
   const resumo = dados.resumo || { linhas: [], meses: [], totalCentavos: 0 };
   const n = resumo.meses.length;
@@ -3604,33 +4029,30 @@ export function gerarPdfCronograma(dados, { jsPDF, autoTable }) {
     tipos.push("rodape");
   });
 
-  // largura de um mês: o maior texto dos meses em negrito (o do rodapé), com folga
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(FONTE_TABELA);
-  const maiorTexto = corpo.reduce(
-    (max, linha) =>
-      linha
-        .slice(COL_MES)
-        .flatMap((t) => String(t).split("\n"))
-        .reduce((m, t) => Math.max(m, doc.getTextWidth(t)), max),
-    0
+  // larguras pelo maior texto de cada coluna em negrito (o do rodapé), com folga
+  const textosDa = (c) => corpo.map((linha) => linha[c]);
+  const largItem = larguraDaColuna(doc, textosDa(0), LARGURA.item);
+  const largValor = larguraDaColuna(doc, textosDa(2), LARGURA.valor);
+  const largPeso = larguraDaColuna(doc, textosDa(3), LARGURA.peso);
+  const largMes = larguraDaColuna(
+    doc,
+    corpo.flatMap((linha) => linha.slice(COL_MES)),
+    LARGURA.mes
   );
-  const largMes = Math.max(LARGURA.mesMin, Math.ceil((maiorTexto + 2 * PADDING + 1) * 10) / 10);
-  const quebra =
-    n > 12 || LARGURA.item + LARGURA.etapaMin + LARGURA.valor + LARGURA.peso + n * largMes > util;
+  const quebra = n > 12 || largItem + LARGURA.etapaMin + largValor + largPeso + n * largMes > util;
 
   const columnStyles = {
-    0: { cellWidth: LARGURA.item },
+    0: { cellWidth: largItem },
     1: quebra
       ? { cellWidth: LARGURA.etapa }
       : { cellWidth: "auto", minCellWidth: LARGURA.etapaMin },
-    2: { cellWidth: LARGURA.valor, halign: "right" },
-    3: { cellWidth: LARGURA.peso, halign: "right" },
+    2: { cellWidth: largValor, halign: "right" },
+    3: { cellWidth: largPeso, halign: "right" },
   };
   for (let j = 0; j < n; j++) columnStyles[COL_MES + j] = { cellWidth: largMes, halign: "right" };
 
   autoTable(doc, {
-    startY: y,
+    startY: pdf.y,
     head: [cabecalhoTabela(n)],
     body: corpo,
     theme: "grid",
@@ -3656,32 +4078,15 @@ export function gerarPdfCronograma(dados, { jsPDF, autoTable }) {
     },
   });
 
-  y = (doc.lastAutoTable?.finalY ?? y) + 8;
+  pdf.y = (doc.lastAutoTable?.finalY ?? pdf.y) + 8;
   // local/data e assinatura não se partem
-  if (y > alt - 45) {
+  if (pdf.y > alt - 45) {
     doc.addPage();
-    y = 20;
+    pdf.y = 20;
   }
-  if (dados.localData) escrever(dados.localData, { tamanho: 9 });
-  y += 16;
-  doc.setDrawColor(60);
-  doc.setLineWidth(0.3);
-  doc.line(larg / 2 - 45, y, larg / 2 + 45, y);
-  y += 5;
-  linhasAssinatura(dados.representante).forEach((t, i) =>
-    escrever(t, { tamanho: 9, negrito: i === 0, alinhar: "center" })
-  );
-
-  const total = doc.getNumberOfPages();
-  for (let p = 1; p <= total; p++) {
-    doc.setPage(p);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(100);
-    doc.text(textoPdf(dados.empresa?.nome || ""), M, alt - 7);
-    doc.text(`Página ${p} de ${total}`, larg - M, alt - 7, { align: "right" });
-    doc.setTextColor(0);
-  }
+  if (dados.localData) pdf.escrever(dados.localData, { tamanho: 9 });
+  escreverAssinaturaPdf(pdf, dados.representante, { espacoAntes: 16 });
+  numerarPaginasPdf(pdf, dados.empresa?.nome);
   return doc;
 }
 
@@ -3707,9 +4112,9 @@ export async function baixarCronogramaExcel(dados, nomeArquivo) {
 Expected:
 
 ```
-✓ src/lib/cronograma-export.test.js (17 tests)
+✓ src/lib/cronograma-export.test.js (18 tests)
 Test Files  1 passed (1)
-     Tests  17 passed (17)
+     Tests  18 passed (18)
 ```
 
 (O teste de 60 meses leva de 1 a 4 s no i3; o limite é de 20 s, como na proposta.)
@@ -3721,7 +4126,7 @@ Test Files  1 passed (1)
 npx prettier --check apps/web/src/lib/cronograma-export.js apps/web/src/lib/cronograma-export.test.js apps/web/src/lib/proposta-orcamento.js apps/web/src/lib/proposta-export.js apps/web/src/lib/proposta-export.test.js
 ```
 
-Expected: a suíte com **1 arquivo e 18 testes a mais** que a linha de base do Step 1 (17 do `cronograma-export` e 1 do `carregarJsPdf`), todos passando; Prettier `All matched files use Prettier code style!` (o `.sql` fica fora: o Prettier do projeto não tem parser de SQL).
+Expected: a suíte com **1 arquivo e 19 testes a mais** que a linha de base do Step 1 (18 do `cronograma-export` e 1 do `carregarJsPdf`), todos passando; Prettier `All matched files use Prettier code style!` (o `.sql` fica fora: o Prettier do projeto não tem parser de SQL).
 
 - [ ] **Step 10: Commit (só os 6 caminhos da task)**
 
@@ -3735,11 +4140,15 @@ feat(cronograma): migração 0133 e exportação do cronograma físico-financeir
   aplicada só na publicação, antes do push do front
 - lib/cronograma-export: dados da exportação (cabeçalho da proposta, prazo e resumo do
   cronograma), nome do arquivo, Excel com 2 linhas por etapa e rodapé em SUM com o valor
-  em cache, e PDF A4 paisagem que quebra na horizontal acima de 12 meses repetindo Item
-  e Etapa, com "Página X de Y"
+  em cache, e PDF A4 paisagem com as colunas medidas pelo maior texto (12 meses numa
+  página até R$ 9.999.999,99) que quebra na horizontal acima de 12 meses, ou se não couber,
+  repetindo Item e Etapa, com "Página X de Y"
 - proposta-orcamento: montarCabecalhoLicitacao sai de montarDadosProposta e é exportada
 - proposta-export: exporta cabecalhoDoDocumento, linhasAssinatura e textoPdf; o import
-  dinâmico do jsPDF vira carregarJsPdf, usado pela proposta e pelo cronograma
+  dinâmico do jsPDF vira carregarJsPdf; o esqueleto do PDF e da planilha (criarPdf,
+  escreverTopoPdf, escreverAssinaturaPdf, numerarPaginasPdf, criarPlanilha,
+  escreverTopoPlanilha e escreverAssinaturaPlanilha) sai de gerarPdfProposta e
+  montarPlanilhaProposta e é usado também pelo cronograma; a saída da proposta não muda
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
@@ -3808,7 +4217,7 @@ Expected:
 
 - `git status --short`: arquivos de outras sessões podem aparecer (ex.: `.claude/launch.json`); não mexa neles;
 - `6`, `1` e `1`. Se não bater, **pare**: os nomes vêm das Tasks 1 e 2;
-- Vitest sem falha. Anote `Test Files N passed` e `Tests M passed`; com a linha de base de 05/10 (36/433) e as Tasks 1 a 4, são **39 e 509**;
+- Vitest sem falha. Anote `Test Files N passed` e `Tests M passed`; com a linha de base de 05/10 (36/433) e as Tasks 1 a 4, são **39 e 510**;
 - ESLint: só o aviso que já existia, e `exit 0`:
 
 ```
@@ -4987,7 +5396,7 @@ Expected:
 (cd apps/web && npx vitest run 2>&1 | tail -5)
 ```
 
-Expected: `N + 1` arquivos e `M + 8` testes do Step 1, todos passando (com a base de 05/10: **40 e 517**).
+Expected: `N + 1` arquivos e `M + 8` testes do Step 1, todos passando (com a base de 05/10: **40 e 518**).
 
 - [ ] **Step 13: Commit (só os 6 caminhos da task)**
 
@@ -5612,7 +6021,7 @@ git diff -z --name-only --diff-filter=ACMR origin/master...HEAD | xargs -0 npx p
 
 Expected:
 
-- Vitest: a linha de base anotada antes da Task 1 mais **4 arquivos e 84 testes**, sem `failed`. Os 84 são: Task 1, 37; Task 2, 20; Task 3, 1; Task 4, 18; Task 5, 8. Com a base de 05/10, ficam **40 arquivos e 517 testes**;
+- Vitest: a linha de base anotada antes da Task 1 mais **4 arquivos e 85 testes**, sem `failed`. Os 85 são: Task 1, 37; Task 2, 20; Task 3, 1; Task 4, 19; Task 5, 8. Com a base de 05/10, ficam **40 arquivos e 518 testes**;
 - `LINT_OK`;
 - `no-undef`: só o aviso antigo `'cronogramaEtapas' is defined but never used` e `exit 0`;
 - `BUILD_OK`;
@@ -5909,6 +6318,7 @@ Conferência depois do passo 11 (consulta do Step 6). Expected na linha de Itati
 | 1   | **Importar** → `Orcamento SIGO - PM Itatinga - com cronograma.xlsx` → **Importar cronograma** → OK em "Substituir o cronograma atual?" | Volta a 20/35/30/15 (o Step 8 terminou em 27,50/27,50/22,50/22,50), com a legenda "importado de …".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 2   | **Reperiodizar** → `18` → OK                                                                                                           | 18 colunas: 4,45 · 4,44 · 4,44 · 4,44 · 6,11 · 7,78 · 7,78 · 7,78 · 7,78 · 6,67 · 6,67 · 6,67 · 6,67 · 5,00 · 3,33 · 3,33 · 3,33 · 3,33, com Total 100,00% verde. A grade rola na horizontal com Item e Etapa fixos; o Mês 18 tem R$ 47.201,81.                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 3   | **Exportar** → PDF → **Gerar PDF**                                                                                                     | Baixa `Cronograma - TESTE cronograma Itatinga - <aaaa-mm-dd>.pdf`, A4 paisagem, com **mais de uma página**: os meses quebram na horizontal, repetindo Item e Etapa. "Página X de Y" em todas as páginas.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 3b  | **Reperiodizar** → `12` → OK → **Exportar** → PDF → **Gerar PDF**                                                                      | Baixa o PDF com **1 página**: os 12 meses (Mês 1 a Mês 12), com Valor e % do total, na mesma folha, sem quebra na horizontal (12 meses cabem numa página até R$ 9.999.999,99 de total).                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | 4   | **Importar** o mesmo arquivo de novo → OK em "Substituir o cronograma atual?" → **Exportar**                                           | O diálogo "Exportar cronograma" mostra "Prazo de 4 meses · 1 etapa · total de R$ 1.417.472,96". Local = cidade/UF da empresa; data = hoje; representante legal preenchido com o de Configurações → Empresa.                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | 5   | Apagar o nome do representante → **Gerar PDF**                                                                                         | Toast de validação (nome obrigatório); nada é baixado. Desfazer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | 6   | **Gerar PDF**                                                                                                                          | Baixa `Cronograma - TESTE cronograma Itatinga - <aaaa-mm-dd>.pdf`, A4 paisagem, 1 página:<br>- cabeçalho: razão social, CNPJ e endereço da empresa; "Cronograma físico-financeiro"; Órgão "Prefeitura Municipal de Itatinga"; Objeto "Distrito Industrial de Itatinga"; "Prazo de execução: 4 meses";<br>- tabela: 1 · SERVIÇOS DE ELÉTRICA · 1.417.472,96 · 100,00% e, em cada mês, o R$ em cima e o % embaixo (283.494,59 / 20,00% … 212.620,94 / 15,00%);<br>- rodapé em negrito: Total do mês, % do mês, Acumulado (R$) até 1.417.472,96 e Acumulado (%) até 100,00%;<br>- local e data; linha de assinatura com nome, cargo e CPF; "Página 1 de 1". |
