@@ -41,6 +41,18 @@ import { refDaEmpresa } from "../_shared/storage-assinar.ts";
 import { carregarDocumentos, funcionarioPodeEntrar } from "./documentos.ts";
 import { requisitosDoCurso, duracaoParaProgresso } from "./requisitos.ts";
 import {
+  NOTA_MINIMA_PADRAO,
+  aulaLiberada,
+  conclusaoDaAula,
+  corrigirProva,
+  creditarTempo,
+  datasDeConclusao,
+  detalheLimitado,
+  proximaTentativaEm,
+  situacaoDasTentativas,
+  situacaoDaTrilha,
+} from "./regras.ts";
+import {
   consumirTentativa,
   ipDaRequisicao,
   liberarTentativas,
@@ -49,8 +61,6 @@ import {
 
 const TTL_SESSAO = 60 * 60 * 12;
 const TTL_ARQUIVO = 60 * 60 * 3; // URLs assinadas de vídeo/legenda/PDF
-const PCT_CONCLUSAO = 0.9;
-const TOLERANCIA_SEG = 2; // folga de rede por sinal de progresso
 const MAX_FALHAS_LOGIN = 5;
 const BLOQUEIO_MIN = 15;
 const TEMPO_MINIMO_PADRAO = 60; // aula de PDF/texto sem tempo definido
@@ -64,7 +74,6 @@ const MSG_CREDENCIAIS = "Credenciais inválidas: confira o usuário (CPF) e a se
 // cada dúvida manda WhatsApp ao tutor pelo canal único do SaaS
 const JANELA_DUVIDA_SEG = 60 * 60;
 const MAX_DUVIDAS_POR_HORA = 10;
-const MAX_DETALHE = 2000; // caracteres do JSON do detalhe de um evento
 
 const EVENTOS_CLIENTE = new Set([
   "abrir_curso",
@@ -140,16 +149,6 @@ async function trilhaDoCurso(
   return { aulas: aulas ?? [], feitas };
 }
 
-/** Progresso linear: só libera a aula se todas as anteriores estão concluídas. */
-// deno-lint-ignore no-explicit-any
-function aulaLiberada(trilha: { aulas: any[]; feitas: Set<unknown> }, aulaId: string) {
-  for (const a of trilha.aulas) {
-    if (a.id === aulaId) return true;
-    if (!trilha.feitas.has(a.id)) return false;
-  }
-  return false;
-}
-
 /** A aula existe (não apagada) e é do curso, na empresa da sessão. */
 async function aulaDoCurso(supabase: Db, aulaId: string, cursoId: string, empresaId: string) {
   const { data } = await supabase
@@ -161,28 +160,6 @@ async function aulaDoCurso(supabase: Db, aulaId: string, cursoId: string, empres
     .is("deleted_at", null)
     .maybeSingle();
   return !!data;
-}
-
-/**
- * Detalhe do evento vindo do navegador, limitado: objeto pequeno passa como
- * veio; o resto vira { cortado, tamanho, json } com o JSON serializado cortado.
- */
-function detalheLimitado(d: unknown): Record<string, unknown> | null {
-  if (d === null || d === undefined) return null;
-  let json: string | undefined;
-  try {
-    json = JSON.stringify(d);
-  } catch {
-    return { invalido: true };
-  }
-  if (json === undefined) return null;
-  const objeto = typeof d === "object" && !Array.isArray(d);
-  if (objeto && json.length <= MAX_DETALHE) return d as Record<string, unknown>;
-  return {
-    cortado: json.length > MAX_DETALHE,
-    tamanho: json.length,
-    json: json.slice(0, MAX_DETALHE),
-  };
 }
 
 /**
@@ -212,11 +189,12 @@ async function situacaoReal(supabase: Db, mat: any, empresaId: string) {
       .order("numero", { ascending: false })
       .limit(1),
   ]);
-  const aulasOk =
-    trilha.aulas.length > 0 && trilha.aulas.every((a: { id: string }) => trilha.feitas.has(a.id));
-  const temAvaliacao = (questoes ?? []).length > 0;
-  const aprovacao: { numero: number; nota: number } | null = aprovadas?.[0] ?? null;
-  return { aulasOk, temAvaliacao, aprovacao, concluido: aulasOk && (!temAvaliacao || !!aprovacao) };
+  return situacaoDaTrilha({
+    aulas: trilha.aulas,
+    feitas: trilha.feitas,
+    temAvaliacao: (questoes ?? []).length > 0,
+    aprovacao: aprovadas?.[0] ?? null,
+  });
 }
 
 // deno-lint-ignore no-explicit-any
@@ -235,16 +213,10 @@ async function concluirSeCompleto(supabase: Db, mat: any, empresaId: string) {
   if (!sit.concluido) {
     return { status: "em_andamento", concluiu: false, precisaAvaliacao: sit.temAvaliacao };
   }
-  const hoje = new Date();
   const patch: Record<string, unknown> = {
     status: "concluido",
-    data_conclusao: hoje.toISOString().slice(0, 10),
+    ...datasDeConclusao(new Date(), curso?.validade_meses),
   };
-  if (curso?.validade_meses) {
-    const renova = new Date(hoje);
-    renova.setMonth(renova.getMonth() + curso.validade_meses);
-    patch.proxima_renovacao = renova.toISOString().slice(0, 10);
-  }
   await supabase.from("treinamento_matricula").update(patch).eq("id", mat.id);
   return { status: "concluido", concluiu: true, precisaAvaliacao: false };
 }
@@ -697,13 +669,13 @@ Deno.serve(
         const questoesCurso = (questoes ?? []).filter((q: any) => q.curso_id === m.curso_id);
         // deno-lint-ignore no-explicit-any
         const tents = (tentativas ?? []).filter((t: any) => t.matricula_id === m.id);
-        const ultima = tents[tents.length - 1];
-        const max =
-          curso?.max_tentativas > 0 ? curso.max_tentativas + (m.tentativas_extras || 0) : null;
-        const liberaEm =
-          ultima && !ultima.aprovada && curso?.intervalo_tentativa_min > 0
-            ? Date.parse(ultima.created_at) + curso.intervalo_tentativa_min * 60_000
-            : 0;
+        const { max, esgotada, aguardarAte } = situacaoDasTentativas({
+          usadas: tents.length,
+          curso,
+          matricula: m,
+          ultima: tents[tents.length - 1],
+          agora,
+        });
         // deno-lint-ignore no-explicit-any
         const cert: any = (certificados ?? []).find((c: any) => c.matricula_id === m.id) || null;
         const pendencias = requisitosDoCurso({
@@ -711,10 +683,17 @@ Deno.serve(
           aulas: (aulas ?? []).filter((a: { curso_id: string }) => a.curso_id === m.curso_id),
           questoes: questoesCurso,
         }).filter((r) => r.bloqueia && !r.ok);
-        const concluidoReal =
-          aulasCurso.length > 0 &&
-          aulasCurso.every((a: { concluida: boolean }) => a.concluida) &&
-          (questoesCurso.length === 0 || tents.some((t: { aprovada: boolean }) => t.aprovada));
+        const concluidoReal = situacaoDaTrilha({
+          aulas: aulasCurso,
+          feitas: new Set(
+            aulasCurso
+              .filter((a: { concluida: boolean }) => a.concluida)
+              .map((a: { id: string }) => a.id)
+          ),
+          temAvaliacao: questoesCurso.length > 0,
+          // deno-lint-ignore no-explicit-any
+          aprovacao: tents.find((t: any) => t.aprovada) ?? null,
+        }).concluido;
         return {
           matricula: m,
           curso: curso && {
@@ -731,9 +710,9 @@ Deno.serve(
           avaliacao: {
             tentativas_usadas: tents.length,
             tentativas_max: max,
-            limite_atingido: max !== null && tents.length >= max && !m.avaliacao_aprovada,
-            proxima_em: liberaEm > agora ? new Date(liberaEm).toISOString() : null,
-            nota_minima: curso?.nota_minima ?? 70,
+            limite_atingido: esgotada && !m.avaliacao_aprovada,
+            proxima_em: aguardarAte !== null ? new Date(aguardarAte).toISOString() : null,
+            nota_minima: curso?.nota_minima ?? NOTA_MINIMA_PADRAO,
           },
           certificado: cert && {
             codigo: cert.codigo,
@@ -845,18 +824,19 @@ Deno.serve(
       // O navegador informa o total; o servidor só aceita o que cabe no tempo
       // real passado desde o último sinal deste funcionário (qualquer aba/aula).
       const agora = Date.now();
-      const ultimoSinal = acesso.ultimo_sinal_em ? Date.parse(acesso.ultimo_sinal_em) : agora;
-      const decorrido = Math.max(0, (agora - ultimoSinal) / 1000);
-      const pedido = Math.max(0, Math.floor(Number(body.segundos_assistidos) || 0) - jaTinha);
-      const aceito = Math.min(pedido, Math.floor(decorrido + TOLERANCIA_SEG));
-      let novoSeg = jaTinha + aceito;
-      if (duracao) novoSeg = Math.min(novoSeg, duracao);
+      const { decorrido, pedido, aceito, novoSeg, ajustado } = creditarTempo({
+        jaTinha,
+        informado: body.segundos_assistidos,
+        ultimoSinalEm: acesso.ultimo_sinal_em,
+        agora,
+        duracao,
+      });
 
       await supabase
         .from("funcionario_portal_acesso")
         .update({ ultimo_sinal_em: new Date(agora).toISOString() })
         .eq("funcionario_id", funcionarioId);
-      if (pedido > aceito + TOLERANCIA_SEG) {
+      if (ajustado) {
         await ev({
           evento: "progresso_ajustado",
           matricula_id: mat.id,
@@ -868,19 +848,21 @@ Deno.serve(
 
       // vídeo conclui sozinho aos 90% assistidos; apostila (pdf/texto) exige o
       // tempo de leitura COMPLETO e o clique explícito em "Marcar como lida"
-      const ehVideo = !aula.tipo || aula.tipo === "video";
-      const minimoSeg = ehVideo ? Math.ceil(duracao * PCT_CONCLUSAO) : duracao;
-      const atingiuTempo = duracao > 0 && novoSeg >= minimoSeg;
-      if (body.concluir === true && !ehVideo && !atingiuTempo) {
-        const faltam = Math.ceil((duracao - novoSeg) / 60);
+      const { ehVideo, concluirCedo, faltamSeg, concluiu, podeConcluir } = conclusaoDaAula({
+        tipo: aula.tipo,
+        duracao,
+        segundos: novoSeg,
+        jaConcluida: atual?.concluida,
+        pediuConcluir: body.concluir,
+      });
+      if (concluirCedo) {
+        const faltam = Math.ceil(faltamSeg / 60);
         return fail(`Continue lendo: ainda faltam ${faltam} min do tempo mínimo de leitura.`, 409, {
           codigo: "TEMPO_LEITURA",
           segundos_assistidos: novoSeg,
-          faltam_seg: duracao - novoSeg,
+          faltam_seg: faltamSeg,
         });
       }
-      const concluiu =
-        atual?.concluida || (ehVideo ? atingiuTempo : atingiuTempo && body.concluir === true);
       const { error: upErr } = await supabase.from("treinamento_progresso").upsert(
         {
           empresa_id: empresaId,
@@ -929,7 +911,7 @@ Deno.serve(
 
       return ok({
         segundos_assistidos: novoSeg,
-        pode_concluir: !ehVideo && atingiuTempo && !concluiu,
+        pode_concluir: podeConcluir,
         aula_concluida: concluiu,
         curso_concluido: resultado.concluiu,
         precisa_avaliacao: resultado.precisaAvaliacao && !mat.avaliacao_aprovada,
@@ -972,26 +954,28 @@ Deno.serve(
       if (!questoes?.length) return fail("Este curso não tem avaliação", 400);
 
       const usadas = anteriores?.length ?? 0;
-      const max =
-        curso?.max_tentativas > 0 ? curso.max_tentativas + (mat.tentativas_extras || 0) : null;
-      if (max !== null && usadas >= max) {
+      const tentativas = situacaoDasTentativas({
+        usadas,
+        curso,
+        matricula: mat,
+        ultima: anteriores?.[0],
+        agora: Date.now(),
+      });
+      const max = tentativas.max;
+      if (tentativas.esgotada) {
         return fail("Você usou todas as tentativas. Procure o RH para liberar uma nova.", 403, {
           codigo: "LIMITE_TENTATIVAS",
         });
       }
-      const ultima = anteriores?.[0];
-      if (ultima && !ultima.aprovada && curso?.intervalo_tentativa_min > 0) {
-        const libera = Date.parse(ultima.created_at) + curso.intervalo_tentativa_min * 60_000;
-        if (Date.now() < libera) {
-          return fail(
-            `Nova tentativa liberada às ${hora(new Date(libera).toISOString())}. Revise as aulas enquanto isso.`,
-            429,
-            { codigo: "AGUARDAR", liberada_em: new Date(libera).toISOString() }
-          );
-        }
+      if (tentativas.aguardarAte !== null) {
+        const libera = tentativas.aguardarAte;
+        return fail(
+          `Nova tentativa liberada às ${hora(new Date(libera).toISOString())}. Revise as aulas enquanto isso.`,
+          429,
+          { codigo: "AGUARDAR", liberada_em: new Date(libera).toISOString() }
+        );
       }
 
-      const marcada = new Map(respostas.map((r) => [r.questao_id, Number(r.resposta)]));
       // ordem em que o portal EXIBIU (questões e alternativas são sorteadas)
       const exibicao = new Map(
         respostas.map((r, i) => [
@@ -1007,11 +991,11 @@ Deno.serve(
           },
         ])
       );
-      const acertou = (q: { id: string; correta: number }) => marcada.get(q.id) === q.correta;
-      const acertos = questoes.filter(acertou).length;
-      const nota = Math.round((acertos / questoes.length) * 100);
-      const minima = curso?.nota_minima ?? 70;
-      const aprovada = nota >= minima;
+      const { marcada, acertou, acertos, nota, minima, aprovada } = corrigirProva({
+        questoes,
+        respostas,
+        notaMinima: curso?.nota_minima,
+      });
       const numero = usadas + 1;
 
       const { error: tErr } = await supabase.from("treinamento_tentativa").insert({
@@ -1078,10 +1062,8 @@ Deno.serve(
             comentario: q.comentario ?? null,
           }))
         : null;
-      const liberaEm =
-        !aprovada && curso?.intervalo_tentativa_min > 0
-          ? new Date(Date.now() + curso.intervalo_tentativa_min * 60_000).toISOString()
-          : null;
+      const liberaMs = proximaTentativaEm(aprovada, curso?.intervalo_tentativa_min, Date.now());
+      const liberaEm = liberaMs !== null ? new Date(liberaMs).toISOString() : null;
 
       return ok({
         nota,
