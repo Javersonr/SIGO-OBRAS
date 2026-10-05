@@ -23,9 +23,20 @@ describe("SKILL.md", () => {
     expect(skill.indexOf("\n---\n", 4)).toBeGreaterThan(0);
   });
   it("usa exatamente os nomes do modelo do SIGO", () => {
+    // Tabelas e prosa do documento (o Claude lê o texto inteiro).
     for (const texto of [ABA_ORCAMENTO, ABA_INFORMACOES, ...CABECALHOS_MODELO, ...ROTULOS_INFO]) {
       expect(skill).toContain(texto);
     }
+    // O que realmente grava o .xlsx é o bloco Python: as listas e os nomes das abas têm de ser
+    // iguais aos de orcamento-modelo.js, na mesma ordem (o toContain acima acharia as strings
+    // na prosa mesmo com o código errado).
+    const python = /```python\n([\s\S]*?)\n```/.exec(skill)[1];
+    const lista = (nome) =>
+      JSON.parse(new RegExp(`^${nome} = (\\[[^\\]]*\\])`, "m").exec(python)[1]);
+    expect(lista("CABECALHOS")).toEqual(CABECALHOS_MODELO);
+    expect(lista("ROTULOS_INFO")).toEqual(ROTULOS_INFO);
+    expect(python).toContain(`ws.title = "${ABA_ORCAMENTO}"`);
+    expect(python).toContain(`create_sheet("${ABA_INFORMACOES}")`);
   });
 });
 
