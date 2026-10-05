@@ -1987,6 +1987,7 @@ Esperado: o commit sai e o `git log` mostra `feat(orcamento): modelo SIGO de or�
   - `textoSkillValido(texto: string): boolean` — começa com `---` (aceita um BOM antes) e contém `name: orcamento-prefeitura-sigo`; `false` para o `index.html` que o Apache devolve com 200 quando o arquivo falta;
   - `montarZipSkill(JSZip, texto: string, tipo = "blob"): Promise<Blob|Uint8Array|...>` — uma única entrada `orcamento-prefeitura-sigo/SKILL.md`, sem entrada de pasta (`createFolders: false`), compressão DEFLATE.
 - O arquivo `SKILL.md` é a única fonte da skill. Ele foi conferido assim: o código Python do próprio documento gerou um `.xlsx` que o `lerArquivoModelo` da Task 2 leu com 0 erros e 0 avisos, com o preço com BDI calculado (`preco_com_bdi(2827.92, 23.96)` = 3.505,49) e o total da prefeitura batendo. A `description` tem 601 caracteres (o limite do Claude é 1.024) e não tem `<` nem `>`.
+- O teste `usa exatamente os nomes do modelo do SIGO` confere o texto inteiro do documento **e** o bloco Python: as listas `CABECALHOS` e `ROTULOS_INFO` (com a ordem) e `ws.title`/`create_sheet(...)` têm de ser iguais aos de `orcamento-modelo.js`. Só procurar as strings no documento não basta (elas já aparecem nas tabelas da prosa). Conferido trocando listas e abas do Python em memória: o teste falha em cada troca.
 
 - [ ] **Step 1: Escrever o teste que falha**
 
@@ -2019,9 +2020,20 @@ describe("SKILL.md", () => {
     expect(skill.indexOf("\n---\n", 4)).toBeGreaterThan(0);
   });
   it("usa exatamente os nomes do modelo do SIGO", () => {
+    // Tabelas e prosa do documento (o Claude lê o texto inteiro).
     for (const texto of [ABA_ORCAMENTO, ABA_INFORMACOES, ...CABECALHOS_MODELO, ...ROTULOS_INFO]) {
       expect(skill).toContain(texto);
     }
+    // O que realmente grava o .xlsx é o bloco Python: as listas e os nomes das abas têm de ser
+    // iguais aos de orcamento-modelo.js, na mesma ordem (o toContain acima acharia as strings
+    // na prosa mesmo com o código errado).
+    const python = /```python\n([\s\S]*?)\n```/.exec(skill)[1];
+    const lista = (nome) =>
+      JSON.parse(new RegExp(`^${nome} = (\\[[^\\]]*\\])`, "m").exec(python)[1]);
+    expect(lista("CABECALHOS")).toEqual(CABECALHOS_MODELO);
+    expect(lista("ROTULOS_INFO")).toEqual(ROTULOS_INFO);
+    expect(python).toContain(`ws.title = "${ABA_ORCAMENTO}"`);
+    expect(python).toContain(`create_sheet("${ABA_INFORMACOES}")`);
   });
 });
 
