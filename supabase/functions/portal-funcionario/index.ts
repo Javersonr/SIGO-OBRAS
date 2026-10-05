@@ -39,6 +39,7 @@ import {
 import { enviarWhatsAppTexto, normalizarTelefoneBR } from "../_shared/whatsapp-envio.ts";
 import { assinarDaEmpresa, refDaEmpresa } from "../_shared/storage-assinar.ts";
 import { carregarDocumentos, funcionarioPodeEntrar } from "./documentos.ts";
+import { confirmarCiencia } from "./ciencia.ts";
 import { requisitosDoCurso, duracaoParaProgresso } from "./requisitos.ts";
 import {
   NOTA_MINIMA_PADRAO,
@@ -1263,29 +1264,26 @@ Deno.serve(
     // Confirmação = assinatura eletrônica simples (Lei 14.063/2020): quem
     // (login pessoal), quando, o quê e de onde (IP/dispositivo).
     if (body.acao === "ciencia") {
-      if (!body.ciencia_id) return fail("ciencia_id é obrigatório", 400);
-      const { data: ciencia } = await supabase
-        .from("entrega_ciencia")
-        .select("id, status")
-        .eq("id", body.ciencia_id)
-        .eq("funcionario_id", funcionarioId)
-        .eq("empresa_id", empresaId)
-        .is("deleted_at", null)
-        .maybeSingle();
-      if (!ciencia) return fail("Registro não encontrado", 404);
-      if (ciencia.status === "confirmada") return ok({ message: "Já confirmada" });
+      const cienciaId = body.ciencia_id;
+      if (!cienciaId) return fail("ciencia_id é obrigatório", 400);
       const evidencia = {
         metodo: "portal_funcionario_login",
         usuario: acesso.usuario,
         confirmado_em: agoraIso(),
         ...origemDaRequisicao(req),
       };
-      const { error } = await supabase
-        .from("entrega_ciencia")
-        .update({ status: "confirmada", confirmada_em: evidencia.confirmado_em, evidencia })
-        .eq("id", ciencia.id);
-      if (error) return fail("Erro ao registrar ciência", 500);
-      await ev({ evento: "ciencia", detalhe: { ciencia_id: ciencia.id } });
+      // só o servidor confirma (trigger da 0134) e só uma vez: o UPDATE exige status pendente,
+      // então uma 2ª aba não sobrescreve a evidência da 1ª (regra e testes em ciencia.ts)
+      const r = await confirmarCiencia(supabase, {
+        cienciaId,
+        funcionarioId,
+        empresaId,
+        evidencia,
+      });
+      if (r.resultado === "nao_encontrada") return fail("Registro não encontrado", 404);
+      if (r.resultado === "ja_confirmada") return ok({ message: "Já confirmada" });
+      if (r.resultado === "erro") return fail("Erro ao registrar ciência", 500);
+      await ev({ evento: "ciencia", detalhe: { ciencia_id: cienciaId } });
       return ok({ message: "Ciência registrada", evidencia });
     }
 
