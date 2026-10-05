@@ -171,6 +171,11 @@ const MESES = [
 
 const texto = (v) => String(v ?? "").trim();
 
+/** "Cidade/UF" da empresa (só uma das partes, se faltar a outra; "" sem nenhuma). */
+export function localDaEmpresa(empresa) {
+  return [empresa?.cidade, empresa?.estado].map(texto).filter(Boolean).join("/");
+}
+
 /** "2026-10-05" → "05 de outubro de 2026" (sem new Date: não cai 1 dia no fuso). */
 function dataPorExtenso(dataISO) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(texto(dataISO));
@@ -186,7 +191,7 @@ function formatarCep(cep) {
 function montarEmpresa(e) {
   const emp = e || {};
   const logradouro = [emp.endereco, emp.numero].map(texto).filter(Boolean).join(", ");
-  const cidadeUf = [emp.cidade, emp.estado].map(texto).filter(Boolean).join("/");
+  const cidadeUf = localDaEmpresa(emp);
   const cep = texto(emp.cep) ? `CEP ${formatarCep(emp.cep)}` : "";
   return {
     nome: texto(emp.razao_social) || texto(emp.nome) || texto(emp.nome_fantasia),

@@ -1,8 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import { FileDown, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
-import { sigo } from "@/api/sigoClient";
+import { FileDown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,17 +14,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatBRL } from "@/lib/formatters";
-import { formatarCpf } from "@/lib/cpf";
 import { normalizarCronograma, resumoCronograma } from "@/lib/cronograma-ff";
 import { validarRepresentante } from "@/lib/proposta-orcamento";
+import {
+  RepresentanteLegalCampos,
+  SeletorFormatoExportacao,
+  useRepresentanteDaEmpresa,
+} from "./CamposDeExportacao";
 
 const AVISO_NAO_FECHA = "Todas as etapas precisam somar 100,00% para exportar";
-
-const localDaEmpresa = (e) =>
-  [e?.cidade, e?.estado]
-    .map((v) => String(v ?? "").trim())
-    .filter(Boolean)
-    .join("/");
 
 /** Resumo do cronograma como a tela mostra (as etapas do orçamento, sem as órfãs). */
 function useResumo(etapas, cronograma) {
@@ -56,46 +53,17 @@ export default function ExportarCronogramaDialog({
   cronograma,
 }) {
   const [formato, setFormato] = useState("pdf");
-  const [local, setLocal] = useState("");
   const [data, setData] = useState("");
-  const [representante, setRepresentante] = useState({ nome: "", cargo: "", cpf: "" });
-  const [empresa, setEmpresa] = useState(null);
-  const [carregando, setCarregando] = useState(false);
   const [gerando, setGerando] = useState(false);
-
-  // a empresa da sessão entra só como ponto de partida ao abrir; mudar de
-  // referência depois não pode apagar o que o usuário já digitou
-  const empresaAtivaRef = useRef(empresaAtiva);
-  empresaAtivaRef.current = empresaAtiva;
+  const { empresa, local, setLocal, representante, setRepresentante, carregando } =
+    useRepresentanteDaEmpresa(open, empresaAtiva);
   const empresaId = empresaAtiva?.id;
 
+  // ao abrir: PDF e a data de hoje
   useEffect(() => {
-    if (!open || !empresaId) return undefined;
-    let cancelado = false;
-    const preencher = (e) => {
-      setEmpresa(e || null);
-      setLocal(localDaEmpresa(e));
-      setRepresentante({
-        nome: e?.representante_nome || "",
-        cargo: e?.representante_cargo || "",
-        cpf: e?.representante_cpf ? formatarCpf(e.representante_cpf) : "",
-      });
-    };
+    if (!open || !empresaId) return;
     setFormato("pdf");
     setData(format(new Date(), "yyyy-MM-dd"));
-    preencher(empresaAtivaRef.current);
-    setCarregando(true);
-    sigo.entities.Empresa.get(empresaId)
-      .then((e) => {
-        if (!cancelado && e) preencher(e);
-      })
-      .catch((err) => console.error("Erro ao carregar a empresa:", err))
-      .finally(() => {
-        if (!cancelado) setCarregando(false);
-      });
-    return () => {
-      cancelado = true;
-    };
   }, [open, empresaId]);
 
   const resumo = useResumo(etapas, cronograma);
@@ -155,12 +123,6 @@ export default function ExportarCronogramaDialog({
     }
   };
 
-  const mudarRep = (campo) => (e) =>
-    setRepresentante((prev) => ({
-      ...prev,
-      [campo]: campo === "cpf" ? formatarCpf(e.target.value) : e.target.value,
-    }));
-
   return (
     <Dialog
       open={open}
@@ -181,31 +143,7 @@ export default function ExportarCronogramaDialog({
         <div className="space-y-4">
           {!resumo.todasFecham && <p className="text-sm text-red-600">{AVISO_NAO_FECHA}</p>}
 
-          <div>
-            <Label className="text-xs text-slate-600">Formato</Label>
-            <div className="mt-1 flex gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant={formato === "pdf" ? "default" : "outline"}
-                onClick={() => setFormato("pdf")}
-                disabled={gerando}
-              >
-                <FileText className="w-4 h-4" />
-                PDF
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={formato === "xlsx" ? "default" : "outline"}
-                onClick={() => setFormato("xlsx")}
-                disabled={gerando}
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                Excel
-              </Button>
-            </div>
-          </div>
+          <SeletorFormatoExportacao formato={formato} setFormato={setFormato} gerando={gerando} />
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
@@ -236,59 +174,14 @@ export default function ExportarCronogramaDialog({
             </div>
           </div>
 
-          <div className="rounded-md border p-3 space-y-3">
-            <p className="text-sm font-medium text-slate-700">
-              Representante legal
-              {carregando && <Loader2 className="ml-2 inline w-3.5 h-3.5 animate-spin" />}
-            </p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="sm:col-span-3">
-                <Label htmlFor="cronograma-rep-nome" className="text-xs text-slate-600">
-                  Nome *
-                </Label>
-                <Input
-                  id="cronograma-rep-nome"
-                  value={representante.nome}
-                  onChange={mudarRep("nome")}
-                  placeholder={empresa?.responsavel_principal || ""}
-                  disabled={gerando || carregando}
-                  className="mt-1"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <Label htmlFor="cronograma-rep-cargo" className="text-xs text-slate-600">
-                  Cargo
-                </Label>
-                <Input
-                  id="cronograma-rep-cargo"
-                  value={representante.cargo}
-                  onChange={mudarRep("cargo")}
-                  placeholder="Sócio-administrador"
-                  disabled={gerando || carregando}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label htmlFor="cronograma-rep-cpf" className="text-xs text-slate-600">
-                  CPF
-                </Label>
-                <Input
-                  id="cronograma-rep-cpf"
-                  inputMode="numeric"
-                  value={representante.cpf}
-                  onChange={mudarRep("cpf")}
-                  placeholder="000.000.000-00"
-                  disabled={gerando || carregando}
-                  className="mt-1"
-                />
-              </div>
-            </div>
-            <p className="text-xs text-slate-500">
-              {
-                "Vale só para esta exportação. O padrão fica em Configurações → Empresa → Representante legal."
-              }
-            </p>
-          </div>
+          <RepresentanteLegalCampos
+            idPrefixo="cronograma"
+            representante={representante}
+            setRepresentante={setRepresentante}
+            empresa={empresa}
+            carregando={carregando}
+            gerando={gerando}
+          />
         </div>
 
         <DialogFooter className="gap-2">

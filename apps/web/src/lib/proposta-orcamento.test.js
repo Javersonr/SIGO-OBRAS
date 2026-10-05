@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ordenarItensOportunidade } from "./orcamento-registros";
 import {
   descricaoVersaoProposta,
+  localDaEmpresa,
   montarDadosProposta,
   nomeArquivoProposta,
   validarRepresentante,
@@ -202,6 +203,23 @@ describe("validarRepresentante", () => {
     });
     expect(validarRepresentante({ nome: "", cpf: "123" }).erros).toHaveLength(2);
     expect(validarRepresentante(undefined).ok).toBe(false);
+  });
+});
+
+describe("localDaEmpresa", () => {
+  it("cidade e UF viram Cidade/UF, sem os espaços das pontas", () => {
+    expect(localDaEmpresa({ cidade: " Itatinga ", estado: "SP" })).toBe("Itatinga/SP");
+  });
+
+  it("só uma das partes vira só ela, sem barra", () => {
+    expect(localDaEmpresa({ cidade: "Itatinga", estado: "" })).toBe("Itatinga");
+    expect(localDaEmpresa({ cidade: null, estado: "SP" })).toBe("SP");
+  });
+
+  it("sem cidade nem UF, vazio (também com empresa nula ou indefinida)", () => {
+    expect(localDaEmpresa({ cidade: "  ", estado: undefined })).toBe("");
+    expect(localDaEmpresa(null)).toBe("");
+    expect(localDaEmpresa(undefined)).toBe("");
   });
 });
 
