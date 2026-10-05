@@ -59,6 +59,13 @@ export async function chamarPortal(acao, dados = {}, token) {
 }
 
 /**
+ * API que os componentes do portal usam por padrão. A prévia do responsável técnico ("Ver como aluno")
+ * injeta outra no lugar, que nunca fala com o servidor (`criarApiPrevia`, em lib/portal-previa.js):
+ * `previa: true` faz os componentes esconderem o que só vale para aluno matriculado.
+ */
+export const apiPortal = { previa: false, chamarPortal };
+
+/**
  * Fila: eventos e progresso vão ao servidor NA ORDEM em que aconteceram — o
  * servidor mede o tempo real entre um sinal e o seguinte.
  */

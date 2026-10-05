@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Award, Loader2, FileDown, PenLine } from "lucide-react";
-import { chamarPortal, fmtData } from "./api";
+import { apiPortal, fmtData } from "./api";
 import { baixarCertificadoPdf } from "@/lib/certificado-ead";
 import { AVISO_SEM_LOGO, mensagemFalhaCertificado } from "@/lib/certificado-ead-falhas";
 import { logoParaPdfDeUrl } from "@/lib/pdf-empresa";
@@ -12,6 +12,7 @@ import { logoParaPdfDeUrl } from "@/lib/pdf-empresa";
  * declaração digitando a própria senha, e o servidor registra quando e de onde.
  * `empresaLogoUrl` = URL do logo já assinada pelo servidor (`dados.empresa_logo_url`), para o PDF
  * sair igual ao que o RH baixa; null = a empresa não tem logo que o portal consiga mostrar.
+ * `api` é injetada (padrão: o portal de verdade); a prévia do RT nunca chega aqui (não há certificado).
  */
 export default function CertificadoPortal({
   item,
@@ -20,7 +21,9 @@ export default function CertificadoPortal({
   evento,
   recarregar,
   tratarErro,
+  api = apiPortal,
 }) {
+  const { chamarPortal } = api;
   const cert = item.certificado;
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");

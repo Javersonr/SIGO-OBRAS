@@ -23,6 +23,7 @@ import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
 import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
 import MatriculaAuditoriaSheet from "@/components/seguranca/MatriculaAuditoriaSheet";
 import DuvidasTutorCard from "@/components/seguranca/DuvidasTutorCard";
+import PreviaAlunoCurso from "@/components/seguranca/PreviaAlunoCurso";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -46,6 +47,7 @@ import {
   FileText,
   BookOpen,
   Award,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -139,6 +141,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const [funcionarios, setFuncionarios] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [cursoSel, setCursoSel] = useState(null); // Sheet de edição do curso
+  const [previaAberta, setPreviaAberta] = useState(false); // "Ver como aluno" (T28)
   const [matriculaDetalheId, setMatriculaDetalheId] = useState(null);
   const [showMatricular, setShowMatricular] = useState(false);
   const [matForm, setMatForm] = useState({ curso_id: "", funcionario_ids: [] });
@@ -187,6 +190,11 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       if (carga === cargaRef.current) setCarregando(false);
     }
   };
+
+  // fechou o editor (ou trocou de empresa): a prévia do curso não fica armada para o próximo
+  useEffect(() => {
+    if (!cursoSel?.id) setPreviaAberta(false);
+  }, [cursoSel?.id]);
 
   useEffect(() => {
     if (!empresaAtiva?.id) return;
@@ -1339,14 +1347,26 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     </ul>
                   </div>
                 </div>
-                <Button
-                  onClick={salvarCurso}
-                  disabled={gravando.has("curso")}
-                  className="bg-slate-900 hover:bg-slate-800"
-                >
-                  {gravando.has("curso") && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-                  Salvar curso
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    onClick={salvarCurso}
+                    disabled={gravando.has("curso")}
+                    className="bg-slate-900 hover:bg-slate-800"
+                  >
+                    {gravando.has("curso") && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+                    Salvar curso
+                  </Button>
+                  {cursoSel.id && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setPreviaAberta(true)}
+                      title="Abre o curso como o aluno vê (todas as aulas liberadas, prova com gabarito), sem matricular ninguém e sem gravar nada"
+                    >
+                      <Eye className="w-4 h-4 mr-1" /> Ver como aluno
+                    </Button>
+                  )}
+                </div>
 
                 {cursoSel.id && (
                   <div className="space-y-2 border-t pt-4">
@@ -1842,6 +1862,14 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                   </div>
                 )}
               </div>
+              {previaAberta && cursoSel.id && (
+                <PreviaAlunoCurso
+                  curso={cursoSel}
+                  aulas={aulasDoCurso(cursoSel.id)}
+                  questoes={todasQuestoes.filter((q) => q.curso_id === cursoSel.id)}
+                  onFechar={() => setPreviaAberta(false)}
+                />
+              )}
             </>
           )}
         </SheetContent>

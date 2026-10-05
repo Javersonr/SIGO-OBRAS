@@ -15,8 +15,9 @@ import {
   RotateCcw,
   Loader2,
   ChevronRight,
+  Eye,
 } from "lucide-react";
-import { chamarPortal, criarFila, fmtTempo, fmtDataHora, armazenamentoPortal } from "./api";
+import { apiPortal, criarFila, fmtTempo, fmtDataHora, armazenamentoPortal } from "./api";
 import AvaliacaoPortal from "./AvaliacaoPortal";
 import CertificadoPortal from "./CertificadoPortal";
 import DuvidasPortal from "./DuvidasPortal";
@@ -90,6 +91,10 @@ const ICONE_TIPO = { video: PlayCircle, pdf: FileText, texto: BookOpen };
  * - aulas em ordem: a próxima só abre com a anterior concluída;
  * - o tempo só conta com o vídeo tocando (ou a leitura aberta) e a aba VISÍVEL;
  * - eventos e progresso vão numa fila, na ordem em que aconteceram.
+ *
+ * `api` é injetada (padrão: o portal de verdade). A prévia do responsável técnico ("Ver como aluno")
+ * passa uma API de mentira com `previa: true` (lib/portal-previa.js): nada vai ao servidor, o tempo
+ * não é contado, a prova fica disponível sem concluir as aulas e nada é guardado no aparelho.
  */
 export default function CursoPortal({
   item,
@@ -100,7 +105,12 @@ export default function CursoPortal({
   abrirProximaAula = false,
   onVoltar,
   onErroSessao,
+  api = apiPortal,
 }) {
+  const { chamarPortal } = api;
+  const previa = api.previa === true;
+  // o que o portal guarda no aparelho (posição do vídeo, respostas da prova) não vale na prévia
+  const armazenamento = () => (previa ? null : armazenamentoPortal());
   const mat = item.matricula;
   const aulas = item.aulas || [];
   const [aulaId, setAulaId] = useState(null);
@@ -159,7 +169,7 @@ export default function CursoPortal({
     const a = aulaRef.current;
     if (!a || a.tipo !== "video" || a.concluida) return;
     const segundos = videoElRef.current?.currentTime ?? playerRef.current?.getCurrentTime?.();
-    guardarPosicao(armazenamentoPortal(), mat.id, a.id, segundos);
+    guardarPosicao(armazenamento(), mat.id, a.id, segundos);
   };
 
   const evento = (nome, extra = {}) =>
@@ -170,7 +180,7 @@ export default function CursoPortal({
   // `fim`: o vídeo acabou; se mesmo assim a aula não concluiu, o aluno é avisado
   const sincronizar = async ({ concluir = false, fim = false } = {}) => {
     const a = aulaRef.current;
-    if (!a) return;
+    if (!a || previa) return; // prévia: o tempo não é contado nem enviado
     guardarPosicaoAtual();
     const enviado = assistidoRef.current;
     try {
@@ -249,7 +259,7 @@ export default function CursoPortal({
   };
 
   function iniciarContagem() {
-    if (contandoRef.current || document.hidden) return;
+    if (previa || contandoRef.current || document.hidden) return;
     contandoRef.current = true;
     timersRef.current.tick = setInterval(() => {
       assistidoRef.current += 1;
@@ -308,7 +318,7 @@ export default function CursoPortal({
         ? {
             aulaId: a.id,
             seg: posicaoParaRetomar({
-              salva: lerPosicao(armazenamentoPortal(), mat.id, a.id),
+              salva: lerPosicao(armazenamento(), mat.id, a.id),
               segundosAssistidos: a.segundos_assistidos,
               duracao: a.duracao_seg,
               concluida: a.concluida,
@@ -576,12 +586,15 @@ export default function CursoPortal({
   const todasFeitas = !semAulas && feitas === aulas.length;
   const av = item.avaliacao || {};
   const aguardando = provaAguardando(av.proxima_em, Date.now());
+  // prévia: o RT abre a prova sem concluir as aulas (nada é gravado)
+  const provaLiberada = todasFeitas || previa;
   const podeFazerProva =
-    todasFeitas && item.curso?.tem_avaliacao && !mat.avaliacao_aprovada && !av.limite_atingido;
+    provaLiberada && item.curso?.tem_avaliacao && !mat.avaliacao_aprovada && !av.limite_atingido;
   const proximaPendente = proximaAulaPendente(aulas);
   const numeroDaAula = (a) => aulasNumeradas.find((x) => x.id === a?.id)?.numero;
   // botão "Próxima aula": só depois de concluir a aula aberta (as aulas seguem em ordem)
-  const seguinte = aula?.concluida ? aulaSeguinte(aulas, aula.id) : null;
+  // (na prévia, que não conclui aula, o botão leva à seguinte da lista)
+  const seguinte = aula && (aula.concluida || previa) ? aulaSeguinte(aulas, aula.id) : null;
 
   // aulas agrupadas por módulo, na ordem
   const grupos = [];
@@ -620,7 +633,9 @@ export default function CursoPortal({
           <div className="flex-1 min-w-0">
             <p className="font-semibold leading-tight truncate">{item.curso?.nome}</p>
             <p className="text-xs text-slate-300">
-              {feitas}/{aulas.length} aulas concluídas
+              {previa
+                ? `${aulas.length} aulas · prévia`
+                : `${feitas}/${aulas.length} aulas concluídas`}
             </p>
           </div>
           {item.curso?.projeto_pedagogico_url && (
@@ -638,6 +653,21 @@ export default function CursoPortal({
       </header>
 
       <div className="max-w-3xl mx-auto p-4 space-y-4">
+        {previa && (
+          <div
+            role="status"
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm text-violet-900"
+          >
+            <Eye className="w-4 h-4 shrink-0" />
+            <span className="flex-1 min-w-[12rem]">
+              <strong>Prévia como aluno.</strong> Nada é gravado: sem matrícula, tempo, tentativa,
+              certificado nem trilha. Todas as aulas estão liberadas e a prova mostra o gabarito.
+            </span>
+            <Button type="button" size="sm" variant="outline" className="bg-white" onClick={voltar}>
+              Sair da prévia
+            </Button>
+          </div>
+        )}
         {aviso && (
           <div className="flex items-start gap-2 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">
             <span className="flex-1">{aviso}</span>
@@ -687,6 +717,7 @@ export default function CursoPortal({
         {/* durante a prova o certificado sai da frente: o aluno só vê as questões */}
         {modo !== "avaliacao" && (mat.status === "concluido" || item.certificado) && (
           <CertificadoPortal
+            api={api}
             item={item}
             token={token}
             empresaLogoUrl={empresaLogoUrl}
@@ -698,6 +729,7 @@ export default function CursoPortal({
 
         {modo === "avaliacao" ? (
           <AvaliacaoPortal
+            api={api}
             item={item}
             token={token}
             fila={fila}
@@ -802,6 +834,8 @@ export default function CursoPortal({
                   <span className="text-amber-700">
                     Esta aula está sem duração cadastrada — avise o RH. O tempo não será contado.
                   </span>
+                ) : previa ? (
+                  <span>Prévia: o tempo assistido não é contado nem gravado.</span>
                 ) : (
                   <span>
                     Assistido:{" "}
@@ -809,6 +843,8 @@ export default function CursoPortal({
                     o tempo só conta com esta tela aberta e o vídeo tocando em velocidade normal
                   </span>
                 )
+              ) : previa ? (
+                <span>Prévia: o tempo de leitura não é contado nem gravado.</span>
               ) : (
                 <span>
                   Tempo de leitura: {fmtTempo(segundosTela)}
@@ -816,7 +852,7 @@ export default function CursoPortal({
                 </span>
               )}
             </div>
-            {aula.tipo !== "video" && !aula.concluida && !apostilaIndisponivel && (
+            {aula.tipo !== "video" && !aula.concluida && !apostilaIndisponivel && !previa && (
               <Button
                 className="w-full h-11 bg-emerald-600 hover:bg-emerald-700"
                 disabled={minimo > 0 && segundosTela < minimo}
@@ -878,7 +914,7 @@ export default function CursoPortal({
         )}
 
         {modo === "aulas" &&
-          todasFeitas &&
+          provaLiberada &&
           item.curso?.tem_avaliacao &&
           !mat.avaliacao_aprovada && (
             <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 space-y-2">
@@ -951,6 +987,7 @@ export default function CursoPortal({
         </div>
 
         <DuvidasPortal
+          api={api}
           item={item}
           token={token}
           aulaId={aulaId}

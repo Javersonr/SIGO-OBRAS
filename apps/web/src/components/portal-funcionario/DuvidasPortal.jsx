@@ -2,10 +2,22 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageCircleQuestion, Loader2 } from "lucide-react";
-import { chamarPortal, fmtDataHora } from "./api";
+import { apiPortal, fmtDataHora } from "./api";
 
-/** "Fale com o tutor": a dúvida fica registrada e o tutor é avisado. */
-export default function DuvidasPortal({ item, token, aulaId, recarregar, tratarErro }) {
+/**
+ * "Fale com o tutor": a dúvida fica registrada e o tutor é avisado. Na prévia do responsável técnico
+ * (`api.previa`) o cartão aparece como o aluno vê, mas não envia nada.
+ */
+export default function DuvidasPortal({
+  item,
+  token,
+  aulaId,
+  recarregar,
+  tratarErro,
+  api = apiPortal,
+}) {
+  const { chamarPortal } = api;
+  const previa = api.previa === true;
   const [pergunta, setPergunta] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [ok, setOk] = useState("");
@@ -60,12 +72,18 @@ export default function DuvidasPortal({ item, token, aulaId, recarregar, tratarE
         placeholder="Escreva sua dúvida sobre o curso ou esta aula…"
         rows={3}
         maxLength={2000}
+        disabled={previa}
       />
+      {previa && (
+        <p className="text-xs text-slate-500">
+          Prévia: aqui o aluno escreve a dúvida e o tutor é avisado. Nada é enviado nesta tela.
+        </p>
+      )}
       {erro && <p className="text-sm text-red-600">{erro}</p>}
       {ok && <p className="text-sm text-emerald-700">{ok}</p>}
       <Button
         onClick={enviar}
-        disabled={enviando || pergunta.trim().length < 3}
+        disabled={previa || enviando || pergunta.trim().length < 3}
         variant="outline"
         className="w-full"
       >

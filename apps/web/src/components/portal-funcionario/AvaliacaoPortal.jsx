@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
-import { chamarPortal, fmtDataHora, armazenamentoPortal } from "./api";
+import { apiPortal, fmtDataHora, armazenamentoPortal } from "./api";
 import {
   guardarRascunhoProva,
   lerRascunhoProva,
@@ -53,8 +53,23 @@ function embaralhar(lista) {
  * As respostas da tentativa em andamento ficam guardadas no navegador (por matrícula e
  * tentativa): recarregar a página ou voltar às aulas não as perde. Como as respostas são
  * pelo índice ORIGINAL da alternativa, valem mesmo com o novo sorteio da ordem.
+ *
+ * `api` é injetada (padrão: o portal de verdade). Na prévia do responsável técnico (`api.previa`) as
+ * questões chegam COM `correta` e `comentario`: a tela marca o gabarito e mostra o comentário (só o RT
+ * vê), a correção é feita na hora, sem servidor, e nada é guardado no aparelho.
  */
-export default function AvaliacaoPortal({ item, token, fila, tratarErro, onFechar }) {
+export default function AvaliacaoPortal({
+  item,
+  token,
+  fila,
+  tratarErro,
+  onFechar,
+  api = apiPortal,
+}) {
+  const { chamarPortal } = api;
+  const previa = api.previa === true;
+  const armazenamento = () => (previa ? null : armazenamentoPortal());
+  const raizRef = useRef(null);
   // sorteio feito uma vez por abertura da prova (estável até fechar/reabrir)
   const [questoes] = useState(() =>
     embaralhar(item.questoes || []).map((q) => ({
@@ -67,7 +82,7 @@ export default function AvaliacaoPortal({ item, token, fila, tratarErro, onFecha
   // número da tentativa que está sendo feita; depois de enviada, a próxima começa sem rascunho
   const [tentativa] = useState(() => (av.tentativas_usadas ?? 0) + 1);
   const [respostas, setRespostas] = useState(() =>
-    lerRascunhoProva(armazenamentoPortal(), matriculaId, tentativa, questoes)
+    lerRascunhoProva(armazenamento(), matriculaId, tentativa, questoes)
   ); // questao_id -> índice ORIGINAL
   const [recuperadas] = useState(() => Object.keys(respostas).length);
   const [resultado, setResultado] = useState(null);
@@ -89,7 +104,7 @@ export default function AvaliacaoPortal({ item, token, fila, tratarErro, onFecha
   // cada resposta marcada vai para o navegador (a prova já enviada não deixa rascunho)
   useEffect(() => {
     if (resultado) return;
-    guardarRascunhoProva(armazenamentoPortal(), matriculaId, tentativa, respostas);
+    guardarRascunhoProva(armazenamento(), matriculaId, tentativa, respostas);
   }, [respostas, resultado]);
 
   const irParaQuestao = (id) => {
@@ -126,10 +141,12 @@ export default function AvaliacaoPortal({ item, token, fila, tratarErro, onFecha
           token
         )
       );
-      limparRascunhoProva(armazenamentoPortal(), matriculaId, tentativa);
+      limparRascunhoProva(armazenamento(), matriculaId, tentativa);
       setResultado(r);
       setDestacarFaltas(false);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      // na prévia a tela rola dentro da gaveta, não na janela
+      if (previa) raizRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      else window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
       if (e.codigo === "SESSAO" || e.codigo === "TROCAR_SENHA") tratarErro(e);
       else setErro(mensagemDeFalha(e));
@@ -145,7 +162,7 @@ export default function AvaliacaoPortal({ item, token, fila, tratarErro, onFecha
   };
 
   return (
-    <div className="space-y-3">
+    <div ref={raizRef} className="space-y-3">
       <h2 className="font-semibold text-slate-800 text-lg">📝 Avaliação final</h2>
       <p className="text-sm text-slate-500">
         Nota mínima {av.nota_minima}%
@@ -242,10 +259,21 @@ export default function AvaliacaoPortal({ item, token, fila, tratarErro, onFecha
                   />
                   <span>
                     {String.fromCharCode(65 + pos)}) {op.texto}
+                    {previa && op.indice === q.correta && (
+                      <span className="ml-2 inline-flex items-center gap-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800">
+                        <CheckCircle2 className="w-3 h-3" /> gabarito
+                      </span>
+                    )}
                   </span>
                 </label>
               ))}
             </div>
+            {previa && !resultado?.revisao && q.comentario && (
+              <p className="mt-2 rounded-md border border-dashed border-violet-300 bg-violet-50 p-2 text-xs text-violet-900">
+                <span className="font-medium">Comentário (o aluno só vê depois de aprovado):</span>{" "}
+                {q.comentario}
+              </p>
+            )}
             {faltando && <p className="text-xs text-red-600 mt-1">Falta responder esta questão.</p>}
             <CorrecaoComentada item={resultado?.revisao?.find((r) => r.questao_id === q.id)} />
           </div>
