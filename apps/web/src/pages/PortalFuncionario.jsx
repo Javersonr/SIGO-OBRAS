@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -98,10 +98,14 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
   const [erro, setErro] = useState("");
   const [matriculaAberta, setMatriculaAberta] = useState(null);
   const [aba, setAba] = useState("cursos");
+  // quando os dados (e as URLs assinadas de vídeo/PDF, que valem 3 h) foram pedidos pela última vez
+  const carregadoEmRef = useRef(0);
 
   const carregar = useCallback(async () => {
     try {
+      const pedidoEm = Date.now();
       const d = await chamarPortal("dados", {}, token);
+      carregadoEmRef.current = pedidoEm;
       setDados(d);
       setErro("");
       return d;
@@ -146,6 +150,7 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
         item={item}
         token={token}
         recarregar={carregar}
+        dadosCarregadosEm={() => carregadoEmRef.current}
         onErroSessao={onErroSessao}
         onVoltar={() => {
           setMatriculaAberta(null);
