@@ -68,7 +68,7 @@ As etapas aparecem na oportunidade e no projeto, na ordem da planilha.
 - **C2:** a planilha de Itatinga fica em `D:\OneDrive\SINERGIA\LICITAÇÕES\SINERGIA SERVIÇOS\Licitações\2026\101- PM Itatinga - SP\01- Arquivo\Planilha Orcamentaria (original Excel).xlsx`.
 - **C3:** na proposta, órgão, objeto e edital vêm de `orcamento_info` e, na falta, dos campos da licitação da oportunidade. O objeto cai por último no nome da oportunidade, e um dado que não exista não aparece.
 - `resumoOrcamento().itensSemReferencia` é um **número**.
-- `lerArquivoModelo` lê com `sheetStubs: true` e devolve um erro legível se o arquivo não for uma planilha.
+- `lerArquivoModelo` lê com `sheetStubs: true` e `cellNF: true` (a célula traz o formato `z`) e devolve um erro legível se o arquivo não for uma planilha.
 - A prévia da importação mostra no máximo os 50 primeiros avisos, mais "e mais N".
 - Um item sem Unidade gera o aviso "Linha N: item sem unidade".
 - O card "Importar" do estado vazio abre o diálogo novo, pelo estado `importarAberto` elevado ao `OportunidadeDetalhe`.
@@ -76,6 +76,13 @@ As etapas aparecem na oportunidade e no projeto, na ordem da planilha.
 - A ferramenta do conector, o Portal do cliente (etapas como R$ 0,00 e corte em 1.000 linhas) e as pastas ficam fora desta entrega. O Portal do cliente é da sessão de segurança.
 - Conferido: no "Ganho", os itens mudam de dono **na mesma linha**, e as colunas novas vão junto sem mudar código.
 - **Contas estritas (revisão da Task 1, 01/10; decisão do Javerson).** `precoComDesconto` lança `RangeError` com desconto fora de 0 a 99,99 ou referência inválida (antes virava 0%, e a proposta saía a preço cheio), e o texto numérico das contas é estrito, sem `parseFloat` (`"1,5"`, `"12abc"` e `"1e3"` viram vazio; `".5"` e `"5."` valem). Chamadores conferidos: **Task 4** usa `descontoPct ?? 0` explícito (nulo/ausente = 0; o resto vai ao `precoComDesconto`, não ao `validarDesconto`, que recusa vazio); **Task 5** já validava com `validarDesconto` e ganhou `try/catch` ao redor do `aplicarDesconto` e da montagem dos registros da importação (antes de apagar qualquer item); **Tasks 2, 7, 8, 6 e 11** passam number (ou texto de `<input type="number">`), sem mudança de código (ver a observação na Task 6).
+- **Leitura do modelo endurecida (revisão 3 da Task 2, 05/10; o Javerson autorizou as correções técnicas).**
+  - **Data do Excel pelo formato, não pelo texto exibido.** Digitar `1/10` ou `09/2025` vira data com formato `d-mmm`, `mmm-yy` ou `mm/yyyy`, e o texto exibido (`10/1/26`) só casa com alguns. Por isso `lerArquivoModelo` lê com `cellNF: true` e `XLSX.SSF.is_date(z)` decide (o texto exibido fica só de reserva quando não há `z`). Item, Quantidade e Preço com formato de data são **erro**; `Total (R$)` e `Total da prefeitura` são aviso ("foi ignorado").
+  - **`Data-base` numérica:** com formato que mostra o dia vira `dd/mm/aaaa`; sem o dia (`mmm-yy`, `mm/yyyy`), `mm/aaaa`, porque a data-base de uma tabela de preços é mês/ano e não se inventa um "01/". Número puro (`General`, `45901`) vira o texto do número, com o aviso "Informações, linha N: Data-base numérica (45901) — confira.".
+  - **Modelo em branco:** `gerarModelo` grava a coluna B da aba `Informações` como Texto (`z: "@"`), menos o total da prefeitura (B7, número), para `09/2025` não virar data.
+  - **Tetos do banco:** Quantidade ≥ 1e11 (`numeric(14,3)`), Preço ≥ 1e10 (`numeric(14,4)`) e total da linha ≥ 1e12 (`numeric(14,2)`) são **erro de linha** ("acima do limite"), e o `totalLinha` não roda com valor acima do teto. Sem isso o INSERT da Task 5 estoura depois do `deleteMany`, e o orçamento antigo já foi apagado.
+  - **Ruído de fórmula:** quantidade e preço passam por 15 dígitos significativos antes de contar as casas (`10.48 * 1.1` = 11.528000000000002 não gera mais o aviso falso de "mais de 3 casas"). Casas fixas não bastam: `1234568.5 * 1.07` sai `1320988.2950000002`.
+  - **Etapa com texto:** linha sem Quantidade e Preço, mas com Unidade ou Total, ainda vira etapa, agora **com aviso** ("Linha N: linha sem quantidade e preço tratada como etapa — confira.").
 
 ---
 
@@ -87,7 +94,7 @@ As etapas aparecem na oportunidade e no projeto, na ordem da planilha.
 (cd apps/web && npx vitest run 2>&1 | tail -5)
 ```
 
-Anote as linhas `Test Files  N passed` e `Tests  M passed`. Ao fim da Task 3 devem ser `N + 3` arquivos e `M + 62` testes, sem falhas.
+Anote as linhas `Test Files  N passed` e `Tests  M passed`. Ao fim da Task 3 devem ser `N + 3` arquivos e `M + 96` testes, sem falhas.
 
 **Regras para as três tasks:**
 
@@ -698,9 +705,9 @@ Esperado: o Prettier não muda nada (`unchanged`), o commit sai e o `git log` mo
 - Produces:
   - constantes `ABA_ORCAMENTO`, `ABA_INFORMACOES`, `CABECALHOS_MODELO`, `ROTULOS_INFO`, `CHAVES_INFO`, `LIMITE_LINHAS` (valores exatos do contrato);
   - `lerNumeroBR(valor): number|null` (NaN quando inválido);
-  - `gerarModelo(): XLSX.WorkBook` — abas `Orçamento` (cabeçalho, `A2:A501` com `z: "@"`, `!ref` `A1:H501`, `!cols`) e `Informações` (rótulos na coluna A);
+  - `gerarModelo(): XLSX.WorkBook` — abas `Orçamento` (cabeçalho, `A2:A501` com `z: "@"`, `!ref` `A1:H501`, `!cols`) e `Informações` (rótulos na coluna A; `B1:B6` e `B8` vazias com `z: "@"`, o total em `B7` fica sem formato Texto; `!ref` `A1:B8`);
   - `lerPlanilhaModelo(wb): { itens: ItemModelo[], info: InfoOrcamento, erros: string[], avisos: string[], totais: { referencia, prefeitura, qtdEtapas, qtdItens } }`;
-  - `lerArquivoModelo(buffer: ArrayBuffer|Uint8Array)` — mesmo retorno. Lê com `XLSX.read(buffer, { type: "array", sheetStubs: true })` e devolve o erro "Não foi possível ler o arquivo como planilha Excel (.xlsx)." se o SheetJS lançar.
+  - `lerArquivoModelo(buffer: ArrayBuffer|Uint8Array)` — mesmo retorno. Lê com `XLSX.read(buffer, { type: "array", sheetStubs: true, cellNF: true })` e devolve o erro "Não foi possível ler o arquivo como planilha Excel (.xlsx)." se o SheetJS lançar.
   - `ItemModelo = { linha, numero, etapa, codigo, fonte, descricao, unidade, quantidade, valor_unitario_ref, total_informado }`. `linha` é a linha do Excel. Na etapa, `quantidade` e `valor_unitario_ref` são `null`; `unidade`, `codigo` e `fonte` vêm como estão (a Task 4 zera a unidade da etapa). `quantidade` já vem arredondada a 3 casas e o preço a 4.
 
 **Regras que o contrato não detalhava e que este código fixa** (os testes cobrem cada uma):
@@ -709,12 +716,15 @@ Esperado: o Prettier não muda nada (`unchanged`), o commit sai e o `git log` mo
 - `Descrição` vazia numa linha é erro (a coluna é obrigatória no §4).
 - `Unidade` vazia numa linha de **item** (não de etapa) é **aviso**, não erro: `Linha N: item sem unidade.` A spec §4 marca a Unidade como obrigatória no item, mas a §7 não lista esse caso entre os erros; o aviso deixa a importação seguir e o usuário corrigir depois.
 - As linhas com dado são achadas pelas células que existem, não pelo `!ref` (um `!ref` até a linha 1.048.576 não trava o navegador). Linha em branco no meio é pulada e as mensagens mantêm o número da linha do Excel.
-- `Item` numérico: aviso só quando o número tem casas (`1.1`, que pode ter sido `1.10`); inteiro (`1`, `2`) não avisa. `Item` que o Excel transformou em data (texto exibido `10/1/26`) é erro.
+- `Item` numérico: aviso só quando o número tem casas (`1.1`, que pode ter sido `1.10`); inteiro (`1`, `2`) não avisa. `Item` que o Excel transformou em data é erro, em qualquer formato de data (`m/d/yy`, `d-mmm`, `mmm-yy`, `mm/yyyy`...): vale o formato da célula (`XLSX.SSF.is_date(z)`, por isso o `cellNF`) e o texto exibido (`10/1/26`) só serve de reserva quando a célula não tem `z`. Quantidade e Preço com formato de data são erro também; `Total (R$)`, aviso.
 - Fórmula sem valor salvo (o openpyxl grava assim) em Quantidade ou Preço é erro; sem o `sheetStubs` a célula sumiria e a linha viraria etapa em silêncio.
 - `Total (R$)` não numérico é aviso (a coluna só serve para conferir). Diferença de exatamente R$ 0,01 não avisa; acima disso, avisa.
 - "Numeração fora de sequência": depois de `1.1` o esperado é o filho `1.1.1`, o irmão `1.2` ou o próximo de um nível acima (`2`). Qualquer outro número avisa.
 - "Item sem etapa acima": o item avisa se nenhum prefixo dele (`1`, `1.2`) for uma etapa que já apareceu. Se a planilha não tiver nenhuma etapa, sai um aviso único ("A planilha não tem linhas de etapa; os itens ficam sem subtotal.") em vez de um por linha.
-- Sem a aba `Informações`: aviso (não bloqueia). Na aba, vale a primeira ocorrência de cada rótulo e só as 200 primeiras linhas são lidas. `Data-base` em data do Excel vira `dd/mm/aaaa`; `BDI (%)` numérico com formato de % vira `"23,96%"`; outros números viram texto pt-BR (`"23,96"`).
+- Sem a aba `Informações`: aviso (não bloqueia). Na aba, vale a primeira ocorrência de cada rótulo e só as 200 primeiras linhas são lidas. `Data-base` em data do Excel vira `dd/mm/aaaa` (formato com dia) ou `mm/aaaa` (formato sem dia, como `mmm-yy`); `Data-base` em número puro (`General`) vira o texto do número, com o aviso `Informações, linha N: Data-base numérica (45901) — confira.`; `BDI (%)` numérico com formato de % vira `"23,96%"`; outros números viram texto pt-BR (`"23,96"`).
+- Tetos do banco: `Quantidade` ≥ 1e11, `Preço unitário` ≥ 1e10 ou total da linha ≥ 1e12 é **erro** (`Linha N: Quantidade acima do limite (menos de 100.000.000.000).`, `Preço unitário acima do limite (menos de 10.000.000.000)` e `Total da linha acima do limite (menos de 1.000.000.000.000)`), e o `totalLinha` não roda com valor acima do teto. São as colunas `numeric(14,3)`, `numeric(14,4)` e `numeric(14,2)`.
+- Ruído de ponto flutuante de fórmula (`10.48 * 1.1` = 11.528000000000002) sai antes de contar as casas: quantidade e preço passam por 15 dígitos significativos, e só então vale o aviso de "mais de 3 (ou 4) casas".
+- Linha sem `Quantidade` e `Preço unitário`, mas com `Unidade` ou `Total (R$)`, vira etapa **com aviso** (`Linha N: linha sem quantidade e preço tratada como etapa — confira.`).
 
 - [ ] **Step 1: Escrever o teste que falha**
 
@@ -825,6 +835,15 @@ describe("gerarModelo", () => {
     const r = lerPlanilhaModelo(gerarModelo());
     expect(r.erros).toEqual([`Nenhum item com Quantidade e Preço unitário na aba "Orçamento".`]);
   });
+  it("aba Informações: coluna B como Texto, exceto o total da prefeitura", () => {
+    const wb = XLSX.read(comoArquivo(gerarModelo()), { type: "array", cellNF: true });
+    const info = wb.Sheets[ABA_INFORMACOES];
+    const linhaTotal = ROTULOS_INFO.indexOf("Total da prefeitura (R$)") + 1;
+    ROTULOS_INFO.forEach((_, i) => {
+      if (i + 1 === linhaTotal) expect(info[`B${i + 1}`]?.z).not.toBe("@");
+      else expect(info[`B${i + 1}`].z).toBe("@");
+    });
+  });
 });
 
 describe("lerPlanilhaModelo — caminho feliz", () => {
@@ -903,6 +922,79 @@ describe("lerPlanilhaModelo — caminho feliz", () => {
     expect(r.info.data_base).toBe("01/09/2025");
     expect(r.info.bdi).toBe("23,96%");
   });
+  // O formato (z) decide: com dia → dd/mm/aaaa; sem dia (tabela de preços é mês/ano) → mm/aaaa.
+  it.each([
+    ["m/d/yy", "01/09/2025"],
+    ["dd/mm/yyyy", "01/09/2025"],
+    ["d-mmm-yy", "01/09/2025"],
+    ["d-mmm", "01/09/2025"],
+    ["mm-dd-yy", "01/09/2025"],
+    ["[$-416]d/m/yyyy", "01/09/2025"],
+    ["mm/yyyy", "09/2025"],
+    ["mmm-yy", "09/2025"],
+    ["mmm/yy", "09/2025"],
+    ['mmmm" de "yyyy', "09/2025"],
+  ])("Data-base numérica com formato %s vira %s", (z, esperado) => {
+    const wb = montarWb(ORC_OK, [["Data-base", 0]]);
+    wb.Sheets[ABA_INFORMACOES].B1 = { t: "n", v: 45901, z };
+    const r = lerArquivoModelo(comoArquivo(wb));
+    expect(r.info.data_base).toBe(esperado);
+    expect(r.avisos).toEqual([]);
+  });
+  it("Data-base em número puro (General) vira o texto do número e avisa", () => {
+    const wb = montarWb(ORC_OK, [
+      ["Órgão", "Prefeitura"],
+      ["Data-base", 0],
+    ]);
+    wb.Sheets[ABA_INFORMACOES].B2 = { t: "n", v: 45901, z: "General" };
+    const r = lerArquivoModelo(comoArquivo(wb));
+    expect(r.info.data_base).toBe("45901");
+    expect(r.avisos).toEqual(["Informações, linha 2: Data-base numérica (45901) — confira."]);
+  });
+  it("Data-base digitada como texto fica como está, sem aviso", () => {
+    const wb = montarWb(ORC_OK, [["Data-base", 0]]);
+    wb.Sheets[ABA_INFORMACOES].B1 = { t: "s", v: "09/2025", z: "@" };
+    const r = lerArquivoModelo(comoArquivo(wb));
+    expect(r.info.data_base).toBe("09/2025");
+    expect(r.avisos).toEqual([]);
+  });
+  it("Data-base numérica sem formato salvo (workbook em memória) segue o texto exibido", () => {
+    const wb = montarWb(ORC_OK, [["Data-base", 0]]);
+    wb.Sheets[ABA_INFORMACOES].B1 = { t: "n", v: 45901, w: "9/1/25" };
+    expect(lerPlanilhaModelo(wb).info.data_base).toBe("01/09/2025");
+  });
+  it("ruído de ponto flutuante de fórmula não gera aviso de casas decimais", () => {
+    // Os produtos de fórmula vêm com resto: 11.528000000000002, 1320988.2950000002 (cortar em
+    // 10 casas fixas não limparia este, de 7 dígitos inteiros) e 109.89000000000001.
+    expect(10.48 * 1.1).not.toBe(11.528);
+    expect(1234568.5 * 1.07).not.toBe(1320988.295);
+    expect(99.9 * 1.1).not.toBe(109.89);
+    const r = lerPlanilhaModelo(
+      montarWb([
+        CAB,
+        ["1", null, null, "Etapa"],
+        ["1.1", null, null, "A", "m", 10.48 * 1.1, 0.1 + 0.2],
+        ["1.2", null, null, "B", "m", 1234568.5 * 1.07, 99.9 * 1.1],
+      ])
+    );
+    expect(r.erros).toEqual([]);
+    expect(r.avisos).toEqual([]);
+    expect(r.itens[1]).toMatchObject({ quantidade: 11.528, valor_unitario_ref: 0.3 });
+    expect(r.itens[2]).toMatchObject({ quantidade: 1320988.295, valor_unitario_ref: 109.89 });
+  });
+  it("mais de 3 (ou 4) casas de verdade continuam avisando, com o ruído já limpo", () => {
+    const r = lerPlanilhaModelo(
+      montarWb([
+        CAB,
+        ["1", null, null, "Etapa"],
+        ["1.1", null, null, "A", "m", 2.3456 * 1.1, 0.00005],
+      ])
+    );
+    expect(r.avisos).toEqual([
+      "Linha 3: Quantidade com mais de 3 casas; arredondada para 2,58.",
+      "Linha 3: Preço unitário com mais de 4 casas; arredondado para 0,0001.",
+    ]);
+  });
 });
 
 describe("lerPlanilhaModelo — erros", () => {
@@ -948,6 +1040,109 @@ describe("lerPlanilhaModelo — erros", () => {
       'Linha 3: Item virou data no Excel ("10/1/26"); formate a coluna A como Texto e digite de novo.',
       `Nenhum item com Quantidade e Preço unitário na aba "Orçamento".`,
     ]);
+  });
+  // O Excel decide pelo formato da célula: d-mmm ("1/10" → 1-Oct) e mmm-yy não passam por
+  // `w` com três números, então é o `z` (cellNF) que vale.
+  it.each(["m/d/yy", "dd/mm/yyyy", "d-mmm", "d-mmm-yy", "mmm-yy", "mm/yyyy"])(
+    "Item que o Excel transformou em data (formato %s)",
+    (z) => {
+      const wb = montarWb([CAB, ["1", null, null, "Etapa"], [0, null, null, "A", "m", 1, 1]]);
+      wb.Sheets[ABA_ORCAMENTO].A3 = { t: "n", v: 46296, z };
+      const erros = lerArquivoModelo(comoArquivo(wb)).erros;
+      expect(erros[0]).toMatch(/^Linha 3: Item virou data no Excel \(".+"\); formate a coluna A/);
+    }
+  );
+  it.each(["General", "0.00", "0%", "@", '0 "dias"'])(
+    "Item numérico com formato %s não é data",
+    (z) => {
+      const wb = montarWb([CAB, ["1", null, null, "Etapa"], [0, null, null, "A", "m", 1, 1]]);
+      wb.Sheets[ABA_ORCAMENTO].A3 = { t: "n", v: 2, z };
+      const r = lerArquivoModelo(comoArquivo(wb));
+      expect(r.erros.join("\n")).not.toContain("virou data");
+    }
+  );
+  it("Item em data sem formato salvo (workbook em memória): vale o texto exibido", () => {
+    const wb = montarWb([CAB, ["1", null, null, "Etapa"], [0, null, null, "A", "m", 1, 1]]);
+    wb.Sheets[ABA_ORCAMENTO].A3 = { t: "n", v: 46296, w: "10/1/26" };
+    expect(lerPlanilhaModelo(wb).erros[0]).toBe(
+      'Linha 3: Item virou data no Excel ("10/1/26"); formate a coluna A como Texto e digite de novo.'
+    );
+  });
+  it("Quantidade e Preço com formato de data são erro (e Total é só aviso)", () => {
+    const wb = montarWb([
+      CAB,
+      ["1", null, null, "Etapa"],
+      ["1.1", null, null, "A", "m", 0, 0, 0],
+      ["1.2", null, null, "B", "m", 1, 1, 0],
+    ]);
+    const orc = wb.Sheets[ABA_ORCAMENTO];
+    orc.F3 = { t: "n", v: 46023, z: "d-mmm" }; // 1/1 digitado como quantidade
+    orc.G3 = { t: "n", v: 46023, z: "mmm-yy" };
+    orc.H4 = { t: "n", v: 46023, z: "dd/mm/yyyy" };
+    const r = lerArquivoModelo(comoArquivo(wb));
+    expect(r.erros).toEqual([
+      'Linha 3: Quantidade virou data no Excel ("1-Jan"); formate como Número e digite de novo.',
+      'Linha 3: Preço unitário virou data no Excel ("Jan-26"); formate como Número e digite de novo.',
+    ]);
+    expect(r.itens.map((i) => i.linha)).toEqual([2, 4]); // o item da linha 4 segue, sem o Total
+    expect(r.avisos[0]).toMatch(
+      /^Linha 4: Total \(R\$\) virou data no Excel \(".+"\);.*foi ignorado\.$/
+    );
+  });
+  // Os tetos são os das colunas do banco (numeric 14,3 / 14,4 / 14,2): acima deles o INSERT da
+  // importação estoura depois de o orçamento antigo já ter sido apagado.
+  it("Quantidade acima do limite (1e11) é erro, sem lançar", () => {
+    const r = lerPlanilhaModelo(
+      montarWb([
+        CAB,
+        ["1", null, null, "A", "m", 1e11, 1],
+        ["2", null, null, "B", "m", 1e308, 1e308],
+        ["3", null, null, "C", "m", 99999999999.9996, 1], // arredondada a 3 casas dá 1e11
+        ["4", null, null, "D", "m", 99999999999.999, 0.01], // a maior que cabe: passa
+      ])
+    );
+    expect(r.erros).toEqual([
+      "Linha 2: Quantidade acima do limite (menos de 100.000.000.000).",
+      "Linha 3: Quantidade acima do limite (menos de 100.000.000.000).",
+      "Linha 3: Preço unitário acima do limite (menos de 10.000.000.000).",
+      "Linha 4: Quantidade acima do limite (menos de 100.000.000.000).",
+    ]);
+    expect(r.itens.map((i) => i.linha)).toEqual([5]);
+  });
+  it("Preço unitário acima do limite (1e10) é erro, sem lançar", () => {
+    const r = lerPlanilhaModelo(
+      montarWb([
+        CAB,
+        ["1", null, null, "A", "m", 1, 1e10],
+        ["2", null, null, "B", "m", 1, 1e308],
+        ["3", null, null, "C", "m", 0.001, 9999999999.99995], // arredondado a 4 casas dá 1e10
+        ["4", null, null, "D", "m", 0.001, 9999999999.9999], // o maior que cabe: passa
+      ])
+    );
+    expect(r.erros).toEqual([
+      "Linha 2: Preço unitário acima do limite (menos de 10.000.000.000).",
+      "Linha 3: Preço unitário acima do limite (menos de 10.000.000.000).",
+      "Linha 4: Preço unitário acima do limite (menos de 10.000.000.000).",
+    ]);
+    expect(r.itens.map((i) => i.linha)).toEqual([5]);
+  });
+  it("Total da linha acima do limite (1e12) é erro, sem lançar", () => {
+    const r = lerPlanilhaModelo(
+      montarWb([
+        CAB,
+        ["1", null, null, "A", "m", 1e6, 1e6], // total 1e12 exato
+        ["2", null, null, "B", "m", 5e10, 5e9], // cada um abaixo do limite, total 2,5e20
+        ["3", null, null, "C", "m", 99999999999.999, 9999999999.9999], // os dois no máximo
+        ["4", null, null, "D", "m", 999999.999, 999999.9999], // total logo abaixo de 1e12: passa
+      ])
+    );
+    expect(r.erros).toEqual([
+      "Linha 2: Total da linha acima do limite (menos de 1.000.000.000.000).",
+      "Linha 3: Total da linha acima do limite (menos de 1.000.000.000.000).",
+      "Linha 4: Total da linha acima do limite (menos de 1.000.000.000.000).",
+    ]);
+    expect(r.itens.map((i) => i.linha)).toEqual([5]);
+    expect(r.totais.referencia).toBeLessThan(1e12);
   });
   it("quantidade ≤ 0, preço < 0, texto não numérico e só um dos dois", () => {
     const r = lerPlanilhaModelo(
@@ -1026,6 +1221,15 @@ describe("lerPlanilhaModelo — avisos", () => {
       "Soma dos itens (R$ 19.434,76) difere do Total da prefeitura (R$ 19.500,00) em R$ 65,24.",
     ]);
   });
+  it("Total da prefeitura que o Excel transformou em data é ignorado, com aviso", () => {
+    const wb = montarWb(ORC_OK, [["Total da prefeitura (R$)", 0]]);
+    wb.Sheets[ABA_INFORMACOES].B1 = { t: "n", v: 46023, z: "d-mmm" };
+    const r = lerArquivoModelo(comoArquivo(wb));
+    expect(r.info.total_prefeitura).toBeNull();
+    expect(r.avisos).toEqual([
+      'Informações: Total da prefeitura (R$) virou data no Excel ("1-Jan"); formate como Número e digite de novo; foi ignorado.',
+    ]);
+  });
   it("quantidade com mais de 3 casas e preço com mais de 4 casas são arredondados", () => {
     const r = lerPlanilhaModelo(
       montarWb([CAB, ["1", null, null, "Etapa"], ["1.1", null, null, "A", "m", 2.3456, 10.48475]])
@@ -1076,6 +1280,23 @@ describe("lerPlanilhaModelo — avisos", () => {
     expect(r.avisos).toEqual(["Linha 3: item sem unidade.", "Linha 4: item sem unidade."]);
     expect(r.itens.map((i) => i.unidade)).toEqual([null, null, null, "m"]);
     expect(r.totais).toMatchObject({ qtdEtapas: 1, qtdItens: 3 });
+  });
+  it("linha sem quantidade e preço, mas com Unidade ou Total, vira etapa e avisa", () => {
+    const r = lerPlanilhaModelo(
+      montarWb([
+        CAB,
+        ["1", null, null, "Etapa só com texto"],
+        ["1.1", null, null, "Tem unidade", "un"],
+        ["1.2", null, null, "Tem total", null, null, null, 100],
+        ["1.3", null, null, "Item", "m", 1, 1],
+      ])
+    );
+    expect(r.erros).toEqual([]);
+    expect(r.avisos).toEqual([
+      "Linha 3: linha sem quantidade e preço tratada como etapa — confira.",
+      "Linha 4: linha sem quantidade e preço tratada como etapa — confira.",
+    ]);
+    expect(r.itens.map((i) => i.etapa)).toEqual([true, true, true, false]);
   });
   it("sequência normal com etapas aninhadas não avisa", () => {
     const r = lerPlanilhaModelo(
@@ -1179,6 +1400,22 @@ const LINHAS_MODELO = 500;
 /** A aba Informações é curta; não varre além disso. */
 const LIMITE_LINHAS_INFO = 200;
 
+/**
+ * Tetos das colunas do banco (orcamento_item): quantidade numeric(14,3), valor_unitario e
+ * valor_unitario_ref numeric(14,4), valor_total numeric(14,2). Acima disso o INSERT estoura
+ * depois de a importação já ter apagado o orçamento antigo.
+ */
+const LIMITE_QUANTIDADE = 1e11;
+const LIMITE_PRECO = 1e10;
+const LIMITE_TOTAL = 1e12;
+/**
+ * Dígitos significativos que um número do Excel guarda sem ruído. Os valores dentro dos tetos
+ * acima têm no máximo 14 dígitos (99999999999,999), então cortar em 15 nunca mexe num valor
+ * legítimo e limpa o resto de uma fórmula, em qualquer tamanho (10.48 * 1.1 = 11.528000000000002;
+ * 1234568.5 * 1.07 = 1320988.2950000002, que um corte em casas fixas não limparia).
+ */
+const CIFRAS_RUIDO = 15;
+
 const CAMPO_POR_CABECALHO = {
   Item: "item",
   Código: "codigo",
@@ -1240,9 +1477,27 @@ function valorDaCelula(cel) {
   return cel.v;
 }
 
+/**
+ * Número que o Excel formatou como data (digitar 1/10 vira 1-Oct). Com `cellNF` a célula traz
+ * o formato (`z`) e quem decide é o SSF (d-mmm, mmm-yy, dd/mm/yyyy...): o texto exibido (`w`)
+ * só casa com alguns deles. Sem `z` (workbook em memória), `w` com três números separados por
+ * / ou - fica como reserva.
+ */
+function formatoData(cel) {
+  if (cel?.t !== "n" || typeof cel.v !== "number") return false;
+  if (typeof cel.z === "string") return XLSX.SSF.is_date(cel.z);
+  return /\d+[/-]\d+[/-]\d+/.test(String(cel.w ?? ""));
+}
+
 function lerCampoNumerico(cel, rotulo) {
   if (formulaSemValor(cel)) {
     return { valor: null, erro: `${rotulo} é uma fórmula sem valor salvo; grave o número` };
+  }
+  if (formatoData(cel)) {
+    return {
+      valor: null,
+      erro: `${rotulo} virou data no Excel ("${cel.w ?? cel.v}"); formate como Número e digite de novo`,
+    };
   }
   const bruto = valorDaCelula(cel);
   const valor = lerNumeroBR(bruto);
@@ -1255,6 +1510,11 @@ function casasDecimais(v) {
   const m = /^(\d+)(?:\.(\d+))?(?:e([+-]\d+))?$/i.exec(String(Math.abs(v)));
   if (!m) return 0;
   return Math.max(0, (m[2] || "").length - Number(m[3] || 0));
+}
+
+/** Tira o ruído de ponto flutuante de uma fórmula (11.528000000000002 → 11.528). */
+function semRuido(v) {
+  return Number(v.toPrecision(CIFRAS_RUIDO));
 }
 
 /** Arredonda (meio para cima) sem o erro de 1.005 × 100 = 100.49999… */
@@ -1305,17 +1565,27 @@ function infoVazia() {
   };
 }
 
-/** Valor de texto da aba Informações: data curta do Excel vira dd/mm/aaaa; % e número em pt-BR. */
+/**
+ * Data do Excel como texto: dd/mm/aaaa, ou mm/aaaa quando o formato não mostra o dia (mmm-yy,
+ * mm/yyyy), porque a data-base de uma tabela de preços é mês/ano e não se inventa um "01/".
+ * Sem formato salvo (workbook em memória) fica dd/mm/aaaa.
+ */
+function dataComoTexto(cel) {
+  const d = XLSX.SSF.parse_date_code(cel.v);
+  const dois = (n) => String(n).padStart(2, "0");
+  // Tira "textos entre aspas", [locale] e \escapes antes de procurar o d de dia.
+  const semLiterais = String(cel.z ?? "").replace(/"[^"]*"|\[[^\]]*\]|\\./g, "");
+  return typeof cel.z !== "string" || /d/i.test(semLiterais)
+    ? `${dois(d.d)}/${dois(d.m)}/${d.y}`
+    : `${dois(d.m)}/${d.y}`;
+}
+
+/** Texto da aba Informações: data do Excel vira dd/mm/aaaa (ou mm/aaaa); % e número em pt-BR. */
 function textoInfo(cel) {
   if (semValor(cel)) return "";
   if (cel.t === "n") {
-    const w = String(cel.w ?? "");
-    if (/^\d{1,2}\/\d{1,2}\/\d{2}$/.test(w)) {
-      const d = XLSX.SSF.parse_date_code(cel.v);
-      const dois = (n) => String(n).padStart(2, "0");
-      return `${dois(d.d)}/${dois(d.m)}/${d.y}`;
-    }
-    if (w.endsWith("%")) return `${formatar(cel.v * 100, 0, 4, false)}%`;
+    if (formatoData(cel)) return dataComoTexto(cel);
+    if (String(cel.w ?? "").endsWith("%")) return `${formatar(cel.v * 100, 0, 4, false)}%`;
     return formatar(cel.v, 0, 10, false);
   }
   return textoCelula(cel);
@@ -1345,6 +1615,10 @@ function lerInformacoes(wb, avisos) {
       else info.total_prefeitura = valor;
     } else {
       info[chave] = textoInfo(cel) || null;
+      // Número puro na Data-base (45901): não dá para saber se era data; vai como o número.
+      if (chave === "data_base" && info[chave] !== null && cel?.t === "n" && !formatoData(cel)) {
+        avisos.push(`Informações, linha ${r + 1}: Data-base numérica (${info[chave]}) — confira.`);
+      }
     }
   }
   return info;
@@ -1399,6 +1673,15 @@ export function gerarModelo() {
     { wch: 16 },
   ];
   const informacoes = XLSX.utils.aoa_to_sheet(ROTULOS_INFO.map((rotulo) => [rotulo]));
+  // Coluna B como Texto (menos o total, que é número): "09/2025" não vira data no Excel.
+  ROTULOS_INFO.forEach((rotulo, r) => {
+    if (CHAVES_INFO[rotulo] === "total_prefeitura") return;
+    informacoes[XLSX.utils.encode_cell({ r, c: 1 })] = { t: "s", v: "", z: "@" };
+  });
+  informacoes["!ref"] = XLSX.utils.encode_range({
+    s: { r: 0, c: 0 },
+    e: { r: ROTULOS_INFO.length - 1, c: 1 },
+  });
   informacoes["!cols"] = [{ wch: 26 }, { wch: 80 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, orcamento, ABA_ORCAMENTO);
@@ -1470,7 +1753,7 @@ export function lerPlanilhaModelo(wb) {
 
     const celItem = celula(ws, r, col.item);
     const itemNumerico = celItem?.t === "n" && typeof celItem.v === "number";
-    const virouData = itemNumerico && /\d+[/-]\d+[/-]\d+/.test(String(celItem.w ?? ""));
+    const virouData = itemNumerico && formatoData(celItem);
     let numero = textoCelula(celItem);
     if (itemNumerico && !virouData && !Number.isInteger(celItem.v)) {
       numero = String(celItem.v);
@@ -1481,7 +1764,7 @@ export function lerPlanilhaModelo(wb) {
     }
     if (virouData) {
       erros.push(
-        `Linha ${n}: Item virou data no Excel ("${celItem.w}"); ` +
+        `Linha ${n}: Item virou data no Excel ("${celItem.w ?? celItem.v}"); ` +
           `formate a coluna A como Texto e digite de novo.`
       );
     } else if (!numero) {
@@ -1511,22 +1794,36 @@ export function lerPlanilhaModelo(wb) {
       if (preco.valor === null) erros.push(`Linha ${n}: Quantidade sem Preço unitário.`);
       else if (qtd.valor === null) erros.push(`Linha ${n}: Preço unitário sem Quantidade.`);
       else {
-        quantidade = qtd.valor;
-        ref = preco.valor;
-        if (casasDecimais(quantidade) > 3) {
+        // O ruído de fórmula sai antes de contar as casas, senão vira aviso falso. Acima do teto
+        // não se arredonda nem se avisa: o valor já é erro de limite (e 1e30 não tem "3 casas").
+        quantidade = semRuido(qtd.valor);
+        ref = semRuido(preco.valor);
+        if (Math.abs(quantidade) < LIMITE_QUANTIDADE && casasDecimais(quantidade) > 3) {
           quantidade = arredondarCasas(quantidade, 3);
           avisos.push(
             `Linha ${n}: Quantidade com mais de 3 casas; arredondada para ${formatar(quantidade, 0, 3)}.`
           );
         }
-        if (casasDecimais(ref) > 4) {
+        if (Math.abs(ref) < LIMITE_PRECO && casasDecimais(ref) > 4) {
           ref = arredondarCasas(ref, 4);
           avisos.push(
             `Linha ${n}: Preço unitário com mais de 4 casas; arredondado para ${formatar(ref, 2, 4)}.`
           );
         }
-        if (quantidade <= 0) erros.push(`Linha ${n}: Quantidade deve ser maior que zero.`);
-        if (ref < 0) erros.push(`Linha ${n}: Preço unitário negativo.`);
+        if (quantidade >= LIMITE_QUANTIDADE) {
+          erros.push(
+            `Linha ${n}: Quantidade acima do limite (menos de ${formatar(LIMITE_QUANTIDADE, 0, 0)}).`
+          );
+        } else if (quantidade <= 0) {
+          erros.push(`Linha ${n}: Quantidade deve ser maior que zero.`);
+        }
+        if (ref >= LIMITE_PRECO) {
+          erros.push(
+            `Linha ${n}: Preço unitário acima do limite (menos de ${formatar(LIMITE_PRECO, 0, 0)}).`
+          );
+        } else if (ref < 0) {
+          erros.push(`Linha ${n}: Preço unitário negativo.`);
+        }
       }
     }
 
@@ -1537,9 +1834,19 @@ export function lerPlanilhaModelo(wb) {
     if (erros.length > errosAntes) continue;
 
     const unidade = textoOuNull(celula(ws, r, col.unidade));
+    if (etapa && (unidade !== null || totalInformado !== null)) {
+      avisos.push(`Linha ${n}: linha sem quantidade e preço tratada como etapa — confira.`);
+    }
     if (!etapa) {
-      if (unidade === null) avisos.push(`Linha ${n}: item sem unidade.`);
+      // Quantidade e preço já estão abaixo dos tetos: a conta em BigInt não lança.
       const calculado = totalLinha(quantidade, ref);
+      if (calculado >= LIMITE_TOTAL) {
+        erros.push(
+          `Linha ${n}: Total da linha acima do limite (menos de ${formatar(LIMITE_TOTAL, 0, 0)}).`
+        );
+        continue;
+      }
+      if (unidade === null) avisos.push(`Linha ${n}: item sem unidade.`);
       refCents += Math.round(calculado * 100);
       if (
         totalInformado !== null &&
@@ -1610,12 +1917,13 @@ export function lerPlanilhaModelo(wb) {
 /**
  * Lê o arquivo (ArrayBuffer/Uint8Array de `await file.arrayBuffer()`) e valida.
  * `sheetStubs` mantém a célula de fórmula sem valor salvo, para acusar o erro em vez
- * de tratar a linha como etapa.
+ * de tratar a linha como etapa. `cellNF` traz o formato (`z`) de cada célula, que é como se
+ * reconhece o número que o Excel transformou em data (Item, Quantidade, Preço, Data-base).
  */
 export function lerArquivoModelo(buffer) {
   let wb;
   try {
-    wb = XLSX.read(buffer, { type: "array", sheetStubs: true });
+    wb = XLSX.read(buffer, { type: "array", sheetStubs: true, cellNF: true });
   } catch {
     return {
       itens: [],
@@ -1635,7 +1943,7 @@ export function lerArquivoModelo(buffer) {
 (cd apps/web && npx vitest run src/lib/orcamento-modelo.test.js src/lib/orcamento-desconto.test.js)
 ```
 
-Esperado: `Test Files  2 passed (2)` e `Tests  57 passed (57)` (26 do modelo + 31 da Task 1).
+Esperado: `Test Files  2 passed (2)` e `Tests  91 passed (91)` (60 do modelo + 31 da Task 1).
 
 - [ ] **Step 5: Formatar e commitar**
 
@@ -1649,6 +1957,7 @@ feat(orcamento): modelo SIGO de orçamento (.xlsx) — gerar em branco, ler e va
 Fonte única dos nomes das abas, colunas e rótulos. lerPlanilhaModelo aplica as regras da
 spec §7 (erros bloqueiam, avisos não): Item como texto (avisa se veio número), número pt-BR,
 limite de 3.000 linhas, fórmula sem valor salvo, total da linha e da prefeitura conferidos.
+Data do Excel reconhecida pelo formato da célula (cellNF), tetos do banco como erro de linha.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
@@ -2058,7 +2367,7 @@ npx prettier --check apps/web/public/skills/orcamento-prefeitura-sigo/SKILL.md a
 
 Esperado:
 
-- vitest: `N + 3` arquivos e `M + 62` testes da linha de base, todos passando;
+- vitest: `N + 3` arquivos e `M + 96` testes da linha de base, todos passando;
 - `SKILL.md` e `BUILD_OK` (o Vite copia `public/**` para `dist/`, que o deploy publica; `dist/` está no `.gitignore`);
 - `All matched files use Prettier code style!` (o CI roda `format:check`, que cobre `.md`).
 
