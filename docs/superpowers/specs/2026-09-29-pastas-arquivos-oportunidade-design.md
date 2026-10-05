@@ -25,7 +25,7 @@ A aba Arquivos é uma lista plana, em ordem de envio. Numa licitação ficam 40 
 
 ## 3. Dados
 
-Migração `0125_pastas_arquivos.sql`, só aditiva e idempotente:
+Migração `0132_pastas_arquivos.sql`, só aditiva e idempotente:
 
 ```sql
 alter table public.arquivo_oportunidade add column if not exists pasta text;
@@ -72,7 +72,7 @@ A linha de cada arquivo continua como é hoje (ícones, visualizar, abrir link, 
 
 **Cabeçalho da aba.** Ganha um seletor **Pasta** (padrão: a pasta aberta, ou Outros) e o botão **Nova pasta**.
 
-- Upload e link gravam `pasta` com a escolha do seletor.
+- Upload e link gravam `pasta` com a escolha do seletor. Escolher **Outros** grava `null` (função `pastaParaGravar`), para que um edital enviado pela aba e lido depois pela IA caia em Edital pela regra da categoria. "Mover para Outros" também grava `null`, exceto num arquivo que já tem categoria do edital (aí grava `Outros`, senão ele voltaria para Edital).
 - A lógica de gravação fica nos handlers de `Oportunidades.jsx` (`handleUploadFile`, `handleSalvarLink`). Eles recebem a pasta como argumento; hoje o upload recebe o evento.
 
 **Nova pasta:**
@@ -92,15 +92,15 @@ Os arquivos da leitura de edital e do portal do cliente continuam sem `pasta`. P
 
 Os 33 arquivos com `categoria is null` da oportunidade `5a1e0c2e-…0926` recebem `pasta = 'Envelope 02 – Habilitação'`. Os 8 arquivos do edital já têm categoria e aparecem em Edital sem alteração.
 
-A atualização roda depois da migração, filtrada pelo id da oportunidade e da empresa.
+A atualização roda depois da migração e **antes** do merge/push, filtrada pelo id da oportunidade e da empresa e por `pasta is null`, para não desfazer escolhas feitas na tela nova. Conte antes (os números 33 e 8 são de 29/09) e grave o nome com o literal `U&'Envelope 02 \2013 Habilita\00E7\00E3o'`, que não depende da codificação do arquivo.
 
 ## 7. Testes e publicação
 
 1. **Testes:**
    - Vitest para `pastas-arquivo.js`: regra de pasta, ordem, deduplicação, validação de nome e agrupamento com pasta vazia;
    - depois `npm run lint` e `npm run build`.
-2. **Migração:** `supabase db query --linked -f supabase/migrations/0125_pastas_arquivos.sql`, que é aditiva.
-3. **Publicação:** commit e push em `master` publicam o site.
-4. **Dados de Itatinga:** SQL da §6.
+2. **Migração:** `supabase db query --linked -f supabase/migrations/0132_pastas_arquivos.sql`, que é aditiva.
+3. **Dados de Itatinga:** SQL da §6.
+4. **Publicação:** merge no `master` e push publicam o site.
 
 Os passos 2 a 4 mexem na produção e precisam do OK do Javerson, que pode rodá-los ou aprovar a execução.
