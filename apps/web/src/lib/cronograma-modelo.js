@@ -4,15 +4,23 @@
  * docs/superpowers/specs/2026-10-05-cronograma-fisico-financeiro-design.md §6).
  *
  * `orcamento-modelo.js` importa daqui o nome e o cabeçalho para o `gerarModelo`; por isso este
- * arquivo NÃO importa `orcamento-modelo.js` (sem dependência circular) e repete os poucos
- * utilitários de célula de que precisa.
+ * arquivo NÃO importa `orcamento-modelo.js` (sem dependência circular): os utilitários de célula
+ * que os dois usam ficam em `xlsx-celulas.js`.
  *
  * Funções puras: recebem o workbook do SheetJS (ou o ArrayBuffer do arquivo) e devolvem
  * { cronograma, erros, avisos, resumo }. Mensagens por linha usam a linha do Excel.
  */
 import * as XLSX from "xlsx";
-import { normalizarTexto } from "./busca";
 import { MAX_MESES, lerPercentual, somaCentesimos } from "./cronograma-ff";
+import {
+  acharAba,
+  celula,
+  formatoData,
+  formulaSemValor,
+  normalizarRotulo,
+  textoCelula,
+  vazia,
+} from "./xlsx-celulas";
 
 export const ABA_CRONOGRAMA = "Cronograma";
 
@@ -22,37 +30,6 @@ export function cabecalhoCronograma(meses = 12) {
 }
 
 // ---------------------------------------------------------------- utilidades
-
-function normalizarRotulo(s) {
-  return normalizarTexto(s).replace(/\s+/g, " ").trim();
-}
-
-function acharAba(wb, nome) {
-  const alvo = normalizarRotulo(nome);
-  return (wb?.SheetNames || []).find((n) => normalizarRotulo(n) === alvo);
-}
-
-function celula(ws, r, c) {
-  return c === undefined ? undefined : ws[XLSX.utils.encode_cell({ r, c })];
-}
-
-/** Fórmula gravada sem o valor calculado (openpyxl faz isso); com sheetStubs vem t "z". */
-function formulaSemValor(cel) {
-  return Boolean(cel?.f) && (cel.t === "z" || cel.v === undefined || cel.v === null);
-}
-
-function vazia(cel) {
-  if (formulaSemValor(cel)) return false;
-  if (!cel || cel.t === "z" || cel.v === undefined || cel.v === null) return true;
-  return typeof cel.v === "string" && cel.v.trim() === "";
-}
-
-/** Texto do Item. Número inteiro vira "1" (o `w` podia vir "1.0" ou "1E+0"). */
-function textoCelula(cel) {
-  if (vazia(cel) || formulaSemValor(cel)) return "";
-  if (cel.t === "n" && Number.isInteger(cel.v)) return String(cel.v);
-  return String(cel.w ?? cel.v).trim();
-}
 
 /** Formato da célula sem "textos", [cores/locale] e \escapes (0"%" não é percentual). */
 function formatoLimpo(cel) {
@@ -65,10 +42,6 @@ function formatoPercentual(cel) {
   if (z !== null) return z.includes("%");
   const exibido = String(cel?.w ?? "").trim();
   return exibido.endsWith("%");
-}
-
-function formatoData(cel) {
-  return typeof cel?.z === "string" && XLSX.SSF.is_date(cel.z);
 }
 
 function formatar(v, minimo, maximo) {

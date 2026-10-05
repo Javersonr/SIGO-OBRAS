@@ -157,18 +157,20 @@ describe("lerAbaCronograma — erros", () => {
     expect(r.cronograma).toBeNull();
     expect(r.erros).toEqual(["Linha 4: Item 1 repetido (já está na linha 2)."]);
   });
-  it("fórmula sem valor salvo, data, booleano e NaN numa célula de mês", () => {
-    const wb = montarWb([CAB4, ["1", "A", 0, 0, 0, 0]]);
+  it("fórmula sem valor salvo, data (com e sem `z`), booleano e NaN numa célula de mês", () => {
+    const wb = montarWb([cabecalhoCronograma(5), ["1", "A", 0, 0, 0, 0, 0]]);
     const ws = wb.Sheets[ABA_CRONOGRAMA];
     ws.C2 = { t: "z", f: "10*2" };
     ws.D2 = { t: "n", v: 46296, z: "m/d/yy", w: "10/1/26" };
     ws.E2 = { t: "b", v: true, w: "TRUE" };
     ws.F2 = { t: "n", v: NaN }; // número não finito (arquivo malformado)
+    ws.G2 = { t: "n", v: 46296, w: "10/1/26" }; // sem `z` (em memória): vale o texto exibido
     expect(lerAbaCronograma(wb, ["1"]).erros).toEqual([
       "Linha 2, Mês 1: fórmula sem valor salvo; grave o número.",
       'Linha 2, Mês 2: virou data no Excel ("10/1/26"); formate como Número.',
       'Linha 2, Mês 3: "TRUE" não é um número.',
       'Linha 2, Mês 4: "NaN" não é um número.',
+      'Linha 2, Mês 5: virou data no Excel ("10/1/26"); formate como Número.',
     ]);
   });
   it("aba vazia (modelo em branco) ou sem nenhuma etapa do orçamento", () => {

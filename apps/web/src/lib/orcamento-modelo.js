@@ -10,9 +10,18 @@
  * { itens, info, erros, avisos, totais }. Mensagens por linha usam a linha do Excel.
  */
 import * as XLSX from "xlsx";
-import { normalizarTexto } from "@/lib/busca";
 import { totalLinha } from "@/lib/orcamento-desconto";
 import { ABA_CRONOGRAMA, cabecalhoCronograma } from "@/lib/cronograma-modelo";
+import {
+  acharAba,
+  celula,
+  formatoData,
+  formulaSemValor,
+  normalizarRotulo,
+  semValor,
+  textoCelula,
+  vazia,
+} from "@/lib/xlsx-celulas";
 
 export const ABA_ORCAMENTO = "Orçamento";
 export const ABA_INFORMACOES = "Informações";
@@ -83,41 +92,7 @@ const OBRIGATORIOS = ["Item", "Descrição", "Unidade", "Quantidade", "Preço un
 const PADRAO_ITEM = /^\d+(\.\d+)*$/;
 
 // ---------------------------------------------------------------- utilidades
-
-function normalizarRotulo(s) {
-  return normalizarTexto(s).replace(/\s+/g, " ").trim();
-}
-
-function acharAba(wb, nome) {
-  const alvo = normalizarRotulo(nome);
-  return (wb?.SheetNames || []).find((n) => normalizarRotulo(n) === alvo);
-}
-
-function celula(ws, r, c) {
-  return c === undefined ? undefined : ws[XLSX.utils.encode_cell({ r, c })];
-}
-
-/** Fórmula gravada sem o valor calculado (openpyxl faz isso); com sheetStubs vem t "z". */
-function formulaSemValor(cel) {
-  return Boolean(cel?.f) && (cel.t === "z" || cel.v === undefined || cel.v === null);
-}
-
-function semValor(cel) {
-  return !cel || cel.t === "z" || cel.v === undefined || cel.v === null;
-}
-
-function vazia(cel) {
-  if (formulaSemValor(cel)) return false;
-  if (semValor(cel)) return true;
-  return typeof cel.v === "string" && cel.v.trim() === "";
-}
-
-/** Texto das colunas de texto. Número inteiro vira "93358" (o `w` podia vir "9.3E+4"). */
-function textoCelula(cel) {
-  if (semValor(cel)) return "";
-  if (cel.t === "n" && Number.isInteger(cel.v)) return String(cel.v);
-  return String(cel.w ?? cel.v).trim();
-}
+// (achar aba, rótulo, célula vazia, texto, fórmula sem valor e data vêm de lib/xlsx-celulas.js)
 
 function textoOuNull(cel) {
   return textoCelula(cel) || null;
@@ -128,18 +103,6 @@ function valorDaCelula(cel) {
   if (semValor(cel)) return null;
   if (cel.t === "e") return String(cel.w ?? "#ERRO");
   return cel.v;
-}
-
-/**
- * Número que o Excel formatou como data (digitar 1/10 vira 1-Oct). Com `cellNF` a célula traz
- * o formato (`z`) e quem decide é o SSF (d-mmm, mmm-yy, dd/mm/yyyy...): o texto exibido (`w`)
- * só casa com alguns deles. Sem `z` (workbook em memória), `w` com três números separados por
- * / ou - fica como reserva.
- */
-function formatoData(cel) {
-  if (cel?.t !== "n" || typeof cel.v !== "number") return false;
-  if (typeof cel.z === "string") return XLSX.SSF.is_date(cel.z);
-  return /\d+[/-]\d+[/-]\d+/.test(String(cel.w ?? ""));
 }
 
 function lerCampoNumerico(cel, rotulo) {
