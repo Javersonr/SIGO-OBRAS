@@ -39,7 +39,7 @@ As etapas aparecem na oportunidade e no projeto, na ordem da planilha.
   - Todo registro leva todas as chaves.
   - Item importado: `bdi = 0`, `imposto = 0` e `tipo = null`.
   - Etapa: `etapa = true`, com quantidade e valores nulos.
-- **Gravações pendentes:** a edição por campo grava a linha inteira depois de 1,5 s. Importar e aplicar o desconto cancelam antes os timers de `updateTimeoutRef`.
+- **Gravações pendentes:** a edição por campo grava a linha inteira depois de 1,5 s. Importar cancela antes os timers de `updateTimeoutRef` (tudo é substituído). Aplicar o desconto **não descarta** edição pendente: se houver timer ou gravação em voo, avisa ("Aguarde a gravação da última edição e aplique de novo") e sai sem gravar; o cancelamento fica só como proteção.
 - **Excel sem negrito** (limitação do SheetJS CE); o PDF usa negrito nas etapas.
 - **Representante:**
   - no diálogo de exportação, vem preenchido com `empresa.representante_*` e pode ser editado sem gravar;
@@ -3062,6 +3062,8 @@ Expected: `3 files changed`, só esses três caminhos.
 
 **Entrada inválida nas contas (correção da Task 1, 01/10):** `precoComDesconto`/`aplicarDesconto` lançam `RangeError` em vez de tratar desconto ou referência inválidos como 0%. A barra já chamava `validarDesconto` antes e passa só o `valor` (number); o `aplicarDesconto` agora fica num `try/catch` que mostra o erro e sai sem gravar nada (uma referência negativa vinda do banco, por exemplo). No diálogo, a montagem dos registros também fica num `try/catch`, **antes** de apagar os itens atuais: se o desconto salvo na oportunidade estiver fora de 0 a 99,99% (a coluna é `numeric(5,2)`, sem CHECK), a importação para com um aviso e nada é apagado nem gravado.
 
+**Edição pendente no Aplicar (correção da revisão 1, 05/10):** o `handleUpdateItem` põe a edição no estado local na hora e só grava a linha inteira 1,5 s depois. Cancelar esse timer no Aplicar perderia a edição (o `aplicarDesconto` usa a quantidade do estado local e grava só `valor_unitario`/`valor_total`: o banco ficaria com a quantidade antiga e o total novo; numa linha sem referência, a edição se perderia inteira). Por isso o `handleAplicar` começa conferindo `Object.keys(updateTimeoutRef?.current || {}).length > 0` (a chave só sai do mapa depois do `await` da gravação, então cobre também a gravação em voo) e, havendo pendência, mostra `toast.info("Aguarde a gravação da última edição e aplique de novo")` e sai. O `cancelarGravacoesPendentes` continua depois, como proteção. Na importação descartar está certo (tudo é substituído).
+
 - [ ] **Step 1: Linha de base do lint**
 
 ```bash
@@ -3501,6 +3503,13 @@ export default function OrcamentoLicitacaoBarra({
 
   const handleAplicar = async () => {
     if (!opId || !empresaAtiva?.id) return;
+    // Edição por campo ainda no debounce de 1,5 s (ou gravando: a chave só sai do mapa depois do
+    // await). Cancelar o timer perderia a edição, e o desconto recalculado a partir do estado
+    // local deixaria o banco com a quantidade antiga e o total novo. Espera gravar e aplica de novo.
+    if (Object.keys(updateTimeoutRef?.current || {}).length > 0) {
+      toast.info("Aguarde a gravação da última edição e aplique de novo");
+      return;
+    }
     const validacao = validarDesconto(desconto);
     if (!validacao.ok) {
       toast.error(validacao.erro);
@@ -8662,12 +8671,13 @@ Expected: `['orcamento-prefeitura-sigo/SKILL.md']`.
 
 - [ ] **Step 10: Roteiro E — aplicar 12,35%**
 
-| #   | Ação do Javerson                                    | Resultado esperado                                                                                                                                                                                                                                                                             |
-| --- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Desconto (%) = `12,35` → **Aplicar**                | Confirmação: "Recalcula todos os itens importados a partir do preço da prefeitura; ajustes feitos à mão nesses itens serão substituídos."                                                                                                                                                      |
-| 2   | OK                                                  | Toast "Desconto de 12,35% aplicado em 56 itens". Resumo: Total de referência **R$ 1.617.244,73** · Total da proposta **R$ 1.417.472,96** · Desconto real **12,35%**. Item 1 (Poste 12/1000): Vlr Unit **R$ 3.072,56** (3.505,49 × 0,8765 = 3.072,561985, cortado), Vlr Total **R$ 18.435,36**. |
-| 3   | Desconto `100` → Aplicar; depois `12,355` → Aplicar | Toasts "O desconto vai de 0 a 99,99%" e "Use no máximo 2 casas decimais"; nada muda. Voltar o campo para `12,35` (não precisa aplicar de novo).                                                                                                                                                |
-| 4   | **F5** e voltar à aba Orçamento                     | O campo mostra 12,35 e os totais continuam os mesmos.                                                                                                                                                                                                                                          |
+| #   | Ação do Javerson                                      | Resultado esperado                                                                                                                                                                                                                                                                             |
+| --- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Desconto (%) = `12,35` → **Aplicar**                  | Confirmação: "Recalcula todos os itens importados a partir do preço da prefeitura; ajustes feitos à mão nesses itens serão substituídos."                                                                                                                                                      |
+| 2   | OK                                                    | Toast "Desconto de 12,35% aplicado em 56 itens". Resumo: Total de referência **R$ 1.617.244,73** · Total da proposta **R$ 1.417.472,96** · Desconto real **12,35%**. Item 1 (Poste 12/1000): Vlr Unit **R$ 3.072,56** (3.505,49 × 0,8765 = 3.072,561985, cortado), Vlr Total **R$ 18.435,36**. |
+| 3   | Desconto `100` → Aplicar; depois `12,355` → Aplicar   | Toasts "O desconto vai de 0 a 99,99%" e "Use no máximo 2 casas decimais"; nada muda. Voltar o campo para `12,35` (não precisa aplicar de novo).                                                                                                                                                |
+| 4   | **F5** e voltar à aba Orçamento                       | O campo mostra 12,35 e os totais continuam os mesmos.                                                                                                                                                                                                                                          |
+| 5   | Editar uma quantidade e clicar **Aplicar** em < 1,5 s | Toast "Aguarde a gravação da última edição e aplique de novo"; nada é gravado. Depois de 2 s, **Aplicar** de novo funciona. Para a conferência abaixo, restaurar a quantidade e aplicar 12,35 outra vez.                                                                                       |
 
 Conferência (todo unitário = corte de referência × 0,8765 em 2 casas; todo total = arredondar(qtd × unit, 2)):
 
