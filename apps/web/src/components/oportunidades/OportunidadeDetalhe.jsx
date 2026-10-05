@@ -61,6 +61,7 @@ import DiarioObraTab from "../projetos/DiarioObraTab";
 import VisualizadorPDF from "./VisualizadorPDF";
 import PropostasOportunidade from "./PropostasOportunidade";
 import OrcamentoLicitacaoBarra from "./OrcamentoLicitacaoBarra";
+import CronogramaFisicoFinanceiro from "./CronogramaFisicoFinanceiro";
 import AnexoViewer from "@/components/shared/AnexoViewer";
 import ImgStorage from "@/components/ImgStorage";
 import LerEditalSheet from "@/components/oportunidades/edital/LerEditalSheet";
@@ -1532,12 +1533,23 @@ export default function OportunidadeDetalhe({
                   {/* ABA PLANEJAMENTO */}
                   <TabsContent value="obra" className="space-y-4 mt-4">
                     {visitedTabs.has("obra") && (
-                      <DiarioObraTab
-                        projetoId={selectedOp.id}
-                        empresaAtiva={empresaAtiva}
-                        usuariosEmpresa={usuariosEmpresa}
-                        showOnlyTasks={true}
-                      />
+                      <>
+                        <CronogramaFisicoFinanceiro
+                          selectedOp={selectedOp}
+                          setSelectedOp={setSelectedOp}
+                          setOportunidades={setOportunidades}
+                          orcamentoItens={orcamentoItens}
+                          empresaAtiva={empresaAtiva}
+                          user={user}
+                          podeEditar={podeEditarOrcamento}
+                        />
+                        <DiarioObraTab
+                          projetoId={selectedOp.id}
+                          empresaAtiva={empresaAtiva}
+                          usuariosEmpresa={usuariosEmpresa}
+                          showOnlyTasks={true}
+                        />
+                      </>
                     )}
                   </TabsContent>
 

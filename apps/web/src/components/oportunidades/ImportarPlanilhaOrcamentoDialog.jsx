@@ -23,7 +23,8 @@ import {
 
 const MAX_LISTADAS = 50;
 
-function ListaMensagens({ titulo, mensagens, tom }) {
+/** Erros ou avisos da importação (reusada pelo ImportarCronogramaDialog). */
+export function ListaMensagens({ titulo, mensagens, tom }) {
   if (!mensagens?.length) return null;
   const Icone = tom === "erro" ? XCircle : AlertTriangle;
   const cores =
