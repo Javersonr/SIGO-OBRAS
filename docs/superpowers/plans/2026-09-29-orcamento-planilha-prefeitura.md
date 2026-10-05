@@ -2429,7 +2429,7 @@ Esperado: o commit sai e o `git log` mostra `feat(orcamento): skill do Claude or
   - `rotuloItem(item, indice): string`;
   - `ordenarItensProjeto(itens): ItemOrc[]`;
   - `semEtapas(itens): ItemOrc[]`;
-  - **extras (não estão no contrato; usados na Task 5):** `ordenarItensOportunidade(itens): ItemOrc[]` (mesma ordem do `loadOrcamentoData` da oportunidade, `ordem ?? 0`, desempate por `numero`, e `item = rotuloItem`) e `cancelarGravacoesPendentes(ref): number` (cancela os timers de `updateTimeoutRef.current` e zera o mapa).
+  - **extras (não estão no contrato; usados nas Tasks 5 e 7):** `ordenarItensOportunidade(itens): ItemOrc[]` (mesma ordem do `loadOrcamentoData` da oportunidade, `ordem ?? 0`, desempate por `numero`, e `item = rotuloItem`) e `cancelarGravacoesPendentes(ref): number` (cancela os timers de `updateTimeoutRef.current` e zera o mapa).
 
 - [ ] **Step 1: Linha de base**
 
@@ -4849,7 +4849,7 @@ Convenções desta parte:
 **Interfaces:**
 
 - Consumes (Task 1, `./orcamento-desconto`): `subtotaisEtapas(itens): Record<string, number>` (chave = `numero` da etapa, valor em reais, somado em centavos).
-- Consumes (Task 4, `./orcamento-registros`): `compararNumeroItem(a: string, b: string): number` e `rotuloItem(item, indice): string`.
+- Consumes (Task 4, `./orcamento-registros`): `ordenarItensOportunidade(itens): ItemOrc[]` (a ordem e o rótulo `item` que a tela do orçamento usa).
 - Consumes (já existem, puras): `formatarCpfCnpj(valor)` de `./ler-documento` (só importa `./cnpj`) e `formatarTelefone(valor)` de `./telefone`.
 - Produces (`apps/web/src/lib/cpf.js`):
   - `validarCpf(cpf: string): boolean` — 11 dígitos, recusa todos iguais, confere os 2 dígitos verificadores; aceita com ou sem máscara; letras invalidam;
@@ -4864,8 +4864,8 @@ Convenções desta parte:
 **Decisões desta task (o contrato não cobria):**
 
 - **Órgão, objeto e edital** (decisão C3, aceita; ajusta a spec §9 e o contrato, que mandavam usar o nome da oportunidade quando faltasse a informação). Vêm de `orcamento_info`; se faltar, dos campos da licitação que a oportunidade já tem: `orgao` ← `oportunidade.orgao`; `edital` ← `"Edital <licitacao_numero> - Processo <licitacao_processo>"`. O **objeto cai por último no nome da oportunidade**: `objeto` ← `orcamento_info.objeto`, senão `oportunidade.nome` (ou `titulo`, se não houver nome), que é o "nome da oportunidade" da spec §9. Dado que não existe não aparece: sem nada, fica `null` e a linha não sai no PDF/Excel (em vez de repetir o nome da oportunidade três vezes).
-- **Ordem das linhas:** `ordem ?? 0` com desempate por `compararNumeroItem`, a mesma da tela da oportunidade (`loadOrcamentoData`). A função ordena uma cópia; não depende de a lista chegar ordenada.
-- **Rótulo:** `rotuloItem(item, índice)`, igual à coluna Nº da Task 6 (item incluído à mão sai com a posição).
+- **Ordem das linhas:** a de `ordenarItensOportunidade` (`ordem ?? 0` com desempate por `compararNumeroItem`), a mesma da tela da oportunidade (`loadOrcamentoData`). A função **chama** `ordenarItensOportunidade` em vez de repetir o comparador (a proposta não diverge da tela se a tela mudar); ela devolve lista nova, então não depende de a lista chegar ordenada nem altera a recebida. Um teste compara os números das linhas com `ordenarItensOportunidade(lista).map(i => i.item)`, com a lista invertida e sem `ordem`.
+- **Rótulo:** o `item.item` que `ordenarItensOportunidade` já calcula (`numero`, ou a posição), igual à coluna Nº da Task 6 (item incluído à mão sai com a posição).
 - **Totais:** `total` do item = `valor_total` gravado (nulo → 0), somado em centavos; `totalGeral` = Σ dos itens (sem etapas), o mesmo número do "Total da proposta" da barra (`resumoOrcamento`).
 - **Local/data:** `"<local>, dd de <mês> de aaaa"`, dia com 2 dígitos (como o certificado do EAD), lido do texto `aaaa-mm-dd` sem `new Date` (não cai 1 dia no fuso). Sem local, só a data.
 - **BDI:** ganha `%` no fim se não tiver (`"25,00"` → `"25,00%"`).
@@ -5008,13 +5008,14 @@ Expected: `✓ src/lib/cpf.test.js (7 tests)`, `Test Files  1 passed (1)`, `Test
 
 - [ ] **Step 6: Escrever o teste dos dados da proposta**
 
-Casos: os 4 valores por extenso da spec (e mais 9), o nome do arquivo com os caracteres proibidos, o representante, e `montarDadosProposta` com um orçamento importado fora de ordem (etapas `1`, `1.1`, `2`), um item incluído à mão sem `numero` e os fallbacks sem `orcamento_info`. Conta do fixture: 1.1 = 1.152,09 + 438,20 = **1.590,29**; 1 = 1.590,29 + 200,00 = **1.790,29**; 2 = **3.001,50**; total = 1.790,29 + 3.001,50 + 99,99 = **4.891,78**.
+Casos: os 4 valores por extenso da spec (e mais 9), o nome do arquivo com os caracteres proibidos, o representante, e `montarDadosProposta` com um orçamento importado fora de ordem (etapas `1`, `1.1`, `2`), um item incluído à mão sem `numero`, os fallbacks sem `orcamento_info` e a igualdade da ordem e do rótulo com `ordenarItensOportunidade`. Conta do fixture: 1.1 = 1.152,09 + 438,20 = **1.590,29**; 1 = 1.590,29 + 200,00 = **1.790,29**; 2 = **3.001,50**; total = 1.790,29 + 3.001,50 + 99,99 = **4.891,78**.
 
 Crie `apps/web/src/lib/proposta-orcamento.test.js`:
 
 <!-- prettier-ignore -->
 ```js
 import { describe, expect, it } from "vitest";
+import { ordenarItensOportunidade } from "./orcamento-registros";
 import {
   descricaoVersaoProposta,
   montarDadosProposta,
@@ -5246,6 +5247,18 @@ describe("montarDadosProposta", () => {
     expect(d.linhas.map((l) => l.nivel)).toEqual([1, 2, 3, 3, 2, 1, 2, 1]);
   });
 
+  it("ordem e rótulo são os de ordenarItensOportunidade (a mesma da tela)", () => {
+    // lista embaralhada (a ordem inversa) e outra sem `ordem`, só com o desempate pelo número
+    const invertidos = [...ITENS].reverse();
+    const semOrdem = ITENS.map((i) => ({ ...i, ordem: null }));
+    for (const lista of [invertidos, semOrdem]) {
+      const { linhas } = dados({ itens: lista });
+      expect(linhas.map((l) => l.numero)).toEqual(
+        ordenarItensOportunidade(lista).map((i) => i.item)
+      );
+    }
+  });
+
   it("etapa leva o subtotal; item leva quantidade, unitário e total", () => {
     const d = dados();
     expect(d.linhas[1]).toEqual({
@@ -5421,7 +5434,7 @@ import { formatarCpf, validarCpf } from "./cpf";
 import { formatarCpfCnpj } from "./ler-documento";
 import { formatarTelefone } from "./telefone";
 import { subtotaisEtapas } from "./orcamento-desconto";
-import { compararNumeroItem, rotuloItem } from "./orcamento-registros";
+import { ordenarItensOportunidade } from "./orcamento-registros";
 
 // ------------------------------------------------------ valor por extenso
 // Port de supabase/functions/_shared/recibo-pdf.ts (valorPorExtenso), sem os tipos.
@@ -5637,9 +5650,10 @@ function bdiComPercentual(bdi) {
  *   dataBase, bdi, linhas, totalGeral, totalExtenso, validade, localData,
  *   representante: { nome, cargo, cpf } }
  *
- * - linhas: todos os itens (com ou sem preço de referência), na ordem de `ordem`
- *   (desempate pelo número), como LinhaProposta { tipo: "etapa"|"item", numero,
- *   codigo, fonte, descricao, unidade, quantidade, valorUnitario, total, nivel }.
+ * - linhas: todos os itens (com ou sem preço de referência), na ordem e com o rótulo de
+ *   ordenarItensOportunidade (a mesma da tela: `ordem`, desempate pelo número), como
+ *   LinhaProposta { tipo: "etapa"|"item", numero, codigo, fonte, descricao, unidade,
+ *   quantidade, valorUnitario, total, nivel }.
  *   Na etapa, total = subtotal (subtotaisEtapas) e nivel = nº de segmentos do número.
  * - totalGeral = Σ valor_total dos itens (sem as etapas), somado em centavos.
  * - órgão/objeto/edital: de orcamento_info; se faltar, dos campos da licitação da
@@ -5652,14 +5666,13 @@ export function montarDadosProposta({ itens, info, oportunidade, empresa, repres
   const opc = opcoes || {};
   const rep = representante || {};
 
-  const ordenados = [...(itens || [])].sort(
-    (a, b) => (a.ordem ?? 0) - (b.ordem ?? 0) || compararNumeroItem(a.numero, b.numero)
-  );
+  // Mesma ordem e mesmo rótulo (`item.item`) da tela; devolve lista nova, `itens` fica intacta.
+  const ordenados = ordenarItensOportunidade(itens);
   const subtotais = subtotaisEtapas(ordenados);
 
   let totalCentavos = 0;
-  const linhas = ordenados.map((item, indice) => {
-    const numero = rotuloItem(item, indice);
+  const linhas = ordenados.map((item) => {
+    const numero = item.item;
     const nivel = String(numero).split(".").length;
     const base = {
       numero,
@@ -5726,7 +5739,7 @@ export function montarDadosProposta({ itens, info, oportunidade, empresa, repres
 
 /**
  * Descrição da versão registrada na aba Geral (proposta_oportunidade):
- * "Orçamento com desconto de 12,35% (real 12,41%) — 57 itens".
+ * "Orçamento com desconto de 12,35% (real 12,40%) — 57 itens".
  */
 export function descricaoVersaoProposta({ descontoPct, descontoReal, qtdItens }) {
   const pct = (v) =>
@@ -5747,7 +5760,7 @@ export function descricaoVersaoProposta({ descontoPct, descontoReal, qtdItens })
 cd apps/web && npx vitest run src/lib/proposta-orcamento.test.js
 ```
 
-Expected: `✓ src/lib/proposta-orcamento.test.js (15 tests)`, `Test Files  1 passed (1)`, `Tests  15 passed (15)`.
+Expected: `✓ src/lib/proposta-orcamento.test.js (16 tests)`, `Test Files  1 passed (1)`, `Tests  16 passed (16)`.
 
 - [ ] **Step 10: Suíte inteira e formatação**
 
@@ -5756,7 +5769,7 @@ cd apps/web && npx vitest run 2>&1 | tail -4
 cd ../.. && npx prettier --check apps/web/src/lib/cpf.js apps/web/src/lib/cpf.test.js apps/web/src/lib/proposta-orcamento.js apps/web/src/lib/proposta-orcamento.test.js
 ```
 
-Expected: a suíte do Step 1 com **2 arquivos e 22 testes a mais**, toda passando; Prettier `All matched files use Prettier code style!`. (`src/lib/**` fica fora do ESLint do projeto, por isso não há passo de lint.)
+Expected: a suíte do Step 1 com **2 arquivos e 23 testes a mais**, toda passando; Prettier `All matched files use Prettier code style!`. (`src/lib/**` fica fora do ESLint do projeto, por isso não há passo de lint.)
 
 - [ ] **Step 11: Commit (só os 4 caminhos da task)**
 
