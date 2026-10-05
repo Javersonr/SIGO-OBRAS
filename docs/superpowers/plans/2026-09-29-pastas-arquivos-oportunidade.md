@@ -29,10 +29,11 @@ Cada arquivo tem "Mover para…" e o envio já escolhe a pasta.
 - **Nome de pasta:** aparado, espaços repetidos viram um só, de 1 a 60 caracteres, sem repetir (sem diferenciar maiúsculas nem acento).
 - **Arquivos dentro da pasta:** ordem de nome (`localeCompare` pt-BR, `numeric: true`).
 - **Banco:** nenhuma linha antiga é alterada, sem backfill. A migração é aditiva e idempotente.
-- **Ordem de publicação:** migração ANTES do push. O front novo grava `pasta` e `pastas_arquivos`, e sem as colunas o envio de arquivo falha.
+- **Ordem de publicação:** aplicar a `0132` → SQL de Itatinga → merge/push. O front novo grava `pasta` e `pastas_arquivos`, e sem as colunas o envio de arquivo falha.
+- **Gravação da pasta:** "Outros" grava `null` (função `pastaParaGravar`), para um edital enviado pela aba e lido depois pela IA cair em Edital pela regra da categoria. Detalhes em "Ajustes da revisão final", depois da Task 4.
 - **Textos da tela** em português, no tom das telas atuais.
 - **Commits** terminam com `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-- **Outra sessão faz commits no mesmo `master`.** Faça `git add` só dos arquivos do plano (nunca `git add -A`) e confira o último número de migração antes de criar a `0125`.
+- **Outra sessão faz commits no mesmo `master`.** Faça `git add` só dos arquivos do plano (nunca `git add -A`) e confira o último número de migração antes de criar a `0132`.
 
 ---
 
@@ -42,7 +43,7 @@ Cada arquivo tem "Mover para…" e o envio já escolhe a pasta.
 | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `apps/web/src/lib/pastas-arquivo.js` (novo)                                                     | Regra pura: pastas padrão, pasta de cada arquivo, lista ordenada, agrupamento, validação de nome e leitura do jsonb |
 | `apps/web/src/lib/pastas-arquivo.test.js` (novo)                                                | Testes Vitest da regra                                                                                              |
-| `supabase/migrations/0130_pastas_arquivos.sql` (novo)                                           | Colunas `pasta` e `pastas_arquivos`                                                                                 |
+| `supabase/migrations/0132_pastas_arquivos.sql` (novo)                                           | Colunas `pasta` e `pastas_arquivos`                                                                                 |
 | `apps/web/src/components/oportunidades/ArquivosPastas.jsx` (novo)                               | Pastas recolhíveis, "Nova pasta" e apagar pasta extra vazia; a linha do arquivo vem do pai                          |
 | `apps/web/src/components/oportunidades/OportunidadeDetalhe.jsx` (alterar ~l.1416-1603, 315-335) | Usa `ArquivosPastas`, seletor de pasta no envio, "Mover para…", criar e apagar pasta                                |
 | `apps/web/src/pages/Oportunidades.jsx` (alterar `handleUploadFile`, ~l.823-864)                 | Recebe a pasta e grava `pasta` no `ArquivoOportunidade.create`                                                      |
@@ -319,7 +320,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Arquivos:**
 
-- Criar: `supabase/migrations/0130_pastas_arquivos.sql`. Antes de criar, rode `ls supabase/migrations | tail -3`; se a `0125` já existir, use o próximo número livre.
+- Criar: `supabase/migrations/0132_pastas_arquivos.sql`. Antes de criar, rode `ls supabase/migrations | tail -3` e confira as outras branches; se a `0132` já existir, use o próximo número livre. (A `0125`–`0129` é do financeiro, a `0127` também do Orçamento, a `0130` e a `0131` do EAD e dos treinamentos.)
 
 **Interfaces:**
 
@@ -329,7 +330,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ```sql
 -- ============================================================================
--- 0130_pastas_arquivos.sql — pastas na aba Arquivos da oportunidade
+-- 0132_pastas_arquivos.sql — pastas na aba Arquivos da oportunidade (05/10/2026)
 --   (spec docs/superpowers/specs/2026-09-29-pastas-arquivos-oportunidade-design.md)
 --
 --   arquivo_oportunidade.pasta      nome da pasta; null = regra do front
@@ -337,30 +338,39 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 --   oportunidade.pastas_arquivos    pastas EXTRAS criadas pelo usuário (array jsonb)
 --
 -- Aditiva e idempotente. Sem backfill. RLS inalterada (mesmas tabelas).
+-- Os CHECKs são só higiene (texto livre do usuário): pasta até 120 caracteres e
+-- pastas_arquivos sempre um array. Entram junto com a coluna.
+-- Numeração: 0125–0129 financeiro, 0127 também no plano do Orçamento, 0130/0131 EAD/treinamentos.
 -- ============================================================================
 
 alter table public.arquivo_oportunidade
-  add column if not exists pasta text;
+  add column if not exists pasta text
+    check (pasta is null or char_length(pasta) <= 120);
 
 alter table public.oportunidade
-  add column if not exists pastas_arquivos jsonb not null default '[]'::jsonb;
+  add column if not exists pastas_arquivos jsonb not null default '[]'::jsonb
+    check (jsonb_typeof(pastas_arquivos) = 'array');
 
 comment on column public.arquivo_oportunidade.pasta is
   'Pasta do arquivo na aba Arquivos (ex.: Envelope 02 – Habilitação). Null = Edital (categorias do edital) ou Outros.';
 comment on column public.oportunidade.pastas_arquivos is
   'Pastas extras da aba Arquivos criadas pelo usuário (array de nomes). As padrão ficam no front.';
+
+notify pgrst, 'reload schema';
+
+select 'ok' as res;
 ```
 
 - [ ] **Passo 2: conferir a sintaxe sem aplicar**
 
-Rodar: `grep -c "add column if not exists" supabase/migrations/0130_pastas_arquivos.sql`
+Rodar: `grep -c "add column if not exists" supabase/migrations/0132_pastas_arquivos.sql`
 Esperado: `2`
 
 - [ ] **Passo 3: commit**
 
 ```bash
-git add supabase/migrations/0130_pastas_arquivos.sql
-git commit -m "feat(db): 0125 — colunas de pasta dos arquivos da oportunidade
+git add supabase/migrations/0132_pastas_arquivos.sql
+git commit -m "feat(db): 0132 — colunas de pasta dos arquivos da oportunidade
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -755,14 +765,29 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
+### Ajustes da revisão final (05/10/2026)
+
+A revisão final da branch pediu os ajustes abaixo, já feitos nela. O código listado nas tasks anteriores ficou como foi escrito no plano, e o que vale é o código da branch.
+
+- **Número da migração:** `0132` (a `0130` e a `0131` já existem no `master`). O arquivo termina com `select 'ok' as res;` e tem CHECKs de higiene.
+- **Envio em "Outros" grava `null`:** `pastaParaGravar(nome, categoria?)` em `lib/pastas-arquivo.js`, usada no upload (`Oportunidades.jsx`), no link e no "Mover para…" (`OportunidadeDetalhe.jsx`). Só um arquivo que já tem categoria do edital movido para "Outros" grava `"Outros"`, porque `null` o devolveria a Edital.
+- **Nomes de pasta:** `mesmaPasta(a, b)` (sem maiúsculas, acento nem espaços sobrando) no apagar pasta e no filtro do "Mover para…".
+- **Menores:** `onAbrirPasta` fora do updater do `setState`; a pasta atual ganha selo e borda; ela guarda de qual oportunidade é (sem efeito de reset); `handleSalvarLink` com `try/catch` e toast; `flex-wrap` no cabeçalho da aba; o calendário consolidado recarrega os arquivos depois de mover ou adicionar link.
+
+---
+
 ### Task 5: Publicação e dados de Itatinga (PRODUÇÃO — só com OK do Javerson)
 
 **Arquivos:** nenhum código novo. Os comandos rodam na produção.
 
-- [ ] **Passo 1: aplicar a migração ANTES do push**
+**Ordem obrigatória:** aplicar a `0132` → SQL de Itatinga → merge/push. A migração vem antes do merge porque o front novo manda a coluna `pasta` em todo upload e link (sem ela, o PostgREST recusa com PGRST204). O SQL de Itatinga vem antes do push para não desfazer escolhas de quem já usar a tela nova, e por isso filtra também `pasta is null`.
+
+- [ ] **Passo 1: aplicar a migração ANTES do merge**
+
+O arquivo só existe na branch até o merge, e o link do projeto Supabase fica no checkout principal. Por isso o caminho do arquivo é o do worktree:
 
 ```bash
-cd /c/Users/javer/sigoobras-base && supabase db query --linked -f supabase/migrations/0130_pastas_arquivos.sql
+cd /c/Users/javer/sigoobras-base && supabase db query --linked -f /c/Users/javer/sigoobras-wt-pastas/supabase/migrations/0132_pastas_arquivos.sql
 ```
 
 Conferir:
@@ -771,34 +796,57 @@ Conferir:
 printf "select column_name from information_schema.columns where table_schema='public' and ((table_name='arquivo_oportunidade' and column_name='pasta') or (table_name='oportunidade' and column_name='pastas_arquivos'));" > /tmp/conf.sql && supabase db query --linked -f /tmp/conf.sql
 ```
 
-Esperado: 2 linhas, `pasta` e `pastas_arquivos`.
+Esperado: 2 linhas, `pasta` e `pastas_arquivos`. A migração é idempotente: reaplicar não faz mal.
 
-- [ ] **Passo 2: publicar o site**
+- [ ] **Passo 2: arquivos de habilitação de Itatinga → Envelope 02 (ainda ANTES do merge/push)**
+
+Primeiro conte (os números 33 e 8 são de 29/09 e podem ter mudado) e anote o resultado. Grave em `/tmp/itatinga_contagem.sql`:
+
+```sql
+select count(*) filter (where categoria is null and pasta is null) as vao_para_envelope02,
+       count(*) filter (where categoria is not null)               as do_edital,
+       count(*) filter (where pasta is not null)                   as ja_com_pasta,
+       count(*)                                                    as total
+  from public.arquivo_oportunidade
+ where oportunidade_id = '5a1e0c2e-9c0b-4d2a-8f3e-1a7a7a0e0926'
+   and empresa_id = '00000000-695c-339e-bec0-d89449ec981c'
+   and deleted_at is null;
+```
+
+Rodar: `supabase db query --linked -f /tmp/itatinga_contagem.sql`
+
+Depois grave em `/tmp/itatinga_pastas.sql`. O literal `U&'…'` escreve o travessão e os acentos por código Unicode, então o resultado não depende da codificação do arquivo no Windows:
+
+```sql
+update public.arquivo_oportunidade
+   set pasta = U&'Envelope 02 \2013 Habilita\00E7\00E3o'
+ where oportunidade_id = '5a1e0c2e-9c0b-4d2a-8f3e-1a7a7a0e0926'
+   and empresa_id = '00000000-695c-339e-bec0-d89449ec981c'
+   and categoria is null
+   and pasta is null
+   and deleted_at is null;
+select pasta, ascii(substr(pasta, 13, 1)) as cod_travessao, count(*)
+  from public.arquivo_oportunidade
+ where oportunidade_id = '5a1e0c2e-9c0b-4d2a-8f3e-1a7a7a0e0926' and deleted_at is null
+ group by 1, 2 order by 1 nulls first;
+```
+
+Rodar: `supabase db query --linked -f /tmp/itatinga_pastas.sql`
+
+Esperado, conforme a contagem prévia:
+
+- `null` = os arquivos do edital (8 em 29/09), que aparecem em Edital pela regra;
+- `Envelope 02 – Habilitação` = o `vao_para_envelope02` da contagem (33 em 29/09), com `cod_travessao = 8211` (U+2013, o travessão intacto).
+
+- [ ] **Passo 3: publicar o site (merge e push)**
+
+Só depois dos passos 1 e 2. Antes do merge, repita `git merge-tree` com o `master` atual, e depois do merge rode Vitest, ESLint e build na árvore unida. Não faça o merge no meio da execução do plano do Orçamento, que mexe nos mesmos dois arquivos de tela.
 
 `git fetch && git rev-list --left-right --count origin/master...HEAD` deve mostrar `0 N`. Se mostrar atraso, faça rebase antes. Depois:
 
 ```bash
 git push origin master
 ```
-
-- [ ] **Passo 3: arquivos de habilitação de Itatinga → Envelope 02**
-
-Grave em `/tmp/itatinga_pastas.sql` (UTF-8):
-
-```sql
-update public.arquivo_oportunidade
-   set pasta = 'Envelope 02 – Habilitação'
- where oportunidade_id = '5a1e0c2e-9c0b-4d2a-8f3e-1a7a7a0e0926'
-   and empresa_id = '00000000-695c-339e-bec0-d89449ec981c'
-   and categoria is null
-   and deleted_at is null;
-select pasta, count(*) from public.arquivo_oportunidade
- where oportunidade_id = '5a1e0c2e-9c0b-4d2a-8f3e-1a7a7a0e0926' and deleted_at is null
- group by pasta order by pasta nulls first;
-```
-
-Rodar: `supabase db query --linked -f /tmp/itatinga_pastas.sql`
-Esperado: `null` = 8 (os do edital, que aparecem em Edital) e `Envelope 02 – Habilitação` = 33, com o travessão intacto (sem `?`).
 
 - [ ] **Passo 4: conferir na tela**
 
@@ -810,4 +858,4 @@ Abrir a oportunidade "PM Itatinga - SP" → aba Arquivos:
 - Envelope 02 – Habilitação (33, em ordem 00-, 01a-, 01b-, 02-…);
 - Outros (vazia).
 
-"Mover para…" funciona, e "Nova pasta" cria e apaga uma pasta vazia.
+"Mover para…" funciona, e "Nova pasta" cria e apaga uma pasta vazia. Suba um PDF de edital com a pasta "Outros" e rode "Ler edital": o arquivo deve passar para Edital.
