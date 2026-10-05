@@ -33,7 +33,8 @@ import {
   registrarEvento,
   origemDaRequisicao,
   gerarCodigoCertificado,
-  sha256Hex,
+  hashDoCertificado,
+  HASH_VERSAO_CANONICO,
   type EventoPortal,
 } from "../_shared/portal-funcionario.ts";
 import { enviarWhatsAppTexto, normalizarTelefoneBR } from "../_shared/whatsapp-envio.ts";
@@ -1217,11 +1218,15 @@ Deno.serve(
           "Declaro que realizei pessoalmente este treinamento, assisti às aulas e fiz a avaliação.",
         assinado_em: agoraIso(),
         ...origemDaRequisicao(req),
+        // versão do hash: a validação pública sabe se refaz o hash canônico (2) ou o antigo (sem versão)
+        hash_versao: HASH_VERSAO_CANONICO,
       };
 
       for (let i = 0; i < 3; i++) {
         const codigo = gerarCodigoCertificado();
-        const hash = await sha256Hex(JSON.stringify({ codigo, dados, assinatura }));
+        // JSON canônico (chaves ordenadas): o jsonb do banco reordena as chaves, e só assim o hash
+        // dá para refazer a partir do que ficou gravado (validar-certificado confere isso)
+        const hash = await hashDoCertificado(codigo, dados, assinatura);
         const { data: cert, error } = await supabase
           .from("treinamento_certificado")
           .insert({
@@ -1237,6 +1242,14 @@ Deno.serve(
           .select("codigo, dados, assinatura_aluno, emitido_em, hash_sha256")
           .single();
         if (!error) {
+          // o que o banco devolveu tem de dar o mesmo hash; se não der, a validação pública acusaria
+          // "dados não conferem" num certificado recém-emitido: deixa rastro no log (não derruba)
+          if ((await hashDoCertificado(cert.codigo, cert.dados, cert.assinatura_aluno)) !== hash) {
+            console.error(
+              "[portal-funcionario] certificado: hash não reproduzível pelo banco",
+              codigo
+            );
+          }
           await ev({
             evento: "certificado_assinado",
             matricula_id: mat.id,

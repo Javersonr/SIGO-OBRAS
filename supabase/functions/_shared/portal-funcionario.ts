@@ -99,3 +99,52 @@ export async function sha256Hex(texto: string): Promise<string> {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(texto));
   return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, "0")).join("");
 }
+
+/**
+ * JSON canônico: mesmas chaves, mesma ordem, sempre. Objetos têm as chaves ordenadas (recursivamente) e
+ * a saída não leva espaços; listas mantêm a ordem dos itens. Os valores seguem o `JSON.stringify`
+ * (`undefined` some do objeto, vira `null` na lista, `NaN` vira `null`).
+ *
+ * Existe porque `dados` e `assinatura_aluno` do certificado vão para `jsonb`, que NÃO guarda a ordem das
+ * chaves (ordena por tamanho e depois alfabeticamente). Um hash do `JSON.stringify` do objeto original
+ * não dá para refazer a partir do que está no banco; o do JSON canônico dá.
+ */
+export function jsonCanonico(valor: unknown): string {
+  const normalizado = (v: unknown): unknown => {
+    // toJSON primeiro (Date, por exemplo), como o JSON.stringify faz
+    const x =
+      v !== null &&
+      typeof v === "object" &&
+      typeof (v as { toJSON?: unknown }).toJSON === "function"
+        ? (v as { toJSON: () => unknown }).toJSON()
+        : v;
+    if (Array.isArray(x)) return x.map((i) => normalizado(i));
+    if (x !== null && typeof x === "object") {
+      const saida: Record<string, unknown> = {};
+      for (const k of Object.keys(x).sort()) {
+        const i = (x as Record<string, unknown>)[k];
+        // o que o JSON.stringify descarta num objeto, descartamos também
+        if (i === undefined || typeof i === "function" || typeof i === "symbol") continue;
+        saida[k] = normalizado(i);
+      }
+      return saida;
+    }
+    return x;
+  };
+  return JSON.stringify(normalizado(valor)) ?? "null";
+}
+
+/**
+ * Versão do hash gravada na assinatura do certificado (`assinatura_aluno.hash_versao`). Sem ela (certificados
+ * emitidos antes da T10) o hash é o antigo: SHA-256 do `JSON.stringify` na ordem de montagem do objeto.
+ */
+export const HASH_VERSAO_CANONICO = 2;
+
+/** Hash do certificado (versão 2): SHA-256 do JSON canônico de `{ codigo, dados, assinatura }`. */
+export function hashDoCertificado(
+  codigo: string,
+  dados: unknown,
+  assinatura: unknown
+): Promise<string> {
+  return sha256Hex(jsonCanonico({ codigo, dados, assinatura }));
+}

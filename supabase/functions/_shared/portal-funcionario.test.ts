@@ -4,7 +4,14 @@
 // Só endereços de documentação (RFC 5737 e RFC 3849): nenhum IP real em repositório público.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { origemDaRequisicao, registrarEvento } from "./portal-funcionario.ts";
+import {
+  HASH_VERSAO_CANONICO,
+  hashDoCertificado,
+  jsonCanonico,
+  origemDaRequisicao,
+  registrarEvento,
+  sha256Hex,
+} from "./portal-funcionario.ts";
 
 const req = (headers: Record<string, string>) =>
   new Request("https://x.supabase.co/functions/v1/portal-funcionario", {
@@ -115,4 +122,120 @@ test("registrarEvento: falha ao gravar não derruba a ação principal", async (
   const supabase = fakeSupabase({ message: "falhou" });
   await assert.doesNotReject(() => registrarEvento(supabase, req({}), EVENTO));
   assert.equal(erro.mock.callCount(), 1);
+});
+
+// --------------------------------------------------------- jsonCanonico / hash do certificado
+// Dados sintéticos: nenhum nome, CPF ou empresa reais.
+
+test("jsonCanonico: ordena as chaves, sem espaços", () => {
+  assert.equal(jsonCanonico({ b: 1, a: 2 }), '{"a":2,"b":1}');
+  assert.equal(jsonCanonico([]), "[]");
+  assert.equal(jsonCanonico({}), "{}");
+});
+
+test("jsonCanonico: a ordenação vale em todos os níveis, inclusive dentro de listas", () => {
+  const um = {
+    z: {
+      y: 1,
+      x: [
+        { d: 1, c: 2 },
+        { b: 3, a: 4 },
+      ],
+    },
+    a: null,
+  };
+  const outro = {
+    a: null,
+    z: {
+      x: [
+        { c: 2, d: 1 },
+        { a: 4, b: 3 },
+      ],
+      y: 1,
+    },
+  };
+  assert.equal(jsonCanonico(um), '{"a":null,"z":{"x":[{"c":2,"d":1},{"a":4,"b":3}],"y":1}}');
+  assert.equal(jsonCanonico(um), jsonCanonico(outro));
+});
+
+test("jsonCanonico: a ordem dos itens de uma lista é preservada (lista não é conjunto)", () => {
+  assert.notEqual(jsonCanonico({ a: [1, 2] }), jsonCanonico({ a: [2, 1] }));
+});
+
+test("jsonCanonico: valores como no JSON.stringify (undefined some, null fica, texto escapado)", () => {
+  assert.equal(
+    jsonCanonico({ a: undefined, b: null, c: 1.5, d: true }),
+    '{"b":null,"c":1.5,"d":true}'
+  );
+  assert.equal(jsonCanonico([undefined, 1]), "[null,1]");
+  const texto = 'aspas " e \ barra\nlinha';
+  assert.equal(jsonCanonico({ t: texto }), JSON.stringify({ t: texto }));
+  assert.equal(jsonCanonico("ação — NR-1"), JSON.stringify("ação — NR-1"));
+  assert.equal(jsonCanonico(Number.NaN), "null");
+});
+
+test("jsonCanonico: o resultado volta a ser o mesmo valor (JSON.parse)", () => {
+  const v = { b: [1, { y: "á", x: null }], a: 0.1 + 0.2 };
+  assert.deepEqual(JSON.parse(jsonCanonico(v)), v);
+});
+
+const CERT = {
+  codigo: "ABCD-2345-WXYZ",
+  dados: {
+    aluno: { nome: "Aluno Teste", cpf: "00000000000", funcao: null },
+    curso: { nome: "Curso Teste", carga_horaria_horas: 8, aulas: [{ modulo: "1", titulo: "A" }] },
+    periodo: { inicio: "2026-10-01", conclusao: "2026-10-02", validade: "2027-10-02" },
+  },
+  assinatura: {
+    metodo: "senha_pessoal_portal_funcionario",
+    assinado_em: "2026-10-02T12:00:00.000Z",
+    ip: "203.0.113.9",
+    hash_versao: HASH_VERSAO_CANONICO,
+  },
+};
+
+test("hash do certificado: o mesmo conteúdo com chaves em outra ordem gera o mesmo hash", async () => {
+  const embaralhado = {
+    assinatura: {
+      ip: "203.0.113.9",
+      hash_versao: HASH_VERSAO_CANONICO,
+      assinado_em: "2026-10-02T12:00:00.000Z",
+      metodo: "senha_pessoal_portal_funcionario",
+    },
+    codigo: CERT.codigo,
+    dados: {
+      periodo: { validade: "2027-10-02", conclusao: "2026-10-02", inicio: "2026-10-01" },
+      curso: { aulas: [{ titulo: "A", modulo: "1" }], carga_horaria_horas: 8, nome: "Curso Teste" },
+      aluno: { funcao: null, cpf: "00000000000", nome: "Aluno Teste" },
+    },
+  };
+  const a = await hashDoCertificado(CERT.codigo, CERT.dados, CERT.assinatura);
+  const b = await hashDoCertificado(embaralhado.codigo, embaralhado.dados, embaralhado.assinatura);
+  assert.equal(a, b);
+  assert.match(a, /^[0-9a-f]{64}$/);
+});
+
+test("hash do certificado: é o SHA-256 do JSON canônico de { codigo, dados, assinatura }", async () => {
+  const esperado = await sha256Hex(
+    jsonCanonico({ codigo: CERT.codigo, dados: CERT.dados, assinatura: CERT.assinatura })
+  );
+  assert.equal(await hashDoCertificado(CERT.codigo, CERT.dados, CERT.assinatura), esperado);
+});
+
+test("hash do certificado: mudar qualquer campo, o código ou a assinatura muda o hash", async () => {
+  const base = await hashDoCertificado(CERT.codigo, CERT.dados, CERT.assinatura);
+  const nome = { ...CERT.dados, aluno: { ...CERT.dados.aluno, nome: "Outro Aluno" } };
+  assert.notEqual(await hashDoCertificado(CERT.codigo, nome, CERT.assinatura), base);
+  assert.notEqual(await hashDoCertificado("ABCD-2345-WXYA", CERT.dados, CERT.assinatura), base);
+  const ass = { ...CERT.assinatura, ip: "203.0.113.10" };
+  assert.notEqual(await hashDoCertificado(CERT.codigo, CERT.dados, ass), base);
+});
+
+test("hash do certificado: sobrevive à ida e volta pelo jsonb (undefined some, chaves reordenadas)", async () => {
+  const comUndefined = { ...CERT.dados, aluno: { ...CERT.dados.aluno, extra: undefined } };
+  const idaEVolta = JSON.parse(JSON.stringify(comUndefined));
+  assert.equal(
+    await hashDoCertificado(CERT.codigo, comUndefined, CERT.assinatura),
+    await hashDoCertificado(CERT.codigo, idaEVolta, CERT.assinatura)
+  );
 });

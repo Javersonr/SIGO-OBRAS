@@ -1,11 +1,18 @@
 /**
  * validar-certificado — consulta PÚBLICA de autenticidade de certificado EAD.
  *
- * { codigo } → { valido, revogado, certificado:{...} } com dados mínimos: o
- * CPF volta mascarado para a página não virar consulta de dados pessoais.
+ * { codigo } → { situacao, valido, revogado, vencido, integro, certificado:{...} } com dados
+ * mínimos: o CPF volta mascarado para a página não virar consulta de dados pessoais.
+ *
+ *  - integro: o hash gravado na emissão bate com `dados`, a assinatura e o código de hoje (false =
+ *    alguém mexeu no registro; null = certificado antigo cujo hash não dá para refazer);
+ *  - vencido: validade anterior ao dia de hoje em Brasília;
+ *  - situacao: "valido" | "vencido" | "revogado" | "divergente"; `valido` só é true em "valido".
+ * As regras estão em ./regras.ts (com teste).
  */
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
+import { avaliarCertificado } from "./regras.ts";
 
 function mascararCpf(cpf?: string | null) {
   const d = (cpf || "").replace(/\D/g, "");
@@ -38,10 +45,15 @@ Deno.serve(
     if (!cert) return ok({ valido: false, encontrado: false });
 
     const d = cert.dados ?? {};
+    const av = await avaliarCertificado(cert, new Date());
     return ok({
       encontrado: true,
-      valido: !cert.revogado_em,
-      revogado: !!cert.revogado_em,
+      situacao: av.situacao,
+      valido: av.valido,
+      revogado: av.revogado,
+      vencido: av.vencido,
+      integro: av.integro,
+      hash_versao: av.hash_versao,
       motivo_revogacao: cert.revogado_em ? cert.motivo_revogacao : null,
       certificado: {
         codigo: cert.codigo,
@@ -52,7 +64,7 @@ Deno.serve(
         modalidade: d.curso?.modalidade,
         inicio: d.periodo?.inicio,
         conclusao: d.periodo?.conclusao,
-        validade: d.periodo?.validade,
+        validade: av.validade,
         empresa: d.empresa?.nome,
         cnpj: d.empresa?.cnpj,
         responsavel_tecnico: d.responsavel_tecnico,

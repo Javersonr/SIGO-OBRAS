@@ -3,14 +3,22 @@ import { sigo } from "@/api/sigoClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ShieldCheck, ShieldX, Loader2, Search } from "lucide-react";
+import { ShieldCheck, ShieldAlert, ShieldX, Loader2, Search } from "lucide-react";
+import { apresentacaoDoResultado, avisoDeIntegridade, dataBr } from "@/lib/validacao-certificado";
 
-const fmtData = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
+const fmtData = dataBr;
 const fmtCnpj = (c) => {
   const d = (c || "").replace(/\D/g, "");
   return d.length === 14
     ? `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`
     : c || "";
+};
+
+// cor e ícone de cada estado da validação (a decisão é do servidor; ver lib/validacao-certificado.js)
+const ESTILO = {
+  verde: { Icone: ShieldCheck, card: "border-emerald-300", texto: "text-emerald-700" },
+  ambar: { Icone: ShieldAlert, card: "border-amber-300", texto: "text-amber-700" },
+  vermelho: { Icone: ShieldX, card: "border-red-300", texto: "text-red-700" },
 };
 
 /**
@@ -45,6 +53,9 @@ export default function ValidarCertificado() {
   }, []);
 
   const c = resultado?.certificado;
+  const apresentacao = c ? apresentacaoDoResultado(resultado, { validade: c.validade }) : null;
+  const estilo = apresentacao ? ESTILO[apresentacao.tom] : null;
+  const aviso = c ? avisoDeIntegridade(resultado) : null;
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-start justify-center p-4 pt-12">
@@ -91,21 +102,16 @@ export default function ValidarCertificado() {
           </Card>
         )}
 
-        {c && (
-          <Card className={resultado.valido ? "border-emerald-300" : "border-red-300"}>
+        {c && apresentacao && (
+          <Card className={estilo.card}>
             <CardContent className="p-5 space-y-3">
-              <div
-                className={`flex items-center gap-2 font-semibold ${
-                  resultado.valido ? "text-emerald-700" : "text-red-700"
-                }`}
-              >
-                {resultado.valido ? (
-                  <ShieldCheck className="w-6 h-6" />
-                ) : (
-                  <ShieldX className="w-6 h-6" />
-                )}
-                {resultado.valido ? "Certificado autêntico" : "Certificado REVOGADO"}
+              <div className={`flex items-center gap-2 font-semibold ${estilo.texto}`}>
+                <estilo.Icone className="w-6 h-6" />
+                {apresentacao.titulo}
               </div>
+              {apresentacao.detalhe && (
+                <p className={`text-sm ${estilo.texto}`}>{apresentacao.detalhe}</p>
+              )}
               {resultado.revogado && resultado.motivo_revogacao && (
                 <p className="text-sm text-red-700">Motivo: {resultado.motivo_revogacao}</p>
               )}
@@ -153,6 +159,7 @@ export default function ValidarCertificado() {
                 <dt className="text-slate-500">Código</dt>
                 <dd className="font-mono">{c.codigo}</dd>
               </dl>
+              {aviso && <p className="text-xs text-slate-500">{aviso}</p>}
               <p className="text-[10px] text-slate-400 break-all">SHA-256: {c.hash_sha256}</p>
             </CardContent>
           </Card>
