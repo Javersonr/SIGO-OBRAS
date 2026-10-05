@@ -7,7 +7,7 @@
 **Architecture:**
 
 - **Lógica pura em `apps/web/src/lib/`, testada com Vitest:** `cronograma-ff.js` (contas inteiras: % em centésimos, R$ em centavos, meses e reperiodização), `cronograma-modelo.js` (leitura da aba `Cronograma` e a 3ª aba do `gerarModelo`), `xlsx-celulas.js` (utilitários de célula do SheetJS, compartilhados com o `orcamento-modelo.js`), `cronograma-export.js` (PDF e Excel, com o cabeçalho, o nome do arquivo, o jsPDF e o esqueleto de layout da proposta) e `fila-gravacao.js` (gravação com espera, em ordem).
-- **Tela:** `CronogramaFisicoFinanceiro.jsx`, `ImportarCronogramaDialog.jsx` e `ExportarCronogramaDialog.jsx` em `components/oportunidades/`, ligados no `OportunidadeDetalhe.jsx` (aba Planejamento, acima do `DiarioObraTab`). O quadro grava o objeto inteiro em `oportunidade.cronograma_ff` (migração aditiva `0133`); o R$ nunca é gravado.
+- **Tela:** `CronogramaFisicoFinanceiro.jsx`, `ImportarCronogramaDialog.jsx` e `ExportarCronogramaDialog.jsx` em `components/oportunidades/`, ligados no `OportunidadeDetalhe.jsx` (aba Planejamento, acima do `DiarioObraTab`); o `CamposDeExportacao.jsx` (hook do representante legal, bloco de campos e seletor PDF/Excel) é dividido com o `ExportarPropostaDialog.jsx`. O quadro grava o objeto inteiro em `oportunidade.cronograma_ff` (migração aditiva `0133`); o R$ nunca é gravado.
 - **Skill do Claude** `orcamento-prefeitura-sigo`: seção Cronograma e o código Python com a 3ª aba. Nenhuma Edge Function nova ou alterada.
 
 **Tech Stack:** React 18 + Vite 6 (JavaScript), SheetJS `xlsx` 0.18.5 (sem estilos), `jspdf` 2.5.2 + `jspdf-autotable` 3.8.4 (do Orçamento), Vitest 3 (ambiente node, sem DOM), Supabase pelo `sigo.entities`, Python 3 + openpyxl (skill).
@@ -51,6 +51,7 @@
 - **Sem dependência circular e sem cópia (Task 2):** `orcamento-modelo.js` importa o nome e o cabeçalho de `cronograma-modelo.js`, que não importa `orcamento-modelo.js`; os utilitários de célula (`normalizarRotulo`, `acharAba`, `celula`, `formulaSemValor`, `semValor`, `vazia`, `textoCelula` e `formatoData`) saem do `orcamento-modelo.js` para o módulo neutro `xlsx-celulas.js`, que os dois importam. Uma cópia já tinha divergido no `formatoData` (sem `z`, o do orçamento reconhece a data pelo texto exibido).
 - **Skill mais estrita que o SIGO (Task 3):** o código Python exige Item em texto e % numérico, porque quem grava é o próprio código; `pct_da_linha` converte R$ em % com a diferença no último mês com valor.
 - **Sem cópia da proposta (Task 4):** `montarCabecalhoLicitacao` sai de dentro de `montarDadosProposta` (o resultado da proposta não muda) e `cabecalhoDoDocumento`, `linhasAssinatura`, `textoPdf` e o novo `carregarJsPdf` passam a ser exportados por `proposta-export.js`; `nomeArquivoCronograma` reaproveita `nomeArquivoProposta`. O esqueleto de layout também é um só: `criarPdf` (A4 paisagem e escritor de linhas), `escreverTopoPdf`, `escreverAssinaturaPdf`, `numerarPaginasPdf` e, no Excel, `criarPlanilha`, `escreverTopoPlanilha` e `escreverAssinaturaPlanilha` saem de `gerarPdfProposta` e `montarPlanilhaProposta`, que passam a usá-los (PDF e planilha da proposta idênticos aos de antes, conferidos byte a byte, fora a data de criação do PDF); uma mudança de margem, fonte, rodapé ou assinatura vale para os dois documentos.
+- **Sem cópia do diálogo da proposta (Task 6):** o `localDaEmpresa` vai para `lib/proposta-orcamento.js` (com 3 testes; o `montarEmpresa` também o usa) e o hook `useRepresentanteDaEmpresa`, o bloco `RepresentanteLegalCampos` e o `SeletorFormatoExportacao` ficam num só arquivo, `CamposDeExportacao.jsx`, usado pelo `ExportarCronogramaDialog.jsx` e pelo `ExportarPropostaDialog.jsx`. Os ids dos campos não mudam (prefixo por prop) e a proposta não muda de tela nem de comportamento; cada diálogo guarda só o que é dele (formato e data, e na proposta validade e registro de versão).
 - **Excel (Task 4):** cada etapa em 2 linhas com Item, Etapa, Valor e % do total mesclados; % gravado como fração com formato `0.00%`; mês com 0% em branco; acima de 255 etapas, `SUM` de `SUM`s.
 - **PDF (Task 4):** cada etapa é **uma** linha da tabela com o R$ e o % em duas linhas de texto (o par não se separa na quebra de página); a quebra horizontal liga com mais de 12 meses **ou** quando as colunas não cabem na largura útil. As colunas Item, Valor, % do total e meses têm a largura do maior texto delas (em negrito, com folga de 0,5 mm) e mínimos pequenos, calibrados para **12 meses caberem numa página até R$ 9.999.999,99 de total** (acima disso a tabela de 12 meses pode quebrar na horizontal; o número nunca quebra em 2 linhas).
 - **Linha órfã fora da exportação e dos totais:** `resumoCronograma` só soma as etapas do orçamento.
@@ -60,7 +61,7 @@
 - **Exportar entre as Tasks 5 e 6:** a Task 5 deixa a âncora `{/* EXPORTAR_CRONOGRAMA */}` na barra de botões, fora de qualquer condição de `podeEditar`; a Task 6 troca a âncora pelo `BotaoExportarCronograma` (export extra do `ExportarCronogramaDialog.jsx`), visível também para quem só vê a aba, que exporta o estado local do quadro (o `selectedOp` pode estar atrás da tela).
 - **Imbé de Minas (Task 7):** a planilha feita à mão não redistribui a curva: copia as 5 parcelas preenchidas do CFF de 12 parcelas. O equivalente no SIGO é **Meses 12 → 5**; o roteiro mostra também o **Reperiodizar 12 → 5** como o outro critério, com a diferença explicada. O arquivo de teste promove os grupos 1.1 a 1.6 do edital a etapas 1 a 6.
 - **Onde se trabalha:** no `master` do checkout principal, como o plano do Orçamento (a base dele está lá, ainda não publicada), com commit parcial por task; a Task 7 trata o risco de outra sessão publicar antes (Step 1) e só publica com o OK do Javerson.
-- **Conferência de 05/10** (cópia do `master` `37ad85c` fora do repositório): as Tasks 1 a 6 aplicadas em ordem, com todas as âncoras únicas no momento da troca; Prettier sem mudança; Vitest com 40 arquivos e 515 testes (base 36/433; a Task 1 ganhou depois 1 teste de `lerPercentual` com `number`, e a suíte passou a 516; a Task 2 ganhou depois 1 teste da faixa arredondada da célula numérica, e a suíte passou a 517; a Task 2 passou depois a mover os utilitários de célula para o `xlsx-celulas.js`, conferido no worktree com Vitest, lint e build, sem mudar nenhuma contagem; a Task 4 passou depois a medir as colunas do PDF pelo maior texto (12 meses numa página até R$ 9.999.999,99), a dividir o esqueleto de layout do PDF e do Excel com a proposta e a testar o número que não quebra, com 1 teste a mais, e a suíte passou a 518, conferida no worktree com Vitest, lint e build; a Task 4 passou depois a não partir local/data e assinatura entre páginas (`garantirEspaco` e `alturaAssinaturaPdf`), com 1 teste a mais, e a suíte passou a 519, conferida no worktree com Vitest, lint e build); `npm run lint`, `no-undef` e `vite build` sem erro, com os chunks esperados; o código Python da skill e os números da Task 7 (Itatinga e Imbé) recalculados sobre cópias das planilhas.
+- **Conferência de 05/10** (cópia do `master` `37ad85c` fora do repositório): as Tasks 1 a 6 aplicadas em ordem, com todas as âncoras únicas no momento da troca; Prettier sem mudança; Vitest com 40 arquivos e 515 testes (base 36/433; a Task 1 ganhou depois 1 teste de `lerPercentual` com `number`, e a suíte passou a 516; a Task 2 ganhou depois 1 teste da faixa arredondada da célula numérica, e a suíte passou a 517; a Task 2 passou depois a mover os utilitários de célula para o `xlsx-celulas.js`, conferido no worktree com Vitest, lint e build, sem mudar nenhuma contagem; a Task 4 passou depois a medir as colunas do PDF pelo maior texto (12 meses numa página até R$ 9.999.999,99), a dividir o esqueleto de layout do PDF e do Excel com a proposta e a testar o número que não quebra, com 1 teste a mais, e a suíte passou a 518, conferida no worktree com Vitest, lint e build; a Task 4 passou depois a não partir local/data e assinatura entre páginas (`garantirEspaco` e `alturaAssinaturaPdf`), com 1 teste a mais, e a suíte passou a 519, conferida no worktree com Vitest, lint e build; a Task 6 passou depois a dividir com o `ExportarPropostaDialog` o `localDaEmpresa`, o hook do representante legal, o bloco de campos e o seletor PDF/Excel (`CamposDeExportacao.jsx`), com 3 testes a mais na lib, e a suíte passou a 522, conferida no worktree com Vitest, lint e build); `npm run lint`, `no-undef` e `vite build` sem erro, com os chunks esperados; o código Python da skill e os números da Task 7 (Itatinga e Imbé) recalculados sobre cópias das planilhas.
 
 ---
 
@@ -80,7 +81,8 @@ Anote as linhas `Test Files  N passed` e `Tests  M passed`. A suíte cresce assi
 | Task 2      | `N + 2`  | `M + 57` | 38 e 490            |
 | Task 3      | `N + 2`  | `M + 58` | 38 e 491            |
 | Task 4      | `N + 3`  | `M + 78` | 39 e 511            |
-| Tasks 5 e 6 | `N + 4`  | `M + 86` | 40 e 519            |
+| Task 5      | `N + 4`  | `M + 86` | 40 e 519            |
+| Task 6      | `N + 4`  | `M + 89` | 40 e 522            |
 
 **Regras para todas as tasks:**
 
@@ -5533,20 +5535,28 @@ Expected: o assunto do commit e `6 files changed`, só esses caminhos. Se o hook
 
 **Files:**
 
+- Create: `apps/web/src/components/oportunidades/CamposDeExportacao.jsx` (as peças que o diálogo do cronograma divide com o "Exportar proposta": o hook do representante legal, o bloco de campos dele e o seletor PDF/Excel)
 - Create: `apps/web/src/components/oportunidades/ExportarCronogramaDialog.jsx`
+- Modify: `apps/web/src/components/oportunidades/ExportarPropostaDialog.jsx` (passa a usar as peças em comum; a tela e o comportamento da proposta não mudam)
+- Modify: `apps/web/src/lib/proposta-orcamento.js` (`localDaEmpresa`, que o `montarEmpresa` também passa a usar)
 - Modify: `apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx` (criado na Task 5: a linha do import do `ImportarCronogramaDialog` e a âncora `{/* EXPORTAR_CRONOGRAMA */}`)
-- Test: sem teste de componente (Vitest em node, sem DOM). A lógica está nas Tasks 1 e 4; os componentes são verificados por ESLint, build e o roteiro da Task 7.
+- Test: `apps/web/src/lib/proposta-orcamento.test.js` (3 testes do `localDaEmpresa`). Sem teste de componente (Vitest em node, sem DOM): o hook, os campos e os diálogos são verificados por ESLint, build e o roteiro da Task 7.
 
 **Interfaces:**
 
 - Consumes (Task 1, `@/lib/cronograma-ff`, import estático): `normalizarCronograma`, `resumoCronograma` (`todasFecham`, `linhas`, `meses`, `totalCentavos`).
 - Consumes (Task 4, `@/lib/cronograma-export`, **import dinâmico** no "Gerar"): `montarDadosCronograma`, `nomeArquivoCronograma`, `baixarCronogramaPdf`, `baixarCronogramaExcel`.
-- Consumes (Orçamento, já no `master`): `validarRepresentante` (`@/lib/proposta-orcamento`), `formatarCpf` (`@/lib/cpf`), `formatBRL` (`@/lib/formatters`), `sigo.entities.Empresa.get`.
+- Consumes (Orçamento, já no `master`): `validarRepresentante` (`@/lib/proposta-orcamento`), `formatBRL` (`@/lib/formatters`) e, só dentro do `CamposDeExportacao.jsx`, `formatarCpf` (`@/lib/cpf`) e `sigo.entities.Empresa.get`.
 - Consumes (Task 5, `CronogramaFisicoFinanceiro.jsx`):
   - a linha `import ImportarCronogramaDialog from "./ImportarCronogramaDialog";`;
   - a âncora `{/* EXPORTAR_CRONOGRAMA */}`, uma vez, na barra de botões e **fora** de qualquer condição de `podeEditar` (exportar não grava nada);
   - as props `selectedOp` e `empresaAtiva` e, no corpo do componente, `etapas` (o `EtapaCron[]` de `etapasDoOrcamento`) e `cronograma` (o estado local, `Cronograma` normalizado, o mesmo que a grade mostra).
 - Produces:
+  - `localDaEmpresa(empresa)` (`@/lib/proposta-orcamento`): "Cidade/UF" da empresa; só uma das partes quando falta a outra; `""` sem nenhuma;
+  - `CamposDeExportacao.jsx` (exports nomeados, usados pelos dois diálogos):
+    - `useRepresentanteDaEmpresa(open, empresaAtiva)` → `{ empresa, local, setLocal, representante, setRepresentante, carregando }`: ao abrir parte da empresa da sessão e lê `Empresa.get` de novo; nada é gravado;
+    - `RepresentanteLegalCampos`, props `{ idPrefixo, representante, setRepresentante, empresa, carregando, gerando }` (ids `<idPrefixo>-rep-nome`, `-rep-cargo` e `-rep-cpf`);
+    - `SeletorFormatoExportacao`, props `{ formato, setFormato, gerando }`;
   - `ExportarCronogramaDialog` (default export), props `{ open, onOpenChange, selectedOp, empresaAtiva, etapas, cronograma }` (contrato);
   - **extra (fora do contrato):** `BotaoExportarCronograma` (export nomeado do mesmo arquivo), props `{ selectedOp, empresaAtiva, etapas, cronograma }`: o botão "Exportar" com o próprio estado de abertura e o diálogo. Assim o quadro só precisa de uma linha de import e da âncora, sem estado novo.
 
@@ -5556,34 +5566,322 @@ Expected: o assunto do commit e `6 files changed`, só esses caminhos. Se o hook
 - **Dados exportados:** os `etapas` e `cronograma` do quadro (estado local), não o `selectedOp.cronograma_ff`. A grade grava com 1 s de espera, e no `CalendarioConsolidado` o `setSelectedOp` é vazio: o `selectedOp` pode estar atrás da tela.
 - **Diálogo**, no padrão do "Exportar proposta":
   - campos: formato (PDF/Excel), local (padrão Cidade/UF da empresa), data (hoje) e representante (nome, cargo e CPF com máscara);
-  - representante lido de `Empresa.get(empresaAtiva.id)` ao abrir; enquanto carrega, os campos e o "Gerar" ficam desabilitados;
+  - representante lido de `Empresa.get(empresaAtiva.id)` ao abrir; enquanto carrega, os campos do representante e o "Gerar" ficam desabilitados;
   - sem validade e sem "registrar versão" (não há versão de cronograma, spec §7);
   - validações no "Gerar", com toast: cronograma vazio, linha que não fecha, `validarRepresentante` e data;
-  - o aviso vermelho e o "Gerar" desabilitado repetem a regra do botão;
-  - o `localDaEmpresa` (5 linhas) é repetido do `ExportarPropostaDialog`, para não mexer nele nem exportar função de um arquivo de componente.
-- **Conferido no rascunho** (fora do repositório, com um quadro provisório no lugar do da Task 5): as duas trocas do Step 4, o lint com `no-undef` e o `vite build`, com o `cronograma-export` num chunk próprio que importa o `proposta-export` e o `xlsx`.
+  - o aviso vermelho e o "Gerar" desabilitado repetem a regra do botão.
+- **Sem cópia do "Exportar proposta":** os dois diálogos dividem o `localDaEmpresa` (na lib, com teste), o hook `useRepresentanteDaEmpresa`, o bloco `RepresentanteLegalCampos` e o `SeletorFormatoExportacao`, todos no `CamposDeExportacao.jsx`; os ids dos campos continuam `proposta-rep-*` e `cronograma-rep-*`, pelo prefixo. Cada diálogo guarda só o que é dele: formato e data (mais validade e registro de versão, na proposta) e o efeito que os repõe ao abrir. Uma regra nova (origem do representante, máscara do CPF, local padrão) muda num lugar só. A tela e o comportamento da proposta não mudam; o `montarEmpresa` da lib também usa o `localDaEmpresa`, em vez da conta igual que tinha por dentro.
+- **Conferido:** as duas trocas do Step 7 e o `vite build` numa cópia fora do repositório (com um quadro provisório no lugar do da Task 5); os Steps 2 a 6 e 8 e 9 no worktree `feat/cronograma-ff` (Vitest com 40 arquivos e 522 testes, `npm run lint`, `no-undef` e `vite build`), com o `cronograma-export` num chunk próprio que importa o `proposta-export` e o `xlsx`. As trocas e os arquivos dos Steps 2 a 5 foram refeitos a partir do texto deste plano e batem com os do commit.
 - **Não teste no `npm run dev` antes da Task 7:** o dev aponta para o Supabase de produção, e sem a 0133 o quadro não grava `cronograma_ff` (PGRST204).
 
-- [ ] **Step 1: Linha de base do lint e conferência do quadro da Task 5**
+- [ ] **Step 1: Linha de base do lint e conferência do quadro da Task 5 e do diálogo da proposta**
 
 ```bash
 (cd apps/web && npx eslint --rule "no-undef: error" src/components/oportunidades/CronogramaFisicoFinanceiro.jsx; echo "exit $?")
 grep -c "{/\* EXPORTAR_CRONOGRAMA \*/}" apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx
 grep -c '^import ImportarCronogramaDialog from "./ImportarCronogramaDialog";$' apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx
 grep -cE "const etapas = |const \[cronograma, setCronograma\] = " apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx
+grep -c "^const localDaEmpresa = " apps/web/src/components/oportunidades/ExportarPropostaDialog.jsx
+grep -c "const cidadeUf = \[emp.cidade, emp.estado\]" apps/web/src/lib/proposta-orcamento.js
 ```
 
-Expected: o lint como a Task 5 deixou (`exit 0`, anote os avisos, se houver), depois `1`, `1` e `2`. Se a contagem não bater, **pare**: os nomes vêm da Task 5 (Consumes acima) e precisam ser acertados lá antes desta task.
+Expected: o lint como a Task 5 deixou (`exit 0`, anote os avisos, se houver), depois `1`, `1`, `2`, `1` e `1` (os dois últimos são as origens do `localDaEmpresa` que os Steps 2 e 5 trocam). Se a contagem não bater, **pare**: os nomes do quadro vêm da Task 5 (Consumes acima) e precisam ser acertados lá antes desta task.
 
-- [ ] **Step 2: Criar `apps/web/src/components/oportunidades/ExportarCronogramaDialog.jsx`**
+- [ ] **Step 2: `localDaEmpresa` na lib, com 3 testes (o teste primeiro)**
+
+Aplique com a ferramenta **Edit** em `apps/web/src/lib/proposta-orcamento.test.js` (cada `old` aparece uma única vez; confira com o `grep -c` do Step 1 que o arquivo ainda é o do Orçamento).
+
+2.1 — o import
+
+old:
 
 <!-- prettier-ignore -->
 ```jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+  descricaoVersaoProposta,
+  montarDadosProposta,
+```
+
+new:
+
+<!-- prettier-ignore -->
+```jsx
+  descricaoVersaoProposta,
+  localDaEmpresa,
+  montarDadosProposta,
+```
+
+2.2 — os 3 testes, antes do `describe` da `montarDadosProposta`
+
+old:
+
+<!-- prettier-ignore -->
+```jsx
+describe("montarDadosProposta", () => {
+```
+
+new:
+
+<!-- prettier-ignore -->
+```jsx
+describe("localDaEmpresa", () => {
+  it("cidade e UF viram Cidade/UF, sem os espaços das pontas", () => {
+    expect(localDaEmpresa({ cidade: " Itatinga ", estado: "SP" })).toBe("Itatinga/SP");
+  });
+
+  it("só uma das partes vira só ela, sem barra", () => {
+    expect(localDaEmpresa({ cidade: "Itatinga", estado: "" })).toBe("Itatinga");
+    expect(localDaEmpresa({ cidade: null, estado: "SP" })).toBe("SP");
+  });
+
+  it("sem cidade nem UF, vazio (também com empresa nula ou indefinida)", () => {
+    expect(localDaEmpresa({ cidade: "  ", estado: undefined })).toBe("");
+    expect(localDaEmpresa(null)).toBe("");
+    expect(localDaEmpresa(undefined)).toBe("");
+  });
+});
+
+describe("montarDadosProposta", () => {
+```
+
+Rode o teste (na raiz):
+
+```bash
+(cd apps/web && npx vitest run src/lib/proposta-orcamento.test.js 2>&1 | tail -8)
+```
+
+Expected: **falha**, `3 failed | 16 passed` (`localDaEmpresa is not a function`; o arquivo ainda não exporta a função).
+
+Agora aplique com a ferramenta **Edit** em `apps/web/src/lib/proposta-orcamento.js`:
+
+2.3 — a função, logo depois do `texto`
+
+old:
+
+<!-- prettier-ignore -->
+```jsx
+const texto = (v) => String(v ?? "").trim();
+```
+
+new:
+
+<!-- prettier-ignore -->
+```jsx
+const texto = (v) => String(v ?? "").trim();
+
+/** "Cidade/UF" da empresa (só uma das partes, se faltar a outra; "" sem nenhuma). */
+export function localDaEmpresa(empresa) {
+  return [empresa?.cidade, empresa?.estado].map(texto).filter(Boolean).join("/");
+}
+```
+
+2.4 — o `montarEmpresa` usa a função em vez da conta igual
+
+old:
+
+<!-- prettier-ignore -->
+```jsx
+const cidadeUf = [emp.cidade, emp.estado].map(texto).filter(Boolean).join("/");
+```
+
+new:
+
+<!-- prettier-ignore -->
+```jsx
+const cidadeUf = localDaEmpresa(emp);
+```
+
+Rode de novo:
+
+```bash
+(cd apps/web && npx vitest run src/lib/proposta-orcamento.test.js 2>&1 | tail -8)
+```
+
+Expected: `Test Files  1 passed (1)` e `Tests  19 passed (19)` (os 16 de antes, que cobrem o `montarEmpresa`, mais os 3 novos).
+
+- [ ] **Step 3: Criar `apps/web/src/components/oportunidades/CamposDeExportacao.jsx`**
+
+<!-- prettier-ignore -->
+```jsx
+import React, { useEffect, useRef, useState } from "react";
+import { FileSpreadsheet, FileText, Loader2 } from "lucide-react";
+import { sigo } from "@/api/sigoClient";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { formatarCpf } from "@/lib/cpf";
+import { localDaEmpresa } from "@/lib/proposta-orcamento";
+
+/**
+ * Peças em comum dos diálogos "Exportar proposta" e "Exportar cronograma": a empresa, o local
+ * e o representante legal (o hook), o bloco de campos do representante e o seletor PDF/Excel.
+ * Uma regra nova (de onde vem o representante, a máscara do CPF, o local padrão) muda só aqui.
+ */
+
+/**
+ * Empresa, local e representante legal de um diálogo de exportação.
+ *
+ * Ao abrir, parte da empresa da sessão e lê `Empresa.get` de novo (a da sessão pode ser
+ * anterior à migração 0127, sem `representante_*`). Local e representante podem ser editados
+ * só para a exportação: nada é gravado. `carregando` vale enquanto a leitura não volta.
+ */
+export function useRepresentanteDaEmpresa(open, empresaAtiva) {
+  const [empresa, setEmpresa] = useState(null);
+  const [local, setLocal] = useState("");
+  const [representante, setRepresentante] = useState({ nome: "", cargo: "", cpf: "" });
+  const [carregando, setCarregando] = useState(false);
+
+  // a empresa da sessão entra só como ponto de partida ao abrir; mudar de
+  // referência depois não pode apagar o que o usuário já digitou
+  const empresaAtivaRef = useRef(empresaAtiva);
+  empresaAtivaRef.current = empresaAtiva;
+  const empresaId = empresaAtiva?.id;
+
+  useEffect(() => {
+    if (!open || !empresaId) return undefined;
+    let cancelado = false;
+    const preencher = (e) => {
+      setEmpresa(e || null);
+      setLocal(localDaEmpresa(e));
+      setRepresentante({
+        nome: e?.representante_nome || "",
+        cargo: e?.representante_cargo || "",
+        cpf: e?.representante_cpf ? formatarCpf(e.representante_cpf) : "",
+      });
+    };
+    preencher(empresaAtivaRef.current);
+    setCarregando(true);
+    sigo.entities.Empresa.get(empresaId)
+      .then((e) => {
+        if (!cancelado && e) preencher(e);
+      })
+      .catch((err) => console.error("Erro ao carregar a empresa:", err))
+      .finally(() => {
+        if (!cancelado) setCarregando(false);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [open, empresaId]);
+
+  return { empresa, local, setLocal, representante, setRepresentante, carregando };
+}
+
+/** Seletor PDF / Excel. */
+export function SeletorFormatoExportacao({ formato, setFormato, gerando }) {
+  return (
+    <div>
+      <Label className="text-xs text-slate-600">Formato</Label>
+      <div className="mt-1 flex gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={formato === "pdf" ? "default" : "outline"}
+          onClick={() => setFormato("pdf")}
+          disabled={gerando}
+        >
+          <FileText className="w-4 h-4" />
+          PDF
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={formato === "xlsx" ? "default" : "outline"}
+          onClick={() => setFormato("xlsx")}
+          disabled={gerando}
+        >
+          <FileSpreadsheet className="w-4 h-4" />
+          Excel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Bloco "Representante legal" (nome, cargo e CPF com máscara). `idPrefixo` separa os ids dos
+ * campos de cada diálogo (`<idPrefixo>-rep-nome`, `-rep-cargo` e `-rep-cpf`); `empresa` só
+ * entra com o `responsavel_principal` como dica do nome.
+ */
+export function RepresentanteLegalCampos({
+  idPrefixo,
+  representante,
+  setRepresentante,
+  empresa,
+  carregando,
+  gerando,
+}) {
+  const mudar = (campo) => (e) =>
+    setRepresentante((prev) => ({
+      ...prev,
+      [campo]: campo === "cpf" ? formatarCpf(e.target.value) : e.target.value,
+    }));
+
+  return (
+    <div className="rounded-md border p-3 space-y-3">
+      <p className="text-sm font-medium text-slate-700">
+        Representante legal
+        {carregando && <Loader2 className="ml-2 inline w-3.5 h-3.5 animate-spin" />}
+      </p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="sm:col-span-3">
+          <Label htmlFor={`${idPrefixo}-rep-nome`} className="text-xs text-slate-600">
+            Nome *
+          </Label>
+          <Input
+            id={`${idPrefixo}-rep-nome`}
+            value={representante.nome}
+            onChange={mudar("nome")}
+            placeholder={empresa?.responsavel_principal || ""}
+            disabled={gerando || carregando}
+            className="mt-1"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <Label htmlFor={`${idPrefixo}-rep-cargo`} className="text-xs text-slate-600">
+            Cargo
+          </Label>
+          <Input
+            id={`${idPrefixo}-rep-cargo`}
+            value={representante.cargo}
+            onChange={mudar("cargo")}
+            placeholder="Sócio-administrador"
+            disabled={gerando || carregando}
+            className="mt-1"
+          />
+        </div>
+        <div>
+          <Label htmlFor={`${idPrefixo}-rep-cpf`} className="text-xs text-slate-600">
+            CPF
+          </Label>
+          <Input
+            id={`${idPrefixo}-rep-cpf`}
+            inputMode="numeric"
+            value={representante.cpf}
+            onChange={mudar("cpf")}
+            placeholder="000.000.000-00"
+            disabled={gerando || carregando}
+            className="mt-1"
+          />
+        </div>
+      </div>
+      <p className="text-xs text-slate-500">
+        {
+          "Vale só para esta exportação. O padrão fica em Configurações → Empresa → Representante legal."
+        }
+      </p>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 4: Criar `apps/web/src/components/oportunidades/ExportarCronogramaDialog.jsx`**
+
+<!-- prettier-ignore -->
+```jsx
+import React, { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import { FileDown, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
-import { sigo } from "@/api/sigoClient";
+import { FileDown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -5596,17 +5894,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatBRL } from "@/lib/formatters";
-import { formatarCpf } from "@/lib/cpf";
 import { normalizarCronograma, resumoCronograma } from "@/lib/cronograma-ff";
 import { validarRepresentante } from "@/lib/proposta-orcamento";
+import {
+  RepresentanteLegalCampos,
+  SeletorFormatoExportacao,
+  useRepresentanteDaEmpresa,
+} from "./CamposDeExportacao";
 
 const AVISO_NAO_FECHA = "Todas as etapas precisam somar 100,00% para exportar";
-
-const localDaEmpresa = (e) =>
-  [e?.cidade, e?.estado]
-    .map((v) => String(v ?? "").trim())
-    .filter(Boolean)
-    .join("/");
 
 /** Resumo do cronograma como a tela mostra (as etapas do orçamento, sem as órfãs). */
 function useResumo(etapas, cronograma) {
@@ -5637,46 +5933,17 @@ export default function ExportarCronogramaDialog({
   cronograma,
 }) {
   const [formato, setFormato] = useState("pdf");
-  const [local, setLocal] = useState("");
   const [data, setData] = useState("");
-  const [representante, setRepresentante] = useState({ nome: "", cargo: "", cpf: "" });
-  const [empresa, setEmpresa] = useState(null);
-  const [carregando, setCarregando] = useState(false);
   const [gerando, setGerando] = useState(false);
-
-  // a empresa da sessão entra só como ponto de partida ao abrir; mudar de
-  // referência depois não pode apagar o que o usuário já digitou
-  const empresaAtivaRef = useRef(empresaAtiva);
-  empresaAtivaRef.current = empresaAtiva;
+  const { empresa, local, setLocal, representante, setRepresentante, carregando } =
+    useRepresentanteDaEmpresa(open, empresaAtiva);
   const empresaId = empresaAtiva?.id;
 
+  // ao abrir: PDF e a data de hoje
   useEffect(() => {
-    if (!open || !empresaId) return undefined;
-    let cancelado = false;
-    const preencher = (e) => {
-      setEmpresa(e || null);
-      setLocal(localDaEmpresa(e));
-      setRepresentante({
-        nome: e?.representante_nome || "",
-        cargo: e?.representante_cargo || "",
-        cpf: e?.representante_cpf ? formatarCpf(e.representante_cpf) : "",
-      });
-    };
+    if (!open || !empresaId) return;
     setFormato("pdf");
     setData(format(new Date(), "yyyy-MM-dd"));
-    preencher(empresaAtivaRef.current);
-    setCarregando(true);
-    sigo.entities.Empresa.get(empresaId)
-      .then((e) => {
-        if (!cancelado && e) preencher(e);
-      })
-      .catch((err) => console.error("Erro ao carregar a empresa:", err))
-      .finally(() => {
-        if (!cancelado) setCarregando(false);
-      });
-    return () => {
-      cancelado = true;
-    };
   }, [open, empresaId]);
 
   const resumo = useResumo(etapas, cronograma);
@@ -5736,12 +6003,6 @@ export default function ExportarCronogramaDialog({
     }
   };
 
-  const mudarRep = (campo) => (e) =>
-    setRepresentante((prev) => ({
-      ...prev,
-      [campo]: campo === "cpf" ? formatarCpf(e.target.value) : e.target.value,
-    }));
-
   return (
     <Dialog
       open={open}
@@ -5762,31 +6023,7 @@ export default function ExportarCronogramaDialog({
         <div className="space-y-4">
           {!resumo.todasFecham && <p className="text-sm text-red-600">{AVISO_NAO_FECHA}</p>}
 
-          <div>
-            <Label className="text-xs text-slate-600">Formato</Label>
-            <div className="mt-1 flex gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant={formato === "pdf" ? "default" : "outline"}
-                onClick={() => setFormato("pdf")}
-                disabled={gerando}
-              >
-                <FileText className="w-4 h-4" />
-                PDF
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={formato === "xlsx" ? "default" : "outline"}
-                onClick={() => setFormato("xlsx")}
-                disabled={gerando}
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                Excel
-              </Button>
-            </div>
-          </div>
+          <SeletorFormatoExportacao formato={formato} setFormato={setFormato} gerando={gerando} />
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
@@ -5817,59 +6054,14 @@ export default function ExportarCronogramaDialog({
             </div>
           </div>
 
-          <div className="rounded-md border p-3 space-y-3">
-            <p className="text-sm font-medium text-slate-700">
-              Representante legal
-              {carregando && <Loader2 className="ml-2 inline w-3.5 h-3.5 animate-spin" />}
-            </p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="sm:col-span-3">
-                <Label htmlFor="cronograma-rep-nome" className="text-xs text-slate-600">
-                  Nome *
-                </Label>
-                <Input
-                  id="cronograma-rep-nome"
-                  value={representante.nome}
-                  onChange={mudarRep("nome")}
-                  placeholder={empresa?.responsavel_principal || ""}
-                  disabled={gerando || carregando}
-                  className="mt-1"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <Label htmlFor="cronograma-rep-cargo" className="text-xs text-slate-600">
-                  Cargo
-                </Label>
-                <Input
-                  id="cronograma-rep-cargo"
-                  value={representante.cargo}
-                  onChange={mudarRep("cargo")}
-                  placeholder="Sócio-administrador"
-                  disabled={gerando || carregando}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label htmlFor="cronograma-rep-cpf" className="text-xs text-slate-600">
-                  CPF
-                </Label>
-                <Input
-                  id="cronograma-rep-cpf"
-                  inputMode="numeric"
-                  value={representante.cpf}
-                  onChange={mudarRep("cpf")}
-                  placeholder="000.000.000-00"
-                  disabled={gerando || carregando}
-                  className="mt-1"
-                />
-              </div>
-            </div>
-            <p className="text-xs text-slate-500">
-              {
-                "Vale só para esta exportação. O padrão fica em Configurações → Empresa → Representante legal."
-              }
-            </p>
-          </div>
+          <RepresentanteLegalCampos
+            idPrefixo="cronograma"
+            representante={representante}
+            setRepresentante={setRepresentante}
+            empresa={empresa}
+            carregando={carregando}
+            gerando={gerando}
+          />
         </div>
 
         <DialogFooter className="gap-2">
@@ -5916,15 +6108,310 @@ export function BotaoExportarCronograma({ selectedOp, empresaAtiva, etapas, cron
 }
 ```
 
-- [ ] **Step 3: Lint do componente novo**
+- [ ] **Step 5: `ExportarPropostaDialog.jsx` passa a usar as peças em comum (6 trocas com Edit)**
 
-```bash
-(cd apps/web && npx eslint --rule "no-undef: error" src/components/oportunidades/ExportarCronogramaDialog.jsx; echo "exit $?")
+Aplique com a ferramenta **Edit** em `apps/web/src/components/oportunidades/ExportarPropostaDialog.jsx`, na ordem (cada `old` aparece uma única vez, conferido no Step 1 e no momento da troca). `Button`, `Input` e `Label` continuam em uso nos campos de validade, local e data, e nos botões do rodapé.
+
+5.1 — imports de React e do `lucide-react` (sem `useRef`, `FileSpreadsheet` e `FileText`)
+
+old:
+
+<!-- prettier-ignore -->
+```jsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { format } from "date-fns";
+import { toast } from "sonner";
+import { FileSpreadsheet, FileText, Loader2 } from "lucide-react";
+import { sigo } from "@/api/sigoClient";
 ```
 
-Expected: nenhuma saída e `exit 0`.
+new:
 
-- [ ] **Step 4: Ligar no quadro (2 trocas com Edit + Prettier)**
+<!-- prettier-ignore -->
+```jsx
+import React, { useEffect, useMemo, useState } from "react";
+import { format } from "date-fns";
+import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
+import { sigo } from "@/api/sigoClient";
+```
+
+5.2 — imports das libs e o `localDaEmpresa` que sai daqui
+
+old:
+
+<!-- prettier-ignore -->
+```jsx
+import { formatBRL } from "@/lib/formatters";
+import { formatarCpf } from "@/lib/cpf";
+import { resumoOrcamento } from "@/lib/orcamento-desconto";
+import {
+  descricaoVersaoProposta,
+  montarDadosProposta,
+  nomeArquivoProposta,
+  validarRepresentante,
+} from "@/lib/proposta-orcamento";
+
+const localDaEmpresa = (e) =>
+  [e?.cidade, e?.estado]
+    .map((v) => String(v ?? "").trim())
+    .filter(Boolean)
+    .join("/");
+```
+
+new:
+
+<!-- prettier-ignore -->
+```jsx
+import { formatBRL } from "@/lib/formatters";
+import { resumoOrcamento } from "@/lib/orcamento-desconto";
+import {
+  descricaoVersaoProposta,
+  montarDadosProposta,
+  nomeArquivoProposta,
+  validarRepresentante,
+} from "@/lib/proposta-orcamento";
+import {
+  RepresentanteLegalCampos,
+  SeletorFormatoExportacao,
+  useRepresentanteDaEmpresa,
+} from "./CamposDeExportacao";
+```
+
+5.3 — os estados e o efeito de abrir: o do representante vai para o hook, ficam os da proposta
+
+old:
+
+<!-- prettier-ignore -->
+```jsx
+  const [validade, setValidade] = useState("60");
+  const [local, setLocal] = useState("");
+  const [data, setData] = useState("");
+  const [representante, setRepresentante] = useState({ nome: "", cargo: "", cpf: "" });
+  const [registrar, setRegistrar] = useState(true);
+  const [empresa, setEmpresa] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+  const [gerando, setGerando] = useState(false);
+  const [versaoRegistrada, setVersaoRegistrada] = useState(null);
+
+  // a empresa da sessão entra só como ponto de partida ao abrir; mudar de
+  // referência depois não pode apagar o que o usuário já digitou
+  const empresaAtivaRef = useRef(empresaAtiva);
+  empresaAtivaRef.current = empresaAtiva;
+  const empresaId = empresaAtiva?.id;
+
+  useEffect(() => {
+    if (!open || !empresaId) return undefined;
+    let cancelado = false;
+    const preencher = (e) => {
+      setEmpresa(e || null);
+      setLocal(localDaEmpresa(e));
+      setRepresentante({
+        nome: e?.representante_nome || "",
+        cargo: e?.representante_cargo || "",
+        cpf: e?.representante_cpf ? formatarCpf(e.representante_cpf) : "",
+      });
+    };
+    setFormato("pdf");
+    setValidade("60");
+    setData(format(new Date(), "yyyy-MM-dd"));
+    setRegistrar(true);
+    setVersaoRegistrada(null);
+    preencher(empresaAtivaRef.current);
+    setCarregando(true);
+    sigo.entities.Empresa.get(empresaId)
+      .then((e) => {
+        if (!cancelado && e) preencher(e);
+      })
+      .catch((err) => console.error("Erro ao carregar a empresa:", err))
+      .finally(() => {
+        if (!cancelado) setCarregando(false);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [open, empresaId]);
+```
+
+new:
+
+<!-- prettier-ignore -->
+```jsx
+  const [validade, setValidade] = useState("60");
+  const [data, setData] = useState("");
+  const [registrar, setRegistrar] = useState(true);
+  const [gerando, setGerando] = useState(false);
+  const [versaoRegistrada, setVersaoRegistrada] = useState(null);
+  const { empresa, local, setLocal, representante, setRepresentante, carregando } =
+    useRepresentanteDaEmpresa(open, empresaAtiva);
+  const empresaId = empresaAtiva?.id;
+
+  // ao abrir: PDF, validade de 60 dias, a data de hoje e o registro da versão ligado
+  useEffect(() => {
+    if (!open || !empresaId) return;
+    setFormato("pdf");
+    setValidade("60");
+    setData(format(new Date(), "yyyy-MM-dd"));
+    setRegistrar(true);
+    setVersaoRegistrada(null);
+  }, [open, empresaId]);
+```
+
+5.4 — o `mudarRep` sai (agora está no bloco do representante)
+
+old:
+
+<!-- prettier-ignore -->
+```jsx
+  const mudarRep = (campo) => (e) =>
+    setRepresentante((prev) => ({
+      ...prev,
+      [campo]: campo === "cpf" ? formatarCpf(e.target.value) : e.target.value,
+    }));
+
+  return (
+```
+
+new:
+
+<!-- prettier-ignore -->
+```jsx
+  return (
+```
+
+5.5 — o seletor PDF/Excel
+
+old:
+
+<!-- prettier-ignore -->
+```jsx
+          <div>
+            <Label className="text-xs text-slate-600">Formato</Label>
+            <div className="mt-1 flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={formato === "pdf" ? "default" : "outline"}
+                onClick={() => setFormato("pdf")}
+                disabled={gerando}
+              >
+                <FileText className="w-4 h-4" />
+                PDF
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={formato === "xlsx" ? "default" : "outline"}
+                onClick={() => setFormato("xlsx")}
+                disabled={gerando}
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                Excel
+              </Button>
+            </div>
+          </div>
+```
+
+new:
+
+<!-- prettier-ignore -->
+```jsx
+          <SeletorFormatoExportacao formato={formato} setFormato={setFormato} gerando={gerando} />
+```
+
+5.6 — o bloco do representante legal
+
+old:
+
+<!-- prettier-ignore -->
+```jsx
+          <div className="rounded-md border p-3 space-y-3">
+            <p className="text-sm font-medium text-slate-700">
+              Representante legal
+              {carregando && <Loader2 className="ml-2 inline w-3.5 h-3.5 animate-spin" />}
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="sm:col-span-3">
+                <Label htmlFor="proposta-rep-nome" className="text-xs text-slate-600">
+                  Nome *
+                </Label>
+                <Input
+                  id="proposta-rep-nome"
+                  value={representante.nome}
+                  onChange={mudarRep("nome")}
+                  placeholder={empresa?.responsavel_principal || ""}
+                  disabled={gerando || carregando}
+                  className="mt-1"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <Label htmlFor="proposta-rep-cargo" className="text-xs text-slate-600">
+                  Cargo
+                </Label>
+                <Input
+                  id="proposta-rep-cargo"
+                  value={representante.cargo}
+                  onChange={mudarRep("cargo")}
+                  placeholder="Sócio-administrador"
+                  disabled={gerando || carregando}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="proposta-rep-cpf" className="text-xs text-slate-600">
+                  CPF
+                </Label>
+                <Input
+                  id="proposta-rep-cpf"
+                  inputMode="numeric"
+                  value={representante.cpf}
+                  onChange={mudarRep("cpf")}
+                  placeholder="000.000.000-00"
+                  disabled={gerando || carregando}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-slate-500">
+              {
+                "Vale só para esta exportação. O padrão fica em Configurações → Empresa → Representante legal."
+              }
+            </p>
+          </div>
+```
+
+new:
+
+<!-- prettier-ignore -->
+```jsx
+          <RepresentanteLegalCampos
+            idPrefixo="proposta"
+            representante={representante}
+            setRepresentante={setRepresentante}
+            empresa={empresa}
+            carregando={carregando}
+            gerando={gerando}
+          />
+```
+
+Formate e confira (na raiz):
+
+```bash
+npx prettier --write apps/web/src/components/oportunidades/ExportarPropostaDialog.jsx
+git diff --stat -- apps/web/src/components/oportunidades/ExportarPropostaDialog.jsx
+```
+
+Expected: o Prettier não muda nada (os blocos já estão formatados) e o `git diff --stat` mostra `1 file changed, 20 insertions(+), 126 deletions(-)`.
+
+- [ ] **Step 6: Lint dos componentes**
+
+```bash
+(cd apps/web && npx eslint --rule "no-undef: error" src/components/oportunidades/CamposDeExportacao.jsx src/components/oportunidades/ExportarCronogramaDialog.jsx src/components/oportunidades/ExportarPropostaDialog.jsx; echo "exit $?")
+```
+
+Expected: nenhuma saída e `exit 0` (o `unused-imports` falha se sobrar um import que a troca do Step 5 tirou de uso).
+
+- [ ] **Step 7: Ligar no quadro (2 trocas com Edit + Prettier)**
 
 Aplique com a ferramenta **Edit** em `apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx` (cada `old` aparece uma única vez, conferido no Step 1).
 
@@ -5977,10 +6464,10 @@ git diff --stat -- apps/web/src/components/oportunidades/CronogramaFisicoFinance
 
 Expected: `2` (o import e o `<BotaoExportarCronograma`), `0`, e o `git diff --stat` com `1 file changed, 7 insertions(+), 1 deletion(-)` (o Prettier só mexe nas linhas novas, porque o resto do arquivo já estava formatado pela Task 5).
 
-- [ ] **Step 5: Lint e build**
+- [ ] **Step 8: Lint e build**
 
 ```bash
-(cd apps/web && npx eslint --rule "no-undef: error" src/components/oportunidades/ExportarCronogramaDialog.jsx src/components/oportunidades/CronogramaFisicoFinanceiro.jsx; echo "exit $?")
+(cd apps/web && npx eslint --rule "no-undef: error" src/components/oportunidades/CamposDeExportacao.jsx src/components/oportunidades/ExportarCronogramaDialog.jsx src/components/oportunidades/ExportarPropostaDialog.jsx src/components/oportunidades/CronogramaFisicoFinanceiro.jsx; echo "exit $?")
 (cd apps/web && npm run build > /dev/null && echo BUILD_OK)
 ls apps/web/dist/assets | grep -E "^(cronograma-export|proposta-export)-.*\.js$"
 grep -o 'from"./[a-zA-Z0-9._-]*"' apps/web/dist/assets/cronograma-export-*.js | grep -c "proposta-export\|xlsx"
@@ -5992,26 +6479,30 @@ Expected:
 - `BUILD_OK` (neste PC leva de 2 a 5 minutos; o `vite.config.js` tem `logLevel: "error"`, então o build não mostra avisos);
 - dois arquivos, `cronograma-export-<hash>.js` e `proposta-export-<hash>.js`, e depois `2`: o chunk do cronograma importa o da proposta e o do `xlsx` em vez de copiá-los, e o `xlsx`, o `jspdf` e o `jspdf-autotable` continuam fora dos chunks do Dashboard e da página de Oportunidades.
 
-- [ ] **Step 6: Suíte e formatação**
+- [ ] **Step 9: Suíte e formatação**
 
 ```bash
 (cd apps/web && npx vitest run 2>&1 | tail -5)
-npx prettier --check apps/web/src/components/oportunidades/ExportarCronogramaDialog.jsx apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx
+(cd apps/web && npm run lint && echo LINT_OK)
+npx prettier --check apps/web/src/components/oportunidades/CamposDeExportacao.jsx apps/web/src/components/oportunidades/ExportarCronogramaDialog.jsx apps/web/src/components/oportunidades/ExportarPropostaDialog.jsx apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx apps/web/src/lib/proposta-orcamento.js apps/web/src/lib/proposta-orcamento.test.js
 ```
 
-Expected: a suíte igual ao fim da Task 5 (esta task não acrescenta teste), toda passando; Prettier `All matched files use Prettier code style!`.
+Expected: a suíte do fim da Task 5 mais os 3 testes do `localDaEmpresa` (a mesma contagem de arquivos; com a base de 05/10, **40 arquivos e 522 testes**), toda passando; `LINT_OK`; Prettier `All matched files use Prettier code style!`.
 
-- [ ] **Step 7: Commit (só os 2 caminhos da task)**
+- [ ] **Step 10: Commit (só os 6 caminhos da task)**
 
 ```bash
 git status --short
-git add apps/web/src/components/oportunidades/ExportarCronogramaDialog.jsx
-git commit -F - -- apps/web/src/components/oportunidades/ExportarCronogramaDialog.jsx apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx <<'EOF'
+git add apps/web/src/components/oportunidades/CamposDeExportacao.jsx apps/web/src/components/oportunidades/ExportarCronogramaDialog.jsx
+git commit -F - -- apps/web/src/components/oportunidades/CamposDeExportacao.jsx apps/web/src/components/oportunidades/ExportarCronogramaDialog.jsx apps/web/src/components/oportunidades/ExportarPropostaDialog.jsx apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx apps/web/src/lib/proposta-orcamento.js apps/web/src/lib/proposta-orcamento.test.js <<'EOF'
 feat(oportunidades): exportar o cronograma físico-financeiro em PDF ou Excel
 
 - ExportarCronogramaDialog: formato, local, data e representante legal (lido da empresa
   ao abrir, editável só para esta exportação e validado como na proposta); xlsx, jspdf e
   jspdf-autotable só descem no clique do Gerar
+- CamposDeExportacao: hook do representante legal, bloco de campos e seletor PDF/Excel, em
+  comum com o ExportarPropostaDialog (tela e comportamento da proposta iguais);
+  localDaEmpresa vai para lib/proposta-orcamento.js, com 3 testes
 - botão Exportar no quadro do cronograma: habilitado só com todas as etapas em 100,00% e
   visível também para quem só vê a aba, porque não grava nada; exporta o que a grade mostra
 
@@ -6020,7 +6511,7 @@ EOF
 git show --stat --format=%s HEAD
 ```
 
-Expected: `2 files changed`, só esses dois caminhos.
+Expected: `6 files changed`, só esses caminhos.
 
 ---
 
@@ -6115,14 +6606,14 @@ Expected:
 ```bash
 (cd apps/web && npx vitest run 2>&1 | tail -5)
 (cd apps/web && npm run lint && echo LINT_OK)
-(cd apps/web && npx eslint --rule "no-undef: error" src/components/oportunidades/CronogramaFisicoFinanceiro.jsx src/components/oportunidades/ImportarCronogramaDialog.jsx src/components/oportunidades/ExportarCronogramaDialog.jsx src/components/oportunidades/ImportarPlanilhaOrcamentoDialog.jsx src/components/oportunidades/OportunidadeDetalhe.jsx; echo "exit $?")
+(cd apps/web && npx eslint --rule "no-undef: error" src/components/oportunidades/CronogramaFisicoFinanceiro.jsx src/components/oportunidades/ImportarCronogramaDialog.jsx src/components/oportunidades/ExportarCronogramaDialog.jsx src/components/oportunidades/CamposDeExportacao.jsx src/components/oportunidades/ExportarPropostaDialog.jsx src/components/oportunidades/ImportarPlanilhaOrcamentoDialog.jsx src/components/oportunidades/OportunidadeDetalhe.jsx; echo "exit $?")
 (cd apps/web && npm run build > /dev/null && echo BUILD_OK)
 git diff -z --name-only --diff-filter=ACMR origin/master...HEAD | xargs -0 npx prettier --check --ignore-unknown
 ```
 
 Expected:
 
-- Vitest: a linha de base anotada antes da Task 1 mais **4 arquivos e 86 testes**, sem `failed`. Os 86 são: Task 1, 37; Task 2, 20; Task 3, 1; Task 4, 20; Task 5, 8. Com a base de 05/10, ficam **40 arquivos e 519 testes**;
+- Vitest: a linha de base anotada antes da Task 1 mais **4 arquivos e 89 testes**, sem `failed`. Os 89 são: Task 1, 37; Task 2, 20; Task 3, 1; Task 4, 20; Task 5, 8; Task 6, 3. Com a base de 05/10, ficam **40 arquivos e 522 testes**;
 - `LINT_OK`;
 - `no-undef`: só o aviso antigo `'cronogramaEtapas' is defined but never used` e `exit 0`;
 - `BUILD_OK`;
@@ -6424,6 +6915,7 @@ Conferência depois do passo 11 (consulta do Step 6). Expected na linha de Itati
 | 5   | Apagar o nome do representante → **Gerar PDF**                                                                                         | Toast de validação (nome obrigatório); nada é baixado. Desfazer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | 6   | **Gerar PDF**                                                                                                                          | Baixa `Cronograma - TESTE cronograma Itatinga - <aaaa-mm-dd>.pdf`, A4 paisagem, 1 página:<br>- cabeçalho: razão social, CNPJ e endereço da empresa; "Cronograma físico-financeiro"; Órgão "Prefeitura Municipal de Itatinga"; Objeto "Distrito Industrial de Itatinga"; "Prazo de execução: 4 meses";<br>- tabela: 1 · SERVIÇOS DE ELÉTRICA · 1.417.472,96 · 100,00% e, em cada mês, o R$ em cima e o % embaixo (283.494,59 / 20,00% … 212.620,94 / 15,00%);<br>- rodapé em negrito: Total do mês, % do mês, Acumulado (R$) até 1.417.472,96 e Acumulado (%) até 100,00%;<br>- local e data; linha de assinatura com nome, cargo e CPF; "Página 1 de 1". |
 | 7   | **Excel** → **Gerar Excel**                                                                                                            | Baixa `Cronograma - TESTE cronograma Itatinga - <aaaa-mm-dd>.xlsx`, aba `Cronograma`:<br>- a etapa em 2 linhas (R$ e %);<br>- Total do mês, % do mês, Acumulado (R$) e Acumulado (%) em fórmulas `SUM`, com os mesmos números do PDF e da tela;<br>- **Ctrl+Alt+F9** não muda nenhum valor. Fechar **sem salvar**.                                                                                                                                                                                                                                                                                                                                       |
+| 8   | Abrir o **Orçamento** da mesma oportunidade → **Exportar proposta**                                                                    | O diálogo abre como antes, com Formato, Validade, Local, Data e o Representante legal (nome, cargo e CPF) preenchidos com os de Configurações → Empresa; ele usa agora as mesmas peças do "Exportar cronograma". Desmarcar **Registrar como nova versão da proposta** → **Gerar PDF** baixa a proposta, sem registrar versão.                                                                                                                                                                                                                                                                                                                            |
 
 - [ ] **Step 10: Roteiro D — Imbé de Minas: comparação com a planilha feita à mão**
 
@@ -6580,7 +7072,7 @@ Pergunte: "Posso desfazer o cronograma físico-financeiro (telas, skill e a aba 
 git fetch -q origin && git status -sb | head -1 && git status --short
 PRIMEIRO=$(git log --format=%H --diff-filter=A origin/master -- apps/web/src/lib/cronograma-ff.js | tail -1)
 git log -1 --format='%h %s' "$PRIMEIRO"
-ALVO="apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx apps/web/src/components/oportunidades/ImportarCronogramaDialog.jsx apps/web/src/components/oportunidades/ExportarCronogramaDialog.jsx apps/web/src/components/oportunidades/OportunidadeDetalhe.jsx apps/web/src/components/oportunidades/ImportarPlanilhaOrcamentoDialog.jsx apps/web/public/skills/orcamento-prefeitura-sigo/SKILL.md apps/web/src/lib/orcamento-modelo.js"
+ALVO="apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx apps/web/src/components/oportunidades/ImportarCronogramaDialog.jsx apps/web/src/components/oportunidades/ExportarCronogramaDialog.jsx apps/web/src/components/oportunidades/CamposDeExportacao.jsx apps/web/src/components/oportunidades/ExportarPropostaDialog.jsx apps/web/src/components/oportunidades/OportunidadeDetalhe.jsx apps/web/src/components/oportunidades/ImportarPlanilhaOrcamentoDialog.jsx apps/web/public/skills/orcamento-prefeitura-sigo/SKILL.md apps/web/src/lib/orcamento-modelo.js"
 git log --format='%h %s' "$PRIMEIRO"^..origin/master -i --grep='cronograma' -- $ALVO
 ```
 
@@ -6607,9 +7099,9 @@ Expected:
 - `git revert` sem conflito (a lista vem do mais novo para o mais antigo, a ordem certa);
 - o `--stat` só com estes arquivos:
   - os de `ALVO`;
-  - os testes que esses commits alteraram (`orcamento-modelo.test.js` e `skill-orcamento.test.js`);
+  - a `proposta-orcamento.js` e os testes que esses commits alteraram (`orcamento-modelo.test.js`, `skill-orcamento.test.js` e `proposta-orcamento.test.js`): o revert da Task 6 devolve o `ExportarPropostaDialog.jsx` ao que era antes das peças em comum;
   - os arquivos que eles criaram (`fila-gravacao.js` e `cronograma-modelo.js`, cada um com o seu teste, e `xlsx-celulas.js`), que saem;
-- Vitest sem `failed`, com 2 arquivos e 29 testes a menos que no Step 2 (os da Task 2, os da Task 5 e o da Task 3);
+- Vitest sem `failed`, com 2 arquivos e 32 testes a menos que no Step 2 (os da Task 2, os da Task 5, o da Task 3 e os 3 do `localDaEmpresa`, da Task 6);
 - `LINT_OK` e `BUILD_OK`.
 
 Com conflito ou falha: `git revert --abort`, e mostre ao Javerson.
