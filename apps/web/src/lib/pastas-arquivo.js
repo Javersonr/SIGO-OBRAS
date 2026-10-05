@@ -92,3 +92,21 @@ export function nomePastaValido(nome, existentes = []) {
   }
   return { ok: true, nome: n };
 }
+
+/** Duas grafias da mesma pasta? (sem maiúsculas/acento/espaços sobrando, como nomePastaValido) */
+export function mesmaPasta(a, b) {
+  return chave(a) === chave(b);
+}
+
+/**
+ * Valor a gravar em `arquivo_oportunidade.pasta`. "Outros" (ou vazio) vira null: assim o arquivo
+ * continua seguindo a regra de categoria (um edital lido depois pela IA cai em "Edital").
+ * Exceção: arquivo que JÁ tem categoria do edital movido para "Outros" grava "Outros" explícito,
+ * porque null o faria voltar para "Edital".
+ */
+export function pastaParaGravar(nome, categoria = null) {
+  const n = limpar(nome);
+  if (!n) return null;
+  if (mesmaPasta(n, PASTA_OUTROS)) return CATEGORIAS_DO_EDITAL.has(categoria) ? PASTA_OUTROS : null;
+  return n;
+}

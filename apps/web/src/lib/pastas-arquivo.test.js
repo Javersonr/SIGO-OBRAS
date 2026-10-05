@@ -9,6 +9,8 @@ import {
   listarPastas,
   agruparPorPasta,
   nomePastaValido,
+  mesmaPasta,
+  pastaParaGravar,
 } from "./pastas-arquivo";
 
 describe("PASTAS_PADRAO", () => {
@@ -119,5 +121,45 @@ describe("nomePastaValido", () => {
     expect(nomePastaValido("x".repeat(60), []).ok).toBe(true);
     expect(nomePastaValido("envelope 02 – habilitacao", PASTAS_PADRAO).ok).toBe(false);
     expect(nomePastaValido("RECURSO", ["Recurso"]).erro).toBe("Já existe uma pasta com esse nome");
+  });
+});
+
+describe("mesmaPasta", () => {
+  it("ignora maiúsculas, acento e espaços sobrando", () => {
+    expect(mesmaPasta("edital", "Edital")).toBe(true);
+    expect(mesmaPasta("Envelope 02 – Habilitacao", "envelope  02 – HABILITAÇÃO ")).toBe(true);
+    expect(mesmaPasta("Recurso", "Contrato")).toBe(false);
+  });
+  it("vazio só casa com vazio", () => {
+    expect(mesmaPasta("", null)).toBe(true);
+    expect(mesmaPasta("", "Outros")).toBe(false);
+  });
+});
+
+describe("pastaParaGravar", () => {
+  it("Outros (qualquer grafia) ou vazio grava null, para a regra de categoria valer depois", () => {
+    expect(pastaParaGravar("Outros")).toBeNull();
+    expect(pastaParaGravar("  outros ")).toBeNull();
+    expect(pastaParaGravar("")).toBeNull();
+    expect(pastaParaGravar(null)).toBeNull();
+    expect(pastaParaGravar(undefined)).toBeNull();
+  });
+  it("as demais pastas gravam o nome aparado", () => {
+    expect(pastaParaGravar("Edital")).toBe("Edital");
+    expect(pastaParaGravar("  Envelope 02 – Habilitação ")).toBe("Envelope 02 – Habilitação");
+    expect(pastaParaGravar("Recurso   Administrativo")).toBe("Recurso Administrativo");
+  });
+  it("arquivo com categoria do edital movido para Outros grava 'Outros' (null o devolveria ao Edital)", () => {
+    expect(pastaParaGravar("Outros", "edital")).toBe("Outros");
+    expect(pastaParaGravar("Outros", "errata")).toBe("Outros");
+    expect(pastaParaGravar("Outros", "contrato")).toBeNull();
+    expect(pastaParaGravar("Outros", null)).toBeNull();
+    expect(pastaParaGravar("Credenciamento", "edital")).toBe("Credenciamento");
+  });
+  it("o resultado coerente com pastaDoArquivo: envio em Outros + categoria depois = Edital", () => {
+    const gravada = pastaParaGravar("Outros");
+    expect(pastaDoArquivo({ pasta: gravada, categoria: "edital" })).toBe(PASTA_EDITAL);
+    const movido = pastaParaGravar("Outros", "edital");
+    expect(pastaDoArquivo({ pasta: movido, categoria: "edital" })).toBe(PASTA_OUTROS);
   });
 });
