@@ -15,13 +15,20 @@ import {
   lerPosicao,
   respostasValidas,
   resumoRespostas,
+  textoSairDaProva,
   guardarRascunhoProva,
   lerRascunhoProva,
   limparRascunhoProva,
   limparRascunhosPortal,
+  MAX_ESPERA_MS,
+  MSG_SEM_CONEXAO,
+  MSG_SERVICO_INDISPONIVEL,
   msAteLiberar,
+  msTemporizadorProva,
   provaAguardando,
   mensagemDeFalha,
+  urlDoProjetoPedagogico,
+  abrirProjetoPedagogico,
 } from "./portal-curso";
 
 /** Storage de mentira: guarda em memória e deixa ver o que foi gravado. */
@@ -408,6 +415,23 @@ describe("resumoRespostas", () => {
   });
 });
 
+describe("textoSairDaProva (aviso ao voltar às aulas no meio da prova)", () => {
+  it("aluno: diz quantas respondeu e que as respostas ficam no aparelho", () => {
+    const texto = textoSairDaProva({ respondidas: 3, total: 10 });
+    expect(texto).toContain("respondeu 3 de 10 questões");
+    expect(texto).toContain("ficam guardadas neste aparelho");
+    expect(texto).toContain("só vale depois de enviada");
+  });
+
+  it("prévia: nada é guardado, então o texto NÃO promete guardar", () => {
+    const texto = textoSairDaProva({ respondidas: 2, total: 5, previa: true });
+    expect(texto).toContain("respondeu 2 de 5 questões");
+    expect(texto).toMatch(/nada é guardado/);
+    expect(texto).toMatch(/se perdem/);
+    expect(texto).not.toMatch(/ficam guardadas|voltam quando/);
+  });
+});
+
 describe("respostasValidas", () => {
   it("mantém só resposta de questão existente e alternativa que existe", () => {
     expect(respostasValidas(questoes, { q1: 3, q2: 3, q3: 0, fantasma: 1, q4: 0 })).toEqual({
@@ -524,6 +548,228 @@ describe("msAteLiberar e provaAguardando (temporizador da nova tentativa)", () =
   });
 });
 
+describe("msTemporizadorProva (o setTimeout que reabilita a prova)", () => {
+  const agora = Date.parse("2026-10-05T12:00:00Z");
+  const em = (ms) => new Date(agora + ms).toISOString();
+
+  it("faltando tempo: a espera mais uma folga curta, para o relógio do servidor já ter passado", () => {
+    expect(msTemporizadorProva(em(30000), agora)).toBe(30300);
+    expect(msTemporizadorProva(em(30000), agora, 1000)).toBe(31000);
+  });
+
+  it("sem espera (horário passado, ausente ou inválido): 0, nenhum temporizador", () => {
+    for (const ruim of [em(0), em(-60000), null, undefined, "", "ontem"]) {
+      expect(msTemporizadorProva(ruim, agora)).toBe(0);
+    }
+  });
+
+  it("nunca passa do máximo do setTimeout: acima disso o navegador dispara na hora e a tela entra em laço", () => {
+    // o intervalo entre tentativas é digitado pelo RH; 90 dias em minutos é um valor possível no campo
+    for (const dias of [24.8, 25, 90, 36500]) {
+      const espera = msTemporizadorProva(em(dias * 24 * 3600 * 1000), agora);
+      expect(espera).toBeGreaterThan(0);
+      expect(espera).toBeLessThanOrEqual(MAX_ESPERA_MS);
+    }
+    // bem na beirada: a folga não empurra para além do máximo
+    expect(msTemporizadorProva(em(MAX_ESPERA_MS), agora)).toBe(MAX_ESPERA_MS);
+    expect(msTemporizadorProva(em(MAX_ESPERA_MS - 100), agora)).toBe(MAX_ESPERA_MS);
+    expect(msTemporizadorProva(em(MAX_ESPERA_MS - 1000), agora)).toBe(MAX_ESPERA_MS - 700);
+  });
+});
+
+describe("urlDoProjetoPedagogico (link renovado do projeto pedagógico)", () => {
+  const dados = (url, matriculaId = "m1") => ({
+    cursos: [
+      { matricula: { id: "outra" }, curso: { projeto_pedagogico_url: "https://outro.test/a.pdf" } },
+      { matricula: { id: matriculaId }, curso: { projeto_pedagogico_url: url } },
+    ],
+  });
+
+  it("devolve a URL do curso da matrícula, não a de outro curso", () => {
+    expect(urlDoProjetoPedagogico(dados("https://sig.test/projeto.pdf?t=1"), "m1")).toBe(
+      "https://sig.test/projeto.pdf?t=1"
+    );
+  });
+
+  it("sem dados (a busca falhou), matrícula ausente ou sem projeto: null", () => {
+    expect(urlDoProjetoPedagogico(null, "m1")).toBeNull();
+    expect(urlDoProjetoPedagogico(undefined, "m1")).toBeNull();
+    expect(urlDoProjetoPedagogico({}, "m1")).toBeNull();
+    expect(urlDoProjetoPedagogico(dados("https://sig.test/p.pdf"), "nao-existe")).toBeNull();
+    for (const sem of [null, undefined, ""]) {
+      expect(urlDoProjetoPedagogico(dados(sem), "m1")).toBeNull();
+    }
+  });
+
+  it("link que não é http(s) não abre (nada de about:blank nem javascript:)", () => {
+    for (const ruim of ["about:blank", "javascript:alert(1)", "/relativo.pdf", "   "]) {
+      expect(urlDoProjetoPedagogico(dados(ruim), "m1")).toBeNull();
+    }
+  });
+});
+
+describe("abrirProjetoPedagogico (botão do cabeçalho do curso)", () => {
+  const URL_ANTIGA = "https://sig.test/projeto.pdf?token=antigo";
+  const URL_NOVA = "https://sig.test/projeto.pdf?token=novo";
+  const dadosCom = (url) => ({
+    cursos: [{ matricula: { id: "m1" }, curso: { projeto_pedagogico_url: url } }],
+  });
+
+  /** `window` de mentira: registra as aberturas e devolve uma aba de mentira (ou null = pop-up bloqueado). */
+  function ambiente({ bloqueada = false } = {}) {
+    const aberturas = [];
+    const aba = { closed: false, opener: "janela-do-portal", location: { href: "" } };
+    aba.close = () => {
+      aba.closed = true;
+    };
+    const janela = {
+      open: (...args) => {
+        aberturas.push(args);
+        return bloqueada ? null : aba;
+      },
+    };
+    return { janela, aba, aberturas };
+  }
+
+  const base = { urlAtual: URL_ANTIGA, matriculaId: "m1" };
+
+  it("link ainda válido: abre direto, na hora, sem buscar os dados", async () => {
+    const { janela, aberturas } = ambiente();
+    let buscou = 0;
+    const r = await abrirProjetoPedagogico({
+      ...base,
+      janela,
+      vencida: false,
+      recarregar: async () => {
+        buscou += 1;
+        return null;
+      },
+    });
+    expect(r).toBe("aberto");
+    expect(aberturas).toEqual([[URL_ANTIGA, "_blank", "noopener"]]);
+    expect(buscou).toBe(0);
+  });
+
+  it("link válido mas que não é http(s): não abre nada", async () => {
+    const { janela, aberturas } = ambiente();
+    for (const ruim of [null, "", "about:blank", "javascript:alert(1)"]) {
+      const r = await abrirProjetoPedagogico({
+        ...base,
+        urlAtual: ruim,
+        janela,
+        vencida: false,
+        recarregar: async () => null,
+      });
+      expect(r).toBe("sem_link");
+    }
+    expect(aberturas).toHaveLength(0);
+  });
+
+  it("link possivelmente vencido: a aba abre JÁ no clique (antes da busca) e vai ao link renovado", async () => {
+    const { janela, aba, aberturas } = ambiente();
+    let chamadas = 0;
+    const promessa = abrirProjetoPedagogico({
+      ...base,
+      janela,
+      vencida: true,
+      recarregar: async () => {
+        chamadas += 1;
+        return dadosCom(URL_NOVA);
+      },
+    });
+    // síncrono, como no clique: a aba em branco já abriu e os dados já estão sendo buscados
+    expect(aberturas).toEqual([["", "_blank"]]);
+    expect(chamadas).toBe(1);
+    expect(aba.opener).toBeNull(); // a aba em branco não fica ligada ao portal
+    expect(aba.location.href).toBe(""); // ainda esperando o link novo
+    expect(await promessa).toBe("aberto");
+    expect(aba.location.href).toBe(URL_NOVA); // nunca o link velho
+    expect(aba.closed).toBe(false);
+  });
+
+  it("não conseguiu renovar (sem rede ou sem link no curso): fecha a aba vazia e avisa", async () => {
+    for (const recarregar of [
+      async () => null, // a busca falhou
+      async () => dadosCom(null), // o curso não tem mais projeto
+      async () => {
+        throw new Error("falha inesperada");
+      },
+    ]) {
+      const { janela, aba } = ambiente();
+      const r = await abrirProjetoPedagogico({ ...base, janela, vencida: true, recarregar });
+      expect(r).toBe("sem_link");
+      expect(aba.closed).toBe(true); // nada de aba em branco esquecida nem de link morto
+      expect(aba.location.href).toBe("");
+    }
+  });
+
+  it("pop-up bloqueado: renova mesmo assim e pede para tocar de novo (link já novo)", async () => {
+    const { janela } = ambiente({ bloqueada: true });
+    const r = await abrirProjetoPedagogico({
+      ...base,
+      janela,
+      vencida: true,
+      recarregar: async () => dadosCom(URL_NOVA),
+    });
+    expect(r).toBe("renovado");
+  });
+
+  it("o aluno fechou a aba enquanto esperava: renovado, sem mexer na aba fechada", async () => {
+    const { janela, aba } = ambiente();
+    const r = await abrirProjetoPedagogico({
+      ...base,
+      janela,
+      vencida: true,
+      recarregar: async () => {
+        aba.closed = true;
+        return dadosCom(URL_NOVA);
+      },
+    });
+    expect(r).toBe("renovado");
+    expect(aba.location.href).toBe("");
+  });
+
+  it("avisa o início e o fim da busca (o botão mostra andamento), mesmo quando ela falha", async () => {
+    for (const recarregar of [
+      async () => dadosCom(URL_NOVA),
+      async () => {
+        throw new Error("x");
+      },
+    ]) {
+      const { janela } = ambiente();
+      const marcas = [];
+      await abrirProjetoPedagogico({
+        ...base,
+        janela,
+        vencida: true,
+        recarregar,
+        aoComecarBusca: () => marcas.push("comecou"),
+        aoTerminarBusca: () => marcas.push("terminou"),
+      });
+      expect(marcas).toEqual(["comecou", "terminou"]);
+    }
+  });
+
+  it("a aba que não aceita mexer no opener (navegador restrito) não impede de abrir", async () => {
+    const aba = { closed: false, location: { href: "" }, close() {} };
+    Object.defineProperty(aba, "opener", {
+      get: () => "x",
+      set: () => {
+        throw new Error("opener somente leitura");
+      },
+    });
+    const janela = { open: () => aba };
+    const r = await abrirProjetoPedagogico({
+      ...base,
+      janela,
+      vencida: true,
+      recarregar: async () => dadosCom(URL_NOVA),
+    });
+    expect(r).toBe("aberto");
+    expect(aba.location.href).toBe(URL_NOVA);
+  });
+});
+
 describe("mensagemDeFalha (erro de rede em português)", () => {
   it("falha de conexão do supabase-js ou do navegador vira texto para o aluno", () => {
     for (const msg of [
@@ -532,10 +778,45 @@ describe("mensagemDeFalha (erro de rede em português)", () => {
       "Failed to fetch",
       "NetworkError when attempting to fetch resource.",
       "Load failed",
+      "The network connection was lost.",
+      "The Internet connection appears to be offline.",
+      "signal timed out",
+      "The operation was aborted.",
     ]) {
       const texto = mensagemDeFalha(new Error(msg));
+      expect(texto).toBe(MSG_SEM_CONEXAO);
       expect(texto).toMatch(/conex/i);
       expect(texto).not.toMatch(/edge function|fetch/i);
+    }
+  });
+
+  it("erro da plataforma em inglês (função com erro HTTP, 5xx, função fora do ar) vira texto em português", () => {
+    for (const msg of [
+      "Edge Function returned a non-2xx status code",
+      "Internal Server Error",
+      "502 Bad Gateway",
+      "Service Unavailable",
+      "Gateway Timeout",
+      "Requested function was not found",
+      "BOOT_ERROR",
+      "WORKER_LIMIT",
+      "Unexpected token '<', \"<!doctype \"... is not valid JSON",
+    ]) {
+      const texto = mensagemDeFalha(new Error(msg));
+      expect(texto).toBe(MSG_SERVICO_INDISPONIVEL);
+      expect(texto).toMatch(/indispon/i);
+      expect(texto).toMatch(/avise o RH/i);
+      expect(texto).not.toMatch(/edge function|non-2xx|gateway|server error|json/i);
+    }
+  });
+
+  it("o texto em português do servidor que fala de erro ou função passa como veio", () => {
+    for (const msg of [
+      "Função indisponível no momento",
+      "Erro ao carregar o curso",
+      "Aula não pertence ao curso",
+    ]) {
+      expect(mensagemDeFalha(new Error(msg))).toBe(msg);
     }
   });
 

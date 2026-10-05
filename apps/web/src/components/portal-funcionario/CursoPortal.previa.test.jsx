@@ -1,4 +1,6 @@
 import React from "react";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -10,6 +12,21 @@ vi.hoisted(() => {
   globalThis.window = janela;
 });
 
+// O teste NUNCA carrega o cliente de produção: `api.js` importa o sigoClient, que criaria o cliente do
+// Supabase com o `.env.local` da máquina. Aqui qualquer chamada ao backend é registrada (e falha).
+vi.mock("@/api/sigoClient", () => ({
+  sigo: {
+    functions: {
+      invoke: vi.fn(() => {
+        throw new Error("o portal chamou o backend durante o teste");
+      }),
+    },
+  },
+  supabase: {},
+  resolveStorageUrl: vi.fn(),
+}));
+
+import { sigo } from "@/api/sigoClient";
 import CursoPortal from "./CursoPortal";
 import AvaliacaoPortal from "./AvaliacaoPortal";
 import DuvidasPortal from "./DuvidasPortal";
@@ -50,13 +67,22 @@ const apiPrevia = criarApiPrevia({ item: itemPrevia });
 const semOperacao = () => {};
 const fila = (tarefa) => tarefa();
 
-// o que o servidor devolve a um aluno matriculado: aulas em ordem linear e questões SEM gabarito
+// O que o servidor devolve a um aluno matriculado: aulas em ordem linear e questões SEM gabarito.
 const itemReal = {
   ...itemPrevia,
   matricula: { id: "m1", status: "em_andamento", avaliacao_aprovada: false },
   aulas: itemPrevia.aulas.map((a, i) => ({ ...a, liberada: i === 0 })),
   questoes: itemPrevia.questoes.map(({ correta: _correta, comentario: _comentario, ...q }) => q),
 };
+
+// Tag de abertura do primeiro <elemento> do HTML (null se não houver) e botão pelo texto dele.
+const tagAbertura = (html, elemento) =>
+  html.match(new RegExp(`<${elemento}\\b[^>]*>`))?.[0] ?? null;
+const botaoComTexto = (html, texto) =>
+  html.match(new RegExp(`<button\\b[^>]*>[^<]*${texto}</button>`))?.[0] ?? null;
+// Só o ATRIBUTO conta: as classes do shadcn (`disabled:opacity-50`) também têm a palavra "disabled".
+// O React escreve o atributo ligado como ` disabled=""`.
+const desativado = (tag) => /\sdisabled=""/.test(tag);
 
 describe("prévia do curso para o RT", () => {
   const html = renderToStaticMarkup(
@@ -84,7 +110,9 @@ describe("prévia do curso para o RT", () => {
   });
 
   it("deixa abrir a prova sem concluir as aulas", () => {
-    expect(html).toContain("Fazer avaliação final");
+    const botao = botaoComTexto(html, "Fazer avaliação final");
+    expect(botao).not.toBeNull();
+    expect(desativado(botao)).toBe(false); // o botão está lá E pode ser apertado
     expect(html).toContain("nota mínima 70%");
     expect(html).toContain("tentativa 1 de 3");
   });
@@ -114,7 +142,12 @@ describe("prévia do curso para o RT", () => {
       />
     );
     expect(duvidas).toContain("Prévia: aqui o aluno escreve a dúvida");
-    expect(duvidas).toContain("disabled");
+    expect(desativado(tagAbertura(duvidas, "textarea"))).toBe(true);
+    expect(desativado(botaoComTexto(duvidas, "Enviar dúvida"))).toBe(true);
+  });
+
+  it("nada da prévia chamou o backend (a API injetada é a única porta)", () => {
+    expect(sigo.functions.invoke).not.toHaveBeenCalled();
   });
 });
 
@@ -159,6 +192,52 @@ describe("portal do aluno (sem API injetada)", () => {
       />
     );
     expect(duvidas).not.toContain("Prévia");
-    expect(duvidas).not.toContain("<textarea disabled");
+    expect(tagAbertura(duvidas, "textarea")).not.toBeNull();
+    expect(desativado(tagAbertura(duvidas, "textarea"))).toBe(false);
   });
+
+  it("a prova do aluno fica desativada enquanto o intervalo da nova tentativa não acaba", () => {
+    const aguardando = {
+      ...itemReal,
+      aulas: itemReal.aulas.map((a) => ({ ...a, concluida: true, liberada: true })),
+      avaliacao: {
+        ...itemReal.avaliacao,
+        tentativas_usadas: 1,
+        proxima_em: new Date(Date.now() + 3600 * 1000).toISOString(),
+      },
+    };
+    const html = renderToStaticMarkup(
+      <CursoPortal
+        item={aguardando}
+        token="token"
+        recarregar={async () => null}
+        onVoltar={semOperacao}
+        onErroSessao={semOperacao}
+      />
+    );
+    const botao = botaoComTexto(html, "Fazer avaliação final");
+    expect(botao).not.toBeNull();
+    expect(desativado(botao)).toBe(true);
+  });
+});
+
+describe("a prévia só pode falar com o servidor pela API injetada", () => {
+  // Se um destes componentes voltasse a importar `chamarPortal` direto de ./api, a prévia (e a prova
+  // dela) passariam a falar com o servidor de produção sem que nenhum outro teste percebesse.
+  for (const arquivo of [
+    "CursoPortal.jsx",
+    "AvaliacaoPortal.jsx",
+    "DuvidasPortal.jsx",
+    "CertificadoPortal.jsx",
+  ]) {
+    it(`${arquivo} importa só \`apiPortal\` de ./api, nunca \`chamarPortal\``, () => {
+      const fonte = readFileSync(fileURLToPath(new URL(arquivo, import.meta.url)), "utf8");
+      const importados = [...fonte.matchAll(/import\s*\{([^}]*)\}\s*from\s*"\.\/api"/g)]
+        .flatMap((m) => m[1].split(","))
+        .map((n) => n.trim())
+        .filter(Boolean);
+      expect(importados).toContain("apiPortal"); // o padrão vem do módulo, e a prévia o substitui
+      expect(importados).not.toContain("chamarPortal");
+    });
+  }
 });

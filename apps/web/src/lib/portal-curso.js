@@ -7,6 +7,7 @@
  * em memória) e toda leitura/gravação nele tolera falha: navegador sem storage só perde o
  * "retomar", nunca trava o aluno.
  */
+import { urlApostilaValida } from "./apostila-pdf";
 
 // ---------------------------------------------------------------- aulas
 
@@ -247,6 +248,17 @@ export function guardarRascunhoProva(storage, matriculaId, tentativa, respostas)
   );
 }
 
+/**
+ * Texto do aviso ao sair da prova com respostas marcadas. Para o aluno, as respostas ficam no aparelho;
+ * na prévia do responsável técnico nada é guardado (a lib não grava nada), então o texto diz o contrário.
+ */
+export function textoSairDaProva({ respondidas, total, previa = false } = {}) {
+  const abertura = `Voltar às aulas? Você já respondeu ${respondidas} de ${total} questões.`;
+  return previa
+    ? `${abertura} Na prévia nada é guardado: ao voltar, essas respostas se perdem.`
+    : `${abertura} As respostas ficam guardadas neste aparelho e voltam quando você abrir a prova de novo, mas a prova só vale depois de enviada.`;
+}
+
 /** Respostas guardadas que ainda valem para esta prova (a prova pode ter mudado). */
 export function lerRascunhoProva(storage, matriculaId, tentativa, questoes) {
   if (!storage) return {};
@@ -294,21 +306,117 @@ export function provaAguardando(proximaEm, agora) {
   return msAteLiberar(proximaEm, agora) > 0;
 }
 
+/** Folga depois do horário de `proxima_em`: o relógio do servidor já passou quando o botão libera. */
+export const FOLGA_TEMPORIZADOR_MS = 300;
+
+/**
+ * Tempo do `setTimeout` que reabilita a prova: a espera até `proxima_em` mais uma folga curta, NUNCA
+ * acima de `MAX_ESPERA_MS`. Acima disso o navegador dispara o temporizador na hora e, como o disparo
+ * refaz a conta, a tela entraria em laço de renderização (o RH digita o intervalo entre tentativas,
+ * em minutos, e um valor enorme é possível). 0 = não há o que esperar, não crie temporizador.
+ * Passando do teto o temporizador só acorda mais cedo e a conta é refeita.
+ */
+export function msTemporizadorProva(proximaEm, agora, folgaMs = FOLGA_TEMPORIZADOR_MS) {
+  const espera = msAteLiberar(proximaEm, agora);
+  return espera > 0 ? Math.min(espera + folgaMs, MAX_ESPERA_MS) : 0;
+}
+
+// ------------------------------------------ projeto pedagógico (link assinado)
+
+export const MSG_PROJETO_SEM_LINK =
+  "Não foi possível renovar o link do projeto pedagógico agora. Verifique sua conexão e tente de novo; se continuar, avise o RH.";
+export const MSG_PROJETO_RENOVADO =
+  "O link do projeto pedagógico foi renovado. Toque em Projeto pedagógico de novo para abrir.";
+
+/**
+ * Link do projeto pedagógico do curso da matrícula dentro da resposta da ação `dados` (a URL é
+ * assinada por 3 h e vem nova a cada busca). null = sem dados, sem o curso, sem projeto ou link que
+ * não é http(s): quem chama avisa o aluno em vez de abrir uma aba vazia.
+ */
+export function urlDoProjetoPedagogico(dados, matriculaId) {
+  const item = dados?.cursos?.find?.((c) => c?.matricula?.id === matriculaId);
+  const url = item?.curso?.projeto_pedagogico_url;
+  return urlApostilaValida(url) ? url.trim() : null;
+}
+
+/**
+ * Abre o projeto pedagógico sem abrir link morto em silêncio. O link vale 3 h: com os dados velhos
+ * (`vencida`) ele pode estar vencido, então os dados são buscados de novo (`recarregar`) ANTES de abrir.
+ * A aba em branco abre no próprio clique (esta função roda síncrona até o primeiro `await`): depois de
+ * esperar a rede o navegador trataria a abertura como pop-up e a bloquearia.
+ *
+ * Devolve:
+ * - "aberto": a aba foi para o link (o do portal, ainda válido, ou o renovado);
+ * - "renovado": o link foi renovado, mas a aba foi bloqueada ou fechada: o aluno toca de novo (agora
+ *   os dados são novos e abre direto);
+ * - "sem_link": não há link utilizável (sem rede, curso sem projeto...); a aba em branco é fechada.
+ * `janela` é o `window` (nos testes, um de mentira); `aoComecarBusca`/`aoTerminarBusca` mostram o andamento.
+ */
+export async function abrirProjetoPedagogico({
+  janela,
+  urlAtual,
+  vencida,
+  recarregar,
+  matriculaId,
+  aoComecarBusca,
+  aoTerminarBusca,
+}) {
+  if (!vencida) {
+    if (!urlApostilaValida(urlAtual)) return "sem_link";
+    janela.open(urlAtual.trim(), "_blank", "noopener");
+    return "aberto";
+  }
+  const aba = janela.open("", "_blank");
+  tentar(() => {
+    if (aba) aba.opener = null; // a aba em branco não fica ligada à janela do portal
+  });
+  aoComecarBusca?.();
+  let dados = null;
+  try {
+    dados = await recarregar();
+  } catch {
+    dados = null;
+  } finally {
+    aoTerminarBusca?.();
+  }
+  const url = urlDoProjetoPedagogico(dados, matriculaId);
+  if (!url) {
+    tentar(() => aba?.close());
+    return "sem_link";
+  }
+  if (aba && !aba.closed) {
+    aba.location.href = url;
+    return "aberto";
+  }
+  return "renovado";
+}
+
 // --------------------------------------------------------- mensagens
 
 export const MSG_SEM_CONEXAO =
   "Não foi possível falar com o servidor. Verifique sua conexão com a internet e tente de novo.";
+export const MSG_SERVICO_INDISPONIVEL =
+  "O serviço do portal está indisponível no momento. Tente de novo em instantes; se continuar, avise o RH.";
 export const MSG_FALHA_PADRAO = "Algo deu errado. Tente de novo; se continuar, avise o RH.";
 
+// erro da plataforma (Supabase/gateway) que o aluno não consegue resolver: a função respondeu com
+// erro HTTP sem corpo, o gateway caiu, a função não existe ou a resposta não era JSON
+const FALHA_DO_SERVIDOR =
+  /non-2xx|internal server error|bad gateway|service unavailable|gateway time-?out|function (was )?not found|boot_error|worker_limit|is not valid json|unexpected token|unexpected end of json/i;
+
+// a requisição nem chegou ao servidor (rede, tempo esgotado), no vocabulário do supabase-js e dos navegadores
 const FALHA_DE_REDE =
-  /failed to send a request|relay error|failed to fetch|networkerror|load failed|network request failed/i;
+  /failed to send a request|relay error|failed to fetch|fetch failed|networkerror|load failed|network request failed|network connection was lost|internet connection appears to be offline|timed out|timeout|aborted|aborterror/i;
 
 /**
- * Texto do erro para o aluno. As falhas de conexão chegam em inglês (supabase-js e navegadores):
- * viram uma frase em português. O que o servidor respondeu (já em português) passa como veio.
+ * Texto do erro para o aluno. Os erros de conexão e de plataforma chegam em inglês (supabase-js e
+ * navegadores): viram uma frase em português. O que o servidor respondeu (já em português) passa
+ * como veio.
  */
 export function mensagemDeFalha(erro) {
   const texto = typeof erro?.message === "string" ? erro.message.trim() : "";
   if (!texto) return MSG_FALHA_PADRAO;
+  // o servidor vem antes da rede: "Gateway Timeout" tem "timeout", mas quem falhou foi o servidor
+  if (FALHA_DO_SERVIDOR.test(texto)) return MSG_SERVICO_INDISPONIVEL;
   return FALHA_DE_REDE.test(texto) ? MSG_SEM_CONEXAO : texto;
 }

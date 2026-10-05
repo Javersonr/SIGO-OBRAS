@@ -233,6 +233,20 @@ describe("montarItemPrevia", () => {
     expect(padrao.avaliacao.nota_minima).toBe(70);
   });
 
+  it("nota mínima 0 vale 0, como no servidor (`nota_minima ?? 70`); só ausente ou vazia vira 70", () => {
+    const nota = (valor) =>
+      montarItemPrevia({
+        curso: { id: "c", nome: "x", nota_minima: valor },
+        aulas: [],
+        questoes,
+        urls: {},
+      }).avaliacao.nota_minima;
+    expect(nota(0)).toBe(0);
+    expect(nota("0")).toBe(0);
+    expect(nota(100)).toBe(100);
+    for (const ausente of [null, undefined, "", "  "]) expect(nota(ausente)).toBe(70);
+  });
+
   it("não altera o que recebeu", () => {
     const antes = JSON.stringify({ curso, aulas, questoes });
     montarItemPrevia({ curso, aulas, questoes, urls });
@@ -273,6 +287,14 @@ describe("corrigirPrevia", () => {
       notaMinima: 70,
     });
     expect(r).toMatchObject({ acertos: 1, nota: 25, aprovada: false });
+  });
+
+  it("nota mínima 0 vale 0: até quem errou tudo passa, como no servidor", () => {
+    const r = corrigirPrevia({ questoes: prova, respostas: [], notaMinima: 0 });
+    expect(r).toMatchObject({ nota: 0, minima: 0, aprovada: true });
+    expect(corrigirPrevia({ questoes: prova, respostas: [], notaMinima: "0" }).minima).toBe(0);
+    expect(corrigirPrevia({ questoes: prova, respostas: [], notaMinima: "" }).minima).toBe(70);
+    expect(corrigirPrevia({ questoes: prova, respostas: [], notaMinima: null }).minima).toBe(70);
   });
 
   it("nota mínima ausente vale 70; prova vazia não vira NaN", () => {
@@ -356,6 +378,18 @@ describe("criarApiPrevia", () => {
       { questao_id: "q1", acertou: true, resposta_correta: "a", comentario: "Porque sim" },
       { questao_id: "q2", acertou: true, resposta_correta: "c", comentario: null },
     ]);
+  });
+
+  it("curso com nota mínima 0: a API corrige com 0 (não troca por 70)", async () => {
+    const semMinima = montarItemPrevia({
+      curso: { ...curso, nota_minima: 0 },
+      aulas,
+      questoes,
+      urls,
+    });
+    const api = criarApiPrevia({ item: semMinima });
+    const r = await api.chamarPortal("avaliacao", { respostas: [] });
+    expect(r).toMatchObject({ nota: 0, nota_minima: 0, aprovada: true });
   });
 
   it("reprovado: sem espera para nova tentativa e sem correção comentada (como o aluno vê)", async () => {

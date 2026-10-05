@@ -5,6 +5,9 @@ import {
   IDADE_MAX_DADOS_MS,
   JANELA_RENOVACAO_AUTO_MS,
   AVISO_VELOCIDADE,
+  MSG_VIDEO_RENOVADO,
+  avisoRetomada,
+  avisoPedePlay,
   minimoVideoSeg,
   percentualContado,
   precisaReassistir,
@@ -282,7 +285,8 @@ describe("mensagemErroYouTube", () => {
 describe("criarCarregadorYouTube", () => {
   function ambiente() {
     const anexados = [];
-    const agendados = [];
+    const agendados = []; // { id, fn, ms }
+    const cancelados = []; // ids dos temporizadores cancelados
     const documento = {
       head: {
         appendChild: (el) => {
@@ -301,74 +305,177 @@ describe("criarCarregadorYouTube", () => {
       janela,
       documento,
       agendar: (fn, ms) => {
-        agendados.push({ fn, ms });
-        return agendados.length;
+        const id = agendados.length + 1;
+        agendados.push({ id, fn, ms });
+        return id;
       },
-      cancelar: () => {},
+      cancelar: (id) => cancelados.push(id),
       timeoutMs: 5000,
     });
-    return { anexados, agendados, janela, carregar };
+    // o YouTube terminou de carregar: define o YT e chama o callback que o carregador registrou
+    const youtubePronto = () => {
+      janela.YT = { Player: function Player() {} };
+      janela.onYouTubeIframeAPIReady();
+    };
+    return { anexados, agendados, cancelados, janela, carregar, youtubePronto };
   }
 
-  it("já carregada: devolve o YT sem criar script", async () => {
-    const { anexados, janela, carregar } = ambiente();
+  it("já carregada: devolve o YT sem criar script nem temporizador", async () => {
+    const { anexados, agendados, janela, carregar } = ambiente();
     janela.YT = { Player: function Player() {} };
     await expect(carregar()).resolves.toBe(janela.YT);
     expect(anexados).toHaveLength(0);
+    expect(agendados).toHaveLength(0);
   });
 
   it("carrega o script uma vez só e resolve quando o YouTube avisa que está pronto", async () => {
-    const { anexados, janela, carregar } = ambiente();
+    const { anexados, janela, carregar, youtubePronto } = ambiente();
     const p1 = carregar();
     const p2 = carregar();
     expect(p2).toBe(p1);
     expect(anexados).toHaveLength(1);
     expect(anexados[0].src).toBe("https://www.youtube.com/iframe_api");
-    janela.YT = { Player: function Player() {} };
-    janela.onYouTubeIframeAPIReady();
+    youtubePronto();
     await expect(p1).resolves.toBe(janela.YT);
   });
 
   it("mantém o callback que já existia na página", async () => {
-    const { janela, carregar } = ambiente();
+    const { janela, carregar, youtubePronto } = ambiente();
     let chamou = 0;
     janela.onYouTubeIframeAPIReady = () => {
       chamou += 1;
     };
     const p = carregar();
-    janela.YT = { Player: function Player() {} };
-    janela.onYouTubeIframeAPIReady();
+    youtubePronto();
     await p;
     expect(chamou).toBe(1);
   });
 
-  it("script.onerror rejeita com mensagem e deixa tentar de novo", async () => {
-    const { anexados, carregar } = ambiente();
+  it("script.onerror rejeita com mensagem, cancela o temporizador e deixa tentar de novo", async () => {
+    const { anexados, agendados, cancelados, carregar } = ambiente();
     const p = carregar();
     anexados[0].onerror(new Event("error"));
     await expect(p).rejects.toThrow(/YouTube/);
     expect(anexados).toHaveLength(0); // o script que falhou saiu da página
+    expect(cancelados).toEqual([agendados[0].id]); // o temporizador do tempo limite não fica solto
 
     const outra = carregar(); // nova tentativa = novo script
     expect(anexados).toHaveLength(1);
     expect(outra).not.toBe(p);
   });
 
-  it("sem resposta no tempo limite rejeita com mensagem", async () => {
-    const { agendados, carregar } = ambiente();
+  it("sem resposta no tempo limite rejeita com mensagem e tira o script da página", async () => {
+    const { anexados, agendados, carregar } = ambiente();
     const p = carregar();
     expect(agendados).toHaveLength(1);
     expect(agendados[0].ms).toBe(5000);
+    expect(anexados).toHaveLength(1);
     agendados[0].fn();
     await expect(p).rejects.toThrow(/YouTube/);
+    expect(anexados).toHaveLength(0);
   });
 
-  it("falha depois do tempo limite não derruba nada (promessa já resolvida ou rejeitada)", async () => {
-    const { anexados, janela, carregar } = ambiente();
+  it("no sucesso o temporizador do tempo limite é CANCELADO (e só ele, uma vez)", async () => {
+    const { agendados, cancelados, carregar, youtubePronto } = ambiente();
     const p = carregar();
-    janela.YT = { Player: function Player() {} };
-    janela.onYouTubeIframeAPIReady();
+    expect(agendados).toHaveLength(1);
+    expect(cancelados).toEqual([]); // ainda carregando: nada cancelado
+    youtubePronto();
     await p;
-    expect(() => anexados[0]?.onerror?.()).not.toThrow();
+    expect(cancelados).toEqual([agendados[0].id]);
+    // o YouTube costuma chamar o callback mais de uma vez: não cancela nem resolve de novo
+    youtubePronto();
+    expect(cancelados).toEqual([agendados[0].id]);
+  });
+
+  it("o tempo limite que dispara DEPOIS do sucesso não rejeita nem tira o script da página", async () => {
+    const { anexados, agendados, janela, carregar, youtubePronto } = ambiente();
+    const p = carregar();
+    youtubePronto();
+    await expect(p).resolves.toBe(janela.YT);
+    agendados[0].fn(); // um temporizador que escapou do cancelamento
+    expect(anexados).toHaveLength(1); // o script que funcionou continua na página
+    await expect(p).resolves.toBe(janela.YT); // e a promessa continua resolvida
+    await expect(carregar()).resolves.toBe(janela.YT); // quem pedir depois recebe o YT pronto
+    expect(anexados).toHaveLength(1);
+  });
+
+  it("falha por script.onerror DEPOIS do sucesso não derruba nada", async () => {
+    const { anexados, cancelados, janela, carregar, youtubePronto } = ambiente();
+    const p = carregar();
+    youtubePronto();
+    await p;
+    expect(() => anexados[0].onerror()).not.toThrow();
+    expect(anexados).toHaveLength(1);
+    expect(cancelados).toHaveLength(1);
+    await expect(carregar()).resolves.toBe(janela.YT);
+  });
+
+  it("depois do tempo limite há NOVA tentativa: novo script, novo temporizador, e ela pode dar certo", async () => {
+    const { anexados, agendados, janela, carregar, youtubePronto } = ambiente();
+    const primeira = carregar();
+    const scriptDaPrimeira = anexados[0];
+    agendados[0].fn();
+    await expect(primeira).rejects.toThrow(/YouTube/);
+    expect(anexados).toHaveLength(0);
+
+    const segunda = carregar();
+    expect(segunda).not.toBe(primeira);
+    expect(anexados).toHaveLength(1);
+    expect(anexados[0]).not.toBe(scriptDaPrimeira);
+    expect(anexados[0].src).toBe("https://www.youtube.com/iframe_api");
+    expect(agendados).toHaveLength(2); // a nova tentativa tem o seu próprio tempo limite
+    expect(agendados[1].ms).toBe(5000);
+
+    youtubePronto();
+    await expect(segunda).resolves.toBe(janela.YT);
+    // o tempo limite da 1ª tentativa e o erro do script antigo chegam tarde e não afetam a 2ª
+    agendados[0].fn();
+    scriptDaPrimeira.onerror?.();
+    expect(anexados).toHaveLength(1);
+    await expect(segunda).resolves.toBe(janela.YT);
+  });
+
+  it("o erro tardio do script da tentativa antiga não derruba a nova tentativa em andamento", async () => {
+    const { anexados, agendados, janela, carregar, youtubePronto } = ambiente();
+    const primeira = carregar();
+    const scriptDaPrimeira = anexados[0];
+    agendados[0].fn();
+    await expect(primeira).rejects.toThrow(/YouTube/);
+
+    const segunda = carregar();
+    scriptDaPrimeira.onerror(); // chega tarde, com a 2ª ainda carregando
+    expect(anexados).toHaveLength(1); // o script novo continua lá
+    youtubePronto();
+    await expect(segunda).resolves.toBe(janela.YT);
+  });
+});
+
+describe("avisos que pedem o play (retomada e link renovado)", () => {
+  it("o texto de retomada diz o ponto e manda apertar o play", () => {
+    const texto = avisoRetomada(754);
+    expect(texto).toContain("12:34");
+    expect(texto).toMatch(/Aperte o play/);
+  });
+
+  it("os dois avisos que pedem o play são reconhecidos (e somem quando o aluno dá o play)", () => {
+    expect(avisoPedePlay(avisoRetomada(754))).toBe(true);
+    expect(avisoPedePlay(avisoRetomada(5))).toBe(true);
+    expect(avisoPedePlay(MSG_VIDEO_RENOVADO)).toBe(true);
+    expect(MSG_VIDEO_RENOVADO).toMatch(/Aperte o play/);
+  });
+
+  it("qualquer outro aviso fica (velocidade, aula concluída, erro de leitura...)", () => {
+    for (const outro of [
+      AVISO_VELOCIDADE,
+      "✅ Aula concluída — a próxima já está liberada.",
+      "🎉 Curso concluído!",
+      "Retomamos o vídeo",
+      "",
+      null,
+      undefined,
+    ]) {
+      expect(avisoPedePlay(outro)).toBe(false);
+    }
   });
 });

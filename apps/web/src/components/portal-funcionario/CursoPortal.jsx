@@ -28,9 +28,12 @@ import {
   AVISO_VELOCIDADE,
   MSG_RECARGA_SEM_REDE,
   MSG_VIDEO_FALHOU,
+  MSG_VIDEO_RENOVADO,
   MSG_YOUTUBE_FALHOU,
   aulaDoCurso,
   avisoFimIncompleto,
+  avisoPedePlay,
+  avisoRetomada,
   criarCarregadorYouTube,
   dadosPrecisamRenovar,
   fonteDoVideo,
@@ -42,12 +45,15 @@ import {
   velocidadeNormal,
 } from "@/lib/portal-video";
 import {
+  MSG_PROJETO_RENOVADO,
+  MSG_PROJETO_SEM_LINK,
+  abrirProjetoPedagogico,
   aulaSeguinte,
   cursoDespublicado,
   guardarPosicao,
   lerPosicao,
   mensagemDeFalha,
-  msAteLiberar,
+  msTemporizadorProva,
   numerarAulas,
   posicaoParaRetomar,
   progressoDoCurso,
@@ -119,18 +125,23 @@ export default function CursoPortal({
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState("");
   // vídeo: falha que o aluno precisa ver ({ aulaId, mensagem, acao, posicao }), renovação do
-  // acesso em andamento, número da tentativa (remonta o player) e aviso de fim com tempo a menos
+  // acesso em andamento (id da aula, para a tela de outra aula não mostrar o spinner dela), número
+  // da tentativa (remonta o player) e aviso de fim com tempo a menos
   const [falhaVideo, setFalhaVideo] = useState(null);
-  const [renovandoVideo, setRenovandoVideo] = useState(false);
+  const [renovandoVideo, setRenovandoVideo] = useState(null);
   const [tentativaVideo, setTentativaVideo] = useState(0);
   const [fimIncompleto, setFimIncompleto] = useState(null); // { aulaId, texto }
+  // player do YouTube pronto ("aula:tentativa" do que já disparou onReady); até lá, "Carregando vídeo..."
+  const [ytPronto, setYtPronto] = useState("");
+  // "Projeto pedagógico" renovando o link vencido antes de abrir
+  const [abrindoProjeto, setAbrindoProjeto] = useState(false);
   // URLs de vídeo/legenda de cada aula, travadas na que abriu a aula: refazer os dados (concluir
   // aula, dúvida...) assina URLs novas, e trocar o src no meio do vídeo o recarregaria do início
   const [midiasDaAula, setMidiasDaAula] = useState({});
   // a última busca dos dados falhou: o aluno lê o problema e tem o botão "Tentar de novo"
   const [falhaRecarga, setFalhaRecarga] = useState(false);
   // relógio que só serve para refazer a conta quando acaba o intervalo da próxima tentativa da prova
-  const [agora, setAgora] = useState(() => Date.now());
+  const [relogio, setRelogio] = useState(() => Date.now());
 
   const fila = useMemo(() => criarFila(), []);
   const assistidoRef = useRef(0);
@@ -140,7 +151,7 @@ export default function CursoPortal({
   const playerRef = useRef(null);
   const ytContainerRef = useRef(null);
   const aulaRef = useRef(null);
-  const renovandoRef = useRef(false);
+  const renovandoRef = useRef(null); // id da aula cujo acesso ao vídeo está sendo renovado
   const renovacaoAutoRef = useRef({}); // aulaId -> quando o player renovou o acesso sozinho
   const retomadaRef = useRef(null); // { posicao }: o vídeo trocou de URL e volta a este segundo
   const posicaoInicialRef = useRef(null); // { aulaId, seg }: onde o aluno parou ao abrir a aula
@@ -283,9 +294,6 @@ export default function CursoPortal({
     if (aulaClicada.id === aulaId && modo === "aulas") return;
     setErro("");
     setAviso("");
-    setFalhaVideo(null);
-    setFimIncompleto(null);
-    retomadaRef.current = null;
     await pararContagem();
     // o vídeo da aula anterior não pode seguir tocando enquanto a nova abre
     videoElRef.current?.pause();
@@ -299,6 +307,7 @@ export default function CursoPortal({
         )
       );
     } catch (e) {
+      // a troca não aconteceu: a aula anterior segue aberta COM a falha de vídeo e o "Tentar de novo"
       tratarErro(e);
       return;
     }
@@ -329,6 +338,11 @@ export default function CursoPortal({
       ...m,
       [a.id]: { video_url: a.video_url ?? null, legenda_url: a.legenda_url ?? null },
     }));
+    // a troca vai acontecer: só agora saem a falha do vídeo, o aviso de fim incompleto e a retomada
+    // da aula anterior (se o evento acima falhasse, a aula anterior os manteria)
+    setFalhaVideo(null);
+    setFimIncompleto(null);
+    retomadaRef.current = null;
     setModo("aulas");
     setAulaId(a.id);
     aulaRef.current = a;
@@ -340,14 +354,18 @@ export default function CursoPortal({
   // O arquivo do vídeo não carregou (link vencido, rede): busca os dados de novo e troca a URL.
   // Sem os dados ou sem URL nova, o aluno lê a mensagem e tem o botão "Recarregar".
   const renovarVideo = async (a, posicao = 0) => {
-    if (renovandoRef.current) return;
-    renovandoRef.current = true;
+    if (renovandoRef.current === a.id) return;
+    renovandoRef.current = a.id;
     setFalhaVideo(null);
-    setRenovandoVideo(true);
+    setRenovandoVideo(a.id);
     const dados = await recarregar();
     const nova = aulaDoCurso(dados, mat.id, a.id);
-    renovandoRef.current = false;
-    setRenovandoVideo(false);
+    if (renovandoRef.current === a.id) renovandoRef.current = null;
+    setRenovandoVideo((atual) => (atual === a.id ? null : atual));
+    // O aluno abriu outra aula enquanto a busca corria: o resultado era da aula antiga. Não aplica
+    // nada (nem troca a URL, nem pula para o segundo de lá, nem mostra falha de outra aula): o
+    // spinner é por aula, então o player da aula nova (inclusive o do YouTube) já está na tela.
+    if (aulaRef.current?.id !== a.id) return;
     if (!dados) {
       setFalhaVideo({ aulaId: a.id, mensagem: MSG_RECARGA_SEM_REDE, acao: "recarregar", posicao });
     } else if (fonteDoVideo(nova) !== "upload") {
@@ -396,9 +414,7 @@ export default function CursoPortal({
         posicaoInicialRef.current = null;
         const limite = Number.isFinite(el.duration) ? Math.max(0, el.duration - 1) : inicial.seg;
         el.currentTime = Math.min(inicial.seg, limite);
-        setAviso(
-          `Retomamos o vídeo de onde você parou (${fmtTempo(inicial.seg)}). Aperte o play para continuar.`
-        );
+        setAviso(avisoRetomada(inicial.seg));
       }
       return;
     }
@@ -407,7 +423,7 @@ export default function CursoPortal({
       const limite = Number.isFinite(el.duration) ? Math.max(0, el.duration - 1) : retomada.posicao;
       el.currentTime = Math.min(retomada.posicao, limite);
     }
-    setAviso("O acesso ao vídeo foi renovado. Aperte o play para continuar de onde parou.");
+    setAviso(MSG_VIDEO_RENOVADO);
   };
 
   // só vale a velocidade normal: o tempo conta em tempo real, então 1,5x/2x contaria a menos
@@ -420,6 +436,8 @@ export default function CursoPortal({
 
   const aoTocarVideo = (a) => {
     setFimIncompleto(null);
+    // os avisos "aperte o play" cumpriram o papel; os demais (velocidade, aula concluída) ficam
+    setAviso((atual) => (avisoPedePlay(atual) ? "" : atual));
     evento("play", { aula_id: a.id });
     iniciarContagem();
   };
@@ -451,6 +469,7 @@ export default function CursoPortal({
     if (fonteDoVideo(aula) !== "youtube") return undefined;
     const contenedor = ytContainerRef.current;
     if (!contenedor) return undefined;
+    const chaveYouTube = `${aula.id}:${tentativaVideo}`;
     let vivo = true;
     let player = null;
     carregarYouTubeAPI()
@@ -464,9 +483,7 @@ export default function CursoPortal({
         const inicioSeg = inicial?.aulaId === aula.id ? inicial.seg : 0;
         if (inicioSeg > 0) {
           posicaoInicialRef.current = null;
-          setAviso(
-            `Retomamos o vídeo de onde você parou (${fmtTempo(inicioSeg)}). Aperte o play para continuar.`
-          );
+          setAviso(avisoRetomada(inicioSeg));
         }
         player = new YT.Player(alvo, {
           videoId: aula.youtube_id,
@@ -477,6 +494,9 @@ export default function CursoPortal({
             ...(inicioSeg > 0 ? { start: inicioSeg } : {}),
           },
           events: {
+            onReady: () => {
+              if (vivo) setYtPronto(chaveYouTube);
+            },
             onStateChange: (ev) => {
               if (ev.data === YT.PlayerState.PLAYING) {
                 aoTocarVideo(aula);
@@ -563,22 +583,42 @@ export default function CursoPortal({
   // (sem isto a conta só era refeita se o aluno mexesse na tela). Também refaz a conta quando a aba
   // volta a ficar visível, porque o celular pausa temporizadores com a tela apagada.
   useEffect(() => {
-    const espera = msAteLiberar(item.avaliacao?.proxima_em, Date.now());
+    // a espera já vem limitada ao máximo do setTimeout (acima disso ele dispara na hora e a tela
+    // entraria em laço): num intervalo enorme o temporizador só acorda antes e a conta é refeita
+    const espera = msTemporizadorProva(item.avaliacao?.proxima_em, Date.now());
     if (!espera) return undefined;
-    const timer = setTimeout(() => setAgora(Date.now()), espera + 300);
+    const timer = setTimeout(() => setRelogio(Date.now()), espera);
     const aoVoltar = () => {
-      if (!document.hidden) setAgora(Date.now());
+      if (!document.hidden) setRelogio(Date.now());
     };
     document.addEventListener("visibilitychange", aoVoltar);
     return () => {
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", aoVoltar);
     };
-  }, [item.avaliacao?.proxima_em, agora]);
+  }, [item.avaliacao?.proxima_em, relogio]);
 
   const voltar = async () => {
     await pararContagem();
     onVoltar();
+  };
+
+  // O link do projeto pedagógico é assinado por 3 h, como o dos vídeos: com os dados já velhos ele pode
+  // estar vencido. Os dados são buscados de novo ANTES de abrir; sem link novo o aluno lê o que houve
+  // (antes abria uma aba com erro, sem aviso). A regra está em lib/portal-curso.js (com teste).
+  const abrirProjeto = async () => {
+    const resultado = await abrirProjetoPedagogico({
+      janela: window,
+      urlAtual: item.curso?.projeto_pedagogico_url,
+      vencida: dadosPrecisamRenovar(dadosCarregadosEm?.() ?? 0, Date.now()),
+      recarregar,
+      matriculaId: mat.id,
+      aoComecarBusca: () => setAbrindoProjeto(true),
+      aoTerminarBusca: () => setAbrindoProjeto(false),
+    });
+    if (resultado === "aberto") evento("abrir_projeto");
+    else if (resultado === "renovado") setAviso(MSG_PROJETO_RENOVADO);
+    else setErro(MSG_PROJETO_SEM_LINK);
   };
 
   const aulasNumeradas = numerarAulas(aulas);
@@ -640,13 +680,16 @@ export default function CursoPortal({
           </div>
           {item.curso?.projeto_pedagogico_url && (
             <button
-              className="text-xs flex items-center gap-1 bg-white/10 hover:bg-white/20 rounded-md px-2 py-1.5"
-              onClick={() => {
-                evento("abrir_projeto");
-                window.open(item.curso.projeto_pedagogico_url, "_blank", "noopener");
-              }}
+              className="text-xs flex items-center gap-1 bg-white/10 hover:bg-white/20 rounded-md px-2 py-1.5 disabled:opacity-60"
+              disabled={abrindoProjeto}
+              onClick={abrirProjeto}
             >
-              <FileDown className="w-4 h-4" /> Projeto pedagógico
+              {abrindoProjeto ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <FileDown className="w-4 h-4" />
+              )}{" "}
+              Projeto pedagógico
             </button>
           )}
         </div>
@@ -754,7 +797,7 @@ export default function CursoPortal({
                       : renovarVideo(aula, falha.posicao)
                   }
                 />
-              ) : renovandoVideo ? (
+              ) : renovandoVideo === aula.id ? (
                 <div
                   role="status"
                   className="aspect-video bg-black rounded-lg flex items-center justify-center gap-2 text-sm text-white"
@@ -762,7 +805,7 @@ export default function CursoPortal({
                   <Loader2 className="w-4 h-4 animate-spin" /> Renovando o acesso ao vídeo...
                 </div>
               ) : (
-                <div className="aspect-video bg-black rounded-lg overflow-hidden">
+                <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
                   {fonteVideo === "upload" ? (
                     <video
                       key={`${aula.id}:${tentativaVideo}`}
@@ -794,7 +837,19 @@ export default function CursoPortal({
                       )}
                     </video>
                   ) : (
-                    <div ref={ytContainerRef} className="w-full h-full" />
+                    <>
+                      <div ref={ytContainerRef} className="w-full h-full" />
+                      {/* o player nasce no contêiner acima (fora do React); este aviso cobre o quadro até o
+                          YouTube carregar e o player dizer que está pronto */}
+                      {ytPronto !== `${aula.id}:${tentativaVideo}` && (
+                        <div
+                          role="status"
+                          className="absolute inset-0 flex items-center justify-center gap-2 bg-black text-sm text-white"
+                        >
+                          <Loader2 className="w-4 h-4 animate-spin" /> Carregando vídeo...
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               ))}

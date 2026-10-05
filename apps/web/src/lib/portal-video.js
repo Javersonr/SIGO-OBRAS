@@ -33,6 +33,8 @@ export const MSG_RECARGA_SEM_REDE =
   "Não foi possível recarregar o vídeo agora. Verifique sua conexão e tente de novo.";
 export const MSG_YOUTUBE_FALHOU =
   "Não foi possível carregar o YouTube. Verifique sua conexão (ou algum bloqueador de anúncios) e tente de novo.";
+export const MSG_VIDEO_RENOVADO =
+  "O acesso ao vídeo foi renovado. Aperte o play para continuar de onde parou.";
 
 const positivo = (n) => {
   const v = Number(n);
@@ -45,6 +47,23 @@ const mmss = (seg) => {
   const s = inteiro(seg);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
+
+/** Aviso de que o vídeo voltou ao ponto em que o aluno parou (o play é do aluno: nada toca sozinho). */
+export function avisoRetomada(segundos) {
+  return `Retomamos o vídeo de onde você parou (${mmss(segundos)}). Aperte o play para continuar.`;
+}
+
+/**
+ * O aviso é um dos que mandam apertar o play (retomada ou link renovado)? Esses somem quando o aluno
+ * dá o play; os outros avisos (velocidade, aula concluída...) continuam na tela.
+ */
+export function avisoPedePlay(texto) {
+  if (typeof texto !== "string") return false;
+  return (
+    texto === MSG_VIDEO_RENOVADO ||
+    /^Retomamos o vídeo de onde você parou \(\d+:\d{2}\)\. Aperte o play/.test(texto)
+  );
+}
 
 /** Segundos contados que concluem o vídeo; 0 quando a duração não é válida. */
 export function minimoVideoSeg(duracao) {

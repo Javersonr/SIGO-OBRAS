@@ -23,6 +23,17 @@ export const ID_MATRICULA_PREVIA = "previa";
 const NOTA_MINIMA_PADRAO = 70;
 const TEMPO_MINIMO_PADRAO = 60; // aula de PDF/texto sem tempo definido
 
+/**
+ * Nota mínima como o servidor a usa (`nota_minima ?? 70`): só ausente (ou o texto vazio do formulário)
+ * cai no padrão. 0 vale 0: o RT vê a prova passar com qualquer nota, como o aluno veria.
+ */
+function notaMinimaDe(valor) {
+  if (valor === null || valor === undefined) return NOTA_MINIMA_PADRAO;
+  if (typeof valor === "string" && valor.trim() === "") return NOTA_MINIMA_PADRAO;
+  const n = Number(valor);
+  return Number.isFinite(n) ? n : NOTA_MINIMA_PADRAO;
+}
+
 const lista = (v) => (Array.isArray(v) ? v.filter(Boolean) : []);
 const porOrdem = (itens) => [...itens].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
 const tipoDaAula = (a) => a?.tipo || "video";
@@ -102,7 +113,6 @@ export function montarItemPrevia({ curso, aulas, questoes, urls } = {}) {
     comentario: q.comentario ?? null,
   }));
 
-  const notaMinima = Number(curso?.nota_minima);
   const limite = Number(curso?.max_tentativas ?? 0);
 
   return {
@@ -129,7 +139,7 @@ export function montarItemPrevia({ curso, aulas, questoes, urls } = {}) {
       tentativas_max: Number.isFinite(limite) && limite > 0 ? Math.floor(limite) : null,
       limite_atingido: false,
       proxima_em: null,
-      nota_minima: Number.isFinite(notaMinima) && notaMinima > 0 ? notaMinima : NOTA_MINIMA_PADRAO,
+      nota_minima: notaMinimaDe(curso?.nota_minima),
     },
     certificado: null,
     pode_emitir_certificado: false,
@@ -156,8 +166,7 @@ export function corrigirPrevia({ questoes, respostas, notaMinima } = {}) {
   const acertos = prova.filter(acertou).length;
   const total = prova.length;
   const nota = total ? Math.round((acertos / total) * 100) : 0;
-  const minimaNum = Number(notaMinima);
-  const minima = Number.isFinite(minimaNum) && minimaNum > 0 ? minimaNum : NOTA_MINIMA_PADRAO;
+  const minima = notaMinimaDe(notaMinima);
   return { marcada, acertou, acertos, total, nota, minima, aprovada: nota >= minima };
 }
 

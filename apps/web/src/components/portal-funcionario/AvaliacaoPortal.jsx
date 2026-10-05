@@ -8,6 +8,7 @@ import {
   limparRascunhoProva,
   mensagemDeFalha,
   resumoRespostas,
+  textoSairDaProva,
 } from "@/lib/portal-curso";
 
 function CorrecaoComentada({ item }) {
@@ -292,9 +293,11 @@ export default function AvaliacaoPortal({
             className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2"
           >
             <p className="text-sm text-amber-900">
-              Voltar às aulas? Você já respondeu {resumo.respondidas} de {resumo.total} questões. As
-              respostas ficam guardadas neste aparelho e voltam quando você abrir a prova de novo,
-              mas a prova só vale depois de enviada.
+              {textoSairDaProva({
+                respondidas: resumo.respondidas,
+                total: resumo.total,
+                previa,
+              })}
             </p>
             <div className="flex gap-2">
               <Button
