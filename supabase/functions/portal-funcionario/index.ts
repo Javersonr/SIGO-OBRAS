@@ -43,6 +43,7 @@ import { requisitosDoCurso, duracaoParaProgresso } from "./requisitos.ts";
 import {
   NOTA_MINIMA_PADRAO,
   aulaLiberada,
+  comRastroDeFalha,
   conclusaoDaAula,
   corrigirProva,
   creditarTempo,
@@ -749,8 +750,13 @@ Deno.serve(
       // sessão. Só vale a chamada ao Storage quando o aluno tem certificado para baixar; quem
       // emite um agora recarrega os `dados` e recebe o logo junto.
       const empresaLogoUrl = (certificados ?? []).length
-        ? await logoAssinadoParaPdf(emp?.logo_url, (refs) =>
-            assinarDaEmpresa(supabase, refs, empresaId)
+        ? await logoAssinadoParaPdf(
+            emp?.logo_url,
+            // falha ao assinar = PDF sem logo para o aluno; o rastro fica nos logs da função
+            comRastroDeFalha(
+              (refs: string[]) => assinarDaEmpresa(supabase, refs, empresaId),
+              (erro) => console.error("[portal-funcionario] logo da empresa não assinado:", erro)
+            )
           )
         : null;
 

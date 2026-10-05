@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -83,6 +83,11 @@ export default function MatriculaAuditoriaSheet({
   const [tentativas, setTentativas] = useState([]);
   const [eventos, setEventos] = useState([]);
   const [certificado, setCertificado] = useState(null);
+  // Baixar o PDF leva até alguns segundos (QR + logo): enquanto roda, o botão fica desabilitado, e
+  // cada clique extra não monta outro QR nem baixa outro arquivo. O ref vale já no 2º clique, antes
+  // de a tela redesenhar com o estado.
+  const [baixando, setBaixando] = useState(false);
+  const baixandoRef = useRef(false);
 
   const carregar = async () => {
     setCarregando(true);
@@ -164,12 +169,18 @@ export default function MatriculaAuditoriaSheet({
   };
 
   const baixar = async () => {
+    if (baixandoRef.current) return;
+    baixandoRef.current = true;
+    setBaixando(true);
     try {
       const logo = await logoParaPdf(empresaAtiva);
       await baixarCertificadoPdf({ ...certificado, revogado: !!certificado.revogado_em }, { logo });
     } catch (e) {
       console.error("[certificado] falha ao baixar:", e);
       toast.error(mensagemFalhaCertificado(e));
+    } finally {
+      baixandoRef.current = false;
+      setBaixando(false);
     }
   };
 
@@ -326,8 +337,19 @@ export default function MatriculaAuditoriaSheet({
                     </p>
                   )}
                   <div className="flex gap-2">
-                    <Button size="sm" onClick={baixar} className="bg-slate-900">
-                      <FileDown className="w-4 h-4 mr-1" /> Baixar PDF
+                    <Button
+                      size="sm"
+                      onClick={baixar}
+                      disabled={baixando}
+                      aria-busy={baixando}
+                      className="bg-slate-900"
+                    >
+                      {baixando ? (
+                        <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                      ) : (
+                        <FileDown className="w-4 h-4 mr-1" />
+                      )}{" "}
+                      Baixar PDF
                     </Button>
                     {!certificado.revogado_em && (
                       <Button size="sm" variant="outline" onClick={revogar}>

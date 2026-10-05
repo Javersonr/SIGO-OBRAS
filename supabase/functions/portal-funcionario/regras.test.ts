@@ -6,6 +6,7 @@ import {
   TOLERANCIA_SEG,
   aulaLiberada,
   conclusaoDaAula,
+  comRastroDeFalha,
   corrigirProva,
   creditarTempo,
   cursoPublicado,
@@ -741,4 +742,84 @@ test("logoAssinadoParaPdf + assinarDaEmpresa: assina a pasta da empresa e barra 
     assinar("empresa-a")
   );
   assert.equal(escapando, null);
+});
+
+// -------------------------------------------------------------- comRastroDeFalha
+test("comRastroDeFalha: sucesso devolve o resultado e não registra nada", async () => {
+  const registros: unknown[] = [];
+  const assinar = comRastroDeFalha(assinarSempre("https://assinada.exemplo/logo"), (e) =>
+    registros.push(e)
+  );
+  const mapa = await assinar(["empresas/empresa-a/logo.png"]);
+  assert.equal(mapa.get("empresas/empresa-a/logo.png"), "https://assinada.exemplo/logo");
+  assert.deepEqual(registros, []);
+});
+
+test("comRastroDeFalha: falha ao assinar é registrada e relançada, com o mesmo erro", async () => {
+  const registros: unknown[] = [];
+  const erro = new Error("storage fora do ar");
+  const assinar = comRastroDeFalha(
+    async () => {
+      throw erro;
+    },
+    (e) => registros.push(e)
+  );
+  await assert.rejects(
+    () => assinar(["empresas/empresa-a/logo.png"]),
+    (e) => e === erro
+  );
+  assert.deepEqual(registros, [erro]);
+});
+
+test("comRastroDeFalha: função que lança antes de devolver a promessa também vira rejeição registrada", async () => {
+  const registros: unknown[] = [];
+  const erro = new Error("falha síncrona");
+  const assinar = comRastroDeFalha(
+    () => {
+      throw erro;
+    },
+    (e) => registros.push(e)
+  );
+  await assert.rejects(
+    () => assinar(["x"]),
+    (e) => e === erro
+  );
+  assert.deepEqual(registros, [erro]);
+});
+
+test("comRastroDeFalha: com logoAssinadoParaPdf o PDF sai sem logo e a falha deixa rastro", async () => {
+  const registros: unknown[] = [];
+  const assinar = comRastroDeFalha(
+    async () => {
+      throw new Error("sem rede");
+    },
+    (e) => registros.push(e)
+  );
+  assert.equal(await logoAssinadoParaPdf("empresas/empresa-a/logo.png", assinar), null);
+  assert.equal(registros.length, 1);
+});
+
+test("comRastroDeFalha: o logo sem referência utilizável nem chama o assinar (nada a registrar)", async () => {
+  const registros: unknown[] = [];
+  const assinar = comRastroDeFalha(assinarSempre("https://assinada.exemplo/logo"), (e) =>
+    registros.push(e)
+  );
+  assert.equal(await logoAssinadoParaPdf("https://base44.app/api/files/logo.png", assinar), null);
+  assert.deepEqual(registros, []);
+});
+
+test("comRastroDeFalha: registrar que também falha não esconde o erro de verdade", async () => {
+  const erro = new Error("storage fora do ar");
+  const assinar = comRastroDeFalha(
+    async () => {
+      throw erro;
+    },
+    () => {
+      throw new Error("o log quebrou");
+    }
+  );
+  await assert.rejects(
+    () => assinar(["x"]),
+    (e) => e === erro
+  );
 });

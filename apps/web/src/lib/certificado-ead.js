@@ -13,6 +13,7 @@ import {
   MSG_QR_FALHOU,
   MSG_SEM_BIBLIOTECA_PDF,
   aguardarResultado,
+  pngDoQrSePronto,
 } from "@/lib/certificado-ead-falhas";
 
 export const urlValidacao = (codigo) =>
@@ -34,8 +35,8 @@ const fmtCnpj = (cnpj) => {
 
 /**
  * PNG (data URL) do QR, ou null se não ficou pronto em ~3 s. O QRCodeCanvas só desenha num efeito
- * do React, depois de criar o canvas: um canvas ainda transparente (alfa 0 no 1º pixel) NÃO é o QR,
- * porque o desenho começa pintando o fundo de branco. Sem essa conferência saía um QR em branco.
+ * do React, depois de criar o canvas; a conferência de "já foi desenhado" (sem ela saía um QR em
+ * branco) é `pngDoQrSePronto`, em certificado-ead-falhas.js, com teste.
  */
 async function qrPng(texto) {
   const div = document.createElement("div");
@@ -46,13 +47,7 @@ async function qrPng(texto) {
     root.render(
       React.createElement(QRCodeCanvas, { value: texto, size: 240, level: "M", marginSize: 1 })
     );
-    return await aguardarResultado(() => {
-      const c = div.querySelector("canvas");
-      if (!c || !c.width) return null;
-      const ctx = c.getContext("2d");
-      if (!ctx || ctx.getImageData(0, 0, 1, 1).data[3] === 0) return null;
-      return c.toDataURL("image/png");
-    });
+    return await aguardarResultado(() => pngDoQrSePronto(div.querySelector("canvas")));
   } finally {
     root.unmount();
     div.remove();

@@ -13,7 +13,7 @@ export const MSG_SEM_BIBLIOTECA_PDF =
   "Não foi possível carregar o gerador de PDF. Verifique sua conexão com a internet e tente de novo.";
 /** O PDF saiu, mas sem o logotipo (não carregou ou o formato não é aceito no PDF). */
 export const AVISO_SEM_LOGO =
-  "O PDF foi baixado sem o logotipo da empresa, que não pôde ser carregado. O restante do certificado e a validação pelo QR Code não mudam. Para baixar com o logotipo, atualize a página e baixe de novo.";
+  "O PDF foi baixado sem o logotipo da empresa, que não pôde ser carregado. O restante do certificado e a validação pelo QR Code não mudam. Para baixar com o logotipo, atualize a página e baixe de novo; se continuar sem o logotipo, avise o RH.";
 
 /** Falha prevista na geração do PDF. A `message` já está em português, pronta para o aluno ler. */
 export class ErroCertificado extends Error {
@@ -55,4 +55,19 @@ export async function aguardarResultado(
     if (resultado) return resultado;
   }
   return null;
+}
+
+/**
+ * PNG (data URL) do canvas do QR, ou null se o QR ainda não foi desenhado. O `QRCodeCanvas` do
+ * `qrcode.react` cria o canvas na renderização e só desenha num efeito logo depois, começando por
+ * pintar o fundo de branco: um canvas ainda sem tamanho, sem contexto 2d ou com o 1º pixel
+ * transparente (alfa 0) NÃO é o QR. Sem essa conferência saía um QR em branco no PDF. Erro do
+ * navegador ao ler o canvas (proteção contra impressão digital) sobe para quem chamou.
+ * Quem usa: `lib/certificado-ead.js` (dentro da espera de `aguardarResultado`).
+ */
+export function pngDoQrSePronto(canvas) {
+  if (!canvas || !canvas.width) return null;
+  const ctx = canvas.getContext("2d");
+  if (!ctx || ctx.getImageData(0, 0, 1, 1).data[3] === 0) return null;
+  return canvas.toDataURL("image/png");
 }

@@ -2,7 +2,8 @@
  * Regras puras da tela do RH dos treinamentos EAD (T19) — sem DOM e sem rede.
  *
  * Quem usa: components/seguranca/TreinamentosEadTab.jsx (mover aula, matricular e remover matrícula
- * — T20). Os testes ficam em ead-gestao.test.js. A tela só liga a rede: aqui se decide o que gravar.
+ * — T20; formulários abertos, cargas por empresa e certificados por matrícula — A2). Os testes
+ * ficam em ead-gestao.test.js. A tela só liga a rede: aqui se decide o que gravar.
  */
 
 /**
@@ -114,4 +115,85 @@ export function textoConfirmarRemocao({ matricula, certificado, nomeFuncionario,
       "registro de auditoria, mas não aparecem mais nesta tela.",
     "• Se for matriculado de novo, o curso recomeça do zero (aulas, tempo assistido e tentativas).",
   ].join("\n");
+}
+
+// ------------------------------------------------------------- formulários abertos (A2)
+// Depois de um `await` (gravação lenta) a tela pode estar mostrando OUTRO formulário: o RH fechou o
+// painel e abriu outro curso, ou o editor de outra aula. Quem grava guarda uma referência do
+// formulário que gravou e, no fim, só mexe na tela se ainda for o mesmo.
+
+let sequenciaDeRascunhos = 0;
+
+/**
+ * Dados de um formulário NOVO (curso ou questão ainda sem `id`), com um token em `rascunho`. O token
+ * acompanha o objeto enquanto o RH digita (`{ ...form, campo }` copia a chave) e identifica ESTE
+ * formulário depois da gravação. Não vai para o banco: quem grava monta os campos um a um.
+ */
+export function novoRascunho(dados = {}) {
+  return { ...dados, rascunho: `r${++sequenciaDeRascunhos}` };
+}
+
+/**
+ * `atual` (o que a tela mostra agora) ainda é o formulário `referencia` (o que estava aberto quando
+ * a gravação começou)? Registro já gravado: vale o `id`. Rascunho: vale o token, e só enquanto
+ * ainda não recebeu o `id` da gravação. Sem `id` e sem token não há como identificar: nunca confere.
+ */
+export function mesmoFormulario(atual, referencia) {
+  if (!atual || !referencia) return false;
+  if (referencia.id) return atual.id === referencia.id;
+  return !!referencia.rascunho && !atual.id && atual.rascunho === referencia.rascunho;
+}
+
+// ----------------------------------------------------------------- cargas da tela (A2)
+
+/**
+ * Controle das cargas de dados da tela. A carga fica presa à empresa que estava ativa NA HORA de
+ * iniciar (e não à do render que criou a função: uma gravação lenta chama o `recarregar` de um
+ * render antigo, depois da troca de empresa). Ela deixa de valer quando outra carga começa (a mais
+ * nova vence) ou quando a empresa ativa muda. Quem usa: TreinamentosEadTab.jsx.
+ */
+export function criarControleDeCarga() {
+  let empresa = null;
+  let ultima = 0;
+  return {
+    /** Chamado a cada render com a empresa ativa. */
+    definirEmpresa(id) {
+      empresa = id || null;
+    },
+    empresaAtual() {
+      return empresa;
+    },
+    /** Começa uma carga para a empresa ativa agora; null se não há empresa ativa. */
+    iniciar() {
+      if (!empresa) return null;
+      return { numero: ++ultima, empresaId: empresa };
+    },
+    /** Descarta as cargas em andamento (uma gravação já atualizou a tela por conta própria). */
+    descartarPendentes() {
+      ultima++;
+    },
+    /** A carga ainda é a mais nova e a empresa ativa é a mesma de quando ela começou. */
+    vale(carga) {
+      return !!carga && carga.numero === ultima && carga.empresaId === empresa;
+    },
+    /** `empresaId` ainda é a empresa ativa? Para consultas avulsas e para o fim de uma gravação. */
+    mesmaEmpresa(empresaId) {
+      return !!empresaId && empresaId === empresa;
+    },
+  };
+}
+
+// --------------------------------------------------------------------- tabela de matrículas (A2)
+
+/**
+ * Certificados indexados pelo id da matrícula: a tabela de matrículas consulta uma vez por linha, em
+ * tempo constante, em vez de varrer a lista inteira em cada consulta (`matricula_id` é único; se
+ * houvesse repetido, vale o primeiro, como o `find` que isto substitui).
+ */
+export function certificadosPorMatricula(certificados) {
+  const mapa = new Map();
+  for (const c of Array.isArray(certificados) ? certificados : []) {
+    if (c?.matricula_id && !mapa.has(c.matricula_id)) mapa.set(c.matricula_id, c);
+  }
+  return mapa;
 }

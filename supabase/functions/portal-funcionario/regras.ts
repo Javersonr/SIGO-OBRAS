@@ -235,3 +235,28 @@ export async function logoAssinadoParaPdf(
     return null;
   }
 }
+
+/**
+ * Envolve o `assinar` do logo para deixar rastro nos logs da função quando ele FALHA, e relança o
+ * mesmo erro. `logoAssinadoParaPdf` engole a falha de propósito (o PDF sai sem logo), então sem
+ * isto "o certificado saiu sem logotipo" não teria pista nenhuma no servidor. `registrar` é o
+ * `console.error` do `index.ts` (injetado para este módulo continuar puro); se ele próprio falhar,
+ * o erro que sobe continua sendo o da assinatura.
+ */
+export function comRastroDeFalha<A extends unknown[], R>(
+  executar: (...args: A) => Promise<R> | R,
+  registrar: (erro: unknown) => void
+): (...args: A) => Promise<R> {
+  return async (...args: A) => {
+    try {
+      return await executar(...args);
+    } catch (erro) {
+      try {
+        registrar(erro);
+      } catch {
+        // o registro nunca esconde o erro de verdade
+      }
+      throw erro;
+    }
+  };
+}

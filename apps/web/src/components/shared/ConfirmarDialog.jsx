@@ -53,7 +53,12 @@ export function ConfirmarDialog({ pedido, onResponder }) {
   );
 }
 
-/** Devolve `[confirmar, dialogo]`: `confirmar(config)` → Promise<boolean>; `dialogo` vai no JSX. */
+/**
+ * Devolve `[confirmar, dialogo, cancelar]`: `confirmar(config)` → Promise<boolean>; `dialogo` vai no
+ * JSX; `cancelar()` fecha o pedido que estiver aberto, respondendo "não" (a ação não acontece). Quem
+ * troca o contexto por baixo do diálogo (ex.: a empresa ativa) chama `cancelar()`: o pedido era do
+ * contexto anterior e um "Confirmar" tardio executaria a ação com os dados antigos.
+ */
 export function useConfirmar() {
   const [pedido, setPedido] = useState(null);
   const confirmacoesRef = useRef(null);
@@ -65,6 +70,7 @@ export function useConfirmar() {
 
   const confirmar = useCallback((config) => confirmacoes.pedir(config), [confirmacoes]);
   const responder = useCallback((resposta) => confirmacoes.responder(resposta), [confirmacoes]);
+  const cancelar = useCallback(() => confirmacoes.responder(false), [confirmacoes]);
 
-  return [confirmar, <ConfirmarDialog pedido={pedido} onResponder={responder} />];
+  return [confirmar, <ConfirmarDialog pedido={pedido} onResponder={responder} />, cancelar];
 }

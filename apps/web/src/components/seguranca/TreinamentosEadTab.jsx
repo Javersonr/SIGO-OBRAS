@@ -16,6 +16,10 @@ import {
   podeRemoverMatricula,
   textoConfirmarRemocao,
   MSG_REVOGUE_ANTES,
+  novoRascunho,
+  mesmoFormulario,
+  criarControleDeCarga,
+  certificadosPorMatricula,
 } from "@/lib/ead-gestao";
 import { srtParaVtt } from "@/lib/legendas";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
@@ -73,6 +77,13 @@ const NOVA_AULA = {
   minutos: "",
   duracao: "",
 };
+const MAT_FORM_VAZIO = { curso_id: "", funcionario_ids: [] };
+// o aviso de matrícula bloqueada tem ~190 caracteres e diz onde clicar: o toast padrão (4 s) some antes
+const DURACAO_AVISO_BLOQUEIO_MS = 10000;
+// Setas de ordem: a cor está no botão (o ícone herda), então desabilitada (1ª/última aula ou
+// gravação em andamento) ela esmaece e o hover não a escurece como se estivesse ativa.
+const CLASSE_SETA_ORDEM =
+  "text-slate-400 hover:text-slate-800 disabled:opacity-40 disabled:hover:text-slate-400 disabled:cursor-not-allowed";
 
 // aceita URL completa ou ID puro do YouTube
 function extrairYouTubeId(texto) {
@@ -153,7 +164,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const [previaAberta, setPreviaAberta] = useState(false); // "Ver como aluno" (T28)
   const [matriculaDetalheId, setMatriculaDetalheId] = useState(null);
   const [showMatricular, setShowMatricular] = useState(false);
-  const [matForm, setMatForm] = useState({ curso_id: "", funcionario_ids: [] });
+  const [matForm, setMatForm] = useState(MAT_FORM_VAZIO);
   const [buscaFunc, setBuscaFunc] = useState("");
   const [novaAula, setNovaAula] = useState(NOVA_AULA);
   const [subindoProjeto, setSubindoProjeto] = useState(false);
@@ -163,28 +174,33 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const [novaQuestao, setNovaQuestao] = useState(null); // {pergunta, opcoes[4], correta}
   const [treinamentosConfig, setTreinamentosConfig] = useState([]);
   const [aulaEditando, setAulaEditando] = useState(null); // {id, titulo, modulo, tipo, minutos}
-  const [confirmar, dialogoConfirmar] = useConfirmar();
+  const [confirmar, dialogoConfirmar, cancelarConfirmacao] = useConfirmar();
 
   // Só a 1ª carga (e a troca de empresa) mostra o spinner no lugar da tela. Gravar e recarregar
   // atualiza os dados por baixo, sem desmontar os painéis abertos nem o cartão de dúvidas.
-  // `cargaRef` descarta a resposta de uma carga que já foi superada por outra mais nova.
-  const cargaRef = useRef(0);
+  // `cargas` descarta a resposta de uma carga superada por outra mais nova OU de uma empresa que já
+  // não é a ativa. A carga lê a empresa ativa na hora de começar (não a do render que criou a
+  // função): uma gravação lenta chama o `recarregar` de um render antigo, e depois da troca de
+  // empresa ele não pode consultar nem aplicar os dados da empresa anterior (A2).
+  const cargasRef = useRef(null);
+  if (!cargasRef.current) cargasRef.current = criarControleDeCarga();
+  const cargas = cargasRef.current;
+  cargas.definirEmpresa(empresaAtiva?.id);
   const recarregar = async () => {
-    const carga = ++cargaRef.current;
+    const carga = cargas.iniciar();
+    if (!carga) return;
+    const filtro = { empresa_id: carga.empresaId };
     try {
       const [cs, as, ms, fs, certs, tcfg, qs] = await Promise.all([
-        sigo.entities.TreinamentoCurso.filter({ empresa_id: empresaAtiva.id }),
-        sigo.entities.TreinamentoAula.filter({ empresa_id: empresaAtiva.id }),
-        sigo.entities.TreinamentoMatricula.filter({ empresa_id: empresaAtiva.id }),
-        sigo.entities.Funcionario.filter({ empresa_id: empresaAtiva.id, ativo: true }),
-        sigo.entities.TreinamentoCertificado.filter(
-          { empresa_id: empresaAtiva.id },
-          SEM_SOFT_DELETE
-        ),
-        sigo.entities.Treinamento.filter({ empresa_id: empresaAtiva.id }),
-        sigo.entities.TreinamentoQuestao.filter({ empresa_id: empresaAtiva.id }),
+        sigo.entities.TreinamentoCurso.filter(filtro),
+        sigo.entities.TreinamentoAula.filter(filtro),
+        sigo.entities.TreinamentoMatricula.filter(filtro),
+        sigo.entities.Funcionario.filter({ ...filtro, ativo: true }),
+        sigo.entities.TreinamentoCertificado.filter(filtro, SEM_SOFT_DELETE),
+        sigo.entities.Treinamento.filter(filtro),
+        sigo.entities.TreinamentoQuestao.filter(filtro),
       ]);
-      if (carga !== cargaRef.current) return;
+      if (!cargas.vale(carga)) return;
       setCursos(cs);
       setAulas(porOrdem(as));
       setMatriculas(ms);
@@ -193,11 +209,11 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       setTreinamentosConfig(tcfg);
       setTodasQuestoes(qs);
     } catch (e) {
-      if (carga !== cargaRef.current) return;
+      if (!cargas.vale(carga)) return;
       console.error(e);
       toast.error("Erro ao carregar treinamentos");
     } finally {
-      if (carga === cargaRef.current) setCarregando(false);
+      if (cargas.vale(carga)) setCarregando(false);
     }
   };
 
@@ -208,11 +224,19 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
 
   useEffect(() => {
     if (!empresaAtiva?.id) return;
-    // empresa nova: o que estava aberto era da anterior
+    // Empresa nova: tudo o que estava aberto ou digitado era da anterior (curso, trilha, matrícula,
+    // seleção de funcionários, editores de aula e de questão, formulário de nova aula) e um pedido
+    // de confirmação pendente executaria a ação com os dados antigos.
     setCarregando(true);
     setCursoSel(null);
     setMatriculaDetalheId(null);
     setShowMatricular(false);
+    setMatForm(MAT_FORM_VAZIO);
+    setBuscaFunc("");
+    setNovaQuestao(null);
+    setAulaEditando(null);
+    setNovaAula(NOVA_AULA);
+    cancelarConfirmacao();
     recarregar();
   }, [empresaAtiva?.id]);
 
@@ -246,6 +270,8 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
     });
   const pendenciasCurso = (curso) => requisitos(curso).filter((r) => r.bloqueia && !r.ok);
   const funcPorId = useMemo(() => new Map(funcionarios.map((f) => [f.id, f])), [funcionarios]);
+  // um certificado por matrícula, consultado por linha da tabela sem varrer a lista a cada vez
+  const certPorMatricula = useMemo(() => certificadosPorMatricula(certificados), [certificados]);
   const pessoas = useMemo(() => pessoasDosTreinamentos(treinamentosConfig), [treinamentosConfig]);
 
   // ------------------------------------------------------------------ cursos
@@ -298,8 +324,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
         await sigo.entities.TreinamentoCurso.update(cursoSel.id, dados);
       } else {
         const novo = await sigo.entities.TreinamentoCurso.create(dados);
-        // painel fechado durante a gravação: não reabre um curso em branco
-        setCursoSel((atual) => (atual ? { ...atual, id: novo.id } : atual));
+        // O id do curso novo só vai para o formulário que foi gravado. Painel fechado durante a
+        // gravação: não reabre um curso em branco. Painel reaberto com OUTRO curso: o id não pode ir
+        // para ele, senão o próximo "Salvar curso" gravaria os dados de outro curso por cima do novo.
+        setCursoSel((atual) =>
+          mesmoFormulario(atual, cursoSel) ? { ...atual, id: novo.id } : atual
+        );
       }
       toast.success("Curso salvo");
       recarregar();
@@ -315,9 +345,10 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       toast.error("Informe o título da aula");
       return;
     }
+    const empresaId = empresaAtiva.id;
     const ordem = Math.max(0, ...aulasDoCurso(cursoSel.id).map((a) => a.ordem || 0)) + 1;
     const base = {
-      empresa_id: empresaAtiva.id,
+      empresa_id: empresaId,
       curso_id: cursoSel.id,
       ordem,
       titulo: novaAula.titulo.trim(),
@@ -389,8 +420,11 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
           duracao_seg,
         });
       }
-      // mantém o módulo para a próxima aula do mesmo bloco
-      setNovaAula({ ...NOVA_AULA, modulo: novaAula.modulo, tipo: novaAula.tipo });
+      // mantém o módulo para a próxima aula do mesmo bloco (a menos que a empresa tenha mudado
+      // durante o envio: o formulário já foi limpo e o módulo é da empresa anterior)
+      if (cargas.mesmaEmpresa(empresaId)) {
+        setNovaAula({ ...NOVA_AULA, modulo: novaAula.modulo, tipo: novaAula.tipo });
+      }
       toast.success("Aula adicionada");
       recarregar();
     } catch (e) {
@@ -425,7 +459,10 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       });
       const ref = `${res.bucket}/${res.path}`;
       await sigo.entities.TreinamentoCurso.update(cursoSel.id, { projeto_pedagogico_ref: ref });
-      setCursoSel({ ...cursoSel, projeto_pedagogico_ref: ref });
+      // só no curso que recebeu o PDF: se outro foi aberto durante o envio, ele não é trocado
+      setCursoSel((atual) =>
+        mesmoFormulario(atual, cursoSel) ? { ...atual, projeto_pedagogico_ref: ref } : atual
+      );
       toast.success("Projeto pedagógico anexado — o aluno vê no portal");
       recarregar();
     } catch (e) {
@@ -483,7 +520,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       const novaOrdem = new Map(plano.mudancas.map((m) => [m.id, m.ordem]));
       // a lista já mostra a nova ordem enquanto grava; o recarregar abaixo confirma. Uma carga que
       // ainda está a caminho (começou antes) traria a ordem velha: descarta.
-      cargaRef.current++;
+      cargas.descartarPendentes();
       setAulas((atuais) =>
         porOrdem(
           atuais.map((a) => (novaOrdem.has(a.id) ? { ...a, ordem: novaOrdem.get(a.id) } : a))
@@ -521,9 +558,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       }
       patch.duracao_seg = seg;
     }
+    const editada = aulaEditando; // o editor que o RH mandou salvar
     await gravar("aula", "Erro ao salvar a aula", async () => {
-      await sigo.entities.TreinamentoAula.update(aulaEditando.id, patch);
-      setAulaEditando(null);
+      await sigo.entities.TreinamentoAula.update(editada.id, patch);
+      // fecha só o editor que foi gravado: se o RH abriu o de outra aula durante a gravação, o que
+      // ele já digitou lá não se perde
+      setAulaEditando((atual) => (mesmoFormulario(atual, editada) ? null : atual));
       toast.success("Aula atualizada");
       recarregar();
     });
@@ -548,17 +588,22 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   // curso cujas questões estão na tela: resposta de outro curso (aberto antes) é descartada
   const cursoDasQuestoesRef = useRef(null);
   const carregarQuestoes = async (cursoId) => {
+    // empresa ativa agora (não a do render que criou esta função): ver `cargas`
+    const empresaId = cargas.empresaAtual();
+    if (!empresaId) return;
     try {
       const qs = await sigo.entities.TreinamentoQuestao.filter({
-        empresa_id: empresaAtiva.id,
+        empresa_id: empresaId,
         curso_id: cursoId,
       });
+      if (!cargas.mesmaEmpresa(empresaId)) return; // trocou de empresa durante a consulta
       setTodasQuestoes((anteriores) => [
         ...anteriores.filter((q) => q.curso_id !== cursoId),
         ...qs,
       ]);
       if (cursoDasQuestoesRef.current === cursoId) setQuestoes(porOrdem(qs));
     } catch (e) {
+      if (!cargas.mesmaEmpresa(empresaId)) return;
       console.error(e);
       toast.error("Erro ao carregar as questões do curso: " + (e?.message || e));
     }
@@ -577,6 +622,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       return;
     }
     const dados = resultado.dados;
+    const aberta = novaQuestao; // o formulário que o RH mandou salvar
     // falhou: o formulário continua aberto, com o que o RH digitou
     await gravar("questao", "Erro ao salvar a questão", async () => {
       if (novaQuestao.id) {
@@ -589,7 +635,8 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
           ordem: Math.max(0, ...questoes.map((q) => Number(q.ordem) || 0)) + 1,
         });
       }
-      setNovaQuestao(null);
+      // fecha só o formulário que foi gravado (outro, aberto durante a gravação, fica como está)
+      setNovaQuestao((atual) => (mesmoFormulario(atual, aberta) ? null : atual));
       carregarQuestoes(cursoSel.id);
     });
   };
@@ -622,11 +669,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       toast.error("Este curso ainda tem requisitos pendentes para novas matrículas");
       return;
     }
+    const empresaId = empresaAtiva.id;
     const { novas, ignorados } = matriculasNovas({
       matriculas,
       cursoId: matForm.curso_id,
       funcionarioIds: matForm.funcionario_ids,
-      empresaId: empresaAtiva.id,
+      empresaId,
     });
     if (novas.length === 0) {
       toast.info("Todos os funcionários escolhidos já estão matriculados neste curso");
@@ -647,8 +695,11 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
           `${novas.length} matrícula(s) criada(s)` +
             (ignorados ? " (já matriculados ignorados)" : "")
         );
-        setShowMatricular(false);
-        setMatForm({ curso_id: "", funcionario_ids: [] });
+        // trocou de empresa durante a gravação: o painel e a seleção já são os da empresa nova
+        if (cargas.mesmaEmpresa(empresaId)) {
+          setShowMatricular(false);
+          setMatForm(MAT_FORM_VAZIO);
+        }
       }
     );
   };
@@ -675,15 +726,16 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   // Matrícula com certificado emitido e não revogado não sai (T20): o curso sumiria do portal e da
   // tela, mas o certificado seguiria válido na consulta pública. Antes de apagar, o certificado é
   // lido de novo no banco: o aluno pode ter assinado depois da última carga da tela.
-  const certificadoDaMatricula = (m) => certificados.find((x) => x.matricula_id === m.id);
   const removerMatricula = async (m) => {
-    if (!podeRemoverMatricula(m, certificadoDaMatricula(m))) {
-      toast.error(MSG_REVOGUE_ANTES);
+    const cert = certPorMatricula.get(m.id);
+    if (!podeRemoverMatricula(m, cert)) {
+      // aviso esperado, não erro; fica na tela o tempo de ler onde clicar
+      toast.warning(MSG_REVOGUE_ANTES, { duration: DURACAO_AVISO_BLOQUEIO_MS });
       return;
     }
     const texto = textoConfirmarRemocao({
       matricula: m,
-      certificado: certificadoDaMatricula(m),
+      certificado: cert,
       nomeFuncionario: funcPorId.get(m.funcionario_id)?.nome_completo,
       nomeCurso: cursos.find((c) => c.id === m.curso_id)?.nome,
     });
@@ -700,7 +752,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
         SEM_SOFT_DELETE
       );
       if (!podeRemoverMatricula(m, atual)) {
-        toast.error(MSG_REVOGUE_ANTES);
+        toast.warning(MSG_REVOGUE_ANTES, { duration: DURACAO_AVISO_BLOQUEIO_MS });
         recarregar();
         return;
       }
@@ -868,7 +920,9 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
           </CardTitle>
           <Button
             size="sm"
-            onClick={() => setCursoSel({ nome: "", validade_meses: "", ativo: false })}
+            onClick={() =>
+              setCursoSel(novoRascunho({ nome: "", validade_meses: "", ativo: false }))
+            }
             className="bg-slate-900 hover:bg-slate-800"
           >
             <Plus className="w-4 h-4 mr-1" /> Novo curso
@@ -926,7 +980,8 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                 value=""
                 onChange={(e) => {
                   const modelo = treinamentosConfig.find((t) => t.id === e.target.value);
-                  if (modelo) setCursoSel({ ...dadosCursoDoModelo(modelo), ativo: false });
+                  if (modelo)
+                    setCursoSel(novoRascunho({ ...dadosCursoDoModelo(modelo), ativo: false }));
                 }}
               >
                 <option value="">Selecionar treinamento...</option>
@@ -1004,6 +1059,9 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                 const curso = cursos.find((c) => c.id === m.curso_id);
                 // a tabela tem centenas de linhas iguais: o rótulo diz de quem é a matrícula
                 const quem = f?.nome_completo ? ` de ${f.nome_completo}` : "";
+                // certificado da matrícula: buscado uma vez por linha (a coluna e a lixeira usam o mesmo)
+                const cert = certPorMatricula.get(m.id);
+                const bloqueada = !podeRemoverMatricula(m, cert);
                 return (
                   <tr key={m.id} className="border-b last:border-0 hover:bg-slate-50">
                     <td className="py-2 pr-3 font-medium text-slate-800">
@@ -1018,23 +1076,21 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     <td className="py-2 pr-3 text-slate-600">{fmtData(m.data_conclusao)}</td>
                     <td className="py-2 pr-3 text-slate-600">{fmtData(m.proxima_renovacao)}</td>
                     <td className="py-2 pr-3">
-                      {(() => {
-                        const c = certificados.find((x) => x.matricula_id === m.id);
-                        if (!c) return <span className="text-slate-400">—</span>;
-                        return (
-                          <Badge
-                            variant="outline"
-                            className={
-                              c.revogado_em
-                                ? "bg-red-50 text-red-700 border-red-200"
-                                : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            }
-                          >
-                            <Award className="w-3 h-3 mr-1" />
-                            {c.revogado_em ? "revogado" : c.codigo}
-                          </Badge>
-                        );
-                      })()}
+                      {cert ? (
+                        <Badge
+                          variant="outline"
+                          className={
+                            cert.revogado_em
+                              ? "bg-red-50 text-red-700 border-red-200"
+                              : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          }
+                        >
+                          <Award className="w-3 h-3 mr-1" />
+                          {cert.revogado_em ? "revogado" : cert.codigo}
+                        </Badge>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
                     <td className="py-2">
                       <div className="flex gap-2">
@@ -1054,34 +1110,29 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                         >
                           <MessageCircle className="w-4 h-4 text-emerald-600 hover:text-emerald-800" />
                         </button>
-                        {(() => {
-                          const bloqueada = !podeRemoverMatricula(m, certificadoDaMatricula(m));
-                          return (
-                            <button
-                              type="button"
-                              title={
-                                bloqueada
-                                  ? "Revogue o certificado antes de remover a matrícula"
-                                  : "Remover matrícula"
-                              }
-                              aria-label={
-                                bloqueada
-                                  ? `Remover matrícula${quem} (bloqueado: revogue o certificado antes)`
-                                  : `Remover matrícula${quem}`
-                              }
-                              aria-disabled={bloqueada}
-                              onClick={() => removerMatricula(m)}
-                            >
-                              <Trash2
-                                className={
-                                  bloqueada
-                                    ? "w-4 h-4 text-slate-300 cursor-not-allowed"
-                                    : "w-4 h-4 text-slate-400 hover:text-red-500"
-                                }
-                              />
-                            </button>
-                          );
-                        })()}
+                        <button
+                          type="button"
+                          title={
+                            bloqueada
+                              ? "Revogue o certificado antes de remover a matrícula"
+                              : "Remover matrícula"
+                          }
+                          aria-label={
+                            bloqueada
+                              ? `Remover matrícula${quem} (bloqueado: revogue o certificado antes)`
+                              : `Remover matrícula${quem}`
+                          }
+                          aria-disabled={bloqueada}
+                          onClick={() => removerMatricula(m)}
+                        >
+                          <Trash2
+                            className={
+                              bloqueada
+                                ? "w-4 h-4 text-slate-300 cursor-not-allowed"
+                                : "w-4 h-4 text-slate-400 hover:text-red-500"
+                            }
+                          />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1511,10 +1562,9 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                               aria-label={`Subir a aula ${a.numero} na ordem`}
                               disabled={i === 0 || gravando.has("ordem")}
                               onClick={() => moverAula(a, -1)}
+                              className={CLASSE_SETA_ORDEM}
                             >
-                              <ArrowUp
-                                className={`w-4 h-4 ${i === 0 ? "text-slate-200" : "text-slate-400 hover:text-slate-800"}`}
-                              />
+                              <ArrowUp className="w-4 h-4" />
                             </button>
                             <button
                               type="button"
@@ -1522,10 +1572,9 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                               aria-label={`Descer a aula ${a.numero} na ordem`}
                               disabled={i === lista.length - 1 || gravando.has("ordem")}
                               onClick={() => moverAula(a, 1)}
+                              className={CLASSE_SETA_ORDEM}
                             >
-                              <ArrowDown
-                                className={`w-4 h-4 ${i === lista.length - 1 ? "text-slate-200" : "text-slate-400 hover:text-slate-800"}`}
-                              />
+                              <ArrowDown className="w-4 h-4" />
                             </button>
                             <button
                               type="button"
@@ -1795,7 +1844,9 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                           variant="outline"
                           size="sm"
                           onClick={() =>
-                            setNovaQuestao({ pergunta: "", opcoes: ["", "", "", ""], correta: 0 })
+                            setNovaQuestao(
+                              novoRascunho({ pergunta: "", opcoes: ["", "", "", ""], correta: 0 })
+                            )
                           }
                         >
                           <Plus className="w-4 h-4 mr-1" /> Questão
