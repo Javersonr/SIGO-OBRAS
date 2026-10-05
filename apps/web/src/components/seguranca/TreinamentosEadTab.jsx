@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { sigo, resolveStorageUrl } from "@/api/sigoClient";
 import { normalizarTexto } from "@/lib/busca";
 import {
@@ -10,6 +10,7 @@ import { normalizarQuestao } from "@/lib/ead-questao";
 import { parseDuracao, formatDuracao, lerDuracaoVideo, videoSemDuracao } from "@/lib/ead-duracao";
 import { requisitosDoCurso, tempoObrigatorioSeg } from "@/lib/ead-requisitos";
 import { numerarAulas } from "@/lib/portal-curso";
+import { reordenarAulas, matriculasNovas } from "@/lib/ead-gestao";
 import { srtParaVtt } from "@/lib/legendas";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
@@ -70,6 +71,9 @@ function extrairYouTubeId(texto) {
     t.match(/^([\w-]{11})$/);
   return m ? m[1] : null;
 }
+
+// aulas na ordem da coluna `ordem` (a mesma que o aluno vê no portal)
+const porOrdem = (lista) => [...lista].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
 
 const fmtData = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
 
@@ -142,8 +146,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const [treinamentosConfig, setTreinamentosConfig] = useState([]);
   const [aulaEditando, setAulaEditando] = useState(null); // {id, titulo, modulo, tipo, minutos}
 
+  // Só a 1ª carga (e a troca de empresa) mostra o spinner no lugar da tela. Gravar e recarregar
+  // atualiza os dados por baixo, sem desmontar os painéis abertos nem o cartão de dúvidas.
+  // `cargaRef` descarta a resposta de uma carga que já foi superada por outra mais nova.
+  const cargaRef = useRef(0);
   const recarregar = async () => {
-    setCarregando(true);
+    const carga = ++cargaRef.current;
     try {
       const [cs, as, ms, fs, certs, tcfg, qs] = await Promise.all([
         sigo.entities.TreinamentoCurso.filter({ empresa_id: empresaAtiva.id }),
@@ -157,24 +165,53 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
         sigo.entities.Treinamento.filter({ empresa_id: empresaAtiva.id }),
         sigo.entities.TreinamentoQuestao.filter({ empresa_id: empresaAtiva.id }),
       ]);
+      if (carga !== cargaRef.current) return;
       setCursos(cs);
-      setAulas(as.sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0)));
+      setAulas(porOrdem(as));
       setMatriculas(ms);
       setFuncionarios(fs);
       setCertificados(certs);
       setTreinamentosConfig(tcfg);
       setTodasQuestoes(qs);
     } catch (e) {
+      if (carga !== cargaRef.current) return;
       console.error(e);
       toast.error("Erro ao carregar treinamentos");
     } finally {
-      setCarregando(false);
+      if (carga === cargaRef.current) setCarregando(false);
     }
   };
 
   useEffect(() => {
-    if (empresaAtiva?.id) recarregar();
+    if (!empresaAtiva?.id) return;
+    // empresa nova: o que estava aberto era da anterior
+    setCarregando(true);
+    setCursoSel(null);
+    setMatriculaDetalheId(null);
+    setShowMatricular(false);
+    recarregar();
   }, [empresaAtiva?.id]);
+
+  // Uma gravação de cada tipo por vez (clique duplo não cria curso/questão/matrícula em dobro) e
+  // qualquer falha vira toast: nenhuma rejeição escapa dos botões. `tarefa` lança para falhar.
+  const gravandoRef = useRef(new Set());
+  const [gravando, setGravando] = useState(() => new Set());
+  const gravar = async (chave, erroPrefixo, tarefa) => {
+    if (gravandoRef.current.has(chave)) return false;
+    gravandoRef.current.add(chave);
+    setGravando(new Set(gravandoRef.current));
+    try {
+      await tarefa();
+      return true;
+    } catch (e) {
+      console.error(erroPrefixo, e);
+      toast.error(`${erroPrefixo}: ${e?.message || e}`);
+      return false;
+    } finally {
+      gravandoRef.current.delete(chave);
+      setGravando(new Set(gravandoRef.current));
+    }
+  };
 
   const aulasDoCurso = (cursoId) => aulas.filter((a) => a.curso_id === cursoId);
   const requisitos = (curso) =>
@@ -232,14 +269,17 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       toast.error("Regularize os requisitos do curso antes de publicar");
       return;
     }
-    if (cursoSel.id) {
-      await sigo.entities.TreinamentoCurso.update(cursoSel.id, dados);
-    } else {
-      const novo = await sigo.entities.TreinamentoCurso.create(dados);
-      setCursoSel({ ...cursoSel, id: novo.id });
-    }
-    toast.success("Curso salvo");
-    recarregar();
+    await gravar("curso", "Erro ao salvar o curso", async () => {
+      if (cursoSel.id) {
+        await sigo.entities.TreinamentoCurso.update(cursoSel.id, dados);
+      } else {
+        const novo = await sigo.entities.TreinamentoCurso.create(dados);
+        // painel fechado durante a gravação: não reabre um curso em branco
+        setCursoSel((atual) => (atual ? { ...atual, id: novo.id } : atual));
+      }
+      toast.success("Curso salvo");
+      recarregar();
+    });
   };
 
   const adicionarAula = async () => {
@@ -339,11 +379,13 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const abrirReferencia = async (ref) => {
     // aba aberta já no clique: depois do await o navegador bloquearia o pop-up
     const aba = window.open("", "_blank");
-    const url = await resolveStorageUrl(ref);
-    if (url && aba) {
+    try {
+      const url = await resolveStorageUrl(ref);
+      if (!url || !aba) throw new Error("sem URL");
       aba.opener = null;
       aba.location.href = url;
-    } else {
+    } catch (e) {
+      console.error(e);
       aba?.close();
       toast.error("Não foi possível abrir o arquivo");
     }
@@ -377,11 +419,13 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
     }
     // aba aberta já no clique: depois do await o navegador bloquearia o pop-up
     const aba = window.open("", "_blank");
-    const url = await resolveStorageUrl(aula.video_ref);
-    if (url && aba) {
+    try {
+      const url = await resolveStorageUrl(aula.video_ref);
+      if (!url || !aba) throw new Error("sem URL");
       aba.opener = null;
       aba.location.href = url;
-    } else {
+    } catch (e) {
+      console.error(e);
       aba?.close();
       toast.error("Não foi possível abrir o vídeo");
     }
@@ -406,16 +450,29 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
     }
   };
 
+  // Renumera o curso inteiro (1..n), uma gravação por vez: o banco não tem transação aqui, então
+  // se uma falhar a tela avisa e recarrega o que de fato ficou gravado.
   const moverAula = async (aula, dir) => {
-    const lista = aulasDoCurso(cursoSel.id);
-    const i = lista.findIndex((x) => x.id === aula.id);
-    const alvo = lista[i + dir];
-    if (!alvo) return;
-    await Promise.all([
-      sigo.entities.TreinamentoAula.update(aula.id, { ordem: alvo.ordem }),
-      sigo.entities.TreinamentoAula.update(alvo.id, { ordem: aula.ordem }),
-    ]);
-    recarregar();
+    const plano = reordenarAulas(aulasDoCurso(cursoSel.id), aula.id, dir);
+    if (!plano) return;
+    await gravar("ordem", "Erro ao mudar a ordem das aulas", async () => {
+      const novaOrdem = new Map(plano.mudancas.map((m) => [m.id, m.ordem]));
+      // a lista já mostra a nova ordem enquanto grava; o recarregar abaixo confirma. Uma carga que
+      // ainda está a caminho (começou antes) traria a ordem velha: descarta.
+      cargaRef.current++;
+      setAulas((atuais) =>
+        porOrdem(
+          atuais.map((a) => (novaOrdem.has(a.id) ? { ...a, ordem: novaOrdem.get(a.id) } : a))
+        )
+      );
+      try {
+        for (const { id, ordem } of plano.mudancas) {
+          await sigo.entities.TreinamentoAula.update(id, { ordem });
+        }
+      } finally {
+        recarregar();
+      }
+    });
   };
 
   const salvarAulaEdicao = async () => {
@@ -440,29 +497,45 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       }
       patch.duracao_seg = seg;
     }
-    await sigo.entities.TreinamentoAula.update(aulaEditando.id, patch);
-    setAulaEditando(null);
-    toast.success("Aula atualizada");
-    recarregar();
+    await gravar("aula", "Erro ao salvar a aula", async () => {
+      await sigo.entities.TreinamentoAula.update(aulaEditando.id, patch);
+      setAulaEditando(null);
+      toast.success("Aula atualizada");
+      recarregar();
+    });
   };
 
   const removerAula = async (aula) => {
     if (!confirm(`Remover a aula "${aula.titulo}"?`)) return;
-    await sigo.entities.TreinamentoAula.delete(aula.id);
-    recarregar();
+    await gravar(`remover-aula-${aula.id}`, "Erro ao remover a aula", async () => {
+      await sigo.entities.TreinamentoAula.delete(aula.id);
+      setAulaEditando((atual) => (atual?.id === aula.id ? null : atual));
+      recarregar();
+    });
   };
 
   // ------------------------------------------------------------ avaliação
+  // curso cujas questões estão na tela: resposta de outro curso (aberto antes) é descartada
+  const cursoDasQuestoesRef = useRef(null);
   const carregarQuestoes = async (cursoId) => {
-    const qs = await sigo.entities.TreinamentoQuestao.filter({
-      empresa_id: empresaAtiva.id,
-      curso_id: cursoId,
-    });
-    setQuestoes(qs.sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0)));
-    setTodasQuestoes((anteriores) => [...anteriores.filter((q) => q.curso_id !== cursoId), ...qs]);
+    try {
+      const qs = await sigo.entities.TreinamentoQuestao.filter({
+        empresa_id: empresaAtiva.id,
+        curso_id: cursoId,
+      });
+      setTodasQuestoes((anteriores) => [
+        ...anteriores.filter((q) => q.curso_id !== cursoId),
+        ...qs,
+      ]);
+      if (cursoDasQuestoesRef.current === cursoId) setQuestoes(porOrdem(qs));
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao carregar as questões do curso: " + (e?.message || e));
+    }
   };
 
   useEffect(() => {
+    cursoDasQuestoesRef.current = cursoSel?.id || null;
     if (cursoSel?.id) carregarQuestoes(cursoSel.id);
     else setQuestoes([]);
   }, [cursoSel?.id]);
@@ -474,18 +547,30 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       return;
     }
     const dados = resultado.dados;
-    if (novaQuestao.id) {
-      await sigo.entities.TreinamentoQuestao.update(novaQuestao.id, dados);
-    } else {
-      await sigo.entities.TreinamentoQuestao.create({
-        ...dados,
-        empresa_id: empresaAtiva.id,
-        curso_id: cursoSel.id,
-        ordem: Math.max(0, ...questoes.map((q) => Number(q.ordem) || 0)) + 1,
-      });
-    }
-    setNovaQuestao(null);
-    carregarQuestoes(cursoSel.id);
+    // falhou: o formulário continua aberto, com o que o RH digitou
+    await gravar("questao", "Erro ao salvar a questão", async () => {
+      if (novaQuestao.id) {
+        await sigo.entities.TreinamentoQuestao.update(novaQuestao.id, dados);
+      } else {
+        await sigo.entities.TreinamentoQuestao.create({
+          ...dados,
+          empresa_id: empresaAtiva.id,
+          curso_id: cursoSel.id,
+          ordem: Math.max(0, ...questoes.map((q) => Number(q.ordem) || 0)) + 1,
+        });
+      }
+      setNovaQuestao(null);
+      carregarQuestoes(cursoSel.id);
+    });
+  };
+
+  const excluirQuestao = async (q) => {
+    if (!confirm("Excluir esta questão?")) return;
+    await gravar(`excluir-questao-${q.id}`, "Erro ao excluir a questão", async () => {
+      await sigo.entities.TreinamentoQuestao.delete(q.id);
+      setNovaQuestao((atual) => (atual?.id === q.id ? null : atual));
+      carregarQuestoes(cursoSel.id);
+    });
   };
 
   // -------------------------------------------------------------- matrículas
@@ -499,27 +584,35 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       toast.error("Este curso ainda tem requisitos pendentes para novas matrículas");
       return;
     }
-    const jaMatriculados = new Set(
-      matriculas
-        .filter((m) => m.curso_id === matForm.curso_id && m.status !== "concluido")
-        .map((m) => m.funcionario_id)
-    );
-    const novos = matForm.funcionario_ids.filter((id) => !jaMatriculados.has(id));
-    for (const fid of novos) {
-      await sigo.entities.TreinamentoMatricula.create({
-        empresa_id: empresaAtiva.id,
-        curso_id: matForm.curso_id,
-        funcionario_id: fid,
-        status: "pendente",
-      });
+    const { novas, ignorados } = matriculasNovas({
+      matriculas,
+      cursoId: matForm.curso_id,
+      funcionarioIds: matForm.funcionario_ids,
+      empresaId: empresaAtiva.id,
+    });
+    if (novas.length === 0) {
+      toast.info("Todos os funcionários escolhidos já estão matriculados neste curso");
+      return;
     }
-    toast.success(
-      `${novos.length} matrícula(s) criada(s)` +
-        (novos.length < matForm.funcionario_ids.length ? " (já matriculados ignorados)" : "")
+    // Um INSERT só: ou entram todos ou nenhum. Falhou: o painel segue aberto com a seleção, e a
+    // lista é recarregada para a nova tentativa partir do que de fato ficou no banco.
+    await gravar(
+      "matricula",
+      "Erro ao matricular (a lista foi atualizada; confira antes de tentar de novo)",
+      async () => {
+        try {
+          await sigo.entities.TreinamentoMatricula.bulkCreate(novas);
+        } finally {
+          recarregar();
+        }
+        toast.success(
+          `${novas.length} matrícula(s) criada(s)` +
+            (ignorados ? " (já matriculados ignorados)" : "")
+        );
+        setShowMatricular(false);
+        setMatForm({ curso_id: "", funcionario_ids: [] });
+      }
     );
-    setShowMatricular(false);
-    setMatForm({ curso_id: "", funcionario_ids: [] });
-    recarregar();
   };
 
   // Avisa o funcionário (WhatsApp) com o link do portal; se ele ainda não tem
@@ -543,8 +636,10 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
 
   const removerMatricula = async (m) => {
     if (!confirm("Remover esta matrícula?")) return;
-    await sigo.entities.TreinamentoMatricula.delete(m.id);
-    recarregar();
+    await gravar(`remover-matricula-${m.id}`, "Erro ao remover a matrícula", async () => {
+      await sigo.entities.TreinamentoMatricula.delete(m.id);
+      recarregar();
+    });
   };
 
   // Lista de Presença: uma folha por DIA de treinamento, padrão 10h/dia
@@ -1190,7 +1285,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     </ul>
                   </div>
                 </div>
-                <Button onClick={salvarCurso} className="bg-slate-900 hover:bg-slate-800">
+                <Button
+                  onClick={salvarCurso}
+                  disabled={gravando.has("curso")}
+                  className="bg-slate-900 hover:bg-slate-800"
+                >
+                  {gravando.has("curso") && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
                   Salvar curso
                 </Button>
 
@@ -1267,7 +1367,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                             )}
                             <button
                               title="Subir na ordem"
-                              disabled={i === 0}
+                              disabled={i === 0 || gravando.has("ordem")}
                               onClick={() => moverAula(a, -1)}
                             >
                               <ArrowUp
@@ -1276,7 +1376,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                             </button>
                             <button
                               title="Descer na ordem"
-                              disabled={i === lista.length - 1}
+                              disabled={i === lista.length - 1 || gravando.has("ordem")}
                               onClick={() => moverAula(a, 1)}
                             >
                               <ArrowDown
@@ -1352,7 +1452,11 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                                 >
                                   Cancelar
                                 </Button>
-                                <Button size="sm" onClick={salvarAulaEdicao}>
+                                <Button
+                                  size="sm"
+                                  onClick={salvarAulaEdicao}
+                                  disabled={gravando.has("aula")}
+                                >
                                   Salvar aula
                                 </Button>
                               </div>
@@ -1565,13 +1669,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                             >
                               <Pencil className="w-4 h-4 text-slate-400 hover:text-slate-800" />
                             </button>
-                            <button
-                              onClick={async () => {
-                                if (!confirm("Excluir esta questão?")) return;
-                                await sigo.entities.TreinamentoQuestao.delete(q.id);
-                                carregarQuestoes(cursoSel.id);
-                              }}
-                            >
+                            <button title="Excluir questão" onClick={() => excluirQuestao(q)}>
                               <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
                             </button>
                           </div>
@@ -1672,7 +1770,11 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                             <Button variant="ghost" size="sm" onClick={() => setNovaQuestao(null)}>
                               Cancelar
                             </Button>
-                            <Button size="sm" onClick={salvarQuestao}>
+                            <Button
+                              size="sm"
+                              onClick={salvarQuestao}
+                              disabled={gravando.has("questao")}
+                            >
                               Salvar questão
                             </Button>
                           </div>
@@ -1750,7 +1852,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                 })}
               </div>
             </div>
-            <Button onClick={matricular} className="w-full bg-slate-900 hover:bg-slate-800">
+            <Button
+              onClick={matricular}
+              disabled={gravando.has("matricula")}
+              className="w-full bg-slate-900 hover:bg-slate-800"
+            >
+              {gravando.has("matricula") && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
               Matricular ({matForm.funcionario_ids.length})
             </Button>
           </div>
