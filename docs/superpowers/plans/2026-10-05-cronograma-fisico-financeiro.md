@@ -47,7 +47,7 @@
 
 - **Ordem do orçamento:** o contrato fala em `ordemDoItem`, que não existe; as etapas saem na ordem do `ordenarItensOportunidade` (`ordem`, nula como 0, depois `numero`), a mesma da tela do orçamento (Task 1).
 - **Contas estritas (Task 1):** `lerPercentual` devolve `null` para vazio e `NaN` para texto inválido, sinal, milhar ou valor fora de 0–100 (o arredondamento em 2 casas vem antes da conferência da faixa); `ajustarMeses`, `reperiodizarLinha` e `reperiodizar` lançam `RangeError` com N fora de 1 a 60; `normalizarCronograma` com `meses` 0 devolve `pct: {}`; `todasFecham` é `false` sem etapas; nenhuma função preenche `atualizado_em` (quem grava põe a data).
-- **Leitura da aba (Task 2):** `lerArquivoCronograma` lê com `sheetStubs: true` além do `cellNF` do contrato (fórmula sem valor salvo vira erro, não 0); aba sem linhas e nenhuma linha com etapa do orçamento são **erros** fora da lista da spec, para a importação não trocar o cronograma atual por um vazio; Mês faltando, Mês repetido, colunas além do Mês 60 e linha sem Item são avisos extras.
+- **Leitura da aba (Task 2):** `lerArquivoCronograma` lê com `sheetStubs: true` além do `cellNF` do contrato (fórmula sem valor salvo vira erro, não 0); aba sem linhas e nenhuma linha com etapa do orçamento são **erros** fora da lista da spec, para a importação não trocar o cronograma atual por um vazio; Mês faltando, Mês repetido, colunas além do Mês 60 e linha sem Item são avisos extras; na célula numérica a faixa de 0 a 100 vale sobre o % já arredondado em 2 casas, como no `lerPercentual` (100,004 vira 100,00 com aviso; 100,005 é erro).
 - **Sem dependência circular (Task 2):** `orcamento-modelo.js` importa o nome e o cabeçalho de `cronograma-modelo.js`, que não importa `orcamento-modelo.js` e repete 7 utilitários pequenos de célula.
 - **Skill mais estrita que o SIGO (Task 3):** o código Python exige Item em texto e % numérico, porque quem grava é o próprio código; `pct_da_linha` converte R$ em % com a diferença no último mês com valor.
 - **Sem cópia da proposta (Task 4):** `montarCabecalhoLicitacao` sai de dentro de `montarDadosProposta` (o resultado da proposta não muda) e `cabecalhoDoDocumento`, `linhasAssinatura`, `textoPdf` e o novo `carregarJsPdf` passam a ser exportados por `proposta-export.js`; `nomeArquivoCronograma` reaproveita `nomeArquivoProposta`.
@@ -60,7 +60,7 @@
 - **Exportar entre as Tasks 5 e 6:** a Task 5 deixa a âncora `{/* EXPORTAR_CRONOGRAMA */}` na barra de botões, fora de qualquer condição de `podeEditar`; a Task 6 troca a âncora pelo `BotaoExportarCronograma` (export extra do `ExportarCronogramaDialog.jsx`), visível também para quem só vê a aba, que exporta o estado local do quadro (o `selectedOp` pode estar atrás da tela).
 - **Imbé de Minas (Task 7):** a planilha feita à mão não redistribui a curva: copia as 5 parcelas preenchidas do CFF de 12 parcelas. O equivalente no SIGO é **Meses 12 → 5**; o roteiro mostra também o **Reperiodizar 12 → 5** como o outro critério, com a diferença explicada. O arquivo de teste promove os grupos 1.1 a 1.6 do edital a etapas 1 a 6.
 - **Onde se trabalha:** no `master` do checkout principal, como o plano do Orçamento (a base dele está lá, ainda não publicada), com commit parcial por task; a Task 7 trata o risco de outra sessão publicar antes (Step 1) e só publica com o OK do Javerson.
-- **Conferência de 05/10** (cópia do `master` `37ad85c` fora do repositório): as Tasks 1 a 6 aplicadas em ordem, com todas as âncoras únicas no momento da troca; Prettier sem mudança; Vitest com 40 arquivos e 515 testes (base 36/433; a Task 1 ganhou depois 1 teste de `lerPercentual` com `number`, e a suíte passou a 516); `npm run lint`, `no-undef` e `vite build` sem erro, com os chunks esperados; o código Python da skill e os números da Task 7 (Itatinga e Imbé) recalculados sobre cópias das planilhas.
+- **Conferência de 05/10** (cópia do `master` `37ad85c` fora do repositório): as Tasks 1 a 6 aplicadas em ordem, com todas as âncoras únicas no momento da troca; Prettier sem mudança; Vitest com 40 arquivos e 515 testes (base 36/433; a Task 1 ganhou depois 1 teste de `lerPercentual` com `number`, e a suíte passou a 516; a Task 2 ganhou depois 1 teste da faixa arredondada da célula numérica, e a suíte passou a 517); `npm run lint`, `no-undef` e `vite build` sem erro, com os chunks esperados; o código Python da skill e os números da Task 7 (Itatinga e Imbé) recalculados sobre cópias das planilhas.
 
 ---
 
@@ -77,10 +77,10 @@ Anote as linhas `Test Files  N passed` e `Tests  M passed`. A suíte cresce assi
 | Fim da task | Arquivos | Testes   | Com a base de 05/10 |
 | ----------- | -------- | -------- | ------------------- |
 | Task 1      | `N + 1`  | `M + 37` | 37 e 470            |
-| Task 2      | `N + 2`  | `M + 56` | 38 e 489            |
-| Task 3      | `N + 2`  | `M + 57` | 38 e 490            |
-| Task 4      | `N + 3`  | `M + 75` | 39 e 508            |
-| Tasks 5 e 6 | `N + 4`  | `M + 83` | 40 e 516            |
+| Task 2      | `N + 2`  | `M + 57` | 38 e 490            |
+| Task 3      | `N + 2`  | `M + 58` | 38 e 491            |
+| Task 4      | `N + 3`  | `M + 76` | 39 e 509            |
+| Tasks 5 e 6 | `N + 4`  | `M + 84` | 40 e 517            |
 
 **Regras para todas as tasks:**
 
@@ -858,7 +858,7 @@ Esperado: o Prettier não muda nada (`unchanged`), o commit sai e o `git log` mo
 - **Sem dependência circular:** `orcamento-modelo.js` importa `ABA_CRONOGRAMA` e `cabecalhoCronograma` de `cronograma-modelo.js`, e este **não** importa `orcamento-modelo.js`. Por isso ele repete 7 utilitários pequenos de célula (`normalizarRotulo`, `acharAba`, `celula`, `formulaSemValor`, `vazia`, `textoCelula`, `formatoData`); a leitura do número é a do `lerPercentual` (Task 1), não uma cópia do `lerNumeroBR`.
 - **Regras de leitura (spec §6) e as mensagens exatas:**
   - cabeçalho na linha 1, em qualquer ordem, sem acento, maiúsculas nem espaços extras (`MES 2`, `mês  3` e `Mes1` valem); meses = maior n de `Mês n`;
-  - valores: número de 0 a 100; texto pt-BR (`12,5`, `12.5%`, `25 %`, com espaços nas pontas ou não); célula com formato de % (`z` com `%` fora de aspas, colchetes e escapes; sem `z`, o texto exibido terminado em `%`), que vale × 100 (`0,07` → 7, sem o ruído `7.000000000000001`); vazio = 0;
+  - valores: número de 0 a 100, com a faixa conferida sobre o valor já arredondado em 2 casas (100,004 vira 100,00 com o aviso de casas a mais; 100,005 é erro); número não finito (NaN) é `"NaN" não é um número`; texto pt-BR (`12,5`, `12.5%`, `25 %`, com espaços nas pontas ou não); célula com formato de % (`z` com `%` fora de aspas, colchetes e escapes; sem `z`, o texto exibido terminado em `%`), que vale × 100 (`0,07` → 7, sem o ruído `7.000000000000001`); vazio = 0;
   - **erros** (bloqueiam):
     - `A planilha não tem a aba "Cronograma". Use o modelo do SIGO preenchido pela skill do Claude.`
     - `Linha 1: falta a coluna Item.` e `Linha 1: falta a coluna Mês 1 (os meses vão em Mês 1, Mês 2…).`
@@ -1040,16 +1040,18 @@ describe("lerAbaCronograma — erros", () => {
     expect(r.cronograma).toBeNull();
     expect(r.erros).toEqual(["Linha 4: Item 1 repetido (já está na linha 2)."]);
   });
-  it("fórmula sem valor salvo, data e booleano numa célula de mês", () => {
+  it("fórmula sem valor salvo, data, booleano e NaN numa célula de mês", () => {
     const wb = montarWb([CAB4, ["1", "A", 0, 0, 0, 0]]);
     const ws = wb.Sheets[ABA_CRONOGRAMA];
     ws.C2 = { t: "z", f: "10*2" };
     ws.D2 = { t: "n", v: 46296, z: "m/d/yy", w: "10/1/26" };
     ws.E2 = { t: "b", v: true, w: "TRUE" };
+    ws.F2 = { t: "n", v: NaN }; // número não finito (arquivo malformado)
     expect(lerAbaCronograma(wb, ["1"]).erros).toEqual([
       "Linha 2, Mês 1: fórmula sem valor salvo; grave o número.",
       'Linha 2, Mês 2: virou data no Excel ("10/1/26"); formate como Número.',
       'Linha 2, Mês 3: "TRUE" não é um número.',
+      'Linha 2, Mês 4: "NaN" não é um número.',
     ]);
   });
   it("aba vazia (modelo em branco) ou sem nenhuma etapa do orçamento", () => {
@@ -1106,6 +1108,29 @@ describe("lerAbaCronograma — avisos", () => {
       "Linha 2, Mês 2: % com mais de 2 casas; arredondado para 33,33.",
       "Linha 2, Mês 3: % com mais de 2 casas; arredondado para 33,33.",
       "Linha 2: a etapa 1 soma 99,99%, e não 100,00%; fica vermelha até ser corrigida.",
+    ]);
+  });
+  it("célula numérica: a faixa de 0 a 100 vale sobre o % já arredondado em 2 casas", () => {
+    // 100,004 vira 100,00 e −0,004 vira 0,00, com o aviso de casas a mais (número ou formato de %)
+    const wb = montarWb([CAB4, ["1", "A", 100.004, -0.004, 0, 0], ["2", "B", 0, 0, 0, 0]]);
+    wb.Sheets[ABA_CRONOGRAMA].C3 = { t: "n", v: 1.00004, z: "0.000%" };
+    const ok = lerAbaCronograma(wb, ETAPAS);
+    expect(ok.erros).toEqual([]);
+    expect(ok.cronograma.pct).toEqual({ 1: [100, 0, 0, 0], 2: [100, 0, 0, 0] });
+    expect(ok.avisos).toEqual([
+      "Linha 2, Mês 1: % com mais de 2 casas; arredondado para 100,00.",
+      "Linha 2, Mês 2: % com mais de 2 casas; arredondado para 0,00.",
+      "Linha 3, Mês 1: % com mais de 2 casas; arredondado para 100,00.",
+    ]);
+    // 100,005 vira 100,01 e −0,006 vira −0,01: erro, com o valor que veio na célula
+    const wb2 = montarWb([CAB4, ["1", "A", 100.005, -0.006, 0, 0], ["2", "B", 0, 0, 0, 0]]);
+    wb2.Sheets[ABA_CRONOGRAMA].E3 = { t: "n", v: 1.00005, z: "0.000%" };
+    const r = lerAbaCronograma(wb2, ETAPAS);
+    expect(r.cronograma).toBeNull();
+    expect(r.erros).toEqual([
+      "Linha 2, Mês 1: % acima de 100 (100,005).",
+      "Linha 2, Mês 2: % negativo (-0,006).",
+      "Linha 3, Mês 3: % acima de 100 (100,005).",
     ]);
   });
   it("linha sem Item, Mês faltando no meio e coluna repetida", () => {
@@ -1306,15 +1331,18 @@ const pct2 = (v) => formatar(v, 2, 2);
 function lerCelulaPct(cel) {
   if (formulaSemValor(cel)) return { erro: "fórmula sem valor salvo; grave o número" };
   if (vazia(cel)) return { valor: 0, maisCasas: false };
-  if (cel.t === "n" && typeof cel.v === "number") {
+  if (cel.t === "n" && Number.isFinite(cel.v)) {
     if (formatoData(cel)) {
       return { erro: `virou data no Excel ("${cel.w ?? cel.v}"); formate como Número` };
     }
     // 0,07 × 100 = 7.000000000000001: tira o ruído antes de contar as casas
     const v = formatoPercentual(cel) ? Number((cel.v * 100).toPrecision(15)) : cel.v;
-    if (v < 0) return { erro: `% negativo (${formatar(v, 0, 4)})` };
-    if (v > 100) return { erro: `% acima de 100 (${formatar(v, 0, 4)})` };
-    return { valor: lerPercentual(v), maisCasas: Math.abs(v * 100 - Math.round(v * 100)) > 1e-6 };
+    // a faixa vale sobre o % já arredondado em 2 casas: 100,004 vira 100,00; 100,005 é erro
+    const valor = lerPercentual(v);
+    if (Number.isNaN(valor)) {
+      return { erro: `% ${v < 0 ? "negativo" : "acima de 100"} (${formatar(v, 0, 4)})` };
+    }
+    return { valor, maisCasas: Math.abs(v * 100 - Math.round(v * 100)) > 1e-6 };
   }
   if (cel.t === "s") {
     const texto = String(cel.v).trim();
@@ -1512,7 +1540,7 @@ Esperado: 3 falhas, todas pela aba que o `gerarModelo` ainda não cria:
 - `gerarModelo > três abas, cabeçalho, coluna A como Texto e rótulos`;
 - `gerarModelo > aba Cronograma: Item, Descrição e Mês 1 a Mês 12, coluna A como Texto`;
 
-e `Tests  3 failed | 76 passed (79)`.
+e `Tests  3 failed | 77 passed (80)`.
 
 - [ ] **Step 6: A 3ª aba no `gerarModelo` (3 trocas old→new com a ferramenta Edit em `apps/web/src/lib/orcamento-modelo.js`)**
 
@@ -1598,8 +1626,8 @@ new:
 
 Esperado:
 
-- `Test Files  2 passed (2)` e `Tests  79 passed (79)` (18 do cronograma e 61 do modelo, que tinha 60);
-- a suíte inteira com `N + 2` arquivos e `M + 56` testes da linha de base, sem falhas.
+- `Test Files  2 passed (2)` e `Tests  80 passed (80)` (19 do cronograma e 61 do modelo, que tinha 60);
+- a suíte inteira com `N + 2` arquivos e `M + 57` testes da linha de base, sem falhas.
 
 - [ ] **Step 8: Formatar e commitar**
 
@@ -2217,7 +2245,7 @@ npx prettier --check apps/web/public/skills/orcamento-prefeitura-sigo/SKILL.md a
 
 Esperado:
 
-- vitest: `N + 2` arquivos e `M + 57` testes da linha de base, todos passando;
+- vitest: `N + 2` arquivos e `M + 58` testes da linha de base, todos passando;
 - `SKILL.md` e `BUILD_OK`;
 - `All matched files use Prettier code style!` (o CI roda `format:check`, que cobre `.md`).
 
@@ -3643,7 +3671,7 @@ Expected:
 
 - `git status --short`: arquivos de outras sessões podem aparecer (ex.: `.claude/launch.json`); não mexa neles;
 - `6`, `1` e `1`. Se não bater, **pare**: os nomes vêm das Tasks 1 e 2;
-- Vitest sem falha. Anote `Test Files N passed` e `Tests M passed`; com a linha de base de 05/10 (36/433) e as Tasks 1 a 4, são **39 e 508**;
+- Vitest sem falha. Anote `Test Files N passed` e `Tests M passed`; com a linha de base de 05/10 (36/433) e as Tasks 1 a 4, são **39 e 509**;
 - ESLint: só o aviso que já existia, e `exit 0`:
 
 ```
@@ -4822,7 +4850,7 @@ Expected:
 (cd apps/web && npx vitest run 2>&1 | tail -5)
 ```
 
-Expected: `N + 1` arquivos e `M + 8` testes do Step 1, todos passando (com a base de 05/10: **40 e 516**).
+Expected: `N + 1` arquivos e `M + 8` testes do Step 1, todos passando (com a base de 05/10: **40 e 517**).
 
 - [ ] **Step 13: Commit (só os 6 caminhos da task)**
 
@@ -5447,7 +5475,7 @@ git diff -z --name-only --diff-filter=ACMR origin/master...HEAD | xargs -0 npx p
 
 Expected:
 
-- Vitest: a linha de base anotada antes da Task 1 mais **4 arquivos e 83 testes**, sem `failed`. Os 83 são: Task 1, 37; Task 2, 19; Task 3, 1; Task 4, 18; Task 5, 8. Com a base de 05/10, ficam **40 arquivos e 516 testes**;
+- Vitest: a linha de base anotada antes da Task 1 mais **4 arquivos e 84 testes**, sem `failed`. Os 84 são: Task 1, 37; Task 2, 20; Task 3, 1; Task 4, 18; Task 5, 8. Com a base de 05/10, ficam **40 arquivos e 517 testes**;
 - `LINT_OK`;
 - `no-undef`: só o aviso antigo `'cronogramaEtapas' is defined but never used` e `exit 0`;
 - `BUILD_OK`;
@@ -5933,7 +5961,7 @@ Expected:
   - os de `ALVO`;
   - os testes que esses commits alteraram (`orcamento-modelo.test.js` e `skill-orcamento.test.js`);
   - os arquivos que eles criaram (`fila-gravacao.js` e `cronograma-modelo.js`, cada um com o seu teste), que saem;
-- Vitest sem `failed`, com 2 arquivos e 28 testes a menos que no Step 2 (os da Task 2, os da Task 5 e o da Task 3);
+- Vitest sem `failed`, com 2 arquivos e 29 testes a menos que no Step 2 (os da Task 2, os da Task 5 e o da Task 3);
 - `LINT_OK` e `BUILD_OK`.
 
 Com conflito ou falha: `git revert --abort`, e mostre ao Javerson.
