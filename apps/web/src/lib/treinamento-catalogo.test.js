@@ -4,6 +4,8 @@ import {
   dadosCursoDoModelo,
   modelosSemCurso,
   faltaModeloCentral,
+  TEXTO_CURSO_SEM_VINCULO,
+  mostrarAvisoDeCursoSemVinculo,
 } from "./treinamento-catalogo";
 
 describe("cadastro central de treinamentos", () => {
@@ -74,5 +76,38 @@ describe("cadastro central de treinamentos", () => {
       // sem registro gravado (null), mesmo com id no formulário, o vínculo é exigido
       expect(faltaModeloCentral({ id: "c9", modelo_treinamento_id: null }, null)).toBe(true);
     });
+  });
+});
+
+describe("aviso do curso sem vínculo com o cadastro central (C4)", () => {
+  it("o texto vale para qualquer curso sem vínculo, não só para os criados antes do cadastro central", () => {
+    expect(TEXTO_CURSO_SEM_VINCULO).not.toMatch(/criado antes/i);
+    expect(TEXTO_CURSO_SEM_VINCULO).toMatch(/sem (o )?vínculo|não está vinculado/i);
+    expect(TEXTO_CURSO_SEM_VINCULO).toMatch(/editáveis/);
+  });
+  it("aparece para curso gravado sem vínculo, seja qual for a origem (tela ou tools/ead-sync-cursos.py)", () => {
+    const semVinculo = { id: "c1", modelo_treinamento_id: null };
+    expect(mostrarAvisoDeCursoSemVinculo(semVinculo, semVinculo)).toBe(true);
+    // curso criado depois do cadastro central, por fora da tela: mesmo caso
+    const sincronizado = { id: "c2", nome: "Curso importado", created_at: "2026-10-01T00:00:00Z" };
+    expect(mostrarAvisoDeCursoSemVinculo(sincronizado, sincronizado)).toBe(true);
+  });
+  it("não aparece para curso novo (sem id), vinculado, ou com vínculo escolhido no formulário", () => {
+    expect(mostrarAvisoDeCursoSemVinculo({ nome: "Novo" }, null)).toBe(false);
+    expect(
+      mostrarAvisoDeCursoSemVinculo({ id: "c3", modelo_treinamento_id: "m1" }, { id: "c3" })
+    ).toBe(false);
+    // o RH acabou de escolher o treinamento do cadastro central: some o aviso
+    expect(
+      mostrarAvisoDeCursoSemVinculo({ id: "c4", modelo_treinamento_id: "m1" }, { id: "c4" })
+    ).toBe(false);
+    // ligado no banco, mesmo que o formulário tenha soltado o vínculo (salvar é barrado por faltaModeloCentral)
+    expect(
+      mostrarAvisoDeCursoSemVinculo(
+        { id: "c5", modelo_treinamento_id: null },
+        { id: "c5", modelo_treinamento_id: "m1" }
+      )
+    ).toBe(false);
+    expect(mostrarAvisoDeCursoSemVinculo(null, null)).toBe(false);
   });
 });

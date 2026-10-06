@@ -124,11 +124,15 @@ export function agruparMatriculas(itens) {
   };
 }
 
-/** Matrícula ainda não concluída de um curso que o aluno já concluiu antes: é a renovação. */
+/**
+ * Matrícula ainda não concluída de um curso que o aluno já concluiu antes: é a renovação. Curso de apoio
+ * não tem certificado a renovar (D3): estudar o material de novo não é "Renovação".
+ */
 export function ehRenovacao(item, itens) {
   if (!item?.matricula || !Array.isArray(itens) || item.matricula.status === "concluido") {
     return false;
   }
+  if (cursoDeApoio(item.curso)) return false;
   const cursoId = item.matricula.curso_id;
   return itens.some(
     (o) =>
@@ -150,6 +154,33 @@ export const MSG_CURSO_DE_APOIO =
 /** Curso de apoio ao presencial (`curso.modalidade` vem do servidor): material de estudo, nunca emite. */
 export function cursoDeApoio(curso) {
   return curso?.modalidade === "apoio";
+}
+
+/**
+ * Data (AAAA-MM-DD) de "renovar até" que a tela do aluno e a Ficha do RH mostram, ou null. Curso de apoio
+ * não renova (D3: não há certificado): mesmo uma matrícula concluída ANTES da D3, que ficou com a data
+ * gravada, não a mostra. O servidor já não a grava para o apoio (`datasDeConclusao`).
+ */
+export function renovacaoParaExibir(curso, matricula) {
+  if (cursoDeApoio(curso)) return null;
+  return matricula?.proxima_renovacao || null;
+}
+
+/**
+ * Botão do cartão do curso na lista do aluno: `{ texto, certificado }` (`certificado` liga o ícone de
+ * prêmio). Concluído com certificado vira "Certificado"; concluído de curso de apoio vira "Rever
+ * material", sem ícone de prêmio e sem a palavra "certificado" (D3: ele não emite). Em andamento:
+ * "Começar" (sem progresso) ou "Continuar".
+ * @param {{ matricula?: { status?: string }, curso?: { modalidade?: string } }} item
+ */
+export function rotuloDoBotaoDoCurso(item) {
+  const status = item?.matricula?.status;
+  if (status === "concluido") {
+    return cursoDeApoio(item.curso)
+      ? { texto: "Rever material", certificado: false }
+      : { texto: "Certificado", certificado: true };
+  }
+  return { texto: status === "pendente" ? "Começar" : "Continuar", certificado: false };
 }
 
 // -------------------------------------------------- retomar o vídeo
@@ -373,9 +404,10 @@ const MSG_TENTATIVAS_ESGOTADAS =
 
 /**
  * O que a tela diz depois do envio da prova. O reprovado vê "insatisfatório", a nota mínima, as
- * tentativas e a próxima liberação. A nota e os acertos vêm do servidor conforme a D10 (em aberto,
- * `REPROVADO_VE_NOTA` em regras.ts): a tela os mostra quando vierem e fica só no "insatisfatório"
- * quando o servidor os esconde (eles deixariam deduzir o gabarito).
+ * tentativas e a próxima liberação. A nota e os acertos vêm do servidor conforme a D10 (decidida em
+ * 06/10/2026: o reprovado só vê "insatisfatório", `REPROVADO_VE_NOTA = false` em regras.ts): a tela os
+ * mostra quando vierem (o aprovado) e fica só no "insatisfatório" quando o servidor os esconde (eles
+ * deixariam deduzir o gabarito).
  * `tentativas` conta as que restam (null se o curso não tem limite) e `esgotada` diz que não resta nenhuma
  * (a tela então não promete "nova tentativa liberada em...").
  */

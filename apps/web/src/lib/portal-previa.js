@@ -26,10 +26,11 @@ export const ID_MATRICULA_PREVIA = "previa";
 const NOTA_MINIMA_PADRAO = 70;
 const TEMPO_MINIMO_PADRAO = 60; // aula de PDF/texto sem tempo definido
 /**
- * Espelha REPROVADO_VE_NOTA do servidor (regras.ts, D10 em aberto): `true` = o reprovado também recebe
- * nota, acertos e total (comportamento de antes da T16); `false` = só "insatisfatório".
+ * Espelha REPROVADO_VE_NOTA do servidor (regras.ts, D10 decidida em 06/10/2026): `false` = o reprovado
+ * recebe só "insatisfatório" (sem nota, acertos nem total, que deixariam deduzir o gabarito); `true` =
+ * comportamento de antes da T16. Trocar um lado exige trocar o outro.
  */
-const REPROVADO_VE_NOTA = true;
+const REPROVADO_VE_NOTA = false;
 
 /**
  * Nota mínima como o servidor a usa (`nota_minima ?? 70`): só ausente (ou o texto vazio do formulário)

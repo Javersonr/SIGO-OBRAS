@@ -1,4 +1,10 @@
 // Regra espelhada no front; requisitos.test.ts confere os mesmos casos.
+//
+// D3 (Javerson, 06/10/2026): "emitir" é separado de "publicar/matricular". O curso de apoio CONTINUA
+// publicado e ACEITA MATRÍCULA como material de estudo; só não emite certificado. Por isso cada
+// requisito tem duas chaves: `bloqueia` (impede PUBLICAR e MATRICULAR) e `bloqueiaEmissao` (impede
+// EMITIR o certificado). No requisito MODALIDADE, o apoio só tem a segunda; o semipresencial (e o valor
+// desconhecido) têm as duas, como a T8 deixou, até a T12.
 // deno-lint-ignore-file no-explicit-any
 export const MIN_QUESTOES = 5;
 /**
@@ -55,6 +61,30 @@ export function duracaoParaProgresso(
   if (Number.isFinite(duracao) && duracao > 0) return duracao;
   return !aula.tipo || aula.tipo === "video" ? null : padraoLeitura;
 }
+/**
+ * A modalidade só trava a publicação e a matrícula quando o curso AINDA PODERÁ emitir (semipresencial,
+ * na T12) ou tem um valor que o banco não aceita; o apoio nunca emite e, por isso, não trava (D3).
+ */
+function modalidadeTravaPublicacao(modalidade: string | null | undefined): boolean {
+  return (modalidade || "ead") !== "apoio";
+}
+export interface Requisito {
+  codigo: string;
+  ok: boolean;
+  /** Pendente impede PUBLICAR o curso e MATRICULAR alunos. */
+  bloqueia: boolean;
+  /** Pendente impede EMITIR o certificado. */
+  bloqueiaEmissao: boolean;
+  texto: string;
+}
+/** Requisitos que impedem PUBLICAR o curso e MATRICULAR alunos (ainda não resolvidos). */
+export function pendenciasParaPublicar(requisitos: Requisito[] = []): Requisito[] {
+  return requisitos.filter((r) => r.bloqueia && !r.ok);
+}
+/** Requisitos que impedem EMITIR o certificado (ainda não resolvidos). */
+export function pendenciasParaEmitir(requisitos: Requisito[] = []): Requisito[] {
+  return requisitos.filter((r) => r.bloqueiaEmissao && !r.ok);
+}
 export function tempoObrigatorioSeg(aulas: any[] = []) {
   return aulas
     .filter((a) => !a.deleted_at)
@@ -64,7 +94,7 @@ export function requisitosDoCurso({
   curso = {},
   aulas = [],
   questoes = [],
-}: { curso?: any; aulas?: any[]; questoes?: any[] } = {}) {
+}: { curso?: any; aulas?: any[]; questoes?: any[] } = {}): Requisito[] {
   const ativas = aulas.filter((a) => !a.deleted_at);
   const carga = Number(curso.carga_horaria_horas) || 0;
   const lastro = tempoObrigatorioSeg(ativas);
@@ -76,7 +106,8 @@ export function requisitosDoCurso({
         : a.fonte === "upload"
           ? a.video_ref
           : a.youtube_id;
-  const itens = [
+  const modalidade = modalidadeDoCurso(curso);
+  const itens: [string, boolean, string][] = [
     ["AULAS", ativas.length > 0, "Adicione pelo menos uma aula"],
     [
       "CONTEUDO",
@@ -96,19 +127,30 @@ export function requisitosDoCurso({
     ],
     ["INSTRUTOR", !!curso.instrutor_nome?.trim(), "Informe o instrutor"],
     ["RT", !!curso.responsavel_tecnico_nome?.trim(), "Informe o responsável técnico"],
-    [
-      "MODALIDADE",
-      emiteCertificado(modalidadeDoCurso(curso)),
-      motivoSemCertificado(modalidadeDoCurso(curso)),
-    ],
+    ["MODALIDADE", emiteCertificado(modalidade), motivoSemCertificado(modalidade)],
   ];
   return [
-    ...itens.map(([codigo, ok, texto]) => ({ codigo, ok, bloqueia: true, texto })),
-    ...[
-      ["TUTOR", curso.tutor_telefone, "Defina o contato do tutor"],
-      ["PROJETO", curso.projeto_pedagogico_ref, "Anexe o projeto pedagógico"],
-      ["PROGRAMA", curso.conteudo_programatico, "Preencha o conteúdo programático"],
-      ["VALIDADE", curso.validade_meses, "Confira a validade do treinamento"],
-    ].map(([codigo, valor, texto]) => ({ codigo, ok: !!valor, bloqueia: false, texto })),
+    ...itens.map(([codigo, ok, texto]) => ({
+      codigo,
+      ok,
+      // D3: o apoio não trava publicar nem matricular, só a emissão (o motivo é só informativo)
+      bloqueia: codigo === "MODALIDADE" ? modalidadeTravaPublicacao(modalidade) : true,
+      bloqueiaEmissao: true,
+      texto,
+    })),
+    ...(
+      [
+        ["TUTOR", curso.tutor_telefone, "Defina o contato do tutor"],
+        ["PROJETO", curso.projeto_pedagogico_ref, "Anexe o projeto pedagógico"],
+        ["PROGRAMA", curso.conteudo_programatico, "Preencha o conteúdo programático"],
+        ["VALIDADE", curso.validade_meses, "Confira a validade do treinamento"],
+      ] as [string, unknown, string][]
+    ).map(([codigo, valor, texto]) => ({
+      codigo,
+      ok: !!valor,
+      bloqueia: false,
+      bloqueiaEmissao: false,
+      texto,
+    })),
   ];
 }

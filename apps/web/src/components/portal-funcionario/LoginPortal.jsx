@@ -180,7 +180,6 @@ export function TrocarSenhaPortal({
   // por conta do servidor, que confere de novo em toda troca.
   const dados = { atual, nova, confirma, obrigatoria, usuario };
   const pode = podeTrocarSenha(dados);
-  const avisoSenhaLonga = avisoDeSenhaLonga(nova) || avisoDeSenhaLonga(confirma);
 
   const salvar = async (e) => {
     e.preventDefault();
@@ -237,9 +236,9 @@ export function TrocarSenhaPortal({
           />
           {/* sem `maxLength`: o campo cortaria a senha colada em silêncio; o aviso e a regra de tamanho
               dizem o que houve (T27) */}
-          {avisoSenhaLonga && (
+          {avisoDeSenhaLonga(nova) && (
             <p role="alert" className="text-xs text-red-600">
-              {avisoSenhaLonga}
+              {avisoDeSenhaLonga(nova)}
             </p>
           )}
           <RegrasDaSenha regras={regrasDaSenha(nova, usuario)} />
@@ -255,6 +254,13 @@ export function TrocarSenhaPortal({
             onChange={setConfirma}
             autoComplete="new-password"
           />
+          {/* o aviso fica sob o campo que passou do limite: a confirmação colada com 80 caracteres
+              não pode acusar o campo "Nova senha" (A5) */}
+          {avisoDeSenhaLonga(confirma) && (
+            <p role="alert" className="text-xs text-red-600">
+              {avisoDeSenhaLonga(confirma)}
+            </p>
+          )}
           {confirmacaoDivergiu(nova, confirma) && (
             <p className="text-xs text-amber-700">As duas senhas não são iguais</p>
           )}

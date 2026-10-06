@@ -6,17 +6,25 @@ import {
   modelosSemCurso,
   dadosCursoDoModelo,
   faltaModeloCentral,
+  mostrarAvisoDeCursoSemVinculo,
+  TEXTO_CURSO_SEM_VINCULO,
 } from "@/lib/treinamento-catalogo";
 import {
   OPCOES_MODALIDADE,
+  apresentacaoDoRequisito,
   avisoDaModalidade,
   explicacaoDaModalidade,
-  rotuloDaModalidade,
+  seloDaModalidade,
 } from "@/lib/ead-modalidade";
 import { normalizarQuestao } from "@/lib/ead-questao";
 import { parseDuracao, formatDuracao, lerDuracaoVideo } from "@/lib/ead-duracao";
-import { modalidadeDoCurso, requisitosDoCurso, tempoObrigatorioSeg } from "@/lib/ead-requisitos";
-import { numerarAulas } from "@/lib/portal-curso";
+import {
+  modalidadeDoCurso,
+  pendenciasParaPublicar,
+  requisitosDoCurso,
+  tempoObrigatorioSeg,
+} from "@/lib/ead-requisitos";
+import { numerarAulas, renovacaoParaExibir } from "@/lib/portal-curso";
 import {
   reordenarAulas,
   matriculasNovas,
@@ -402,7 +410,8 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       aulas: aulasDoCurso(curso.id),
       questoes: todasQuestoes.filter((q) => q.curso_id === curso.id),
     });
-  const pendenciasCurso = (curso) => requisitos(curso).filter((r) => r.bloqueia && !r.ok);
+  // o que impede PUBLICAR e MATRICULAR (D3: o curso de apoio publica e matricula; só não emite)
+  const pendenciasCurso = (curso) => pendenciasParaPublicar(requisitos(curso));
   const funcPorId = useMemo(() => new Map(funcionarios.map((f) => [f.id, f])), [funcionarios]);
   // um certificado por matrícula, consultado por linha da tabela sem varrer a lista a cada vez
   const certPorMatricula = useMemo(() => certificadosPorMatricula(certificados), [certificados]);
@@ -1304,9 +1313,10 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     Publicado com pendências
                   </Badge>
                 )}
-                {c.modalidade && c.modalidade !== "ead" && (
+                {/* o apoio leva um selo neutro, não pendência: publica e matricula, só não emite (D3) */}
+                {seloDaModalidade(c.modalidade) && (
                   <Badge variant="outline" className="mt-1 ml-1 text-slate-700">
-                    {rotuloDaModalidade(c.modalidade)}
+                    {seloDaModalidade(c.modalidade).texto}
                   </Badge>
                 )}
                 <p className="text-xs text-slate-500 mt-1">
@@ -1375,7 +1385,10 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                       </Badge>
                     </td>
                     <td className="py-2 pr-3 text-slate-600">{fmtData(m.data_conclusao)}</td>
-                    <td className="py-2 pr-3 text-slate-600">{fmtData(m.proxima_renovacao)}</td>
+                    {/* curso de apoio não renova (D3), mesmo que a matrícula antiga tenha a data */}
+                    <td className="py-2 pr-3 text-slate-600">
+                      {fmtData(renovacaoParaExibir(curso, m))}
+                    </td>
                     <td className="py-2 pr-3">
                       {cert ? (
                         <Badge
@@ -1515,15 +1528,10 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     cadastro em Configurações → Funções → Treinamentos. Edite esses dados lá para
                     atualizar todas as funções.
                   </p>
-                  {cursoSel.id &&
-                    !cursoSel.modelo_treinamento_id &&
-                    !cursos.find((c) => c.id === cursoSel.id)?.modelo_treinamento_id && (
-                      <p className="text-xs text-slate-600">
-                        Este curso foi criado antes do cadastro central e pode ser salvo sem o
-                        vínculo: nome, código, carga horária, validade e conteúdo seguem editáveis
-                        aqui.
-                      </p>
-                    )}
+                  {mostrarAvisoDeCursoSemVinculo(
+                    cursoSel,
+                    cursos.find((c) => c.id === cursoSel.id)
+                  ) && <p className="text-xs text-slate-600">{TEXTO_CURSO_SEM_VINCULO}</p>}
                 </div>
                 <div className="rounded-lg border p-3 space-y-2">
                   <Label htmlFor="curso-modalidade">Modalidade</Label>
@@ -1782,15 +1790,18 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     <ul className="text-xs space-y-1">
                       {requisitos(cursoSel)
                         .filter((r) => !r.ok)
-                        .map((r) => (
-                          <li
-                            key={r.codigo}
-                            className={r.bloqueia ? "text-amber-700" : "text-slate-500"}
-                          >
-                            {r.bloqueia ? "Pendente: " : "Revisar: "}
-                            {r.texto}
-                          </li>
-                        ))}
+                        .map((r) => {
+                          const { prefixo, tom } = apresentacaoDoRequisito(r);
+                          return (
+                            <li
+                              key={r.codigo}
+                              className={tom === "alerta" ? "text-amber-700" : "text-slate-500"}
+                            >
+                              {prefixo}
+                              {r.texto}
+                            </li>
+                          );
+                        })}
                     </ul>
                   </div>
                 </div>

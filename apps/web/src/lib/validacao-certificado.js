@@ -26,7 +26,8 @@ const SITUACOES_DO_SERVIDOR = ["valido", "vencido", "revogado", "divergente"];
  *  - O servidor manda `situacao`: só os quatro valores conhecidos valem; qualquer outro (inclusive
  *    vazio, nulo e texto com outra caixa) é "indeterminada".
  *  - `valido` e `vencido` dizem "autêntico": se a mesma resposta traz `revogado: true` ou
- *    `integro: false` (e, no `valido`, `vencido: true`), ela se contradiz e vira "indeterminada".
+ *    `integro: false` (e, no `valido`, `vencido: true` ou `valido: false`), ela se contradiz e vira
+ *    "indeterminada".
  *  - Servidor ainda sem a T10 (resposta SEM o campo `situacao`): `revogado: true` é revogado e só
  *    `valido: true` é válido, como era antes; o resto é "indeterminada".
  */
@@ -42,7 +43,11 @@ export function situacaoDoResultado(resultado) {
   if (dizAutentico && (resultado.revogado === true || resultado.integro === false)) {
     return "indeterminada";
   }
-  if (situacao === "valido" && resultado.vencido === true) return "indeterminada";
+  // o `valido` do servidor é derivado da mesma situação: "valido" com `valido: false` se contradiz. (No
+  // "vencido", `valido: false` é o normal e não entra aqui.)
+  if (situacao === "valido" && (resultado.vencido === true || resultado.valido === false)) {
+    return "indeterminada";
+  }
   return situacao;
 }
 

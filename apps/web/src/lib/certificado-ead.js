@@ -8,6 +8,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { QRCodeCanvas } from "qrcode.react";
 import { urlPublica } from "@/lib/url-publica";
+import { dataHoraBrasilia } from "@/lib/data-brasilia";
 import {
   ErroCertificado,
   MSG_QR_FALHOU,
@@ -192,7 +193,7 @@ export async function baixarCertificadoPdf(cert, opcoes = {}) {
       nome: d.aluno?.nome,
       papel: "Participante",
       extra: ass.assinado_em
-        ? `Assinado eletronicamente em ${new Date(ass.assinado_em).toLocaleString("pt-BR")}`
+        ? `Assinado eletronicamente em ${dataHoraBrasilia(ass.assinado_em)}`
         : "",
       extra2: ass.ip ? `IP ${ass.ip} · login pessoal` : "",
     },

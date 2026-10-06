@@ -507,6 +507,60 @@ test("registrarOuDesfazer: exceção do banco conta como falha, nunca estoura", 
   assert.equal(r, "sem_registro");
 });
 
+test("registrarOuDesfazer: a exceção de cada passo chega ao aoFalhar com a causa (nada se perde)", async () => {
+  const lancadas: { passo: string; erro: unknown }[] = [];
+  const falhaRegistro = new Error("rede ao gravar o evento");
+  const falhaDesfazer = new Error("rede ao desfazer");
+  const r = await registrarOuDesfazer({
+    registrar: async () => {
+      throw falhaRegistro;
+    },
+    desfazer: async () => {
+      throw falhaDesfazer;
+    },
+    aoFalhar: (passo, erro) => lancadas.push({ passo, erro }),
+  });
+  assert.equal(r, "sem_registro");
+  // registrar (1ª), desfazer e a última tentativa de registrar: as três lançaram
+  assert.deepEqual(lancadas, [
+    { passo: "registrar", erro: falhaRegistro },
+    { passo: "desfazer", erro: falhaDesfazer },
+    { passo: "registrar", erro: falhaRegistro },
+  ]);
+  // passo que só devolve false (sem lançar) não chama o aoFalhar
+  const semExcecao: unknown[] = [];
+  await registrarOuDesfazer({
+    registrar: async () => false,
+    desfazer: async () => false,
+    aoFalhar: (_passo, erro) => semExcecao.push(erro),
+  });
+  assert.deepEqual(semExcecao, []);
+  // o aviso que ele próprio lança nunca derruba a resposta
+  const r2 = await registrarOuDesfazer({
+    registrar: async () => {
+      throw new Error("x");
+    },
+    desfazer: async () => true,
+    aoFalhar: () => {
+      throw new Error("log fora do ar");
+    },
+  });
+  assert.equal(r2, "desfeito");
+});
+
+test("index.ts: as duas chamadas de registrarOuDesfazer escrevem a causa no console.error", () => {
+  const codigo = readFileSync(new URL("./index.ts", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  const chamadas = [...codigo.matchAll(/registrarOuDesfazer\(\{/g)];
+  assert.equal(chamadas.length, 2, "liberar_tentativa e revogar_certificado");
+  for (const c of chamadas) {
+    const trecho = codigo.slice(c.index, c.index + 2200);
+    assert.match(trecho, /aoFalhar:\s*\(passo,\s*erro\)\s*=>/);
+    assert.match(trecho, /console\.error\([\s\S]{0,260}erro/);
+  }
+});
+
 test("falhaDoRegistro: efeito desfeito = 500 'tente de novo'; sem desfazer = código próprio e 'NÃO repita'", () => {
   const liberarDesfeita = falhaDoRegistro({ acao: "liberar_tentativa", resultado: "desfeito" });
   assert.equal(liberarDesfeita.status, 500);

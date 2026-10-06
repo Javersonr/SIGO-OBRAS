@@ -246,6 +246,21 @@ describe("liberação sem repetir (T18, M4)", () => {
     });
   });
 
+  it("QUALQUER 409 recarrega a matrícula (até o 'já foi aprovado' da liberação, sem codigo), menos o efeito sem registro", () => {
+    // a liberação recusada porque o aluno já foi aprovado: 409 sem `codigo`; o botão não pode ficar na tela
+    const jaAprovado = Object.assign(new Error("O aluno já foi aprovado"), { status: 409 });
+    expect(falhaDaAcaoDoRH(jaAprovado).recarregarMatricula).toBe(true);
+    // o `codigo` próprio nunca é lido pelo texto, e outro 409 qualquer também recarrega
+    const outro = Object.assign(new Error("qualquer 409"), { status: 409, codigo: "OUTRO" });
+    expect(falhaDaAcaoDoRH(outro).recarregarMatricula).toBe(true);
+    // a exceção: com o efeito sem registro a tela antiga é a proteção, mesmo que o status venha 409
+    const semRegistro = Object.assign(new Error("NÃO repita"), {
+      codigo: CODIGO_EFEITO_SEM_REGISTRO,
+      status: 409,
+    });
+    expect(falhaDaAcaoDoRH(semRegistro).recarregarMatricula).toBe(false);
+  });
+
   it("sem permissão (403), erro do banco (500) e falha de rede não recarregam a lista", () => {
     for (const status of [400, 403, 500, 503, undefined]) {
       expect(

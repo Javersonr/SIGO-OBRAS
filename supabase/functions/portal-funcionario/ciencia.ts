@@ -90,3 +90,50 @@ export async function confirmarCiencia(supabase: any, p: PedidoCiencia): Promise
   }
   return { resultado: "confirmada" };
 }
+
+/** Quantas ciências CONFIRMADAS o portal recebe no histórico (as mais recentes). */
+export const LIMITE_HISTORICO_CIENCIAS = 30;
+
+const COLUNAS_DA_LISTA = "id, tipo, descricao, itens, status, created_at, confirmada_em";
+
+/**
+ * Entregas do funcionário para o portal (`dados.ciencias`): TODAS as pendentes, mais as
+ * `LIMITE_HISTORICO_CIENCIAS` confirmadas mais recentes. Antes um `.limit(30)` valia para as duas juntas,
+ * ordenadas por criação: com mais de 30 entregas, a pendente mais antiga saía da lista e o aluno nunca a
+ * via nem a confirmava. Pendente é pedido de ação do aluno e não pode ser cortada (o PostgREST ainda aplica
+ * o teto de linhas do projeto, 1000 por padrão, longe de qualquer uso real); só o histórico tem limite.
+ * A lista sai com as pendentes primeiro; dentro de cada grupo, da mais nova para a mais antiga. Se uma das
+ * duas leituras falha, não devolve a outra metade: `{ ok: false }` (o chamador responde 503) e a causa vai
+ * para o log. Service role ignora a RLS: as duas consultas levam empresa e funcionário da sessão.
+ */
+export async function listarCienciasDoAluno(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  p: { funcionarioId: string; empresaId: string }
+  // deno-lint-ignore no-explicit-any
+): Promise<{ ok: true; ciencias: any[] } | { ok: false }> {
+  const consulta = (status: "pendente" | "confirmada") =>
+    supabase
+      .from("entrega_ciencia")
+      .select(COLUNAS_DA_LISTA)
+      .eq("funcionario_id", p.funcionarioId)
+      .eq("empresa_id", p.empresaId)
+      .eq("status", status)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false });
+  const [pendentes, confirmadas] = await Promise.all([
+    consulta("pendente"),
+    consulta("confirmada").limit(LIMITE_HISTORICO_CIENCIAS),
+  ]);
+  const erro = pendentes.error ?? confirmadas.error;
+  if (erro) {
+    const e = erro as { message?: unknown; code?: unknown };
+    console.error(
+      "[portal-funcionario] ciências: lista falhou:",
+      e?.code ? `[${String(e.code)}]` : "",
+      String(e?.message ?? erro)
+    );
+    return { ok: false };
+  }
+  return { ok: true, ciencias: [...(pendentes.data ?? []), ...(confirmadas.data ?? [])] };
+}

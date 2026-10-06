@@ -38,6 +38,8 @@ import {
   urlDoProjetoPedagogico,
   abrirProjetoPedagogico,
   cursoDeApoio,
+  renovacaoParaExibir,
+  rotuloDoBotaoDoCurso,
   MSG_CURSO_DE_APOIO,
 } from "./portal-curso";
 
@@ -318,6 +320,60 @@ describe("cursoDeApoio", () => {
     expect(MSG_CURSO_DE_APOIO).toBe(
       "Material de apoio ao treinamento presencial: não emite certificado"
     );
+  });
+});
+
+describe("curso de apoio não sugere certificado nem renovação (D3)", () => {
+  const concluido = (modalidade, extra = {}) =>
+    item("1", "concluido", { data_conclusao: "2026-09-10", ...extra }, { modalidade });
+
+  it("renovacaoParaExibir: o apoio nunca mostra 'renovar até', mesmo com a data gravada de antes da D3", () => {
+    const mat = { proxima_renovacao: "2028-09-10" };
+    expect(renovacaoParaExibir({ modalidade: "apoio" }, mat)).toBeNull();
+    // EAD, semipresencial e curso lido sem a coluna seguem mostrando a data
+    for (const modalidade of ["ead", "semipresencial", undefined]) {
+      expect(renovacaoParaExibir({ modalidade }, mat)).toBe("2028-09-10");
+    }
+    expect(renovacaoParaExibir({ modalidade: "ead" }, { proxima_renovacao: null })).toBeNull();
+    expect(renovacaoParaExibir(null, mat)).toBe("2028-09-10");
+    expect(renovacaoParaExibir({ modalidade: "ead" }, null)).toBeNull();
+  });
+
+  it("rotuloDoBotaoDoCurso: concluído com certificado = 'Certificado'; concluído de apoio = 'Rever material', sem ícone de prêmio", () => {
+    expect(rotuloDoBotaoDoCurso(concluido("ead"))).toEqual({
+      texto: "Certificado",
+      certificado: true,
+    });
+    expect(rotuloDoBotaoDoCurso(concluido("semipresencial"))).toEqual({
+      texto: "Certificado",
+      certificado: true,
+    });
+    const apoio = rotuloDoBotaoDoCurso(concluido("apoio"));
+    expect(apoio).toEqual({ texto: "Rever material", certificado: false });
+    expect(apoio.texto).not.toMatch(/certificado/i);
+  });
+
+  it("rotuloDoBotaoDoCurso: em andamento segue 'Começar' e 'Continuar', qualquer modalidade", () => {
+    for (const modalidade of ["ead", "apoio"]) {
+      expect(rotuloDoBotaoDoCurso(item("2", "pendente", {}, { modalidade }))).toEqual({
+        texto: "Começar",
+        certificado: false,
+      });
+      expect(rotuloDoBotaoDoCurso(item("3", "em_andamento", {}, { modalidade }))).toEqual({
+        texto: "Continuar",
+        certificado: false,
+      });
+    }
+  });
+
+  it("ehRenovacao: nova matrícula de um curso de apoio já concluído é estudo de novo, não 'Renovação'", () => {
+    const antiga = item("1", "concluido", { curso_id: "nr35" }, { modalidade: "apoio" });
+    const nova = item("2", "pendente", { curso_id: "nr35" }, { modalidade: "apoio" });
+    expect(ehRenovacao(nova, [antiga, nova])).toBe(false);
+    // o mesmo cenário num curso com certificado continua sendo renovação
+    const antigaEad = item("3", "concluido", { curso_id: "nr10" }, { modalidade: "ead" });
+    const novaEad = item("4", "pendente", { curso_id: "nr10" }, { modalidade: "ead" });
+    expect(ehRenovacao(novaEad, [antigaEad, novaEad])).toBe(true);
   });
 });
 

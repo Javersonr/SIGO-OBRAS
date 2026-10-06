@@ -221,11 +221,19 @@ export function proximaTentativaEm(
  * 21h e 24h em Brasília, a conclusão saía com a data do dia seguinte. A renovação soma os meses sobre a
  * data de Brasília. Dia 31 que não existe no mês de destino estoura para o mês seguinte (comportamento
  * de sempre; o teste fixa).
+ *
+ * Curso de APOIO (D3, 06/10/2026) é material de estudo e nunca emite certificado: não há o que renovar,
+ * então só a `data_conclusao` é gravada, qualquer que seja a validade do curso. Quem lê a matrícula (portal,
+ * Ficha, tela do RH) não mostra "renova" para ele.
  */
-export function datasDeConclusao(hoje: Date, validadeMeses?: number | null) {
+export function datasDeConclusao(
+  hoje: Date,
+  validadeMeses?: number | null,
+  modalidade?: string | null
+) {
   const dia = dataBrasilia(hoje);
   const datas: { data_conclusao: string; proxima_renovacao?: string } = { data_conclusao: dia };
-  if (validadeMeses) {
+  if (validadeMeses && modalidade !== "apoio") {
     const [a, m, d] = dia.split("-").map(Number);
     const renova = new Date(Date.UTC(a, m - 1, d));
     renova.setUTCMonth(renova.getUTCMonth() + validadeMeses);
@@ -380,14 +388,13 @@ export const EVENTO_PROVA_INICIADA = "avaliacao_iniciada";
 export const TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG = 0;
 
 /**
- * DECISÃO D10 em aberto: o reprovado vê a nota, os acertos e o total? O padrão `true` mantém o
- * comportamento de antes da T16 (o reprovado recebe nota, acertos e total) até a D10 ser decidida.
- * `false` = só "insatisfatório", as tentativas e a próxima liberação: fecha a dedução do gabarito
- * (acertos e total, em prova de 5 ou 6 questões, deixam deduzir as respostas certas; T16, item 3);
- * o RH vê tudo na trilha. Trocar o valor aqui e publicar a função basta (a prévia do RT espelha o
- * valor em `apps/web/src/lib/portal-previa.js`).
+ * DECISÃO D10 (Javerson, 06/10/2026): o reprovado vê só "insatisfatório". `false` = ele recebe o
+ * conceito, as tentativas e a próxima liberação, e NÃO recebe nota, acertos nem total: em prova de 5
+ * ou 6 questões, acertos e total deixam deduzir as respostas certas (T16, item 3). O RH vê tudo na
+ * trilha. `true` devolveria o comportamento de antes da T16; trocar o valor aqui e publicar a função
+ * basta (a prévia do RT espelha o valor em `apps/web/src/lib/portal-previa.js`: troque os dois).
  */
-export const REPROVADO_VE_NOTA = true;
+export const REPROVADO_VE_NOTA = false;
 
 /** Questão sorteada para uma tentativa: sem gabarito, com as alternativas na ordem mostrada. */
 export interface QuestaoSorteada {
@@ -675,7 +682,7 @@ export function validarEnvio(p: {
  * Resposta da ação `avaliacao` depois de corrigir. Aprovado: tudo, como antes (nota, acertos, total
  * e a correção comentada) mais o conceito `satisfatorio`. Reprovado: `insatisfatorio`, a nota mínima,
  * as tentativas e a próxima liberação, mais nota, acertos e total quando `reprovadoVeNota` (padrão
- * `REPROVADO_VE_NOTA`, D10 em aberto); com `false` o reprovado não recebe nota, acertos nem total
+ * `REPROVADO_VE_NOTA`, D10); com `false` o reprovado não recebe nota, acertos nem total
  * (o RH vê tudo na trilha). A correção comentada só vai ao aprovado, qualquer que seja o valor.
  */
 export function respostaDaCorrecao(
@@ -753,9 +760,9 @@ export const COLUNAS_MATRICULA_PORTAL = [...COLUNAS_MATRICULA_ALUNO, "tentativas
 
 /**
  * A matrícula como o aluno a recebe em `dados`: só as `COLUNAS_MATRICULA_ALUNO` (a coluna que a consulta
- * não trouxe continua ausente). Com `reprovadoVeNota` (padrão `REPROVADO_VE_NOTA`, D10 em aberto) a nota
- * vai como está. Com `false`, a nota da última tentativa não sai enquanto ele não foi aprovado (senão
- * esconder a nota na resposta da prova não adiantaria: ela estaria aqui).
+ * não trouxe continua ausente). `reprovadoVeNota` vale `REPROVADO_VE_NOTA` (D10) por padrão: com
+ * `false`, a nota da última tentativa não sai enquanto ele não foi aprovado (senão esconder a nota na
+ * resposta da prova não adiantaria: ela estaria aqui); com `true`, a nota vai como está.
  */
 export function matriculaParaAluno(
   matricula: { avaliacao_aprovada?: boolean | null } & Record<string, unknown>,
@@ -946,7 +953,8 @@ export async function reconfirmarSenha(p: {
  *    eventos, e há folga até 300). Estourou só barra o próprio player, sem afetar mais nada.
  *  - `evento`: o resto (abrir curso, fim do vídeo, aba oculta ou visível, prova, projeto, certificado),
  *    dezenas em 10 min já é uso intenso.
- * Somados, o pior caso por funcionário (510 em 10 min) é pouco mais de três vezes o teto único antigo.
+ * Somados, o pior caso por funcionário é 570 em 10 min (abrir_aula 120 + player 300 + evento 150), pouco
+ * mais de três vezes o teto único antigo.
  */
 export const VOLUME_POR_ACAO = {
   evento: { escopo: "portal-evento", janelaSeg: 10 * 60, max: 150 },
@@ -1030,7 +1038,7 @@ export function resultadoDoSinal(p: {
 
 // ------------------------- emissão do certificado: o hash tem de se reproduzir pelo banco (T10, M5)
 
-/** Autor da revogação feita pelo próprio sistema (\`treinamento_certificado.revogado_por\`). */
+/** Autor da revogação feita pelo próprio sistema (`treinamento_certificado.revogado_por`). */
 export const POR_SISTEMA = "sistema";
 
 /**
@@ -1044,11 +1052,15 @@ export const MOTIVO_EMISSAO_ANULADA =
 /**
  * Texto do 500 da emissão que não conferiu. Nada foi entregue ao aluno. Uma nova tentativa não ajuda: o
  * certificado anulado continua ocupando a matrícula (um por matrícula) e o mesmo conteúdo daria o mesmo
- * resultado; quem refaz a emissão é o RH.
+ * resultado. Não existe botão de "refazer a emissão": o caminho real é o RH remover a matrícula (pode,
+ * porque o certificado anulado já consta como revogado) e matricular o aluno de novo, o que recomeça o
+ * curso do início (matrícula nova, sem o progresso da anterior). O texto diz isso, para o aluno não
+ * esperar uma correção que o RH não tem como fazer na mesma matrícula.
  */
 export const MSG_EMISSAO_ANULADA =
   "Não foi possível concluir a emissão do certificado: o selo de integridade não pôde ser conferido " +
-  "e nada foi entregue. Avise o RH para refazer a emissão.";
+  "e nada foi entregue. Avise o RH: ele precisa remover esta matrícula e matricular você de novo " +
+  "no curso (o curso recomeça do início).";
 
 /**
  * As únicas colunas que a anulação grava (as mesmas da revogação, migração 0119): hora do servidor, o
@@ -1065,11 +1077,22 @@ export function dadosDaAnulacaoNaEmissao(agora: Date) {
 export type ConferenciaDaEmissao = { entregar: true } | { entregar: false; anulado: boolean };
 
 /**
- * Depois do INSERT, refaz o hash a partir do que o banco DEVOLVEU (o \`jsonb\` pode ter mudado alguma
+ * Como o certificado de uma matrícula que já tem um sai para o aluno: a linha do banco mais `revogado`,
+ * lido de `revogado_em` (a coluna que a revogação e a anulação gravam). Nunca fixa `false`: um
+ * certificado revogado ou anulado não pode voltar como válido só porque o aluno pediu de novo.
+ */
+export function certificadoParaResposta<T extends { revogado_em?: string | null }>(linha: T) {
+  return { ...linha, revogado: !!linha.revogado_em };
+}
+
+/**
+ * Depois do INSERT, refaz o hash a partir do que o banco DEVOLVEU (o `jsonb` pode ter mudado alguma
  * coisa) e compara com o que foi gravado. Se não bate, o certificado apareceria na validação pública como
- * "Dados não conferem" desde o primeiro minuto: então NÃO é entregue e é anulado (\`anular\` revoga a linha;
- * o servidor não apaga, a trilha é só de inclusão, migração 0135). \`anulado: false\` = a anulação também
- * falhou (ou lançou): o chamador deixa rastro no log e responde o mesmo erro. Nunca lança.
+ * "Dados não conferem" desde o primeiro minuto: então NÃO é entregue e é anulado (`anular` revoga a linha;
+ * o servidor não apaga, a trilha é só de inclusão, migração 0135). `anulado: false` = a anulação também
+ * falhou (ou lançou): o chamador deixa rastro no log e responde o mesmo erro. Nunca lança. Se a anulação
+ * LANÇAR, a causa vai para `aoFalharAnulacao` (o `index.ts` a escreve no `console.error`; injetado para
+ * este módulo continuar puro), e um aviso que ele próprio lance não derruba a resposta.
  */
 export async function conferirEmissaoDoCertificado(p: {
   hashEmitido: string;
@@ -1077,6 +1100,8 @@ export async function conferirEmissaoDoCertificado(p: {
   anular: () => Promise<boolean>;
   /** Recebe o hash refeito a partir do banco, para o log. */
   aoDivergir?: (hashRefeito: string) => void;
+  /** Recebe a exceção lançada pela anulação (a causa, que antes se perdia), para o log. */
+  aoFalharAnulacao?: (erro: unknown) => void;
 }): Promise<ConferenciaDaEmissao> {
   const refeito = await hashDoCertificado(
     p.gravado.codigo,
@@ -1088,8 +1113,13 @@ export async function conferirEmissaoDoCertificado(p: {
   let anulado = false;
   try {
     anulado = await p.anular();
-  } catch {
+  } catch (erro) {
     anulado = false;
+    try {
+      p.aoFalharAnulacao?.(erro);
+    } catch {
+      // o log nunca derruba a resposta
+    }
   }
   return { entregar: false, anulado };
 }

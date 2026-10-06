@@ -10,6 +10,7 @@ import {
   ShieldX,
 } from "lucide-react";
 import { apresentacaoDoResultado, avisoDeIntegridade, dataBr } from "@/lib/validacao-certificado";
+import { dataHoraBrasilia } from "@/lib/data-brasilia";
 import { fmtDataHora } from "./api";
 
 /**
@@ -115,11 +116,7 @@ export default function ResultadoValidacao({
                 </>
               )}
               <dt className="text-slate-500">Assinado pelo participante</dt>
-              <dd>
-                {c.assinado_pelo_aluno_em
-                  ? new Date(c.assinado_pelo_aluno_em).toLocaleString("pt-BR")
-                  : "—"}
-              </dd>
+              <dd>{c.assinado_pelo_aluno_em ? dataHoraBrasilia(c.assinado_pelo_aluno_em) : "—"}</dd>
               <dt className="text-slate-500">Código</dt>
               <dd className="font-mono">{c.codigo}</dd>
             </dl>

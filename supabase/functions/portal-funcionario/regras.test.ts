@@ -695,6 +695,17 @@ test("datasDeConclusao: a renovação vem a N meses da conclusão", () => {
   assert.equal(datasDeConclusao(hoje, 3).proxima_renovacao, "2027-01-05"); // vira o ano
 });
 
+test("datasDeConclusao: curso de apoio não grava proxima_renovacao (D3: não há certificado a renovar)", () => {
+  const hoje = new Date("2026-10-05T15:00:00.000Z");
+  // mesmo com validade em meses no curso, o apoio só registra o dia da conclusão
+  assert.deepEqual(datasDeConclusao(hoje, 24, "apoio"), { data_conclusao: "2026-10-05" });
+  assert.equal("proxima_renovacao" in datasDeConclusao(hoje, 12, "apoio"), false);
+  // as outras modalidades (e a ausência da coluna) seguem renovando como sempre
+  for (const modalidade of ["ead", "semipresencial", undefined, null, ""]) {
+    assert.equal(datasDeConclusao(hoje, 24, modalidade).proxima_renovacao, "2028-10-05");
+  }
+});
+
 test("datasDeConclusao: não altera a data recebida", () => {
   const hoje = new Date("2026-10-05T15:00:00.000Z");
   datasDeConclusao(hoje, 12);
@@ -1502,9 +1513,9 @@ test("respostaDaCorrecao: reprovado nunca leva a correção comentada, mesmo se 
   }
 });
 
-test("respostaDaCorrecao: mostrar a nota ao reprovado é uma constante (D10); o padrão é o comportamento atual", () => {
-  // D10 em aberto: até o Javerson decidir, o reprovado continua vendo nota, acertos e total
-  assert.equal(REPROVADO_VE_NOTA, true);
+test("respostaDaCorrecao: o reprovado vê só 'insatisfatório' (D10, 06/10/2026: REPROVADO_VE_NOTA = false)", () => {
+  // D10 decidida: nota, acertos e total do reprovado deixariam deduzir o gabarito; o RH vê tudo na trilha
+  assert.equal(REPROVADO_VE_NOTA, false);
   const reprovado = {
     ...CORRECAO,
     aprovada: false,
@@ -1514,16 +1525,20 @@ test("respostaDaCorrecao: mostrar a nota ao reprovado é uma constante (D10); o 
     cursoConcluido: false,
   };
   const padrao = respostaDaCorrecao(reprovado); // sem o 2º argumento: vale a constante
-  assert.equal(padrao.nota, 40);
-  assert.equal(padrao.acertos, 2);
-  assert.equal(padrao.total, 5);
+  for (const chave of ["nota", "acertos", "total"]) assert.equal(chave in padrao, false, chave);
   assert.equal(padrao.resultado, "insatisfatorio");
   assert.equal(padrao.revisao, null); // a correção comentada continua só para o aprovado
-  assert.deepEqual(padrao, respostaDaCorrecao(reprovado, true));
-  // `false` fecha a dedução do gabarito: nem nota, nem acertos, nem total
-  const fechado = respostaDaCorrecao(reprovado, false);
-  for (const chave of ["nota", "acertos", "total"]) assert.equal(chave in fechado, false, chave);
-  assert.equal(fechado.resultado, "insatisfatorio");
+  assert.deepEqual(padrao, respostaDaCorrecao(reprovado, false));
+  // o aprovado continua recebendo a própria nota, com o padrão
+  const aprovado = respostaDaCorrecao({ ...CORRECAO, aprovada: true, nota: 80, acertos: 4 });
+  assert.equal(aprovado.nota, 80);
+  assert.equal(aprovado.acertos, 4);
+  assert.equal(aprovado.total, 5);
+  // a constante ainda abre a nota quando alguém passa `true` de propósito (a regra é um interruptor)
+  const aberto = respostaDaCorrecao(reprovado, true);
+  assert.equal(aberto.nota, 40);
+  assert.equal(aberto.acertos, 2);
+  assert.equal(aberto.total, 5);
 });
 
 // ---------------------------------------------------------- matriculaParaAluno
@@ -1543,10 +1558,14 @@ test("matriculaParaAluno: com REPROVADO_VE_NOTA = false a nota de quem ainda nã
   assert.equal(m.nota_avaliacao, 40); // o original não é alterado
 });
 
-test("matriculaParaAluno: o padrão (REPROVADO_VE_NOTA = true) entrega a matrícula como está", () => {
+test("matriculaParaAluno: o padrão (REPROVADO_VE_NOTA = false, D10) esconde a nota de quem não foi aprovado", () => {
   const reprovada = { id: "m1", avaliacao_aprovada: false, nota_avaliacao: 40 };
-  assert.equal(matriculaParaAluno(reprovada).nota_avaliacao, 40);
+  assert.equal(matriculaParaAluno(reprovada).nota_avaliacao, null);
+  assert.equal(matriculaParaAluno(reprovada, false).nota_avaliacao, null);
+  // com a regra aberta de propósito a matrícula sai como está
   assert.equal(matriculaParaAluno(reprovada, true).nota_avaliacao, 40);
+  // quem nunca fez a prova também não leva nota nenhuma
+  assert.equal(matriculaParaAluno({ id: "m2", avaliacao_aprovada: null }).nota_avaliacao, null);
 });
 
 test("matriculaParaAluno: o aprovado vê a própria nota com a regra aberta ou fechada", () => {
@@ -1559,9 +1578,9 @@ test("matriculaParaAluno: o aprovado vê a própria nota com a regra aberta ou f
     matriculaParaAluno({ id: "m1", avaliacao_aprovada: null }, false).nota_avaliacao,
     null
   );
-  // o padrão não mexe na matrícula: sem nota gravada, o campo continua ausente
+  // com a regra aberta (`true`) a matrícula não é mexida: sem nota gravada, o campo continua ausente
   assert.equal(
-    "nota_avaliacao" in matriculaParaAluno({ id: "m1", avaliacao_aprovada: null }),
+    "nota_avaliacao" in matriculaParaAluno({ id: "m1", avaliacao_aprovada: null }, true),
     false
   );
 });
@@ -2119,8 +2138,19 @@ test("matriculaParaAluno: mantém o que a tela do aluno lê (id, curso, status, 
 });
 
 test("matriculaParaAluno: coluna que a consulta não trouxe continua ausente (não vira undefined)", () => {
-  const saida = matriculaParaAluno({ id: "m1", curso_id: "c1", avaliacao_aprovada: false });
+  // com a nota liberada (`true`) nada é acrescentado: só sai o que a consulta trouxe
+  const saida = matriculaParaAluno({ id: "m1", curso_id: "c1", avaliacao_aprovada: false }, true);
   assert.deepEqual(Object.keys(saida).sort(), ["avaliacao_aprovada", "curso_id", "id"]);
+  // com o padrão (D10, nota escondida de quem não foi aprovado) o campo da nota sai sempre `null`,
+  // nunca ausente: a tela não distingue "sem nota" de "nota escondida"
+  const padrao = matriculaParaAluno({ id: "m1", curso_id: "c1", avaliacao_aprovada: false });
+  assert.deepEqual(Object.keys(padrao).sort(), [
+    "avaliacao_aprovada",
+    "curso_id",
+    "id",
+    "nota_avaliacao",
+  ]);
+  assert.equal(padrao.nota_avaliacao, null);
 });
 
 test("matriculaParaAluno: a nota escondida (regra fechada) continua escondida na lista fixa", () => {

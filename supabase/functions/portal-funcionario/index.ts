@@ -19,7 +19,10 @@
  *
  * `certificado` só emite para curso EAD (modalidade do curso, T8): curso de apoio responde 409
  * `CURSO_DE_APOIO` e o semipresencial, 409 `PRATICA_PENDENTE` (até a T12); requisito do curso por
- * cumprir responde 409 `REQUISITOS`. O certificado traz o local (`dados.local`) e os dias de Brasília.
+ * cumprir responde 409 `REQUISITOS` (só os que travam a EMISSÃO: `pendenciasParaEmitir`). O curso de apoio
+ * continua publicado e aceita matrícula (D3), só não emite e não grava `proxima_renovacao`; o reprovado
+ * na prova recebe só "insatisfatório" (D10). O certificado traz o local (`dados.local`) e os dias de Brasília.
+ * `dados.ciencias` leva TODAS as pendentes e as 30 confirmadas mais recentes (`listarCienciasDoAluno`).
  * Depois do INSERT o hash é refeito a partir do que o banco devolveu: se não se reproduz, o certificado
  * NÃO é entregue, é anulado (revogado pelo sistema) e a emissão responde 500 `EMISSAO_ANULADA` (T10, M5).
  *
@@ -65,12 +68,13 @@ import {
 import { enviarWhatsAppTexto, normalizarTelefoneBR } from "../_shared/whatsapp-envio.ts";
 import { assinarDaEmpresa, refDaEmpresa } from "../_shared/storage-assinar.ts";
 import { carregarDocumentos, funcionarioPodeEntrar } from "./documentos.ts";
-import { confirmarCiencia } from "./ciencia.ts";
+import { confirmarCiencia, listarCienciasDoAluno } from "./ciencia.ts";
 import {
   bloqueioDeEmissaoPorModalidade,
   duracaoParaProgresso,
   emiteCertificado,
   modalidadeDoCurso,
+  pendenciasParaEmitir,
   requisitosDoCurso,
 } from "./requisitos.ts";
 import {
@@ -88,6 +92,7 @@ import {
   acaoDeVolumeDoEvento,
   aulaLiberada,
   aulasParaAluno,
+  certificadoParaResposta,
   comRastroDeFalha,
   conclusaoDaAula,
   conferirEmissaoDoCertificado,
@@ -277,15 +282,18 @@ async function situacaoReal(supabase: Db, mat: any, empresaId: string) {
 
 // deno-lint-ignore no-explicit-any
 async function concluirSeCompleto(supabase: Db, mat: any, empresaId: string) {
-  const [sit, { data: curso }] = await Promise.all([
+  const [sit, { data: curso, error: erroCurso }] = await Promise.all([
     situacaoReal(supabase, mat, empresaId),
     supabase
       .from("treinamento_curso")
-      .select("validade_meses")
+      .select("validade_meses, modalidade")
       .eq("id", mat.curso_id)
       .eq("empresa_id", empresaId)
       .maybeSingle(),
   ]);
+  // sem o curso a conclusão sai sem a validade (e o apoio sairia com renovação): deixa rastro no log
+  if (erroCurso)
+    console.error("[portal-funcionario] concluirSeCompleto: curso:", erroCurso.message);
   // precisaAvaliacao = "é a hora da prova": só quando TODAS as aulas terminaram
   if (!sit.aulasOk) return { status: "em_andamento", concluiu: false, precisaAvaliacao: false };
   if (!sit.concluido) {
@@ -293,7 +301,8 @@ async function concluirSeCompleto(supabase: Db, mat: any, empresaId: string) {
   }
   const patch: Record<string, unknown> = {
     status: "concluido",
-    ...datasDeConclusao(new Date(), curso?.validade_meses),
+    // curso de apoio não renova (D3): só a data da conclusão
+    ...datasDeConclusao(new Date(), curso?.validade_meses, modalidadeDoCurso(curso)),
   };
   await supabase.from("treinamento_matricula").update(patch).eq("id", mat.id);
   return { status: "concluido", concluiu: true, precisaAvaliacao: false };
@@ -761,11 +770,14 @@ Deno.serve(
         });
         // deno-lint-ignore no-explicit-any
         const cert: any = (certificados ?? []).find((c: any) => c.matricula_id === m.id) || null;
-        const pendencias = requisitosDoCurso({
-          curso: curso || {},
-          aulas: (aulas ?? []).filter((a: { curso_id: string }) => a.curso_id === m.curso_id),
-          questoes: questoesCurso,
-        }).filter((r) => r.bloqueia && !r.ok);
+        // o que impede EMITIR (D3: o curso de apoio publica e matricula, mas nunca emite)
+        const pendencias = pendenciasParaEmitir(
+          requisitosDoCurso({
+            curso: curso || {},
+            aulas: (aulas ?? []).filter((a: { curso_id: string }) => a.curso_id === m.curso_id),
+            questoes: questoesCurso,
+          })
+        );
         const concluidoReal = situacaoDaTrilha({
           aulas: aulasCurso,
           feitas: new Set(
@@ -823,14 +835,9 @@ Deno.serve(
         };
       });
 
-      const { data: ciencias } = await supabase
-        .from("entrega_ciencia")
-        .select("id, tipo, descricao, itens, status, created_at, confirmada_em")
-        .eq("funcionario_id", funcionarioId)
-        .eq("empresa_id", empresaId)
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .limit(30);
+      // todas as pendentes + as últimas confirmadas (só o histórico tem limite; ciencia.ts)
+      const listaDeCiencias = await listarCienciasDoAluno(supabase, { funcionarioId, empresaId });
+      if (!listaDeCiencias.ok) return fail("Não foi possível carregar suas entregas agora", 503);
 
       // Logo da empresa para o PDF do certificado (T15): URL assinada só da pasta da empresa da
       // sessão. Só vale a chamada ao Storage quando o aluno tem certificado para baixar; quem
@@ -851,7 +858,7 @@ Deno.serve(
         empresa_nome: emp?.nome || emp?.razao_social || "",
         empresa_logo_url: empresaLogoUrl,
         cursos: resposta,
-        ciencias: ciencias ?? [],
+        ciencias: listaDeCiencias.ciencias,
       });
     }
 
@@ -1292,7 +1299,8 @@ Deno.serve(
       const liberaEm = liberaMs !== null ? new Date(liberaMs).toISOString() : null;
 
       // Reprovado: "insatisfatório", tentativas e próxima liberação; nota, acertos e total só enquanto
-      // REPROVADO_VE_NOTA (D10 em aberto; fora, eles deixam deduzir o gabarito). Aprovado: como antes.
+      // REPROVADO_VE_NOTA (D10: hoje `false`, o reprovado não recebe; eles deixariam deduzir o gabarito).
+      // Aprovado: como antes.
       // Regra em regras.ts.
       return ok(
         respostaDaCorrecao({
@@ -1317,23 +1325,31 @@ Deno.serve(
       let mat = await minhaMatricula(body.matricula_id);
       if (!mat) return fail("Matrícula não encontrada", 404);
 
-      const { data: existente } = await supabase
+      const { data: existente, error: erroExistente } = await supabase
         .from("treinamento_certificado")
         .select("codigo, dados, assinatura_aluno, emitido_em, hash_sha256, revogado_em")
         .eq("matricula_id", mat.id)
         .maybeSingle();
-      if (existente) {
-        return ok({ certificado: { ...existente, revogado: !!existente.revogado_em } });
+      // falha de leitura não é "ainda não há certificado": seguir emitiria por cima de um que existe
+      if (erroExistente) {
+        console.error("[portal-funcionario] certificado: leitura do existente:", erroExistente);
+        return fail("Não foi possível consultar seu certificado agora. Tente de novo.", 503);
       }
+      if (existente) return ok({ certificado: certificadoParaResposta(existente) });
 
       // Modalidade (T8): curso de apoio nunca emite, e o semipresencial só emitirá com a prática
       // registrada (T12). Vem ANTES da senha: não gasta a reconfirmação do aluno à toa.
-      const { data: cursoDoCertificado } = await supabase
+      const { data: cursoDoCertificado, error: erroCurso } = await supabase
         .from("treinamento_curso")
         .select("*")
         .eq("id", mat.curso_id)
         .eq("empresa_id", empresaId)
         .maybeSingle();
+      // falha de leitura é 503 (como o resto da ação), não "curso não encontrado"
+      if (erroCurso) {
+        console.error("[portal-funcionario] certificado: leitura do curso:", erroCurso);
+        return fail("Não foi possível validar o curso agora. Tente de novo.", 503);
+      }
       if (!cursoDoCertificado) return fail("Curso não encontrado", 404);
       const semEmissao = bloqueioDeEmissaoPorModalidade(modalidadeDoCurso(cursoDoCertificado));
       if (semEmissao) return fail(semEmissao.mensagem, 409, { codigo: semEmissao.codigo });
@@ -1387,11 +1403,13 @@ Deno.serve(
         .eq("empresa_id", empresaId)
         .is("deleted_at", null);
       if (erroQuestoes) return fail("Não foi possível validar os requisitos do curso", 503);
-      const pendencias = requisitosDoCurso({
-        curso: curso || {},
-        aulas: aulas || [],
-        questoes: Array.from({ length: nQuestoes || 0 }, () => ({})),
-      }).filter((r) => r.bloqueia && !r.ok);
+      const pendencias = pendenciasParaEmitir(
+        requisitosDoCurso({
+          curso: curso || {},
+          aulas: aulas || [],
+          questoes: Array.from({ length: nQuestoes || 0 }, () => ({})),
+        })
+      );
       if (pendencias.length)
         return fail("O certificado aguarda a regularização do curso pelo RH", 409, {
           codigo: "REQUISITOS",
@@ -1472,6 +1490,9 @@ Deno.serve(
                 "refeito:",
                 refeito
               ),
+            // a exceção da anulação (rede, banco) tem a causa registrada: sem isto só sobrava "NÃO anulado"
+            aoFalharAnulacao: (erro) =>
+              console.error("[portal-funcionario] certificado: a anulação lançou", codigo, erro),
             anular: async () => {
               const { data: anulados, error: erroAnular } = await supabase
                 .from("treinamento_certificado")
@@ -1522,12 +1543,18 @@ Deno.serve(
           return fail("Erro ao emitir certificado", 500);
         }
         // 23505 no codigo: sorteia outro; na matricula_id: outra aba já emitiu
-        const { data: jaEmitido } = await supabase
+        const { data: jaEmitido, error: erroJaEmitido } = await supabase
           .from("treinamento_certificado")
-          .select("codigo, dados, assinatura_aluno, emitido_em, hash_sha256")
+          .select("codigo, dados, assinatura_aluno, emitido_em, hash_sha256, revogado_em")
           .eq("matricula_id", mat.id)
           .maybeSingle();
-        if (jaEmitido) return ok({ certificado: { ...jaEmitido, revogado: false } });
+        // sem ler o erro, a falha de leitura sorteava outro código e tentava inserir de novo
+        if (erroJaEmitido) {
+          console.error("[portal-funcionario] certificado: leitura após o 23505:", erroJaEmitido);
+          return fail("Não foi possível consultar seu certificado agora. Tente de novo.", 503);
+        }
+        // o certificado de outra aba pode já ter sido revogado: `revogado` vem da coluna
+        if (jaEmitido) return ok({ certificado: certificadoParaResposta(jaEmitido) });
       }
       return fail("Erro ao gerar o código do certificado — tente de novo", 500);
     }

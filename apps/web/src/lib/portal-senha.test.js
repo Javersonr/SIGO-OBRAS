@@ -331,3 +331,32 @@ describe("portal-senha: podeTrocarSenha (habilita o botão)", () => {
     expect(podeTrocarSenha({ ...base, obrigatoria: true, confirma: "" })).toBe(false);
   });
 });
+
+describe("LoginPortal: o aviso de senha longa fica sob o campo que passou do limite (A5)", () => {
+  // Vitest roda sem DOM: o que dá para garantir é a posição dos avisos no próprio componente.
+  const fonte = readFileSync(
+    new URL("../components/portal-funcionario/LoginPortal.jsx", import.meta.url),
+    "utf8"
+  );
+  // quantas vezes o trecho usa o aviso daquele campo
+  const avisos = (trecho, campo) => trecho.split(`avisoDeSenhaLonga(${campo})`).length - 1;
+  const posicao = (texto) => fonte.indexOf(texto);
+
+  it("cada campo tem o seu aviso: o da nova sob 'Nova senha', o da confirmação sob 'Repita a nova senha'", () => {
+    const campoNova = posicao('id="senha-nova"');
+    const campoConfirma = posicao('id="senha-confirma"');
+    expect(campoNova).toBeGreaterThan(0);
+    expect(campoConfirma).toBeGreaterThan(campoNova);
+    // o aviso da nova fica entre os dois campos; o da confirmação, depois do campo de confirmação
+    const entre = fonte.slice(campoNova, campoConfirma);
+    expect(avisos(entre, "nova")).toBeGreaterThan(0);
+    expect(avisos(entre, "confirma")).toBe(0);
+    const depois = fonte.slice(campoConfirma);
+    expect(avisos(depois, "confirma")).toBeGreaterThan(0);
+    expect(avisos(depois, "nova")).toBe(0);
+  });
+
+  it("não existe mais um aviso único que junta os dois campos", () => {
+    expect(fonte).not.toMatch(/avisoDeSenhaLonga\(nova\)\s*\|\|\s*avisoDeSenhaLonga\(confirma\)/);
+  });
+});

@@ -9,7 +9,8 @@ import {
   tituloDoHistorico,
 } from "./portal-ciencias";
 
-// Dados sintéticos: o que a ação `dados` do portal devolve em `ciencias` (até 30, mais nova primeiro).
+// Dados sintéticos: o que a ação `dados` do portal devolve em `ciencias`: todas as pendentes e até 30
+// confirmadas (as mais recentes).
 const entrega = (id, status, extra = {}) => ({
   id,
   tipo: "EPI",
@@ -102,15 +103,16 @@ describe("textoDoItemDeEntrega", () => {
 describe("histórico parcial: o servidor manda só as entregas mais recentes (T36)", () => {
   const lista = (n) => Array.from({ length: n }, (_, i) => entrega(`e${i}`, "confirmada"));
 
-  it("o limite é o mesmo do servidor (`.limit(30)` da consulta de entrega_ciencia no portal-funcionario)", () => {
+  it("o limite é o mesmo do servidor (LIMITE_HISTORICO_CIENCIAS de ciencia.ts, só das confirmadas)", () => {
     const servidor = readFileSync(
-      new URL("../../../../supabase/functions/portal-funcionario/index.ts", import.meta.url),
+      new URL("../../../../supabase/functions/portal-funcionario/ciencia.ts", import.meta.url),
       "utf8"
     );
-    const consulta = servidor.slice(servidor.indexOf('.from("entrega_ciencia")'));
-    const limite = Number(/\.limit\((\d+)\)/.exec(consulta)?.[1]);
+    const limite = Number(/LIMITE_HISTORICO_CIENCIAS\s*=\s*(\d+)/.exec(servidor)?.[1]);
     expect(limite).toBe(30);
     expect(LIMITE_CIENCIAS_DO_SERVIDOR).toBe(limite);
+    // o limite vale só para a consulta das confirmadas: a das pendentes não tem `.limit(`
+    expect(servidor).toMatch(/consulta\("pendente"\),\s*consulta\("confirmada"\)\.limit\(/);
   });
 
   it("com menos entregas que o limite, o servidor mandou todas: o histórico é completo", () => {
@@ -123,13 +125,20 @@ describe("histórico parcial: o servidor manda só as entregas mais recentes (T3
     expect(historicoDeCienciasParcial(lista(LIMITE_CIENCIAS_DO_SERVIDOR + 5))).toBe(true);
   });
 
-  it("conta o que o servidor mandou (pendentes e confirmadas juntas), não só as confirmadas", () => {
+  it("só as confirmadas contam: as pendentes chegam sem limite e não enchem o histórico", () => {
     const mista = [
       ...lista(10),
-      ...Array.from({ length: 20 }, (_, i) => entrega(`p${i}`, "pendente")),
+      ...Array.from({ length: 40 }, (_, i) => entrega(`p${i}`, "pendente")),
     ];
     expect(separarCiencias(mista).confirmadas).toHaveLength(10);
-    expect(historicoDeCienciasParcial(mista)).toBe(true);
+    // 50 entregas no total, mas só 10 confirmadas: o histórico está completo
+    expect(historicoDeCienciasParcial(mista)).toBe(false);
+    // 30 confirmadas (o limite do servidor) com qualquer número de pendentes: pode haver mais antigas
+    const cheia = [
+      ...lista(LIMITE_CIENCIAS_DO_SERVIDOR),
+      ...Array.from({ length: 3 }, (_, i) => entrega(`q${i}`, "pendente")),
+    ];
+    expect(historicoDeCienciasParcial(cheia)).toBe(true);
   });
 
   it("entrada que não é lista nunca é parcial", () => {

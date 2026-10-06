@@ -25,6 +25,8 @@ import {
   limparRascunhosPortal,
   mensagemDeFalha,
   progressoDoCurso,
+  renovacaoParaExibir,
+  rotuloDoBotaoDoCurso,
 } from "@/lib/portal-curso";
 import { LoginPortal, TrocarSenhaPortal } from "@/components/portal-funcionario/LoginPortal";
 import CursoPortal from "@/components/portal-funcionario/CursoPortal";
@@ -203,7 +205,7 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
   const cursos = dados?.cursos || [];
   const { andamento, concluidos } = agruparMatriculas(cursos);
   const { pendentes, confirmadas } = separarCiencias(dados?.ciencias);
-  // o servidor manda só as 30 entregas mais recentes: com o limite cheio o histórico não é o total
+  // o servidor manda só as 30 confirmadas mais recentes: com o limite cheio o histórico não é o total
   const historicoParcial = historicoDeCienciasParcial(dados?.ciencias);
 
   const cartaoDoCurso = (c) => {
@@ -212,6 +214,9 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
     const concluido = m.status === "concluido";
     const renovacao = ehRenovacao(c, cursos);
     const despublicado = !concluido && cursoDespublicado(c.curso);
+    // curso de apoio não tem certificado nem renovação (D3): sem "renovar até" e sem botão de certificado
+    const renovaAte = renovacaoParaExibir(c.curso, m);
+    const botao = rotuloDoBotaoDoCurso(c);
     return (
       <Card key={m.id}>
         <CardContent className="p-4 flex items-center gap-4">
@@ -234,7 +239,7 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
             <p className="text-xs text-slate-500 mt-0.5">
               {concluido
                 ? `Concluído em ${fmtData(m.data_conclusao)}` +
-                  (m.proxima_renovacao ? ` · renovar até ${fmtData(m.proxima_renovacao)}` : "")
+                  (renovaAte ? ` · renovar até ${fmtData(renovaAte)}` : "")
                 : semAulas
                   ? "Este curso ainda não tem aulas cadastradas — avise o RH"
                   : `${feitas}/${total} aulas concluídas`}
@@ -254,16 +259,14 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
           </div>
           <Button
             onClick={() => setAberta({ id: m.id, continuar: !concluido })}
-            className={`shrink-0 ${concluido ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-900"}`}
+            className={`shrink-0 ${botao.certificado ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-900"}`}
           >
-            {concluido ? (
+            {botao.certificado ? (
               <>
-                <Award className="w-4 h-4 mr-1" /> Certificado
+                <Award className="w-4 h-4 mr-1" /> {botao.texto}
               </>
-            ) : m.status === "pendente" ? (
-              "Começar"
             ) : (
-              "Continuar"
+              botao.texto
             )}
           </Button>
         </CardContent>

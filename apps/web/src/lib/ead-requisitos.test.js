@@ -4,6 +4,8 @@ import {
   emiteCertificado,
   modalidadeDoCurso,
   motivoSemCertificado,
+  pendenciasParaEmitir,
+  pendenciasParaPublicar,
   requisitosDoCurso,
   tempoObrigatorioSeg,
 } from "./ead-requisitos";
@@ -15,10 +17,11 @@ const curso = {
 };
 const aulas = [{ tipo: "texto", conteudo_texto: "Texto teste", duracao_seg: 3600 }];
 const questoes = Array.from({ length: 5 }, () => ({}));
-const pendencias = (dados) =>
-  requisitosDoCurso(dados)
-    .filter((r) => r.bloqueia && !r.ok)
-    .map((r) => r.codigo);
+// o que impede PUBLICAR e MATRICULAR
+const pendencias = (dados) => pendenciasParaPublicar(requisitosDoCurso(dados)).map((r) => r.codigo);
+// o que impede EMITIR o certificado
+const pendenciasDeEmissao = (dados) =>
+  pendenciasParaEmitir(requisitosDoCurso(dados)).map((r) => r.codigo);
 describe("requisitos dos cursos", () => {
   it("permite uma hora de conteúdo com uma hora de carga", () =>
     expect(pendencias({ curso, aulas, questoes })).toEqual([]));
@@ -44,24 +47,45 @@ describe("requisitos dos cursos", () => {
     expect(tempoObrigatorioSeg([{ duracao_seg: 3600, deleted_at: "2026-10-01" }])).toBe(0);
   });
   it("a modalidade do curso decide se emite certificado; o nome NR-35 não decide mais", () => {
-    for (const modalidade of ["apoio", "semipresencial"]) {
+    // semipresencial (e valor desconhecido) travam publicar, matricular e emitir, como a T8 deixou
+    for (const modalidade of ["semipresencial", "inventada"]) {
       expect(pendencias({ curso: { ...curso, modalidade }, aulas, questoes })).toContain(
+        "MODALIDADE"
+      );
+      expect(pendenciasDeEmissao({ curso: { ...curso, modalidade }, aulas, questoes })).toContain(
         "MODALIDADE"
       );
     }
     // EAD (marcado ou ausente) emite, mesmo com NR-35 no nome ou no código
     for (const modalidade of [undefined, "ead"]) {
-      expect(
-        pendencias({
-          curso: { ...curso, nome: "NR-35", codigo: "NR-35", modalidade },
-          aulas,
-          questoes,
-        })
-      ).toEqual([]);
+      const dados = {
+        curso: { ...curso, nome: "NR-35", codigo: "NR-35", modalidade },
+        aulas,
+        questoes,
+      };
+      expect(pendencias(dados)).toEqual([]);
+      expect(pendenciasDeEmissao(dados)).toEqual([]);
     }
-    expect(
-      pendencias({ curso: { ...curso, nome: "NR-35", modalidade: "apoio" }, aulas, questoes })
-    ).toEqual(["MODALIDADE"]);
+  });
+  it("D3: curso de apoio publica e aceita matrícula; só a EMISSÃO do certificado é bloqueada", () => {
+    const apoio = { curso: { ...curso, nome: "NR-35", modalidade: "apoio" }, aulas, questoes };
+    // publicar e matricular: a modalidade não pesa (curso completo não tem pendência nenhuma)
+    expect(pendencias(apoio)).toEqual([]);
+    // emitir: nunca
+    expect(pendenciasDeEmissao(apoio)).toEqual(["MODALIDADE"]);
+    const requisito = requisitosDoCurso(apoio).find((r) => r.codigo === "MODALIDADE");
+    expect(requisito).toMatchObject({ ok: false, bloqueia: false, bloqueiaEmissao: true });
+    // os outros requisitos do curso continuam valendo para o apoio (a D3 só trata da modalidade)
+    expect(pendencias({ ...apoio, curso: { ...apoio.curso, instrutor_nome: "" } })).toEqual([
+      "INSTRUTOR",
+    ]);
+  });
+  it("só os requisitos 'bloqueia' travam a emissão; os de revisão (TUTOR etc.) nunca travam", () => {
+    for (const r of requisitosDoCurso({ curso, aulas, questoes })) {
+      expect(typeof r.bloqueiaEmissao).toBe("boolean");
+      expect(r.bloqueiaEmissao).toBe(r.bloqueia);
+    }
+    expect(pendenciasDeEmissao({})).toEqual(pendencias({}));
   });
   it("o requisito de modalidade explica o motivo de cada uma", () => {
     const texto = (modalidade) =>

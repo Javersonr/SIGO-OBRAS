@@ -187,6 +187,9 @@ async function liberarTentativa(
   // O evento é o que faz o portal ignorar o intervalo: sem ele a liberação é desfeita. Se nem desfazer
   // dá (o banco falhou duas vezes seguidas), a resposta é outra e o suporte confere (T18, M4).
   const registro = await registrarOuDesfazer({
+    // a exceção de um passo (rede, banco) conta como falha; a causa fica no log
+    aoFalhar: (passo, erro) =>
+      console.error("[funcionario-acesso] liberar_tentativa: o passo lançou:", passo, erro),
     registrar: () =>
       registrarEvento(supabase, req, {
         empresa_id: mat.empresa_id,
@@ -272,6 +275,9 @@ async function revogarCertificado(
   if (!revogados?.length) return fail("O certificado já está revogado", 409);
 
   const registro = await registrarOuDesfazer({
+    // a exceção de um passo (rede, banco) conta como falha; a causa fica no log
+    aoFalhar: (passo, erro) =>
+      console.error("[funcionario-acesso] revogar_certificado: o passo lançou:", passo, erro),
     registrar: () =>
       registrarEvento(supabase, req, {
         empresa_id: mat.empresa_id,

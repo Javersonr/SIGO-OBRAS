@@ -25,16 +25,25 @@
 -- reafirmam o que o modelo já impõe (nome, código, carga, validade e conteúdo) e, se o modelo estiver
 -- inativo, mantêm o curso despublicado. Nada mais muda além de modalidade e updated_at.
 --
+-- Quando a coluna JÁ existia (reaplicação, ou ela criada por outro caminho), a marcação em 'apoio' é
+-- PULADA e a migração avisa com um NOTICE ("a marcação ... foi PULADA"). Nesse caso a modalidade de cada
+-- curso é a que está no banco: confira-a na conferência impressa no fim deste arquivo.
+--
 -- Depois de aplicar: o RH confere o campo "Modalidade" na tela do curso EAD e a conferência impressa
--- no fim deste arquivo. Os cursos NR-35 marcados 'apoio' não emitem certificado e, como hoje, seguem sem
--- matrícula nova enquanto o requisito de modalidade estiver pendente (separar "emitir" de "matricular" é
--- da T12).
+-- no fim deste arquivo. Os cursos NR-35 marcados 'apoio' não emitem certificado, mas CONTINUAM
+-- publicados e ACEITAM matrícula como material de estudo (D3, decisão do Javerson em 06/10/2026): para o
+-- apoio o requisito de modalidade só bloqueia a EMISSÃO, no front e no servidor, e o aluno vê "Material de
+-- apoio: não emite certificado" (sem "renovar até" e sem botão de certificado). O semipresencial segue sem
+-- publicar, matricular nem emitir até a T12. Os demais requisitos do curso (carga x conteúdo medido,
+-- instrutor, responsável técnico...) continuam valendo para o apoio: um curso de apoio só aceita matrícula
+-- quando eles estiverem cumpridos.
 
 begin;
 
 do $$
 declare
   ja_existia boolean;
+  marcados integer;
 begin
   select exists (
     select 1 from information_schema.columns
@@ -50,6 +59,12 @@ begin
        set modalidade = 'apoio'
      where modalidade = 'ead'
        and (coalesce(codigo, '') || ' ' || coalesce(nome, '')) ~* '\mNR[[:space:]-]*35\M';
+    get diagnostics marcados = row_count;
+    raise notice '0136: % curso(s) com NR-35 no nome ou no código marcado(s) como apoio (D3).', marcados;
+  else
+    -- sinal de "primeira aplicação" = a coluna ainda não existir; se ela já existe, nada é marcado e quem
+    -- aplica precisa saber disso (a conferência abaixo mostra a modalidade de cada curso)
+    raise notice '0136: a coluna modalidade JÁ existia: a marcação dos cursos NR-35 como apoio (D3) foi PULADA. Confira a modalidade de cada curso na conferência abaixo.';
   end if;
 end
 $$;
@@ -65,17 +80,19 @@ comment on column public.treinamento_curso.modalidade is
 
 commit;
 
--- Conferência (só leitura): cursos vivos por modalidade e situação, com os códigos dos que NÃO são EAD.
--- Na primeira aplicação, "com_nr35_no_nome_ou_codigo" tem de ser 0 na linha 'ead' (todo curso NR-35 virou
--- 'apoio'); numa reaplicação o RH pode ter marcado um NR-35 como EAD de propósito.
+-- Conferência (só leitura): cursos vivos por modalidade e situação. A coluna que importa é "cursos_nao_ead":
+-- os códigos (ou nomes) dos cursos que ficaram FORA do EAD, ou seja, os que não emitem certificado. Na
+-- primeira aplicação devem ser os cursos NR-35 em 'apoio'. "com_nr35_no_nome_ou_codigo" usa o mesmo critério
+-- do UPDATE: na primeira aplicação é 0 na linha 'ead' por construção; só serve de alerta numa reaplicação,
+-- em que o RH pode ter marcado um NR-35 como EAD de propósito.
 select modalidade,
        ativo,
        count(*) as cursos,
+       string_agg(distinct coalesce(nullif(codigo, ''), nome), ', ')
+         filter (where modalidade <> 'ead') as cursos_nao_ead,
        count(*) filter (
          where (coalesce(codigo, '') || ' ' || coalesce(nome, '')) ~* '\mNR[[:space:]-]*35\M'
-       ) as com_nr35_no_nome_ou_codigo,
-       string_agg(distinct coalesce(nullif(codigo, ''), nome), ', ')
-         filter (where modalidade <> 'ead') as cursos_nao_ead
+       ) as com_nr35_no_nome_ou_codigo
 from public.treinamento_curso
 where deleted_at is null
 group by modalidade, ativo

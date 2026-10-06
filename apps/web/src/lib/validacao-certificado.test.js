@@ -79,6 +79,18 @@ describe("situacaoDoResultado falha fechado (T10, M3, A4)", () => {
     expect(situacaoDoResultado({ ...base, situacao: "valido", vencido: true })).toBe(
       "indeterminada"
     );
+    // o `valido` do servidor também conta: 'valido' com `valido: false` se contradiz (o servidor deriva
+    // os dois do mesmo valor, então isso só aconteceria por defeito: não pode sair verde)
+    expect(situacaoDoResultado({ ...base, situacao: "valido", valido: false })).toBe(
+      "indeterminada"
+    );
+    expect(apresentacaoDoResultado({ ...base, situacao: "valido", valido: false }).tom).toBe(
+      "cinza"
+    );
+    // já o 'vencido' do servidor traz `valido: false` de propósito (passou da validade): continua âmbar
+    expect(
+      situacaoDoResultado({ ...base, situacao: "vencido", valido: false, vencido: true })
+    ).toBe("vencido");
     // 'vencido' também diz "autêntico": revogado ou dados que não conferem o contradizem
     expect(
       situacaoDoResultado({ ...base, situacao: "vencido", vencido: true, integro: false })

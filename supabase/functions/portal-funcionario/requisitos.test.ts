@@ -6,12 +6,16 @@ import {
   emiteCertificado,
   modalidadeDoCurso,
   motivoSemCertificado,
+  pendenciasParaEmitir,
+  pendenciasParaPublicar,
   requisitosDoCurso,
 } from "./requisitos.ts";
 import {
   emiteCertificado as emiteFront,
   modalidadeDoCurso as modalidadeFront,
   motivoSemCertificado as motivoFront,
+  pendenciasParaEmitir as emitirFront,
+  pendenciasParaPublicar as publicarFront,
   requisitosDoCurso as requisitosFront,
 } from "../../../apps/web/src/lib/ead-requisitos.js";
 const curso = {
@@ -22,10 +26,12 @@ const curso = {
 };
 const aulas = [{ tipo: "texto", conteudo_texto: "Texto teste", duracao_seg: 3600 }];
 const questoes = Array.from({ length: 5 }, () => ({}));
+// o que impede PUBLICAR e MATRICULAR
 const pendencias = (dados: Parameters<typeof requisitosDoCurso>[0]) =>
-  requisitosDoCurso(dados)
-    .filter((r) => r.bloqueia && !r.ok)
-    .map((r) => r.codigo);
+  pendenciasParaPublicar(requisitosDoCurso(dados)).map((r) => r.codigo);
+// o que impede EMITIR o certificado
+const pendenciasDeEmissao = (dados: Parameters<typeof requisitosDoCurso>[0]) =>
+  pendenciasParaEmitir(requisitosDoCurso(dados)).map((r) => r.codigo);
 test("vídeo sem duração de cadastro nunca recebe duração do aluno", () => {
   for (const valor of [null, 0, -1, Infinity, "inválido"])
     assert.equal(duracaoParaProgresso({ tipo: "video", duracao_seg: valor }), null);
@@ -51,18 +57,34 @@ test("front e servidor usam os mesmos requisitos, inclusive bordas", () => {
     { curso: { ...curso, nome: "NR-35 — apoio", modalidade: "apoio" }, aulas, questoes },
     { curso: { ...curso, nome: "NR-35", modalidade: "ead" }, aulas, questoes },
   ];
-  for (const caso of casos) assert.deepEqual(requisitosDoCurso(caso), requisitosFront(caso));
-  assert.equal(
-    requisitosDoCurso({ curso, aulas, questoes }).filter((r) => r.bloqueia && !r.ok).length,
-    0
-  );
-  // só o 2º caso (curso completo) e os que são EAD de fato passam sem pendência
-  const completos = [1, 6, 11];
+  for (const caso of casos) {
+    assert.deepEqual(requisitosDoCurso(caso), requisitosFront(caso));
+    // as duas leituras (publicar/matricular x emitir) também são iguais nas duas cópias
+    assert.deepEqual(
+      pendenciasParaPublicar(requisitosDoCurso(caso)),
+      publicarFront(requisitosFront(caso))
+    );
+    assert.deepEqual(
+      pendenciasParaEmitir(requisitosDoCurso(caso)),
+      emitirFront(requisitosFront(caso))
+    );
+  }
+  assert.equal(pendencias({ curso, aulas, questoes }).length, 0);
+  // PUBLICAR/MATRICULAR: só o 2º caso (curso completo), o EAD marcado e o de apoio completo passam
+  // (D3: apoio não trava a publicação nem a matrícula)
+  const publicaveis = [1, 6, 7, 10, 11];
+  // EMITIR: só o curso completo EAD (o apoio nunca emite)
+  const emissiveis = [1, 6, 11];
   for (const [i, caso] of casos.entries()) {
     assert.equal(
-      requisitosDoCurso(caso).some((r) => r.bloqueia && !r.ok),
-      !completos.includes(i),
-      `caso ${i}`
+      pendenciasParaPublicar(requisitosDoCurso(caso)).length > 0,
+      !publicaveis.includes(i),
+      `publicar, caso ${i}`
+    );
+    assert.equal(
+      pendenciasParaEmitir(requisitosDoCurso(caso)).length > 0,
+      !emissiveis.includes(i),
+      `emitir, caso ${i}`
     );
   }
 });
@@ -81,13 +103,21 @@ test("o nome ou o código do curso NÃO decidem a modalidade (o filtro por 'NR-3
       assert.deepEqual(pendencias({ curso: { ...curso, nome, codigo }, aulas, questoes }), []);
     }
   }
-  // quem decide é a modalidade marcada no curso
+  // quem decide é a modalidade marcada no curso: apoio não emite (D3), mesmo com o nome "NR-35"
   assert.deepEqual(
-    pendencias({ curso: { ...curso, nome: "NR-35", modalidade: "apoio" }, aulas, questoes }),
+    pendenciasDeEmissao({
+      curso: { ...curso, nome: "NR-35", modalidade: "apoio" },
+      aulas,
+      questoes,
+    }),
     ["MODALIDADE"]
   );
+  assert.deepEqual(
+    pendenciasDeEmissao({ curso: { ...curso, nome: "NR-35", modalidade: "ead" }, aulas, questoes }),
+    []
+  );
 });
-test("apoio, semipresencial e modalidade desconhecida bloqueiam; EAD libera", () => {
+test("D3: apoio não trava publicar nem matricular, só emitir; semipresencial e desconhecida travam tudo", () => {
   const mod = (modalidade?: string) =>
     requisitosDoCurso({ curso: { ...curso, modalidade }, aulas, questoes }).find(
       (r) => r.codigo === "MODALIDADE"
@@ -95,8 +125,27 @@ test("apoio, semipresencial e modalidade desconhecida bloqueiam; EAD libera", ()
   assert.equal(mod("ead").ok, true);
   assert.equal(mod(undefined).ok, true);
   for (const m of ["apoio", "semipresencial", "inventada"]) {
-    assert.equal(mod(m).ok, false, m);
-    assert.equal(mod(m).bloqueia, true, m);
+    assert.equal(mod(m).ok, false, m); // nenhum dos três emite certificado
+    assert.equal(mod(m).bloqueiaEmissao, true, m);
+  }
+  // publicar e matricular: o apoio passa (material de estudo); os outros dois continuam travados
+  assert.equal(mod("apoio").bloqueia, false);
+  assert.equal(mod("semipresencial").bloqueia, true);
+  assert.equal(mod("inventada").bloqueia, true);
+  const dados = (modalidade: string) => ({ curso: { ...curso, modalidade }, aulas, questoes });
+  assert.deepEqual(pendencias(dados("apoio")), []);
+  assert.deepEqual(pendenciasDeEmissao(dados("apoio")), ["MODALIDADE"]);
+  assert.deepEqual(pendencias(dados("semipresencial")), ["MODALIDADE"]);
+  assert.deepEqual(pendenciasDeEmissao(dados("semipresencial")), ["MODALIDADE"]);
+  // os outros requisitos do curso continuam valendo para o apoio (a D3 só separa a modalidade)
+  assert.deepEqual(
+    pendencias({ curso: { ...curso, modalidade: "apoio", instrutor_nome: "" }, aulas, questoes }),
+    ["INSTRUTOR"]
+  );
+  // só os requisitos "bloqueia" travam a emissão; os de revisão (TUTOR, PROJETO...) nunca travam
+  for (const r of requisitosDoCurso({ curso, aulas, questoes })) {
+    assert.equal(typeof r.bloqueiaEmissao, "boolean");
+    assert.equal(r.bloqueiaEmissao, r.bloqueia, r.codigo);
   }
   // o texto diz o motivo certo de cada modalidade
   assert.match(mod("apoio").texto, /apoio/i);

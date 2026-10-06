@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import AnexoViewer from "@/components/shared/AnexoViewer";
 import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
+import { renovacaoParaExibir } from "@/lib/portal-curso";
 import { copiarOuOferecer } from "@/lib/whatsapp";
 import AcessoPortalCard from "@/components/seguranca/AcessoPortalCard";
 import DocumentosPortalCard from "@/components/seguranca/DocumentosPortalCard";
@@ -115,9 +116,14 @@ export default function FichaFuncionarioSheet({
         movs.sort((a, b) => (b.data_movimentacao || "").localeCompare(a.data_movimentacao || ""))
       );
       setFerramentasPosse(ferrs);
-      const nomeCurso = new Map(cursosCat.map((c) => [c.id, c.nome]));
+      const cursoPorId = new Map(cursosCat.map((c) => [c.id, c]));
       setCursos(
-        mats.map((m) => ({ ...m, curso_nome: nomeCurso.get(m.curso_id) || "(curso removido)" }))
+        mats.map((m) => ({
+          ...m,
+          curso_nome: cursoPorId.get(m.curso_id)?.nome || "(curso removido)",
+          // o curso de apoio não renova (D3): sem data, a Ficha não mostra "renova"
+          renova_ate: renovacaoParaExibir(cursoPorId.get(m.curso_id), m),
+        }))
       );
     } catch (e) {
       console.error(e);
@@ -436,7 +442,7 @@ export default function FichaFuncionarioSheet({
                         {m.data_conclusao && (
                           <span className="text-xs text-slate-500">
                             {fmtData(m.data_conclusao)}
-                            {m.proxima_renovacao ? ` · renova ${fmtData(m.proxima_renovacao)}` : ""}
+                            {m.renova_ate ? ` · renova ${fmtData(m.renova_ate)}` : ""}
                           </span>
                         )}
                       </div>

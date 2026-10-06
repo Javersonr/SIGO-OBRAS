@@ -296,22 +296,30 @@ export type ResultadoDoRegistro = "registrado" | "desfeito" | "sem_registro";
  * e SEM como desfazer, e repetir o pedido pioraria (a liberação somaria mais uma tentativa extra para um
  * evento só). Repetir a liberação com a tela antiga é barrado por `decidirLiberacao` (409 `CONFLITO`:
  * o pedido traz o número de extras que a tela mostrava). Quem chama responde com `falhaDoRegistro` e
- * deixa rastro no log. Nunca lança.
+ * deixa rastro no log. Nunca lança. A exceção de um passo (rede, banco) conta como falha, e a causa vai
+ * para `aoFalhar(passo, erro)` (o `index.ts` a escreve no `console.error`; injetado para este módulo
+ * continuar puro). Um `aoFalhar` que ele próprio lance não derruba a resposta.
  */
 export async function registrarOuDesfazer(p: {
   registrar: () => Promise<boolean>;
   desfazer: () => Promise<boolean>;
+  aoFalhar?: (passo: "registrar" | "desfazer", erro: unknown) => void;
 }): Promise<ResultadoDoRegistro> {
-  const tentar = async (passo: () => Promise<boolean>) => {
+  const tentar = async (nome: "registrar" | "desfazer") => {
     try {
-      return await passo();
-    } catch {
+      return await p[nome]();
+    } catch (erro) {
+      try {
+        p.aoFalhar?.(nome, erro);
+      } catch {
+        // o log nunca derruba a resposta
+      }
       return false;
     }
   };
-  if (await tentar(p.registrar)) return "registrado";
-  if (await tentar(p.desfazer)) return "desfeito";
-  return (await tentar(p.registrar)) ? "registrado" : "sem_registro";
+  if (await tentar("registrar")) return "registrado";
+  if (await tentar("desfazer")) return "desfeito";
+  return (await tentar("registrar")) ? "registrado" : "sem_registro";
 }
 
 /**

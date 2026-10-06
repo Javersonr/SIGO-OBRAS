@@ -1,9 +1,9 @@
 /**
  * Ciências de entrega no portal do aluno (T36) — regras puras, sem DOM e sem rede.
  *
- * O servidor devolve em `dados.ciencias` até 30 entregas do funcionário (pendentes e confirmadas, a
- * criada por último primeiro). O portal mostra as pendentes em destaque (botão "Confirmo o
- * recebimento") e as confirmadas num histórico recolhido. Testes em portal-ciencias.test.js.
+ * O servidor devolve em `dados.ciencias` TODAS as entregas pendentes do funcionário e as 30 confirmadas
+ * mais recentes (a criada por último primeiro). O portal mostra as pendentes em destaque (botão "Confirmo
+ * o recebimento") e as confirmadas num histórico recolhido. Testes em portal-ciencias.test.js.
  */
 
 const instante = (iso) => {
@@ -45,19 +45,19 @@ export function textoDoItemDeEntrega(item) {
 // ---------------------------------------------------------------- histórico parcial
 
 /**
- * Quantas entregas o servidor manda em `dados.ciencias` (a consulta de `entrega_ciencia` do
- * `portal-funcionario` tem `.limit(30)`; o teste confere os dois lados). Pendentes e confirmadas
- * entram juntas nesse limite.
+ * Quantas entregas CONFIRMADAS o servidor manda em `dados.ciencias` (`LIMITE_HISTORICO_CIENCIAS` em
+ * `portal-funcionario/ciencia.ts`; o teste confere os dois lados). As pendentes não entram nesse limite:
+ * vêm todas.
  */
 export const LIMITE_CIENCIAS_DO_SERVIDOR = 30;
 
 /**
- * O servidor mandou o limite inteiro? Então pode haver entregas mais antigas que não vieram, e o
- * histórico de confirmadas é só das mais recentes (não o total). Conta tudo o que veio, não só as
- * confirmadas.
+ * O servidor mandou o limite inteiro de confirmadas? Então pode haver entregas confirmadas mais antigas
+ * que não vieram, e o histórico é só das mais recentes (não o total). Conta só as confirmadas: as
+ * pendentes são enviadas sem limite e não dizem nada sobre o corte do histórico.
  */
 export function historicoDeCienciasParcial(ciencias) {
-  return Array.isArray(ciencias) && ciencias.length >= LIMITE_CIENCIAS_DO_SERVIDOR;
+  return separarCiencias(ciencias).confirmadas.length >= LIMITE_CIENCIAS_DO_SERVIDOR;
 }
 
 /** Título do bloco do histórico. Parcial: não sugere o total ("Últimas entregas confirmadas (N)"). */

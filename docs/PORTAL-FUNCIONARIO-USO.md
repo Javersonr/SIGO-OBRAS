@@ -56,10 +56,26 @@ Cada curso tem uma **modalidade**, escolhida na tela do curso EAD (a migração 
   certificado".
 
 Quem decide é a modalidade marcada no curso, não o nome. A migração `0136` marca como **apoio** os cursos cujo nome ou
-código tem NR-35 (a NR-35 exige treinamento presencial desde 16/07/2026, item 35.4.5), o que mantém o comportamento
-anterior. Os cursos de apoio e semipresenciais seguem fora de nova matrícula e de publicação enquanto o requisito de
-modalidade estiver pendente. Curso EAD antigo, que ainda não tem o vínculo com o cadastro central, pode ser salvo sem
-o vínculo (despublicar, preencher o instrutor e marcar a modalidade); curso novo continua exigindo o vínculo.
+código tem NR-35 (a NR-35 exige treinamento presencial desde 16/07/2026, item 35.4.5, e não vale como EAD nem como
+semipresencial: a tela sugere **Apoio ao presencial** para um NR-35 marcado como EAD). Curso EAD antigo, que ainda não
+tem o vínculo com o cadastro central, pode ser salvo sem o vínculo (despublicar, preencher o instrutor e marcar a
+modalidade); curso novo continua exigindo o vínculo. A tela avisa isso para qualquer curso sem vínculo, não só para os
+criados antes do cadastro central.
+
+**Curso de apoio (decisão D3, 06/10/2026).** Ele continua **publicado e aceita matrícula** como material de estudo; só
+não emite certificado. No requisito "Modalidade" o apoio bloqueia somente a **emissão** (no front e no servidor, que
+usam a mesma regra), nunca a publicação nem a matrícula. Na lista de cursos do RH ele ganha o selo neutro "Apoio — sem
+certificado" (não "Publicado com pendências"). O semipresencial continua sem publicar, matricular nem emitir até a T12,
+e os outros requisitos do curso (carga x conteúdo medido, instrutor, responsável técnico, questões) valem para o apoio
+como para qualquer curso. Não há o que renovar: a conclusão do apoio **não grava `proxima_renovacao`**, o portal não
+mostra "renovar até" nem o botão "Certificado" (o cartão concluído diz "Rever material"), e a Ficha do funcionário e a
+tabela de matrículas do RH não mostram a renovação. Matrículas de apoio concluídas antes da D3 que já tinham a data
+gravada também deixam de mostrá-la (a tela não a exibe; o banco não é alterado).
+
+**Resultado da prova (decisão D10, 06/10/2026).** Quem foi reprovado vê só "insatisfatório", o número de tentativas e a
+próxima liberação: a nota, os acertos e o total não vão ao navegador (em prova de 5 ou 6 questões eles deixariam
+deduzir o gabarito). O RH continua vendo tudo na trilha do aluno. Quem foi aprovado vê a própria nota. Para reabrir
+a nota ao reprovado, troque `REPROVADO_VE_NOTA` em `portal-funcionario/regras.ts` **e** em `lib/portal-previa.js`.
 
 O certificado traz o **local de realização** (a plataforma e o endereço do portal) e as datas no horário de Brasília:
 uma conclusão às 23h30 sai com o próprio dia, e a renovação soma os meses sobre essa data. A validação pública
@@ -76,9 +92,13 @@ dependentes da autorização específica já solicitada.
 Validação local: testes do front, testes Node das Edge Functions, lint, `no-undef` nos componentes alterados,
 Prettier, build e verificação móvel com dados sintéticos. Os testes não usam o banco real.
 
-A publicação desta entrega não exige migração. Primeiro publique **portal-funcionario**, depois o front pelo
-workflow **Deploy — Hostgator**. Integre apenas os commits do portal; não inclua as alterações locais de Orçamento,
-Financeiro ou Pastas.
+A entrega do portal (T1 a T8 e os acompanhamentos A1 a A5) exige as migrações **`0134`**, **`0135`** e **`0136`**, nesta
+ordem, e o deploy das funções alteradas: **portal-funcionario** e **funcionario-acesso** (com `--no-verify-jwt`) e
+**validar-certificado** (SEM `--no-verify-jwt`). A `0136` cria a coluna `modalidade` e marca os cursos NR-35 como
+apoio (se a coluna já existir, a marcação é pulada e a migração avisa); aplique-a **antes** de publicar o
+`portal-funcionario`, que lê a coluna. Depois publique o front pelo workflow **Deploy — Hostgator**. Integre apenas os
+commits do portal; não inclua as alterações locais de Orçamento, Financeiro ou Pastas. Os comandos exatos, por tarefa,
+ficam na descrição de cada commit.
 
 O teste completo de matrícula real, tempo de estudo, avaliação e certificado deve seguir o roteiro da seção 7 do
 handoff, com o Javerson e após as decisões e tarefas correspondentes.

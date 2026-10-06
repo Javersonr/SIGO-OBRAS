@@ -3,6 +3,12 @@ export const MIN_QUESTOES = 5;
 // "apoio" é material de estudo do treinamento presencial (nunca emite) e "semipresencial" só passa a
 // emitir quando a etapa prática for registrada (T12). Espelho do servidor (portal-funcionario/
 // requisitos.ts); requisitos.test.ts confere que os dois dizem a mesma coisa.
+//
+// D3 (Javerson, 06/10/2026): "emitir" é separado de "publicar/matricular". O curso de apoio CONTINUA
+// publicado e ACEITA MATRÍCULA como material de estudo; só não emite certificado. Por isso cada
+// requisito tem duas chaves: `bloqueia` (impede PUBLICAR e MATRICULAR) e `bloqueiaEmissao` (impede
+// EMITIR o certificado). No requisito MODALIDADE, o apoio só tem a segunda; o semipresencial (e o valor
+// desconhecido) têm as duas, como a T8 deixou, até a T12.
 export const MODALIDADES = ["ead", "semipresencial", "apoio"];
 // A coluna; curso sem ela (lido antes da migração) vale "ead". Nome e código NÃO decidem.
 export function modalidadeDoCurso(curso) {
@@ -23,6 +29,19 @@ export function motivoSemCertificado(modalidade) {
     );
   return "Modalidade do curso não reconhecida: o certificado não pode ser emitido";
 }
+// A modalidade só trava a publicação e a matrícula quando o curso AINDA PODERÁ emitir (semipresencial, na
+// T12) ou tem um valor que o banco não aceita; o apoio nunca emite e, por isso, não trava (D3).
+function modalidadeTravaPublicacao(modalidade) {
+  return (modalidade || "ead") !== "apoio";
+}
+/** Requisitos que impedem PUBLICAR o curso e MATRICULAR alunos (ainda não resolvidos). */
+export function pendenciasParaPublicar(requisitos = []) {
+  return requisitos.filter((r) => r.bloqueia && !r.ok);
+}
+/** Requisitos que impedem EMITIR o certificado (ainda não resolvidos). */
+export function pendenciasParaEmitir(requisitos = []) {
+  return requisitos.filter((r) => r.bloqueiaEmissao && !r.ok);
+}
 export function tempoObrigatorioSeg(aulas = []) {
   return aulas
     .filter((a) => !a.deleted_at)
@@ -40,6 +59,7 @@ export function requisitosDoCurso({ curso = {}, aulas = [], questoes = [] } = {}
         : a.fonte === "upload"
           ? a.video_ref
           : a.youtube_id;
+  const modalidade = modalidadeDoCurso(curso);
   const itens = [
     ["AULAS", ativas.length > 0, "Adicione pelo menos uma aula"],
     [
@@ -60,19 +80,28 @@ export function requisitosDoCurso({ curso = {}, aulas = [], questoes = [] } = {}
     ],
     ["INSTRUTOR", !!curso.instrutor_nome?.trim(), "Informe o instrutor"],
     ["RT", !!curso.responsavel_tecnico_nome?.trim(), "Informe o responsável técnico"],
-    [
-      "MODALIDADE",
-      emiteCertificado(modalidadeDoCurso(curso)),
-      motivoSemCertificado(modalidadeDoCurso(curso)),
-    ],
+    ["MODALIDADE", emiteCertificado(modalidade), motivoSemCertificado(modalidade)],
   ];
   return [
-    ...itens.map(([codigo, ok, texto]) => ({ codigo, ok, bloqueia: true, texto })),
+    ...itens.map(([codigo, ok, texto]) => ({
+      codigo,
+      ok,
+      // D3: o apoio não trava publicar nem matricular, só a emissão (o motivo é só informativo)
+      bloqueia: codigo === "MODALIDADE" ? modalidadeTravaPublicacao(modalidade) : true,
+      bloqueiaEmissao: true,
+      texto,
+    })),
     ...[
       ["TUTOR", curso.tutor_telefone, "Defina o contato do tutor"],
       ["PROJETO", curso.projeto_pedagogico_ref, "Anexe o projeto pedagógico"],
       ["PROGRAMA", curso.conteudo_programatico, "Preencha o conteúdo programático"],
       ["VALIDADE", curso.validade_meses, "Confira a validade do treinamento"],
-    ].map(([codigo, valor, texto]) => ({ codigo, ok: !!valor, bloqueia: false, texto })),
+    ].map(([codigo, valor, texto]) => ({
+      codigo,
+      ok: !!valor,
+      bloqueia: false,
+      bloqueiaEmissao: false,
+      texto,
+    })),
   ];
 }

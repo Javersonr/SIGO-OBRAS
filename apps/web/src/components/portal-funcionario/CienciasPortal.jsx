@@ -65,9 +65,9 @@ export function EntregasPendentes({ pendentes, onConfirmar }) {
 
 /**
  * Histórico das entregas que o aluno já confirmou, recolhido por padrão (só leitura). Não desenha nada
- * quando não há nenhuma. O servidor manda só as 30 entregas mais recentes (pendentes e confirmadas
- * juntas): com `parcial` (o servidor mandou o limite inteiro, `historicoDeCienciasParcial`) o título
- * não sugere o total e um aviso diz que as mais antigas não aparecem.
+ * quando não há nenhuma. O servidor manda só as 30 confirmadas mais recentes (as pendentes vêm todas):
+ * com `parcial` (o servidor mandou o limite inteiro, `historicoDeCienciasParcial`) o título não
+ * sugere o total e um aviso diz que as mais antigas não aparecem.
  */
 export function HistoricoDeEntregas({ confirmadas, parcial = false }) {
   if (!confirmadas?.length) return null;
