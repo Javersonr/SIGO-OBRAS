@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, resolveStorageUrl } from "@/api/sigoClient";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,12 @@ import {
 import { toast } from "sonner";
 import { baixarCertificadoPdf } from "@/lib/certificado-ead";
 import { mensagemFalhaCertificado } from "@/lib/certificado-ead-falhas";
-import { logoParaPdf } from "@/lib/pdf-empresa";
+import { logoParaPdf, logoParaPdfDeUrl } from "@/lib/pdf-empresa";
+import {
+  assinaturasQueFaltaram,
+  avisoAssinaturasNaoCarregadas,
+  carregarAssinaturasDoCertificado,
+} from "@/lib/ead-assinatura";
 import { numerarAulas } from "@/lib/portal-curso";
 import {
   ROTULO_ORIGEM_NAVEGADOR,
@@ -235,7 +240,20 @@ export default function MatriculaAuditoriaSheet({
     setBaixando(true);
     try {
       const logo = await logoParaPdf(empresaAtiva);
-      await baixarCertificadoPdf({ ...certificado, revogado: !!certificado.revogado_em }, { logo });
+      // a imagem da assinatura do instrutor e do RT (T29) é a referência congelada na emissão; o RH a
+      // resolve pela própria sessão. Sem imagem, ou se ela não carregar, o PDF sai só com nome e registro.
+      const carregadas = await carregarAssinaturasDoCertificado(certificado.dados, {
+        urlDe: (pessoa) => resolveStorageUrl(pessoa.assinatura_ref),
+        carregar: logoParaPdfDeUrl,
+      });
+      const { assinaturasDesenhadas } = await baixarCertificadoPdf(
+        { ...certificado, revogado: !!certificado.revogado_em },
+        { logo, assinaturas: carregadas.imagens }
+      );
+      const faltaram = assinaturasQueFaltaram(carregadas, assinaturasDesenhadas);
+      if (faltaram.length) {
+        toast.warning(avisoAssinaturasNaoCarregadas(faltaram), { duration: 12000 });
+      }
     } catch (e) {
       console.error("[certificado] falha ao baixar:", e);
       toast.error(mensagemFalhaCertificado(e));

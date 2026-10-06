@@ -81,6 +81,16 @@ O certificado traz o **local de realização** (a plataforma e o endereço do po
 uma conclusão às 23h30 sai com o próprio dia, e a renovação soma os meses sobre essa data. A validação pública
 (`/ValidarCertificado`) mostra o local.
 
+**Assinaturas do instrutor e do responsável técnico (T29, decisão D7, 06/10/2026).** Vale a **imagem** da assinatura
+(não ICP-Brasil). Na tela do curso (RH & Segurança → Treinamentos → curso), os campos "Assinatura do responsável
+técnico" e "Assinatura do instrutor" aceitam PNG ou JPEG de até 2 MB; salve o curso para guardar. As imagens antigas do
+cadastro de Configurações apontavam para o sistema antigo e não existem mais: anexe de novo (se a pessoa já tem imagem
+nova em Configurações, escolher o nome dela na lista do curso traz a imagem junto). O banco guarda só a referência do
+arquivo. Na emissão a referência é **congelada no certificado** (entra no hash): trocar a imagem do curso depois não muda
+certificados já emitidos, e por isso **o arquivo antigo nunca deve ser apagado do Storage**. O aluno baixa o PDF com as
+imagens sobre as linhas de assinatura; a consulta pública não mostra a imagem nem o caminho. Sem imagem (ou se ela não
+carregar) o certificado sai só com nome e registro, e a tela avisa que o PDF saiu sem a imagem.
+
 O projeto completo de conformidade EAD continua documentado em `HANDOFF-PORTAL-TREINAMENTO.md`. Esta entrega acrescenta
 as áreas de documentos e as proteções necessárias ao fluxo solicitado; não declara concluídas todas as 38 tarefas
 daquele documento. Permanecem, por exemplo, os desenhos e migrações de ciência protegida no banco,
@@ -99,6 +109,12 @@ apoio (se a coluna já existir, a marcação é pulada e a migração avisa); ap
 `portal-funcionario`, que lê a coluna. Depois publique o front pelo workflow **Deploy — Hostgator**. Integre apenas os
 commits do portal; não inclua as alterações locais de Orçamento, Financeiro ou Pastas. Os comandos exatos, por tarefa,
 ficam na descrição de cada commit.
+
+A T29 (assinaturas) acrescenta a migração **`0137`** (colunas `instrutor_assinatura_ref` e
+`responsavel_tecnico_assinatura_ref` no curso): aplique-a **antes** de publicar o front, porque "Salvar curso" passa a
+gravar essas colunas. Depois publique **portal-funcionario** (`--no-verify-jwt`) e **validar-certificado** (SEM
+`--no-verify-jwt`: a consulta pública passa a devolver só nome e registro do responsável técnico, sem o caminho da
+imagem) e, por último, o front.
 
 O teste completo de matrícula real, tempo de estudo, avaliação e certificado deve seguir o roteiro da seção 7 do
 handoff, com o Javerson e após as decisões e tarefas correspondentes.

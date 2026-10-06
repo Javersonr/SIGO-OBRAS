@@ -6,6 +6,11 @@ import { apiPortal, fmtData } from "./api";
 import { baixarCertificadoPdf } from "@/lib/certificado-ead";
 import { AVISO_SEM_LOGO, mensagemFalhaCertificado } from "@/lib/certificado-ead-falhas";
 import { logoParaPdfDeUrl } from "@/lib/pdf-empresa";
+import {
+  assinaturasQueFaltaram,
+  avisoAssinaturasNaoCarregadas,
+  carregarAssinaturasDoCertificado,
+} from "@/lib/ead-assinatura";
 import { MSG_CURSO_DE_APOIO, cursoDeApoio } from "@/lib/portal-curso";
 
 /**
@@ -13,6 +18,8 @@ import { MSG_CURSO_DE_APOIO, cursoDeApoio } from "@/lib/portal-curso";
  * declaração digitando a própria senha, e o servidor registra quando e de onde.
  * `empresaLogoUrl` = URL do logo já assinada pelo servidor (`dados.empresa_logo_url`), para o PDF
  * sair igual ao que o RH baixa; null = a empresa não tem logo que o portal consiga mostrar.
+ * As imagens da assinatura do instrutor e do RT vêm assinadas em `cert.dados` (`assinatura_url`, T29); a
+ * referência do Storage não sai do servidor. Sem imagem (ou se ela não carregar) o PDF sai só com nome e registro.
  * `api` é injetada (padrão: o portal de verdade); a prévia do RT nunca chega aqui (não há certificado).
  */
 export default function CertificadoPortal({
@@ -33,6 +40,7 @@ export default function CertificadoPortal({
   // falha ao gerar o PDF (aluno precisa ler) e aviso de PDF que saiu sem o logotipo
   const [erroPdf, setErroPdf] = useState("");
   const [avisoPdf, setAvisoPdf] = useState("");
+  const [avisoAssinaturas, setAvisoAssinaturas] = useState("");
 
   const assinar = async (e) => {
     e.preventDefault();
@@ -53,14 +61,26 @@ export default function CertificadoPortal({
   const baixar = async () => {
     setErroPdf("");
     setAvisoPdf("");
+    setAvisoAssinaturas("");
     setBaixando(true);
     try {
       // sem logo carregado o PDF sai sem ele (o aluno é avisado abaixo); o QR, não: falha = erro
       const logo = await logoParaPdfDeUrl(empresaLogoUrl);
-      const { logoDesenhado } = await baixarCertificadoPdf(cert, { logo });
+      // assinatura que não carrega também só gera aviso: o PDF sai com nome e registro (T29)
+      const carregadas = await carregarAssinaturasDoCertificado(cert.dados, {
+        urlDe: (pessoa) => pessoa.assinatura_url,
+        carregar: logoParaPdfDeUrl,
+      });
+      const { logoDesenhado, assinaturasDesenhadas } = await baixarCertificadoPdf(cert, {
+        logo,
+        assinaturas: carregadas.imagens,
+      });
       // a trilha só registra "Baixou o certificado" quando o PDF de fato saiu
       evento("abrir_certificado");
       if (empresaLogoUrl && !logoDesenhado) setAvisoPdf(AVISO_SEM_LOGO);
+      setAvisoAssinaturas(
+        avisoAssinaturasNaoCarregadas(assinaturasQueFaltaram(carregadas, assinaturasDesenhadas))
+      );
     } catch (e) {
       console.error("[certificado] falha ao baixar:", e);
       setErroPdf(mensagemFalhaCertificado(e));
@@ -104,6 +124,11 @@ export default function CertificadoPortal({
         {avisoPdf && (
           <p role="status" className="text-sm text-amber-800">
             {avisoPdf}
+          </p>
+        )}
+        {avisoAssinaturas && (
+          <p role="status" className="text-sm text-amber-800">
+            {avisoAssinaturas}
           </p>
         )}
       </div>

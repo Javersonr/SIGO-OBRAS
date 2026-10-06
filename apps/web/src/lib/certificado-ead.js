@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import { QRCodeCanvas } from "qrcode.react";
 import { urlPublica } from "@/lib/url-publica";
 import { dataHoraBrasilia } from "@/lib/data-brasilia";
+import { formatoDaImagem, posicaoDaAssinatura } from "@/lib/ead-assinatura";
 import {
   ErroCertificado,
   MSG_QR_FALHOU,
@@ -79,13 +80,18 @@ function linhasConteudo(curso) {
  * Gera e baixa o PDF. Falha prevista = `ErroCertificado` (mensagem pronta para o aluno): o gerador de
  * PDF não carregou ou o QR de validação não ficou pronto (o PDF NUNCA sai sem o QR em silêncio).
  * Quem chama mostra `mensagemFalhaCertificado(erro)`. O logo é só enfeite: se o PDF não o aceitar,
- * o certificado sai sem ele e o retorno diz (`logoDesenhado`).
+ * o certificado sai sem ele e o retorno diz (`logoDesenhado`). A imagem da assinatura do instrutor e do
+ * responsável técnico (T29) é igual: quem chama carrega as imagens (`lib/ead-assinatura.js`) e passa em
+ * `assinaturas`; a que o PDF não aceitar fica de fora e o retorno diz quais saíram (`assinaturasDesenhadas`).
+ * Sem imagem o certificado sai só com o nome e o registro, como sempre saiu.
  *
  * @param {object} cert { codigo, dados, assinatura_aluno, emitido_em, hash_sha256, revogado }
- * @param {{ logo?: {dataUrl, formato, w, h}, gerarQr?: (url: string) => Promise<string|null>,
+ * @param {{ logo?: {dataUrl, formato, w, h},
+ *   assinaturas?: { instrutor?: {dataUrl, w, h}|null, responsavel_tecnico?: {dataUrl, w, h}|null },
+ *   gerarQr?: (url: string) => Promise<string|null>,
  *   salvar?: (doc: object, nome: string) => void }} [opcoes] `gerarQr` e `salvar` existem para o teste
  *   (sem DOM e sem disco); no app valem o QR do navegador e o download do jsPDF.
- * @returns {Promise<{ logoDesenhado: boolean }>}
+ * @returns {Promise<{ logoDesenhado: boolean, assinaturasDesenhadas: string[] }>}
  */
 export async function baixarCertificadoPdf(cert, opcoes = {}) {
   let jsPDF;
@@ -190,6 +196,7 @@ export async function baixarCertificadoPdf(cert, opcoes = {}) {
   const ass = cert.assinatura_aluno || {};
   const colunas = [
     {
+      chave: "participante", // o aluno assina eletronicamente (senha), sem imagem
       nome: d.aluno?.nome,
       papel: "Participante",
       extra: ass.assinado_em
@@ -198,19 +205,42 @@ export async function baixarCertificadoPdf(cert, opcoes = {}) {
       extra2: ass.ip ? `IP ${ass.ip} · login pessoal` : "",
     },
     {
+      chave: "instrutor",
       nome: d.instrutor?.nome,
       papel: "Instrutor",
       extra: d.instrutor?.qualificacao || "",
     },
     {
+      chave: "responsavel_tecnico",
       nome: d.responsavel_tecnico?.nome,
       papel: "Responsável técnico",
       extra: d.responsavel_tecnico?.registro || "",
     },
   ];
   const yLinha = 142;
+  const assinaturasDesenhadas = [];
   colunas.forEach((c, i) => {
     const x = 18 + (i + 0.5) * ((W - 36) / 3);
+    // imagem da assinatura (T29) sobre a linha; se o PDF não a aceitar, a linha segue com o nome e o registro
+    const imagem = opcoes.assinaturas?.[c.chave];
+    const caixa = imagem?.dataUrl ? posicaoDaAssinatura(x, yLinha, imagem) : null;
+    if (caixa) {
+      try {
+        doc.addImage(
+          imagem.dataUrl,
+          formatoDaImagem(imagem.dataUrl),
+          caixa.x,
+          caixa.y,
+          caixa.w,
+          caixa.h,
+          `assinatura-${c.chave}`,
+          "FAST"
+        );
+        assinaturasDesenhadas.push(c.chave);
+      } catch (e) {
+        console.error(`[certificado] o PDF não aceitou a assinatura (${c.chave}):`, e);
+      }
+    }
     doc.setDrawColor(100, 116, 139);
     doc.line(x - 36, yLinha, x + 36, yLinha);
     doc.setFont("helvetica", "bold");
@@ -292,5 +322,5 @@ export async function baixarCertificadoPdf(cert, opcoes = {}) {
   const arquivo = `Certificado_${nome}_${cert.codigo}.pdf`;
   if (opcoes.salvar) opcoes.salvar(doc, arquivo);
   else doc.save(arquivo);
-  return { logoDesenhado };
+  return { logoDesenhado, assinaturasDesenhadas };
 }

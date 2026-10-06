@@ -11,6 +11,7 @@ import {
   estaVencido,
   localDoCertificado,
   resultadoDaConsulta,
+  responsavelTecnicoPublico,
   situacaoDoCertificado,
   validadeDoCertificado,
 } from "./regras.ts";
@@ -309,6 +310,46 @@ test("localDoCertificado: devolve o ambiente gravado em dados.local; sem local, 
 test("localDoCertificado: só o ambiente sai na consulta pública (nada além dele)", () => {
   const l = localDoCertificado({ local: { ambiente: "Plataforma", interno: "não sai" } });
   assert.deepEqual(l, { ambiente: "Plataforma" });
+});
+
+// ------------------------------------------------------------------ responsável técnico (T29)
+test("responsavelTecnicoPublico: só nome e registro saem na consulta pública, nunca a referência da assinatura", () => {
+  const r = responsavelTecnicoPublico({
+    responsavel_tecnico: {
+      nome: "RT de Teste",
+      registro: "CREA-XX 0000",
+      assinatura_ref: "assinaturas/empresa-teste/2026/10/aaaa-rt.png",
+    },
+  });
+  assert.deepEqual(r, { nome: "RT de Teste", registro: "CREA-XX 0000" });
+  assert.ok(!JSON.stringify(r).includes("assinaturas/"));
+});
+
+test("responsavelTecnicoPublico: certificado antigo e dados fora do formato viram null (a página só não mostra)", () => {
+  assert.deepEqual(responsavelTecnicoPublico({ responsavel_tecnico: { nome: "RT de Teste" } }), {
+    nome: "RT de Teste",
+    registro: null,
+  });
+  for (const dados of [
+    null,
+    undefined,
+    {},
+    { responsavel_tecnico: null },
+    { responsavel_tecnico: "x" },
+  ]) {
+    assert.equal(responsavelTecnicoPublico(dados), null);
+  }
+  // sem nome não há o que mostrar
+  assert.equal(
+    responsavelTecnicoPublico({ responsavel_tecnico: { registro: "CREA-XX 0000" } }),
+    null
+  );
+});
+
+test("index.ts: a consulta pública usa responsavelTecnicoPublico (não devolve o objeto gravado inteiro)", () => {
+  const codigo = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+  assert.match(codigo, /responsavel_tecnico:\s*responsavelTecnicoPublico\(d\)/);
+  assert.doesNotMatch(codigo, /responsavel_tecnico:\s*d\.responsavel_tecnico/);
 });
 
 test("integridade: certificado com local e modalidade nova confere do mesmo jeito", async () => {

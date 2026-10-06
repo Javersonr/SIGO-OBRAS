@@ -54,11 +54,13 @@ import {
 import { srtParaVtt } from "@/lib/legendas";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
+import { refDeAssinatura } from "@/lib/ead-assinatura";
 import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
 import { useConfirmar } from "@/components/shared/ConfirmarDialog";
 import MatriculaAuditoriaSheet from "@/components/seguranca/MatriculaAuditoriaSheet";
 import DuvidasTutorCard from "@/components/seguranca/DuvidasTutorCard";
 import AulaLinhaEad from "@/components/seguranca/AulaLinhaEad";
+import AssinaturaCursoCampo from "@/components/seguranca/AssinaturaCursoCampo";
 import EnvioProgressoEad from "@/components/seguranca/EnvioProgressoEad";
 import PreviaAlunoCurso from "@/components/seguranca/PreviaAlunoCurso";
 import { Button } from "@/components/ui/button";
@@ -415,7 +417,19 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const funcPorId = useMemo(() => new Map(funcionarios.map((f) => [f.id, f])), [funcionarios]);
   // um certificado por matrícula, consultado por linha da tabela sem varrer a lista a cada vez
   const certPorMatricula = useMemo(() => certificadosPorMatricula(certificados), [certificados]);
-  const pessoas = useMemo(() => pessoasDosTreinamentos(treinamentosConfig), [treinamentosConfig]);
+  const pessoas = useMemo(
+    () => pessoasDosTreinamentos(treinamentosConfig, empresaAtiva?.id),
+    [treinamentosConfig, empresaAtiva?.id]
+  );
+  // Troca a imagem da assinatura (T29) só no formulário que a pediu: o envio é lento e o RH pode ter aberto
+  // outro curso enquanto ele terminava (a mesma regra do PDF do projeto pedagógico).
+  const trocarAssinatura = (campo) => {
+    const formulario = cursoSel;
+    return (ref) =>
+      setCursoSel((atual) =>
+        mesmoFormulario(atual, formulario) ? { ...atual, [campo]: ref } : atual
+      );
+  };
 
   // ------------------------------------------------------------------ cursos
   const salvarCurso = async () => {
@@ -455,6 +469,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       responsavel_tecnico_registro: cursoSel.responsavel_tecnico_registro?.trim() || null,
       instrutor_nome: cursoSel.instrutor_nome?.trim() || null,
       instrutor_qualificacao: cursoSel.instrutor_qualificacao?.trim() || null,
+      // só referência válida da empresa (T29): link do Base44, URL ou arquivo de outra pasta viram null
+      instrutor_assinatura_ref: refDeAssinatura(cursoSel.instrutor_assinatura_ref, empresaAtiva.id),
+      responsavel_tecnico_assinatura_ref: refDeAssinatura(
+        cursoSel.responsavel_tecnico_assinatura_ref,
+        empresaAtiva.id
+      ),
       tutor_telefone: cursoSel.tutor_telefone?.trim() || null,
       ativo: cursoSel.ativo !== false,
     };
@@ -1653,6 +1673,8 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                           responsavel_tecnico_nome: p.nome,
                           responsavel_tecnico_registro:
                             p.registro || cursoSel.responsavel_tecnico_registro || "",
+                          // a imagem é da pessoa escolhida: a do catálogo, ou nenhuma (nunca a de quem estava antes)
+                          responsavel_tecnico_assinatura_ref: p.assinatura_ref || null,
                         })
                       }
                     />
@@ -1668,6 +1690,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                       className="mt-0.5"
                     />
                   </div>
+                  <AssinaturaCursoCampo
+                    rotulo="Assinatura do responsável técnico"
+                    valor={cursoSel.responsavel_tecnico_assinatura_ref}
+                    empresaId={empresaAtiva.id}
+                    onChange={trocarAssinatura("responsavel_tecnico_assinatura_ref")}
+                  />
                   <div>
                     <SeletorPessoa
                       rotulo="Instrutor"
@@ -1681,6 +1709,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                           instrutor_nome: p.nome,
                           instrutor_qualificacao:
                             p.qualificacao || cursoSel.instrutor_qualificacao || "",
+                          instrutor_assinatura_ref: p.assinatura_ref || null,
                         })
                       }
                     />
@@ -1696,6 +1725,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                       className="mt-0.5"
                     />
                   </div>
+                  <AssinaturaCursoCampo
+                    rotulo="Assinatura do instrutor"
+                    valor={cursoSel.instrutor_assinatura_ref}
+                    empresaId={empresaAtiva.id}
+                    onChange={trocarAssinatura("instrutor_assinatura_ref")}
+                  />
                   <div className="col-span-2">
                     <Label className="text-xs">
                       WhatsApp do tutor (recebe as dúvidas dos alunos)

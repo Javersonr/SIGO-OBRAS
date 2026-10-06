@@ -12,7 +12,12 @@
  */
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
-import { avaliarCertificado, localDoCertificado, resultadoDaConsulta } from "./regras.ts";
+import {
+  avaliarCertificado,
+  localDoCertificado,
+  responsavelTecnicoPublico,
+  resultadoDaConsulta,
+} from "./regras.ts";
 
 function mascararCpf(cpf?: string | null) {
   const d = (cpf || "").replace(/\D/g, "");
@@ -78,7 +83,8 @@ Deno.serve(
         validade: av.validade,
         empresa: d.empresa?.nome,
         cnpj: d.empresa?.cnpj,
-        responsavel_tecnico: d.responsavel_tecnico,
+        // só nome e registro: a referência da imagem da assinatura (T29) não sai numa consulta pública
+        responsavel_tecnico: responsavelTecnicoPublico(d),
         emitido_em: cert.emitido_em,
         assinado_pelo_aluno_em: cert.assinatura_aluno?.assinado_em ?? null,
         hash_sha256: cert.hash_sha256,

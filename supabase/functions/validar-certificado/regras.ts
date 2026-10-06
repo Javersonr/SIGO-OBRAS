@@ -182,6 +182,24 @@ export function localDoCertificado(dados: unknown): { ambiente: string } | null 
   return typeof ambiente === "string" && ambiente.trim() ? { ambiente } : null;
 }
 
+// ------------------------------------------------------------------------------ responsável técnico
+
+/**
+ * Responsável técnico na consulta pública (`dados.responsavel_tecnico`): só nome e registro. O objeto
+ * gravado pode levar `assinatura_ref` (T29, a imagem da assinatura), que é um caminho do Storage com o
+ * id da empresa e não pode sair numa consulta pública. Sem nome (ou sem o objeto, como nos certificados
+ * mais antigos) devolve null e a página não mostra a linha.
+ */
+export function responsavelTecnicoPublico(
+  dados: unknown
+): { nome: string; registro: string | null } | null {
+  const rt = (dados as { responsavel_tecnico?: unknown } | null)?.responsavel_tecnico;
+  if (rt === null || typeof rt !== "object" || Array.isArray(rt)) return null;
+  const { nome, registro } = rt as { nome?: unknown; registro?: unknown };
+  if (typeof nome !== "string" || !nome.trim()) return null;
+  return { nome, registro: typeof registro === "string" && registro.trim() ? registro : null };
+}
+
 // ------------------------------------------------------------------------------ situação
 
 /**

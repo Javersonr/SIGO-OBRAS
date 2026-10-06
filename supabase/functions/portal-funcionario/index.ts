@@ -26,6 +26,12 @@
  * Depois do INSERT o hash é refeito a partir do que o banco devolveu: se não se reproduz, o certificado
  * NÃO é entregue, é anulado (revogado pelo sistema) e a emissão responde 500 `EMISSAO_ANULADA` (T10, M5).
  *
+ * Assinaturas (T29, D7: vale a imagem): o curso guarda a referência "assinaturas/<empresa>/..." da imagem do
+ * instrutor e do RT; a emissão a CONGELA em `assinatura_ref` dentro de `dados.instrutor` e de
+ * `dados.responsavel_tecnico` (entra no hash; ver assinaturas.ts). O aluno nunca recebe a referência: `dados`
+ * troca por `tem_assinatura` + `assinatura_url` (URL assinada, só da pasta da empresa) e a ação `certificado`
+ * a tira da resposta. Falha ao assinar = PDF sem a imagem; certificado sem imagem sai só com nome e registro.
+ *
  * Reconfirmar a senha com a sessão aberta (`certificado` e `trocar_senha` com a senha atual) tem limite de
  * tentativas por funcionário (escopo próprio, 5 em 15 min); passou do teto responde 429 `LIMITE`. Senha
  * vazia é "incorreta" sem consumir tentativa (T27).
@@ -69,6 +75,13 @@ import { enviarWhatsAppTexto, normalizarTelefoneBR } from "../_shared/whatsapp-e
 import { assinarDaEmpresa, refDaEmpresa } from "../_shared/storage-assinar.ts";
 import { carregarDocumentos, funcionarioPodeEntrar } from "./documentos.ts";
 import { confirmarCiencia, listarCienciasDoAluno } from "./ciencia.ts";
+import {
+  certificadoParaOAluno,
+  dadosParaOAluno,
+  instrutorDoCertificado,
+  refsDasAssinaturas,
+  responsavelTecnicoDoCertificado,
+} from "./assinaturas.ts";
 import {
   bloqueioDeEmissaoPorModalidade,
   duracaoParaProgresso,
@@ -746,6 +759,24 @@ Deno.serve(
       );
       const url = (ref?: string | null) => (ref ? (assinada.get(ref) ?? null) : null);
 
+      // Imagens da assinatura do instrutor e do RT para o PDF do certificado (T29): URL assinada só da
+      // pasta da empresa da sessão; a referência não vai ao aluno (`dadosParaOAluno`). Falha ao assinar =
+      // PDF sem a imagem (a tela avisa); nunca derruba os `dados`, a tela inicial do portal. Só chama o
+      // Storage quando o aluno tem certificado com assinatura.
+      let assinadasDasAssinaturas = new Map<string, string>();
+      const refsDasAssinaturasDoAluno = refsDasAssinaturas(certificados, empresaId);
+      if (refsDasAssinaturasDoAluno.length) {
+        try {
+          assinadasDasAssinaturas = await assinarRefs(
+            supabase,
+            refsDasAssinaturasDoAluno,
+            empresaId
+          );
+        } catch (erro) {
+          console.error("[portal-funcionario] assinaturas do certificado não assinadas:", erro);
+        }
+      }
+
       // deno-lint-ignore no-explicit-any
       const resposta = matsDaEmpresa.map((m: any) => {
         // deno-lint-ignore no-explicit-any
@@ -817,7 +848,9 @@ Deno.serve(
           },
           certificado: cert && {
             codigo: cert.codigo,
-            dados: cert.dados,
+            dados: dadosParaOAluno(cert.dados, empresaId, (ref) =>
+              assinadasDasAssinaturas.get(ref)
+            ),
             assinatura_aluno: cert.assinatura_aluno,
             emitido_em: cert.emitido_em,
             hash_sha256: cert.hash_sha256,
@@ -1335,7 +1368,11 @@ Deno.serve(
         console.error("[portal-funcionario] certificado: leitura do existente:", erroExistente);
         return fail("Não foi possível consultar seu certificado agora. Tente de novo.", 503);
       }
-      if (existente) return ok({ certificado: certificadoParaResposta(existente) });
+      if (existente) {
+        return ok({
+          certificado: certificadoParaOAluno(certificadoParaResposta(existente), empresaId),
+        });
+      }
 
       // Modalidade (T8): curso de apoio nunca emite, e o semipresencial só emitirá com a prática
       // registrada (T12). Vem ANTES da senha: não gasta a reconfirmação do aluno à toa.
@@ -1435,14 +1472,10 @@ Deno.serve(
         avaliacao: sit.aprovacao
           ? { nota: sit.aprovacao.nota, tentativa: sit.aprovacao.numero }
           : null,
-        instrutor: {
-          nome: curso.instrutor_nome ?? null,
-          qualificacao: curso.instrutor_qualificacao ?? null,
-        },
-        responsavel_tecnico: {
-          nome: curso.responsavel_tecnico_nome ?? null,
-          registro: curso.responsavel_tecnico_registro ?? null,
-        },
+        // nome, qualificação/registro e, quando o RH anexou, a referência da imagem da assinatura (T29).
+        // Tudo congelado aqui: entra no hash, e trocar a imagem do curso depois não muda este certificado
+        instrutor: instrutorDoCertificado(curso, empresaId),
+        responsavel_tecnico: responsavelTecnicoDoCertificado(curso, empresaId),
       };
       const assinatura = {
         metodo: "senha_pessoal_portal_funcionario",
@@ -1534,8 +1567,10 @@ Deno.serve(
             curso_id: mat.curso_id,
             detalhe: { codigo },
           });
-          // o id da linha só serve para anular; não vai ao navegador
+          // o id da linha só serve para anular; não vai ao navegador. A referência da assinatura também
+          // não: o portal recarrega os `dados` e recebe a URL assinada (T29)
           const { id: _idDaLinha, ...certificado } = cert;
+          certificado.dados = dadosParaOAluno(certificado.dados, empresaId, () => null);
           return ok({ certificado: { ...certificado, revogado: false } });
         }
         if (error.code !== "23505") {
@@ -1554,7 +1589,11 @@ Deno.serve(
           return fail("Não foi possível consultar seu certificado agora. Tente de novo.", 503);
         }
         // o certificado de outra aba pode já ter sido revogado: `revogado` vem da coluna
-        if (jaEmitido) return ok({ certificado: certificadoParaResposta(jaEmitido) });
+        if (jaEmitido) {
+          return ok({
+            certificado: certificadoParaOAluno(certificadoParaResposta(jaEmitido), empresaId),
+          });
+        }
       }
       return fail("Erro ao gerar o código do certificado — tente de novo", 500);
     }
