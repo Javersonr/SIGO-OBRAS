@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { sigo, resolveStorageUrl } from "@/api/sigoClient";
+import { sigo, supabase, resolveStorageUrl } from "@/api/sigoClient";
 import { normalizarTexto } from "@/lib/busca";
 import {
   modelosDeTreinamento,
@@ -7,7 +7,7 @@ import {
   dadosCursoDoModelo,
 } from "@/lib/treinamento-catalogo";
 import { normalizarQuestao } from "@/lib/ead-questao";
-import { parseDuracao, formatDuracao, lerDuracaoVideo, videoSemDuracao } from "@/lib/ead-duracao";
+import { parseDuracao, formatDuracao, lerDuracaoVideo } from "@/lib/ead-duracao";
 import { requisitosDoCurso, tempoObrigatorioSeg } from "@/lib/ead-requisitos";
 import { numerarAulas } from "@/lib/portal-curso";
 import {
@@ -21,6 +21,20 @@ import {
   criarControleDeCarga,
   certificadosPorMatricula,
 } from "@/lib/ead-gestao";
+import {
+  validarArquivoAula,
+  subirArquivoComProgresso,
+  tipoDeArquivoDaAula,
+  dadosDaTrocaDeArquivo,
+  ACCEPT_AULA,
+} from "@/lib/ead-upload";
+import {
+  resumirProgressoAula,
+  mudouGabarito,
+  mudouNotaMinima,
+  avisoDeMudanca,
+  textoConfirmarRemocaoAula,
+} from "@/lib/ead-impacto";
 import { srtParaVtt } from "@/lib/legendas";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
@@ -28,6 +42,8 @@ import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
 import { useConfirmar } from "@/components/shared/ConfirmarDialog";
 import MatriculaAuditoriaSheet from "@/components/seguranca/MatriculaAuditoriaSheet";
 import DuvidasTutorCard from "@/components/seguranca/DuvidasTutorCard";
+import AulaLinhaEad from "@/components/seguranca/AulaLinhaEad";
+import EnvioProgressoEad from "@/components/seguranca/EnvioProgressoEad";
 import PreviaAlunoCurso from "@/components/seguranca/PreviaAlunoCurso";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,11 +62,8 @@ import {
   Users,
   Video,
   Pencil,
-  ArrowUp,
-  ArrowDown,
   ClipboardList,
   FileText,
-  BookOpen,
   Award,
   ChevronDown,
   Eye,
@@ -78,13 +91,9 @@ const NOVA_AULA = {
   duracao: "",
 };
 const MAT_FORM_VAZIO = { curso_id: "", funcionario_ids: [] };
-// o aviso de matrícula bloqueada tem ~190 caracteres e diz onde clicar: o toast padrão (4 s) some antes
+// o aviso de matrícula bloqueada tem ~190 caracteres e diz onde clicar: o toast padrão (4 s) some
+// antes (o aviso da legenda mantida, ao trocar o vídeo de uma aula, também é longo)
 const DURACAO_AVISO_BLOQUEIO_MS = 10000;
-// Setas de ordem: a cor está no botão (o ícone herda), então desabilitada (1ª/última aula ou
-// gravação em andamento) ela esmaece e o hover não a escurece como se estivesse ativa.
-const CLASSE_SETA_ORDEM =
-  "text-slate-400 hover:text-slate-800 disabled:opacity-40 disabled:hover:text-slate-400 disabled:cursor-not-allowed";
-
 // aceita URL completa ou ID puro do YouTube
 function extrairYouTubeId(texto) {
   const t = (texto || "").trim();
@@ -168,7 +177,11 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const [buscaFunc, setBuscaFunc] = useState("");
   const [novaAula, setNovaAula] = useState(NOVA_AULA);
   const [subindoProjeto, setSubindoProjeto] = useState(false);
-  const [subindoVideo, setSubindoVideo] = useState(false);
+  // Envio de arquivo ou gravação de aula em andamento (T30): { alvo: "nova" | id da aula, arquivo,
+  // fase, percentual, enviado, total }. `envioRef` guarda o AbortController (botão Cancelar) e é a
+  // trava de um envio por vez: o estado só chega no render seguinte.
+  const [envio, setEnvio] = useState(null);
+  const envioRef = useRef(null);
   const [questoes, setQuestoes] = useState([]);
   const [todasQuestoes, setTodasQuestoes] = useState([]);
   const [novaQuestao, setNovaQuestao] = useState(null); // {pergunta, opcoes[4], correta}
@@ -226,7 +239,9 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
     if (!empresaAtiva?.id) return;
     // Empresa nova: tudo o que estava aberto ou digitado era da anterior (curso, trilha, matrícula,
     // seleção de funcionários, editores de aula e de questão, formulário de nova aula) e um pedido
-    // de confirmação pendente executaria a ação com os dados antigos.
+    // de confirmação pendente executaria a ação com os dados antigos. Um envio de arquivo em
+    // andamento também era da empresa anterior: é cancelado.
+    envioRef.current?.abort();
     setCarregando(true);
     setCursoSel(null);
     setMatriculaDetalheId(null);
@@ -258,6 +273,113 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
     } finally {
       gravandoRef.current.delete(chave);
       setGravando(new Set(gravandoRef.current));
+    }
+  };
+
+  // ------------------------------------------------- envio de arquivos (T30)
+  // Tela fechada no meio do envio: cancela (o arquivo não ficaria ligado a nenhuma aula).
+  useEffect(() => () => envioRef.current?.abort(), []);
+  // Fechar a aba ou recarregar a página no meio de um envio perderia o arquivo: o navegador pergunta.
+  const enviandoArquivo = !!envio?.arquivo;
+  useEffect(() => {
+    if (!enviandoArquivo) return undefined;
+    const avisar = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", avisar);
+    return () => window.removeEventListener("beforeunload", avisar);
+  }, [enviandoArquivo]);
+
+  // Começa um envio e devolve o controle de cancelamento. Quem chama confere `envioRef.current`
+  // antes (um envio por vez). `arquivo` vazio = só gravação (aula de texto ou YouTube).
+  const iniciarEnvio = (alvo, arquivo) => {
+    const controle = new AbortController();
+    envioRef.current = controle;
+    setEnvio({
+      alvo,
+      arquivo: arquivo?.name || null,
+      fase: arquivo ? "enviando" : "gravando",
+      percentual: 0,
+      enviado: 0,
+      total: arquivo?.size || 0,
+    });
+    return controle;
+  };
+  const mudarFaseDoEnvio = (fase) => setEnvio((atual) => (atual ? { ...atual, fase } : atual));
+  const encerrarEnvio = (controle) => {
+    if (envioRef.current !== controle) return;
+    envioRef.current = null;
+    setEnvio(null);
+  };
+  const cancelarEnvio = () => envioRef.current?.abort();
+  // Fechar o painel do curso no meio do envio cancelaria o arquivo: o RH confirma antes.
+  const fecharCurso = async () => {
+    if (envio?.arquivo && envio.fase !== "gravando") {
+      const sair = await confirmar({
+        titulo: "Cancelar o envio do arquivo?",
+        texto:
+          `O arquivo "${envio.arquivo}" ainda está sendo enviado. Se fechar agora, o envio é ` +
+          "cancelado e será preciso começar de novo.",
+        rotuloConfirmar: "Cancelar envio e fechar",
+        rotuloCancelar: "Continuar enviando",
+        destrutivo: true,
+      });
+      if (!sair) return;
+      cancelarEnvio();
+    }
+    setCursoSel(null);
+  };
+
+  // Sobe o arquivo para o bucket das aulas com a barra de progresso; devolve a referência
+  // "bucket/caminho" (é ela que vai para o banco). O percentual só vai para a tela quando muda de
+  // número inteiro: a tela é grande e não precisa redesenhar a cada pacote.
+  const subirArquivo = async (controle, arquivo) => {
+    let ultimo = -1;
+    const res = await subirArquivoComProgresso({
+      supabase,
+      chaveApi: import.meta.env.VITE_SUPABASE_ANON_KEY,
+      bucket: "treinamentos",
+      arquivo,
+      sinal: controle.signal,
+      aoProgredir: ({ enviado, total, percentual }) => {
+        if (percentual === ultimo) return;
+        ultimo = percentual;
+        setEnvio((atual) =>
+          atual && envioRef.current === controle ? { ...atual, percentual, enviado, total } : atual
+        );
+      },
+    });
+    return res.ref;
+  };
+
+  // Avisos de impacto (T30): antes de mudar gabarito, nota mínima ou aulas, o RH vê quantos alunos
+  // estão no meio do curso. Os números vêm do banco na hora (a lista da tela pode estar velha: o
+  // aluno abre o curso a qualquer momento). Se a consulta falhar, a mudança não segue (toast).
+  const impactoNoBanco = async (cursoId, aulaId) => {
+    const empresaId = cargas.empresaAtual();
+    if (!empresaId) throw new Error("sem empresa ativa");
+    const [mats, progressos] = await Promise.all([
+      sigo.entities.TreinamentoMatricula.filter({ empresa_id: empresaId, curso_id: cursoId }),
+      aulaId
+        ? sigo.entities.TreinamentoProgresso.filter(
+            { empresa_id: empresaId, aula_id: aulaId },
+            SEM_SOFT_DELETE
+          )
+        : Promise.resolve([]),
+    ]);
+    return resumirProgressoAula(mats, progressos);
+  };
+  // true = pode seguir (nada a avisar, ou o RH confirmou); false = parar (cancelou ou falhou)
+  const confirmarImpacto = async (tipo, { cursoId, aulaId, ehVideo }) => {
+    try {
+      const impacto = await impactoNoBanco(cursoId, aulaId);
+      const aviso = avisoDeMudanca(tipo, { ...impacto, ehVideo });
+      return aviso ? await confirmar(aviso) : true;
+    } catch (e) {
+      console.error(e);
+      toast.error("Não foi possível conferir os alunos em andamento: " + (e?.message || e));
+      return false;
     }
   };
 
@@ -319,6 +441,14 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       toast.error("Regularize os requisitos do curso antes de publicar");
       return;
     }
+    // nota mínima nova com alunos no meio do curso: o RH vê quantos antes de salvar (T30)
+    const gravado = cursoSel.id ? cursos.find((c) => c.id === cursoSel.id) : null;
+    if (
+      mudouNotaMinima(gravado, dados.nota_minima) &&
+      !(await confirmarImpacto("nota_minima", { cursoId: cursoSel.id }))
+    ) {
+      return;
+    }
     await gravar("curso", "Erro ao salvar o curso", async () => {
       if (cursoSel.id) {
         await sigo.entities.TreinamentoCurso.update(cursoSel.id, dados);
@@ -337,6 +467,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   };
 
   const adicionarAula = async () => {
+    if (envioRef.current) return; // um envio por vez (o botão também fica desabilitado)
     if (!cursoSel?.id) {
       toast.error("Salve o curso antes de adicionar aulas");
       return;
@@ -346,10 +477,11 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       return;
     }
     const empresaId = empresaAtiva.id;
-    const ordem = Math.max(0, ...aulasDoCurso(cursoSel.id).map((a) => a.ordem || 0)) + 1;
+    const cursoId = cursoSel.id;
+    const ordem = Math.max(0, ...aulasDoCurso(cursoId).map((a) => a.ordem || 0)) + 1;
     const base = {
       empresa_id: empresaId,
-      curso_id: cursoSel.id,
+      curso_id: cursoId,
       ordem,
       titulo: novaAula.titulo.trim(),
       modulo: novaAula.modulo.trim() || null,
@@ -357,69 +489,80 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
     };
     // PDF/texto: o tempo mínimo com a aula aberta é o que conta para concluir
     const tempoMinimo = Math.round(Number(novaAula.minutos || 0) * 60);
+
+    // Tudo o que dá para conferir sem gravar nada vem antes de subir qualquer arquivo (T30)
+    let youtube = null;
+    if (novaAula.tipo !== "video") {
+      if (!tempoMinimo) {
+        toast.error("Informe o tempo mínimo de leitura (minutos)");
+        return;
+      }
+      if (novaAula.tipo === "pdf") {
+        if (!novaAula.arquivo) {
+          toast.error("Anexe o PDF da aula");
+          return;
+        }
+      } else if (!novaAula.texto.trim()) {
+        toast.error("Escreva o texto da aula");
+        return;
+      }
+    } else if (!novaAula.arquivo) {
+      const ytId = extrairYouTubeId(novaAula.url);
+      if (!ytId) {
+        toast.error("Anexe o vídeo OU informe um link válido do YouTube");
+        return;
+      }
+      const duracao_seg = parseDuracao(novaAula.duracao);
+      if (!duracao_seg) {
+        toast.error("Informe a duração do vídeo em mm:ss");
+        return;
+      }
+      youtube = { ytId, duracao_seg };
+    }
+    const arquivo = novaAula.tipo === "texto" ? null : novaAula.arquivo;
+    if (arquivo) {
+      const valido = validarArquivoAula(arquivo, novaAula.tipo === "pdf" ? "pdf" : "video");
+      if (!valido.ok) {
+        toast.error(valido.erro);
+        return;
+      }
+    }
+    if (!(await confirmarImpacto("aula_nova", { cursoId }))) return;
+    if (envioRef.current) return; // outro envio começou enquanto o aviso estava na tela
+
+    const controle = iniciarEnvio("nova", arquivo);
     try {
-      if (novaAula.tipo !== "video") {
-        if (!tempoMinimo) {
-          toast.error("Informe o tempo mínimo de leitura (minutos)");
-          return;
-        }
-        let arquivo_ref = null;
-        if (novaAula.tipo === "pdf") {
-          if (!novaAula.arquivo) {
-            toast.error("Anexe o PDF da aula");
-            return;
-          }
-          setSubindoVideo(true);
-          const res = await sigo.integrations.Core.UploadFile({
-            file: novaAula.arquivo,
-            bucket: "treinamentos",
-          });
-          arquivo_ref = `${res.bucket}/${res.path}`;
-        } else if (!novaAula.texto.trim()) {
-          toast.error("Escreva o texto da aula");
-          return;
-        }
-        await sigo.entities.TreinamentoAula.create({
-          ...base,
+      let dados;
+      if (novaAula.tipo === "pdf") {
+        const arquivo_ref = await subirArquivo(controle, arquivo);
+        mudarFaseDoEnvio("gravando");
+        dados = {
           fonte: "upload",
           youtube_id: null,
           arquivo_ref,
-          conteudo_texto: novaAula.tipo === "texto" ? novaAula.texto.trim() : null,
+          conteudo_texto: null,
           duracao_seg: tempoMinimo,
-        });
-      } else if (novaAula.arquivo) {
-        // HOSPEDAGEM PRÓPRIA: vídeo sobe pro bucket 'treinamentos' (até 1GB)
-        setSubindoVideo(true);
-        const duracao_seg = await lerDuracaoVideo(novaAula.arquivo);
-        const res = await sigo.integrations.Core.UploadFile({
-          file: novaAula.arquivo,
-          bucket: "treinamentos",
-        });
-        await sigo.entities.TreinamentoAula.create({
-          ...base,
+        };
+      } else if (novaAula.tipo === "texto") {
+        dados = {
           fonte: "upload",
-          video_ref: `${res.bucket}/${res.path}`,
           youtube_id: null,
-          duracao_seg,
-        });
+          arquivo_ref: null,
+          conteudo_texto: novaAula.texto.trim(),
+          duracao_seg: tempoMinimo,
+        };
+      } else if (arquivo) {
+        // HOSPEDAGEM PRÓPRIA: vídeo sobe pro bucket 'treinamentos' (até 1GB)
+        mudarFaseDoEnvio("lendo");
+        const duracao_seg = await lerDuracaoVideo(arquivo);
+        mudarFaseDoEnvio("enviando");
+        const video_ref = await subirArquivo(controle, arquivo);
+        mudarFaseDoEnvio("gravando");
+        dados = { fonte: "upload", video_ref, youtube_id: null, duracao_seg };
       } else {
-        const ytId = extrairYouTubeId(novaAula.url);
-        if (!ytId) {
-          toast.error("Anexe o vídeo OU informe um link válido do YouTube");
-          return;
-        }
-        const duracao_seg = parseDuracao(novaAula.duracao);
-        if (!duracao_seg) {
-          toast.error("Informe a duração do vídeo em mm:ss");
-          return;
-        }
-        await sigo.entities.TreinamentoAula.create({
-          ...base,
-          fonte: "youtube",
-          youtube_id: ytId,
-          duracao_seg,
-        });
+        dados = { fonte: "youtube", youtube_id: youtube.ytId, duracao_seg: youtube.duracao_seg };
       }
+      await sigo.entities.TreinamentoAula.create({ ...base, ...dados });
       // mantém o módulo para a próxima aula do mesmo bloco (a menos que a empresa tenha mudado
       // durante o envio: o formulário já foi limpo e o módulo é da empresa anterior)
       if (cargas.mesmaEmpresa(empresaId)) {
@@ -428,9 +571,10 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       toast.success("Aula adicionada");
       recarregar();
     } catch (e) {
-      toast.error("Erro ao adicionar aula: " + (e?.message || e));
+      if (e?.cancelado) toast.info("Envio cancelado. Nenhuma aula foi criada.");
+      else toast.error("Erro ao adicionar aula: " + (e?.message || e));
     } finally {
-      setSubindoVideo(false);
+      encerrarEnvio(controle);
     }
   };
 
@@ -536,14 +680,29 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
     });
   };
 
+  // Abre o editor da aula. Aula do YouTube mostra o link para trocar (a duração segue no mesmo editor).
+  const abrirEdicaoAula = (a) =>
+    setAulaEditando({
+      id: a.id,
+      tipo: a.tipo || "video",
+      youtube: (a.tipo || "video") === "video" && a.fonte === "youtube",
+      link: a.fonte === "youtube" && a.youtube_id ? `https://youtu.be/${a.youtube_id}` : "",
+      titulo: a.titulo || "",
+      modulo: a.modulo || "",
+      minutos: a.duracao_seg ? Math.round(a.duracao_seg / 60) : "",
+      duracao: a.duracao_seg ? formatDuracao(a.duracao_seg) : "",
+    });
+
   const salvarAulaEdicao = async () => {
     const titulo = (aulaEditando.titulo || "").trim();
     if (!titulo) {
       toast.error("Informe o título da aula");
       return;
     }
+    const original = aulas.find((a) => a.id === aulaEditando.id);
+    const ehVideo = aulaEditando.tipo === "video";
     const patch = { titulo, modulo: (aulaEditando.modulo || "").trim() || null };
-    if (aulaEditando.tipo !== "video") {
+    if (!ehVideo) {
       const seg = Math.round(Number(aulaEditando.minutos || 0) * 60);
       if (!seg) {
         toast.error("Informe o tempo mínimo de leitura (minutos)");
@@ -558,6 +717,29 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       }
       patch.duracao_seg = seg;
     }
+    // aula do YouTube: o link novo troca o vídeo, mantendo a posição (T30)
+    if (aulaEditando.youtube) {
+      const ytId = extrairYouTubeId(aulaEditando.link);
+      if (!ytId) {
+        toast.error("Informe um link válido do YouTube");
+        return;
+      }
+      if (ytId !== original?.youtube_id) patch.youtube_id = ytId;
+    }
+    // vídeo ou tempo novo com alunos no meio desta aula: o RH vê quantos antes de salvar (T30)
+    const mudouVideo = !!patch.youtube_id;
+    const mudouTempo = !!original && patch.duracao_seg !== (Number(original.duracao_seg) || 0);
+    if (
+      original &&
+      (mudouVideo || mudouTempo) &&
+      !(await confirmarImpacto(mudouVideo ? "aula_trocar" : "aula_duracao", {
+        cursoId: original.curso_id,
+        aulaId: original.id,
+        ehVideo,
+      }))
+    ) {
+      return;
+    }
     const editada = aulaEditando; // o editor que o RH mandou salvar
     await gravar("aula", "Erro ao salvar a aula", async () => {
       await sigo.entities.TreinamentoAula.update(editada.id, patch);
@@ -569,10 +751,83 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
     });
   };
 
+  // Troca o arquivo de uma aula de vídeo hospedado ou de PDF, mantendo a posição, o título e o
+  // módulo (T30). O arquivo antigo continua no Storage: é o que quem já assistiu viu.
+  const trocarArquivoDaAula = async (aula, arquivo) => {
+    const tipoArquivo = tipoDeArquivoDaAula(aula);
+    if (!arquivo || !tipoArquivo) return;
+    if (envioRef.current) {
+      toast.info("Já há um envio em andamento. Espere terminar ou cancele.");
+      return;
+    }
+    const valido = validarArquivoAula(arquivo, tipoArquivo);
+    if (!valido.ok) {
+      toast.error(valido.erro);
+      return;
+    }
+    const ehVideo = tipoArquivo === "video";
+    const cursoId = aula.curso_id;
+    if (!(await confirmarImpacto("aula_trocar", { cursoId, aulaId: aula.id, ehVideo }))) return;
+    if (envioRef.current) return; // outro envio começou enquanto o aviso estava na tela
+
+    const controle = iniciarEnvio(aula.id, arquivo);
+    try {
+      let duracao_seg = null;
+      if (ehVideo) {
+        mudarFaseDoEnvio("lendo");
+        duracao_seg = await lerDuracaoVideo(arquivo);
+        mudarFaseDoEnvio("enviando");
+      }
+      const ref = await subirArquivo(controle, arquivo);
+      mudarFaseDoEnvio("gravando");
+      await sigo.entities.TreinamentoAula.update(
+        aula.id,
+        dadosDaTrocaDeArquivo(tipoArquivo, ref, duracao_seg)
+      );
+      // o editor desta aula, se estiver aberto, passa a mostrar a duração nova: salvar o título
+      // depois não pode devolver a duração do vídeo antigo
+      if (ehVideo) {
+        setAulaEditando((atual) =>
+          atual?.id === aula.id ? { ...atual, duracao: formatDuracao(duracao_seg) } : atual
+        );
+      }
+      if (ehVideo && aula.legenda_ref) {
+        toast.success(
+          "Vídeo trocado na mesma posição. A legenda anterior continua anexada: se o conteúdo " +
+            "mudou, troque a legenda pelo menu da aula.",
+          { duration: DURACAO_AVISO_BLOQUEIO_MS }
+        );
+      } else {
+        toast.success(`${ehVideo ? "Vídeo" : "PDF"} trocado na mesma posição`);
+      }
+      recarregar();
+    } catch (e) {
+      if (e?.cancelado) toast.info("Envio cancelado. A aula continua com o arquivo anterior.");
+      else toast.error("Erro ao trocar o arquivo: " + (e?.message || e));
+    } finally {
+      encerrarEnvio(controle);
+    }
+  };
+
   const removerAula = async (aula) => {
+    if (envio?.alvo === aula.id) {
+      toast.info("Esta aula está recebendo um arquivo. Cancele o envio antes de removê-la.");
+      return;
+    }
+    // quantos alunos têm progresso nesta aula (e quantos estão no meio do curso) vai no aviso
+    let impacto;
+    try {
+      impacto = await impactoNoBanco(aula.curso_id, aula.id);
+    } catch (e) {
+      console.error(e);
+      toast.error(
+        "Não foi possível conferir o progresso dos alunos nesta aula: " + (e?.message || e)
+      );
+      return;
+    }
     const confirmado = await confirmar({
       titulo: "Remover a aula?",
-      texto: `Remover a aula "${aula.titulo}" deste curso?`,
+      texto: textoConfirmarRemocaoAula({ tituloAula: aula.titulo, ...impacto }),
       rotuloConfirmar: "Remover aula",
       destrutivo: true,
     });
@@ -623,6 +878,17 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
     }
     const dados = resultado.dados;
     const aberta = novaQuestao; // o formulário que o RH mandou salvar
+    // gabarito diferente com alunos no meio do curso: o RH vê quantos antes de salvar (T30)
+    if (
+      novaQuestao.id &&
+      mudouGabarito(
+        questoes.find((q) => q.id === novaQuestao.id),
+        dados
+      ) &&
+      !(await confirmarImpacto("gabarito", { cursoId: cursoSel.id }))
+    ) {
+      return;
+    }
     // falhou: o formulário continua aberto, com o que o RH digitou
     await gravar("questao", "Erro ao salvar a questão", async () => {
       if (novaQuestao.id) {
@@ -1178,7 +1444,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       })()}
 
       {/* Sheet: curso + aulas */}
-      <Sheet open={!!cursoSel} onOpenChange={(v) => !v && setCursoSel(null)}>
+      <Sheet open={!!cursoSel} onOpenChange={(v) => !v && fecharCurso()}>
         <SheetContent className="left-0 w-full max-w-none overflow-y-auto sm:max-w-none lg:left-0 lg:w-full">
           {cursoSel && (
             <>
@@ -1488,8 +1754,6 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                       <Video className="w-4 h-4" /> Aulas
                     </h4>
                     {numerarAulas(aulasDoCurso(cursoSel.id)).map((a, i, lista) => {
-                      const Icone =
-                        a.tipo === "pdf" ? FileText : a.tipo === "texto" ? BookOpen : Video;
                       const novoModulo = a.modulo && a.modulo !== lista[i - 1]?.modulo;
                       return (
                         <React.Fragment key={a.id}>
@@ -1498,107 +1762,23 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                               {a.modulo}
                             </p>
                           )}
-                          <div className="flex items-center gap-2 text-sm bg-slate-50 rounded p-2">
-                            <Icone className="w-4 h-4 text-slate-400 shrink-0" />
-                            <span className="flex-1">
-                              {a.numero}. {a.titulo}
-                              {a.tipo !== "video" && a.duracao_seg ? (
-                                <span className="text-xs text-slate-400">
-                                  {" "}
-                                  · mín. {Math.round(a.duracao_seg / 60)} min
-                                </span>
-                              ) : null}
-                            </span>
-                            {videoSemDuracao(a) && (
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] px-1.5 py-0 text-amber-700 border-amber-300"
-                                title="Vídeo sem duração cadastrada: o aluno não consegue concluir esta aula. Edite a aula e informe a duração (mm:ss)."
-                              >
-                                sem duração
-                              </Badge>
-                            )}
-                            {a.tipo === "video" && a.legenda_ref && (
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] px-1.5 py-0"
-                                title="Aula com legenda"
-                              >
-                                CC
-                              </Badge>
-                            )}
-                            {a.tipo === "video" && (
-                              <label
-                                className="text-xs text-slate-500 hover:text-slate-800 cursor-pointer"
-                                title="Anexar ou trocar a legenda (.srt ou .vtt)"
-                              >
-                                {a.legenda_ref ? "trocar legenda" : "+ legenda"}
-                                <input
-                                  type="file"
-                                  accept=".srt,.vtt"
-                                  className="hidden"
-                                  onChange={(e) => {
-                                    enviarLegenda(a, e.target.files?.[0]);
-                                    e.target.value = "";
-                                  }}
-                                />
-                              </label>
-                            )}
-                            {a.tipo !== "texto" && (
-                              <button
-                                type="button"
-                                onClick={() => abrirVideo(a)}
-                                className="text-xs text-sky-600 hover:underline"
-                              >
-                                {a.tipo === "pdf" ? "ver PDF" : "ver vídeo"}
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              title="Subir na ordem"
-                              aria-label={`Subir a aula ${a.numero} na ordem`}
-                              disabled={i === 0 || gravando.has("ordem")}
-                              onClick={() => moverAula(a, -1)}
-                              className={CLASSE_SETA_ORDEM}
-                            >
-                              <ArrowUp className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              title="Descer na ordem"
-                              aria-label={`Descer a aula ${a.numero} na ordem`}
-                              disabled={i === lista.length - 1 || gravando.has("ordem")}
-                              onClick={() => moverAula(a, 1)}
-                              className={CLASSE_SETA_ORDEM}
-                            >
-                              <ArrowDown className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              title="Editar aula"
-                              aria-label={`Editar a aula ${a.numero}`}
-                              onClick={() =>
-                                setAulaEditando({
-                                  id: a.id,
-                                  tipo: a.tipo || "video",
-                                  titulo: a.titulo || "",
-                                  modulo: a.modulo || "",
-                                  minutos: a.duracao_seg ? Math.round(a.duracao_seg / 60) : "",
-                                  duracao: a.duracao_seg ? formatDuracao(a.duracao_seg) : "",
-                                })
-                              }
-                            >
-                              <Pencil className="w-4 h-4 text-slate-400 hover:text-slate-800" />
-                            </button>
-                            <button
-                              type="button"
-                              title="Remover aula"
-                              aria-label={`Remover a aula ${a.numero}`}
-                              onClick={() => removerAula(a)}
-                            >
-                              <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
-                            </button>
-                          </div>
+                          <AulaLinhaEad
+                            aula={a}
+                            primeira={i === 0}
+                            ultima={i === lista.length - 1}
+                            ordemOcupada={gravando.has("ordem")}
+                            envioEmCurso={!!envio}
+                            onSubir={() => moverAula(a, -1)}
+                            onDescer={() => moverAula(a, 1)}
+                            onEditar={() => abrirEdicaoAula(a)}
+                            onVer={() => abrirVideo(a)}
+                            onRemover={() => removerAula(a)}
+                            onTrocarArquivo={(arquivo) => trocarArquivoDaAula(a, arquivo)}
+                            onLegenda={(arquivo) => enviarLegenda(a, arquivo)}
+                          />
+                          {envio?.alvo === a.id && (
+                            <EnvioProgressoEad envio={envio} onCancelar={cancelarEnvio} />
+                          )}
                           {aulaEditando?.id === a.id && (
                             <div className="rounded-lg border p-3 space-y-2 bg-white">
                               <div className="grid grid-cols-2 gap-2">
@@ -1610,6 +1790,17 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                                   }
                                   className="h-9 col-span-2"
                                 />
+                                {aulaEditando.youtube && (
+                                  <Input
+                                    placeholder="Link do YouTube (não listado)"
+                                    aria-label="Link do vídeo no YouTube"
+                                    value={aulaEditando.link}
+                                    onChange={(e) =>
+                                      setAulaEditando({ ...aulaEditando, link: e.target.value })
+                                    }
+                                    className="h-9 col-span-2"
+                                  />
+                                )}
                                 <Input
                                   placeholder="Módulo"
                                   value={aulaEditando.modulo}
@@ -1652,7 +1843,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                                 <Button
                                   size="sm"
                                   onClick={salvarAulaEdicao}
-                                  disabled={gravando.has("aula")}
+                                  disabled={gravando.has("aula") || envio?.alvo === aulaEditando.id}
                                 >
                                   Salvar aula
                                 </Button>
@@ -1716,11 +1907,13 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                             <label className="h-9 flex items-center gap-2 px-3 rounded-md border border-slate-200 text-sm text-slate-600 cursor-pointer hover:border-slate-400 truncate">
                               <FileText className="w-4 h-4 shrink-0" />
                               <span className="truncate">
-                                {novaAula.arquivo ? novaAula.arquivo.name : "Anexar PDF da aula"}
+                                {novaAula.arquivo
+                                  ? novaAula.arquivo.name
+                                  : "Anexar PDF da aula (até 100 MB)"}
                               </span>
                               <input
                                 type="file"
-                                accept="application/pdf"
+                                accept={ACCEPT_AULA.pdf}
                                 className="hidden"
                                 onChange={(e) =>
                                   setNovaAula({ ...novaAula, arquivo: e.target.files?.[0] || null })
@@ -1752,9 +1945,9 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                               title="Adicionar aula"
                               aria-label="Adicionar aula"
                               onClick={adicionarAula}
-                              disabled={subindoVideo}
+                              disabled={!!envio}
                             >
-                              {subindoVideo ? (
+                              {envio?.alvo === "nova" ? (
                                 <Loader2 className="w-4 h-4 animate-spin" />
                               ) : (
                                 <Plus className="w-4 h-4" />
@@ -1764,24 +1957,26 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                         </div>
                       )}
                       {novaAula.tipo === "video" && (
-                        <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
+                        <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[1fr_auto_1fr_auto]">
                           <label className="h-9 flex items-center gap-2 px-3 rounded-md border border-slate-200 text-sm text-slate-600 cursor-pointer hover:border-slate-400 truncate">
                             <Video className="w-4 h-4 shrink-0" />
                             <span className="truncate">
                               {novaAula.arquivo
                                 ? novaAula.arquivo.name
-                                : "Anexar vídeo (hospedagem própria, até 1GB)"}
+                                : "Anexar vídeo MP4 ou WebM (até 1 GB)"}
                             </span>
                             <input
                               type="file"
-                              accept="video/*"
+                              accept={ACCEPT_AULA.video}
                               className="hidden"
                               onChange={(e) =>
                                 setNovaAula({ ...novaAula, arquivo: e.target.files?.[0] || null })
                               }
                             />
                           </label>
-                          <span className="text-xs text-slate-400">ou</span>
+                          <span className="text-center text-xs text-slate-400 sm:text-left">
+                            ou
+                          </span>
                           <Input
                             placeholder="Link do YouTube (não listado)"
                             value={novaAula.url}
@@ -1806,15 +2001,20 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                             title="Adicionar aula"
                             aria-label="Adicionar aula"
                             onClick={adicionarAula}
-                            disabled={subindoVideo}
+                            disabled={!!envio}
+                            className="w-full sm:w-auto"
                           >
-                            {subindoVideo ? (
+                            {envio?.alvo === "nova" ? (
                               <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
                               <Plus className="w-4 h-4" />
                             )}
+                            <span className="sm:hidden">Adicionar aula</span>
                           </Button>
                         </div>
+                      )}
+                      {envio?.alvo === "nova" && (
+                        <EnvioProgressoEad envio={envio} onCancelar={cancelarEnvio} />
                       )}
                     </div>
                     <p className="text-xs text-slate-400">
