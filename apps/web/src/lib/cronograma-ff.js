@@ -156,9 +156,28 @@ export function linhaFecha(linha) {
 }
 
 /**
+ * Centavos da etapa pelo maior resto, para linha que fecha 100,00% (Σ centésimos = 10000):
+ * cada mês recebe ⌊|subtotal| × % ÷ 100⌋ e os centavos que faltam vão, um a um, aos meses de
+ * maior resto (empate: o mais cedo). A soma é exata, mês com 0% fica com 0 e nenhuma célula
+ * troca de sinal. Em BigInt: só roda com etapa pequena, mas não depende disso.
+ */
+function maiorRestoDaEtapa(cents, cs) {
+  const total = BigInt(Math.abs(cents));
+  const base = cs.map((c) => (total * BigInt(c)) / 10000n);
+  const restos = cs.map((c, j) => ({ j, resto: (total * BigInt(c)) % 10000n }));
+  let falta = total - base.reduce((s, v) => s + v, 0n);
+  restos.sort((x, y) => (x.resto === y.resto ? x.j - y.j : x.resto < y.resto ? 1 : -1));
+  for (let k = 0; falta > 0n; k++, falta--) base[restos[k].j] += 1n;
+  return base.map((v) => Number(cents < 0 ? -v : v));
+}
+
+/**
  * R$ de cada mês da etapa, em centavos: arredondar(subtotal × % ÷ 100).
  * Se a linha fecha 100,00%, o último mês com % > 0 recebe a diferença, e a linha soma
  * exatamente o subtotal. Se não fecha, cada célula é só o arredondamento dela.
+ * Etapa muito pequena (ex.: 3 centavos em 6 meses): se a diferença deixaria o último mês
+ * negativo (com o sinal trocado, numa etapa negativa), a linha inteira vai pelo maior resto,
+ * com a mesma soma exata e nenhuma célula negativa. Nos outros casos nada muda.
  */
 export function valoresDaLinha(linha, centavosEtapa) {
   const cents = Math.round(Number(centavosEtapa) || 0);
@@ -170,7 +189,9 @@ export function valoresDaLinha(linha, centavosEtapa) {
       if (c > 0) ultimo = j;
     });
     const outros = valores.reduce((s, v, j) => (j === ultimo ? s : s + v), 0);
-    valores[ultimo] = cents - outros;
+    const diferenca = cents - outros;
+    if (diferenca * Math.sign(cents) < 0) return maiorRestoDaEtapa(cents, cs);
+    valores[ultimo] = diferenca;
   }
   return valores;
 }

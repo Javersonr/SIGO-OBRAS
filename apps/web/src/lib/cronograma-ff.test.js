@@ -174,6 +174,33 @@ describe("valoresDaLinha", () => {
     expect(valoresDaLinha([], 5000)).toEqual([]);
     expect(valoresDaLinha([0, 0], 5000)).toEqual([0, 0]);
   });
+  it("etapa tão pequena que a diferença deixaria o último mês negativo: maior resto", () => {
+    // 3 centavos em 6 meses: 5 × 0,5001 → 1 cada, e o último ficaria com 3 − 5 = −2
+    const tres = valoresDaLinha([16.67, 16.67, 16.67, 16.67, 16.67, 16.65], 3);
+    expect(tres).toEqual([1, 1, 1, 0, 0, 0]);
+    // R$ 1,05 em 12 meses (11 × 9,05% e 0,45%): 11 × 9,5025 → 10 cada, e o último ficaria −5
+    const pct = [...new Array(11).fill(9.05), 0.45];
+    const umReal = valoresDaLinha(pct, 105);
+    expect(umReal).toEqual([10, 10, 10, 10, 10, 10, 9, 9, 9, 9, 9, 0]);
+    for (const v of [tres, umReal]) expect(v.every((c) => c >= 0)).toBe(true);
+    expect(soma(tres)).toBe(3);
+    expect(soma(umReal)).toBe(105);
+    // etapa negativa: a mesma regra, com o sinal da etapa
+    expect(valoresDaLinha([16.67, 16.67, 16.67, 16.67, 16.67, 16.65], -3)).toEqual([
+      -1, -1, -1, 0, 0, 0,
+    ]);
+  });
+  it("sem célula negativa, a diferença continua no último mês com % > 0 (Itatinga, Task 7)", () => {
+    // 6 × 25% = 1,5 → 2, 2, 2 e o último com 0: não é negativo, fica como está
+    expect(valoresDaLinha([25, 25, 25, 25], 6)).toEqual([2, 2, 2, 0]);
+    // os números do roteiro da Task 7 (subtotal R$ 1.417.472,96, 20/35/30/15)
+    expect(valoresDaLinha([20, 35, 30, 15], 141747296)).toEqual([
+      28349459, 49611554, 42524189, 21262094,
+    ]);
+    const dezoito = valoresDaLinha(reperiodizarLinha([20, 35, 30, 15], 18), 141747296);
+    expect(dezoito[17]).toBe(4720181);
+    expect(soma(dezoito)).toBe(141747296);
+  });
 });
 
 describe("resumoCronograma", () => {
