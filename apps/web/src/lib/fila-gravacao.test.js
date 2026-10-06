@@ -131,6 +131,67 @@ describe("criarFilaGravacao", () => {
     ]);
   });
 
+  it("descarregar sem nada esperando e com uma gravação em voo resolve quando ela termina", async () => {
+    const g1 = adiada();
+    const g2 = adiada();
+    const gravar = vi.fn().mockReturnValueOnce(g1.promessa).mockReturnValueOnce(g2.promessa);
+    const fila = criarFilaGravacao({ gravar });
+    fila.gravarJa("op1", 1);
+    let resultado;
+    fila.descarregar().then((ok) => {
+      resultado = ok;
+    });
+    await microtarefas();
+    expect(resultado).toBeUndefined();
+    g1.resolver();
+    await microtarefas();
+    expect(resultado).toBe(true);
+    // com a gravação em voo falhando, resolve false
+    fila.gravarJa("op1", 2);
+    const p = fila.descarregar();
+    g2.rejeitar(new Error("sem rede"));
+    await expect(p).resolves.toBe(false);
+    expect(gravar).toHaveBeenCalledTimes(2);
+  });
+
+  it("sem aoFalhar: a falha resolve false e a fila segue gravando", async () => {
+    const gravar = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("sem rede"))
+      .mockResolvedValue(undefined);
+    const fila = criarFilaGravacao({ gravar });
+    await expect(fila.gravarJa("op1", 1)).resolves.toBe(false);
+    expect(fila.ocupada()).toBe(false);
+    await expect(fila.gravarJa("op1", 2)).resolves.toBe(true);
+    expect(gravar.mock.calls).toEqual([
+      ["op1", 1],
+      ["op1", 2],
+    ]);
+  });
+
+  it("aoFalhar que lança não deixa a fila travada", async () => {
+    const gravar = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("sem rede"))
+      .mockResolvedValue(undefined);
+    const aoFalhar = vi.fn(() => {
+      throw new Error("erro no aviso");
+    });
+    const erroNoConsole = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const fila = criarFilaGravacao({ gravar, aoFalhar });
+      await expect(fila.gravarJa("op1", 1)).resolves.toBe(false);
+      expect(aoFalhar).toHaveBeenCalledTimes(1);
+      expect(fila.ocupada()).toBe(false);
+      await expect(fila.gravarJa("op1", 2)).resolves.toBe(true);
+      await expect(fila.descarregar()).resolves.toBe(true);
+      expect(gravar).toHaveBeenCalledTimes(2);
+      expect(erroNoConsole).toHaveBeenCalledTimes(1);
+    } finally {
+      erroNoConsole.mockRestore();
+    }
+  });
+
   it("a falha de uma chave não descarta a outra", async () => {
     const gravar = vi.fn(async (chave) => {
       if (chave === "op1") throw new Error("RLS");

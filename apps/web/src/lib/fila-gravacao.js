@@ -7,7 +7,8 @@
  *   termina, e o banco nunca fica com um valor mais velho que o da tela.
  * - Falha: chama `aoFalhar(chave, erro)` e descarta, da mesma chave, o valor que esperava e os
  *   que já estavam na fila depois do que falhou (eles contêm a edição que falhou). Quem usa a
- *   fila volta a tela para o último valor gravado.
+ *   fila volta a tela para o último valor gravado. Um erro dentro do `aoFalhar` vai para o
+ *   console e a fila segue.
  *
  * A chave separa os donos dos valores (o id da oportunidade): agendar outra chave manda para a
  * fila, na hora, o valor que esperava, e a falha de uma chave não descarta as outras.
@@ -47,7 +48,13 @@ export function criarFilaGravacao({ gravar, esperaMs = 1000, aoFalhar } = {}) {
       } catch (erro) {
         epocas.set(chave, epocaDe(chave) + 1);
         if (esperando?.chave === chave) cancelarEspera();
-        aoFalhar?.(chave, erro);
+        // um erro dentro do aviso não pode rejeitar a fila: as gravações seguintes seriam
+        // puladas para sempre e `ocupada()` ficaria true
+        try {
+          aoFalhar?.(chave, erro);
+        } catch (erroNoAviso) {
+          console.error("Erro no aviso de falha da fila de gravação:", erroNoAviso);
+        }
         return false;
       } finally {
         naFila -= 1;
