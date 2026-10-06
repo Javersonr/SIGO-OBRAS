@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import {
   HardHat,
   Loader2,
-  CheckCircle2,
   GraduationCap,
   LogOut,
   KeyRound,
@@ -30,6 +29,11 @@ import {
 import { LoginPortal, TrocarSenhaPortal } from "@/components/portal-funcionario/LoginPortal";
 import CursoPortal from "@/components/portal-funcionario/CursoPortal";
 import DocumentosPortal from "@/components/portal-funcionario/DocumentosPortal";
+import {
+  EntregasPendentes,
+  HistoricoDeEntregas,
+} from "@/components/portal-funcionario/CienciasPortal";
+import { separarCiencias } from "@/lib/portal-ciencias";
 
 /**
  * Portal do Funcionário — treinamentos EAD, ciência de entregas e certificados.
@@ -198,7 +202,7 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
 
   const cursos = dados?.cursos || [];
   const { andamento, concluidos } = agruparMatriculas(cursos);
-  const pendentes = (dados?.ciencias || []).filter((c) => c.status === "pendente");
+  const { pendentes, confirmadas } = separarCiencias(dados?.ciencias);
 
   const cartaoDoCurso = (c) => {
     const { total, feitas, percentual, semAulas } = progressoDoCurso(c.aulas);
@@ -384,48 +388,7 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
                   </div>
                 )}
 
-                {pendentes.length > 0 && (
-                  <Card className="border-amber-300">
-                    <CardContent className="p-4 space-y-3">
-                      <p className="font-semibold text-amber-800">
-                        📋 Você tem entregas aguardando sua ciência:
-                      </p>
-                      {pendentes.map((c) => (
-                        <div key={c.id} className="border rounded-lg p-3 bg-amber-50 space-y-2">
-                          <p className="text-sm">
-                            <Badge variant="outline" className="mr-2">
-                              {c.tipo}
-                            </Badge>
-                            {c.descricao}
-                          </p>
-                          {Array.isArray(c.itens) && c.itens.length > 0 && (
-                            <ul className="text-sm text-slate-700 list-disc pl-5">
-                              {c.itens.map((it, i) => (
-                                <li key={i}>
-                                  {it.quantidade ? `${it.quantidade}× ` : ""}
-                                  {it.descricao || it.nome}
-                                  {it.codigo ? ` (${it.codigo})` : ""}
-                                  {it.ca ? ` · CA ${it.ca}` : ""}
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                          <Button
-                            className="w-full bg-emerald-600 hover:bg-emerald-700"
-                            onClick={() => darCiencia(c.id)}
-                          >
-                            <CheckCircle2 className="w-4 h-4 mr-1" /> Confirmo o recebimento (dou
-                            ciência)
-                          </Button>
-                          <p className="text-[11px] text-amber-700">
-                            Ao confirmar, ficam registrados seu login, data/hora e aparelho — vale
-                            como assinatura eletrônica (Lei 14.063/2020).
-                          </p>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                )}
+                <EntregasPendentes pendentes={pendentes} onConfirmar={darCiencia} />
 
                 {cursos.length === 0 && (
                   <Card>
@@ -440,6 +403,8 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
                 {andamento.map(cartaoDoCurso)}
                 {concluidos.length > 0 && tituloGrupo("Concluídos")}
                 {concluidos.map(cartaoDoCurso)}
+
+                <HistoricoDeEntregas confirmadas={confirmadas} />
               </>
             )}
           </>

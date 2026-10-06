@@ -384,7 +384,7 @@ export function resumoDoResultado(resultado) {
     return {
       aprovada,
       titulo: placar ?? "Resultado: satisfatório",
-      mensagem: "🎉 Aprovado! Veja abaixo a correção comentada.",
+      mensagem: "Aprovado! Veja abaixo a correção comentada.",
       tentativas: null,
       esgotada: false,
     };

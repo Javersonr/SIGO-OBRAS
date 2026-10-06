@@ -69,3 +69,37 @@ export function avisoDeIntegridade(resultado) {
     "não se aplica a ele."
   );
 }
+
+// ---------------------------------------------------------------- código de autenticidade
+
+const TAMANHO_CODIGO = 12;
+
+/**
+ * Máscara do campo do código: só A-Z e 0-9 (como o servidor, que descarta o resto), em maiúsculas, no
+ * máximo 12 caracteres e com hífen a cada 4 (XXXX-XXXX-XXXX). O hífen só entra quando vem o caractere
+ * seguinte, para apagar o último caractere não ficar preso num hífen. Serve para digitar e para colar
+ * (com ou sem hífen) e dá o mesmo resultado se aplicada de novo.
+ */
+export function mascararCodigo(valor) {
+  const texto = typeof valor === "string" || typeof valor === "number" ? String(valor) : "";
+  const limpo = texto
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, TAMANHO_CODIGO);
+  return limpo.match(/.{1,4}/g)?.join("-") ?? "";
+}
+
+/** O código tem os 12 caracteres (a consulta só faz sentido assim). */
+export function codigoCompleto(valor) {
+  return mascararCodigo(valor).replace(/-/g, "").length === TAMANHO_CODIGO;
+}
+
+/**
+ * Endereço da própria página sem o `?codigo=` do QR (caminho + demais parâmetros + #trecho, sem o
+ * domínio). "Consultar outro código" o usa para um recarregamento não consultar o código antigo.
+ */
+export function urlSemCodigo(href) {
+  const u = new URL(href, "http://localhost");
+  u.searchParams.delete("codigo");
+  return u.pathname + u.search + u.hash;
+}

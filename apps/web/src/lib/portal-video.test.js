@@ -468,8 +468,8 @@ describe("avisos que pedem o play (retomada e link renovado)", () => {
   it("qualquer outro aviso fica (velocidade, aula concluída, erro de leitura...)", () => {
     for (const outro of [
       AVISO_VELOCIDADE,
-      "✅ Aula concluída — a próxima já está liberada.",
-      "🎉 Curso concluído!",
+      "Aula concluída — a próxima já está liberada.",
+      "Curso concluído!",
       "Retomamos o vídeo",
       "",
       null,

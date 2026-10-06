@@ -217,12 +217,12 @@ export default function CursoPortal({
         // sem os dados novos a tela não sabe o que foi liberado: só afirma o que o servidor confirmou
         setAviso(
           !novos
-            ? "✅ Aula concluída."
+            ? "Aula concluída."
             : r.curso_concluido
-              ? "🎉 Curso concluído!"
+              ? "Curso concluído!"
               : r.precisa_avaliacao
-                ? "✅ Todas as aulas concluídas — agora faça a avaliação final."
-                : "✅ Aula concluída — a próxima já está liberada."
+                ? "Todas as aulas concluídas — agora faça a avaliação final."
+                : "Aula concluída — a próxima já está liberada."
         );
       } else if (fim && a.tipo === "video" && !r.aula_concluida) {
         // acabou com menos do mínimo contado (2x, 1,5x, trechos pulados): diz quanto foi contado
@@ -974,7 +974,7 @@ export default function CursoPortal({
           !mat.avaliacao_aprovada && (
             <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 space-y-2">
               <p className="text-sm text-violet-900">
-                📝 Avaliação final
+                Avaliação final
                 {av.total_questoes
                   ? ` · ${av.total_questoes} ${av.total_questoes === 1 ? "questão" : "questões"}`
                   : ""}{" "}

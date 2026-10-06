@@ -2,8 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   apresentacaoDoResultado,
   avisoDeIntegridade,
+  codigoCompleto,
   dataBr,
+  mascararCodigo,
   situacaoDoResultado,
+  urlSemCodigo,
 } from "./validacao-certificado";
 
 // Dados sintéticos: só o que a página usa para decidir o estado.
@@ -88,5 +91,77 @@ describe("avisoDeIntegridade", () => {
   it("servidor antigo (sem o campo integro) não mostra aviso", () => {
     expect(avisoDeIntegridade({ encontrado: true, valido: true })).toBeNull();
     expect(avisoDeIntegridade(null)).toBeNull();
+  });
+});
+
+describe("mascararCodigo (campo do código de autenticidade, XXXX-XXXX-XXXX)", () => {
+  it("coloca os hífens sozinho e deixa tudo em maiúsculas", () => {
+    expect(mascararCodigo("abcd1234efgh")).toBe("ABCD-1234-EFGH");
+    expect(mascararCodigo("ABCD-1234-EFGH")).toBe("ABCD-1234-EFGH");
+  });
+
+  it("digitando: o hífen só aparece quando vem o próximo caractere", () => {
+    expect(mascararCodigo("a")).toBe("A");
+    expect(mascararCodigo("abcd")).toBe("ABCD");
+    expect(mascararCodigo("abcde")).toBe("ABCD-E");
+    expect(mascararCodigo("abcd1234")).toBe("ABCD-1234");
+    expect(mascararCodigo("abcd12345")).toBe("ABCD-1234-5");
+  });
+
+  it("apagando: o hífen que sobra no fim some (apagar o último caractere não trava no hífen)", () => {
+    expect(mascararCodigo("ABCD-")).toBe("ABCD");
+    expect(mascararCodigo("ABCD-1234-")).toBe("ABCD-1234");
+  });
+
+  it("ignora espaço, símbolo e acento (o servidor também só aceita A-Z e 0-9)", () => {
+    expect(mascararCodigo("  ab cd/12.34 ef_gh ")).toBe("ABCD-1234-EFGH");
+    expect(mascararCodigo("áb1")).toBe("B1");
+    expect(mascararCodigo("---")).toBe("");
+  });
+
+  it("corta o excesso: o código tem 12 caracteres", () => {
+    expect(mascararCodigo("ABCD-1234-EFGH-ZZZZ")).toBe("ABCD-1234-EFGH");
+  });
+
+  it("vazio ou valor que não é texto vira vazio; aceita número colado", () => {
+    expect(mascararCodigo("")).toBe("");
+    expect(mascararCodigo(null)).toBe("");
+    expect(mascararCodigo(undefined)).toBe("");
+    expect(mascararCodigo({})).toBe("");
+    expect(mascararCodigo(123456)).toBe("1234-56");
+  });
+
+  it("aplicar duas vezes dá o mesmo resultado", () => {
+    for (const v of ["a", "abcde", "abcd-1234-efgh", " x-y-z ", "ABCD-"]) {
+      expect(mascararCodigo(mascararCodigo(v))).toBe(mascararCodigo(v));
+    }
+  });
+});
+
+describe("codigoCompleto", () => {
+  it("só é verdade com os 12 caracteres, com ou sem hífen", () => {
+    expect(codigoCompleto("ABCD-1234-EFGH")).toBe(true);
+    expect(codigoCompleto("abcd1234efgh")).toBe(true);
+    expect(codigoCompleto("ABCD-1234-EFG")).toBe(false);
+    expect(codigoCompleto("")).toBe(false);
+    expect(codigoCompleto(null)).toBe(false);
+  });
+});
+
+describe("urlSemCodigo (botão 'Consultar outro código')", () => {
+  it("tira o código do QR da URL e mantém o resto", () => {
+    expect(urlSemCodigo("https://exemplo.test/ValidarCertificado?codigo=ABCD-1234-EFGH")).toBe(
+      "/ValidarCertificado"
+    );
+    expect(urlSemCodigo("https://exemplo.test/ValidarCertificado?a=1&codigo=X&b=2#topo")).toBe(
+      "/ValidarCertificado?a=1&b=2#topo"
+    );
+  });
+
+  it("sem código na URL, devolve a mesma página", () => {
+    expect(urlSemCodigo("https://exemplo.test/ValidarCertificado")).toBe("/ValidarCertificado");
+    expect(urlSemCodigo("https://exemplo.test/ValidarCertificado?a=1")).toBe(
+      "/ValidarCertificado?a=1"
+    );
   });
 });

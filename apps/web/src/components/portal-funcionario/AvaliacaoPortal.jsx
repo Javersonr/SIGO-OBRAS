@@ -125,7 +125,7 @@ export default function AvaliacaoPortal({
 
   return (
     <div className="space-y-3">
-      <h2 className="font-semibold text-slate-800 text-lg">📝 Avaliação final</h2>
+      <h2 className="font-semibold text-slate-800 text-lg">Avaliação final</h2>
       {estado.fase === "carregando" ? (
         <p role="status" className="flex items-center gap-2 text-sm text-slate-500">
           <Loader2 className="w-4 h-4 animate-spin" /> Preparando a prova...
@@ -253,7 +253,7 @@ export function ProvaEmAndamento({
 
   return (
     <div ref={raizRef} className="space-y-3">
-      <h2 className="font-semibold text-slate-800 text-lg">📝 Avaliação final</h2>
+      <h2 className="font-semibold text-slate-800 text-lg">Avaliação final</h2>
       <p className="text-sm text-slate-500">
         Nota mínima {notaMinima}%
         {tentativasMax ? ` · tentativa ${tentativa} de ${tentativasMax}` : ""}
