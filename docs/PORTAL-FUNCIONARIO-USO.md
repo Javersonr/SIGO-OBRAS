@@ -85,7 +85,9 @@ uma conclusão às 23h30 sai com o próprio dia, e a renovação soma os meses s
 (não ICP-Brasil). Na tela do curso (RH & Segurança → Treinamentos → curso), os campos "Assinatura do responsável
 técnico" e "Assinatura do instrutor" aceitam PNG ou JPEG de até 2 MB; salve o curso para guardar. As imagens antigas do
 cadastro de Configurações apontavam para o sistema antigo e não existem mais: anexe de novo (se a pessoa já tem imagem
-nova em Configurações, escolher o nome dela na lista do curso traz a imagem junto). O banco guarda só a referência do
+nova em Configurações, escolher o nome dela na lista do curso traz a imagem junto). A imagem é de uma pessoa: se o RH
+digitar outro nome no campo (ou voltar para "escolher dos salvos"), a imagem de quem estava antes sai do curso e a tela
+avisa; anexe a da pessoa nova. O banco guarda só a referência do
 arquivo. Na emissão a referência é **congelada no certificado** (entra no hash): trocar a imagem do curso depois não muda
 certificados já emitidos, e por isso **o arquivo antigo nunca deve ser apagado do Storage**. O aluno baixa o PDF com as
 imagens sobre as linhas de assinatura; a consulta pública não mostra a imagem nem o caminho. Sem imagem (ou se ela não

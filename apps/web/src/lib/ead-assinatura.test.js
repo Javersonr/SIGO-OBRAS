@@ -4,6 +4,7 @@ import {
   BUCKET_ASSINATURAS,
   LIMITE_ASSINATURA_BYTES,
   assinaturasQueFaltaram,
+  aoMudarNomeDaPessoa,
   avisoAssinaturasNaoCarregadas,
   caberNaCaixa,
   carregarAssinaturasDoCertificado,
@@ -354,5 +355,127 @@ describe("avisoAssinaturasNaoCarregadas", () => {
     expect(dois).toMatch(/do instrutor e do responsável técnico/);
     expect(dois).toMatch(/QR Code/);
     expect(dois).toMatch(/baixe de novo/);
+  });
+});
+
+describe("aoMudarNomeDaPessoa (a imagem é de quem assina: mudou o nome, a imagem sai)", () => {
+  const curso = {
+    id: "curso-1",
+    nome: "NR-35",
+    responsavel_tecnico_nome: "Fulano de Tal",
+    responsavel_tecnico_registro: "CREA 123",
+    responsavel_tecnico_assinatura_ref: REF,
+    instrutor_nome: "Ciclana Exemplo",
+    instrutor_qualificacao: "Eng. de Segurança",
+    instrutor_assinatura_ref: `${BUCKET_ASSINATURAS}/${EMPRESA}/2026/10/bbbb-instrutor.jpg`,
+  };
+
+  it("nome de outra pessoa no RT: tira a imagem do RT, avisa e não mexe no resto nem no instrutor", () => {
+    const r = aoMudarNomeDaPessoa(curso, "responsavel_tecnico", "Beltrano");
+    expect(r.imagemRetirada).toBe(true);
+    expect(r.curso.responsavel_tecnico_nome).toBe("Beltrano");
+    expect(r.curso.responsavel_tecnico_assinatura_ref).toBeNull();
+    expect(r.curso.responsavel_tecnico_registro).toBe("CREA 123");
+    expect(r.curso.instrutor_nome).toBe("Ciclana Exemplo");
+    expect(r.curso.instrutor_assinatura_ref).toBe(curso.instrutor_assinatura_ref);
+    expect(r.curso.nome).toBe("NR-35");
+    expect(r.aviso).toMatch(/imagem da assinatura do responsável técnico/);
+    expect(r.aviso).toMatch(/nome mudou/);
+    // o nome digitado até ali pode estar pela metade ("Beltr"): o aviso não o repete
+    expect(r.aviso).not.toMatch(/Beltrano/);
+    expect(r.aviso).toMatch(/anexe a imagem/i);
+  });
+
+  it("nome de outra pessoa no instrutor: tira só a imagem do instrutor", () => {
+    const r = aoMudarNomeDaPessoa(curso, "instrutor", "Fulaninho");
+    expect(r.imagemRetirada).toBe(true);
+    expect(r.curso.instrutor_nome).toBe("Fulaninho");
+    expect(r.curso.instrutor_assinatura_ref).toBeNull();
+    expect(r.curso.instrutor_qualificacao).toBe("Eng. de Segurança");
+    expect(r.curso.responsavel_tecnico_nome).toBe("Fulano de Tal");
+    expect(r.curso.responsavel_tecnico_assinatura_ref).toBe(REF);
+    expect(r.aviso).toMatch(/assinatura do instrutor/);
+  });
+
+  it("digitando letra por letra, o aviso sai uma vez só (na primeira letra que muda o nome)", () => {
+    let atual = curso;
+    const avisos = [];
+    for (const v of ["Fulano de Ta", "Fulano de T", "Fulano de", "Beltrano"]) {
+      const r = aoMudarNomeDaPessoa(atual, "responsavel_tecnico", v);
+      if (r.aviso) avisos.push(r.aviso);
+      atual = r.curso;
+    }
+    expect(avisos).toHaveLength(1);
+    expect(atual.responsavel_tecnico_nome).toBe("Beltrano");
+    expect(atual.responsavel_tecnico_assinatura_ref).toBeNull();
+  });
+
+  it("nome digitado à mão que já tinha imagem anexada e é trocado direto no campo: também retira", () => {
+    const daMao = { ...curso, instrutor_nome: "Digitado A Mao" };
+    const r = aoMudarNomeDaPessoa(daMao, "instrutor", "Digitado B");
+    expect(r.imagemRetirada).toBe(true);
+    expect(r.curso.instrutor_assinatura_ref).toBeNull();
+  });
+
+  it("'— escolher dos salvos —' (nome vazio): a imagem sai junto, porque imagem sem nome não vale", () => {
+    for (const vazio of ["", "   ", null, undefined]) {
+      const r = aoMudarNomeDaPessoa(curso, "responsavel_tecnico", vazio);
+      expect(r.imagemRetirada).toBe(true);
+      expect(r.curso.responsavel_tecnico_nome).toBe(vazio ?? ""); // o texto fica como veio (sem null)
+      expect(r.curso.responsavel_tecnico_assinatura_ref).toBeNull();
+      expect(r.aviso).toMatch(/imagem da assinatura do responsável técnico/);
+      expect(r.aviso).toMatch(/nome foi apagado/);
+      expect(r.aviso).not.toMatch(/undefined|null/);
+    }
+  });
+
+  it("o mesmo nome (espaço sobrando, maiúscula, espaço duplo) é a mesma pessoa: a imagem fica", () => {
+    for (const v of ["Fulano de Tal ", "  fulano de tal", "FULANO DE TAL", "Fulano  de   Tal"]) {
+      const r = aoMudarNomeDaPessoa(curso, "responsavel_tecnico", v);
+      expect(r.imagemRetirada).toBe(false);
+      expect(r.aviso).toBe("");
+      expect(r.curso.responsavel_tecnico_nome).toBe(v);
+      expect(r.curso.responsavel_tecnico_assinatura_ref).toBe(REF);
+    }
+  });
+
+  it("sem imagem no curso: só troca o nome, sem aviso e sem inventar o campo da imagem", () => {
+    const semImagem = { id: "curso-2", responsavel_tecnico_nome: "Fulano de Tal" };
+    const r = aoMudarNomeDaPessoa(semImagem, "responsavel_tecnico", "Beltrano");
+    expect(r).toEqual({
+      curso: { id: "curso-2", responsavel_tecnico_nome: "Beltrano" },
+      imagemRetirada: false,
+      aviso: "",
+    });
+    const nula = { ...semImagem, responsavel_tecnico_assinatura_ref: null };
+    expect(aoMudarNomeDaPessoa(nula, "responsavel_tecnico", "Beltrano").curso).toEqual({
+      ...nula,
+      responsavel_tecnico_nome: "Beltrano",
+    });
+  });
+
+  it("curso novo, sem nome nenhum: digitar o primeiro nome não retira nada", () => {
+    const r = aoMudarNomeDaPessoa({ rascunho: 1 }, "instrutor", "Novo");
+    expect(r.imagemRetirada).toBe(false);
+    expect(r.aviso).toBe("");
+    expect(r.curso).toEqual({ rascunho: 1, instrutor_nome: "Novo" });
+  });
+
+  it("imagem que o formulário nem mostra (referência do Base44) sai em silêncio ao mudar o nome", () => {
+    const antiga = { ...curso, instrutor_assinatura_ref: "https://app.base44.app/api/x.png" };
+    const r = aoMudarNomeDaPessoa(antiga, "instrutor", "Fulaninho");
+    expect(r.curso.instrutor_assinatura_ref).toBeNull();
+    expect(r.imagemRetirada).toBe(false);
+    expect(r.aviso).toBe("");
+  });
+
+  it("não altera o objeto de entrada", () => {
+    const copia = JSON.parse(JSON.stringify(curso));
+    aoMudarNomeDaPessoa(curso, "responsavel_tecnico", "Beltrano");
+    expect(curso).toEqual(copia);
+  });
+
+  it("pessoa desconhecida é erro de quem chamou (nunca grava campo inventado)", () => {
+    expect(() => aoMudarNomeDaPessoa(curso, "tutor", "X")).toThrow(/desconhecid/);
   });
 });

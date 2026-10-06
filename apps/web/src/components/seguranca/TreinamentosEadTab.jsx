@@ -54,7 +54,7 @@ import {
 import { srtParaVtt } from "@/lib/legendas";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
-import { refDeAssinatura } from "@/lib/ead-assinatura";
+import { aoMudarNomeDaPessoa, refDeAssinatura } from "@/lib/ead-assinatura";
 import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
 import { useConfirmar } from "@/components/shared/ConfirmarDialog";
 import MatriculaAuditoriaSheet from "@/components/seguranca/MatriculaAuditoriaSheet";
@@ -429,6 +429,14 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       setCursoSel((atual) =>
         mesmoFormulario(atual, formulario) ? { ...atual, [campo]: ref } : atual
       );
+  };
+  // O RH escreve o nome do RT ou do instrutor (campo livre, ou "— escolher dos salvos —" que o esvazia): a
+  // imagem é de uma pessoa, então a de quem estava antes sai do curso e o RH é avisado (T29). A regra e o
+  // texto estão em lib/ead-assinatura.js. O toast fica aqui, no evento, e não dentro do setState.
+  const mudarNomeDaPessoa = (pessoa, valor) => {
+    const mudanca = aoMudarNomeDaPessoa(cursoSel, pessoa, valor);
+    setCursoSel(mudanca.curso);
+    if (mudanca.aviso) toast.warning(mudanca.aviso, { duration: 8000 });
   };
 
   // ------------------------------------------------------------------ cursos
@@ -1666,7 +1674,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                       pessoas={pessoas.responsaveis}
                       formatar={(p) => p.nome + (p.registro ? ` · ${p.registro}` : "")}
                       nome={cursoSel.responsavel_tecnico_nome}
-                      onNome={(v) => setCursoSel({ ...cursoSel, responsavel_tecnico_nome: v })}
+                      onNome={(v) => mudarNomeDaPessoa("responsavel_tecnico", v)}
                       onEscolher={(p) =>
                         setCursoSel({
                           ...cursoSel,
@@ -1702,7 +1710,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                       pessoas={pessoas.instrutores}
                       formatar={(p) => p.nome + (p.qualificacao ? ` · ${p.qualificacao}` : "")}
                       nome={cursoSel.instrutor_nome}
-                      onNome={(v) => setCursoSel({ ...cursoSel, instrutor_nome: v })}
+                      onNome={(v) => mudarNomeDaPessoa("instrutor", v)}
                       onEscolher={(p) =>
                         setCursoSel({
                           ...cursoSel,

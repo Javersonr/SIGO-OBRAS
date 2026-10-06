@@ -88,6 +88,51 @@ export function nomeParaEnvio(arquivo) {
   return `${nome}${mime === "image/png" ? ".png" : ".jpg"}`;
 }
 
+/** Nome para comparar duas grafias da mesma pessoa: sem espaço sobrando e sem diferença de maiúscula. */
+function nomeNormalizado(nome) {
+  return String(nome ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+/**
+ * Regra do formulário do curso quando o RH ESCREVE o nome do instrutor ou do RT (campo de texto livre, ou
+ * "— escolher dos salvos —", que esvazia o nome). A imagem da assinatura é de uma pessoa: se o nome muda
+ * para outra, a imagem de quem estava antes sai do curso, senão a emissão congelaria o nome de uma
+ * pessoa com a assinatura de outra (NR-1). Quem escolhe alguém da lista de Configurações não passa por
+ * aqui: lá o formulário já troca nome e imagem juntos.
+ *
+ * `pessoa` é "instrutor" ou "responsavel_tecnico" (os campos são `<pessoa>_nome` e
+ * `<pessoa>_assinatura_ref`). Mesmo nome, só com espaço ou maiúscula diferente, mantém a imagem. Devolve
+ * um curso novo (o de entrada não muda), `imagemRetirada` (só quando havia uma imagem que a tela
+ * mostrava) e o `aviso` para o toast ("" quando nada foi retirado). O aviso não repete o nome, que pode
+ * estar pela metade enquanto o RH digita. Pessoa desconhecida lança: seria gravar um campo inventado.
+ */
+export function aoMudarNomeDaPessoa(curso, pessoa, novoNome) {
+  const dados = PESSOAS.find((p) => p.chave === pessoa);
+  if (!dados) throw new Error(`pessoa desconhecida: ${pessoa}`);
+  const campoNome = `${pessoa}_nome`;
+  const campoRef = `${pessoa}_assinatura_ref`;
+  const atual = curso || {};
+  const nome = novoNome == null ? "" : String(novoNome);
+  const proximo = { ...atual, [campoNome]: nome };
+  const imagemDoCurso = atual[campoRef];
+  if (!imagemDoCurso || nomeNormalizado(atual[campoNome]) === nomeNormalizado(nome)) {
+    return { curso: proximo, imagemRetirada: false, aviso: "" };
+  }
+  // referência que a tela nem mostra como imagem (sistema antigo): sai junto, sem avisar de uma imagem que o RH não via
+  const eraVisivel = !!refDeAssinatura(imagemDoCurso);
+  const motivo = nomeNormalizado(nome)
+    ? "porque o nome mudou. Anexe a imagem de quem assina, no campo logo abaixo."
+    : "porque o nome foi apagado. Escolha ou digite quem assina e anexe a imagem dessa pessoa.";
+  return {
+    curso: { ...proximo, [campoRef]: null },
+    imagemRetirada: eraVisivel,
+    aviso: eraVisivel ? `A imagem da assinatura ${dados.rotulo} foi retirada ${motivo}` : "",
+  };
+}
+
 /**
  * Tamanho (mm) da imagem `w` x `h` dentro da caixa `maxW` x `maxH`, mantendo a proporção. Encolhe ou
  * amplia até uma das medidas tocar a caixa. null se alguma medida não for um número positivo.
