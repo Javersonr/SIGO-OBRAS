@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { FileSpreadsheet, FileText, Loader2 } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,8 @@ import { localDaEmpresa } from "@/lib/proposta-orcamento";
  * Ao abrir, parte da empresa da sessão e lê `Empresa.get` de novo (a da sessão pode ser
  * anterior à migração 0127, sem `representante_*`). Local e representante podem ser editados
  * só para a exportação: nada é gravado. `carregando` vale enquanto a leitura não volta.
+ * A resposta do `Empresa.get` só preenche o campo que o usuário ainda não mudou (o Local fica
+ * editável enquanto carrega); se a leitura falha, um aviso pede para conferir os campos.
  */
 export function useRepresentanteDaEmpresa(open, empresaAtiva) {
   const [empresa, setEmpresa] = useState(null);
@@ -35,22 +38,42 @@ export function useRepresentanteDaEmpresa(open, empresaAtiva) {
   useEffect(() => {
     if (!open || !empresaId) return undefined;
     let cancelado = false;
-    const preencher = (e) => {
-      setEmpresa(e || null);
-      setLocal(localDaEmpresa(e));
-      setRepresentante({
-        nome: e?.representante_nome || "",
-        cargo: e?.representante_cargo || "",
-        cpf: e?.representante_cpf ? formatarCpf(e.representante_cpf) : "",
-      });
+    const doCadastro = (e) => ({
+      local: localDaEmpresa(e),
+      nome: e?.representante_nome || "",
+      cargo: e?.representante_cargo || "",
+      cpf: e?.representante_cpf ? formatarCpf(e.representante_cpf) : "",
+    });
+    // o que a empresa da sessão preencheu: campo ainda igual a isso = não tocado pelo usuário
+    const inicial = doCadastro(empresaAtivaRef.current);
+    setEmpresa(empresaAtivaRef.current || null);
+    setLocal(inicial.local);
+    setRepresentante({ nome: inicial.nome, cargo: inicial.cargo, cpf: inicial.cpf });
+    // a resposta que chega depois só troca o campo que o usuário não mudou
+    const preencherNaoTocados = (e) => {
+      const novo = doCadastro(e);
+      const manter = (atual, campo) => (atual === inicial[campo] ? novo[campo] : atual);
+      setEmpresa(e);
+      setLocal((atual) => manter(atual, "local"));
+      setRepresentante((atual) => ({
+        nome: manter(atual.nome, "nome"),
+        cargo: manter(atual.cargo, "cargo"),
+        cpf: manter(atual.cpf, "cpf"),
+      }));
     };
-    preencher(empresaAtivaRef.current);
     setCarregando(true);
     sigo.entities.Empresa.get(empresaId)
       .then((e) => {
-        if (!cancelado && e) preencher(e);
+        if (!cancelado && e) preencherNaoTocados(e);
       })
-      .catch((err) => console.error("Erro ao carregar a empresa:", err))
+      .catch((err) => {
+        console.error("Erro ao carregar a empresa:", err);
+        if (!cancelado) {
+          toast.warning(
+            `Não foi possível ler os dados da empresa (${err?.message || "erro desconhecido"}). Confira o local e o representante legal antes de gerar.`
+          );
+        }
+      })
       .finally(() => {
         if (!cancelado) setCarregando(false);
       });
