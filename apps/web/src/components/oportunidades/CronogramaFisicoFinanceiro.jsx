@@ -211,15 +211,26 @@ export default function CronogramaFisicoFinanceiro({
   const paiRef = useRef({ setSelectedOp, setOportunidades });
   paiRef.current = { setSelectedOp, setOportunidades };
   const cancelarEdicaoRef = useRef(false);
+  const raizRef = useRef(null); // contêiner deste quadro (o Esc só age nas células dele)
+  const montadoRef = useRef(false); // a falha só volta a tela se este quadro ainda está na tela
+
+  useEffect(() => {
+    montadoRef.current = true;
+    return () => {
+      montadoRef.current = false;
+    };
+  }, []);
 
   // Esc numa célula só desfaz a edição, sem fechar o detalhe da oportunidade. O Sheet (Radix)
   // escuta o Esc em captura no document e fecha a gaveta se o evento não vier com
   // defaultPrevented; a captura na window roda antes (padrão do AnexoViewer e da janela flutuante).
+  // Só as células deste quadro: a marca de cancelar é desta instância.
   useEffect(() => {
     const aoTeclarEsc = (e) => {
       if (e.key !== "Escape" || e.isComposing) return;
       const alvo = e.target;
       if (!alvo?.closest?.("[data-celula-cronograma]")) return;
+      if (!raizRef.current?.contains(alvo)) return;
       e.preventDefault();
       cancelarEdicaoRef.current = true;
       alvo.blur(); // o onBlur lê a marca, descarta o texto digitado e a limpa
@@ -236,13 +247,18 @@ export default function CronogramaFisicoFinanceiro({
 
   // Avisos da fila desta oportunidade: esta montagem passa a recebê-los, também os das gravações
   // que uma montagem anterior deixou na fila. Lê os callbacks do pai e a oportunidade atual
-  // pelos refs.
+  // pelos refs. O último gravado e o eco só mudam se a oportunidade ainda é a da tela; a falha
+  // só volta a tela (e só diz isso) com a oportunidade aberta neste quadro. Senão (outra
+  // oportunidade, outra aba ou o detalhe fechado), o aviso diz qual oportunidade não gravou.
   useEffect(() => {
     if (!fila) return;
+    const nome = opRef.current?.nome || opRef.current?.titulo || "";
     fila.definirAvisos({
       aoGravar: (id, cron) => {
-        if (opIdRef.current === id) salvoRef.current = cron;
-        ecoRef.current = cron;
+        if (opIdRef.current === id) {
+          salvoRef.current = cron;
+          ecoRef.current = cron;
+        }
         const aplicar = (o) => (o?.id === id ? { ...o, cronograma_ff: cron } : o);
         paiRef.current.setSelectedOp?.((prev) => aplicar(prev));
         paiRef.current.setOportunidades?.((prev) =>
@@ -251,13 +267,19 @@ export default function CronogramaFisicoFinanceiro({
       },
       aoFalhar: (id, erro) => {
         console.error("Erro ao gravar o cronograma:", erro);
-        toast.error(
-          `Não foi possível gravar o cronograma: ${erro?.message || "erro desconhecido"}. A tela voltou ao último gravado.`
-        );
-        if (opIdRef.current === id) {
+        const motivo = erro?.message || "erro desconhecido";
+        if (montadoRef.current && opIdRef.current === id) {
           cronogramaRef.current = salvoRef.current;
           setCronograma(salvoRef.current);
+          toast.error(
+            `Não foi possível gravar o cronograma: ${motivo}. A tela voltou ao último gravado.`
+          );
+          return;
         }
+        const qual = nome ? ` de "${nome}"` : "";
+        toast.error(
+          `Não foi possível gravar o cronograma${qual}: ${motivo}. A última alteração não foi gravada.`
+        );
       },
     });
   }, [fila]);
@@ -464,7 +486,7 @@ export default function CronogramaFisicoFinanceiro({
   };
 
   return (
-    <div className="space-y-3 rounded-lg border bg-white p-4">
+    <div ref={raizRef} className="space-y-3 rounded-lg border bg-white p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="flex items-center gap-2 font-semibold text-slate-800">
