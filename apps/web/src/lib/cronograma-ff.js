@@ -120,7 +120,9 @@ export function normalizarCronograma(obj) {
 }
 
 /**
- * % digitado na grade: number, "12,5", "12.5", "12,5%", com espaços.
+ * % digitado na grade: number, "12,5", "12.5", "12,5%", com espaços nas pontas e entre o
+ * número e o % (" 12,5 % "). Espaço no meio do número ("5 0", "12, 5") é inválido: "5 0" é
+ * erro de digitação de "5,0", não 50.
  * Vazio (null, undefined, "", só espaços, "%") → null. Texto que não seja número, sinal,
  * milhar ou valor fora de 0 a 100 → NaN. O resultado vem com 2 casas (33,335 → 33,34), e o
  * arredondamento vem antes da faixa: 100,004 → 100, mas 100,005 → 100,01 → NaN.
@@ -131,7 +133,7 @@ export function lerPercentual(entrada) {
   if (typeof entrada === "number") {
     n = entrada;
   } else if (typeof entrada === "string") {
-    const texto = entrada.replace(/\s+/g, "").replace(/%$/, "");
+    const texto = entrada.trim().replace(/\s*%$/, "");
     if (texto === "") return null;
     if (!/^(\d+([.,]\d*)?|[.,]\d+)$/.test(texto)) return NaN;
     n = Number(texto.replace(",", "."));

@@ -144,6 +144,23 @@ describe("lerAbaCronograma — erros", () => {
       "Linha 3, Mês 2: % acima de 100 (120).",
     ]);
   });
+  it("texto com espaço no meio do número é erro; nas pontas e antes do % vale", () => {
+    const comErro = lerAbaCronograma(
+      montarWb([CAB4, ["1", "A", "5 0", "12, 5", 0, 0], ["2", "B", 100, 0, 0, 0]]),
+      ETAPAS
+    );
+    expect(comErro.cronograma).toBeNull();
+    expect(comErro.erros).toEqual([
+      'Linha 2, Mês 1: "5 0" não é um % de 0 a 100.',
+      'Linha 2, Mês 2: "12, 5" não é um % de 0 a 100.',
+    ]);
+    const semErro = lerAbaCronograma(
+      montarWb([CAB4, ["1", "A", " 50 ", "50 %", 0, 0], ["2", "B", 100, 0, 0, 0]]),
+      ETAPAS
+    );
+    expect(semErro.erros).toEqual([]);
+    expect(semErro.cronograma.pct).toEqual({ 1: [50, 50, 0, 0], 2: [100, 0, 0, 0] });
+  });
   it("Item repetido", () => {
     const r = lerAbaCronograma(
       montarWb([

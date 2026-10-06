@@ -122,6 +122,15 @@ describe("lerPercentual", () => {
     expect(lerPercentual("-0,004")).toBeNaN();
     expect(lerPercentual("-0.004")).toBeNaN();
   });
+  it("espaço no meio do número é inválido; nas pontas e entre o número e o % vale", () => {
+    for (const v of ["5 0", "12, 5", "12 ,5", "1 2,5%", "5 0"]) {
+      expect(lerPercentual(v)).toBeNaN();
+    }
+    expect(lerPercentual(" 50 ")).toBe(50);
+    expect(lerPercentual("50 %")).toBe(50);
+    expect(lerPercentual("\t12,5 %\n")).toBe(12.5);
+    expect(lerPercentual(" % ")).toBeNull();
+  });
 });
 
 describe("somaCentesimos e linhaFecha", () => {
