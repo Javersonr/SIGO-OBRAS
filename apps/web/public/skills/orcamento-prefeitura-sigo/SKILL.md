@@ -111,10 +111,10 @@ Quando o edital trouxer o **cronograma físico-financeiro** (no PDF, numa aba do
 - **Os meses do edital, sem reperiodizar.** Cronograma da prefeitura em 6 meses = `Mês 1` a `Mês 6`, mesmo que a Ordem de Serviço vá dar outro prazo: a reperiodização é feita dentro do SIGO.
 - **% por célula:** o % daquela etapa naquele mês, como número de 0 a 100 com até 2 casas (`20` para 20%; nunca `0,2`, texto ou formato de %).
 - **Cada linha soma 100,00.** Se o edital mostrar % que somam 99,99 ou 100,01 por arredondamento, copie como está e anote em Observações; o SIGO importa e mostra a linha em vermelho até alguém corrigir.
-- **Edital só com R$ por mês:** converta com `pct_da_linha` (R$ do mês ÷ total da etapa no cronograma da prefeitura, 2 casas; o último mês com valor fica com a diferença, para fechar 100,00) e anote em Observações: "Cronograma convertido de R$ para %: R$ do mês ÷ total da etapa, 2 casas, diferença no último mês."
+- **Edital só com R$ por mês:** converta com `pct_da_linha` (R$ do mês ÷ total da etapa no cronograma da prefeitura, 2 casas; o último mês com % maior que zero fica com a diferença, para fechar 100,00, como no SIGO; se isso deixasse esse mês negativo, a linha vai pelo maior resto) e anote em Observações: "Cronograma convertido de R$ para %: R$ do mês ÷ total da etapa, 2 casas, diferença no último mês."
 - **Orçamento sem etapas e cronograma com uma etapa só** (ex.: Itatinga-SP, "1 SERVIÇOS DE ELÉTRICA"): crie essa etapa `1` na aba `Orçamento`, antes dos itens, numere os itens como `1.1`, `1.2`… e anote em Observações: "Etapa 1 criada a partir do cronograma; itens numerados como 1.1, 1.2…".
 - **Não force a correspondência.** Se as etapas do cronograma não baterem com as do orçamento (outra divisão, outra numeração) ou se o cronograma só tiver o total por mês, sem as etapas, não crie a aba: explique na resposta, e o usuário decide.
-- Confira com `conferir_modelo_sigo`: % fora de 0 a 100, texto numa célula de mês e `Item` repetido são **erros** (o SIGO recusa); linha que não soma 100,00, `Item` que não é etapa de nível 1 e etapa sem linha são **avisos**.
+- Confira com `conferir_modelo_sigo`: % fora de 0 a 100, texto numa célula de mês e `Item` repetido são **erros**; linha que não soma 100,00, `Item` que não é etapa de nível 1 e etapa sem linha são **avisos**. O SIGO recusa o % fora da faixa, o texto que não é número e o `Item` repetido; um texto com número (`"12,5"`) o SIGO aceita, mas o `conferir_cronograma` da skill recusa, para o arquivo sair só com números.
 
 ## Código (Python + openpyxl)
 
@@ -149,15 +149,27 @@ def preco_com_bdi(sem_bdi, bdi_pct):
 
 def pct_da_linha(valores):
     """% de cada mês a partir dos R$ da etapa no cronograma da prefeitura, com 2 casas.
-    O último mês com valor fica com a diferença, para a linha fechar 100,00."""
+    O último mês com % > 0 fica com a diferença, para a linha fechar 100,00 (como no SIGO);
+    nunca um mês com 0%. Se isso deixasse esse mês negativo (mês com valor ínfimo), a linha
+    vai pelo maior resto: soma 100,00 e nenhum % negativo."""
     reais = [Decimal(str(v or 0)) for v in valores]
     total = sum(reais)
     if total == 0:
         return [0.0] * len(reais)
     pct = [(v * 100 / total).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) for v in reais]
-    ultimo = max(k for k, v in enumerate(reais) if v)
-    pct[ultimo] += Decimal("100") - sum(pct)
-    return [float(p) for p in pct]
+    diferenca = Decimal("100") - sum(pct)
+    ultimo = max(k for k, p in enumerate(pct) if p > 0)
+    if pct[ultimo] + diferenca >= 0:
+        pct[ultimo] += diferenca
+        return [float(p) for p in pct]
+    # maior resto em centésimos: cada mês fica com o piso, e os centésimos que faltam vão para
+    # os meses de maior resto (empate: o mais cedo); mês sem valor não recebe nada
+    exatos = [v * 10000 / total for v in reais]
+    base = [int(e) for e in exatos]
+    ordem = sorted(range(len(reais)), key=lambda k: (base[k] - exatos[k], k))
+    for k in ordem[:10000 - sum(base)]:
+        base[k] += 1
+    return [b / 100 for b in base]
 
 
 def gravar_modelo_sigo(linhas, info, caminho, cronograma=None):
@@ -202,7 +214,9 @@ def gravar_modelo_sigo(linhas, info, caminho, cronograma=None):
                 raise ValueError(f"Etapa {l['item']}: {len(pct)} valores de %, e o cronograma "
                                  f"tem {meses} meses")
             for c, valor in enumerate([str(l["item"]), l.get("descricao") or None] + pct, start=1):
-                wc.cell(row=n, column=c, value=valor)
+                celula = wc.cell(row=n, column=c, value=valor)
+                if isinstance(valor, str) and valor.startswith("="):
+                    celula.data_type = "s"  # texto que começa com "=" não vira fórmula
             wc.cell(row=n, column=1).number_format = "@"  # coluna A como Texto
         wc.column_dimensions["A"].width = 10
         wc.column_dimensions["B"].width = 50
@@ -211,7 +225,8 @@ def gravar_modelo_sigo(linhas, info, caminho, cronograma=None):
 
 def conferir_modelo_sigo(caminho):
     """Relê o arquivo e aplica as regras do importador do SIGO.
-    Devolve (erros, avisos, soma_dos_itens). Com erros, o SIGO recusa a importação."""
+    Devolve (erros, avisos, soma_dos_itens). Com erros, corrija antes de entregar: o SIGO recusa
+    a importação (no texto com número da aba Cronograma, quem recusa é a skill)."""
     wb = load_workbook(caminho)
     erros, avisos = [], []
     abas_validas = (["Orçamento", "Informações"], ["Orçamento", "Informações", "Cronograma"])
@@ -269,7 +284,8 @@ def conferir_modelo_sigo(caminho):
 def conferir_cronograma(ws, etapas, erros, avisos):
     """Aba Cronograma com as regras do importador do SIGO. Erros: cabeçalho, Item que não é texto,
     Item repetido e % que não é número de 0 a 100. Avisos: linha que não soma 100,00, % com mais
-    de 2 casas, Item que não é etapa de nível 1 da aba Orçamento e etapa sem linha."""
+    de 2 casas, Item que não é etapa de nível 1 da aba Orçamento e etapa sem linha. Mais estrita
+    que o SIGO: texto com número numa célula de mês ("12,5") é erro aqui; o SIGO o aceita."""
     cabecalho = [c.value for c in ws[1]]
     while cabecalho and cabecalho[-1] in (None, ""):
         cabecalho.pop()
