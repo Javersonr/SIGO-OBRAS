@@ -11,6 +11,7 @@ import {
   MOTIVO_REVOGACAO_MAX,
   MOTIVO_REVOGACAO_MIN,
   MENSAGEM_SEM_EDICAO,
+  TEMPO_LIMITE_AVISO_MS,
   avisarAluno,
   dadosDaRevogacao,
   dadosParaDesfazerRevogacao,
@@ -19,7 +20,9 @@ import {
   destinoDoAviso,
   detalheDaLiberacao,
   detalheDaRevogacao,
+  falhaDoRegistro,
   motivoDaRevogacao,
+  registrarOuDesfazer,
   textoAvisoRevogacao,
   validarMatriculaId,
 } from "./regras.ts";
@@ -289,6 +292,166 @@ test("avisarAluno: falha do canal nunca estoura: vira 'falhou' (ou 'canal_nao_co
   assert.equal(erros.length, 2);
 });
 
+// ------------------------------------------------------------ T18, M1: erro de leitura do funcionário
+test("destinoDoAviso: falha na leitura do funcionário é 'falhou', nunca 'inativo' (toast verde mentiroso)", () => {
+  // o funcionário ATIVO que não foi lido por erro do banco parecia "inativo, nenhum aviso foi enviado"
+  assert.deepEqual(destinoDoAviso(null, { message: "conexão caiu" }), { tipo: "falhou" });
+  assert.deepEqual(
+    destinoDoAviso({ telefone: "(38) 99999-0000", ativo: true }, { message: "conexão caiu" }),
+    { tipo: "falhou" }
+  );
+  // sem erro e sem linha segue sendo "inativo" (não existe na empresa); com erro nulo não muda nada
+  assert.deepEqual(destinoDoAviso(null), { tipo: "inativo" });
+  assert.deepEqual(destinoDoAviso(null, null), { tipo: "inativo" });
+  assert.deepEqual(destinoDoAviso({ telefone: "(38) 99999-0000", ativo: true }, null), {
+    tipo: "enviar",
+    numero: "5538999990000",
+  });
+});
+
+test("avisarAluno: destino 'falhou' não chama o canal e devolve 'falhou'", async () => {
+  let chamadas = 0;
+  const r = await avisarAluno({
+    destino: { tipo: "falhou" },
+    texto: "oi",
+    enviar: async () => {
+      chamadas++;
+    },
+    canalNaoConfigurado: () => false,
+  });
+  assert.equal(r, "falhou");
+  assert.equal(chamadas, 0);
+});
+
+// ------------------------------------------------------------ T18, M2: tempo limite do aviso
+test("avisarAluno: canal que não responde vira 'falhou' pelo tempo limite, sem travar a revogação", async () => {
+  const erros: unknown[] = [];
+  const inicio = Date.now();
+  const r = await avisarAluno({
+    destino: { tipo: "enviar", numero: "5538999990000" },
+    texto: "oi",
+    enviar: () => new Promise<void>(() => {}), // nunca responde
+    canalNaoConfigurado: () => false,
+    aoFalhar: (e) => erros.push(e),
+    limiteMs: 30,
+  });
+  assert.equal(r, "falhou");
+  assert.ok(Date.now() - inicio < 2_000, "voltou logo, sem esperar o canal");
+  assert.equal(erros.length, 1);
+  assert.match((erros[0] as Error).message, /tempo esgotado/i);
+});
+
+test("avisarAluno: o envio que termina a tempo não é cortado e o relógio não fica ligado", async () => {
+  const r = await avisarAluno({
+    destino: { tipo: "enviar", numero: "5538999990000" },
+    texto: "oi",
+    enviar: () => new Promise<void>((resolve) => setTimeout(resolve, 5)),
+    canalNaoConfigurado: () => false,
+    limiteMs: 5_000,
+  });
+  // se o temporizador do limite ficasse ligado, o teste esperaria 5 s para terminar o processo
+  assert.equal(r, "enviado");
+});
+
+test("avisarAluno: envio que falha depois de o prazo vencer não vira erro não tratado", async () => {
+  let rejeitar!: (e: Error) => void;
+  const r = await avisarAluno({
+    destino: { tipo: "enviar", numero: "5538999990000" },
+    texto: "oi",
+    enviar: () =>
+      new Promise<void>((_ok, no) => {
+        rejeitar = no;
+      }),
+    canalNaoConfigurado: () => false,
+    limiteMs: 20,
+  });
+  assert.equal(r, "falhou");
+  rejeitar(new Error("Evolution 500 tardio")); // sem handler, derrubaria o processo de teste
+  await new Promise((resolve) => setTimeout(resolve, 20));
+});
+
+test("o prazo do aviso é de poucos segundos, e o do envio ao Evolution cabe dentro dele", () => {
+  assert.ok(TEMPO_LIMITE_AVISO_MS >= 5_000 && TEMPO_LIMITE_AVISO_MS <= 30_000);
+});
+
+// ------------------------------------------------------------ T18, M4: efeito sem registro
+test("registrarOuDesfazer: evento gravado = registrado, sem desfazer nada", async () => {
+  const passos: string[] = [];
+  const r = await registrarOuDesfazer({
+    registrar: async () => (passos.push("registrar"), true),
+    desfazer: async () => (passos.push("desfazer"), true),
+  });
+  assert.equal(r, "registrado");
+  assert.deepEqual(passos, ["registrar"]);
+});
+
+test("registrarOuDesfazer: evento não gravou e o efeito foi desfeito = desfeito (pode tentar de novo)", async () => {
+  const passos: string[] = [];
+  const r = await registrarOuDesfazer({
+    registrar: async () => (passos.push("registrar"), false),
+    desfazer: async () => (passos.push("desfazer"), true),
+  });
+  assert.equal(r, "desfeito");
+  assert.deepEqual(passos, ["registrar", "desfazer"]);
+});
+
+test("registrarOuDesfazer: não desfez, mas o evento gravou na última tentativa = registrado (em dia)", async () => {
+  const resultados = [false, true];
+  const passos: string[] = [];
+  const r = await registrarOuDesfazer({
+    registrar: async () => (passos.push("registrar"), resultados.shift() as boolean),
+    desfazer: async () => (passos.push("desfazer"), false),
+  });
+  assert.equal(r, "registrado");
+  assert.deepEqual(passos, ["registrar", "desfazer", "registrar"]);
+});
+
+test("registrarOuDesfazer: nem registrou nem desfez = sem_registro (e para por aí, sem laço)", async () => {
+  const passos: string[] = [];
+  const r = await registrarOuDesfazer({
+    registrar: async () => (passos.push("registrar"), false),
+    desfazer: async () => (passos.push("desfazer"), false),
+  });
+  assert.equal(r, "sem_registro");
+  assert.deepEqual(passos, ["registrar", "desfazer", "registrar"]);
+});
+
+test("registrarOuDesfazer: exceção do banco conta como falha, nunca estoura", async () => {
+  const r = await registrarOuDesfazer({
+    registrar: async () => {
+      throw new Error("rede");
+    },
+    desfazer: async () => {
+      throw new Error("rede");
+    },
+  });
+  assert.equal(r, "sem_registro");
+});
+
+test("falhaDoRegistro: efeito desfeito = 500 'tente de novo'; sem desfazer = código próprio e 'NÃO repita'", () => {
+  const liberarDesfeita = falhaDoRegistro({ acao: "liberar_tentativa", resultado: "desfeito" });
+  assert.equal(liberarDesfeita.status, 500);
+  assert.equal(liberarDesfeita.codigo, "TRILHA_FALHOU");
+  assert.match(liberarDesfeita.mensagem, /Tente de novo/);
+
+  const liberarSem = falhaDoRegistro({ acao: "liberar_tentativa", resultado: "sem_registro" });
+  assert.equal(liberarSem.status, 500);
+  assert.equal(liberarSem.codigo, "EFEITO_SEM_REGISTRO");
+  assert.match(liberarSem.mensagem, /NÃO repita/);
+  assert.match(liberarSem.mensagem, /suporte/i);
+  assert.doesNotMatch(liberarSem.mensagem, /Tente de novo/);
+
+  const revogarDesfeita = falhaDoRegistro({ acao: "revogar_certificado", resultado: "desfeito" });
+  assert.equal(revogarDesfeita.codigo, "TRILHA_FALHOU");
+  assert.match(revogarDesfeita.mensagem, /revogação/);
+
+  const revogarSem = falhaDoRegistro({ acao: "revogar_certificado", resultado: "sem_registro" });
+  assert.equal(revogarSem.codigo, "EFEITO_SEM_REGISTRO");
+  assert.match(revogarSem.mensagem, /revogado/);
+  assert.match(revogarSem.mensagem, /NÃO foi avisado/);
+  assert.match(revogarSem.mensagem, /suporte/i);
+});
+
 // ------------------------------------------------------------ o index.ts não foge das regras
 const INDEX = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
 
@@ -314,4 +477,27 @@ test("index.ts: o certificado só é alterado com as colunas da revogação (e d
 test("index.ts: o autor do evento e da revogação é o e-mail da sessão, nunca algo do corpo", () => {
   assert.ok(INDEX.includes("por: staff.email"));
   assert.ok(!/body\.(por|email|revogado_por|usuario_email)\b/.test(INDEX));
+});
+
+test("index.ts: a leitura do funcionário confere o error e o passa a destinoDoAviso (T18, M1)", () => {
+  const leitura = INDEX.indexOf('.from("funcionario")\n    .select("nome_completo, telefone');
+  assert.ok(leitura > 0, "leitura do funcionário para o aviso não encontrada");
+  const antes = INDEX.slice(Math.max(0, leitura - 80), leitura);
+  assert.match(antes, /const \{ data: func, error: erroFunc \}/);
+  const depois = INDEX.slice(leitura, leitura + 900);
+  assert.match(depois, /if \(erroFunc\)[\s\S]*?console\.error\(/);
+  assert.match(depois, /destinoDoAviso\(func, erroFunc\)/);
+});
+
+test("index.ts: liberar e revogar passam por registrarOuDesfazer e respondem pela falhaDoRegistro (T18, M4)", () => {
+  assert.equal(INDEX.match(/registrarOuDesfazer\(\{/g)?.length, 2, "uma vez em cada ação");
+  assert.equal(INDEX.match(/falhaDoRegistro\(\{/g)?.length, 2);
+  // a falha sem desfazer deixa rastro no log (o suporte precisa dos números para conferir a matrícula)
+  assert.match(INDEX, /registro === "sem_registro"[\s\S]*?console\.error\(/);
+  // o "desfazer" só vale se atingiu a linha (0 linhas = o valor já tinha mudado, não foi desfeito)
+  assert.equal(INDEX.match(/\.select\("id"\);\s*\n\s*if \(erroDesfazer\)/g)?.length, 2);
+});
+
+test("index.ts: a resposta de efeito sem registro leva o código próprio (EFEITO_SEM_REGISTRO via falhaDoRegistro)", () => {
+  assert.match(INDEX, /fail\(falha\.mensagem,\s*falha\.status,\s*\{\s*codigo:\s*falha\.codigo/);
 });

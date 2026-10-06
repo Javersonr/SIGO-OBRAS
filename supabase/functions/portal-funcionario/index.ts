@@ -20,14 +20,18 @@
  * `certificado` só emite para curso EAD (modalidade do curso, T8): curso de apoio responde 409
  * `CURSO_DE_APOIO` e o semipresencial, 409 `PRATICA_PENDENTE` (até a T12); requisito do curso por
  * cumprir responde 409 `REQUISITOS`. O certificado traz o local (`dados.local`) e os dias de Brasília.
+ * Depois do INSERT o hash é refeito a partir do que o banco devolveu: se não se reproduz, o certificado
+ * NÃO é entregue, é anulado (revogado pelo sistema) e a emissão responde 500 `EMISSAO_ANULADA` (T10, M5).
  *
  * Reconfirmar a senha com a sessão aberta (`certificado` e `trocar_senha` com a senha atual) tem limite de
- * tentativas por funcionário (escopo próprio, 5 em 15 min); passou do teto responde 429 `LIMITE`.
+ * tentativas por funcionário (escopo próprio, 5 em 15 min); passou do teto responde 429 `LIMITE`. Senha
+ * vazia é "incorreta" sem consumir tentativa (T27).
  *
  * `evento` e `progresso` (que o navegador repete sozinho) também têm teto por funcionário, em escopos
- * próprios (`VOLUME_POR_ACAO`, em regras.ts); passou do teto responde 429 `LIMITE`. O `progresso` ainda só
- * grava o sinal (ultimo_sinal_em) se ninguém o mudou desde que o pedido o leu (trava otimista): quem
- * perde a corrida responde 409 `SINAL_CONCORRENTE` e não credita tempo (T31).
+ * próprios (`VOLUME_POR_ACAO`, em regras.ts); passou do teto responde 429 `LIMITE`. O evento tem três
+ * tetos (abrir_aula, play/pausa e o resto), para o play repetido do vídeo não travar a troca de aula.
+ * O `progresso` ainda só grava o sinal (ultimo_sinal_em) se ninguém o mudou desde que o pedido o leu
+ * (trava otimista): quem perde a corrida responde 409 `SINAL_CONCORRENTE` e não credita tempo (T31).
  *
  * `dados` não leva as questões (saem sorteadas em iniciar_avaliacao) e só assina URL e manda o texto das
  * aulas LIBERADAS: a aula bloqueada vai na lista, mas sem conteúdo (T16).
@@ -37,7 +41,8 @@
  * assistido informado pelo navegador é limitado pelo relógio do servidor
  * (ultimo_sinal_em), então não dá para "declarar" tempo que não passou.
  * A trilha é só de inclusão (0135): treinamento_evento, treinamento_tentativa e
- * treinamento_certificado só recebem INSERT daqui; o banco recusa UPDATE/DELETE.
+ * treinamento_certificado só recebem INSERT daqui; o banco recusa UPDATE/DELETE. A única exceção é a
+ * anulação de uma emissão que não conferiu (revogação do sistema, `dadosDaAnulacaoNaEmissao`).
  * Os eventos que o navegador relata (ação `evento`) levam origem "navegador".
  */
 import { createAdminClient } from "../_shared/supabase-admin.ts";
@@ -53,6 +58,7 @@ import {
   gerarCodigoCertificado,
   hashDoCertificado,
   HASH_VERSAO_CANONICO,
+  EVENTO_CERTIFICADO_REVOGADO,
   EVENTO_TENTATIVA_LIBERADA,
   type EventoPortal,
 } from "../_shared/portal-funcionario.ts";
@@ -71,17 +77,24 @@ import {
   COLUNAS_MATRICULA_PORTAL,
   EVENTO_PROVA_INICIADA,
   LOCAL_DO_CERTIFICADO,
+  MSG_EMISSAO_ANULADA,
   MSG_MUITAS_ACOES,
   MSG_SINAL_CONCORRENTE,
+  MOTIVO_EMISSAO_ANULADA,
   NOTA_MINIMA_PADRAO,
+  POR_SISTEMA,
   TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG,
+  type AcaoComVolume,
+  acaoDeVolumeDoEvento,
   aulaLiberada,
   aulasParaAluno,
   comRastroDeFalha,
   conclusaoDaAula,
+  conferirEmissaoDoCertificado,
   corrigirProva,
   creditarTempo,
   cursoPublicado,
+  dadosDaAnulacaoNaEmissao,
   datasDeConclusao,
   dentroDoVolume,
   detalheDaProvaIniciada,
@@ -471,15 +484,18 @@ Deno.serve(
     const reconfirmar = (senha: string) =>
       reconfirmarSenha({
         funcionarioId,
+        senha,
         consumir: (escopo, janelaSeg, limites) =>
           consumirTentativa(supabase, escopo, janelaSeg, limites),
         conferir: async () => (await verifyPassword(senha, acesso.senha_hash)).ok,
         liberar: (consumo) => liberarTentativas(supabase, consumo),
       });
     const muitasTentativas = () => fail(MSG_MUITAS_TENTATIVAS, 429, { codigo: "LIMITE" });
-    // Volume de `evento` e `progresso` (T31): teto por funcionário, consumido ANTES do trabalho. Fora do ar,
-    // o limitador não derruba o portal (`consumirTentativa` libera e registra o erro).
-    const dentroDoLimite = (acao: "evento" | "progresso") =>
+    // Volume de `evento` e `progresso` (T31): teto por funcionário, consumido ANTES do trabalho. O evento
+    // tem três tetos (`acaoDeVolumeDoEvento`): abrir_aula, play/pausa e o resto, para o play repetido do
+    // vídeo não travar a troca de aula. Fora do ar, o limitador não derruba o portal (`consumirTentativa`
+    // libera e registra o erro).
+    const dentroDoLimite = (acao: AcaoComVolume) =>
       dentroDoVolume({
         acao,
         funcionarioId,
@@ -841,7 +857,7 @@ Deno.serve(
 
     // --------------------------------------------------------------- evento
     if (body.acao === "evento") {
-      if (!(await dentroDoLimite("evento"))) return muitasAcoes();
+      if (!(await dentroDoLimite(acaoDeVolumeDoEvento(body.evento)))) return muitasAcoes();
       const nome = body.evento ?? "";
       if (!EVENTOS_CLIENTE.has(nome)) return fail("Evento inválido", 400);
       const mat = await minhaMatricula(body.matricula_id);
@@ -1438,16 +1454,58 @@ Deno.serve(
             dados,
             assinatura_aluno: assinatura,
           })
-          .select("codigo, dados, assinatura_aluno, emitido_em, hash_sha256")
+          .select("id, codigo, dados, assinatura_aluno, emitido_em, hash_sha256")
           .single();
         if (!error) {
-          // o que o banco devolveu tem de dar o mesmo hash; se não der, a validação pública acusaria
-          // "dados não conferem" num certificado recém-emitido: deixa rastro no log (não derruba)
-          if ((await hashDoCertificado(cert.codigo, cert.dados, cert.assinatura_aluno)) !== hash) {
+          // O que o banco devolveu tem de dar o mesmo hash (T10, M5). Se não der, a validação pública
+          // acusaria "Dados não conferem" num certificado recém-emitido: ele NÃO é entregue e é
+          // anulado (revogado pelo sistema; o servidor não apaga, a trilha é só de inclusão, 0135).
+          const emissao = await conferirEmissaoDoCertificado({
+            hashEmitido: hash,
+            gravado: cert,
+            aoDivergir: (refeito) =>
+              console.error(
+                "[portal-funcionario] certificado: hash não reproduzível pelo banco",
+                codigo,
+                "gravado:",
+                hash,
+                "refeito:",
+                refeito
+              ),
+            anular: async () => {
+              const { data: anulados, error: erroAnular } = await supabase
+                .from("treinamento_certificado")
+                .update(dadosDaAnulacaoNaEmissao(new Date()))
+                .eq("id", cert.id)
+                .eq("empresa_id", empresaId)
+                .is("revogado_em", null)
+                .select("id");
+              if (erroAnular) {
+                console.error(
+                  "[portal-funcionario] certificado: não anulou a emissão",
+                  codigo,
+                  erroAnular.message
+                );
+                return false;
+              }
+              return (anulados?.length ?? 0) > 0;
+            },
+          });
+          if (!emissao.entregar) {
             console.error(
-              "[portal-funcionario] certificado: hash não reproduzível pelo banco",
-              codigo
+              "[portal-funcionario] certificado: emissão NÃO entregue (hash não reproduzível)",
+              codigo,
+              emissao.anulado ? "anulado" : "NÃO anulado: confira a linha"
             );
+            if (emissao.anulado) {
+              await ev({
+                evento: EVENTO_CERTIFICADO_REVOGADO,
+                matricula_id: mat.id,
+                curso_id: mat.curso_id,
+                detalhe: { por: POR_SISTEMA, codigo, motivo: MOTIVO_EMISSAO_ANULADA },
+              });
+            }
+            return fail(MSG_EMISSAO_ANULADA, 500, { codigo: "EMISSAO_ANULADA" });
           }
           await ev({
             evento: "certificado_assinado",
@@ -1455,7 +1513,9 @@ Deno.serve(
             curso_id: mat.curso_id,
             detalhe: { codigo },
           });
-          return ok({ certificado: { ...cert, revogado: false } });
+          // o id da linha só serve para anular; não vai ao navegador
+          const { id: _idDaLinha, ...certificado } = cert;
+          return ok({ certificado: { ...certificado, revogado: false } });
         }
         if (error.code !== "23505") {
           console.error("[portal-funcionario] certificado:", error);

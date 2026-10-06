@@ -166,16 +166,23 @@ export function textoAvisoRevogacao(p: {
 /** Para onde vai o aviso: um número, ou o motivo de não haver para onde mandar. */
 export type DestinoDoAviso =
   | { tipo: "enviar"; numero: string }
-  | { tipo: "sem_telefone" | "telefone_invalido" | "inativo" };
+  | { tipo: "sem_telefone" | "telefone_invalido" | "inativo" | "falhou" };
 
-/** Quem não é mais funcionário ativo da empresa não recebe a mensagem. */
+/**
+ * Quem não é mais funcionário ativo da empresa não recebe a mensagem. `erroDeLeitura` = o banco falhou ao
+ * ler o funcionário: não dá para saber se ele está ativo, então o resultado é "falhou" (o RH avisa por
+ * outro meio) e nunca "inativo", que dizia ao RH, num toast verde, que o aluno ativo "não precisava" de
+ * aviso (T18, M1).
+ */
 export function destinoDoAviso(
   funcionario: {
     telefone?: string | null;
     ativo?: boolean | null;
     deleted_at?: string | null;
-  } | null
+  } | null,
+  erroDeLeitura?: unknown
 ): DestinoDoAviso {
+  if (erroDeLeitura) return { tipo: "falhou" };
   if (!funcionario || funcionario.deleted_at || funcionario.ativo === false) {
     return { tipo: "inativo" };
   }
@@ -195,8 +202,16 @@ export type ResultadoDoAviso =
   | "falhou";
 
 /**
- * Manda o aviso sem nunca derrubar a ação: falha do canal vira "falhou" (ou "canal_nao_configurado") e
- * o RH é informado na tela. `enviar` e `canalNaoConfigurado` vêm de fora (Evolution no servidor).
+ * Prazo (ms) para o aviso sair. O envio ao Evolution já tem o seu (`TEMPO_LIMITE_ENVIO_MS`, 12 s, em
+ * `_shared/whatsapp-envio.ts`); este é a rede de segurança por cima, um pouco maior: o aviso é só um
+ * recado e a revogação, que já está gravada, não espera minutos por ele (T18, M2).
+ */
+export const TEMPO_LIMITE_AVISO_MS = 15_000;
+
+/**
+ * Manda o aviso sem nunca derrubar nem atrasar a ação: falha do canal vira "falhou" (ou
+ * "canal_nao_configurado"), e passar de `limiteMs` sem resposta também vira "falhou"; o RH é informado na
+ * tela. `enviar` e `canalNaoConfigurado` vêm de fora (Evolution no servidor).
  */
 export async function avisarAluno(p: {
   destino: DestinoDoAviso;
@@ -204,13 +219,86 @@ export async function avisarAluno(p: {
   enviar: (numero: string, texto: string) => Promise<void>;
   canalNaoConfigurado: (erro: unknown) => boolean;
   aoFalhar?: (erro: unknown) => void;
+  limiteMs?: number;
 }): Promise<ResultadoDoAviso> {
   if (p.destino.tipo !== "enviar") return p.destino.tipo;
+  const limiteMs = p.limiteMs ?? TEMPO_LIMITE_AVISO_MS;
+  let relogio: ReturnType<typeof setTimeout> | undefined;
+  const esgotou = new Promise<never>((_ok, rejeitar) => {
+    relogio = setTimeout(
+      () => rejeitar(new Error(`Aviso sem resposta em ${limiteMs} ms (tempo esgotado)`)),
+      limiteMs
+    );
+  });
   try {
-    await p.enviar(p.destino.numero, p.texto);
+    // a corrida também segura um envio que falhe só depois do prazo (a rejeição tardia já tem handler)
+    await Promise.race([p.enviar(p.destino.numero, p.texto), esgotou]);
     return "enviado";
   } catch (e) {
     p.aoFalhar?.(e);
     return p.canalNaoConfigurado(e) ? "canal_nao_configurado" : "falhou";
+  } finally {
+    clearTimeout(relogio);
   }
+}
+
+// ---------------------------------------------------------------- efeito sem registro na trilha
+
+/** Como terminou "gravar o efeito, registrar o evento e, se o evento falhar, desfazer o efeito". */
+export type ResultadoDoRegistro = "registrado" | "desfeito" | "sem_registro";
+
+/**
+ * A liberação e a revogação gravam o EFEITO (extras da matrícula, `revogado_*` do certificado) e depois o
+ * evento da trilha. Sem o evento o efeito não fica: tenta-se desfazê-lo. Se o evento falha E o desfazer
+ * também falha (ou não atinge a linha), uma última tentativa de gravar o evento: se ela passa, efeito e
+ * registro ficam em dia. Só quando as três falham sobra `sem_registro`: o efeito está gravado SEM evento
+ * e SEM como desfazer, e repetir o pedido pioraria (a liberação somaria mais uma tentativa extra para um
+ * evento só). Quem chama responde com `falhaDoRegistro` e deixa rastro no log. Nunca lança.
+ */
+export async function registrarOuDesfazer(p: {
+  registrar: () => Promise<boolean>;
+  desfazer: () => Promise<boolean>;
+}): Promise<ResultadoDoRegistro> {
+  const tentar = async (passo: () => Promise<boolean>) => {
+    try {
+      return await passo();
+    } catch {
+      return false;
+    }
+  };
+  if (await tentar(p.registrar)) return "registrado";
+  if (await tentar(p.desfazer)) return "desfeito";
+  return (await tentar(p.registrar)) ? "registrado" : "sem_registro";
+}
+
+/**
+ * A resposta de erro para o RH quando o evento não foi gravado. `desfeito`: nada ficou gravado, é só
+ * tentar de novo (`TRILHA_FALHOU`). `sem_registro`: o efeito ficou, a mensagem manda NÃO repetir e avisar o
+ * suporte, e o código próprio (`EFEITO_SEM_REGISTRO`) deixa a tela e os logs distinguirem os dois casos.
+ */
+export function falhaDoRegistro(p: {
+  acao: "liberar_tentativa" | "revogar_certificado";
+  resultado: Exclude<ResultadoDoRegistro, "registrado">;
+}): { status: 500; codigo: "TRILHA_FALHOU" | "EFEITO_SEM_REGISTRO"; mensagem: string } {
+  const liberar = p.acao === "liberar_tentativa";
+  if (p.resultado === "desfeito") {
+    return {
+      status: 500,
+      codigo: "TRILHA_FALHOU",
+      mensagem: liberar
+        ? "Não foi possível registrar a liberação na trilha de auditoria. Tente de novo."
+        : "Não foi possível registrar a revogação na trilha de auditoria. Tente de novo.",
+    };
+  }
+  return {
+    status: 500,
+    codigo: "EFEITO_SEM_REGISTRO",
+    mensagem: liberar
+      ? "A tentativa foi liberada, mas o registro na trilha de auditoria falhou e a liberação não pôde " +
+        "ser desfeita. NÃO repita a liberação (somaria outra tentativa extra): avise o suporte para " +
+        "conferir a matrícula."
+      : "O certificado foi revogado, mas o registro na trilha de auditoria falhou e a revogação não pôde " +
+        "ser desfeita. O funcionário NÃO foi avisado: avise-o por outro meio e peça ao suporte para " +
+        "conferir o registro.",
+  };
 }

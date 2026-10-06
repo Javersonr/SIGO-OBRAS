@@ -13,9 +13,13 @@
  *    `hash_versao: 2`. Reproduzível a partir do banco, na ordem de chaves que o `jsonb` devolver.
  *  - versão 1 (antiga, sem `hash_versao`): SHA-256 do `JSON.stringify` na ordem em que o servidor
  *    montava os objetos. O `jsonb` reordena as chaves, então só dá para refazer reaplicando essa ordem
- *    (`MOLDE_ORDEM_ANTIGA`, igual ao código de emissão desde o 1º certificado). Se nem assim bater,
- *    o resultado é "não verificável" (`integro: null`): jamais reprovamos um certificado real por uma
- *    forma antiga que não conhecemos.
+ *    (`MOLDE_ORDEM_ANTIGA`, igual ao código de emissão desde o 1º certificado).
+ *
+ * A versão vem de um campo gravado na própria linha (`assinatura_aluno.hash_versao`), então quem
+ * alterasse o registro poderia apagá-lo para cair numa forma mais frouxa. Por isso, SEM `hash_versao`
+ * tenta-se a v1 e, se ela não bater, a v2; se nenhuma reproduzir o hash gravado, o registro NÃO confere
+ * (`integro: false`). Nunca existe "não verificável": o resultado é `true` ou `false`. Com a v2 gravada,
+ * só a v2 vale (a v1 nunca é tentada).
  */
 import {
   HASH_VERSAO_CANONICO,
@@ -35,14 +39,15 @@ export interface CertificadoGravado {
 }
 
 export interface Integridade {
-  /** true = confere; false = não confere (versão 2); null = forma antiga que não dá para reconferir */
-  integro: boolean | null;
+  /** true = o hash gravado se reproduz a partir do banco; false = não se reproduz (nunca null) */
+  integro: boolean;
+  /** versão do hash que reproduziu; se nenhuma reproduziu, a que o registro declara (sem campo: 1) */
   hash_versao: 1 | 2;
 }
 
 export interface AvaliacaoCertificado extends Integridade {
   situacao: SituacaoCertificado;
-  /** autêntico (íntegro ou não verificável), não revogado e dentro da validade */
+  /** autêntico (íntegro), não revogado e dentro da validade */
   valido: boolean;
   revogado: boolean;
   vencido: boolean;
@@ -106,7 +111,8 @@ const minusculo = (h: unknown) =>
 
 /**
  * Refaz o hash a partir do que está gravado e compara com o `hash_sha256` da emissão.
- * A versão vem da assinatura (`hash_versao`); sem ela, é o hash antigo.
+ * Com `hash_versao` >= 2 na assinatura, só a v2 vale. Sem ela: tenta a v1 (hash antigo) e, se não
+ * bater, a v2; se nenhuma bater, `integro = false` (T10, M1: apagar a versão não rebaixa a conferência).
  */
 export async function conferirIntegridade(cert: {
   codigo: string;
@@ -119,18 +125,24 @@ export async function conferirIntegridade(cert: {
     (cert.assinatura_aluno as { hash_versao?: unknown } | null)?.hash_versao
   );
 
+  const confereV2 = async () =>
+    (await hashDoCertificado(cert.codigo, cert.dados, cert.assinatura_aluno)) === gravado;
+
   if (versaoGravada >= HASH_VERSAO_CANONICO) {
-    const refeito = await hashDoCertificado(cert.codigo, cert.dados, cert.assinatura_aluno);
-    return { integro: refeito === gravado, hash_versao: 2 };
+    return { integro: await confereV2(), hash_versao: 2 };
   }
 
-  // Antigo: o JSON.stringify da emissão, com as chaves de volta na ordem original.
+  // Sem versão: o JSON.stringify da emissão antiga, com as chaves de volta na ordem original...
   const original = naOrdemDoMolde(
     { codigo: cert.codigo, dados: cert.dados, assinatura: cert.assinatura_aluno },
     MOLDE_ORDEM_ANTIGA
   );
-  const refeito = await sha256Hex(JSON.stringify(original));
-  return { integro: refeito === gravado ? true : null, hash_versao: 1 };
+  if ((await sha256Hex(JSON.stringify(original))) === gravado) {
+    return { integro: true, hash_versao: 1 };
+  }
+  // ...e, se não bateu, o hash canônico (a versão pode ter sido apagada do registro)
+  if (await confereV2()) return { integro: true, hash_versao: 2 };
+  return { integro: false, hash_versao: 1 };
 }
 
 // ------------------------------------------------------------------------------ validade
@@ -172,14 +184,17 @@ export function localDoCertificado(dados: unknown): { ambiente: string } | null 
 
 // ------------------------------------------------------------------------------ situação
 
-/** Prioridade: revogado, depois dados que não conferem, depois vencido. `integro: null` não reprova. */
+/**
+ * Prioridade: revogado, depois dados que não conferem, depois vencido. Falha fechado: só `integro === true`
+ * é autêntico (`false`, `null` ou ausente viram "divergente").
+ */
 export function situacaoDoCertificado(s: {
   revogado: boolean;
-  integro: boolean | null;
+  integro: boolean;
   vencido: boolean;
 }): SituacaoCertificado {
   if (s.revogado) return "revogado";
-  if (s.integro === false) return "divergente";
+  if (s.integro !== true) return "divergente";
   if (s.vencido) return "vencido";
   return "valido";
 }
@@ -202,4 +217,25 @@ export async function avaliarCertificado(
     hash_versao: integridade.hash_versao,
     validade,
   };
+}
+
+// ------------------------------------------------------------------------------ leitura
+
+export type ResultadoDaConsulta<T> =
+  | { tipo: "erro" }
+  | { tipo: "nao_encontrado" }
+  | { tipo: "encontrado"; certificado: T };
+
+/**
+ * O que a leitura do certificado (`maybeSingle` do supabase-js) quer dizer. `error` vence tudo: se o banco
+ * falhou, a resposta é erro (500) e não "nenhum certificado com esse código", que um fiscal leria como
+ * certificado falso (T10, M7). Sem erro: linha = encontrado; sem linha = não encontrado.
+ */
+export function resultadoDaConsulta<T>(leitura: {
+  data?: T | null;
+  error?: unknown;
+}): ResultadoDaConsulta<T> {
+  if (leitura.error) return { tipo: "erro" };
+  if (!leitura.data) return { tipo: "nao_encontrado" };
+  return { tipo: "encontrado", certificado: leitura.data };
 }

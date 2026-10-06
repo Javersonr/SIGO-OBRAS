@@ -20,7 +20,10 @@
  * As ações de matrícula (regras em ./regras.ts) gravam um evento na trilha com
  * o e-mail do RH (`detalhe.por`): `tentativa_liberada` (que também zera o
  * intervalo entre tentativas no portal) e `certificado_revogado` (que avisa o
- * aluno por WhatsApp, sem derrubar a revogação se o aviso falhar).
+ * aluno por WhatsApp, sem derrubar a revogação se o aviso falhar ou demorar: o aviso tem
+ * tempo limite). Sem o evento a ação é desfeita (500 `TRILHA_FALHOU`, pode repetir); se nem
+ * desfazer dá, o efeito fica gravado sem evento e a resposta é 500 `EFEITO_SEM_REGISTRO`, que
+ * manda NÃO repetir e avisar o suporte (a liberação repetida somaria outra tentativa extra).
  *
  * A senha provisória volta UMA vez (para o RH entregar); no primeiro acesso o
  * funcionário cria a própria senha, que ninguém do RH conhece.
@@ -49,7 +52,9 @@ import {
   destinoDoAviso,
   detalheDaLiberacao,
   detalheDaRevogacao,
+  falhaDoRegistro,
   motivoDaRevogacao,
+  registrarOuDesfazer,
   textoAvisoRevogacao,
   validarMatriculaId,
 } from "./regras.ts";
@@ -152,28 +157,47 @@ async function liberarTentativa(
     });
   }
 
-  const gravou = await registrarEvento(supabase, req, {
-    empresa_id: mat.empresa_id,
-    funcionario_id: mat.funcionario_id,
-    matricula_id: mat.id,
-    curso_id: mat.curso_id,
-    evento: EVENTO_TENTATIVA_LIBERADA,
-    detalhe: detalheDaLiberacao({ por: staff.email, extrasNovas: decisao.extrasNovas }),
+  // O evento é o que faz o portal ignorar o intervalo: sem ele a liberação é desfeita. Se nem desfazer
+  // dá (o banco falhou duas vezes seguidas), a resposta é outra e o suporte confere (T18, M4).
+  const registro = await registrarOuDesfazer({
+    registrar: () =>
+      registrarEvento(supabase, req, {
+        empresa_id: mat.empresa_id,
+        funcionario_id: mat.funcionario_id,
+        matricula_id: mat.id,
+        curso_id: mat.curso_id,
+        evento: EVENTO_TENTATIVA_LIBERADA,
+        detalhe: detalheDaLiberacao({ por: staff.email, extrasNovas: decisao.extrasNovas }),
+      }),
+    desfazer: async () => {
+      const { data: desfeitas, error: erroDesfazer } = await supabase
+        .from("treinamento_matricula")
+        .update({ tentativas_extras: decisao.extrasAtuais })
+        .eq("id", mat.id)
+        .eq("empresa_id", mat.empresa_id)
+        .eq("tentativas_extras", decisao.extrasNovas)
+        .select("id");
+      if (erroDesfazer) {
+        console.error("[funcionario-acesso] liberar_tentativa: não desfez:", erroDesfazer.message);
+      }
+      // 0 linhas = o valor já tinha mudado: o efeito continua gravado
+      return !erroDesfazer && (desfeitas?.length ?? 0) > 0;
+    },
   });
-  if (!gravou) {
-    const { error: erroDesfazer } = await supabase
-      .from("treinamento_matricula")
-      .update({ tentativas_extras: decisao.extrasAtuais })
-      .eq("id", mat.id)
-      .eq("empresa_id", mat.empresa_id)
-      .eq("tentativas_extras", decisao.extrasNovas);
-    if (erroDesfazer) {
-      console.error("[funcionario-acesso] liberar_tentativa: não desfez:", erroDesfazer.message);
+  if (registro !== "registrado") {
+    const falha = falhaDoRegistro({ acao: "liberar_tentativa", resultado: registro });
+    if (registro === "sem_registro") {
+      console.error(
+        "[funcionario-acesso] liberar_tentativa: EFEITO SEM REGISTRO. A matrícula ficou com",
+        decisao.extrasNovas,
+        "tentativas extras (eram",
+        decisao.extrasAtuais + ") e a trilha não tem o evento. Matrícula:",
+        mat.id,
+        "Autor:",
+        staff.email
+      );
     }
-    return fail(
-      "Não foi possível registrar a liberação na trilha de auditoria. Tente de novo.",
-      500
-    );
+    return fail(falha.mensagem, falha.status, { codigo: falha.codigo });
   }
   return ok({ tentativas_extras: decisao.extrasNovas });
 }
@@ -220,38 +244,63 @@ async function revogarCertificado(
   }
   if (!revogados?.length) return fail("O certificado já está revogado", 409);
 
-  const gravou = await registrarEvento(supabase, req, {
-    empresa_id: mat.empresa_id,
-    funcionario_id: mat.funcionario_id,
-    matricula_id: mat.id,
-    curso_id: mat.curso_id,
-    evento: EVENTO_CERTIFICADO_REVOGADO,
-    detalhe: detalheDaRevogacao({ por: staff.email, codigo: cert.codigo, motivo }),
+  const registro = await registrarOuDesfazer({
+    registrar: () =>
+      registrarEvento(supabase, req, {
+        empresa_id: mat.empresa_id,
+        funcionario_id: mat.funcionario_id,
+        matricula_id: mat.id,
+        curso_id: mat.curso_id,
+        evento: EVENTO_CERTIFICADO_REVOGADO,
+        detalhe: detalheDaRevogacao({ por: staff.email, codigo: cert.codigo, motivo }),
+      }),
+    desfazer: async () => {
+      const { data: desfeitos, error: erroDesfazer } = await supabase
+        .from("treinamento_certificado")
+        .update(dadosParaDesfazerRevogacao())
+        .eq("id", cert.id)
+        .eq("empresa_id", mat.empresa_id)
+        .eq("revogado_em", quando.toISOString())
+        .select("id");
+      if (erroDesfazer) {
+        console.error(
+          "[funcionario-acesso] revogar_certificado: não desfez:",
+          erroDesfazer.message
+        );
+      }
+      return !erroDesfazer && (desfeitos?.length ?? 0) > 0;
+    },
   });
-  if (!gravou) {
-    const { error: erroDesfazer } = await supabase
-      .from("treinamento_certificado")
-      .update(dadosParaDesfazerRevogacao())
-      .eq("id", cert.id)
-      .eq("empresa_id", mat.empresa_id)
-      .eq("revogado_em", quando.toISOString());
-    if (erroDesfazer) {
-      console.error("[funcionario-acesso] revogar_certificado: não desfez:", erroDesfazer.message);
+  if (registro !== "registrado") {
+    const falha = falhaDoRegistro({ acao: "revogar_certificado", resultado: registro });
+    if (registro === "sem_registro") {
+      console.error(
+        "[funcionario-acesso] revogar_certificado: EFEITO SEM REGISTRO. Certificado",
+        cert.codigo,
+        "revogado sem o evento na trilha e sem aviso ao aluno. Matrícula:",
+        mat.id,
+        "Autor:",
+        staff.email
+      );
     }
-    return fail(
-      "Não foi possível registrar a revogação na trilha de auditoria. Tente de novo.",
-      500
-    );
+    return fail(falha.mensagem, falha.status, { codigo: falha.codigo });
   }
 
-  const { data: func } = await supabase
+  const { data: func, error: erroFunc } = await supabase
     .from("funcionario")
     .select("nome_completo, telefone, ativo, deleted_at")
     .eq("id", mat.funcionario_id)
     .eq("empresa_id", mat.empresa_id)
     .maybeSingle();
+  // erro de leitura NÃO é "funcionário inativo": o aviso é dado como falho e o RH avisa por outro meio
+  if (erroFunc) {
+    console.error(
+      "[funcionario-acesso] aviso da revogação: não leu o funcionário:",
+      erroFunc.message
+    );
+  }
   const aviso = await avisarAluno({
-    destino: destinoDoAviso(func),
+    destino: destinoDoAviso(func, erroFunc),
     texto: textoAvisoRevogacao({
       nome: func?.nome_completo,
       curso: cert.dados?.curso?.nome,

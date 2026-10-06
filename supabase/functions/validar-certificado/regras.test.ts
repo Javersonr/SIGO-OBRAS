@@ -3,12 +3,14 @@
 // Dados sintéticos: nenhum nome, CPF, CNPJ ou IP reais (só endereços de documentação, RFC 5737).
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   avaliarCertificado,
   conferirIntegridade,
   dataDeBrasilia,
   estaVencido,
   localDoCertificado,
+  resultadoDaConsulta,
   situacaoDoCertificado,
   validadeDoCertificado,
 } from "./regras.ts";
@@ -189,11 +191,54 @@ test("integridade: antigo com avaliação nula, sem aulas e sem IP também repro
   assert.deepEqual(await conferirIntegridade(cert), { integro: true, hash_versao: 1 });
 });
 
-test("integridade: antigo que não dá para refazer fica 'não verificável' (null), nunca reprovado", async () => {
+test("integridade: antigo que não dá para refazer NÃO confere (false), nunca 'não verificável' (null)", async () => {
   const cert = await certificadoLegado();
-  // hash que não bate e sem a versão 2 na assinatura: pode ser uma forma antiga que não conhecemos
+  // hash que não bate, sem hash_versao: nem a v1 nem a v2 reproduzem, então o registro não confere
   const r = await conferirIntegridade({ ...cert, hash_sha256: "0".repeat(64) });
-  assert.deepEqual(r, { integro: null, hash_versao: 1 });
+  assert.deepEqual(r, { integro: false, hash_versao: 1 });
+});
+
+test("integridade: apagar o hash_versao de um certificado novo não rebaixa para a v1 (T10, M1)", async () => {
+  const cert = await certificadoNovo();
+  const { hash_versao: _tirada, ...semVersao } = cert.assinatura_aluno;
+  // 1) só a versão apagada, o resto intacto: o hash gravado era da assinatura COM a versão
+  const soSemVersao = await conferirIntegridade({ ...cert, assinatura_aluno: semVersao });
+  assert.equal(soSemVersao.integro, false);
+  // 2) versão apagada E a validade esticada: antes virava `null` ("válido" na página); agora não confere
+  const esticado = {
+    ...cert,
+    assinatura_aluno: semVersao,
+    dados: {
+      ...cert.dados,
+      periodo: { ...(cert.dados.periodo as object), validade: "2030-01-01" },
+    },
+  };
+  const r = await conferirIntegridade(esticado);
+  assert.equal(r.integro, false);
+  assert.notEqual(r.integro, null);
+});
+
+test("integridade: sem hash_versao tenta a v1 e, se não bater, a v2 (hash canônico sem a versão)", async () => {
+  // uma assinatura sem hash_versao cujo hash foi calculado pela v2: a segunda tentativa reproduz
+  const dados = dadosDeEmissao();
+  const assinatura = assinaturaDeEmissao();
+  const cert = {
+    codigo: CODIGO,
+    dados: comoNoJsonb(dados),
+    assinatura_aluno: comoNoJsonb(assinatura),
+    hash_sha256: await hashDoCertificado(CODIGO, dados, assinatura),
+  };
+  assert.deepEqual(await conferirIntegridade(cert), { integro: true, hash_versao: 2 });
+});
+
+test("integridade: com hash_versao 2 gravada, a v1 nunca é tentada", async () => {
+  // o hash gravado é o da v1 (JSON.stringify na ordem antiga) mas a assinatura diz v2: não confere
+  const legado = await certificadoLegado();
+  const r = await conferirIntegridade({
+    ...legado,
+    assinatura_aluno: { ...legado.assinatura_aluno, hash_versao: HASH_VERSAO_CANONICO },
+  });
+  assert.deepEqual(r, { integro: false, hash_versao: 2 });
 });
 
 test("integridade: a versão do hash vem da assinatura; ausente = versão 1", async () => {
@@ -295,9 +340,19 @@ test("situação: revogado tem prioridade; depois dados que não conferem; depoi
   assert.equal(situacaoDoCertificado({ revogado: false, integro: true, vencido: false }), "valido");
 });
 
-test("situação: integridade 'não verificável' (null) não reprova o certificado", () => {
-  assert.equal(situacaoDoCertificado({ revogado: false, integro: null, vencido: false }), "valido");
-  assert.equal(situacaoDoCertificado({ revogado: false, integro: null, vencido: true }), "vencido");
+test("situação: integridade que não é true (inclusive null vindo de fora) reprova: nunca 'válido'", () => {
+  assert.equal(
+    situacaoDoCertificado({ revogado: false, integro: null as unknown as boolean, vencido: false }),
+    "divergente"
+  );
+  assert.equal(
+    situacaoDoCertificado({
+      revogado: false,
+      integro: undefined as unknown as boolean,
+      vencido: true,
+    }),
+    "divergente"
+  );
 });
 
 // ------------------------------------------------------------------ avaliarCertificado
@@ -372,4 +427,61 @@ test("avaliar: certificado antigo íntegro e no prazo → válido, versão 1", a
   assert.equal(r.situacao, "valido");
   assert.equal(r.integro, true);
   assert.equal(r.hash_versao, 1);
+});
+
+test("avaliar: sem hash_versao e com a validade esticada → divergente, não 'válido' (T10, M1)", async () => {
+  const cert = await certificadoNovo("2026-10-03");
+  const { hash_versao: _tirada, ...semVersao } = cert.assinatura_aluno;
+  const adulterado = {
+    ...cert,
+    assinatura_aluno: semVersao,
+    dados: {
+      ...cert.dados,
+      periodo: { ...(cert.dados.periodo as object), validade: "2030-01-01" },
+    },
+  };
+  const r = await avaliarCertificado(adulterado, HOJE);
+  assert.equal(r.situacao, "divergente");
+  assert.equal(r.integro, false);
+  assert.equal(r.valido, false);
+});
+
+// ------------------------------------------------------------------ resultadoDaConsulta (T10, M7)
+test("consulta: erro do banco é erro (500), nunca 'nenhum certificado' (T10, M7)", () => {
+  const r = resultadoDaConsulta({ data: null, error: { message: "conexão caiu", code: "08006" } });
+  assert.equal(r.tipo, "erro");
+  // mesmo que o banco devolva uma linha junto com o erro, o erro vale
+  assert.equal(
+    resultadoDaConsulta({ data: { codigo: "X" }, error: { message: "falha" } }).tipo,
+    "erro"
+  );
+});
+
+test("consulta: sem erro e sem linha = não encontrado; com linha = encontrado", () => {
+  assert.deepEqual(resultadoDaConsulta({ data: null, error: null }), { tipo: "nao_encontrado" });
+  assert.deepEqual(resultadoDaConsulta({ data: undefined, error: undefined }), {
+    tipo: "nao_encontrado",
+  });
+  const cert = { codigo: CODIGO };
+  assert.deepEqual(resultadoDaConsulta({ data: cert, error: null }), {
+    tipo: "encontrado",
+    certificado: cert,
+  });
+});
+
+test("index.ts: o erro do select vira 500 (com console.error) antes de 'não encontrado'", () => {
+  const index = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+  const leitura = index.indexOf("resultadoDaConsulta(leitura)");
+  assert.ok(leitura > 0, "o index.ts não usa resultadoDaConsulta");
+  const erro = index.indexOf('consulta.tipo === "erro"', leitura);
+  const naoAchou = index.indexOf('consulta.tipo === "nao_encontrado"', leitura);
+  assert.ok(
+    erro > leitura && naoAchou > erro,
+    "o erro tem de ser tratado antes do 'não encontrado'"
+  );
+  const bloco = index.slice(erro, naoAchou);
+  assert.match(bloco, /console\.error\(/);
+  assert.match(bloco, /fail\([\s\S]*?,\s*500\s*\)/);
+  // a leitura não descarta o error (era o defeito: const { data: cert } = ...)
+  assert.equal(/const \{ data: cert \}/.test(index), false);
 });

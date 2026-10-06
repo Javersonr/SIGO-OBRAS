@@ -8,6 +8,21 @@
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * Deixa nos logs da função a causa de um erro do banco (a resposta ao aluno é só "Erro ao registrar
+ * ciência"). Vai a etapa, o código e a mensagem do banco; nunca a evidência (IP, dispositivo, usuário).
+ */
+function registrarErro(etapa: "leitura" | "confirmação", erro: unknown) {
+  const e = erro as { message?: unknown; code?: unknown } | null;
+  console.error(
+    "[portal-funcionario] ciência:",
+    etapa,
+    "falhou:",
+    e?.code ? `[${String(e.code)}]` : "",
+    String(e?.message ?? erro)
+  );
+}
+
 export type ResultadoCiencia =
   | { resultado: "confirmada" }
   | { resultado: "ja_confirmada" }
@@ -46,7 +61,10 @@ export async function confirmarCiencia(supabase: any, p: PedidoCiencia): Promise
     .eq("empresa_id", p.empresaId)
     .is("deleted_at", null)
     .maybeSingle();
-  if (erroLeitura) return { resultado: "erro" };
+  if (erroLeitura) {
+    registrarErro("leitura", erroLeitura);
+    return { resultado: "erro" };
+  }
   if (!ciencia) return { resultado: "nao_encontrada" };
   if (ciencia.status === "confirmada") return { resultado: "ja_confirmada" };
 
@@ -63,7 +81,10 @@ export async function confirmarCiencia(supabase: any, p: PedidoCiencia): Promise
     .eq("status", "pendente")
     .is("deleted_at", null)
     .select("id");
-  if (error) return { resultado: "erro" };
+  if (error) {
+    registrarErro("confirmação", error);
+    return { resultado: "erro" };
+  }
   if (!Array.isArray(atualizadas) || atualizadas.length === 0) {
     return { resultado: "ja_confirmada" };
   }

@@ -24,15 +24,25 @@
 --     'servidor' pelo default: em 30/09/2026 a trilha só tinha 2 eventos "acesso_criado", gravados
 --     pelo servidor, então o rótulo está certo e nenhuma linha precisa de UPDATE;
 --   - trigger trilha_imutavel: recusa UPDATE e DELETE em treinamento_evento e treinamento_tentativa, e
---     DELETE em treinamento_certificado (o UPDATE do certificado é a revogação, 0119), sempre, até
---     para service role, super admin e o dono do banco. TRUNCATE das três também. O servidor
---     (portal-funcionario) só faz INSERT nelas (conferido no index.ts; o teste
---     supabase/functions/portal-funcionario/trilha-imutavel.test.ts vigia isso).
+--     DELETE em treinamento_certificado (o UPDATE do certificado é a revogação, 0119), até para o
+--     service role e o super admin, ou seja, por qualquer caminho da API (PostgREST e Edge
+--     Functions) e por acidente de quem roda um comando. TRUNCATE das três também. O servidor
+--     (portal-funcionario) só faz INSERT nelas, com uma exceção: a anulação de uma emissão de
+--     certificado cujo hash não se reproduziu, que é UPDATE de certificado (revogação do sistema, que
+--     este trigger deixa passar). Conferido no index.ts; o teste
+--     supabase/functions/portal-funcionario/trilha-imutavel.test.ts vigia isso.
 --
--- A ÚNICA saída é a variável de sessão sigo.permitir_expurgo = 'on', que só quem tem acesso ao SQL
--- consegue ligar (PostgREST e as Edge Functions não conseguem). Uso: o Javerson, na limpeza de dados
--- de teste e no expurgo por retenção (decisão D11 do handoff, ainda sem política escrita; NADA é
--- apagado automaticamente). Sempre dentro de uma transação, com "set local":
+-- ALCANCE: um UPDATE ou DELETE comum também é barrado para o dono da tabela (o papel postgres do
+-- Supabase; tools/smoke-ead-trilha.sql confere), mas a trava não é à prova de quem é dono: ele
+-- consegue desligá-la de propósito (alter table ... disable trigger, drop trigger, ou
+-- set session_replication_role = replica, que desliga os triggers de usuário). Isso não acontece por
+-- engano e deixa rastro no log do Postgres, mas não é impossível.
+--
+-- A saída prevista, sem mexer no trigger, é a variável de sessão sigo.permitir_expurgo = 'on', que só
+-- quem tem acesso ao SQL consegue ligar (PostgREST e as Edge Functions não conseguem). Uso: o
+-- Javerson, na limpeza de dados de teste e no expurgo por retenção (decisão D11 do handoff, ainda
+-- sem política escrita; NADA é apagado automaticamente). Sempre dentro de uma transação, com
+-- "set local":
 --
 --   begin;
 --   set local sigo.permitir_expurgo = 'on';
@@ -81,7 +91,8 @@ comment on column public.treinamento_evento.origem is
 
 -- 3. Trilha só de inclusão ----------------------------------------------------
 -- Sem exceção para service role nem super admin: só o expurgo deliberado (set local
--- sigo.permitir_expurgo = 'on'). Não é SECURITY DEFINER: não lê nada protegido.
+-- sigo.permitir_expurgo = 'on'). Não protege contra o dono do banco (ver ALCANCE no cabeçalho).
+-- Não é SECURITY DEFINER: não lê nada protegido.
 create or replace function public.trilha_imutavel()
 returns trigger
 language plpgsql

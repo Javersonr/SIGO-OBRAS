@@ -16,6 +16,8 @@ import {
   TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG,
   TOLERANCIA_SEG,
   VOLUME_POR_ACAO,
+  type AcaoComVolume,
+  acaoDeVolumeDoEvento,
   aulaLiberada,
   aulasParaAluno,
   conclusaoDaAula,
@@ -1887,7 +1889,7 @@ function depsFalsas(opcoes: { permitido?: boolean; senhaCerta?: boolean } = {}) 
 
 test("reconfirmarSenha: consome a tentativa ANTES de conferir, por funcionário e em escopo próprio", async () => {
   const f = depsFalsas({ senhaCerta: false });
-  await reconfirmarSenha({ funcionarioId: "func-1", ...f.deps });
+  await reconfirmarSenha({ funcionarioId: "func-1", senha: "senha-digitada", ...f.deps });
   assert.deepEqual(f.chamadas, ["consumir", "conferir"]);
   assert.equal(f.consumos.length, 1);
   assert.equal(f.consumos[0].escopo, ESCOPO_RECONFIRMAR_SENHA);
@@ -1907,20 +1909,29 @@ test("reconfirmarSenha: o escopo não é o do login nem o das dúvidas, e o teto
 
 test("reconfirmarSenha: limite estourado devolve 'limite' sem nem conferir a senha", async () => {
   const f = depsFalsas({ permitido: false, senhaCerta: true });
-  assert.equal(await reconfirmarSenha({ funcionarioId: "func-1", ...f.deps }), "limite");
+  assert.equal(
+    await reconfirmarSenha({ funcionarioId: "func-1", senha: "senha-digitada", ...f.deps }),
+    "limite"
+  );
   assert.deepEqual(f.chamadas, ["consumir"]);
 });
 
 test("reconfirmarSenha: senha certa devolve 'ok' e libera as tentativas (zera a conta)", async () => {
   const f = depsFalsas({ senhaCerta: true });
-  assert.equal(await reconfirmarSenha({ funcionarioId: "func-1", ...f.deps }), "ok");
+  assert.equal(
+    await reconfirmarSenha({ funcionarioId: "func-1", senha: "senha-digitada", ...f.deps }),
+    "ok"
+  );
   assert.deepEqual(f.chamadas, ["consumir", "conferir", "liberar"]);
   assert.equal(f.liberados[0], f.consumo);
 });
 
 test("reconfirmarSenha: senha errada devolve 'incorreta' e não libera nada", async () => {
   const f = depsFalsas({ senhaCerta: false });
-  assert.equal(await reconfirmarSenha({ funcionarioId: "func-1", ...f.deps }), "incorreta");
+  assert.equal(
+    await reconfirmarSenha({ funcionarioId: "func-1", senha: "senha-digitada", ...f.deps }),
+    "incorreta"
+  );
   assert.deepEqual(f.chamadas, ["consumir", "conferir"]);
 });
 
@@ -1963,6 +1974,7 @@ function reconfirmarComLimitador(
 ) {
   return reconfirmarSenha({
     funcionarioId,
+    senha: "senha-digitada",
     consumir: (escopo, janelaSeg, limites) => consumirTentativa(admin, escopo, janelaSeg, limites),
     conferir: async () => senhaCerta,
     liberar: (c) => liberarTentativas(admin, c),
@@ -1996,6 +2008,48 @@ test("reconfirmarSenha: o limite de um funcionário não afeta outro", async () 
   }
   assert.equal(await reconfirmarComLimitador(admin, "func-1", true), "limite");
   assert.equal(await reconfirmarComLimitador(admin, "func-2", true), "ok");
+});
+
+test("reconfirmarSenha: senha vazia é 'incorreta' sem consumir tentativa nem conferir (T27)", async () => {
+  for (const vazia of ["", undefined, null, 0 as unknown as string]) {
+    const f = depsFalsas({ senhaCerta: true });
+    const r = await reconfirmarSenha({
+      funcionarioId: "func-1",
+      senha: vazia as unknown as string,
+      ...f.deps,
+    });
+    assert.equal(r, "incorreta", String(vazia));
+    assert.deepEqual(f.chamadas, [], "nem consumiu a tentativa nem conferiu a senha");
+  }
+});
+
+test("reconfirmarSenha: chamadas com senha vazia não queimam as tentativas de quem tem o token", async () => {
+  const admin = limitadorFalso();
+  // 20 pedidos de senha vazia (script com o token): nenhum conta
+  for (let i = 0; i < 20; i++) {
+    const r = await reconfirmarSenha({
+      funcionarioId: "func-1",
+      senha: "",
+      consumir: (escopo, janelaSeg, limites) =>
+        consumirTentativa(admin, escopo, janelaSeg, limites),
+      conferir: async () => true,
+      liberar: (c) => liberarTentativas(admin, c),
+    });
+    assert.equal(r, "incorreta");
+  }
+  assert.equal(admin.contagem.size, 0, "o limitador nem foi chamado");
+  // as 5 tentativas de verdade continuam todas disponíveis, e a senha certa assina
+  for (let i = 0; i < MAX_TENTATIVAS_RECONFIRMAR_SENHA - 1; i++) {
+    assert.equal(await reconfirmarComLimitador(admin, "func-1", false), "incorreta");
+  }
+  assert.equal(await reconfirmarComLimitador(admin, "func-1", true), "ok");
+});
+
+test("reconfirmarSenha: senha só com espaços é uma senha como outra qualquer (consome e confere)", async () => {
+  const f = depsFalsas({ senhaCerta: false });
+  const r = await reconfirmarSenha({ funcionarioId: "func-1", senha: "   ", ...f.deps });
+  assert.equal(r, "incorreta");
+  assert.deepEqual(f.chamadas, ["consumir", "conferir"]);
 });
 
 test("reconfirmarSenha: limitador fora do ar não tranca (a conferência da senha segue valendo)", async () => {
@@ -2092,7 +2146,7 @@ test("COLUNAS_MATRICULA_PORTAL: lista explícita (sem *) com a do aluno mais o q
 // ------------------------------------------------ limite de volume: evento e progresso (T31)
 function volumeComLimitador(
   admin: ReturnType<typeof limitadorFalso>,
-  acao: "evento" | "progresso",
+  acao: AcaoComVolume,
   funcionarioId: string
 ) {
   return dentroDoVolume({
@@ -2103,7 +2157,7 @@ function volumeComLimitador(
 }
 
 test("dentroDoVolume: passa até o teto da ação e barra a partir da seguinte", async () => {
-  for (const acao of ["evento", "progresso"] as const) {
+  for (const acao of Object.keys(VOLUME_POR_ACAO) as AcaoComVolume[]) {
     const admin = limitadorFalso();
     for (let i = 0; i < VOLUME_POR_ACAO[acao].max; i++) {
       assert.equal(await volumeComLimitador(admin, acao, "func-1"), true, `${acao} #${i + 1}`);
@@ -2138,8 +2192,8 @@ test("dentroDoVolume: um funcionário no teto não atrapalha outro (aparelho com
 });
 
 test("dentroDoVolume: evento e progresso têm contadores separados, e nenhum é o do login ou da senha", async () => {
-  const escopos = [VOLUME_POR_ACAO.evento.escopo, VOLUME_POR_ACAO.progresso.escopo];
-  assert.equal(new Set(escopos).size, 2);
+  const escopos = Object.values(VOLUME_POR_ACAO).map((v) => v.escopo);
+  assert.equal(new Set(escopos).size, escopos.length, "cada ação tem o seu escopo");
   for (const e of escopos) {
     assert.notEqual(e, ESCOPO_RECONFIRMAR_SENHA);
     assert.notEqual(e, "funcionario-login");
@@ -2165,6 +2219,83 @@ test("dentroDoVolume: limitador fora do ar não derruba o portal (como no login)
   } finally {
     console.error = erroOriginal;
   }
+});
+
+// ------------- T31 (acompanhamento): trocar de aula não pode ser travado pelo teto do play
+test("acaoDeVolumeDoEvento: abrir_aula e play/pausa têm teto próprio; o resto fica no teto geral", () => {
+  assert.equal(acaoDeVolumeDoEvento("abrir_aula"), "abrir_aula");
+  assert.equal(acaoDeVolumeDoEvento("play"), "player");
+  assert.equal(acaoDeVolumeDoEvento("pausa"), "player");
+  for (const nome of [
+    "abrir_curso",
+    "fim_video",
+    "aba_oculta",
+    "aba_visivel",
+    "avaliacao_inicio",
+    "abrir_projeto",
+    "abrir_certificado",
+  ]) {
+    assert.equal(acaoDeVolumeDoEvento(nome), "evento", nome);
+  }
+});
+
+test("acaoDeVolumeDoEvento: nome desconhecido, vazio ou que não é texto cai no teto geral", () => {
+  for (const nome of ["", "login", "PLAY", " play", undefined, null, 7, {}]) {
+    assert.equal(acaoDeVolumeDoEvento(nome), "evento", String(nome));
+  }
+});
+
+test("play repetido (YouTube: BUFFERING→PLAYING) esgota só o teto do player, nunca o de abrir_aula", async () => {
+  const admin = limitadorFalso();
+  // internet ruim de obra: muito mais play/pausa do que o normal, até estourar o teto do player
+  for (let i = 0; i < VOLUME_POR_ACAO.player.max; i++) {
+    assert.equal(await volumeComLimitador(admin, acaoDeVolumeDoEvento("play"), "func-1"), true);
+  }
+  assert.equal(await volumeComLimitador(admin, acaoDeVolumeDoEvento("play"), "func-1"), false);
+  // o aluno continua conseguindo trocar de aula (e registrar o resto da navegação)
+  assert.equal(await volumeComLimitador(admin, acaoDeVolumeDoEvento("abrir_aula"), "func-1"), true);
+  assert.equal(
+    await volumeComLimitador(admin, acaoDeVolumeDoEvento("abrir_curso"), "func-1"),
+    true
+  );
+  assert.equal(await volumeComLimitador(admin, acaoDeVolumeDoEvento("aba_oculta"), "func-1"), true);
+});
+
+test("o teto geral de evento esgotado também não trava a troca de aula nem o play", async () => {
+  const admin = limitadorFalso();
+  for (let i = 0; i <= VOLUME_POR_ACAO.evento.max; i++) {
+    await volumeComLimitador(admin, acaoDeVolumeDoEvento("aba_visivel"), "func-1");
+  }
+  assert.equal(
+    await volumeComLimitador(admin, acaoDeVolumeDoEvento("aba_visivel"), "func-1"),
+    false
+  );
+  assert.equal(await volumeComLimitador(admin, acaoDeVolumeDoEvento("abrir_aula"), "func-1"), true);
+  assert.equal(await volumeComLimitador(admin, acaoDeVolumeDoEvento("play"), "func-1"), true);
+});
+
+test("abrir_aula ainda tem teto (a trilha é só de inclusão): passou, 429, e só para quem passou", async () => {
+  const admin = limitadorFalso();
+  for (let i = 0; i < VOLUME_POR_ACAO.abrir_aula.max; i++) {
+    assert.equal(await volumeComLimitador(admin, "abrir_aula", "func-1"), true);
+  }
+  assert.equal(await volumeComLimitador(admin, "abrir_aula", "func-1"), false);
+  // e o teto de um funcionário não vale para outro
+  assert.equal(await volumeComLimitador(admin, "abrir_aula", "func-2"), true);
+});
+
+test("VOLUME_POR_ACAO: os tetos de abrir_aula e do player têm folga sobre o pior caso plausível", () => {
+  const { abrir_aula, player, evento } = VOLUME_POR_ACAO;
+  const janela = player.janelaSeg;
+  assert.equal(abrir_aula.janelaSeg, janela);
+  assert.equal(evento.janelaSeg, janela);
+  // trocar de aula: uma a cada 6 s, sem parar, durante 10 min (um aluno que anda pela lista)
+  assert.ok(abrir_aula.max >= janela / 6, "abrir_aula");
+  // internet ruim: cada travada do vídeo vira um par pausa/play; um par a cada 5 s por 10 min
+  assert.ok(player.max >= (janela / 5) * 2, "player");
+  // mas nenhum fica aberto a ponto de não limitar nada
+  assert.ok(abrir_aula.max <= 300);
+  assert.ok(player.max <= 600);
 });
 
 test("VOLUME_POR_ACAO: o teto deixa folga sobre o ritmo do portal (sinal a cada 10 s)", () => {

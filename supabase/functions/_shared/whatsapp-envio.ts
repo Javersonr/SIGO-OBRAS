@@ -50,28 +50,55 @@ export async function evolutionApi(
   return { status: resp.status, json };
 }
 
-export async function enviarWhatsAppTexto(numero: string, texto: string): Promise<void> {
+/**
+ * Tempo máximo (ms) de UM envio de texto, somando a tentativa no formato v2 e o refazer no v1. Sem limite,
+ * um Evolution fora do ar deixava o `fetch` esperar o timeout de conexão do sistema (minutos), e quem
+ * esperava a resposta (a revogação de certificado, a recuperação de senha) ficava pendurado. Passou do
+ * prazo, o envio LANÇA: o chamador trata como falha do canal.
+ */
+export const TEMPO_LIMITE_ENVIO_MS = 12_000;
+
+export async function enviarWhatsAppTexto(
+  numero: string,
+  texto: string,
+  opcoes: { limiteMs?: number } = {}
+): Promise<void> {
   const { url, instancia, apikey } = configEvolution();
 
   const endpoint = `${url}/message/sendText/${encodeURIComponent(instancia)}`;
   const headers = { "Content-Type": "application/json", apikey };
+  const limiteMs = opcoes.limiteMs ?? TEMPO_LIMITE_ENVIO_MS;
+  // um sinal só para o envio inteiro: a segunda chamada não ganha prazo novo
+  const signal = AbortSignal.timeout(limiteMs);
 
-  // Evolution v2 usa { number, text }; v1 usa { number, textMessage: { text } }.
-  // Tenta v2 e, num 400, refaz no formato v1.
-  let resp = await fetch(endpoint, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ number: numero, text: texto }),
-  });
-  if (resp.status === 400) {
-    resp = await fetch(endpoint, {
+  try {
+    // Evolution v2 usa { number, text }; v1 usa { number, textMessage: { text } }.
+    // Tenta v2 e, num 400, refaz no formato v1.
+    let resp = await fetch(endpoint, {
       method: "POST",
       headers,
-      body: JSON.stringify({ number: numero, textMessage: { text: texto } }),
+      body: JSON.stringify({ number: numero, text: texto }),
+      signal,
     });
-  }
-  if (!resp.ok) {
-    const corpo = await resp.text().catch(() => "");
-    throw new Error(`Evolution ${resp.status}: ${corpo.slice(0, 300)}`);
+    if (resp.status === 400) {
+      resp = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ number: numero, textMessage: { text: texto } }),
+        signal,
+      });
+    }
+    if (!resp.ok) {
+      const corpo = await resp.text().catch(() => "");
+      throw new Error(`Evolution ${resp.status}: ${corpo.slice(0, 300)}`);
+    }
+  } catch (e) {
+    // o prazo estourou (o fetch rejeita com TimeoutError/AbortError): erro com o motivo claro
+    if (signal.aborted) {
+      throw new Error(
+        `Evolution: tempo esgotado (sem resposta em ${Math.round(limiteMs / 1000)} s)`
+      );
+    }
+    throw e;
   }
 }

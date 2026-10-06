@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { confirmarCiencia } from "./ciencia.ts";
 
 type Chamada = { operacao: string; tabela: string; filtros: unknown[][]; dados?: unknown };
@@ -151,7 +152,8 @@ test("registro inexistente, de outra empresa ou excluído: não encontrado e sem
   assert.equal(chamadas.filter((c) => c.operacao === "update").length, 0);
 });
 
-test("erro do banco na leitura ou no UPDATE vira erro, não 404 nem sucesso", async () => {
+test("erro do banco na leitura ou no UPDATE vira erro, não 404 nem sucesso", async (t) => {
+  t.mock.method(console, "error", () => {});
   const leituraComErro = bancoDeTeste({ leitura: { data: null, error: { message: "falha" } } });
   assert.deepEqual(await confirmarCiencia(leituraComErro.db, pedido), { resultado: "erro" });
 
@@ -160,6 +162,62 @@ test("erro do banco na leitura ou no UPDATE vira erro, não 404 nem sucesso", as
     escrita: { data: null, error: { message: "falha" } },
   });
   assert.deepEqual(await confirmarCiencia(escritaComErro.db, pedido), { resultado: "erro" });
+});
+
+// T7: o erro do banco não pode sumir sem rastro (o 500 genérico sozinho não diz a causa nos logs)
+test("erro do banco na leitura deixa rastro no log, com a etapa e o motivo", async (t) => {
+  const erro = t.mock.method(console, "error", () => {});
+  const { db } = bancoDeTeste({
+    leitura: { data: null, error: { message: "permission denied for table x", code: "42501" } },
+  });
+  assert.deepEqual(await confirmarCiencia(db, pedido), { resultado: "erro" });
+  assert.equal(erro.mock.callCount(), 1);
+  const texto = erro.mock.calls[0].arguments.join(" ");
+  assert.match(texto, /ciência/);
+  assert.match(texto, /leitura/);
+  assert.match(texto, /permission denied for table x/);
+  assert.match(texto, /42501/);
+});
+
+test("erro do banco no UPDATE deixa rastro no log, com a etapa e o motivo", async (t) => {
+  const erro = t.mock.method(console, "error", () => {});
+  const { db } = bancoDeTeste({
+    leitura: { data: { id: ID_CIENCIA, status: "pendente" } },
+    escrita: { data: null, error: { message: "trigger recusou", code: "42501" } },
+  });
+  assert.deepEqual(await confirmarCiencia(db, pedido), { resultado: "erro" });
+  assert.equal(erro.mock.callCount(), 1);
+  const texto = erro.mock.calls[0].arguments.join(" ");
+  assert.match(texto, /ciência/);
+  assert.match(texto, /confirma/);
+  assert.match(texto, /trigger recusou/);
+});
+
+test("o rastro do erro não leva a evidência (IP, dispositivo, usuário) para o log", async (t) => {
+  const erro = t.mock.method(console, "error", () => {});
+  const { db } = bancoDeTeste({
+    leitura: { data: { id: ID_CIENCIA, status: "pendente" } },
+    escrita: { data: null, error: { message: "falha" } },
+  });
+  await confirmarCiencia(db, pedido);
+  const texto = erro.mock.calls.map((c) => c.arguments.join(" ")).join(" ");
+  assert.equal(texto.includes(evidencia.ip), false);
+  assert.equal(texto.includes(evidencia.usuario), false);
+});
+
+test("sem erro (confirmada, já confirmada ou não encontrada) nada vai para o log de erro", async (t) => {
+  const erro = t.mock.method(console, "error", () => {});
+  const confirmada = bancoDeTeste({
+    leitura: { data: { id: ID_CIENCIA, status: "pendente" } },
+    escrita: { data: [{ id: ID_CIENCIA }] },
+  });
+  await confirmarCiencia(confirmada.db, pedido);
+  await confirmarCiencia(bancoDeTeste({ leitura: { data: null } }).db, pedido);
+  await confirmarCiencia(
+    bancoDeTeste({ leitura: { data: { id: ID_CIENCIA, status: "confirmada" } } }).db,
+    pedido
+  );
+  assert.equal(erro.mock.callCount(), 0);
 });
 
 test("id que não é UUID (ou nem é texto) é não encontrado, sem consultar o banco", async () => {
@@ -171,4 +229,29 @@ test("id que não é UUID (ou nem é texto) é não encontrado, sem consultar o 
     assert.deepEqual(r, { resultado: "nao_encontrada" });
     assert.equal(chamadas.length, 0);
   }
+});
+
+// T7: o smoke em SQL (roda o Javerson, em transação com rollback) precisa conferir o que diz e
+// escolher o funcionário pelo mesmo critério que o comentário e o portal usam.
+test("smoke da ciência: confere itens ao corrigir a pendente e escolhe funcionário ATIVO (como o comentário diz)", () => {
+  const sql = readFileSync(
+    new URL("../../../tools/smoke-ead-ciencia.sql", import.meta.url),
+    "utf8"
+  ).replace(/\r\n/g, "\n");
+  // passo 4: o UPDATE grava tipo, descricao E itens, e a conferência lê os três
+  assert.match(
+    sql,
+    /set tipo = 'Ferramenta', descricao = [^\n]+, itens = '\[\{"nome":"capacete"\}\]'::jsonb/
+  );
+  const passo4 = sql.slice(sql.indexOf("-- 4. pendente"), sql.indexOf("-- 5. confirmar direto"));
+  assert.match(passo4, /v_linha\.itens is distinct from '\[\{"nome":"capacete"\}\]'::jsonb/);
+  // passo 1: o filtro tem o mesmo critério do portal (funcionarioPodeEntrar: ativo !== false e sem deleted_at)
+  const passo1 = sql.slice(
+    sql.indexOf("-- 1. empresa e funcionário de teste"),
+    sql.indexOf("-- ---")
+  );
+  assert.match(passo1, /f\.deleted_at is null/);
+  assert.match(passo1, /f\.ativo is not false/);
+  // sem UUID fixo no arquivo (repositório público)
+  assert.equal(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(sql), false);
 });

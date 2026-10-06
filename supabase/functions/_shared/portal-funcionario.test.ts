@@ -60,6 +60,11 @@ test("origem: o X-Forwarded-For tem prioridade sobre o x-real-ip", () => {
   assert.equal(ip, "203.0.113.9");
 });
 
+test("origem: x-real-ip enorme é gravado cortado em 64 caracteres (T4)", () => {
+  const { ip } = origemDaRequisicao(req({ "x-real-ip": "7".repeat(300) }));
+  assert.equal(ip?.length, 64);
+});
+
 test("origem: sem cabeçalho de IP o endereço é null (cf-connecting-ip é do cliente e não vale)", () => {
   assert.equal(origemDaRequisicao(req({})).ip, null);
   assert.equal(origemDaRequisicao(req({ "cf-connecting-ip": "198.51.100.7" })).ip, null);

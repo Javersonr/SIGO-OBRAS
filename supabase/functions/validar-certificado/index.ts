@@ -5,14 +5,14 @@
  * mínimos: o CPF volta mascarado para a página não virar consulta de dados pessoais.
  *
  *  - integro: o hash gravado na emissão bate com `dados`, a assinatura e o código de hoje (false =
- *    alguém mexeu no registro; null = certificado antigo cujo hash não dá para refazer);
+ *    o registro não confere, por alteração ou por forma de hash que não se reproduz; nunca null);
  *  - vencido: validade anterior ao dia de hoje em Brasília;
  *  - situacao: "valido" | "vencido" | "revogado" | "divergente"; `valido` só é true em "valido".
  * As regras estão em ./regras.ts (com teste).
  */
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
-import { avaliarCertificado, localDoCertificado } from "./regras.ts";
+import { avaliarCertificado, localDoCertificado, resultadoDaConsulta } from "./regras.ts";
 
 function mascararCpf(cpf?: string | null) {
   const d = (cpf || "").replace(/\D/g, "");
@@ -35,14 +35,24 @@ Deno.serve(
     const codigo = `${bruto.slice(0, 4)}-${bruto.slice(4, 8)}-${bruto.slice(8)}`;
 
     const supabase = createAdminClient();
-    const { data: cert } = await supabase
+    const leitura = await supabase
       .from("treinamento_certificado")
       .select(
         "codigo, dados, emitido_em, revogado_em, motivo_revogacao, hash_sha256, assinatura_aluno"
       )
       .eq("codigo", codigo)
       .maybeSingle();
-    if (!cert) return ok({ valido: false, encontrado: false });
+    // falha do banco é erro, nunca "nenhum certificado": um fiscal leria isso como certificado falso
+    const consulta = resultadoDaConsulta(leitura);
+    if (consulta.tipo === "erro") {
+      console.error("[validar-certificado] leitura do certificado:", leitura.error);
+      return fail(
+        "Não foi possível consultar o certificado agora. Tente de novo em instantes.",
+        500
+      );
+    }
+    if (consulta.tipo === "nao_encontrado") return ok({ valido: false, encontrado: false });
+    const cert = consulta.certificado;
 
     const d = cert.dados ?? {};
     const av = await avaliarCertificado(cert, new Date());

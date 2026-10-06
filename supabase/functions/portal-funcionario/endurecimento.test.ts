@@ -60,22 +60,42 @@ test("o portal continua com as ações do aluno (nada além da link saiu)", () =
 });
 
 test("evento e progresso passam pelo limite de volume antes de qualquer trabalho", () => {
+  // o evento escolhe o teto pelo NOME do evento (abrir_aula e play/pausa têm o seu, T31); o progresso, o dele
+  const chamadas: Record<string, string> = {
+    evento: "dentroDoLimite(acaoDeVolumeDoEvento(body.evento))",
+    progresso: 'dentroDoLimite("progresso")',
+  };
   for (const acao of ["evento", "progresso"]) {
     const trecho = trechoDaAcao(acao);
-    const chamada = trecho.indexOf(`dentroDoLimite("${acao}")`);
+    const chamada = trecho.indexOf(chamadas[acao]);
     assert.ok(chamada >= 0, `${acao}: sem o limite de volume`);
     // vem antes de ler a matrícula ou qualquer tabela
     const primeiraLeitura = trecho.search(/minhaMatricula\(|supabase\s*\.from\(|trilhaDoCurso\(/);
     assert.ok(chamada < primeiraLeitura, `${acao}: o limite tem de vir antes das leituras`);
     // estourou: 429 (a resposta é a mesma nas duas ações)
-    const barra = new RegExp(`dentroDoLimite\\("${acao}"\\)\\)\\)\\s*return muitasAcoes\\(\\)`);
-    assert.ok(barra.test(trecho), acao);
+    assert.ok(trecho.includes(`if (!(await ${chamadas[acao]})) return muitasAcoes();`), acao);
   }
   assert.ok(
     /const muitasAcoes = \(\) =>\s*fail\(MSG_MUITAS_ACOES,\s*429,\s*\{ codigo: "LIMITE" \}\)/.test(
       codigo
     )
   );
+});
+
+test("o evento usa o teto próprio de abrir_aula e do play; só o resto cai no teto geral (T31)", () => {
+  const trecho = trechoDaAcao("evento");
+  // a escolha do teto sai da regra testada (regras.test.ts), não de um if solto no index.ts
+  assert.ok(trecho.includes("acaoDeVolumeDoEvento(body.evento)"));
+  assert.equal(/dentroDoLimite\("evento"\)/.test(codigo), false, "o teto único voltou");
+  // o tipo aceito pelo limite cobre todas as ações da regra
+  assert.ok(codigo.includes("const dentroDoLimite = (acao: AcaoComVolume)"));
+});
+
+test("a reconfirmação passa a senha à regra (senha vazia não consome tentativa, T27)", () => {
+  const inicio = codigo.indexOf("const reconfirmar = (senha: string)");
+  assert.ok(inicio >= 0, "falta o reconfirmar");
+  const definicao = codigo.slice(inicio, codigo.indexOf("const muitasTentativas"));
+  assert.match(definicao, /reconfirmarSenha\(\{\s*funcionarioId,\s*senha,/);
 });
 
 test("o limite de volume é do funcionário da sessão e usa o limitador do login (sem IP)", () => {

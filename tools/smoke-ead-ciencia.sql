@@ -9,8 +9,10 @@
 -- persistido.
 --
 -- A empresa de teste é escolhida em tempo de execução (a do funcionário ativo
--- mais antigo): nenhum UUID fixo neste arquivo. Para testar outra empresa,
--- troque o filtro do passo 1 por `and f.empresa_id = '<empresa_teste>'`.
+-- mais antigo: sem exclusão lógica e com `ativo` diferente de false, o mesmo
+-- critério com que o portal deixa o funcionário entrar): nenhum UUID fixo neste
+-- arquivo. Para testar outra empresa, troque o filtro do passo 1 por
+-- `and f.empresa_id = '<empresa_teste>'`.
 --
 -- O que confere:
 --   1. criar entrega pendente funciona (e nasce pendente, sem evidência, mesmo
@@ -51,6 +53,7 @@ begin
   select f.empresa_id, f.id into v_empresa, v_func
     from public.funcionario f
     where f.deleted_at is null
+      and f.ativo is not false
     order by f.created_at
     limit 1;
   if v_empresa is null then
@@ -100,7 +103,8 @@ begin
     set tipo = 'Ferramenta', descricao = 'SMOKE capacete (corrigido)', itens = '[{"nome":"capacete"}]'::jsonb
     where id = v_id;
   select * into v_linha from public.entrega_ciencia where id = v_id;
-  if v_linha.tipo <> 'Ferramenta' or v_linha.descricao <> 'SMOKE capacete (corrigido)' then
+  if v_linha.tipo <> 'Ferramenta' or v_linha.descricao <> 'SMOKE capacete (corrigido)'
+     or v_linha.itens is distinct from '[{"nome":"capacete"}]'::jsonb then
     raise exception 'FALHOU: pendente deveria aceitar a correção de tipo/descricao/itens';
   end if;
   raise notice '[corrigir pendente] OK';

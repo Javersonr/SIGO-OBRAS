@@ -22,17 +22,21 @@ const TABELAS_DA_TRILHA = [
 const ESCRITAS_PROIBIDAS = new Set(["update", "upsert", "delete"]);
 
 /**
- * A única escrita (além do insert) permitida na trilha: a REVOGAÇÃO do certificado (T18), feita pelo
- * `funcionario-acesso` a pedido do RH (e o seu desfazer, se o evento da trilha não for gravado). Antes
- * ela era feita direto do navegador do RH; o banco (0119) só deixa a empresa mudar as 3 colunas da
- * revogação, mas o service role passa por essa trava, então o código fica restrito: só este arquivo,
- * só estas duas atualizações, e o `funcionario-acesso` testa que as colunas vêm de `dadosDaRevogacao`.
+ * As únicas escritas (além do insert) permitidas na trilha: a REVOGAÇÃO do certificado (T18), feita pelo
+ * `funcionario-acesso` a pedido do RH (e o seu desfazer, se o evento da trilha não for gravado), e a
+ * ANULAÇÃO de uma emissão cujo hash não se reproduziu pelo banco (T10, M5), feita pelo
+ * `portal-funcionario` no mesmo instante da emissão. Antes a revogação era feita direto do navegador do
+ * RH; o banco (0119) só deixa a empresa mudar as 3 colunas da revogação, mas o service role passa por essa
+ * trava, então o código fica restrito: só estes arquivos, só estas atualizações. O `funcionario-acesso`
+ * testa que as colunas vêm de `dadosDaRevogacao`, e o `emissao-certificado.test.ts` que a anulação vem de
+ * `dadosDaAnulacaoNaEmissao`.
  */
 export const ESCRITAS_PERMITIDAS: Record<string, string[]> = {
   "funcionario-acesso/index.ts": [
     "treinamento_certificado.update",
     "treinamento_certificado.update",
   ],
+  "portal-funcionario/index.ts": ["treinamento_certificado.update"],
 };
 
 /** Tira de `achadas` cada escrita permitida (uma vez por permissão); o que sobra é proibido. */
@@ -189,7 +193,7 @@ function arquivosDasFuncoes(): string[] {
     .filter((p) => p.endsWith(".ts") && !p.endsWith(".test.ts") && !p.includes("node_modules"));
 }
 
-test("nenhuma Edge Function faz UPDATE, UPSERT ou DELETE na trilha (só a revogação, no funcionario-acesso)", () => {
+test("nenhuma Edge Function faz UPDATE, UPSERT ou DELETE na trilha (só a revogação e a anulação da emissão)", () => {
   const arquivos = arquivosDasFuncoes();
   assert.ok(arquivos.length > 10, "a varredura precisa achar as funções");
   const achados: string[] = [];

@@ -18,7 +18,7 @@
  */
 
 import type { Consumo, Limite } from "../_shared/limite-tentativas.ts";
-import { dataBrasilia } from "../_shared/portal-funcionario.ts";
+import { dataBrasilia, hashDoCertificado } from "../_shared/portal-funcionario.ts";
 
 /** Vídeo conclui sozinho a partir de 90% assistidos. */
 export const PCT_CONCLUSAO = 0.9;
@@ -899,15 +899,22 @@ export type ResultadoReconfirmacao = "ok" | "incorreta" | "limite";
  * (`MSG_MUITAS_TENTATIVAS`, `codigo: "LIMITE"`). Limitador fora do ar não tranca (como no login): a
  * conferência da senha segue valendo.
  *
+ * Senha VAZIA (ou que nem é texto) é "incorreta" na hora, sem consumir tentativa e sem conferir: o
+ * portal já desliga o botão sem senha, então só um pedido direto com o token do aluno chega aqui assim, e
+ * ele não pode queimar as 5 tentativas da conta (T27).
+ *
  * As três dependências entram por parâmetro (o `index.ts` liga `consumirTentativa`, `verifyPassword` e
  * `liberarTentativas`), para a ordem poder ser testada no Node.
  */
 export async function reconfirmarSenha(p: {
   funcionarioId: string;
+  /** A senha digitada, só para saber se veio vazia; quem a confere é `conferir`. */
+  senha: string;
   consumir: (escopo: string, janelaSeg: number, limites: Limite[]) => Promise<Consumo>;
   conferir: () => Promise<boolean>;
   liberar: (consumo: Consumo) => Promise<void>;
 }): Promise<ResultadoReconfirmacao> {
+  if (typeof p.senha !== "string" || p.senha === "") return "incorreta";
   const consumo = await p.consumir(ESCOPO_RECONFIRMAR_SENHA, JANELA_RECONFIRMAR_SENHA_SEG, [
     { tipo: "conta", valor: p.funcionarioId, max: MAX_TENTATIVAS_RECONFIRMAR_SENHA },
   ]);
@@ -917,26 +924,49 @@ export async function reconfirmarSenha(p: {
   return "ok";
 }
 
-// ----------------------------------------------- limite de volume: evento e progresso (T31)
+// ------------------------------- limite de volume: evento (3 tetos) e progresso (T31)
 
 /**
- * Teto de chamadas por funcionário das duas ações que o navegador repete sozinho. Sem teto, um aluno
- * (ou um script com o token dele, que vale 12 h) enchia a trilha de auditoria, que é só de inclusão
- * (0135) e não se limpa depois, e o banco com pedidos de progresso. A tentativa é consumida ANTES do
- * trabalho, como no login (`consumirTentativa`, janela fixa, uma linha por funcionário e ação).
+ * Teto de chamadas por funcionário das ações que o navegador repete sozinho. Sem teto, um aluno (ou um
+ * script com o token dele, que vale 12 h) enchia a trilha de auditoria, que é só de inclusão (0135) e
+ * não se limpa depois, e o banco com pedidos de progresso. A tentativa é consumida ANTES do trabalho,
+ * como no login (`consumirTentativa`, janela fixa, uma linha por funcionário e ação).
  *
  * Os números têm folga sobre o ritmo do portal: o progresso sai a cada 10 s com a aula tocando (60 em 10
- * min; duas abas abertas, 120) mais um envio a cada pausa ou troca de aula, e o evento é play, pausa, aba
- * oculta ou visível e abrir aula (dezenas em 10 min já é uso intenso). Passar do teto só atrasa: o
+ * min; duas abas abertas, 120) mais um envio a cada pausa ou troca de aula. Passar do teto só atrasa: o
  * progresso reenvia o TOTAL assistido e o servidor credita o tempo real decorrido desde o último sinal,
  * então nada que o aluno assistiu se perde. Escopos próprios, separados do login e da senha.
+ *
+ * O evento tem TRÊS tetos, porque um só deixava o play repetido travar a troca de aula (T31, revisão):
+ * no YouTube cada volta de BUFFERING para PLAYING manda um `play`, e com internet ruim de obra isso
+ * esgotava o teto e o aluno ficava até 10 min sem conseguir abrir outra aula.
+ *  - `abrir_aula`: a navegação do aluno. Escopo só dela, nada que o player faz a esgota. Uma troca a
+ *    cada 5 s, sem parar, por 10 min, ainda passa (120).
+ *  - `player`: `play` e `pausa` (a travada do vídeo gera um par; um par a cada 5 s por 10 min são 240
+ *    eventos, e há folga até 300). Estourou só barra o próprio player, sem afetar mais nada.
+ *  - `evento`: o resto (abrir curso, fim do vídeo, aba oculta ou visível, prova, projeto, certificado),
+ *    dezenas em 10 min já é uso intenso.
+ * Somados, o pior caso por funcionário (510 em 10 min) é pouco mais de três vezes o teto único antigo.
  */
 export const VOLUME_POR_ACAO = {
   evento: { escopo: "portal-evento", janelaSeg: 10 * 60, max: 150 },
+  abrir_aula: { escopo: "portal-abrir-aula", janelaSeg: 10 * 60, max: 120 },
+  player: { escopo: "portal-player", janelaSeg: 10 * 60, max: 300 },
   progresso: { escopo: "portal-progresso", janelaSeg: 10 * 60, max: 180 },
 } as const;
 
 export type AcaoComVolume = keyof typeof VOLUME_POR_ACAO;
+
+/**
+ * Qual teto vale para o evento que o navegador relatou (`body.evento`): `abrir_aula` e `play`/`pausa`
+ * têm o seu; o resto, e qualquer nome desconhecido ou que nem é texto, cai no teto geral (`evento`).
+ * Vem ANTES de validar o nome: um nome inventado também gasta o teto geral.
+ */
+export function acaoDeVolumeDoEvento(nome: unknown): Exclude<AcaoComVolume, "progresso"> {
+  if (nome === "abrir_aula") return "abrir_aula";
+  if (nome === "play" || nome === "pausa") return "player";
+  return "evento";
+}
 
 /** Mensagem do 429 de volume (o portal mostra o texto que o servidor manda). */
 export const MSG_MUITAS_ACOES =
@@ -996,4 +1026,70 @@ export function resultadoDoSinal(p: {
 }): ResultadoDoSinal {
   if (p.erro) return "erro";
   return (p.linhas ?? 0) > 0 ? "gravado" : "mudou";
+}
+
+// ------------------------- emissão do certificado: o hash tem de se reproduzir pelo banco (T10, M5)
+
+/** Autor da revogação feita pelo próprio sistema (\`treinamento_certificado.revogado_por\`). */
+export const POR_SISTEMA = "sistema";
+
+/**
+ * Motivo gravado quando a emissão é anulada. Aparece na consulta pública do certificado (texto curto, de
+ * uma linha, sem dado pessoal).
+ */
+export const MOTIVO_EMISSAO_ANULADA =
+  "Emissão anulada automaticamente: o selo de integridade do certificado não pôde ser conferido. " +
+  "Procure o RH da empresa.";
+
+/**
+ * Texto do 500 da emissão que não conferiu. Nada foi entregue ao aluno. Uma nova tentativa não ajuda: o
+ * certificado anulado continua ocupando a matrícula (um por matrícula) e o mesmo conteúdo daria o mesmo
+ * resultado; quem refaz a emissão é o RH.
+ */
+export const MSG_EMISSAO_ANULADA =
+  "Não foi possível concluir a emissão do certificado: o selo de integridade não pôde ser conferido " +
+  "e nada foi entregue. Avise o RH para refazer a emissão.";
+
+/**
+ * As únicas colunas que a anulação grava (as mesmas da revogação, migração 0119): hora do servidor, o
+ * sistema como autor e o motivo.
+ */
+export function dadosDaAnulacaoNaEmissao(agora: Date) {
+  return {
+    revogado_em: agora.toISOString(),
+    revogado_por: POR_SISTEMA,
+    motivo_revogacao: MOTIVO_EMISSAO_ANULADA,
+  };
+}
+
+export type ConferenciaDaEmissao = { entregar: true } | { entregar: false; anulado: boolean };
+
+/**
+ * Depois do INSERT, refaz o hash a partir do que o banco DEVOLVEU (o \`jsonb\` pode ter mudado alguma
+ * coisa) e compara com o que foi gravado. Se não bate, o certificado apareceria na validação pública como
+ * "Dados não conferem" desde o primeiro minuto: então NÃO é entregue e é anulado (\`anular\` revoga a linha;
+ * o servidor não apaga, a trilha é só de inclusão, migração 0135). \`anulado: false\` = a anulação também
+ * falhou (ou lançou): o chamador deixa rastro no log e responde o mesmo erro. Nunca lança.
+ */
+export async function conferirEmissaoDoCertificado(p: {
+  hashEmitido: string;
+  gravado: { codigo: string; dados: unknown; assinatura_aluno: unknown };
+  anular: () => Promise<boolean>;
+  /** Recebe o hash refeito a partir do banco, para o log. */
+  aoDivergir?: (hashRefeito: string) => void;
+}): Promise<ConferenciaDaEmissao> {
+  const refeito = await hashDoCertificado(
+    p.gravado.codigo,
+    p.gravado.dados,
+    p.gravado.assinatura_aluno
+  );
+  if (refeito === p.hashEmitido) return { entregar: true };
+  p.aoDivergir?.(refeito);
+  let anulado = false;
+  try {
+    anulado = await p.anular();
+  } catch {
+    anulado = false;
+  }
+  return { entregar: false, anulado };
 }
