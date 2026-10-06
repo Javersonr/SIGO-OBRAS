@@ -17,6 +17,10 @@
  *   certificado { matricula_id, senha }          ciencia { ciencia_id }
  *   duvida { matricula_id, aula_id?, pergunta }
  *
+ * `certificado` só emite para curso EAD (modalidade do curso, T8): curso de apoio responde 409
+ * `CURSO_DE_APOIO` e o semipresencial, 409 `PRATICA_PENDENTE` (até a T12); requisito do curso por
+ * cumprir responde 409 `REQUISITOS`. O certificado traz o local (`dados.local`) e os dias de Brasília.
+ *
  * Reconfirmar a senha com a sessão aberta (`certificado` e `trocar_senha` com a senha atual) tem limite de
  * tentativas por funcionário (escopo próprio, 5 em 15 min); passou do teto responde 429 `LIMITE`.
  *
@@ -56,10 +60,17 @@ import { enviarWhatsAppTexto, normalizarTelefoneBR } from "../_shared/whatsapp-e
 import { assinarDaEmpresa, refDaEmpresa } from "../_shared/storage-assinar.ts";
 import { carregarDocumentos, funcionarioPodeEntrar } from "./documentos.ts";
 import { confirmarCiencia } from "./ciencia.ts";
-import { requisitosDoCurso, duracaoParaProgresso } from "./requisitos.ts";
+import {
+  bloqueioDeEmissaoPorModalidade,
+  duracaoParaProgresso,
+  emiteCertificado,
+  modalidadeDoCurso,
+  requisitosDoCurso,
+} from "./requisitos.ts";
 import {
   COLUNAS_MATRICULA_PORTAL,
   EVENTO_PROVA_INICIADA,
+  LOCAL_DO_CERTIFICADO,
   MSG_MUITAS_ACOES,
   MSG_SINAL_CONCORRENTE,
   NOTA_MINIMA_PADRAO,
@@ -79,6 +90,7 @@ import {
   liberacoesPorMatricula,
   logoAssinadoParaPdf,
   matriculaParaAluno,
+  periodoDoCertificado,
   type ProgressoDaAula,
   provaDaOrdem,
   proximaTentativaEm,
@@ -89,6 +101,7 @@ import {
   situacaoDasTentativas,
   situacaoDaTrilha,
   sortearProva,
+  textoDaModalidade,
   travaDoSinal,
   ultimaLiberacao,
   validarEnvio,
@@ -761,6 +774,8 @@ Deno.serve(
             tem_avaliacao: questoesCurso.length > 0,
             // o portal mostra um selo quando o RH despublicou o curso (T14)
             ativo: cursoPublicado(curso),
+            // "apoio" é material de estudo e não emite certificado (T8): o portal explica isso
+            modalidade: modalidadeDoCurso(curso),
           },
           aulas: aulasCurso,
           // as questões NÃO vão aqui (T16): saem sorteadas, sem gabarito, em iniciar_avaliacao
@@ -780,7 +795,12 @@ Deno.serve(
             hash_sha256: cert.hash_sha256,
             revogado: !!cert.revogado_em,
           },
-          pode_emitir_certificado: concluidoReal && !cert && pendencias.length === 0,
+          // curso de apoio nunca emite (a modalidade também é um dos requisitos acima)
+          pode_emitir_certificado:
+            concluidoReal &&
+            !cert &&
+            pendencias.length === 0 &&
+            emiteCertificado(modalidadeDoCurso(curso)),
           pendencias_certificado: pendencias.map((r) => r.texto),
           // deno-lint-ignore no-explicit-any
           duvidas: (duvidas ?? []).filter((d: any) => d.curso_id === m.curso_id),
@@ -1290,6 +1310,18 @@ Deno.serve(
         return ok({ certificado: { ...existente, revogado: !!existente.revogado_em } });
       }
 
+      // Modalidade (T8): curso de apoio nunca emite, e o semipresencial só emitirá com a prática
+      // registrada (T12). Vem ANTES da senha: não gasta a reconfirmação do aluno à toa.
+      const { data: cursoDoCertificado } = await supabase
+        .from("treinamento_curso")
+        .select("*")
+        .eq("id", mat.curso_id)
+        .eq("empresa_id", empresaId)
+        .maybeSingle();
+      if (!cursoDoCertificado) return fail("Curso não encontrado", 404);
+      const semEmissao = bloqueioDeEmissaoPorModalidade(modalidadeDoCurso(cursoDoCertificado));
+      if (semEmissao) return fail(semEmissao.mensagem, 409, { codigo: semEmissao.codigo });
+
       // NR-1: conclusão recalculada aqui (progresso + tentativa aprovada), não
       // pelo status da matrícula, que a empresa grava pela API.
       const sit = await situacaoReal(supabase, mat, empresaId);
@@ -1308,13 +1340,8 @@ Deno.serve(
         mat = (await minhaMatricula(mat.id)) ?? mat;
       }
 
-      const [{ data: curso }, { data: func }, { data: emp }, { data: aulas }] = await Promise.all([
-        supabase
-          .from("treinamento_curso")
-          .select("*")
-          .eq("id", mat.curso_id)
-          .eq("empresa_id", empresaId)
-          .maybeSingle(),
+      const curso = cursoDoCertificado;
+      const [{ data: func }, { data: emp }, { data: aulas }] = await Promise.all([
         supabase
           .from("funcionario")
           .select("nome_completo, cpf, funcao_nome")
@@ -1362,16 +1389,15 @@ Deno.serve(
           nome: curso.nome,
           codigo: curso.codigo,
           carga_horaria_horas: curso.carga_horaria_horas,
-          modalidade: "Ensino a distância (EAD) — NR-1, Anexo II",
+          modalidade: textoDaModalidade(modalidadeDoCurso(curso)),
           conteudo_programatico: curso.conteudo_programatico || null,
           // deno-lint-ignore no-explicit-any
           aulas: (aulas ?? []).map((a: any) => ({ modulo: a.modulo, titulo: a.titulo })),
         },
-        periodo: {
-          inicio: (mat.iniciado_em ?? mat.created_at)?.slice(0, 10),
-          conclusao: mat.data_conclusao,
-          validade: mat.proxima_renovacao ?? null,
-        },
+        // dias de Brasília (T8); conclusão e validade já foram gravadas assim em datasDeConclusao
+        periodo: periodoDoCertificado(mat),
+        // NR-1, 1.7.1.1: onde o treinamento foi realizado
+        local: LOCAL_DO_CERTIFICADO,
         avaliacao: sit.aprovacao
           ? { nota: sit.aprovacao.nota, tentativa: sit.aprovacao.numero }
           : null,

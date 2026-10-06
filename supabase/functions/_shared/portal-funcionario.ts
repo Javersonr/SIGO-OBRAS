@@ -129,6 +129,23 @@ export function inteiroAleatorioSeguro(n: number): number {
   return buf[0] % n;
 }
 
+/**
+ * Data de calendário (AAAA-MM-DD) em Brasília no instante `data`. O `toISOString().slice(0, 10)` dá o
+ * dia em UTC, e entre 21h e 24h em Brasília o UTC já virou o dia seguinte: a conclusão às 23h30 saía com
+ * a data de amanhã no certificado (T8). Vale para todo dia gravado em matrícula e certificado.
+ * Lança `RangeError` se `data` não for uma data válida.
+ */
+export function dataBrasilia(data: Date): string {
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(data);
+  const p = (tipo: string) => partes.find((x) => x.type === tipo)?.value ?? "";
+  return `${p("year")}-${p("month")}-${p("day")}`;
+}
+
 /** Código do certificado: 12 caracteres em 3 blocos (ex.: K7QM-2XRA-94TD). */
 export function gerarCodigoCertificado(): string {
   const alfabeto = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";

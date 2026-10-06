@@ -75,6 +75,12 @@ export default function ResultadoValidacao({
               <dd>
                 {c.carga_horaria_horas} h · {c.modalidade}
               </dd>
+              {c.local?.ambiente && (
+                <>
+                  <dt className="text-slate-500">Local</dt>
+                  <dd>{c.local.ambiente}</dd>
+                </>
+              )}
               <dt className="text-slate-500">Período</dt>
               <dd>
                 {dataBr(c.inicio)} a {dataBr(c.conclusao)}

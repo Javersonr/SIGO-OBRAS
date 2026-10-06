@@ -33,6 +33,8 @@ import {
   resumoDoResultado,
   urlDoProjetoPedagogico,
   abrirProjetoPedagogico,
+  cursoDeApoio,
+  MSG_CURSO_DE_APOIO,
 } from "./portal-curso";
 
 /** Storage de mentira: guarda em memória e deixa ver o que foi gravado. */
@@ -295,6 +297,23 @@ describe("cursoDespublicado", () => {
     expect(cursoDespublicado({})).toBe(false);
     expect(cursoDespublicado(null)).toBe(false);
     expect(cursoDespublicado(undefined)).toBe(false);
+  });
+});
+
+describe("cursoDeApoio", () => {
+  it("só modalidade 'apoio' é material de apoio (ausente = EAD)", () => {
+    expect(cursoDeApoio({ modalidade: "apoio" })).toBe(true);
+    expect(cursoDeApoio({ modalidade: "ead" })).toBe(false);
+    expect(cursoDeApoio({ modalidade: "semipresencial" })).toBe(false);
+    expect(cursoDeApoio({})).toBe(false);
+    expect(cursoDeApoio(null)).toBe(false);
+    expect(cursoDeApoio(undefined)).toBe(false);
+  });
+
+  it("o aviso do curso de apoio é o texto combinado com o RH", () => {
+    expect(MSG_CURSO_DE_APOIO).toBe(
+      "Material de apoio ao treinamento presencial: não emite certificado"
+    );
   });
 });
 

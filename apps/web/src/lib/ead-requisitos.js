@@ -1,4 +1,28 @@
 export const MIN_QUESTOES = 5;
+// Modalidade do curso (coluna treinamento_curso.modalidade, migração 0136). Só "ead" emite certificado:
+// "apoio" é material de estudo do treinamento presencial (nunca emite) e "semipresencial" só passa a
+// emitir quando a etapa prática for registrada (T12). Espelho do servidor (portal-funcionario/
+// requisitos.ts); requisitos.test.ts confere que os dois dizem a mesma coisa.
+export const MODALIDADES = ["ead", "semipresencial", "apoio"];
+// A coluna; curso sem ela (lido antes da migração) vale "ead". Nome e código NÃO decidem.
+export function modalidadeDoCurso(curso) {
+  const m = String(curso?.modalidade ?? "").trim();
+  return m === "" ? "ead" : m;
+}
+export function emiteCertificado(modalidade) {
+  return (modalidade || "ead") === "ead";
+}
+export function motivoSemCertificado(modalidade) {
+  const m = modalidade || "ead";
+  if (m === "ead") return "Modalidade EAD: emite certificado";
+  if (m === "apoio") return "Curso de apoio ao treinamento presencial: não emite certificado";
+  if (m === "semipresencial")
+    return (
+      "Curso semipresencial: o certificado só poderá ser emitido depois do registro da " +
+      "prática presencial (ainda não disponível)"
+    );
+  return "Modalidade do curso não reconhecida: o certificado não pode ser emitido";
+}
 export function tempoObrigatorioSeg(aulas = []) {
   return aulas
     .filter((a) => !a.deleted_at)
@@ -38,9 +62,8 @@ export function requisitosDoCurso({ curso = {}, aulas = [], questoes = [] } = {}
     ["RT", !!curso.responsavel_tecnico_nome?.trim(), "Informe o responsável técnico"],
     [
       "MODALIDADE",
-      (curso.modalidade || "ead") === "ead" &&
-        !/\bNR[\s-]*35\b/i.test(`${curso.codigo || ""} ${curso.nome || ""}`),
-      "Este curso precisa de validação da etapa presencial antes de emitir certificado",
+      emiteCertificado(modalidadeDoCurso(curso)),
+      motivoSemCertificado(modalidadeDoCurso(curso)),
     ],
   ];
   return [

@@ -12,7 +12,7 @@
  */
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
-import { avaliarCertificado } from "./regras.ts";
+import { avaliarCertificado, localDoCertificado } from "./regras.ts";
 
 function mascararCpf(cpf?: string | null) {
   const d = (cpf || "").replace(/\D/g, "");
@@ -62,6 +62,7 @@ Deno.serve(
         curso: d.curso?.nome,
         carga_horaria_horas: d.curso?.carga_horaria_horas,
         modalidade: d.curso?.modalidade,
+        local: localDoCertificado(d),
         inicio: d.periodo?.inicio,
         conclusao: d.periodo?.conclusao,
         validade: av.validade,

@@ -6,6 +6,7 @@ import {
   ESCOPO_RECONFIRMAR_SENHA,
   EVENTO_PROVA_INICIADA,
   JANELA_RECONFIRMAR_SENHA_SEG,
+  LOCAL_DO_CERTIFICADO,
   MAX_DETALHE,
   MAX_TENTATIVAS_RECONFIRMAR_SENHA,
   MSG_MUITAS_ACOES,
@@ -32,6 +33,7 @@ import {
   logoAssinadoParaPdf,
   matriculaParaAluno,
   ordemDaProva,
+  periodoDoCertificado,
   proximaTentativaEm,
   provaDaOrdem,
   reconfirmarSenha,
@@ -41,6 +43,7 @@ import {
   situacaoDasTentativas,
   situacaoDaTrilha,
   sortearProva,
+  textoDaModalidade,
   travaDoSinal,
   ultimaLiberacao,
   validarEnvio,
@@ -696,16 +699,103 @@ test("datasDeConclusao: não altera a data recebida", () => {
   assert.equal(hoje.toISOString(), "2026-10-05T15:00:00.000Z");
 });
 
-test("datasDeConclusao: usa o dia em UTC (comportamento atual; a T8 passa para Brasília)", () => {
-  // 23h30 de 05/10 em Brasília já é 06/10 em UTC
+test("datasDeConclusao: usa o dia de Brasília (23h30 de 05/10 é 02h30Z de 06/10)", () => {
   const hoje = new Date("2026-10-06T02:30:00.000Z");
-  assert.equal(datasDeConclusao(hoje, null).data_conclusao, "2026-10-06");
+  assert.equal(datasDeConclusao(hoje, null).data_conclusao, "2026-10-05");
+});
+
+test("datasDeConclusao: a virada do dia é à meia-noite de Brasília", () => {
+  assert.equal(
+    datasDeConclusao(new Date("2026-10-06T02:59:59.999Z"), null).data_conclusao,
+    "2026-10-05"
+  );
+  assert.equal(
+    datasDeConclusao(new Date("2026-10-06T03:00:00.000Z"), null).data_conclusao,
+    "2026-10-06"
+  );
+});
+
+test("datasDeConclusao: renovação de 24 meses a partir da data de Brasília, não da do UTC", () => {
+  const hoje = new Date("2026-10-06T02:30:00.000Z"); // 23h30 de 05/10 em Brasília
+  assert.deepEqual(datasDeConclusao(hoje, 24), {
+    data_conclusao: "2026-10-05",
+    proxima_renovacao: "2028-10-05",
+  });
+  assert.equal(datasDeConclusao(hoje, 12).proxima_renovacao, "2027-10-05");
+});
+
+test("datasDeConclusao: virada de ano em Brasília (23h30 de 31/12 é 1º/01 em UTC)", () => {
+  const hoje = new Date("2027-01-01T02:30:00.000Z");
+  assert.deepEqual(datasDeConclusao(hoje, 12), {
+    data_conclusao: "2026-12-31",
+    proxima_renovacao: "2027-12-31",
+  });
 });
 
 test("datasDeConclusao: dia 31 que não existe no mês de destino estoura (comportamento atual)", () => {
   const hoje = new Date("2026-01-31T12:00:00.000Z");
   // fevereiro de 2026 tem 28 dias: 31/02 vira 03/03
   assert.equal(datasDeConclusao(hoje, 1).proxima_renovacao, "2026-03-03");
+});
+
+test("datasDeConclusao: o dia 31 também estoura contando sobre a data de Brasília", () => {
+  // 23h30 de 31/01 em Brasília (02h30Z de 1º/02): a data é 31/01 e fevereiro não tem dia 31
+  const hoje = new Date("2026-02-01T02:30:00.000Z");
+  assert.deepEqual(datasDeConclusao(hoje, 1), {
+    data_conclusao: "2026-01-31",
+    proxima_renovacao: "2026-03-03",
+  });
+});
+
+// ------------------------------------------------------- período do certificado (T8)
+test("periodoDoCertificado: início, conclusão e validade; o início é o dia de Brasília", () => {
+  const p = periodoDoCertificado({
+    iniciado_em: "2026-10-06T02:30:00.000Z", // 23h30 de 05/10 em Brasília
+    created_at: "2026-09-01T12:00:00.000Z",
+    data_conclusao: "2026-10-05",
+    proxima_renovacao: "2028-10-05",
+  });
+  assert.deepEqual(p, { inicio: "2026-10-05", conclusao: "2026-10-05", validade: "2028-10-05" });
+});
+
+test("periodoDoCertificado: sem início registrado usa a criação da matrícula (também em Brasília)", () => {
+  const p = periodoDoCertificado({
+    iniciado_em: null,
+    created_at: "2026-09-02T01:00:00.000Z", // 22h de 01/09 em Brasília
+    data_conclusao: "2026-09-10",
+    proxima_renovacao: null,
+  });
+  assert.deepEqual(p, { inicio: "2026-09-01", conclusao: "2026-09-10", validade: null });
+});
+
+test("periodoDoCertificado: data que não é data não derruba a emissão", () => {
+  const p = periodoDoCertificado({ iniciado_em: "lixo", created_at: null, data_conclusao: null });
+  assert.deepEqual(p, { inicio: null, conclusao: null, validade: null });
+});
+
+// ------------------------------------------------- modalidade e local do certificado (T8)
+test("textoDaModalidade: EAD mantém o texto que os certificados já emitidos trazem", () => {
+  assert.equal(textoDaModalidade("ead"), "Ensino a distância (EAD) — NR-1, Anexo II");
+  assert.equal(textoDaModalidade(undefined), "Ensino a distância (EAD) — NR-1, Anexo II");
+});
+
+test("textoDaModalidade: semipresencial e apoio têm o próprio texto", () => {
+  assert.match(textoDaModalidade("semipresencial"), /^Semipresencial/);
+  assert.match(textoDaModalidade("semipresencial"), /prática presencial/);
+  assert.match(textoDaModalidade("apoio"), /apoio/i);
+  // nenhum deles diz "a distância" no lugar do outro
+  assert.ok(!/^Ensino a distância/.test(textoDaModalidade("semipresencial")));
+  assert.ok(!/^Ensino a distância/.test(textoDaModalidade("apoio")));
+});
+
+test("textoDaModalidade: valor desconhecido nunca vira EAD", () => {
+  assert.ok(!/EAD/.test(textoDaModalidade("inventada")));
+});
+
+test("local do certificado: a plataforma e o endereço do portal do funcionário", () => {
+  assert.deepEqual(LOCAL_DO_CERTIFICADO, {
+    ambiente: "Plataforma SIGO Obras — https://www.sigoobras.com.br/PortalFuncionario",
+  });
 });
 
 // ------------------------------------------------------------ detalheLimitado

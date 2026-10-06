@@ -19,6 +19,7 @@
  */
 import {
   HASH_VERSAO_CANONICO,
+  dataBrasilia,
   hashDoCertificado,
   sha256Hex,
 } from "../_shared/portal-funcionario.ts";
@@ -134,17 +135,8 @@ export async function conferirIntegridade(cert: {
 
 // ------------------------------------------------------------------------------ validade
 
-/** Data de calendário (AAAA-MM-DD) em Brasília no instante `agora`. */
-export function dataDeBrasilia(agora: Date): string {
-  const partes = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(agora);
-  const p = (tipo: string) => partes.find((x) => x.type === tipo)?.value ?? "";
-  return `${p("year")}-${p("month")}-${p("day")}`;
-}
+/** Data de calendário (AAAA-MM-DD) em Brasília no instante `agora` (a mesma do portal-funcionario, T8). */
+export const dataDeBrasilia = dataBrasilia;
 
 /** AAAA-MM-DD de uma validade (aceita timestamp: só o dia vale) ou null se não for data. */
 function diaDaValidade(validade: unknown): string | null {
@@ -164,6 +156,18 @@ export function validadeDoCertificado(dados: unknown): string | null {
 export function estaVencido(validade: unknown, hoje: string): boolean {
   const dia = diaDaValidade(validade);
   return dia !== null && dia < hoje;
+}
+
+// ------------------------------------------------------------------------------ local
+
+/**
+ * Onde o treinamento foi realizado (`dados.local`, gravado desde a T8): só o ambiente sai na consulta
+ * pública. Certificado anterior à T8 não tem local: devolve null e a página não mostra a linha.
+ */
+export function localDoCertificado(dados: unknown): { ambiente: string } | null {
+  const local = (dados as { local?: unknown } | null)?.local;
+  const ambiente = (local as { ambiente?: unknown } | null | undefined)?.ambiente;
+  return typeof ambiente === "string" && ambiente.trim() ? { ambiente } : null;
 }
 
 // ------------------------------------------------------------------------------ situação

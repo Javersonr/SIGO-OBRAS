@@ -8,6 +8,7 @@ import {
   conferirIntegridade,
   dataDeBrasilia,
   estaVencido,
+  localDoCertificado,
   situacaoDoCertificado,
   validadeDoCertificado,
 } from "./regras.ts";
@@ -242,6 +243,42 @@ test("validadeDoCertificado: lê dados.periodo.validade como AAAA-MM-DD ou null"
   assert.equal(validadeDoCertificado({ periodo: {} }), null);
   assert.equal(validadeDoCertificado({}), null);
   assert.equal(validadeDoCertificado(null), null);
+});
+
+// ------------------------------------------------------------------ local (T8)
+test("localDoCertificado: devolve o ambiente gravado em dados.local; sem local, null", () => {
+  assert.deepEqual(
+    localDoCertificado({
+      local: { ambiente: "Plataforma de Teste — https://exemplo.test/portal" },
+    }),
+    { ambiente: "Plataforma de Teste — https://exemplo.test/portal" }
+  );
+  // certificado emitido antes da T8 não tem local: a página só não mostra a linha
+  assert.equal(localDoCertificado({}), null);
+  assert.equal(localDoCertificado({ local: null }), null);
+  assert.equal(localDoCertificado({ local: {} }), null);
+  assert.equal(localDoCertificado(null), null);
+  assert.equal(localDoCertificado({ local: "texto solto" }), null);
+});
+
+test("localDoCertificado: só o ambiente sai na consulta pública (nada além dele)", () => {
+  const l = localDoCertificado({ local: { ambiente: "Plataforma", interno: "não sai" } });
+  assert.deepEqual(l, { ambiente: "Plataforma" });
+});
+
+test("integridade: certificado com local e modalidade nova confere do mesmo jeito", async () => {
+  const dados = {
+    ...dadosDeEmissao(),
+    local: { ambiente: "Plataforma de Teste — https://exemplo.test/portal" },
+  };
+  const assinatura = assinaturaDeEmissao({ hash_versao: HASH_VERSAO_CANONICO });
+  const cert = {
+    codigo: CODIGO,
+    dados: comoNoJsonb(dados) as Record<string, unknown>,
+    assinatura_aluno: comoNoJsonb(assinatura) as Record<string, unknown>,
+    hash_sha256: await hashDoCertificado(CODIGO, dados, assinatura),
+  };
+  assert.deepEqual(await conferirIntegridade(cert), { integro: true, hash_versao: 2 });
 });
 
 // ------------------------------------------------------------------ situação

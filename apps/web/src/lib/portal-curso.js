@@ -143,6 +143,15 @@ export function cursoDespublicado(curso) {
   return curso?.ativo === false;
 }
 
+/** Texto do aviso do curso de apoio (T8): o certificado não existe para esse curso. */
+export const MSG_CURSO_DE_APOIO =
+  "Material de apoio ao treinamento presencial: não emite certificado";
+
+/** Curso de apoio ao presencial (`curso.modalidade` vem do servidor): material de estudo, nunca emite. */
+export function cursoDeApoio(curso) {
+  return curso?.modalidade === "apoio";
+}
+
 // -------------------------------------------------- retomar o vídeo
 
 /** Abaixo disto o vídeo recomeça do início; também nos últimos segundos antes do fim. */

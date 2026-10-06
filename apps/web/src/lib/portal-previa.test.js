@@ -132,6 +132,13 @@ describe("montarItemPrevia", () => {
     expect(item.duvidas).toEqual([]);
   });
 
+  it("leva a modalidade do curso (ausente = EAD), como o servidor devolve em `dados`", () => {
+    expect(item.curso.modalidade).toBe("ead");
+    const apoio = montarItemPrevia({ curso: { ...curso, modalidade: "apoio" }, aulas, questoes });
+    expect(apoio.curso.modalidade).toBe("apoio");
+    expect(apoio.pode_emitir_certificado).toBe(false);
+  });
+
   it("libera todas as aulas, nenhuma concluída, na ordem do curso", () => {
     expect(item.aulas.map((a) => a.id)).toEqual(["a1", "a2", "a3", "a4"]);
     expect(item.aulas.every((a) => a.liberada === true)).toBe(true);

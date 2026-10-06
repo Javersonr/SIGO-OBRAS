@@ -5,10 +5,17 @@ import {
   modelosDeTreinamento,
   modelosSemCurso,
   dadosCursoDoModelo,
+  faltaModeloCentral,
 } from "@/lib/treinamento-catalogo";
+import {
+  OPCOES_MODALIDADE,
+  avisoDaModalidade,
+  explicacaoDaModalidade,
+  rotuloDaModalidade,
+} from "@/lib/ead-modalidade";
 import { normalizarQuestao } from "@/lib/ead-questao";
 import { parseDuracao, formatDuracao, lerDuracaoVideo } from "@/lib/ead-duracao";
-import { requisitosDoCurso, tempoObrigatorioSeg } from "@/lib/ead-requisitos";
+import { modalidadeDoCurso, requisitosDoCurso, tempoObrigatorioSeg } from "@/lib/ead-requisitos";
 import { numerarAulas } from "@/lib/portal-curso";
 import {
   reordenarAulas,
@@ -398,7 +405,10 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
 
   // ------------------------------------------------------------------ cursos
   const salvarCurso = async () => {
-    if (!cursoSel?.modelo_treinamento_id) {
+    // curso novo exige o treinamento do cadastro central; curso antigo, gravado sem ele, pode ser salvo
+    // sem o vínculo (o RH precisa despublicar, preencher o instrutor e marcar a modalidade, C4)
+    const gravado = cursoSel?.id ? cursos.find((c) => c.id === cursoSel.id) : null;
+    if (faltaModeloCentral(cursoSel, gravado)) {
       toast.error("Selecione o treinamento do cadastro central antes de salvar o curso");
       return;
     }
@@ -409,6 +419,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
     const dados = {
       empresa_id: empresaAtiva.id,
       modelo_treinamento_id: cursoSel.modelo_treinamento_id || null,
+      modalidade: cursoSel.modalidade || "ead",
       nome: cursoSel.nome.trim(),
       codigo: cursoSel.codigo || null,
       descricao: cursoSel.descricao || null,
@@ -442,7 +453,6 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       return;
     }
     // nota mínima nova com alunos no meio do curso: o RH vê quantos antes de salvar (T30)
-    const gravado = cursoSel.id ? cursos.find((c) => c.id === cursoSel.id) : null;
     if (
       mudouNotaMinima(gravado, dados.nota_minima) &&
       !(await confirmarImpacto("nota_minima", { cursoId: cursoSel.id }))
@@ -1033,6 +1043,14 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const HORAS_DIA = 10;
   const gerarListasPresenca = async (curso) => {
     try {
+      // a folha diz "Modalidade: EAD" e declara conteúdo feito na plataforma: só vale para curso EAD (T8)
+      if (modalidadeDoCurso(curso) !== "ead") {
+        toast.error(
+          "A lista de presença do portal vale só para curso EAD. Este curso é de apoio ou " +
+            "semipresencial: use a lista da turma presencial."
+        );
+        return;
+      }
       const carga = Number(curso.carga_horaria_horas) || 0;
       if (!carga) {
         toast.error("Informe a carga horária do curso antes de gerar as listas");
@@ -1274,6 +1292,11 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     Publicado com pendências
                   </Badge>
                 )}
+                {c.modalidade && c.modalidade !== "ead" && (
+                  <Badge variant="outline" className="mt-1 ml-1 text-slate-700">
+                    {rotuloDaModalidade(c.modalidade)}
+                  </Badge>
+                )}
                 <p className="text-xs text-slate-500 mt-1">
                   {c.codigo ? c.codigo + " · " : ""}
                   {qtdAulas} aula(s)
@@ -1480,6 +1503,38 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
                     cadastro em Configurações → Funções → Treinamentos. Edite esses dados lá para
                     atualizar todas as funções.
                   </p>
+                  {cursoSel.id &&
+                    !cursoSel.modelo_treinamento_id &&
+                    !cursos.find((c) => c.id === cursoSel.id)?.modelo_treinamento_id && (
+                      <p className="text-xs text-slate-600">
+                        Este curso foi criado antes do cadastro central e pode ser salvo sem o
+                        vínculo: nome, código, carga horária, validade e conteúdo seguem editáveis
+                        aqui.
+                      </p>
+                    )}
+                </div>
+                <div className="rounded-lg border p-3 space-y-2">
+                  <Label htmlFor="curso-modalidade">Modalidade</Label>
+                  <select
+                    id="curso-modalidade"
+                    className="w-full h-10 rounded border bg-white px-2 text-sm"
+                    value={cursoSel.modalidade || "ead"}
+                    onChange={(e) => setCursoSel({ ...cursoSel, modalidade: e.target.value })}
+                  >
+                    {OPCOES_MODALIDADE.map((o) => (
+                      <option key={o.valor} value={o.valor}>
+                        {o.rotulo}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-600">
+                    {explicacaoDaModalidade(cursoSel.modalidade)}
+                  </p>
+                  {avisoDaModalidade(cursoSel) && (
+                    <p role="alert" className="text-xs text-amber-700">
+                      {avisoDaModalidade(cursoSel)}
+                    </p>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">

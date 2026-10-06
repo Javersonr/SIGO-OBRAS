@@ -1,6 +1,51 @@
 // Regra espelhada no front; requisitos.test.ts confere os mesmos casos.
 // deno-lint-ignore-file no-explicit-any
 export const MIN_QUESTOES = 5;
+/**
+ * Modalidade do curso (coluna `treinamento_curso.modalidade`, migração 0136; CHECK no banco).
+ * Só `ead` emite certificado hoje: `apoio` é material de estudo do treinamento presencial e nunca
+ * emite; `semipresencial` (teoria EAD + prática presencial) só passa a emitir quando a etapa prática
+ * for registrada (T12).
+ */
+export const MODALIDADES = ["ead", "semipresencial", "apoio"] as const;
+/** A coluna; ausente (curso lido antes da migração 0136) vale "ead". Nome e código NÃO decidem. */
+export function modalidadeDoCurso(curso: any): string {
+  const m = String(curso?.modalidade ?? "").trim();
+  return m === "" ? "ead" : m;
+}
+export function emiteCertificado(modalidade: string | null | undefined): boolean {
+  return (modalidade || "ead") === "ead";
+}
+/** Por que a modalidade não emite certificado (para EAD, só o texto neutro do requisito). */
+export function motivoSemCertificado(modalidade: string | null | undefined): string {
+  const m = modalidade || "ead";
+  if (m === "ead") return "Modalidade EAD: emite certificado";
+  if (m === "apoio") return "Curso de apoio ao treinamento presencial: não emite certificado";
+  if (m === "semipresencial")
+    return (
+      "Curso semipresencial: o certificado só poderá ser emitido depois do registro da " +
+      "prática presencial (ainda não disponível)"
+    );
+  return "Modalidade do curso não reconhecida: o certificado não pode ser emitido";
+}
+/**
+ * Resposta 409 da emissão pela modalidade, ou null se a modalidade emite. `apoio` e `semipresencial`
+ * têm código próprio (a tela e o roteiro de teste distinguem); a T12 troca o do semipresencial pela
+ * checagem real da prática.
+ */
+export function bloqueioDeEmissaoPorModalidade(
+  modalidade: string | null | undefined
+): { codigo: string; mensagem: string } | null {
+  if (emiteCertificado(modalidade)) return null;
+  const m = modalidade || "ead";
+  const codigo =
+    m === "apoio"
+      ? "CURSO_DE_APOIO"
+      : m === "semipresencial"
+        ? "PRATICA_PENDENTE"
+        : "MODALIDADE_INVALIDA";
+  return { codigo, mensagem: motivoSemCertificado(m) };
+}
 /** Somente a duração cadastrada pelo RH pode creditar tempo de vídeo. */
 export function duracaoParaProgresso(
   aula: { tipo?: string; duracao_seg?: unknown },
@@ -53,9 +98,8 @@ export function requisitosDoCurso({
     ["RT", !!curso.responsavel_tecnico_nome?.trim(), "Informe o responsável técnico"],
     [
       "MODALIDADE",
-      (curso.modalidade || "ead") === "ead" &&
-        !/\bNR[\s-]*35\b/i.test(`${curso.codigo || ""} ${curso.nome || ""}`),
-      "Este curso precisa de validação da etapa presencial antes de emitir certificado",
+      emiteCertificado(modalidadeDoCurso(curso)),
+      motivoSemCertificado(modalidadeDoCurso(curso)),
     ],
   ];
   return [

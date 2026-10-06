@@ -50,6 +50,8 @@ import {
   abrirProjetoPedagogico,
   aulaSeguinte,
   cursoDespublicado,
+  cursoDeApoio,
+  MSG_CURSO_DE_APOIO,
   guardarPosicao,
   lerPosicao,
   mensagemDeFalha,
@@ -754,6 +756,17 @@ export default function CursoPortal({
             className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
           >
             O RH despublicou este curso (pode estar em revisão). Em caso de dúvida, fale com o RH.
+          </div>
+        )}
+
+        {/* curso de apoio: o aluno sabe desde o começo que não há certificado (T8); concluído, a
+            mensagem sai no bloco do certificado, logo abaixo */}
+        {mat.status !== "concluido" && cursoDeApoio(item.curso) && (
+          <div
+            role="status"
+            className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"
+          >
+            {MSG_CURSO_DE_APOIO}
           </div>
         )}
 

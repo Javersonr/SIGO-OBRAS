@@ -117,3 +117,50 @@ describe("baixarCertificadoPdf: logo da empresa", () => {
     expect(erroNoConsole).toHaveBeenCalled();
   });
 });
+
+describe("baixarCertificadoPdf: local de realização (T8)", () => {
+  /** Conteúdo do PDF como texto: o jsPDF grava o texto das páginas sem compressão. */
+  const textoDoPdf = async (cert) => {
+    let texto = "";
+    await baixarCertificadoPdf(cert, {
+      gerarQr: async () => PNG_1X1,
+      salvar: (doc) => {
+        texto = doc.output();
+      },
+    });
+    return texto;
+  };
+  const comLocal = () =>
+    certificado({
+      dados: {
+        ...certificado().dados,
+        local: { ambiente: "Plataforma de Teste — https://exemplo.test/portal" },
+      },
+    });
+
+  it("imprime o local gravado no certificado, na frente", async () => {
+    const texto = await textoDoPdf(comLocal());
+    expect(texto).toContain("Local de realiza");
+    expect(texto).toContain("Plataforma de Teste");
+    expect(texto).toContain("https://exemplo.test/portal");
+  });
+
+  it("certificado de antes da T8, sem local, sai sem a linha", async () => {
+    const texto = await textoDoPdf(certificado());
+    expect(texto).not.toContain("Local de realiza");
+  });
+
+  it("local e validade juntos: as duas linhas saem", async () => {
+    const texto = await textoDoPdf(comLocal());
+    expect(texto).toContain("Validade: at");
+    expect(texto).toContain("Local de realiza");
+  });
+
+  it("sem validade, o local sobe para o lugar dela (continua na frente)", async () => {
+    const c = comLocal();
+    c.dados.periodo = { ...c.dados.periodo, validade: null };
+    const texto = await textoDoPdf(c);
+    expect(texto).not.toContain("Validade: at");
+    expect(texto).toContain("Local de realiza");
+  });
+});

@@ -10,6 +10,7 @@ import {
   EVENTO_CERTIFICADO_REVOGADO,
   EVENTO_TENTATIVA_LIBERADA,
   HASH_VERSAO_CANONICO,
+  dataBrasilia,
   hashDoCertificado,
   inteiroAleatorioSeguro,
   jsonCanonico,
@@ -325,4 +326,29 @@ test("eventos do RH: o navegador do aluno não consegue gravar nenhum deles", ()
   for (const nome of [EVENTO_TENTATIVA_LIBERADA, EVENTO_CERTIFICADO_REVOGADO]) {
     assert.ok(!lista.includes(`"${nome}"`), `${nome} não pode estar em EVENTOS_CLIENTE`);
   }
+});
+
+// ------------------------------------------------------------------ dataBrasilia (T8)
+test("dataBrasilia: 23h30 de Brasília (02h30Z do dia seguinte) ainda é o mesmo dia", () => {
+  assert.equal(dataBrasilia(new Date("2026-10-06T02:30:00.000Z")), "2026-10-05");
+});
+
+test("dataBrasilia: a virada do dia é à meia-noite de Brasília (03h00Z)", () => {
+  assert.equal(dataBrasilia(new Date("2026-10-06T02:59:59.999Z")), "2026-10-05");
+  assert.equal(dataBrasilia(new Date("2026-10-06T03:00:00.000Z")), "2026-10-06");
+});
+
+test("dataBrasilia: dia claro continua no mesmo dia do UTC", () => {
+  assert.equal(dataBrasilia(new Date("2026-10-05T15:00:00.000Z")), "2026-10-05");
+});
+
+test("dataBrasilia: virada de mês e de ano", () => {
+  assert.equal(dataBrasilia(new Date("2026-11-01T02:30:00.000Z")), "2026-10-31");
+  assert.equal(dataBrasilia(new Date("2027-01-01T02:59:59.000Z")), "2026-12-31");
+  assert.equal(dataBrasilia(new Date("2027-01-01T03:00:00.000Z")), "2027-01-01");
+});
+
+test("dataBrasilia: ano bissexto (29/02) e formato AAAA-MM-DD com zeros", () => {
+  assert.equal(dataBrasilia(new Date("2028-03-01T02:30:00.000Z")), "2028-02-29");
+  assert.equal(dataBrasilia(new Date("2026-03-04T12:00:00.000Z")), "2026-03-04");
 });

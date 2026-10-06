@@ -139,6 +139,8 @@ export function montarItemPrevia({ curso, aulas, questoes, urls } = {}) {
       projeto_pedagogico_url: urlDe(urls, curso?.projeto_pedagogico_ref),
       tem_avaliacao: questoesPrevia.length > 0,
       ativo: true,
+      // como o servidor devolve em `dados` (T8): ausente = EAD
+      modalidade: curso?.modalidade || "ead",
     },
     aulas: aulasPrevia,
     questoes: questoesPrevia,

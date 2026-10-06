@@ -6,9 +6,9 @@
  * O tempo entra por parâmetro (`agora`, em ms), nunca por `Date.now()` aqui.
  *
  * Saíram do `index.ts` sem mudar comportamento (a exceção é `logoAssinadoParaPdf`, que já
- * nasceu aqui, na T15). Duas regras ainda são as de hoje de propósito (o handoff corrige em
- * tarefa própria): `datasDeConclusao` usa o dia em UTC (T8) e `corrigirProva` converte a
- * resposta com `Number()` (o envio já chega validado por `validarEnvio`, que só deixa passar inteiro).
+ * nasceu aqui, na T15). Uma regra ainda é a de hoje de propósito (o handoff corrige em tarefa
+ * própria): `corrigirProva` converte a resposta com `Number()` (o envio já chega validado por
+ * `validarEnvio`, que só deixa passar inteiro). `datasDeConclusao` passou para o dia de Brasília na T8.
  *
  * A T16 acrescentou, no fim do arquivo, a prova no servidor (sorteio, início, validação do envio e
  * resposta da correção) e a regra das aulas bloqueadas sem conteúdo. A T27 acrescentou, no fim, o limite
@@ -18,6 +18,7 @@
  */
 
 import type { Consumo, Limite } from "../_shared/limite-tentativas.ts";
+import { dataBrasilia } from "../_shared/portal-funcionario.ts";
 
 /** Vídeo conclui sozinho a partir de 90% assistidos. */
 export const PCT_CONCLUSAO = 0.9;
@@ -215,21 +216,69 @@ export function proximaTentativaEm(
 }
 
 /**
- * Datas gravadas ao concluir: `data_conclusao` e, se o curso tem validade em
- * meses, `proxima_renovacao`. Comportamento de hoje: dia em UTC (às 21h em
- * Brasília já é o dia seguinte) e dia 31 que não existe no mês de destino estoura
- * para o mês seguinte. A T8 corrige o fuso.
+ * Datas gravadas ao concluir: `data_conclusao` e, se o curso tem validade em meses,
+ * `proxima_renovacao`. Os dois dias são os de BRASÍLIA (T8): o `toISOString()` dava o dia em UTC e, entre
+ * 21h e 24h em Brasília, a conclusão saía com a data do dia seguinte. A renovação soma os meses sobre a
+ * data de Brasília. Dia 31 que não existe no mês de destino estoura para o mês seguinte (comportamento
+ * de sempre; o teste fixa).
  */
 export function datasDeConclusao(hoje: Date, validadeMeses?: number | null) {
-  const datas: { data_conclusao: string; proxima_renovacao?: string } = {
-    data_conclusao: hoje.toISOString().slice(0, 10),
-  };
+  const dia = dataBrasilia(hoje);
+  const datas: { data_conclusao: string; proxima_renovacao?: string } = { data_conclusao: dia };
   if (validadeMeses) {
-    const renova = new Date(hoje);
+    const [a, m, d] = dia.split("-").map(Number);
+    const renova = new Date(Date.UTC(a, m - 1, d));
     renova.setUTCMonth(renova.getUTCMonth() + validadeMeses);
     datas.proxima_renovacao = renova.toISOString().slice(0, 10);
   }
   return datas;
+}
+
+/** Dia de Brasília de um timestamp do banco; null se vazio ou se não for data. */
+function diaBrasiliaOuNull(instante: unknown): string | null {
+  if (typeof instante !== "string" || !instante) return null;
+  const data = new Date(instante);
+  return Number.isNaN(data.getTime()) ? null : dataBrasilia(data);
+}
+
+/**
+ * `periodo` do certificado. O início é o dia de BRASÍLIA em que o aluno começou (`iniciado_em`, ou a
+ * criação da matrícula se ele nunca registrou início); conclusão e validade já são datas de calendário
+ * gravadas pelo servidor em `datasDeConclusao`.
+ */
+export function periodoDoCertificado(mat: {
+  iniciado_em?: string | null;
+  created_at?: string | null;
+  data_conclusao?: string | null;
+  proxima_renovacao?: string | null;
+}) {
+  return {
+    inicio: diaBrasiliaOuNull(mat.iniciado_em) ?? diaBrasiliaOuNull(mat.created_at),
+    conclusao: mat.data_conclusao ?? null,
+    validade: mat.proxima_renovacao ?? null,
+  };
+}
+
+/**
+ * Onde o treinamento foi realizado (NR-1, 1.7.1.1: o certificado traz o local). No EAD, é a plataforma;
+ * a prática presencial do semipresencial acrescentará o endereço (T12).
+ */
+export const LOCAL_DO_CERTIFICADO = {
+  ambiente: "Plataforma SIGO Obras — https://www.sigoobras.com.br/PortalFuncionario",
+};
+
+/**
+ * Texto da modalidade impresso em `dados.curso.modalidade` do certificado (e no PDF e na validação
+ * pública). O texto do EAD é o que os certificados já emitidos trazem. Só o EAD emite hoje; os outros
+ * textos existem para a T12 e para o RH ler o curso, nunca para valer como "a distância" no lugar.
+ */
+export function textoDaModalidade(modalidade: string | null | undefined): string {
+  const m = modalidade || "ead";
+  if (m === "ead") return "Ensino a distância (EAD) — NR-1, Anexo II";
+  if (m === "semipresencial")
+    return "Semipresencial — teoria em ensino a distância (EAD) e prática presencial";
+  if (m === "apoio") return "Material de apoio ao treinamento presencial (não emite certificado)";
+  return `Modalidade não reconhecida (${m})`;
 }
 
 /**

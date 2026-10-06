@@ -42,12 +42,32 @@ técnico. A soma do tempo obrigatório das aulas precisa cobrir a carga declarad
 
 Como previsto na decisão **D1** do handoff, os cursos atuais com carga superior ao conteúdo ficam com novas matrículas
 e certificados bloqueados até revisão da carga ou complementação do conteúdo. Nenhum curso existente é despublicado
-ou regravado em massa. Cursos de apoio, semipresenciais e NR-35 aguardam a validação da etapa presencial; esta entrega
-não cria o cadastro de sessões práticas.
+ou regravado em massa. Esta entrega não cria o cadastro de sessões práticas.
+
+### Modalidade do curso (T8)
+
+Cada curso tem uma **modalidade**, escolhida na tela do curso EAD (a migração `0136` cria a coluna):
+
+- **EAD**: todo o treinamento é a distância. É a única modalidade que emite certificado hoje.
+- **Semipresencial**: teoria a distância e prática presencial. Não emite certificado até o registro da etapa prática
+  existir; o servidor responde 409 `PRATICA_PENDENTE`.
+- **Apoio ao presencial**: material de estudo do treinamento presencial. Nunca emite certificado (409
+  `CURSO_DE_APOIO`) e o portal avisa o aluno com o texto "Material de apoio ao treinamento presencial: não emite
+  certificado".
+
+Quem decide é a modalidade marcada no curso, não o nome. A migração `0136` marca como **apoio** os cursos cujo nome ou
+código tem NR-35 (a NR-35 exige treinamento presencial desde 16/07/2026, item 35.4.5), o que mantém o comportamento
+anterior. Os cursos de apoio e semipresenciais seguem fora de nova matrícula e de publicação enquanto o requisito de
+modalidade estiver pendente. Curso EAD antigo, que ainda não tem o vínculo com o cadastro central, pode ser salvo sem
+o vínculo (despublicar, preencher o instrutor e marcar a modalidade); curso novo continua exigindo o vínculo.
+
+O certificado traz o **local de realização** (a plataforma e o endereço do portal) e as datas no horário de Brasília:
+uma conclusão às 23h30 sai com o próprio dia, e a renovação soma os meses sobre essa data. A validação pública
+(`/ValidarCertificado`) mostra o local.
 
 O projeto completo de conformidade EAD continua documentado em `HANDOFF-PORTAL-TREINAMENTO.md`. Esta entrega acrescenta
 as áreas de documentos e as proteções necessárias ao fluxo solicitado; não declara concluídas todas as 38 tarefas
-daquele documento. Permanecem, por exemplo, os desenhos e migrações de modalidade, ciência protegida no banco,
+daquele documento. Permanecem, por exemplo, os desenhos e migrações de ciência protegida no banco,
 permissões granulares e sessões práticas. Os imports de Ferramental e a ativação global de `no-undef` continuam
 dependentes da autorização específica já solicitada.
 

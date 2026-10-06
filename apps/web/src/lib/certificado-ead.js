@@ -167,9 +167,22 @@ export async function baixarCertificadoPdf(cert, opcoes = {}) {
     align: "center",
     lineHeightFactor: 1.6,
   });
+  // linhas de rodapé do texto: validade e local de realização (NR-1, 1.7.1.1; certificado emitido antes
+  // da T8 não tem local e sai sem a linha)
+  let yDetalhe = 104;
   if (d.periodo?.validade) {
     doc.setFontSize(10.5);
-    doc.text(`Validade: até ${fmtData(d.periodo.validade)}`, W / 2, 104, { align: "center" });
+    doc.text(`Validade: até ${fmtData(d.periodo.validade)}`, W / 2, yDetalhe, { align: "center" });
+    yDetalhe += 7;
+  }
+  if (d.local?.ambiente) {
+    doc.setFontSize(10.5);
+    doc.text(
+      doc.splitTextToSize(`Local de realização: ${d.local.ambiente}`, W - 60),
+      W / 2,
+      yDetalhe,
+      { align: "center" }
+    );
   }
 
   // assinaturas

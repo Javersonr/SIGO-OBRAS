@@ -6,6 +6,7 @@ import { apiPortal, fmtData } from "./api";
 import { baixarCertificadoPdf } from "@/lib/certificado-ead";
 import { AVISO_SEM_LOGO, mensagemFalhaCertificado } from "@/lib/certificado-ead-falhas";
 import { logoParaPdfDeUrl } from "@/lib/pdf-empresa";
+import { MSG_CURSO_DE_APOIO, cursoDeApoio } from "@/lib/portal-curso";
 
 /**
  * Certificado do curso concluído. Emitir = ASSINAR: o funcionário confirma a
@@ -105,6 +106,18 @@ export default function CertificadoPortal({
             {avisoPdf}
           </p>
         )}
+      </div>
+    );
+  }
+
+  // curso de apoio ao presencial (T8): é material de estudo e nunca emite; não há o que regularizar
+  if (cursoDeApoio(item.curso)) {
+    return (
+      <div
+        role="status"
+        className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"
+      >
+        <p>{MSG_CURSO_DE_APOIO}</p>
       </div>
     );
   }
