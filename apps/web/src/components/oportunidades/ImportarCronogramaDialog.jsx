@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { FileSpreadsheet, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,12 +33,18 @@ export default function ImportarCronogramaDialog({
   const [lendo, setLendo] = useState(false);
   const [resultado, setResultado] = useState(null);
   const [gravando, setGravando] = useState(false);
+  // nº da leitura em andamento: a que terminar depois de outra começar, ou depois de o diálogo
+  // fechar, é descartada (senão a prévia velha voltaria na próxima abertura, sem o nome do
+  // arquivo, e o Importar gravaria sem `arquivo_nome`)
+  const leituraRef = useRef(0);
 
-  // fechou: começa do zero na próxima vez
+  // fechou: descarta a prévia e a leitura em andamento; começa do zero na próxima vez
   useEffect(() => {
     if (!open) {
+      leituraRef.current += 1;
       setArquivoNome("");
       setResultado(null);
+      setLendo(false);
     }
   }, [open]);
 
@@ -54,16 +60,21 @@ export default function ImportarCronogramaDialog({
       toast.error("Escolha o arquivo .xlsx no modelo do SIGO");
       return;
     }
+    const leitura = ++leituraRef.current;
+    const valendo = () => leituraRef.current === leitura;
     setArquivoNome(file.name);
     setLendo(true);
     try {
       const { lerArquivoCronograma } = await import("@/lib/cronograma-modelo");
-      setResultado(lerArquivoCronograma(await file.arrayBuffer(), numerosEtapas || []));
+      const lido = lerArquivoCronograma(await file.arrayBuffer(), numerosEtapas || []);
+      if (valendo()) setResultado(lido);
     } catch (err) {
       console.error("Erro ao ler a planilha:", err);
-      toast.error(`Não foi possível ler a planilha: ${err?.message || "arquivo inválido"}`);
+      if (valendo()) {
+        toast.error(`Não foi possível ler a planilha: ${err?.message || "arquivo inválido"}`);
+      }
     } finally {
-      setLendo(false);
+      if (valendo()) setLendo(false);
     }
   };
 
