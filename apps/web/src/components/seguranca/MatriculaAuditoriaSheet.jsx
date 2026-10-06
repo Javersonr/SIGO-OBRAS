@@ -3,7 +3,16 @@ import { sigo } from "@/api/sigoClient";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, FileDown, Download, Award, Ban, Plus } from "lucide-react";
+import {
+  Loader2,
+  FileDown,
+  Download,
+  Award,
+  Ban,
+  Plus,
+  ChevronDown,
+  ChevronRight,
+} from "lucide-react";
 import { toast } from "sonner";
 import { baixarCertificadoPdf } from "@/lib/certificado-ead";
 import { mensagemFalhaCertificado } from "@/lib/certificado-ead-falhas";
@@ -11,64 +20,36 @@ import { logoParaPdf } from "@/lib/pdf-empresa";
 import { numerarAulas } from "@/lib/portal-curso";
 import {
   ROTULO_ORIGEM_NAVEGADOR,
+  abertaEmDaTentativa,
+  descreverDetalhe,
   eventoInformadoPeloNavegador,
+  formatarTempo,
   origemDoEvento,
+  rotuloDoEvento,
+  tomDoEvento,
 } from "@/lib/ead-trilha";
+import {
+  MOTIVO_REVOGACAO_MAX,
+  acessoPortal,
+  avisoDaRevogacao,
+  validarMotivoRevogacao,
+} from "@/lib/portal-funcionario-acesso";
+import { useConfirmar } from "@/components/shared/ConfirmarDialog";
+import PedirMotivoDialog from "@/components/shared/PedirMotivoDialog";
+import ProvaDaTentativa from "@/components/seguranca/ProvaDaTentativa";
 
 // tabelas só de inclusão (sem deleted_at): o SDK precisa de includeDeleted
 const SEM_SOFT_DELETE = { includeDeleted: true };
 
-const ROTULO_EVENTO = {
-  login: "Entrou no portal",
-  login_falha: "Senha errada no login",
-  logout: "Saiu do portal",
-  troca_senha: "Trocou a senha",
-  acesso_criado: "Acesso criado pelo RH",
-  senha_redefinida: "Senha redefinida pelo RH",
-  acesso_desativado: "Acesso desativado pelo RH",
-  acesso_reativado: "Acesso reativado pelo RH",
-  abrir_curso: "Abriu o curso",
-  abrir_aula: "Abriu a aula",
-  play: "Iniciou o vídeo",
-  pausa: "Pausou",
-  fim_video: "Terminou o vídeo",
-  aba_oculta: "Saiu da tela (tempo parado)",
-  aba_visivel: "Voltou à tela",
-  progresso_ajustado: "Tempo informado acima do real — ajustado pelo servidor",
-  aula_concluida: "Concluiu a aula",
-  avaliacao_inicio: "Abriu a avaliação",
-  avaliacao_iniciada: "Prova aberta (ordem sorteada pelo servidor)",
-  avaliacao_envio: "Enviou a avaliação",
-  curso_concluido: "Concluiu o curso",
-  certificado_assinado: "Assinou o certificado",
-  abrir_certificado: "Baixou o certificado",
-  abrir_projeto: "Abriu o projeto pedagógico",
-  duvida_enviada: "Enviou dúvida ao tutor",
-  ciencia: "Deu ciência de entrega",
+// cor do texto do evento na trilha (T18: a revogação do certificado destaca em vermelho)
+const CLASSE_DO_TOM = {
+  normal: "text-slate-800",
+  atencao: "text-amber-700",
+  revogado: "text-red-700 font-medium",
 };
 
 const fmtDataHora = (iso) =>
   iso ? new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "medium" }) : "—";
-const fmtTempo = (s) => {
-  const t = Math.floor(s || 0);
-  const h = Math.floor(t / 3600);
-  const m = Math.floor((t % 3600) / 60);
-  return h ? `${h}h${String(m).padStart(2, "0")}` : `${m}min ${t % 60}s`;
-};
-
-function descreverDetalhe(e) {
-  const d = e.detalhe || {};
-  if (e.evento === "avaliacao_envio")
-    return `tentativa ${d.tentativa} · nota ${d.nota}% · ${d.aprovada ? "aprovado" : "reprovado"}`;
-  if (e.evento === "avaliacao_iniciada") return `tentativa ${d.tentativa}`;
-  if (e.evento === "progresso_ajustado") return `pediu +${d.pedido}s, aceito +${d.aceito}s`;
-  if (e.evento === "login_falha")
-    return d.bloqueou ? "acesso bloqueado por 15 min" : `tentativa ${d.tentativa}`;
-  if (e.evento === "aula_concluida") return `${fmtTempo(d.segundos)} assistidos`;
-  if (e.evento === "certificado_assinado") return `código ${d.codigo}`;
-  if (d.por) return `por ${d.por}`;
-  return "";
-}
 
 /**
  * Trilha de auditoria de uma matrícula EAD — o que se mostra à fiscalização:
@@ -81,7 +62,6 @@ export default function MatriculaAuditoriaSheet({
   funcionario,
   aulas,
   empresaAtiva,
-  user,
   onClose,
   onMudou,
 }) {
@@ -95,9 +75,19 @@ export default function MatriculaAuditoriaSheet({
   // de a tela redesenhar com o estado.
   const [baixando, setBaixando] = useState(false);
   const baixandoRef = useRef(false);
+  // Liberar e revogar são ações do servidor (funcionario-acesso): uma por vez, e o botão fica parado
+  // enquanto a anterior roda. O ref vale já no 2º clique, antes de a tela redesenhar.
+  const [agindo, setAgindo] = useState(false);
+  const agindoRef = useRef(false);
+  const [pedindoMotivo, setPedindoMotivo] = useState(false); // janela do motivo da revogação
+  const [confirmar, dialogoConfirmar] = useConfirmar();
+  // tentativas com a prova aberta na tabela (linha expansível)
+  const [abertas, setAbertas] = useState(() => new Set());
 
-  const carregar = async () => {
-    setCarregando(true);
+  // `silencioso`: recarrega por baixo, sem trocar o painel por "Carregando" (depois de uma ação, a
+  // tela fica onde está e só os dados mudam)
+  const carregar = async ({ silencioso = false } = {}) => {
+    if (!silencioso) setCarregando(true);
     try {
       const [ps, ts, evs, certs] = await Promise.all([
         sigo.entities.TreinamentoProgresso.filter({ matricula_id: matricula.id }, SEM_SOFT_DELETE),
@@ -129,8 +119,17 @@ export default function MatriculaAuditoriaSheet({
   };
 
   useEffect(() => {
+    setAbertas(new Set());
     if (matricula?.id) carregar();
   }, [matricula?.id]);
+
+  const alternarProva = (id) =>
+    setAbertas((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(id)) novo.delete(id);
+      else novo.add(id);
+      return novo;
+    });
 
   // numeração pela posição na lista (1, 2, 3...), a mesma que o aluno vê no portal
   const aulasNumeradas = numerarAulas(aulas);
@@ -153,7 +152,7 @@ export default function MatriculaAuditoriaSheet({
       ...eventos.map((e) => [
         new Date(e.created_at).toLocaleString("pt-BR"),
         e.evento,
-        ROTULO_EVENTO[e.evento] || e.evento,
+        rotuloDoEvento(e.evento),
         e.aula_id ? tituloAula.get(e.aula_id) || e.aula_id : "",
         e.detalhe ? JSON.stringify(e.detalhe) : "",
         e.ip || "",
@@ -172,17 +171,49 @@ export default function MatriculaAuditoriaSheet({
     URL.revokeObjectURL(a.href);
   };
 
-  const liberarTentativa = async () => {
-    if (!window.confirm("Liberar mais uma tentativa de avaliação para este funcionário?")) return;
+  // Roda uma ação do servidor sobre a matrícula, uma de cada vez. Devolve true se deu certo. Falhou
+  // (sem permissão, conflito, certificado já revogado por outra pessoa): avisa e recarrega por baixo,
+  // para a tela mostrar o que o servidor tem agora.
+  const executarAcao = async (tarefa) => {
+    if (agindoRef.current) return false;
+    agindoRef.current = true;
+    setAgindo(true);
     try {
-      await sigo.entities.TreinamentoMatricula.update(matricula.id, {
-        tentativas_extras: (matricula.tentativas_extras || 0) + 1,
-      });
-      toast.success("Nova tentativa liberada");
-      onMudou?.();
+      await tarefa();
+      return true;
     } catch (e) {
-      toast.error("Erro: " + (e?.message || e));
+      console.error("[matricula] ação do RH falhou:", e);
+      toast.error(e?.message || "Não foi possível concluir a ação");
+      carregar({ silencioso: true });
+      return false;
+    } finally {
+      agindoRef.current = false;
+      setAgindo(false);
     }
+  };
+
+  // a tela dos Detalhes recarrega a trilha por baixo, e a lista de matrículas (que o painel não
+  // enxerga) é avisada para refletir a liberação e a revogação (a lixeira, T20, depende disto)
+  const aposAcao = () => {
+    carregar({ silencioso: true });
+    onMudou?.();
+  };
+
+  const liberarTentativa = async () => {
+    const confirmado = await confirmar({
+      titulo: "Liberar mais uma tentativa?",
+      texto:
+        `${funcionario?.nome_completo || "O funcionário"} ganha mais uma tentativa da avaliação e pode ` +
+        "refazer a prova agora, sem esperar o intervalo entre tentativas.\n\n" +
+        "A liberação fica registrada na trilha de auditoria, com o seu e-mail.",
+      rotuloConfirmar: "Liberar tentativa",
+    });
+    if (!confirmado) return;
+    await executarAcao(async () => {
+      await acessoPortal.liberarTentativa(matricula.id);
+      toast.success("Tentativa liberada: o funcionário já pode refazer a prova.");
+      aposAcao();
+    });
   };
 
   const baixar = async () => {
@@ -201,20 +232,15 @@ export default function MatriculaAuditoriaSheet({
     }
   };
 
-  const revogar = async () => {
-    const motivo = window.prompt("Motivo da revogação (aparece na consulta pública):");
-    if (!motivo?.trim()) return;
-    try {
-      await sigo.entities.TreinamentoCertificado.update(certificado.id, {
-        revogado_em: new Date().toISOString(),
-        revogado_por: user?.email || user?.full_name || null,
-        motivo_revogacao: motivo.trim(),
-      });
-      toast.success("Certificado revogado");
-      carregar();
-    } catch (e) {
-      toast.error("Erro: " + (e?.message || e));
-    }
+  // Com a janela aberta, uma falha deixa o motivo digitado onde está (o erro vai no toast).
+  const revogar = async (motivo) => {
+    await executarAcao(async () => {
+      const resposta = await acessoPortal.revogarCertificado(matricula.id, motivo);
+      const aviso = avisoDaRevogacao(resposta);
+      toast[aviso.tipo](aviso.texto, aviso.tipo === "warning" ? { duration: 12000 } : undefined);
+      setPedindoMotivo(false);
+      aposAcao();
+    });
   };
 
   return (
@@ -237,7 +263,7 @@ export default function MatriculaAuditoriaSheet({
                 ["Status", matricula.status.replace("_", " ")],
                 ["Início", fmtDataHora(matricula.iniciado_em)],
                 ["Conclusão", matricula.data_conclusao?.split("-").reverse().join("/") || "—"],
-                ["Tempo total assistido", fmtTempo(totalAssistido)],
+                ["Tempo total assistido", formatarTempo(totalAssistido)],
               ].map(([k, v]) => (
                 <div key={k} className="rounded-md bg-slate-50 p-2">
                   <p className="text-xs text-slate-500">{k}</p>
@@ -258,8 +284,8 @@ export default function MatriculaAuditoriaSheet({
                           {a.numero}. {a.titulo}
                         </td>
                         <td className="py-1.5 pr-2 text-slate-600 whitespace-nowrap">
-                          {fmtTempo(p?.segundos_assistidos)}
-                          {a.duracao_seg ? ` / ${fmtTempo(a.duracao_seg)}` : ""}
+                          {formatarTempo(p?.segundos_assistidos)}
+                          {a.duracao_seg ? ` / ${formatarTempo(a.duracao_seg)}` : ""}
                         </td>
                         <td className="py-1.5 text-right">
                           {p?.concluida ? (
@@ -287,7 +313,13 @@ export default function MatriculaAuditoriaSheet({
                   )
                 </h3>
                 {!matricula.avaliacao_aprovada && (
-                  <Button size="sm" variant="outline" onClick={liberarTentativa}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={liberarTentativa}
+                    disabled={agindo}
+                    aria-busy={agindo}
+                  >
                     <Plus className="w-4 h-4 mr-1" /> Liberar tentativa
                   </Button>
                 )}
@@ -306,28 +338,61 @@ export default function MatriculaAuditoriaSheet({
                     </tr>
                   </thead>
                   <tbody>
-                    {tentativas.map((t) => (
-                      <tr key={t.id} className="border-b last:border-0">
-                        <td className="py-1.5 pr-2">{t.numero}</td>
-                        <td className="py-1.5 pr-2">{fmtDataHora(t.created_at)}</td>
-                        <td className="py-1.5 pr-2">
-                          {t.acertos}/{t.total}
-                        </td>
-                        <td className="py-1.5 pr-2">
-                          <Badge
-                            variant="outline"
-                            className={
-                              t.aprovada
-                                ? "bg-emerald-100 text-emerald-700 border-emerald-200"
-                                : "bg-red-50 text-red-700 border-red-200"
-                            }
-                          >
-                            {t.nota}% · {t.aprovada ? "aprovado" : "reprovado"}
-                          </Badge>
-                        </td>
-                        <td className="py-1.5 text-slate-500">{t.ip || "—"}</td>
-                      </tr>
-                    ))}
+                    {tentativas.map((t) => {
+                      const aberta = abertas.has(t.id);
+                      return (
+                        <React.Fragment key={t.id}>
+                          <tr className="border-b last:border-0">
+                            <td className="py-1.5 pr-2">
+                              <button
+                                type="button"
+                                onClick={() => alternarProva(t.id)}
+                                aria-expanded={aberta}
+                                aria-controls={`prova-${t.id}`}
+                                aria-label={`${aberta ? "Esconder" : "Ver"} a prova da tentativa ${t.numero}`}
+                                title={aberta ? "Esconder a prova" : "Ver a prova"}
+                                className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-slate-700 hover:bg-slate-100"
+                              >
+                                {aberta ? (
+                                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                                )}
+                                {t.numero}
+                              </button>
+                            </td>
+                            <td className="py-1.5 pr-2">{fmtDataHora(t.created_at)}</td>
+                            <td className="py-1.5 pr-2">
+                              {t.acertos}/{t.total}
+                            </td>
+                            <td className="py-1.5 pr-2">
+                              <Badge
+                                variant="outline"
+                                className={
+                                  t.aprovada
+                                    ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                                    : "bg-red-50 text-red-700 border-red-200"
+                                }
+                              >
+                                {t.nota}% · {t.aprovada ? "aprovado" : "reprovado"}
+                              </Badge>
+                            </td>
+                            <td className="py-1.5 text-slate-500">{t.ip || "—"}</td>
+                          </tr>
+                          {aberta && (
+                            <tr id={`prova-${t.id}`} className="border-b last:border-0">
+                              <td colSpan={5} className="pb-3">
+                                <ProvaDaTentativa
+                                  tentativa={t}
+                                  abertaEm={abertaEmDaTentativa(eventos, t.numero)}
+                                  formatarDataHora={fmtDataHora}
+                                />
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -369,7 +434,12 @@ export default function MatriculaAuditoriaSheet({
                       Baixar PDF
                     </Button>
                     {!certificado.revogado_em && (
-                      <Button size="sm" variant="outline" onClick={revogar}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setPedindoMotivo(true)}
+                        disabled={agindo}
+                      >
                         <Ban className="w-4 h-4 mr-1" /> Revogar
                       </Button>
                     )}
@@ -415,14 +485,8 @@ export default function MatriculaAuditoriaSheet({
                           {fmtDataHora(e.created_at)}
                         </td>
                         <td className="py-1 px-2">
-                          <span
-                            className={
-                              e.evento === "progresso_ajustado" || e.evento === "login_falha"
-                                ? "text-amber-700"
-                                : "text-slate-800"
-                            }
-                          >
-                            {ROTULO_EVENTO[e.evento] || e.evento}
+                          <span className={CLASSE_DO_TOM[tomDoEvento(e.evento)]}>
+                            {rotuloDoEvento(e.evento)}
                           </span>
                           {e.aula_id && tituloAula.get(e.aula_id) && (
                             <span className="text-slate-500"> · {tituloAula.get(e.aula_id)}</span>
@@ -450,6 +514,25 @@ export default function MatriculaAuditoriaSheet({
           </div>
         )}
       </SheetContent>
+      {/* as janelas ficam fora do SheetContent: recarregar a trilha não as desmonta */}
+      {dialogoConfirmar}
+      <PedirMotivoDialog
+        aberto={pedindoMotivo}
+        titulo="Revogar o certificado?"
+        texto={
+          `O certificado de ${funcionario?.nome_completo || "o funcionário"} deixa de valer: a consulta pública ` +
+          "passa a mostrar “Revogado” com o motivo abaixo, e o funcionário é avisado por WhatsApp. " +
+          "A revogação não pode ser desfeita."
+        }
+        rotulo="Motivo da revogação (aparece na consulta pública)"
+        validar={validarMotivoRevogacao}
+        maximo={MOTIVO_REVOGACAO_MAX}
+        rotuloConfirmar="Revogar certificado"
+        destrutivo
+        enviando={agindo}
+        onConfirmar={revogar}
+        onCancelar={() => setPedindoMotivo(false)}
+      />
     </Sheet>
   );
 }

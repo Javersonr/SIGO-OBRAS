@@ -21,6 +21,30 @@ const TABELAS_DA_TRILHA = [
 // o supabase-js escreve com insert/update/upsert/delete; só o insert é permitido na trilha
 const ESCRITAS_PROIBIDAS = new Set(["update", "upsert", "delete"]);
 
+/**
+ * A única escrita (além do insert) permitida na trilha: a REVOGAÇÃO do certificado (T18), feita pelo
+ * `funcionario-acesso` a pedido do RH (e o seu desfazer, se o evento da trilha não for gravado). Antes
+ * ela era feita direto do navegador do RH; o banco (0119) só deixa a empresa mudar as 3 colunas da
+ * revogação, mas o service role passa por essa trava, então o código fica restrito: só este arquivo,
+ * só estas duas atualizações, e o `funcionario-acesso` testa que as colunas vêm de `dadosDaRevogacao`.
+ */
+export const ESCRITAS_PERMITIDAS: Record<string, string[]> = {
+  "funcionario-acesso/index.ts": [
+    "treinamento_certificado.update",
+    "treinamento_certificado.update",
+  ],
+};
+
+/** Tira de `achadas` cada escrita permitida (uma vez por permissão); o que sobra é proibido. */
+export function semAsPermitidas(achadas: string[], permitidas: string[]): string[] {
+  const restantes = [...achadas];
+  for (const p of permitidas) {
+    const i = restantes.indexOf(p);
+    if (i !== -1) restantes.splice(i, 1);
+  }
+  return restantes;
+}
+
 interface Cadeia {
   tabela: string;
   metodos: string[];
@@ -143,6 +167,18 @@ test("leitor: um update numa consulta vizinha não é atribuído à tabela da tr
   assert.deepEqual(escritasProibidasNaTrilha(codigo), []);
 });
 
+test("permitidas: uma atualização do certificado além das combinadas é acusada", () => {
+  const achadas = Array(3).fill("treinamento_certificado.update");
+  assert.deepEqual(semAsPermitidas(achadas, ESCRITAS_PERMITIDAS["funcionario-acesso/index.ts"]), [
+    "treinamento_certificado.update",
+  ]);
+  assert.deepEqual(
+    semAsPermitidas(["treinamento_evento.update"], ["treinamento_certificado.update"]),
+    ["treinamento_evento.update"]
+  );
+  assert.deepEqual(semAsPermitidas([], ESCRITAS_PERMITIDAS["funcionario-acesso/index.ts"]), []);
+});
+
 // ------------------------------------------------------------------ o código de verdade
 
 const RAIZ_FUNCOES = fileURLToPath(new URL("../", import.meta.url));
@@ -153,7 +189,7 @@ function arquivosDasFuncoes(): string[] {
     .filter((p) => p.endsWith(".ts") && !p.endsWith(".test.ts") && !p.includes("node_modules"));
 }
 
-test("nenhuma Edge Function faz UPDATE, UPSERT ou DELETE na trilha de auditoria", () => {
+test("nenhuma Edge Function faz UPDATE, UPSERT ou DELETE na trilha (só a revogação, no funcionario-acesso)", () => {
   const arquivos = arquivosDasFuncoes();
   assert.ok(arquivos.length > 10, "a varredura precisa achar as funções");
   const achados: string[] = [];
@@ -163,7 +199,10 @@ test("nenhuma Edge Function faz UPDATE, UPSERT ou DELETE na trilha de auditoria"
     referencias += cadeiasDeConsulta(codigo).filter((c) =>
       TABELAS_DA_TRILHA.includes(c.tabela)
     ).length;
-    for (const a of escritasProibidasNaTrilha(codigo)) achados.push(`${arquivo}: ${a}`);
+    const achadas = escritasProibidasNaTrilha(codigo);
+    for (const a of semAsPermitidas(achadas, ESCRITAS_PERMITIDAS[arquivo] ?? [])) {
+      achados.push(`${arquivo}: ${a}`);
+    }
   }
   // sem isso o teste passaria vazio se o leitor deixasse de achar as consultas
   assert.ok(referencias >= 8, `esperava achar as consultas à trilha (achou ${referencias})`);

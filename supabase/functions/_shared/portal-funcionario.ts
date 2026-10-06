@@ -72,6 +72,14 @@ export function origemDaRequisicao(req: Request): {
  */
 export type OrigemEvento = "servidor" | "navegador";
 
+/**
+ * Eventos que só o servidor grava, a pedido do RH (`funcionario-acesso`, T18). Nenhum deles está na
+ * lista de eventos que o navegador do aluno pode relatar (`EVENTOS_CLIENTE`, no portal): a liberação
+ * zera o intervalo entre tentativas, então o aluno não pode gravar o próprio evento.
+ */
+export const EVENTO_TENTATIVA_LIBERADA = "tentativa_liberada";
+export const EVENTO_CERTIFICADO_REVOGADO = "certificado_revogado";
+
 export interface EventoPortal {
   empresa_id: string;
   funcionario_id: string;

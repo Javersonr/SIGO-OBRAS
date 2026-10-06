@@ -8,10 +8,19 @@
  *                                                      (já tem acesso: 409 com `codigo: "JA_TEM_ACESSO"`)
  *   { acao:"redefinir", funcionario_id }             → { usuario, senha_provisoria }
  *   { acao:"ativo", funcionario_id, ativo:boolean }  → { ativo }
+ *   { acao:"liberar_tentativa", matricula_id }       → { tentativas_extras } (T18)
+ *   { acao:"revogar_certificado", matricula_id, motivo }
+ *                                                    → { revogado, aviso_whatsapp } (T18)
  *
  * Permissão (espelha a aba Funcionários de RH & Segurança, onde fica a ficha
  * com o AcessoPortalCard): super admin, Admin, dono ou permissão na aba.
- * "status" basta ver a aba; criar/redefinir/ativar exigem a função "editar".
+ * "status" basta ver a aba; criar/redefinir/ativar e as ações de matrícula
+ * exigem a função "editar".
+ *
+ * As ações de matrícula (regras em ./regras.ts) gravam um evento na trilha com
+ * o e-mail do RH (`detalhe.por`): `tentativa_liberada` (que também zera o
+ * intervalo entre tentativas no portal) e `certificado_revogado` (que avisa o
+ * aluno por WhatsApp, sem derrubar a revogação se o aviso falhar).
  *
  * A senha provisória volta UMA vez (para o RH entregar); no primeiro acesso o
  * funcionário cria a própria senha, que ninguém do RH conhece.
@@ -22,15 +31,33 @@ import { usuarioDaRequisicao } from "../_shared/usuario-request.ts";
 import { hashPassword } from "../_shared/passwords.ts";
 import { temPermissaoServidor, type Vinculo } from "../_shared/conector/acesso.ts";
 import {
+  EVENTO_CERTIFICADO_REVOGADO,
+  EVENTO_TENTATIVA_LIBERADA,
   normalizarUsuario,
   gerarSenhaProvisoria,
   registrarEvento,
 } from "../_shared/portal-funcionario.ts";
+import { CanalNaoConfiguradoError, enviarWhatsAppTexto } from "../_shared/whatsapp-envio.ts";
+import {
+  ACOES_DE_MATRICULA,
+  MENSAGEM_SEM_EDICAO,
+  avisarAluno,
+  dadosDaRevogacao,
+  dadosParaDesfazerRevogacao,
+  decidirLiberacao,
+  decidirRevogacao,
+  destinoDoAviso,
+  detalheDaLiberacao,
+  detalheDaRevogacao,
+  motivoDaRevogacao,
+  textoAvisoRevogacao,
+  validarMatriculaId,
+} from "./regras.ts";
 
 // mesmo módulo/aba do front (pages/SegurancaTrabalho.jsx → aba Funcionários)
 const MODULO = "Segurança do Trabalho";
 const ABA = "Funcionários";
-const ACOES_ESCRITA = new Set(["criar", "redefinir", "ativo"]);
+const ACOES_ESCRITA = new Set(["criar", "redefinir", "ativo", ...ACOES_DE_MATRICULA]);
 
 interface Body {
   acao?: string;
@@ -38,7 +65,11 @@ interface Body {
   funcionario_id?: string;
   usuario?: string;
   ativo?: boolean;
+  matricula_id?: string;
+  motivo?: string;
 }
+
+type Staff = { email: string; is_super_admin: boolean; empresa_id: string | null };
 
 /**
  * Vínculo ATIVO do chamador na empresa da sessão (e-mail do usuário do JWT +
@@ -63,6 +94,177 @@ async function vinculoDoChamador(
     .maybeSingle();
   if (error) throw new Error("usuario_empresa: " + error.message);
   return data ?? null;
+}
+
+/**
+ * A matrícula da requisição, só se for da empresa da sessão (super admin vê qualquer uma). Matrícula de
+ * outra empresa responde como inexistente. Erro de leitura lança (vira 500).
+ */
+async function matriculaDoChamador(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  staff: Staff,
+  matriculaId: string
+) {
+  const { data, error } = await supabase
+    .from("treinamento_matricula")
+    .select(
+      "id, empresa_id, funcionario_id, curso_id, tentativas_extras, avaliacao_aprovada, deleted_at"
+    )
+    .eq("id", matriculaId)
+    .maybeSingle();
+  if (error) throw new Error("treinamento_matricula: " + error.message);
+  if (!data || (!staff.is_super_admin && data.empresa_id !== staff.empresa_id)) return null;
+  return data;
+}
+
+/**
+ * Libera mais uma tentativa da avaliação. A soma só grava se a matrícula ainda tem o valor lido (dois
+ * cliques seguidos não perdem uma liberação) e o evento `tentativa_liberada` é o que faz o portal
+ * ignorar o intervalo: sem o evento a liberação é desfeita, para a trilha e a matrícula não divergirem.
+ */
+async function liberarTentativa(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  req: Request,
+  staff: Staff,
+  // deno-lint-ignore no-explicit-any
+  mat: any
+): Promise<Response> {
+  const decisao = decidirLiberacao(mat);
+  if (!decisao.ok) return fail(decisao.mensagem, decisao.status);
+
+  const { data: gravadas, error } = await supabase
+    .from("treinamento_matricula")
+    .update({ tentativas_extras: decisao.extrasNovas })
+    .eq("id", mat.id)
+    .eq("empresa_id", mat.empresa_id)
+    .eq("tentativas_extras", decisao.extrasAtuais)
+    .is("deleted_at", null)
+    .select("id");
+  if (error) {
+    console.error("[funcionario-acesso] liberar_tentativa:", error.message);
+    return fail("Erro ao liberar a tentativa", 500);
+  }
+  if (!gravadas?.length) {
+    return fail("A matrícula mudou agora há pouco. Atualize a tela e tente de novo.", 409, {
+      codigo: "CONFLITO",
+    });
+  }
+
+  const gravou = await registrarEvento(supabase, req, {
+    empresa_id: mat.empresa_id,
+    funcionario_id: mat.funcionario_id,
+    matricula_id: mat.id,
+    curso_id: mat.curso_id,
+    evento: EVENTO_TENTATIVA_LIBERADA,
+    detalhe: detalheDaLiberacao({ por: staff.email, extrasNovas: decisao.extrasNovas }),
+  });
+  if (!gravou) {
+    const { error: erroDesfazer } = await supabase
+      .from("treinamento_matricula")
+      .update({ tentativas_extras: decisao.extrasAtuais })
+      .eq("id", mat.id)
+      .eq("empresa_id", mat.empresa_id)
+      .eq("tentativas_extras", decisao.extrasNovas);
+    if (erroDesfazer) {
+      console.error("[funcionario-acesso] liberar_tentativa: não desfez:", erroDesfazer.message);
+    }
+    return fail(
+      "Não foi possível registrar a liberação na trilha de auditoria. Tente de novo.",
+      500
+    );
+  }
+  return ok({ tentativas_extras: decisao.extrasNovas });
+}
+
+/**
+ * Revoga o certificado da matrícula (só a empresa dona revoga; o servidor confere que ainda vale, para
+ * não sobrescrever autor e motivo de uma revogação anterior), registra `certificado_revogado` na trilha
+ * e avisa o aluno por WhatsApp. A revogação sem registro de quem a fez não fica (é desfeita); já o
+ * aviso é só um recado: se falhar, a revogação vale e o RH vê o motivo na resposta.
+ */
+async function revogarCertificado(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  req: Request,
+  staff: Staff,
+  // deno-lint-ignore no-explicit-any
+  mat: any,
+  motivo: string
+): Promise<Response> {
+  const { data: cert, error: erroLeitura } = await supabase
+    .from("treinamento_certificado")
+    .select("id, codigo, dados, revogado_em")
+    .eq("matricula_id", mat.id)
+    .eq("empresa_id", mat.empresa_id)
+    .maybeSingle();
+  if (erroLeitura) {
+    console.error("[funcionario-acesso] revogar_certificado:", erroLeitura.message);
+    return fail("Erro ao carregar o certificado", 500);
+  }
+  const decisao = decidirRevogacao(cert);
+  if (!decisao.ok) return fail(decisao.mensagem, decisao.status);
+
+  const quando = new Date();
+  const { data: revogados, error } = await supabase
+    .from("treinamento_certificado")
+    .update(dadosDaRevogacao({ agora: quando, por: staff.email, motivo }))
+    .eq("id", cert.id)
+    .eq("empresa_id", mat.empresa_id)
+    .is("revogado_em", null)
+    .select("id");
+  if (error) {
+    console.error("[funcionario-acesso] revogar_certificado:", error.message);
+    return fail("Erro ao revogar o certificado", 500);
+  }
+  if (!revogados?.length) return fail("O certificado já está revogado", 409);
+
+  const gravou = await registrarEvento(supabase, req, {
+    empresa_id: mat.empresa_id,
+    funcionario_id: mat.funcionario_id,
+    matricula_id: mat.id,
+    curso_id: mat.curso_id,
+    evento: EVENTO_CERTIFICADO_REVOGADO,
+    detalhe: detalheDaRevogacao({ por: staff.email, codigo: cert.codigo, motivo }),
+  });
+  if (!gravou) {
+    const { error: erroDesfazer } = await supabase
+      .from("treinamento_certificado")
+      .update(dadosParaDesfazerRevogacao())
+      .eq("id", cert.id)
+      .eq("empresa_id", mat.empresa_id)
+      .eq("revogado_em", quando.toISOString());
+    if (erroDesfazer) {
+      console.error("[funcionario-acesso] revogar_certificado: não desfez:", erroDesfazer.message);
+    }
+    return fail(
+      "Não foi possível registrar a revogação na trilha de auditoria. Tente de novo.",
+      500
+    );
+  }
+
+  const { data: func } = await supabase
+    .from("funcionario")
+    .select("nome_completo, telefone, ativo, deleted_at")
+    .eq("id", mat.funcionario_id)
+    .eq("empresa_id", mat.empresa_id)
+    .maybeSingle();
+  const aviso = await avisarAluno({
+    destino: destinoDoAviso(func),
+    texto: textoAvisoRevogacao({
+      nome: func?.nome_completo,
+      curso: cert.dados?.curso?.nome,
+      codigo: cert.codigo,
+      empresa: cert.dados?.empresa?.nome,
+      motivo,
+    }),
+    enviar: enviarWhatsAppTexto,
+    canalNaoConfigurado: (e) => e instanceof CanalNaoConfiguradoError,
+    aoFalhar: (e) =>
+      console.error("[funcionario-acesso] aviso da revogação:", (e as Error)?.message),
+  });
+  return ok({ revogado: true, aviso_whatsapp: aviso });
 }
 
 Deno.serve(
@@ -119,6 +321,24 @@ Deno.serve(
           ultimo_acesso: a.ultimo_acesso,
         })),
       });
+    }
+
+    // Ações de matrícula (T18): a identidade e a empresa vêm da sessão; a matrícula, do banco.
+    if (ACOES_DE_MATRICULA.has(acao)) {
+      if (!podeEditar) return fail(MENSAGEM_SEM_EDICAO[acao], 403);
+      const idDaMatricula = validarMatriculaId(body.matricula_id);
+      if (!idDaMatricula.ok) return fail(idDaMatricula.mensagem, idDaMatricula.status);
+      let motivo = "";
+      if (acao === "revogar_certificado") {
+        const m = motivoDaRevogacao(body.motivo);
+        if (!m.ok) return fail(m.mensagem, m.status);
+        motivo = m.motivo;
+      }
+      const mat = await matriculaDoChamador(supabase, staff, idDaMatricula.id);
+      if (!mat || mat.deleted_at) return fail("Matrícula não encontrada", 404);
+      return acao === "liberar_tentativa"
+        ? liberarTentativa(supabase, req, staff, mat)
+        : revogarCertificado(supabase, req, staff, mat, motivo);
     }
 
     if (!body.funcionario_id) return fail("funcionario_id é obrigatório", 400);

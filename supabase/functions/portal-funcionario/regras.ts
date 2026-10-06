@@ -135,6 +135,9 @@ export function corrigirProva(p: {
  * - `aguardarAte` (ms): reprovado na última tentativa e o intervalo ainda corre
  *   (`agora < última + intervalo`); null quando já pode tentar.
  * `usadas` = quantas tentativas a matrícula já tem; `ultima` = a de maior número.
+ * `liberadaEm` (ms, T18): a liberação mais recente do RH para esta matrícula (evento
+ * `tentativa_liberada`). Se veio DEPOIS da última tentativa, o intervalo não vale: o aluno liberado
+ * faz a prova na hora. Liberação anterior à última tentativa já foi usada e não vale mais.
  */
 export function situacaoDasTentativas(p: {
   usadas: number;
@@ -144,6 +147,7 @@ export function situacaoDasTentativas(p: {
     | undefined;
   matricula: { tentativas_extras?: number | null };
   ultima?: { aprovada?: boolean | null; created_at: string } | null;
+  liberadaEm?: number | null;
   agora: number;
 }) {
   const limite = p.curso?.max_tentativas ?? 0;
@@ -152,10 +156,47 @@ export function situacaoDasTentativas(p: {
   const intervalo = p.curso?.intervalo_tentativa_min ?? 0;
   let aguardarAte: number | null = null;
   if (p.ultima && !p.ultima.aprovada && intervalo > 0) {
-    const libera = Date.parse(p.ultima.created_at) + intervalo * 60_000;
-    if (p.agora < libera) aguardarAte = libera;
+    const tentouEm = Date.parse(p.ultima.created_at);
+    const liberada = typeof p.liberadaEm === "number" && p.liberadaEm > tentouEm;
+    const libera = tentouEm + intervalo * 60_000;
+    if (!liberada && p.agora < libera) aguardarAte = libera;
   }
   return { max, esgotada, aguardarAte };
+}
+
+/**
+ * Instante (ms) da liberação mais recente dentre as linhas de `treinamento_evento` com evento
+ * `tentativa_liberada` (a consulta já filtra pelo nome), ou null. Não depende da ordem das linhas;
+ * data ausente ou inválida é ignorada.
+ */
+export function ultimaLiberacao(
+  eventos: { created_at?: unknown }[] | null | undefined
+): number | null {
+  let maisRecente: number | null = null;
+  for (const e of eventos ?? []) {
+    const t = typeof e?.created_at === "string" ? Date.parse(e.created_at) : Number.NaN;
+    if (Number.isFinite(t) && (maisRecente === null || t > maisRecente)) maisRecente = t;
+  }
+  return maisRecente;
+}
+
+/** `ultimaLiberacao` de cada matrícula (o `dados` consulta as de todas de uma vez). */
+export function liberacoesPorMatricula(
+  eventos: { matricula_id?: string | null; created_at?: unknown }[] | null | undefined
+): Map<string, number> {
+  const porMatricula = new Map<string, { created_at?: unknown }[]>();
+  for (const e of eventos ?? []) {
+    if (!e?.matricula_id) continue;
+    const lista = porMatricula.get(e.matricula_id) ?? [];
+    lista.push(e);
+    porMatricula.set(e.matricula_id, lista);
+  }
+  const saida = new Map<string, number>();
+  for (const [matriculaId, lista] of porMatricula) {
+    const t = ultimaLiberacao(lista);
+    if (t !== null) saida.set(matriculaId, t);
+  }
+  return saida;
 }
 
 /** Quando o reprovado poderá tentar de novo (ms), ou null se não há intervalo ou foi aprovado. */

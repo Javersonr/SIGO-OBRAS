@@ -32,7 +32,72 @@ export const acessoPortal = {
     chamar("criar", { funcionario_id: funcionarioId, usuario: usuario || undefined }),
   redefinir: (funcionarioId) => chamar("redefinir", { funcionario_id: funcionarioId }),
   ativo: (funcionarioId, ativo) => chamar("ativo", { funcionario_id: funcionarioId, ativo }),
+  // ações de matrícula (T18): o servidor confere a permissão, grava o evento com o e-mail do RH
+  liberarTentativa: (matriculaId) => chamar("liberar_tentativa", { matricula_id: matriculaId }),
+  revogarCertificado: (matriculaId, motivo) =>
+    chamar("revogar_certificado", { matricula_id: matriculaId, motivo }),
 };
+
+// Os mesmos limites do servidor (funcionario-acesso/regras.ts); o teste confere os dois lados.
+export const MOTIVO_REVOGACAO_MIN = 5;
+export const MOTIVO_REVOGACAO_MAX = 300;
+
+/**
+ * Confere o motivo da revogação antes de chamar o servidor (que repete a conferência). O motivo
+ * aparece na consulta pública do certificado: uma linha só, então quebras e espaços repetidos viram um.
+ * @returns {{ ok: true, motivo: string } | { ok: false, erro: string }}
+ */
+export function validarMotivoRevogacao(bruto) {
+  const motivo = typeof bruto === "string" ? bruto.replace(/\s+/g, " ").trim() : "";
+  if (!motivo) return { ok: false, erro: "Informe o motivo da revogação" };
+  if (motivo.length < MOTIVO_REVOGACAO_MIN) {
+    return {
+      ok: false,
+      erro: `O motivo precisa ter pelo menos ${MOTIVO_REVOGACAO_MIN} caracteres`,
+    };
+  }
+  if (motivo.length > MOTIVO_REVOGACAO_MAX) {
+    return { ok: false, erro: `O motivo pode ter no máximo ${MOTIVO_REVOGACAO_MAX} caracteres` };
+  }
+  return { ok: true, motivo };
+}
+
+const AVISO_DA_REVOGACAO = {
+  enviado: ["success", "Certificado revogado. O funcionário foi avisado no WhatsApp."],
+  inativo: [
+    "success",
+    "Certificado revogado. O funcionário está inativo: nenhum aviso foi enviado.",
+  ],
+  sem_telefone: [
+    "warning",
+    "Certificado revogado, mas o funcionário não tem telefone cadastrado: avise-o por outro meio.",
+  ],
+  telefone_invalido: [
+    "warning",
+    "Certificado revogado, mas o telefone do funcionário é inválido: corrija o cadastro e avise-o por outro meio.",
+  ],
+  canal_nao_configurado: [
+    "warning",
+    "Certificado revogado, mas o WhatsApp automático não está configurado: avise o funcionário por outro meio.",
+  ],
+  falhou: [
+    "warning",
+    "Certificado revogado, mas o aviso por WhatsApp falhou: avise o funcionário por outro meio.",
+  ],
+};
+
+/**
+ * O que mostrar ao RH depois de revogar: a revogação vale sempre; o texto diz se o aluno foi avisado
+ * (`aviso_whatsapp` da resposta de `revogar_certificado`) ou o que fazer quando o aviso não saiu.
+ * @returns {{ tipo: "success"|"warning", texto: string }}
+ */
+export function avisoDaRevogacao(resposta) {
+  const chave = resposta?.aviso_whatsapp;
+  const [tipo, texto] = Object.hasOwn(AVISO_DA_REVOGACAO, chave)
+    ? AVISO_DA_REVOGACAO[chave]
+    : ["success", "Certificado revogado"];
+  return { tipo, texto };
+}
 
 const primeiroNome = (nome) => (nome || "").trim().split(/\s+/)[0] || "";
 

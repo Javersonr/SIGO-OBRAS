@@ -4,7 +4,11 @@
 // Só endereços de documentação (RFC 5737 e RFC 3849): nenhum IP real em repositório público.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
+  EVENTO_CERTIFICADO_REVOGADO,
+  EVENTO_TENTATIVA_LIBERADA,
   HASH_VERSAO_CANONICO,
   hashDoCertificado,
   inteiroAleatorioSeguro,
@@ -297,5 +301,28 @@ test("inteiroAleatorioSeguro: sem viés visível (3 valores em 6000 sorteios fic
 test("inteiroAleatorioSeguro: não aceita n inválido", () => {
   for (const ruim of [0, -1, 1.5, Number.NaN, Infinity, 2 ** 32 + 1]) {
     assert.throws(() => inteiroAleatorioSeguro(ruim), RangeError, String(ruim));
+  }
+});
+
+// ------------------------------------------- eventos que o RH gera (funcionario-acesso, T18)
+test("eventos do RH: nomes combinados com a tela e com o portal", () => {
+  assert.equal(EVENTO_TENTATIVA_LIBERADA, "tentativa_liberada");
+  assert.equal(EVENTO_CERTIFICADO_REVOGADO, "certificado_revogado");
+});
+
+test("eventos do RH: o navegador do aluno não consegue gravar nenhum deles", () => {
+  // `tentativa_liberada` zera o intervalo entre tentativas: se o aluno pudesse gravar o evento pela
+  // ação `evento` do portal, ele mesmo se liberaria. A lista de eventos aceitos do navegador é o
+  // `EVENTOS_CLIENTE` do index.ts (não importável no Node): confere pelo texto.
+  const codigo = readFileSync(
+    fileURLToPath(new URL("../portal-funcionario/index.ts", import.meta.url)),
+    "utf8"
+  );
+  const inicio = codigo.indexOf("const EVENTOS_CLIENTE = new Set([");
+  assert.ok(inicio > 0, "EVENTOS_CLIENTE não encontrado");
+  const lista = codigo.slice(inicio, codigo.indexOf("]);", inicio));
+  assert.ok(lista.includes('"abrir_aula"'), "a leitura da lista precisa achar os eventos do aluno");
+  for (const nome of [EVENTO_TENTATIVA_LIBERADA, EVENTO_CERTIFICADO_REVOGADO]) {
+    assert.ok(!lista.includes(`"${nome}"`), `${nome} não pode estar em EVENTOS_CLIENTE`);
   }
 });

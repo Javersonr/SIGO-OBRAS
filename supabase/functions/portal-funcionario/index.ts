@@ -43,6 +43,7 @@ import {
   gerarCodigoCertificado,
   hashDoCertificado,
   HASH_VERSAO_CANONICO,
+  EVENTO_TENTATIVA_LIBERADA,
   type EventoPortal,
 } from "../_shared/portal-funcionario.ts";
 import { enviarWhatsAppTexto, normalizarTelefoneBR } from "../_shared/whatsapp-envio.ts";
@@ -65,6 +66,7 @@ import {
   detalheDaProvaIniciada,
   detalheLimitado,
   inicioDaProva,
+  liberacoesPorMatricula,
   logoAssinadoParaPdf,
   matriculaParaAluno,
   type ProgressoDaAula,
@@ -75,6 +77,7 @@ import {
   situacaoDasTentativas,
   situacaoDaTrilha,
   sortearProva,
+  ultimaLiberacao,
   validarEnvio,
 } from "./regras.ts";
 import {
@@ -589,6 +592,7 @@ Deno.serve(
         { data: tentativas },
         { data: certificados },
         { data: duvidas },
+        { data: liberacoes },
       ] = await Promise.all([
         cursoIds.length
           ? supabase
@@ -643,7 +647,18 @@ Deno.serve(
               .is("deleted_at", null)
               .order("created_at", { ascending: false })
           : vazio,
+        // liberações do RH (T18): quem foi liberado depois da última tentativa não espera o intervalo
+        matIds.length
+          ? supabase
+              .from("treinamento_evento")
+              .select("matricula_id, created_at")
+              .eq("empresa_id", empresaId)
+              .eq("funcionario_id", funcionarioId)
+              .eq("evento", EVENTO_TENTATIVA_LIBERADA)
+              .in("matricula_id", matIds)
+          : vazio,
       ]);
+      const liberadaEm = liberacoesPorMatricula(liberacoes);
 
       const progPor = new Map(
         // deno-lint-ignore no-explicit-any
@@ -701,6 +716,7 @@ Deno.serve(
           curso,
           matricula: m,
           ultima: tents[tents.length - 1],
+          liberadaEm: liberadaEm.get(m.id),
           agora,
         });
         // deno-lint-ignore no-explicit-any
@@ -989,30 +1005,40 @@ Deno.serve(
       if (!trilha.aulas.every((a: { id: string }) => trilha.feitas.has(a.id))) {
         return { falha: fail("Conclua todas as aulas antes da avaliação", 409) };
       }
-      const [{ data: questoes }, { data: curso }, { data: anteriores }] = await Promise.all([
-        supabase
-          .from("treinamento_questao")
-          .select(
-            comGabarito
-              ? "id, ordem, pergunta, opcoes, correta, comentario"
-              : "id, ordem, pergunta, opcoes"
-          )
-          .eq("curso_id", mat.curso_id)
-          .eq("empresa_id", empresaId)
-          .is("deleted_at", null)
-          .order("ordem", { ascending: true }),
-        supabase
-          .from("treinamento_curso")
-          .select("nota_minima, max_tentativas, intervalo_tentativa_min")
-          .eq("id", mat.curso_id)
-          .eq("empresa_id", empresaId)
-          .maybeSingle(),
-        supabase
-          .from("treinamento_tentativa")
-          .select("numero, aprovada, created_at")
-          .eq("matricula_id", mat.id)
-          .order("numero", { ascending: false }),
-      ]);
+      const [{ data: questoes }, { data: curso }, { data: anteriores }, { data: liberacoes }] =
+        await Promise.all([
+          supabase
+            .from("treinamento_questao")
+            .select(
+              comGabarito
+                ? "id, ordem, pergunta, opcoes, correta, comentario"
+                : "id, ordem, pergunta, opcoes"
+            )
+            .eq("curso_id", mat.curso_id)
+            .eq("empresa_id", empresaId)
+            .is("deleted_at", null)
+            .order("ordem", { ascending: true }),
+          supabase
+            .from("treinamento_curso")
+            .select("nota_minima, max_tentativas, intervalo_tentativa_min")
+            .eq("id", mat.curso_id)
+            .eq("empresa_id", empresaId)
+            .maybeSingle(),
+          supabase
+            .from("treinamento_tentativa")
+            .select("numero, aprovada, created_at")
+            .eq("matricula_id", mat.id)
+            .order("numero", { ascending: false }),
+          // liberação do RH (T18): depois da última tentativa, o intervalo não vale
+          supabase
+            .from("treinamento_evento")
+            .select("created_at")
+            .eq("matricula_id", mat.id)
+            .eq("empresa_id", empresaId)
+            .eq("evento", EVENTO_TENTATIVA_LIBERADA)
+            .order("created_at", { ascending: false })
+            .limit(1),
+        ]);
       if (!questoes?.length) return { falha: fail("Este curso não tem avaliação", 400) };
 
       const usadas = anteriores?.length ?? 0;
@@ -1021,6 +1047,7 @@ Deno.serve(
         curso,
         matricula: mat,
         ultima: anteriores?.[0],
+        liberadaEm: ultimaLiberacao(liberacoes),
         agora: Date.now(),
       });
       if (tentativas.esgotada) {

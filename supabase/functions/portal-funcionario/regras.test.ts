@@ -19,6 +19,7 @@ import {
   detalheLimitado,
   inicioDaProva,
   liberacaoDasAulas,
+  liberacoesPorMatricula,
   logoAssinadoParaPdf,
   matriculaParaAluno,
   ordemDaProva,
@@ -29,6 +30,7 @@ import {
   situacaoDasTentativas,
   situacaoDaTrilha,
   sortearProva,
+  ultimaLiberacao,
   validarEnvio,
 } from "./regras.ts";
 import { assinarDaEmpresa } from "../_shared/storage-assinar.ts";
@@ -559,6 +561,92 @@ test("situacaoDasTentativas: limite esgotado e intervalo correndo são avaliados
   });
   assert.equal(s.esgotada, true);
   assert.equal(s.aguardarAte, minDepois(30));
+});
+
+// ------------------------------------------- liberação do RH zera o intervalo (T18)
+const liberada = (min: number) => ({ created_at: new Date(minDepois(min)).toISOString() });
+
+test("situacaoDasTentativas: liberação do RH depois da última tentativa ignora o intervalo", () => {
+  const base = {
+    usadas: 1,
+    curso: { intervalo_tentativa_min: 30 },
+    matricula: {},
+    ultima: tentativa(false),
+    agora: minDepois(5),
+  };
+  assert.equal(situacaoDasTentativas(base).aguardarAte, minDepois(30), "sem liberação espera");
+  assert.equal(
+    situacaoDasTentativas({ ...base, liberadaEm: minDepois(2) }).aguardarAte,
+    null,
+    "liberada depois da tentativa"
+  );
+});
+
+test("situacaoDasTentativas: liberação ANTERIOR à última tentativa não vale (o aluno já usou)", () => {
+  const base = {
+    usadas: 2,
+    curso: { intervalo_tentativa_min: 30 },
+    matricula: { tentativas_extras: 1 },
+    ultima: { aprovada: false, created_at: new Date(minDepois(10)).toISOString() },
+    agora: minDepois(12),
+  };
+  // liberada aos 5 min, tentou aos 10 min e reprovou de novo: o intervalo volta a valer
+  assert.equal(
+    situacaoDasTentativas({ ...base, liberadaEm: minDepois(5) }).aguardarAte,
+    minDepois(40)
+  );
+  // no mesmo instante da tentativa também não conta: a liberação tem de ser DEPOIS dela
+  assert.equal(
+    situacaoDasTentativas({ ...base, liberadaEm: minDepois(10) }).aguardarAte,
+    minDepois(40)
+  );
+});
+
+test("situacaoDasTentativas: sem liberação (null, undefined) o intervalo vale como antes", () => {
+  const base = {
+    usadas: 1,
+    curso: { intervalo_tentativa_min: 30 },
+    matricula: {},
+    ultima: tentativa(false),
+    agora: minDepois(5),
+  };
+  for (const liberadaEm of [null, undefined, Number.NaN])
+    assert.equal(situacaoDasTentativas({ ...base, liberadaEm }).aguardarAte, minDepois(30));
+});
+
+test("situacaoDasTentativas: a liberação não mexe no limite (as extras são da matrícula)", () => {
+  const s = situacaoDasTentativas({
+    usadas: 3,
+    curso: { max_tentativas: 3, intervalo_tentativa_min: 30 },
+    matricula: { tentativas_extras: 0 },
+    ultima: tentativa(false),
+    liberadaEm: minDepois(2),
+    agora: minDepois(5),
+  });
+  assert.equal(s.esgotada, true, "sem a tentativa extra o limite continua esgotado");
+  assert.equal(s.aguardarAte, null);
+});
+
+test("ultimaLiberacao: devolve a mais recente, em qualquer ordem, e ignora data inválida", () => {
+  assert.equal(ultimaLiberacao([liberada(3), liberada(9), liberada(1)]), minDepois(9));
+  assert.equal(ultimaLiberacao([{ created_at: "lixo" }, liberada(4), {}]), minDepois(4));
+  for (const vazio of [[], null, undefined, [{ created_at: "lixo" }]])
+    assert.equal(ultimaLiberacao(vazio), null);
+});
+
+test("liberacoesPorMatricula: uma data por matrícula (a mais recente); sem matrícula é ignorada", () => {
+  const mapa = liberacoesPorMatricula([
+    { matricula_id: "m1", ...liberada(3) },
+    { matricula_id: "m2", ...liberada(7) },
+    { matricula_id: "m1", ...liberada(8) },
+    { matricula_id: null, ...liberada(20) },
+    { ...liberada(30) },
+  ]);
+  assert.deepEqual([...mapa.entries()].sort(), [
+    ["m1", minDepois(8)],
+    ["m2", minDepois(7)],
+  ]);
+  assert.equal(liberacoesPorMatricula(null).size, 0);
 });
 
 // --------------------------------------------------------- proximaTentativaEm
