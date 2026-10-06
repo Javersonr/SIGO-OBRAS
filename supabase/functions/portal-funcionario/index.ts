@@ -6,9 +6,8 @@
  * obriga a troca. A sessão é um token HMAC de 12h amarrado à `sessao_versao`
  * do acesso: redefinir a senha ou desativar derruba as sessões abertas.
  *
- * Ações sem sessão:
+ * Ação sem sessão:
  *   { acao:"login", usuario, senha }            → { token, trocar_senha, nome }
- *   { acao:"link", funcionario_id }  [STAFF]    → { url_path, usuario, tem_acesso }
  * Ações com sessão ({ token }):
  *   trocar_senha { nova_senha, senha_atual? }   logout  (senha_atual é obrigatória fora do 1º acesso)
  *   dados                                       evento { evento, matricula_id?, aula_id?, detalhe? }
@@ -20,6 +19,11 @@
  *
  * Reconfirmar a senha com a sessão aberta (`certificado` e `trocar_senha` com a senha atual) tem limite de
  * tentativas por funcionário (escopo próprio, 5 em 15 min); passou do teto responde 429 `LIMITE`.
+ *
+ * `evento` e `progresso` (que o navegador repete sozinho) também têm teto por funcionário, em escopos
+ * próprios (`VOLUME_POR_ACAO`, em regras.ts); passou do teto responde 429 `LIMITE`. O `progresso` ainda só
+ * grava o sinal (ultimo_sinal_em) se ninguém o mudou desde que o pedido o leu (trava otimista): quem
+ * perde a corrida responde 409 `SINAL_CONCORRENTE` e não credita tempo (T31).
  *
  * `dados` não leva as questões (saem sorteadas em iniciar_avaliacao) e só assina URL e manda o texto das
  * aulas LIBERADAS: a aula bloqueada vai na lista, mas sem conteúdo (T16).
@@ -35,7 +39,6 @@
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { signPortalToken, verifyPortalToken } from "../_shared/portal-token.ts";
-import { usuarioDaRequisicao } from "../_shared/usuario-request.ts";
 import { hashPassword, verifyPassword } from "../_shared/passwords.ts";
 import {
   normalizarUsuario,
@@ -55,7 +58,10 @@ import { carregarDocumentos, funcionarioPodeEntrar } from "./documentos.ts";
 import { confirmarCiencia } from "./ciencia.ts";
 import { requisitosDoCurso, duracaoParaProgresso } from "./requisitos.ts";
 import {
+  COLUNAS_MATRICULA_PORTAL,
   EVENTO_PROVA_INICIADA,
+  MSG_MUITAS_ACOES,
+  MSG_SINAL_CONCORRENTE,
   NOTA_MINIMA_PADRAO,
   TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG,
   aulaLiberada,
@@ -66,6 +72,7 @@ import {
   creditarTempo,
   cursoPublicado,
   datasDeConclusao,
+  dentroDoVolume,
   detalheDaProvaIniciada,
   detalheLimitado,
   inicioDaProva,
@@ -78,9 +85,11 @@ import {
   reconfirmarSenha,
   refsDasAulasLiberadas,
   respostaDaCorrecao,
+  resultadoDoSinal,
   situacaoDasTentativas,
   situacaoDaTrilha,
   sortearProva,
+  travaDoSinal,
   ultimaLiberacao,
   validarEnvio,
 } from "./regras.ts";
@@ -129,7 +138,6 @@ interface Body {
   senha?: string;
   senha_atual?: string;
   nova_senha?: string;
-  funcionario_id?: string;
   token?: string;
   evento?: string;
   detalhe?: Record<string, unknown>;
@@ -314,32 +322,6 @@ Deno.serve(
     const supabase = createAdminClient();
     const agoraIso = () => new Date().toISOString();
 
-    // ------------------------------------------------ link (legado, STAFF)
-    if (body.acao === "link") {
-      const staff = await usuarioDaRequisicao(req);
-      if (!staff) return fail("Sessão inválida", 401);
-      const { data: func } = await supabase
-        .from("funcionario")
-        .select("id, empresa_id")
-        .eq("id", body.funcionario_id ?? "")
-        .is("deleted_at", null)
-        .maybeSingle();
-      if (!func) return fail("Funcionário não encontrado", 404);
-      if (!staff.is_super_admin && func.empresa_id !== staff.empresa_id) {
-        return fail("Funcionário de outra empresa", 403);
-      }
-      const { data: acesso } = await supabase
-        .from("funcionario_portal_acesso")
-        .select("usuario")
-        .eq("funcionario_id", func.id)
-        .maybeSingle();
-      return ok({
-        url_path: "/PortalFuncionario",
-        usuario: acesso?.usuario ?? null,
-        tem_acesso: !!acesso,
-      });
-    }
-
     // ---------------------------------------------------------------- login
     if (body.acao === "login") {
       const usuario = normalizarUsuario(body.usuario ?? "");
@@ -482,6 +464,16 @@ Deno.serve(
         liberar: (consumo) => liberarTentativas(supabase, consumo),
       });
     const muitasTentativas = () => fail(MSG_MUITAS_TENTATIVAS, 429, { codigo: "LIMITE" });
+    // Volume de `evento` e `progresso` (T31): teto por funcionário, consumido ANTES do trabalho. Fora do ar,
+    // o limitador não derruba o portal (`consumirTentativa` libera e registra o erro).
+    const dentroDoLimite = (acao: "evento" | "progresso") =>
+      dentroDoVolume({
+        acao,
+        funcionarioId,
+        consumir: (escopo, janelaSeg, limites) =>
+          consumirTentativa(supabase, escopo, janelaSeg, limites),
+      });
+    const muitasAcoes = () => fail(MSG_MUITAS_ACOES, 429, { codigo: "LIMITE" });
 
     // --------------------------------------------------------- trocar senha
     if (body.acao === "trocar_senha") {
@@ -559,7 +551,7 @@ Deno.serve(
       if (!id) return null;
       const { data } = await supabase
         .from("treinamento_matricula")
-        .select("*")
+        .select(COLUNAS_MATRICULA_PORTAL)
         .eq("id", id)
         .eq("funcionario_id", funcionarioId)
         .eq("empresa_id", empresaId)
@@ -591,7 +583,7 @@ Deno.serve(
           .maybeSingle(),
         supabase
           .from("treinamento_matricula")
-          .select("*")
+          .select(COLUNAS_MATRICULA_PORTAL)
           .eq("funcionario_id", funcionarioId)
           .eq("empresa_id", empresaId)
           .is("deleted_at", null),
@@ -829,6 +821,7 @@ Deno.serve(
 
     // --------------------------------------------------------------- evento
     if (body.acao === "evento") {
+      if (!(await dentroDoLimite("evento"))) return muitasAcoes();
       const nome = body.evento ?? "";
       if (!EVENTOS_CLIENTE.has(nome)) return fail("Evento inválido", 400);
       const mat = await minhaMatricula(body.matricula_id);
@@ -879,6 +872,7 @@ Deno.serve(
 
     // ------------------------------------------------------------ progresso
     if (body.acao === "progresso") {
+      if (!(await dentroDoLimite("progresso"))) return muitasAcoes();
       const mat = await minhaMatricula(body.matricula_id);
       if (!mat || !body.aula_id) return fail("Matrícula não encontrada", 404);
       const trilha = await trilhaDoCurso(supabase, mat.curso_id, mat.id, empresaId);
@@ -915,10 +909,26 @@ Deno.serve(
         duracao,
       });
 
-      await supabase
-        .from("funcionario_portal_acesso")
-        .update({ ultimo_sinal_em: new Date(agora).toISOString() })
-        .eq("funcionario_id", funcionarioId);
+      // Trava otimista (T31): o sinal só é gravado se ninguém o mudou desde que este pedido o leu (o
+      // `acesso` do começo). Dois progressos simultâneos liam o mesmo sinal e creditavam o mesmo tempo
+      // decorrido, cada um; agora o UPDATE do Postgres deixa passar só o primeiro, e o outro responde 409
+      // sem creditar nada (o navegador reenvia o total no próximo ciclo).
+      const { data: sinalGravado, error: erroSinal } = await travaDoSinal(
+        supabase
+          .from("funcionario_portal_acesso")
+          .update({ ultimo_sinal_em: new Date(agora).toISOString() })
+          .eq("funcionario_id", funcionarioId)
+          .eq("empresa_id", empresaId),
+        acesso.ultimo_sinal_em
+      ).select("funcionario_id");
+      const sinal = resultadoDoSinal({ erro: erroSinal, linhas: sinalGravado?.length });
+      if (sinal === "erro") {
+        console.error("[portal-funcionario] sinal do progresso:", erroSinal);
+        return fail("Erro ao salvar progresso", 500);
+      }
+      if (sinal === "mudou") {
+        return fail(MSG_SINAL_CONCORRENTE, 409, { codigo: "SINAL_CONCORRENTE" });
+      }
       if (ajustado) {
         await ev({
           evento: "progresso_ajustado",

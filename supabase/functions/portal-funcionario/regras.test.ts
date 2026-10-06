@@ -1,15 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  COLUNAS_MATRICULA_ALUNO,
+  COLUNAS_MATRICULA_PORTAL,
   ESCOPO_RECONFIRMAR_SENHA,
   EVENTO_PROVA_INICIADA,
   JANELA_RECONFIRMAR_SENHA_SEG,
   MAX_DETALHE,
   MAX_TENTATIVAS_RECONFIRMAR_SENHA,
+  MSG_MUITAS_ACOES,
+  MSG_SINAL_CONCORRENTE,
   PCT_CONCLUSAO,
   REPROVADO_VE_NOTA,
   TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG,
   TOLERANCIA_SEG,
+  VOLUME_POR_ACAO,
   aulaLiberada,
   aulasParaAluno,
   conclusaoDaAula,
@@ -18,6 +23,7 @@ import {
   creditarTempo,
   cursoPublicado,
   datasDeConclusao,
+  dentroDoVolume,
   detalheDaProvaIniciada,
   detalheLimitado,
   inicioDaProva,
@@ -31,9 +37,11 @@ import {
   reconfirmarSenha,
   refsDasAulasLiberadas,
   respostaDaCorrecao,
+  resultadoDoSinal,
   situacaoDasTentativas,
   situacaoDaTrilha,
   sortearProva,
+  travaDoSinal,
   ultimaLiberacao,
   validarEnvio,
 } from "./regras.ts";
@@ -1438,7 +1446,8 @@ test("matriculaParaAluno: com REPROVADO_VE_NOTA = false a nota de quem ainda nã
   const para = matriculaParaAluno(m, false);
   assert.equal(para.nota_avaliacao, null);
   assert.equal(para.id, "m1");
-  assert.equal(para.tentativas_extras, 1);
+  assert.equal(para.status, "em_andamento");
+  assert.equal("tentativas_extras" in para, false); // fora da lista fixa de colunas (T31)
   assert.equal(m.nota_avaliacao, 40); // o original não é alterado
 });
 
@@ -1909,4 +1918,280 @@ test("reconfirmarSenha: limitador fora do ar não tranca (a conferência da senh
   } finally {
     console.error = erroOriginal;
   }
+});
+
+// ------------------------------------------- matrícula com lista fixa de colunas (T31)
+const matriculaDoBanco = {
+  id: "m1",
+  empresa_id: "emp-1",
+  funcionario_id: "func-1",
+  curso_id: "c1",
+  status: "concluido",
+  iniciado_em: "2026-10-01T12:00:00.000Z",
+  data_conclusao: "2026-10-02",
+  proxima_renovacao: "2027-10-02",
+  nota_avaliacao: 90,
+  avaliacao_aprovada: true,
+  avaliacao_em: "2026-10-02T12:00:00.000Z",
+  tentativas_extras: 2,
+  created_at: "2026-09-30T12:00:00.000Z",
+  updated_at: "2026-10-02T12:00:00.000Z",
+  deleted_at: null,
+  // coluna que alguém acrescente ao banco amanhã: não pode sair para o navegador sem ser pedida
+  observacao_do_rh: "texto interno",
+};
+
+test("matriculaParaAluno: só as colunas da lista fixa vão para o aluno", () => {
+  const saida = matriculaParaAluno(matriculaDoBanco);
+  assert.deepEqual(Object.keys(saida).sort(), [...COLUNAS_MATRICULA_ALUNO].sort());
+  for (const interna of [
+    "empresa_id",
+    "funcionario_id",
+    "tentativas_extras",
+    "updated_at",
+    "deleted_at",
+    "observacao_do_rh",
+  ]) {
+    assert.equal(interna in saida, false, interna);
+  }
+});
+
+test("matriculaParaAluno: mantém o que a tela do aluno lê (id, curso, status, datas e aprovação)", () => {
+  const saida: Record<string, unknown> = matriculaParaAluno(matriculaDoBanco);
+  const original: Record<string, unknown> = matriculaDoBanco;
+  for (const usada of [
+    "id",
+    "curso_id",
+    "status",
+    "data_conclusao",
+    "proxima_renovacao",
+    "created_at",
+    "avaliacao_aprovada",
+    "nota_avaliacao",
+  ]) {
+    assert.ok((COLUNAS_MATRICULA_ALUNO as readonly string[]).includes(usada), usada);
+    assert.equal(saida[usada], original[usada], usada);
+  }
+});
+
+test("matriculaParaAluno: coluna que a consulta não trouxe continua ausente (não vira undefined)", () => {
+  const saida = matriculaParaAluno({ id: "m1", curso_id: "c1", avaliacao_aprovada: false });
+  assert.deepEqual(Object.keys(saida).sort(), ["avaliacao_aprovada", "curso_id", "id"]);
+});
+
+test("matriculaParaAluno: a nota escondida (regra fechada) continua escondida na lista fixa", () => {
+  const reprovada = { ...matriculaDoBanco, avaliacao_aprovada: false, nota_avaliacao: 40 };
+  const saida = matriculaParaAluno(reprovada, false);
+  assert.equal(saida.nota_avaliacao, null);
+  assert.equal("tentativas_extras" in saida, false);
+});
+
+test("COLUNAS_MATRICULA_PORTAL: lista explícita (sem *) com a do aluno mais o que só o servidor lê", () => {
+  const colunas = COLUNAS_MATRICULA_PORTAL.split(",").map((c) => c.trim());
+  assert.equal(colunas.includes("*"), false);
+  for (const c of COLUNAS_MATRICULA_ALUNO) assert.ok(colunas.includes(c), c);
+  // o limite de tentativas soma as extras do RH; sem esta coluna a conta ficaria errada
+  assert.ok(colunas.includes("tentativas_extras"));
+  assert.equal(new Set(colunas).size, colunas.length, "coluna repetida");
+  // nada que identifique outra empresa ou funcionário sai da consulta: o servidor já filtra por eles
+  for (const fora of ["empresa_id", "funcionario_id", "updated_at", "deleted_at"]) {
+    assert.equal(colunas.includes(fora), false, fora);
+  }
+});
+
+// ------------------------------------------------ limite de volume: evento e progresso (T31)
+function volumeComLimitador(
+  admin: ReturnType<typeof limitadorFalso>,
+  acao: "evento" | "progresso",
+  funcionarioId: string
+) {
+  return dentroDoVolume({
+    acao,
+    funcionarioId,
+    consumir: (escopo, janelaSeg, limites) => consumirTentativa(admin, escopo, janelaSeg, limites),
+  });
+}
+
+test("dentroDoVolume: passa até o teto da ação e barra a partir da seguinte", async () => {
+  for (const acao of ["evento", "progresso"] as const) {
+    const admin = limitadorFalso();
+    for (let i = 0; i < VOLUME_POR_ACAO[acao].max; i++) {
+      assert.equal(await volumeComLimitador(admin, acao, "func-1"), true, `${acao} #${i + 1}`);
+    }
+    assert.equal(await volumeComLimitador(admin, acao, "func-1"), false, `${acao} acima do teto`);
+    assert.equal(await volumeComLimitador(admin, acao, "func-1"), false, `${acao} segue barrado`);
+  }
+});
+
+test("dentroDoVolume: o contador é por funcionário, nunca por IP", async () => {
+  const chamadas: { escopo: string; janelaSeg: number; limites: unknown[] }[] = [];
+  const consumir = async (escopo: string, janelaSeg: number, limites: unknown[]) => {
+    chamadas.push({ escopo, janelaSeg, limites });
+    return { permitido: true, chaves: {} };
+  };
+  await dentroDoVolume({ acao: "progresso", funcionarioId: "func-1", consumir });
+  assert.equal(chamadas.length, 1);
+  assert.deepEqual(chamadas[0].limites, [
+    { tipo: "conta", valor: "func-1", max: VOLUME_POR_ACAO.progresso.max },
+  ]);
+  assert.equal(chamadas[0].escopo, VOLUME_POR_ACAO.progresso.escopo);
+  assert.equal(chamadas[0].janelaSeg, VOLUME_POR_ACAO.progresso.janelaSeg);
+});
+
+test("dentroDoVolume: um funcionário no teto não atrapalha outro (aparelho compartilhado de obra)", async () => {
+  const admin = limitadorFalso();
+  for (let i = 0; i <= VOLUME_POR_ACAO.evento.max; i++) {
+    await volumeComLimitador(admin, "evento", "func-1");
+  }
+  assert.equal(await volumeComLimitador(admin, "evento", "func-1"), false);
+  assert.equal(await volumeComLimitador(admin, "evento", "func-2"), true);
+});
+
+test("dentroDoVolume: evento e progresso têm contadores separados, e nenhum é o do login ou da senha", async () => {
+  const escopos = [VOLUME_POR_ACAO.evento.escopo, VOLUME_POR_ACAO.progresso.escopo];
+  assert.equal(new Set(escopos).size, 2);
+  for (const e of escopos) {
+    assert.notEqual(e, ESCOPO_RECONFIRMAR_SENHA);
+    assert.notEqual(e, "funcionario-login");
+    assert.notEqual(e, "portal-duvida");
+  }
+  const admin = limitadorFalso();
+  for (let i = 0; i <= VOLUME_POR_ACAO.evento.max; i++) {
+    await volumeComLimitador(admin, "evento", "func-1");
+  }
+  assert.equal(await volumeComLimitador(admin, "evento", "func-1"), false);
+  assert.equal(await volumeComLimitador(admin, "progresso", "func-1"), true);
+  // estourar o volume também não gasta as tentativas de senha
+  assert.equal(await reconfirmarComLimitador(admin, "func-1", true), "ok");
+});
+
+test("dentroDoVolume: limitador fora do ar não derruba o portal (como no login)", async () => {
+  const admin = limitadorFalso(true);
+  const erroOriginal = console.error;
+  console.error = () => {};
+  try {
+    assert.equal(await volumeComLimitador(admin, "progresso", "func-1"), true);
+    assert.equal(await volumeComLimitador(admin, "evento", "func-1"), true);
+  } finally {
+    console.error = erroOriginal;
+  }
+});
+
+test("VOLUME_POR_ACAO: o teto deixa folga sobre o ritmo do portal (sinal a cada 10 s)", () => {
+  const { progresso, evento } = VOLUME_POR_ACAO;
+  // o front manda o progresso a cada 10 s com a aula tocando; duas abas abertas dobram o ritmo
+  const sinaisNormais = Math.ceil(progresso.janelaSeg / 10);
+  assert.ok(progresso.max >= sinaisNormais * 2, "progresso precisa de folga para duas abas");
+  // play, pausa, aba oculta/visível e abrir aula: dezenas por 10 min já é uso intenso
+  assert.ok(evento.max >= 100);
+  // mas o teto não pode ser aberto a ponto de não limitar nada (a trilha é só de inclusão)
+  assert.ok(progresso.max <= sinaisNormais * 6);
+  assert.ok(evento.max <= 600);
+  assert.ok(MSG_MUITAS_ACOES.length > 0);
+});
+
+// --------------------------------- trava otimista em ultimo_sinal_em (T31)
+type Filtro = [string, string, unknown];
+
+/** Consulta falsa do supabase-js: só anota os filtros que a trava aplica. */
+function consultaFalsa() {
+  const filtros: Filtro[] = [];
+  const consulta = {
+    filtros,
+    eq(coluna: string, valor: unknown) {
+      filtros.push(["eq", coluna, valor]);
+      return consulta;
+    },
+    is(coluna: string, valor: null) {
+      filtros.push(["is", coluna, valor]);
+      return consulta;
+    },
+  };
+  return consulta;
+}
+
+test("travaDoSinal: com sinal anterior, só atualiza se o valor lido continua o mesmo", () => {
+  const c = travaDoSinal(consultaFalsa(), "2026-10-06T10:00:00.123+00:00");
+  assert.deepEqual(c.filtros, [["eq", "ultimo_sinal_em", "2026-10-06T10:00:00.123+00:00"]]);
+});
+
+test("travaDoSinal: sem sinal anterior (null, undefined), só atualiza se ainda não há sinal", () => {
+  for (const lido of [null, undefined]) {
+    const c = travaDoSinal(consultaFalsa(), lido);
+    assert.deepEqual(c.filtros, [["is", "ultimo_sinal_em", null]], String(lido));
+  }
+});
+
+test("travaDoSinal: devolve a própria consulta, para o chamador seguir a cadeia (.select)", () => {
+  const base = consultaFalsa();
+  assert.equal(travaDoSinal(base, "2026-10-06T10:00:00+00:00"), base);
+  assert.equal(travaDoSinal(base, null), base);
+});
+
+/**
+ * A linha de funcionario_portal_acesso como o banco a trata: o UPDATE confere os filtros no momento
+ * em que roda (cada chamada vê o que a anterior gravou), como a trava de linha do Postgres.
+ */
+function acessoFalso(inicial: string | null) {
+  const linha: Record<string, unknown> = { funcionario_id: "func-1", ultimo_sinal_em: inicial };
+  return {
+    linha,
+    atualizar(novo: string) {
+      const filtros: Filtro[] = [];
+      const consulta = {
+        eq(coluna: string, valor: unknown) {
+          filtros.push(["eq", coluna, valor]);
+          return consulta;
+        },
+        is(coluna: string, valor: null) {
+          filtros.push(["is", coluna, valor]);
+          return consulta;
+        },
+        async select(_colunas?: string) {
+          if (!filtros.every(([, coluna, valor]) => linha[coluna] === valor)) {
+            return { data: [] as unknown[], error: null };
+          }
+          linha.ultimo_sinal_em = novo;
+          return { data: [{ funcionario_id: linha.funcionario_id }], error: null };
+        },
+      };
+      return consulta.eq("funcionario_id", "func-1");
+    },
+  };
+}
+
+test("trava do sinal: de dois progressos que leram o mesmo sinal, só o primeiro grava", async () => {
+  const lido = "2026-10-06T10:00:00.000+00:00";
+  const banco = acessoFalso(lido);
+  const a = await travaDoSinal(banco.atualizar("2026-10-06T10:00:10.000Z"), lido).select();
+  const b = await travaDoSinal(banco.atualizar("2026-10-06T10:00:10.050Z"), lido).select();
+  assert.equal(resultadoDoSinal({ erro: a.error, linhas: a.data.length }), "gravado");
+  assert.equal(resultadoDoSinal({ erro: b.error, linhas: b.data.length }), "mudou");
+  assert.equal(banco.linha.ultimo_sinal_em, "2026-10-06T10:00:10.000Z"); // o segundo não sobrescreve
+});
+
+test("trava do sinal: a primeira vez (sem sinal) também só deixa um gravar", async () => {
+  const banco = acessoFalso(null);
+  const a = await travaDoSinal(banco.atualizar("2026-10-06T10:00:10.000Z"), null).select();
+  const b = await travaDoSinal(banco.atualizar("2026-10-06T10:00:10.050Z"), null).select();
+  assert.equal(a.data.length, 1);
+  assert.equal(b.data.length, 0);
+});
+
+test("trava do sinal: pedidos em sequência (cada um lê o sinal que o anterior gravou) passam", async () => {
+  const banco = acessoFalso("2026-10-06T10:00:00.000Z");
+  for (const novo of ["2026-10-06T10:00:10.000Z", "2026-10-06T10:00:20.000Z"]) {
+    const lido = banco.linha.ultimo_sinal_em as string;
+    const r = await travaDoSinal(banco.atualizar(novo), lido).select();
+    assert.equal(resultadoDoSinal({ erro: r.error, linhas: r.data.length }), "gravado", novo);
+  }
+});
+
+test("resultadoDoSinal: uma linha = gravado; nenhuma = outro pedido chegou antes; erro = falhou", () => {
+  assert.equal(resultadoDoSinal({ erro: null, linhas: 1 }), "gravado");
+  assert.equal(resultadoDoSinal({ erro: null, linhas: 0 }), "mudou");
+  assert.equal(resultadoDoSinal({ erro: null, linhas: null }), "mudou");
+  assert.equal(resultadoDoSinal({ erro: { message: "x" }, linhas: 0 }), "erro");
+  assert.equal(resultadoDoSinal({ erro: { message: "x" }, linhas: 1 }), "erro");
+  assert.ok(MSG_SINAL_CONCORRENTE.length > 0);
 });

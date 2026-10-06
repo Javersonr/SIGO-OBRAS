@@ -12,7 +12,9 @@
  *
  * A T16 acrescentou, no fim do arquivo, a prova no servidor (sorteio, início, validação do envio e
  * resposta da correção) e a regra das aulas bloqueadas sem conteúdo. A T27 acrescentou, no fim, o limite
- * de tentativas das reconfirmações de senha (`reconfirmarSenha`).
+ * de tentativas das reconfirmações de senha (`reconfirmarSenha`). A T31 acrescentou o limite de volume
+ * de `evento` e `progresso` (`dentroDoVolume`), a trava otimista do sinal de progresso
+ * (`travaDoSinal`, `resultadoDoSinal`) e a lista fixa de colunas da matrícula.
  */
 
 import type { Consumo, Limite } from "../_shared/limite-tentativas.ts";
@@ -671,16 +673,51 @@ export function respostaDaCorrecao(
 }
 
 /**
- * A matrícula como o aluno a recebe em `dados`. Com `reprovadoVeNota` (padrão `REPROVADO_VE_NOTA`,
- * D10 em aberto) ela vai inteira. Com `false`, a nota da última tentativa não sai enquanto ele não
- * foi aprovado (senão esconder a nota na resposta da prova não adiantaria: ela estaria aqui).
+ * Colunas da matrícula que vão ao navegador do aluno (T31): lista FIXA. Antes `dados` lia a matrícula
+ * com `select("*")` e devolvia a linha inteira, então coluna nova no banco (uma observação do RH, um
+ * campo interno) saía para o aluno sem ninguém decidir. Agora só sai o que a tela do aluno usa: o
+ * andamento (`status`, datas), a aprovação e a nota (esta, sujeita à regra D10). O resto é do servidor
+ * (`empresa_id`, `funcionario_id`, `tentativas_extras`, `updated_at`, `deleted_at`).
  */
-export function matriculaParaAluno<T extends { avaliacao_aprovada?: boolean | null }>(
-  matricula: T,
+export const COLUNAS_MATRICULA_ALUNO = [
+  "id",
+  "curso_id",
+  "status",
+  "iniciado_em",
+  "data_conclusao",
+  "proxima_renovacao",
+  "avaliacao_aprovada",
+  "nota_avaliacao",
+  "avaliacao_em",
+  "created_at",
+] as const;
+
+/**
+ * O `select` da matrícula no servidor: as colunas do aluno mais `tentativas_extras`, que só o servidor
+ * lê (o teto de tentativas soma as extras que o RH liberou). Serve a `minhaMatricula` (todas as ações) e
+ * ao `dados`. Quem passar a ler outra coluna de `mat` no `index.ts` acrescenta aqui (o
+ * `endurecimento.test.ts` acusa a que faltar).
+ */
+export const COLUNAS_MATRICULA_PORTAL = [...COLUNAS_MATRICULA_ALUNO, "tentativas_extras"].join(
+  ", "
+);
+
+/**
+ * A matrícula como o aluno a recebe em `dados`: só as `COLUNAS_MATRICULA_ALUNO` (a coluna que a consulta
+ * não trouxe continua ausente). Com `reprovadoVeNota` (padrão `REPROVADO_VE_NOTA`, D10 em aberto) a nota
+ * vai como está. Com `false`, a nota da última tentativa não sai enquanto ele não foi aprovado (senão
+ * esconder a nota na resposta da prova não adiantaria: ela estaria aqui).
+ */
+export function matriculaParaAluno(
+  matricula: { avaliacao_aprovada?: boolean | null } & Record<string, unknown>,
   reprovadoVeNota: boolean = REPROVADO_VE_NOTA
-): T & { nota_avaliacao?: unknown } {
-  if (reprovadoVeNota || matricula.avaliacao_aprovada) return matricula;
-  return { ...matricula, nota_avaliacao: null };
+): Record<string, unknown> {
+  const saida: Record<string, unknown> = {};
+  for (const coluna of COLUNAS_MATRICULA_ALUNO) {
+    if (coluna in matricula) saida[coluna] = matricula[coluna];
+  }
+  if (!reprovadoVeNota && !matricula.avaliacao_aprovada) saida.nota_avaliacao = null;
+  return saida;
 }
 
 // -------------------------------------------------- aulas bloqueadas sem conteúdo (T16)
@@ -829,4 +866,85 @@ export async function reconfirmarSenha(p: {
   if (!(await p.conferir())) return "incorreta";
   await p.liberar(consumo);
   return "ok";
+}
+
+// ----------------------------------------------- limite de volume: evento e progresso (T31)
+
+/**
+ * Teto de chamadas por funcionário das duas ações que o navegador repete sozinho. Sem teto, um aluno
+ * (ou um script com o token dele, que vale 12 h) enchia a trilha de auditoria, que é só de inclusão
+ * (0135) e não se limpa depois, e o banco com pedidos de progresso. A tentativa é consumida ANTES do
+ * trabalho, como no login (`consumirTentativa`, janela fixa, uma linha por funcionário e ação).
+ *
+ * Os números têm folga sobre o ritmo do portal: o progresso sai a cada 10 s com a aula tocando (60 em 10
+ * min; duas abas abertas, 120) mais um envio a cada pausa ou troca de aula, e o evento é play, pausa, aba
+ * oculta ou visível e abrir aula (dezenas em 10 min já é uso intenso). Passar do teto só atrasa: o
+ * progresso reenvia o TOTAL assistido e o servidor credita o tempo real decorrido desde o último sinal,
+ * então nada que o aluno assistiu se perde. Escopos próprios, separados do login e da senha.
+ */
+export const VOLUME_POR_ACAO = {
+  evento: { escopo: "portal-evento", janelaSeg: 10 * 60, max: 150 },
+  progresso: { escopo: "portal-progresso", janelaSeg: 10 * 60, max: 180 },
+} as const;
+
+export type AcaoComVolume = keyof typeof VOLUME_POR_ACAO;
+
+/** Mensagem do 429 de volume (o portal mostra o texto que o servidor manda). */
+export const MSG_MUITAS_ACOES =
+  "Muitas ações em pouco tempo. Aguarde alguns minutos e tente de novo.";
+
+/**
+ * Consome uma chamada do funcionário e diz se ainda está dentro do teto da ação. É por FUNCIONÁRIO,
+ * nunca por IP (aparelho compartilhado de obra não tranca os colegas). Limitador fora do ar não derruba
+ * o portal (como no login). O `index.ts` liga `consumirTentativa`; a dependência entra por parâmetro
+ * para a regra poder ser testada no Node.
+ */
+export async function dentroDoVolume(p: {
+  acao: AcaoComVolume;
+  funcionarioId: string;
+  consumir: (escopo: string, janelaSeg: number, limites: Limite[]) => Promise<Consumo>;
+}): Promise<boolean> {
+  const { escopo, janelaSeg, max } = VOLUME_POR_ACAO[p.acao];
+  const consumo = await p.consumir(escopo, janelaSeg, [
+    { tipo: "conta", valor: p.funcionarioId, max },
+  ]);
+  return consumo.permitido;
+}
+
+// --------------------------------------------- trava otimista em ultimo_sinal_em (T31)
+
+/** Mensagem do 409 de quem perdeu a corrida pelo sinal (o portal mostra o texto que o servidor manda). */
+export const MSG_SINAL_CONCORRENTE =
+  "O progresso desta aula foi enviado ao mesmo tempo por outra aba ou aparelho. " +
+  "Seu tempo continua contando e será enviado de novo em instantes.";
+
+/**
+ * Faz o UPDATE do `ultimo_sinal_em` valer só se a coluna ainda tem o valor que o pedido LEU no começo
+ * (sem sinal anterior: só se continua sem sinal). Sem isso, dois `progresso` simultâneos (duas abas, ou
+ * um script) liam o mesmo sinal, cada um creditava o mesmo tempo decorrido e o aluno ganhava o dobro.
+ * Com a trava, o UPDATE do Postgres serializa as chamadas: só a primeira acha a linha como a leu, e a
+ * outra grava zero linhas (`resultadoDoSinal` = "mudou"). Recebe a consulta do supabase-js (já com o
+ * `update` e o filtro do funcionário) e devolve a mesma, para o chamador seguir com `.select(...)`.
+ */
+export function travaDoSinal<
+  Q extends { eq(coluna: string, valor: string): Q; is(coluna: string, valor: null): Q },
+>(consulta: Q, lido: string | null | undefined): Q {
+  return lido ? consulta.eq("ultimo_sinal_em", lido) : consulta.is("ultimo_sinal_em", null);
+}
+
+export type ResultadoDoSinal = "gravado" | "mudou" | "erro";
+
+/**
+ * O que a gravação do sinal quer dizer: `erro` = o banco falhou (o pedido não credita nada e responde
+ * erro: antes a falha passava em silêncio e o sinal ficava velho, o que dava crédito a mais no próximo
+ * pedido); `mudou` = nenhuma linha casou, outro pedido gravou o sinal primeiro (responde 409, sem
+ * creditar; o navegador reenvia o total no próximo ciclo e o servidor credita o tempo real); `gravado`
+ * = este pedido é o dono do sinal e segue.
+ */
+export function resultadoDoSinal(p: {
+  erro: unknown;
+  linhas: number | null | undefined;
+}): ResultadoDoSinal {
+  if (p.erro) return "erro";
+  return (p.linhas ?? 0) > 0 ? "gravado" : "mudou";
 }
