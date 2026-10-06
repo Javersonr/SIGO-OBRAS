@@ -23,9 +23,24 @@ import {
   reperiodizar,
   resumoCronograma,
 } from "@/lib/cronograma-ff";
-import { criarFilaGravacao } from "@/lib/fila-gravacao";
+import { filasPorChave } from "@/lib/fila-gravacao";
 import ImportarCronogramaDialog from "./ImportarCronogramaDialog";
 import { BotaoExportarCronograma } from "./ExportarCronogramaDialog";
+
+// Uma fila de gravação por oportunidade, no escopo do módulo, e não uma por montagem: o quadro
+// desmonta ao trocar de aba e monta de novo ao voltar, e a gravação que a montagem anterior
+// deixou em voo tem de sair antes da próxima (senão a próxima, feita sobre o valor velho,
+// termina depois e apaga a edição). A montagem nova parte do valor que a fila ainda grava.
+const obterFilaDoCronograma = filasPorChave({
+  esperaMs: 1000,
+  gravar: (id, cron) => sigo.entities.Oportunidade.update(id, { cronograma_ff: cron }),
+});
+
+/** O cronograma mais novo da oportunidade: o que a fila ainda grava; senão, o do banco. */
+function cronogramaMaisNovo(fila, opId, cronogramaFF) {
+  const pendente = fila?.valorPendente(opId);
+  return normalizarCronograma(pendente === undefined ? cronogramaFF : pendente);
+}
 
 const SEM_ITENS = "Importe o orçamento com etapas para montar o cronograma.";
 const SEM_ETAPAS =
@@ -178,7 +193,8 @@ export default function CronogramaFisicoFinanceiro({
   const etapas = useMemo(() => etapasDoOrcamento(orcamentoItens || []), [orcamentoItens]);
   const numerosEtapas = useMemo(() => etapas.map((e) => e.numero), [etapas]);
 
-  const [cronograma, setCronograma] = useState(() => normalizarCronograma(cronogramaFF));
+  const fila = useMemo(() => (opId ? obterFilaDoCronograma(opId) : null), [opId]);
+  const [cronograma, setCronograma] = useState(() => cronogramaMaisNovo(fila, opId, cronogramaFF));
   const [edicao, setEdicao] = useState(null); // { numero, mes, texto } da célula em foco
   const [importarAberto, setImportarAberto] = useState(false);
   const [modoMeses, setModoMeses] = useState(null); // null | "meses" | "reperiodizar"
@@ -218,12 +234,13 @@ export default function CronogramaFisicoFinanceiro({
     setCronograma(novo);
   };
 
-  // criada uma vez; lê os callbacks do pai e a oportunidade atual pelos refs
-  const [fila] = useState(() =>
-    criarFilaGravacao({
-      esperaMs: 1000,
-      gravar: async (id, cron) => {
-        await sigo.entities.Oportunidade.update(id, { cronograma_ff: cron });
+  // Avisos da fila desta oportunidade: esta montagem passa a recebê-los, também os das gravações
+  // que uma montagem anterior deixou na fila. Lê os callbacks do pai e a oportunidade atual
+  // pelos refs.
+  useEffect(() => {
+    if (!fila) return;
+    fila.definirAvisos({
+      aoGravar: (id, cron) => {
         if (opIdRef.current === id) salvoRef.current = cron;
         ecoRef.current = cron;
         const aplicar = (o) => (o?.id === id ? { ...o, cronograma_ff: cron } : o);
@@ -242,27 +259,30 @@ export default function CronogramaFisicoFinanceiro({
           setCronograma(salvoRef.current);
         }
       },
-    })
-  );
+    });
+  }, [fila]);
 
-  // Outra oportunidade (ou o quadro montou de novo): começa do que veio do banco. Ao sair (troca
-  // de oportunidade ou de aba, detalhe fechado), a edição que esperava o 1 s é gravada na hora.
+  // Outra oportunidade (ou o quadro montou de novo): começa do valor mais novo, o que a fila
+  // ainda grava (de uma montagem anterior) ou, sem ele, o do banco; o último gravado é o do
+  // banco. Ao sair (troca de oportunidade ou de aba, detalhe fechado), a edição que esperava o
+  // 1 s é gravada na hora.
   useEffect(() => {
-    const inicial = normalizarCronograma(opRef.current?.cronograma_ff);
-    ecoRef.current = opRef.current?.cronograma_ff;
-    salvoRef.current = inicial;
+    const doBanco = opRef.current?.cronograma_ff;
+    const inicial = cronogramaMaisNovo(fila, opId, doBanco);
+    ecoRef.current = doBanco;
+    salvoRef.current = normalizarCronograma(doBanco);
     cronogramaRef.current = inicial;
     setCronograma(inicial);
     setEdicao(null);
     return () => {
-      fila.descarregar();
+      fila?.descarregar();
     };
   }, [opId, fila]);
 
   // O pai trouxe outro cronograma_ff da mesma oportunidade (ex.: a gravação de um quadro
   // anterior terminou depois de este montar): adota, se aqui nada espera para gravar.
   useEffect(() => {
-    if (cronogramaFF === ecoRef.current || fila.ocupada()) return;
+    if (cronogramaFF === ecoRef.current || fila?.ocupada()) return;
     ecoRef.current = cronogramaFF;
     const novo = normalizarCronograma(cronogramaFF);
     salvoRef.current = novo;
@@ -275,7 +295,7 @@ export default function CronogramaFisicoFinanceiro({
   // Importar, Meses, Reperiodizar e apagar linha: mostra já e grava na hora (resolve true/false)
   const gravarAgora = (novo) => {
     aplicarLocal(novo);
-    return fila.gravarJa(opId, novo);
+    return fila ? fila.gravarJa(opId, novo) : Promise.resolve(false);
   };
 
   const confirmarCelula = (numero, mes, texto) => {
@@ -304,7 +324,7 @@ export default function CronogramaFisicoFinanceiro({
       atualizado_em: agoraISO(),
     };
     aplicarLocal(novo);
-    fila.agendar(opId, novo);
+    fila?.agendar(opId, novo);
   };
 
   const importar = async (cron, arquivoNome) => {
