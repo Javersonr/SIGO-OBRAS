@@ -49,7 +49,7 @@
 - **Contas estritas (Task 1):** `lerPercentual` devolve `null` para vazio e `NaN` para texto inválido, sinal, milhar ou valor fora de 0–100 (o arredondamento em 2 casas vem antes da conferência da faixa); `ajustarMeses`, `reperiodizarLinha` e `reperiodizar` lançam `RangeError` com N fora de 1 a 60; `normalizarCronograma` com `meses` 0 devolve `pct: {}`; `todasFecham` é `false` sem etapas; nenhuma função preenche `atualizado_em` (quem grava põe a data).
 - **Leitura da aba (Task 2):** `lerArquivoCronograma` lê com `sheetStubs: true` além do `cellNF` do contrato (fórmula sem valor salvo vira erro, não 0); aba sem linhas e nenhuma linha com etapa do orçamento são **erros** fora da lista da spec, para a importação não trocar o cronograma atual por um vazio; Mês faltando, Mês repetido, colunas além do Mês 60 e linha sem Item são avisos extras; na célula numérica a faixa de 0 a 100 vale sobre o % já arredondado em 2 casas, como no `lerPercentual` (100,004 vira 100,00 com aviso; 100,005 é erro).
 - **Sem dependência circular e sem cópia (Task 2):** `orcamento-modelo.js` importa o nome e o cabeçalho de `cronograma-modelo.js`, que não importa `orcamento-modelo.js`; os utilitários de célula (`normalizarRotulo`, `acharAba`, `celula`, `formulaSemValor`, `semValor`, `vazia`, `textoCelula` e `formatoData`) saem do `orcamento-modelo.js` para o módulo neutro `xlsx-celulas.js`, que os dois importam. Uma cópia já tinha divergido no `formatoData` (sem `z`, o do orçamento reconhece a data pelo texto exibido).
-- **Skill mais estrita que o SIGO (Task 3):** o código Python exige Item em texto e % numérico, porque quem grava é o próprio código; `pct_da_linha` converte R$ em % com a diferença no último mês com valor.
+- **Skill mais estrita que o SIGO (Task 3):** o código Python exige Item em texto e % numérico, porque quem grava é o próprio código; `pct_da_linha` converte R$ em % com a diferença no último mês com % > 0, como no SIGO, e pelo maior resto se isso deixasse o mês negativo (desde o acompanhamento de 05/10; antes, a diferença ia ao último mês com valor).
 - **Sem cópia da proposta (Task 4):** `montarCabecalhoLicitacao` sai de dentro de `montarDadosProposta` (o resultado da proposta não muda) e `cabecalhoDoDocumento`, `linhasAssinatura`, `textoPdf` e o novo `carregarJsPdf` passam a ser exportados por `proposta-export.js`; `nomeArquivoCronograma` reaproveita `nomeArquivoProposta`. O esqueleto de layout também é um só: `criarPdf` (A4 paisagem e escritor de linhas), `escreverTopoPdf`, `escreverAssinaturaPdf`, `numerarPaginasPdf` e, no Excel, `criarPlanilha`, `escreverTopoPlanilha` e `escreverAssinaturaPlanilha` saem de `gerarPdfProposta` e `montarPlanilhaProposta`, que passam a usá-los (PDF e planilha da proposta idênticos aos de antes, conferidos byte a byte, fora a data de criação do PDF); uma mudança de margem, fonte, rodapé ou assinatura vale para os dois documentos.
 - **Sem cópia do diálogo da proposta (Task 6):** o `localDaEmpresa` vai para `lib/proposta-orcamento.js` (com 3 testes; o `montarEmpresa` também o usa) e o hook `useRepresentanteDaEmpresa`, o bloco `RepresentanteLegalCampos` e o `SeletorFormatoExportacao` ficam num só arquivo, `CamposDeExportacao.jsx`, usado pelo `ExportarCronogramaDialog.jsx` e pelo `ExportarPropostaDialog.jsx`. Os ids dos campos não mudam (prefixo por prop) e a proposta não muda de tela nem de comportamento; cada diálogo guarda só o que é dele (formato e data, e na proposta validade e registro de versão).
 - **Excel (Task 4):** cada etapa em 2 linhas com Item, Etapa, Valor e % do total mesclados; % gravado como fração com formato `0.00%`; mês com 0% em branco; acima de 255 etapas, `SUM` de `SUM`s.
@@ -62,6 +62,17 @@
 - **Imbé de Minas (Task 7):** a planilha feita à mão não redistribui a curva: copia as 5 parcelas preenchidas do CFF de 12 parcelas. O equivalente no SIGO é **Meses 12 → 5**; o roteiro mostra também o **Reperiodizar 12 → 5** como o outro critério, com a diferença explicada. O arquivo de teste promove os grupos 1.1 a 1.6 do edital a etapas 1 a 6.
 - **Onde se trabalha:** no `master` do checkout principal, como o plano do Orçamento (a base dele está lá, ainda não publicada), com commit parcial por task; a Task 7 trata o risco de outra sessão publicar antes (Step 1) e só publica com o OK do Javerson.
 - **Conferência de 05/10** (cópia do `master` `37ad85c` fora do repositório): as Tasks 1 a 6 aplicadas em ordem, com todas as âncoras únicas no momento da troca; Prettier sem mudança; Vitest com 40 arquivos e 515 testes (base 36/433; a Task 1 ganhou depois 1 teste de `lerPercentual` com `number`, e a suíte passou a 516; a Task 2 ganhou depois 1 teste da faixa arredondada da célula numérica, e a suíte passou a 517; a Task 2 passou depois a mover os utilitários de célula para o `xlsx-celulas.js`, conferido no worktree com Vitest, lint e build, sem mudar nenhuma contagem; a Task 4 passou depois a medir as colunas do PDF pelo maior texto (12 meses numa página até R$ 9.999.999,99), a dividir o esqueleto de layout do PDF e do Excel com a proposta e a testar o número que não quebra, com 1 teste a mais, e a suíte passou a 518, conferida no worktree com Vitest, lint e build; a Task 4 passou depois a não partir local/data e assinatura entre páginas (`garantirEspaco` e `alturaAssinaturaPdf`), com 1 teste a mais, e a suíte passou a 519, conferida no worktree com Vitest, lint e build; a Task 6 passou depois a dividir com o `ExportarPropostaDialog` o `localDaEmpresa`, o hook do representante legal, o bloco de campos e o seletor PDF/Excel (`CamposDeExportacao.jsx`), com 3 testes a mais na lib, e a suíte passou a 522, conferida no worktree com Vitest, lint e build); `npm run lint`, `no-undef` e `vite build` sem erro, com os chunks esperados; o código Python da skill e os números da Task 7 (Itatinga e Imbé) recalculados sobre cópias das planilhas.
+- **Acompanhamento de 05/10** (correções técnicas das revisões das Tasks 1 a 6, no worktree `feat/cronograma-ff`, em commits por assunto por cima do `9ab4103`). O código das tasks neste plano **não** foi reescrito: quem aplicar o plano no `master` aplica estes commits depois da Task 6, nesta ordem:
+  1. `54ba537` — `lerPercentual`: espaço no meio do número (`"5 0"`, `"12, 5"`) é inválido (`NaN`); espaços nas pontas e entre o número e o `%` continuam aceitos. A leitura da aba (`lerCelulaPct`) usa a mesma função e dá o erro `não é um % de 0 a 100`. 1 teste a mais no `cronograma-ff.test.js` e 1 no `cronograma-modelo.test.js`.
+  2. `4e7354a` — `valoresDaLinha`: quando a diferença no último mês com % > 0 deixaria a célula negativa (etapa de poucos centavos, ex.: 3 centavos em 6 meses), a linha inteira vai pelo maior resto em centavos (soma exata, nenhuma célula negativa, mês com 0% fica com 0). Nos outros casos o resultado é o mesmo de antes: os números da Task 7 (Itatinga, 283.494,59 · 496.115,54 · 425.241,89 · 212.620,94, e o Mês 18 do Reperiodizar 4 → 18) estão no teste. 2 testes a mais.
+  3. `b0d899a` — fila de gravação: um `aoFalhar` que lança não deixa a fila rejeitada para sempre (try/catch, erro no console). 3 testes a mais: `aoFalhar` que lança, fila sem `aoFalhar` e `descarregar()` sem nada esperando com uma gravação em voo.
+  4. `783fc81` — uma fila por oportunidade no escopo do módulo (`filasPorChave` em `fila-gravacao.js`), e não uma por montagem do quadro; a fila ganha `aoGravar`, `valorPendente(chave)` e `definirAvisos`. A montagem nova (sair da aba e voltar antes de a gravação terminar) parte do valor que a fila ainda grava, e as gravações das duas montagens saem em ordem: a edição anterior não é mais apagada. 6 testes a mais.
+  5. `a3f8e7e` — quadro: o toast "A tela voltou ao último gravado" (e a volta da tela) só com a oportunidade aberta neste quadro; senão o aviso diz de qual oportunidade a última alteração não foi gravada. O eco ganha a guarda de oportunidade do último gravado, e o Esc em captura na `window` só age nas células do contêiner do próprio quadro.
+  6. `0fa22fc` — Importar: fechar o diálogo descarta a prévia e a leitura em andamento (a próxima abertura não importa mais a prévia velha sem `arquivo_nome`).
+  7. `d158fca` — `CamposDeExportacao.jsx` (proposta e cronograma): a resposta atrasada do `Empresa.get` só troca o campo que continua igual ao que a empresa da sessão preencheu; a falha da leitura mostra um aviso pedindo para conferir o local e o representante.
+  8. `cbe5d16` — skill: `pct_da_linha` com a diferença no último mês com % > 0 (maior resto se ficaria negativo), Descrição da aba Cronograma com a proteção de `=` da aba Orçamento e a prosa corrigida (o SIGO aceita texto com número numa célula de mês; quem recusa é o `conferir_cronograma` da skill). O Exemplo do SKILL.md, rodado com `py -3` fora do repositório, dá `([], [], 22348.18)`.
+
+  Suíte: 40 arquivos e **535 testes** (13 a mais: 3 no `cronograma-ff.test.js`, 1 no `cronograma-modelo.test.js` e 9 no `fila-gravacao.test.js`), com `npm run lint`, `no-undef` e `vite build` sem erro e os chunks do Step 11 da Task 5 iguais. Na Task 7, o Step 2 passa a esperar 535, e o Step 14 ganha `fila-gravacao.js` e `cronograma-modelo.test.js` no `ALVO`: sem eles, o revert das Tasks 5 e 2 dava conflito com os commits 3 e 1, que só mexem em lib (conferido num clone fora do repositório).
 
 ---
 
@@ -75,14 +86,15 @@
 
 Anote as linhas `Test Files  N passed` e `Tests  M passed`. A suíte cresce assim, sem falhas:
 
-| Fim da task | Arquivos | Testes   | Com a base de 05/10 |
-| ----------- | -------- | -------- | ------------------- |
-| Task 1      | `N + 1`  | `M + 37` | 37 e 470            |
-| Task 2      | `N + 2`  | `M + 57` | 38 e 490            |
-| Task 3      | `N + 2`  | `M + 58` | 38 e 491            |
-| Task 4      | `N + 3`  | `M + 78` | 39 e 511            |
-| Task 5      | `N + 4`  | `M + 86` | 40 e 519            |
-| Task 6      | `N + 4`  | `M + 89` | 40 e 522            |
+| Fim da task             | Arquivos | Testes    | Com a base de 05/10 |
+| ----------------------- | -------- | --------- | ------------------- |
+| Task 1                  | `N + 1`  | `M + 37`  | 37 e 470            |
+| Task 2                  | `N + 2`  | `M + 57`  | 38 e 490            |
+| Task 3                  | `N + 2`  | `M + 58`  | 38 e 491            |
+| Task 4                  | `N + 3`  | `M + 78`  | 39 e 511            |
+| Task 5                  | `N + 4`  | `M + 86`  | 40 e 519            |
+| Task 6                  | `N + 4`  | `M + 89`  | 40 e 522            |
+| Acompanhamento de 05/10 | `N + 4`  | `M + 102` | 40 e 535            |
 
 **Regras para todas as tasks:**
 
@@ -6613,7 +6625,7 @@ git diff -z --name-only --diff-filter=ACMR origin/master...HEAD | xargs -0 npx p
 
 Expected:
 
-- Vitest: a linha de base anotada antes da Task 1 mais **4 arquivos e 89 testes**, sem `failed`. Os 89 são: Task 1, 37; Task 2, 20; Task 3, 1; Task 4, 20; Task 5, 8; Task 6, 3. Com a base de 05/10, ficam **40 arquivos e 522 testes**;
+- Vitest: a linha de base anotada antes da Task 1 mais **4 arquivos e 102 testes**, sem `failed`. Os 102 são: Task 1, 37; Task 2, 20; Task 3, 1; Task 4, 20; Task 5, 8; Task 6, 3; e 13 do acompanhamento de 05/10 (3 no `cronograma-ff.test.js`, 1 no `cronograma-modelo.test.js` e 9 no `fila-gravacao.test.js`). Com a base de 05/10, ficam **40 arquivos e 535 testes**;
 - `LINT_OK`;
 - `no-undef`: só o aviso antigo `'cronogramaEtapas' is defined but never used` e `exit 0`;
 - `BUILD_OK`;
@@ -7072,14 +7084,14 @@ Pergunte: "Posso desfazer o cronograma físico-financeiro (telas, skill e a aba 
 git fetch -q origin && git status -sb | head -1 && git status --short
 PRIMEIRO=$(git log --format=%H --diff-filter=A origin/master -- apps/web/src/lib/cronograma-ff.js | tail -1)
 git log -1 --format='%h %s' "$PRIMEIRO"
-ALVO="apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx apps/web/src/components/oportunidades/ImportarCronogramaDialog.jsx apps/web/src/components/oportunidades/ExportarCronogramaDialog.jsx apps/web/src/components/oportunidades/CamposDeExportacao.jsx apps/web/src/components/oportunidades/ExportarPropostaDialog.jsx apps/web/src/components/oportunidades/OportunidadeDetalhe.jsx apps/web/src/components/oportunidades/ImportarPlanilhaOrcamentoDialog.jsx apps/web/public/skills/orcamento-prefeitura-sigo/SKILL.md apps/web/src/lib/orcamento-modelo.js"
+ALVO="apps/web/src/components/oportunidades/CronogramaFisicoFinanceiro.jsx apps/web/src/components/oportunidades/ImportarCronogramaDialog.jsx apps/web/src/components/oportunidades/ExportarCronogramaDialog.jsx apps/web/src/components/oportunidades/CamposDeExportacao.jsx apps/web/src/components/oportunidades/ExportarPropostaDialog.jsx apps/web/src/components/oportunidades/OportunidadeDetalhe.jsx apps/web/src/components/oportunidades/ImportarPlanilhaOrcamentoDialog.jsx apps/web/public/skills/orcamento-prefeitura-sigo/SKILL.md apps/web/src/lib/orcamento-modelo.js apps/web/src/lib/fila-gravacao.js apps/web/src/lib/cronograma-modelo.test.js"
 git log --format='%h %s' "$PRIMEIRO"^..origin/master -i --grep='cronograma' -- $ALVO
 ```
 
 Expected:
 
 - `PRIMEIRO` = o commit da Task 1 (`feat(cronograma): contas do cronograma físico-financeiro …`);
-- a lista, do mais novo para o mais antigo: Task 6, Task 5, Task 3 e Task 2, e os `fix` deles.
+- a lista, do mais novo para o mais antigo: Task 6, Task 5, Task 3 e Task 2, e os `fix` deles, inclusive os do acompanhamento de 05/10 (o da fila e o do espaço no %, que só mexem em lib, entram pelo `fila-gravacao.js` e pelo `cronograma-modelo.test.js` do `ALVO`; sem eles, o revert das Tasks 5 e 2 dá conflito).
 
 Mostre a lista ao Javerson. Se entrou commit de **outra sessão**, pare e combine: o revert desfaria o trabalho dela. Se `git status --short` mostrar alteração não commitada nesses arquivos, o revert recusa; combine com a outra sessão antes.
 
@@ -7101,7 +7113,8 @@ Expected:
   - os de `ALVO`;
   - a `proposta-orcamento.js` e os testes que esses commits alteraram (`orcamento-modelo.test.js`, `skill-orcamento.test.js` e `proposta-orcamento.test.js`): o revert da Task 6 devolve o `ExportarPropostaDialog.jsx` ao que era antes das peças em comum;
   - os arquivos que eles criaram (`fila-gravacao.js` e `cronograma-modelo.js`, cada um com o seu teste, e `xlsx-celulas.js`), que saem;
-- Vitest sem `failed`, com 2 arquivos e 32 testes a menos que no Step 2 (os da Task 2, os da Task 5, o da Task 3 e os 3 do `localDaEmpresa`, da Task 6);
+  - o `cronograma-ff.js` e o `cronograma-ff.test.js`: o revert do commit do espaço no % (acompanhamento de 05/10) devolve a regra antiga do `lerPercentual` à lib da Task 1, que fica sem uso;
+- Vitest sem `failed`, com 2 arquivos e 43 testes a menos que no Step 2 (os da Task 2, os da Task 5, o da Task 3, os 3 do `localDaEmpresa`, da Task 6, e os 11 do acompanhamento de 05/10 nesses arquivos e no `cronograma-ff.test.js`);
 - `LINT_OK` e `BUILD_OK`.
 
 Com conflito ou falha: `git revert --abort`, e mostre ao Javerson.
