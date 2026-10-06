@@ -11,8 +11,11 @@
  * resposta com `Number()` (o envio já chega validado por `validarEnvio`, que só deixa passar inteiro).
  *
  * A T16 acrescentou, no fim do arquivo, a prova no servidor (sorteio, início, validação do envio e
- * resposta da correção) e a regra das aulas bloqueadas sem conteúdo.
+ * resposta da correção) e a regra das aulas bloqueadas sem conteúdo. A T27 acrescentou, no fim, o limite
+ * de tentativas das reconfirmações de senha (`reconfirmarSenha`).
  */
+
+import type { Consumo, Limite } from "../_shared/limite-tentativas.ts";
 
 /** Vídeo conclui sozinho a partir de 90% assistidos. */
 export const PCT_CONCLUSAO = 0.9;
@@ -781,4 +784,49 @@ export function aulasParaAluno(p: {
       liberada,
     };
   });
+}
+
+// ---------------------------------------------------- reconfirmação de senha (T27)
+
+/**
+ * Escopo do limitador das reconfirmações de senha com a SESSÃO já aberta: assinar o certificado
+ * (`certificado`) e trocar a senha informando a atual (`trocar_senha`). As duas dividem o mesmo contador
+ * de propósito, porque conferem a mesma senha: alternar entre elas não dá o dobro de tentativas. É um
+ * escopo só delas, separado do login (`funcionario-login`), então errar a assinatura não afeta o login
+ * nem o contrário.
+ */
+export const ESCOPO_RECONFIRMAR_SENHA = "funcionario-reconfirmar-senha";
+/** Janela do contador (s): 15 minutos, como o login. */
+export const JANELA_RECONFIRMAR_SENHA_SEG = 15 * 60;
+/**
+ * Tentativas por funcionário na janela. A sexta é barrada ainda que a senha esteja certa: a tentativa é
+ * consumida ANTES de conferir, como no login, para uma rajada paralela não passar do teto.
+ */
+export const MAX_TENTATIVAS_RECONFIRMAR_SENHA = 5;
+
+export type ResultadoReconfirmacao = "ok" | "incorreta" | "limite";
+
+/**
+ * Reconfirma a senha do funcionário com limite de tentativas: consome uma tentativa da conta DELE
+ * (nunca por IP: aparelho compartilhado de obra não tranca os colegas), confere a senha e, se estiver
+ * certa, libera o contador. `limite` = não chegou nem a conferir a senha: o chamador responde 429
+ * (`MSG_MUITAS_TENTATIVAS`, `codigo: "LIMITE"`). Limitador fora do ar não tranca (como no login): a
+ * conferência da senha segue valendo.
+ *
+ * As três dependências entram por parâmetro (o `index.ts` liga `consumirTentativa`, `verifyPassword` e
+ * `liberarTentativas`), para a ordem poder ser testada no Node.
+ */
+export async function reconfirmarSenha(p: {
+  funcionarioId: string;
+  consumir: (escopo: string, janelaSeg: number, limites: Limite[]) => Promise<Consumo>;
+  conferir: () => Promise<boolean>;
+  liberar: (consumo: Consumo) => Promise<void>;
+}): Promise<ResultadoReconfirmacao> {
+  const consumo = await p.consumir(ESCOPO_RECONFIRMAR_SENHA, JANELA_RECONFIRMAR_SENHA_SEG, [
+    { tipo: "conta", valor: p.funcionarioId, max: MAX_TENTATIVAS_RECONFIRMAR_SENHA },
+  ]);
+  if (!consumo.permitido) return "limite";
+  if (!(await p.conferir())) return "incorreta";
+  await p.liberar(consumo);
+  return "ok";
 }

@@ -10,13 +10,16 @@
  *   { acao:"login", usuario, senha }            → { token, trocar_senha, nome }
  *   { acao:"link", funcionario_id }  [STAFF]    → { url_path, usuario, tem_acesso }
  * Ações com sessão ({ token }):
- *   trocar_senha { nova_senha, senha_atual? }   logout
+ *   trocar_senha { nova_senha, senha_atual? }   logout  (senha_atual é obrigatória fora do 1º acesso)
  *   dados                                       evento { evento, matricula_id?, aula_id?, detalhe? }
  *   progresso { matricula_id, aula_id, segundos_assistidos }  (a duração vem do cadastro da aula)
  *   iniciar_avaliacao { matricula_id }          → sorteia a prova NO SERVIDOR (sem gabarito)
  *   avaliacao { matricula_id, respostas:[{questao_id,resposta}] }  (exige iniciar_avaliacao antes)
  *   certificado { matricula_id, senha }          ciencia { ciencia_id }
  *   duvida { matricula_id, aula_id?, pergunta }
+ *
+ * Reconfirmar a senha com a sessão aberta (`certificado` e `trocar_senha` com a senha atual) tem limite de
+ * tentativas por funcionário (escopo próprio, 5 em 15 min); passou do teto responde 429 `LIMITE`.
  *
  * `dados` não leva as questões (saem sorteadas em iniciar_avaliacao) e só assina URL e manda o texto das
  * aulas LIBERADAS: a aula bloqueada vai na lista, mas sem conteúdo (T16).
@@ -72,6 +75,7 @@ import {
   type ProgressoDaAula,
   provaDaOrdem,
   proximaTentativaEm,
+  reconfirmarSenha,
   refsDasAulasLiberadas,
   respostaDaCorrecao,
   situacaoDasTentativas,
@@ -467,12 +471,27 @@ Deno.serve(
       return fail("Cadastro inativo — fale com o RH", 401, { codigo: "SESSAO" });
     }
 
+    // Reconfirmação da senha com a sessão aberta (assinar o certificado e trocar a senha informando a
+    // atual): limite de tentativas por funcionário, em escopo próprio, consumido ANTES de conferir (T27).
+    const reconfirmar = (senha: string) =>
+      reconfirmarSenha({
+        funcionarioId,
+        consumir: (escopo, janelaSeg, limites) =>
+          consumirTentativa(supabase, escopo, janelaSeg, limites),
+        conferir: async () => (await verifyPassword(senha, acesso.senha_hash)).ok,
+        liberar: (consumo) => liberarTentativas(supabase, consumo),
+      });
+    const muitasTentativas = () => fail(MSG_MUITAS_TENTATIVAS, 429, { codigo: "LIMITE" });
+
     // --------------------------------------------------------- trocar senha
     if (body.acao === "trocar_senha") {
       const nova = body.nova_senha ?? "";
       if (!acesso.senha_provisoria) {
-        const { ok: atualOk } = await verifyPassword(body.senha_atual ?? "", acesso.senha_hash);
-        if (!atualOk) return fail("Senha atual incorreta", 400);
+        // a senha atual é obrigatória na troca voluntária (só o 1º acesso, com a provisória, dispensa)
+        if (!body.senha_atual) return fail("Informe a sua senha atual", 400);
+        const reconfirmacao = await reconfirmar(body.senha_atual);
+        if (reconfirmacao === "limite") return muitasTentativas();
+        if (reconfirmacao === "incorreta") return fail("Senha atual incorreta", 400);
       }
       const motivo = motivoSenhaInvalida(nova, acesso.usuario);
       if (motivo) return fail(motivo, 400);
@@ -1266,8 +1285,11 @@ Deno.serve(
       const sit = await situacaoReal(supabase, mat, empresaId);
       if (!sit.concluido) return fail("Conclua o curso antes de emitir o certificado", 409);
 
-      const { ok: senhaOk } = await verifyPassword(body.senha ?? "", acesso.senha_hash);
-      if (!senhaOk) return fail("Senha incorreta — a assinatura não foi feita", 400);
+      const reconfirmacao = await reconfirmar(body.senha ?? "");
+      if (reconfirmacao === "limite") return muitasTentativas();
+      if (reconfirmacao === "incorreta") {
+        return fail("Senha incorreta — a assinatura não foi feita", 400);
+      }
 
       // matrícula sem o status/data que o servidor grava ao concluir: regrava
       // antes de montar o certificado (conclusão e validade vêm dela)

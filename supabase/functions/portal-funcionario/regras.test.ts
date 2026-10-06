@@ -1,8 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  ESCOPO_RECONFIRMAR_SENHA,
   EVENTO_PROVA_INICIADA,
+  JANELA_RECONFIRMAR_SENHA_SEG,
   MAX_DETALHE,
+  MAX_TENTATIVAS_RECONFIRMAR_SENHA,
   PCT_CONCLUSAO,
   REPROVADO_VE_NOTA,
   TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG,
@@ -25,6 +28,7 @@ import {
   ordemDaProva,
   proximaTentativaEm,
   provaDaOrdem,
+  reconfirmarSenha,
   refsDasAulasLiberadas,
   respostaDaCorrecao,
   situacaoDasTentativas,
@@ -34,6 +38,7 @@ import {
   validarEnvio,
 } from "./regras.ts";
 import { assinarDaEmpresa } from "../_shared/storage-assinar.ts";
+import { consumirTentativa, liberarTentativas } from "../_shared/limite-tentativas.ts";
 
 // Dados sintéticos: nenhum identificador ou nome real.
 const trilhaDe = (ids: string[], feitas: string[]) => ({
@@ -1744,4 +1749,164 @@ test("aulasParaAluno: aula sem tipo (legado) aparece como vídeo, sem URL de ví
 
 test("o evento da prova iniciada tem um nome só do servidor", () => {
   assert.equal(EVENTO_PROVA_INICIADA, "avaliacao_iniciada");
+});
+
+// -------------------------------------------------- reconfirmarSenha (T27)
+// Limite de erros nas duas reconfirmações de senha da sessão (assinar o certificado e trocar a senha
+// com a senha atual): uma fila de tentativas por funcionário, em escopo próprio, consumida ANTES de
+// conferir a senha. Dados sintéticos.
+type Consumo = Awaited<ReturnType<typeof consumirTentativa>>;
+
+/** `consumir`/`conferir`/`liberar` falsos que registram a ordem das chamadas. */
+function depsFalsas(opcoes: { permitido?: boolean; senhaCerta?: boolean } = {}) {
+  const chamadas: string[] = [];
+  const consumos: { escopo: string; janelaSeg: number; limites: unknown[] }[] = [];
+  const consumo: Consumo = { permitido: opcoes.permitido ?? true, chaves: { conta: "k-conta" } };
+  const liberados: Consumo[] = [];
+  return {
+    chamadas,
+    consumos,
+    liberados,
+    consumo,
+    deps: {
+      consumir: async (escopo: string, janelaSeg: number, limites: unknown[]) => {
+        chamadas.push("consumir");
+        consumos.push({ escopo, janelaSeg, limites });
+        return consumo;
+      },
+      conferir: async () => {
+        chamadas.push("conferir");
+        return opcoes.senhaCerta ?? true;
+      },
+      liberar: async (c: Consumo) => {
+        chamadas.push("liberar");
+        liberados.push(c);
+      },
+    },
+  };
+}
+
+test("reconfirmarSenha: consome a tentativa ANTES de conferir, por funcionário e em escopo próprio", async () => {
+  const f = depsFalsas({ senhaCerta: false });
+  await reconfirmarSenha({ funcionarioId: "func-1", ...f.deps });
+  assert.deepEqual(f.chamadas, ["consumir", "conferir"]);
+  assert.equal(f.consumos.length, 1);
+  assert.equal(f.consumos[0].escopo, ESCOPO_RECONFIRMAR_SENHA);
+  assert.equal(f.consumos[0].janelaSeg, JANELA_RECONFIRMAR_SENHA_SEG);
+  // só por funcionário: um aparelho compartilhado (obra) não tranca os colegas
+  assert.deepEqual(f.consumos[0].limites, [
+    { tipo: "conta", valor: "func-1", max: MAX_TENTATIVAS_RECONFIRMAR_SENHA },
+  ]);
+});
+
+test("reconfirmarSenha: o escopo não é o do login nem o das dúvidas, e o teto é 5 em 15 minutos", () => {
+  assert.notEqual(ESCOPO_RECONFIRMAR_SENHA, "funcionario-login");
+  assert.notEqual(ESCOPO_RECONFIRMAR_SENHA, "portal-duvida");
+  assert.equal(MAX_TENTATIVAS_RECONFIRMAR_SENHA, 5);
+  assert.equal(JANELA_RECONFIRMAR_SENHA_SEG, 15 * 60);
+});
+
+test("reconfirmarSenha: limite estourado devolve 'limite' sem nem conferir a senha", async () => {
+  const f = depsFalsas({ permitido: false, senhaCerta: true });
+  assert.equal(await reconfirmarSenha({ funcionarioId: "func-1", ...f.deps }), "limite");
+  assert.deepEqual(f.chamadas, ["consumir"]);
+});
+
+test("reconfirmarSenha: senha certa devolve 'ok' e libera as tentativas (zera a conta)", async () => {
+  const f = depsFalsas({ senhaCerta: true });
+  assert.equal(await reconfirmarSenha({ funcionarioId: "func-1", ...f.deps }), "ok");
+  assert.deepEqual(f.chamadas, ["consumir", "conferir", "liberar"]);
+  assert.equal(f.liberados[0], f.consumo);
+});
+
+test("reconfirmarSenha: senha errada devolve 'incorreta' e não libera nada", async () => {
+  const f = depsFalsas({ senhaCerta: false });
+  assert.equal(await reconfirmarSenha({ funcionarioId: "func-1", ...f.deps }), "incorreta");
+  assert.deepEqual(f.chamadas, ["consumir", "conferir"]);
+});
+
+/**
+ * Banco falso do limitador: conta as chamadas de `auth_rate_limit_consumir` por chave (a chave é o
+ * SHA-256 de "escopo:tipo:valor") e nega quando passa do teto, como a RPC da migração 0112.
+ */
+function limitadorFalso(falhar = false) {
+  const contagem = new Map<string, number>();
+  const zeradas: string[] = [];
+  return {
+    contagem,
+    zeradas,
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      if (falhar) return { data: null, error: { message: "limitador fora do ar" } };
+      if (fn === "auth_rate_limit_liberar") {
+        for (const k of args.p_zerar as string[]) {
+          contagem.delete(k);
+          zeradas.push(k);
+        }
+        return { data: null, error: null };
+      }
+      const chaves = args.p_chaves as string[];
+      const maximos = args.p_limites as number[];
+      let permitido = true;
+      chaves.forEach((k, i) => {
+        const n = (contagem.get(k) ?? 0) + 1;
+        contagem.set(k, n);
+        if (n > maximos[i]) permitido = false;
+      });
+      return { data: permitido, error: null };
+    },
+  };
+}
+
+function reconfirmarComLimitador(
+  admin: ReturnType<typeof limitadorFalso>,
+  funcionarioId: string,
+  senhaCerta: boolean
+) {
+  return reconfirmarSenha({
+    funcionarioId,
+    consumir: (escopo, janelaSeg, limites) => consumirTentativa(admin, escopo, janelaSeg, limites),
+    conferir: async () => senhaCerta,
+    liberar: (c) => liberarTentativas(admin, c),
+  });
+}
+
+test("reconfirmarSenha: cinco erros passam; a sexta tentativa é barrada, mesmo com a senha certa", async () => {
+  const admin = limitadorFalso();
+  for (let i = 0; i < MAX_TENTATIVAS_RECONFIRMAR_SENHA; i++) {
+    assert.equal(await reconfirmarComLimitador(admin, "func-1", false), "incorreta");
+  }
+  assert.equal(await reconfirmarComLimitador(admin, "func-1", false), "limite");
+  assert.equal(await reconfirmarComLimitador(admin, "func-1", true), "limite");
+});
+
+test("reconfirmarSenha: acertar zera a conta, e o contador recomeça", async () => {
+  const admin = limitadorFalso();
+  for (let i = 0; i < 4; i++) await reconfirmarComLimitador(admin, "func-1", false);
+  assert.equal(await reconfirmarComLimitador(admin, "func-1", true), "ok");
+  assert.equal(admin.zeradas.length, 1);
+  for (let i = 0; i < MAX_TENTATIVAS_RECONFIRMAR_SENHA; i++) {
+    assert.equal(await reconfirmarComLimitador(admin, "func-1", false), "incorreta");
+  }
+  assert.equal(await reconfirmarComLimitador(admin, "func-1", false), "limite");
+});
+
+test("reconfirmarSenha: o limite de um funcionário não afeta outro", async () => {
+  const admin = limitadorFalso();
+  for (let i = 0; i < MAX_TENTATIVAS_RECONFIRMAR_SENHA + 1; i++) {
+    await reconfirmarComLimitador(admin, "func-1", false);
+  }
+  assert.equal(await reconfirmarComLimitador(admin, "func-1", true), "limite");
+  assert.equal(await reconfirmarComLimitador(admin, "func-2", true), "ok");
+});
+
+test("reconfirmarSenha: limitador fora do ar não tranca (a conferência da senha segue valendo)", async () => {
+  const admin = limitadorFalso(true);
+  const erroOriginal = console.error;
+  console.error = () => {};
+  try {
+    assert.equal(await reconfirmarComLimitador(admin, "func-1", true), "ok");
+    assert.equal(await reconfirmarComLimitador(admin, "func-1", false), "incorreta");
+  } finally {
+    console.error = erroOriginal;
+  }
 });

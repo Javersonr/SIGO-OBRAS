@@ -42,6 +42,9 @@ export default function PortalFuncionario() {
   const [sessao, setSessao] = useState(() => sessaoPortal.ler());
   const [aviso, setAviso] = useState("");
   const [alterandoSenha, setAlterandoSenha] = useState(false);
+  // usuário (CPF) do último login, SÓ em memória: a tela de troca de senha o usa para recusar "senha
+  // igual ao CPF" antes de enviar. Não vai para o localStorage com a sessão (é dado pessoal).
+  const [usuarioDoLogin, setUsuarioDoLogin] = useState("");
 
   useEffect(() => {
     const u = new URL(window.location.href);
@@ -65,6 +68,7 @@ export default function PortalFuncionario() {
     atualizarSessao(null);
     setAviso(mensagem || "");
     setAlterandoSenha(false);
+    setUsuarioDoLogin("");
   };
 
   const erroSessao = (e) => {
@@ -76,8 +80,9 @@ export default function PortalFuncionario() {
     return (
       <LoginPortal
         aviso={aviso}
-        onEntrar={(s) => {
+        onEntrar={({ usuario, ...s }) => {
           setAviso("");
+          setUsuarioDoLogin(usuario || "");
           atualizarSessao(s);
         }}
       />
@@ -89,6 +94,7 @@ export default function PortalFuncionario() {
       <TrocarSenhaPortal
         token={sessao.token}
         nome={sessao.nome}
+        usuario={usuarioDoLogin}
         obrigatoria={!!sessao.trocar_senha}
         onConcluir={(token) => {
           atualizarSessao({ ...sessao, token, trocar_senha: false });
