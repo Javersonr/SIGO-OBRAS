@@ -32,6 +32,67 @@ describe("situacaoDoResultado", () => {
   });
 });
 
+describe("situacaoDoResultado falha fechado (T10, M3, A4)", () => {
+  it("só a situação 'valido' vira válido: qualquer outra coisa que o servidor mande é indeterminada", () => {
+    for (const situacao of [
+      "suspenso",
+      "VALIDO",
+      " valido",
+      "valido ",
+      "",
+      null,
+      0,
+      1,
+      true,
+      false,
+      {},
+      ["valido"],
+    ]) {
+      expect(situacaoDoResultado({ ...base, situacao }), JSON.stringify(situacao)).toBe(
+        "indeterminada"
+      );
+    }
+  });
+
+  it("resposta sem situação e sem os campos do servidor antigo não vale como válida", () => {
+    expect(situacaoDoResultado({ encontrado: true })).toBe("indeterminada");
+    expect(situacaoDoResultado({ encontrado: true, certificado: {} })).toBe("indeterminada");
+  });
+
+  it("servidor antigo: válido só com `valido: true`; revogado continua revogado", () => {
+    expect(situacaoDoResultado({ encontrado: true, valido: true })).toBe("valido");
+    expect(situacaoDoResultado({ encontrado: true, valido: false, revogado: true })).toBe(
+      "revogado"
+    );
+    expect(situacaoDoResultado({ encontrado: true, valido: false, revogado: false })).toBe(
+      "indeterminada"
+    );
+  });
+
+  it("'valido' com campos que o contradizem não vale como válido", () => {
+    expect(situacaoDoResultado({ ...base, situacao: "valido", revogado: true })).toBe(
+      "indeterminada"
+    );
+    expect(situacaoDoResultado({ ...base, situacao: "valido", integro: false })).toBe(
+      "indeterminada"
+    );
+    expect(situacaoDoResultado({ ...base, situacao: "valido", vencido: true })).toBe(
+      "indeterminada"
+    );
+    // 'vencido' também diz "autêntico": revogado ou dados que não conferem o contradizem
+    expect(
+      situacaoDoResultado({ ...base, situacao: "vencido", vencido: true, integro: false })
+    ).toBe("indeterminada");
+    expect(
+      situacaoDoResultado({ ...base, situacao: "vencido", vencido: true, revogado: true })
+    ).toBe("indeterminada");
+  });
+
+  it("'valido' com integridade não verificável (integro nulo, servidor antes do A3) continua válido", () => {
+    expect(situacaoDoResultado({ ...base, situacao: "valido", integro: null })).toBe("valido");
+  });
+});
+
 describe("dataBr", () => {
   it("AAAA-MM-DD vira DD/MM/AAAA, também com hora; vazio vira travessão", () => {
     expect(dataBr("2026-10-04")).toBe("04/10/2026");
@@ -79,6 +140,42 @@ describe("apresentacaoDoResultado", () => {
   it("sem resultado, não há apresentação", () => {
     expect(apresentacaoDoResultado(null)).toBeNull();
   });
+
+  it("situação desconhecida: cinza, nunca verde, pedindo a confirmação com a empresa emissora (T10, M3)", () => {
+    for (const situacao of ["suspenso", "", null, 7]) {
+      const a = apresentacaoDoResultado({ ...base, situacao });
+      expect(a.situacao).toBe("indeterminada");
+      expect(a.tom).toBe("cinza");
+      expect(a.titulo).not.toMatch(/autêntico|válido/i);
+      expect(a.titulo).toMatch(/não foi possível confirmar/i);
+      expect(a.detalhe).toMatch(/emissora/i);
+    }
+  });
+
+  it("'valido' contradito por outro campo também vira indeterminada, não verde", () => {
+    const a = apresentacaoDoResultado({ ...base, situacao: "valido", revogado: true });
+    expect(a.tom).toBe("cinza");
+    expect(a.situacao).toBe("indeterminada");
+  });
+
+  it("o verde só aparece para situacao === 'valido' (varre tudo o que a apresentação devolve)", () => {
+    const verdes = [
+      undefined,
+      null,
+      "",
+      "valido",
+      "VALIDO",
+      "ok",
+      "suspenso",
+      "vencido",
+      "revogado",
+      "divergente",
+    ]
+      .map((situacao) => apresentacaoDoResultado({ ...base, situacao }))
+      .filter((a) => a?.tom === "verde");
+    expect(verdes).toHaveLength(1);
+    expect(verdes[0].situacao).toBe("valido");
+  });
 });
 
 describe("avisoDeIntegridade", () => {
@@ -86,6 +183,14 @@ describe("avisoDeIntegridade", () => {
     expect(avisoDeIntegridade({ ...base, integro: null, hash_versao: 1 })).toMatch(/antes/i);
     expect(avisoDeIntegridade({ ...base, integro: true })).toBeNull();
     expect(avisoDeIntegridade({ ...base, integro: false })).toBeNull();
+  });
+
+  it("não diz que a conferência 'não se aplica': ela foi tentada e não bateu (T10, M4)", () => {
+    const aviso = avisoDeIntegridade({ ...base, integro: null, hash_versao: 1 });
+    expect(aviso).not.toMatch(/não se aplica/i);
+    expect(aviso).toMatch(/não foi possível (conferir|confirmar)/i);
+    expect(aviso).toMatch(/SHA-256/);
+    expect(aviso).toMatch(/emissora/i);
   });
 
   it("servidor antigo (sem o campo integro) não mostra aviso", () => {

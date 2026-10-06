@@ -144,6 +144,17 @@ export function mesmoFormulario(atual, referencia) {
   return !!referencia.rascunho && !atual.id && atual.rascunho === referencia.rascunho;
 }
 
+/**
+ * Depois de gravar uma aula (envio lento: vídeo de até 1 GB), o formulário de "nova aula" só é limpo se a
+ * tela ainda mostra o que estava aberto quando o envio começou: a MESMA empresa (`mesmaEmpresa`, do
+ * controle de cargas) e o MESMO curso (`cursoAberto` é o que está no painel agora, `cursoDoEnvio`, o que
+ * estava aberto no clique). Num curso diferente, ou com o painel fechado, o formulário é de outra
+ * digitação e não pode ser sobrescrito com os valores do clique (A2).
+ */
+export function formularioDeAulaSegueOMesmo({ mesmaEmpresa, cursoAberto, cursoDoEnvio }) {
+  return !!mesmaEmpresa && mesmoFormulario(cursoAberto, cursoDoEnvio);
+}
+
 // ----------------------------------------------------------------- cargas da tela (A2)
 
 /**

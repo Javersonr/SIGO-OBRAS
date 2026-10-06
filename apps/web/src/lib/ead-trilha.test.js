@@ -22,21 +22,35 @@ describe("origem do evento da trilha (T17)", () => {
     expect(origemDoEvento({ evento: "login", origem: "servidor" })).toBe("servidor");
   });
 
-  it("linha sem origem (resposta de antes da migração) vale servidor: só 'navegador' é selo", () => {
+  it("linha sem origem (resposta de antes da migração) NÃO vale servidor: a origem sai vazia, e não há selo (T17, M3)", () => {
     expect(eventoInformadoPeloNavegador({ evento: "acesso_criado" })).toBe(false);
-    expect(origemDoEvento({ evento: "acesso_criado" })).toBe("servidor");
-    expect(origemDoEvento({ evento: "x", origem: null })).toBe("servidor");
+    expect(origemDoEvento({ evento: "acesso_criado" })).toBe("");
+    expect(origemDoEvento({ evento: "x", origem: null })).toBe("");
+    expect(origemDoEvento({ evento: "x", origem: "" })).toBe("");
   });
 
-  it("valor desconhecido nunca vira selo nem é repassado ao CSV", () => {
+  it("valor desconhecido nunca vira selo nem é repassado ao CSV: sai vazio, não 'servidor'", () => {
     expect(eventoInformadoPeloNavegador({ origem: "NAVEGADOR" })).toBe(false);
-    expect(origemDoEvento({ origem: "outro" })).toBe("servidor");
+    expect(origemDoEvento({ origem: "NAVEGADOR" })).toBe("");
+    expect(origemDoEvento({ origem: "outro" })).toBe("");
+    expect(origemDoEvento({ origem: 1 })).toBe("");
   });
 
   it("aguenta evento vazio", () => {
     expect(eventoInformadoPeloNavegador(undefined)).toBe(false);
     expect(eventoInformadoPeloNavegador(null)).toBe(false);
-    expect(origemDoEvento(undefined)).toBe("servidor");
+    expect(origemDoEvento(undefined)).toBe("");
+    expect(origemDoEvento(null)).toBe("");
+  });
+
+  it("só os dois valores que o banco aceita (check da migração 0135) saem como estão", () => {
+    const migracao = readFileSync(
+      new URL("../../../../supabase/migrations/0135_trilha_imutavel.sql", import.meta.url),
+      "utf8"
+    );
+    expect(migracao).toMatch(/origem in \('servidor', 'navegador'\)/);
+    expect(origemDoEvento({ origem: "servidor" })).toBe("servidor");
+    expect(origemDoEvento({ origem: "navegador" })).toBe("navegador");
   });
 
   it("o rótulo do selo é o texto combinado com o RH", () => {

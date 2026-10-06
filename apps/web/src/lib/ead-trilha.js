@@ -7,10 +7,13 @@ export const ROTULO_ORIGEM_NAVEGADOR = "informado pelo navegador";
  * Origem do evento da trilha (`treinamento_evento.origem`, migração 0135): "navegador" quando o
  * navegador do aluno INFORMOU o que aconteceu (abriu a aula, play, pausa, saiu da aba...; o servidor
  * só carimba hora e IP) e "servidor" quando o servidor viu e decidiu (login, aula concluída, prova,
- * certificado...). Qualquer outro valor, ou a falta dele, vale "servidor": só "navegador" é selo.
+ * certificado...). Só esses dois valores (os do check do banco) saem como estão. A falta da origem
+ * (resposta de antes da migração) ou um valor desconhecido saem VAZIOS: a tela e o CSV não afirmam
+ * "servidor" sobre o que não sabem (T17, M3). Só "navegador" vira selo.
  */
 export function origemDoEvento(evento) {
-  return evento?.origem === "navegador" ? "navegador" : "servidor";
+  const origem = evento?.origem;
+  return origem === "navegador" || origem === "servidor" ? origem : "";
 }
 
 /** O evento leva o selo "informado pelo navegador"? */

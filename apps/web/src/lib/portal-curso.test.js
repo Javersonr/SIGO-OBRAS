@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   PREFIXO_POSICAO,
   PREFIXO_PROVA,
@@ -27,6 +28,9 @@ import {
   msTemporizadorProva,
   provaAguardando,
   mensagemDeFalha,
+  CODIGOS_DE_AVISO_PASSAGEIRO,
+  textoDoAvisoPassageiro,
+  erroAposEnvioCerto,
   provaParaTela,
   provaPrecisaReabrir,
   avisoDaProvaReaberta,
@@ -833,6 +837,55 @@ describe("mensagemDeFalha (erro de rede em português)", () => {
     }
   });
 
+  it("erro de plataforma no formato REAL do cliente: frase em inglês + código em `extra.code` (A1, m1)", () => {
+    // `invokeFn` (sigoClient) usa `body.error || body.message` como mensagem e deixa o corpo inteiro em
+    // `extra`; `ErroPortal` (api.js) guarda isso em `.extra`. O código de plataforma é `code`.
+    const comoOCliente = (message, code) =>
+      Object.assign(new Error(message), { codigo: null, extra: { code, message } });
+    for (const erro of [
+      comoOCliente("Function failed to start (please check logs)", "BOOT_ERROR"),
+      comoOCliente(
+        "Function failed due to not having enough compute resources (please check logs)",
+        "WORKER_LIMIT"
+      ),
+      comoOCliente("Function exited due to an error (please check logs)", "WORKER_ERROR"),
+    ]) {
+      const texto = mensagemDeFalha(erro);
+      expect(texto, erro.message).toBe(MSG_SERVICO_INDISPONIVEL);
+      expect(texto).not.toMatch(/function|logs|compute/i);
+    }
+  });
+
+  it("as mesmas frases de plataforma, sem o código, também viram texto em português", () => {
+    for (const msg of [
+      "Function failed to start (please check logs)",
+      "Function failed due to not having enough compute resources (please check logs)",
+      "Function exited due to an error (please check logs)",
+    ]) {
+      expect(mensagemDeFalha(new Error(msg)), msg).toBe(MSG_SERVICO_INDISPONIVEL);
+    }
+  });
+
+  it("só o código de plataforma em `extra.code` (mensagem vazia ou diferente) basta", () => {
+    for (const code of ["BOOT_ERROR", "WORKER_LIMIT", "WORKER_ERROR", "NOT_FOUND"]) {
+      expect(mensagemDeFalha({ message: "", extra: { code } }), code).toBe(
+        MSG_SERVICO_INDISPONIVEL
+      );
+      expect(mensagemDeFalha({ message: "texto qualquer", extra: { code } }), code).toBe(
+        MSG_SERVICO_INDISPONIVEL
+      );
+    }
+  });
+
+  it("`extra.code` que não é de plataforma (ou ausente, ou que não é texto) não esconde o texto do servidor", () => {
+    expect(
+      mensagemDeFalha({ message: "Aula não pertence ao curso", extra: { code: "OUTRO" } })
+    ).toBe("Aula não pertence ao curso");
+    expect(mensagemDeFalha({ message: "Muitas ações", extra: {} })).toBe("Muitas ações");
+    expect(mensagemDeFalha({ message: "Muitas ações", extra: { code: 500 } })).toBe("Muitas ações");
+    expect(mensagemDeFalha({ message: "Muitas ações", extra: null })).toBe("Muitas ações");
+  });
+
   it("o texto em português do servidor que fala de erro ou função passa como veio", () => {
     for (const msg of [
       "Função indisponível no momento",
@@ -854,6 +907,63 @@ describe("mensagemDeFalha (erro de rede em português)", () => {
     for (const vazio of [null, undefined, {}, new Error(""), "x".repeat(0)]) {
       expect(mensagemDeFalha(vazio)).toMatch(/tente de novo/i);
     }
+  });
+});
+
+// ------------------------------------------------ aviso passageiro de envio (T31, M2)
+
+describe("aviso de envio recusado (409/429) que some no próximo envio que dá certo", () => {
+  const comCodigo = (codigo, message = "Muitas ações. Aguarde.") =>
+    Object.assign(new Error(message), { codigo, extra: { codigo } });
+
+  it("os códigos são os que o servidor usa para o sinal simultâneo (409) e o limite de volume (429)", () => {
+    const servidor = readFileSync(
+      new URL("../../../../supabase/functions/portal-funcionario/index.ts", import.meta.url),
+      "utf8"
+    );
+    expect(CODIGOS_DE_AVISO_PASSAGEIRO).toEqual(["SINAL_CONCORRENTE", "LIMITE"]);
+    for (const codigo of CODIGOS_DE_AVISO_PASSAGEIRO) {
+      expect(servidor).toContain(`codigo: "${codigo}"`);
+    }
+  });
+
+  it("409 de sinal simultâneo e 429 de volume são avisos passageiros; o texto é o do servidor", () => {
+    expect(textoDoAvisoPassageiro(comCodigo("LIMITE"))).toBe("Muitas ações. Aguarde.");
+    expect(
+      textoDoAvisoPassageiro(comCodigo("SINAL_CONCORRENTE", "Enviado ao mesmo tempo por outra aba"))
+    ).toBe("Enviado ao mesmo tempo por outra aba");
+  });
+
+  it("outros erros (sessão, leitura, rede, servidor) não são passageiros: ficam até o aluno fechar", () => {
+    for (const erro of [
+      comCodigo("SESSAO", "Sessão expirada"),
+      comCodigo("TEMPO_LEITURA", "Falta tempo de leitura"),
+      comCodigo("TROCAR_SENHA", "Troque a senha"),
+      new Error("Failed to fetch"),
+      new Error("Aula não pertence ao curso"),
+      null,
+      undefined,
+      {},
+    ]) {
+      expect(textoDoAvisoPassageiro(erro)).toBe("");
+    }
+  });
+
+  it("o envio que deu certo tira o aviso passageiro que ainda está na tela", () => {
+    expect(erroAposEnvioCerto("Muitas ações. Aguarde.", "Muitas ações. Aguarde.")).toBe("");
+  });
+
+  it("não apaga outro erro que o aluno está lendo (o do projeto pedagógico, por exemplo)", () => {
+    expect(erroAposEnvioCerto("Não foi possível renovar o link", "Muitas ações. Aguarde.")).toBe(
+      "Não foi possível renovar o link"
+    );
+  });
+
+  it("sem aviso passageiro registrado, o erro da tela fica como está (inclusive vazio)", () => {
+    expect(erroAposEnvioCerto("Algum erro", "")).toBe("Algum erro");
+    expect(erroAposEnvioCerto("Algum erro", null)).toBe("Algum erro");
+    expect(erroAposEnvioCerto("", "")).toBe("");
+    expect(erroAposEnvioCerto("", "Muitas ações. Aguarde.")).toBe("");
   });
 });
 

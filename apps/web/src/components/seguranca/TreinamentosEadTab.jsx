@@ -25,6 +25,7 @@ import {
   MSG_REVOGUE_ANTES,
   novoRascunho,
   mesmoFormulario,
+  formularioDeAulaSegueOMesmo,
   criarControleDeCarga,
   certificadosPorMatricula,
 } from "@/lib/ead-gestao";
@@ -177,6 +178,10 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   const [funcionarios, setFuncionarios] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [cursoSel, setCursoSel] = useState(null); // Sheet de edição do curso
+  // o curso que está no painel AGORA: uma gravação lenta (vídeo de até 1 GB) termina com o `cursoSel` do
+  // clique e confere nesta referência se o RH ainda está no mesmo curso (A2)
+  const cursoSelRef = useRef(null);
+  cursoSelRef.current = cursoSel;
   const [previaAberta, setPreviaAberta] = useState(false); // "Ver como aluno" (T28)
   const [matriculaDetalheId, setMatriculaDetalheId] = useState(null);
   const [showMatricular, setShowMatricular] = useState(false);
@@ -573,9 +578,16 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
         dados = { fonte: "youtube", youtube_id: youtube.ytId, duracao_seg: youtube.duracao_seg };
       }
       await sigo.entities.TreinamentoAula.create({ ...base, ...dados });
-      // mantém o módulo para a próxima aula do mesmo bloco (a menos que a empresa tenha mudado
-      // durante o envio: o formulário já foi limpo e o módulo é da empresa anterior)
-      if (cargas.mesmaEmpresa(empresaId)) {
+      // mantém o módulo para a próxima aula do mesmo bloco, a menos que a tela já seja outra durante o
+      // envio: empresa diferente (o formulário já foi limpo e o módulo é da empresa anterior) ou OUTRO
+      // curso aberto (o formulário é compartilhado e tem o que o RH digitou lá: não é sobrescrito)
+      if (
+        formularioDeAulaSegueOMesmo({
+          mesmaEmpresa: cargas.mesmaEmpresa(empresaId),
+          cursoAberto: cursoSelRef.current,
+          cursoDoEnvio: cursoSel,
+        })
+      ) {
         setNovaAula({ ...NOVA_AULA, modulo: novaAula.modulo, tipo: novaAula.tipo });
       }
       toast.success("Aula adicionada");

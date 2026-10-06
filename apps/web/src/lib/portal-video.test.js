@@ -21,6 +21,9 @@ import {
   mensagemVideoIndisponivel,
   mensagemErroYouTube,
   criarCarregadorYouTube,
+  criarVigiaDoPlayer,
+  LIMITE_PLAYER_YOUTUBE_MS,
+  MSG_PLAYER_DEMOROU,
 } from "./portal-video";
 
 const URL_OK = "https://exemplo.test/storage/aula.mp4?token=abc";
@@ -448,6 +451,92 @@ describe("criarCarregadorYouTube", () => {
     expect(anexados).toHaveLength(1); // o script novo continua lá
     youtubePronto();
     await expect(segunda).resolves.toBe(janela.YT);
+  });
+});
+
+describe('criarVigiaDoPlayer ("Carregando vídeo..." com tempo limite, A1 m5)', () => {
+  /** Agendador de mentira: guarda o que foi agendado e cancelado, e dispara na mão. */
+  function agendador() {
+    const agendados = [];
+    const cancelados = [];
+    return {
+      agendados,
+      cancelados,
+      agendar: (fn, ms) => {
+        const id = agendados.length + 1;
+        agendados.push({ id, fn, ms });
+        return id;
+      },
+      cancelar: (id) => cancelados.push(id),
+    };
+  }
+
+  it("o limite padrão é de 20 s e a mensagem manda tentar de novo", () => {
+    expect(LIMITE_PLAYER_YOUTUBE_MS).toBe(20000);
+    expect(MSG_PLAYER_DEMOROU).toMatch(/demor/i);
+    expect(MSG_PLAYER_DEMOROU).toMatch(/tente de novo|Tentar de novo/i);
+    expect(MSG_PLAYER_DEMOROU).not.toMatch(/youtube.com|iframe|onReady/i);
+  });
+
+  it("estourou o limite sem o player ficar pronto: avisa uma única vez", () => {
+    const { agendados, agendar, cancelar } = agendador();
+    let avisos = 0;
+    criarVigiaDoPlayer({ aoEstourar: () => avisos++, agendar, cancelar });
+    expect(agendados).toHaveLength(1);
+    expect(agendados[0].ms).toBe(LIMITE_PLAYER_YOUTUBE_MS);
+    expect(avisos).toBe(0);
+    agendados[0].fn();
+    expect(avisos).toBe(1);
+    agendados[0].fn(); // disparo repetido não avisa de novo
+    expect(avisos).toBe(1);
+  });
+
+  it("o limite pode ser mudado", () => {
+    const { agendados, agendar, cancelar } = agendador();
+    criarVigiaDoPlayer({ aoEstourar: () => {}, limiteMs: 5000, agendar, cancelar });
+    expect(agendados[0].ms).toBe(5000);
+  });
+
+  it("player pronto (parar) antes do limite: cancela o tempo e nunca avisa, nem se o disparo chegar tarde", () => {
+    const { agendados, cancelados, agendar, cancelar } = agendador();
+    let avisos = 0;
+    const vigia = criarVigiaDoPlayer({ aoEstourar: () => avisos++, agendar, cancelar });
+    vigia.parar();
+    expect(cancelados).toEqual([agendados[0].id]);
+    agendados[0].fn(); // o disparo que já estava na fila do navegador
+    expect(avisos).toBe(0);
+  });
+
+  it("parar de novo, ou depois de estourar, não cancela nada à toa", () => {
+    const { agendados, cancelados, agendar, cancelar } = agendador();
+    const vigia = criarVigiaDoPlayer({ aoEstourar: () => {}, agendar, cancelar });
+    vigia.parar();
+    vigia.parar();
+    expect(cancelados).toHaveLength(1);
+
+    const outra = agendador();
+    const vigia2 = criarVigiaDoPlayer({
+      aoEstourar: () => {},
+      agendar: outra.agendar,
+      cancelar: outra.cancelar,
+    });
+    outra.agendados[0].fn();
+    vigia2.parar();
+    expect(outra.cancelados).toHaveLength(0);
+    expect(agendados).toHaveLength(1);
+  });
+
+  it("cada vigia tem o seu tempo: uma nova tentativa não herda o da anterior", () => {
+    const { agendados, agendar, cancelar } = agendador();
+    let avisos = 0;
+    const primeira = criarVigiaDoPlayer({ aoEstourar: () => avisos++, agendar, cancelar });
+    primeira.parar();
+    criarVigiaDoPlayer({ aoEstourar: () => avisos++, agendar, cancelar });
+    expect(agendados).toHaveLength(2);
+    agendados[0].fn(); // tempo da 1ª, cancelado
+    expect(avisos).toBe(0);
+    agendados[1].fn();
+    expect(avisos).toBe(1);
   });
 });
 

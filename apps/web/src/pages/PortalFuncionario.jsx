@@ -33,7 +33,7 @@ import {
   EntregasPendentes,
   HistoricoDeEntregas,
 } from "@/components/portal-funcionario/CienciasPortal";
-import { separarCiencias } from "@/lib/portal-ciencias";
+import { historicoDeCienciasParcial, separarCiencias } from "@/lib/portal-ciencias";
 
 /**
  * Portal do Funcionário — treinamentos EAD, ciência de entregas e certificados.
@@ -203,6 +203,8 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
   const cursos = dados?.cursos || [];
   const { andamento, concluidos } = agruparMatriculas(cursos);
   const { pendentes, confirmadas } = separarCiencias(dados?.ciencias);
+  // o servidor manda só as 30 entregas mais recentes: com o limite cheio o histórico não é o total
+  const historicoParcial = historicoDeCienciasParcial(dados?.ciencias);
 
   const cartaoDoCurso = (c) => {
     const { total, feitas, percentual, semAulas } = progressoDoCurso(c.aulas);
@@ -404,7 +406,7 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
                 {concluidos.length > 0 && tituloGrupo("Concluídos")}
                 {concluidos.map(cartaoDoCurso)}
 
-                <HistoricoDeEntregas confirmadas={confirmadas} />
+                <HistoricoDeEntregas confirmadas={confirmadas} parcial={historicoParcial} />
               </>
             )}
           </>

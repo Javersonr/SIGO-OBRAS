@@ -24,7 +24,11 @@ vi.mock("@/api/sigoClient", () => ({
   resolveStorageUrl: vi.fn(),
 }));
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { LoginPortal, TrocarSenhaPortal } from "./LoginPortal";
+
+const fonte = readFileSync(fileURLToPath(new URL("LoginPortal.jsx", import.meta.url)), "utf8");
 
 /**
  * Primeira tela do login e da troca de senha (T27), só com dados sintéticos. `renderToStaticMarkup` não
@@ -63,10 +67,26 @@ describe("TrocarSenhaPortal", () => {
     expect(html).not.toContain("mínimo 6 caracteres");
   });
 
-  it("limita o tamanho da senha ao que o servidor aceita", () => {
+  it("não corta a senha colada em silêncio: sem maxLength, com o aviso do limite de 72 (T27, m4)", () => {
     const html = tela(<TrocarSenhaPortal {...props} obrigatoria usuario="" />);
-    expect(campo(html, "senha-nova")).toContain('maxLength="72"');
-    expect(campo(html, "senha-confirma")).toContain('maxLength="72"');
+    expect(campo(html, "senha-nova")).not.toContain("maxLength");
+    expect(campo(html, "senha-confirma")).not.toContain("maxLength");
+    // o aviso é da lib (testado em portal-senha.test.js); aqui se confere que a tela o mostra
+    expect(fonte).toContain("avisoDeSenhaLonga(nova)");
+    expect(fonte).toContain("avisoDeSenhaLonga(confirma)");
+    // nada digitado, nada de aviso
+    expect(html).not.toContain("o máximo é 72");
+  });
+
+  it("usuário conhecido: a regra do CPF aparece como regra comum; desconhecido: diz que o servidor confere ao salvar (T27, M1)", () => {
+    const conhecido = tela(<TrocarSenhaPortal {...props} obrigatoria usuario="11122233344" />);
+    expect(conhecido).toContain("Diferente do seu CPF ou usuário");
+    expect(conhecido).not.toContain("servidor confere");
+    const recarregada = tela(<TrocarSenhaPortal {...props} obrigatoria usuario="" />);
+    expect(recarregada).toContain("Diferente do seu CPF ou usuário (o servidor confere ao salvar)");
+    expect(recarregada).toContain('aria-label="Conferida ao salvar"');
+    // nunca com o ícone de "cumprida"
+    expect(recarregada).not.toContain('aria-label="Cumprida"');
   });
 
   it("1º acesso não pede a senha atual; a troca voluntária pede", () => {

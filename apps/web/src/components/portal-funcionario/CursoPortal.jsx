@@ -26,6 +26,7 @@ import { leituraPodeContar, urlApostilaValida } from "@/lib/apostila-pdf";
 import { videoSemDuracao } from "@/lib/ead-duracao";
 import {
   AVISO_VELOCIDADE,
+  MSG_PLAYER_DEMOROU,
   MSG_RECARGA_SEM_REDE,
   MSG_VIDEO_FALHOU,
   MSG_VIDEO_RENOVADO,
@@ -35,6 +36,7 @@ import {
   avisoPedePlay,
   avisoRetomada,
   criarCarregadorYouTube,
+  criarVigiaDoPlayer,
   dadosPrecisamRenovar,
   fonteDoVideo,
   mensagemErroYouTube,
@@ -52,6 +54,7 @@ import {
   cursoDespublicado,
   cursoDeApoio,
   MSG_CURSO_DE_APOIO,
+  erroAposEnvioCerto,
   guardarPosicao,
   lerPosicao,
   mensagemDeFalha,
@@ -61,6 +64,7 @@ import {
   progressoDoCurso,
   proximaAulaPendente,
   provaAguardando,
+  textoDoAvisoPassageiro,
 } from "@/lib/portal-curso";
 
 // IFrame API do YouTube, carregada uma única vez (falha = rejeita com mensagem e deixa tentar de novo)
@@ -158,6 +162,9 @@ export default function CursoPortal({
   const retomadaRef = useRef(null); // { posicao }: o vídeo trocou de URL e volta a este segundo
   const posicaoInicialRef = useRef(null); // { aulaId, seg }: onde o aluno parou ao abrir a aula
   const abriuProximaRef = useRef(false);
+  // texto do erro de um ENVIO (progresso ou evento) que é aviso passageiro (409/429, T31): o próximo
+  // envio que der certo tira da tela só ele; outro erro que o aluno esteja lendo fica
+  const avisoDeEnvioRef = useRef("");
   // estado da apostila (PDF) da aula aberta: o tempo de leitura só corre com ela na tela
   const estadoPdfRef = useRef({ aulaId: null, estado: "carregando" });
 
@@ -167,6 +174,19 @@ export default function CursoPortal({
   const tratarErro = (e) => {
     if (e?.codigo === "SESSAO" || e?.codigo === "TROCAR_SENHA") onErroSessao(e);
     else setErro(mensagemDeFalha(e));
+  };
+
+  // erro de um envio de progresso ou de evento: igual ao `tratarErro`, e guarda o texto quando é um aviso
+  // passageiro (409/429) para o próximo envio certo poder tirá-lo da tela
+  const tratarErroDeEnvio = (e) => {
+    tratarErro(e);
+    avisoDeEnvioRef.current = textoDoAvisoPassageiro(e);
+  };
+  const envioDeuCerto = () => {
+    const aviso = avisoDeEnvioRef.current;
+    if (!aviso) return;
+    avisoDeEnvioRef.current = "";
+    setErro((atual) => erroAposEnvioCerto(atual, aviso));
   };
 
   // Busca os dados de novo. Se falhar, o aluno LÊ o problema (antes a falha passava em silêncio e a tela
@@ -186,9 +206,12 @@ export default function CursoPortal({
   };
 
   const evento = (nome, extra = {}) =>
-    fila(() =>
-      chamarPortal("evento", { evento: nome, matricula_id: mat.id, ...extra }, token)
-    ).catch(tratarErro);
+    fila(() => chamarPortal("evento", { evento: nome, matricula_id: mat.id, ...extra }, token))
+      .then((r) => {
+        envioDeuCerto();
+        return r;
+      })
+      .catch(tratarErroDeEnvio);
 
   // `fim`: o vídeo acabou; se mesmo assim a aula não concluiu, o aluno é avisado
   const sincronizar = async ({ concluir = false, fim = false } = {}) => {
@@ -209,6 +232,7 @@ export default function CursoPortal({
           token
         )
       );
+      envioDeuCerto();
       // o servidor é quem manda: realinha o contador ao que ele aceitou
       const andouDepois = Math.max(0, assistidoRef.current - enviado);
       assistidoRef.current = r.segundos_assistidos + andouDepois;
@@ -244,7 +268,7 @@ export default function CursoPortal({
         iniciarContagem();
         return;
       }
-      tratarErro(e);
+      tratarErroDeEnvio(e);
     }
   };
 
@@ -308,9 +332,10 @@ export default function CursoPortal({
           token
         )
       );
+      envioDeuCerto();
     } catch (e) {
       // a troca não aconteceu: a aula anterior segue aberta COM a falha de vídeo e o "Tentar de novo"
-      tratarErro(e);
+      tratarErroDeEnvio(e);
       return;
     }
     // As URLs assinadas de vídeo, legenda e PDF valem 3 h: com os dados carregados há mais de
@@ -474,6 +499,7 @@ export default function CursoPortal({
     const chaveYouTube = `${aula.id}:${tentativaVideo}`;
     let vivo = true;
     let player = null;
+    let vigia = null; // tempo limite do player para ficar pronto ("Carregando vídeo..." não dura para sempre)
     carregarYouTubeAPI()
       .then((YT) => {
         if (!vivo) return;
@@ -497,6 +523,7 @@ export default function CursoPortal({
           },
           events: {
             onReady: () => {
+              vigia?.parar();
               if (vivo) setYtPronto(chaveYouTube);
             },
             onStateChange: (ev) => {
@@ -515,6 +542,7 @@ export default function CursoPortal({
               setAviso(AVISO_VELOCIDADE);
             },
             onError: (ev) => {
+              vigia?.parar();
               pararContagem();
               setFalhaVideo({
                 aulaId: aula.id,
@@ -525,6 +553,14 @@ export default function CursoPortal({
           },
         });
         playerRef.current = player;
+        // o iframe pode nunca avisar que está pronto (extensão que o bloqueia, rede que não chega):
+        // passado o limite, a falha aparece com "Tentar de novo"
+        vigia = criarVigiaDoPlayer({
+          aoEstourar: () => {
+            if (!vivo) return;
+            setFalhaVideo({ aulaId: aula.id, mensagem: MSG_PLAYER_DEMOROU, acao: "tentar" });
+          },
+        });
       })
       .catch((e) => {
         if (!vivo) return;
@@ -536,6 +572,10 @@ export default function CursoPortal({
       });
     return () => {
       vivo = false;
+      vigia?.parar();
+      // o player morre aqui: o próximo (voltar da prova, A → B → A, nova tentativa) nasce com a mesma
+      // chave e precisa do "Carregando vídeo..." de novo até o seu onReady
+      setYtPronto("");
       try {
         player?.destroy?.();
       } catch {

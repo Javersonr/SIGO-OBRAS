@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { separarCiencias, textoDoItemDeEntrega } from "./portal-ciencias";
+import { readFileSync } from "node:fs";
+import {
+  AVISO_HISTORICO_PARCIAL,
+  LIMITE_CIENCIAS_DO_SERVIDOR,
+  historicoDeCienciasParcial,
+  separarCiencias,
+  textoDoItemDeEntrega,
+  tituloDoHistorico,
+} from "./portal-ciencias";
 
 // Dados sintéticos: o que a ação `dados` do portal devolve em `ciencias` (até 30, mais nova primeiro).
 const entrega = (id, status, extra = {}) => ({
@@ -88,5 +96,59 @@ describe("textoDoItemDeEntrega", () => {
     expect(textoDoItemDeEntrega({})).toBe("");
     expect(textoDoItemDeEntrega(null)).toBe("");
     expect(textoDoItemDeEntrega(undefined)).toBe("");
+  });
+});
+
+describe("histórico parcial: o servidor manda só as entregas mais recentes (T36)", () => {
+  const lista = (n) => Array.from({ length: n }, (_, i) => entrega(`e${i}`, "confirmada"));
+
+  it("o limite é o mesmo do servidor (`.limit(30)` da consulta de entrega_ciencia no portal-funcionario)", () => {
+    const servidor = readFileSync(
+      new URL("../../../../supabase/functions/portal-funcionario/index.ts", import.meta.url),
+      "utf8"
+    );
+    const consulta = servidor.slice(servidor.indexOf('.from("entrega_ciencia")'));
+    const limite = Number(/\.limit\((\d+)\)/.exec(consulta)?.[1]);
+    expect(limite).toBe(30);
+    expect(LIMITE_CIENCIAS_DO_SERVIDOR).toBe(limite);
+  });
+
+  it("com menos entregas que o limite, o servidor mandou todas: o histórico é completo", () => {
+    expect(historicoDeCienciasParcial(lista(0))).toBe(false);
+    expect(historicoDeCienciasParcial(lista(LIMITE_CIENCIAS_DO_SERVIDOR - 1))).toBe(false);
+  });
+
+  it("no limite (ou acima), pode haver mais entregas antigas que não vieram: o histórico é parcial", () => {
+    expect(historicoDeCienciasParcial(lista(LIMITE_CIENCIAS_DO_SERVIDOR))).toBe(true);
+    expect(historicoDeCienciasParcial(lista(LIMITE_CIENCIAS_DO_SERVIDOR + 5))).toBe(true);
+  });
+
+  it("conta o que o servidor mandou (pendentes e confirmadas juntas), não só as confirmadas", () => {
+    const mista = [
+      ...lista(10),
+      ...Array.from({ length: 20 }, (_, i) => entrega(`p${i}`, "pendente")),
+    ];
+    expect(separarCiencias(mista).confirmadas).toHaveLength(10);
+    expect(historicoDeCienciasParcial(mista)).toBe(true);
+  });
+
+  it("entrada que não é lista nunca é parcial", () => {
+    for (const x of [null, undefined, {}, "texto", 30]) {
+      expect(historicoDeCienciasParcial(x)).toBe(false);
+    }
+  });
+
+  it("o título é 'Entregas confirmadas (N)' só quando a lista é completa", () => {
+    expect(tituloDoHistorico(3, false)).toBe("Entregas confirmadas (3)");
+    expect(tituloDoHistorico(3)).toBe("Entregas confirmadas (3)");
+  });
+
+  it("parcial: o título não sugere o total ('Últimas entregas confirmadas (N)') e o aviso explica", () => {
+    const titulo = tituloDoHistorico(22, true);
+    expect(titulo).toBe("Últimas entregas confirmadas (22)");
+    expect(titulo).not.toMatch(/^Entregas confirmadas/);
+    expect(AVISO_HISTORICO_PARCIAL).toContain(String(LIMITE_CIENCIAS_DO_SERVIDOR));
+    expect(AVISO_HISTORICO_PARCIAL).toMatch(/mais antigas/i);
+    expect(AVISO_HISTORICO_PARCIAL).toMatch(/RH/);
   });
 });

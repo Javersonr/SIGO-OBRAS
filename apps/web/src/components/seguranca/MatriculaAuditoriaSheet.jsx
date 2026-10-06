@@ -175,11 +175,13 @@ export default function MatriculaAuditoriaSheet({
 
   // Roda uma ação do servidor sobre a matrícula, uma de cada vez. Devolve true se deu certo. Falhou
   // (sem permissão, conflito, certificado já revogado por outra pessoa): avisa e recarrega por baixo,
-  // para a tela mostrar o que o servidor tem agora. Conflito (a matrícula mudou desde que a tela foi
-  // carregada) também recarrega a matrícula do painel: sem isso o número antigo seguiria valendo e
-  // todo clique repetiria o conflito. Já "efeito sem registro" NÃO a recarrega: a tela antiga é o que
-  // impede, no servidor, repetir a liberação (o aviso fica mais tempo, pede para NÃO repetir).
-  const executarAcao = async (tarefa) => {
+  // para a tela mostrar o que o servidor tem agora. Quando o que a tela mostra ficou velho (conflito: a
+  // matrícula mudou desde que a tela foi carregada; 409/404: outro RH já agiu), recarrega também a lista
+  // da aba (`onMudou`): sem isso o número antigo seguiria valendo, todo clique repetiria o erro e a
+  // lixeira da linha continuaria achando que o certificado é válido. Já "efeito sem registro" NÃO a
+  // recarrega: a tela antiga é o que impede, no servidor, repetir a liberação (o aviso fica mais tempo,
+  // pede para NÃO repetir). `aoFalhar(falha)` deixa a ação reagir à mesma decisão (ex.: fechar a janela).
+  const executarAcao = async (tarefa, { aoFalhar } = {}) => {
     if (agindoRef.current) return false;
     agindoRef.current = true;
     setAgindo(true);
@@ -192,6 +194,7 @@ export default function MatriculaAuditoriaSheet({
       toast.error(falha.texto, falha.duracao ? { duration: falha.duracao } : undefined);
       carregar({ silencioso: true });
       if (falha.recarregarMatricula) onMudou?.();
+      aoFalhar?.(falha);
       return false;
     } finally {
       agindoRef.current = false;
@@ -242,15 +245,24 @@ export default function MatriculaAuditoriaSheet({
     }
   };
 
-  // Com a janela aberta, uma falha deixa o motivo digitado onde está (o erro vai no toast).
+  // Com a janela aberta, uma falha deixa o motivo digitado onde está (o erro vai no toast), para tentar
+  // de novo. Exceção: a falha que mostra que a tela ficou velha (outro RH já revogou, certificado que já
+  // não existe): o botão "Revogar" some depois da recarga, e a janela não pode ficar aberta sem sentido.
   const revogar = async (motivo) => {
-    await executarAcao(async () => {
-      const resposta = await acessoPortal.revogarCertificado(matricula.id, motivo);
-      const aviso = avisoDaRevogacao(resposta);
-      toast[aviso.tipo](aviso.texto, aviso.tipo === "warning" ? { duration: 12000 } : undefined);
-      setPedindoMotivo(false);
-      aposAcao();
-    });
+    await executarAcao(
+      async () => {
+        const resposta = await acessoPortal.revogarCertificado(matricula.id, motivo);
+        const aviso = avisoDaRevogacao(resposta);
+        toast[aviso.tipo](aviso.texto, aviso.tipo === "warning" ? { duration: 12000 } : undefined);
+        setPedindoMotivo(false);
+        aposAcao();
+      },
+      {
+        aoFalhar: (falha) => {
+          if (falha.recarregarMatricula) setPedindoMotivo(false);
+        },
+      }
+    );
   };
 
   return (
@@ -484,7 +496,9 @@ export default function MatriculaAuditoriaSheet({
                 Data e hora do servidor. Inclui os acessos ao portal (login, senha) do funcionário.
                 Os eventos com o selo “{ROTULO_ORIGEM_NAVEGADOR}” são relatos do aparelho do aluno
                 (abrir a aula, play, pausa, sair da tela): o servidor registra a hora e o IP, mas
-                não confirma que aconteceu. Os demais o servidor viu e decidiu.
+                não confirma que aconteceu. Os eventos de origem “servidor” (login, prova,
+                certificado...) o servidor viu e decidiu; a coluna “origem” do CSV traz a origem de
+                cada evento, vazia quando o registro não a tem.
               </p>
               <div className="max-h-96 overflow-y-auto border rounded-md">
                 <table className="w-full text-xs">

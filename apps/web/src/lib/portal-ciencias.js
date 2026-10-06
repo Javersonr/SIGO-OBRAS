@@ -41,3 +41,30 @@ export function textoDoItemDeEntrega(item) {
     (item.ca ? ` · CA ${item.ca}` : "")
   );
 }
+
+// ---------------------------------------------------------------- histórico parcial
+
+/**
+ * Quantas entregas o servidor manda em `dados.ciencias` (a consulta de `entrega_ciencia` do
+ * `portal-funcionario` tem `.limit(30)`; o teste confere os dois lados). Pendentes e confirmadas
+ * entram juntas nesse limite.
+ */
+export const LIMITE_CIENCIAS_DO_SERVIDOR = 30;
+
+/**
+ * O servidor mandou o limite inteiro? Então pode haver entregas mais antigas que não vieram, e o
+ * histórico de confirmadas é só das mais recentes (não o total). Conta tudo o que veio, não só as
+ * confirmadas.
+ */
+export function historicoDeCienciasParcial(ciencias) {
+  return Array.isArray(ciencias) && ciencias.length >= LIMITE_CIENCIAS_DO_SERVIDOR;
+}
+
+/** Título do bloco do histórico. Parcial: não sugere o total ("Últimas entregas confirmadas (N)"). */
+export function tituloDoHistorico(quantidade, parcial = false) {
+  return parcial
+    ? `Últimas entregas confirmadas (${quantidade})`
+    : `Entregas confirmadas (${quantidade})`;
+}
+
+export const AVISO_HISTORICO_PARCIAL = `Aparecem só as ${LIMITE_CIENCIAS_DO_SERVIDOR} entregas mais recentes; as mais antigas não são mostradas aqui. Em caso de dúvida, fale com o RH.`;

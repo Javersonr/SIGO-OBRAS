@@ -1,7 +1,14 @@
 import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Printer, RotateCcw, ShieldCheck, ShieldAlert, ShieldX } from "lucide-react";
+import {
+  Printer,
+  RotateCcw,
+  ShieldCheck,
+  ShieldAlert,
+  ShieldQuestion,
+  ShieldX,
+} from "lucide-react";
 import { apresentacaoDoResultado, avisoDeIntegridade, dataBr } from "@/lib/validacao-certificado";
 import { fmtDataHora } from "./api";
 
@@ -24,6 +31,8 @@ const ESTILO = {
   verde: { Icone: ShieldCheck, card: "border-emerald-300", texto: "text-emerald-700" },
   ambar: { Icone: ShieldAlert, card: "border-amber-300", texto: "text-amber-700" },
   vermelho: { Icone: ShieldX, card: "border-red-300", texto: "text-red-700" },
+  // resposta que a página não sabe interpretar: nunca verde (T10, M3)
+  cinza: { Icone: ShieldQuestion, card: "border-slate-300", texto: "text-slate-700" },
 };
 
 export default function ResultadoValidacao({

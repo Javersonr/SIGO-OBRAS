@@ -161,6 +161,43 @@ describe("ações de matrícula do RH (T18)", () => {
   });
 });
 
+describe("status HTTP do erro do servidor (T18, M3)", () => {
+  it("o erro lançado leva o status da resposta (a tela decide recarregar pelo 409/404)", async () => {
+    invoke.mockResolvedValueOnce({
+      data: { success: false, error: "O certificado já está revogado" },
+      error: { context: { status: 409 } },
+    });
+    const erro = await acessoPortal.revogarCertificado("mat-1", "Motivo qualquer").catch((e) => e);
+    expect(erro.message).toBe("O certificado já está revogado");
+    expect(erro.status).toBe(409);
+    expect(erro.codigo).toBeUndefined();
+  });
+
+  it("junto do código, quando há os dois", async () => {
+    invoke.mockResolvedValueOnce({
+      data: { success: false, error: "A matrícula mudou agora há pouco.", codigo: "CONFLITO" },
+      error: { context: { status: 409 } },
+    });
+    const erro = await acessoPortal.liberarTentativa("mat-1", 1).catch((e) => e);
+    expect(erro.codigo).toBe("CONFLITO");
+    expect(erro.status).toBe(409);
+  });
+
+  it("resposta sem o objeto de erro do supabase-js (ou sem status): não inventa status", async () => {
+    invoke.mockResolvedValueOnce({ data: { success: false, error: "Erro ao revogar" } });
+    const sem = await acessoPortal.revogarCertificado("mat-1", "Motivo qualquer").catch((e) => e);
+    expect(sem.status).toBeUndefined();
+    invoke.mockResolvedValueOnce({
+      data: { success: false, error: "Erro ao revogar" },
+      error: { message: "x", context: {} },
+    });
+    const semStatus = await acessoPortal
+      .revogarCertificado("mat-1", "Motivo qualquer")
+      .catch((e) => e);
+    expect(semStatus.status).toBeUndefined();
+  });
+});
+
 describe("liberação sem repetir (T18, M4)", () => {
   it("extrasDaMatricula lê como o servidor: inteiro positivo, senão 0", () => {
     expect(extrasDaMatricula({ tentativas_extras: 3 })).toBe(3);
@@ -191,6 +228,37 @@ describe("liberação sem repetir (T18, M4)", () => {
     expect(f.duracao).toBe(DURACAO_AVISO_SEM_REGISTRO_MS);
     expect(f.duracao).toBeGreaterThanOrEqual(15000);
     expect(f.recarregarMatricula).toBe(false);
+  });
+
+  it("409 e 404 (outro RH já agiu, matrícula ou certificado que já não existe): recarrega a lista da aba (T18, M3)", () => {
+    // o servidor responde "O certificado já está revogado" com 409 e SEM `codigo`: o que o front tem é o status
+    const conflito = Object.assign(new Error("O certificado já está revogado"), { status: 409 });
+    expect(falhaDaAcaoDoRH(conflito).recarregarMatricula).toBe(true);
+    const naoExiste = Object.assign(new Error("Esta matrícula ainda não tem certificado"), {
+      status: 404,
+    });
+    expect(falhaDaAcaoDoRH(naoExiste).recarregarMatricula).toBe(true);
+    // o texto continua o do servidor e o tempo, o padrão
+    expect(falhaDaAcaoDoRH(conflito)).toEqual({
+      texto: "O certificado já está revogado",
+      duracao: undefined,
+      recarregarMatricula: true,
+    });
+  });
+
+  it("sem permissão (403), erro do banco (500) e falha de rede não recarregam a lista", () => {
+    for (const status of [400, 403, 500, 503, undefined]) {
+      expect(
+        falhaDaAcaoDoRH(Object.assign(new Error("falhou"), { status })).recarregarMatricula,
+        String(status)
+      ).toBe(false);
+    }
+    // efeito sem registro é 500 e continua sem recarregar, mesmo que o status venha junto
+    const semRegistro = Object.assign(new Error("NÃO repita"), {
+      codigo: CODIGO_EFEITO_SEM_REGISTRO,
+      status: 500,
+    });
+    expect(falhaDaAcaoDoRH(semRegistro).recarregarMatricula).toBe(false);
   });
 
   it("o campo e os códigos são os mesmos do servidor (funcionario-acesso)", () => {

@@ -3,7 +3,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, ChevronDown, ClipboardCheck, ClipboardList } from "lucide-react";
-import { textoDoItemDeEntrega } from "@/lib/portal-ciencias";
+import {
+  AVISO_HISTORICO_PARCIAL,
+  textoDoItemDeEntrega,
+  tituloDoHistorico,
+} from "@/lib/portal-ciencias";
 import { fmtDataHora } from "./api";
 
 /**
@@ -61,9 +65,11 @@ export function EntregasPendentes({ pendentes, onConfirmar }) {
 
 /**
  * Histórico das entregas que o aluno já confirmou, recolhido por padrão (só leitura). Não desenha nada
- * quando não há nenhuma. O servidor manda as 30 mais recentes.
+ * quando não há nenhuma. O servidor manda só as 30 entregas mais recentes (pendentes e confirmadas
+ * juntas): com `parcial` (o servidor mandou o limite inteiro, `historicoDeCienciasParcial`) o título
+ * não sugere o total e um aviso diz que as mais antigas não aparecem.
  */
-export function HistoricoDeEntregas({ confirmadas }) {
+export function HistoricoDeEntregas({ confirmadas, parcial = false }) {
   if (!confirmadas?.length) return null;
   return (
     <Card>
@@ -71,7 +77,7 @@ export function HistoricoDeEntregas({ confirmadas }) {
         <details className="group">
           <summary className="flex cursor-pointer list-none items-center gap-2 p-4 text-sm font-semibold text-slate-700 [&::-webkit-details-marker]:hidden">
             <ClipboardCheck className="w-4 h-4 shrink-0 text-emerald-600" aria-hidden="true" />
-            <span className="flex-1">{`Entregas confirmadas (${confirmadas.length})`}</span>
+            <span className="flex-1">{tituloDoHistorico(confirmadas.length, parcial)}</span>
             <ChevronDown
               className="w-4 h-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180"
               aria-hidden="true"
@@ -93,6 +99,9 @@ export function HistoricoDeEntregas({ confirmadas }) {
               </li>
             ))}
           </ul>
+          {parcial && (
+            <p className="border-t p-4 text-xs text-slate-500">{AVISO_HISTORICO_PARCIAL}</p>
+          )}
         </details>
       </CardContent>
     </Card>

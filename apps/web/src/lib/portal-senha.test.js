@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
+  avisoDeSenhaLonga,
   confirmacaoConfere,
   confirmacaoDivergiu,
   motivoSenhaInvalida,
@@ -191,6 +192,77 @@ describe("portal-senha: regrasDaSenha (lista mostrada antes de enviar)", () => {
   });
 });
 
+describe("portal-senha: usuário desconhecido (tela recarregada) não mostra 'cumprida' sem avaliar (T27, M1)", () => {
+  const usuarioDe = (lista) => lista.find((r) => r.id === "usuario");
+
+  it("a regra do usuário fica pendente e diz que o servidor confere ao salvar", () => {
+    for (const desconhecido of ["", undefined, null]) {
+      const r = usuarioDe(regrasDaSenha("Obra#2026x", desconhecido));
+      expect(r.ok, String(desconhecido)).toBe(false);
+      expect(r.aoSalvar).toBe(true);
+      expect(r.texto).toMatch(/CPF ou usuário/);
+      expect(r.texto).toMatch(/servidor confere/i);
+    }
+  });
+
+  it("nem a senha igual ao CPF faz a regra aparecer cumprida (o aluno não vê tudo verde à toa)", () => {
+    const regras = regrasDaSenha(CPF, "");
+    expect(usuarioDe(regras).ok).toBe(false);
+    expect(regras.filter((r) => r.id !== "usuario").every((r) => r.ok)).toBe(true);
+  });
+
+  it("com o usuário conhecido nada muda: é uma regra comum, avaliada na hora", () => {
+    const boa = usuarioDe(regrasDaSenha("Obra#2026x", CPF));
+    expect(boa.ok).toBe(true);
+    expect(boa.aoSalvar).toBe(false);
+    expect(boa.texto).toBe("Diferente do seu CPF ou usuário");
+    expect(usuarioDe(regrasDaSenha(CPF, CPF)).ok).toBe(false);
+  });
+
+  it("a regra que fica para o servidor não trava o botão (senão a tela recarregada nunca salvaria)", () => {
+    const dados = { atual: "", nova: "Obra#2026x", confirma: "Obra#2026x", obrigatoria: true };
+    expect(podeTrocarSenha({ ...dados, usuario: "" })).toBe(true);
+    // as outras regras continuam valendo sem o usuário
+    expect(podeTrocarSenha({ ...dados, usuario: "", nova: "123456", confirma: "123456" })).toBe(
+      false
+    );
+    expect(podeTrocarSenha({ ...dados, usuario: "", nova: "abc", confirma: "abc" })).toBe(false);
+  });
+
+  it("todas as regras que a tela consegue conferir cumpridas = o servidor aceitaria (usuário desconhecido)", () => {
+    for (const nova of ["", "abc", "123456", "Obra#2026x", "ab".repeat(37), "SENHA123"]) {
+      const cumpridas = regrasDaSenha(nova, "")
+        .filter((r) => !r.aoSalvar)
+        .every((r) => r.ok);
+      expect(cumpridas, nova).toBe(motivoDoServidor(nova, "") === null);
+    }
+  });
+});
+
+describe("portal-senha: senha longa demais avisa em vez de truncar em silêncio (T27, m4)", () => {
+  it("até 72 caracteres não há aviso", () => {
+    expect(avisoDeSenhaLonga("")).toBeNull();
+    expect(avisoDeSenhaLonga(undefined)).toBeNull();
+    expect(avisoDeSenhaLonga("x".repeat(TAMANHO_MAXIMO_SENHA))).toBeNull();
+  });
+
+  it("acima de 72 caracteres o aviso diz quantos foram e qual é o máximo", () => {
+    const aviso = avisoDeSenhaLonga("x".repeat(TAMANHO_MAXIMO_SENHA + 1));
+    expect(aviso).toContain("73");
+    expect(aviso).toContain(String(TAMANHO_MAXIMO_SENHA));
+    expect(aviso).toMatch(/mais curta/i);
+    expect(avisoDeSenhaLonga("y".repeat(200))).toContain("200");
+  });
+
+  it("a regra do tamanho não fica cumprida e o botão não liga com a senha acima do limite", () => {
+    const longa = "Obra#26".padEnd(TAMANHO_MAXIMO_SENHA + 5, "x");
+    expect(regrasDaSenha(longa, CPF).find((r) => r.id === "tamanho").ok).toBe(false);
+    expect(
+      podeTrocarSenha({ atual: "", nova: longa, confirma: longa, obrigatoria: true, usuario: CPF })
+    ).toBe(false);
+  });
+});
+
 describe("portal-senha: confirmação e senha atual", () => {
   it("confirmacaoConfere exige algo digitado e igual", () => {
     expect(confirmacaoConfere("Obra#2026x", "Obra#2026x")).toBe(true);
@@ -207,6 +279,24 @@ describe("portal-senha: confirmação e senha atual", () => {
     expect(confirmacaoDivergiu("Obra#2026x", "Obra#2027")).toBe(true);
     expect(confirmacaoDivergiu("Obra#2026x", "obra#2026x")).toBe(true);
     expect(confirmacaoDivergiu("Obra#2026x", "Obra#2026xy")).toBe(true);
+  });
+
+  it("confirmacaoDivergiu: o único jeito de avisar é a confirmação NÃO ser o começo da nova senha (T27, m2)", () => {
+    // o que sobrava do critério antigo ("chegou ao tamanho da nova") nunca valia sozinho: confirmação
+    // do tamanho da nova (ou maior) que ainda é o começo dela só existe quando é igual (sem aviso)
+    const novas = ["", "a", "Obra#2026x", "senha longa com espaço"];
+    for (const nova of novas) {
+      for (const confirma of ["", "a", "ab", "Obra", "Obra#2026x", "Obra#2026xy", "senha longa"]) {
+        const esperado = !!confirma && confirma !== nova && !nova.startsWith(confirma);
+        expect(confirmacaoDivergiu(nova, confirma), `${nova} | ${confirma}`).toBe(esperado);
+      }
+    }
+    // confirmação a mais depois de igual à nova: saiu do caminho (a nova NÃO começa por ela)
+    expect(confirmacaoDivergiu("abc", "abcd")).toBe(true);
+    // confirmação mais curta e ainda no caminho: sem aviso
+    expect(confirmacaoDivergiu("abc", "ab")).toBe(false);
+    // sem nova senha digitada ainda, qualquer confirmação já destoa
+    expect(confirmacaoDivergiu("", "a")).toBe(true);
   });
 
   it("senhaNovaIgualAtual só avisa quando as duas foram digitadas", () => {

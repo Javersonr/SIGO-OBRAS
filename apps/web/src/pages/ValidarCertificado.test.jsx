@@ -139,6 +139,27 @@ describe("ResultadoValidacao", () => {
     expect(botaoComTexto(html, "Consultar outro código")).not.toBeNull();
   });
 
+  it("situação que a página não conhece: cartão cinza, nunca 'Autêntico e válido' nem verde (T10, M3)", () => {
+    for (const situacao of ["suspenso", "", null, "VALIDO"]) {
+      const html = tela(<ResultadoValidacao resultado={{ ...achado, situacao }} {...aoLado} />);
+      expect(html, String(situacao)).toContain("Não foi possível confirmar este certificado");
+      expect(html).toContain("confirmar com a empresa emissora");
+      expect(html).not.toContain("Autêntico e válido");
+      expect(html).not.toMatch(/emerald/);
+      expect(html).toContain("border-slate-300");
+      // o fiscal ainda pode imprimir o que viu
+      expect(botaoComTexto(html, "Imprimir")).not.toBeNull();
+    }
+  });
+
+  it("o aviso do hash antigo não diz que a conferência 'não se aplica'", () => {
+    const html = tela(
+      <ResultadoValidacao resultado={{ ...achado, integro: null, hash_versao: 1 }} {...aoLado} />
+    );
+    expect(html).toContain("Não foi possível conferir o selo de integridade");
+    expect(html).not.toMatch(/não se aplica/i);
+  });
+
   it("revogado e vencido continuam podendo ser impressos (a página registra o que o fiscal viu)", () => {
     const revogado = tela(
       <ResultadoValidacao

@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { HardHat, Loader2, Eye, EyeOff, KeyRound, Check, Circle } from "lucide-react";
 import { chamarPortal } from "./api";
 import {
-  TAMANHO_MAXIMO_SENHA,
+  avisoDeSenhaLonga,
   confirmacaoDivergiu,
   normalizarUsuario,
   podeTrocarSenha,
@@ -35,7 +35,7 @@ function Moldura({ titulo, subtitulo, children }) {
   );
 }
 
-function CampoSenha({ id, valor, onChange, autoComplete, rotulo, maxLength }) {
+function CampoSenha({ id, valor, onChange, autoComplete, rotulo }) {
   const [ver, setVer] = useState(false);
   return (
     <div>
@@ -47,7 +47,6 @@ function CampoSenha({ id, valor, onChange, autoComplete, rotulo, maxLength }) {
           value={valor}
           onChange={(e) => onChange(e.target.value)}
           autoComplete={autoComplete}
-          maxLength={maxLength}
           className="h-11 pr-10"
         />
         <button
@@ -75,7 +74,10 @@ function RegrasDaSenha({ regras }) {
           {r.ok ? (
             <Check className="w-3.5 h-3.5 mt-px shrink-0" aria-label="Cumprida" />
           ) : (
-            <Circle className="w-3.5 h-3.5 mt-px shrink-0" aria-label="Pendente" />
+            <Circle
+              className="w-3.5 h-3.5 mt-px shrink-0"
+              aria-label={r.aoSalvar ? "Conferida ao salvar" : "Pendente"}
+            />
           )}
           <span>{r.texto}</span>
         </li>
@@ -178,6 +180,7 @@ export function TrocarSenhaPortal({
   // por conta do servidor, que confere de novo em toda troca.
   const dados = { atual, nova, confirma, obrigatoria, usuario };
   const pode = podeTrocarSenha(dados);
+  const avisoSenhaLonga = avisoDeSenhaLonga(nova) || avisoDeSenhaLonga(confirma);
 
   const salvar = async (e) => {
     e.preventDefault();
@@ -231,8 +234,14 @@ export function TrocarSenhaPortal({
             valor={nova}
             onChange={setNova}
             autoComplete="new-password"
-            maxLength={TAMANHO_MAXIMO_SENHA}
           />
+          {/* sem `maxLength`: o campo cortaria a senha colada em silêncio; o aviso e a regra de tamanho
+              dizem o que houve (T27) */}
+          {avisoSenhaLonga && (
+            <p role="alert" className="text-xs text-red-600">
+              {avisoSenhaLonga}
+            </p>
+          )}
           <RegrasDaSenha regras={regrasDaSenha(nova, usuario)} />
           {!obrigatoria && senhaNovaIgualAtual(nova, atual) && (
             <p className="text-xs text-amber-700">Escolha uma senha diferente da atual</p>
@@ -245,7 +254,6 @@ export function TrocarSenhaPortal({
             valor={confirma}
             onChange={setConfirma}
             autoComplete="new-password"
-            maxLength={TAMANHO_MAXIMO_SENHA}
           />
           {confirmacaoDivergiu(nova, confirma) && (
             <p className="text-xs text-amber-700">As duas senhas não são iguais</p>

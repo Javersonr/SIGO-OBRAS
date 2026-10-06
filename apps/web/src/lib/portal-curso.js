@@ -528,9 +528,17 @@ export const MSG_SERVICO_INDISPONIVEL =
 export const MSG_FALHA_PADRAO = "Algo deu errado. Tente de novo; se continuar, avise o RH.";
 
 // erro da plataforma (Supabase/gateway) que o aluno não consegue resolver: a função respondeu com
-// erro HTTP sem corpo, o gateway caiu, a função não existe ou a resposta não era JSON
+// erro HTTP sem corpo, o gateway caiu, a função não existe, a resposta não era JSON ou o runtime não
+// subiu a função. Frases reais do runtime do Supabase: "Function failed to start (please check logs)"
+// (BOOT_ERROR), "Function failed due to not having enough compute resources (please check logs)"
+// (WORKER_LIMIT) e "Function exited due to an error (please check logs)" (WORKER_ERROR)
 const FALHA_DO_SERVIDOR =
-  /non-2xx|internal server error|bad gateway|service unavailable|gateway time-?out|function (was )?not found|boot_error|worker_limit|is not valid json|unexpected token|unexpected end of json/i;
+  /non-2xx|internal server error|bad gateway|service unavailable|gateway time-?out|function (was )?not found|boot_error|worker_limit|worker_error|please check logs|function failed to start|not having enough compute resources|function exited due to an error|is not valid json|unexpected token|unexpected end of json/i;
+
+// `code` que o runtime do Supabase põe no CORPO do erro (o cliente o deixa em `erro.extra`: o texto da
+// mensagem vem do mesmo corpo, em inglês). NOT_FOUND = função que não existe. O `codigo` do portal
+// (SESSAO, LIMITE...) é outro campo e nunca entra aqui.
+const CODIGOS_DE_PLATAFORMA = new Set(["BOOT_ERROR", "WORKER_LIMIT", "WORKER_ERROR", "NOT_FOUND"]);
 
 // a requisição nem chegou ao servidor (rede, tempo esgotado), no vocabulário do supabase-js e dos navegadores
 const FALHA_DE_REDE =
@@ -542,9 +550,40 @@ const FALHA_DE_REDE =
  * como veio.
  */
 export function mensagemDeFalha(erro) {
+  const codigo = erro?.extra?.code;
+  if (typeof codigo === "string" && CODIGOS_DE_PLATAFORMA.has(codigo.trim().toUpperCase())) {
+    return MSG_SERVICO_INDISPONIVEL;
+  }
   const texto = typeof erro?.message === "string" ? erro.message.trim() : "";
   if (!texto) return MSG_FALHA_PADRAO;
   // o servidor vem antes da rede: "Gateway Timeout" tem "timeout", mas quem falhou foi o servidor
   if (FALHA_DO_SERVIDOR.test(texto)) return MSG_SERVICO_INDISPONIVEL;
   return FALHA_DE_REDE.test(texto) ? MSG_SEM_CONEXAO : texto;
+}
+
+// ------------------------------------------- aviso passageiro de envio (T31, M2)
+
+/**
+ * Códigos do servidor que recusam UM envio por excesso, sem nada de errado com o aluno: 409
+ * `SINAL_CONCORRENTE` (o progresso chegou ao mesmo tempo por outra aba ou aparelho) e 429 `LIMITE`
+ * (muitas ações em pouco tempo). O aviso passa sozinho no próximo envio que der certo.
+ */
+export const CODIGOS_DE_AVISO_PASSAGEIRO = ["SINAL_CONCORRENTE", "LIMITE"];
+
+/**
+ * Texto do erro de um envio, se ele é um aviso passageiro (`CODIGOS_DE_AVISO_PASSAGEIRO`); "" nos
+ * demais (sessão, leitura incompleta, rede...), que ficam na tela até o aluno fechar. Quem mostra o
+ * erro guarda este texto para saber, no próximo envio certo, qual aviso pode tirar.
+ */
+export function textoDoAvisoPassageiro(erro) {
+  return CODIGOS_DE_AVISO_PASSAGEIRO.includes(erro?.codigo) ? mensagemDeFalha(erro) : "";
+}
+
+/**
+ * O erro que a tela deve mostrar depois de um envio que deu certo. Sai só o aviso passageiro que ainda
+ * está na tela (`avisoDoEnvio`, de `textoDoAvisoPassageiro`); outro erro que o aluno esteja lendo
+ * (projeto pedagógico, por exemplo) fica.
+ */
+export function erroAposEnvioCerto(erroNaTela, avisoDoEnvio) {
+  return avisoDoEnvio && erroNaTela === avisoDoEnvio ? "" : erroNaTela;
 }

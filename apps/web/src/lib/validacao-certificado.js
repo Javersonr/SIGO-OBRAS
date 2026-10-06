@@ -3,11 +3,15 @@
  * Puro (sem DOM, sem sigoClient), com teste ao lado. A decisão de verdade é do servidor
  * (supabase/functions/validar-certificado/regras.ts): ele devolve `situacao`, e aqui só viram texto e cor.
  *
- * Os quatro estados:
+ * Os quatro estados do servidor:
  *  - valido:     verde    "Autêntico e válido"
  *  - vencido:    âmbar    "Autêntico, vencido em DD/MM/AAAA"
  *  - revogado:   vermelho "Revogado"
  *  - divergente: vermelho "Dados não conferem com o registro" (o hash da emissão não bate com o banco)
+ * e um quinto, só desta página: `indeterminada` (cinza, "Não foi possível confirmar"), para qualquer
+ * resposta que ela não sabe interpretar. A página FALHA FECHADO: o verde só aparece com
+ * `situacao === "valido"` (T10, M3); situação nova, resposta incompleta ou contraditória nunca vira
+ * "Autêntico e válido".
  */
 
 /** AAAA-MM-DD (ou timestamp) → DD/MM/AAAA; vazio → "—". */
@@ -15,18 +19,35 @@ export function dataBr(d) {
   return d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—";
 }
 
+const SITUACOES_DO_SERVIDOR = ["valido", "vencido", "revogado", "divergente"];
+
 /**
- * "valido" | "vencido" | "revogado" | "divergente", ou null se não há certificado.
- * Servidor ainda sem a T10 (resposta sem `situacao`): revogado ou válido, como era antes.
+ * "valido" | "vencido" | "revogado" | "divergente" | "indeterminada", ou null se não há certificado.
+ *  - O servidor manda `situacao`: só os quatro valores conhecidos valem; qualquer outro (inclusive
+ *    vazio, nulo e texto com outra caixa) é "indeterminada".
+ *  - `valido` e `vencido` dizem "autêntico": se a mesma resposta traz `revogado: true` ou
+ *    `integro: false` (e, no `valido`, `vencido: true`), ela se contradiz e vira "indeterminada".
+ *  - Servidor ainda sem a T10 (resposta SEM o campo `situacao`): `revogado: true` é revogado e só
+ *    `valido: true` é válido, como era antes; o resto é "indeterminada".
  */
 export function situacaoDoResultado(resultado) {
   if (!resultado || resultado.encontrado === false) return null;
-  if (resultado.situacao) return resultado.situacao;
-  return resultado.revogado ? "revogado" : "valido";
+  if (resultado.situacao === undefined) {
+    if (resultado.revogado === true) return "revogado";
+    return resultado.valido === true ? "valido" : "indeterminada";
+  }
+  const situacao = resultado.situacao;
+  if (!SITUACOES_DO_SERVIDOR.includes(situacao)) return "indeterminada";
+  const dizAutentico = situacao === "valido" || situacao === "vencido";
+  if (dizAutentico && (resultado.revogado === true || resultado.integro === false)) {
+    return "indeterminada";
+  }
+  if (situacao === "valido" && resultado.vencido === true) return "indeterminada";
+  return situacao;
 }
 
 /**
- * Título, cor (`tom`: "verde" | "ambar" | "vermelho") e, quando há, orientação. `validade` é a do
+ * Título, cor (`tom`: "verde" | "ambar" | "vermelho" | "cinza") e, quando há, orientação. `validade` é a do
  * certificado (AAAA-MM-DD), usada no estado vencido.
  */
 export function apresentacaoDoResultado(resultado, { validade } = {}) {
@@ -54,19 +75,31 @@ export function apresentacaoDoResultado(resultado, { validade } = {}) {
         "Não aceite este certificado sem confirmar com a empresa emissora.",
     };
   }
-  return { situacao: "valido", tom: "verde", titulo: "Autêntico e válido", detalhe: null };
+  if (situacao === "valido") {
+    return { situacao, tom: "verde", titulo: "Autêntico e válido", detalhe: null };
+  }
+  // qualquer outra coisa: a página não sabe o que a resposta quer dizer e não afirma nada
+  return {
+    situacao: "indeterminada",
+    tom: "cinza",
+    titulo: "Não foi possível confirmar este certificado",
+    detalhe:
+      "A consulta devolveu um resultado que esta página não sabe interpretar. " +
+      "Não aceite este certificado sem confirmar com a empresa emissora.",
+  };
 }
 
 /**
- * Aviso discreto para certificado emitido antes do hash reproduzível: o servidor não consegue refazer o
- * SHA-256 dele (`integro: null`). Não reprova o certificado; só diz que a conferência não se aplica.
- * Servidor sem a T10 (campo `integro` ausente) não mostra aviso.
+ * Aviso discreto para o certificado cujo SHA-256 o servidor não conseguiu confirmar (`integro: null`:
+ * emitido antes do hash reproduzível). A conferência foi tentada e não bateu: o texto não diz que ela
+ * "não se aplica", e manda confirmar com quem emitiu. Servidor sem a T10 (campo `integro` ausente) não
+ * mostra aviso.
  */
 export function avisoDeIntegridade(resultado) {
   if (!resultado || resultado.integro !== null) return null;
   return (
-    "Certificado emitido antes do selo de integridade atual: a conferência automática do SHA-256 " +
-    "não se aplica a ele."
+    "Não foi possível conferir o selo de integridade (SHA-256) deste certificado, emitido antes do " +
+    "selo atual. Confirme com a empresa emissora."
   );
 }
 

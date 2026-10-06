@@ -7,6 +7,7 @@ import {
   textoConfirmarRemocao,
   novoRascunho,
   mesmoFormulario,
+  formularioDeAulaSegueOMesmo,
   criarControleDeCarga,
   certificadosPorMatricula,
 } from "./ead-gestao";
@@ -401,5 +402,90 @@ describe("certificadosPorMatricula", () => {
     expect(certificadosPorMatricula(null).size).toBe(0);
     const mapa = certificadosPorMatricula([null, {}, { id: "c1", matricula_id: null }]);
     expect(mapa.size).toBe(0);
+  });
+});
+
+describe("formularioDeAulaSegueOMesmo (depois do envio lento de uma aula, A2)", () => {
+  const cursoA = { id: "curso-a", nome: "Curso A" };
+  const cursoB = { id: "curso-b", nome: "Curso B" };
+
+  it("mesma empresa e o mesmo curso ainda aberto: o formulário da aula enviada pode ser limpo", () => {
+    expect(
+      formularioDeAulaSegueOMesmo({
+        mesmaEmpresa: true,
+        // o RH segue digitando no curso A (o objeto mudou, o id é o mesmo)
+        cursoAberto: { ...cursoA, nome: "Curso A (editado)" },
+        cursoDoEnvio: cursoA,
+      })
+    ).toBe(true);
+  });
+
+  it("o RH abriu OUTRO curso durante o envio: o que ele digitou lá não pode ser apagado", () => {
+    expect(
+      formularioDeAulaSegueOMesmo({ mesmaEmpresa: true, cursoAberto: cursoB, cursoDoEnvio: cursoA })
+    ).toBe(false);
+  });
+
+  it("o painel foi fechado durante o envio: não há formulário a limpar", () => {
+    expect(
+      formularioDeAulaSegueOMesmo({ mesmaEmpresa: true, cursoAberto: null, cursoDoEnvio: cursoA })
+    ).toBe(false);
+    expect(
+      formularioDeAulaSegueOMesmo({
+        mesmaEmpresa: true,
+        cursoAberto: undefined,
+        cursoDoEnvio: cursoA,
+      })
+    ).toBe(false);
+  });
+
+  it("a empresa mudou durante o envio: o formulário já é de outra empresa, mesmo com o mesmo id", () => {
+    expect(
+      formularioDeAulaSegueOMesmo({
+        mesmaEmpresa: false,
+        cursoAberto: cursoA,
+        cursoDoEnvio: cursoA,
+      })
+    ).toBe(false);
+  });
+
+  it("curso novo ainda sem id (rascunho) não identifica o formulário: nunca confere", () => {
+    const rascunho = novoRascunho({ nome: "Novo" });
+    expect(
+      formularioDeAulaSegueOMesmo({
+        mesmaEmpresa: true,
+        cursoAberto: rascunho,
+        cursoDoEnvio: rascunho,
+      })
+    ).toBe(true); // o mesmo rascunho (token) ainda aberto vale
+    expect(
+      formularioDeAulaSegueOMesmo({
+        mesmaEmpresa: true,
+        cursoAberto: novoRascunho({ nome: "Outro" }),
+        cursoDoEnvio: rascunho,
+      })
+    ).toBe(false);
+    expect(
+      formularioDeAulaSegueOMesmo({
+        mesmaEmpresa: true,
+        cursoAberto: { nome: "sem id nem token" },
+        cursoDoEnvio: { nome: "sem id nem token" },
+      })
+    ).toBe(false);
+  });
+
+  it("aceita a consulta da empresa que o controle de carga faz (mesmaEmpresa)", () => {
+    const cargas = criarControleDeCarga();
+    cargas.definirEmpresa("empresa-1");
+    const doEnvio = cargas.mesmaEmpresa("empresa-1");
+    cargas.definirEmpresa("empresa-2");
+    expect(
+      formularioDeAulaSegueOMesmo({
+        mesmaEmpresa: cargas.mesmaEmpresa("empresa-1"),
+        cursoAberto: cursoA,
+        cursoDoEnvio: cursoA,
+      })
+    ).toBe(false);
+    expect(doEnvio).toBe(true);
   });
 });

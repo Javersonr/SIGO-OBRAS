@@ -24,11 +24,15 @@ export const CODIGO_CONFLITO = "CONFLITO";
 export const CODIGO_EFEITO_SEM_REGISTRO = "EFEITO_SEM_REGISTRO";
 
 async function chamar(acao, dados = {}) {
-  const { data } = await sigo.functions.invoke("funcionarioAcesso", { acao, ...dados });
+  const { data, error } = await sigo.functions.invoke("funcionarioAcesso", { acao, ...dados });
   if (data?.success === false) {
     const erro = new Error(data.error || "Erro no acesso ao portal");
     // o sigoClient mantém no `data` os campos extras do erro do servidor (ex.: `codigo`)
     if (data.codigo) erro.codigo = data.codigo;
+    // e a resposta HTTP no `error.context`: nem todo erro leva `codigo` (o "certificado já está
+    // revogado" é só um 409), e a tela precisa do status para saber que o que ela mostra ficou velho
+    const status = Number(error?.context?.status);
+    if (Number.isInteger(status) && status > 0) erro.status = status;
     throw erro;
   }
   return data;
@@ -66,16 +70,23 @@ export const DURACAO_AVISO_SEM_REGISTRO_MS = 20000;
 
 /**
  * O que a tela do RH faz quando uma ação de matrícula (liberar, revogar) falha: o texto do servidor, quanto
- * tempo mostrar e se a matrícula precisa ser recarregada (conflito: o número que a tela tinha já não vale,
- * e sem recarregar todo clique seguinte repetiria o mesmo conflito).
+ * tempo mostrar e se a matrícula precisa ser recarregada, painel E lista da aba (`recarregarMatricula`).
+ * Recarrega quando o que a tela mostra ficou velho: conflito (`CONFLITO`: o número de tentativas que a tela
+ * tinha já não vale), HTTP 409 (outro RH já revogou: o servidor responde só "já está revogado", sem
+ * `codigo`) e 404 (matrícula ou certificado que já não existe). Sem recarregar, todo clique seguinte repetiria o
+ * mesmo erro e a lixeira da lista seguiria achando que o certificado é válido (T18, M3). Já "efeito sem
+ * registro" (500) NÃO recarrega: a tela antiga é o que impede o servidor de repetir a liberação.
  * @returns {{ texto: string, duracao: number | undefined, recarregarMatricula: boolean }}
  */
 export function falhaDaAcaoDoRH(erro) {
   const codigo = erro?.codigo;
+  const status = Number(erro?.status);
   return {
     texto: erro?.message || "Não foi possível concluir a ação",
     duracao: codigo === CODIGO_EFEITO_SEM_REGISTRO ? DURACAO_AVISO_SEM_REGISTRO_MS : undefined,
-    recarregarMatricula: codigo === CODIGO_CONFLITO,
+    recarregarMatricula:
+      codigo !== CODIGO_EFEITO_SEM_REGISTRO &&
+      (codigo === CODIGO_CONFLITO || status === 409 || status === 404),
   };
 }
 

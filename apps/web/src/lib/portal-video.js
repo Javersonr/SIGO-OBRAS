@@ -35,6 +35,15 @@ export const MSG_YOUTUBE_FALHOU =
   "Não foi possível carregar o YouTube. Verifique sua conexão (ou algum bloqueador de anúncios) e tente de novo.";
 export const MSG_VIDEO_RENOVADO =
   "O acesso ao vídeo foi renovado. Aperte o play para continuar de onde parou.";
+export const MSG_PLAYER_DEMOROU =
+  "O vídeo está demorando demais para carregar. Verifique sua conexão (ou algum bloqueador de anúncios) e tente de novo.";
+
+/**
+ * Depois que a IFrame API do YouTube carrega, o player tem este tempo para avisar que está pronto
+ * (`onReady`). Passou disso, "Carregando vídeo..." vira falha com "Tentar de novo" (o script já tem o
+ * seu próprio tempo limite, em `criarCarregadorYouTube`).
+ */
+export const LIMITE_PLAYER_YOUTUBE_MS = 20000;
 
 const positivo = (n) => {
   const v = Number(n);
@@ -206,5 +215,35 @@ export function criarCarregadorYouTube({
       documento.head.appendChild(script);
     });
     return promessa;
+  };
+}
+
+/**
+ * Vigia do player do YouTube (A1, m5): se o player não avisar que está pronto dentro de `limiteMs`,
+ * chama `aoEstourar` UMA vez (o iframe pode nunca dizer nada, por exemplo com uma extensão que o
+ * bloqueia, e o aluno ficaria para sempre diante de "Carregando vídeo..."). `parar()` desarma: use
+ * quando o player ficar pronto, falhar ou for destruído; um disparo que já estava na fila depois
+ * disso não faz nada. `agendar`/`cancelar` entram por parâmetro (teste sem relógio).
+ */
+export function criarVigiaDoPlayer({
+  aoEstourar,
+  limiteMs = LIMITE_PLAYER_YOUTUBE_MS,
+  agendar = setTimeout,
+  cancelar = clearTimeout,
+}) {
+  let ativo = true;
+  let timer = agendar(() => {
+    if (!ativo) return;
+    ativo = false;
+    timer = null;
+    aoEstourar();
+  }, limiteMs);
+  return {
+    parar() {
+      if (!ativo) return;
+      ativo = false;
+      cancelar(timer);
+      timer = null;
+    },
   };
 }

@@ -94,6 +94,24 @@ describe("HistoricoDeEntregas", () => {
     expect(html).not.toMatch(EMOJI);
   });
 
+  it("histórico parcial (o servidor manda só as 30 mais recentes): não sugere o total e avisa (T36)", () => {
+    const html = tela(
+      <HistoricoDeEntregas confirmadas={[confirmada("a"), confirmada("b")]} parcial />
+    );
+    expect(html).toContain("Últimas entregas confirmadas (2)");
+    expect(html).not.toContain("Entregas confirmadas (2)");
+    expect(html).toContain("30 entregas mais recentes");
+    expect(html).toContain("as mais antigas não são mostradas");
+    expect(html).not.toMatch(EMOJI);
+  });
+
+  it("lista completa: o título e o resto continuam como antes, sem o aviso", () => {
+    const html = tela(<HistoricoDeEntregas confirmadas={[confirmada("a")]} />);
+    expect(html).toContain("Entregas confirmadas (1)");
+    expect(html).not.toContain("Últimas");
+    expect(html).not.toContain("mais recentes");
+  });
+
   it("é só leitura: não tem botão de ciência", () => {
     const html = tela(<HistoricoDeEntregas confirmadas={[confirmada("a")]} />);
     expect(html).not.toContain("<button");
