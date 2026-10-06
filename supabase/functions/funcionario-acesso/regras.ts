@@ -20,10 +20,13 @@ export const MENSAGEM_SEM_EDICAO: Record<string, string> = {
     "Sem permissão para revogar o certificado: é preciso poder editar Funcionários em Segurança do Trabalho",
 };
 
-/** Resultado de uma conferência: segue (`ok`) ou recusa com o status HTTP e o texto para o RH. */
+/**
+ * Resultado de uma conferência: segue (`ok`) ou recusa com o status HTTP e o texto para o RH. `codigo`
+ * (opcional) é o que a tela usa para decidir o que fazer; o texto pode mudar.
+ */
 export type Conferencia<T = unknown> =
   | ({ ok: true } & T)
-  | { ok: false; status: number; mensagem: string };
+  | { ok: false; status: number; mensagem: string; codigo?: string };
 
 // uuid em qualquer caixa; evita mandar lixo ao banco (22P02 viraria 500)
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -68,13 +71,40 @@ interface MatriculaParaLiberar {
   deleted_at?: string | null;
 }
 
+/** Nome do campo do corpo com o número de tentativas extras que a tela do RH mostrava (T18, M4). */
+export const CAMPO_EXTRAS_VISTAS = "tentativas_extras_vistas";
+
+/**
+ * O número de tentativas extras que a tela mostrava quando o RH clicou em "Liberar". É OBRIGATÓRIO: a
+ * liberação só vale sobre esse número (ver `decidirLiberacao`), então um pedido sem ele é recusado em vez de
+ * valer "sobre o que estiver no banco". Só inteiro não negativo, vindo como número no JSON.
+ */
+export function validarExtrasVistas(bruto: unknown): Conferencia<{ extrasVistas: number }> {
+  if (typeof bruto !== "number" || !Number.isSafeInteger(bruto) || bruto < 0) {
+    return {
+      ok: false,
+      status: 400,
+      mensagem: `${CAMPO_EXTRAS_VISTAS} inválido: atualize a página e tente de novo`,
+    };
+  }
+  return { ok: true, extrasVistas: bruto };
+}
+
 /**
  * Pode liberar mais uma tentativa? Soma 1 às extras da matrícula (o limite do curso não muda). Quem já
- * foi aprovado não precisa de tentativa. `extrasAtuais` é o valor lido, que o servidor usa para gravar
- * só se ninguém mudou no meio (dois cliques seguidos não somam um só).
+ * foi aprovado não precisa de tentativa.
+ *
+ * Idempotência (T18, M4): a liberação grava o efeito (as extras) e depois o evento da trilha. Se o evento
+ * e o desfazer falham, a matrícula fica com uma extra a mais e SEM evento (`sem_registro`); um segundo
+ * clique, lendo o valor novo do banco, somaria outra extra para um evento só. Por isso o pedido traz o
+ * número que a tela mostrava (`extrasVistas`) e o servidor só soma se a matrícula AINDA tem esse número;
+ * senão responde 409 `CONFLITO`, sem gravar nada. A tela que ficou com o número antigo depois de uma falha
+ * não consegue repetir a liberação. `extrasAtuais` (o valor lido, igual a `extrasVistas` quando segue) é o
+ * que o servidor usa para gravar só se ninguém mudou no meio (dois cliques seguidos não somam um só).
  */
 export function decidirLiberacao(
-  matricula: MatriculaParaLiberar | null | undefined
+  matricula: MatriculaParaLiberar | null | undefined,
+  extrasVistas: number
 ): Conferencia<{ extrasAtuais: number; extrasNovas: number }> {
   if (!matricula || matricula.deleted_at) {
     return { ok: false, status: 404, mensagem: "Matrícula não encontrada" };
@@ -88,6 +118,17 @@ export function decidirLiberacao(
   }
   const lidas = Number(matricula.tentativas_extras);
   const extrasAtuais = Number.isInteger(lidas) && lidas > 0 ? lidas : 0;
+  if (extrasVistas !== extrasAtuais) {
+    return {
+      ok: false,
+      status: 409,
+      codigo: "CONFLITO",
+      mensagem:
+        `As tentativas extras desta matrícula mudaram desde que a tela foi carregada (a tela mostrava ` +
+        `${extrasVistas}, agora são ${extrasAtuais}). Nada foi liberado. Confira a trilha de auditoria e ` +
+        "atualize a tela antes de liberar de novo.",
+    };
+  }
   return { ok: true, extrasAtuais, extrasNovas: extrasAtuais + 1 };
 }
 
@@ -253,7 +294,9 @@ export type ResultadoDoRegistro = "registrado" | "desfeito" | "sem_registro";
  * também falha (ou não atinge a linha), uma última tentativa de gravar o evento: se ela passa, efeito e
  * registro ficam em dia. Só quando as três falham sobra `sem_registro`: o efeito está gravado SEM evento
  * e SEM como desfazer, e repetir o pedido pioraria (a liberação somaria mais uma tentativa extra para um
- * evento só). Quem chama responde com `falhaDoRegistro` e deixa rastro no log. Nunca lança.
+ * evento só). Repetir a liberação com a tela antiga é barrado por `decidirLiberacao` (409 `CONFLITO`:
+ * o pedido traz o número de extras que a tela mostrava). Quem chama responde com `falhaDoRegistro` e
+ * deixa rastro no log. Nunca lança.
  */
 export async function registrarOuDesfazer(p: {
   registrar: () => Promise<boolean>;

@@ -8,7 +8,8 @@
  *                                                      (já tem acesso: 409 com `codigo: "JA_TEM_ACESSO"`)
  *   { acao:"redefinir", funcionario_id }             → { usuario, senha_provisoria }
  *   { acao:"ativo", funcionario_id, ativo:boolean }  → { ativo }
- *   { acao:"liberar_tentativa", matricula_id }       → { tentativas_extras } (T18)
+ *   { acao:"liberar_tentativa", matricula_id, tentativas_extras_vistas }
+ *                                                    → { tentativas_extras } (T18)
  *   { acao:"revogar_certificado", matricula_id, motivo }
  *                                                    → { revogado, aviso_whatsapp } (T18)
  *
@@ -23,7 +24,9 @@
  * aluno por WhatsApp, sem derrubar a revogação se o aviso falhar ou demorar: o aviso tem
  * tempo limite). Sem o evento a ação é desfeita (500 `TRILHA_FALHOU`, pode repetir); se nem
  * desfazer dá, o efeito fica gravado sem evento e a resposta é 500 `EFEITO_SEM_REGISTRO`, que
- * manda NÃO repetir e avisar o suporte (a liberação repetida somaria outra tentativa extra).
+ * manda NÃO repetir e avisar o suporte. O servidor também barra a repetição: a liberação traz o
+ * número de extras que a tela mostrava (`tentativas_extras_vistas`, obrigatório) e só soma se a
+ * matrícula ainda tem esse número; senão 409 `CONFLITO` e nada é gravado.
  *
  * A senha provisória volta UMA vez (para o RH entregar); no primeiro acesso o
  * funcionário cria a própria senha, que ninguém do RH conhece.
@@ -56,6 +59,7 @@ import {
   motivoDaRevogacao,
   registrarOuDesfazer,
   textoAvisoRevogacao,
+  validarExtrasVistas,
   validarMatriculaId,
 } from "./regras.ts";
 
@@ -72,6 +76,7 @@ interface Body {
   ativo?: boolean;
   matricula_id?: string;
   motivo?: string;
+  tentativas_extras_vistas?: unknown;
 }
 
 type Staff = { email: string; is_super_admin: boolean; empresa_id: string | null };
@@ -124,8 +129,10 @@ async function matriculaDoChamador(
 }
 
 /**
- * Libera mais uma tentativa da avaliação. A soma só grava se a matrícula ainda tem o valor lido (dois
- * cliques seguidos não perdem uma liberação) e o evento `tentativa_liberada` é o que faz o portal
+ * Libera mais uma tentativa da avaliação. Só soma se a matrícula tem as extras que a TELA mostrava
+ * (`extrasVistas`, do pedido): depois de uma falha sem registro na trilha, repetir com a tela antiga dá
+ * 409 em vez de somar de novo (T18, M4). A soma também só grava se a matrícula ainda tem o valor lido
+ * (dois cliques seguidos não perdem uma liberação) e o evento `tentativa_liberada` é o que faz o portal
  * ignorar o intervalo: sem o evento a liberação é desfeita, para a trilha e a matrícula não divergirem.
  */
 async function liberarTentativa(
@@ -134,10 +141,30 @@ async function liberarTentativa(
   req: Request,
   staff: Staff,
   // deno-lint-ignore no-explicit-any
-  mat: any
+  mat: any,
+  extrasVistas: number
 ): Promise<Response> {
-  const decisao = decidirLiberacao(mat);
-  if (!decisao.ok) return fail(decisao.mensagem, decisao.status);
+  const decisao = decidirLiberacao(mat, extrasVistas);
+  if (!decisao.ok) {
+    if (decisao.codigo === "CONFLITO") {
+      // nada foi gravado; o log ajuda o suporte a conferir (a trilha pode não ter o evento da anterior)
+      console.warn(
+        "[funcionario-acesso] liberar_tentativa recusada: a tela mostrava",
+        extrasVistas,
+        "tentativas extras e a matrícula tem",
+        mat.tentativas_extras ?? 0,
+        "(pode ser o 2º clique depois de uma falha sem registro). Matrícula:",
+        mat.id,
+        "Autor:",
+        staff.email
+      );
+    }
+    return fail(
+      decisao.mensagem,
+      decisao.status,
+      decisao.codigo ? { codigo: decisao.codigo } : undefined
+    );
+  }
 
   const { data: gravadas, error } = await supabase
     .from("treinamento_matricula")
@@ -378,15 +405,20 @@ Deno.serve(
       const idDaMatricula = validarMatriculaId(body.matricula_id);
       if (!idDaMatricula.ok) return fail(idDaMatricula.mensagem, idDaMatricula.status);
       let motivo = "";
+      let extrasVistas = 0;
       if (acao === "revogar_certificado") {
         const m = motivoDaRevogacao(body.motivo);
         if (!m.ok) return fail(m.mensagem, m.status);
         motivo = m.motivo;
+      } else {
+        const v = validarExtrasVistas(body.tentativas_extras_vistas);
+        if (!v.ok) return fail(v.mensagem, v.status);
+        extrasVistas = v.extrasVistas;
       }
       const mat = await matriculaDoChamador(supabase, staff, idDaMatricula.id);
       if (!mat || mat.deleted_at) return fail("Matrícula não encontrada", 404);
       return acao === "liberar_tentativa"
-        ? liberarTentativa(supabase, req, staff, mat)
+        ? liberarTentativa(supabase, req, staff, mat, extrasVistas)
         : revogarCertificado(supabase, req, staff, mat, motivo);
     }
 

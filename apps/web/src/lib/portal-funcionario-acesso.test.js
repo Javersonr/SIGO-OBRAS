@@ -13,9 +13,14 @@ import {
   acessoPortal,
   avisarNoPortal,
   avisoDaRevogacao,
+  CODIGO_CONFLITO,
+  CODIGO_EFEITO_SEM_REGISTRO,
   CODIGO_JA_TEM_ACESSO,
+  DURACAO_AVISO_SEM_REGISTRO_MS,
   MOTIVO_REVOGACAO_MAX,
   MOTIVO_REVOGACAO_MIN,
+  extrasDaMatricula,
+  falhaDaAcaoDoRH,
   validarMotivoRevogacao,
 } from "./portal-funcionario-acesso";
 
@@ -116,14 +121,21 @@ describe("avisarNoPortal", () => {
 });
 
 describe("ações de matrícula do RH (T18)", () => {
-  it("liberarTentativa chama o servidor só com a matrícula (a identidade vem da sessão)", async () => {
+  it("liberarTentativa manda a matrícula e as extras que a tela mostrava (a identidade vem da sessão)", async () => {
     invoke.mockResolvedValueOnce({ data: { success: true, tentativas_extras: 2 } });
-    const r = await acessoPortal.liberarTentativa("mat-1");
+    const r = await acessoPortal.liberarTentativa("mat-1", 1);
     expect(invoke).toHaveBeenCalledWith("funcionarioAcesso", {
       acao: "liberar_tentativa",
       matricula_id: "mat-1",
+      tentativas_extras_vistas: 1,
     });
     expect(r.tentativas_extras).toBe(2);
+  });
+
+  it("liberarTentativa manda o 0 quando a tela mostrava 0 (zero é um valor, não ausência)", async () => {
+    invoke.mockResolvedValueOnce({ data: { success: true, tentativas_extras: 1 } });
+    await acessoPortal.liberarTentativa("mat-1", 0);
+    expect(invoke.mock.calls[0][1].tentativas_extras_vistas).toBe(0);
   });
 
   it("revogarCertificado manda a matrícula e o motivo", async () => {
@@ -143,9 +155,59 @@ describe("ações de matrícula do RH (T18)", () => {
     invoke.mockResolvedValueOnce({
       data: { success: false, error: "A matrícula mudou agora há pouco.", codigo: "CONFLITO" },
     });
-    const erro = await acessoPortal.liberarTentativa("mat-1").catch((e) => e);
+    const erro = await acessoPortal.liberarTentativa("mat-1", 1).catch((e) => e);
     expect(erro.message).toBe("A matrícula mudou agora há pouco.");
     expect(erro.codigo).toBe("CONFLITO");
+  });
+});
+
+describe("liberação sem repetir (T18, M4)", () => {
+  it("extrasDaMatricula lê como o servidor: inteiro positivo, senão 0", () => {
+    expect(extrasDaMatricula({ tentativas_extras: 3 })).toBe(3);
+    for (const ruim of [0, null, undefined, -2, 1.5, Number.NaN, "x", {}]) {
+      expect(extrasDaMatricula({ tentativas_extras: ruim }), String(ruim)).toBe(0);
+    }
+    expect(extrasDaMatricula(undefined)).toBe(0);
+    expect(extrasDaMatricula(null)).toBe(0);
+  });
+
+  it("falha comum: mostra o texto do servidor, tempo padrão, sem recarregar a matrícula", () => {
+    const f = falhaDaAcaoDoRH(Object.assign(new Error("Sem permissão"), { codigo: "OUTRO" }));
+    expect(f).toEqual({ texto: "Sem permissão", duracao: undefined, recarregarMatricula: false });
+    expect(falhaDaAcaoDoRH(new Error("")).texto).toMatch(/Não foi possível concluir/);
+    expect(falhaDaAcaoDoRH(undefined).texto).toMatch(/Não foi possível concluir/);
+  });
+
+  it("conflito: recarrega a matrícula (o número que a tela tinha já não vale)", () => {
+    const f = falhaDaAcaoDoRH(Object.assign(new Error("mudou"), { codigo: CODIGO_CONFLITO }));
+    expect(f.recarregarMatricula).toBe(true);
+    expect(f.duracao).toBeUndefined();
+  });
+
+  it("efeito sem registro: o aviso de NÃO repetir fica mais tempo e a matrícula NÃO é recarregada", () => {
+    const f = falhaDaAcaoDoRH(
+      Object.assign(new Error("NÃO repita"), { codigo: CODIGO_EFEITO_SEM_REGISTRO })
+    );
+    expect(f.duracao).toBe(DURACAO_AVISO_SEM_REGISTRO_MS);
+    expect(f.duracao).toBeGreaterThanOrEqual(15000);
+    expect(f.recarregarMatricula).toBe(false);
+  });
+
+  it("o campo e os códigos são os mesmos do servidor (funcionario-acesso)", () => {
+    const ler = (nome) =>
+      readFileSync(
+        new URL(`../../../../supabase/functions/funcionario-acesso/${nome}`, import.meta.url),
+        "utf8"
+      );
+    const regras = ler("regras.ts");
+    const campo = /CAMPO_EXTRAS_VISTAS = "([a-z_]+)"/.exec(regras)?.[1];
+    expect(campo).toBe("tentativas_extras_vistas");
+    invoke.mockResolvedValueOnce({ data: { success: true } });
+    return acessoPortal.liberarTentativa("mat-1", 4).then(() => {
+      expect(Object.keys(invoke.mock.calls[0][1])).toContain(campo);
+      expect(regras).toContain(`codigo: "${CODIGO_CONFLITO}"`);
+      expect(regras).toContain(`"${CODIGO_EFEITO_SEM_REGISTRO}"`);
+    });
   });
 });
 

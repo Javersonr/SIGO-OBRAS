@@ -15,6 +15,14 @@ export const urlPortal = () => urlPublica("/PortalFuncionario");
  */
 export const CODIGO_JA_TEM_ACESSO = "JA_TEM_ACESSO";
 
+/**
+ * Outros códigos do `funcionario-acesso` (T18). `CONFLITO` (409): a matrícula mudou desde que a tela foi
+ * carregada (a tela mostrava um número de tentativas extras que já não vale). `EFEITO_SEM_REGISTRO` (500):
+ * a ação ficou gravada, mas o registro na trilha falhou e não deu para desfazer.
+ */
+export const CODIGO_CONFLITO = "CONFLITO";
+export const CODIGO_EFEITO_SEM_REGISTRO = "EFEITO_SEM_REGISTRO";
+
 async function chamar(acao, dados = {}) {
   const { data } = await sigo.functions.invoke("funcionarioAcesso", { acao, ...dados });
   if (data?.success === false) {
@@ -32,11 +40,44 @@ export const acessoPortal = {
     chamar("criar", { funcionario_id: funcionarioId, usuario: usuario || undefined }),
   redefinir: (funcionarioId) => chamar("redefinir", { funcionario_id: funcionarioId }),
   ativo: (funcionarioId, ativo) => chamar("ativo", { funcionario_id: funcionarioId, ativo }),
-  // ações de matrícula (T18): o servidor confere a permissão, grava o evento com o e-mail do RH
-  liberarTentativa: (matriculaId) => chamar("liberar_tentativa", { matricula_id: matriculaId }),
+  // ações de matrícula (T18): o servidor confere a permissão, grava o evento com o e-mail do RH.
+  // `extrasVistas` = as tentativas extras que a tela mostra (`extrasDaMatricula`): o servidor só libera
+  // se a matrícula ainda tem esse número, e assim um 2º clique com a tela antiga não soma de novo.
+  liberarTentativa: (matriculaId, extrasVistas) =>
+    chamar("liberar_tentativa", {
+      matricula_id: matriculaId,
+      tentativas_extras_vistas: extrasVistas,
+    }),
   revogarCertificado: (matriculaId, motivo) =>
     chamar("revogar_certificado", { matricula_id: matriculaId, motivo }),
 };
+
+/**
+ * Tentativas extras da matrícula como a tela as mostra, lidas do mesmo jeito que o servidor lê
+ * (`decidirLiberacao`): inteiro positivo, senão 0. É o número que `liberarTentativa` manda de volta.
+ */
+export function extrasDaMatricula(matricula) {
+  const lidas = Number(matricula?.tentativas_extras);
+  return Number.isInteger(lidas) && lidas > 0 ? lidas : 0;
+}
+
+/** Quanto tempo (ms) o aviso de "NÃO repita" fica na tela: o toast comum some antes de dar para ler. */
+export const DURACAO_AVISO_SEM_REGISTRO_MS = 20000;
+
+/**
+ * O que a tela do RH faz quando uma ação de matrícula (liberar, revogar) falha: o texto do servidor, quanto
+ * tempo mostrar e se a matrícula precisa ser recarregada (conflito: o número que a tela tinha já não vale,
+ * e sem recarregar todo clique seguinte repetiria o mesmo conflito).
+ * @returns {{ texto: string, duracao: number | undefined, recarregarMatricula: boolean }}
+ */
+export function falhaDaAcaoDoRH(erro) {
+  const codigo = erro?.codigo;
+  return {
+    texto: erro?.message || "Não foi possível concluir a ação",
+    duracao: codigo === CODIGO_EFEITO_SEM_REGISTRO ? DURACAO_AVISO_SEM_REGISTRO_MS : undefined,
+    recarregarMatricula: codigo === CODIGO_CONFLITO,
+  };
+}
 
 // Os mesmos limites do servidor (funcionario-acesso/regras.ts); o teste confere os dois lados.
 export const MOTIVO_REVOGACAO_MIN = 5;

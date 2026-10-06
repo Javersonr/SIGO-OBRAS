@@ -11,6 +11,7 @@ import {
   MOTIVO_REVOGACAO_MAX,
   MOTIVO_REVOGACAO_MIN,
   MENSAGEM_SEM_EDICAO,
+  CAMPO_EXTRAS_VISTAS,
   TEMPO_LIMITE_AVISO_MS,
   avisarAluno,
   dadosDaRevogacao,
@@ -24,6 +25,7 @@ import {
   motivoDaRevogacao,
   registrarOuDesfazer,
   textoAvisoRevogacao,
+  validarExtrasVistas,
   validarMatriculaId,
 } from "./regras.ts";
 
@@ -89,32 +91,109 @@ test("motivoDaRevogacao: limites de tamanho valem para o texto já limpo", () =>
 
 // ------------------------------------------------------------ liberar tentativa
 test("decidirLiberacao: soma uma tentativa extra à matrícula", () => {
-  assert.deepEqual(decidirLiberacao({ avaliacao_aprovada: false, tentativas_extras: 2 }), {
+  assert.deepEqual(decidirLiberacao({ avaliacao_aprovada: false, tentativas_extras: 2 }, 2), {
     ok: true,
     extrasAtuais: 2,
     extrasNovas: 3,
   });
+  // valor ilegível no banco conta como 0 (a tela manda o 0 que mostrou)
   for (const extras of [0, null, undefined, -4, Number.NaN, "x"]) {
-    const r = decidirLiberacao({ avaliacao_aprovada: null, tentativas_extras: extras as number });
+    const r = decidirLiberacao(
+      { avaliacao_aprovada: null, tentativas_extras: extras as number },
+      0
+    );
     assert.deepEqual(r, { ok: true, extrasAtuais: 0, extrasNovas: 1 }, String(extras));
   }
 });
 
 test("decidirLiberacao: matrícula inexistente ou excluída é 404", () => {
   for (const mat of [null, undefined, { deleted_at: "2026-10-01T00:00:00Z" }]) {
-    const r = decidirLiberacao(mat);
+    const r = decidirLiberacao(mat, 0);
     assert.equal(r.ok, false);
     if (!r.ok) assert.equal(r.status, 404);
   }
 });
 
 test("decidirLiberacao: quem já foi aprovado não precisa de tentativa (409, nada muda)", () => {
-  const r = decidirLiberacao({ avaliacao_aprovada: true, tentativas_extras: 1 });
+  const r = decidirLiberacao({ avaliacao_aprovada: true, tentativas_extras: 1 }, 1);
   assert.equal(r.ok, false);
   if (!r.ok) {
     assert.equal(r.status, 409);
     assert.match(r.mensagem, /aprovad/i);
   }
+});
+
+// ------------------------------------------------------------ idempotência da liberação (T18, M4)
+test("validarExtrasVistas: só aceita número inteiro não negativo (o campo é obrigatório)", () => {
+  assert.equal(CAMPO_EXTRAS_VISTAS, "tentativas_extras_vistas");
+  assert.deepEqual(validarExtrasVistas(0), { ok: true, extrasVistas: 0 });
+  assert.deepEqual(validarExtrasVistas(3), { ok: true, extrasVistas: 3 });
+  const ruins = [undefined, null, "3", "", true, {}, [], -1, 1.5, Number.NaN];
+  ruins.push(Number.POSITIVE_INFINITY, 2 ** 60);
+  for (const ruim of ruins) {
+    const r = validarExtrasVistas(ruim);
+    assert.equal(r.ok, false, String(ruim));
+    if (!r.ok) {
+      assert.equal(r.status, 400);
+      assert.match(r.mensagem, /tentativas_extras_vistas/);
+    }
+  }
+});
+
+test("decidirLiberacao: a matrícula não tem mais o número que a tela mostrava = 409 CONFLITO, nada a gravar", () => {
+  for (const [vistas, atuais] of [
+    [2, 3],
+    [3, 2],
+    [0, 1],
+  ]) {
+    const r = decidirLiberacao({ avaliacao_aprovada: false, tentativas_extras: atuais }, vistas);
+    assert.equal(r.ok, false, `vistas ${vistas}, atuais ${atuais}`);
+    if (!r.ok) {
+      assert.equal(r.status, 409);
+      assert.equal(r.codigo, "CONFLITO");
+      assert.match(r.mensagem, /Nada foi liberado/);
+      assert.ok(r.mensagem.includes(`mostrava ${vistas}`), r.mensagem);
+      assert.ok(r.mensagem.includes(`agora são ${atuais}`), r.mensagem);
+    }
+  }
+});
+
+test("decidirLiberacao: 404 e 'já aprovado' vêm antes da conferência do número da tela (não são conflito)", () => {
+  const sumida = decidirLiberacao(null, 7);
+  assert.equal(!sumida.ok && sumida.status, 404);
+  const aprovada = decidirLiberacao({ avaliacao_aprovada: true, tentativas_extras: 1 }, 7);
+  assert.equal(!aprovada.ok && aprovada.status, 409);
+  assert.equal(!aprovada.ok && aprovada.codigo, undefined);
+});
+
+test("liberação repetida com a tela antiga depois de uma falha sem registro é barrada: não soma de novo (T18, M4)", async () => {
+  const banco = { avaliacao_aprovada: false, tentativas_extras: 2 };
+  const telaDoRH = banco.tentativas_extras; // a tela mostrava 2 quando o RH clicou
+
+  // 1º clique: o efeito grava (2 -> 3), mas o evento e o desfazer falham (as três tentativas)
+  const primeira = decidirLiberacao(banco, telaDoRH);
+  assert.equal(primeira.ok, true);
+  if (!primeira.ok) return;
+  banco.tentativas_extras = primeira.extrasNovas;
+  const registro = await registrarOuDesfazer({
+    registrar: async () => false,
+    desfazer: async () => false,
+  });
+  assert.equal(registro, "sem_registro");
+  assert.equal(banco.tentativas_extras, 3);
+
+  // 2º clique, sem a tela ter mudado (ainda mostra 2): o servidor recusa e a matrícula fica em 3
+  const repetida = decidirLiberacao(banco, telaDoRH);
+  assert.equal(repetida.ok, false);
+  if (!repetida.ok) {
+    assert.equal(repetida.status, 409);
+    assert.equal(repetida.codigo, "CONFLITO");
+  }
+  assert.equal(banco.tentativas_extras, 3, "a recusa não grava nada");
+
+  // risco que sobra, assumido: com a tela já atualizada (mostrando 3), o RH decide liberar outra
+  const deliberada = decidirLiberacao(banco, 3);
+  assert.deepEqual(deliberada, { ok: true, extrasAtuais: 3, extrasNovas: 4 });
 });
 
 test("detalheDaLiberacao: autor (e-mail do RH) e o total de extras depois da liberação", () => {
@@ -463,6 +542,29 @@ test("index.ts: toda ação de matrícula exige a permissão 'editar' antes de l
   const leitura = bloco.indexOf("matriculaDoChamador(");
   assert.ok(permissao !== -1, "a permissão não é conferida no bloco");
   assert.ok(leitura !== -1 && permissao < leitura, "a permissão vem antes de ler a matrícula");
+});
+
+test("index.ts: a liberação exige o número que a tela mostrava, conferido antes de ler a matrícula (T18, M4)", () => {
+  const inicio = INDEX.indexOf("if (ACOES_DE_MATRICULA.has(acao)) {");
+  assert.ok(inicio > 0, "bloco das ações de matrícula não encontrado");
+  const bloco = INDEX.slice(inicio, inicio + 1600);
+  const valida = bloco.indexOf("validarExtrasVistas(body.tentativas_extras_vistas)");
+  const leitura = bloco.indexOf("matriculaDoChamador(");
+  assert.ok(valida !== -1, "o número da tela não é validado");
+  assert.ok(leitura !== -1 && valida < leitura, "a validação vem antes de ler a matrícula");
+  // o campo não ganha valor padrão: pedido sem ele é recusado (400), não vale "sobre o que houver"
+  assert.ok(!/tentativas_extras_vistas\s*(\?\?|\|\|)/.test(INDEX));
+  assert.ok(INDEX.includes("decidirLiberacao(mat, extrasVistas)"));
+  assert.ok(!/decidirLiberacao\(mat\)/.test(INDEX));
+  assert.ok(INDEX.includes("liberarTentativa(supabase, req, staff, mat, extrasVistas)"));
+});
+
+test("index.ts: o 409 da conferência sai com o código CONFLITO e a gravação segue condicional ao valor lido", () => {
+  assert.match(
+    INDEX,
+    /fail\(\s*decisao\.mensagem,\s*decisao\.status,\s*decisao\.codigo \? \{ codigo: decisao\.codigo \} : undefined\s*\)/
+  );
+  assert.match(INDEX, /\.eq\("tentativas_extras", decisao\.extrasAtuais\)/);
 });
 
 test("index.ts: o certificado só é alterado com as colunas da revogação (e do desfazer)", () => {

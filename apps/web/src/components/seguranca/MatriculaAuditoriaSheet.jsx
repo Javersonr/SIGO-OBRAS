@@ -32,6 +32,8 @@ import {
   MOTIVO_REVOGACAO_MAX,
   acessoPortal,
   avisoDaRevogacao,
+  extrasDaMatricula,
+  falhaDaAcaoDoRH,
   validarMotivoRevogacao,
 } from "@/lib/portal-funcionario-acesso";
 import { useConfirmar } from "@/components/shared/ConfirmarDialog";
@@ -173,7 +175,10 @@ export default function MatriculaAuditoriaSheet({
 
   // Roda uma ação do servidor sobre a matrícula, uma de cada vez. Devolve true se deu certo. Falhou
   // (sem permissão, conflito, certificado já revogado por outra pessoa): avisa e recarrega por baixo,
-  // para a tela mostrar o que o servidor tem agora.
+  // para a tela mostrar o que o servidor tem agora. Conflito (a matrícula mudou desde que a tela foi
+  // carregada) também recarrega a matrícula do painel: sem isso o número antigo seguiria valendo e
+  // todo clique repetiria o conflito. Já "efeito sem registro" NÃO a recarrega: a tela antiga é o que
+  // impede, no servidor, repetir a liberação (o aviso fica mais tempo, pede para NÃO repetir).
   const executarAcao = async (tarefa) => {
     if (agindoRef.current) return false;
     agindoRef.current = true;
@@ -183,8 +188,10 @@ export default function MatriculaAuditoriaSheet({
       return true;
     } catch (e) {
       console.error("[matricula] ação do RH falhou:", e);
-      toast.error(e?.message || "Não foi possível concluir a ação");
+      const falha = falhaDaAcaoDoRH(e);
+      toast.error(falha.texto, falha.duracao ? { duration: falha.duracao } : undefined);
       carregar({ silencioso: true });
+      if (falha.recarregarMatricula) onMudou?.();
       return false;
     } finally {
       agindoRef.current = false;
@@ -200,6 +207,9 @@ export default function MatriculaAuditoriaSheet({
   };
 
   const liberarTentativa = async () => {
+    // O número que a tela mostra no clique: o servidor só libera se a matrícula ainda tem esse número
+    // (depois de uma falha, repetir com a tela antiga dá conflito em vez de somar outra tentativa).
+    const extrasVistas = extrasDaMatricula(matricula);
     const confirmado = await confirmar({
       titulo: "Liberar mais uma tentativa?",
       texto:
@@ -210,7 +220,7 @@ export default function MatriculaAuditoriaSheet({
     });
     if (!confirmado) return;
     await executarAcao(async () => {
-      await acessoPortal.liberarTentativa(matricula.id);
+      await acessoPortal.liberarTentativa(matricula.id, extrasVistas);
       toast.success("Tentativa liberada: o funcionário já pode refazer a prova.");
       aposAcao();
     });

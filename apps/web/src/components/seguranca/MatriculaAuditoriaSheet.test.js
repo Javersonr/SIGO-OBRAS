@@ -22,6 +22,20 @@ describe("MatriculaAuditoriaSheet: janelas e ações pelo servidor", () => {
     expect(sheet).not.toMatch(/TreinamentoCertificado\.(update|create|delete)/);
   });
 
+  it("liberar manda as extras que a tela mostrava no clique (lidas antes do diálogo) e recarrega no conflito (T18, M4)", () => {
+    const liberar = /const liberarTentativa = async[\s\S]*?\n {2}\};/.exec(sheet)?.[0] ?? "";
+    const lida = liberar.indexOf("const extrasVistas = extrasDaMatricula(matricula)");
+    const dialogo = liberar.indexOf("await confirmar(");
+    expect(lida).toBeGreaterThan(-1);
+    expect(dialogo).toBeGreaterThan(lida); // o número é o do clique, não o do fim do diálogo
+    expect(liberar).toContain("acessoPortal.liberarTentativa(matricula.id, extrasVistas)");
+    // falha: o texto do servidor, o aviso de "NÃO repita" com mais tempo e, no conflito, a matrícula recarregada
+    const executar = /const executarAcao = async[\s\S]*?\n {2}\};/.exec(sheet)?.[0] ?? "";
+    expect(executar).toContain("falhaDaAcaoDoRH(e)");
+    expect(executar).toMatch(/if \(falha\.recarregarMatricula\) onMudou\?\.\(\)/);
+    expect(executar).toMatch(/duration: falha\.duracao/);
+  });
+
   it("depois de liberar ou revogar, avisa a tela de matrículas (onMudou)", () => {
     const aposAcao = /const aposAcao = \(\) => \{([\s\S]*?)\n {2}\};/.exec(sheet)?.[1] ?? "";
     expect(aposAcao).toContain("onMudou?.()");
