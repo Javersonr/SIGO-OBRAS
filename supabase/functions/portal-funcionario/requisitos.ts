@@ -148,7 +148,13 @@ export function requisitosDoCurso({
           normalizarTelefoneBR(curso.tutor_telefone),
           "Defina o WhatsApp do tutor (número válido, com DDD)",
         ],
-        ["PROJETO", curso.projeto_pedagogico_ref, "Anexe o projeto pedagógico"],
+        // T25: o projeto pedagógico (Anexo II, 3.1) só está em ordem com o PDF gerado ou anexado E a validação do
+        // responsável técnico registrada (3.3). É aviso: virar bloqueio de publicação é decisão do Javerson.
+        [
+          "PROJETO",
+          curso.projeto_pedagogico_ref && curso.projeto_validado_em,
+          "Complete o projeto pedagógico (15 itens), gere o PDF e registre a validação do responsável técnico",
+        ],
         ["PROGRAMA", curso.conteudo_programatico, "Preencha o conteúdo programático"],
         ["VALIDADE", curso.validade_meses, "Confira a validade do treinamento"],
       ] as [string, unknown, string][]

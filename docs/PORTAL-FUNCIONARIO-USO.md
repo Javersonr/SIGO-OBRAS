@@ -175,8 +175,8 @@ aparece o aviso de que foi enviado.
 
 **Prazo para concluir e aviso aos atrasados.** Por padrão **não há prazo**: ninguém fica atrasado (o comportamento de
 sempre). No campo **Prazo para concluir** (dias após a matrícula), acima da tabela, o RH define um prazo padrão. Ele
-fica salvo **só neste navegador** (por empresa), porque ainda não há onde guardá-lo para todos; quando o curso passar a
-ter prazo próprio (`prazo_conclusao_dias`, T25), o do curso vale mais. A matrícula aberta que passou do limite ganha o
+fica salvo **só neste navegador** (por empresa) e vale para os cursos que não têm prazo próprio; o curso que tem
+prazo no projeto pedagógico (`prazo_conclusao_dias`, T25) usa o dele, que vale mais e vale para todos. A matrícula aberta que passou do limite ganha o
 selo **Atrasada**, e o botão **Avisar atrasados** manda um lembrete pelo WhatsApp **automático**, uma mensagem por
 funcionário, juntando os cursos atrasados e sem senha. Só recebe quem já tem acesso ao portal, telefone válido e ainda
 não foi avisado hoje; os demais ficam listados com o motivo. Cada rodada manda no máximo 30 mensagens (o canal aceita 60
@@ -187,6 +187,50 @@ as áreas de documentos e as proteções necessárias ao fluxo solicitado; não 
 daquele documento. Permanecem, por exemplo, os desenhos e migrações de ciência protegida no banco,
 permissões granulares e sessões práticas. Os imports de Ferramental e a ativação global de `no-undef` continuam
 dependentes da autorização específica já solicitada.
+
+### Projeto pedagógico do curso (T25)
+
+A NR-1 (Anexo II, item 3.1) pede, para todo curso a distância, um projeto pedagógico com 15 itens (de a até o), e o item
+3.3 pede que ele seja validado a cada 2 anos ou quando a NR do curso mudar. No formulário do curso (**RH & Segurança →
+Treinamentos → curso**) há a seção **Projeto pedagógico (Anexo II 3.1)**:
+
+- **Os 15 itens, com o que falta.** Cada item mostra "Preenchido" ou "Falta" e o que fazer. Nove são escritos ali mesmo
+  (objetivo geral, princípios e conceitos de SST, estratégia pedagógica, infraestrutura de apoio e controle, objetivo
+  de cada módulo, dedicação diária mínima, prazo máximo para concluir, público-alvo e instrumentos de aprendizagem). Os
+  outros seis vêm dos campos que o curso já tinha e só se leem ali: responsável técnico, instrutor, conteúdo
+  programático (com o campo vazio vale a lista de aulas), carga horária, material didático (as aulas) e avaliação
+  (as questões, a nota mínima e as tentativas). O objetivo é escrito **por módulo**: cada rótulo de módulo das aulas
+  ganha o seu campo (aulas sem módulo formam um grupo só).
+- **Quem escreve.** O texto do projeto é do responsável técnico: o sistema não sugere nem preenche conteúdo. Os campos
+  ficam no **curso EAD**, não no cadastro central de treinamentos: são exclusivos do EAD e não mudam as exigências das
+  funções (a sincronização com o cadastro central não toca neles).
+- **Gravar.** Os campos são gravados com **Salvar curso**. Textos até 4.000 caracteres; dedicação de 1 a 1.440 minutos
+  por dia; prazo de 1 a 3.650 dias.
+- **Validação (3.3).** Os campos **Validado por** (o botão "Usar o responsável técnico do curso" preenche o nome), **Data
+  da validação** e **Próxima revisão até** (o sistema sugere 2 anos depois e o RH pode mudar). Quem validou e a data
+  andam juntos, e **só se registra a validação com os 15 itens preenchidos**. A tela também lembra das mudanças de NR
+  que obrigam a revisar: **NR-35** (mudou em 16/07/2026, Portaria MTE 1.259/2026) e **NR-10** (muda em 01/06/2027). Curso
+  cujo projeto foi validado antes da mudança da NR aparece como revisão vencida; a NR que ainda vai mudar antecipa a data
+  de revisão para o dia da mudança. É a lista `GATILHOS_DE_REVISAO` em `lib/ead-projeto.js`: surgindo outra mudança de
+  norma, é só acrescentar uma linha lá.
+- **Gerar PDF do projeto.** O botão grava os campos do projeto e gera o PDF com os 15 itens, a validação e a linha de
+  assinatura do responsável técnico, envia para o bucket `treinamentos` e põe a referência em `projeto_pedagogico_ref`:
+  é esse PDF que o aluno abre pelo botão **Projeto pedagógico** do curso. O PDF usa os dados **já salvos** do curso
+  (nome, carga, responsável técnico, instrutor) com o projeto escrito na tela; item vazio sai como "Não preenchido" e o
+  documento leva a tarja de rascunho enquanto faltar item. Gerar de novo troca o PDF que o aluno vê; os arquivos
+  anteriores ficam no Storage (são o histórico das versões do projeto, não os apague). **Anexar PDF próprio** continua
+  existindo, para o RT que prefere um documento seu.
+- **Aviso na lista de requisitos.** O item "Projeto pedagógico" dos requisitos do curso só some com o PDF **e** a data
+  da validação. É **aviso**: não impede publicar, matricular nem emitir certificado. Virar bloqueio é uma decisão do
+  Javerson (uma linha em `ead-requisitos.js` e `requisitos.ts`).
+- **Revisão no painel Vencimentos.** O painel ganhou o cartão **Projeto pedagógico: revisão**, com os cursos publicados
+  que estão sem validação, com a revisão vencida (inclusive por mudança de NR) ou vencendo em até 90 dias, e o botão
+  **Abrir curso**. Curso em rascunho e curso de apoio não entram.
+- **Prazo e dedicação para o aluno e para o RH.** O prazo (dias a partir da matrícula) e a dedicação diária mínima
+  aparecem para o aluno no curso e o prazo na lista de cursos ("Prazo para concluir: até 31/10/2026"). Passar do prazo
+  só avisa o aluno para falar com o RH; o portal **não** tranca o curso. O RH vê o prazo e o selo **Atrasada** na tabela
+  de matrículas, e o prazo do curso vale mais que o prazo padrão daquele navegador (T22). Curso sem prazo no projeto
+  continua como era.
 
 ## Validação e publicação
 
@@ -212,6 +256,12 @@ diário; sem alteração de dado) e muda o **portal-funcionario** (aviso ao RH q
 `--no-verify-jwt`). Ordem: migração, depois a função, depois o front (o painel só lê dados que já existem). Depois de
 aplicar a migração, rode a função à mão uma vez e confira o sino:
 `supabase db query --linked "select public.alertar_treinamentos_ead() as empresas_avisadas;"`.
+
+A T25 (projeto pedagógico estruturado) acrescenta a migração **`0141`** (12 colunas novas no curso e as restrições de
+tamanho; sem alteração de dado) e muda o **portal-funcionario** (o aluno recebe o prazo e a dedicação diária do curso,
+com `--no-verify-jwt`). Ordem: migração, depois a função, depois o front. A migração vem **antes** do front: depois dele,
+"Salvar curso" passa a gravar as colunas novas. Publicar a função antes da migração não quebra nada (as colunas só são
+lidas quando existem).
 
 O teste completo de matrícula real, tempo de estudo, avaliação e certificado deve seguir o roteiro da seção 7 do
 handoff, com o Javerson e após as decisões e tarefas correspondentes.

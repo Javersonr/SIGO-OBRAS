@@ -139,3 +139,34 @@ describe("requisito TUTOR (T21, D4): só avisa, e só com um WhatsApp que o serv
     expect(pendenciasDeEmissao({ curso, aulas, questoes })).toEqual([]);
   });
 });
+
+describe("requisito PROJETO (T25): só avisa, e só some com o PDF do projeto E a validação do RT", () => {
+  const projeto = (valores) =>
+    requisitosDoCurso({ curso: { ...curso, ...valores }, aulas, questoes }).find(
+      (r) => r.codigo === "PROJETO"
+    );
+  const PDF = "treinamentos/empresa/2026/10/projeto.pdf";
+  it("sem nada, só com o PDF ou só com a validação, o aviso aparece", () => {
+    expect(projeto({}).ok).toBe(false);
+    expect(projeto({ projeto_pedagogico_ref: PDF }).ok).toBe(false);
+    expect(projeto({ projeto_validado_em: "2026-10-01" }).ok).toBe(false);
+    expect(projeto({ projeto_pedagogico_ref: "", projeto_validado_em: "2026-10-01" }).ok).toBe(
+      false
+    );
+  });
+  it("com o PDF e a data da validação, o aviso some", () => {
+    expect(projeto({ projeto_pedagogico_ref: PDF, projeto_validado_em: "2026-10-01" }).ok).toBe(
+      true
+    );
+  });
+  it("o texto manda gerar o PDF e registrar a validação", () => {
+    expect(projeto({}).texto).toMatch(/projeto pedagógico/i);
+    expect(projeto({}).texto).toMatch(/validação/i);
+  });
+  it("é só aviso: nunca trava publicar, matricular nem emitir (vira bloqueio só por decisão do Javerson)", () => {
+    expect(projeto({}).bloqueia).toBe(false);
+    expect(projeto({}).bloqueiaEmissao).toBe(false);
+    expect(pendencias({ curso, aulas, questoes })).toEqual([]);
+    expect(pendenciasDeEmissao({ curso, aulas, questoes })).toEqual([]);
+  });
+});

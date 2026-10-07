@@ -55,6 +55,10 @@ import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
 import { aoMudarNomeDaPessoa, refDeAssinatura } from "@/lib/ead-assinatura";
 import { MAX_TUTOR_ATENDIMENTO, MAX_TUTOR_NOME, dadosDoTutorParaGravar } from "@/lib/ead-tutor";
+import { camposDoProjeto, dadosDoProjetoParaGravar } from "@/lib/ead-projeto";
+import { nomeDoArquivoDoProjeto, pdfDoProjetoComoBlob } from "@/lib/ead-projeto-pdf";
+import { hojeEmBrasilia } from "@/lib/ead-vencimentos";
+import { refDoUpload } from "@/lib/anexo-ref";
 import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
 import { decidirAvisoAoRH } from "@/lib/ead-aviso-matricula";
 import { lerEmPaginas } from "@/lib/leitura-em-paginas";
@@ -66,6 +70,7 @@ import MatriculaAuditoriaSheet from "@/components/seguranca/MatriculaAuditoriaSh
 import DuvidasTutorCard from "@/components/seguranca/DuvidasTutorCard";
 import AulaLinhaEad from "@/components/seguranca/AulaLinhaEad";
 import AssinaturaCursoCampo from "@/components/seguranca/AssinaturaCursoCampo";
+import ProjetoPedagogicoCurso from "@/components/seguranca/ProjetoPedagogicoCurso";
 import EnvioProgressoEad from "@/components/seguranca/EnvioProgressoEad";
 import PreviaAlunoCurso from "@/components/seguranca/PreviaAlunoCurso";
 import VencimentosEadPainel from "@/components/seguranca/VencimentosEadPainel";
@@ -223,6 +228,9 @@ export default function TreinamentosEadTab({
   const [avisoAcesso, setAvisoAcesso] = useState(null);
   const [novaAula, setNovaAula] = useState(NOVA_AULA);
   const [subindoProjeto, setSubindoProjeto] = useState(false);
+  // "Gerar PDF do projeto" (T25) em andamento; o ref vale já no 2º clique, antes de a tela redesenhar
+  const [gerandoProjeto, setGerandoProjeto] = useState(false);
+  const gerandoProjetoRef = useRef(false);
   // Envio de arquivo ou gravação de aula em andamento (T30): { alvo: "nova" | id da aula, arquivo,
   // fase, percentual, enviado, total }. `envioRef` guarda o AbortController (botão Cancelar) e é a
   // trava de um envio por vez: o estado só chega no render seguinte.
@@ -562,6 +570,16 @@ export default function TreinamentosEadTab({
       toast.error(tutor.erro);
       return;
     }
+    // projeto pedagógico (T25, Anexo II 3.1 e 3.3): os 12 campos novos do curso; o texto é do RT, a tela só
+    // estrutura. A validação só se grava com os 15 itens preenchidos.
+    const projeto = dadosDoProjetoParaGravar(cursoSel, {
+      aulas: aulasDoCurso(cursoSel.id),
+      questoes: todasQuestoes.filter((q) => q.curso_id === cursoSel.id),
+    });
+    if (!projeto.ok) {
+      toast.error(projeto.erro);
+      return;
+    }
     const dados = {
       empresa_id: empresaAtiva.id,
       modelo_treinamento_id: cursoSel.modelo_treinamento_id || null,
@@ -594,6 +612,7 @@ export default function TreinamentosEadTab({
         empresaAtiva.id
       ),
       ...tutor.dados,
+      ...projeto.dados,
       ativo: cursoSel.ativo !== false,
     };
     if (
@@ -811,6 +830,74 @@ export default function TreinamentosEadTab({
       toast.error("Erro ao anexar: " + (e?.message || e));
     } finally {
       setSubindoProjeto(false);
+    }
+  };
+
+  // "Gerar PDF do projeto" (T25): grava os campos do projeto escritos na tela e o PDF com os 15 itens, e põe a
+  // referência em `projeto_pedagogico_ref` (o aluno abre pelo portal). O PDF usa os dados JÁ SALVOS do curso
+  // (nome, carga, RT, instrutor) com o projeto da tela, para o arquivo e o banco dizerem a mesma coisa.
+  const gerarProjetoPedagogicoPdf = async () => {
+    const formulario = cursoSel;
+    if (!formulario?.id || gerandoProjetoRef.current) return;
+    const gravado = cursos.find((c) => c.id === formulario.id);
+    if (!gravado) {
+      toast.error("Salve o curso antes de gerar o PDF do projeto");
+      return;
+    }
+    const aulasDoProjeto = aulasDoCurso(formulario.id);
+    const questoesDoProjeto = todasQuestoes.filter((q) => q.curso_id === formulario.id);
+    // a conferência (e a validação, que exige os 15 itens) vale para o que vai no PDF: os dados salvos do curso
+    // com o projeto escrito na tela
+    const projeto = dadosDoProjetoParaGravar(
+      { ...gravado, ...camposDoProjeto(formulario) },
+      { aulas: aulasDoProjeto, questoes: questoesDoProjeto }
+    );
+    if (!projeto.ok) {
+      toast.error(projeto.erro);
+      return;
+    }
+    gerandoProjetoRef.current = true;
+    setGerandoProjeto(true);
+    const empresaId = empresaAtiva?.id;
+    try {
+      const logo = await logoParaPdf(empresaAtiva);
+      const blob = await pdfDoProjetoComoBlob(
+        {
+          curso: { ...gravado, ...projeto.dados },
+          aulas: aulasDoProjeto,
+          questoes: questoesDoProjeto,
+          empresa: empresaAtiva,
+          geradoEm: hojeEmBrasilia(),
+        },
+        { logo }
+      );
+      const arquivo = new File([blob], nomeDoArquivoDoProjeto(gravado), {
+        type: "application/pdf",
+      });
+      const res = await sigo.integrations.Core.UploadFile({
+        file: arquivo,
+        bucket: "treinamentos",
+      });
+      const ref = refDoUpload(res);
+      if (!ref) throw new Error("o envio do arquivo não devolveu a referência");
+      await sigo.entities.TreinamentoCurso.update(formulario.id, {
+        ...projeto.dados,
+        projeto_pedagogico_ref: ref,
+      });
+      // só no curso que gerou o PDF, e só se a empresa ainda é a mesma (a geração pode demorar)
+      if (empresaIdDaTelaRef.current === empresaId) {
+        setCursoSel((atual) =>
+          mesmoFormulario(atual, formulario) ? { ...atual, projeto_pedagogico_ref: ref } : atual
+        );
+        toast.success("PDF do projeto gerado e salvo: o aluno abre pelo portal");
+        recarregar();
+      }
+    } catch (e) {
+      console.error("[projeto-pedagogico] falha ao gerar o PDF:", e);
+      toast.error("Não foi possível gerar o PDF do projeto: " + (e?.message || e));
+    } finally {
+      gerandoProjetoRef.current = false;
+      setGerandoProjeto(false);
     }
   };
 
@@ -1453,6 +1540,7 @@ export default function TreinamentosEadTab({
         treinamentos={treinamentosConfig}
         podeMatricular={cursoAceitaMatricula}
         onMatricular={matricularDoPainel}
+        onAbrirCurso={(cursoId) => setCursoSel(cursos.find((c) => c.id === cursoId) ?? null)}
       />
 
       {/* Cursos */}
@@ -1926,42 +2014,18 @@ export default function TreinamentosEadTab({
                       className="mt-0.5"
                     />
                   </div>
-                  {cursoSel.id && (
-                    <div className="col-span-2 flex flex-wrap items-center gap-2 rounded-lg border p-3">
-                      <FileText className="w-4 h-4 text-slate-600" />
-                      <span className="text-sm flex-1">
-                        Projeto pedagógico (PDF){" "}
-                        <span className="text-xs text-slate-500">— o aluno baixa pelo portal</span>
-                      </span>
-                      {cursoSel.projeto_pedagogico_ref && (
-                        <button
-                          type="button"
-                          className="text-xs text-sky-600 hover:underline"
-                          onClick={() => abrirReferencia(cursoSel.projeto_pedagogico_ref)}
-                        >
-                          ver atual
-                        </button>
-                      )}
-                      <label className="text-xs border rounded-md px-2 py-1 cursor-pointer hover:border-slate-400">
-                        {subindoProjeto ? (
-                          <Loader2 className="w-3 h-3 animate-spin inline" />
-                        ) : cursoSel.projeto_pedagogico_ref ? (
-                          "trocar PDF"
-                        ) : (
-                          "anexar PDF"
-                        )}
-                        <input
-                          type="file"
-                          accept="application/pdf"
-                          className="hidden"
-                          onChange={(e) => {
-                            enviarProjetoPedagogico(e.target.files?.[0]);
-                            e.target.value = "";
-                          }}
-                        />
-                      </label>
-                    </div>
-                  )}
+                  <ProjetoPedagogicoCurso
+                    curso={cursoSel}
+                    aulas={aulasDoCurso(cursoSel.id)}
+                    questoes={todasQuestoes.filter((q) => q.curso_id === cursoSel.id)}
+                    onMudar={(mudanca) => setCursoSel((prev) => ({ ...prev, ...mudanca }))}
+                    podeGerarPdf={!!cursoSel.id}
+                    gerandoPdf={gerandoProjeto}
+                    subindoPdf={subindoProjeto}
+                    onGerarPdf={gerarProjetoPedagogicoPdf}
+                    onAnexarPdf={enviarProjetoPedagogico}
+                    onVerPdf={() => abrirReferencia(cursoSel.projeto_pedagogico_ref)}
+                  />
                   <div className="col-span-2 flex items-start gap-3 rounded-lg border p-3">
                     <Switch
                       id="curso-publicado"

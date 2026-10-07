@@ -10,13 +10,17 @@ import {
   rotuloDoMotivo,
   JANELA_VENCIMENTO_DIAS,
 } from "@/lib/ead-vencimentos";
-import { CalendarClock, ShieldAlert, Plus } from "lucide-react";
+import { selecionarRevisoes, rotuloDaRevisao, DIAS_DE_AVISO_DA_REVISAO } from "@/lib/ead-projeto";
+import { CalendarClock, ShieldAlert, Plus, ClipboardCheck } from "lucide-react";
 
 /**
  * Painel "Vencimentos" da aba Treinamentos (T24): treinamentos do portal vencidos ou a vencer em 30, 60 e
  * 90 dias, os que ainda estão sem matrícula de renovação, e os funcionários ativos sem matrícula válida
  * nos cursos EAD da sua função (NR-1, 1.7.1.2.1). As regras estão em `@/lib/ead-vencimentos` (testadas);
  * aqui só se desenha e se liga o botão "Matricular" ao painel de matrícula da própria aba.
+ *
+ * Também mostra a revisão dos projetos pedagógicos dos cursos publicados (T25; Anexo II, 3.3): sem validação,
+ * revisão vencida e a vencer em até 90 dias. A regra está em `@/lib/ead-projeto` (`selecionarRevisoes`).
  */
 
 const LINHAS_INICIAIS = 10;
@@ -39,10 +43,12 @@ export default function VencimentosEadPainel({
   treinamentos,
   podeMatricular,
   onMatricular,
+  onAbrirCurso,
 }) {
   const [filtro, setFiltro] = useState(null);
   const [todos, setTodos] = useState(false);
   const [todosSemTreino, setTodosSemTreino] = useState(false);
+  const [todasRevisoes, setTodasRevisoes] = useState(false);
 
   // o dia é o de Brasília; muda só à meia-noite, e as listas abaixo só são refeitas quando ele ou os dados mudam
   const hoje = hojeEmBrasilia();
@@ -62,6 +68,9 @@ export default function VencimentosEadPainel({
       }),
     [funcionarios, treinamentos, cursos, matriculas, certificados, hoje]
   );
+
+  const revisoes = useMemo(() => selecionarRevisoes({ cursos, hoje }), [cursos, hoje]);
+  const linhasDeRevisao = todasRevisoes ? revisoes.itens : revisoes.itens.slice(0, LINHAS_INICIAIS);
 
   const visiveis = itens.filter((i) =>
     !filtro ? true : filtro === "semRenovacao" ? i.renovacao === "sem" : i.faixa === filtro
@@ -281,6 +290,104 @@ export default function VencimentosEadPainel({
                   onClick={() => setTodosSemTreino((v) => !v)}
                 >
                   {todosSemTreino ? "Mostrar menos" : `Mostrar todos (${semTreinamento.length})`}
+                </button>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ClipboardCheck className="w-5 h-5" /> Projeto pedagógico: revisão (
+            {revisoes.itens.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-slate-500">
+            O projeto pedagógico de cada curso a distância (NR-1, Anexo II, item 3.3) é validado
+            pelo responsável técnico a cada 2 anos, ou quando a norma do curso mudar. Entram os
+            cursos publicados; curso em rascunho e curso de apoio não entram. Registre a validação
+            na seção "Projeto pedagógico" do curso.
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { rotulo: "Sem validação", valor: revisoes.resumo.semValidacao, alerta: true },
+              { rotulo: "Revisão vencida", valor: revisoes.resumo.vencidas, alerta: true },
+              {
+                rotulo: `Vencem em até ${DIAS_DE_AVISO_DA_REVISAO} dias`,
+                valor: revisoes.resumo.aVencer,
+                alerta: false,
+              },
+            ].map((c) => {
+              const destaque = c.alerta && c.valor > 0;
+              return (
+                <div
+                  key={c.rotulo}
+                  className={
+                    "rounded-lg border border-slate-200 p-3 " +
+                    (destaque ? "bg-amber-50" : "bg-white")
+                  }
+                >
+                  <p
+                    className={
+                      "text-2xl font-semibold " + (destaque ? "text-amber-700" : "text-slate-800")
+                    }
+                  >
+                    {c.valor}
+                  </p>
+                  <p className="text-xs text-slate-500">{c.rotulo}</p>
+                </div>
+              );
+            })}
+          </div>
+          {revisoes.itens.length === 0 ? (
+            <p className="text-sm text-slate-500 py-1">
+              Nenhum projeto pedagógico pendente de validação ou revisão nos cursos publicados.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {linhasDeRevisao.map(({ curso, situacao }) => (
+                <div
+                  key={curso.id}
+                  className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-3"
+                >
+                  <span className="min-w-[10rem] flex-1 font-medium text-slate-800">
+                    {curso.nome}
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className={
+                      situacao.estado === "vencida"
+                        ? "bg-red-50 text-red-700 border-red-200"
+                        : "bg-amber-50 text-amber-700 border-amber-200"
+                    }
+                  >
+                    {rotuloDaRevisao(situacao)}
+                  </Badge>
+                  {situacao.data && (
+                    <span className="text-xs text-slate-500">até {fmtData(situacao.data)}</span>
+                  )}
+                  {onAbrirCurso && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      aria-label={`Abrir o curso ${curso.nome}`}
+                      onClick={() => onAbrirCurso(curso.id)}
+                    >
+                      Abrir curso
+                    </Button>
+                  )}
+                </div>
+              ))}
+              {revisoes.itens.length > LINHAS_INICIAIS && (
+                <button
+                  type="button"
+                  className="text-sm text-sky-700 underline"
+                  onClick={() => setTodasRevisoes((v) => !v)}
+                >
+                  {todasRevisoes ? "Mostrar menos" : `Mostrar todos (${revisoes.itens.length})`}
                 </button>
               )}
             </div>

@@ -210,3 +210,40 @@ test("requisito TUTOR (T21, D4): só avisa, e só some com um WhatsApp que o ser
   assert.deepEqual(pendencias({ curso, aulas, questoes }), []);
   assert.deepEqual(pendenciasDeEmissao({ curso, aulas, questoes }), []);
 });
+
+test("requisito PROJETO (T25): só avisa, e só some com o PDF do projeto E a validação do RT (igual ao front)", () => {
+  const projeto = (valores: Record<string, unknown>) =>
+    requisitosDoCurso({ curso: { ...curso, ...valores }, aulas, questoes }).find(
+      (r) => r.codigo === "PROJETO"
+    )!;
+  const PDF = "treinamentos/empresa/2026/10/projeto.pdf";
+  assert.equal(projeto({}).ok, false);
+  assert.equal(projeto({ projeto_pedagogico_ref: PDF }).ok, false);
+  assert.equal(projeto({ projeto_validado_em: "2026-10-01" }).ok, false);
+  assert.equal(
+    projeto({ projeto_pedagogico_ref: "", projeto_validado_em: "2026-10-01" }).ok,
+    false
+  );
+  assert.equal(
+    projeto({ projeto_pedagogico_ref: PDF, projeto_validado_em: "2026-10-01" }).ok,
+    true
+  );
+  assert.match(projeto({}).texto, /projeto pedagógico/i);
+  assert.match(projeto({}).texto, /validação/i);
+  // é só aviso
+  assert.equal(projeto({}).bloqueia, false);
+  assert.equal(projeto({}).bloqueiaEmissao, false);
+  assert.deepEqual(pendencias({ curso, aulas, questoes }), []);
+  assert.deepEqual(pendenciasDeEmissao({ curso, aulas, questoes }), []);
+  // as duas cópias dizem a mesma coisa nos mesmos casos
+  for (const valores of [
+    {},
+    { projeto_pedagogico_ref: PDF },
+    { projeto_validado_em: "2026-10-01" },
+    { projeto_pedagogico_ref: PDF, projeto_validado_em: "2026-10-01" },
+    { projeto_pedagogico_ref: "   ", projeto_validado_em: "2026-10-01" },
+  ]) {
+    const caso = { curso: { ...curso, ...valores }, aulas, questoes };
+    assert.deepEqual(requisitosDoCurso(caso), requisitosFront(caso), JSON.stringify(valores));
+  }
+});

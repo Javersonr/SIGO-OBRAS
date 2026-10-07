@@ -22,6 +22,7 @@ import AvaliacaoPortal from "./AvaliacaoPortal";
 import CertificadoPortal from "./CertificadoPortal";
 import DuvidasPortal from "./DuvidasPortal";
 import ApostilaPdf from "./ApostilaPdf";
+import PrazoDoCurso from "./PrazoDoCurso";
 import { leituraPodeContar, urlApostilaValida } from "@/lib/apostila-pdf";
 import { videoSemDuracao } from "@/lib/ead-duracao";
 import {
@@ -809,6 +810,9 @@ export default function CursoPortal({
             {MSG_CURSO_DE_APOIO}
           </div>
         )}
+
+        {/* prazo para concluir e dedicação diária do projeto pedagógico (T25); some quando o curso não os tem */}
+        {modo !== "avaliacao" && <PrazoDoCurso item={item} previa={previa} />}
 
         {/* durante a prova o certificado sai da frente: o aluno só vê as questões */}
         {modo !== "avaliacao" && (mat.status === "concluido" || item.certificado) && (

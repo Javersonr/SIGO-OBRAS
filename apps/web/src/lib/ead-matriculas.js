@@ -9,9 +9,9 @@
  * "Vencimentos" (`conclusoesVigentes`, de ead-vencimentos.js): uma conclusão antiga, que já foi renovada
  * por outra, vira histórico e não conta como vencida.
  *
- * Prazo para concluir (T22, depende da T25): `prazoDaMatricula` olha o `prazo_conclusao_dias` do curso
- * (a coluna só nasce com a T25) e, na falta dele, o prazo padrão da tela. Sem nenhum dos dois não há prazo
- * e ninguém fica "atrasado": é o comportamento de antes.
+ * Prazo para concluir (T22, com o prazo do projeto pedagógico da T25): `prazoDaMatricula` olha o
+ * `prazo_conclusao_dias` do curso (coluna da migração 0141, escrita no projeto pedagógico) e, na falta dele, o
+ * prazo padrão da tela. Sem nenhum dos dois não há prazo e ninguém fica "atrasado": é o comportamento de antes.
  */
 import { normalizarTexto } from "./busca";
 import { renovacaoParaExibir } from "./portal-curso";

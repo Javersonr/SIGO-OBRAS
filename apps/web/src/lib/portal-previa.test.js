@@ -151,6 +151,34 @@ describe("montarItemPrevia", () => {
     expect(JSON.stringify(comTutor)).not.toContain("99999");
   });
 
+  it("leva o prazo e a dedicação diária do projeto (T25), como o servidor devolve em `dados`, e nunca o texto do projeto", () => {
+    expect(item.curso.prazo_conclusao_dias).toBeNull();
+    expect(item.curso.dedicacao_diaria_min).toBeNull();
+    const comProjeto = montarItemPrevia({
+      curso: {
+        ...curso,
+        prazo_conclusao_dias: 30,
+        dedicacao_diaria_min: "45",
+        objetivo_geral: "Texto do objetivo de teste",
+        projeto_validado_por: "RT Teste",
+      },
+      aulas,
+      questoes,
+    });
+    expect(comProjeto.curso.prazo_conclusao_dias).toBe(30);
+    expect(comProjeto.curso.dedicacao_diaria_min).toBe(45);
+    expect(JSON.stringify(comProjeto)).not.toContain("Texto do objetivo de teste");
+    expect(JSON.stringify(comProjeto)).not.toContain("RT Teste");
+    // valor fora do que o banco aceita não chega à tela
+    const ruim = montarItemPrevia({
+      curso: { ...curso, prazo_conclusao_dias: 0, dedicacao_diaria_min: 1441 },
+      aulas,
+      questoes,
+    });
+    expect(ruim.curso.prazo_conclusao_dias).toBeNull();
+    expect(ruim.curso.dedicacao_diaria_min).toBeNull();
+  });
+
   it("leva a modalidade do curso (ausente = EAD), como o servidor devolve em `dados`", () => {
     expect(item.curso.modalidade).toBe("ead");
     const apoio = montarItemPrevia({ curso: { ...curso, modalidade: "apoio" }, aulas, questoes });

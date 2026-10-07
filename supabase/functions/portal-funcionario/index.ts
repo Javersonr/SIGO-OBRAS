@@ -78,6 +78,7 @@ import { assinarDaEmpresa, refDaEmpresa } from "../_shared/storage-assinar.ts";
 import { carregarDocumentos, funcionarioPodeEntrar } from "./documentos.ts";
 import { confirmarCiencia, listarCienciasDoAluno } from "./ciencia.ts";
 import { destinoDoAvisoAoTutor, mensagemDuvidaAoTutor, tutorParaOAluno } from "./tutor.ts";
+import { projetoParaOAluno } from "./projeto.ts";
 import { avisarGestores, avisoDeTentativasEsgotadas, esgotouAsTentativas } from "./avisos.ts";
 import {
   certificadoParaOAluno,
@@ -842,6 +843,9 @@ Deno.serve(
             // o tutor do curso (T21, D4): o aluno vê o nome e o atendimento (horário e prazo de resposta);
             // o telefone fica só no servidor
             ...tutorParaOAluno(curso),
+            // do projeto pedagógico (T25) o aluno recebe só o prazo para concluir e a dedicação diária; o texto
+            // do projeto chega pelo PDF (`projeto_pedagogico_url`)
+            ...projetoParaOAluno(curso),
           },
           aulas: aulasCurso,
           // as questões NÃO vão aqui (T16): saem sorteadas, sem gabarito, em iniciar_avaliacao

@@ -36,6 +36,8 @@ import {
   HistoricoDeEntregas,
 } from "@/components/portal-funcionario/CienciasPortal";
 import { historicoDeCienciasParcial, separarCiencias } from "@/lib/portal-ciencias";
+import { hojeEmBrasilia } from "@/lib/ead-vencimentos";
+import { prazoParaOAluno } from "@/lib/portal-prazo";
 
 /**
  * Portal do Funcionário — treinamentos EAD, ciência de entregas e certificados.
@@ -217,6 +219,10 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
     // curso de apoio não tem certificado nem renovação (D3): sem "renovar até" e sem botão de certificado
     const renovaAte = renovacaoParaExibir(c.curso, m);
     const botao = rotuloDoBotaoDoCurso(c);
+    // prazo para concluir do projeto pedagógico do curso (T25); só para quem ainda está fazendo
+    const prazo = concluido
+      ? null
+      : prazoParaOAluno({ matricula: m, curso: c.curso, hoje: hojeEmBrasilia() });
     return (
       <Card key={m.id}>
         <CardContent className="p-4 flex items-center gap-4">
@@ -244,6 +250,19 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
                   ? "Este curso ainda não tem aulas cadastradas — avise o RH"
                   : `${feitas}/${total} aulas concluídas`}
             </p>
+            {prazo && (
+              <p
+                className={`text-xs mt-0.5 ${
+                  prazo.tom === "atraso"
+                    ? "text-red-700"
+                    : prazo.tom === "atencao"
+                      ? "text-amber-700"
+                      : "text-slate-500"
+                }`}
+              >
+                {prazo.texto}
+              </p>
+            )}
             {despublicado && (
               <p className="text-xs text-amber-700 mt-0.5">
                 O RH despublicou este curso (pode estar em revisão). Em caso de dúvida, fale com o

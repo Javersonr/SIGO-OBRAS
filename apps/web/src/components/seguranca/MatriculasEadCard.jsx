@@ -63,8 +63,8 @@ const DIRECAO_INICIAL = {
 const fmtData = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
 const fmtNota = (n) => String(Number(n.toFixed(1))).replace(".", ",");
 
-// O prazo padrão fica só neste navegador (por empresa): ainda não há onde guardá-lo para todos (a coluna
-// `prazo_conclusao_dias` do curso nasce com a T25 e, quando existir, vale mais que este número).
+// O prazo padrão fica só neste navegador (por empresa) e vale para os cursos que não têm prazo próprio: o
+// prazo do curso (`prazo_conclusao_dias`, escrito no projeto pedagógico, T25) vale mais que este número.
 const chavePrazo = (empresaId) => `sigo:ead:prazo-padrao:${empresaId}`;
 function lerPrazo(empresaId) {
   try {
@@ -398,8 +398,8 @@ export default function MatriculasEadCard({
                 onChange={(e) => mudarPrazo(e.target.value)}
                 className="h-7 w-20 px-2 text-xs"
               />
-              dias após a matrícula. Vale para os cursos sem prazo próprio e fica salvo só neste
-              navegador.
+              dias após a matrícula. Vale para os cursos sem prazo no projeto pedagógico e fica
+              salvo só neste navegador.
             </span>
             {andamento.carregado && andamento.erro && (
               <span role="alert" className="text-amber-700">

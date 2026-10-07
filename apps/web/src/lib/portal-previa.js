@@ -94,6 +94,21 @@ function tutorParaAPrevia(curso) {
 }
 
 /**
+ * Prazo para concluir e dedicação diária do projeto pedagógico (T25), como o servidor devolve em `dados`
+ * (projeto.ts): inteiro válido ou null. O texto do projeto não vai ao aluno (só dentro do PDF).
+ */
+function projetoParaAPrevia(curso) {
+  const inteiro = (valor, maximo) => {
+    const n = typeof valor === "string" && valor.trim() !== "" ? Number(valor) : valor;
+    return Number.isInteger(n) && n >= 1 && n <= maximo ? n : null;
+  };
+  return {
+    prazo_conclusao_dias: inteiro(curso?.prazo_conclusao_dias, 3650),
+    dedicacao_diaria_min: inteiro(curso?.dedicacao_diaria_min, 1440),
+  };
+}
+
+/**
  * O "item" de um curso como o aluno o recebe do portal (ação `dados`), para a prévia do RT. Diferenças
  * propositais: matrícula de mentira, todas as aulas liberadas e nenhuma concluída, questões com
  * `correta` e `comentario`, sem certificado e sem dúvidas, curso sempre "publicado" (o selo de curso
@@ -153,6 +168,8 @@ export function montarItemPrevia({ curso, aulas, questoes, urls } = {}) {
       modalidade: curso?.modalidade || "ead",
       // o tutor como o servidor devolve em `dados` (T21): nome e atendimento; o telefone nunca vai ao aluno
       ...tutorParaAPrevia(curso),
+      // o prazo e a dedicação do projeto pedagógico como o servidor devolve em `dados` (T25)
+      ...projetoParaAPrevia(curso),
     },
     aulas: aulasPrevia,
     questoes: questoesPrevia,

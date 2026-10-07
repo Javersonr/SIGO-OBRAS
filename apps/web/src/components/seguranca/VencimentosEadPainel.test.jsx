@@ -142,4 +142,95 @@ describe("VencimentosEadPainel", () => {
     expect(html).toContain("Nenhum funcionário ativo sem matrícula válida");
     expect(html).toContain("Atividade sem treinamento (0)");
   });
+
+  describe("revisão do projeto pedagógico (T25)", () => {
+    const cursosDoProjeto = [
+      // nunca validado
+      { id: "c1", nome: "Curso Sem Validação", ativo: true },
+      // revisão vencida em 01/10/2026 (5 dias antes de "hoje")
+      {
+        id: "c2",
+        nome: "Curso Vencido",
+        ativo: true,
+        projeto_validado_em: "2024-10-01",
+        projeto_validado_por: "RT Teste",
+        proxima_revisao: "2026-10-01",
+      },
+      // vence em 55 dias
+      {
+        id: "c3",
+        nome: "Curso A Vencer",
+        ativo: true,
+        projeto_validado_em: "2024-12-01",
+        projeto_validado_por: "RT Teste",
+        proxima_revisao: "2026-12-01",
+      },
+      // em dia, rascunho e apoio: fora da lista
+      {
+        id: "c4",
+        nome: "Curso Em Dia",
+        ativo: true,
+        projeto_validado_em: "2026-09-01",
+        projeto_validado_por: "RT Teste",
+      },
+      { id: "c5", nome: "Curso Rascunho", ativo: false },
+      { id: "c6", nome: "Curso Apoio", ativo: true, modalidade: "apoio" },
+    ];
+
+    it("lista os projetos sem validação, vencidos e a vencer, com o motivo e o botão de abrir o curso", () => {
+      congelarHoje();
+      const html = renderizar({ cursos: cursosDoProjeto, onAbrirCurso: () => {} });
+      expect(html).toContain("Projeto pedagógico: revisão (3)");
+      expect(html).toContain("Curso Sem Validação");
+      expect(html).toContain("Sem validação registrada");
+      expect(html).toContain("Curso Vencido");
+      expect(html).toContain("Revisão vencida há 5 dias");
+      expect(html).toContain("Curso A Vencer");
+      expect(html).toContain("Revisão vence em 56 dias");
+      expect(html).toContain("01/12/2026");
+      expect(html).not.toContain("Curso Em Dia");
+      expect(html).not.toContain("Curso Rascunho");
+      expect(html).not.toContain("Curso Apoio");
+      expect(html).toContain("Abrir o curso Curso Vencido");
+    });
+
+    it("mostra os contadores: sem validação, vencidas e a vencer", () => {
+      congelarHoje();
+      const html = renderizar({ cursos: cursosDoProjeto });
+      expect(html).toContain("Sem validação");
+      expect(html).toContain("Revisão vencida");
+      expect(html).toContain("Vencem em até 90 dias");
+    });
+
+    it("a ordem põe a revisão vencida antes da que ainda não foi feita", () => {
+      congelarHoje();
+      const html = renderizar({ cursos: cursosDoProjeto });
+      expect(html.indexOf("Curso Vencido")).toBeLessThan(html.indexOf("Curso Sem Validação"));
+      expect(html.indexOf("Curso Sem Validação")).toBeLessThan(html.indexOf("Curso A Vencer"));
+    });
+
+    it("curso de NR que mudou depois da validação aparece como vencido pela norma", () => {
+      congelarHoje();
+      const html = renderizar({
+        cursos: [
+          {
+            id: "c1",
+            nome: "NR-35 — Trabalho em Altura",
+            ativo: true,
+            projeto_validado_em: "2025-03-01",
+            projeto_validado_por: "RT Teste",
+            proxima_revisao: "2027-03-01",
+          },
+        ],
+      });
+      expect(html).toContain("A NR-35 mudou em 16/07/2026, depois da última validação");
+    });
+
+    it("tudo validado e em dia: aviso de vazio", () => {
+      congelarHoje();
+      const html = renderizar({ cursos: [cursosDoProjeto[3]] });
+      expect(html).toContain("Projeto pedagógico: revisão (0)");
+      expect(html).toContain("Nenhum projeto pedagógico pendente de validação ou revisão");
+    });
+  });
 });
