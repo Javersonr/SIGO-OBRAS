@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import {
+  FILTRO_SEM_RESPOSTA,
   contarPendentes,
+  decidirResposta,
+  edicaoDepoisDeResponder,
   ehPendente,
   filtrarDuvidas,
   opcoesDoFiltro,
@@ -23,15 +27,31 @@ const lista = [
   d(2, { resposta: "Resposta 2" }),
   d(3, { curso_id: "curso-b", funcionario_id: "func-2" }),
   d(4, { curso_id: "curso-b", funcionario_id: "func-1", resposta: "Resposta 4" }),
-  d(5, { funcionario_id: "func-2", resposta: "   " }),
+  d(5, { funcionario_id: "func-2", resposta: "" }),
 ];
 
 describe("dúvida pendente", () => {
-  it("sem resposta (nula, vazia ou só espaços) está pendente", () => {
+  it("sem resposta (nula, ausente ou vazia) está pendente: a mesma conta do banco (A6)", () => {
     expect(ehPendente(d(1))).toBe(true);
+    expect(ehPendente(d(1, { resposta: undefined }))).toBe(true);
     expect(ehPendente(d(1, { resposta: "" }))).toBe(true);
-    expect(ehPendente(d(1, { resposta: "  \n " }))).toBe(true);
     expect(ehPendente(d(1, { resposta: "Resposta" }))).toBe(false);
+    expect(ehPendente(null)).toBe(true);
+  });
+
+  it("só espaços NÃO é pendente: o contador da aba (no banco) e o cartão dizem a mesma coisa (A6)", () => {
+    // o banco só sabe separar nula e vazia ("resposta.is.null,resposta.eq."); uma conta diferente no cartão
+    // deixaria o número do gatilho da aba diferente do número de cartões. A tela nunca grava só espaços.
+    expect(ehPendente(d(1, { resposta: "   " }))).toBe(false);
+    expect(ehPendente(d(1, { resposta: " \n " }))).toBe(false);
+  });
+
+  it("o filtro do banco para 'sem resposta' é nula ou vazia, e é o que a página usa", () => {
+    expect(FILTRO_SEM_RESPOSTA).toBe("resposta.is.null,resposta.eq.");
+    const pagina = readFileSync(new URL("../pages/SegurancaTrabalho.jsx", import.meta.url), "utf8");
+    expect(pagina).toContain(".or(FILTRO_SEM_RESPOSTA)");
+    // a contagem antiga (só nula, pelo SDK) não pode voltar
+    expect(pagina).not.toMatch(/TreinamentoDuvida\.count\(/);
   });
 
   it("conta as pendentes, com ou sem recorte", () => {
@@ -41,6 +61,66 @@ describe("dúvida pendente", () => {
     expect(contarPendentes(lista, { cursoId: "curso-a", funcionarioId: "func-2" })).toBe(1);
     expect(contarPendentes([])).toBe(0);
     expect(contarPendentes(null)).toBe(0);
+  });
+});
+
+describe("decidirResposta e edicaoDepoisDeResponder (A6)", () => {
+  const respondida = d(7, { resposta: "Resposta original" });
+
+  it("dúvida sem resposta: 'responder' (grava direto, como sempre), com o texto sem as pontas", () => {
+    expect(decidirResposta({ duvida: d(1), texto: "  Olá  \n", editando: null })).toEqual({
+      acao: "responder",
+      texto: "Olá",
+    });
+  });
+
+  it("dúvida em edição: 'editar' (vai pelo servidor, que guarda a versão anterior na trilha)", () => {
+    expect(
+      decidirResposta({ duvida: respondida, texto: "Resposta corrigida", editando: 7 })
+    ).toEqual({ acao: "editar", texto: "Resposta corrigida" });
+  });
+
+  it("a mesma resposta (fora os espaços das pontas) só fecha a edição, sem gravar nem avisar", () => {
+    expect(
+      decidirResposta({ duvida: respondida, texto: "  Resposta original ", editando: 7 })
+    ).toEqual({ acao: "fechar_edicao" });
+  });
+
+  it("texto vazio não faz nada, em resposta nova e em edição", () => {
+    for (const texto of ["", "  \n ", null, undefined]) {
+      expect(decidirResposta({ duvida: d(1), texto, editando: null })).toEqual({ acao: "nada" });
+      expect(decidirResposta({ duvida: respondida, texto, editando: 7 })).toEqual({
+        acao: "nada",
+      });
+    }
+  });
+
+  it("responder a dúvida A enquanto a B está em edição grava A como resposta nova (não é edição)", () => {
+    const r = decidirResposta({ duvida: d(1), texto: "Resposta de A", editando: 2 });
+    expect(r.acao).toBe("responder");
+  });
+
+  it("responder uma dúvida só fecha a edição se for a MESMA que estava em edição", () => {
+    expect(edicaoDepoisDeResponder(2, 1)).toBe(2); // editava a B, respondeu a A: B continua aberta
+    expect(edicaoDepoisDeResponder(2, 2)).toBeNull(); // editava e salvou a própria B
+    expect(edicaoDepoisDeResponder(null, 1)).toBeNull();
+    expect(edicaoDepoisDeResponder(undefined, 1)).toBeNull();
+  });
+
+  it("o cartão grava a resposta nova direto e a edição pelo servidor, e só fecha a edição da própria dúvida", () => {
+    const cartao = readFileSync(
+      new URL("../components/seguranca/DuvidasTutorCard.jsx", import.meta.url),
+      "utf8"
+    );
+    expect(cartao).toContain("decidirResposta({");
+    expect(cartao).toContain("acessoPortal.editarRespostaDuvida(d.id, decisao.texto)");
+    expect(cartao).toContain("sigo.entities.TreinamentoDuvida.update(d.id, {");
+    expect(cartao).toContain("setEditando((atual) => edicaoDepoisDeResponder(atual, d.id))");
+    // a forma antiga (fechar a edição de qualquer dúvida ao responder) não pode voltar
+    const responder = /const responder = async[\s\S]*?\n {2}\};/.exec(cartao)?.[0] ?? "";
+    expect(responder).not.toMatch(/\bcancelarEdicao\(\);\s*toast\.success/);
+    // a edição que falha (conflito, sem permissão) mostra a mensagem do servidor e relê a lista se ficou velha
+    expect(responder).toContain("falhaDaAcaoDoRH(e)");
   });
 });
 

@@ -110,4 +110,28 @@ describe("aviso do curso sem vínculo com o cadastro central (C4)", () => {
     ).toBe(false);
     expect(mostrarAvisoDeCursoSemVinculo(null, null)).toBe(false);
   });
+  it("o aviso e a regra de salvar dizem a mesma coisa (A6): sem o curso na lista carregada, nenhum dos dois libera", () => {
+    // curso com id que não está na lista carregada (gravado ausente): salvar exige o vínculo,
+    // então o aviso não pode dizer que "pode ser salvo sem o vínculo"
+    const form = { id: "c6", modelo_treinamento_id: null };
+    expect(faltaModeloCentral(form, undefined)).toBe(true);
+    expect(mostrarAvisoDeCursoSemVinculo(form, undefined)).toBe(false);
+    expect(mostrarAvisoDeCursoSemVinculo(form, null)).toBe(false);
+    // curso gravado sem vínculo: salvar liberado e o aviso aparece
+    const gravado = { id: "c6", modelo_treinamento_id: null };
+    expect(faltaModeloCentral(form, gravado)).toBe(false);
+    expect(mostrarAvisoDeCursoSemVinculo(form, gravado)).toBe(true);
+    // para qualquer combinação: o aviso só aparece quando salvar sem vínculo está liberado
+    for (const f of [
+      null,
+      {},
+      { id: "x" },
+      { id: "x", modelo_treinamento_id: "m" },
+      { nome: "N" },
+    ]) {
+      for (const g of [undefined, null, {}, { id: "x" }, { id: "x", modelo_treinamento_id: "m" }]) {
+        if (mostrarAvisoDeCursoSemVinculo(f, g)) expect(faltaModeloCentral(f, g)).toBe(false);
+      }
+    }
+  });
 });

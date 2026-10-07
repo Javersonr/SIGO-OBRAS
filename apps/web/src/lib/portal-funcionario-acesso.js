@@ -54,6 +54,10 @@ export const acessoPortal = {
     }),
   revogarCertificado: (matriculaId, motivo) =>
     chamar("revogar_certificado", { matricula_id: matriculaId, motivo }),
+  // editar a resposta de uma dúvida já respondida (A6, T21): o servidor guarda a versão ANTERIOR na trilha
+  // (evento `duvida_resposta_editada`); autor e empresa vêm da sessão. A 1ª resposta segue direto pela tela.
+  editarRespostaDuvida: (duvidaId, resposta) =>
+    chamar("editar_resposta_duvida", { duvida_id: duvidaId, resposta }),
 };
 
 /**

@@ -2,6 +2,7 @@ import { resolveStorageUrl } from "@/api/sigoClient";
 import { baixarCertificadoPdf } from "@/lib/certificado-ead";
 import { logoParaPdf, logoParaPdfDeUrl } from "@/lib/pdf-empresa";
 import { assinaturasQueFaltaram, carregarAssinaturasDoCertificado } from "@/lib/ead-assinatura";
+import { criarCacheSoDeSucesso } from "@/lib/cache-so-sucesso";
 
 /**
  * Gerador do PDF do certificado EAD para a EQUIPE (RH): usa a própria sessão para assinar o logo e as imagens
@@ -10,6 +11,8 @@ import { assinaturasQueFaltaram, carregarAssinaturasDoCertificado } from "@/lib/
  *
  * O logo e cada imagem de assinatura são carregados UMA vez por gerador: o dossiê gera dezenas de PDFs do
  * mesmo curso, que repetem as mesmas imagens. As URLs assinadas nascem na hora do uso e nunca são gravadas.
+ * O cache guarda só o SUCESSO (`criarCacheSoDeSucesso`): uma queda de rede na primeira imagem não tira a
+ * imagem de todo o lote, a próxima leitura tenta de novo (e desiste só se o arquivo falhar várias vezes).
  *
  * @param {object} empresaAtiva empresa que emite (só o logo é usado)
  * @returns {(certificado: object, salvar?: (doc: object, nome: string) => void)
@@ -19,23 +22,14 @@ import { assinaturasQueFaltaram, carregarAssinaturasDoCertificado } from "@/lib/
  *   Falha prevista = `ErroCertificado` (`mensagemFalhaCertificado` dá o texto para o toast).
  */
 export function criarGeradorDeCertificado(empresaAtiva) {
-  let logo; // undefined = ainda não carregado; null = a empresa não tem logo ou ele não carregou
-  const urlPorRef = new Map();
-  const imagemPorUrl = new Map();
+  const logoCarregado = criarCacheSoDeSucesso(() => logoParaPdf(empresaAtiva));
+  const urlPorRef = criarCacheSoDeSucesso((ref) => resolveStorageUrl(ref));
+  const imagemPorUrl = criarCacheSoDeSucesso((url) => logoParaPdfDeUrl(url));
 
-  const logoDaEmpresa = async () => {
-    if (logo === undefined) logo = await logoParaPdf(empresaAtiva);
-    return logo;
-  };
-  const urlDe = (pessoa) => {
-    const ref = pessoa?.assinatura_ref;
-    if (!urlPorRef.has(ref)) urlPorRef.set(ref, resolveStorageUrl(ref));
-    return urlPorRef.get(ref);
-  };
-  const carregar = (url) => {
-    if (!imagemPorUrl.has(url)) imagemPorUrl.set(url, logoParaPdfDeUrl(url));
-    return imagemPorUrl.get(url);
-  };
+  // empresa sem logo cadastrado não é falha: não há o que carregar (e nada a tentar de novo)
+  const logoDaEmpresa = () => (empresaAtiva?.logo_url ? logoCarregado("logo") : null);
+  const urlDe = (pessoa) => urlPorRef(pessoa?.assinatura_ref);
+  const carregar = (url) => imagemPorUrl(url);
 
   return async function gerarPdfDoCertificado(certificado, salvar) {
     const logoDoPdf = await logoDaEmpresa();

@@ -48,8 +48,9 @@
 -- sobrescrito.
 --
 -- Quem é NR-1 e NR-6: o código ou o nome do curso contém "NR-1" ou "NR-6" como palavra inteira (também
--- "NR 1", "NR1", "NR-01"...). "NR-10", "NR-16", "NR-35" etc. NÃO entram. Confira a lista da prévia: se algum
--- curso apareceu por engano ou faltou, ajuste antes de gravar.
+-- "NR 1", "NR1", "NR-01" e com travessão no lugar do hífen, como "NR – 1" ou "NR — 6", comum em nome
+-- digitado no Word). "NR-10", "NR-16", "NR-35" etc. NÃO entram. Confira a lista da prévia: se algum curso
+-- apareceu por engano ou faltou, ajuste antes de gravar.
 --
 -- Este arquivo não tem UUID, nome de empresa nem dado pessoal: tudo é lido do banco na hora.
 -- ============================================================================
@@ -81,7 +82,7 @@ with alvo as (
      and m.modelo_treinamento_id is null
    where c.deleted_at is null
      and c.validade_meses is null
-     and (coalesce(c.codigo, '') || ' ' || coalesce(c.nome, '')) ~* '\mNR[[:space:]-]*0?(1|6)\M'
+     and (coalesce(c.codigo, '') || ' ' || coalesce(c.nome, '')) ~* '\mNR[[:space:]–—-]*0?(1|6)\M'
 )
 select e.nome as empresa,
        a.codigo,
@@ -147,7 +148,7 @@ select e.nome as empresa,
 --  where deleted_at is null
 --    and validade_meses is null
 --    and modelo_treinamento_id is null
---    and (coalesce(codigo, '') || ' ' || coalesce(nome, '')) ~* '\mNR[[:space:]-]*0?(1|6)\M';
+--    and (coalesce(codigo, '') || ' ' || coalesce(nome, '')) ~* '\mNR[[:space:]–—-]*0?(1|6)\M';
 --
 -- -- B2. Cursos ligados: validade no treinamento central. O trigger `propagar_modelo` (0131) copia para os
 -- --     cursos ligados e para as exigências das funções que usam o modelo (ver o aviso da prévia).
@@ -163,7 +164,7 @@ select e.nome as empresa,
 --       where c.deleted_at is null
 --         and c.validade_meses is null
 --         and c.modelo_treinamento_id is not null
---         and (coalesce(c.codigo, '') || ' ' || coalesce(c.nome, '')) ~* '\mNR[[:space:]-]*0?(1|6)\M'
+--         and (coalesce(c.codigo, '') || ' ' || coalesce(c.nome, '')) ~* '\mNR[[:space:]–—-]*0?(1|6)\M'
 --    );
 --
 -- -- B3. Conferência (dentro da transação, antes de confirmar): todo curso de NR-1/NR-6 deve mostrar 24
@@ -171,7 +172,7 @@ select e.nome as empresa,
 --   from public.treinamento_curso c
 --   join public.empresa e on e.id = c.empresa_id
 --  where c.deleted_at is null
---    and (coalesce(c.codigo, '') || ' ' || coalesce(c.nome, '')) ~* '\mNR[[:space:]-]*0?(1|6)\M'
+--    and (coalesce(c.codigo, '') || ' ' || coalesce(c.nome, '')) ~* '\mNR[[:space:]–—-]*0?(1|6)\M'
 --  order by e.nome, c.nome;
 --
 -- commit;

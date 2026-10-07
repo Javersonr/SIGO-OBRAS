@@ -43,9 +43,13 @@
 --      mudança: carga do modelo nula, zero ou negativa vira NULL no curso (curso sem carga, que a tela já
 --      mostra como pendência), em vez de gravar 0. Modelo com carga positiva segue copiado como antes. O
 --      ramo das exigências das funções (tabela treinamento) não muda: ali não há o CHECK.
---      Esta migração NÃO corrige a carga de nenhum modelo nem curso: se houver curso ligado a modelo com
---      carga 0 hoje, o próprio curso (que tem o mesmo 0) aparece na conferência abaixo, e quem decide é o
---      Javerson, pela tela.
+--      Mesma coisa para a validade (A6): o CHECK validade_meses >= 0 do curso recusaria um modelo com
+--      validade NEGATIVA (dado sem sentido, mas o cadastro central não impede), e a edição do modelo falharia
+--      com o erro de outra tabela. Validade do modelo nula ou negativa chega ao curso como NULL (sem
+--      validade); zero e positiva seguem copiadas. O ramo das exigências das funções não muda.
+--      Esta migração NÃO corrige a carga nem a validade de nenhum modelo nem curso: se houver curso ligado a
+--      modelo com carga 0 hoje, o próprio curso (que tem o mesmo 0) aparece na conferência abaixo, e quem
+--      decide é o Javerson, pela tela. A linha 12 da conferência mostra o modelo com validade negativa.
 --
 -- Como não falhar no meio (o pedido da tarefa):
 --   - tudo roda numa transação só: qualquer erro desfaz tudo, não sobra meia migração;
@@ -76,9 +80,11 @@
 -- Esta migração só mexe em esquema e permissão: nenhum INSERT, UPDATE, DELETE nem TRUNCATE de dado real.
 
 begin;
+set local lock_timeout = '10s';
 
--- 1. C9: a carga do cadastro central não chega ao curso como zero ------------------------------------
--- Igual à 0131, exceto a linha da carga do curso (ramo "else"): nula, zero ou negativa vira NULL.
+-- 1. C9: a carga e a validade do cadastro central não chega ao curso como zero ------------------------------------
+-- Igual à 0131, exceto duas linhas do curso (ramo "else"): carga nula, zero ou negativa e validade negativa
+-- viram NULL.
 create or replace function public.validar_modelo_de_treinamento()
 returns trigger language plpgsql set search_path = public as $$
 declare modelo public.treinamento%rowtype;
@@ -113,6 +119,8 @@ begin
     -- O CHECK treinamento_curso_carga_horaria_chk exige carga > 0 (ou nula). O cadastro central aceita
     -- nulo e zero: o que não é positivo chega ao curso como NULL, para a edição do modelo não falhar.
     new.carga_horaria_horas := case when modelo.carga_horaria > 0 then modelo.carga_horaria else null end;
+    -- idem a validade: o CHECK treinamento_curso_validade_meses_chk exige >= 0 (ou nula); negativa vira NULL
+    new.validade_meses := case when modelo.validade_meses >= 0 then modelo.validade_meses else null end;
     -- Pessoas do EAD têm qualificação e registro próprios: o vínculo preserva
     -- esses campos. Só a identidade pedagógica vem do cadastro central.
     if modelo.ativo is false then new.ativo := false; end if;
@@ -170,8 +178,13 @@ do $chk$ begin
 exception when duplicate_object then null; end $chk$;
 
 -- 3. Valida as linhas antigas, uma trava por vez; dado fora da regra vira aviso, não erro --------------
--- A trava que não passar continua NOT VALID (protegendo o dado novo). VALIDATE CONSTRAINT não bloqueia
--- escrita na tabela. Uma falha aqui desfaz só a validação daquela trava (cada uma tem o seu bloco).
+-- A trava que não passar continua NOT VALID (protegendo o dado novo). Uma falha aqui desfaz só a validação
+-- daquela trava (cada uma tem o seu bloco). ATENÇÃO ao bloqueio: tudo roda numa transação só, e o ADD
+-- CONSTRAINT do passo 2 já tomou ACCESS EXCLUSIVE em treinamento_curso, treinamento_aula e treinamento_questao
+-- até o commit. Ou seja, estas três tabelas ficam sem leitura nem escrita enquanto a migração roda (alguns
+-- segundos, com tabelas pequenas: o EAD ainda não tem uso real). Por isso a migração pede os bloqueios com
+-- lock_timeout: se outra sessão estiver segurando uma delas, a migração desiste e desfaz tudo em vez de
+-- ficar na fila travando o sistema; aplique de novo daqui a pouco.
 do $validar$
 declare
   r record;
@@ -252,31 +265,37 @@ revoke all on public.entrega_ciencia from anon;
 
 commit;
 
--- Conferência (só leitura): cada trava e o índice, com a situação de agora. "NOT VALID" nas travas ou
--- "NÃO CRIADO" no índice quer dizer que sobrou dado fora da regra: veja os avisos acima e rode
--- tools/conferir-checks-ead.sql para saber quais linhas são.
-select c.conrelid::regclass::text as tabela,
-       c.conname::text as trava,
-       case when c.convalidated then 'validada' else 'NOT VALID (há dado antigo fora da regra)' end as situacao
-from pg_constraint c
-where c.connamespace = 'public'::regnamespace
-  and c.contype = 'c'
-  and c.conname = any (array[
-    'treinamento_curso_nota_minima_chk',
-    'treinamento_curso_max_tentativas_chk',
-    'treinamento_curso_intervalo_tentativa_chk',
-    'treinamento_curso_carga_horaria_chk',
-    'treinamento_curso_validade_meses_chk',
-    'treinamento_aula_duracao_seg_chk',
-    'treinamento_questao_correta_chk'
-  ])
-union all
-select 'treinamento_matricula',
-       'treinamento_matricula_viva_uidx',
-       case when exists (
-         select 1 from pg_indexes
-         where schemaname = 'public' and indexname = 'treinamento_matricula_viva_uidx'
-       ) then 'criado' else 'NÃO CRIADO (há matrícula aberta repetida)' end
-order by 1, 2;
-
-select 'ok' as res;
+-- Resultado final (só leitura): é o ÚLTIMO resultado do arquivo de propósito, porque o supabase db query pode
+-- devolver só ele (e não os avisos acima). `res` é 'ok' quando a migração terminou; o resto é a conferência.
+-- Esperado: travas_validadas = 7, travas_not_valid vazio, indice_unico = criado e conferencia = "tudo
+-- aplicado". Se sobrou NOT VALID ou o índice não foi criado, a coluna conferencia diz ATENÇÃO: veja os avisos
+-- (WARNING) acima, rode tools/conferir-checks-ead.sql para saber quais linhas são, corrija pela tela e aplique
+-- de novo.
+with travas as (
+  select c.conname::text as nome, c.convalidated as validada
+  from pg_constraint c
+  where c.connamespace = 'public'::regnamespace
+    and c.contype = 'c'
+    and c.conname = any (array[
+      'treinamento_curso_nota_minima_chk',
+      'treinamento_curso_max_tentativas_chk',
+      'treinamento_curso_intervalo_tentativa_chk',
+      'treinamento_curso_carga_horaria_chk',
+      'treinamento_curso_validade_meses_chk',
+      'treinamento_aula_duracao_seg_chk',
+      'treinamento_questao_correta_chk'
+    ])
+), indice as (
+  select exists (
+    select 1 from pg_indexes
+    where schemaname = 'public' and indexname = 'treinamento_matricula_viva_uidx'
+  ) as criado
+)
+select 'ok' as res,
+       (select count(*) from travas where validada) as travas_validadas,
+       (select string_agg(nome, ', ' order by nome) from travas where not validada) as travas_not_valid,
+       case when (select criado from indice) then 'criado'
+            else 'NÃO CRIADO (há matrícula aberta repetida)' end as indice_unico,
+       case when (select count(*) from travas where validada) = 7 and (select criado from indice)
+            then 'tudo aplicado'
+            else 'ATENÇÃO: sobrou trava NOT VALID ou o índice não foi criado' end as conferencia;

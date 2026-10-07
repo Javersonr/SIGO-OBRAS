@@ -79,6 +79,8 @@ export type OrigemEvento = "servidor" | "navegador";
  */
 export const EVENTO_TENTATIVA_LIBERADA = "tentativa_liberada";
 export const EVENTO_CERTIFICADO_REVOGADO = "certificado_revogado";
+/** A resposta de uma dúvida foi editada (A6, T21): o evento guarda a versão anterior inteira. */
+export const EVENTO_DUVIDA_RESPOSTA_EDITADA = "duvida_resposta_editada";
 
 export interface EventoPortal {
   empresa_id: string;

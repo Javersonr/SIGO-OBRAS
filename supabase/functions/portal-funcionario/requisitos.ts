@@ -5,6 +5,12 @@
 // requisito tem duas chaves: `bloqueia` (impede PUBLICAR e MATRICULAR) e `bloqueiaEmissao` (impede
 // EMITIR o certificado). No requisito MODALIDADE, o apoio só tem a segunda; o valor desconhecido, as duas.
 //
+// D3 completa (A6, 07/10/2026): o apoio é MATERIAL DE ESTUDO, publicado e matriculável sem certificado, então os
+// requisitos que só existem por causa do certificado não se aplicam a ele e saem da lista: QUESTOES, LASTRO,
+// INSTRUTOR, RT, PROJETO e VALIDADE (o apoio nunca renova). Ficam AULAS, CONTEUDO e CARGA, o aviso do tutor e o
+// conteúdo programático, e a MODALIDADE. Só vale para `modalidade === "apoio"`; o front tem a mesma regra
+// (lib/ead-requisitos.js) e requisitos.test.ts confere as duas cópias.
+//
 // T12: o requisito do CURSO (esta lista) é separado da condição da MATRÍCULA. O semipresencial emite como
 // modalidade, mas cada aluno só recebe o certificado com a parte prática presencial registrada como
 // "presente" e "satisfatória" numa sessão do curso (pratica.ts: 409 PRATICA_PENDENTE). No curso, o
@@ -161,6 +167,8 @@ export function requisitosDoCurso({
           : a.youtube_id;
   const modalidade = modalidadeDoCurso(curso);
   const semipresencial = modalidade === "semipresencial";
+  // D3 completa: o apoio só estuda, não certifica (ver o cabeçalho). Só "apoio": o valor desconhecido segue completo.
+  const soEstudo = modalidade === "apoio";
   const itens: [string, boolean, string][] = [
     ["AULAS", ativas.length > 0, "Adicione pelo menos uma aula"],
     [
@@ -168,25 +176,33 @@ export function requisitosDoCurso({
       ativas.length > 0 && ativas.every((a) => arquivo(a) && Number(a.duracao_seg) > 0),
       "Todas as aulas precisam de conteúdo e duração cadastrada",
     ],
-    [
-      "QUESTOES",
-      questoes.filter((q) => !q.deleted_at).length >= MIN_QUESTOES,
-      `Cadastre pelo menos ${MIN_QUESTOES} questões`,
-    ],
+    ...(soEstudo
+      ? []
+      : ([
+          [
+            "QUESTOES",
+            questoes.filter((q) => !q.deleted_at).length >= MIN_QUESTOES,
+            `Cadastre pelo menos ${MIN_QUESTOES} questões`,
+          ],
+        ] as [string, boolean, string][])),
     ["CARGA", carga > 0, "Defina a carga horária"],
     // só o semipresencial: carga teórica + prática = carga total (T12)
     ...(semipresencial
       ? [["CARGAS", ...cargasDoSemipresencial(curso)] as [string, boolean, string]]
       : []),
-    [
-      "LASTRO",
-      cargaTeorica > 0 && cargaTeorica * 3600 <= lastro,
-      semipresencial
-        ? "O conteúdo cadastrado não cobre a carga teórica (EAD) declarada"
-        : "O conteúdo cadastrado não cobre a carga horária declarada",
-    ],
-    ["INSTRUTOR", !!curso.instrutor_nome?.trim(), "Informe o instrutor"],
-    ["RT", !!curso.responsavel_tecnico_nome?.trim(), "Informe o responsável técnico"],
+    ...(soEstudo
+      ? []
+      : ([
+          [
+            "LASTRO",
+            cargaTeorica > 0 && cargaTeorica * 3600 <= lastro,
+            semipresencial
+              ? "O conteúdo cadastrado não cobre a carga teórica (EAD) declarada"
+              : "O conteúdo cadastrado não cobre a carga horária declarada",
+          ],
+          ["INSTRUTOR", !!curso.instrutor_nome?.trim(), "Informe o instrutor"],
+          ["RT", !!curso.responsavel_tecnico_nome?.trim(), "Informe o responsável técnico"],
+        ] as [string, boolean, string][])),
     ["MODALIDADE", emiteCertificado(modalidade), motivoSemCertificado(modalidade)],
   ];
   return [
@@ -211,15 +227,26 @@ export function requisitosDoCurso({
         // responsável técnico registrada (3.3), e com o PDF que diz o mesmo que o projeto de hoje: a marca gravada
         // junto com o PDF tem de bater com a dos campos do curso (projeto.ts). Mudou o texto ou a validação
         // depois do PDF: gerar de novo. É aviso: virar bloqueio de publicação é decisão do Javerson.
-        [
-          "PROJETO",
-          pdfDoProjeto === "atual" && curso.projeto_validado_em,
-          pdfDoProjeto === "desatualizado" && curso.projeto_validado_em
-            ? TEXTO_PDF_DO_PROJETO_DESATUALIZADO
-            : "Complete o projeto pedagógico (15 itens), gere o PDF e registre a validação do responsável técnico",
-        ],
+        // (o apoio não tem projeto pedagógico de EAD com certificado nem validade: D3 completa)
+        ...(soEstudo
+          ? []
+          : ([
+              [
+                "PROJETO",
+                pdfDoProjeto === "atual" && curso.projeto_validado_em,
+                pdfDoProjeto === "desatualizado" && curso.projeto_validado_em
+                  ? TEXTO_PDF_DO_PROJETO_DESATUALIZADO
+                  : "Complete o projeto pedagógico (15 itens), gere o PDF e registre a validação do responsável técnico",
+              ],
+            ] as [string, unknown, string][])),
         ["PROGRAMA", curso.conteudo_programatico, "Preencha o conteúdo programático"],
-        ["VALIDADE", curso.validade_meses, "Confira a validade do treinamento"],
+        ...(soEstudo
+          ? []
+          : ([["VALIDADE", curso.validade_meses, "Confira a validade do treinamento"]] as [
+              string,
+              unknown,
+              string,
+            ][])),
       ] as [string, unknown, string][]
     ).map(([codigo, valor, texto]) => ({
       codigo,

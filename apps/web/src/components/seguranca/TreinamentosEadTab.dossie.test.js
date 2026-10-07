@@ -33,6 +33,19 @@ describe("aba de cursos: botão Exportar dossiê", () => {
     expect(final).toContain("setExportandoDossie(null);");
   });
 
+  it("o andamento é anunciado a leitores de tela (aria-live), já que o texto do botão muda sozinho (A6)", () => {
+    // o aria-label do botão é fixo; a região avisa "Certificados 3/12..." sem tirar o foco do botão
+    const regiao = aba.slice(
+      aba.indexOf('aria-live="polite"') - 120,
+      aba.indexOf('aria-live="polite"') + 360
+    );
+    expect(aba).toContain('aria-live="polite"');
+    expect(regiao).toContain('role="status"');
+    expect(regiao).toContain('className="sr-only"');
+    expect(regiao).toContain("exportandoDossie?.cursoId === c.id");
+    expect(regiao).toContain("`Exportando o dossiê do curso ${c.nome}: ${exportandoDossie.texto}`");
+  });
+
   it("não baixa o dossiê de uma empresa que já foi trocada na tela", () => {
     expect(exportar).toContain("aindaVale: () => empresaIdDaTelaRef.current === empresaId");
     expect(exportar).toMatch(/if \(!resumo\) return;/);
@@ -83,6 +96,17 @@ describe("Ficha do funcionário: certificado de cada curso EAD", () => {
     expect(baixar).toContain("avisoAssinaturasNaoCarregadas(faltaram)");
     expect(baixar).toContain("mensagemFalhaCertificado(e)");
     expect(baixar).toContain("baixandoCertificadoRef.current = false;");
+  });
+
+  it("a linha do curso quebra em telas estreitas (nome, status, data, selo e botão), sem espremer o nome (A6)", () => {
+    const fim = ficha.indexOf("{m.curso_nome}</span>");
+    expect(fim).toBeGreaterThan(-1);
+    const linha = ficha.slice(Math.max(0, fim - 300), fim);
+    // o contêiner da linha quebra, e o nome aceita encolher e quebrar sem sumir
+    expect(linha).toContain(
+      'className="flex flex-wrap items-center gap-2 text-sm bg-white border rounded p-2"'
+    );
+    expect(linha).toMatch(/<span className="min-w-0 flex-1 basis-40[^"]*">$/);
   });
 
   it("o botão tem nome acessível e o selo de revogado aparece", () => {

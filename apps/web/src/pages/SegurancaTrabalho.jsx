@@ -1,6 +1,6 @@
 import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
-import { sigo, resolveStorageUrl, refDoStorage } from "@/api/sigoClient";
+import { sigo, supabase, resolveStorageUrl, refDoStorage } from "@/api/sigoClient";
 import { refDoUpload } from "@/lib/anexo-ref";
 import ImgStorage from "@/components/ImgStorage";
 import { useEmpresa } from "../Layout";
@@ -91,7 +91,7 @@ import {
 import { toast } from "sonner";
 import { sugestaoDeMatricula, textoDaSugestao } from "@/lib/ead-matricula-funcao";
 import { cn } from "@/lib/utils";
-import { rotuloDaAbaTreinamentos, textoPendentes } from "@/lib/ead-duvidas";
+import { FILTRO_SEM_RESPOSTA, rotuloDaAbaTreinamentos, textoPendentes } from "@/lib/ead-duvidas";
 import JSZip from "jszip";
 
 export default function SegurancaTrabalho() {
@@ -370,9 +370,16 @@ export default function SegurancaTrabalho() {
       return undefined;
     }
     let vale = true;
-    sigo.entities.TreinamentoDuvida.count({ empresa_id: empresaAtiva.id, resposta: null })
-      .then((n) => {
-        if (vale) setDuvidasPendentes(n);
+    // a mesma conta do cartão de dúvidas (lib/ead-duvidas.js): resposta nula ou vazia, dúvida não excluída
+    supabase
+      .from("treinamento_duvida")
+      .select("id", { count: "exact", head: true })
+      .eq("empresa_id", empresaAtiva.id)
+      .is("deleted_at", null)
+      .or(FILTRO_SEM_RESPOSTA)
+      .then(({ count, error }) => {
+        if (error) throw error;
+        if (vale) setDuvidasPendentes(count ?? 0);
       })
       // sem a contagem o gatilho só fica sem número: nada mais depende dela
       .catch((e) => console.warn("[SegurancaTrabalho] dúvidas sem resposta:", e?.message));

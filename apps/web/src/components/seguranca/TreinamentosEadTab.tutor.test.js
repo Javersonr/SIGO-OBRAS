@@ -55,11 +55,17 @@ describe("dúvidas: cartão do RH e contador da aba", () => {
     expect(cartao).toMatch(/if \(carregado\) onPendentes\?\.\(pendentes\)/);
   });
 
-  it("responder e editar gravam só os três campos da resposta (o trigger do banco recusa o resto)", () => {
+  it("a resposta nova grava só os três campos da resposta (o trigger do banco recusa o resto); a edição vai ao servidor (A6)", () => {
     const responder = funcao(cartao, "responder");
     expect(responder).toContain("TreinamentoDuvida.update(d.id, {");
     expect(responder).toMatch(
-      /resposta: texto,\s*respondida_por: [^\n]+,\s*respondida_em: [^\n]+,\s*\}\)/
+      /resposta: decisao\.texto,\s*respondida_por: [^\n]+,\s*respondida_em: [^\n]+,\s*\}\)/
+    );
+    // editar uma resposta já dada nunca é um UPDATE direto da tela: o servidor guarda a versão anterior na trilha
+    expect(responder).toContain("acessoPortal.editarRespostaDuvida(d.id, decisao.texto)");
+    expect(responder.match(/TreinamentoDuvida\.update\(/g)).toHaveLength(1);
+    expect(responder.indexOf("if (edicao) {")).toBeLessThan(
+      responder.indexOf("TreinamentoDuvida.update(")
     );
   });
 
@@ -71,8 +77,9 @@ describe("dúvidas: cartão do RH e contador da aba", () => {
   });
 
   it("a página conta as dúvidas sem resposta da empresa, só para quem vê a aba, e mostra no gatilho", () => {
-    expect(pagina).toContain(
-      "sigo.entities.TreinamentoDuvida.count({ empresa_id: empresaAtiva.id, resposta: null })"
+    // a MESMA conta do cartão (lib/ead-duvidas.js: resposta nula ou vazia), contada no banco (A6)
+    expect(pagina).toMatch(
+      /\.from\("treinamento_duvida"\)\s*\.select\("id", \{ count: "exact", head: true \}\)\s*\.eq\("empresa_id", empresaAtiva\.id\)\s*\.is\("deleted_at", null\)\s*\.or\(FILTRO_SEM_RESPOSTA\)/
     );
     expect(pagina).toMatch(/const verTreinamentos =\s*perfil === "Admin" \|\| temPermissao\(/);
     expect(pagina).toMatch(
@@ -85,7 +92,7 @@ describe("dúvidas: cartão do RH e contador da aba", () => {
 
   it("a contagem não deixa resposta atrasada de outra empresa ou de outra aba aparecer", () => {
     const efeito = pagina.slice(pagina.indexOf("let vale = true;"));
-    expect(efeito).toMatch(/if \(vale\) setDuvidasPendentes\(n\)/);
+    expect(efeito).toMatch(/if \(vale\) setDuvidasPendentes\(count \?\? 0\)/);
     expect(efeito).toMatch(/return \(\) => \{\s*vale = false;/);
   });
 });

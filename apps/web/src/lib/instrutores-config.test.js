@@ -101,6 +101,25 @@ describe("pessoasDosTreinamentos: imagem da assinatura que o RH já anexou em Co
     ]);
   });
 
+  it("a junção com '|' que Configurações grava (todas as linhas num campo só) não vira imagem (A6)", () => {
+    // TreinamentoModal junta as assinaturas de todas as linhas de instrutor com "|" em instrutor_assinatura_url;
+    // o instrutor em texto puro lê esse campo inteiro, e a junção nunca carrega como imagem
+    const { instrutores } = pessoasDosTreinamentos(
+      [
+        {
+          instrutor_nome: "Instrutor Um",
+          instrutor_assinatura_url: `${ref("a.png")}|${ref("b.png")}`,
+        },
+        { instrutor_nome: "Instrutor Dois", instrutor_assinatura_url: ref("b.png") },
+      ],
+      EMPRESA
+    );
+    expect(instrutores.map((i) => [i.nome, i.assinatura_ref])).toEqual([
+      ["Instrutor Dois", ref("b.png")],
+      ["Instrutor Um", null],
+    ]);
+  });
+
   it("o mesmo nome em vários treinamentos: a primeira assinatura válida encontrada vale", () => {
     const { instrutores, responsaveis } = pessoasDosTreinamentos(
       [

@@ -236,6 +236,50 @@ export function precisaDeAviso(item) {
 }
 
 /**
+ * Quem esgotou as tentativas da prova (A6): matrícula viva, ainda não concluída nem aprovada, de funcionário
+ * ATIVO, em curso vivo com limite (`max_tentativas` > 0), que já usou todas as tentativas (o limite do curso
+ * mais as `tentativas_extras` que o RH liberou). É a mesma conta do servidor (`situacaoDasTentativas`, em
+ * portal-funcionario/regras.ts). O aviso no sino (`alertar`, T24) é uma tentativa só: se o banco recusar na hora,
+ * ele se perde e não há segunda chance. Esta lista é lida das próprias matrículas e tentativas, então o RH vê
+ * quem esgotou mesmo assim. `tentativas` são as linhas de `treinamento_tentativa` (`matricula_id`, `numero`,
+ * `aprovada`). Devolve `[{ matricula, curso, funcionario, usadas, maximo }]` pelo nome do funcionário.
+ */
+export function tentativasEsgotadas({
+  matriculas = [],
+  cursos = [],
+  funcionarios = [],
+  tentativas = [],
+} = {}) {
+  const funcPorId = new Map(
+    (funcionarios ?? []).filter((f) => viva(f) && f.ativo !== false).map((f) => [f.id, f])
+  );
+  const cursoPorId = new Map((cursos ?? []).filter(viva).map((c) => [c.id, c]));
+  const usadasPor = new Map();
+  const aprovadas = new Set();
+  for (const t of tentativas ?? []) {
+    if (!t?.matricula_id) continue;
+    usadasPor.set(t.matricula_id, (usadasPor.get(t.matricula_id) ?? 0) + 1);
+    if (t.aprovada === true) aprovadas.add(t.matricula_id);
+  }
+  const itens = [];
+  for (const m of (matriculas ?? []).filter(viva)) {
+    if (m.status === "concluido" || aprovadas.has(m.id)) continue;
+    const curso = cursoPorId.get(m.curso_id);
+    const funcionario = funcPorId.get(m.funcionario_id);
+    const limite = Number(curso?.max_tentativas) || 0;
+    if (!curso || !funcionario || limite <= 0) continue;
+    const maximo = limite + Math.max(0, Number(m.tentativas_extras) || 0);
+    const usadas = usadasPor.get(m.id) ?? 0;
+    if (usadas >= maximo) itens.push({ matricula: m, curso, funcionario, usadas, maximo });
+  }
+  return itens.sort(
+    (a, b) =>
+      porTexto(a.funcionario.nome_completo, b.funcionario.nome_completo) ||
+      porTexto(a.curso.nome, b.curso.nome)
+  );
+}
+
+/**
  * Atividade sem treinamento (NR-1, 1.7.1.2.1): funcionário ATIVO cuja função exige um treinamento que tem
  * curso EAD publicado e que não tem matrícula válida em nenhum desses cursos.
  *
@@ -245,6 +289,12 @@ export function precisaDeAviso(item) {
  * Só habilita o curso EAD publicado (`ativo !== false`) cuja modalidade emite certificado (EAD ou, desde a T12,
  * semipresencial): o de apoio não emite. Exigência sem nenhum curso assim fica de fora: o EAD não
  * tem como julgar, e o treinamento presencial registrado na Ficha não entra nesta conta.
+ *
+ * Quem decide se a exigência ENTRA e quais cursos o botão "matricular" oferece são os cursos publicados; mas a
+ * VALIDADE é julgada com as matrículas de todos os cursos vivos do modelo que emitem certificado, publicados ou
+ * não (A6): despublicar a versão antiga do curso não invalida o certificado já emitido, e o painel
+ * "Vencimentos" já mostra essa matrícula. Sem isto, quem concluiu a versão antiga aparecia aqui como "Sem
+ * matrícula" e com botão para matricular na nova, contradizendo o outro painel.
  *
  * Devolve `[{ funcionario, pendencias: [{ exigencia, cursos, motivo }] }]` por nome do funcionário, só de
  * quem tem pendência. `motivo`: "revogada" (certificado revogado), "vencida" (concluiu e venceu) ou
@@ -259,9 +309,12 @@ export function atividadeSemTreinamento({
   hoje,
 } = {}) {
   const revogada = revogadas(certificados);
-  const cursosEad = (cursos ?? []).filter(
-    (c) => viva(c) && c.ativo !== false && emiteCertificado(modalidadeDoCurso(c))
+  // cursos vivos que emitem certificado (publicados ou não): a validade do certificado vale em todos
+  const cursosQueEmitem = (cursos ?? []).filter(
+    (c) => viva(c) && emiteCertificado(modalidadeDoCurso(c))
   );
+  // só os publicados habilitam a exigência e são oferecidos para matricular
+  const cursosEad = cursosQueEmitem.filter((c) => c.ativo !== false);
   const matriculasDoFuncionario = new Map();
   for (const m of (matriculas ?? []).filter(viva)) {
     const lista = matriculasDoFuncionario.get(m.funcionario_id) ?? [];
@@ -280,7 +333,11 @@ export function atividadeSemTreinamento({
         (c) => c.modelo_treinamento_id === exigencia.modelo_treinamento_id
       );
       if (cursosDaExigencia.length === 0) continue;
-      const ids = new Set(cursosDaExigencia.map((c) => c.id));
+      const ids = new Set(
+        cursosQueEmitem
+          .filter((c) => c.modelo_treinamento_id === exigencia.modelo_treinamento_id)
+          .map((c) => c.id)
+      );
       const doModelo = suas.filter((m) => ids.has(m.curso_id));
       if (doModelo.some((m) => matriculaValida(m, revogada.has(m.id), hoje))) continue;
       const motivo = doModelo.some((m) => revogada.has(m.id))

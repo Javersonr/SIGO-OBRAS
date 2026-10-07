@@ -85,10 +85,12 @@ const ITENS_NO_TEXTO = 8;
 
 /**
  * A mensagem do lembrete: os cursos atrasados com o prazo de cada um e o link do portal. Não leva senha:
- * só vai a quem já tem acesso.
- * @param {{ nome: string, itens: Array<{ cursoNome: string, limite: string }>, urlPortal: string }} p
+ * só vai a quem já tem acesso. Quem ainda não fez o primeiro acesso (`primeiroAcessoPendente`) não tem "a sua
+ * senha": a mensagem manda usar a provisória que o RH passou e criar a pessoal (A6).
+ * @param {{ nome: string, itens: Array<{ cursoNome: string, limite: string }>, urlPortal: string,
+ *   primeiroAcessoPendente?: boolean }} p
  */
-export function textoDeAtraso({ nome, itens, urlPortal }) {
+export function textoDeAtraso({ nome, itens, urlPortal, primeiroAcessoPendente = false }) {
   const lista = itens ?? [];
   const n = lista.length;
   const saudacao = primeiroNome(nome) ? `Olá, ${primeiroNome(nome)}!` : "Olá!";
@@ -101,7 +103,10 @@ export function textoDeAtraso({ nome, itens, urlPortal }) {
       "no Portal do Funcionário:",
     linhas.join("\n"),
     `Conclua o quanto antes: ${urlPortal}`,
-    "Entre com o seu usuário (CPF) e a sua senha.",
+    primeiroAcessoPendente
+      ? "Entre com o seu usuário (CPF) e a senha provisória que o RH passou; no primeiro acesso você " +
+        "cria a sua senha. Se não tiver mais a senha provisória, fale com o RH."
+      : "Entre com o seu usuário (CPF) e a sua senha.",
   ].join("\n\n");
 }
 
@@ -126,11 +131,18 @@ export function rotuloDoMotivoPulado(motivo) {
  * (`funcionario_id`, `ativo`, `bloqueado`), ou null se não deu para consultar (ninguém é enviado).
  * Quem tem acesso bloqueado por erro de senha ainda recebe: o bloqueio passa sozinho. `avisadosHoje` são os
  * ids de quem já recebeu o lembrete hoje (uma rodada anterior): ficam de fora para ninguém receber duas vezes.
+ *
+ * Curso DESPUBLICADO (`linha.curso.ativo === false`) fica fora (A6): o aluno não consegue fazê-lo, então o
+ * lembrete não pode cobrá-lo; `despublicados` conta as matrículas atrasadas ignoradas por isso, e quem só
+ * tem atraso nelas não recebe nem aparece em `pulados`. Quem ainda não fez o primeiro acesso recebe o texto
+ * da senha provisória, não "a sua senha" (`textoDeAtraso`).
  * @returns {{
  *   enviar: Array<{ funcionarioId: string, nome: string, telefone: string, numero: string,
- *                   itens: Array<{ cursoNome: string, limite: string, diasDeAtraso: number }>, texto: string }>,
+ *                   itens: Array<{ cursoNome: string, limite: string, diasDeAtraso: number }>, texto: string,
+ *                   primeiroAcessoPendente: boolean }>,
  *   pulados: Array<{ funcionarioId: string, nome: string, motivo: string, itens: object[] }>,
  *   excedente: number,
+ *   despublicados: number,
  * }}
  */
 export function prepararLoteDeAtrasados({
@@ -142,8 +154,13 @@ export function prepararLoteDeAtrasados({
 } = {}) {
   const jaAvisados = new Set(avisadosHoje ?? []);
   const porFuncionario = new Map();
+  let despublicados = 0;
   for (const l of linhas ?? []) {
     if (!l?.atrasada) continue;
+    if (l.curso?.ativo === false) {
+      despublicados += 1;
+      continue;
+    }
     const grupo = porFuncionario.get(l.funcionarioId) ?? {
       funcionario: l.funcionario,
       nome: l.funcionario?.nome_completo || l.funcionarioNome || "",
@@ -177,18 +194,20 @@ export function prepararLoteDeAtrasados({
     else if (!digitosTelefone(telefone)) pular("sem_telefone");
     else if (!telefoneValido(telefone)) pular("telefone_invalido");
     else {
+      const primeiroAcessoPendente = acesso.primeiro_acesso_pendente === true;
       enviar.push({
         funcionarioId,
         nome: g.nome,
         telefone,
         numero: digitosTelefone(telefone),
         itens,
-        texto: textoDeAtraso({ nome: g.nome, itens, urlPortal }),
+        primeiroAcessoPendente,
+        texto: textoDeAtraso({ nome: g.nome, itens, urlPortal, primeiroAcessoPendente }),
       });
     }
   }
   const excedente = Math.max(0, enviar.length - limite);
-  return { enviar: enviar.slice(0, limite), pulados, excedente };
+  return { enviar: enviar.slice(0, limite), pulados, excedente, despublicados };
 }
 
 /**

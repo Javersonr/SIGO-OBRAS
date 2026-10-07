@@ -68,3 +68,19 @@ export function tituloDoHistorico(quantidade, parcial = false) {
 }
 
 export const AVISO_HISTORICO_PARCIAL = `Aparecem só as ${LIMITE_CIENCIAS_DO_SERVIDOR} entregas mais recentes; as mais antigas não são mostradas aqui. Em caso de dúvida, fale com o RH.`;
+
+// ---------------------------------------------------------------- lista que não carregou (A6)
+
+/**
+ * O servidor não conseguiu ler a lista de entregas (`ciencias: null` em `dados`)? Só `null` é falha: sem
+ * nenhuma entrega a lista vem vazia, e o campo ausente (servidor ainda sem esta regra) não acusa nada. Os
+ * cursos vêm normalmente: uma falha só desta lista não derruba a tela, mas o aluno precisa saber que uma
+ * entrega pendente pode não estar aparecendo.
+ */
+export function cienciasIndisponiveis(ciencias) {
+  return ciencias === null;
+}
+
+export const AVISO_CIENCIAS_INDISPONIVEIS =
+  "Não foi possível carregar suas entregas agora. Os cursos abaixo estão certos, mas uma entrega que espera " +
+  "sua ciência pode não aparecer. Atualize a página mais tarde; se continuar assim, fale com o RH.";

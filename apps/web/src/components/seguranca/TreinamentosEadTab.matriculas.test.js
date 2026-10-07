@@ -42,6 +42,16 @@ describe("aviso ao funcionário: a mensagem com a senha não é copiada sozinha"
     );
   });
 
+  it("um aviso por funcionário de cada vez: clique duplo não cria o acesso em dobro nem apaga a senha da janela (A6)", () => {
+    const avisar = funcao(aba, "avisarFuncionario");
+    // a trava (a mesma `gravar` das outras gravações, uma por chave) vem antes de qualquer chamada ao backend
+    expect(avisar).toContain("gravar(`avisar-${funcionario.id}`");
+    expect(avisar.indexOf("gravar(")).toBeGreaterThan(-1);
+    expect(avisar.indexOf("gravar(")).toBeLessThan(avisar.indexOf("avisarNoPortal("));
+    // o erro vira o toast da própria `gravar`: nenhum catch solto engole a falha
+    expect(avisar).not.toMatch(/catch \(e\) \{\s*toast\.error/);
+  });
+
   it("ex-funcionário não recebe aviso (nem ganha acesso ao portal)", () => {
     const avisar = funcao(aba, "avisarFuncionario");
     expect(avisar).toMatch(/funcionario\.ativo === false/);
@@ -80,6 +90,17 @@ describe("carga dos dados da tabela", () => {
     expect(carregar).toContain("try {");
     expect(carregar).toContain("catch (e)");
     expect(carregar.match(/cargas\.vale\(carga\)/g).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("o andamento é pedido assim que a carga começa, sem depender de a leitura principal dar certo (A6)", () => {
+    // antes só era pedido no fim do `try` principal: se a carga B (uma gravação qualquer) falhasse depois de a
+    // carga A ter o andamento descartado, o andamento de B nunca era pedido e a tabela ficava em "..."
+    const recarregar = /const recarregar = async[\s\S]*?\n {2}\};/.exec(aba)?.[0] ?? "";
+    expect(recarregar).toContain("carregarAndamento(carga)");
+    expect(recarregar.match(/carregarAndamento\(carga\)/g)).toHaveLength(1);
+    const andamento = recarregar.indexOf("carregarAndamento(carga)");
+    expect(andamento).toBeGreaterThan(recarregar.indexOf("cargas.iniciar()"));
+    expect(andamento).toBeLessThan(recarregar.indexOf("try {"));
   });
 });
 

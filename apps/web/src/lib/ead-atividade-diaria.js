@@ -39,6 +39,7 @@ export const EVENTOS_DO_RH = [
   "acesso_reativado",
   "tentativa_liberada",
   "certificado_revogado",
+  "duvida_resposta_editada",
 ];
 
 /** Fora da janela: as ações do RH e a senha errada no login (pode ser de outra pessoa, não é o aluno). */

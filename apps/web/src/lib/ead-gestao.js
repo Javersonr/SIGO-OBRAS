@@ -35,6 +35,25 @@ export function reordenarAulas(aulas, aulaId, dir) {
   return { ids: lista.map((a) => a.id), mudancas };
 }
 
+/** O que a tela diz quando o banco recusa uma matrícula aberta repetida (A6). */
+export const MSG_MATRICULA_JA_ABERTA =
+  "Esta pessoa já tem uma matrícula aberta neste curso (outro usuário pode ter acabado de matricular). " +
+  "A lista foi atualizada; confira quem já está matriculado antes de tentar de novo.";
+
+/**
+ * Traduz o erro do banco ao criar matrícula (A6). O índice único `treinamento_matricula_viva_uidx` (migração
+ * 0139) recusa a SEGUNDA matrícula aberta do mesmo funcionário no mesmo curso: duas abas, ou dois RHs, matriculando
+ * a mesma pessoa ao mesmo tempo. O erro cru ("duplicate key value violates unique constraint ...") não diz nada
+ * ao RH. O SDK lança o erro do PostgREST (`{ code: "23505", message }`), não um `Error`: reconhece pelo código
+ * ou, se ele não vier, pelo texto. A causa original fica em `cause`. Qualquer outro erro volta como veio.
+ */
+export function erroDeMatricula(erro) {
+  const duplicada =
+    String(erro?.code ?? "") === "23505" ||
+    /duplicate key value violates unique constraint/i.test(String(erro?.message ?? ""));
+  return duplicada ? new Error(MSG_MATRICULA_JA_ABERTA, { cause: erro }) : erro;
+}
+
 /**
  * Matrículas a criar para os funcionários escolhidos num curso. Quem já tem matrícula aberta (não
  * concluída) no curso é ignorado; quem já concluiu pode ser matriculado de novo (renovação). Todas

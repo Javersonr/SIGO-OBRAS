@@ -97,6 +97,25 @@ test("front e servidor usam os mesmos requisitos, inclusive bordas", () => {
       questoes,
     },
     { curso: { ...curso, carga_horaria_horas: 2, carga_teorica_horas: 1 }, aulas, questoes },
+    // D3 completa (A6): curso de apoio sem instrutor, RT, questões, validade, projeto e com o conteúdo menor que a
+    // carga (22) publica e matricula; sem aulas (23) ou sem carga (24) não. O apoio completo (7) e o EAD seguem iguais
+    {
+      curso: { nome: "Apoio", carga_horaria_horas: 40, modalidade: "apoio" },
+      aulas: [{ tipo: "texto", conteudo_texto: "Texto teste", duracao_seg: 600 }],
+      questoes: [],
+    },
+    {
+      curso: { nome: "Apoio", carga_horaria_horas: 40, modalidade: "apoio" },
+      aulas: [],
+      questoes: [],
+    },
+    { curso: { nome: "Apoio", modalidade: "apoio" }, aulas, questoes: [] },
+    // o mesmo curso incompleto, mas EAD (25): continua barrado por tudo o que faltar
+    {
+      curso: { nome: "Curso", carga_horaria_horas: 40 },
+      aulas: [{ tipo: "texto", conteudo_texto: "Texto teste", duracao_seg: 600 }],
+      questoes: [],
+    },
   ];
   for (const caso of casos) {
     assert.deepEqual(requisitosDoCurso(caso), requisitosFront(caso));
@@ -117,7 +136,7 @@ test("front e servidor usam os mesmos requisitos, inclusive bordas", () => {
   // T12: o semipresencial sem as cargas (8), com a soma errada (19) ou com a teoria maior que o conteúdo (20)
   // não publica; com as cargas certas (18), publica e emite (a prática é condição da matrícula, à parte). O EAD
   // com carga teórica gravada (21) mede o lastro pela carga total (2 h > 1 h de conteúdo): não publica.
-  const publicaveis = [1, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 18];
+  const publicaveis = [1, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 18, 22];
   // EMITIR: o curso completo EAD ou semipresencial (o apoio nunca emite)
   const emissiveis = [1, 6, 11, 12, 13, 14, 15, 16, 17, 18];
   for (const [i, caso] of casos.entries()) {
@@ -190,12 +209,13 @@ test("D3 e T12: apoio só trava emitir; semipresencial emite como curso; desconh
   assert.deepEqual(pendenciasDeEmissao(dados("semipresencial")), ["CARGAS", "LASTRO"]);
   assert.deepEqual(pendencias(dados("semipresencial", CARGAS_SEMI)), []);
   assert.deepEqual(pendenciasDeEmissao(dados("semipresencial", CARGAS_SEMI)), []);
-  // os outros requisitos do curso continuam valendo para o apoio (a D3 só separa a modalidade)
+  // D3 completa (A6): o apoio também dispensa os requisitos que só existem por causa do certificado
   assert.deepEqual(
     pendencias({ curso: { ...curso, modalidade: "apoio", instrutor_nome: "" }, aulas, questoes }),
-    ["INSTRUTOR"]
+    []
   );
-  // só os requisitos "bloqueia" travam a emissão; os de revisão (TUTOR, PROJETO...) nunca travam
+  // em curso que emite, travar a emissão e travar a publicação são a mesma coisa (só a MODALIDADE do apoio difere:
+  // ela trava a emissão sem travar a publicação); os de revisão (TUTOR, PROJETO...) nunca travam
   for (const r of requisitosDoCurso({ curso, aulas, questoes })) {
     assert.equal(typeof r.bloqueiaEmissao, "boolean");
     assert.equal(r.bloqueiaEmissao, r.bloqueia, r.codigo);

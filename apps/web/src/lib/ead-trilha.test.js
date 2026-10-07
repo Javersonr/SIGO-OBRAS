@@ -236,3 +236,26 @@ describe("abertaEmDaTentativa (T18)", () => {
     expect(abertaEmDaTentativa([{ evento: "avaliacao_iniciada", detalhe: null }], 1)).toBeNull();
   });
 });
+
+describe("edição da resposta de uma dúvida (A6, T21)", () => {
+  it("o evento tem rótulo em português e tom normal", () => {
+    expect(rotuloDoEvento("duvida_resposta_editada")).toMatch(/resposta.*d[úu]vida.*editada/i);
+    expect(tomDoEvento("duvida_resposta_editada")).toBe("normal");
+  });
+
+  it("a linha diz quem editou e que a versão anterior ficou guardada, sem repetir o texto antigo", () => {
+    const texto = descreverDetalhe({
+      evento: "duvida_resposta_editada",
+      detalhe: {
+        por: "rh@exemplo.test",
+        duvida_id: "x",
+        resposta_anterior: "Texto que NÃO aparece",
+      },
+    });
+    expect(texto).toBe("por rh@exemplo.test · versão anterior guardada no registro");
+    expect(texto).not.toContain("Texto que");
+    expect(descreverDetalhe({ evento: "duvida_resposta_editada", detalhe: {} })).toBe(
+      "versão anterior guardada no registro"
+    );
+  });
+});

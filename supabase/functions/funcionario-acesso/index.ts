@@ -12,6 +12,8 @@
  *                                                    → { tentativas_extras } (T18)
  *   { acao:"revogar_certificado", matricula_id, motivo }
  *                                                    → { revogado, aviso_whatsapp } (T18)
+ *   { acao:"editar_resposta_duvida", duvida_id, resposta }
+ *                                                    → { editada } (A6, T21)
  *
  * Permissão (espelha a aba Funcionários de RH & Segurança, onde fica a ficha
  * com o AcessoPortalCard): super admin, Admin, dono ou permissão na aba.
@@ -28,6 +30,10 @@
  * número de extras que a tela mostrava (`tentativas_extras_vistas`, obrigatório) e só soma se a
  * matrícula ainda tem esse número; senão 409 `CONFLITO` e nada é gravado.
  *
+ * Editar a resposta de uma dúvida (A6, T21) também passa por aqui: o servidor troca o texto e grava o evento
+ * `duvida_resposta_editada` com a versão ANTERIOR inteira (a trilha é só de inclusão), com a mesma regra de
+ * desfazer se o evento não grava (regras em ./duvida.ts). A primeira resposta segue pela tela do RH.
+ *
  * A senha provisória volta UMA vez (para o RH entregar); no primeiro acesso o
  * funcionário cria a própria senha, que ninguém do RH conhece.
  */
@@ -38,6 +44,7 @@ import { hashPassword } from "../_shared/passwords.ts";
 import { temPermissaoServidor, type Vinculo } from "../_shared/conector/acesso.ts";
 import {
   EVENTO_CERTIFICADO_REVOGADO,
+  EVENTO_DUVIDA_RESPOSTA_EDITADA,
   EVENTO_TENTATIVA_LIBERADA,
   normalizarUsuario,
   gerarSenhaProvisoria,
@@ -62,11 +69,28 @@ import {
   validarExtrasVistas,
   validarMatriculaId,
 } from "./regras.ts";
+import {
+  ACOES_DE_DUVIDA,
+  MENSAGEM_SEM_EDICAO_DA_RESPOSTA,
+  dadosDaEdicao,
+  dadosParaDesfazerEdicao,
+  decidirEdicaoDaResposta,
+  detalheDaEdicao,
+  falhaDoRegistroDaEdicao,
+  validarDuvidaId,
+  validarRespostaDaDuvida,
+} from "./duvida.ts";
 
 // mesmo módulo/aba do front (pages/SegurancaTrabalho.jsx → aba Funcionários)
 const MODULO = "Segurança do Trabalho";
 const ABA = "Funcionários";
-const ACOES_ESCRITA = new Set(["criar", "redefinir", "ativo", ...ACOES_DE_MATRICULA]);
+const ACOES_ESCRITA = new Set([
+  "criar",
+  "redefinir",
+  "ativo",
+  ...ACOES_DE_MATRICULA,
+  ...ACOES_DE_DUVIDA,
+]);
 
 interface Body {
   acao?: string;
@@ -77,6 +101,8 @@ interface Body {
   matricula_id?: string;
   motivo?: string;
   tentativas_extras_vistas?: unknown;
+  duvida_id?: string;
+  resposta?: unknown;
 }
 
 type Staff = { email: string; is_super_admin: boolean; empresa_id: string | null };
@@ -126,6 +152,146 @@ async function matriculaDoChamador(
   if (error) throw new Error("treinamento_matricula: " + error.message);
   if (!data || (!staff.is_super_admin && data.empresa_id !== staff.empresa_id)) return null;
   return data;
+}
+
+/**
+ * A dúvida da requisição, só se for da empresa da sessão (super admin vê qualquer uma). Dúvida de outra
+ * empresa responde como inexistente. Erro de leitura lança (vira 500).
+ */
+async function duvidaDoChamador(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  staff: Staff,
+  duvidaId: string
+) {
+  const { data, error } = await supabase
+    .from("treinamento_duvida")
+    .select(
+      "id, empresa_id, funcionario_id, curso_id, matricula_id, resposta, respondida_por, respondida_em, updated_at, deleted_at"
+    )
+    .eq("id", duvidaId)
+    .maybeSingle();
+  if (error) throw new Error("treinamento_duvida: " + error.message);
+  if (!data || (!staff.is_super_admin && data.empresa_id !== staff.empresa_id)) return null;
+  return data;
+}
+
+/** Nome do usuário do SIGO (o que a tela já gravava em `respondida_por`); sem ele, o e-mail da sessão. */
+async function nomeDoAutor(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  email: string
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("usuario_custom")
+    .select("nome_completo")
+    .eq("email", email.toLowerCase())
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) {
+    console.error("[funcionario-acesso] nome do autor da resposta:", error.message);
+    return email;
+  }
+  const nome = typeof data?.nome_completo === "string" ? data.nome_completo.trim() : "";
+  return nome || email;
+}
+
+/**
+ * Edita a resposta de uma dúvida já respondida (A6, T21). Grava só se a dúvida continua como foi lida
+ * (`updated_at`: duas edições seguidas não perdem uma versão), e o evento `duvida_resposta_editada` leva a
+ * versão ANTERIOR inteira e o e-mail de quem editou. Sem o evento a edição é desfeita (a resposta anterior
+ * volta); se nem desfazer dá, a resposta é `EFEITO_SEM_REGISTRO` e a versão anterior vai para o log.
+ */
+async function editarRespostaDaDuvida(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  req: Request,
+  staff: Staff,
+  // deno-lint-ignore no-explicit-any
+  duvida: any,
+  respostaNova: string
+): Promise<Response> {
+  const decisao = decidirEdicaoDaResposta(duvida, respostaNova);
+  if (!decisao.ok) {
+    return fail(
+      decisao.mensagem,
+      decisao.status,
+      decisao.codigo ? { codigo: decisao.codigo } : undefined
+    );
+  }
+  if (!decisao.mudou) return ok({ editada: false });
+
+  const quando = new Date();
+  const autor = await nomeDoAutor(supabase, staff.email);
+  const nova = dadosDaEdicao({ resposta: respostaNova, por: autor, agora: quando });
+  let gravar = supabase
+    .from("treinamento_duvida")
+    .update(nova)
+    .eq("id", duvida.id)
+    .eq("empresa_id", duvida.empresa_id)
+    .is("deleted_at", null);
+  gravar = decisao.lidaEm ? gravar.eq("updated_at", decisao.lidaEm) : gravar;
+  const { data: gravadas, error } = await gravar.select("id, updated_at");
+  if (error) {
+    console.error("[funcionario-acesso] editar_resposta_duvida:", error.message);
+    return fail("Erro ao editar a resposta", 500);
+  }
+  if (!gravadas?.length) {
+    return fail("A dúvida mudou agora há pouco. Atualize a tela e tente de novo.", 409, {
+      codigo: "CONFLITO",
+    });
+  }
+
+  const registro = await registrarOuDesfazer({
+    // a exceção de um passo (rede, banco) conta como falha; a causa fica no log
+    aoFalhar: (passo, erro) =>
+      console.error("[funcionario-acesso] editar_resposta_duvida: o passo lançou:", passo, erro),
+    registrar: () =>
+      registrarEvento(supabase, req, {
+        empresa_id: duvida.empresa_id,
+        funcionario_id: duvida.funcionario_id,
+        matricula_id: duvida.matricula_id ?? null,
+        curso_id: duvida.curso_id,
+        evento: EVENTO_DUVIDA_RESPOSTA_EDITADA,
+        detalhe: detalheDaEdicao({
+          por: staff.email,
+          duvidaId: duvida.id,
+          anterior: decisao.anterior,
+        }),
+      }),
+    desfazer: async () => {
+      const { data: desfeitas, error: erroDesfazer } = await supabase
+        .from("treinamento_duvida")
+        .update(dadosParaDesfazerEdicao(decisao.anterior))
+        .eq("id", duvida.id)
+        .eq("empresa_id", duvida.empresa_id)
+        .eq("respondida_em", nova.respondida_em)
+        .select("id");
+      if (erroDesfazer) {
+        console.error(
+          "[funcionario-acesso] editar_resposta_duvida: não desfez:",
+          erroDesfazer.message
+        );
+      }
+      // 0 linhas = a dúvida já tinha mudado de novo: a edição continua gravada
+      return !erroDesfazer && (desfeitas?.length ?? 0) > 0;
+    },
+  });
+  if (registro !== "registrado") {
+    if (registro === "sem_registro") {
+      console.error(
+        "[funcionario-acesso] editar_resposta_duvida: EFEITO SEM REGISTRO. A dúvida",
+        duvida.id,
+        "ficou com a resposta nova e a trilha não tem o evento. VERSÃO ANTERIOR (guarde):",
+        JSON.stringify(decisao.anterior),
+        "Autor:",
+        staff.email
+      );
+    }
+    const falha = falhaDoRegistroDaEdicao(registro);
+    return fail(falha.mensagem, falha.status, { codigo: falha.codigo });
+  }
+  return ok({ editada: true });
 }
 
 /**
@@ -426,6 +592,18 @@ Deno.serve(
       return acao === "liberar_tentativa"
         ? liberarTentativa(supabase, req, staff, mat, extrasVistas)
         : revogarCertificado(supabase, req, staff, mat, motivo);
+    }
+
+    // Edição da resposta de uma dúvida (A6, T21): dúvida e empresa vêm do banco e da sessão; o autor é o da sessão.
+    if (ACOES_DE_DUVIDA.has(acao)) {
+      if (!podeEditar) return fail(MENSAGEM_SEM_EDICAO_DA_RESPOSTA, 403);
+      const idDaDuvida = validarDuvidaId(body.duvida_id);
+      if (!idDaDuvida.ok) return fail(idDaDuvida.mensagem, idDaDuvida.status);
+      const texto = validarRespostaDaDuvida(body.resposta);
+      if (!texto.ok) return fail(texto.mensagem, texto.status);
+      const duvida = await duvidaDoChamador(supabase, staff, idDaDuvida.id);
+      if (!duvida || duvida.deleted_at) return fail("Dúvida não encontrada", 404);
+      return editarRespostaDaDuvida(supabase, req, staff, duvida, texto.resposta);
     }
 
     if (!body.funcionario_id) return fail("funcionario_id é obrigatório", 400);

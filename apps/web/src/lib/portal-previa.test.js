@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   ID_MATRICULA_PREVIA,
   refsDaPrevia,
@@ -560,5 +561,32 @@ describe("criarApiPrevia", () => {
       expect(erro.codigo).toBe("PREVIA");
       expect(erro.message).toMatch(/prévia/i);
     }
+  });
+});
+
+describe("paridade da prévia com o servidor (A6)", () => {
+  // `REPROVADO_VE_NOTA` existe em duas cópias (regras.ts e portal-previa.js): cada lado tem teste que fixa o
+  // próprio valor, e este confere que os DOIS dizem a mesma coisa, para a prévia do RT nunca mostrar ao
+  // reprovado o que o aluno de verdade não vê (nem o contrário).
+  const valorDe = (texto, onde) => {
+    const m = /\bREPROVADO_VE_NOTA(?::\s*boolean)?\s*=\s*(true|false)\b/.exec(texto);
+    if (!m) throw new Error(`REPROVADO_VE_NOTA não encontrado em ${onde}`);
+    return m[1] === "true";
+  };
+  const previa = readFileSync(new URL("./portal-previa.js", import.meta.url), "utf8");
+  const servidor = readFileSync(
+    new URL("../../../../supabase/functions/portal-funcionario/regras.ts", import.meta.url),
+    "utf8"
+  );
+
+  it("REPROVADO_VE_NOTA vale o mesmo em regras.ts e em portal-previa.js", () => {
+    expect(valorDe(previa, "portal-previa.js")).toBe(valorDe(servidor, "regras.ts"));
+  });
+
+  it("o leitor da constante não passa em branco: texto sem a constante falha, e troca de valor aparece", () => {
+    expect(() => valorDe("const OUTRA = true;", "teste")).toThrow(/não encontrado/);
+    expect(valorDe("export const REPROVADO_VE_NOTA = true;", "teste")).toBe(true);
+    expect(valorDe("const REPROVADO_VE_NOTA = false;", "teste")).toBe(false);
+    expect(valorDe("export const REPROVADO_VE_NOTA: boolean = true;", "teste")).toBe(true);
   });
 });

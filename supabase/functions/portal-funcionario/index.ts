@@ -38,7 +38,8 @@
  * periódico ou eventual, com o motivo do eventual) é congelado em `dados` (ver tipo-treinamento.ts). O curso de apoio
  * continua publicado e aceita matrícula (D3), só não emite e não grava `proxima_renovacao`; o reprovado
  * na prova recebe só "insatisfatório" (D10). O certificado traz o local (`dados.local`) e os dias de Brasília.
- * `dados.ciencias` leva TODAS as pendentes e as 30 confirmadas mais recentes (`listarCienciasDoAluno`).
+ * `dados.ciencias` leva TODAS as pendentes e as 30 confirmadas mais recentes (`listarCienciasDoAluno`); se só
+ * essa leitura falha, vai `null` (o portal avisa) e a lista de cursos segue normal.
  * Depois do INSERT o hash é refeito a partir do que o banco devolveu: se não se reproduz, o certificado
  * NÃO é entregue, é anulado (revogado pelo sistema) e a emissão responde 500 `EMISSAO_ANULADA` (T10, M5).
  *
@@ -157,7 +158,7 @@ import {
   creditarTempo,
   cursoPublicado,
   dadosDaAnulacaoNaEmissao,
-  datasDeConclusao,
+  decisaoDeConclusao,
   dentroDoVolume,
   detalheDaProvaIniciada,
   detalheLimitado,
@@ -353,21 +354,19 @@ async function concluirSeCompleto(supabase: Db, mat: any, empresaId: string) {
       .eq("empresa_id", empresaId)
       .maybeSingle(),
   ]);
-  // sem o curso a conclusão sai sem a validade (e o apoio sairia com renovação): deixa rastro no log
+  // A conclusão é permanente: sem ler o curso (validade e modalidade), concluir gravaria a matrícula sem a
+  // renovação certa, para sempre. Com erro na leitura NÃO conclui agora (decisaoDeConclusao devolve
+  // em_andamento) e deixa a causa no log; a próxima ação do aluno tenta de novo.
   if (erroCurso)
     console.error("[portal-funcionario] concluirSeCompleto: curso:", erroCurso.message);
-  // precisaAvaliacao = "é a hora da prova": só quando TODAS as aulas terminaram
-  if (!sit.aulasOk) return { status: "em_andamento", concluiu: false, precisaAvaliacao: false };
-  if (!sit.concluido) {
-    return { status: "em_andamento", concluiu: false, precisaAvaliacao: sit.temAvaliacao };
-  }
-  const patch: Record<string, unknown> = {
-    status: "concluido",
-    // curso de apoio não renova (D3): só a data da conclusão
-    ...datasDeConclusao(new Date(), curso?.validade_meses, modalidadeDoCurso(curso)),
-  };
-  await supabase.from("treinamento_matricula").update(patch).eq("id", mat.id);
-  return { status: "concluido", concluiu: true, precisaAvaliacao: false };
+  const { resultado, patch } = decisaoDeConclusao({
+    sit,
+    curso,
+    cursoLido: !erroCurso,
+    hoje: new Date(),
+  });
+  if (patch) await supabase.from("treinamento_matricula").update(patch).eq("id", mat.id);
+  return resultado;
 }
 
 /**
@@ -986,9 +985,10 @@ Deno.serve(
         };
       });
 
-      // todas as pendentes + as últimas confirmadas (só o histórico tem limite; ciencia.ts)
+      // todas as pendentes + as últimas confirmadas (só o histórico tem limite; ciencia.ts). Falha só desta
+      // lista (a causa já foi para o log) NÃO derruba os cursos: sai `ciencias: null` e o portal avisa que as
+      // entregas não carregaram, em vez de esconder as pendentes em silêncio ou tirar a tela de cursos do ar.
       const listaDeCiencias = await listarCienciasDoAluno(supabase, { funcionarioId, empresaId });
-      if (!listaDeCiencias.ok) return fail("Não foi possível carregar suas entregas agora", 503);
 
       // Logo da empresa para o PDF do certificado (T15): URL assinada só da pasta da empresa da
       // sessão. Só vale a chamada ao Storage quando o aluno tem certificado para baixar; quem
@@ -1009,7 +1009,7 @@ Deno.serve(
         empresa_nome: emp?.nome || emp?.razao_social || "",
         empresa_logo_url: empresaLogoUrl,
         cursos: resposta,
-        ciencias: listaDeCiencias.ciencias,
+        ciencias: listaDeCiencias.ok ? listaDeCiencias.ciencias : null,
         // a orientação do RT que o aluno confirma ao abrir o curso (T35); null = leitura falhou
         declaracao_ambiente: textoDaDeclaracao.ok
           ? declaracaoParaOAluno(textoDaDeclaracao.vigente)

@@ -14,6 +14,7 @@ import {
   avisoDaModalidade,
   explicacaoDaModalidade,
   seloDaModalidade,
+  textoDaValidadeDoCurso,
 } from "@/lib/ead-modalidade";
 import { normalizarQuestao } from "@/lib/ead-questao";
 import { parseDuracao, formatDuracao, lerDuracaoVideo } from "@/lib/ead-duracao";
@@ -37,7 +38,9 @@ import {
   formularioDeAulaSegueOMesmo,
   criarControleDeCarga,
   certificadosPorMatricula,
+  erroDeMatricula,
 } from "@/lib/ead-gestao";
+import { validarNumerosDoCurso } from "@/lib/ead-curso-numeros";
 import {
   validarArquivoAula,
   subirArquivoComProgresso,
@@ -55,7 +58,13 @@ import {
 import { srtParaVtt } from "@/lib/legendas";
 import { logoParaPdf } from "@/lib/pdf-empresa";
 import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
-import { aoMudarNomeDaPessoa, refDeAssinatura } from "@/lib/ead-assinatura";
+import {
+  aoEscolherPessoa,
+  aoMudarNomeDaPessoa,
+  aoTrocarImagemDaAssinatura,
+  refDeAssinatura,
+  semMarcasDeAssinatura,
+} from "@/lib/ead-assinatura";
 import { MAX_TUTOR_ATENDIMENTO, MAX_TUTOR_NOME, dadosDoTutorParaGravar } from "@/lib/ead-tutor";
 import {
   avisoDoPdfAoSalvar,
@@ -310,6 +319,10 @@ export default function TreinamentosEadTab({
     const carga = cargas.iniciar();
     if (!carga) return;
     const filtro = { empresa_id: carga.empresaId };
+    // O andamento (aulas feitas e tentativas) não depende da leitura principal: pede-se já, em paralelo. Antes
+    // só era pedido no fim do `try`: se esta carga falhasse depois de a anterior ter o andamento descartado
+    // (outra carga começou), o andamento desta nunca era pedido e a tabela ficava em "..." (A6).
+    carregarAndamento(carga);
     try {
       const [cs, as, ms, fs, certs, tcfg, qs] = await Promise.all([
         sigo.entities.TreinamentoCurso.filter(filtro),
@@ -330,7 +343,6 @@ export default function TreinamentosEadTab({
       setCertificados(certs);
       setTreinamentosConfig(tcfg);
       setTodasQuestoes(qs);
-      carregarAndamento(carga);
     } catch (e) {
       if (!cargas.vale(carga)) return;
       console.error(e);
@@ -548,20 +560,35 @@ export default function TreinamentosEadTab({
     () => pessoasDosTreinamentos(treinamentosConfig, empresaAtiva?.id),
     [treinamentosConfig, empresaAtiva?.id]
   );
-  // Troca a imagem da assinatura (T29) só no formulário que a pediu: o envio é lento e o RH pode ter aberto
-  // outro curso enquanto ele terminava (a mesma regra do PDF do projeto pedagógico).
-  const trocarAssinatura = (campo) => {
+  // Troca a imagem da assinatura (T29) só no formulário que a pediu E para a pessoa que estava no campo: o
+  // envio é lento e o RH pode ter aberto outro curso, mudado o nome ou escolhido outra pessoa enquanto ele
+  // terminava (a regra e os avisos estão em lib/ead-assinatura.js, `aoTrocarImagemDaAssinatura`). Lê o
+  // formulário de AGORA pela ref e devolve o resultado, para o campo avisar se a imagem não entrou.
+  const trocarAssinatura = (pessoa) => {
     const formulario = cursoSel;
-    return (ref) =>
-      setCursoSel((atual) =>
-        mesmoFormulario(atual, formulario) ? { ...atual, [campo]: ref } : atual
-      );
+    return (ref) => {
+      const resultado = aoTrocarImagemDaAssinatura({
+        atual: cursoSelRef.current,
+        formulario,
+        pessoa,
+        ref,
+      });
+      if (resultado.aplicada) setCursoSel(resultado.curso);
+      return resultado;
+    };
   };
   // O RH escreve o nome do RT ou do instrutor (campo livre, ou "— escolher dos salvos —" que o esvazia): a
   // imagem é de uma pessoa, então a de quem estava antes sai do curso e o RH é avisado (T29). A regra e o
   // texto estão em lib/ead-assinatura.js. O toast fica aqui, no evento, e não dentro do setState.
   const mudarNomeDaPessoa = (pessoa, valor) => {
     const mudanca = aoMudarNomeDaPessoa(cursoSel, pessoa, valor);
+    setCursoSel(mudanca.curso);
+    if (mudanca.aviso) toast.warning(mudanca.aviso, { duration: 8000 });
+  };
+  // O RH escolheu alguém da lista de Configurações: nome, registro e a imagem da pessoa entram juntos, e uma
+  // imagem que a tela mostrava e sai (a pessoa não tem imagem lá) é avisada, como em `mudarNomeDaPessoa`.
+  const escolherPessoa = (pessoa, escolhida) => {
+    const mudanca = aoEscolherPessoa(cursoSel, pessoa, escolhida);
     setCursoSel(mudanca.curso);
     if (mudanca.aviso) toast.warning(mudanca.aviso, { duration: 8000 });
   };
@@ -577,6 +604,12 @@ export default function TreinamentosEadTab({
     }
     if (!cursoSel?.nome?.trim()) {
       toast.error("Dê um nome ao curso");
+      return;
+    }
+    // nota de 0 a 100, carga e validade sem sentido: a mensagem sai daqui, em português, e não do Postgres (A6)
+    const numeros = validarNumerosDoCurso(cursoSel);
+    if (!numeros.ok) {
+      toast.error(numeros.erro);
       return;
     }
     // pré-requisito (T23): o curso escolhido não pode exigir este de volta (o banco também recusa)
@@ -655,15 +688,22 @@ export default function TreinamentosEadTab({
       return;
     }
     await gravar("curso", "Erro ao salvar o curso", async () => {
+      // Gravado, a imagem da assinatura passa a ser de quem assina (A6): as marcas "imagem sem dono" da tela
+      // saem do formulário, e mudar o nome dali em diante retira a imagem (lib/ead-assinatura.js).
       if (cursoSel.id) {
         await sigo.entities.TreinamentoCurso.update(cursoSel.id, dados);
+        setCursoSel((atual) =>
+          mesmoFormulario(atual, cursoSel) ? semMarcasDeAssinatura(atual) : atual
+        );
       } else {
         const novo = await sigo.entities.TreinamentoCurso.create(dados);
         // O id do curso novo só vai para o formulário que foi gravado. Painel fechado durante a
         // gravação: não reabre um curso em branco. Painel reaberto com OUTRO curso: o id não pode ir
         // para ele, senão o próximo "Salvar curso" gravaria os dados de outro curso por cima do novo.
         setCursoSel((atual) =>
-          mesmoFormulario(atual, cursoSel) ? { ...atual, id: novo.id } : atual
+          mesmoFormulario(atual, cursoSel)
+            ? { ...semMarcasDeAssinatura(atual), id: novo.id }
+            : atual
         );
       }
       toast.success("Curso salvo");
@@ -1300,6 +1340,9 @@ export default function TreinamentosEadTab({
               liberadas.slice(i, i + LOTE_DE_MATRICULAS)
             );
           }
+        } catch (e) {
+          // matrícula aberta repetida (23505): mensagem clara, não o texto cru do Postgres (A6)
+          throw erroDeMatricula(e);
         } finally {
           recarregar();
         }
@@ -1321,9 +1364,13 @@ export default function TreinamentosEadTab({
   // (T22): havendo senha nova, ou se nada foi enviado (sem telefone, telefone inválido), abre uma janela
   // que mostra a senha uma vez e deixa o RH copiar a mensagem quando quiser. Ex-funcionário não recebe aviso
   // nem ganha acesso (o botão da tabela já fica desligado; aqui é a segunda trava).
+  //
+  // Um aviso por funcionário de cada vez (A6): o clique duplo chamaria `criar` duas vezes, e a 2ª resposta
+  // ("já tem acesso", sem senha) trocaria a janela da 1ª, perdendo a senha provisória, que só aparece uma
+  // vez. A trava é a mesma `gravar` das outras gravações (uma por chave), que também mostra o erro.
   const avisarFuncionario = async (funcionario) => {
     if (!funcionario || funcionario.ativo === false || funcionario.deleted_at) return;
-    try {
+    await gravar(`avisar-${funcionario.id}`, "Erro ao avisar", async () => {
       const r = await avisarNoPortal(
         funcionario,
         "🎓 Você tem treinamentos no Portal do Funcionário."
@@ -1340,9 +1387,7 @@ export default function TreinamentosEadTab({
           temSenha: decisao.temSenha,
         });
       }
-    } catch (e) {
-      toast.error("Erro ao avisar: " + (e?.message || e));
-    }
+    });
   };
 
   // Renovar: cria uma matrícula nova (do zero) no mesmo curso. A concluída fica como histórico, com o
@@ -1403,6 +1448,8 @@ export default function TreinamentosEadTab({
       }
       try {
         await sigo.entities.TreinamentoMatricula.bulkCreate(liberadas);
+      } catch (e) {
+        throw erroDeMatricula(e);
       } finally {
         recarregar();
       }
@@ -1473,9 +1520,12 @@ export default function TreinamentosEadTab({
         certificados={certificados}
         funcionarios={funcionarios}
         treinamentos={treinamentosConfig}
+        tentativas={tentativas}
+        andamento={andamento}
         podeMatricular={cursoAceitaMatricula}
         onMatricular={matricularDoPainel}
         onAbrirCurso={(cursoId) => setCursoSel(cursos.find((c) => c.id === cursoId) ?? null)}
+        onDetalhes={setMatriculaDetalheId}
       />
 
       {/* Cursos */}
@@ -1587,7 +1637,7 @@ export default function TreinamentosEadTab({
                   <p className="text-xs text-slate-500 mt-1">
                     {c.codigo ? c.codigo + " · " : ""}
                     {qtdAulas} aula(s)
-                    {c.validade_meses ? ` · validade ${c.validade_meses} meses` : ""}
+                    {textoDaValidadeDoCurso(c)}
                   </p>
                   {/* pré-requisito (T23): o curso só matricula e emite para quem concluiu o exigido */}
                   {cursoExigidoDe(c, cursos) && (
@@ -1602,6 +1652,13 @@ export default function TreinamentosEadTab({
                   )}
                 </button>
                 <div className="border-t border-slate-100 px-2 py-1">
+                  {/* o texto do botão muda sozinho durante a exportação ("Certificados 3/12..."); o aria-label
+                      é fixo, então esta região avisa o andamento a leitores de tela sem tirar o foco (A6) */}
+                  <span role="status" aria-live="polite" className="sr-only">
+                    {exportandoDossie?.cursoId === c.id
+                      ? `Exportando o dossiê do curso ${c.nome}: ${exportandoDossie.texto}`
+                      : ""}
+                  </span>
                   <Button
                     type="button"
                     variant="ghost"
@@ -1830,6 +1887,8 @@ export default function TreinamentosEadTab({
                     <Label className="text-xs">Validade (meses)</Label>
                     <Input
                       type="number"
+                      min={0}
+                      step={1}
                       disabled={!!cursoSel.modelo_treinamento_id}
                       value={cursoSel.validade_meses || ""}
                       onChange={(e) => setCursoSel({ ...cursoSel, validade_meses: e.target.value })}
@@ -1841,6 +1900,8 @@ export default function TreinamentosEadTab({
                     <Label className="text-xs">Carga horária (h)</Label>
                     <Input
                       type="number"
+                      min={1}
+                      step={1}
                       disabled={!!cursoSel.modelo_treinamento_id}
                       value={cursoSel.carga_horaria_horas || ""}
                       onChange={(e) =>
@@ -1854,6 +1915,9 @@ export default function TreinamentosEadTab({
                     <Label className="text-xs">Nota mínima da avaliação (%)</Label>
                     <Input
                       type="number"
+                      min={0}
+                      max={100}
+                      step={1}
                       value={cursoSel.nota_minima ?? 70}
                       onChange={(e) => setCursoSel({ ...cursoSel, nota_minima: e.target.value })}
                       className="mt-0.5"
@@ -1896,16 +1960,7 @@ export default function TreinamentosEadTab({
                       formatar={(p) => p.nome + (p.registro ? ` · ${p.registro}` : "")}
                       nome={cursoSel.responsavel_tecnico_nome}
                       onNome={(v) => mudarNomeDaPessoa("responsavel_tecnico", v)}
-                      onEscolher={(p) =>
-                        setCursoSel({
-                          ...cursoSel,
-                          responsavel_tecnico_nome: p.nome,
-                          responsavel_tecnico_registro:
-                            p.registro || cursoSel.responsavel_tecnico_registro || "",
-                          // a imagem é da pessoa escolhida: a do catálogo, ou nenhuma (nunca a de quem estava antes)
-                          responsavel_tecnico_assinatura_ref: p.assinatura_ref || null,
-                        })
-                      }
+                      onEscolher={(p) => escolherPessoa("responsavel_tecnico", p)}
                     />
                   </div>
                   <div>
@@ -1923,7 +1978,7 @@ export default function TreinamentosEadTab({
                     rotulo="Assinatura do responsável técnico"
                     valor={cursoSel.responsavel_tecnico_assinatura_ref}
                     empresaId={empresaAtiva.id}
-                    onChange={trocarAssinatura("responsavel_tecnico_assinatura_ref")}
+                    onChange={trocarAssinatura("responsavel_tecnico")}
                   />
                   <div>
                     <SeletorPessoa
@@ -1932,15 +1987,7 @@ export default function TreinamentosEadTab({
                       formatar={(p) => p.nome + (p.qualificacao ? ` · ${p.qualificacao}` : "")}
                       nome={cursoSel.instrutor_nome}
                       onNome={(v) => mudarNomeDaPessoa("instrutor", v)}
-                      onEscolher={(p) =>
-                        setCursoSel({
-                          ...cursoSel,
-                          instrutor_nome: p.nome,
-                          instrutor_qualificacao:
-                            p.qualificacao || cursoSel.instrutor_qualificacao || "",
-                          instrutor_assinatura_ref: p.assinatura_ref || null,
-                        })
-                      }
+                      onEscolher={(p) => escolherPessoa("instrutor", p)}
                     />
                   </div>
                   <div>
@@ -1958,7 +2005,7 @@ export default function TreinamentosEadTab({
                     rotulo="Assinatura do instrutor"
                     valor={cursoSel.instrutor_assinatura_ref}
                     empresaId={empresaAtiva.id}
-                    onChange={trocarAssinatura("instrutor_assinatura_ref")}
+                    onChange={trocarAssinatura("instrutor")}
                   />
                   <div>
                     <Label className="text-xs">Nome do tutor</Label>

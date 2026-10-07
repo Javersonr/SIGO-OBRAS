@@ -27,8 +27,9 @@
 --     10  carga nula no modelo: o curso fica sem carga (já é assim hoje; a tela mostra como pendência);
 --     11  carga zero ou negativa no modelo: o CHECK recusaria o 0 no curso; a 0139 recria a função da 0131 e
 --         grava NULL no curso nesse caso (sem erro). Quem decide a carga certa é o Javerson, pela tela;
---     12  validade negativa no modelo: a cópia para o curso seria recusada pelo CHECK de validade, e a edição
---         do cadastro central falharia. Corrija o modelo ANTES (a 0139 não mexe na validade do modelo).
+--     12  validade negativa no modelo: dado sem sentido. A 0139 recria a função da 0131 e grava NULL (sem
+--         validade) no curso nesse caso, para a edição do cadastro central não falhar no CHECK de validade,
+--         mas ela não corrige o modelo: corrija o valor dele pela tela, senão o curso fica sem validade.
 --   Linhas 4 e 5 já pegam o curso que carrega um 0 ou um negativo (ligado a modelo ou não).
 -- Linha 13: o anon ainda tem privilégio em alguma tabela do EAD? Linha 14: o default de ativo ainda é true?
 -- Linha 15: a função validar_modelo_de_treinamento (a que copia o modelo para o curso) ainda é a da 0131?
@@ -179,10 +180,12 @@ from (
   where m.carga_horaria <= 0
 
   union all
-  -- 12. C9: modelo com validade negativa (a cópia para o curso seria recusada pelo CHECK de validade)
+  -- 12. C9: modelo com validade negativa (antes da 0139 a cópia para o curso seria recusada pelo CHECK de
+  --     validade; a 0139 grava NULL no curso, e o valor do modelo continua sem sentido)
   select 12, 'treinamento (modelo)', 'C9: modelo com curso EAD ligado e validade_meses < 0',
          count(*), count(*),
-         case when count(*) = 0 then 'OK' else 'CORRIGIR O MODELO ANTES: a cópia para o curso seria recusada' end,
+         case when count(*) = 0 then 'OK'
+              else 'CORRIGIR O MODELO: a 0139 grava NULL (sem validade) no curso, mas o valor do modelo não faz sentido' end,
          array_to_string((array_agg(m.id::text order by m.id))[1:5], ', '),
          '-'
   from modelos_em_uso m

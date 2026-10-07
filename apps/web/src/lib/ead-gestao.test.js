@@ -10,6 +10,8 @@ import {
   formularioDeAulaSegueOMesmo,
   criarControleDeCarga,
   certificadosPorMatricula,
+  erroDeMatricula,
+  MSG_MATRICULA_JA_ABERTA,
 } from "./ead-gestao";
 
 const aula = (id, ordem) => ({ id, ordem });
@@ -570,5 +572,36 @@ describe("formularioDeAulaSegueOMesmo (depois do envio lento de uma aula, A2)", 
       })
     ).toBe(false);
     expect(doEnvio).toBe(true);
+  });
+});
+
+describe("erroDeMatricula (A6): matrícula aberta repetida (23505) com mensagem clara", () => {
+  it("23505 do índice único da matrícula aberta vira a mensagem da tela, guardando a causa", () => {
+    const bruto = {
+      code: "23505",
+      message: 'duplicate key value violates unique constraint "treinamento_matricula_viva_uidx"',
+      details: "Key (funcionario_id, curso_id)=(...) already exists.",
+    };
+    const erro = erroDeMatricula(bruto);
+    expect(erro).toBeInstanceOf(Error);
+    expect(erro.message).toBe(MSG_MATRICULA_JA_ABERTA);
+    expect(erro.message).toMatch(/já tem uma matrícula aberta/i);
+    expect(erro.message).toMatch(/lista foi atualizada/i);
+    expect(erro.message).not.toMatch(/duplicate key|unique constraint|23505/i);
+    expect(erro.cause).toBe(bruto);
+  });
+
+  it("reconhece pela mensagem quando o código não vem (erro de rede reescrito, proxy)", () => {
+    const erro = erroDeMatricula(new Error('duplicate key value violates unique constraint "x"'));
+    expect(erro.message).toBe(MSG_MATRICULA_JA_ABERTA);
+  });
+
+  it("qualquer outro erro passa como veio (a tela mostra a mensagem dele)", () => {
+    const outro = { code: "42501", message: "permission denied for table treinamento_matricula" };
+    expect(erroDeMatricula(outro)).toBe(outro);
+    const rede = new Error("Failed to fetch");
+    expect(erroDeMatricula(rede)).toBe(rede);
+    expect(erroDeMatricula(null)).toBeNull();
+    expect(erroDeMatricula(undefined)).toBeUndefined();
   });
 });

@@ -11,6 +11,8 @@
  * (migração 0137).
  */
 
+import { mesmoFormulario } from "./ead-gestao";
+
 export const BUCKET_ASSINATURAS = "assinaturas";
 
 /** Uma assinatura é um desenho pequeno: 2 MB sobra, e o PDF do aluno não engorda com foto de celular. */
@@ -21,21 +23,24 @@ export const ACCEPT_ASSINATURA = "image/png,image/jpeg,.png,.jpg,.jpeg";
 
 /** Quem assina além do aluno, na ordem do PDF: chave em `dados` do certificado e texto do aviso. */
 const PESSOAS = [
-  { chave: "instrutor", rotulo: "do instrutor" },
-  { chave: "responsavel_tecnico", rotulo: "do responsável técnico" },
+  { chave: "instrutor", rotulo: "do instrutor", complemento: "qualificacao" },
+  { chave: "responsavel_tecnico", rotulo: "do responsável técnico", complemento: "registro" },
 ];
 
 const IMAGEM_PNG_OU_JPEG = /\.(png|jpe?g)$/i;
 
 /**
  * A referência "assinaturas/<empresa>/caminho.png" ou null. Ignora URL (assinada ou não), Base44,
- * outro bucket, pasta de outra empresa (quando `empresaId` é informado), caminho que escapa da pasta e
- * arquivo que não é PNG ou JPEG. Sem `empresaId` só confere o formato.
+ * outro bucket, pasta de outra empresa (quando `empresaId` é informado), caminho que escapa da pasta,
+ * arquivo que não é PNG ou JPEG e a junção de várias referências com "|" (o separador que Configurações
+ * usa para guardar as assinaturas de todas as linhas de instrutor num campo só: uma junção nunca carrega
+ * como imagem). Sem `empresaId` só confere o formato. A mesma regra vale no servidor
+ * (portal-funcionario/assinaturas.ts) e no banco (CHECK da migração 0137): mude nos três.
  */
 export function refDeAssinatura(valor, empresaId = null) {
   if (typeof valor !== "string") return null;
   const ref = valor.trim();
-  if (!ref || /base44\./i.test(ref) || ref.includes("\\") || ref.includes(":")) return null;
+  if (!ref || /base44\./i.test(ref) || /[\\:|]/.test(ref)) return null;
   const partes = ref.split("/");
   if (partes.length < 3 || partes.some((p) => !p || p === "." || p === "..")) return null;
   if (partes[0] !== BUCKET_ASSINATURAS) return null;
@@ -96,12 +101,45 @@ function nomeNormalizado(nome) {
     .toLowerCase();
 }
 
+/** Marca (só da tela, nunca gravada) de que a imagem do curso ainda não tem dono: foi anexada antes do nome. */
+const marcaSemDono = (pessoa) => `${pessoa}_assinatura_sem_dono`;
+
+const pessoaDaAssinatura = (pessoa) => {
+  const dados = PESSOAS.find((p) => p.chave === pessoa);
+  if (!dados) throw new Error(`pessoa desconhecida: ${pessoa}`);
+  return dados;
+};
+
+/** Cópia do curso sem a marca de imagem sem dono de `pessoa` (o mesmo objeto, se não havia marca). */
+function semMarca(curso, pessoa) {
+  const marca = marcaSemDono(pessoa);
+  if (!curso || !(marca in curso)) return curso;
+  const { [marca]: _descartada, ...resto } = curso;
+  return resto;
+}
+
+/**
+ * Tira do formulário as marcas de "imagem sem dono" das duas pessoas. A tela chama isto depois de salvar: o
+ * que foi gravado tem nome e imagem juntos, e mudar o nome dali em diante retira a imagem. O mesmo objeto
+ * volta se não havia marca; a entrada não muda.
+ */
+export function semMarcasDeAssinatura(curso) {
+  return PESSOAS.reduce((atual, p) => semMarca(atual, p.chave), curso);
+}
+
 /**
  * Regra do formulário do curso quando o RH ESCREVE o nome do instrutor ou do RT (campo de texto livre, ou
  * "— escolher dos salvos —", que esvazia o nome). A imagem da assinatura é de uma pessoa: se o nome muda
  * para outra, a imagem de quem estava antes sai do curso, senão a emissão congelaria o nome de uma
  * pessoa com a assinatura de outra (NR-1). Quem escolhe alguém da lista de Configurações não passa por
- * aqui: lá o formulário já troca nome e imagem juntos.
+ * aqui (`aoEscolherPessoa`): lá o formulário já troca nome e imagem juntos.
+ *
+ * A exceção (A6) é a imagem anexada ANTES de haver nome (curso novo: o RH anexa e depois digita): ela ainda
+ * não é de ninguém, e o nome que ele digita agora é o de quem assina. Enquanto o nome é digitado letra por
+ * letra a imagem fica, e a marca `<pessoa>_assinatura_sem_dono` (só da tela) lembra disso até o curso ser
+ * salvo (`semMarcasDeAssinatura`). O mesmo vale para uma imagem gravada sem nome (dado antigo). Quem já
+ * tinha nome e imagem (a pessoa da lista, a imagem de um curso salvo, a anexada com o nome preenchido)
+ * continua perdendo a imagem se o nome muda.
  *
  * `pessoa` é "instrutor" ou "responsavel_tecnico" (os campos são `<pessoa>_nome` e
  * `<pessoa>_assinatura_ref`). Mesmo nome, só com espaço ou maiúscula diferente, mantém a imagem. Devolve
@@ -110,26 +148,112 @@ function nomeNormalizado(nome) {
  * estar pela metade enquanto o RH digita. Pessoa desconhecida lança: seria gravar um campo inventado.
  */
 export function aoMudarNomeDaPessoa(curso, pessoa, novoNome) {
-  const dados = PESSOAS.find((p) => p.chave === pessoa);
-  if (!dados) throw new Error(`pessoa desconhecida: ${pessoa}`);
+  const dados = pessoaDaAssinatura(pessoa);
   const campoNome = `${pessoa}_nome`;
   const campoRef = `${pessoa}_assinatura_ref`;
   const atual = curso || {};
   const nome = novoNome == null ? "" : String(novoNome);
   const proximo = { ...atual, [campoNome]: nome };
   const imagemDoCurso = atual[campoRef];
-  if (!imagemDoCurso || nomeNormalizado(atual[campoNome]) === nomeNormalizado(nome)) {
-    return { curso: proximo, imagemRetirada: false, aviso: "" };
+  if (!imagemDoCurso) return { curso: semMarca(proximo, pessoa), imagemRetirada: false, aviso: "" };
+  const nomeAntes = nomeNormalizado(atual[campoNome]);
+  const nomeDepois = nomeNormalizado(nome);
+  // imagem ainda sem dono: o nome digitado agora é o dono (a marca segue até salvar)
+  if (atual[marcaSemDono(pessoa)] === true || nomeAntes === "") {
+    return {
+      curso: { ...proximo, [marcaSemDono(pessoa)]: true },
+      imagemRetirada: false,
+      aviso: "",
+    };
   }
+  if (nomeAntes === nomeDepois) return { curso: proximo, imagemRetirada: false, aviso: "" };
   // referência que a tela nem mostra como imagem (sistema antigo): sai junto, sem avisar de uma imagem que o RH não via
   const eraVisivel = !!refDeAssinatura(imagemDoCurso);
-  const motivo = nomeNormalizado(nome)
+  const motivo = nomeDepois
     ? "porque o nome mudou. Anexe a imagem de quem assina, no campo logo abaixo."
     : "porque o nome foi apagado. Escolha ou digite quem assina e anexe a imagem dessa pessoa.";
   return {
-    curso: { ...proximo, [campoRef]: null },
+    curso: { ...semMarca(proximo, pessoa), [campoRef]: null },
     imagemRetirada: eraVisivel,
     aviso: eraVisivel ? `A imagem da assinatura ${dados.rotulo} foi retirada ${motivo}` : "",
+  };
+}
+
+/**
+ * O RH ESCOLHEU uma pessoa da lista de Configurações no seletor do instrutor ou do RT: nome, registro (ou
+ * qualificação) e a imagem dela entram juntos, e a imagem de quem estava antes nunca fica (A6: a escolha
+ * avisa, como `aoMudarNomeDaPessoa`, quando uma imagem que a tela mostrava é retirada porque a pessoa
+ * escolhida não tem imagem em Configurações). Se é a MESMA pessoa que já estava no campo (o nome digitado
+ * igual ao da lista) e a lista não traz imagem, a que o RH anexou fica. O registro/qualificação de quem
+ * estava antes só é trocado se a pessoa escolhida tiver o seu. `escolhida` é o item de
+ * `pessoasDosTreinamentos` ({ nome, registro | qualificacao, assinatura_ref }). Devolve o mesmo formato de
+ * `aoMudarNomeDaPessoa`.
+ */
+export function aoEscolherPessoa(curso, pessoa, escolhida) {
+  const dados = pessoaDaAssinatura(pessoa);
+  const campoNome = `${pessoa}_nome`;
+  const campoRef = `${pessoa}_assinatura_ref`;
+  const campoComplemento = `${pessoa}_${dados.complemento}`;
+  const atual = curso || {};
+  const imagemVisivel = refDeAssinatura(atual[campoRef]);
+  const mesmaPessoa = nomeNormalizado(atual[campoNome]) === nomeNormalizado(escolhida?.nome);
+  const daLista = escolhida?.assinatura_ref || null;
+  const imagem = daLista ?? (mesmaPessoa ? imagemVisivel : null);
+  const retirada = !!imagemVisivel && !imagem;
+  return {
+    curso: {
+      ...semMarca(atual, pessoa),
+      [campoNome]: escolhida?.nome ?? "",
+      [campoComplemento]: escolhida?.[dados.complemento] || atual[campoComplemento] || "",
+      [campoRef]: imagem,
+    },
+    imagemRetirada: retirada,
+    aviso: retirada
+      ? `A imagem da assinatura ${dados.rotulo} foi retirada porque a pessoa escolhida não tem imagem em Configurações. Anexe a imagem dessa pessoa, no campo logo abaixo.`
+      : "",
+  };
+}
+
+/**
+ * A imagem que o envio terminou de subir (`ref`) ou a remoção (`ref` null) chega ao formulário que a pediu?
+ * `formulario` é o curso aberto quando o RH clicou (e o nome que ele tinha); `atual` é o que a tela mostra
+ * AGORA. O envio é lento: nesse tempo o RH pode ter aberto outro curso ou mudado o nome / escolhido outra
+ * pessoa, e a imagem não pode cair sob o nome de outra pessoa (A6). Vale: o mesmo formulário e o mesmo
+ * nome do começo do envio (ou nome vazio no começo: a imagem fica sem dono e adota o que o RH digitou). Não
+ * vale: devolve `aplicada: false`, o curso de `atual` sem mudança e o `aviso` para o toast. A remoção vale
+ * no mesmo formulário, seja qual for o nome. `atual` e `formulario` não são alterados.
+ */
+export function aoTrocarImagemDaAssinatura({ atual, formulario, pessoa, ref }) {
+  const dados = pessoaDaAssinatura(pessoa);
+  const campoNome = `${pessoa}_nome`;
+  const campoRef = `${pessoa}_assinatura_ref`;
+  if (!mesmoFormulario(atual, formulario)) {
+    return {
+      curso: atual,
+      aplicada: false,
+      aviso:
+        `A imagem da assinatura ${dados.rotulo} não foi anexada: o formulário mudou (outro curso foi aberto) ` +
+        "durante o envio. Anexe de novo no curso certo.",
+    };
+  }
+  if (ref == null) {
+    return { curso: { ...semMarca(atual, pessoa), [campoRef]: null }, aplicada: true, aviso: "" };
+  }
+  const nomeNoInicio = nomeNormalizado(formulario[campoNome]);
+  if (nomeNoInicio && nomeNoInicio !== nomeNormalizado(atual[campoNome])) {
+    return {
+      curso: atual,
+      aplicada: false,
+      aviso:
+        `A imagem da assinatura ${dados.rotulo} não foi anexada: quem assina mudou durante o envio. ` +
+        "Anexe de novo, já com o nome certo.",
+    };
+  }
+  const anexada = { ...atual, [campoRef]: ref };
+  return {
+    curso: nomeNoInicio ? semMarca(anexada, pessoa) : { ...anexada, [marcaSemDono(pessoa)]: true },
+    aplicada: true,
+    aviso: "",
   };
 }
 

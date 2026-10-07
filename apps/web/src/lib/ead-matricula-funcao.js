@@ -3,8 +3,11 @@
  *
  * O caminho é o da migração 0131: função → exigência da função (`treinamento` com `funcao_id`) →
  * treinamento central (`modelo_treinamento_id`) → curso do portal (`treinamento_curso.modelo_treinamento_id`).
- * É o mesmo vínculo do painel "Atividade sem treinamento" (T24, `ead-vencimentos.js`): quem aparece lá como
- * pendência é quem esta tela matricula, com a mesma conta de "matrícula válida".
+ * É o mesmo vínculo do painel "Atividade sem treinamento" (T24, `ead-vencimentos.js`) e a mesma conta de
+ * "matrícula válida", inclusive para a conclusão em curso despublicado do mesmo modelo (A6: o certificado já
+ * emitido continua valendo nos dois). Quem aparece lá como pendência é quem esta tela matricula, com um desvio
+ * consciente: o apoio feito (ver "Exceção" abaixo) tira a pessoa de "faltam" aqui, mas o painel T24 segue
+ * mostrando-a, porque o apoio não emite certificado.
  *
  * Quem usa: components/seguranca/MatricularEadSheet.jsx (modo "Por função") e as telas que sugerem a
  * matrícula na admissão e na troca de função (`sugestaoDeMatricula`). Os testes ficam em

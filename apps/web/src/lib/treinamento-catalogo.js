@@ -37,11 +37,15 @@ export const TEXTO_CURSO_SEM_VINCULO =
   "vínculo: nome, código, carga horária, validade e conteúdo seguem editáveis aqui.";
 
 /**
- * Mostra o aviso acima? Só para curso JÁ gravado (tem id) e sem vínculo, nem no formulário nem no banco:
- * vale para qualquer curso nessa situação (criado antes do cadastro central, ou depois por fora da tela,
- * como no `tools/ead-sync-cursos.py`). Curso novo exige o vínculo para salvar (`faltaModeloCentral`), e
- * o aviso some assim que o RH escolhe o treinamento.
+ * Mostra o aviso acima? Só para curso JÁ gravado (tem id, e achado na lista carregada) e sem vínculo, nem no
+ * formulário nem no banco: vale para qualquer curso nessa situação (criado antes do cadastro central, ou
+ * depois por fora da tela, como no `tools/ead-sync-cursos.py`). Curso novo exige o vínculo para salvar
+ * (`faltaModeloCentral`), e o aviso some assim que o RH escolhe o treinamento. É a mesma condição em que
+ * `faltaModeloCentral` libera o salvar sem vínculo: exige `gravado?.id`, senão o aviso diria "pode ser
+ * salvo sem o vínculo" para um curso que a regra de salvar recusa (A6).
  */
 export function mostrarAvisoDeCursoSemVinculo(form, gravado) {
-  return !!form?.id && !form.modelo_treinamento_id && !gravado?.modelo_treinamento_id;
+  return (
+    !!form?.id && !form.modelo_treinamento_id && !!gravado?.id && !gravado.modelo_treinamento_id
+  );
 }

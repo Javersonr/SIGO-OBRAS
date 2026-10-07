@@ -69,7 +69,12 @@ vi.mock("@/components/seguranca/certificadoParaRH", () => ({
   },
 }));
 
-import { lerDadosDoDossie, exportarDossieDoCurso } from "./exportarDossieEad";
+import {
+  LIMITE_DO_PROJETO_MS,
+  exportarDossieDoCurso,
+  lerArquivoDoStorage,
+  lerDadosDoDossie,
+} from "./exportarDossieEad";
 
 // Dados sintéticos: nenhum nome, CPF, IP ou identificador real.
 const EMPRESA = "emp-1";
@@ -373,7 +378,8 @@ describe("exportarDossieDoCurso: lê, monta o ZIP e entrega ao navegador", () =>
   it("o projeto é baixado por URL assinada na hora, sem gravar nada", async () => {
     await exportarDossieDoCurso(pedido());
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      "https://arquivos.invalid/treinamentos/emp-1/projeto.pdf"
+      "https://arquivos.invalid/treinamentos/emp-1/projeto.pdf",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
   });
 
@@ -394,5 +400,89 @@ describe("exportarDossieDoCurso: lê, monta o ZIP e entrega ao navegador", () =>
     h.estado.erros.treinamento_matricula = new Error("fora do ar");
     await expect(exportarDossieDoCurso(pedido())).rejects.toThrow("fora do ar");
     expect(ancora.click).not.toHaveBeenCalled();
+  });
+});
+
+describe("lerArquivoDoStorage: o projeto baixa com limite de tempo (A6)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete globalThis.fetch;
+  });
+
+  // fetch que nunca responde sozinho: só termina quando o sinal de cancelamento dispara (como o de verdade)
+  const fetchQueTrava = () =>
+    vi.fn(
+      (_url, opcoes) =>
+        new Promise((_resolve, rejeitar) => {
+          opcoes.signal.addEventListener("abort", () =>
+            rejeitar(Object.assign(new Error("The operation was aborted"), { name: "AbortError" }))
+          );
+        })
+    );
+
+  it("o limite padrão é de minutos, não de segundos (o PDF do projeto pode ser grande)", () => {
+    expect(LIMITE_DO_PROJETO_MS).toBeGreaterThanOrEqual(30_000);
+    expect(LIMITE_DO_PROJETO_MS).toBeLessThanOrEqual(300_000);
+  });
+
+  it("download que trava é cancelado no limite e vira um erro que diz que o tempo acabou", async () => {
+    globalThis.fetch = fetchQueTrava();
+    await expect(lerArquivoDoStorage("treinamentos/emp-1/projeto.pdf", 20)).rejects.toThrow(
+      /tempo esgotado/i
+    );
+    // o fetch recebeu o sinal de cancelamento
+    expect(globalThis.fetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+    expect(globalThis.fetch.mock.calls[0][1].signal.aborted).toBe(true);
+  });
+
+  it("download que termina a tempo devolve os bytes e solta o temporizador", async () => {
+    const limpar = vi.spyOn(globalThis, "clearTimeout");
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      arrayBuffer: async () => new TextEncoder().encode("%PDF").buffer,
+    }));
+    const bytes = await lerArquivoDoStorage("treinamentos/emp-1/projeto.pdf", 5_000);
+    expect(new TextDecoder().decode(bytes)).toBe("%PDF");
+    expect(limpar).toHaveBeenCalled();
+    expect(globalThis.fetch.mock.calls[0][1].signal.aborted).toBe(false);
+  });
+
+  it("o corpo da resposta também conta no limite (cabeçalho veio, arquivo não)", async () => {
+    globalThis.fetch = vi.fn((_url, opcoes) =>
+      Promise.resolve({
+        ok: true,
+        arrayBuffer: () =>
+          new Promise((_resolve, rejeitar) => {
+            opcoes.signal.addEventListener("abort", () =>
+              rejeitar(Object.assign(new Error("aborted"), { name: "AbortError" }))
+            );
+          }),
+      })
+    );
+    await expect(lerArquivoDoStorage("treinamentos/emp-1/projeto.pdf", 20)).rejects.toThrow(
+      /tempo esgotado/i
+    );
+  });
+
+  it("erro HTTP e falta de URL continuam com a causa no texto do erro", async () => {
+    globalThis.fetch = vi.fn(async () => ({ ok: false, status: 404 }));
+    await expect(lerArquivoDoStorage("treinamentos/emp-1/projeto.pdf", 5_000)).rejects.toThrow(
+      "HTTP 404"
+    );
+    const { resolveStorageUrl } = await import("@/api/sigoClient");
+    resolveStorageUrl.mockResolvedValueOnce(null);
+    await expect(lerArquivoDoStorage("treinamentos/emp-1/projeto.pdf", 5_000)).rejects.toThrow(
+      "sem URL"
+    );
+  });
+
+  it("o fetch do dossiê passa pelo limite: o exportador usa lerArquivoDoStorage para o projeto", async () => {
+    const codigo = (await import("node:fs")).readFileSync(
+      new URL("./exportarDossieEad.js", import.meta.url),
+      "utf8"
+    );
+    expect(codigo).toContain("lerProjeto: lerArquivoDoStorage");
+    expect(codigo).toMatch(/new AbortController\(\)/);
+    expect(codigo).not.toMatch(/await fetch\(url\);/);
   });
 });

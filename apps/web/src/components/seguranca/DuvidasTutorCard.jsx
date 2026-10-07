@@ -8,8 +8,15 @@ import { Label } from "@/components/ui/label";
 import { MessageCircleQuestion, Loader2, Send, Pencil, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { dispararWhatsApp } from "@/lib/whatsapp";
-import { urlPortal } from "@/lib/portal-funcionario-acesso";
-import { contarPendentes, ehPendente, filtrarDuvidas, opcoesDoFiltro } from "@/lib/ead-duvidas";
+import { acessoPortal, falhaDaAcaoDoRH, urlPortal } from "@/lib/portal-funcionario-acesso";
+import {
+  contarPendentes,
+  decidirResposta,
+  edicaoDepoisDeResponder,
+  ehPendente,
+  filtrarDuvidas,
+  opcoesDoFiltro,
+} from "@/lib/ead-duvidas";
 
 const fmtDataHora = (iso) =>
   iso ? new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "";
@@ -114,7 +121,8 @@ export function CartaoDeDuvida({
  *
  * - filtros por curso e por aluno (só aparecem os que têm dúvida) e "Ver todas" para incluir as respondidas;
  * - a resposta pode ser editada depois de enviada (por padrão o aluno NÃO é avisado de novo no WhatsApp: o RH
- *   marca a caixa quando a correção muda o sentido);
+ *   marca a caixa quando a correção muda o sentido). A edição passa pelo servidor, que guarda a versão ANTERIOR
+ *   na trilha de auditoria (evento `duvida_resposta_editada`, A6): o aluno pode ter lido a primeira;
  * - o número de dúvidas sem resposta sobe para a tela (`onPendentes`), que o mostra no gatilho da aba
  *   "Treinamentos" de RH & Segurança.
  *
@@ -228,29 +236,40 @@ export default function DuvidasTutorCard({
   };
 
   const responder = async (d) => {
-    const texto = (respostas[d.id] || "").trim();
-    if (!texto) return;
-    const edicao = editando === d.id;
+    // a regra (resposta nova x edição x "a mesma resposta" x vazio) está em lib/ead-duvidas.js
+    const decisao = decidirResposta({ duvida: d, texto: respostas[d.id], editando });
+    if (decisao.acao === "nada") return;
     // a mesma resposta de novo não muda nada (e não deve gastar um aviso)
-    if (edicao && texto === String(d.resposta || "").trim()) {
+    if (decisao.acao === "fechar_edicao") {
       cancelarEdicao();
       return;
     }
+    const edicao = decisao.acao === "editar";
     setSalvando(d.id);
     try {
-      await sigo.entities.TreinamentoDuvida.update(d.id, {
-        resposta: texto,
-        respondida_por: user?.full_name || user?.email || null,
-        respondida_em: new Date().toISOString(),
-      });
+      if (edicao) {
+        // o servidor troca o texto e guarda a versão anterior na trilha (a trilha é só de inclusão)
+        await acessoPortal.editarRespostaDuvida(d.id, decisao.texto);
+      } else {
+        await sigo.entities.TreinamentoDuvida.update(d.id, {
+          resposta: decisao.texto,
+          respondida_por: user?.full_name || user?.email || null,
+          respondida_em: new Date().toISOString(),
+        });
+      }
       // resposta nova avisa o aluno; correção só avisa se o RH marcou a caixa
       if (!edicao || avisarDeNovo) await avisarAluno(d);
       setRespostas((r) => ({ ...r, [d.id]: "" }));
-      cancelarEdicao();
+      // só fecha a edição desta dúvida: a de outra, que o RH deixou aberta, continua
+      if (edicao) setAvisarDeNovo(false);
+      setEditando((atual) => edicaoDepoisDeResponder(atual, d.id));
       toast.success(edicao ? "Resposta atualizada" : "Resposta enviada");
       carregar();
     } catch (e) {
-      toast.error("Erro: " + (e?.message || e));
+      const falha = falhaDaAcaoDoRH(e);
+      toast.error(falha.texto, falha.duracao ? { duration: falha.duracao } : undefined);
+      // conflito ou dúvida que já não existe: o que a tela mostra ficou velho
+      if (falha.recarregarMatricula) carregar();
     } finally {
       setSalvando(null);
     }

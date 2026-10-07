@@ -72,6 +72,19 @@ export function seloDaModalidade(modalidade) {
 }
 
 /**
+ * O pedaço do cartão do curso que diz a validade: " · validade 24 meses" (e " · validade 1 mês"), ou vazio. O
+ * curso de APOIO nunca mostra validade (D3 completa, A6): ele é material de estudo, não emite certificado e não
+ * renova, ainda que o cadastro central traga uma validade. Sem validade válida (nula, zero, negativa, texto)
+ * também sai vazio.
+ */
+export function textoDaValidadeDoCurso(curso) {
+  if (normalizar(curso?.modalidade) === "apoio") return "";
+  const meses = Number(curso?.validade_meses);
+  if (!Number.isFinite(meses) || meses <= 0) return "";
+  return ` · validade ${meses} ${meses === 1 ? "mês" : "meses"}`;
+}
+
+/**
  * Como a lista de requisitos do curso mostra um requisito ainda não cumprido (`requisitosDoCurso`):
  * "Pendente" (em alerta) quando ele trava publicar e matricular; "Informação" (neutro) quando só trava a
  * emissão, que é o caso do curso de apoio (o motivo é só informativo, D3); "Revisar" (neutro) para o que

@@ -19,7 +19,7 @@
 
 import type { Consumo, Limite } from "../_shared/limite-tentativas.ts";
 import { dataBrasilia, hashDoCertificado } from "../_shared/portal-funcionario.ts";
-import { formatarHoras } from "./requisitos.ts";
+import { formatarHoras, modalidadeDoCurso } from "./requisitos.ts";
 
 /** Vídeo conclui sozinho a partir de 90% assistidos. */
 export const PCT_CONCLUSAO = 0.9;
@@ -237,6 +237,43 @@ export function datasDeConclusao(
   const renovacao = renovacaoAPartirDe(dia, validadeMeses, modalidade);
   if (renovacao) datas.proxima_renovacao = renovacao;
   return datas;
+}
+
+/**
+ * O que fazer quando a trilha pode estar completa (A6): o resultado que o `index.ts` devolve e, se concluiu,
+ * o que grava na matrícula (`status`, `data_conclusao` e, fora do apoio, `proxima_renovacao`).
+ *
+ * `cursoLido: false` = a leitura do curso (validade e modalidade) FALHOU. A conclusão é permanente (a
+ * matrícula vira `concluido` e nenhuma ação a regrava), então concluir sem o curso gravaria a validade errada
+ * para sempre: o EAD sairia sem renovação, e o curso de apoio, que não renova, não teria como ser distinguido.
+ * Nesse caso a conclusão fica para a próxima ação do aluno (a leitura é refeita); o aluno não perde nada.
+ * Curso que não existe (sem erro) segue o comportamento de sempre: conclui só com a data.
+ *
+ * `precisaAvaliacao` = "é a hora da prova": só com todas as aulas feitas e a prova ainda pendente.
+ */
+export function decisaoDeConclusao(p: {
+  sit: { aulasOk: boolean; temAvaliacao: boolean; concluido: boolean };
+  curso?: { validade_meses?: number | null; modalidade?: string | null } | null;
+  /** false quando a leitura do curso deu erro (não confundir com curso que não existe). */
+  cursoLido?: boolean;
+  hoje: Date;
+}) {
+  const { sit } = p;
+  const andamento = (precisaAvaliacao: boolean) => ({
+    resultado: { status: "em_andamento", concluiu: false, precisaAvaliacao },
+    patch: null as Record<string, unknown> | null,
+  });
+  if (!sit.aulasOk) return andamento(false);
+  if (!sit.concluido) return andamento(sit.temAvaliacao);
+  if (p.cursoLido === false) return andamento(false);
+  return {
+    resultado: { status: "concluido", concluiu: true, precisaAvaliacao: false },
+    patch: {
+      status: "concluido",
+      // curso de apoio não renova (D3): só a data da conclusão
+      ...datasDeConclusao(p.hoje, p.curso?.validade_meses, modalidadeDoCurso(p.curso)),
+    } as Record<string, unknown> | null,
+  };
 }
 
 /**

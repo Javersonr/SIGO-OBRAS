@@ -86,12 +86,103 @@ describe("requisitos dos cursos", () => {
     expect(pendenciasDeEmissao(apoio)).toEqual(["MODALIDADE"]);
     const requisito = requisitosDoCurso(apoio).find((r) => r.codigo === "MODALIDADE");
     expect(requisito).toMatchObject({ ok: false, bloqueia: false, bloqueiaEmissao: true });
-    // os outros requisitos do curso continuam valendo para o apoio (a D3 só trata da modalidade)
-    expect(pendencias({ ...apoio, curso: { ...apoio.curso, instrutor_nome: "" } })).toEqual([
-      "INSTRUTOR",
-    ]);
+    // D3 completa (A6): os requisitos que só existem por causa do certificado também não pesam no apoio
+    expect(pendencias({ ...apoio, curso: { ...apoio.curso, instrutor_nome: "" } })).toEqual([]);
   });
-  it("só os requisitos 'bloqueia' travam a emissão; os de revisão (TUTOR etc.) nunca travam", () => {
+  describe("D3 completa (A6): o apoio é material de estudo e só precisa do que serve ao estudo", () => {
+    // curso de apoio SEM instrutor, RT, questões, validade, projeto e com o conteúdo menor que a carga
+    const nu = {
+      curso: { nome: "Apoio NR-35", carga_horaria_horas: 40, modalidade: "apoio" },
+      aulas: [{ tipo: "texto", conteudo_texto: "Texto teste", duracao_seg: 600 }],
+      questoes: [],
+    };
+    const codigos = (dados) => requisitosDoCurso(dados).map((r) => r.codigo);
+
+    it("publica e matricula sem LASTRO, INSTRUTOR, RT, QUESTOES, VALIDADE nem PROJETO", () => {
+      expect(pendencias(nu)).toEqual([]);
+      for (const certificado of ["LASTRO", "INSTRUTOR", "RT", "QUESTOES", "VALIDADE", "PROJETO"]) {
+        expect(codigos(nu), certificado).not.toContain(certificado);
+      }
+    });
+
+    it("não pede 'Confira a validade' nem projeto pedagógico: nenhum requisito do apoio fala deles", () => {
+      const textos = requisitosDoCurso(nu)
+        .map((r) => r.texto)
+        .join(" | ");
+      expect(textos).not.toMatch(/validade/i);
+      expect(textos).not.toMatch(/projeto pedag/i);
+      expect(textos).not.toMatch(/instrutor|respons[áa]vel t[ée]cnico/i);
+    });
+
+    it("o que serve ao estudo continua exigido: aulas, conteúdo com duração e carga horária", () => {
+      expect(pendencias({ curso: nu.curso })).toEqual(["AULAS", "CONTEUDO"]);
+      expect(pendencias({ ...nu, aulas: [{ ...nu.aulas[0], duracao_seg: 0 }] })).toEqual([
+        "CONTEUDO",
+      ]);
+      expect(pendencias({ ...nu, curso: { ...nu.curso, carga_horaria_horas: 0 } })).toEqual([
+        "CARGA",
+      ]);
+    });
+
+    it("só a MODALIDADE trava a emissão, e a emissão do apoio continua barrada com tudo em branco", () => {
+      expect(pendenciasDeEmissao(nu)).toEqual(["MODALIDADE"]);
+      expect(
+        pendenciasDeEmissao({ ...nu, questoes: Array.from({ length: 5 }, () => ({})) })
+      ).toEqual(["MODALIDADE"]);
+    });
+
+    it("o aviso do tutor e o conteúdo programático seguem como revisão (não travam)", () => {
+      const avisos = requisitosDoCurso(nu).filter((r) => !r.bloqueia && !r.bloqueiaEmissao);
+      expect(avisos.map((r) => r.codigo)).toEqual(["TUTOR", "PROGRAMA"]);
+    });
+
+    it("EAD, semipresencial e modalidade desconhecida continuam com a lista inteira (nada mudou)", () => {
+      const completos = [
+        "AULAS",
+        "CONTEUDO",
+        "QUESTOES",
+        "CARGA",
+        "LASTRO",
+        "INSTRUTOR",
+        "RT",
+        "MODALIDADE",
+        "TUTOR",
+        "PROJETO",
+        "PROGRAMA",
+        "VALIDADE",
+      ];
+      for (const modalidade of [undefined, "ead", "inventada"]) {
+        expect(codigos({ ...nu, curso: { ...nu.curso, modalidade } }), String(modalidade)).toEqual(
+          completos
+        );
+      }
+      expect(
+        codigos({ ...nu, curso: { ...nu.curso, ...CARGAS_SEMI, modalidade: "semipresencial" } })
+      ).toEqual([
+        "AULAS",
+        "CONTEUDO",
+        "QUESTOES",
+        "CARGA",
+        "CARGAS",
+        "LASTRO",
+        "INSTRUTOR",
+        "RT",
+        "MODALIDADE",
+        "TUTOR",
+        "PROJETO",
+        "PROGRAMA",
+        "VALIDADE",
+      ]);
+    });
+
+    it("um curso que sai do apoio volta a ser cobrado do que faltava (a lista é calculada na hora)", () => {
+      const virouEad = { ...nu, curso: { ...nu.curso, modalidade: "ead" } };
+      expect(pendencias(virouEad)).toEqual(
+        expect.arrayContaining(["QUESTOES", "LASTRO", "INSTRUTOR", "RT"])
+      );
+    });
+  });
+  it("em curso que emite, travar a emissão e travar a publicação são a mesma coisa; os de revisão (TUTOR etc.) nunca travam", () => {
     for (const r of requisitosDoCurso({ curso, aulas, questoes })) {
       expect(typeof r.bloqueiaEmissao).toBe("boolean");
       expect(r.bloqueiaEmissao).toBe(r.bloqueia);

@@ -122,6 +122,22 @@ describe("textoDeAtraso", () => {
     expect(t).toMatch(/usuário \(CPF\) e a sua senha/);
   });
 
+  it("primeiro acesso pendente (A6): não manda 'entre com a sua senha', e sim a provisória que o RH passou", () => {
+    const t = textoDeAtraso({
+      nome: "Beto",
+      itens: [{ cursoNome: "X", limite: "2026-10-01" }],
+      urlPortal: url,
+      primeiroAcessoPendente: true,
+    });
+    expect(t).not.toMatch(/e a sua senha/);
+    expect(t).toMatch(/senha provisória/);
+    expect(t).toMatch(/cria a sua senha/);
+    expect(t).toMatch(/fale com o RH/);
+    // ainda não leva a senha nem o usuário, só orienta
+    expect(t).not.toMatch(/\d{6}/);
+    expect(t).toContain(url);
+  });
+
   it("sem nome ainda cumprimenta", () => {
     expect(
       textoDeAtraso({ nome: "", itens: [{ cursoNome: "X", limite: "2026-10-01" }], urlPortal: url })
@@ -217,6 +233,52 @@ describe("prepararLoteDeAtrasados", () => {
   it("o limite padrão fica abaixo do teto por hora do canal (60)", () => {
     expect(LIMITE_DO_LOTE).toBeLessThan(60);
     expect(LIMITE_DO_LOTE).toBeGreaterThan(0);
+  });
+
+  it("primeiro acesso pendente (A6): ainda recebe, com o texto da senha provisória", () => {
+    const r = montar(
+      [linha("m1", "f1"), linha("m2", "f2")],
+      [
+        acesso("f1", { primeiro_acesso_pendente: true }),
+        acesso("f2", { primeiro_acesso_pendente: false }),
+      ]
+    );
+    const f1 = r.enviar.find((e) => e.funcionarioId === "f1");
+    const f2 = r.enviar.find((e) => e.funcionarioId === "f2");
+    expect(f1.texto).toMatch(/senha provisória/);
+    expect(f1.texto).not.toMatch(/e a sua senha/);
+    expect(f1.primeiroAcessoPendente).toBe(true);
+    expect(f2.texto).toMatch(/usuário \(CPF\) e a sua senha/);
+    expect(f2.texto).not.toMatch(/senha provisória/);
+    expect(f2.primeiroAcessoPendente).toBe(false);
+  });
+
+  it("curso despublicado (A6): o aluno não consegue fazê-lo, então não entra no lembrete", () => {
+    const r = montar(
+      [
+        linha("m1", "f1", { cursoNome: "Publicado", curso: { id: "c1", ativo: true } }),
+        linha("m2", "f1", { cursoNome: "Despublicado", curso: { id: "c2", ativo: false } }),
+        // só tem atraso em curso despublicado: nem recebe nem aparece como "de fora"
+        linha("m3", "f2", { cursoNome: "Despublicado", curso: { id: "c2", ativo: false } }),
+      ],
+      [acesso("f1"), acesso("f2")]
+    );
+    expect(r.enviar.map((e) => e.funcionarioId)).toEqual(["f1"]);
+    expect(r.enviar[0].itens.map((i) => i.cursoNome)).toEqual(["Publicado"]);
+    expect(r.enviar[0].texto).toContain("1 treinamento atrasado");
+    expect(r.enviar[0].texto).not.toContain("Despublicado");
+    expect(r.pulados).toEqual([]);
+    // quantas matrículas ficaram fora por isso, para a tela dizer
+    expect(r.despublicados).toBe(2);
+  });
+
+  it("curso sem o campo 'ativo' (ou curso ausente na linha) conta como publicado", () => {
+    const r = montar(
+      [linha("m1", "f1", { curso: {} }), linha("m2", "f2", { curso: undefined })],
+      [acesso("f1"), acesso("f2")]
+    );
+    expect(r.enviar).toHaveLength(2);
+    expect(r.despublicados).toBe(0);
   });
 
   it("os itens saem do mais antigo para o mais novo", () => {

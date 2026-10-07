@@ -27,12 +27,17 @@ const PESSOAS_COM_ASSINATURA = ["instrutor", "responsavel_tecnico"] as const;
 /**
  * A referência "bucket/caminho" da assinatura, ou null. Só passa o que está em `assinaturas/<empresa>/...`,
  * é imagem (PNG ou JPEG, o que o PDF sabe desenhar) e não escapa da pasta (`.`, `..`, `//`, `\`). URL de
- * qualquer tipo não é referência (a regra do projeto é gravar a referência, nunca o `file_url`).
+ * qualquer tipo não é referência (a regra do projeto é gravar a referência, nunca o `file_url`). A junção de
+ * várias referências com "|" (o separador de Configurações, que guarda as assinaturas de todas as linhas de
+ * instrutor num campo só) também não é: nunca carregaria como imagem (A6).
+ *
+ * A mesma regra vale no front (`lib/ead-assinatura.js`, `refDeAssinatura`) e no banco (CHECK da migração
+ * 0137): mude nos três.
  */
 export function refDaAssinatura(valor: unknown, empresaId: string): string | null {
   if (typeof valor !== "string" || !empresaId) return null;
   const ref = valor.trim();
-  if (!ref || ARQUIVO_DO_BASE44.test(ref) || ref.includes("\\") || ref.includes(":")) return null;
+  if (!ref || ARQUIVO_DO_BASE44.test(ref) || /[\\:|]/.test(ref)) return null;
   const partes = ref.split("/"); // [bucket, empresa_id, ...caminho]
   if (partes.length < 3 || partes.some((p) => !p || p === "." || p === "..")) return null;
   if (partes[0] !== BUCKET_ASSINATURAS || partes[1] !== empresaId) return null;

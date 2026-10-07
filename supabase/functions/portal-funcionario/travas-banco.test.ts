@@ -145,7 +145,7 @@ test("a validação é um passo à parte, só das 7 travas, que não derruba a m
   // o passo só pega o que ainda não foi validado (reaplicar não repete a varredura)
   assert.match(compactoSql, /not c\.convalidated/i);
   // a validação roda DEPOIS de todas as travas existirem
-  const ultimaAdicao = sqlMigracao.lastIndexOf("not valid");
+  const ultimaAdicao = sqlMigracao.lastIndexOf(") not valid;");
   const validacao = sqlMigracao.search(/validate constraint/i);
   assert.ok(validacao > ultimaAdicao, "a validação precisa vir depois das adições");
 });
@@ -255,10 +255,11 @@ test("a função nova mantém o mesmo gatilho de segurança da 0131 (sem securit
 
 // -------------------------------------------------------------------------- regras do repositório e forma
 
-test("migração: transação, sem mexer em dado real, termina em select 'ok' as res;", () => {
+test("migração: transação, sem mexer em dado real, termina em select 'ok' as res (com a conferência)", () => {
   assert.match(sqlMigracao, /^\s*begin;/i);
   assert.match(sqlMigracao, /\bcommit;/i);
-  assert.match(migracao.trimEnd(), /select 'ok' as res;$/);
+  // o último comando devolve res = 'ok' (A6: ele também traz a conferência, ver o teste abaixo)
+  assert.match(migracao.trimEnd(), /select 'ok' as res,[\s\S]*;$/);
   // nenhum UPDATE/DELETE/INSERT/TRUNCATE de dado (o único "update" do arquivo é palavra de comentário)
   assert.doesNotMatch(sqlMigracao, /\b(update|delete from|insert into|truncate)\b/i);
   // e nenhum apagar de objeto que não seja o desta migração
@@ -368,4 +369,51 @@ test("config.toml: validar-certificado com JWT no gateway (única função do EA
 test("config.toml: as funções do conector continuam como estavam (verify_jwt = false)", () => {
   assert.equal(verifyJwtDe("mcp"), false);
   assert.equal(verifyJwtDe("mcp-oauth"), false);
+});
+
+// ------------------------------------------------------------------------------------------ A6 (revisão 1)
+
+test("validade negativa do modelo vira NULL no curso (o CHECK validade_meses >= 0 recusaria)", () => {
+  const sql = compacto(sqlMigracao);
+  // no ramo do curso (depois da carga), e o ramo das exigências das funções continua copiando como era
+  const nova =
+    /new\.validade_meses := case when modelo\.validade_meses >= 0 then modelo\.validade_meses else null end;/i;
+  assert.match(sql, nova);
+  const posNova = sql.search(nova);
+  const posCarga = sql.search(/new\.carga_horaria_horas := case when/i);
+  assert.ok(posNova > posCarga, "a guarda da validade fica no ramo do curso, junto da carga");
+  assert.match(sql, /new\.validade_meses := modelo\.validade_meses;/);
+  // a cópia crua só sobra uma vez (a das duas tabelas, antes do ramo do curso sobrescrever)
+  assert.equal((sql.match(/new\.validade_meses := modelo\.validade_meses;/g) ?? []).length, 1);
+});
+
+test("a conferência é o ÚLTIMO resultado: um comando só, res = 'ok' e a situação das 7 travas e do índice", () => {
+  const depoisDoCommit = sqlMigracao.slice(sqlMigracao.search(/\bcommit;/i) + "commit;".length);
+  const comandos = depoisDoCommit
+    .split(";")
+    .map((c) => c.trim())
+    .filter(Boolean);
+  assert.equal(comandos.length, 1, "depois do commit só pode haver o resultado final");
+  const ultimo = compacto(comandos[0]);
+  assert.match(ultimo, /^with travas as \(/i);
+  assert.match(ultimo, /select 'ok' as res,/i);
+  for (const coluna of ["travas_validadas", "travas_not_valid", "indice_unico", "conferencia"]) {
+    assert.ok(ultimo.includes(` as ${coluna}`), `falta a coluna ${coluna}`);
+  }
+  for (const t of TRAVAS) assert.ok(ultimo.includes(`'${t.nome}'`), `falta ${t.nome}`);
+  assert.ok(ultimo.includes("treinamento_matricula_viva_uidx"));
+  assert.match(ultimo, /'tudo aplicado'/);
+  assert.match(ultimo, /ATENÇÃO/);
+  // só lê
+  assert.doesNotMatch(
+    ultimo,
+    /\b(insert|update|delete|truncate|alter|drop|create|grant|revoke)\b/i
+  );
+});
+
+test("o comentário do passo 3 não diz que o VALIDATE não bloqueia, e a migração pede o bloqueio com prazo", () => {
+  assert.doesNotMatch(migracao, /VALIDATE CONSTRAINT não bloqueia/i);
+  assert.match(migracao, /ACCESS EXCLUSIVE/);
+  // lock_timeout só vale nesta transação: se outra sessão segura a tabela, desiste e desfaz tudo
+  assert.match(sqlMigracao, /begin;\s*set local lock_timeout = '10s';/i);
 });

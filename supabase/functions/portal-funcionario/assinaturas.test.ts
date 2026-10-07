@@ -366,3 +366,35 @@ test("index.ts: a ação certificado devolve `dados` sem a referência nos três
     /certificado\.dados\s*=\s*dadosParaOAluno\(\s*certificado\.dados\s*,\s*empresaId/
   );
 });
+
+// ------------------------------------------------------------------ "|" (A6)
+// Configurações guarda as assinaturas de todas as linhas de instrutor juntas, separadas por "|"
+// (`instrutor_assinatura_url`): a junção de duas referências nunca carrega como imagem, e uma referência
+// congelada no hash que nunca abre deixaria todo download do aluno com o aviso "não pôde ser carregada".
+test("refDaAssinatura: a junção de várias referências com '|' não é uma referência", () => {
+  for (const v of [
+    `${REF_INSTRUTOR}|${REF_RT}`,
+    `${REF_INSTRUTOR}|`,
+    `${BUCKET_ASSINATURAS}/${EMPRESA}/2026/10/a|b.png`,
+    `|${REF_RT}`,
+  ]) {
+    assert.equal(refDaAssinatura(v, EMPRESA), null, v);
+  }
+  // sozinhas, as duas continuam valendo
+  assert.equal(refDaAssinatura(REF_INSTRUTOR, EMPRESA), REF_INSTRUTOR);
+  assert.equal(refDaAssinatura(REF_RT, EMPRESA), REF_RT);
+});
+
+test("0137: o CHECK das duas colunas também recusa '|' (mesma regra do servidor e do front)", () => {
+  const sql = readFileSync(
+    new URL("../../migrations/0137_treinamento_curso_assinaturas.sql", import.meta.url),
+    "utf8"
+  );
+  for (const coluna of ["instrutor_assinatura_ref", "responsavel_tecnico_assinatura_ref"]) {
+    const recusa = (caractere: string) => sql.includes(`position('${caractere}' in ${coluna}) = 0`);
+    assert.ok(recusa("|"), `${coluna}: falta recusar "|"`);
+    // e continua recusando o resto que o servidor recusa (barra invertida e dois-pontos)
+    assert.ok(recusa("\\"), `${coluna}: falta recusar a barra invertida`);
+    assert.ok(recusa(":"), `${coluna}: falta recusar ":"`);
+  }
+});

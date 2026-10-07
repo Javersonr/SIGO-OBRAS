@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
+  AVISO_CIENCIAS_INDISPONIVEIS,
   AVISO_HISTORICO_PARCIAL,
   LIMITE_CIENCIAS_DO_SERVIDOR,
+  cienciasIndisponiveis,
   historicoDeCienciasParcial,
   separarCiencias,
   textoDoItemDeEntrega,
@@ -159,5 +161,40 @@ describe("histórico parcial: o servidor manda só as entregas mais recentes (T3
     expect(AVISO_HISTORICO_PARCIAL).toContain(String(LIMITE_CIENCIAS_DO_SERVIDOR));
     expect(AVISO_HISTORICO_PARCIAL).toMatch(/mais antigas/i);
     expect(AVISO_HISTORICO_PARCIAL).toMatch(/RH/);
+  });
+});
+
+describe("ciências que não carregaram (A6): o servidor manda `ciencias: null`", () => {
+  it("só null (falha da leitura) conta como indisponível; lista vazia e campo ausente não", () => {
+    expect(cienciasIndisponiveis(null)).toBe(true);
+    // sem entregas é uma lista vazia, não uma falha
+    expect(cienciasIndisponiveis([])).toBe(false);
+    expect(cienciasIndisponiveis([entrega("a", "pendente")])).toBe(false);
+    // campo ausente (servidor antigo, ainda sem esta regra) não acusa falha
+    expect(cienciasIndisponiveis(undefined)).toBe(false);
+    expect(cienciasIndisponiveis({})).toBe(false);
+  });
+
+  it("o aviso diz que as entregas não carregaram, que os cursos estão certos e o que fazer", () => {
+    expect(AVISO_CIENCIAS_INDISPONIVEIS).toMatch(/entregas/i);
+    expect(AVISO_CIENCIAS_INDISPONIVEIS).toMatch(/não foi possível/i);
+    expect(AVISO_CIENCIAS_INDISPONIVEIS).toMatch(/RH/);
+  });
+
+  it("com ciencias null, separarCiencias não quebra (a lista fica vazia)", () => {
+    expect(separarCiencias(null)).toEqual({ pendentes: [], confirmadas: [] });
+  });
+
+  it("a página mostra o aviso quando as ciências não carregaram, e o servidor não responde mais 503", () => {
+    const pagina = readFileSync(new URL("../pages/PortalFuncionario.jsx", import.meta.url), "utf8");
+    expect(pagina).toMatch(/cienciasIndisponiveis\(dados\?\.ciencias\)/);
+    expect(pagina).toMatch(/<AvisoCienciasIndisponiveis\s*\/>/);
+    const servidor = readFileSync(
+      new URL("../../../../supabase/functions/portal-funcionario/index.ts", import.meta.url),
+      "utf8"
+    );
+    expect(servidor).toMatch(
+      /ciencias:\s*listaDeCiencias\.ok\s*\?\s*listaDeCiencias\.ciencias\s*:\s*null/
+    );
   });
 });

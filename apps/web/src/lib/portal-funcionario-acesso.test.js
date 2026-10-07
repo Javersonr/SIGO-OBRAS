@@ -151,6 +151,17 @@ describe("ações de matrícula do RH (T18)", () => {
     expect(r.aviso_whatsapp).toBe("enviado");
   });
 
+  it("editarRespostaDuvida manda a dúvida e o texto novo (autor e empresa vêm da sessão) (A6)", async () => {
+    invoke.mockResolvedValueOnce({ data: { success: true, editada: true } });
+    const r = await acessoPortal.editarRespostaDuvida("duv-1", "Texto corrigido");
+    expect(invoke).toHaveBeenCalledWith("funcionarioAcesso", {
+      acao: "editar_resposta_duvida",
+      duvida_id: "duv-1",
+      resposta: "Texto corrigido",
+    });
+    expect(r.editada).toBe(true);
+  });
+
   it("erro do servidor (sem permissão, conflito) sobe com a mensagem e o código", async () => {
     invoke.mockResolvedValueOnce({
       data: { success: false, error: "A matrícula mudou agora há pouco.", codigo: "CONFLITO" },

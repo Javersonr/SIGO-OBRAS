@@ -24,7 +24,11 @@ vi.mock("@/api/sigoClient", () => ({
   resolveStorageUrl: vi.fn(),
 }));
 
-import { EntregasPendentes, HistoricoDeEntregas } from "./CienciasPortal";
+import {
+  AvisoCienciasIndisponiveis,
+  EntregasPendentes,
+  HistoricoDeEntregas,
+} from "./CienciasPortal";
 
 /**
  * Entregas que pedem ciência e histórico das já confirmadas (T36), só com dados sintéticos. As datas
@@ -125,5 +129,15 @@ describe("HistoricoDeEntregas", () => {
     expect(html).toContain("Entrega a");
     expect(html).toContain("Confirmada");
     expect(html).not.toContain("Confirmada em");
+  });
+});
+
+describe("AvisoCienciasIndisponiveis (A6)", () => {
+  it("avisa em um alerta que as entregas não carregaram, sem emoji", () => {
+    const html = tela(<AvisoCienciasIndisponiveis />);
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Não foi possível carregar suas entregas");
+    expect(html).toContain("RH");
+    expect(html).not.toMatch(EMOJI);
   });
 });

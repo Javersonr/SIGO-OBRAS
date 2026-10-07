@@ -34,10 +34,15 @@ import CursoPortal from "@/components/portal-funcionario/CursoPortal";
 import DeclaracaoAmbientePortal from "@/components/portal-funcionario/DeclaracaoAmbientePortal";
 import DocumentosPortal from "@/components/portal-funcionario/DocumentosPortal";
 import {
+  AvisoCienciasIndisponiveis,
   EntregasPendentes,
   HistoricoDeEntregas,
 } from "@/components/portal-funcionario/CienciasPortal";
-import { historicoDeCienciasParcial, separarCiencias } from "@/lib/portal-ciencias";
+import {
+  cienciasIndisponiveis,
+  historicoDeCienciasParcial,
+  separarCiencias,
+} from "@/lib/portal-ciencias";
 import { hojeEmBrasilia } from "@/lib/ead-vencimentos";
 import { prazoParaOAluno } from "@/lib/portal-prazo";
 import { precisaDeclararAmbiente } from "@/lib/portal-declaracao";
@@ -452,6 +457,9 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
                     </Button>
                   </div>
                 )}
+
+                {/* a lista de entregas não carregou (dados.ciencias null): os cursos seguem, com o aviso */}
+                {cienciasIndisponiveis(dados?.ciencias) && <AvisoCienciasIndisponiveis />}
 
                 <EntregasPendentes pendentes={pendentes} onConfirmar={darCiencia} />
 

@@ -6,12 +6,13 @@ import {
   hojeEmBrasilia,
   selecionarVencimentos,
   atividadeSemTreinamento,
+  tentativasEsgotadas,
   rotuloDoVencimento,
   rotuloDoMotivo,
   JANELA_VENCIMENTO_DIAS,
 } from "@/lib/ead-vencimentos";
 import { selecionarRevisoes, rotuloDaRevisao, DIAS_DE_AVISO_DA_REVISAO } from "@/lib/ead-projeto";
-import { CalendarClock, ShieldAlert, Plus, ClipboardCheck } from "lucide-react";
+import { CalendarClock, ShieldAlert, Plus, ClipboardCheck, ListChecks } from "lucide-react";
 
 /**
  * Painel "Vencimentos" da aba Treinamentos (T24): treinamentos do portal vencidos ou a vencer em 30, 60 e
@@ -19,7 +20,8 @@ import { CalendarClock, ShieldAlert, Plus, ClipboardCheck } from "lucide-react";
  * nos cursos EAD da sua função (NR-1, 1.7.1.2.1). As regras estão em `@/lib/ead-vencimentos` (testadas);
  * aqui só se desenha e se liga o botão "Matricular" ao painel de matrícula da própria aba.
  *
- * Também mostra a revisão dos projetos pedagógicos dos cursos publicados (T25; Anexo II, 3.3): sem validação,
+ * Mostra também quem esgotou as tentativas da prova (A6): o aviso no sino pode falhar na hora, e a lista é
+ * lida das próprias matrículas e tentativas. Também mostra a revisão dos projetos pedagógicos dos cursos publicados (T25; Anexo II, 3.3): sem validação,
  * revisão vencida, a vencer em até 90 dias e PDF desatualizado (o projeto mudou depois do PDF que o aluno e a
  * fiscalização abrem). A regra está em `@/lib/ead-projeto` (`selecionarRevisoes`).
  */
@@ -42,14 +44,18 @@ export default function VencimentosEadPainel({
   certificados,
   funcionarios,
   treinamentos,
+  tentativas,
+  andamento,
   podeMatricular,
   onMatricular,
   onAbrirCurso,
+  onDetalhes,
 }) {
   const [filtro, setFiltro] = useState(null);
   const [todos, setTodos] = useState(false);
   const [todosSemTreino, setTodosSemTreino] = useState(false);
   const [todasRevisoes, setTodasRevisoes] = useState(false);
+  const [todasEsgotadas, setTodasEsgotadas] = useState(false);
 
   // o dia é o de Brasília; muda só à meia-noite, e as listas abaixo só são refeitas quando ele ou os dados mudam
   const hoje = hojeEmBrasilia();
@@ -69,6 +75,14 @@ export default function VencimentosEadPainel({
       }),
     [funcionarios, treinamentos, cursos, matriculas, certificados, hoje]
   );
+
+  // as tentativas vêm à parte (`andamento`): sem a prop, o bloco nem aparece (uso antigo do painel)
+  const mostrarEsgotadas = !!andamento;
+  const esgotadas = useMemo(
+    () => tentativasEsgotadas({ matriculas, cursos, funcionarios, tentativas }),
+    [matriculas, cursos, funcionarios, tentativas]
+  );
+  const linhasEsgotadas = todasEsgotadas ? esgotadas : esgotadas.slice(0, LINHAS_INICIAIS);
 
   const revisoes = useMemo(() => selecionarRevisoes({ cursos, hoje }), [cursos, hoje]);
   const linhasDeRevisao = todasRevisoes ? revisoes.itens : revisoes.itens.slice(0, LINHAS_INICIAIS);
@@ -297,6 +311,84 @@ export default function VencimentosEadPainel({
           )}
         </CardContent>
       </Card>
+
+      {mostrarEsgotadas && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <ListChecks className="w-5 h-5" /> Tentativas da prova esgotadas ({esgotadas.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-slate-500">
+              Alunos que usaram todas as tentativas da prova e não foram aprovados. O aviso no sino
+              pode falhar na hora; esta lista é lida das matrículas e das tentativas. Para liberar
+              mais uma: Detalhes da matrícula, Liberar tentativa.
+            </p>
+            {!andamento.carregado ? (
+              <p className="text-sm text-slate-500 py-1">Carregando as tentativas...</p>
+            ) : andamento.erro ? (
+              <p role="alert" className="text-sm text-red-700 py-1">
+                Não foi possível carregar as tentativas agora. Recarregue a aba para tentar de novo.
+              </p>
+            ) : (
+              <>
+                {andamento.parcial && (
+                  <p role="status" className="text-xs text-amber-700">
+                    O banco devolveu só parte das tentativas: a lista pode estar incompleta.
+                  </p>
+                )}
+                {esgotadas.length === 0 ? (
+                  <p className="text-sm text-slate-500 py-1">
+                    Ninguém esgotou as tentativas da prova.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {linhasEsgotadas.map((i) => (
+                      <div
+                        key={i.matricula.id}
+                        className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-3"
+                      >
+                        <span className="min-w-[10rem] flex-1">
+                          <span className="font-medium text-slate-800">
+                            {i.funcionario.nome_completo}
+                          </span>
+                          <span className="block text-sm text-slate-600">{i.curso.nome}</span>
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className="bg-amber-50 text-amber-700 border-amber-200"
+                        >
+                          {i.usadas} de {i.maximo} tentativas
+                        </Badge>
+                        {onDetalhes && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            aria-label={`Abrir os detalhes da matrícula de ${i.funcionario.nome_completo} em ${i.curso.nome}`}
+                            onClick={() => onDetalhes(i.matricula.id)}
+                          >
+                            Detalhes
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                    {esgotadas.length > LINHAS_INICIAIS && (
+                      <button
+                        type="button"
+                        className="text-sm text-sky-700 underline"
+                        onClick={() => setTodasEsgotadas((v) => !v)}
+                      >
+                        {todasEsgotadas ? "Mostrar menos" : `Mostrar todos (${esgotadas.length})`}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="pb-2">

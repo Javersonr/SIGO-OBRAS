@@ -217,7 +217,7 @@ test("migração 0140: colunas tutor_nome e tutor_atendimento, idempotente, com 
   // os limites repetem o front (lib/ead-tutor.js: 120 e 300)
   assert.match(sqlMigracao, /char_length\(tutor_nome\)\s*<=\s*120/);
   assert.match(sqlMigracao, /char_length\(tutor_atendimento\)\s*<=\s*300/);
-  // a restrição é recriada (reaplicar não falha) e nasce sem varrer a tabela inteira por dado antigo
+  // a restrição é recriada (reaplicar não falha) e, como não é NOT VALID, a criação varre a tabela inteira (são poucas linhas: sem efeito prático)
   assert.match(sqlMigracao, /drop constraint if exists treinamento_curso_tutor_nome_chk/i);
   assert.match(sqlMigracao, /drop constraint if exists treinamento_curso_tutor_atendimento_chk/i);
 });

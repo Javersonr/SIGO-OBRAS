@@ -108,7 +108,7 @@ export default function AvisoAtrasadosDialog({ aberto, linhas, empresaId, onFech
     () =>
       aberto
         ? prepararLoteDeAtrasados({ linhas, acessos, urlPortal: urlPortal(), avisadosHoje })
-        : { enviar: [], pulados: [], excedente: 0 },
+        : { enviar: [], pulados: [], excedente: 0, despublicados: 0 },
     [aberto, linhas, acessos, avisadosHoje]
   );
 
@@ -226,6 +226,15 @@ export default function AvisoAtrasadosDialog({ aberto, linhas, empresaId, onFech
                   ))}
                 </ul>
               </div>
+            )}
+            {lote.despublicados > 0 && (
+              <p className="text-slate-500">
+                {lote.despublicados}{" "}
+                {lote.despublicados === 1
+                  ? "matrícula atrasada é de um curso despublicado"
+                  : "matrículas atrasadas são de cursos despublicados"}
+                : o funcionário não consegue fazê-lo, então o lembrete não a inclui.
+              </p>
             )}
             {total === 0 && lote.pulados.length === 0 && !erroAcessos && (
               <p className="text-slate-500">Nenhum funcionário atrasado para avisar.</p>

@@ -26,6 +26,7 @@ import {
   creditarTempo,
   cursoPublicado,
   datasDeConclusao,
+  decisaoDeConclusao,
   dentroDoVolume,
   detalheDaProvaIniciada,
   detalheLimitado,
@@ -759,6 +760,93 @@ test("datasDeConclusao: o dia 31 também estoura contando sobre a data de Brasí
     data_conclusao: "2026-01-31",
     proxima_renovacao: "2026-03-03",
   });
+});
+
+// ----------------------------------------------------------- decisaoDeConclusao (A6)
+const sitConcluida = { aulasOk: true, temAvaliacao: true, concluido: true };
+const hojeConclusao = new Date("2026-10-05T15:00:00.000Z");
+
+test("decisaoDeConclusao: aulas por fazer não concluem e ainda não é a hora da prova", () => {
+  const d = decisaoDeConclusao({
+    sit: { aulasOk: false, temAvaliacao: true, concluido: false },
+    curso: { validade_meses: 12, modalidade: "ead" },
+    hoje: hojeConclusao,
+  });
+  assert.deepEqual(d, {
+    resultado: { status: "em_andamento", concluiu: false, precisaAvaliacao: false },
+    patch: null,
+  });
+});
+
+test("decisaoDeConclusao: aulas feitas e prova pendente: é a hora da prova", () => {
+  const d = decisaoDeConclusao({
+    sit: { aulasOk: true, temAvaliacao: true, concluido: false },
+    curso: { validade_meses: 12, modalidade: "ead" },
+    hoje: hojeConclusao,
+  });
+  assert.deepEqual(d.resultado, {
+    status: "em_andamento",
+    concluiu: false,
+    precisaAvaliacao: true,
+  });
+  assert.equal(d.patch, null);
+});
+
+test("decisaoDeConclusao: concluída grava a data de Brasília e a renovação do curso", () => {
+  const d = decisaoDeConclusao({
+    sit: sitConcluida,
+    curso: { validade_meses: 24, modalidade: "ead" },
+    hoje: hojeConclusao,
+  });
+  assert.deepEqual(d.resultado, { status: "concluido", concluiu: true, precisaAvaliacao: false });
+  assert.deepEqual(d.patch, {
+    status: "concluido",
+    data_conclusao: "2026-10-05",
+    proxima_renovacao: "2028-10-05",
+  });
+});
+
+test("decisaoDeConclusao: curso de apoio conclui sem renovação (D3)", () => {
+  const d = decisaoDeConclusao({
+    sit: sitConcluida,
+    curso: { validade_meses: 24, modalidade: "apoio" },
+    hoje: hojeConclusao,
+  });
+  assert.equal(d.resultado.concluiu, true);
+  assert.deepEqual(d.patch, { status: "concluido", data_conclusao: "2026-10-05" });
+});
+
+test("decisaoDeConclusao: curso lido sem validade conclui só com a data (curso sem validade)", () => {
+  const d = decisaoDeConclusao({
+    sit: sitConcluida,
+    curso: { validade_meses: null, modalidade: "ead" },
+    hoje: hojeConclusao,
+  });
+  assert.deepEqual(d.patch, { status: "concluido", data_conclusao: "2026-10-05" });
+});
+
+test("decisaoDeConclusao: sem conseguir ler o curso NÃO conclui (a validade sumiria para sempre)", () => {
+  // curso nulo por erro de leitura: concluir agora gravaria a matrícula sem renovação (ou, no apoio, com ela),
+  // e o trabalho já estaria 'concluido'. Devolve em_andamento: a próxima ação do aluno tenta de novo.
+  for (const curso of [null, undefined, { validade_meses: 24, modalidade: "ead" }]) {
+    const d = decisaoDeConclusao({
+      sit: sitConcluida,
+      curso,
+      cursoLido: false,
+      hoje: hojeConclusao,
+    });
+    assert.deepEqual(d, {
+      resultado: { status: "em_andamento", concluiu: false, precisaAvaliacao: false },
+      patch: null,
+    });
+  }
+});
+
+test("decisaoDeConclusao: curso inexistente (sem erro) conclui como antes, sem validade", () => {
+  // maybeSingle sem linha e sem erro: o comportamento antigo (curso apagado entre a leitura e a conclusão)
+  const d = decisaoDeConclusao({ sit: sitConcluida, curso: null, hoje: hojeConclusao });
+  assert.equal(d.resultado.concluiu, true);
+  assert.deepEqual(d.patch, { status: "concluido", data_conclusao: "2026-10-05" });
 });
 
 // ----------------------------------------------------------- renovacaoAPartirDe (T12)

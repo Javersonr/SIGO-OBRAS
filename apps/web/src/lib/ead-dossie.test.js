@@ -824,6 +824,35 @@ describe("montarDossie", () => {
     expect(nomes(zip).some((n) => n.includes("projeto-pedagogico"))).toBe(false);
   });
 
+  it("o projeto que não baixou deixa a CAUSA no console (404, tempo esgotado, arquivo vazio), não só o aviso (A6)", async () => {
+    const original = console.error;
+    const logs = [];
+    console.error = (...args) => logs.push(args.map(String).join(" "));
+    try {
+      for (const causa of ["HTTP 404", "tempo esgotado (60 s)"]) {
+        const r = await montarDossie(
+          entrada(),
+          deps({
+            lerProjeto: async () => {
+              throw new Error(causa);
+            },
+          })
+        );
+        expect(r.resumo.projeto).toBe("falhou");
+      }
+      await montarDossie(entrada(), deps({ lerProjeto: async () => new Uint8Array(0) }));
+    } finally {
+      console.error = original;
+    }
+    expect(logs).toHaveLength(3);
+    expect(logs[0]).toMatch(/projeto pedag/i);
+    expect(logs[0]).toContain("HTTP 404");
+    expect(logs[1]).toContain("tempo esgotado");
+    expect(logs[2]).toContain("arquivo vazio");
+    // o log não leva a referência do arquivo (o caminho tem o id da empresa)
+    for (const l of logs) expect(l).not.toContain("treinamentos/");
+  });
+
   it("projeto que volta vazio não entra como arquivo de zero byte: vira aviso", async () => {
     for (const vazio of [null, new Uint8Array(0)]) {
       const r = await montarDossie(entrada(), deps({ lerProjeto: async () => vazio }));

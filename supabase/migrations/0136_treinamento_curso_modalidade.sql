@@ -55,10 +55,11 @@ begin
 
   if not ja_existia then
     -- \m = início de palavra e \M = fim de palavra (o \b do filtro antigo); ~* ignora maiúsculas
+    -- O separador entre NR e 35 pode ser espaço, hífen ou travessão (– ou —, comum em nome digitado no Word).
     update public.treinamento_curso
        set modalidade = 'apoio'
      where modalidade = 'ead'
-       and (coalesce(codigo, '') || ' ' || coalesce(nome, '')) ~* '\mNR[[:space:]-]*35\M';
+       and (coalesce(codigo, '') || ' ' || coalesce(nome, '')) ~* '\mNR[[:space:]–—-]*35\M';
     get diagnostics marcados = row_count;
     raise notice '0136: % curso(s) com NR-35 no nome ou no código marcado(s) como apoio (D3).', marcados;
   else
@@ -91,7 +92,7 @@ select modalidade,
        string_agg(distinct coalesce(nullif(codigo, ''), nome), ', ')
          filter (where modalidade <> 'ead') as cursos_nao_ead,
        count(*) filter (
-         where (coalesce(codigo, '') || ' ' || coalesce(nome, '')) ~* '\mNR[[:space:]-]*35\M'
+         where (coalesce(codigo, '') || ' ' || coalesce(nome, '')) ~* '\mNR[[:space:]–—-]*35\M'
        ) as com_nr35_no_nome_ou_codigo
 from public.treinamento_curso
 where deleted_at is null

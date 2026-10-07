@@ -2,8 +2,9 @@ import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, ChevronDown, ClipboardCheck, ClipboardList } from "lucide-react";
+import { CheckCircle2, ChevronDown, ClipboardCheck, ClipboardList, XCircle } from "lucide-react";
 import {
+  AVISO_CIENCIAS_INDISPONIVEIS,
   AVISO_HISTORICO_PARCIAL,
   textoDoItemDeEntrega,
   tituloDoHistorico,
@@ -24,6 +25,22 @@ function ItensDaEntrega({ itens }) {
         <li key={i}>{textoDoItemDeEntrega(it)}</li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * A lista de entregas não carregou (`dados.ciencias` null, A6): os cursos aparecem, e o aluno é avisado de que
+ * uma entrega pendente pode estar faltando (antes a falha derrubava a tela inteira ou escondia a pendente).
+ */
+export function AvisoCienciasIndisponiveis() {
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800"
+    >
+      <XCircle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
+      <span>{AVISO_CIENCIAS_INDISPONIVEIS}</span>
+    </div>
   );
 }
 

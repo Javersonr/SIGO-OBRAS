@@ -468,9 +468,9 @@ export default function FichaFuncionarioSheet({
                     {cursos.map((m) => (
                       <div
                         key={m.id}
-                        className="flex items-center gap-2 text-sm bg-white border rounded p-2"
+                        className="flex flex-wrap items-center gap-2 text-sm bg-white border rounded p-2"
                       >
-                        <span className="flex-1">{m.curso_nome}</span>
+                        <span className="min-w-0 flex-1 basis-40">{m.curso_nome}</span>
                         <Badge
                           variant="outline"
                           className={

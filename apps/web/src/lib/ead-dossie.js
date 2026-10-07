@@ -670,9 +670,15 @@ export async function montarDossie(entrada, deps = {}) {
       pasta.file(caminho, bytes);
       arquivos.push({ caminho, descricao: "projeto pedagógico do curso, como está anexado." });
       projeto = "incluido";
-    } catch {
+    } catch (erro) {
       projeto = "falhou";
       avisos.push(AVISO_PROJETO_FALHOU);
+      // o aviso do LEIA-ME é um só para qualquer causa: a causa (404, tempo esgotado, arquivo vazio) fica no
+      // console de quem exportou. Sem a referência do arquivo no log: o caminho tem o id da empresa.
+      console.error(
+        "[dossie] projeto pedagógico não incluído:",
+        erro instanceof Error ? erro.message : String(erro)
+      );
     }
   }
 

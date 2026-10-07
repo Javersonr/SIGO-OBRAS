@@ -466,7 +466,12 @@ test("index.ts: a ação dados lista as ciências por listarCienciasDoAluno (sem
   assert.match(codigo, /listarCienciasDoAluno\(supabase,/);
   // a consulta de entrega_ciencia do index.ts não pode voltar a cortar pendente
   assert.equal(codigo.includes('.from("entrega_ciencia")'), false);
-  // falha de leitura vira 503 (não some a lista)
+  // falha de leitura (A6): a lista de cursos segue e `ciencias` vai null, para o portal avisar; nada de 503
+  // (o 503 derrubava os cursos por causa de uma falha só da tabela de entregas)
   const uso = codigo.indexOf("listarCienciasDoAluno(supabase,");
-  assert.match(codigo.slice(uso, uso + 500), /fail\([^)]*503\)/);
+  assert.doesNotMatch(codigo.slice(uso, uso + 500), /fail\([^)]*503\)/);
+  assert.match(
+    codigo,
+    /ciencias:\s*listaDeCiencias\.ok\s*\?\s*listaDeCiencias\.ciencias\s*:\s*null/
+  );
 });

@@ -293,3 +293,84 @@ describe("VencimentosEadPainel", () => {
     });
   });
 });
+
+describe("VencimentosEadPainel: tentativas esgotadas (A6)", () => {
+  const cursoDeProva = { id: "cp", nome: "Curso com Prova", ativo: true, max_tentativas: 3 };
+  const em_andamento = (id, funcionario_id, extra = {}) => ({
+    id,
+    funcionario_id,
+    curso_id: "cp",
+    status: "em_andamento",
+    proxima_renovacao: null,
+    ...extra,
+  });
+  const tres = (matricula_id) =>
+    [1, 2, 3].map((numero) => ({ matricula_id, numero, nota: 40, aprovada: false }));
+  const carregado = { carregado: true, erro: false, parcial: false };
+
+  it("lista quem esgotou as tentativas, com o botão dos detalhes da matrícula", () => {
+    congelarHoje();
+    const html = renderizar({
+      cursos: [cursoDeProva],
+      matriculas: [em_andamento("m1", "f1")],
+      tentativas: tres("m1"),
+      andamento: carregado,
+      onDetalhes: () => {},
+    });
+    expect(html).toContain("Tentativas da prova esgotadas (1)");
+    expect(html).toContain("Ana Teste");
+    expect(html).toContain("Curso com Prova");
+    expect(html).toContain("3 de 3 tentativas");
+    expect(html).toContain("Abrir os detalhes da matrícula de Ana Teste em Curso com Prova");
+    // diz como liberar mais uma
+    expect(html).toContain("Liberar tentativa");
+  });
+
+  it("ninguém esgotou: diz isso, com o andamento carregado", () => {
+    congelarHoje();
+    const html = renderizar({
+      cursos: [cursoDeProva],
+      matriculas: [em_andamento("m1", "f1")],
+      tentativas: [],
+      andamento: carregado,
+    });
+    expect(html).toContain("Tentativas da prova esgotadas (0)");
+    expect(html).toContain("Ninguém esgotou as tentativas da prova");
+  });
+
+  it("enquanto o andamento carrega, ou se ele falhou, não afirma que ninguém esgotou", () => {
+    congelarHoje();
+    const carregando = renderizar({
+      cursos: [cursoDeProva],
+      matriculas: [em_andamento("m1", "f1")],
+      andamento: { carregado: false, erro: false, parcial: false },
+    });
+    expect(carregando).not.toContain("Ninguém esgotou");
+    expect(carregando).toContain("Carregando as tentativas");
+    const falhou = renderizar({
+      cursos: [cursoDeProva],
+      matriculas: [em_andamento("m1", "f1")],
+      andamento: { carregado: true, erro: true, parcial: false },
+    });
+    expect(falhou).not.toContain("Ninguém esgotou");
+    expect(falhou).toContain("Não foi possível carregar as tentativas");
+  });
+
+  it("andamento parcial (o banco devolveu o teto de linhas): avisa que a lista pode estar incompleta", () => {
+    congelarHoje();
+    const html = renderizar({
+      cursos: [cursoDeProva],
+      matriculas: [em_andamento("m1", "f1")],
+      tentativas: tres("m1"),
+      andamento: { carregado: true, erro: false, parcial: true },
+    });
+    expect(html).toContain("Tentativas da prova esgotadas (1)");
+    expect(html).toContain("pode estar incompleta");
+  });
+
+  it("sem a prop de andamento (uso antigo do painel), o bloco não aparece nem quebra", () => {
+    congelarHoje();
+    const html = renderizar();
+    expect(html).not.toContain("Tentativas da prova esgotadas");
+  });
+});

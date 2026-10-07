@@ -14,9 +14,11 @@
 -- e do registro que o certificado já congela dali: a imagem e o nome da mesma pessoa nunca vêm de lugares
 -- diferentes. Certificado sem imagem continua saindo, só com nome e registro.
 --
--- O CHECK repete no banco a regra do servidor (portal-funcionario/assinaturas.ts): só referência
--- `assinaturas/<empresa do curso>/...` de PNG ou JPEG, sem escapar da pasta, sem URL e sem Base44. Assim um
--- curso não aponta para a assinatura de outra empresa nem para link morto, nem por chamada direta à API.
+-- O CHECK repete no banco a regra do servidor (portal-funcionario/assinaturas.ts) e a do front
+-- (lib/ead-assinatura.js): só referência `assinaturas/<empresa do curso>/...` de PNG ou JPEG, sem escapar da
+-- pasta, sem URL, sem Base44 e sem "|" (o separador com que Configurações junta as assinaturas de várias
+-- linhas num campo só: uma junção nunca carrega como imagem). Assim um curso não aponta para a assinatura de
+-- outra empresa nem para link morto, nem por chamada direta à API. Mude a regra nos três lugares juntos.
 -- Linhas existentes ficam com NULL e passam no CHECK.
 --
 -- Idempotente (add column if not exists; a restrição é recriada). Sem UPDATE de dados reais: nenhum curso
@@ -48,6 +50,7 @@ alter table public.treinamento_curso
       and instrutor_assinatura_ref !~ '(^|/)\.{1,2}(/|$)'
       and position('\' in instrutor_assinatura_ref) = 0
       and position(':' in instrutor_assinatura_ref) = 0
+      and position('|' in instrutor_assinatura_ref) = 0
     )
   );
 
@@ -65,6 +68,7 @@ alter table public.treinamento_curso
       and responsavel_tecnico_assinatura_ref !~ '(^|/)\.{1,2}(/|$)'
       and position('\' in responsavel_tecnico_assinatura_ref) = 0
       and position(':' in responsavel_tecnico_assinatura_ref) = 0
+      and position('|' in responsavel_tecnico_assinatura_ref) = 0
     )
   );
 

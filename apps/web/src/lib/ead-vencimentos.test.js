@@ -11,6 +11,7 @@ import {
   exigenciasPorFuncao,
   precisaDeAviso,
   atividadeSemTreinamento,
+  tentativasEsgotadas,
   rotuloDoVencimento,
   rotuloDoMotivo,
 } from "./ead-vencimentos";
@@ -565,6 +566,86 @@ describe("atividadeSemTreinamento", () => {
     expect(f2.pendencias[0].cursos.map((c) => c.id)).toEqual(["c1", "c1b"]);
   });
 
+  describe("curso despublicado do mesmo modelo (A6): o certificado já emitido não perde a validade", () => {
+    // M1 tem a versão antiga (despublicada, c1old) e a nova (publicada, c1); só a nova aceita matrícula agora
+    const comVersaoAntiga = {
+      ...base,
+      treinamentos: [exigencia("t1", "fn1", "m1")],
+      cursos: [
+        curso("c1", { modelo_treinamento_id: "m1" }),
+        curso("c1old", { modelo_treinamento_id: "m1", ativo: false }),
+      ],
+    };
+
+    it("conclusão válida no curso despublicado resolve a exigência (o painel Vencimentos já a mostra)", () => {
+      const r = atividadeSemTreinamento({
+        ...comVersaoAntiga,
+        matriculas: [mat("a", "f1", "c1old", { proxima_renovacao: "2028-05-01" })],
+      });
+      expect(r.find((x) => x.funcionario.id === "f1")).toBeUndefined();
+      // quem não fez continua pendente, e o botão de matricular só oferece o curso PUBLICADO
+      const f2 = r.find((x) => x.funcionario.id === "f2");
+      expect(f2.pendencias[0].cursos.map((c) => c.id)).toEqual(["c1"]);
+    });
+
+    it("conclusão vencida no despublicado é 'vencida' (e não 'sem matrícula')", () => {
+      const r = atividadeSemTreinamento({
+        ...comVersaoAntiga,
+        matriculas: [mat("a", "f1", "c1old", { proxima_renovacao: "2026-09-30" })],
+      });
+      const f1 = r.find((x) => x.funcionario.id === "f1");
+      expect(f1.pendencias.map((p) => [p.exigencia.id, p.motivo])).toEqual([["t1", "vencida"]]);
+      expect(f1.pendencias[0].cursos.map((c) => c.id)).toEqual(["c1"]);
+    });
+
+    it("certificado revogado no despublicado é 'revogada'", () => {
+      const r = atividadeSemTreinamento({
+        ...comVersaoAntiga,
+        certificados: [{ matricula_id: "a", revogado_em: "2026-10-02T00:00:00Z" }],
+        matriculas: [mat("a", "f1", "c1old", { proxima_renovacao: "2028-05-01" })],
+      });
+      const f1 = r.find((x) => x.funcionario.id === "f1");
+      expect(f1.pendencias.map((p) => p.motivo)).toEqual(["revogada"]);
+    });
+
+    it("matrícula em andamento no despublicado também conta como válida", () => {
+      const r = atividadeSemTreinamento({
+        ...comVersaoAntiga,
+        matriculas: [mat("a", "f1", "c1old", { status: "em_andamento", proxima_renovacao: null })],
+      });
+      expect(r.find((x) => x.funcionario.id === "f1")).toBeUndefined();
+    });
+
+    it("curso despublicado de APOIO ou removido não cumpre a exigência", () => {
+      const r = atividadeSemTreinamento({
+        ...comVersaoAntiga,
+        cursos: [
+          curso("c1", { modelo_treinamento_id: "m1" }),
+          curso("c1apoio", { modelo_treinamento_id: "m1", ativo: false, modalidade: "apoio" }),
+          curso("c1apagado", {
+            modelo_treinamento_id: "m1",
+            ativo: false,
+            deleted_at: "2026-09-01",
+          }),
+        ],
+        matriculas: [
+          mat("a", "f1", "c1apoio", { proxima_renovacao: "2028-05-01" }),
+          mat("b", "f1", "c1apagado", { proxima_renovacao: "2028-05-01" }),
+        ],
+      });
+      expect(r.find((x) => x.funcionario.id === "f1").pendencias[0].motivo).toBe("sem_matricula");
+    });
+
+    it("sem nenhum curso PUBLICADO a exigência continua fora: o despublicado sozinho não a habilita", () => {
+      const r = atividadeSemTreinamento({
+        ...comVersaoAntiga,
+        cursos: [curso("c1old", { modelo_treinamento_id: "m1", ativo: false })],
+        matriculas: [],
+      });
+      expect(r).toEqual([]);
+    });
+  });
+
   it("exigência opcional, inativa, removida ou sem modelo não conta", () => {
     const r = atividadeSemTreinamento({
       ...base,
@@ -630,5 +711,148 @@ describe("rotuloDoMotivo", () => {
     expect(rotuloDoMotivo("sem_matricula")).toBe("Sem matrícula");
     expect(rotuloDoMotivo("vencida")).toBe("Treinamento vencido, sem nova matrícula");
     expect(rotuloDoMotivo("revogada")).toBe("Certificado revogado, sem nova matrícula");
+  });
+});
+
+describe("tentativasEsgotadas (A6): o painel mostra quem esgotou, mesmo se o aviso do sino se perder", () => {
+  // curso com 3 tentativas; a matrícula pode ter extras liberadas pelo RH
+  const cursoDeProva = (extra = {}) => curso("cp", { max_tentativas: 3, ...extra });
+  const tent = (matricula_id, numero, extra = {}) => ({
+    matricula_id,
+    numero,
+    nota: 40,
+    aprovada: false,
+    ...extra,
+  });
+  const base = {
+    funcionarios: [func("f1", { nome_completo: "Zeca" }), func("f2", { nome_completo: "Ana" })],
+    cursos: [cursoDeProva()],
+  };
+  const aberta = (id, funcionario_id, extra = {}) =>
+    mat(id, funcionario_id, "cp", { status: "em_andamento", proxima_renovacao: null, ...extra });
+  const tres = (id) => [tent(id, 1), tent(id, 2), tent(id, 3)];
+
+  it("lista a matrícula que usou todas as tentativas sem ser aprovada", () => {
+    const r = tentativasEsgotadas({
+      ...base,
+      matriculas: [aberta("a", "f1")],
+      tentativas: tres("a"),
+    });
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ usadas: 3, maximo: 3 });
+    expect(r[0].matricula.id).toBe("a");
+    expect(r[0].funcionario.id).toBe("f1");
+    expect(r[0].curso.id).toBe("cp");
+  });
+
+  it("ainda com tentativa sobrando, não lista; as extras liberadas somam ao limite", () => {
+    expect(
+      tentativasEsgotadas({
+        ...base,
+        matriculas: [aberta("a", "f1")],
+        tentativas: [tent("a", 1), tent("a", 2)],
+      })
+    ).toEqual([]);
+    // 3 usadas, limite 3 + 1 extra liberada pelo RH: ainda pode tentar
+    expect(
+      tentativasEsgotadas({
+        ...base,
+        matriculas: [aberta("a", "f1", { tentativas_extras: 1 })],
+        tentativas: tres("a"),
+      })
+    ).toEqual([]);
+    // 4 usadas de 3 + 1: esgotou de novo, e o máximo mostrado é 4
+    const r = tentativasEsgotadas({
+      ...base,
+      matriculas: [aberta("a", "f1", { tentativas_extras: 1 })],
+      tentativas: [...tres("a"), tent("a", 4)],
+    });
+    expect(r.map((i) => [i.usadas, i.maximo])).toEqual([[4, 4]]);
+  });
+
+  it("quem foi aprovado em alguma tentativa, ou já concluiu, não está esgotado", () => {
+    expect(
+      tentativasEsgotadas({
+        ...base,
+        matriculas: [aberta("a", "f1")],
+        tentativas: [tent("a", 1), tent("a", 2), tent("a", 3, { aprovada: true })],
+      })
+    ).toEqual([]);
+    expect(
+      tentativasEsgotadas({
+        ...base,
+        matriculas: [mat("a", "f1", "cp", { status: "concluido" })],
+        tentativas: tres("a"),
+      })
+    ).toEqual([]);
+  });
+
+  it("curso sem limite (0 ou ausente), matrícula removida e funcionário inativo ou fora da lista não entram", () => {
+    const tentativas = [...tres("a"), ...tres("b"), ...tres("c")];
+    expect(
+      tentativasEsgotadas({
+        ...base,
+        cursos: [cursoDeProva({ max_tentativas: 0 })],
+        matriculas: [aberta("a", "f1")],
+        tentativas,
+      })
+    ).toEqual([]);
+    expect(
+      tentativasEsgotadas({
+        ...base,
+        cursos: [cursoDeProva({ max_tentativas: undefined })],
+        matriculas: [aberta("a", "f1")],
+        tentativas,
+      })
+    ).toEqual([]);
+    expect(
+      tentativasEsgotadas({
+        ...base,
+        matriculas: [aberta("a", "f1", { deleted_at: "2026-10-01" })],
+        tentativas,
+      })
+    ).toEqual([]);
+    expect(
+      tentativasEsgotadas({
+        ...base,
+        funcionarios: [func("f1", { ativo: false })],
+        matriculas: [aberta("a", "f1"), aberta("b", "f9")],
+        tentativas,
+      })
+    ).toEqual([]);
+    // curso removido: o aluno não consegue mais fazer a prova, não há o que liberar
+    expect(
+      tentativasEsgotadas({
+        ...base,
+        cursos: [cursoDeProva({ deleted_at: "2026-10-01" })],
+        matriculas: [aberta("a", "f1")],
+        tentativas,
+      })
+    ).toEqual([]);
+  });
+
+  it("tentativa de outra matrícula não conta, e a lista sai pelo nome do funcionário", () => {
+    const r = tentativasEsgotadas({
+      ...base,
+      matriculas: [aberta("a", "f1"), aberta("b", "f2"), aberta("c", "f2", { curso_id: "cp" })],
+      tentativas: [...tres("a"), ...tres("b"), tent("c", 1)],
+    });
+    expect(r.map((i) => i.funcionario.nome_completo)).toEqual(["Ana", "Zeca"]);
+    expect(r.map((i) => i.matricula.id)).toEqual(["b", "a"]);
+  });
+
+  it("o curso de apoio também tem prova: entra", () => {
+    const r = tentativasEsgotadas({
+      ...base,
+      cursos: [cursoDeProva({ modalidade: "apoio" })],
+      matriculas: [aberta("a", "f1")],
+      tentativas: tres("a"),
+    });
+    expect(r).toHaveLength(1);
+  });
+
+  it("entradas ausentes não quebram", () => {
+    expect(tentativasEsgotadas()).toEqual([]);
+    expect(tentativasEsgotadas({ matriculas: [aberta("a", "f1")] })).toEqual([]);
   });
 });

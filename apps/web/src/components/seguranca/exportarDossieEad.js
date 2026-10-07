@@ -116,13 +116,34 @@ export async function lerDadosDoDossie({ empresaId, cursoId }) {
   };
 }
 
-/** Baixa o arquivo guardado no Storage (a URL assinada nasce aqui e some com a função). */
-async function lerArquivoDoStorage(ref) {
+/**
+ * Quanto tempo o projeto pedagógico tem para baixar (A6). O PDF pode ser grande e a rede do RH lenta, então o
+ * limite é de minutos; sem ele um download travado deixava "Montando os arquivos..." para sempre e todos os
+ * botões "Exportar dossiê" desabilitados até recarregar a página.
+ */
+export const LIMITE_DO_PROJETO_MS = 120_000;
+
+/**
+ * Baixa o arquivo guardado no Storage (a URL assinada nasce aqui e some com a função), com limite de tempo
+ * para a resposta INTEIRA (cabeçalho e corpo). Erros dizem a causa ("sem URL", "HTTP 404", "tempo esgotado").
+ */
+export async function lerArquivoDoStorage(ref, limiteMs = LIMITE_DO_PROJETO_MS) {
   const url = await resolveStorageUrl(ref);
   if (!url) throw new Error("sem URL");
-  const resposta = await fetch(url);
-  if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
-  return resposta.arrayBuffer();
+  const controle = new AbortController();
+  const temporizador = setTimeout(() => controle.abort(), limiteMs);
+  try {
+    const resposta = await fetch(url, { signal: controle.signal });
+    if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+    return await resposta.arrayBuffer();
+  } catch (erro) {
+    if (controle.signal.aborted) {
+      throw new Error(`tempo esgotado (${Math.round(limiteMs / 1000)} s)`);
+    }
+    throw erro;
+  } finally {
+    clearTimeout(temporizador);
+  }
 }
 
 /** Entrega o arquivo ao navegador (a URL do Blob só é liberada depois que o download começou). */

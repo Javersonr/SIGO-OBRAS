@@ -548,12 +548,16 @@ test("registrarOuDesfazer: a exceção de cada passo chega ao aoFalhar com a cau
   assert.equal(r2, "desfeito");
 });
 
-test("index.ts: as duas chamadas de registrarOuDesfazer escrevem a causa no console.error", () => {
+test("index.ts: as chamadas de registrarOuDesfazer escrevem a causa no console.error", () => {
   const codigo = readFileSync(new URL("./index.ts", import.meta.url), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
   const chamadas = [...codigo.matchAll(/registrarOuDesfazer\(\{/g)];
-  assert.equal(chamadas.length, 2, "liberar_tentativa e revogar_certificado");
+  assert.equal(
+    chamadas.length,
+    3,
+    "liberar_tentativa, revogar_certificado e editar_resposta_duvida"
+  );
   for (const c of chamadas) {
     const trecho = codigo.slice(c.index, c.index + 2200);
     assert.match(trecho, /aoFalhar:\s*\(passo,\s*erro\)\s*=>/);
@@ -646,12 +650,13 @@ test("index.ts: a leitura do funcionário confere o error e o passa a destinoDoA
 });
 
 test("index.ts: liberar e revogar passam por registrarOuDesfazer e respondem pela falhaDoRegistro (T18, M4)", () => {
-  assert.equal(INDEX.match(/registrarOuDesfazer\(\{/g)?.length, 2, "uma vez em cada ação");
+  // liberar, revogar e (A6) editar a resposta de uma dúvida; esta última responde por falhaDoRegistroDaEdicao
+  assert.equal(INDEX.match(/registrarOuDesfazer\(\{/g)?.length, 3, "uma vez em cada ação");
   assert.equal(INDEX.match(/falhaDoRegistro\(\{/g)?.length, 2);
   // a falha sem desfazer deixa rastro no log (o suporte precisa dos números para conferir a matrícula)
   assert.match(INDEX, /registro === "sem_registro"[\s\S]*?console\.error\(/);
   // o "desfazer" só vale se atingiu a linha (0 linhas = o valor já tinha mudado, não foi desfeito)
-  assert.equal(INDEX.match(/\.select\("id"\);\s*\n\s*if \(erroDesfazer\)/g)?.length, 2);
+  assert.equal(INDEX.match(/\.select\("id"\);\s*\n\s*if \(erroDesfazer\)/g)?.length, 3);
 });
 
 test("index.ts: a resposta de efeito sem registro leva o código próprio (EFEITO_SEM_REGISTRO via falhaDoRegistro)", () => {

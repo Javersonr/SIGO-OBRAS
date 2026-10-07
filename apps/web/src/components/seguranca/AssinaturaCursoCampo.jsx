@@ -19,8 +19,9 @@ import {
  * imagem, não ICP-Brasil). O arquivo sobe para o bucket `assinaturas` e o curso guarda a REFERÊNCIA
  * "assinaturas/<empresa>/..." (nunca a URL assinada); o certificado copia essa referência na emissão.
  *
- * `valor` é a referência do curso; `onChange(ref)` recebe a referência nova, ou null ao remover. A troca só
- * vale depois de "Salvar curso". Remover não apaga o arquivo do Storage: certificado já emitido guarda a
+ * `valor` é a referência do curso; `onChange(ref)` recebe a referência nova, ou null ao remover, e pode devolver
+ * `{ aplicada, aviso }` (a tela descarta a imagem se o RH abriu outro curso ou trocou quem assina durante o
+ * envio). A troca só vale depois de "Salvar curso". Remover não apaga o arquivo do Storage: certificado já emitido guarda a
  * referência e continua desenhando a imagem. Referência antiga (Base44, arquivo perdido) não aparece como
  * imagem: o RH vê o aviso e anexa de novo.
  */
@@ -45,8 +46,13 @@ export default function AssinaturaCursoCampo({ rotulo, valor, empresaId, onChang
       if (!refDeAssinatura(nova, empresaId)) {
         throw new Error("o arquivo não ficou numa referência válida da empresa");
       }
-      onChange(nova);
-      toast.success("Imagem anexada. Salve o curso para guardá-la.");
+      // a tela devolve se a imagem entrou: descartada (outro curso aberto, outra pessoa no campo) não é sucesso
+      const resultado = onChange(nova);
+      if (resultado && resultado.aplicada === false) {
+        toast.warning(resultado.aviso, { duration: 8000 });
+      } else {
+        toast.success("Imagem anexada. Salve o curso para guardá-la.");
+      }
     } catch (e) {
       toast.error("Erro ao enviar a imagem: " + (e?.message || e));
     } finally {

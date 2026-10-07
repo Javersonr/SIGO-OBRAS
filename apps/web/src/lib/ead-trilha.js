@@ -59,6 +59,7 @@ export const ROTULO_EVENTO = {
   abrir_certificado: "Baixou o certificado",
   abrir_projeto: "Abriu o projeto pedagógico",
   duvida_enviada: "Enviou dúvida ao tutor",
+  duvida_resposta_editada: "Resposta de dúvida editada pelo RH",
   declaracao_ambiente: "Declarou o ambiente e o horário de estudo",
   ciencia: "Deu ciência de entrega",
 };
@@ -129,6 +130,9 @@ export function descreverDetalhe(evento) {
         d.codigo && `código ${d.codigo}`,
         d.motivo && `motivo: ${d.motivo}`
       );
+    case "duvida_resposta_editada":
+      // o texto anterior inteiro fica no evento (é o que a trilha guarda), mas não polui a linha
+      return juntar(d.por && `por ${d.por}`, "versão anterior guardada no registro");
     default:
       return d.por ? `por ${d.por}` : "";
   }

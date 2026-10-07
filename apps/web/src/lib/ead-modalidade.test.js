@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   OPCOES_MODALIDADE,
   apresentacaoDoRequisito,
@@ -6,6 +7,7 @@ import {
   explicacaoDaModalidade,
   rotuloDaModalidade,
   seloDaModalidade,
+  textoDaValidadeDoCurso,
 } from "./ead-modalidade";
 import { MODALIDADES, requisitosDoCurso } from "./ead-requisitos";
 
@@ -119,5 +121,41 @@ describe("apresentacaoDoRequisito: como a lista de requisitos do curso mostra ca
       .map((r) => apresentacaoDoRequisito(r).prefixo);
     expect(prefixos).toContain("Informação: ");
     expect(prefixos).not.toContain("Pendente: ");
+  });
+});
+
+describe("textoDaValidadeDoCurso (A6): o apoio não mostra 'validade N meses'", () => {
+  it("EAD e semipresencial com validade mostram ' · validade N meses' (e 1 mês no singular)", () => {
+    expect(textoDaValidadeDoCurso({ modalidade: "ead", validade_meses: 24 })).toBe(
+      " · validade 24 meses"
+    );
+    expect(textoDaValidadeDoCurso({ modalidade: "semipresencial", validade_meses: "12" })).toBe(
+      " · validade 12 meses"
+    );
+    expect(textoDaValidadeDoCurso({ validade_meses: 1 })).toBe(" · validade 1 mês");
+  });
+
+  it("o curso de apoio nunca mostra validade (ele não renova), mesmo com validade herdada do cadastro central", () => {
+    expect(textoDaValidadeDoCurso({ modalidade: "apoio", validade_meses: 24 })).toBe("");
+  });
+
+  it("sem validade (nula, zero, vazia, negativa ou texto) o texto sai vazio", () => {
+    for (const validade_meses of [null, undefined, 0, "", "0", -3, "abc"]) {
+      expect(
+        textoDaValidadeDoCurso({ modalidade: "ead", validade_meses }),
+        String(validade_meses)
+      ).toBe("");
+    }
+    expect(textoDaValidadeDoCurso(null)).toBe("");
+    expect(textoDaValidadeDoCurso(undefined)).toBe("");
+  });
+
+  it("o cartão do curso na aba usa esta regra, e não escreve a validade por conta própria", () => {
+    const aba = readFileSync(
+      new URL("../components/seguranca/TreinamentosEadTab.jsx", import.meta.url),
+      "utf8"
+    );
+    expect(aba).toContain("{textoDaValidadeDoCurso(c)}");
+    expect(aba).not.toMatch(/validade \$\{c\.validade_meses\} meses/);
   });
 });
