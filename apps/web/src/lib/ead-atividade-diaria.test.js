@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import {
   EVENTOS_DE_ESTUDO,
   EVENTOS_DO_RH,
+  EVENTOS_DO_SISTEMA,
   EVENTOS_FORA_DA_JANELA,
   avisoDaCobranca,
   csvDaAtividade,
@@ -10,6 +11,7 @@ import {
   diaDeBrasilia,
   diaInicialDoPeriodo,
   ehAtividadeDoAluno,
+  ehEventoDeEstudo,
   filtrarAtividade,
   horaDeBrasilia,
   inicioDaCobranca,
@@ -147,6 +149,9 @@ describe("quais eventos contam para a janela do aluno", () => {
       "certificado_assinado",
       "certificado_revogado",
       "duvida_enviada",
+      // a conclusão que o sistema adiou e registrou depois (A6): não é o aluno estudando
+      "conclusao_adiada",
+      "conclusao_registrada",
     ];
     for (const nome of gravados) {
       expect(
@@ -158,6 +163,18 @@ describe("quais eventos contam para a janela do aluno", () => {
     for (const nome of EVENTOS_DE_ESTUDO) expect(gravados, nome).toContain(nome);
     for (const nome of EVENTOS_DE_ESTUDO) expect(naoSaoEstudo, nome).not.toContain(nome);
     for (const nome of EVENTOS_DO_RH) expect(EVENTOS_DE_ESTUDO, nome).not.toContain(nome);
+    for (const nome of EVENTOS_DO_SISTEMA) expect(EVENTOS_DE_ESTUDO, nome).not.toContain(nome);
+    // e o portal grava os dois eventos do sistema (se mudar o nome lá, muda aqui)
+    for (const nome of EVENTOS_DO_SISTEMA) expect(gravados, nome).toContain(nome);
+  });
+
+  it("a conclusão que o sistema adiou ou registrou depois não é atividade do aluno (nem estende a janela do dia)", () => {
+    expect(EVENTOS_DO_SISTEMA).toEqual(["conclusao_adiada", "conclusao_registrada"]);
+    for (const nome of EVENTOS_DO_SISTEMA) {
+      expect(EVENTOS_FORA_DA_JANELA, nome).toContain(nome);
+      expect(ehAtividadeDoAluno(ev(nome, "2026-10-07T12:00:00Z")), nome).toBe(false);
+      expect(ehEventoDeEstudo(ev(nome, "2026-10-07T12:00:00Z")), nome).toBe(false);
+    }
   });
 });
 

@@ -259,3 +259,33 @@ describe("edição da resposta de uma dúvida (A6, T21)", () => {
     );
   });
 });
+
+describe("conclusão adiada e registrada pelo sistema (A6, revisão 2)", () => {
+  it("os dois eventos têm rótulo em português (nada de nome técnico na trilha) e tom normal", () => {
+    expect(rotuloDoEvento("conclusao_adiada")).toMatch(/conclus[ãa]o.*adiada/i);
+    expect(rotuloDoEvento("conclusao_registrada")).toMatch(/conclus[ãa]o.*registrada/i);
+    expect(tomDoEvento("conclusao_adiada")).toBe("normal");
+    expect(tomDoEvento("conclusao_registrada")).toBe("normal");
+  });
+
+  it("o evento adiado diz o motivo; o registrado diz a data da conclusão que ficou na matrícula", () => {
+    expect(
+      descreverDetalhe({ evento: "conclusao_adiada", detalhe: { motivo: "curso_nao_lido" } })
+    ).toBe("não foi possível ler o curso");
+    expect(
+      descreverDetalhe({ evento: "conclusao_adiada", detalhe: { motivo: "gravacao_falhou" } })
+    ).toBe("não foi possível gravar a conclusão");
+    expect(descreverDetalhe({ evento: "conclusao_adiada", detalhe: {} })).toBe("");
+    expect(
+      descreverDetalhe({
+        evento: "conclusao_registrada",
+        detalhe: { data_conclusao: "2026-10-01" },
+      })
+    ).toBe("data da conclusão 01/10/2026");
+    expect(descreverDetalhe({ evento: "conclusao_registrada", detalhe: {} })).toBe("");
+    // data que não é data não vira lixo na linha
+    expect(
+      descreverDetalhe({ evento: "conclusao_registrada", detalhe: { data_conclusao: "ontem" } })
+    ).toBe("");
+  });
+});

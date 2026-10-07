@@ -353,16 +353,32 @@ tabela grande, aplique fora do horário de pico. Funções alteradas: **portal-f
 (`--no-verify-jwt`) e **validar-certificado** (SEM `--no-verify-jwt`). O smoke de cada migração fica em `tools/`
 (`smoke-ead-pratica.sql`, `smoke-ead-declaracao.sql`, `smoke-ead-pre-requisito.sql`).
 
-**Conclusão que não foi registrada (A6, revisão 1).** O servidor só conclui a matrícula quando consegue ler o curso
-(a validade e a modalidade definem a renovação, e a conclusão é permanente). Se a leitura falha no instante da última
-aula, a matrícula não vira "concluída" na hora; a **próxima abertura do portal** conclui as matrículas cuja trilha já
-está completa e que continuam abertas no banco (o curso de apoio e o curso sem prova, que ninguém mais regravaria,
-ficavam "em andamento" ou "Atrasada" para sempre). Isso acontece sozinho, sem ação do aluno nem do RH, e **não grava
-evento na trilha** (abrir o portal não é estudar e contaria o dia como "estudou" no relatório de atividade): vale a
-data da conclusão da matrícula, que é o dia em que o portal a registrou. O pedido de certificado nessa situação
-responde "Não foi possível registrar a conclusão do curso agora. Tente de novo." (503), nunca emite sem a conclusão.
-Vale também para quem publicar o `portal-funcionario` antes da `0136` (o select de `modalidade` falha): as
-conclusões dessa janela ficam abertas e são registradas depois, mas a ordem correta continua sendo migração primeiro.
+**Conclusão que não foi registrada (A6, revisões 1 e 2).** O servidor só conclui a matrícula quando consegue ler o
+curso e gravar a conclusão (a validade e a modalidade definem a renovação, e a conclusão é permanente). Se a leitura do
+curso ou a gravação falha no instante da última aula (ou da aprovação na prova), a matrícula não vira "concluída" na
+hora e o servidor grava na trilha o evento **`conclusao_adiada`** ("Conclusão adiada pelo sistema"), com o motivo. A
+**próxima abertura do portal** conclui **só as matrículas marcadas por esse evento** (o curso de apoio e o curso sem
+prova, que ninguém mais regravaria, ficavam "em andamento" ou "Atrasada" para sempre) e grava o evento
+**`conclusao_registrada`** ("Conclusão registrada pelo sistema"), que mostra à auditoria quando e como a conclusão
+foi feita. Isso acontece sozinho, sem ação do aluno nem do RH. Os dois eventos são do sistema: não contam como
+atividade do aluno nem estendem a janela do dia no relatório de ambiente e horário, e não gravam `curso_concluido`
+(abrir o portal não é estudar). A `data_conclusao` da matrícula, e a renovação que conta dela, são o **dia (Brasília)
+do último marco da trilha** (a última aula concluída ou a aprovação na prova), não o dia em que o portal a registrou:
+atraso na abertura do portal não estende a validade.
+
+Uma trilha que só **parece** completa não é concluída por esse caminho. Exemplo: o aluno reprovou nas tentativas e o
+RH excluiu as questões antigas antes de cadastrar as novas; nesse intervalo o curso fica sem prova e a trilha "fecha",
+mas nada foi adiado e o aluno nunca foi aprovado, então a matrícula continua em andamento (e continua aparecendo em
+"Tentativas da prova esgotadas"). O mesmo vale para a aula que o RH apaga e o aluno não tinha feito. Quem fez a prova
+e não foi aprovado nunca é concluído pela retomada, mesmo com a conclusão adiada. Matrículas que já estavam com a
+trilha completa e abertas antes desta função (sem o evento) **não** são concluídas sozinhas: quem precisar delas
+concluídas pede o certificado (o pedido confere a trilha) ou o RH trata caso a caso.
+
+O pedido de certificado com a conclusão ainda sem registro responde "Não foi possível registrar a conclusão do curso
+agora. Tente de novo." (503) e confere a matrícula depois de gravar: nunca emite sem a conclusão. Vale também para quem
+publicar o `portal-funcionario` antes da `0136` (o select de `modalidade` falha): as conclusões dessa janela
+ficam marcadas como adiadas e são registradas depois, mas a ordem correta continua sendo migração primeiro. Não há
+migração nova: os dois eventos usam as colunas que `treinamento_evento` já tem.
 
 O teste completo de matrícula real, tempo de estudo, avaliação e certificado deve seguir o roteiro da seção 7 do
 handoff, com o Javerson e após as decisões e tarefas correspondentes.

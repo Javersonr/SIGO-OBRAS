@@ -240,17 +240,56 @@ export function datasDeConclusao(
 }
 
 /**
+ * Eventos da conclusão que o SERVIDOR grava sozinho (A6, revisão 2). Nenhum está em `EVENTOS_CLIENTE` (o navegador
+ * não consegue gravá-los) e nenhum é "estudar": quem decide a janela de atividade do aluno, no relatório do RH, os
+ * deixa de fora (`EVENTOS_DO_SISTEMA`, no front).
+ *
+ * - `conclusao_adiada`: o aluno cumpriu a trilha (última aula ou aprovação) e a conclusão NÃO pôde ser gravada na
+ *   hora (a leitura do curso falhou ou a gravação deu erro). É a pendência que a abertura do portal retoma: só a
+ *   matrícula marcada aqui é concluída depois, nunca uma trilha que apenas parece completa.
+ * - `conclusao_registrada`: a conclusão adiada foi gravada depois, pela abertura do portal (rastro de quando e
+ *   como; também encerra a pendência). Não é `curso_concluido`: abrir o portal não é estudar.
+ */
+export const EVENTO_CONCLUSAO_ADIADA = "conclusao_adiada";
+export const EVENTO_CONCLUSAO_REGISTRADA = "conclusao_registrada";
+
+/**
+ * O momento em que a trilha ficou completa: o mais recente entre a conclusão da última aula (só as aulas vivas do
+ * curso) e a aprovação na prova. É dele que vem o dia da `data_conclusao` (NR-1: a validade conta do treinamento
+ * feito, não do dia em que o sistema o registrou). Null se nenhum dos dois traz uma data válida.
+ * `concluidaEm`: aula_id → `concluida_em` das aulas que o aluno concluiu.
+ */
+export function marcoDaTrilha(p: {
+  aulas: { id: unknown }[];
+  concluidaEm: ReadonlyMap<unknown, string | null | undefined>;
+  aprovadaEm?: string | null;
+}): Date | null {
+  let maior = Number.NEGATIVE_INFINITY;
+  const considerar = (iso: unknown) => {
+    const t = typeof iso === "string" ? Date.parse(iso) : Number.NaN;
+    if (Number.isFinite(t) && t > maior) maior = t;
+  };
+  for (const aula of p.aulas) considerar(p.concluidaEm.get(aula.id));
+  considerar(p.aprovadaEm);
+  return Number.isFinite(maior) ? new Date(maior) : null;
+}
+
+/**
  * O que fazer quando a trilha pode estar completa (A6): o resultado que o `index.ts` devolve e, se concluiu,
  * o que grava na matrícula (`status`, `data_conclusao` e, fora do apoio, `proxima_renovacao`).
  *
  * `cursoLido: false` = a leitura do curso (validade e modalidade) FALHOU. A conclusão é permanente (a
  * matrícula vira `concluido` e nenhuma ação a regrava), então concluir sem o curso gravaria a validade errada
  * para sempre: o EAD sairia sem renovação, e o curso de apoio, que não renova, não teria como ser distinguido.
- * Nesse caso a conclusão fica para depois, e quem a retoma é a próxima abertura do portal (`dados` conclui de novo,
- * com `retomarConclusoes`, as matrículas que a trilha já dá por completas e o banco tem abertas) ou o pedido de
- * certificado; o aluno não perde nada. Sem essa segunda chance o curso de apoio (sem certificado) e o
- * curso sem prova ficariam `em_andamento` para sempre: nenhuma outra ação chama a conclusão depois da última aula.
- * Curso que não existe (sem erro) segue o comportamento de sempre: conclui só com a data.
+ * Nesse caso a conclusão fica ADIADA (`adiada: true`; o `index.ts` grava o evento `conclusao_adiada`) e a
+ * próxima abertura do portal a retoma (`retomarConclusoes`): só as matrículas adiadas, nunca uma trilha que
+ * apenas parece completa pelo estado de hoje do curso (A6, revisão 2). Sem essa segunda chance o curso de apoio
+ * (sem certificado) e o curso sem prova ficariam `em_andamento` para sempre: nenhuma outra ação chama a conclusão
+ * depois da última aula. Curso que não existe (sem erro) segue o comportamento de sempre: conclui só com a data.
+ *
+ * `marco` = o momento em que a trilha ficou completa (`marcoDaTrilha`): a `data_conclusao` é o dia de Brasília
+ * dele, e a renovação conta dele; sem marco, ou com um marco depois de `hoje`, vale `hoje`. Na conclusão feita
+ * logo depois da última aula é a mesma data de sempre; na retomada, dias depois, não estende a validade.
  *
  * `precisaAvaliacao` = "é a hora da prova": só com todas as aulas feitas e a prova ainda pendente.
  */
@@ -260,35 +299,75 @@ export function decisaoDeConclusao(p: {
   /** false quando a leitura do curso deu erro (não confundir com curso que não existe). */
   cursoLido?: boolean;
   hoje: Date;
+  /** O momento em que a trilha ficou completa; o dia da conclusão vem dele. */
+  marco?: Date | null;
 }) {
   const { sit } = p;
-  const andamento = (precisaAvaliacao: boolean) => ({
+  const andamento = (precisaAvaliacao: boolean, adiada = false) => ({
     resultado: { status: "em_andamento", concluiu: false, precisaAvaliacao },
     patch: null as Record<string, unknown> | null,
+    adiada,
   });
   if (!sit.aulasOk) return andamento(false);
   if (!sit.concluido) return andamento(sit.temAvaliacao);
-  if (p.cursoLido === false) return andamento(false);
+  if (p.cursoLido === false) return andamento(false, true);
+  const marco = p.marco && !Number.isNaN(p.marco.getTime()) ? p.marco : null;
+  const diaDaConclusao = marco && marco.getTime() <= p.hoje.getTime() ? marco : p.hoje;
   return {
     resultado: { status: "concluido", concluiu: true, precisaAvaliacao: false },
     patch: {
       status: "concluido",
       // curso de apoio não renova (D3): só a data da conclusão
-      ...datasDeConclusao(p.hoje, p.curso?.validade_meses, modalidadeDoCurso(p.curso)),
+      ...datasDeConclusao(diaDaConclusao, p.curso?.validade_meses, modalidadeDoCurso(p.curso)),
     } as Record<string, unknown> | null,
+    adiada: false,
   };
 }
 
 /**
- * As matrículas que a trilha já dá por concluídas (todas as aulas e, se há prova, a aprovação) mas que o banco
- * ainda tem abertas (A6, revisão 1). É o que sobra quando a conclusão não foi registrada na hora, em geral porque a
- * leitura do curso falhou (`decisaoDeConclusao` com `cursoLido: false`): a conclusão só roda quando uma aula passa a
- * concluída, quando a prova é aprovada e no pedido de certificado, então sem esta segunda chance a matrícula ficava
- * `em_andamento` (ou "Atrasada", entrando no lote de lembretes) para sempre. O `dados` chama a conclusão de cada
- * uma delas, que é idempotente. `concluidoNaTrilha` só é consultado para quem ainda não está concluído no banco:
- * o caso comum (curso já concluído ou nenhum curso pronto) não custa nada.
+ * Das linhas de `treinamento_evento` (`conclusao_adiada` e `conclusao_registrada`), as matrículas cuja conclusão
+ * está adiada e ainda não foi registrada: a última `conclusao_adiada` é mais recente que a última
+ * `conclusao_registrada` (ou esta não existe). Não depende da ordem das linhas; ignora linha sem matrícula, de outro
+ * evento ou com data inválida. No mesmo instante vale a registrada (a conclusão já foi feita).
  */
-export function matriculasComConclusaoPorRegistrar<M extends { status?: string | null }>(
+export function conclusoesAdiadas(
+  eventos: {
+    matricula_id?: string | null;
+    evento?: string | null;
+    created_at?: string | null;
+  }[]
+): Set<string> {
+  const adiada = new Map<string, number>();
+  const registrada = new Map<string, number>();
+  for (const e of eventos) {
+    const t = Date.parse(String(e.created_at ?? ""));
+    if (!e.matricula_id || !Number.isFinite(t)) continue;
+    const mapa =
+      e.evento === EVENTO_CONCLUSAO_ADIADA
+        ? adiada
+        : e.evento === EVENTO_CONCLUSAO_REGISTRADA
+          ? registrada
+          : null;
+    if (mapa && t > (mapa.get(e.matricula_id) ?? Number.NEGATIVE_INFINITY)) {
+      mapa.set(e.matricula_id, t);
+    }
+  }
+  return new Set(
+    [...adiada]
+      .filter(([id, t]) => t > (registrada.get(id) ?? Number.NEGATIVE_INFINITY))
+      .map(([id]) => id)
+  );
+}
+
+/**
+ * As matrículas que o banco ainda tem abertas (`status` diferente de `concluido`) e que a trilha dá por completas
+ * (todas as aulas e, se há prova, a aprovação), pelo estado de hoje do curso. É só o primeiro filtro da segunda
+ * chance da conclusão: uma trilha que parece completa NÃO basta para concluir (o RH pode ter apagado a aula que o
+ * aluno não fez ou as questões que ele não acertou); `matriculasComConclusaoPorRegistrar` escolhe, entre elas, as
+ * que tiveram a conclusão adiada. `concluidoNaTrilha` só é consultado para quem ainda não está concluído no
+ * banco: o caso comum (curso já concluído ou nenhum curso pronto) não custa nada.
+ */
+export function matriculasAbertasComTrilhaCompleta<M extends { status?: string | null }>(
   matriculas: M[],
   concluidoNaTrilha: (matricula: M) => boolean
 ): M[] {
@@ -296,24 +375,60 @@ export function matriculasComConclusaoPorRegistrar<M extends { status?: string |
 }
 
 /**
- * Segunda chance da conclusão (A6, revisão 1): conclui de novo cada matrícula de `matriculas` (as de
- * `matriculasComConclusaoPorRegistrar`) e, se concluiu, relê a linha e a atualiza NO LUGAR com o que o banco
- * ficou (a mesma linha que o `dados` devolve ao aluno e que o pré-requisito dos outros cursos lê). As matrículas
- * andam em paralelo. NUNCA lança: erro ao concluir ou reler vai para `registrar` e a matrícula segue como estava,
- * para a próxima abertura do portal tentar de novo (uma segunda chance que derrubasse o `dados` tiraria o portal
- * do ar por causa de um problema de leitura). Releitura sem linha (`null`) também só é registrada. Não grava o
- * evento `curso_concluido`: abrir o portal não é estudar, e ele contaria o dia como "estudou" no relatório de
- * atividade. A conclusão fica no `data_conclusao` da matrícula e a última aula já está na trilha.
- * `concluir` e `reler` entram por parâmetro (o `index.ts` liga `concluirSeCompleto` e a consulta da matrícula).
+ * Das matrículas abertas com a trilha completa, as que a segunda chance conclui (A6, revisão 2): as que tiveram a
+ * conclusão ADIADA (`adiadas`, de `conclusoesAdiadas`: a trilha estava mesmo completa quando a conclusão falhou) e
+ * em que o aluno NÃO fez a prova sem passar (`provaSemAprovacao`: com tentativas e nenhuma aprovada, a trilha só
+ * parece completa porque o RH apagou as questões, e concluir daria validade a quem não foi aprovado).
  */
-export async function retomarConclusoes<M extends object>(p: {
+export function matriculasComConclusaoPorRegistrar<M extends { id?: string | null }>(
+  abertasComTrilhaCompleta: M[],
+  adiadas: ReadonlySet<string>,
+  provaSemAprovacao: (matricula: M) => boolean
+): M[] {
+  return abertasComTrilhaCompleta.filter(
+    (m) => !!m.id && adiadas.has(m.id) && !provaSemAprovacao(m)
+  );
+}
+
+/**
+ * Segunda chance da conclusão (A6, revisões 1 e 2): conclui de novo as matrículas cuja conclusão foi ADIADA
+ * (a leitura do curso falhou quando o aluno terminou a trilha) e, se concluiu, relê a linha e a atualiza NO LUGAR com
+ * o que o banco ficou (a mesma linha que o `dados` devolve ao aluno e que o pré-requisito dos outros cursos lê).
+ *
+ * Quem entra: aberta no banco, trilha completa (`concluidoNaTrilha`), conclusão adiada (`lerAdiadas`, uma leitura
+ * só, e só quando há candidata) e sem prova feita e não aprovada (`provaSemAprovacao`). Uma trilha que só parece
+ * completa porque o RH refez a prova ou apagou uma aula NÃO é concluída aqui. `concluir` grava a `data_conclusao` do
+ * dia do último marco da trilha, não o da abertura do portal.
+ *
+ * As matrículas andam em paralelo. NUNCA lança: erro ao ler as pendências, ao concluir ou ao reler vai para
+ * `registrar` e a matrícula segue como estava, para a próxima abertura do portal tentar de novo (uma segunda chance
+ * que derrubasse o `dados` tiraria o portal do ar por causa de um problema de leitura). Releitura sem linha
+ * (`null`) também só é registrada. Não grava `curso_concluido` (abrir o portal não é estudar): o `concluir` do
+ * `index.ts` grava o `conclusao_registrada`, que mostra à auditoria quando e como a conclusão foi registrada.
+ */
+export async function retomarConclusoes<
+  M extends { id?: string | null; status?: string | null },
+>(p: {
   matriculas: M[];
-  concluir: (matricula: M) => Promise<{ concluiu: boolean }>;
+  concluidoNaTrilha: (matricula: M) => boolean;
+  provaSemAprovacao: (matricula: M) => boolean;
+  lerAdiadas: (matriculaIds: string[]) => Promise<ReadonlySet<string>>;
+  concluir: (matricula: M) => Promise<{ concluiu: boolean; data_conclusao?: string | null }>;
   reler: (matricula: M) => Promise<M | null>;
   registrar: (mensagem: string, causa?: unknown) => void;
 }): Promise<void> {
+  let escolhidas: M[] = [];
+  try {
+    const abertas = matriculasAbertasComTrilhaCompleta(p.matriculas, p.concluidoNaTrilha);
+    if (!abertas.length) return;
+    const adiadas = await p.lerAdiadas(abertas.map((m) => String(m.id)));
+    escolhidas = matriculasComConclusaoPorRegistrar(abertas, adiadas, p.provaSemAprovacao);
+  } catch (erro) {
+    p.registrar("retomarConclusao: não deu para saber quais conclusões estão adiadas", erro);
+    return;
+  }
   await Promise.all(
-    p.matriculas.map(async (matricula) => {
+    escolhidas.map(async (matricula) => {
       try {
         if (!(await p.concluir(matricula)).concluiu) return;
         const atual = await p.reler(matricula);

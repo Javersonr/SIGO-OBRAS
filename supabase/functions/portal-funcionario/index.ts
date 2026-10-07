@@ -138,6 +138,8 @@ import {
 } from "./requisitos.ts";
 import {
   COLUNAS_MATRICULA_PORTAL,
+  EVENTO_CONCLUSAO_ADIADA,
+  EVENTO_CONCLUSAO_REGISTRADA,
   EVENTO_PROVA_INICIADA,
   LOCAL_DO_CERTIFICADO,
   MSG_EMISSAO_ANULADA,
@@ -154,6 +156,7 @@ import {
   certificadoParaResposta,
   comRastroDeFalha,
   conclusaoDaAula,
+  conclusoesAdiadas,
   conferirEmissaoDoCertificado,
   corrigirProva,
   creditarTempo,
@@ -166,8 +169,8 @@ import {
   inicioDaProva,
   liberacoesPorMatricula,
   logoAssinadoParaPdf,
+  marcoDaTrilha,
   matriculaParaAluno,
-  matriculasComConclusaoPorRegistrar,
   periodoDoCertificado,
   type ProgressoDaAula,
   provaDaOrdem,
@@ -290,12 +293,19 @@ async function trilhaDoCurso(
       .order("ordem", { ascending: true }),
     supabase
       .from("treinamento_progresso")
-      .select("aula_id, concluida")
+      .select("aula_id, concluida, concluida_em")
       .eq("matricula_id", matriculaId),
   ]);
   // deno-lint-ignore no-explicit-any
-  const feitas = new Set((progs ?? []).filter((p: any) => p.concluida).map((p: any) => p.aula_id));
-  return { aulas: aulas ?? [], feitas };
+  const concluidas = (progs ?? []).filter((p: any) => p.concluida);
+  // deno-lint-ignore no-explicit-any
+  const feitas = new Set(concluidas.map((p: any) => p.aula_id));
+  // quando cada aula foi concluída (o dia da conclusão do curso vem do último marco: marcoDaTrilha)
+  const concluidaEm = new Map<unknown, string | null>(
+    // deno-lint-ignore no-explicit-any
+    concluidas.map((p: any) => [p.aula_id, p.concluida_em ?? null])
+  );
+  return { aulas: aulas ?? [], feitas, concluidaEm };
 }
 
 /** A aula existe (não apagada) e é do curso, na empresa da sessão. */
@@ -330,7 +340,7 @@ async function situacaoReal(supabase: Db, mat: any, empresaId: string) {
       .limit(1),
     supabase
       .from("treinamento_tentativa")
-      .select("numero, nota")
+      .select("numero, nota, created_at")
       .eq("matricula_id", mat.id)
       .eq("curso_id", mat.curso_id)
       .eq("empresa_id", empresaId)
@@ -338,16 +348,44 @@ async function situacaoReal(supabase: Db, mat: any, empresaId: string) {
       .order("numero", { ascending: false })
       .limit(1),
   ]);
-  return situacaoDaTrilha({
+  const sit = situacaoDaTrilha({
     aulas: trilha.aulas,
     feitas: trilha.feitas,
     temAvaliacao: (questoes ?? []).length > 0,
     aprovacao: aprovadas?.[0] ?? null,
   });
+  return {
+    ...sit,
+    // quando a trilha ficou completa: a última aula concluída ou a aprovação, o que veio por último
+    marco: marcoDaTrilha({
+      aulas: trilha.aulas,
+      concluidaEm: trilha.concluidaEm,
+      aprovadaEm: aprovadas?.[0]?.created_at ?? null,
+    }),
+  };
 }
 
-// deno-lint-ignore no-explicit-any
-async function concluirSeCompleto(supabase: Db, mat: any, empresaId: string) {
+/**
+ * Conclui a matrícula se a trilha está completa e devolve o que isso deu. Quem chama: a última aula (progresso), a
+ * aprovação (avaliação), o pedido de certificado e a retomada do `dados`.
+ *
+ * A conclusão é permanente: sem ler o curso (validade e modalidade), concluir gravaria a matrícula sem a renovação
+ * certa, para sempre. Com erro na leitura do curso, ou com erro ao gravar, NÃO conclui agora: devolve em_andamento,
+ * deixa a causa no log e, se quem chamou passou `adiar`, grava o evento `conclusao_adiada` (a trilha estava
+ * completa; só a conclusão ficou por fazer). Quem tenta de novo é `retomarConclusoes` (regras.ts), que o `dados`
+ * chama a cada abertura do portal e que conclui SÓ as matrículas marcadas por esse evento (uma trilha que apenas
+ * parece completa pelo estado de hoje do curso, como a de quem reprovou e viu o RH apagar as questões, nunca é
+ * concluída por ali). `adiar` fica de fora do pedido de certificado (o aluno vê o 503 e tenta de novo) e da própria
+ * retomada (a marca já existe). As ações de aula e de prova só chamam isto no instante em que a última aula ou a
+ * aprovação acontece. A `data_conclusao` é o dia do último marco da trilha, não o de hoje.
+ */
+async function concluirSeCompleto(
+  supabase: Db,
+  // deno-lint-ignore no-explicit-any
+  mat: any,
+  empresaId: string,
+  adiar?: (motivo: "curso_nao_lido" | "gravacao_falhou") => Promise<unknown>
+) {
   const [sit, { data: curso, error: erroCurso }] = await Promise.all([
     situacaoReal(supabase, mat, empresaId),
     supabase
@@ -357,22 +395,62 @@ async function concluirSeCompleto(supabase: Db, mat: any, empresaId: string) {
       .eq("empresa_id", empresaId)
       .maybeSingle(),
   ]);
-  // A conclusão é permanente: sem ler o curso (validade e modalidade), concluir gravaria a matrícula sem a
-  // renovação certa, para sempre. Com erro na leitura NÃO conclui agora (decisaoDeConclusao devolve
-  // em_andamento) e deixa a causa no log. Quem tenta de novo é `retomarConclusoes` (regras.ts), que o `dados`
-  // chama a cada abertura do portal para a matrícula que a trilha já dá por completa e o banco ainda tem aberta;
-  // o pedido de certificado também recusa (503) em vez de emitir sem a conclusão registrada. As outras ações
-  // (progresso, avaliação) só chamam isto no instante em que a última aula ou a aprovação acontece.
   if (erroCurso)
     console.error("[portal-funcionario] concluirSeCompleto: curso:", erroCurso.message);
-  const { resultado, patch } = decisaoDeConclusao({
+  const { resultado, patch, adiada } = decisaoDeConclusao({
     sit,
     curso,
     cursoLido: !erroCurso,
     hoje: new Date(),
+    marco: sit.marco,
   });
-  if (patch) await supabase.from("treinamento_matricula").update(patch).eq("id", mat.id);
-  return resultado;
+  if (patch) {
+    const { error: erroGravacao } = await supabase
+      .from("treinamento_matricula")
+      .update(patch)
+      .eq("id", mat.id)
+      .eq("empresa_id", empresaId);
+    if (erroGravacao) {
+      // o UPDATE falhou: a matrícula segue aberta, e dizer que concluiu faria o portal e o certificado
+      // seguirem como se a conclusão existisse
+      console.error("[portal-funcionario] concluirSeCompleto: gravação:", erroGravacao.message);
+      await adiar?.("gravacao_falhou");
+      return {
+        status: "em_andamento",
+        concluiu: false,
+        precisaAvaliacao: false,
+        data_conclusao: null as string | null,
+      };
+    }
+  } else if (adiada) {
+    await adiar?.("curso_nao_lido");
+  }
+  return { ...resultado, data_conclusao: (patch?.data_conclusao as string | undefined) ?? null };
+}
+
+/**
+ * As matrículas (entre `matriculaIds`, do funcionário e da empresa da sessão) cuja conclusão está adiada e ainda
+ * não foi registrada: lê os eventos `conclusao_adiada` e `conclusao_registrada` e deixa a conta para
+ * `conclusoesAdiadas` (regras.ts). Erro de leitura LANÇA: não pode virar "nenhuma pendência" em silêncio, e quem
+ * chama (`retomarConclusoes`) registra a causa, não conclui nada e não derruba o `dados`.
+ */
+async function conclusoesAdiadasDoBanco(
+  supabase: Db,
+  {
+    empresaId,
+    funcionarioId,
+    matriculaIds,
+  }: { empresaId: string; funcionarioId: string; matriculaIds: string[] }
+): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("treinamento_evento")
+    .select("matricula_id, evento, created_at")
+    .eq("empresa_id", empresaId)
+    .eq("funcionario_id", funcionarioId)
+    .in("evento", [EVENTO_CONCLUSAO_ADIADA, EVENTO_CONCLUSAO_REGISTRADA])
+    .in("matricula_id", matriculaIds);
+  if (error) throw error;
+  return conclusoesAdiadas(data ?? []);
 }
 
 /**
@@ -542,6 +620,16 @@ Deno.serve(
         empresa_id: empresaId,
         funcionario_id: funcionarioId,
         ...e,
+      });
+    // A trilha ficou completa (última aula ou aprovação) e a conclusão não pôde ser gravada: a marca que a abertura
+    // do portal usa para retomar SÓ esta matrícula (A6, revisão 2). Só as ações de aula e de prova a usam.
+    // deno-lint-ignore no-explicit-any
+    const adiarConclusao = (mat: any) => (motivo: "curso_nao_lido" | "gravacao_falhou") =>
+      ev({
+        evento: EVENTO_CONCLUSAO_ADIADA,
+        matricula_id: mat.id,
+        curso_id: mat.curso_id,
+        detalhe: { motivo },
       });
 
     const { data: funcionarioSessao, error: erroFuncionarioSessao } = await supabase
@@ -853,12 +941,38 @@ Deno.serve(
         }).concluido;
       };
 
-      // Segunda chance da conclusão (A6, revisão 1): a matrícula que a trilha já dá por completa e que o banco
-      // ainda tem aberta (a leitura do curso falhou quando a conclusão rodou) é concluída agora, ANTES de montar
-      // a resposta (o pré-requisito dos outros cursos lê o status). Só custa consultas nesse estado; idempotente.
+      // Segunda chance da conclusão (A6, revisões 1 e 2): a matrícula que a trilha dá por completa, que o banco ainda
+      // tem aberta E cuja conclusão foi ADIADA (a leitura do curso ou a gravação falhou quando o aluno terminou) é
+      // concluída agora, ANTES de montar a resposta (o pré-requisito dos outros cursos lê o status). Trilha que só
+      // parece completa (o RH apagou as questões de quem reprovou, ou uma aula que o aluno não fez) não é concluída
+      // aqui. Só custa consultas com matrícula aberta e trilha completa; idempotente.
       await retomarConclusoes({
-        matriculas: matriculasComConclusaoPorRegistrar(matsDaEmpresa, concluidoNaTrilha),
-        concluir: (m) => concluirSeCompleto(supabase, m, empresaId),
+        matriculas: matsDaEmpresa,
+        concluidoNaTrilha,
+        // fez a prova e nenhuma tentativa passou: a trilha só parece completa porque não há mais questões vivas
+        provaSemAprovacao: (m) => {
+          // deno-lint-ignore no-explicit-any
+          const dela = (tentativas ?? []).filter((t: any) => t.matricula_id === m.id);
+          // deno-lint-ignore no-explicit-any
+          return dela.length > 0 && !dela.some((t: any) => t.aprovada);
+        },
+        lerAdiadas: (ids) =>
+          conclusoesAdiadasDoBanco(supabase, { empresaId, funcionarioId, matriculaIds: ids }),
+        concluir: async (m) => {
+          // sem `adiar`: a marca já existe, e cada abertura do portal com o curso ilegível não pode gerar outra
+          const resultado = await concluirSeCompleto(supabase, m, empresaId);
+          if (resultado.concluiu) {
+            // o rastro de quando e como a conclusão foi registrada (não é `curso_concluido`: abrir o portal não é
+            // estudar); só se a conclusão foi mesmo gravada
+            await ev({
+              evento: EVENTO_CONCLUSAO_REGISTRADA,
+              matricula_id: m.id,
+              curso_id: m.curso_id,
+              detalhe: { data_conclusao: resultado.data_conclusao },
+            });
+          }
+          return resultado;
+        },
         // a mesma leitura das outras ações: matrícula do próprio funcionário, na empresa da sessão, colunas fixas
         reler: (m) => minhaMatricula(m.id),
         registrar: (mensagem, causa) => console.error(`[portal-funcionario] ${mensagem}`, causa),
@@ -1265,7 +1379,7 @@ Deno.serve(
           aula_id: aula.id,
           detalhe: { segundos: novoSeg, duracao },
         });
-        resultado = await concluirSeCompleto(supabase, mat, empresaId);
+        resultado = await concluirSeCompleto(supabase, mat, empresaId, adiarConclusao(mat));
         if (resultado.concluiu) {
           await ev({ evento: "curso_concluido", matricula_id: mat.id, curso_id: mat.curso_id });
         }
@@ -1544,7 +1658,7 @@ Deno.serve(
       let concluiu = false;
       if (aprovada) {
         // concluirSeCompleto confere a tentativa aprovada recém-gravada
-        const r = await concluirSeCompleto(supabase, mat, empresaId);
+        const r = await concluirSeCompleto(supabase, mat, empresaId, adiarConclusao(mat));
         concluiu = r.concluiu;
         if (concluiu) {
           await ev({ evento: "curso_concluido", matricula_id: mat.id, curso_id: mat.curso_id });
@@ -1688,6 +1802,11 @@ Deno.serve(
           return fail("Não foi possível registrar a conclusão do curso agora. Tente de novo.", 503);
         }
         mat = (await minhaMatricula(mat.id)) ?? mat;
+        // a releitura confirma: o certificado congela a data e a validade da matrícula, então uma matrícula que ainda
+        // aparece aberta (UPDATE que não pegou, releitura que falhou) não emite
+        if (mat.status !== "concluido" || !mat.data_conclusao) {
+          return fail("Não foi possível registrar a conclusão do curso agora. Tente de novo.", 503);
+        }
       }
 
       const curso = cursoDoCertificado;

@@ -4,6 +4,8 @@ import {
   COLUNAS_MATRICULA_ALUNO,
   COLUNAS_MATRICULA_PORTAL,
   ESCOPO_RECONFIRMAR_SENHA,
+  EVENTO_CONCLUSAO_ADIADA,
+  EVENTO_CONCLUSAO_REGISTRADA,
   EVENTO_PROVA_INICIADA,
   JANELA_RECONFIRMAR_SENHA_SEG,
   LOCAL_DO_CERTIFICADO,
@@ -22,6 +24,7 @@ import {
   aulasParaAluno,
   conclusaoDaAula,
   comRastroDeFalha,
+  conclusoesAdiadas,
   corrigirProva,
   creditarTempo,
   cursoPublicado,
@@ -34,7 +37,9 @@ import {
   liberacaoDasAulas,
   liberacoesPorMatricula,
   logoAssinadoParaPdf,
+  marcoDaTrilha,
   matriculaParaAluno,
+  matriculasAbertasComTrilhaCompleta,
   matriculasComConclusaoPorRegistrar,
   ordemDaProva,
   periodoDoCertificado,
@@ -777,6 +782,7 @@ test("decisaoDeConclusao: aulas por fazer não concluem e ainda não é a hora d
   assert.deepEqual(d, {
     resultado: { status: "em_andamento", concluiu: false, precisaAvaliacao: false },
     patch: null,
+    adiada: false,
   });
 });
 
@@ -838,10 +844,76 @@ test("decisaoDeConclusao: sem conseguir ler o curso NÃO conclui (a validade sum
       cursoLido: false,
       hoje: hojeConclusao,
     });
+    // adiada: a trilha estava completa e só a leitura do curso impediu; é o que a abertura do portal retoma
     assert.deepEqual(d, {
       resultado: { status: "em_andamento", concluiu: false, precisaAvaliacao: false },
       patch: null,
+      adiada: true,
     });
+  }
+});
+
+test("decisaoDeConclusao: só é 'adiada' a trilha completa; aula por fazer ou prova pendente com o curso ilegível não marca nada", () => {
+  for (const sit of [
+    { aulasOk: false, temAvaliacao: true, concluido: false },
+    { aulasOk: true, temAvaliacao: true, concluido: false },
+  ]) {
+    const d = decisaoDeConclusao({ sit, curso: null, cursoLido: false, hoje: hojeConclusao });
+    assert.equal(d.adiada, false);
+    assert.equal(d.patch, null);
+  }
+});
+
+test("decisaoDeConclusao: concluída com sucesso não é 'adiada'", () => {
+  const d = decisaoDeConclusao({
+    sit: sitConcluida,
+    curso: { validade_meses: 12, modalidade: "ead" },
+    hoje: hojeConclusao,
+  });
+  assert.equal(d.adiada, false);
+});
+
+test("decisaoDeConclusao: a data da conclusão é o dia (Brasília) do último marco da trilha, não o de hoje (I1)", () => {
+  // última aula feita às 23h30 de 1º/10 em Brasília (02h30Z de 2/10); o portal só a registrou em 5/10
+  const marco = new Date("2026-10-02T02:30:00.000Z");
+  const d = decisaoDeConclusao({
+    sit: sitConcluida,
+    curso: { validade_meses: 24, modalidade: "ead" },
+    hoje: hojeConclusao,
+    marco,
+  });
+  assert.deepEqual(d.patch, {
+    status: "concluido",
+    data_conclusao: "2026-10-01",
+    proxima_renovacao: "2028-10-01",
+  });
+});
+
+test("decisaoDeConclusao: curso de apoio também conta a data do marco e continua sem renovação", () => {
+  const d = decisaoDeConclusao({
+    sit: sitConcluida,
+    curso: { validade_meses: 24, modalidade: "apoio" },
+    hoje: hojeConclusao,
+    marco: new Date("2026-09-20T15:00:00.000Z"),
+  });
+  assert.deepEqual(d.patch, { status: "concluido", data_conclusao: "2026-09-20" });
+});
+
+test("decisaoDeConclusao: marco ausente, inválido ou no futuro vale hoje (nunca grava data de amanhã)", () => {
+  for (const marco of [
+    null,
+    undefined,
+    new Date("lixo"),
+    new Date("2026-10-06T15:00:00.000Z"), // depois de hoje (relógio adiantado)
+  ]) {
+    const d = decisaoDeConclusao({
+      sit: sitConcluida,
+      curso: { validade_meses: 12, modalidade: "ead" },
+      hoje: hojeConclusao,
+      marco,
+    });
+    assert.equal(d.patch?.data_conclusao, "2026-10-05");
+    assert.equal(d.patch?.proxima_renovacao, "2027-10-05");
   }
 });
 
@@ -852,136 +924,415 @@ test("decisaoDeConclusao: curso inexistente (sem erro) conclui como antes, sem v
   assert.deepEqual(d.patch, { status: "concluido", data_conclusao: "2026-10-05" });
 });
 
-// ------------------------------------------- segunda chance da conclusão (A6, revisão 1)
-// Dados sintéticos: ids e status inventados.
-test("matriculasComConclusaoPorRegistrar: completa na trilha e ainda aberta no banco volta a concluir", () => {
+// ------------------------------- segunda chance da conclusão (A6, revisões 1 e 2)
+// Dados sintéticos: ids, status e datas inventados.
+
+test("os dois eventos da conclusão têm nome próprio e não são os de estudo", () => {
+  assert.equal(EVENTO_CONCLUSAO_ADIADA, "conclusao_adiada");
+  assert.equal(EVENTO_CONCLUSAO_REGISTRADA, "conclusao_registrada");
+  assert.notEqual(EVENTO_CONCLUSAO_REGISTRADA, "curso_concluido");
+});
+
+// marcoDaTrilha: o momento em que a trilha ficou completa
+test("marcoDaTrilha: o mais recente entre a última aula concluída e a aprovação", () => {
+  const aulas = [{ id: "a1" }, { id: "a2" }];
+  const concluidaEm = new Map<unknown, string>([
+    ["a1", "2026-10-01T12:00:00.000Z"],
+    ["a2", "2026-10-02T12:00:00.000Z"],
+  ]);
+  assert.equal(
+    marcoDaTrilha({ aulas, concluidaEm, aprovadaEm: "2026-10-03T09:00:00.000Z" })?.toISOString(),
+    "2026-10-03T09:00:00.000Z"
+  );
+  // curso sem prova (ou prova aprovada antes da última aula, se o RH acrescentou aula depois)
+  assert.equal(marcoDaTrilha({ aulas, concluidaEm })?.toISOString(), "2026-10-02T12:00:00.000Z");
+  assert.equal(
+    marcoDaTrilha({ aulas, concluidaEm, aprovadaEm: "2026-09-30T09:00:00.000Z" })?.toISOString(),
+    "2026-10-02T12:00:00.000Z"
+  );
+});
+
+test("marcoDaTrilha: aula apagada não conta; data inválida ou ausente é ignorada; sem nada, null", () => {
+  const concluidaEm = new Map<unknown, string | null>([
+    ["a1", "2026-10-01T12:00:00.000Z"],
+    ["apagada", "2026-10-09T12:00:00.000Z"], // progresso de uma aula que o RH excluiu
+    ["a2", null],
+    ["a3", "lixo"],
+  ]);
+  const aulas = [{ id: "a1" }, { id: "a2" }, { id: "a3" }];
+  assert.equal(
+    marcoDaTrilha({ aulas, concluidaEm, aprovadaEm: "não é data" })?.toISOString(),
+    "2026-10-01T12:00:00.000Z"
+  );
+  assert.equal(marcoDaTrilha({ aulas: [{ id: "a2" }], concluidaEm: new Map() }), null);
+  assert.equal(marcoDaTrilha({ aulas: [], concluidaEm: new Map() }), null);
+});
+
+// conclusoesAdiadas: as matrículas com a conclusão adiada e ainda não registrada
+test("conclusoesAdiadas: adiada e nunca registrada é pendente", () => {
+  const pendentes = conclusoesAdiadas([
+    { matricula_id: "a", evento: EVENTO_CONCLUSAO_ADIADA, created_at: "2026-10-01T10:00:00Z" },
+    { matricula_id: "b", evento: EVENTO_CONCLUSAO_ADIADA, created_at: "2026-10-01T11:00:00Z" },
+  ]);
+  assert.deepEqual([...pendentes].sort(), ["a", "b"]);
+});
+
+test("conclusoesAdiadas: registrada depois da adiada deixa de ser pendente; adiada de novo depois, volta a ser", () => {
+  const pendentes = conclusoesAdiadas([
+    { matricula_id: "a", evento: EVENTO_CONCLUSAO_ADIADA, created_at: "2026-10-01T10:00:00Z" },
+    { matricula_id: "a", evento: EVENTO_CONCLUSAO_REGISTRADA, created_at: "2026-10-02T10:00:00Z" },
+    // b foi registrada e depois reaberta (a trilha ficou completa outra vez e a leitura falhou de novo)
+    { matricula_id: "b", evento: EVENTO_CONCLUSAO_ADIADA, created_at: "2026-10-01T10:00:00Z" },
+    { matricula_id: "b", evento: EVENTO_CONCLUSAO_REGISTRADA, created_at: "2026-10-02T10:00:00Z" },
+    { matricula_id: "b", evento: EVENTO_CONCLUSAO_ADIADA, created_at: "2026-10-03T10:00:00Z" },
+    // c: só registrada (não há o que retomar)
+    { matricula_id: "c", evento: EVENTO_CONCLUSAO_REGISTRADA, created_at: "2026-10-02T10:00:00Z" },
+  ]);
+  assert.deepEqual([...pendentes], ["b"]);
+});
+
+test("conclusoesAdiadas: não depende da ordem das linhas e ignora linha sem matrícula, outro evento ou data inválida", () => {
+  const pendentes = conclusoesAdiadas([
+    { matricula_id: "a", evento: EVENTO_CONCLUSAO_REGISTRADA, created_at: "2026-10-02T10:00:00Z" },
+    { matricula_id: "a", evento: EVENTO_CONCLUSAO_ADIADA, created_at: "2026-10-01T10:00:00Z" },
+    { matricula_id: null, evento: EVENTO_CONCLUSAO_ADIADA, created_at: "2026-10-01T10:00:00Z" },
+    { matricula_id: "d", evento: "curso_concluido", created_at: "2026-10-01T10:00:00Z" },
+    { matricula_id: "e", evento: EVENTO_CONCLUSAO_ADIADA, created_at: "ontem" },
+  ]);
+  assert.equal(pendentes.size, 0);
+  assert.equal(conclusoesAdiadas([]).size, 0);
+});
+
+test("conclusoesAdiadas: no mesmo instante da registrada a conclusão já foi feita (não retoma)", () => {
+  const pendentes = conclusoesAdiadas([
+    { matricula_id: "a", evento: EVENTO_CONCLUSAO_ADIADA, created_at: "2026-10-01T10:00:00Z" },
+    { matricula_id: "a", evento: EVENTO_CONCLUSAO_REGISTRADA, created_at: "2026-10-01T10:00:00Z" },
+  ]);
+  assert.equal(pendentes.size, 0);
+});
+
+// matriculasAbertasComTrilhaCompleta
+test("matriculasAbertasComTrilhaCompleta: completa na trilha e ainda aberta no banco", () => {
   const completas = new Set(["a", "b", "c"]);
   const lista = [
-    { id: "a", status: "em_andamento" }, // trilha completa, banco aberto: a que ficou presa
-    { id: "b", status: "pendente" }, // idem, nunca marcada como iniciada
+    { id: "a", status: "em_andamento" },
+    { id: "b", status: "pendente" },
     { id: "c", status: "concluido" }, // já concluída: nada a fazer
     { id: "d", status: "em_andamento" }, // trilha incompleta
-    { id: "e", status: null }, // sem status e incompleta
+    { id: "e", status: null },
   ];
-  const escolhidas = matriculasComConclusaoPorRegistrar(lista, (m) => completas.has(m.id));
+  const abertas = matriculasAbertasComTrilhaCompleta(lista, (m) => completas.has(m.id));
   assert.deepEqual(
-    escolhidas.map((m) => m.id),
+    abertas.map((m) => m.id),
     ["a", "b"]
   );
 });
 
-test("matriculasComConclusaoPorRegistrar: não consulta a trilha de quem já está concluído", () => {
+test("matriculasAbertasComTrilhaCompleta: não consulta a trilha de quem já está concluído; sem matrícula, nada", () => {
   const consultadas: string[] = [];
-  const lista = [
-    { id: "a", status: "concluido" },
-    { id: "b", status: "em_andamento" },
-  ];
-  matriculasComConclusaoPorRegistrar(lista, (m) => {
-    consultadas.push(m.id);
-    return false;
-  });
+  matriculasAbertasComTrilhaCompleta(
+    [
+      { id: "a", status: "concluido" },
+      { id: "b", status: "em_andamento" },
+    ],
+    (m) => {
+      consultadas.push(m.id);
+      return false;
+    }
+  );
   assert.deepEqual(consultadas, ["b"]);
-});
-
-test("matriculasComConclusaoPorRegistrar: sem matrícula, nada", () => {
   assert.deepEqual(
-    matriculasComConclusaoPorRegistrar([], () => true),
+    matriculasAbertasComTrilhaCompleta([], () => true),
     []
   );
 });
 
-test("retomarConclusoes: concluiu, relê a linha e a atualiza no lugar (curso de apoio preso em andamento)", async () => {
-  const presa = { id: "a", status: "em_andamento", data_conclusao: null as string | null };
-  const lida: string[] = [];
-  const registros: string[] = [];
-  await retomarConclusoes({
-    matriculas: [presa],
-    concluir: async () => ({ concluiu: true }),
-    reler: async (m) => {
-      lida.push(m.id);
-      return { id: m.id, status: "concluido", data_conclusao: "2026-10-07" };
+// matriculasComConclusaoPorRegistrar: só as que tiveram a conclusão adiada
+test("matriculasComConclusaoPorRegistrar: só a que tem a conclusão adiada, e nunca a que fez a prova e não passou", () => {
+  const abertas = [
+    { id: "a", status: "em_andamento" }, // adiada, trilha completa: retoma
+    { id: "b", status: "em_andamento" }, // trilha completa, mas nada foi adiado (ex.: prova refeita pelo RH)
+    { id: "c", status: "em_andamento" }, // adiada, mas fez a prova e não foi aprovado
+  ];
+  const escolhidas = matriculasComConclusaoPorRegistrar(
+    abertas,
+    new Set(["a", "c"]),
+    (m) => m.id === "c"
+  );
+  assert.deepEqual(
+    escolhidas.map((m) => m.id),
+    ["a"]
+  );
+});
+
+test("matriculasComConclusaoPorRegistrar: matrícula sem id nunca é escolhida", () => {
+  assert.deepEqual(
+    matriculasComConclusaoPorRegistrar(
+      [{ status: "em_andamento" }],
+      new Set(["undefined"]),
+      () => false
+    ),
+    []
+  );
+});
+
+// retomarConclusoes
+type Mat = { id: string; status: string; data_conclusao?: string | null };
+const abertaA = (): Mat => ({ id: "a", status: "em_andamento", data_conclusao: null });
+
+/**
+ * Dependências de uma abertura do portal em que tudo corre bem; cada teste troca só o que importa.
+ * `quaisAdiadas` devolve, das matrículas candidatas, as que têm a conclusão adiada (todas, por padrão).
+ */
+function retomada(
+  sobrescrever: Record<string, unknown> = {},
+  quaisAdiadas: (ids: string[]) => string[] = (ids) => ids
+) {
+  const chamadas = { lidas: [] as string[][], concluidas: [] as string[], relidas: [] as string[] };
+  const registros: { mensagem: string; causa?: unknown }[] = [];
+  const p = {
+    matriculas: [abertaA()] as Mat[],
+    concluidoNaTrilha: (_m: Mat) => true,
+    provaSemAprovacao: (_m: Mat) => false,
+    lerAdiadas: async (ids: string[]) => {
+      chamadas.lidas.push(ids);
+      return new Set(quaisAdiadas(ids));
     },
-    registrar: (mensagem) => registros.push(mensagem),
-  });
-  assert.deepEqual(presa, { id: "a", status: "concluido", data_conclusao: "2026-10-07" });
-  assert.deepEqual(lida, ["a"]);
+    concluir: async (m: Mat): Promise<{ concluiu: boolean; data_conclusao?: string | null }> => {
+      chamadas.concluidas.push(m.id);
+      return { concluiu: true, data_conclusao: "2026-10-01" };
+    },
+    reler: async (m: Mat): Promise<Mat | null> => {
+      chamadas.relidas.push(m.id);
+      return { id: m.id, status: "concluido", data_conclusao: "2026-10-01" };
+    },
+    registrar: (mensagem: string, causa?: unknown) => registros.push({ mensagem, causa }),
+    ...sobrescrever,
+  };
+  return { p, chamadas, registros };
+}
+
+test("retomarConclusoes: conclusão adiada e trilha completa conclui, relê e atualiza a linha no lugar", async () => {
+  const { p, chamadas, registros } = retomada();
+  await retomarConclusoes(p);
+  assert.deepEqual(p.matriculas, [{ id: "a", status: "concluido", data_conclusao: "2026-10-01" }]);
+  assert.deepEqual(chamadas.lidas, [["a"]]);
+  assert.deepEqual(chamadas.concluidas, ["a"]);
+  assert.deepEqual(chamadas.relidas, ["a"]);
   assert.deepEqual(registros, []);
 });
 
-test("retomarConclusoes: a leitura do curso falhou de novo (não concluiu): não relê e a linha fica como estava", async () => {
-  const presa = { id: "a", status: "em_andamento" };
-  let releituras = 0;
-  await retomarConclusoes({
-    matriculas: [presa],
-    concluir: async () => ({ concluiu: false }),
-    reler: async () => {
-      releituras++;
-      return { id: "a", status: "concluido" };
+test("retomarConclusoes (I1): prova refeita pelo RH, aluno reprovado, questões antigas excluídas: NÃO conclui", async () => {
+  // O cenário da revisão 2: 3 tentativas reprovadas, o RH exclui as questões antigas antes de cadastrar as novas,
+  // e nesse intervalo o aluno abre o portal. Sem questões a trilha parece completa, mas nada foi adiado: não conclui.
+  const reprovado = abertaA();
+  const { p, chamadas } = retomada(
+    {
+      matriculas: [reprovado],
+      concluidoNaTrilha: () => true, // sem questões vivas
+      provaSemAprovacao: () => true, // tentativas feitas, nenhuma aprovada
     },
-    registrar: () => {},
+    () => [] // nenhuma conclusão adiada
+  );
+  await retomarConclusoes(p);
+  assert.deepEqual(chamadas.concluidas, []);
+  assert.deepEqual(chamadas.relidas, []);
+  assert.deepEqual(reprovado, { id: "a", status: "em_andamento", data_conclusao: null });
+});
+
+test("retomarConclusoes (I1): mesmo com a conclusão adiada, quem fez a prova e não passou não conclui", async () => {
+  const { p, chamadas } = retomada({ provaSemAprovacao: () => true });
+  await retomarConclusoes(p);
+  assert.deepEqual(chamadas.concluidas, []);
+});
+
+test("retomarConclusoes (I1): trilha completa que nunca foi adiada (aula apagada pelo RH) não é concluída por aqui", async () => {
+  const { p, chamadas } = retomada({}, () => []);
+  await retomarConclusoes(p);
+  assert.deepEqual(chamadas.concluidas, []);
+});
+
+test("retomarConclusoes: só lê os eventos quando há matrícula aberta com a trilha completa", async () => {
+  const { p, chamadas } = retomada({
+    matriculas: [
+      { id: "a", status: "concluido" },
+      { id: "b", status: "em_andamento" },
+    ],
+    concluidoNaTrilha: (m: Mat) => m.id === "a", // a de b não está completa
   });
-  assert.equal(releituras, 0);
-  assert.deepEqual(presa, { id: "a", status: "em_andamento" });
+  await retomarConclusoes(p);
+  assert.deepEqual(chamadas.lidas, []);
+  assert.deepEqual(chamadas.concluidas, []);
+});
+
+test("retomarConclusoes: pede os eventos só das matrículas candidatas, numa leitura só", async () => {
+  const { p, chamadas } = retomada(
+    {
+      matriculas: [
+        { id: "a", status: "em_andamento" },
+        { id: "b", status: "em_andamento" },
+        { id: "c", status: "concluido" },
+        { id: "d", status: "em_andamento" },
+      ],
+      concluidoNaTrilha: (m: Mat) => m.id !== "d",
+    },
+    () => ["b"]
+  );
+  await retomarConclusoes(p);
+  assert.deepEqual(chamadas.lidas, [["a", "b"]]);
+  assert.deepEqual(chamadas.concluidas, ["b"]);
+});
+
+test("retomarConclusoes: a leitura do curso falhou de novo (não concluiu): não relê e a linha fica como estava", async () => {
+  const { p, chamadas } = retomada({ concluir: async () => ({ concluiu: false }) });
+  await retomarConclusoes(p);
+  assert.deepEqual(chamadas.relidas, []);
+  assert.deepEqual(p.matriculas, [{ id: "a", status: "em_andamento", data_conclusao: null }]);
 });
 
 test("retomarConclusoes: nunca lança; o erro de uma matrícula vai para o registro e não impede as outras", async () => {
-  const lista = [
-    { id: "a", status: "em_andamento" },
-    { id: "b", status: "em_andamento" },
-    { id: "c", status: "em_andamento" },
-  ];
-  const registros: { mensagem: string; causa?: unknown }[] = [];
   const falha = new Error("rede");
-  await retomarConclusoes({
-    matriculas: lista,
-    concluir: async (m) => {
+  const { p, registros } = retomada({
+    matriculas: [
+      { id: "a", status: "em_andamento" },
+      { id: "b", status: "em_andamento" },
+      { id: "c", status: "em_andamento" },
+    ],
+    concluir: async (m: Mat) => {
       if (m.id === "a") throw falha; // a conclusão lançou
       return { concluiu: true };
     },
-    reler: async (m) => {
+    reler: async (m: Mat) => {
       if (m.id === "b") throw falha; // a releitura lançou
       return { id: m.id, status: "concluido" };
     },
-    registrar: (mensagem, causa) => registros.push({ mensagem, causa }),
   });
+  await retomarConclusoes(p);
   assert.equal(registros.length, 2);
   assert.ok(registros.every((r) => r.causa === falha));
   assert.deepEqual(
-    lista.map((m) => m.status),
+    p.matriculas.map((m) => m.status),
     ["em_andamento", "em_andamento", "concluido"]
   );
 });
 
-test("retomarConclusoes: releitura sem linha só é registrada (a matrícula segue como estava)", async () => {
-  const presa = { id: "a", status: "em_andamento" };
-  const registros: string[] = [];
-  await retomarConclusoes({
-    matriculas: [presa],
-    concluir: async () => ({ concluiu: true }),
-    reler: async () => null,
-    registrar: (mensagem) => registros.push(mensagem),
+test("retomarConclusoes: não conseguir ler os eventos só é registrado (nada é concluído, o portal segue)", async () => {
+  const falha = new Error("banco fora");
+  const { p, chamadas, registros } = retomada({
+    lerAdiadas: async () => {
+      throw falha;
+    },
   });
+  await retomarConclusoes(p); // não lança
+  assert.deepEqual(chamadas.concluidas, []);
   assert.equal(registros.length, 1);
-  assert.deepEqual(presa, { id: "a", status: "em_andamento" });
+  assert.equal(registros[0].causa, falha);
+});
+
+test("retomarConclusoes: erro ao conferir a trilha também é só registrado", async () => {
+  const falha = new Error("trilha");
+  const { p, chamadas, registros } = retomada({
+    concluidoNaTrilha: () => {
+      throw falha;
+    },
+  });
+  await retomarConclusoes(p);
+  assert.deepEqual(chamadas.concluidas, []);
+  assert.equal(registros[0]?.causa, falha);
+});
+
+test("retomarConclusoes: releitura sem linha só é registrada (a matrícula segue como estava)", async () => {
+  const { p, registros } = retomada({ reler: async () => null });
+  await retomarConclusoes(p);
+  assert.equal(registros.length, 1);
+  assert.deepEqual(p.matriculas, [{ id: "a", status: "em_andamento", data_conclusao: null }]);
 });
 
 test("retomarConclusoes: sem matrícula, não chama nada", async () => {
-  let chamadas = 0;
+  const { p, chamadas, registros } = retomada({ matriculas: [] });
+  await retomarConclusoes(p);
+  assert.deepEqual(chamadas, { lidas: [], concluidas: [], relidas: [] });
+  assert.deepEqual(registros, []);
+});
+
+// ----- os dois cenários da revisão 2, com as regras reais compostas (situacaoDaTrilha, marcoDaTrilha, decisaoDeConclusao)
+test("I1, cenário da revisão: reprovado nas 3 tentativas e questões excluídas pelo RH: a abertura do portal NÃO conclui", async () => {
+  const aulas = [{ id: "a1" }, { id: "a2" }];
+  const feitas = new Set<unknown>(["a1", "a2"]);
+  const tentativas = [
+    { matricula_id: "m1", numero: 1, aprovada: false },
+    { matricula_id: "m1", numero: 2, aprovada: false },
+    { matricula_id: "m1", numero: 3, aprovada: false },
+  ];
+  const matricula = { id: "m1", status: "em_andamento", data_conclusao: null as string | null };
+  const concluidas: string[] = [];
+  const retomar = async (questoesVivas: number) => {
+    await retomarConclusoes({
+      matriculas: [matricula],
+      // a mesma conta do dados: sem questões vivas a trilha "fecha"
+      concluidoNaTrilha: () =>
+        situacaoDaTrilha({ aulas, feitas, temAvaliacao: questoesVivas > 0, aprovacao: null })
+          .concluido,
+      provaSemAprovacao: (m) => {
+        const dela = tentativas.filter((t) => t.matricula_id === m.id);
+        return dela.length > 0 && !dela.some((t) => t.aprovada);
+      },
+      // nenhum evento conclusao_adiada: o aluno nunca chegou a completar a trilha
+      lerAdiadas: async () => conclusoesAdiadas([]),
+      concluir: async (m) => {
+        concluidas.push(m.id);
+        return { concluiu: true };
+      },
+      reler: async (m) => ({ ...m, status: "concluido" }),
+      registrar: () => {},
+    });
+  };
+  await retomar(5); // com as 5 questões vivas a trilha nem fecha
+  await retomar(0); // o intervalo em que o RH apagou as questões antigas
+  assert.deepEqual(concluidas, []);
+  assert.deepEqual(matricula, { id: "m1", status: "em_andamento", data_conclusao: null });
+});
+
+test("I1: conclusão adiada e retomada dias depois mantém a data da trilha e a renovação que conta dela", async () => {
+  const aulas = [{ id: "a1" }, { id: "a2" }];
+  const concluidaEm = new Map<unknown, string>([
+    ["a1", "2026-10-02T14:00:00.000Z"],
+    ["a2", "2026-10-03T12:00:00.000Z"],
+  ]);
+  // a leitura do curso falhou na última aula (03/10); o aluno só reabre o portal em 07/10
+  const marco = marcoDaTrilha({ aulas, concluidaEm });
+  const hoje = new Date("2026-10-07T15:00:00.000Z");
+  const matricula = { id: "m1", status: "em_andamento", data_conclusao: null as string | null };
+  let gravado: Record<string, unknown> | null = null;
   await retomarConclusoes({
-    matriculas: [],
+    matriculas: [matricula],
+    concluidoNaTrilha: () => true,
+    provaSemAprovacao: () => false,
+    lerAdiadas: async () =>
+      conclusoesAdiadas([
+        { matricula_id: "m1", evento: EVENTO_CONCLUSAO_ADIADA, created_at: "2026-10-03T12:00:01Z" },
+      ]),
     concluir: async () => {
-      chamadas++;
-      return { concluiu: true };
+      const d = decisaoDeConclusao({
+        sit: { aulasOk: true, temAvaliacao: false, concluido: true },
+        curso: { validade_meses: 24, modalidade: "ead" },
+        cursoLido: true,
+        hoje,
+        marco,
+      });
+      gravado = d.patch;
+      return { concluiu: d.resultado.concluiu, data_conclusao: d.patch?.data_conclusao as string };
     },
-    reler: async () => {
-      chamadas++;
-      return null;
-    },
-    registrar: () => {
-      chamadas++;
-    },
+    reler: async (m) => ({ ...m, ...gravado }),
+    registrar: () => {},
   });
-  assert.equal(chamadas, 0);
+  assert.deepEqual(gravado, {
+    status: "concluido",
+    data_conclusao: "2026-10-03",
+    proxima_renovacao: "2028-10-03",
+  });
+  assert.equal(matricula.status, "concluido");
+  assert.equal(matricula.data_conclusao, "2026-10-03");
 });
 
 // ----------------------------------------------------------- renovacaoAPartirDe (T12)

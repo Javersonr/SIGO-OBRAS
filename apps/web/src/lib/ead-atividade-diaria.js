@@ -42,8 +42,18 @@ export const EVENTOS_DO_RH = [
   "duvida_resposta_editada",
 ];
 
-/** Fora da janela: as ações do RH e a senha errada no login (pode ser de outra pessoa, não é o aluno). */
-export const EVENTOS_FORA_DA_JANELA = [...EVENTOS_DO_RH, "login_falha"];
+/**
+ * Eventos que o próprio SISTEMA grava na trilha do aluno sem ele fazer nada (A6): a conclusão que não pôde ser gravada
+ * na hora (`conclusao_adiada`) e a que o portal gravou depois, ao ser aberto (`conclusao_registrada`). Nenhum é o
+ * aluno estudando nem estendendo a janela do dia; `ead-atividade-diaria.test.js` confere que o portal os grava.
+ */
+export const EVENTOS_DO_SISTEMA = ["conclusao_adiada", "conclusao_registrada"];
+
+/**
+ * Fora da janela: as ações do RH, os eventos do sistema e a senha errada no login (pode ser de outra pessoa, não é o
+ * aluno).
+ */
+export const EVENTOS_FORA_DA_JANELA = [...EVENTOS_DO_RH, ...EVENTOS_DO_SISTEMA, "login_falha"];
 
 /**
  * Eventos de servidor que são ESTUDAR um curso (cada um ligado a uma matrícula): o progresso que o servidor creditou

@@ -54,6 +54,8 @@ export const ROTULO_EVENTO = {
   avaliacao_envio: "Enviou a avaliação",
   tentativa_liberada: "Tentativa extra liberada pelo RH",
   curso_concluido: "Concluiu o curso",
+  conclusao_adiada: "Conclusão adiada pelo sistema (será registrada depois)",
+  conclusao_registrada: "Conclusão registrada pelo sistema (estava adiada)",
   certificado_assinado: "Assinou o certificado",
   certificado_revogado: "Certificado revogado pelo RH",
   abrir_certificado: "Baixou o certificado",
@@ -130,6 +132,18 @@ export function descreverDetalhe(evento) {
         d.codigo && `código ${d.codigo}`,
         d.motivo && `motivo: ${d.motivo}`
       );
+    case "conclusao_adiada":
+      // a trilha estava completa; só a conclusão da matrícula ficou por gravar (a abertura do portal a registra)
+      return d.motivo === "curso_nao_lido"
+        ? "não foi possível ler o curso"
+        : d.motivo === "gravacao_falhou"
+          ? "não foi possível gravar a conclusão"
+          : "";
+    case "conclusao_registrada":
+      // o dia que ficou na matrícula: o do último marco da trilha, não o da abertura do portal
+      return /^\d{4}-\d{2}-\d{2}$/.test(String(d.data_conclusao ?? ""))
+        ? `data da conclusão ${String(d.data_conclusao).split("-").reverse().join("/")}`
+        : "";
     case "duvida_resposta_editada":
       // o texto anterior inteiro fica no evento (é o que a trilha guarda), mas não polui a linha
       return juntar(d.por && `por ${d.por}`, "versão anterior guardada no registro");
