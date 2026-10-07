@@ -167,6 +167,7 @@ import {
   liberacoesPorMatricula,
   logoAssinadoParaPdf,
   matriculaParaAluno,
+  matriculasComConclusaoPorRegistrar,
   periodoDoCertificado,
   type ProgressoDaAula,
   provaDaOrdem,
@@ -175,6 +176,7 @@ import {
   refsDasAulasLiberadas,
   respostaDaCorrecao,
   resultadoDoSinal,
+  retomarConclusoes,
   situacaoDasTentativas,
   situacaoDaTrilha,
   sortearProva,
@@ -357,7 +359,10 @@ async function concluirSeCompleto(supabase: Db, mat: any, empresaId: string) {
   ]);
   // A conclusão é permanente: sem ler o curso (validade e modalidade), concluir gravaria a matrícula sem a
   // renovação certa, para sempre. Com erro na leitura NÃO conclui agora (decisaoDeConclusao devolve
-  // em_andamento) e deixa a causa no log; a próxima ação do aluno tenta de novo.
+  // em_andamento) e deixa a causa no log. Quem tenta de novo é `retomarConclusoes` (regras.ts), que o `dados`
+  // chama a cada abertura do portal para a matrícula que a trilha já dá por completa e o banco ainda tem aberta;
+  // o pedido de certificado também recusa (503) em vez de emitir sem a conclusão registrada. As outras ações
+  // (progresso, avaliação) só chamam isto no instante em que a última aula ou a aprovação acontece.
   if (erroCurso)
     console.error("[portal-funcionario] concluirSeCompleto: curso:", erroCurso.message);
   const { resultado, patch } = decisaoDeConclusao({
@@ -827,6 +832,38 @@ Deno.serve(
         (aulaId: string): ProgressoDaAula =>
           progPor.get(`${matriculaId}|${aulaId}`) as ProgressoDaAula;
 
+      // A trilha desta matrícula está completa (todas as aulas e, se há prova, a aprovação)? É a conta de
+      // `situacaoReal` feita só com o que este `dados` já leu: serve a `concluidoReal` de cada curso (abaixo) e à
+      // segunda chance da conclusão.
+      // deno-lint-ignore no-explicit-any
+      const concluidoNaTrilha = (m: any) => {
+        const aulasDaMatricula = aulasDoCurso(m.curso_id);
+        const progresso = progressoDa(m.id);
+        return situacaoDaTrilha({
+          aulas: aulasDaMatricula,
+          feitas: new Set(
+            // deno-lint-ignore no-explicit-any
+            aulasDaMatricula.filter((a: any) => progresso(a.id)?.concluida).map((a: any) => a.id)
+          ),
+          // deno-lint-ignore no-explicit-any
+          temAvaliacao: (questoes ?? []).some((q: any) => q.curso_id === m.curso_id),
+          aprovacao:
+            // deno-lint-ignore no-explicit-any
+            (tentativas ?? []).find((t: any) => t.matricula_id === m.id && t.aprovada) ?? null,
+        }).concluido;
+      };
+
+      // Segunda chance da conclusão (A6, revisão 1): a matrícula que a trilha já dá por completa e que o banco
+      // ainda tem aberta (a leitura do curso falhou quando a conclusão rodou) é concluída agora, ANTES de montar
+      // a resposta (o pré-requisito dos outros cursos lê o status). Só custa consultas nesse estado; idempotente.
+      await retomarConclusoes({
+        matriculas: matriculasComConclusaoPorRegistrar(matsDaEmpresa, concluidoNaTrilha),
+        concluir: (m) => concluirSeCompleto(supabase, m, empresaId),
+        // a mesma leitura das outras ações: matrícula do próprio funcionário, na empresa da sessão, colunas fixas
+        reler: (m) => minhaMatricula(m.id),
+        registrar: (mensagem, causa) => console.error(`[portal-funcionario] ${mensagem}`, causa),
+      });
+
       // Só as aulas LIBERADAS têm arquivo assinado (T16): a URL vale 3 h e pode ser repassada, então
       // aula bloqueada não ganha URL. A próxima aula recebe a sua quando for liberada (o portal
       // recarrega os dados ao concluir uma aula).
@@ -893,17 +930,7 @@ Deno.serve(
             questoes: questoesCurso,
           })
         );
-        const concluidoReal = situacaoDaTrilha({
-          aulas: aulasCurso,
-          feitas: new Set(
-            aulasCurso
-              .filter((a: { concluida: boolean }) => a.concluida)
-              .map((a: { id: string }) => a.id)
-          ),
-          temAvaliacao: questoesCurso.length > 0,
-          // deno-lint-ignore no-explicit-any
-          aprovacao: tents.find((t: any) => t.aprovada) ?? null,
-        }).concluido;
+        const concluidoReal = concluidoNaTrilha(m);
         // o curso exige outro? (null = não exige). Só emite com o curso exigido concluído e válido (T23)
         const preRequisito = preRequisitoDoCurso({
           curso,
@@ -1654,7 +1681,12 @@ Deno.serve(
       // matrícula sem o status/data que o servidor grava ao concluir: regrava
       // antes de montar o certificado (conclusão e validade vêm dela)
       if (mat.status !== "concluido" || !mat.data_conclusao) {
-        await concluirSeCompleto(supabase, mat, empresaId);
+        const conclusao = await concluirSeCompleto(supabase, mat, empresaId);
+        // A trilha está completa (conferido acima), então não concluir aqui é falha de leitura do curso, não "o
+        // curso não terminou": 503 para tentar de novo, e nunca um certificado sem a conclusão registrada (A6).
+        if (!conclusao.concluiu) {
+          return fail("Não foi possível registrar a conclusão do curso agora. Tente de novo.", 503);
+        }
         mat = (await minhaMatricula(mat.id)) ?? mat;
       }
 

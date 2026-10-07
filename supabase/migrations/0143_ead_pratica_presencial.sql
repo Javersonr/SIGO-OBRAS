@@ -316,7 +316,7 @@ create or replace function public.pratica_sessao_com_participantes()
 returns trigger
 language plpgsql
 set search_path = public
-as $
+as $$
 declare
   v_hoje date := (now() at time zone 'America/Sao_Paulo')::date;
 begin
@@ -339,7 +339,7 @@ begin
 
   return new;
 end;
-$;
+$$;
 revoke all on function public.pratica_sessao_com_participantes() from public, anon, authenticated;
 
 drop trigger if exists pratica_sessao_com_participantes on public.treinamento_sessao_pratica;

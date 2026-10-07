@@ -353,5 +353,16 @@ tabela grande, aplique fora do horário de pico. Funções alteradas: **portal-f
 (`--no-verify-jwt`) e **validar-certificado** (SEM `--no-verify-jwt`). O smoke de cada migração fica em `tools/`
 (`smoke-ead-pratica.sql`, `smoke-ead-declaracao.sql`, `smoke-ead-pre-requisito.sql`).
 
+**Conclusão que não foi registrada (A6, revisão 1).** O servidor só conclui a matrícula quando consegue ler o curso
+(a validade e a modalidade definem a renovação, e a conclusão é permanente). Se a leitura falha no instante da última
+aula, a matrícula não vira "concluída" na hora; a **próxima abertura do portal** conclui as matrículas cuja trilha já
+está completa e que continuam abertas no banco (o curso de apoio e o curso sem prova, que ninguém mais regravaria,
+ficavam "em andamento" ou "Atrasada" para sempre). Isso acontece sozinho, sem ação do aluno nem do RH, e **não grava
+evento na trilha** (abrir o portal não é estudar e contaria o dia como "estudou" no relatório de atividade): vale a
+data da conclusão da matrícula, que é o dia em que o portal a registrou. O pedido de certificado nessa situação
+responde "Não foi possível registrar a conclusão do curso agora. Tente de novo." (503), nunca emite sem a conclusão.
+Vale também para quem publicar o `portal-funcionario` antes da `0136` (o select de `modalidade` falha): as
+conclusões dessa janela ficam abertas e são registradas depois, mas a ordem correta continua sendo migração primeiro.
+
 O teste completo de matrícula real, tempo de estudo, avaliação e certificado deve seguir o roteiro da seção 7 do
 handoff, com o Javerson e após as decisões e tarefas correspondentes.

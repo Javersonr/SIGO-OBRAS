@@ -246,7 +246,10 @@ export function datasDeConclusao(
  * `cursoLido: false` = a leitura do curso (validade e modalidade) FALHOU. A conclusão é permanente (a
  * matrícula vira `concluido` e nenhuma ação a regrava), então concluir sem o curso gravaria a validade errada
  * para sempre: o EAD sairia sem renovação, e o curso de apoio, que não renova, não teria como ser distinguido.
- * Nesse caso a conclusão fica para a próxima ação do aluno (a leitura é refeita); o aluno não perde nada.
+ * Nesse caso a conclusão fica para depois, e quem a retoma é a próxima abertura do portal (`dados` conclui de novo,
+ * com `retomarConclusoes`, as matrículas que a trilha já dá por completas e o banco tem abertas) ou o pedido de
+ * certificado; o aluno não perde nada. Sem essa segunda chance o curso de apoio (sem certificado) e o
+ * curso sem prova ficariam `em_andamento` para sempre: nenhuma outra ação chama a conclusão depois da última aula.
  * Curso que não existe (sem erro) segue o comportamento de sempre: conclui só com a data.
  *
  * `precisaAvaliacao` = "é a hora da prova": só com todas as aulas feitas e a prova ainda pendente.
@@ -274,6 +277,56 @@ export function decisaoDeConclusao(p: {
       ...datasDeConclusao(p.hoje, p.curso?.validade_meses, modalidadeDoCurso(p.curso)),
     } as Record<string, unknown> | null,
   };
+}
+
+/**
+ * As matrículas que a trilha já dá por concluídas (todas as aulas e, se há prova, a aprovação) mas que o banco
+ * ainda tem abertas (A6, revisão 1). É o que sobra quando a conclusão não foi registrada na hora, em geral porque a
+ * leitura do curso falhou (`decisaoDeConclusao` com `cursoLido: false`): a conclusão só roda quando uma aula passa a
+ * concluída, quando a prova é aprovada e no pedido de certificado, então sem esta segunda chance a matrícula ficava
+ * `em_andamento` (ou "Atrasada", entrando no lote de lembretes) para sempre. O `dados` chama a conclusão de cada
+ * uma delas, que é idempotente. `concluidoNaTrilha` só é consultado para quem ainda não está concluído no banco:
+ * o caso comum (curso já concluído ou nenhum curso pronto) não custa nada.
+ */
+export function matriculasComConclusaoPorRegistrar<M extends { status?: string | null }>(
+  matriculas: M[],
+  concluidoNaTrilha: (matricula: M) => boolean
+): M[] {
+  return matriculas.filter((m) => m.status !== "concluido" && concluidoNaTrilha(m));
+}
+
+/**
+ * Segunda chance da conclusão (A6, revisão 1): conclui de novo cada matrícula de `matriculas` (as de
+ * `matriculasComConclusaoPorRegistrar`) e, se concluiu, relê a linha e a atualiza NO LUGAR com o que o banco
+ * ficou (a mesma linha que o `dados` devolve ao aluno e que o pré-requisito dos outros cursos lê). As matrículas
+ * andam em paralelo. NUNCA lança: erro ao concluir ou reler vai para `registrar` e a matrícula segue como estava,
+ * para a próxima abertura do portal tentar de novo (uma segunda chance que derrubasse o `dados` tiraria o portal
+ * do ar por causa de um problema de leitura). Releitura sem linha (`null`) também só é registrada. Não grava o
+ * evento `curso_concluido`: abrir o portal não é estudar, e ele contaria o dia como "estudou" no relatório de
+ * atividade. A conclusão fica no `data_conclusao` da matrícula e a última aula já está na trilha.
+ * `concluir` e `reler` entram por parâmetro (o `index.ts` liga `concluirSeCompleto` e a consulta da matrícula).
+ */
+export async function retomarConclusoes<M extends object>(p: {
+  matriculas: M[];
+  concluir: (matricula: M) => Promise<{ concluiu: boolean }>;
+  reler: (matricula: M) => Promise<M | null>;
+  registrar: (mensagem: string, causa?: unknown) => void;
+}): Promise<void> {
+  await Promise.all(
+    p.matriculas.map(async (matricula) => {
+      try {
+        if (!(await p.concluir(matricula)).concluiu) return;
+        const atual = await p.reler(matricula);
+        if (!atual) {
+          p.registrar("retomarConclusao: a matrícula concluída não foi relida (sem linha)");
+          return;
+        }
+        Object.assign(matricula, atual);
+      } catch (erro) {
+        p.registrar("retomarConclusao: falhou", erro);
+      }
+    })
+  );
 }
 
 /**

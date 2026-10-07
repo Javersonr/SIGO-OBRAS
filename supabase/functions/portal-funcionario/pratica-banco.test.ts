@@ -36,9 +36,39 @@ const semComentarios = (sql: string) =>
     .join("\n");
 const compacto = (sql: string) => sql.replace(/\s+/g, " ").trim();
 const sql = compacto(semComentarios(migracao));
-/** O corpo de uma função `create or replace function public.<nome>() ... $$ ... $$;` (compactado). */
+/**
+ * O corpo de uma função `create or replace function public.<nome>() ... as $$ ... $$;` (compactado), do PRIMEIRO
+ * `$$` que a abre ao primeiro `$$;` que a fecha. Entre o cabeçalho e o `$$` que abre não pode haver `$` nenhum
+ * (`[^$]*?`): com `as $` sozinho (A6, C1: o PostgreSQL recusa e a migração inteira se desfaz) o regex NÃO casa e o
+ * teste falha, em vez de atravessar até o `$$;` da função seguinte e achar tudo o que procurava. O pareamento de
+ * todas as migrações é de `migracoes-delimitadores.test.ts`.
+ */
 const corpo = (nome: string) =>
-  new RegExp(`create or replace function public\\.${nome}\\(\\)(.*?)\\$\\$;`).exec(sql)?.[1] ?? "";
+  new RegExp(`create or replace function public\\.${nome}\\(\\)[^$]*?\\$\\$(.*?)\\$\\$;`).exec(
+    sql
+  )?.[1] ?? "";
+
+test("cada função abre e fecha o próprio $$ (3 funções = 6 $$) e nenhum corpo atravessa outra função (C1)", () => {
+  const nomes = [...sql.matchAll(/create or replace function public\.(\w+)\(\)/g)].map((m) => m[1]);
+  assert.deepEqual(nomes, [
+    "pratica_participante_coerente",
+    "pratica_sessao_com_participantes",
+    "pratica_avaliacao_pelo_banco",
+  ]);
+  // sem `$` solto: todo `$` do arquivo (fora de comentário) é metade de um `$$`
+  assert.equal([...sql.matchAll(/\$/g)].length, nomes.length * 4);
+  assert.equal([...sql.matchAll(/\$\$/g)].length, nomes.length * 2);
+  for (const nome of nomes) {
+    const f = corpo(nome);
+    assert.ok(f, `${nome}: corpo não encontrado`);
+    assert.ok(
+      !f.includes("create or replace function"),
+      `${nome}: o corpo atravessou outra função`
+    );
+    assert.ok(!f.includes("$"), `${nome}: $ dentro do corpo`);
+    assert.ok(f.includes("begin") && /end; ?$/.test(f), `${nome}: corpo sem begin/end`);
+  }
+});
 
 test("termina em select 'ok' as res; e roda numa transação só", () => {
   assert.ok(migracao.trimEnd().endsWith("select 'ok' as res;"));

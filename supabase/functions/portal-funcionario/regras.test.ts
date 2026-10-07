@@ -35,6 +35,7 @@ import {
   liberacoesPorMatricula,
   logoAssinadoParaPdf,
   matriculaParaAluno,
+  matriculasComConclusaoPorRegistrar,
   ordemDaProva,
   periodoDoCertificado,
   proximaTentativaEm,
@@ -44,6 +45,7 @@ import {
   renovacaoAPartirDe,
   respostaDaCorrecao,
   resultadoDoSinal,
+  retomarConclusoes,
   situacaoDasTentativas,
   situacaoDaTrilha,
   sortearProva,
@@ -827,7 +829,8 @@ test("decisaoDeConclusao: curso lido sem validade conclui só com a data (curso 
 
 test("decisaoDeConclusao: sem conseguir ler o curso NÃO conclui (a validade sumiria para sempre)", () => {
   // curso nulo por erro de leitura: concluir agora gravaria a matrícula sem renovação (ou, no apoio, com ela),
-  // e o trabalho já estaria 'concluido'. Devolve em_andamento: a próxima ação do aluno tenta de novo.
+  // e o trabalho já estaria 'concluido'. Devolve em_andamento: quem tenta de novo é a abertura do portal
+  // (matriculasComConclusaoPorRegistrar + retomarConclusoes, logo abaixo).
   for (const curso of [null, undefined, { validade_meses: 24, modalidade: "ead" }]) {
     const d = decisaoDeConclusao({
       sit: sitConcluida,
@@ -847,6 +850,138 @@ test("decisaoDeConclusao: curso inexistente (sem erro) conclui como antes, sem v
   const d = decisaoDeConclusao({ sit: sitConcluida, curso: null, hoje: hojeConclusao });
   assert.equal(d.resultado.concluiu, true);
   assert.deepEqual(d.patch, { status: "concluido", data_conclusao: "2026-10-05" });
+});
+
+// ------------------------------------------- segunda chance da conclusão (A6, revisão 1)
+// Dados sintéticos: ids e status inventados.
+test("matriculasComConclusaoPorRegistrar: completa na trilha e ainda aberta no banco volta a concluir", () => {
+  const completas = new Set(["a", "b", "c"]);
+  const lista = [
+    { id: "a", status: "em_andamento" }, // trilha completa, banco aberto: a que ficou presa
+    { id: "b", status: "pendente" }, // idem, nunca marcada como iniciada
+    { id: "c", status: "concluido" }, // já concluída: nada a fazer
+    { id: "d", status: "em_andamento" }, // trilha incompleta
+    { id: "e", status: null }, // sem status e incompleta
+  ];
+  const escolhidas = matriculasComConclusaoPorRegistrar(lista, (m) => completas.has(m.id));
+  assert.deepEqual(
+    escolhidas.map((m) => m.id),
+    ["a", "b"]
+  );
+});
+
+test("matriculasComConclusaoPorRegistrar: não consulta a trilha de quem já está concluído", () => {
+  const consultadas: string[] = [];
+  const lista = [
+    { id: "a", status: "concluido" },
+    { id: "b", status: "em_andamento" },
+  ];
+  matriculasComConclusaoPorRegistrar(lista, (m) => {
+    consultadas.push(m.id);
+    return false;
+  });
+  assert.deepEqual(consultadas, ["b"]);
+});
+
+test("matriculasComConclusaoPorRegistrar: sem matrícula, nada", () => {
+  assert.deepEqual(
+    matriculasComConclusaoPorRegistrar([], () => true),
+    []
+  );
+});
+
+test("retomarConclusoes: concluiu, relê a linha e a atualiza no lugar (curso de apoio preso em andamento)", async () => {
+  const presa = { id: "a", status: "em_andamento", data_conclusao: null as string | null };
+  const lida: string[] = [];
+  const registros: string[] = [];
+  await retomarConclusoes({
+    matriculas: [presa],
+    concluir: async () => ({ concluiu: true }),
+    reler: async (m) => {
+      lida.push(m.id);
+      return { id: m.id, status: "concluido", data_conclusao: "2026-10-07" };
+    },
+    registrar: (mensagem) => registros.push(mensagem),
+  });
+  assert.deepEqual(presa, { id: "a", status: "concluido", data_conclusao: "2026-10-07" });
+  assert.deepEqual(lida, ["a"]);
+  assert.deepEqual(registros, []);
+});
+
+test("retomarConclusoes: a leitura do curso falhou de novo (não concluiu): não relê e a linha fica como estava", async () => {
+  const presa = { id: "a", status: "em_andamento" };
+  let releituras = 0;
+  await retomarConclusoes({
+    matriculas: [presa],
+    concluir: async () => ({ concluiu: false }),
+    reler: async () => {
+      releituras++;
+      return { id: "a", status: "concluido" };
+    },
+    registrar: () => {},
+  });
+  assert.equal(releituras, 0);
+  assert.deepEqual(presa, { id: "a", status: "em_andamento" });
+});
+
+test("retomarConclusoes: nunca lança; o erro de uma matrícula vai para o registro e não impede as outras", async () => {
+  const lista = [
+    { id: "a", status: "em_andamento" },
+    { id: "b", status: "em_andamento" },
+    { id: "c", status: "em_andamento" },
+  ];
+  const registros: { mensagem: string; causa?: unknown }[] = [];
+  const falha = new Error("rede");
+  await retomarConclusoes({
+    matriculas: lista,
+    concluir: async (m) => {
+      if (m.id === "a") throw falha; // a conclusão lançou
+      return { concluiu: true };
+    },
+    reler: async (m) => {
+      if (m.id === "b") throw falha; // a releitura lançou
+      return { id: m.id, status: "concluido" };
+    },
+    registrar: (mensagem, causa) => registros.push({ mensagem, causa }),
+  });
+  assert.equal(registros.length, 2);
+  assert.ok(registros.every((r) => r.causa === falha));
+  assert.deepEqual(
+    lista.map((m) => m.status),
+    ["em_andamento", "em_andamento", "concluido"]
+  );
+});
+
+test("retomarConclusoes: releitura sem linha só é registrada (a matrícula segue como estava)", async () => {
+  const presa = { id: "a", status: "em_andamento" };
+  const registros: string[] = [];
+  await retomarConclusoes({
+    matriculas: [presa],
+    concluir: async () => ({ concluiu: true }),
+    reler: async () => null,
+    registrar: (mensagem) => registros.push(mensagem),
+  });
+  assert.equal(registros.length, 1);
+  assert.deepEqual(presa, { id: "a", status: "em_andamento" });
+});
+
+test("retomarConclusoes: sem matrícula, não chama nada", async () => {
+  let chamadas = 0;
+  await retomarConclusoes({
+    matriculas: [],
+    concluir: async () => {
+      chamadas++;
+      return { concluiu: true };
+    },
+    reler: async () => {
+      chamadas++;
+      return null;
+    },
+    registrar: () => {
+      chamadas++;
+    },
+  });
+  assert.equal(chamadas, 0);
 });
 
 // ----------------------------------------------------------- renovacaoAPartirDe (T12)
