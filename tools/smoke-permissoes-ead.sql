@@ -45,14 +45,24 @@
 --   9. prática presencial (T12) e texto da declaração (T35) exigem Editar;
 --  10. Storage: as 3 policies restritivas do bucket treinamentos existem e a
 --      expressão delas libera só quem tem Editar (e não atrapalha outro bucket);
---  11. documentos do portal: as RPC exigem RH → Criar/Deletar, recusam arquivo
---      fora da pasta da empresa, em recibos/, com "..", inexistente ou que não
---      é PDF; o UPDATE só dos itens do portal pela API é recusado; o
---      salvamento do formulário inteiro com a lista velha mantém o PDF; um item
---      forjado junto com outra mudança não entra; INSERT de funcionário com
---      item do portal é recusado.
+--  11. documentos do portal: a escrita COMUM em funcionario continua passando
+--      como authenticated (INSERT sem a coluna, com "[]" e com anexo comum;
+--      UPDATE com a lista igual, com e sem PDF do portal, e com anexo comum:
+--      o trigger zz_documentos_portal roda como authenticated e chama as
+--      funções anexos_*, que precisam de EXECUTE para authenticated); as RPC
+--      exigem RH → Criar/Deletar, recusam arquivo fora da pasta da empresa, em
+--      recibos/, com "..", inexistente ou que não é PDF; o UPDATE só dos itens
+--      do portal pela API é recusado; o salvamento do formulário inteiro com a
+--      lista velha mantém o PDF; um item forjado junto com outra mudança não
+--      entra; INSERT de funcionário com item do portal é recusado.
 --
--- Como rodar (precisa da migração 0147 já aplicada):
+-- Cada recusa confere a MENSAGEM esperada ou, no mínimo, que não foi um
+-- "permission denied" nem uma policy de RLS (smoke_t33_recusa): 42501 sozinho
+-- aceitaria a recusa pelo motivo errado, como o EXECUTE que faltava.
+--
+-- Como rodar (precisa da migração 0147 já aplicada; rode LOGO DEPOIS de aplicar
+-- a 0147 e antes de liberar o uso, porque termina em ROLLBACK e pega o que a
+-- migração quebraria. Se falhar, desfaça pelo bloco "PARA DESFAZER" da 0147):
 --   supabase db query --linked -f tools/smoke-permissoes-ead.sql
 --   -- ou: psql "$DATABASE_URL" -f tools/smoke-permissoes-ead.sql
 -- Deve terminar imprimindo "SMOKE TEST OK" (e a linha da tabela de resultado).
@@ -62,7 +72,14 @@ begin;
 
 -- tenta o comando e exige que ele seja RECUSADO com o estado esperado (padrão 42501). Roda com os direitos de quem
 -- chama (SECURITY INVOKER): vale o papel ativo no momento. Some no ROLLBACK.
-create or replace function public.smoke_t33_recusa(p_sql text, p_estado text default '42501')
+-- O estado sozinho não basta: 42501 também é o "permission denied" de um grant ou EXECUTE que falta e o "new row
+-- violates row-level security" de uma policy, e a recusa passaria pelo motivo errado (foi o que escondeu o EXECUTE
+-- que faltava nas funções auxiliares do trigger dos documentos, revisão 1 da T33). Por isso:
+--   * p_msg (padrão LIKE) exige a mensagem esperada; passe sempre que o motivo importar;
+--   * sem p_msg, a recusa por "permission denied" ou por RLS é falha do smoke (quem espera "permission denied" de
+--     propósito, como o UPDATE do certificado sem grant, diz isso em p_msg).
+create or replace function public.smoke_t33_recusa(
+  p_sql text, p_estado text default '42501', p_msg text default null)
 returns text
 language plpgsql
 as $f$
@@ -72,6 +89,12 @@ begin
   exception when others then
     if sqlstate <> p_estado then
       raise exception 'FALHOU: esperava % e veio % (%) em: %', p_estado, sqlstate, sqlerrm, p_sql;
+    end if;
+    if p_msg is not null and sqlerrm not like p_msg then
+      raise exception 'FALHOU: recusado, mas pelo motivo errado. Esperava "%" e veio "%" em: %', p_msg, sqlerrm, p_sql;
+    end if;
+    if p_msg is null and (sqlerrm like 'permission denied%' or sqlerrm like 'new row violates row-level security%') then
+      raise exception 'FALHOU: recusado por grant ou RLS ("%"), não pela regra, em: %', sqlerrm, p_sql;
     end if;
     return sqlerrm;
   end;
@@ -110,6 +133,7 @@ declare
   v_mat2 uuid;         -- M2 (C2, sem certificado)
   v_duvida uuid;
   v_sessao uuid;
+  v_novo uuid;         -- funcionário comum criado pelo admin (passo 13)
   v_n bigint;
   v_ok boolean;
   v_msg text;
@@ -367,7 +391,8 @@ begin
   insert into public.treinamento_matricula (empresa_id, curso_id, funcionario_id)
     values (v_empresa, v_curso4, v_func);
   perform public.smoke_t33_recusa(format(
-    'update public.treinamento_matricula set tentativas_extras = tentativas_extras + 1 where id = %L', v_mat2));
+    'update public.treinamento_matricula set tentativas_extras = tentativas_extras + 1 where id = %L', v_mat2),
+    '42501', 'Acesso negado: andamento e conclusão%');
   v_msg := public.smoke_t33_recusa(format(
     'update public.treinamento_matricula set deleted_at = now() where id = %L', v_mat));
   if v_msg not like 'Esta matrícula tem certificado emitido e ainda válido%' then
@@ -381,13 +406,16 @@ begin
   perform set_config('request.jwt.claims', public.smoke_t33_claims('admin', v_empresa), true);
   set local role authenticated;
   perform public.smoke_t33_recusa(format(
-    'update public.treinamento_matricula set tentativas_extras = 1 where id = %L', v_mat));
+    'update public.treinamento_matricula set tentativas_extras = 1 where id = %L', v_mat),
+    '42501', 'Acesso negado: andamento e conclusão%');
   raise notice '[matrícula] OK matricular = Matricular; tentativa extra só pelo servidor; certificado válido trava a remoção';
 
   -- 8. certificado: nem o Admin revoga pela API -------------------------------------------------------------------
   perform public.smoke_t33_recusa(format(
     'update public.treinamento_certificado set revogado_em = now(), revogado_por = %L, motivo_revogacao = %L where matricula_id = %L',
-    'smoke', 'smoke motivo', v_mat));
+    'smoke', 'smoke motivo', v_mat),
+    -- aqui o motivo É o grant: o revoke update tira o UPDATE da API antes do trigger (que fica de segunda barreira)
+    '42501', 'permission denied for table treinamento_certificado%');
   raise notice '[certificado] OK sem UPDATE pela API (a revogação é do funcionario-acesso)';
 
   -- 9. dúvida ---------------------------------------------------------------------------------------------------
@@ -510,8 +538,53 @@ begin
   raise notice '[Storage] OK enviar, trocar e apagar arquivo de aula só com Editar; outros buckets não mudam';
 
   -- 13. documentos do portal (B2) ---------------------------------------------------------------------------------
-  -- (as funções auxiliares anexos_* não são executáveis pela API: são chamadas aqui como dono do banco, antes de
-  -- trocar de papel)
+  -- 13.0 a escrita COMUM em funcionario continua passando (regressão da revisão 1 da T33). O trigger
+  -- zz_documentos_portal NÃO é SECURITY DEFINER (R7) e roda como authenticated em todo INSERT de funcionário e em todo
+  -- UPDATE que leva documentos_rh_anexos; ele chama anexos_como_lista e anexos_do_portal, que por isso precisam de
+  -- EXECUTE para authenticated. Sem o grant, cadastro, contratação, importação e a Edição completa do RH caíam com
+  -- "permission denied for function". anon continua sem acesso.
+  if not has_function_privilege('authenticated', 'public.anexos_como_lista(jsonb)', 'execute')
+     or not has_function_privilege('authenticated', 'public.anexos_do_portal(jsonb, boolean)', 'execute') then
+    raise exception 'FALHOU: authenticated não executa anexos_como_lista/anexos_do_portal, que o trigger zz_documentos_portal chama como authenticated (falta o grant da 0147)';
+  end if;
+  if has_function_privilege('anon', 'public.anexos_como_lista(jsonb)', 'execute')
+     or has_function_privilege('anon', 'public.anexos_do_portal(jsonb, boolean)', 'execute') then
+    raise exception 'FALHOU: anon não deveria executar anexos_como_lista/anexos_do_portal';
+  end if;
+
+  perform set_config('request.jwt.claims', public.smoke_t33_claims('admin', v_empresa), true);
+  set local role authenticated;
+  begin
+    -- o cadastro (SegurancaTrabalho) manda a linha sem a coluna; a importação manda o texto "[]"; a contratação, anexos
+    insert into public.funcionario (empresa_id, nome_completo, cpf)
+      values (v_empresa, 'SMOKE T33 funcionário comum', '00000000001')
+      returning id into v_novo;
+    insert into public.funcionario (empresa_id, nome_completo, cpf, documentos_rh_anexos)
+      values (v_empresa, 'SMOKE T33 funcionário importado', '00000000002', '"[]"'::jsonb);
+    insert into public.funcionario (empresa_id, nome_completo, cpf, documentos_rh_anexos)
+      values (v_empresa, 'SMOKE T33 funcionário contratado', '00000000003',
+              '[{"id":"smoke-t33-comum","nome_arquivo":"a.pdf","url":"contratacao/x/a.pdf"}]'::jsonb);
+    -- a Edição completa manda a linha inteira: a lista igual, junto com outra coluna
+    update public.funcionario
+       set observacoes = 'SMOKE T33', documentos_rh_anexos = documentos_rh_anexos
+     where id = v_novo;
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then raise exception 'o UPDATE com a lista igual não achou o funcionário (linhas=%)', v_n; end if;
+    -- anexo comum novo (o que não é do portal muda à vontade)
+    update public.funcionario
+       set documentos_rh_anexos = '[{"id":"smoke-t33-comum-2","nome_arquivo":"b.pdf","url":"contratacao/x/b.pdf"}]'::jsonb
+     where id = v_novo;
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then raise exception 'o UPDATE do anexo comum não achou o funcionário (linhas=%)', v_n; end if;
+  exception when others then
+    raise exception 'FALHOU: a escrita comum em funcionario (INSERT sem a coluna, com "[]", com anexo comum; UPDATE com a lista igual e com anexo comum) deveria passar como authenticated, e veio % (%)',
+      sqlerrm, sqlstate;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  raise notice '[funcionário] OK INSERT e UPDATE comuns passam (o trigger dos documentos roda como authenticated)';
+
+  -- (aqui, como dono do banco, antes de trocar de papel: as funções auxiliares anexos_* também funcionam)
   if public.anexos_como_lista((select documentos_rh_anexos from public.funcionario where id = v_func)) is null then
     raise exception 'O funcionário de teste tem documentos_rh_anexos ilegível: escolha outro (passo 1).';
   end if;
@@ -541,9 +614,11 @@ begin
   perform set_config('request.jwt.claims', public.smoke_t33_claims('ver', v_empresa), true);
   set local role authenticated;
   perform public.smoke_t33_recusa(format(
-    'select public.portal_documento_publicar(%L, %L, null, %L, %L)', v_func, 'documentacao', v_ref_pdf, 'doc.pdf'));
+    'select public.portal_documento_publicar(%L, %L, null, %L, %L)', v_func, 'documentacao', v_ref_pdf, 'doc.pdf'),
+    '42501', 'Sem permissão: Segurança do Trabalho → RH → Criar%');
   perform public.smoke_t33_recusa(format(
-    'select public.portal_documento_retirar(%L, %L)', v_func, 'smoke-t33-doc'));
+    'select public.portal_documento_retirar(%L, %L)', v_func, 'smoke-t33-doc'),
+    '42501', 'Sem permissão: Segurança do Trabalho → RH → Deletar%');
 
   -- com RH: arquivo fora da regra é recusado (22023)
   reset role;
@@ -592,9 +667,32 @@ begin
     raise notice '[documentos] OK publicar (item montado pelo banco, com quem publicou) e retirar pela RPC';
   end if;
 
-  -- a chamada direta à API que mexe SÓ nos itens do portal é recusada (nem o Admin publica por fora)
+  -- a Edição completa de quem tem PDF publicado: a linha inteira com a lista IGUAL (portal inclusive) passa e o PDF fica
   reset role;
   perform set_config('request.jwt.claims', '', true);
+  select documentos_rh_anexos into v_lista from public.funcionario where id = v_func;
+  perform set_config('request.jwt.claims', public.smoke_t33_claims('admin', v_empresa), true);
+  set local role authenticated;
+  begin
+    update public.funcionario
+       set observacoes = coalesce(observacoes, '') || ' ', documentos_rh_anexos = v_lista
+     where id = v_func;
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then raise exception 'o UPDATE com a lista igual não achou o funcionário (linhas=%)', v_n; end if;
+  exception when others then
+    raise exception 'FALHOU: o UPDATE com a lista igual (o PDF do portal incluído) deveria passar como authenticated, e veio % (%)',
+      sqlerrm, sqlstate;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  select documentos_rh_anexos into v_lista from public.funcionario where id = v_func;
+  if not exists (
+    select 1 from jsonb_array_elements(public.anexos_como_lista(v_lista)) e where e.value ->> 'id' = 'smoke-t33-doc'
+  ) then
+    raise exception 'FALHOU: o UPDATE com a lista igual tirou o PDF publicado';
+  end if;
+
+  -- a chamada direta à API que mexe SÓ nos itens do portal é recusada (nem o Admin publica por fora)
   select documentos_rh_anexos into v_lista from public.funcionario where id = v_func;
   v_sem_portal := public.anexos_do_portal(v_lista, false);   -- a lista "velha", sem o PDF publicado
   v_forjada := public.anexos_como_lista(v_lista) || jsonb_build_array(jsonb_build_object(
@@ -641,10 +739,12 @@ begin
   -- INSERT de funcionário já com item do portal: recusado
   perform set_config('request.jwt.claims', public.smoke_t33_claims('admin', v_empresa), true);
   set local role authenticated;
+  -- (a mensagem é a do trigger: "permission denied" aqui seria o grant que falta, não a regra)
   perform public.smoke_t33_recusa(format(
     'insert into public.funcionario (empresa_id, nome_completo, cpf, documentos_rh_anexos) values (%L, %L, %L, %L::jsonb)',
     v_empresa, 'SMOKE T33 funcionário', '00000000000',
-    jsonb_build_array(jsonb_build_object('id', 'x', 'origem', 'portal_funcionario', 'publicado', true))));
+    jsonb_build_array(jsonb_build_object('id', 'x', 'origem', 'portal_funcionario', 'publicado', true))),
+    '42501', 'Publique o PDF pelo cartão%');
 
   -- retirar pela RPC: some da lista; de novo, não acha (false)
   reset role;

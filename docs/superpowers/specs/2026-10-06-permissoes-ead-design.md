@@ -442,6 +442,10 @@ O que mudou em relação ao texto acima, por ter vindo depois dele na branch:
 - `PermissoesTab.jsx` (perfis do SaaS) ganhou a aba nova na cópia própria em vez de importar a canônica: as duas
   cópias já são diferentes em outras abas, e trocar mudaria a tela do SaaS.
 - O trigger `zz_documentos_portal` também recusa INSERT de funcionário já com item do portal (API).
+- **Revisão 1 (07/10):** o `zz_documentos_portal` não é SECURITY DEFINER (R7) e chama `anexos_como_lista` e
+  `anexos_do_portal` como `authenticated`; as duas ganharam `grant execute ... to authenticated` (funções puras),
+  senão todo INSERT de funcionário e todo UPDATE com `documentos_rh_anexos` pela API falharia. O smoke passa a rodar
+  logo depois da migração (passo 4), antes do push da tela e de liberar o uso, e cobre o INSERT e o UPDATE comuns.
 - Arquivos: `supabase/migrations/0147_permissoes_ead.sql`, `tools/conferir-permissoes-ead.sql` (só leitura),
   `tools/smoke-permissoes-ead.sql`, `supabase/functions/funcionario-acesso/{regras,index,duvida}.ts`,
   `apps/web/src/lib/ead-permissoes.js` e as telas da §8.

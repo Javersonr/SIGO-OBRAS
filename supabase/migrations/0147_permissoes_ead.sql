@@ -62,7 +62,10 @@
 --      RH → Criar / Deletar), que montam e gravam o item num UPDATE só, e o trigger zz_documentos_portal em
 --      funcionario, que protege os itens com origem 'portal_funcionario': mudar só esses itens pela API é recusado
 --      (42501); o salvamento do formulário inteiro com a lista velha mantém os itens do portal que estão no banco
---      (corrige a perda de dado). Nenhum item existente muda de lugar.
+--      (corrige a perda de dado). Nenhum item existente muda de lugar. O trigger roda como authenticated (não é
+--      SECURITY DEFINER, R7) e chama anexos_como_lista e anexos_do_portal: as duas têm EXECUTE para authenticated
+--      (funções puras). Sem esse grant, todo INSERT de funcionário e todo UPDATE com documentos_rh_anexos pela API
+--      falharia com "permission denied for function" (revisão 1 da T33).
 --
 -- O que NÃO muda: o portal do aluno (portal-funcionario), a validação pública, o cron da 0138, o cadastro central sem
 -- curso EAD vinculado, funcionario como um todo (fora os itens do portal), o bucket assinaturas (R8 do spec).
@@ -73,9 +76,11 @@
 --      pessoas; lista vazia (só Admin e dono usam o EAD): a fase 1 vai junto com a 2
 --   3. npx supabase@2.118.0 functions deploy funcionario-acesso --project-ref <ref> --no-verify-jwt --use-api
 --   4. supabase db query --linked -f supabase/migrations/0147_permissoes_ead.sql
---   5. push da tela
---   6. supabase db query --linked -f tools/smoke-permissoes-ead.sql   (begin ... rollback) e o roteiro manual do spec
--- Entre 3 e 5 a tela antiga segue funcionando para Admin e dono; o cartão antigo de documentos recebe o erro claro
+--   5. supabase db query --linked -f tools/smoke-permissoes-ead.sql   (begin ... rollback) LOGO DEPOIS do passo 4 e
+--      antes de liberar o uso: ele roda como cada usuário e pega o que a migração quebraria (por exemplo, o cadastro de
+--      funcionário). Se falhar, desfazer na hora pelo bloco "PARA DESFAZER" abaixo
+--   6. push da tela e o roteiro manual do spec (§9)
+-- Entre 3 e 6 a tela antiga segue funcionando para Admin e dono; o cartão antigo de documentos recebe o erro claro
 -- do item 6 (não perde o PDF em silêncio) até o push. Depois de aplicar, os smokes antigos do EAD (trilha, prática,
 -- declaração e pré-requisito) usam um vínculo Admin sintético (atualizados junto com esta migração).
 --
@@ -488,7 +493,13 @@ begin
   return null;
 end;
 $$;
+-- EXECUTE para authenticated DE PROPÓSITO: o trigger zz_documentos_portal (mais abaixo) NÃO é SECURITY DEFINER (R7: ele
+-- precisa do current_user) e roda como authenticated em todo INSERT de funcionário e em todo UPDATE que leva
+-- documentos_rh_anexos. O Postgres confere o EXECUTE da chamada aninhada com esse papel: sem o grant, o cadastro, a
+-- contratação, a importação e a Edição completa do RH falham com "permission denied for function". São funções
+-- puras (só leem o jsonb que o próprio chamador grava), sem dado de empresa; anon continua sem acesso.
 revoke all on function public.anexos_como_lista(jsonb) from public, anon, authenticated;
+grant execute on function public.anexos_como_lista(jsonb) to authenticated;
 
 -- os itens publicados no portal (origem = portal_funcionario) ou os outros, na ordem da lista
 create or replace function public.anexos_do_portal(p jsonb, p_do_portal boolean)
@@ -502,7 +513,9 @@ as $$
          with ordinality as e(value, ordem)
    where (((e.value ->> 'origem') = 'portal_funcionario') is true) = p_do_portal;
 $$;
+-- (mesmo motivo do grant acima: o zz_documentos_portal chama esta função como authenticated, e ela chama a anterior)
 revoke all on function public.anexos_do_portal(jsonb, boolean) from public, anon, authenticated;
+grant execute on function public.anexos_do_portal(jsonb, boolean) to authenticated;
 
 -- funcionário vivo da empresa do chamador (ou qualquer um, para o servidor e o super admin), travado para o UPDATE
 create or replace function public.portal_documento_funcionario(p_funcionario_id uuid)
@@ -665,6 +678,9 @@ grant execute on function public.portal_documento_retirar(uuid, text) to authent
 -- Protege os itens do portal em documentos_rh_anexos. NÃO é SECURITY DEFINER de propósito (R7): o current_user é
 -- quem grava. "authenticated" é a API (tela ou chamada direta); service_role, o dono do banco e as RPC acima (que são
 -- SECURITY DEFINER do dono) passam. Não depende de variável de sessão que alguém possa esquecer de ligar.
+-- Como roda COM os direitos de authenticated, as funções auxiliares que ela chama (anexos_como_lista e
+-- anexos_do_portal) precisam de EXECUTE para authenticated (grant acima). Não troque isto por SECURITY DEFINER sem
+-- rever a R7, e não tire o grant sem testar o INSERT de funcionário (tools/smoke-permissoes-ead.sql, passo 13).
 create or replace function public.zz_documentos_portal()
 returns trigger
 language plpgsql
@@ -718,7 +734,8 @@ commit;
 
 -- Conferência (só leitura): o que esta migração deixou no banco. Esperado: tem_permissao = 1, triggers_zz_de_8 = 8,
 -- leitura_restritiva_de_3 = 3, storage_restritivas_de_3 = 3, tenant_revogar = 0, certificado_update_authenticated =
--- false, rpc_documentos_de_2 = 2, trigger_documentos = 1.
+-- false, rpc_documentos_de_2 = 2, trigger_documentos = 1, anexos_executaveis_pela_api = true (o trigger chama as duas
+-- como authenticated), anexos_fechados_ao_anon = true.
 select (select count(*) from pg_proc
          where pronamespace = 'public'::regnamespace and proname = 'tem_permissao') as tem_permissao,
        (select count(*) from pg_trigger where not tgisinternal and tgname = 'zz_permissao_ead') as triggers_zz_de_8,
@@ -738,6 +755,12 @@ select (select count(*) from pg_proc
          where pronamespace = 'public'::regnamespace
            and proname in ('portal_documento_publicar', 'portal_documento_retirar')) as rpc_documentos_de_2,
        (select count(*) from pg_trigger where not tgisinternal and tgname = 'zz_documentos_portal')
-         as trigger_documentos;
+         as trigger_documentos,
+       (has_function_privilege('authenticated', 'public.anexos_como_lista(jsonb)', 'execute')
+         and has_function_privilege('authenticated', 'public.anexos_do_portal(jsonb, boolean)', 'execute'))
+         as anexos_executaveis_pela_api,
+       (not has_function_privilege('anon', 'public.anexos_como_lista(jsonb)', 'execute')
+         and not has_function_privilege('anon', 'public.anexos_do_portal(jsonb, boolean)', 'execute'))
+         as anexos_fechados_ao_anon;
 
 select 'ok' as res;
