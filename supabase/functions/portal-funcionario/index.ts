@@ -16,7 +16,8 @@
  *   avaliacao { matricula_id, respostas:[{questao_id,resposta}] }  (exige iniciar_avaliacao antes; quem
  *     reprova na ÚLTIMA tentativa avisa o RH no sino via `notificar_gestores`, T24: ver avisos.ts)
  *   certificado { matricula_id, senha }          ciencia { ciencia_id }
- *   duvida { matricula_id, aula_id?, pergunta }
+ *   duvida { matricula_id, aula_id?, pergunta }  → { duvida, tutor_avisado } (T21: o aviso vai ao WhatsApp do
+ *     tutor do curso, com o link para responder, só se o telefone for aceito; ver tutor.ts)
  *
  * `certificado` só emite para curso EAD (modalidade do curso, T8): curso de apoio responde 409
  * `CURSO_DE_APOIO` e o semipresencial, 409 `PRATICA_PENDENTE` (até a T12); requisito do curso por
@@ -72,10 +73,11 @@ import {
   EVENTO_TENTATIVA_LIBERADA,
   type EventoPortal,
 } from "../_shared/portal-funcionario.ts";
-import { enviarWhatsAppTexto, normalizarTelefoneBR } from "../_shared/whatsapp-envio.ts";
+import { enviarWhatsAppTexto } from "../_shared/whatsapp-envio.ts";
 import { assinarDaEmpresa, refDaEmpresa } from "../_shared/storage-assinar.ts";
 import { carregarDocumentos, funcionarioPodeEntrar } from "./documentos.ts";
 import { confirmarCiencia, listarCienciasDoAluno } from "./ciencia.ts";
+import { destinoDoAvisoAoTutor, mensagemDuvidaAoTutor, tutorParaOAluno } from "./tutor.ts";
 import { avisarGestores, avisoDeTentativasEsgotadas, esgotouAsTentativas } from "./avisos.ts";
 import {
   certificadoParaOAluno,
@@ -837,6 +839,9 @@ Deno.serve(
             ativo: cursoPublicado(curso),
             // "apoio" é material de estudo e não emite certificado (T8): o portal explica isso
             modalidade: modalidadeDoCurso(curso),
+            // o tutor do curso (T21, D4): o aluno vê o nome e o atendimento (horário e prazo de resposta);
+            // o telefone fica só no servidor
+            ...tutorParaOAluno(curso),
           },
           aulas: aulasCurso,
           // as questões NÃO vão aqui (T16): saem sorteadas, sem gabarito, em iniciar_avaliacao
@@ -1705,7 +1710,10 @@ Deno.serve(
         detalhe: { duvida_id: duvida.id },
       });
 
-      const [{ data: curso }, { data: func }] = await Promise.all([
+      // O aviso ao tutor (T21): o curso, o aluno e a aula vêm do banco pela sessão (nunca do corpo). Só sai
+      // com telefone que o envio aceita (destinoDoAvisoAoTutor); a falha do envio não derruba a dúvida, que
+      // já está gravada, e a resposta diz ao portal se o tutor foi avisado.
+      const [{ data: curso }, { data: func }, { data: aula }] = await Promise.all([
         supabase
           .from("treinamento_curso")
           .select("nome, tutor_telefone")
@@ -1718,19 +1726,36 @@ Deno.serve(
           .eq("id", funcionarioId)
           .eq("empresa_id", empresaId)
           .maybeSingle(),
+        body.aula_id
+          ? supabase
+              .from("treinamento_aula")
+              .select("titulo")
+              .eq("id", body.aula_id)
+              .eq("curso_id", mat.curso_id)
+              .eq("empresa_id", empresaId)
+              .is("deleted_at", null)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
       ]);
-      const tel = normalizarTelefoneBR(curso?.tutor_telefone ?? "");
-      if (tel) {
+      const destino = destinoDoAvisoAoTutor(curso);
+      let tutorAvisado = false;
+      if (destino) {
         try {
           await enviarWhatsAppTexto(
-            tel,
-            `❓ Dúvida no curso ${curso?.nome}\nDe: ${func?.nome_completo}\n\n"${pergunta}"\n\nResponda no SIGO → RH & Segurança → Treinamentos → Dúvidas.`
+            destino,
+            mensagemDuvidaAoTutor({
+              cursoNome: curso?.nome,
+              alunoNome: func?.nome_completo,
+              aulaTitulo: aula?.titulo,
+              pergunta,
+            })
           );
+          tutorAvisado = true;
         } catch (e) {
           console.error("[portal-funcionario] aviso ao tutor:", (e as Error)?.message);
         }
       }
-      return ok({ duvida });
+      return ok({ duvida, tutor_avisado: tutorAvisado });
     }
 
     return fail("Ação desconhecida", 400);

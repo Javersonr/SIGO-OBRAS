@@ -91,6 +91,7 @@ import {
 import { toast } from "sonner";
 import { sugestaoDeMatricula, textoDaSugestao } from "@/lib/ead-matricula-funcao";
 import { cn } from "@/lib/utils";
+import { rotuloDaAbaTreinamentos, textoPendentes } from "@/lib/ead-duvidas";
 import JSZip from "jszip";
 
 export default function SegurancaTrabalho() {
@@ -356,6 +357,29 @@ export default function SegurancaTrabalho() {
   useEffect(() => {
     carregarAcessosPortal();
   }, [empresaAtiva?.id]);
+
+  // Dúvidas dos alunos sem resposta (T21): o número aparece no gatilho da aba "Treinamentos" antes de o RH abri-la.
+  // Aqui fica a contagem de quando a tela abre e de quando o RH volta de outra aba; com a aba aberta, o cartão de
+  // dúvidas manda o número da lista que ele mesmo carregou (onDuvidasPendentes). Só conta quem enxerga a aba.
+  const [duvidasPendentes, setDuvidasPendentes] = useState(0);
+  const verTreinamentos =
+    perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários");
+  useEffect(() => {
+    if (!empresaAtiva?.id || !verTreinamentos) {
+      setDuvidasPendentes(0);
+      return undefined;
+    }
+    let vale = true;
+    sigo.entities.TreinamentoDuvida.count({ empresa_id: empresaAtiva.id, resposta: null })
+      .then((n) => {
+        if (vale) setDuvidasPendentes(n);
+      })
+      // sem a contagem o gatilho só fica sem número: nada mais depende dela
+      .catch((e) => console.warn("[SegurancaTrabalho] dúvidas sem resposta:", e?.message));
+    return () => {
+      vale = false;
+    };
+  }, [empresaAtiva?.id, verTreinamentos, activeTab]);
 
   const loadData = async () => {
     try {
@@ -1138,7 +1162,9 @@ export default function SegurancaTrabalho() {
                 <SelectItem value="contratacao">Contratação</SelectItem>
               )}
               {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
-                <SelectItem value="treinamentos_ead">Treinamentos</SelectItem>
+                <SelectItem value="treinamentos_ead">
+                  {rotuloDaAbaTreinamentos(duvidasPendentes)}
+                </SelectItem>
               )}
               {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
                 <SelectItem value="funcionarios">Funcionários</SelectItem>
@@ -1172,7 +1198,18 @@ export default function SegurancaTrabalho() {
             <TabsTrigger value="contratacao">Contratação</TabsTrigger>
           )}
           {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
-            <TabsTrigger value="treinamentos_ead">Treinamentos</TabsTrigger>
+            <TabsTrigger value="treinamentos_ead">
+              Treinamentos
+              {duvidasPendentes > 0 && (
+                <span
+                  className="ml-1.5 inline-flex min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[11px] font-semibold leading-5 text-white"
+                  title={textoPendentes(duvidasPendentes)}
+                >
+                  {duvidasPendentes > 99 ? "99+" : duvidasPendentes}
+                  <span className="sr-only"> ({textoPendentes(duvidasPendentes)})</span>
+                </span>
+              )}
+            </TabsTrigger>
           )}
           {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
             <TabsTrigger value="funcionarios">Funcionários</TabsTrigger>
@@ -1221,6 +1258,7 @@ export default function SegurancaTrabalho() {
             user={user}
             sugestaoMatricula={sugestaoMatricula}
             onSugestaoConsumida={() => setSugestaoMatricula(null)}
+            onDuvidasPendentes={setDuvidasPendentes}
           />
         </TabsContent>
 

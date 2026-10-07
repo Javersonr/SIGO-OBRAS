@@ -1,3 +1,5 @@
+// com a extensão: o teste do servidor (node:test) importa este arquivo direto, sem o resolvedor do Vite
+import { normalizarTelefoneBR } from "./telefone.js";
 export const MIN_QUESTOES = 5;
 // Modalidade do curso (coluna treinamento_curso.modalidade, migração 0136). Só "ead" emite certificado:
 // "apoio" é material de estudo do treinamento presencial (nunca emite) e "semipresencial" só passa a
@@ -92,7 +94,13 @@ export function requisitosDoCurso({ curso = {}, aulas = [], questoes = [] } = {}
       texto,
     })),
     ...[
-      ["TUTOR", curso.tutor_telefone, "Defina o contato do tutor"],
+      // T21 (D4): o aviso só some com um WhatsApp que o servidor aceita enviar (a mesma regra do envio);
+      // nome e atendimento do tutor são opcionais e não entram aqui. Nunca trava publicar nem emitir.
+      [
+        "TUTOR",
+        normalizarTelefoneBR(curso.tutor_telefone),
+        "Defina o WhatsApp do tutor (número válido, com DDD)",
+      ],
       ["PROJETO", curso.projeto_pedagogico_ref, "Anexe o projeto pedagógico"],
       ["PROGRAMA", curso.conteudo_programatico, "Preencha o conteúdo programático"],
       ["VALIDADE", curso.validade_meses, "Confira a validade do treinamento"],

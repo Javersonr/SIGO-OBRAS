@@ -106,3 +106,36 @@ describe("requisitos dos cursos", () => {
     expect(MODALIDADES).toEqual(["ead", "semipresencial", "apoio"]);
   });
 });
+
+describe("requisito TUTOR (T21, D4): só avisa, e só com um WhatsApp que o servidor aceita", () => {
+  // número fictício (o repositório é público)
+  const tutor = (valores) =>
+    requisitosDoCurso({ curso: { ...curso, ...valores }, aulas, questoes }).find(
+      (r) => r.codigo === "TUTOR"
+    );
+  it("sem telefone, ou com telefone que não dá para enviar, o aviso aparece", () => {
+    for (const tutor_telefone of [undefined, null, "", "   ", "abc", "99999", "(11) 9999-000"]) {
+      expect(tutor({ tutor_telefone }).ok, String(tutor_telefone)).toBe(false);
+    }
+    expect(tutor({}).texto).toMatch(/WhatsApp do tutor/);
+  });
+  it("com telefone válido (com ou sem máscara) o aviso some", () => {
+    for (const tutor_telefone of [
+      "(11) 99999-0000",
+      "11999990000",
+      "5511999990000",
+      "(11) 3333-0000",
+    ]) {
+      expect(tutor({ tutor_telefone }).ok, tutor_telefone).toBe(true);
+    }
+  });
+  it("nome e atendimento do tutor são opcionais: sozinhos não tiram o aviso", () => {
+    expect(tutor({ tutor_nome: "Tutor teste", tutor_atendimento: "dias úteis" }).ok).toBe(false);
+  });
+  it("tutor nunca trava publicar, matricular nem emitir (é só aviso)", () => {
+    expect(tutor({}).bloqueia).toBe(false);
+    expect(tutor({}).bloqueiaEmissao).toBe(false);
+    expect(pendencias({ curso, aulas, questoes })).toEqual([]);
+    expect(pendenciasDeEmissao({ curso, aulas, questoes })).toEqual([]);
+  });
+});

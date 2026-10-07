@@ -54,12 +54,14 @@ import { srtParaVtt } from "@/lib/legendas";
 import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
 import { aoMudarNomeDaPessoa, refDeAssinatura } from "@/lib/ead-assinatura";
+import { MAX_TUTOR_ATENDIMENTO, MAX_TUTOR_NOME, dadosDoTutorParaGravar } from "@/lib/ead-tutor";
 import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
 import { decidirAvisoAoRH } from "@/lib/ead-aviso-matricula";
 import { lerEmPaginas } from "@/lib/leitura-em-paginas";
 import { avisoDoDossie, textoDoAndamento } from "@/lib/ead-dossie";
 import { exportarDossieDoCurso } from "@/components/seguranca/exportarDossieEad";
 import { useConfirmar } from "@/components/shared/ConfirmarDialog";
+import InputTelefone from "@/components/shared/InputTelefone";
 import MatriculaAuditoriaSheet from "@/components/seguranca/MatriculaAuditoriaSheet";
 import DuvidasTutorCard from "@/components/seguranca/DuvidasTutorCard";
 import AulaLinhaEad from "@/components/seguranca/AulaLinhaEad";
@@ -185,6 +187,7 @@ export default function TreinamentosEadTab({
   user,
   sugestaoMatricula = null,
   onSugestaoConsumida,
+  onDuvidasPendentes,
 }) {
   const [cursos, setCursos] = useState([]);
   const [aulas, setAulas] = useState([]);
@@ -553,6 +556,12 @@ export default function TreinamentosEadTab({
       toast.error("Dê um nome ao curso");
       return;
     }
+    // tutor (T21, D4): nome, WhatsApp e atendimento são opcionais; o telefone só grava se o envio o aceita
+    const tutor = dadosDoTutorParaGravar(cursoSel);
+    if (!tutor.ok) {
+      toast.error(tutor.erro);
+      return;
+    }
     const dados = {
       empresa_id: empresaAtiva.id,
       modelo_treinamento_id: cursoSel.modelo_treinamento_id || null,
@@ -584,7 +593,7 @@ export default function TreinamentosEadTab({
         cursoSel.responsavel_tecnico_assinatura_ref,
         empresaAtiva.id
       ),
-      tutor_telefone: cursoSel.tutor_telefone?.trim() || null,
+      ...tutor.dados,
       ativo: cursoSel.ativo !== false,
     };
     if (
@@ -1620,8 +1629,10 @@ export default function TreinamentosEadTab({
         empresaAtiva={empresaAtiva}
         cursos={cursos}
         funcPorId={funcPorId}
+        funcTodosPorId={funcTodosPorId}
         aulas={aulas}
         user={user}
+        onPendentes={onDuvidasPendentes}
       />
 
       {(() => {
@@ -1863,16 +1874,43 @@ export default function TreinamentosEadTab({
                     empresaId={empresaAtiva.id}
                     onChange={trocarAssinatura("instrutor_assinatura_ref")}
                   />
-                  <div className="col-span-2">
+                  <div>
+                    <Label className="text-xs">Nome do tutor</Label>
+                    <Input
+                      value={cursoSel.tutor_nome || ""}
+                      maxLength={MAX_TUTOR_NOME}
+                      onChange={(e) => setCursoSel({ ...cursoSel, tutor_nome: e.target.value })}
+                      placeholder="Quem responde as dúvidas (o aluno vê)"
+                      className="mt-0.5"
+                    />
+                  </div>
+                  <div>
                     <Label className="text-xs">
                       WhatsApp do tutor (recebe as dúvidas dos alunos)
                     </Label>
-                    <Input
+                    <InputTelefone
                       value={cursoSel.tutor_telefone || ""}
-                      onChange={(e) => setCursoSel({ ...cursoSel, tutor_telefone: e.target.value })}
-                      placeholder="(38) 99999-9999"
+                      onChange={(valor) => setCursoSel({ ...cursoSel, tutor_telefone: valor })}
                       className="mt-0.5"
                     />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs">
+                      Atendimento do tutor: horário e prazo de resposta (o aluno vê)
+                    </Label>
+                    <Input
+                      value={cursoSel.tutor_atendimento || ""}
+                      maxLength={MAX_TUTOR_ATENDIMENTO}
+                      onChange={(e) =>
+                        setCursoSel({ ...cursoSel, tutor_atendimento: e.target.value })
+                      }
+                      placeholder="Ex.: dias úteis, das 8h às 17h; resposta em até 1 dia útil"
+                      className="mt-0.5"
+                    />
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      O tutor é opcional e não impede publicar o curso. O número só recebe o aviso
+                      se for um WhatsApp válido, com DDD.
+                    </p>
                   </div>
                   <div className="col-span-2">
                     <Label className="text-xs">

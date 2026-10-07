@@ -6,6 +6,7 @@
 // EMITIR o certificado). No requisito MODALIDADE, o apoio só tem a segunda; o semipresencial (e o valor
 // desconhecido) têm as duas, como a T8 deixou, até a T12.
 // deno-lint-ignore-file no-explicit-any
+import { normalizarTelefoneBR } from "../_shared/whatsapp-envio.ts";
 export const MIN_QUESTOES = 5;
 /**
  * Modalidade do curso (coluna `treinamento_curso.modalidade`, migração 0136; CHECK no banco).
@@ -140,7 +141,13 @@ export function requisitosDoCurso({
     })),
     ...(
       [
-        ["TUTOR", curso.tutor_telefone, "Defina o contato do tutor"],
+        // T21 (D4): o aviso só some com um WhatsApp que o envio aceita (a mesma regra de normalizarTelefoneBR);
+        // nome e atendimento do tutor são opcionais. Nunca trava publicar nem emitir.
+        [
+          "TUTOR",
+          normalizarTelefoneBR(curso.tutor_telefone),
+          "Defina o WhatsApp do tutor (número válido, com DDD)",
+        ],
         ["PROJETO", curso.projeto_pedagogico_ref, "Anexe o projeto pedagógico"],
         ["PROGRAMA", curso.conteudo_programatico, "Preencha o conteúdo programático"],
         ["VALIDADE", curso.validade_meses, "Confira a validade do treinamento"],

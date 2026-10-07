@@ -50,6 +50,21 @@ export function formatarTelefone(valor) {
   return d && telefoneValido(valor) ? mascaraTelefone(d) : String(valor ?? "");
 }
 
+/**
+ * Cópia EXATA da regra do servidor (`normalizarTelefoneBR` em supabase/functions/_shared/whatsapp-envio.ts):
+ * o número no formato que o envio do WhatsApp usa (E.164 sem o "+", ex.: 5511999990000) ou null quando o
+ * servidor se recusaria a enviar. Serve para a tela dizer, antes de gravar, se o aviso vai chegar (T21: o
+ * telefone do tutor do curso). Quem decide o que o servidor aceita é o servidor: se a regra de lá mudar,
+ * mude aqui junto (o teste `tutor.test.ts` compara as duas cópias nos mesmos casos).
+ */
+export function normalizarTelefoneBR(bruto) {
+  const d = String(bruto || "").replace(/\D/g, "");
+  if (!d) return null;
+  if (d.startsWith("55") && (d.length === 12 || d.length === 13)) return d;
+  if (d.length === 10 || d.length === 11) return "55" + d;
+  return null; // formato irreconhecível: melhor não enviar para o número errado
+}
+
 export function mensagemTelefoneInvalido(valor) {
   const n = digitosTelefone(valor).length;
   if (n === 10 || n === 11) {

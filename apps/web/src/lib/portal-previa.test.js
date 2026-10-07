@@ -132,6 +132,25 @@ describe("montarItemPrevia", () => {
     expect(item.duvidas).toEqual([]);
   });
 
+  it("leva o nome e o atendimento do tutor, como o servidor devolve em `dados` (T21), e nunca o telefone", () => {
+    expect(item.curso.tutor_nome).toBeNull();
+    expect(item.curso.tutor_atendimento).toBeNull();
+    const comTutor = montarItemPrevia({
+      curso: {
+        ...curso,
+        tutor_nome: "Tutor Teste",
+        tutor_atendimento: "Dias úteis, 8h às 17h",
+        tutor_telefone: "(11) 99999-0000",
+      },
+      aulas,
+      questoes,
+    });
+    expect(comTutor.curso.tutor_nome).toBe("Tutor Teste");
+    expect(comTutor.curso.tutor_atendimento).toBe("Dias úteis, 8h às 17h");
+    expect("tutor_telefone" in comTutor.curso).toBe(false);
+    expect(JSON.stringify(comTutor)).not.toContain("99999");
+  });
+
   it("leva a modalidade do curso (ausente = EAD), como o servidor devolve em `dados`", () => {
     expect(item.curso.modalidade).toBe("ead");
     const apoio = montarItemPrevia({ curso: { ...curso, modalidade: "apoio" }, aulas, questoes });

@@ -84,6 +84,15 @@ function opcoesDaQuestao(opcoes) {
   return [];
 }
 
+/** Nome e atendimento do tutor do curso, como o servidor devolve (tutor.ts); vazio vira null e o telefone fica de fora. */
+function tutorParaAPrevia(curso) {
+  const aparar = (valor) => String(valor ?? "").trim() || null;
+  return {
+    tutor_nome: aparar(curso?.tutor_nome),
+    tutor_atendimento: aparar(curso?.tutor_atendimento),
+  };
+}
+
 /**
  * O "item" de um curso como o aluno o recebe do portal (ação `dados`), para a prévia do RT. Diferenças
  * propositais: matrícula de mentira, todas as aulas liberadas e nenhuma concluída, questões com
@@ -142,6 +151,8 @@ export function montarItemPrevia({ curso, aulas, questoes, urls } = {}) {
       ativo: true,
       // como o servidor devolve em `dados` (T8): ausente = EAD
       modalidade: curso?.modalidade || "ead",
+      // o tutor como o servidor devolve em `dados` (T21): nome e atendimento; o telefone nunca vai ao aluno
+      ...tutorParaAPrevia(curso),
     },
     aulas: aulasPrevia,
     questoes: questoesPrevia,

@@ -56,6 +56,13 @@ test("front e servidor usam os mesmos requisitos, inclusive bordas", () => {
     { curso: { ...curso, modalidade: "outra" }, aulas, questoes },
     { curso: { ...curso, nome: "NR-35 — apoio", modalidade: "apoio" }, aulas, questoes },
     { curso: { ...curso, nome: "NR-35", modalidade: "ead" }, aulas, questoes },
+    // T21: o aviso do tutor segue a mesma regra de telefone nas duas cópias (números fictícios)
+    { curso: { ...curso, tutor_telefone: "(11) 99999-0000" }, aulas, questoes },
+    { curso: { ...curso, tutor_telefone: "11999990000" }, aulas, questoes },
+    { curso: { ...curso, tutor_telefone: "5511999990000" }, aulas, questoes },
+    { curso: { ...curso, tutor_telefone: "(11) 9999-000" }, aulas, questoes },
+    { curso: { ...curso, tutor_telefone: "   " }, aulas, questoes },
+    { curso: { ...curso, tutor_telefone: "abc", tutor_nome: "Tutor teste" }, aulas, questoes },
   ];
   for (const caso of casos) {
     assert.deepEqual(requisitosDoCurso(caso), requisitosFront(caso));
@@ -72,9 +79,10 @@ test("front e servidor usam os mesmos requisitos, inclusive bordas", () => {
   assert.equal(pendencias({ curso, aulas, questoes }).length, 0);
   // PUBLICAR/MATRICULAR: só o 2º caso (curso completo), o EAD marcado e o de apoio completo passam
   // (D3: apoio não trava a publicação nem a matrícula)
-  const publicaveis = [1, 6, 7, 10, 11];
+  // (o tutor é só aviso: os casos 12 a 17, curso completo com ou sem telefone, publicam e emitem)
+  const publicaveis = [1, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17];
   // EMITIR: só o curso completo EAD (o apoio nunca emite)
-  const emissiveis = [1, 6, 11];
+  const emissiveis = [1, 6, 11, 12, 13, 14, 15, 16, 17];
   for (const [i, caso] of casos.entries()) {
     assert.equal(
       pendenciasParaPublicar(requisitosDoCurso(caso)).length > 0,
@@ -175,4 +183,30 @@ test("emissão pela modalidade: apoio e semipresencial têm código próprio (40
   assert.equal(semi?.mensagem, motivoSemCertificado("semipresencial"));
   // valor que o banco não aceita (CHECK da 0136): não emite, e o código diz o porquê
   assert.equal(bloqueioDeEmissaoPorModalidade("inventada")?.codigo, "MODALIDADE_INVALIDA");
+});
+
+test("requisito TUTOR (T21, D4): só avisa, e só some com um WhatsApp que o servidor aceita", () => {
+  const tutor = (valores: Record<string, unknown>) =>
+    requisitosDoCurso({ curso: { ...curso, ...valores }, aulas, questoes }).find(
+      (r) => r.codigo === "TUTOR"
+    )!;
+  for (const tutor_telefone of [undefined, null, "", "   ", "abc", "99999", "(11) 9999-000"]) {
+    assert.equal(tutor({ tutor_telefone }).ok, false, String(tutor_telefone));
+  }
+  for (const tutor_telefone of [
+    "(11) 99999-0000",
+    "11999990000",
+    "5511999990000",
+    "(11) 3333-0000",
+  ]) {
+    assert.equal(tutor({ tutor_telefone }).ok, true, tutor_telefone);
+  }
+  // nome e atendimento são opcionais e não tiram o aviso
+  assert.equal(tutor({ tutor_nome: "Tutor teste", tutor_atendimento: "dias úteis" }).ok, false);
+  assert.match(tutor({}).texto, /WhatsApp do tutor/);
+  // é só aviso: nunca trava publicar, matricular nem emitir
+  assert.equal(tutor({}).bloqueia, false);
+  assert.equal(tutor({}).bloqueiaEmissao, false);
+  assert.deepEqual(pendencias({ curso, aulas, questoes }), []);
+  assert.deepEqual(pendenciasDeEmissao({ curso, aulas, questoes }), []);
 });
