@@ -373,10 +373,11 @@ test("dadosDaPraticaNoCertificado: a prática de vários dias congela todas as s
     ]
   );
   assert.equal(dados.carga_horas, 16);
-  // a soma não carrega erro de ponto flutuante
+  // a soma não carrega erro de ponto flutuante (em dias diferentes: no mesmo dia e horário seriam a mesma sessão
+  // lançada duas vezes, que vale uma vez só, A7)
   const frac = dadosDaPraticaNoCertificado([
     sessao({ id: "a", carga_horas: 0.1 }) as never,
-    sessao({ id: "b", carga_horas: 0.2 }) as never,
+    sessao({ id: "b", data: "2026-10-06", carga_horas: 0.2 }) as never,
   ]);
   assert.equal(frac.carga_horas, 0.3);
 });
@@ -1190,6 +1191,59 @@ test("sobreposição: a mesma sessão lançada duas vezes (mesmo dia e horário)
   assert.match(bloqueioDeEmissaoPorPratica(r)!.mensagem, /Cumpridas 8 h das 16 h/);
 });
 
+test("sobreposição (A7): a mesma sessão lançada duas vezes com a carga MENOR que o horário também vale uma vez", () => {
+  // 08 às 17 com 4 h, lançada duas vezes: a união dos horários dá 9 h e a soma declarada 8 h; contava 8 h (o dobro)
+  const original = no("a", "2026-10-05", "08:00", "17:00", 4);
+  const duplicada = no("a2", "2026-10-05", "08:00", "17:00", 4);
+  const caso = comCarga([original, duplicada], ambas("a", "a2"), 8);
+  const r = situacaoDaPratica(caso);
+  assert.equal(r.cumpridaHoras, 4);
+  assert.equal(r.situacao, "parcial");
+  assert.equal(podeEmitirSemipresencial(caso), false);
+  // com a carga do curso coberta, a repetida não acrescenta tempo e não vai para o certificado
+  const realizada = situacaoDaPratica(comCarga([original, duplicada], ambas("a", "a2"), 4));
+  assert.equal(realizada.situacao, "realizada");
+  assert.deepEqual(
+    realizada.sessoes.map((s) => s.id),
+    ["a"]
+  );
+  // e a soma congelada das duas também não dobra
+  assert.equal(dadosDaPraticaNoCertificado([original, duplicada] as never).carga_horas, 4);
+});
+
+test("sobreposição (A7): a mesma sessão repetida com cargas diferentes vale a maior, uma vez só", () => {
+  const caso = comCarga(
+    [no("a", "2026-10-05", "08:00", "17:00", 4), no("a2", "2026-10-05", "08:00", "17:00", 6)],
+    ambas("a", "a2"),
+    8
+  );
+  assert.equal(situacaoDaPratica(caso).cumpridaHoras, 6);
+});
+
+test("sobreposição (A7): horários diferentes no mesmo dia não são a mesma sessão (turnos somam, cruzadas seguem a união)", () => {
+  // 08-12 e 13-17 com 3 h cada: dois turnos, 6 h
+  const turnos = comCarga(
+    [no("a", "2026-10-05", "08:00", "12:00", 3), no("b", "2026-10-05", "13:00", "17:00", 3)],
+    ambas("a", "b"),
+    8
+  );
+  assert.equal(situacaoDaPratica(turnos).cumpridaHoras, 6);
+  // 08-17 (4 h) e 09-17 (4 h): horários diferentes, a regra de antes vale (soma 8 h, dentro das 9 h de relógio)
+  const cruzadas = comCarga(
+    [no("a", "2026-10-05", "08:00", "17:00", 4), no("b", "2026-10-05", "09:00", "17:00", 4)],
+    ambas("a", "b"),
+    8
+  );
+  assert.equal(situacaoDaPratica(cruzadas).cumpridaHoras, 8);
+  // o mesmo horário em dias diferentes continua somando
+  const dias = comCarga(
+    [no("a", "2026-10-05", "08:00", "17:00", 4), no("b", "2026-10-06", "08:00", "17:00", 4)],
+    ambas("a", "b"),
+    8
+  );
+  assert.equal(situacaoDaPratica(dias).cumpridaHoras, 8);
+});
+
 test("sobreposição: sessões que se cruzam no mesmo dia valem o tempo coberto (a união dos horários)", () => {
   // 08-12 (4 h) e 10-14 (4 h): 8 h declaradas, mas só 6 h de relógio (08 às 14)
   const caso = comCarga(
@@ -1261,6 +1315,17 @@ test("sobreposição: o espelho do front diz o mesmo (situação, sessões e hor
     comCarga(
       [no("a", "2026-10-05", "08:00", "16:00", 8), no("a2", "2026-10-05", "08:00", "16:00", 8)],
       ambas("a", "a2")
+    ),
+    // A7: repetida com a carga menor que o horário, e repetida com cargas diferentes
+    comCarga(
+      [no("a", "2026-10-05", "08:00", "17:00", 4), no("a2", "2026-10-05", "08:00", "17:00", 4)],
+      ambas("a", "a2"),
+      8
+    ),
+    comCarga(
+      [no("a", "2026-10-05", "08:00", "17:00", 4), no("a2", "2026-10-05", "08:00", "17:00", 6)],
+      ambas("a", "a2"),
+      8
     ),
     comCarga(
       [no("a", "2026-10-05", "08:00", "12:00", 4), no("b", "2026-10-05", "10:00", "14:00", 4)],

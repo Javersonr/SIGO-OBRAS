@@ -13,6 +13,7 @@ import {
   MAX_TENTATIVAS_RECONFIRMAR_SENHA,
   MSG_MUITAS_ACOES,
   MSG_SINAL_CONCORRENTE,
+  MSG_TRILHA_INDISPONIVEL,
   PCT_CONCLUSAO,
   REPROVADO_VE_NOTA,
   TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG,
@@ -22,6 +23,7 @@ import {
   acaoDeVolumeDoEvento,
   aulaLiberada,
   aulasParaAluno,
+  bloqueioDaTrilhaNoCertificado,
   conclusaoDaAula,
   comRastroDeFalha,
   conclusoesAdiadas,
@@ -32,6 +34,7 @@ import {
   decisaoDeConclusao,
   dentroDoVolume,
   detalheDaProvaIniciada,
+  fecharConclusaoAdiada,
   detalheLimitado,
   inicioDaProva,
   liberacaoDasAulas,
@@ -783,6 +786,7 @@ test("decisaoDeConclusao: aulas por fazer não concluem e ainda não é a hora d
     resultado: { status: "em_andamento", concluiu: false, precisaAvaliacao: false },
     patch: null,
     adiada: false,
+    motivo: null,
   });
 });
 
@@ -849,6 +853,7 @@ test("decisaoDeConclusao: sem conseguir ler o curso NÃO conclui (a validade sum
       resultado: { status: "em_andamento", concluiu: false, precisaAvaliacao: false },
       patch: null,
       adiada: true,
+      motivo: "curso_nao_lido",
     });
   }
 });
@@ -922,6 +927,185 @@ test("decisaoDeConclusao: curso inexistente (sem erro) conclui como antes, sem v
   const d = decisaoDeConclusao({ sit: sitConcluida, curso: null, hoje: hojeConclusao });
   assert.equal(d.resultado.concluiu, true);
   assert.deepEqual(d.patch, { status: "concluido", data_conclusao: "2026-10-05" });
+});
+
+// ------------------------------------------- leitura que falhou não decide a conclusão (A7, achado I1 da revisão 3 da A6)
+// `trilhaLida` = as aulas e o progresso foram lidos; `provaLida` = as questões e a tentativa aprovada foram lidas.
+
+test("decisaoDeConclusao (A7): aulas ou progresso ilegíveis não concluem e NÃO marcam (não dá para saber se era a última aula)", () => {
+  for (const sit of [
+    // a leitura que falhou devolve a trilha vazia: parece "aula por fazer"
+    { aulasOk: false, temAvaliacao: false, concluido: false, trilhaLida: false, provaLida: true },
+    // e mesmo que a conta tenha dado "completa", sem a trilha lida a regra não confia nela
+    { aulasOk: true, temAvaliacao: false, concluido: true, trilhaLida: false, provaLida: true },
+    { aulasOk: true, temAvaliacao: true, concluido: true, trilhaLida: false, provaLida: false },
+  ]) {
+    const d = decisaoDeConclusao({
+      sit,
+      curso: { validade_meses: 24, modalidade: "ead" },
+      cursoLido: true,
+      hoje: hojeConclusao,
+    });
+    assert.deepEqual(d, {
+      resultado: { status: "em_andamento", concluiu: false, precisaAvaliacao: false },
+      patch: null,
+      adiada: false,
+      motivo: null,
+    });
+  }
+});
+
+test("decisaoDeConclusao (A7): aulas completas e prova ilegível (questões ou aprovação) NÃO conclui e marca 'prova_nao_lida'", () => {
+  // questões ilegíveis viravam "curso sem prova": temAvaliacao false e concluido true, a conclusão saía sem aprovação
+  for (const sit of [
+    { aulasOk: true, temAvaliacao: false, concluido: true, provaLida: false },
+    { aulasOk: true, temAvaliacao: true, concluido: false, provaLida: false },
+  ]) {
+    const d = decisaoDeConclusao({
+      sit: { ...sit, trilhaLida: true },
+      curso: { validade_meses: 24, modalidade: "ead" },
+      cursoLido: true,
+      hoje: hojeConclusao,
+    });
+    assert.deepEqual(d, {
+      resultado: { status: "em_andamento", concluiu: false, precisaAvaliacao: false },
+      patch: null,
+      adiada: true,
+      motivo: "prova_nao_lida",
+    });
+  }
+});
+
+test("decisaoDeConclusao (A7): prova ilegível com aula por fazer não marca nada (a trilha não estava completa)", () => {
+  const d = decisaoDeConclusao({
+    sit: {
+      aulasOk: false,
+      temAvaliacao: false,
+      concluido: false,
+      trilhaLida: true,
+      provaLida: false,
+    },
+    curso: null,
+    cursoLido: false,
+    hoje: hojeConclusao,
+  });
+  assert.equal(d.adiada, false);
+  assert.equal(d.motivo, null);
+  assert.equal(d.patch, null);
+});
+
+test("decisaoDeConclusao (A7): prova e curso ilegíveis marcam uma vez só, pela prova", () => {
+  const d = decisaoDeConclusao({
+    sit: {
+      aulasOk: true,
+      temAvaliacao: false,
+      concluido: true,
+      trilhaLida: true,
+      provaLida: false,
+    },
+    curso: null,
+    cursoLido: false,
+    hoje: hojeConclusao,
+  });
+  assert.equal(d.adiada, true);
+  assert.equal(d.motivo, "prova_nao_lida");
+  assert.equal(d.patch, null);
+});
+
+test("decisaoDeConclusao (A7): tudo lido conclui como antes (trilhaLida e provaLida verdadeiros)", () => {
+  const d = decisaoDeConclusao({
+    sit: { ...sitConcluida, trilhaLida: true, provaLida: true },
+    curso: { validade_meses: 24, modalidade: "ead" },
+    cursoLido: true,
+    hoje: hojeConclusao,
+  });
+  assert.equal(d.resultado.concluiu, true);
+  assert.equal(d.adiada, false);
+  assert.equal(d.motivo, null);
+  assert.deepEqual(d.patch, {
+    status: "concluido",
+    data_conclusao: "2026-10-05",
+    proxima_renovacao: "2028-10-05",
+  });
+});
+
+// ----------------------------------------------------- bloqueioDaTrilhaNoCertificado (A7)
+test("bloqueioDaTrilhaNoCertificado: trilha ilegível é 503 (tente de novo), nunca 'Conclua o curso'", () => {
+  for (const sit of [
+    { lida: false, concluido: false },
+    { lida: false, concluido: true },
+  ]) {
+    const b = bloqueioDaTrilhaNoCertificado(sit);
+    assert.equal(b?.status, 503);
+    assert.equal(b?.mensagem, MSG_TRILHA_INDISPONIVEL);
+    assert.doesNotMatch(b!.mensagem, /Conclua o curso/);
+  }
+});
+
+test("bloqueioDaTrilhaNoCertificado: trilha lida e incompleta é 409; completa não bloqueia", () => {
+  assert.deepEqual(bloqueioDaTrilhaNoCertificado({ lida: true, concluido: false }), {
+    status: 409,
+    mensagem: "Conclua o curso antes de emitir o certificado",
+  });
+  assert.equal(bloqueioDaTrilhaNoCertificado({ lida: true, concluido: true }), null);
+});
+
+// ----------------------------------------------------- fecharConclusaoAdiada (A7, Minor 2 da revisão 3 da A6)
+function fechamento(sobrescrever: Partial<Parameters<typeof fecharConclusaoAdiada>[0]> = {}) {
+  const chamadas = { lidas: [] as string[][], registradas: 0 };
+  const registros: { mensagem: string; causa?: unknown }[] = [];
+  const p: Parameters<typeof fecharConclusaoAdiada>[0] = {
+    matriculaId: "m1",
+    lerAdiadas: async (ids: string[]) => {
+      chamadas.lidas.push(ids);
+      return new Set(["m1"]);
+    },
+    registrarConclusao: async () => {
+      chamadas.registradas += 1;
+      return true;
+    },
+    registrar: (mensagem: string, causa?: unknown) => registros.push({ mensagem, causa }),
+    ...sobrescrever,
+  };
+  return { p, chamadas, registros };
+}
+
+test("fecharConclusaoAdiada: a conclusão normal (ou do certificado) de uma matrícula marcada grava conclusao_registrada", async () => {
+  const { p, chamadas, registros } = fechamento();
+  assert.equal(await fecharConclusaoAdiada(p), true);
+  assert.deepEqual(chamadas, { lidas: [["m1"]], registradas: 1 });
+  assert.deepEqual(registros, []);
+});
+
+test("fecharConclusaoAdiada: sem marca pendente não grava nada (a conclusão comum não ganha evento a mais)", async () => {
+  const { p, chamadas } = fechamento({ lerAdiadas: async () => new Set(["outra"]) });
+  assert.equal(await fecharConclusaoAdiada(p), false);
+  assert.equal(chamadas.registradas, 0);
+});
+
+test("fecharConclusaoAdiada: nunca lança; leitura ou gravação que falha só vai para o registro", async () => {
+  const erro = new Error("conexão caiu");
+  const leitura = fechamento({
+    lerAdiadas: async () => {
+      throw erro;
+    },
+  });
+  assert.equal(await fecharConclusaoAdiada(leitura.p), false);
+  assert.equal(leitura.chamadas.registradas, 0);
+  assert.equal(leitura.registros.length, 1);
+  assert.equal(leitura.registros[0].causa, erro);
+
+  const gravacao = fechamento({
+    registrarConclusao: async () => {
+      throw erro;
+    },
+  });
+  assert.equal(await fecharConclusaoAdiada(gravacao.p), false);
+  assert.equal(gravacao.registros.length, 1);
+
+  // o evento que não gravou (registrarEvento devolve false e já deixou a causa no log) não conta como fechado
+  const naoGravou = fechamento({ registrarConclusao: async () => false });
+  assert.equal(await fecharConclusaoAdiada(naoGravou.p), false);
 });
 
 // ------------------------------- segunda chance da conclusão (A6, revisões 1 e 2)

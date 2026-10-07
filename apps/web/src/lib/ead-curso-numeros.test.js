@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { validarNumerosDoCurso } from "./ead-curso-numeros";
+import { readFileSync } from "node:fs";
+import { notaMinimaParaGravar, validarNumerosDoCurso } from "./ead-curso-numeros";
 
 // A6 (T32): os números do curso são conferidos antes de gravar, com a mensagem da tela. Sem isto, nota fora de
 // 0-100 ou carga/validade negativa voltavam como o texto cru do Postgres ("new row for relation ... violates
@@ -108,5 +109,34 @@ describe("validarNumerosDoCurso", () => {
     expect(erro({ validade_meses: -1, nota_minima: 200 }).campo).toBe("nota_minima");
     expect(() => validarNumerosDoCurso(null)).not.toThrow();
     expect(validarNumerosDoCurso(undefined)).toEqual({ ok: true });
+  });
+});
+
+// A7 (M5 da revisão 1 da A6): a tela gravava `cursoSel.nota_minima ? Number(...) : 70`, então a nota mínima 0
+// virava 70 ao salvar; o servidor (portal-funcionario) usa `nota_minima ?? 70` e aceita 0.
+describe("notaMinimaParaGravar", () => {
+  it("0 continua 0 (como no servidor), número ou texto numérico vira número", () => {
+    expect(notaMinimaParaGravar(0)).toBe(0);
+    expect(notaMinimaParaGravar("0")).toBe(0);
+    expect(notaMinimaParaGravar(" 0 ")).toBe(0);
+    expect(notaMinimaParaGravar(85)).toBe(85);
+    expect(notaMinimaParaGravar("60")).toBe(60);
+  });
+
+  it("campo vazio vale o padrão (70), como antes", () => {
+    for (const vazio of ["", "   ", null, undefined]) {
+      expect(notaMinimaParaGravar(vazio)).toBe(70);
+    }
+  });
+});
+
+describe("a aba Treinamentos grava a nota mínima pela regra (A7)", () => {
+  it("salvarCurso usa notaMinimaParaGravar, e não o `? Number(...) : 70` que trocava 0 por 70", () => {
+    const aba = readFileSync(
+      new URL("../components/seguranca/TreinamentosEadTab.jsx", import.meta.url),
+      "utf8"
+    );
+    expect(aba).toMatch(/nota_minima: notaMinimaParaGravar\(cursoSel\.nota_minima\),/);
+    expect(aba).not.toMatch(/cursoSel\.nota_minima \? Number\(cursoSel\.nota_minima\) : 70/);
   });
 });

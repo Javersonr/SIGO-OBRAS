@@ -90,6 +90,14 @@ export function formatarTempo(segundos) {
 
 const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
 
+/** Por onde a conclusão adiada foi gravada (`origem` do `conclusao_registrada`, servidor do portal, A7). */
+const ORIGEM_DA_CONCLUSAO_REGISTRADA = {
+  retomada: "ao abrir o portal",
+  aula: "ao concluir a aula",
+  prova: "na aprovação da prova",
+  certificado: "no pedido do certificado",
+};
+
 /** Complemento da linha do evento ("tentativa 2 · nota 60% · reprovado", "por rh@..."). Vazio se não há. */
 export function descreverDetalhe(evento) {
   const e = evento || {};
@@ -136,14 +144,20 @@ export function descreverDetalhe(evento) {
       // a trilha estava completa; só a conclusão da matrícula ficou por gravar (a abertura do portal a registra)
       return d.motivo === "curso_nao_lido"
         ? "não foi possível ler o curso"
-        : d.motivo === "gravacao_falhou"
-          ? "não foi possível gravar a conclusão"
-          : "";
+        : d.motivo === "prova_nao_lida"
+          ? "não foi possível ler a prova (questões ou aprovação)"
+          : d.motivo === "gravacao_falhou"
+            ? "não foi possível gravar a conclusão"
+            : "";
     case "conclusao_registrada":
-      // o dia que ficou na matrícula: o do último marco da trilha, não o da abertura do portal
-      return /^\d{4}-\d{2}-\d{2}$/.test(String(d.data_conclusao ?? ""))
-        ? `data da conclusão ${String(d.data_conclusao).split("-").reverse().join("/")}`
-        : "";
+      // o dia que ficou na matrícula (o do último marco da trilha, não o da abertura do portal) e por onde a
+      // conclusão adiada foi gravada (A7: a abertura do portal, a aula ou a prova seguintes, ou o certificado)
+      return juntar(
+        /^\d{4}-\d{2}-\d{2}$/.test(String(d.data_conclusao ?? "")) &&
+          `data da conclusão ${String(d.data_conclusao).split("-").reverse().join("/")}`,
+        Object.hasOwn(ORIGEM_DA_CONCLUSAO_REGISTRADA, String(d.origem)) &&
+          ORIGEM_DA_CONCLUSAO_REGISTRADA[d.origem]
+      );
     case "duvida_resposta_editada":
       // o texto anterior inteiro fica no evento (é o que a trilha guarda), mas não polui a linha
       return juntar(d.por && `por ${d.por}`, "versão anterior guardada no registro");

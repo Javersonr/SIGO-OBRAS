@@ -380,5 +380,32 @@ publicar o `portal-funcionario` antes da `0136` (o select de `modalidade` falha)
 ficam marcadas como adiadas e são registradas depois, mas a ordem correta continua sendo migração primeiro. Não há
 migração nova: os dois eventos usam as colunas que `treinamento_evento` já tem.
 
+**Leitura que falhou (A7).** A conclusão só é decidida com tudo lido: aulas, progresso, questões, tentativa aprovada e
+curso. Uma leitura isolada do banco pode falhar (queda de conexão, tempo esgotado), e antes ela parecia uma resposta
+vazia: questões ilegíveis viravam "curso sem prova" (conclusão permanente sem aprovação) e aulas ilegíveis viravam
+"trilha incompleta" (sem conclusão e sem segunda chance). Agora, se alguma leitura falha, o servidor lê tudo de novo
+uma vez. Se ainda falha:
+
+- com as aulas ou o progresso ilegíveis, não conclui e **não** marca (o progresso chama a conclusão em toda aula
+  concluída, então não dá para saber se era a última; marcar às cegas deixaria a retomada concluir uma trilha
+  incompleta). A causa vai ao log da função. Fica aberta até a próxima aula, a próxima aprovação ou o pedido de
+  certificado; no curso de apoio, que não tem certificado, só se o aluno voltar a uma ação que conclua;
+- com as aulas e o progresso lidos e completos, e só a prova (questões ou aprovação) ilegível, não conclui e grava
+  `conclusao_adiada` com o motivo "não foi possível ler a prova (questões ou aprovação)". A retomada relê tudo e mantém
+  as duas travas (trilha completa e "fez a prova e não passou").
+
+Quando a matrícula marcada é concluída por outro caminho (a aula ou a aprovação seguintes, ou o pedido de certificado),
+o servidor também grava `conclusao_registrada`, que fecha a marca; a trilha mostra por onde ("ao abrir o portal", "ao
+concluir a aula", "na aprovação da prova" ou "no pedido do certificado"). Com a trilha ilegível, o pedido de
+certificado, a aula, o progresso e a prova respondem 503 "Não foi possível conferir o andamento do curso agora. Tente
+de novo em instantes." (antes: "Conclua o curso antes de emitir o certificado", "Aula não pertence ao curso" ou "Conclua
+a aula anterior primeiro"), e a abertura do portal com as questões ou as tentativas ilegíveis responde 503 "Não foi
+possível carregar seus cursos agora. Tente de novo em instantes." (o portal mostra o botão de tentar de novo).
+
+**Prática lançada duas vezes (A7).** No semipresencial, a mesma sessão lançada mais de uma vez no mesmo dia, com o
+mesmo horário de início e de fim, conta uma vez só (com a maior carga), mesmo quando a carga é menor que o horário (4 h
+das 08 às 17, por exemplo). Sessões com horários diferentes seguem a regra anterior: as que se cruzam valem o tempo de
+relógio coberto, e os turnos separados somam.
+
 O teste completo de matrícula real, tempo de estudo, avaliação e certificado deve seguir o roteiro da seção 7 do
 handoff, com o Javerson e após as decisões e tarefas correspondentes.

@@ -3,23 +3,41 @@
 //
 // A6 (acompanhamento técnico das revisões): guardas de TEXTO do index.ts, que não é importável no Node
 // (usa Deno.serve e imports de URL). Cada teste fixa a ligação entre o index.ts e a regra pura que tem teste
-// de comportamento (regras.test.ts, ciencia.test.ts). Sem dado real.
+// de comportamento (regras.test.ts, ciencia.test.ts). Sem dado real. Na A7 a leitura da trilha e a conclusão
+// (`trilhaDoCurso`, `situacaoReal`, `concluirSeCompleto`) saíram para conclusao.ts, testada com banco injetado
+// (conclusao.test.ts); as guardas delas leem esse arquivo.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const codigoDoIndex = readFileSync(new URL("./index.ts", import.meta.url), "utf8")
-  .replace(/\/\*[\s\S]*?\*\//g, "")
-  .replace(/^\s*\/\/.*$/gm, "");
+const semComentarios = (texto: string) =>
+  texto.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const codigoDoIndex = semComentarios(readFileSync(new URL("./index.ts", import.meta.url), "utf8"));
+const originalDaConclusao = readFileSync(new URL("./conclusao.ts", import.meta.url), "utf8");
+const codigoDaConclusao = semComentarios(originalDaConclusao);
 
-/** O corpo de uma função de topo do index.ts, do `async function nome(` até a próxima função de topo. */
+/**
+ * O corpo de uma função de topo, do `async function nome(` até a próxima função de topo. As da conclusão
+ * (`trilhaDoCurso`, `situacaoReal`, `concluirSeCompleto`) estão em conclusao.ts desde a A7.
+ */
 function corpoDaFuncao(nome: string): string {
-  const inicio = codigoDoIndex.indexOf(`async function ${nome}(`);
+  const codigo = codigoDaConclusao.includes(`async function ${nome}(`)
+    ? codigoDaConclusao
+    : codigoDoIndex;
+  const inicio = codigo.indexOf(`async function ${nome}(`);
   assert.ok(inicio >= 0, `função ${nome} não encontrada`);
-  const fim = codigoDoIndex.indexOf("\nasync function ", inicio + 10);
-  const deno = codigoDoIndex.indexOf("\nDeno.serve(", inicio);
-  const limites = [fim, deno].filter((n) => n > inicio);
-  return codigoDoIndex.slice(inicio, Math.min(...limites));
+  const fim = codigo.indexOf("\nasync function ", inicio + 10);
+  const fimExportado = codigo.indexOf("\nexport async function ", inicio + 10);
+  const deno = codigo.indexOf("\nDeno.serve(", inicio);
+  const limites = [fim, fimExportado, deno].filter((n) => n > inicio);
+  return codigo.slice(inicio, limites.length ? Math.min(...limites) : undefined);
+}
+
+/** O comentário logo ACIMA de `async function concluirSeCompleto(` (em conclusao.ts desde a A7). */
+function comentarioDeConcluirSeCompleto(): string {
+  const inicio = originalDaConclusao.indexOf("async function concluirSeCompleto(");
+  assert.ok(inicio > 0, "concluirSeCompleto não encontrada em conclusao.ts");
+  return originalDaConclusao.slice(originalDaConclusao.lastIndexOf("/**", inicio), inicio);
 }
 
 test("concluirSeCompleto: erro ao ler o curso não conclui (decisaoDeConclusao com cursoLido: !erroCurso)", () => {
@@ -50,7 +68,8 @@ test("concluirSeCompleto: o erro da gravação não vira conclusão (revisão 2)
 test("concluirSeCompleto: a conclusão adiada deixa o evento conclusao_adiada (só quem passa 'adiar'); a retomada e o certificado não", () => {
   const corpo = corpoDaFuncao("concluirSeCompleto");
   assert.match(corpo, /adiar\?:\s*\(motivo:/);
-  assert.match(corpo, /else if \(adiada\) \{\s*await adiar\?\.\("curso_nao_lido"\);?\s*\}/);
+  // o motivo vem da regra (curso_nao_lido ou, desde a A7, prova_nao_lida); sem motivo, nada é marcado
+  assert.match(corpo, /else if \(motivo\) \{\s*await adiar\?\.\(motivo\);?\s*\}/);
   // a ação cria o evento com a constante (o front classifica o evento pelo nome)
   assert.match(
     codigoDoIndex,
@@ -83,10 +102,8 @@ test("progresso e avaliação marcam a conclusão adiada; o certificado e a reto
 });
 
 test("concluirSeCompleto: o comentário não promete mais 'a conclusão sai sem a validade'", () => {
-  const original = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
-  const inicio = original.indexOf("async function concluirSeCompleto(");
   // o comentário fica logo ACIMA da função
-  const comentario = original.slice(original.lastIndexOf("/**", inicio), inicio);
+  const comentario = comentarioDeConcluirSeCompleto();
   assert.doesNotMatch(comentario, /sai sem a validade/);
   assert.match(comentario, /NÃO conclui/);
 });
@@ -202,10 +219,142 @@ test("certificado: conclusão que não deu para registrar é 503, não um certif
 });
 
 test("concluirSeCompleto: o comentário aponta quem tenta de novo (retomarConclusoes), não a 'próxima ação'", () => {
-  const original = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
-  const inicio = original.indexOf("async function concluirSeCompleto(");
-  const comentario = original.slice(original.lastIndexOf("/**", inicio), inicio);
+  const comentario = comentarioDeConcluirSeCompleto();
   assert.match(comentario, /retomarConclusoes/);
   assert.match(comentario, /conclusao_adiada/);
   assert.doesNotMatch(comentario, /a próxima ação do aluno tenta de novo/);
+});
+
+// ------------------------------------------- A7: leitura que falhou não decide a conclusão (I1 da revisão 3)
+// O comportamento está em conclusao.test.ts (banco injetado) e em regras.test.ts; aqui, a ligação no index.ts.
+
+test("A7: o index.ts usa a conclusão de conclusao.ts e não tem mais cópia própria", () => {
+  assert.match(
+    codigoDoIndex,
+    /import \{ concluirSeCompleto, situacaoReal, trilhaDoCurso \} from "\.\/conclusao\.ts";/
+  );
+  for (const nome of ["trilhaDoCurso", "situacaoReal", "concluirSeCompleto"]) {
+    assert.doesNotMatch(codigoDoIndex, new RegExp(`async function ${nome}\\(`), nome);
+  }
+});
+
+test("A7: toda leitura da trilha no index.ts confere `lida` antes de usar as aulas (503, nunca 'aula bloqueada')", () => {
+  const leituras = [
+    ...codigoDoIndex.matchAll(/const trilha = await trilhaDoCurso\([^)]*\);\s*([^\n]*)/g),
+  ];
+  // abrir_aula, progresso e a preparação da prova
+  assert.equal(leituras.length, 3, String(leituras.map((m) => m[0])));
+  for (const [, seguinte] of leituras) {
+    assert.match(
+      seguinte,
+      /if \(!trilha\.lida\) return (?:\{ falha: )?fail\(MSG_TRILHA_INDISPONIVEL, 503\)/
+    );
+  }
+});
+
+test("A7: o certificado com a trilha ilegível responde 503 (bloqueioDaTrilhaNoCertificado), não 409 'Conclua o curso'", () => {
+  const inicio = codigoDoIndex.indexOf('body.acao === "certificado"');
+  const trecho = codigoDoIndex.slice(
+    inicio,
+    codigoDoIndex.indexOf('body.acao === "ciencia"', inicio)
+  );
+  assert.match(
+    trecho,
+    /const sit = await situacaoReal\(supabase, mat, empresaId\);\s*const semTrilha = bloqueioDaTrilhaNoCertificado\(sit\);\s*if \(semTrilha\) return fail\(semTrilha\.mensagem, semTrilha\.status\);/
+  );
+  // a mensagem de "conclua o curso" saiu do index.ts: só a regra decide entre 409 e 503
+  assert.doesNotMatch(codigoDoIndex, /Conclua o curso antes de emitir o certificado/);
+  assert.doesNotMatch(trecho, /if \(!sit\.concluido\)/);
+});
+
+test("A7: o dados não monta a resposta com questões ou tentativas ilegíveis (503 antes da retomada)", () => {
+  const trecho = trechoDoDados();
+  assert.match(trecho, /\{ data: questoes, error: erroQuestoes \}/);
+  assert.match(trecho, /\{ data: tentativas, error: erroTentativas \}/);
+  const falha = trecho.indexOf("if (erroQuestoes || erroTentativas)");
+  assert.ok(falha > 0, "o dados não confere o erro das questões e das tentativas");
+  const bloco = trecho.slice(falha, trecho.indexOf("const liberadaEm", falha));
+  assert.match(bloco, /console\.error\([^)]*questões/);
+  assert.match(bloco, /console\.error\([^)]*tentativas/);
+  assert.match(bloco, /return fail\([^)]*503\s*\)/);
+  // vem antes da conta da trilha e da retomada (que dependem das duas listas)
+  assert.ok(falha < trecho.indexOf("const concluidoNaTrilha"));
+  assert.ok(falha < trecho.indexOf("retomarConclusoes({"));
+});
+
+test("A7: a conclusão normal (aula, prova) e a do certificado fecham a marca adiada com conclusao_registrada", () => {
+  // o fechamento usa a regra pura (fecharConclusaoAdiada) com a leitura das marcas desta matrícula
+  const inicio = codigoDoIndex.indexOf("const fecharAdiada = (");
+  assert.ok(inicio > 0, "falta o fecharAdiada");
+  const definicao = codigoDoIndex.slice(inicio, codigoDoIndex.indexOf("});", inicio) + 3);
+  assert.match(definicao, /fecharConclusaoAdiada\(\{/);
+  assert.match(
+    definicao,
+    /conclusoesAdiadasDoBanco\(supabase, \{ empresaId, funcionarioId, matriculaIds: ids \}\)/
+  );
+  assert.match(
+    definicao,
+    /evento: EVENTO_CONCLUSAO_REGISTRADA,\s*matricula_id: mat\.id,\s*curso_id: mat\.curso_id,\s*detalhe: \{ data_conclusao: dataConclusao, origem \}/
+  );
+  // progresso e avaliação: logo depois do curso_concluido; certificado: logo depois de concluir
+  assert.match(
+    codigoDoIndex,
+    /evento: "curso_concluido", matricula_id: mat\.id, curso_id: mat\.curso_id \}\);\s*await fecharAdiada\(mat, resultado\.data_conclusao, "aula"\);/
+  );
+  assert.match(
+    codigoDoIndex,
+    /evento: "curso_concluido", matricula_id: mat\.id, curso_id: mat\.curso_id \}\);\s*await fecharAdiada\(mat, r\.data_conclusao, "prova"\);/
+  );
+  assert.match(
+    codigoDoIndex,
+    /if \(!conclusao\.concluiu\) \{[^}]*\}\s*await fecharAdiada\(mat, conclusao\.data_conclusao, "certificado"\);/
+  );
+  // a retomada continua gravando o seu, agora com a origem
+  assert.match(
+    trechoDoDados(),
+    /detalhe: \{ data_conclusao: resultado\.data_conclusao, origem: "retomada" \}/
+  );
+});
+
+test("A7 (Minor 1): o navegador não grava as marcas da conclusão (fora de EVENTOS_CLIENTE)", () => {
+  const original = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+  const inicio = original.indexOf("const EVENTOS_CLIENTE = new Set([");
+  assert.ok(inicio > 0, "lista EVENTOS_CLIENTE não encontrada");
+  const lista = original.slice(inicio, original.indexOf("]);", inicio));
+  assert.ok(lista.length > 50, "a lista de eventos do navegador não foi lida");
+  // com a marca gravada pelo aluno, a retomada concluiria qualquer trilha que parecesse completa
+  for (const evento of [
+    "conclusao_adiada",
+    "conclusao_registrada",
+    "EVENTO_CONCLUSAO_ADIADA",
+    "EVENTO_CONCLUSAO_REGISTRADA",
+  ]) {
+    assert.equal(lista.includes(evento), false, evento);
+  }
+});
+
+test("A7 (Minor 3): o comentário de concluirSeCompleto diz que o progresso chama em TODA aula concluída", () => {
+  const comentario = comentarioDeConcluirSeCompleto();
+  assert.doesNotMatch(comentario, /só chamam isto no instante em que a última aula/);
+  assert.match(comentario, /TODA aula/);
+  // e o que acontece com cada leitura que falha
+  assert.match(comentario, /segunda leitura|lê tudo de novo/);
+  assert.match(comentario, /NÃO conclui e NÃO marca/);
+});
+
+test("A7: a conclusão confere o erro de cada leitura (conclusao.ts) e manda a causa ao log", () => {
+  const trilha = corpoDaFuncao("trilhaDoCurso");
+  assert.match(trilha, /error: erroAulas/);
+  assert.match(trilha, /error: erroProgs/);
+  assert.match(trilha, /lida: !erroAulas && !erroProgs/);
+  const situacao = corpoDaFuncao("situacaoReal");
+  assert.match(situacao, /error: erroQuestoes/);
+  assert.match(situacao, /error: erroAprovadas/);
+  assert.match(situacao, /concluido: lida && sit\.concluido/);
+  const concluir = corpoDaFuncao("concluirSeCompleto");
+  // segunda leitura antes de desistir ou adiar
+  assert.match(
+    concluir,
+    /if \(!sit\.lida \|\| erroCurso\) \{[\s\S]*await esperar\(\);[\s\S]*await ler\(\);/
+  );
 });

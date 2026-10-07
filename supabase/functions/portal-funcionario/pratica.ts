@@ -109,11 +109,13 @@ const minutosDoDia = (hora: unknown): number | null => {
 /**
  * Horas (em centésimos) que as sessões de UMA matrícula realmente cobrem (A6, T12 N1). A soma das cargas
  * declaradas inflava quando o RH lançava a mesma sessão duas vezes (mesmo dia e horário), ou duas sessões que
- * se cruzam: duas de 8 h iguais davam 16 h de prática para um dia só. Por dia, vale a soma das cargas
- * limitada ao tempo de relógio que os horários das sessões do dia cobrem (a união dos intervalos): a
- * repetida não soma, as que se cruzam valem o tempo coberto, e os turnos separados (manhã e tarde) somam. Sessão
- * sem horário válido (o CHECK do banco não deixa, mas a regra não presume) vale a carga declarada, sem limite.
- * Dias diferentes sempre somam. Quem muda esta conta muda também a cópia do front (lib/ead-pratica.js).
+ * se cruzam: duas de 8 h iguais davam 16 h de prática para um dia só. Por dia: a mesma sessão lançada mais de uma
+ * vez (mesmo início e mesmo fim) vale uma vez, com a maior carga (A7: com a carga menor que o horário, como 4 h
+ * das 08 às 17, a união dos horários não a segurava e ela contava em dobro); depois, a soma das cargas limitada ao
+ * tempo de relógio que os horários das sessões do dia cobrem (a união dos intervalos): as que se cruzam valem o
+ * tempo coberto, e os turnos separados (manhã e tarde) somam. Sessão sem horário válido (o CHECK do banco não
+ * deixa, mas a regra não presume) vale a carga declarada, sem limite. Dias diferentes sempre somam. Quem muda esta
+ * conta muda também a cópia do front (lib/ead-pratica.js).
  */
 function creditoEmCentesimos(sessoes: SessaoPratica[]): number {
   const porDia = new Map<string, SessaoPratica[]>();
@@ -123,18 +125,25 @@ function creditoEmCentesimos(sessoes: SessaoPratica[]): number {
   }
   let total = 0;
   for (const doDia of porDia.values()) {
-    const intervalos: [number, number][] = [];
-    let declarada = 0; // as cargas das sessões do dia que têm horário válido
+    // a mesma sessão lançada mais de uma vez (mesmo início e fim no dia) vale uma vez, com a maior carga
+    const porHorario = new Map<string, { de: number; ate: number; carga: number }>();
     for (const s of doDia) {
       const carga = emCentesimos(s.carga_horas);
       const de = minutosDoDia(s.hora_inicio);
       const ate = minutosDoDia(s.hora_fim);
       if (de !== null && ate !== null && ate > de) {
-        intervalos.push([de, ate]);
-        declarada += carga;
+        const chave = `${de}-${ate}`;
+        const anterior = porHorario.get(chave);
+        if (!anterior || carga > anterior.carga) porHorario.set(chave, { de, ate, carga });
       } else {
         total += carga;
       }
+    }
+    const intervalos: [number, number][] = [];
+    let declarada = 0; // as cargas das sessões do dia que têm horário válido (uma por horário)
+    for (const { de, ate, carga } of porHorario.values()) {
+      intervalos.push([de, ate]);
+      declarada += carga;
     }
     intervalos.sort((a, b) => a[0] - b[0]);
     let coberto = 0;

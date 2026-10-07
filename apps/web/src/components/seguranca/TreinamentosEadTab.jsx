@@ -40,7 +40,7 @@ import {
   certificadosPorMatricula,
   erroDeMatricula,
 } from "@/lib/ead-gestao";
-import { validarNumerosDoCurso } from "@/lib/ead-curso-numeros";
+import { notaMinimaParaGravar, validarNumerosDoCurso } from "@/lib/ead-curso-numeros";
 import {
   validarArquivoAula,
   subirArquivoComProgresso,
@@ -675,7 +675,8 @@ export default function TreinamentosEadTab({
       // semipresencial (T12): carga teórica (EAD) e prática (presencial), só do curso EAD (o cadastro central
       // não as sobrescreve); nos outros cursos ficam vazias
       ...cargasDoCursoParaGravar(cursoSel, gravado),
-      nota_minima: cursoSel.nota_minima ? Number(cursoSel.nota_minima) : 70,
+      // 0 continua 0 (campo vazio vale 70), como no servidor (A7)
+      nota_minima: notaMinimaParaGravar(cursoSel.nota_minima),
       max_tentativas:
         cursoSel.max_tentativas === "" || cursoSel.max_tentativas == null
           ? 3

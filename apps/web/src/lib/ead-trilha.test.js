@@ -288,4 +288,30 @@ describe("conclusão adiada e registrada pelo sistema (A6, revisão 2)", () => {
       descreverDetalhe({ evento: "conclusao_registrada", detalhe: { data_conclusao: "ontem" } })
     ).toBe("");
   });
+
+  it("A7: o adiamento pela prova ilegível diz o motivo (questões ou aprovação)", () => {
+    expect(
+      descreverDetalhe({ evento: "conclusao_adiada", detalhe: { motivo: "prova_nao_lida" } })
+    ).toBe("não foi possível ler a prova (questões ou aprovação)");
+  });
+
+  it("A7: o registro diz por onde a conclusão adiada foi gravada (abertura do portal, aula, prova ou certificado)", () => {
+    const registrada = (origem) =>
+      descreverDetalhe({
+        evento: "conclusao_registrada",
+        detalhe: { data_conclusao: "2026-10-01", origem },
+      });
+    expect(registrada("retomada")).toBe("data da conclusão 01/10/2026 · ao abrir o portal");
+    expect(registrada("aula")).toBe("data da conclusão 01/10/2026 · ao concluir a aula");
+    expect(registrada("prova")).toBe("data da conclusão 01/10/2026 · na aprovação da prova");
+    expect(registrada("certificado")).toBe(
+      "data da conclusão 01/10/2026 · no pedido do certificado"
+    );
+    // origem desconhecida (ou ausente, como nos eventos gravados antes da A7) não vira texto técnico
+    expect(registrada("outra")).toBe("data da conclusão 01/10/2026");
+    expect(registrada("toString")).toBe("data da conclusão 01/10/2026");
+    expect(descreverDetalhe({ evento: "conclusao_registrada", detalhe: { origem: "aula" } })).toBe(
+      "ao concluir a aula"
+    );
+  });
 });

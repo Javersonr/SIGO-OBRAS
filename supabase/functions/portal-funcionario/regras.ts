@@ -281,11 +281,21 @@ export function marcoDaTrilha(p: {
  * `cursoLido: false` = a leitura do curso (validade e modalidade) FALHOU. A conclusão é permanente (a
  * matrícula vira `concluido` e nenhuma ação a regrava), então concluir sem o curso gravaria a validade errada
  * para sempre: o EAD sairia sem renovação, e o curso de apoio, que não renova, não teria como ser distinguido.
- * Nesse caso a conclusão fica ADIADA (`adiada: true`; o `index.ts` grava o evento `conclusao_adiada`) e a
- * próxima abertura do portal a retoma (`retomarConclusoes`): só as matrículas adiadas, nunca uma trilha que
- * apenas parece completa pelo estado de hoje do curso (A6, revisão 2). Sem essa segunda chance o curso de apoio
- * (sem certificado) e o curso sem prova ficariam `em_andamento` para sempre: nenhuma outra ação chama a conclusão
- * depois da última aula. Curso que não existe (sem erro) segue o comportamento de sempre: conclui só com a data.
+ * Nesse caso a conclusão fica ADIADA (`adiada: true`, `motivo: "curso_nao_lido"`; o `index.ts` grava o evento
+ * `conclusao_adiada`) e a próxima abertura do portal a retoma (`retomarConclusoes`): só as matrículas adiadas,
+ * nunca uma trilha que apenas parece completa pelo estado de hoje do curso (A6, revisão 2). Sem essa segunda
+ * chance o curso de apoio (sem certificado) e o curso sem prova ficariam `em_andamento` para sempre: nenhuma outra
+ * ação chama a conclusão depois da última aula. Curso que não existe (sem erro) segue o comportamento de sempre:
+ * conclui só com a data.
+ *
+ * Leituras da trilha (A7): `sit.trilhaLida: false` = a leitura das aulas ou do progresso FALHOU. A trilha lida
+ * assim parece vazia, e o progresso chama a conclusão em toda aula concluída: não dá para saber se era a última,
+ * então não conclui e NÃO marca (marcar às cegas deixaria a retomada concluir uma trilha incompleta, como a da aula
+ * que o RH apagou). Quem chama faz uma segunda leitura antes de desistir (`concluirSeCompleto`, conclusao.ts).
+ * `sit.provaLida: false` = a leitura das questões ou da tentativa aprovada FALHOU: sem ela a conta da trilha tomaria
+ * o curso por "sem prova" (conclusão sem aprovação, permanente) ou o aprovado por "sem aprovação". Com as aulas
+ * lidas e completas a conclusão fica ADIADA (`motivo: "prova_nao_lida"`): a retomada relê tudo e mantém as duas
+ * travas (a trilha completa pelo banco e "fez a prova e não passou"). Ausentes, as duas valem `true` (lidas).
  *
  * `marco` = o momento em que a trilha ficou completa (`marcoDaTrilha`): a `data_conclusao` é o dia de Brasília
  * dele, e a renovação conta dele; sem marco, ou com um marco depois de `hoje`, vale `hoje`. Na conclusão feita
@@ -294,7 +304,15 @@ export function marcoDaTrilha(p: {
  * `precisaAvaliacao` = "é a hora da prova": só com todas as aulas feitas e a prova ainda pendente.
  */
 export function decisaoDeConclusao(p: {
-  sit: { aulasOk: boolean; temAvaliacao: boolean; concluido: boolean };
+  sit: {
+    aulasOk: boolean;
+    temAvaliacao: boolean;
+    concluido: boolean;
+    /** false quando a leitura das aulas ou do progresso deu erro (A7). */
+    trilhaLida?: boolean;
+    /** false quando a leitura das questões ou da tentativa aprovada deu erro (A7). */
+    provaLida?: boolean;
+  };
   curso?: { validade_meses?: number | null; modalidade?: string | null } | null;
   /** false quando a leitura do curso deu erro (não confundir com curso que não existe). */
   cursoLido?: boolean;
@@ -303,14 +321,22 @@ export function decisaoDeConclusao(p: {
   marco?: Date | null;
 }) {
   const { sit } = p;
-  const andamento = (precisaAvaliacao: boolean, adiada = false) => ({
+  const andamento = (
+    precisaAvaliacao: boolean,
+    motivo: "curso_nao_lido" | "prova_nao_lida" | null = null
+  ) => ({
     resultado: { status: "em_andamento", concluiu: false, precisaAvaliacao },
     patch: null as Record<string, unknown> | null,
-    adiada,
+    adiada: motivo !== null,
+    motivo,
   });
+  // sem as aulas e o progresso lidos, nada a decidir (nem a marca: não se sabe se a trilha fechou)
+  if (sit.trilhaLida === false) return andamento(false);
   if (!sit.aulasOk) return andamento(false);
+  // aulas completas, prova ilegível: nem conclui (podia faltar a aprovação) nem diz que é a hora da prova
+  if (sit.provaLida === false) return andamento(false, "prova_nao_lida");
   if (!sit.concluido) return andamento(sit.temAvaliacao);
-  if (p.cursoLido === false) return andamento(false, true);
+  if (p.cursoLido === false) return andamento(false, "curso_nao_lido");
   const marco = p.marco && !Number.isNaN(p.marco.getTime()) ? p.marco : null;
   const diaDaConclusao = marco && marco.getTime() <= p.hoje.getTime() ? marco : p.hoje;
   return {
@@ -321,7 +347,58 @@ export function decisaoDeConclusao(p: {
       ...datasDeConclusao(diaDaConclusao, p.curso?.validade_meses, modalidadeDoCurso(p.curso)),
     } as Record<string, unknown> | null,
     adiada: false,
+    motivo: null as "curso_nao_lido" | "prova_nao_lida" | null,
   };
+}
+
+/** Por que a conclusão ficou adiada (detalhe do evento `conclusao_adiada`; o front mostra o texto de cada um). */
+export type MotivoDaConclusaoAdiada = "curso_nao_lido" | "prova_nao_lida" | "gravacao_falhou";
+
+/**
+ * A trilha ilegível (aulas, progresso, questões ou aprovação) no pedido de certificado, na aula, no progresso e na
+ * prova (A7): 503 e tentar de novo, não "Conclua o curso", "Aula não pertence ao curso" ou "aula bloqueada".
+ */
+export const MSG_TRILHA_INDISPONIVEL =
+  "Não foi possível conferir o andamento do curso agora. Tente de novo em instantes.";
+
+/**
+ * O pedido de certificado confere a trilha no servidor (aulas, progresso, questões e aprovação). Leitura que
+ * falhou é 503 (tentar de novo): dizer "Conclua o curso" a quem concluiu manda o aluno refazer o que já fez. Trilha
+ * lida e incompleta é 409. Null = pode seguir.
+ */
+export function bloqueioDaTrilhaNoCertificado(sit: {
+  lida: boolean;
+  concluido: boolean;
+}): { status: 409 | 503; mensagem: string } | null {
+  if (!sit.lida) return { status: 503, mensagem: MSG_TRILHA_INDISPONIVEL };
+  if (!sit.concluido) {
+    return { status: 409, mensagem: "Conclua o curso antes de emitir o certificado" };
+  }
+  return null;
+}
+
+/**
+ * Fecha a marca `conclusao_adiada` quando a matrícula é concluída por outro caminho (A7): a conclusão normal
+ * posterior (a aula ou a aprovação que vieram depois) ou a do pedido de certificado. Sem isso a trilha mostraria
+ * "Conclusão adiada" para sempre ao lado da matrícula concluída. Lê as marcas SÓ desta matrícula e grava o
+ * `conclusao_registrada` (por `registrarConclusao`) só se havia marca pendente: a conclusão comum não ganha evento
+ * a mais. NUNCA lança (a conclusão já foi gravada; o rastro que falta não pode derrubar a resposta ao aluno): erro
+ * vai para `registrar`. Devolve true se gravou.
+ */
+export async function fecharConclusaoAdiada(p: {
+  matriculaId: string;
+  lerAdiadas: (matriculaIds: string[]) => Promise<ReadonlySet<string>>;
+  registrarConclusao: () => Promise<unknown>;
+  registrar: (mensagem: string, causa?: unknown) => void;
+}): Promise<boolean> {
+  try {
+    const pendentes = await p.lerAdiadas([p.matriculaId]);
+    if (!pendentes.has(p.matriculaId)) return false;
+    return (await p.registrarConclusao()) === true;
+  } catch (erro) {
+    p.registrar("fecharConclusaoAdiada: a marca da conclusão adiada não foi fechada", erro);
+    return false;
+  }
 }
 
 /**

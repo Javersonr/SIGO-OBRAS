@@ -65,3 +65,16 @@ export function validarNumerosDoCurso(curso) {
   }
   return { ok: true };
 }
+
+/** Nota mínima quando o curso não define uma (a mesma `NOTA_MINIMA_PADRAO` do portal-funcionario). */
+const NOTA_MINIMA_PADRAO = 70;
+
+/**
+ * A nota mínima que a tela grava (A7): campo vazio vale o padrão (70); qualquer outro valor vira número, e 0
+ * continua 0. A tela gravava `nota_minima ? Number(nota_minima) : 70`, que transformava 0 em 70 ao salvar; o
+ * servidor usa `nota_minima ?? 70` e aceita 0 (o CHECK da 0139 vai de 0 a 100). Quem confere a faixa antes de gravar
+ * é `validarNumerosDoCurso`.
+ */
+export function notaMinimaParaGravar(valor) {
+  return vazio(valor) ? NOTA_MINIMA_PADRAO : Number(String(valor).trim());
+}

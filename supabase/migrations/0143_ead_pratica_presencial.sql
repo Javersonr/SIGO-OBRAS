@@ -6,9 +6,9 @@
 -- EAD com horário fixo de 10 h por dia e não gravava nada. Agora o RH registra cada sessão prática (data, horário,
 -- carga, local e instrutor reais) e, nela, a presença e o resultado de cada matrícula; o servidor só emite o
 -- certificado do curso semipresencial para quem esteve "presente" e teve resultado "satisfatório" em sessões não
--- apagadas do mesmo curso, já realizadas, cuja soma das cargas chega à carga prática do curso (limitada, em cada
--- dia, ao tempo de relógio dos horários: sessão lançada duas vezes não dobra; portal-funcionario/pratica.ts, 409
--- PRATICA_PENDENTE).
+-- apagadas do mesmo curso, já realizadas, cuja soma das cargas chega à carga prática do curso (em cada dia, a sessão
+-- lançada duas vezes com o mesmo horário conta uma vez, com a maior carga, e a soma fica limitada ao tempo de relógio
+-- dos horários; portal-funcionario/pratica.ts, 409 PRATICA_PENDENTE).
 --
 -- O que muda:
 --

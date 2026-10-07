@@ -14,7 +14,10 @@ describe("salvar o curso: números conferidos antes de gravar (T32)", () => {
   const salvar = funcao("salvarCurso");
 
   it("nota, tentativas, carga e validade passam por validarNumerosDoCurso, com o erro em português no toast", () => {
-    expect(aba).toMatch(/import \{ validarNumerosDoCurso \} from "@\/lib\/ead-curso-numeros"/);
+    // (A7: a mesma linha importa também notaMinimaParaGravar)
+    expect(aba).toMatch(
+      /import \{ (?:notaMinimaParaGravar, )?validarNumerosDoCurso \} from "@\/lib\/ead-curso-numeros"/
+    );
     expect(salvar).toContain("validarNumerosDoCurso(cursoSel)");
     expect(salvar).toMatch(
       /if \(!numeros\.ok\) \{\s*toast\.error\(numeros\.erro\);\s*return;\s*\}/
