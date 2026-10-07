@@ -7,6 +7,9 @@
 - **Aceite da T33:** este spec com o OK do Javerson. A implementação vem depois, em outra tarefa, com migração.
 - **Revisão 1 (07/10/2026):** a ação `status` do `funcionario-acesso` passa a aceitar também quem só tem Treinamentos
   EAD → `matricular`, porque o "Avisar atrasados" da aba depende dela (§3, §7, §8, §9 e P3).
+- **Revisão 2 (07/10/2026):** quem só matricula **não** cria o acesso ao portal na recomendação: o `criar` devolve o
+  login (CPF) e a senha provisória, e com ela a pessoa lê os documentos do funcionário. Passa a haver três caminhos
+  para a P3 (§7.1), o risco R9 e a decisão `decidirCriar`, que também deixa a ordem "409 antes do 403" sob teste.
 
 ---
 
@@ -54,15 +57,15 @@ caminho: tela, API e propagação do cadastro central. A tela só espelha.
 Nova aba **"Treinamentos EAD"** no módulo "Segurança do Trabalho" de `ESTRUTURA_PERMISSOES`
 (`components/shared/PermissoesGranularesEditor.jsx:84`):
 
-| Função                | O que libera                                                                                                                                                                                                                                           | Onde é conferida                                   |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
-| `visualizar`          | Ver a aba (cursos, matrículas, trilha, dossiê, vencimentos, dúvidas, "Ver como aluno"); ler questões, tentativas e trilha                                                                                                                              | tela + leitura §4.4                                |
-| `editar`              | Criar curso; alterar dados do curso, aulas, questões, projeto pedagógico, imagens de assinatura, modalidade e vínculo com o cadastro central; enviar ou trocar arquivo de aula; alterar no cadastro central um treinamento que tem curso EAD vinculado | trigger + Storage                                  |
-| `publicar`            | Ligar e desligar "Publicado"; excluir curso; desativar no cadastro central um treinamento com curso EAD vinculado                                                                                                                                      | trigger                                            |
-| `matricular`          | Matricular (por funcionário, por função, renovar), avisar o aluno (por linha e "Avisar atrasados"; criar o acesso ao portal e consultar quem já tem acesso, P3) e remover matrícula sem certificado válido                                             | trigger + `funcionario-acesso` (`criar`, `status`) |
-| `liberar_tentativa`   | Liberar tentativa extra                                                                                                                                                                                                                                | `funcionario-acesso`                               |
-| `revogar_certificado` | Revogar certificado                                                                                                                                                                                                                                    | `funcionario-acesso`                               |
-| `responder_duvidas`   | Responder dúvida (tutor)                                                                                                                                                                                                                               | trigger                                            |
+| Função                | O que libera                                                                                                                                                                                                                                                         | Onde é conferida                                            |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `visualizar`          | Ver a aba (cursos, matrículas, trilha, dossiê, vencimentos, dúvidas, "Ver como aluno"); ler questões, tentativas e trilha                                                                                                                                            | tela + leitura §4.4                                         |
+| `editar`              | Criar curso; alterar dados do curso, aulas, questões, projeto pedagógico, imagens de assinatura, modalidade e vínculo com o cadastro central; enviar ou trocar arquivo de aula; alterar no cadastro central um treinamento que tem curso EAD vinculado               | trigger + Storage                                           |
+| `publicar`            | Ligar e desligar "Publicado"; excluir curso; desativar no cadastro central um treinamento com curso EAD vinculado                                                                                                                                                    | trigger                                                     |
+| `matricular`          | Matricular (por funcionário, por função, renovar), avisar o aluno que já tem acesso ao portal (por linha e "Avisar atrasados"; consulta quem já tem acesso, só `ativo`; criar o acesso fica em Funcionários → Editar, P3) e remover matrícula sem certificado válido | trigger + `funcionario-acesso` (`status`; `criar` só o 409) |
+| `liberar_tentativa`   | Liberar tentativa extra                                                                                                                                                                                                                                              | `funcionario-acesso`                                        |
+| `revogar_certificado` | Revogar certificado                                                                                                                                                                                                                                                  | `funcionario-acesso`                                        |
+| `responder_duvidas`   | Responder dúvida (tutor)                                                                                                                                                                                                                                             | trigger                                                     |
 
 Regras gerais:
 
@@ -72,8 +75,11 @@ Regras gerais:
 - **Ler é ter qualquer função da aba:** quem tem só `editar` vê o que edita. Assim a leitura não depende de lembrar de
   marcar `visualizar`.
 - **Acesso ao portal** (criar, redefinir, desativar, ver situação) continua em "Funcionários", porque fica na Ficha e o
-  portal também mostra documentos e ciências. Única mudança proposta: quem tem Treinamentos EAD → `matricular` também
-  cria o acesso e consulta a situação dele (`status`, só com `ativo`), para matricular e avisar atrasados: ver P3.
+  portal também mostra documentos e ciências: quem tem a senha provisória entra no portal e lê contracheque, folha de
+  ponto, documentação e advertências do funcionário (R9). Única mudança proposta: quem tem Treinamentos EAD →
+  `matricular` consulta a situação dele (`status`, só com `ativo`) e avisa quem já tem acesso, para o "Avisar
+  atrasados" e o aviso por linha funcionarem. **Criar o acesso não entra**, a menos que o Javerson escolha outro
+  caminho na P3 (§7.1).
 - **Documentos do portal** (contracheque, folha de ponto, documentação) vão para a aba "RH": `criar` publica o PDF e
   `deletar` retira (P2).
 - **T12 (prática presencial, ainda não feita):** as sessões entram em `editar`; o lançamento de presença e resultado
@@ -228,16 +234,24 @@ Detalhe da B2:
     `JA_TEM_ACESSO` antes do 403 (é assim que `avisarNoPortal` segue quando o funcionário já tem acesso, como no
     "Avisar" da Ficha).
 
-| Ação                  | Entrar                                                            | Agir                                                            |
-| --------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------- |
-| `status`              | Funcionários (qualquer função) ou Treinamentos EAD → `matricular` | o mesmo que entrar                                              |
-| `criar`               | Funcionários (qualquer função) ou Treinamentos EAD → `matricular` | Funcionários → `editar` ou Treinamentos EAD → `matricular` (P3) |
-| `redefinir`, `ativo`  | Funcionários (qualquer função)                                    | Funcionários → `editar`, como hoje                              |
-| `liberar_tentativa`   | Treinamentos EAD → `liberar_tentativa`                            | o mesmo que entrar (hoje: Funcionários → `editar`)              |
-| `revogar_certificado` | Treinamentos EAD → `revogar_certificado`                          | o mesmo que entrar (hoje: Funcionários → `editar`)              |
+| Ação                  | Entrar                                                            | Agir                                               |
+| --------------------- | ----------------------------------------------------------------- | -------------------------------------------------- |
+| `status`              | Funcionários (qualquer função) ou Treinamentos EAD → `matricular` | o mesmo que entrar                                 |
+| `criar`               | Funcionários (qualquer função) ou Treinamentos EAD → `matricular` | Funcionários → `editar`, como hoje (P3 e §7.1)     |
+| `redefinir`, `ativo`  | Funcionários (qualquer função)                                    | Funcionários → `editar`, como hoje                 |
+| `liberar_tentativa`   | Treinamentos EAD → `liberar_tentativa`                            | o mesmo que entrar (hoje: Funcionários → `editar`) |
+| `revogar_certificado` | Treinamentos EAD → `revogar_certificado`                          | o mesmo que entrar (hoje: Funcionários → `editar`) |
 
 - `index.ts` troca o `MODULO`/`ABA` fixos (`:67-68`) e a conferência única de `:370-383` pela decisão de
-  `permissaoDaAcao`, e `MENSAGEM_SEM_EDICAO` (`regras.ts:15-21`) passa a citar a permissão nova.
+  `permissaoDaAcao`. `MENSAGEM_SEM_EDICAO` (`regras.ts:15-21`) passa a ter as cinco ações de escrita (hoje só tem as
+  duas de matrícula; `criar`, `redefinir` e `ativo` usam o `semEdicao()` fixo de `index.ts:382-383`, `:462` e `:495`),
+  cada mensagem citando a permissão que falta. A de `criar` diz o que fazer: "Este funcionário ainda não tem acesso ao
+  portal. Criar o acesso exige Segurança do Trabalho → Funcionários → Editar."
+- **A ordem "409 antes do 403" fica sob teste:** função pura `decidirCriar({ entra, age, jaTemAcesso })` em `regras.ts`,
+  que devolve `"conflito"` (409 `JA_TEM_ACESSO`), `"sem_permissao"` (403) ou `"criar"`. A ordem é fixa: sem `entra`,
+  403; com acesso já criado, 409 (mesmo para quem não age); sem `age`, 403; senão cria. Hoje a ordem só existe no
+  `index.ts:456-462`, que o `node --test` não importa; sem a função, mudar essa ordem quebraria o "Avisar" da Ficha
+  (para quem só vê Funcionários) e o aviso por linha da aba (para quem só matricula) sem nenhum teste falhar.
 - **Por que `status` também aceita a aba nova:** o "Avisar atrasados" da aba Treinamentos chama `status`
   (`AvisoAtrasadosDialog.jsx:90-91`) para saber quem já tem acesso ao portal (o lote só usa `funcionario_id` e `ativo`,
   `lib/ead-aviso-matricula.js:159-176`). Sem isso, quem só recebe a aba nova leva 403 e o diálogo mostra "Não foi
@@ -246,9 +260,33 @@ Detalhe da B2:
   (função pura `recortarAcessosParaEad`). Super admin e quem tem Funcionários seguem recebendo a lista inteira. Só
   `matricular` entra: quem tem apenas `visualizar` não vê o botão de avisar e não precisa do `status`. A chamada de
   `SegurancaTrabalho.jsx:350` (coluna de acesso da lista de funcionários) segue só avisando no console quando vier 403.
-- `criar` entra em P3 porque, ao matricular quem ainda não tem acesso, a tela chama `funcionarioAcesso` "criar" e
-  entrega a senha provisória. Sem P3, quem só matricula precisa também de Funcionários → `editar` (e de Funcionários,
-  qualquer função, para o `status` do "Avisar atrasados").
+- **Por que `criar` também deixa entrar quem só matricula, mas não o deixa agir:** é o botão "Avisar" da linha
+  (`MatriculasEadCard.jsx:611-616` → `TreinamentosEadTab.jsx:1167-1170` → `avisarNoPortal`) que chama `criar`, e não o
+  ato de matricular (matricular só grava `treinamento_matricula`, `TreinamentosEadTab.jsx:1143-1157`). Para quem já tem
+  acesso, o 409 `JA_TEM_ACESSO` faz o aviso sair só com o link, sem senha. Se o funcionário ainda não tem acesso,
+  criá-lo entrega login e senha a quem chamou: ver §7.1.
+
+### 7.1 Criar o acesso ao portal: quem pode (P3)
+
+O `criar` devolve a quem chamou o login (o CPF, ou o `usuario` do corpo) e a senha provisória (`index.ts:491`), e o
+servidor não confere se o funcionário tem matrícula. Com essa senha, a pessoa faz o primeiro acesso ao portal (a senha
+provisória dispensa a atual na troca, `portal-funcionario/index.ts:532-566`) e passa a ver contracheque, folha de ponto,
+documentação e advertências do funcionário (`:586-596`, `documentos.ts:42-60`). Esses PDFs podem estar publicados antes
+de o funcionário ter acesso, porque o cartão da Ficha não depende dele (`FichaFuncionarioSheet.jsx:315-325`), e são os
+documentos que a §6 põe atrás de RH → `criar`/`deletar`. O funcionário, por sua vez, fica sem entrar até alguém com
+Funcionários → `editar` redefinir a senha (R9). Portanto, dar o `criar` a quem só matricula **é dar a leitura desses
+documentos**, não só uma conveniência. Três caminhos:
+
+| Caminho                                                                          | O que muda                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | A favor                                                                                                                                | Contra                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **C1 (recomendado): criar o acesso só com Funcionários → `editar`, como hoje**   | `criar` entra para quem tem a aba nova (só para o 409), mas age só com Funcionários → `editar`. Quem só matricula avisa quem já tem acesso (mensagem sem senha) e consulta o `status` recortado. Sem acesso, leva o 403 com a mensagem do §7                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Nenhuma credencial na mão de quem só matricula; nada de código além de `permissaoDaAcao` e `decidirCriar`; nada muda para quem já cria | Quem só matricula não cria o acesso: pede a alguém com Funcionários → `editar` (quem cuida da Ficha tem). O "Avisar atrasados" já pula quem não tem acesso                                                                                                                                                                             |
+| C2: quem só matricula cria, e a senha vai só ao WhatsApp do funcionário          | Em `criar`, quem não tem Funcionários → `editar` mas tem Treinamentos EAD → `matricular` cai numa terceira saída: o servidor confere o destino antes (`destinoDoAviso`: funcionário ativo, com telefone válido), cria o acesso com o CPF (ignora o `usuario` do corpo), manda ele mesmo a mensagem com login e senha (`enviarWhatsAppTexto`, texto fixo do servidor) e responde só `{ acesso_criado, enviado }`, sem `usuario` nem `senha_provisoria`. Se o envio não sai (sem telefone, canal não configurado, falha, tempo esgotado), apaga o acesso que acabou de criar e recusa, pedindo alguém com Funcionários → `editar`. O evento `acesso_criado` só é gravado depois do envio e leva `detalhe.via = "matricular"` | Dá a conveniência e a senha só chega ao dono do telefone; nunca fica acesso com senha que ninguém conhece                              | Código novo no servidor (envio, desfazer, terceira saída de `decidirCriar`) e a URL pública do portal no servidor (hoje ele devolve só `url_path`); sem telefone ou sem canal, não cria; envio que estoura o tempo mas chega entrega uma senha de acesso já apagado (o funcionário não entra e alguém recria). A tela também muda (§8) |
+| C3: quem só matricula cria e recebe a senha, só de funcionário que tem matrícula | Uma condição a mais no `criar`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Pouco código                                                                                                                           | **Não fecha**: quem matricula pode matricular qualquer funcionário e, em seguida, criar o acesso dele. Descartado                                                                                                                                                                                                                      |
+
+Recomendação: **C1**. É o único que fecha o problema sem código além do que a §7 já pede, e o custo é pequeno: o RH
+que cuida da Ficha já tem Funcionários → `editar`. Se aparecer um perfil que só matricula e precisa criar o acesso, o
+C2 entra depois como a terceira saída de `decidirCriar`, sem mexer no resto. Redefinir a senha e desativar seguem
+exigindo Funcionários → `editar`, nos três caminhos.
 
 ## 8. Tela (espelho; quem protege é o banco)
 
@@ -262,8 +300,14 @@ Detalhe da B2:
 - `MatriculaAuditoriaSheet.jsx`: "Liberar tentativa" e "Revogar" só com a função de cada um. `DuvidasTutorCard.jsx`:
   "Responder" só com `responder_duvidas`.
 - `MatriculasEadCard.jsx`: o botão "Avisar atrasados" (`:283`) e o aviso por linha (`:611-614`) só aparecem com
-  `matricular`. O diálogo chama `status` (`AvisoAtrasadosDialog.jsx:90-91`) e o aviso por linha chama `criar`; as duas
-  ações aceitam quem só tem a aba nova (§7), e o `status` dele vem recortado.
+  `matricular`. O diálogo chama `status` (`AvisoAtrasadosDialog.jsx:90-91`) e o aviso por linha chama `criar` (pelo
+  `avisarNoPortal`); as duas ações aceitam quem só tem a aba nova (§7), e o `status` dele vem recortado.
+- Quem tem `matricular` mas não tem Funcionários → `editar` (C1, recomendado na P3) avisa só quem já tem acesso. A dica
+  do botão ("cria o acesso ao portal se ainda não tiver", `MatriculasEadCard.jsx:611-613`) e o motivo `sem_acesso` do
+  lote ("o botão do WhatsApp da linha... cria o acesso e envia a senha", `lib/ead-aviso-matricula.js:111-112`) passam a
+  mandar procurar quem tem Funcionários → Editar. Com o C2, o `avisarNoPortal` reconhece a resposta sem
+  `senha_provisoria` e o `decidirAvisoAoRH` ganha a situação "enviado pelo servidor" (toast "Acesso criado: o
+  funcionário recebeu o usuário e a senha no WhatsApp"), sem abrir a janela da senha.
 - `DocumentosPortalCard.jsx`: passa a chamar as RPC; enviar com RH → `criar`, retirar com RH → `deletar`; sem nenhuma
   das duas, só a lista.
 - Erro `42501` do banco vira toast com a mensagem como veio (já é o padrão do `gravar` da aba). Em Configurações, o erro
@@ -314,10 +358,13 @@ erro claro da §6 (não perde o PDF em silêncio) até o push.
   - só Funcionários → `visualizar`: entra em `status` e em `criar` (e não age em `criar`, então recebe o 409 quando o
     funcionário já tem acesso e o 403 quando não tem), entra em `redefinir`, e não entra em `liberar_tentativa` nem em
     `revogar_certificado`;
-  - só Treinamentos EAD → `matricular`: entra e age em `status` e em `criar`, e não entra em `redefinir`, `ativo`,
-    `liberar_tentativa` nem `revogar_certificado`;
+  - só Treinamentos EAD → `matricular`: entra e age em `status`, **entra em `criar` mas não age** (C1: só recebe o 409;
+    sem acesso, o 403), e não entra em `redefinir`, `ativo`, `liberar_tentativa` nem `revogar_certificado`;
   - só Treinamentos EAD → `visualizar` (ou só `liberar_tentativa`): não entra em `status` nem em `criar`;
   - Funcionários → `editar` sem a aba nova: não entra em `liberar_tentativa` nem em `revogar_certificado`.
+- `node --test`, `decidirCriar`: sem `entra`, `"sem_permissao"` em qualquer combinação; entra, não age e já tem acesso,
+  `"conflito"`; entra, não age e não tem acesso, `"sem_permissao"`; entra, age e já tem acesso, `"conflito"`; entra,
+  age e não tem acesso, `"criar"`. Com o C2, mais os casos da terceira saída e do desfazer quando o envio falha.
 - `node --test`, `recortarAcessosParaEad`: devolve só `funcionario_id` e `ativo` (sem `usuario`, `ultimo_acesso`,
   `bloqueado` nem `primeiro_acesso_pendente`); quem tem Funcionários ou é super admin recebe a lista inteira.
 - `node --test`, `acesso.test.ts`: a tabela de casos de permissão que o smoke SQL repete igual (sem vínculo, vínculo
@@ -325,9 +372,12 @@ erro claro da §6 (não perde o PDF em silêncio) até o push.
   inválido).
 - Vitest: `ead-permissoes.js`.
 - Roteiro manual do usuário só com Treinamentos EAD → `matricular` (sem Funcionários): "Avisar atrasados" abre, lista os
-  atrasados e não mostra "Não foi possível conferir o acesso ao portal"; matricular quem ainda não tem acesso cria o
-  acesso e entrega a senha; Redefinir senha e Desativar (Ficha) continuam fora do alcance. Com só `visualizar`, o botão
-  "Avisar atrasados" não aparece e a chamada direta de `status` recebe 403.
+  atrasados e não mostra "Não foi possível conferir o acesso ao portal"; o "Avisar" da linha de quem já tem acesso envia
+  o link sem senha; o "Avisar" da linha de quem ainda não tem acesso mostra a mensagem que manda procurar quem tem
+  Funcionários → Editar e **não cria o acesso** (conferir na Ficha: continua "Sem acesso"); a chamada direta de `criar`
+  para esse funcionário recebe 403 sem `usuario` nem `senha_provisoria` na resposta; Redefinir senha e Desativar (Ficha)
+  continuam fora do alcance. Com só `visualizar`, o botão "Avisar atrasados" não aparece e a chamada direta de `status`
+  recebe 403.
 - Smoke SQL: cada linha da tabela da §4.2; propagação do cadastro central com e sem `editar`/`publicar`;
   `tentativas_extras` e revogação pelo cliente recusadas; remoção de matrícula com certificado válido recusada; questão,
   tentativa e evento invisíveis sem a aba; as duas RPC; salvamento do formulário inteiro com a lista velha preserva o
@@ -354,15 +404,25 @@ erro claro da §6 (não perde o PDF em silêncio) até o push.
   trocadas por qualquer usuário da empresa, e o certificado emitido guarda só a referência (a imagem impressa muda).
   Caminho futuro: pasta `assinaturas/<empresa>/ead/` com policy restritiva. Também ficam de fora `funcionario` como um
   todo, `treinamento` e `enviarWhatsApp` (§2).
+- **R9 — Credencial do portal na mão de quem só matricula.** Se quem tem só Treinamentos EAD → `matricular` pudesse
+  criar o acesso, receberia o login (CPF) e a senha provisória de qualquer funcionário sem acesso
+  (`funcionario-acesso/index.ts:491`), faria o primeiro acesso (`portal-funcionario/index.ts:532-566`) e leria os
+  documentos publicados no portal (contracheque, folha de ponto, documentação e advertências), justamente os que a §6
+  põe atrás de RH → `criar`/`deletar`. Esses PDFs podem estar publicados antes de o funcionário ter acesso
+  (`FichaFuncionarioSheet.jsx:315-325`), e o funcionário ficaria sem entrar até alguém com Funcionários → `editar`
+  redefinir a senha. O `status` recortado não tem esse efeito: só diz quem já tem acesso. Mitigação: o C1 da P3 (criar o
+  acesso só com Funcionários → `editar`, como hoje); com o C2, a senha vai só ao telefone do funcionário e o servidor
+  não a devolve a quem chamou. O roteiro da §9 confere que a chamada direta de `criar` não devolve senha a quem só
+  matricula.
 
 ## 11. Perguntas ao Javerson
 
-| #   | Pergunta                                                                                                                                                                                                  | Recomendação                                                      |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| P1  | A aba "Treinamentos EAD" com as 7 funções da §3 serve?                                                                                                                                                    | Sim                                                               |
-| P2  | Documentos do portal: aba RH (`criar`/`deletar`), Funcionários → `editar` (a mesma do acesso) ou uma aba nova "Portal do Funcionário"?                                                                    | Aba RH (contracheque e folha de ponto são do RH)                  |
-| P3  | Quem tem Treinamentos EAD → `matricular` pode criar o acesso ao portal na hora da matrícula, sem Funcionários → `editar`, e consultar quem já tem acesso (só `ativo`, sem CPF) para o "Avisar atrasados"? | Sim (só criar e consultar; redefinir e desativar seguem na Ficha) |
-| P4  | Desativar no cadastro central um treinamento com curso EAD vinculado exige Treinamentos EAD → `publicar`?                                                                                                 | Sim                                                               |
-| P5  | Esconder gabarito, tentativas e trilha (IP e dispositivo) de quem não tem a aba?                                                                                                                          | Sim                                                               |
-| P6  | (a) A1, (b) B2 e o desenho geral S1?                                                                                                                                                                      | Sim                                                               |
-| P7  | Número da migração (`0140`, e `0141` se os documentos forem separados) e fase 1 separada ou junto com a 2 (depende da conferência)?                                                                       | `0140`; decidir a fase depois da conferência                      |
+| #   | Pergunta                                                                                                                                                                                                                                                                                                                         | Recomendação                                                                                                                                |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1  | A aba "Treinamentos EAD" com as 7 funções da §3 serve?                                                                                                                                                                                                                                                                           | Sim                                                                                                                                         |
+| P2  | Documentos do portal: aba RH (`criar`/`deletar`), Funcionários → `editar` (a mesma do acesso) ou uma aba nova "Portal do Funcionário"?                                                                                                                                                                                           | Aba RH (contracheque e folha de ponto são do RH)                                                                                            |
+| P3  | Quem tem Treinamentos EAD → `matricular` (sem Funcionários) pode consultar quem já tem acesso ao portal (só `ativo`, sem CPF) e avisar quem já tem acesso? E pode **criar** o acesso de quem ainda não tem? Criar entrega login e senha, e com a senha a pessoa lê os documentos do funcionário no portal (R9). Caminhos na §7.1 | Consultar e avisar: sim. Criar: **não** (C1, só Funcionários → `editar`). C2 (senha só no WhatsApp do funcionário) se aparecer quem precise |
+| P4  | Desativar no cadastro central um treinamento com curso EAD vinculado exige Treinamentos EAD → `publicar`?                                                                                                                                                                                                                        | Sim                                                                                                                                         |
+| P5  | Esconder gabarito, tentativas e trilha (IP e dispositivo) de quem não tem a aba?                                                                                                                                                                                                                                                 | Sim                                                                                                                                         |
+| P6  | (a) A1, (b) B2 e o desenho geral S1?                                                                                                                                                                                                                                                                                             | Sim                                                                                                                                         |
+| P7  | Número da migração (`0140`, e `0141` se os documentos forem separados) e fase 1 separada ou junto com a 2 (depende da conferência)?                                                                                                                                                                                              | `0140`; decidir a fase depois da conferência                                                                                                |
