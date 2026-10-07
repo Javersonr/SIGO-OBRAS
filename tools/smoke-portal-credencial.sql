@@ -149,7 +149,7 @@ begin
     returning id into v_f1;
   insert into public.funcionario (empresa_id, nome_completo, cpf) values (v_emp1, 'SMOKE T38 cópia 2', '99999999902')
     returning id into v_f2;
-  insert into public.funcionario (empresa_id, nome_completo, cpf) values (v_emp1, 'SMOKE T38 cópia 3', null)
+  insert into public.funcionario (empresa_id, nome_completo, cpf) values (v_emp1, 'SMOKE T38 cópia 3', '99999999903')  -- em produção funcionario.cpf é not null
     returning id into v_f3;
   insert into public.funcionario (empresa_id, nome_completo, cpf) values (v_emp1, 'SMOKE T38 cópia 4', '99999999904')
     returning id into v_f4;
