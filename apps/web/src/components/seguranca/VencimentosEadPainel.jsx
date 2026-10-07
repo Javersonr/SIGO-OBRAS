@@ -20,7 +20,8 @@ import { CalendarClock, ShieldAlert, Plus, ClipboardCheck } from "lucide-react";
  * aqui só se desenha e se liga o botão "Matricular" ao painel de matrícula da própria aba.
  *
  * Também mostra a revisão dos projetos pedagógicos dos cursos publicados (T25; Anexo II, 3.3): sem validação,
- * revisão vencida e a vencer em até 90 dias. A regra está em `@/lib/ead-projeto` (`selecionarRevisoes`).
+ * revisão vencida, a vencer em até 90 dias e PDF desatualizado (o projeto mudou depois do PDF que o aluno e a
+ * fiscalização abrem). A regra está em `@/lib/ead-projeto` (`selecionarRevisoes`).
  */
 
 const LINHAS_INICIAIS = 10;
@@ -309,9 +310,10 @@ export default function VencimentosEadPainel({
             O projeto pedagógico de cada curso a distância (NR-1, Anexo II, item 3.3) é validado
             pelo responsável técnico a cada 2 anos, ou quando a norma do curso mudar. Entram os
             cursos publicados; curso em rascunho e curso de apoio não entram. Registre a validação
-            na seção "Projeto pedagógico" do curso.
+            na seção "Projeto pedagógico" do curso e gere o PDF de novo sempre que o projeto mudar:
+            o aluno e a fiscalização abrem o PDF.
           </p>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {[
               { rotulo: "Sem validação", valor: revisoes.resumo.semValidacao, alerta: true },
               { rotulo: "Revisão vencida", valor: revisoes.resumo.vencidas, alerta: true },
@@ -319,6 +321,11 @@ export default function VencimentosEadPainel({
                 rotulo: `Vencem em até ${DIAS_DE_AVISO_DA_REVISAO} dias`,
                 valor: revisoes.resumo.aVencer,
                 alerta: false,
+              },
+              {
+                rotulo: "PDF desatualizado",
+                valor: revisoes.resumo.pdfDesatualizado,
+                alerta: true,
               },
             ].map((c) => {
               const destaque = c.alerta && c.valor > 0;
@@ -344,11 +351,12 @@ export default function VencimentosEadPainel({
           </div>
           {revisoes.itens.length === 0 ? (
             <p className="text-sm text-slate-500 py-1">
-              Nenhum projeto pedagógico pendente de validação ou revisão nos cursos publicados.
+              Nenhum projeto pedagógico pendente de validação, revisão ou PDF novo nos cursos
+              publicados.
             </p>
           ) : (
             <div className="space-y-2">
-              {linhasDeRevisao.map(({ curso, situacao }) => (
+              {linhasDeRevisao.map(({ curso, situacao, pdfDesatualizado }) => (
                 <div
                   key={curso.id}
                   className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-3"
@@ -356,17 +364,27 @@ export default function VencimentosEadPainel({
                   <span className="min-w-[10rem] flex-1 font-medium text-slate-800">
                     {curso.nome}
                   </span>
-                  <Badge
-                    variant="outline"
-                    className={
-                      situacao.estado === "vencida"
-                        ? "bg-red-50 text-red-700 border-red-200"
-                        : "bg-amber-50 text-amber-700 border-amber-200"
-                    }
-                  >
-                    {rotuloDaRevisao(situacao)}
-                  </Badge>
-                  {situacao.data && (
+                  {situacao.estado !== "em_dia" && (
+                    <Badge
+                      variant="outline"
+                      className={
+                        situacao.estado === "vencida"
+                          ? "bg-red-50 text-red-700 border-red-200"
+                          : "bg-amber-50 text-amber-700 border-amber-200"
+                      }
+                    >
+                      {rotuloDaRevisao(situacao)}
+                    </Badge>
+                  )}
+                  {pdfDesatualizado && (
+                    <Badge
+                      variant="outline"
+                      className="bg-amber-50 text-amber-700 border-amber-200"
+                    >
+                      PDF desatualizado: gere de novo
+                    </Badge>
+                  )}
+                  {situacao.estado !== "em_dia" && situacao.data && (
                     <span className="text-xs text-slate-500">até {fmtData(situacao.data)}</span>
                   )}
                   {onAbrirCurso && (

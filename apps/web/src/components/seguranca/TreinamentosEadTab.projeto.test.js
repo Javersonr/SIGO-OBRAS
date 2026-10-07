@@ -34,6 +34,21 @@ describe("Salvar curso: o projeto pedagógico só é gravado depois de validado"
 
   it("Salvar curso não mexe no PDF do projeto (só 'Gerar PDF' e o anexo próprio gravam a referência)", () => {
     expect(salvar).not.toContain("projeto_pedagogico_ref");
+    // nem na marca do PDF: ela só muda junto com o PDF, senão o requisito do projeto não notaria a mudança
+    expect(salvar).not.toContain("projeto_pdf_marca");
+  });
+
+  it("projeto mudado com PDF já gerado: avisa para gerar o PDF de novo, depois de salvar", () => {
+    // a regra (só avisa se o projeto mudou neste salvar e o PDF passou a destoar) está em lib/ead-projeto.js
+    expect(salvar).toMatch(/avisoDoPdfAoSalvar\(gravado, projeto\.dados\)/);
+    expect(salvar).toMatch(/if \(avisoPdf\) toast\.warning\(avisoPdf,/);
+    const aposGravar = salvar.slice(salvar.indexOf("await gravar("));
+    expect(aposGravar.indexOf('toast.success("Curso salvo")')).toBeLessThan(
+      aposGravar.indexOf("avisoDoPdfAoSalvar(")
+    );
+    expect(aposGravar.indexOf("avisoDoPdfAoSalvar(")).toBeLessThan(
+      aposGravar.indexOf("recarregar()")
+    );
   });
 });
 
@@ -65,10 +80,14 @@ describe("Gerar PDF do projeto", () => {
     expect(gerar.indexOf("UploadFile(")).toBeLessThan(gerar.indexOf("TreinamentoCurso.update("));
   });
 
-  it("grava os campos do projeto e a referência do PDF numa gravação só", () => {
+  it("grava os campos do projeto, a referência do PDF e a marca do que foi para o PDF numa gravação só", () => {
     expect(gerar).toMatch(
-      /TreinamentoCurso\.update\(formulario\.id, \{\s*\.\.\.projeto\.dados,\s*projeto_pedagogico_ref: ref,\s*\}\)/
+      /TreinamentoCurso\.update\(formulario\.id, \{\s*\.\.\.projeto\.dados,\s*projeto_pedagogico_ref: ref,\s*projeto_pdf_marca,\s*\}\)/
     );
+    // a marca é a dos campos que foram para o PDF (os mesmos que se gravam), não a do formulário cru
+    expect(gerar).toMatch(/const projeto_pdf_marca = marcaDoProjeto\(projeto\.dados\);/);
+    // e a tela já passa a saber da marca nova (o selo "PDF desatualizado" some sem reabrir o curso)
+    expect(gerar).toMatch(/\{ \.\.\.atual, projeto_pedagogico_ref: ref, projeto_pdf_marca \}/);
   });
 
   it("só mexe na tela se ainda é a mesma empresa e o mesmo curso", () => {
@@ -80,6 +99,22 @@ describe("Gerar PDF do projeto", () => {
     expect(gerar).toMatch(
       /catch \(e\) \{[\s\S]*toast\.error\("Não foi possível gerar o PDF do projeto: "/
     );
+  });
+});
+
+describe("PDF próprio anexado pelo RH", () => {
+  const anexar = funcao(aba, "enviarProjetoPedagogico");
+
+  it("grava a marca do projeto SALVO junto com a referência (sem ela o requisito ficaria pendente)", () => {
+    expect(anexar).not.toBe("");
+    expect(anexar).toMatch(/const gravado = cursos\.find\(\(c\) => c\.id === cursoSel\.id\);/);
+    expect(anexar).toMatch(
+      /const projeto_pdf_marca = gravado \? marcaDoProjeto\(gravado\) : null;/
+    );
+    expect(anexar).toMatch(
+      /TreinamentoCurso\.update\(cursoSel\.id, \{\s*projeto_pedagogico_ref: ref,\s*projeto_pdf_marca,\s*\}\)/
+    );
+    expect(anexar).toMatch(/\{ \.\.\.atual, projeto_pedagogico_ref: ref, projeto_pdf_marca \}/);
   });
 });
 

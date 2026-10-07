@@ -9,7 +9,9 @@ import {
   pendenciasParaEmitir,
   pendenciasParaPublicar,
   requisitosDoCurso,
+  TEXTO_PDF_DO_PROJETO_DESATUALIZADO,
 } from "./requisitos.ts";
+import { marcaDoProjeto } from "./projeto.ts";
 import {
   emiteCertificado as emiteFront,
   modalidadeDoCurso as modalidadeFront,
@@ -17,6 +19,7 @@ import {
   pendenciasParaEmitir as emitirFront,
   pendenciasParaPublicar as publicarFront,
   requisitosDoCurso as requisitosFront,
+  TEXTO_PDF_DO_PROJETO_DESATUALIZADO as textoPdfDesatualizadoFront,
 } from "../../../apps/web/src/lib/ead-requisitos.js";
 const curso = {
   nome: "Curso teste",
@@ -211,12 +214,24 @@ test("requisito TUTOR (T21, D4): só avisa, e só some com um WhatsApp que o ser
   assert.deepEqual(pendenciasDeEmissao({ curso, aulas, questoes }), []);
 });
 
-test("requisito PROJETO (T25): só avisa, e só some com o PDF do projeto E a validação do RT (igual ao front)", () => {
+test("requisito PROJETO (T25): só avisa, e só some com o PDF do projeto E a validação do RT, com o PDF em dia (igual ao front)", () => {
   const projeto = (valores: Record<string, unknown>) =>
     requisitosDoCurso({ curso: { ...curso, ...valores }, aulas, questoes }).find(
       (r) => r.codigo === "PROJETO"
     )!;
   const PDF = "treinamentos/empresa/2026/10/projeto.pdf";
+  // o projeto validado e o PDF gerado depois dele: a marca gravada com o PDF é a dos campos de hoje
+  const validado = {
+    objetivo_geral: "Objetivo de teste",
+    projeto_validado_em: "2026-10-01",
+    projeto_validado_por: "RT Teste",
+    proxima_revisao: "2028-10-01",
+  };
+  const comPdfEmDia = (valores: Record<string, unknown>) => ({
+    ...valores,
+    projeto_pedagogico_ref: PDF,
+    projeto_pdf_marca: marcaDoProjeto(valores),
+  });
   assert.equal(projeto({}).ok, false);
   assert.equal(projeto({ projeto_pedagogico_ref: PDF }).ok, false);
   assert.equal(projeto({ projeto_validado_em: "2026-10-01" }).ok, false);
@@ -224,24 +239,60 @@ test("requisito PROJETO (T25): só avisa, e só some com o PDF do projeto E a va
     projeto({ projeto_pedagogico_ref: "", projeto_validado_em: "2026-10-01" }).ok,
     false
   );
-  assert.equal(
-    projeto({ projeto_pedagogico_ref: PDF, projeto_validado_em: "2026-10-01" }).ok,
-    true
-  );
+  // PDF em dia, mas sem validação
+  assert.equal(projeto(comPdfEmDia({ objetivo_geral: "Objetivo de teste" })).ok, false);
+  // PDF em dia com o projeto e a validação registrada
+  assert.equal(projeto(comPdfEmDia(validado)).ok, true);
   assert.match(projeto({}).texto, /projeto pedagógico/i);
   assert.match(projeto({}).texto, /validação/i);
+
+  // o PDF gerado ANTES da validação deixa o PROJETO pendente (o aluno e o dossiê abririam um rascunho)
+  const pdfAnterior = { ...comPdfEmDia({ objetivo_geral: "Objetivo de teste" }), ...validado };
+  assert.equal(projeto(pdfAnterior).ok, false);
+  assert.equal(projeto(pdfAnterior).texto, TEXTO_PDF_DO_PROJETO_DESATUALIZADO);
+  assert.match(projeto(pdfAnterior).texto, /desatualizado/);
+  // gerar o PDF de novo (marca nova) resolve
+  assert.equal(
+    projeto({ ...pdfAnterior, projeto_pdf_marca: marcaDoProjeto(pdfAnterior) }).ok,
+    true
+  );
+  // texto, validação ou revisão mudados depois do PDF também
+  const pdf = comPdfEmDia(validado);
+  assert.equal(projeto({ ...pdf, publico_alvo: "Público acrescentado depois" }).ok, false);
+  assert.equal(projeto({ ...pdf, projeto_validado_em: "2026-10-02" }).ok, false);
+  assert.equal(projeto({ ...pdf, proxima_revisao: "2029-10-01" }).ok, false);
+  // PDF sem marca (anexado antes desta regra)
+  assert.equal(projeto({ ...validado, projeto_pedagogico_ref: PDF }).ok, false);
+  assert.equal(
+    projeto({ ...validado, projeto_pedagogico_ref: PDF, projeto_pdf_marca: "" }).ok,
+    false
+  );
+  // sem validação o texto é o de sempre, mesmo com PDF antigo
+  assert.equal(projeto({ projeto_pedagogico_ref: PDF }).texto, projeto({}).texto);
+
   // é só aviso
   assert.equal(projeto({}).bloqueia, false);
   assert.equal(projeto({}).bloqueiaEmissao, false);
+  assert.equal(projeto(pdfAnterior).bloqueia, false);
+  assert.equal(projeto(pdfAnterior).bloqueiaEmissao, false);
   assert.deepEqual(pendencias({ curso, aulas, questoes }), []);
   assert.deepEqual(pendenciasDeEmissao({ curso, aulas, questoes }), []);
+
   // as duas cópias dizem a mesma coisa nos mesmos casos
+  assert.equal(TEXTO_PDF_DO_PROJETO_DESATUALIZADO, textoPdfDesatualizadoFront);
   for (const valores of [
     {},
     { projeto_pedagogico_ref: PDF },
     { projeto_validado_em: "2026-10-01" },
     { projeto_pedagogico_ref: PDF, projeto_validado_em: "2026-10-01" },
     { projeto_pedagogico_ref: "   ", projeto_validado_em: "2026-10-01" },
+    comPdfEmDia(validado),
+    comPdfEmDia({ objetivo_geral: "Objetivo de teste" }),
+    pdfAnterior,
+    { ...pdf, publico_alvo: "Público acrescentado depois" },
+    { ...validado, projeto_pedagogico_ref: PDF },
+    { ...pdf, modulos_objetivos: [{ modulo: "Módulo 1", objetivo: "Objetivo do módulo" }] },
+    { ...pdf, dedicacao_diaria_min: "30" },
   ]) {
     const caso = { curso: { ...curso, ...valores }, aulas, questoes };
     assert.deepEqual(requisitosDoCurso(caso), requisitosFront(caso), JSON.stringify(valores));

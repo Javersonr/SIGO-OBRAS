@@ -10,8 +10,18 @@ import { readFileSync, readdirSync } from "node:fs";
 import {
   MAX_DEDICACAO_DIARIA_MIN,
   MAX_PRAZO_CONCLUSAO_DIAS,
+  VERSAO_DA_MARCA,
+  camposCanonicosDoProjeto,
+  estadoDoPdfDoProjeto,
+  marcaDoProjeto,
   projetoParaOAluno,
 } from "./projeto.ts";
+import {
+  VERSAO_DA_MARCA as versaoFront,
+  camposCanonicosDoProjeto as camposFront,
+  estadoDoPdfDoProjeto as estadoFront,
+  marcaDoProjeto as marcaFront,
+} from "../../../apps/web/src/lib/ead-projeto-marca.js";
 
 // ------------------------------------------------------------------ o que o aluno recebe
 test("projetoParaOAluno: prazo e dedicação diária, inteiros dentro do limite; o resto vira null", () => {
@@ -79,6 +89,116 @@ test("projetoParaOAluno: o texto do projeto e a validação nunca vão ao aluno"
   ]);
 });
 
+// ------------------------------------------------------------------ a marca do PDF do projeto
+// Os mesmos valores estão em apps/web/src/lib/ead-projeto-marca.test.js: as duas cópias da regra (front e servidor)
+// precisam dar a MESMA marca, senão o requisito do projeto diverge entre a tela do RH e o portal.
+const projetoDeTeste = {
+  objetivo_geral: "Objetivo de teste",
+  principios_sst: "Princípios de teste",
+  estrategia_pedagogica: "Estratégia de teste",
+  infraestrutura_apoio: "Infraestrutura de teste",
+  publico_alvo: "Público de teste",
+  instrumentos_aprendizagem: "Instrumentos de teste",
+  dedicacao_diaria_min: 30,
+  prazo_conclusao_dias: 45,
+  modulos_objetivos: [
+    { modulo: "Módulo 2", objetivo: "Objetivo do módulo 2" },
+    { modulo: "Módulo 1", objetivo: "Objetivo do módulo 1" },
+  ],
+  projeto_validado_em: "2026-10-01",
+  projeto_validado_por: "RT Teste",
+  proxima_revisao: "2028-10-01",
+};
+const PDF = "treinamentos/empresa/2026/10/projeto.pdf";
+
+test("marcaDoProjeto: os valores de referência são os do front e não mudam", () => {
+  assert.equal(VERSAO_DA_MARCA, "v1");
+  assert.equal(VERSAO_DA_MARCA, versaoFront);
+  assert.equal(marcaDoProjeto(projetoDeTeste), "v1:15ea345e713e2a");
+  assert.equal(marcaDoProjeto({}), "v1:0c548973284055");
+  assert.match(marcaDoProjeto(projetoDeTeste), /^v1:[0-9a-f]{14}$/);
+});
+
+test("marcaDoProjeto: servidor e front dão a mesma marca e o mesmo estado do PDF, inclusive nas bordas", () => {
+  const casos: Record<string, unknown>[] = [
+    {},
+    projetoDeTeste,
+    { ...projetoDeTeste, objetivo_geral: "  Objetivo de teste \n" },
+    { ...projetoDeTeste, dedicacao_diaria_min: "30", prazo_conclusao_dias: " 45 " },
+    { ...projetoDeTeste, dedicacao_diaria_min: 1.5, prazo_conclusao_dias: "abc" },
+    { ...projetoDeTeste, modulos_objetivos: [...projetoDeTeste.modulos_objetivos].reverse() },
+    { ...projetoDeTeste, modulos_objetivos: JSON.stringify(projetoDeTeste.modulos_objetivos) },
+    { ...projetoDeTeste, modulos_objetivos: "não é json" },
+    { ...projetoDeTeste, modulos_objetivos: null },
+    {
+      ...projetoDeTeste,
+      modulos_objetivos: [
+        ...projetoDeTeste.modulos_objetivos,
+        { modulo: "Módulo 3", objetivo: "   " },
+        { modulo: "Módulo 4" },
+        null,
+        "texto",
+        { modulo: "Módulo 5", objetivo: 7 },
+        { modulo: "Árvore", objetivo: "Texto com acento e emoji 🙂" },
+      ],
+    },
+    { ...projetoDeTeste, projeto_validado_em: "2026-10-01T00:00:00", projeto_validado_por: " RT " },
+    { ...projetoDeTeste, projeto_validado_em: null, projeto_validado_por: null },
+    { ...projetoDeTeste, publico_alvo: "x".repeat(4000) },
+  ];
+  for (const caso of casos) {
+    assert.equal(marcaDoProjeto(caso), marcaFront(caso), JSON.stringify(caso).slice(0, 80));
+    assert.deepEqual(camposCanonicosDoProjeto(caso), camposFront(caso));
+    for (const extra of [{}, { projeto_pedagogico_ref: PDF }, { projeto_pedagogico_ref: "  " }]) {
+      for (const marca of [undefined, "", marcaDoProjeto(caso), "v1:0000000000000a"]) {
+        const curso = { ...caso, ...extra, projeto_pdf_marca: marca };
+        assert.equal(
+          estadoDoPdfDoProjeto(curso),
+          estadoFront(curso),
+          JSON.stringify(curso).slice(0, 80)
+        );
+      }
+    }
+  }
+  assert.equal(marcaDoProjeto(null), marcaFront(null));
+  assert.equal(estadoDoPdfDoProjeto(null), estadoFront(null));
+});
+
+test("estadoDoPdfDoProjeto: sem PDF, atual e desatualizado (PDF gerado antes da validação, texto mudado depois)", () => {
+  assert.equal(estadoDoPdfDoProjeto({}), "sem_pdf");
+  assert.equal(
+    estadoDoPdfDoProjeto({ ...projetoDeTeste, projeto_pedagogico_ref: "  " }),
+    "sem_pdf"
+  );
+  const atual = {
+    ...projetoDeTeste,
+    projeto_pedagogico_ref: PDF,
+    projeto_pdf_marca: marcaDoProjeto(projetoDeTeste),
+  };
+  assert.equal(estadoDoPdfDoProjeto(atual), "atual");
+  // PDF sem marca
+  assert.equal(
+    estadoDoPdfDoProjeto({ ...projetoDeTeste, projeto_pedagogico_ref: PDF }),
+    "desatualizado"
+  );
+  // o PDF saiu antes da validação; registrar a validação o deixa desatualizado
+  const semValidacao = {
+    ...projetoDeTeste,
+    projeto_validado_em: null,
+    projeto_validado_por: null,
+    proxima_revisao: null,
+  };
+  const pdfAnterior = { ...atual, projeto_pdf_marca: marcaDoProjeto(semValidacao) };
+  assert.equal(estadoDoPdfDoProjeto(pdfAnterior), "desatualizado");
+  // texto mudado depois do PDF
+  assert.equal(estadoDoPdfDoProjeto({ ...atual, objetivo_geral: "Mudado" }), "desatualizado");
+  // o que o PDF busca em outras partes do curso não conta
+  assert.equal(
+    estadoDoPdfDoProjeto({ ...atual, nome: "Outro nome", carga_horaria_horas: 99 }),
+    "atual"
+  );
+});
+
 // ------------------------------------------------------------------ o index.ts usa a regra
 const codigoDoIndex = readFileSync(new URL("./index.ts", import.meta.url), "utf8")
   .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -109,6 +229,7 @@ test("index.ts, ação dados: o curso do aluno leva o prazo e a dedicação, e n
     "modulos_objetivos",
     "projeto_validado",
     "proxima_revisao",
+    "projeto_pdf_marca",
   ]) {
     assert.doesNotMatch(acao, new RegExp(coluna), `${coluna} não pode sair em dados`);
   }
@@ -128,7 +249,7 @@ test("existe exatamente uma migração 0141, a do projeto pedagógico", () => {
   assert.equal(arquivos0141[0], "0141_treinamento_curso_projeto_pedagogico.sql");
 });
 
-test("migração 0141: as 12 colunas do projeto, no curso, idempotentes e com o tipo certo", () => {
+test("migração 0141: as 12 colunas do projeto mais a marca do PDF, no curso, idempotentes e com o tipo certo", () => {
   assert.match(sqlMigracao, /alter table public\.treinamento_curso\s+add column if not exists/i);
   const colunas: Record<string, string> = {
     objetivo_geral: "text",
@@ -143,6 +264,7 @@ test("migração 0141: as 12 colunas do projeto, no curso, idempotentes e com o 
     projeto_validado_em: "date",
     projeto_validado_por: "text",
     proxima_revisao: "date",
+    projeto_pdf_marca: "text",
   };
   for (const [nome, tipo] of Object.entries(colunas)) {
     assert.match(
@@ -155,8 +277,9 @@ test("migração 0141: as 12 colunas do projeto, no curso, idempotentes e com o 
       new RegExp(`comment on column public\\.treinamento_curso\\.${nome} is`)
     );
   }
-  // nenhuma coluna a mais além das 12 (o aluno e o cadastro central não ganham nada aqui)
-  assert.equal((sqlMigracao.match(/add column if not exists/gi) || []).length, 12);
+  // nenhuma coluna a mais além das 12 do projeto e da marca do PDF (o aluno e o cadastro central não ganham nada)
+  assert.equal((sqlMigracao.match(/add column if not exists/gi) || []).length, 13);
+  assert.equal(Object.keys(colunas).length, 13);
   assert.doesNotMatch(sqlMigracao, /\btreinamento\b\s*\(|alter table public\.treinamento\s/i);
 });
 
@@ -173,6 +296,9 @@ test("migração 0141: os limites repetem os da tela e do servidor, e a restriç
     /\(projeto_validado_em is null\)\s*=\s*\(projeto_validado_por is null\)/
   );
   assert.match(sqlMigracao, /proxima_revisao >= projeto_validado_em/);
+  // a marca do PDF cabe com folga ("v1:" e 14 dígitos)
+  assert.match(sqlMigracao, /char_length\(projeto_pdf_marca\)\s*<=\s*64/);
+  assert.ok(marcaDoProjeto({}).length <= 64);
   for (const trava of [
     "treinamento_curso_projeto_textos_chk",
     "treinamento_curso_dedicacao_diaria_chk",
@@ -180,6 +306,7 @@ test("migração 0141: os limites repetem os da tela e do servidor, e a restriç
     "treinamento_curso_modulos_objetivos_chk",
     "treinamento_curso_projeto_validado_por_chk",
     "treinamento_curso_projeto_validacao_chk",
+    "treinamento_curso_projeto_pdf_marca_chk",
   ]) {
     assert.match(sqlMigracao, new RegExp(`drop constraint if exists ${trava}`, "i"), trava);
     assert.match(sqlMigracao, new RegExp(`add constraint ${trava}`, "i"), trava);

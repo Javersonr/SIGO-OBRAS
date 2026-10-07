@@ -2,6 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import VencimentosEadPainel from "./VencimentosEadPainel";
+import { marcaDoProjeto } from "@/lib/ead-projeto";
 
 // `@/lib/utils` lê `window` ao ser importado (os componentes de `ui/` passam por ele) e o Vitest daqui roda
 // em ambiente node, sem DOM: um `window` vazio basta para o import.
@@ -156,7 +157,7 @@ describe("VencimentosEadPainel", () => {
         projeto_validado_por: "RT Teste",
         proxima_revisao: "2026-10-01",
       },
-      // vence em 55 dias
+      // vence em 56 dias
       {
         id: "c3",
         nome: "Curso A Vencer",
@@ -194,12 +195,13 @@ describe("VencimentosEadPainel", () => {
       expect(html).toContain("Abrir o curso Curso Vencido");
     });
 
-    it("mostra os contadores: sem validação, vencidas e a vencer", () => {
+    it("mostra os contadores: sem validação, vencidas, a vencer e PDF desatualizado", () => {
       congelarHoje();
       const html = renderizar({ cursos: cursosDoProjeto });
       expect(html).toContain("Sem validação");
       expect(html).toContain("Revisão vencida");
       expect(html).toContain("Vencem em até 90 dias");
+      expect(html).toContain(">PDF desatualizado<");
     });
 
     it("a ordem põe a revisão vencida antes da que ainda não foi feita", () => {
@@ -230,7 +232,64 @@ describe("VencimentosEadPainel", () => {
       congelarHoje();
       const html = renderizar({ cursos: [cursosDoProjeto[3]] });
       expect(html).toContain("Projeto pedagógico: revisão (0)");
-      expect(html).toContain("Nenhum projeto pedagógico pendente de validação ou revisão");
+      expect(html).toContain(
+        "Nenhum projeto pedagógico pendente de validação, revisão ou PDF novo"
+      );
+    });
+
+    describe("PDF desatualizado: o projeto mudou depois do PDF que o aluno e a fiscalização abrem", () => {
+      const PDF = "treinamentos/empresa/2026/10/projeto.pdf";
+      const validado = {
+        id: "c1",
+        nome: "Curso Validado",
+        ativo: true,
+        objetivo_geral: "Objetivo de teste",
+        projeto_validado_em: "2026-09-01",
+        projeto_validado_por: "RT Teste",
+      };
+      const comPdf = (extra = {}, marca = marcaDoProjeto(validado)) => ({
+        ...validado,
+        ...extra,
+        projeto_pedagogico_ref: PDF,
+        projeto_pdf_marca: marca,
+      });
+
+      it("curso em dia na revisão, com o PDF antigo, aparece com o selo e conta no cartão", () => {
+        congelarHoje();
+        // o RH gerou o PDF e depois mudou o texto
+        const html = renderizar({
+          cursos: [comPdf({ objetivo_geral: "Objetivo mudado depois do PDF" })],
+          onAbrirCurso: () => {},
+        });
+        expect(html).toContain("Projeto pedagógico: revisão (1)");
+        expect(html).toContain("Curso Validado");
+        expect(html).toContain("PDF desatualizado: gere de novo");
+        expect(html).toContain("Abrir o curso Curso Validado");
+        // a revisão está em dia: nenhum selo de revisão vencida, a vencer ou sem validação
+        expect(html).not.toMatch(/Revisão vence em|Revisão vence hoje/);
+        expect(html).not.toMatch(/Revisão vencida há/);
+        expect(html).not.toContain("Sem validação registrada");
+        expect(html).not.toContain("Nenhum projeto pedagógico pendente");
+      });
+
+      it("PDF gerado antes da validação (a marca é a do projeto sem validação) também aparece", () => {
+        congelarHoje();
+        const semValidacao = {
+          ...validado,
+          projeto_validado_em: null,
+          projeto_validado_por: null,
+        };
+        const html = renderizar({ cursos: [comPdf({}, marcaDoProjeto(semValidacao))] });
+        expect(html).toContain("PDF desatualizado: gere de novo");
+      });
+
+      it("PDF em dia com o projeto: nada a avisar", () => {
+        congelarHoje();
+        const html = renderizar({ cursos: [comPdf()] });
+        expect(html).toContain("Projeto pedagógico: revisão (0)");
+        expect(html).not.toContain("PDF desatualizado: gere de novo");
+        expect(html).toContain("Nenhum projeto pedagógico pendente");
+      });
     });
   });
 });

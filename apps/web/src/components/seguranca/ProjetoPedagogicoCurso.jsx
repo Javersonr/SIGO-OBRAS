@@ -11,6 +11,7 @@ import {
   MAX_PRAZO_DIAS,
   aoMudarValidacao,
   comObjetivoDoModulo,
+  estadoDoPdfDoFormulario,
   gatilhosDoCurso,
   modulosDoCurso,
   montarProjeto,
@@ -153,6 +154,12 @@ export default function ProjetoPedagogicoCurso({
   const modulos = useMemo(() => modulosDoCurso(aulas), [aulas]);
   const revisao = useMemo(() => situacaoDaRevisao(curso, dia), [curso, dia]);
   const gatilhos = useMemo(() => gatilhosDoCurso(curso), [curso]);
+  // o PDF diz o mesmo que o projeto que está na tela? (a marca gravada com o PDF contra os 12 campos de agora)
+  const estadoDoPdf = useMemo(
+    () => estadoDoPdfDoFormulario(curso, { aulas, questoes }),
+    [curso, aulas, questoes]
+  );
+  const pdfDesatualizado = estadoDoPdf === "desatualizado";
   const nomeDoRT = String(curso?.responsavel_tecnico_nome ?? "").trim();
 
   return (
@@ -178,6 +185,11 @@ export default function ProjetoPedagogicoCurso({
         <Badge variant="outline" className={COR_DA_REVISAO[revisao.estado]}>
           {rotuloDaRevisao(revisao)}
         </Badge>
+        {pdfDesatualizado && (
+          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+            PDF desatualizado
+          </Badge>
+        )}
       </div>
       <p className="text-xs text-slate-600">
         A NR-1 (Anexo II, item 3.1) pede 15 itens no projeto pedagógico de todo curso a distância. O
@@ -337,9 +349,22 @@ export default function ProjetoPedagogicoCurso({
             />
           </label>
         )}
+        {pdfDesatualizado && (
+          <p role="status" className="w-full text-xs text-amber-700">
+            O PDF está desatualizado: o projeto, a validação ou a data de revisão mudaram depois de
+            gerá-lo (ou o PDF foi anexado sem registro do projeto que ele diz). O aluno e a
+            fiscalização ainda abrem o PDF antigo, e o requisito do projeto só fica em ordem com o
+            PDF novo. Clique em "Gerar PDF do projeto" (ou anexe o seu de novo).
+          </p>
+        )}
+        {estadoDoPdf === "atual" && (
+          <p className="w-full text-xs text-emerald-700">
+            O PDF diz o mesmo que o projeto e a validação desta tela.
+          </p>
+        )}
         <p className="w-full text-xs text-slate-500">
           {podeGerarPdf
-            ? "O PDF usa o projeto escrito aqui e os dados já salvos do curso (nome, carga, responsável técnico, instrutor). Gerar de novo troca o PDF que o aluno vê."
+            ? "O PDF usa o projeto escrito aqui e os dados já salvos do curso (nome, carga, responsável técnico, instrutor). Gerar de novo troca o PDF que o aluno vê. Um PDF próprio vale para o projeto salvo na hora do envio: mudou o projeto, anexe de novo."
             : "Salve o curso para gerar o PDF do projeto."}
         </p>
       </div>

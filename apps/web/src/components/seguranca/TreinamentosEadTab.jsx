@@ -55,7 +55,12 @@ import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
 import { aoMudarNomeDaPessoa, refDeAssinatura } from "@/lib/ead-assinatura";
 import { MAX_TUTOR_ATENDIMENTO, MAX_TUTOR_NOME, dadosDoTutorParaGravar } from "@/lib/ead-tutor";
-import { camposDoProjeto, dadosDoProjetoParaGravar } from "@/lib/ead-projeto";
+import {
+  avisoDoPdfAoSalvar,
+  camposDoProjeto,
+  dadosDoProjetoParaGravar,
+  marcaDoProjeto,
+} from "@/lib/ead-projeto";
 import { nomeDoArquivoDoProjeto, pdfDoProjetoComoBlob } from "@/lib/ead-projeto-pdf";
 import { hojeEmBrasilia } from "@/lib/ead-vencimentos";
 import { refDoUpload } from "@/lib/anexo-ref";
@@ -643,6 +648,9 @@ export default function TreinamentosEadTab({
         );
       }
       toast.success("Curso salvo");
+      // o projeto mudou e o curso já tem PDF: o que o aluno e a fiscalização abrem ficou antigo (T25)
+      const avisoPdf = avisoDoPdfAoSalvar(gravado, projeto.dados);
+      if (avisoPdf) toast.warning(avisoPdf, { duration: 10000 });
       recarregar();
     });
   };
@@ -819,10 +827,19 @@ export default function TreinamentosEadTab({
         bucket: "treinamentos",
       });
       const ref = `${res.bucket}/${res.path}`;
-      await sigo.entities.TreinamentoCurso.update(cursoSel.id, { projeto_pedagogico_ref: ref });
+      // O PDF próprio é o do projeto que está SALVO no curso: a marca dos campos de hoje vai junto, e o requisito
+      // do projeto só fica em ordem enquanto o projeto não mudar depois dele (sem a marca, ficaria desatualizado).
+      const gravado = cursos.find((c) => c.id === cursoSel.id);
+      const projeto_pdf_marca = gravado ? marcaDoProjeto(gravado) : null;
+      await sigo.entities.TreinamentoCurso.update(cursoSel.id, {
+        projeto_pedagogico_ref: ref,
+        projeto_pdf_marca,
+      });
       // só no curso que recebeu o PDF: se outro foi aberto durante o envio, ele não é trocado
       setCursoSel((atual) =>
-        mesmoFormulario(atual, cursoSel) ? { ...atual, projeto_pedagogico_ref: ref } : atual
+        mesmoFormulario(atual, cursoSel)
+          ? { ...atual, projeto_pedagogico_ref: ref, projeto_pdf_marca }
+          : atual
       );
       toast.success("Projeto pedagógico anexado — o aluno vê no portal");
       recarregar();
@@ -880,14 +897,19 @@ export default function TreinamentosEadTab({
       });
       const ref = refDoUpload(res);
       if (!ref) throw new Error("o envio do arquivo não devolveu a referência");
+      // a marca dos campos que foram para o PDF vai junto: o requisito do projeto só vale enquanto ela bater
+      const projeto_pdf_marca = marcaDoProjeto(projeto.dados);
       await sigo.entities.TreinamentoCurso.update(formulario.id, {
         ...projeto.dados,
         projeto_pedagogico_ref: ref,
+        projeto_pdf_marca,
       });
       // só no curso que gerou o PDF, e só se a empresa ainda é a mesma (a geração pode demorar)
       if (empresaIdDaTelaRef.current === empresaId) {
         setCursoSel((atual) =>
-          mesmoFormulario(atual, formulario) ? { ...atual, projeto_pedagogico_ref: ref } : atual
+          mesmoFormulario(atual, formulario)
+            ? { ...atual, projeto_pedagogico_ref: ref, projeto_pdf_marca }
+            : atual
         );
         toast.success("PDF do projeto gerado e salvo: o aluno abre pelo portal");
         recarregar();

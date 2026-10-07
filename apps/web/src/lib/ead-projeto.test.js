@@ -1,16 +1,21 @@
 import { describe, it, expect } from "vitest";
 import {
   ANOS_ENTRE_REVISOES,
+  AVISO_PDF_DESATUALIZADO,
   CAMPOS_DE_TEXTO_DO_PROJETO,
   CAMPOS_DO_PROJETO,
   GATILHOS_DE_REVISAO,
   ITENS_DO_PROJETO,
   LIMITE_TEXTO_PROJETO,
   aoMudarValidacao,
+  avisoDoPdfAoSalvar,
   camposDoProjeto,
   comObjetivoDoModulo,
   dadosDoProjetoParaGravar,
+  estadoDoPdfDoFormulario,
+  estadoDoPdfDoProjeto,
   gatilhosDoCurso,
+  marcaDoProjeto,
   modulosDoCurso,
   montarProjeto,
   objetivoDoModulo,
@@ -20,6 +25,7 @@ import {
   situacaoDaRevisao,
   somarAnos,
 } from "./ead-projeto";
+import { requisitosDoCurso } from "./ead-requisitos";
 
 // Só dados sintéticos: o repositório é público e o texto do projeto é do responsável técnico (D5).
 const aulas = [
@@ -712,7 +718,13 @@ describe("selecionarRevisoes (painel de vencimentos)", () => {
       ],
     });
     expect(itens.map((i) => i.curso.id)).toEqual(["vencido", "sem", "a-vencer"]);
-    expect(resumo).toEqual({ semValidacao: 1, vencidas: 1, aVencer: 1, emDia: 1 });
+    expect(resumo).toEqual({
+      semValidacao: 1,
+      vencidas: 1,
+      aVencer: 1,
+      emDia: 1,
+      pdfDesatualizado: 0,
+    });
   });
 
   it("ordena vencidas pela mais atrasada, sem validação por nome e a vencer pela mais próxima", () => {
@@ -733,9 +745,291 @@ describe("selecionarRevisoes (painel de vencimentos)", () => {
   it("sem cursos, nada a mostrar", () => {
     expect(selecionarRevisoes({ cursos: [], hoje: HOJE })).toEqual({
       itens: [],
-      resumo: { semValidacao: 0, vencidas: 0, aVencer: 0, emDia: 0 },
+      resumo: { semValidacao: 0, vencidas: 0, aVencer: 0, emDia: 0, pdfDesatualizado: 0 },
     });
     expect(selecionarRevisoes({ hoje: HOJE }).itens).toEqual([]);
+  });
+
+  describe("PDF desatualizado (o projeto mudou depois do PDF que o aluno e a fiscalização abrem)", () => {
+    const PDF = "treinamentos/empresa/2026/10/projeto.pdf";
+    const validado = {
+      ...curso,
+      projeto_validado_em: "2026-09-01",
+      projeto_validado_por: "RT Teste",
+    };
+    const comPdfAtual = (extra) => ({
+      ...validado,
+      ...extra,
+      projeto_pedagogico_ref: PDF,
+      projeto_pdf_marca: marcaDoProjeto({ ...validado, ...extra }),
+    });
+
+    it("curso em dia na revisão, mas com o PDF antigo, entra na lista e no contador", () => {
+      const antigo = { ...comPdfAtual(), objetivo_geral: "Objetivo mudado depois do PDF" };
+      const { itens, resumo } = selecionarRevisoes({
+        hoje: HOJE,
+        cursos: [
+          { id: "ok", nome: "Curso ok", ativo: true, ...comPdfAtual() },
+          { id: "antigo", nome: "Curso antigo", ativo: true, ...antigo },
+        ],
+      });
+      expect(itens.map((i) => [i.curso.id, i.situacao.estado, i.pdfDesatualizado])).toEqual([
+        ["antigo", "em_dia", true],
+      ]);
+      expect(resumo).toEqual({
+        semValidacao: 0,
+        vencidas: 0,
+        aVencer: 0,
+        emDia: 2,
+        pdfDesatualizado: 1,
+      });
+    });
+
+    it("o PDF antigo de um curso vencido ou sem validação marca o item sem trocar a situação", () => {
+      const { itens, resumo } = selecionarRevisoes({
+        hoje: HOJE,
+        cursos: [
+          c("vencido", {
+            projeto_validado_em: "2024-01-01",
+            projeto_validado_por: "RT Teste",
+            proxima_revisao: "2026-01-01",
+            projeto_pedagogico_ref: PDF,
+          }),
+          c("sem", { projeto_pedagogico_ref: PDF }),
+          c("sem-pdf"),
+        ],
+      });
+      expect(itens.map((i) => [i.curso.id, i.situacao.estado, i.pdfDesatualizado])).toEqual([
+        ["vencido", "vencida", true],
+        ["sem", "sem_validacao", true],
+        ["sem-pdf", "sem_validacao", false],
+      ]);
+      expect(resumo).toMatchObject({ semValidacao: 2, vencidas: 1, pdfDesatualizado: 2 });
+    });
+
+    it("os que só têm o PDF antigo vêm depois dos vencidos e dos que vencem", () => {
+      const { itens } = selecionarRevisoes({
+        hoje: HOJE,
+        cursos: [
+          { id: "pdf", nome: "Curso pdf", ativo: true, ...comPdfAtual(), objetivo_geral: "mudado" },
+          c("a-vencer", { projeto_validado_em: "2024-12-01", proxima_revisao: "2026-12-01" }),
+          c("vencido", { projeto_validado_em: "2024-01-01", proxima_revisao: "2026-01-01" }),
+        ],
+      });
+      expect(itens.map((i) => i.curso.id)).toEqual(["vencido", "a-vencer", "pdf"]);
+    });
+
+    it("rascunho e apoio com PDF antigo não entram (como o resto do painel)", () => {
+      const antigo = { ...comPdfAtual(), objetivo_geral: "mudado" };
+      const { itens, resumo } = selecionarRevisoes({
+        hoje: HOJE,
+        cursos: [
+          { id: "r", ativo: false, ...antigo },
+          { id: "ap", ativo: true, modalidade: "apoio", ...antigo },
+        ],
+      });
+      expect(itens).toEqual([]);
+      expect(resumo.pdfDesatualizado).toBe(0);
+    });
+  });
+});
+
+describe("PDF x projeto (revisão da T25): a marca do que foi para o PDF", () => {
+  const PDF = "treinamentos/empresa/2026/10/projeto.pdf";
+  const gravadoSemPdf = {
+    ...curso,
+    projeto_validado_em: null,
+    projeto_validado_por: null,
+    proxima_revisao: null,
+  };
+  const comPdf = (base) => ({
+    ...base,
+    projeto_pedagogico_ref: PDF,
+    projeto_pdf_marca: marcaDoProjeto(base),
+  });
+
+  it("a marca e o estado do PDF são os da lib de marca (a tela e o requisito usam a mesma regra)", () => {
+    expect(marcaDoProjeto(curso)).toMatch(/^v1:[0-9a-f]{14}$/);
+    expect(estadoDoPdfDoProjeto(curso)).toBe("sem_pdf");
+    expect(estadoDoPdfDoProjeto(comPdf(curso))).toBe("atual");
+  });
+
+  describe("estadoDoPdfDoFormulario (o que a tela mostra)", () => {
+    const contexto = { aulas, questoes };
+
+    it("compara o PDF com o projeto da tela, já como seria gravado", () => {
+      const gravado = comPdf(gravadoSemPdf);
+      expect(estadoDoPdfDoFormulario(gravado, contexto)).toBe("atual");
+      // espaços e módulo que não existe mais não mudam o que seria gravado
+      expect(
+        estadoDoPdfDoFormulario(
+          {
+            ...gravado,
+            objetivo_geral: "  Objetivo geral de teste  ",
+            modulos_objetivos: [
+              ...gravado.modulos_objetivos,
+              { modulo: "Módulo que saiu", objetivo: "Texto de um módulo que não existe mais" },
+            ],
+          },
+          contexto
+        )
+      ).toBe("atual");
+      expect(
+        estadoDoPdfDoFormulario({ ...gravado, objetivo_geral: "Objetivo mudado" }, contexto)
+      ).toBe("desatualizado");
+    });
+
+    it("sem PDF não há o que comparar", () => {
+      expect(estadoDoPdfDoFormulario(gravadoSemPdf, contexto)).toBe("sem_pdf");
+    });
+
+    it("registrar a validação na tela, depois de gerar o PDF, o deixa desatualizado", () => {
+      const gravado = comPdf(gravadoSemPdf);
+      const naTela = {
+        ...gravado,
+        projeto_validado_em: "2026-10-01",
+        projeto_validado_por: "RT Teste",
+      };
+      expect(estadoDoPdfDoFormulario(naTela, contexto)).toBe("desatualizado");
+      // a revisão (2 anos depois) é preenchida ao gravar: a tela e o que vai para o banco concordam
+      const dados = dadosDoProjetoParaGravar(naTela, { ...contexto, hoje: HOJE });
+      expect(dados.ok).toBe(true);
+      expect(dados.dados.proxima_revisao).toBe("2028-10-01");
+    });
+
+    it("formulário que não dá para gravar (data inválida) ainda é comparado, sem lançar", () => {
+      const gravado = comPdf(gravadoSemPdf);
+      expect(
+        estadoDoPdfDoFormulario({ ...gravado, projeto_validado_em: "2026-02-30" }, contexto)
+      ).toBe("desatualizado");
+    });
+  });
+
+  describe("avisoDoPdfAoSalvar (o aviso depois de Salvar curso)", () => {
+    const dadosGravados = (formulario) =>
+      dadosDoProjetoParaGravar(formulario, { aulas, questoes, hoje: HOJE }).dados;
+
+    it("projeto mudou e o curso já tem PDF: avisa para gerar de novo", () => {
+      const gravado = comPdf(gravadoSemPdf);
+      const aviso = avisoDoPdfAoSalvar(
+        gravado,
+        dadosGravados({ ...gravado, objetivo_geral: "Objetivo mudado" })
+      );
+      expect(aviso).toBe(AVISO_PDF_DESATUALIZADO);
+      expect(aviso).toMatch(/Gerar PDF do projeto/);
+    });
+
+    it("registrar a validação depois do PDF (o cenário do RH) também avisa", () => {
+      const gravado = comPdf(gravadoSemPdf);
+      expect(
+        avisoDoPdfAoSalvar(
+          gravado,
+          dadosGravados({
+            ...gravado,
+            projeto_validado_em: "2026-10-01",
+            projeto_validado_por: "RT Teste",
+          })
+        )
+      ).toBe(AVISO_PDF_DESATUALIZADO);
+    });
+
+    it("sem PDF, ou com o projeto igual, não avisa", () => {
+      expect(
+        avisoDoPdfAoSalvar(gravadoSemPdf, dadosGravados({ ...gravadoSemPdf, objetivo_geral: "x" }))
+      ).toBeNull();
+      const gravado = comPdf(gravadoSemPdf);
+      expect(avisoDoPdfAoSalvar(gravado, dadosGravados(gravado))).toBeNull();
+      // curso novo (ainda não gravado)
+      expect(avisoDoPdfAoSalvar(null, dadosGravados(gravadoSemPdf))).toBeNull();
+    });
+
+    it("PDF que já estava antigo e projeto sem mudança: não repete o aviso a cada salvar", () => {
+      const antigo = { ...comPdf(gravadoSemPdf), objetivo_geral: "mudado antes, já avisado" };
+      expect(avisoDoPdfAoSalvar(antigo, dadosGravados(antigo))).toBeNull();
+    });
+
+    it("voltar ao projeto que o PDF diz deixa o PDF atual: não avisa", () => {
+      const original = comPdf(gravadoSemPdf);
+      const mudado = { ...original, objetivo_geral: "Objetivo mudado" };
+      // o curso gravado está mudado (PDF antigo); o RH volta o texto e salva
+      expect(avisoDoPdfAoSalvar(mudado, dadosGravados(original))).toBeNull();
+    });
+  });
+});
+
+describe("o cenário da revisão 1 da T25: PDF gerado antes da validação, validação registrada em Salvar curso", () => {
+  const PDF = "treinamentos/empresa/2026/10/projeto.pdf";
+  const contexto = { aulas, questoes, hoje: HOJE };
+  const requisito = (linha) =>
+    requisitosDoCurso({ curso: linha, aulas, questoes }).find((r) => r.codigo === "PROJETO");
+
+  it("o requisito só fica em ordem quando o PDF diz o mesmo que o projeto validado", () => {
+    // 1. o RH escreve os 15 itens e clica em "Gerar PDF do projeto" para o RT ler: a gravação leva os campos
+    //    da tela, a referência do PDF e a marca do que foi para o PDF (ainda sem validação)
+    const gerado = dadosDoProjetoParaGravar(curso, contexto);
+    expect(gerado.ok).toBe(true);
+    let linha = {
+      ...curso,
+      ...gerado.dados,
+      projeto_pedagogico_ref: PDF,
+      projeto_pdf_marca: marcaDoProjeto(gerado.dados),
+    };
+    expect(estadoDoPdfDoProjeto(linha)).toBe("atual");
+    expect(requisito(linha).ok).toBe(false); // falta a validação do RT
+
+    // 2. o RT aprova; o RH escreve "Validado por" e a data e clica em "Salvar curso", que grava os campos do
+    //    projeto mas não mexe no PDF nem na marca dele
+    const salvar = dadosDoProjetoParaGravar(
+      { ...linha, projeto_validado_por: "RT Teste", projeto_validado_em: "2026-10-01" },
+      contexto
+    );
+    expect(salvar.ok).toBe(true);
+    expect(avisoDoPdfAoSalvar(linha, salvar.dados)).toBe(AVISO_PDF_DESATUALIZADO);
+    linha = { ...linha, ...salvar.dados };
+    expect(linha.projeto_validado_em).toBe("2026-10-01");
+    expect(linha.projeto_pedagogico_ref).toBe(PDF);
+    // o PDF que o aluno abre ainda diz "não foi validado": o requisito NÃO pode ficar em ordem
+    expect(estadoDoPdfDoProjeto(linha)).toBe("desatualizado");
+    expect(requisito(linha).ok).toBe(false);
+    expect(requisito(linha).texto).toMatch(/desatualizado/);
+    expect(requisito(linha).bloqueia).toBe(false); // é aviso
+
+    // 3. o RH clica em "Gerar PDF do projeto" de novo: o PDF e a marca passam a ter a validação
+    const novo = dadosDoProjetoParaGravar(linha, contexto);
+    linha = { ...linha, ...novo.dados, projeto_pdf_marca: marcaDoProjeto(novo.dados) };
+    expect(estadoDoPdfDoProjeto(linha)).toBe("atual");
+    expect(requisito(linha).ok).toBe(true);
+
+    // 4. um texto editado depois (Salvar curso) volta a pedir o PDF novo, e a seção avisa na hora
+    const editado = dadosDoProjetoParaGravar(
+      { ...linha, publico_alvo: "Público mudado" },
+      contexto
+    );
+    expect(avisoDoPdfAoSalvar(linha, editado.dados)).toBe(AVISO_PDF_DESATUALIZADO);
+    linha = { ...linha, ...editado.dados };
+    expect(requisito(linha).ok).toBe(false);
+  });
+
+  it("PDF próprio anexado: a marca é a do projeto salvo e o requisito segue a mesma regra", () => {
+    const validado = dadosDoProjetoParaGravar(
+      { ...curso, projeto_validado_por: "RT Teste", projeto_validado_em: "2026-10-01" },
+      contexto
+    );
+    const salvo = { ...curso, ...validado.dados };
+    // o RH anexa o PDF do RT depois de salvar: a marca vai junto (marcaDoProjeto do curso gravado)
+    const anexado = {
+      ...salvo,
+      projeto_pedagogico_ref: PDF,
+      projeto_pdf_marca: marcaDoProjeto(salvo),
+    };
+    expect(requisito(anexado).ok).toBe(true);
+    // anexado antes de validar: precisa anexar de novo depois
+    const antes = {
+      ...curso,
+      projeto_pedagogico_ref: PDF,
+      projeto_pdf_marca: marcaDoProjeto(curso),
+    };
+    expect(requisito({ ...antes, ...validado.dados }).ok).toBe(false);
   });
 });
 

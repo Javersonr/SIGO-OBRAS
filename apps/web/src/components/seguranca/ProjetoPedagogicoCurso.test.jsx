@@ -2,6 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect, vi } from "vitest";
 import ProjetoPedagogicoCurso from "./ProjetoPedagogicoCurso";
+import { marcaDoProjeto } from "@/lib/ead-projeto";
 
 // `@/lib/utils` lê `window` ao ser importado (os componentes de `ui/` passam por ele) e o Vitest daqui roda
 // em ambiente node, sem DOM: um `window` vazio basta para o import.
@@ -161,5 +162,86 @@ describe("ProjetoPedagogicoCurso", () => {
     expect(html).toContain("trocar por PDF próprio");
     expect(renderizar(completo)).toContain("anexar PDF próprio");
     expect(renderizar(completo)).not.toContain("ver atual");
+  });
+
+  describe("PDF x projeto: o PDF diz o mesmo que o projeto desta tela?", () => {
+    const PDF = "treinamentos/x/projeto.pdf";
+    const validacao = {
+      projeto_validado_por: "RT Teste",
+      projeto_validado_em: "2026-10-01",
+      proxima_revisao: "2028-10-01",
+    };
+
+    it("sem PDF não há selo nem aviso de PDF", () => {
+      const html = renderizar(completo);
+      expect(html).not.toContain("PDF desatualizado");
+      expect(html).not.toContain("O PDF está desatualizado");
+      expect(html).not.toContain("O PDF diz o mesmo que o projeto");
+    });
+
+    it("PDF gerado com o projeto e a validação desta tela: diz que está em dia", () => {
+      const curso = {
+        ...completo,
+        ...validacao,
+        projeto_pedagogico_ref: PDF,
+        projeto_pdf_marca: marcaDoProjeto({ ...completo, ...validacao }),
+      };
+      const html = renderizar(curso);
+      expect(html).toContain("O PDF diz o mesmo que o projeto e a validação desta tela.");
+      expect(html).not.toContain("PDF desatualizado");
+    });
+
+    it("PDF gerado ANTES da validação: o selo e o aviso mandam gerar o PDF de novo", () => {
+      // o RH gerou o PDF para o RT ler; depois escreveu quem validou e a data na tela
+      const curso = {
+        ...completo,
+        ...validacao,
+        projeto_pedagogico_ref: PDF,
+        projeto_pdf_marca: marcaDoProjeto(completo),
+      };
+      const html = renderizar(curso);
+      expect(html).toContain("PDF desatualizado");
+      expect(html).toContain("O PDF está desatualizado");
+      expect(html).toContain("Gerar PDF do projeto");
+      expect(html).not.toContain("O PDF diz o mesmo que o projeto");
+      // o selo vai no alto da seção, ao lado da revisão
+      expect(html.indexOf("PDF desatualizado")).toBeLessThan(html.indexOf("Validação do projeto"));
+    });
+
+    it("texto mudado na tela depois de gerar o PDF também deixa o PDF desatualizado", () => {
+      const curso = {
+        ...completo,
+        projeto_pedagogico_ref: PDF,
+        projeto_pdf_marca: marcaDoProjeto(completo),
+      };
+      expect(renderizar(curso)).toContain("O PDF diz o mesmo que o projeto");
+      expect(renderizar({ ...curso, publico_alvo: "Público mudado na tela" })).toContain(
+        "O PDF está desatualizado"
+      );
+    });
+
+    it("espaço nas pontas e objetivo de módulo que não existe mais não desatualizam o PDF", () => {
+      const curso = {
+        ...completo,
+        projeto_pedagogico_ref: PDF,
+        projeto_pdf_marca: marcaDoProjeto(completo),
+      };
+      const html = renderizar({
+        ...curso,
+        objetivo_geral: "  Objetivo geral de teste  ",
+        modulos_objetivos: [
+          ...completo.modulos_objetivos,
+          { modulo: "Módulo que saiu", objetivo: "Texto de um módulo que não existe mais" },
+        ],
+      });
+      expect(html).toContain("O PDF diz o mesmo que o projeto");
+      expect(html).not.toContain("O PDF está desatualizado");
+    });
+
+    it("PDF sem marca (anexado antes da regra) fica desatualizado", () => {
+      const html = renderizar({ ...completo, projeto_pedagogico_ref: PDF });
+      expect(html).toContain("O PDF está desatualizado");
+      expect(html).toContain("sem registro do projeto que ele diz");
+    });
   });
 });

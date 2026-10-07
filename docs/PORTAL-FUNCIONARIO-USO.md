@@ -219,13 +219,21 @@ Treinamentos → curso**) há a seção **Projeto pedagógico (Anexo II 3.1)**:
   (nome, carga, responsável técnico, instrutor) com o projeto escrito na tela; item vazio sai como "Não preenchido" e o
   documento leva a tarja de rascunho enquanto faltar item. Gerar de novo troca o PDF que o aluno vê; os arquivos
   anteriores ficam no Storage (são o histórico das versões do projeto, não os apague). **Anexar PDF próprio** continua
-  existindo, para o RT que prefere um documento seu.
+  existindo, para o RT que prefere um documento seu (vale para o projeto **salvo** na hora do envio).
+- **O PDF tem de dizer o mesmo que o projeto.** O PDF é um arquivo parado: quem o grava (o botão ou o anexo próprio)
+  grava junto a **marca** dos 12 campos do projeto daquele momento (`projeto_pdf_marca`: os 9 itens escritos no curso,
+  quem validou, a data da validação e a data da próxima revisão). Se qualquer um deles mudar depois, a marca deixa de
+  bater e o PDF fica **desatualizado**: a seção mostra o selo "PDF desatualizado", "Salvar curso" avisa, o requisito
+  volta a pedir e o painel Vencimentos lista o curso. Cenário típico: o RH gera o PDF para o RT ler (ele diz "ainda não
+  foi validado"), o RT aprova e o RH registra a validação: é preciso **gerar o PDF de novo** (o botão já grava a
+  validação junto), senão o aluno e a fiscalização continuariam abrindo o rascunho. O que o PDF busca em outras partes
+  (aulas, questões, carga, instrutor) não entra na marca: mudou isso, gere o PDF de novo por conta própria.
 - **Aviso na lista de requisitos.** O item "Projeto pedagógico" dos requisitos do curso só some com o PDF **e** a data
-  da validação. É **aviso**: não impede publicar, matricular nem emitir certificado. Virar bloqueio é uma decisão do
-  Javerson (uma linha em `ead-requisitos.js` e `requisitos.ts`).
+  da validação **e** o PDF em dia com o projeto (a marca bate). É **aviso**: não impede publicar, matricular nem emitir
+  certificado. Virar bloqueio é uma decisão do Javerson (uma linha em `ead-requisitos.js` e `requisitos.ts`).
 - **Revisão no painel Vencimentos.** O painel ganhou o cartão **Projeto pedagógico: revisão**, com os cursos publicados
-  que estão sem validação, com a revisão vencida (inclusive por mudança de NR) ou vencendo em até 90 dias, e o botão
-  **Abrir curso**. Curso em rascunho e curso de apoio não entram.
+  que estão sem validação, com a revisão vencida (inclusive por mudança de NR), vencendo em até 90 dias ou com o PDF
+  desatualizado, e o botão **Abrir curso**. Curso em rascunho e curso de apoio não entram.
 - **Prazo e dedicação para o aluno e para o RH.** O prazo (dias a partir da matrícula) e a dedicação diária mínima
   aparecem para o aluno no curso e o prazo na lista de cursos ("Prazo para concluir: até 31/10/2026"). Passar do prazo
   só avisa o aluno para falar com o RH; o portal **não** tranca o curso. O RH vê o prazo e o selo **Atrasada** na tabela
@@ -257,11 +265,11 @@ diário; sem alteração de dado) e muda o **portal-funcionario** (aviso ao RH q
 aplicar a migração, rode a função à mão uma vez e confira o sino:
 `supabase db query --linked "select public.alertar_treinamentos_ead() as empresas_avisadas;"`.
 
-A T25 (projeto pedagógico estruturado) acrescenta a migração **`0141`** (12 colunas novas no curso e as restrições de
-tamanho; sem alteração de dado) e muda o **portal-funcionario** (o aluno recebe o prazo e a dedicação diária do curso,
+A T25 (projeto pedagógico estruturado) acrescenta a migração **`0141`** (13 colunas novas no curso, entre elas a marca
+do PDF do projeto, e as restrições de tamanho; sem alteração de dado) e muda o **portal-funcionario** (o aluno recebe o prazo e a dedicação diária do curso,
 com `--no-verify-jwt`). Ordem: migração, depois a função, depois o front. A migração vem **antes** do front: depois dele,
 "Salvar curso" passa a gravar as colunas novas. Publicar a função antes da migração não quebra nada (as colunas só são
-lidas quando existem).
+lidas quando existem). A `0141` é idempotente: se a versão anterior dela (sem a marca do PDF) já tiver sido aplicada, rodar o arquivo de novo só acrescenta a coluna da marca.
 
 O teste completo de matrícula real, tempo de estudo, avaliação e certificado deve seguir o roteiro da seção 7 do
 handoff, com o Javerson e após as decisões e tarefas correspondentes.

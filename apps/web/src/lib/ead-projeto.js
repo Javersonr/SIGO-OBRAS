@@ -19,11 +19,19 @@
  * Validação do projeto (3.3, a cada 2 anos ou quando a NR mudar): `projeto_validado_por` (quem validou, o
  * responsável técnico), `projeto_validado_em` e `proxima_revisao`. Os gatilhos de mudança de NR estão em
  * GATILHOS_DE_REVISAO (D5 do handoff).
+ *
+ * PDF x projeto: o PDF é um arquivo parado. Quem o grava (Gerar PDF do projeto, ou o anexo próprio) grava junto a
+ * marca dos 12 campos do projeto (`projeto_pdf_marca`, lib ead-projeto-marca.js); o PDF só vale enquanto a marca
+ * bate com a dos campos de hoje. Mudou texto, validação ou data de revisão depois do PDF: "desatualizado".
  */
+import { estadoDoPdfDoProjeto, marcaDoProjeto } from "./ead-projeto-marca";
 import { MIN_QUESTOES, modalidadeDoCurso } from "./ead-requisitos";
 import { diasParaVencer, hojeEmBrasilia } from "./ead-vencimentos";
 import { numerarAulas } from "./portal-curso";
 import { formatarMinutos } from "./portal-prazo";
+
+// a marca do PDF vive num módulo sem dependências (o servidor testa a mesma regra); a tela importa daqui
+export { estadoDoPdfDoProjeto, marcaDoProjeto };
 
 /** Limite de cada texto do projeto (igual ao CHECK da migração 0141). */
 export const LIMITE_TEXTO_PROJETO = 4000;
@@ -583,6 +591,35 @@ export function aoMudarValidacao(curso, novaData) {
   return patch;
 }
 
+// ------------------------------------------------------------------------------ PDF x projeto (T25)
+
+/**
+ * O PDF do projeto diante do que o RH vê na tela agora: "sem_pdf", "atual" ou "desatualizado" (a marca do PDF contra
+ * os 12 campos do formulário, já como seriam gravados: aparados e só com os módulos que existem nas aulas).
+ */
+export function estadoDoPdfDoFormulario(curso, { aulas, questoes } = {}) {
+  const normal = dadosDoProjetoParaGravar(curso, { aulas, questoes });
+  return estadoDoPdfDoProjeto(normal.ok ? { ...curso, ...normal.dados } : curso);
+}
+
+/** O que a tela diz depois de "Salvar curso" mudar o projeto de um curso que já tem PDF. */
+export const AVISO_PDF_DESATUALIZADO =
+  "O projeto mudou depois de o PDF ser gerado: o aluno e a fiscalização ainda veem o PDF antigo. " +
+  'Clique em "Gerar PDF do projeto" para atualizá-lo.';
+
+/**
+ * O aviso para o RH depois de salvar, ou null. `gravado` é o curso como estava no banco e `dados` os 12 campos do
+ * projeto que "Salvar curso" vai gravar (`dadosDoProjetoParaGravar`). Só avisa se o projeto MUDOU neste salvar e o
+ * PDF passou a destoar dele (mudar de volta para o que o PDF diz não avisa; PDF já antigo e projeto igual também não:
+ * a seção do curso e o painel já mostram).
+ */
+export function avisoDoPdfAoSalvar(gravado, dados) {
+  if (marcaDoProjeto(gravado) === marcaDoProjeto(dados)) return null;
+  return estadoDoPdfDoProjeto({ ...gravado, ...dados }) === "desatualizado"
+    ? AVISO_PDF_DESATUALIZADO
+    : null;
+}
+
 // ------------------------------------------------------------------------- revisão (Anexo II, 3.3)
 
 /**
@@ -678,27 +715,32 @@ export function rotuloDaRevisao(situacao) {
   return "Revisão em dia";
 }
 
-const ORDEM_DOS_ESTADOS = { vencida: 0, sem_validacao: 1, a_vencer: 2 };
+const ORDEM_DOS_ESTADOS = { vencida: 0, sem_validacao: 1, a_vencer: 2, em_dia: 3 };
 
 /**
  * Os projetos que pedem ação, para o painel "Vencimentos": cursos vivos, PUBLICADOS e que não sejam de apoio
  * (o apoio é só material de estudo e não emite certificado; rascunho ainda está sendo escrito). Vencidos
- * primeiro (o mais atrasado antes), depois os sem validação (por nome) e os que vencem (o mais próximo antes).
- * @returns {{ itens: { curso: object, situacao: object }[],
- *   resumo: { semValidacao: number, vencidas: number, aVencer: number, emDia: number } }}
+ * primeiro (o mais atrasado antes), depois os sem validação (por nome) e os que vencem (o mais próximo antes),
+ * e por último os em dia que só têm o PDF desatualizado (o projeto mudou depois do PDF que o aluno e a
+ * fiscalização veem). `pdfDesatualizado` marca o item cujo PDF destoa do projeto, qualquer que seja a revisão.
+ * @returns {{ itens: { curso: object, situacao: object, pdfDesatualizado: boolean }[],
+ *   resumo: { semValidacao: number, vencidas: number, aVencer: number, emDia: number,
+ *     pdfDesatualizado: number } }}
  */
 export function selecionarRevisoes({ cursos = [], hoje = hojeEmBrasilia() } = {}) {
-  const resumo = { semValidacao: 0, vencidas: 0, aVencer: 0, emDia: 0 };
+  const resumo = { semValidacao: 0, vencidas: 0, aVencer: 0, emDia: 0, pdfDesatualizado: 0 };
   const itens = [];
   for (const curso of Array.isArray(cursos) ? cursos : []) {
     if (!viva(curso) || curso.ativo === false || modalidadeDoCurso(curso) === "apoio") continue;
     const situacao = situacaoDaRevisao(curso, hoje);
+    const pdfDesatualizado = estadoDoPdfDoProjeto(curso) === "desatualizado";
+    if (pdfDesatualizado) resumo.pdfDesatualizado++;
     if (situacao.estado === "em_dia") resumo.emDia++;
-    else {
-      if (situacao.estado === "vencida") resumo.vencidas++;
-      else if (situacao.estado === "a_vencer") resumo.aVencer++;
-      else resumo.semValidacao++;
-      itens.push({ curso, situacao });
+    else if (situacao.estado === "vencida") resumo.vencidas++;
+    else if (situacao.estado === "a_vencer") resumo.aVencer++;
+    else resumo.semValidacao++;
+    if (situacao.estado !== "em_dia" || pdfDesatualizado) {
+      itens.push({ curso, situacao, pdfDesatualizado });
     }
   }
   itens.sort((a, b) => {

@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { marcaDoProjeto } from "./ead-projeto-marca";
 import {
   MODALIDADES,
+  TEXTO_PDF_DO_PROJETO_DESATUALIZADO,
   emiteCertificado,
   modalidadeDoCurso,
   motivoSemCertificado,
@@ -140,12 +142,24 @@ describe("requisito TUTOR (T21, D4): só avisa, e só com um WhatsApp que o serv
   });
 });
 
-describe("requisito PROJETO (T25): só avisa, e só some com o PDF do projeto E a validação do RT", () => {
+describe("requisito PROJETO (T25): só avisa, e só some com o PDF do projeto E a validação do RT, com o PDF em dia", () => {
   const projeto = (valores) =>
     requisitosDoCurso({ curso: { ...curso, ...valores }, aulas, questoes }).find(
       (r) => r.codigo === "PROJETO"
     );
   const PDF = "treinamentos/empresa/2026/10/projeto.pdf";
+  // o projeto validado e o PDF gerado depois dele: a marca gravada com o PDF é a dos campos de hoje
+  const validado = {
+    objetivo_geral: "Objetivo de teste",
+    projeto_validado_em: "2026-10-01",
+    projeto_validado_por: "RT Teste",
+    proxima_revisao: "2028-10-01",
+  };
+  const comPdfEmDia = (valores) => ({
+    ...valores,
+    projeto_pedagogico_ref: PDF,
+    projeto_pdf_marca: marcaDoProjeto(valores),
+  });
   it("sem nada, só com o PDF ou só com a validação, o aviso aparece", () => {
     expect(projeto({}).ok).toBe(false);
     expect(projeto({ projeto_pedagogico_ref: PDF }).ok).toBe(false);
@@ -153,15 +167,41 @@ describe("requisito PROJETO (T25): só avisa, e só some com o PDF do projeto E 
     expect(projeto({ projeto_pedagogico_ref: "", projeto_validado_em: "2026-10-01" }).ok).toBe(
       false
     );
+    // PDF gerado em dia, mas sem validação
+    expect(projeto(comPdfEmDia({ objetivo_geral: "Objetivo de teste" })).ok).toBe(false);
   });
-  it("com o PDF e a data da validação, o aviso some", () => {
-    expect(projeto({ projeto_pedagogico_ref: PDF, projeto_validado_em: "2026-10-01" }).ok).toBe(
+  it("com o PDF em dia com o projeto e a data da validação, o aviso some", () => {
+    expect(projeto(comPdfEmDia(validado)).ok).toBe(true);
+  });
+  it("PDF gerado ANTES da validação deixa o PROJETO pendente, e o texto manda gerar de novo", () => {
+    // o RH gera o PDF para o RT ler (ele diz "ainda não foi validado") e depois só registra a validação
+    const semValidacao = { objetivo_geral: "Objetivo de teste" };
+    const pdfAnterior = { ...comPdfEmDia(semValidacao), ...validado };
+    expect(projeto(pdfAnterior).ok).toBe(false);
+    expect(projeto(pdfAnterior).texto).toBe(TEXTO_PDF_DO_PROJETO_DESATUALIZADO);
+    expect(projeto(pdfAnterior).texto).toMatch(/desatualizado/);
+    // gerar o PDF de novo (marca nova) resolve
+    expect(projeto({ ...pdfAnterior, projeto_pdf_marca: marcaDoProjeto(pdfAnterior) }).ok).toBe(
       true
+    );
+  });
+  it("texto mudado depois de gerar o PDF validado também deixa pendente", () => {
+    const pdf = comPdfEmDia(validado);
+    expect(projeto({ ...pdf, publico_alvo: "Público acrescentado depois do PDF" }).ok).toBe(false);
+    expect(projeto({ ...pdf, projeto_validado_em: "2026-10-02" }).ok).toBe(false);
+    expect(projeto({ ...pdf, proxima_revisao: "2029-10-01" }).ok).toBe(false);
+  });
+  it("PDF sem marca (anexado antes desta regra) fica pendente", () => {
+    expect(projeto({ ...validado, projeto_pedagogico_ref: PDF }).ok).toBe(false);
+    expect(projeto({ ...validado, projeto_pedagogico_ref: PDF, projeto_pdf_marca: "" }).ok).toBe(
+      false
     );
   });
   it("o texto manda gerar o PDF e registrar a validação", () => {
     expect(projeto({}).texto).toMatch(/projeto pedagógico/i);
     expect(projeto({}).texto).toMatch(/validação/i);
+    // sem validação o texto é o de sempre, mesmo com PDF antigo
+    expect(projeto({ projeto_pedagogico_ref: PDF }).texto).toBe(projeto({}).texto);
   });
   it("é só aviso: nunca trava publicar, matricular nem emitir (vira bloqueio só por decisão do Javerson)", () => {
     expect(projeto({}).bloqueia).toBe(false);

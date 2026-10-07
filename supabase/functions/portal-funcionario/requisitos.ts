@@ -7,6 +7,7 @@
 // desconhecido) têm as duas, como a T8 deixou, até a T12.
 // deno-lint-ignore-file no-explicit-any
 import { normalizarTelefoneBR } from "../_shared/whatsapp-envio.ts";
+import { estadoDoPdfDoProjeto } from "./projeto.ts";
 export const MIN_QUESTOES = 5;
 /**
  * Modalidade do curso (coluna `treinamento_curso.modalidade`, migração 0136; CHECK no banco).
@@ -91,11 +92,15 @@ export function tempoObrigatorioSeg(aulas: any[] = []) {
     .filter((a) => !a.deleted_at)
     .reduce((total, a) => total + Math.max(0, Number(a.duracao_seg) || 0), 0);
 }
+// O PDF do projeto foi gerado (ou anexado) com um projeto diferente do que está no curso (T25)
+export const TEXTO_PDF_DO_PROJETO_DESATUALIZADO =
+  "O PDF do projeto pedagógico está desatualizado: o projeto ou a validação mudaram depois de gerá-lo. Gere o PDF de novo";
 export function requisitosDoCurso({
   curso = {},
   aulas = [],
   questoes = [],
 }: { curso?: any; aulas?: any[]; questoes?: any[] } = {}): Requisito[] {
+  const pdfDoProjeto = estadoDoPdfDoProjeto(curso);
   const ativas = aulas.filter((a) => !a.deleted_at);
   const carga = Number(curso.carga_horaria_horas) || 0;
   const lastro = tempoObrigatorioSeg(ativas);
@@ -149,11 +154,15 @@ export function requisitosDoCurso({
           "Defina o WhatsApp do tutor (número válido, com DDD)",
         ],
         // T25: o projeto pedagógico (Anexo II, 3.1) só está em ordem com o PDF gerado ou anexado E a validação do
-        // responsável técnico registrada (3.3). É aviso: virar bloqueio de publicação é decisão do Javerson.
+        // responsável técnico registrada (3.3), e com o PDF que diz o mesmo que o projeto de hoje: a marca gravada
+        // junto com o PDF tem de bater com a dos campos do curso (projeto.ts). Mudou o texto ou a validação
+        // depois do PDF: gerar de novo. É aviso: virar bloqueio de publicação é decisão do Javerson.
         [
           "PROJETO",
-          curso.projeto_pedagogico_ref && curso.projeto_validado_em,
-          "Complete o projeto pedagógico (15 itens), gere o PDF e registre a validação do responsável técnico",
+          pdfDoProjeto === "atual" && curso.projeto_validado_em,
+          pdfDoProjeto === "desatualizado" && curso.projeto_validado_em
+            ? TEXTO_PDF_DO_PROJETO_DESATUALIZADO
+            : "Complete o projeto pedagógico (15 itens), gere o PDF e registre a validação do responsável técnico",
         ],
         ["PROGRAMA", curso.conteudo_programatico, "Preencha o conteúdo programático"],
         ["VALIDADE", curso.validade_meses, "Confira a validade do treinamento"],
