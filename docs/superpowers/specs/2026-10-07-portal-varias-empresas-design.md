@@ -33,7 +33,7 @@ inteiro** (`0103:31-32`, índice em `lower(usuario)`) e, para quem tem CPF no ca
 entrar, ela escolhe a empresa; dentro da sessão, tudo continua filtrado por aquela empresa e por aquele cadastro, como
 hoje. Nenhum RH consegue, com o que tem nas mãos, entrar no portal da pessoa em outra empresa nem descobrir em qual
 outra empresa ela está. Isso vale também para o RH que age de má-fé e cadastra o CPF de outra pessoa: ele não troca a
-senha de quem já usa o portal, o que descobre é mínimo e o que faz fica registrado (§4.3). O que sobra está em R11.
+senha de quem já usa o portal, o que descobre é mínimo e o que faz fica registrado (§4.3). O que sobra está em R1 e R11.
 
 **Fora do escopo:**
 
@@ -51,11 +51,11 @@ senha de quem já usa o portal, o que descobre é mínimo e o que faz fica regis
 
 ### 3.1 Tabelas
 
-| Tabela                                                  | Uma linha por                     | Guarda                                                                                                                                                                                                                                                                                                                                                | Quem lê e grava                                                                                                                               |
-| ------------------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `portal_credencial` (nova)                              | pessoa (usuário)                  | `usuario` (CPF ou usuário com letras), `tipo` (`cpf`/`manual`), hash da senha pessoal (nulo até a pessoa criar), `senha_geracao`, `senha_origem_empresa_id` (empresa cuja provisória criou a senha atual; nulo depois que a pessoa a troca por conta própria), `sessao_versao`, `tentativas`, `bloqueado_ate`, `ultimo_sinal_em`, `senha_alterada_em` | só o servidor: RLS ligada, sem policy, `revoke` de `anon` e de `authenticated`                                                                |
-| `funcionario_portal_acesso` (fica e vira o **vínculo**) | cadastro de funcionário (empresa) | `credencial_id`, `empresa_id`, `ativo`, `sessao_versao` do vínculo, `ultimo_acesso` nesta empresa, provisória pendente (`provisoria_hash`, `provisoria_criada_em`, `provisoria_expira_em`), `geracao_liberada`, `confirmado_em` (quando a pessoa liberou este vínculo sabendo a senha; nunca é apagado), `criado_por`                                 | só o servidor (como hoje)                                                                                                                     |
-| `portal_credencial_evento` (nova)                       | evento de segurança da pessoa     | `credencial_id` (sem chave estrangeira e sem o CPF), `empresa_id` do vínculo que agiu, `evento`, `detalhe`, `ip`, `dispositivo`, `created_at`                                                                                                                                                                                                         | o servidor grava e só o operador lê (RLS ligada, sem policy, `revoke` de `anon` e de `authenticated`); só de inclusão, como a trilha (`0135`) |
+| Tabela                                                  | Uma linha por                     | Guarda                                                                                                                                                                                                                                                                                                                                                                                                 | Quem lê e grava                                                                                                                               |
+| ------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `portal_credencial` (nova)                              | pessoa (usuário)                  | `usuario` (CPF ou usuário com letras), `tipo` (`cpf`/`manual`), hash da senha pessoal (nulo até a pessoa criar), `senha_geracao`, `senha_origem_empresa_id` (empresa cuja provisória criou a senha atual, que o RH dela pode conhecer; só a troca na etapa `ativar` de **outra** empresa a zera, §4.2), `sessao_versao`, `tentativas`, `bloqueado_ate`, `ultimo_sinal_em`, `senha_alterada_em`         | só o servidor: RLS ligada, sem policy, `revoke` de `anon` e de `authenticated`                                                                |
+| `funcionario_portal_acesso` (fica e vira o **vínculo**) | cadastro de funcionário (empresa) | `credencial_id`, `empresa_id`, `ativo`, `sessao_versao` do vínculo, `ultimo_acesso` nesta empresa, provisória pendente (`provisoria_hash`, `provisoria_criada_em`, `provisoria_expira_em`), `geracao_liberada`, `confirmado_em` (quando a pessoa liberou este vínculo sabendo a senha; nenhuma ação do RH o apaga: só a religação do caso 7 e o procedimento do operador, §4.3, o zeram), `criado_por` | só o servidor (como hoje)                                                                                                                     |
+| `portal_credencial_evento` (nova)                       | evento de segurança da pessoa     | `credencial_id` (sem chave estrangeira e sem o CPF), `empresa_id` do vínculo que agiu, `evento`, `detalhe`, `ip`, `dispositivo`, `created_at`                                                                                                                                                                                                                                                          | o servidor grava e só o operador lê (RLS ligada, sem policy, `revoke` de `anon` e de `authenticated`); só de inclusão, como a trilha (`0135`) |
 
 - `portal_credencial` **não tem `empresa_id`**: é a identidade da pessoa na plataforma, como `auth.users` é a do
   usuário do SIGO. É exceção declarada à regra 5 do `AGENTS.md`: a tabela não é de negócio, não tem policy e o servidor
@@ -135,7 +135,7 @@ da empresa A criaria, com a provisória dele, uma senha que abre também a empre
 
 | Opção                                                                                                     | Criar                                                                                                                                                                                    | Esqueci a senha                                                                                                                                                                         | Desativar                 | Efeito de uma empresa sobre a outra                                                                                  | A favor                                                                                  | Contra                                                                                                                                                                                                                                                                                               |
 | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **A (recomendada):** provisória por empresa; senha criada com a provisória de uma empresa trava as outras | o RH gera a provisória do vínculo dele; com ela a pessoa cria a senha (se ainda não tem) ou confirma a que já usa (e escolhe uma nova, se a atual nasceu da provisória de outra empresa) | o RH de qualquer empresa em que a pessoa já entrou com a senha gera nova provisória; com ela a pessoa cria senha nova, que abre só aquela empresa até cada outra gerar a sua provisória | cada RH só o vínculo dele | senha criada com a provisória da A **trava** a B até a B gerar nova provisória (indisponibilidade, sem dado exposto) | nenhum RH entra em outra empresa; nenhum canal novo; os botões do RH continuam os mesmos | quem esquece a senha e está em duas empresas precisa de uma provisória de cada, e quem só tem empresas em que nunca entrou com a senha precisa antes da provisória de uma em que já entrou (§4.3)                                                                                                    |
+| **A (recomendada):** provisória por empresa; senha criada com a provisória de uma empresa trava as outras | o RH gera a provisória do vínculo dele; com ela a pessoa cria a senha (se ainda não tem) ou confirma a que já usa (e escolhe uma nova, se a atual nasceu da provisória de outra empresa) | o RH de qualquer empresa em que a pessoa já entrou com a senha gera nova provisória; com ela a pessoa cria senha nova, que abre só aquela empresa até cada outra gerar a sua provisória | cada RH só o vínculo dele | senha criada com a provisória da A **trava** a B até a B gerar nova provisória (indisponibilidade, sem dado exposto) | nenhum RH entra em outra empresa; nenhum canal novo; os botões do RH continuam os mesmos | quem esquece a senha e está em duas empresas precisa de uma provisória de cada, e quem só tem empresas em que nunca entrou com a senha precisa antes da provisória de uma em que já entrou ou, se não resta nenhuma, do operador (§4.3)                                                              |
 | B: a primeira empresa é dona da senha                                                                     | só a dona gera provisória que cria senha; as outras só ligam o vínculo (a pessoa confirma a senha)                                                                                       | só a dona                                                                                                                                                                               | cada RH o vínculo dele    | a dona controla a senha usada nas outras                                                                             | simples                                                                                  | a dona pode ter desligado o funcionário ou ser concorrente da outra; passar a "posse" vira regra nova                                                                                                                                                                                                |
 | C: recuperação pelo próprio funcionário (WhatsApp)                                                        | como na A                                                                                                                                                                                | "Esqueci a senha" manda um código ao WhatsApp **que a própria pessoa cadastrou e confirmou** na credencial; o RH só em último caso (aí vale a A)                                        | como na A                 | nenhum, quando a pessoa recupera sozinha                                                                             | quem esquece não depende de RH nenhum                                                    | depende do canal WhatsApp do SaaS no ar; o telefone tem de ser o da credencial, confirmado pela pessoa (não o `funcionario.telefone`, que hoje qualquer usuário da empresa troca pela API, ver o spec da T33, §2); mais código e mais tela; não resolve o CPF ocupado antes pela empresa real (§4.3) |
 | D: qualquer RH redefine, e a senha nova vale em todas                                                     | o RH gera a provisória                                                                                                                                                                   | qualquer RH                                                                                                                                                                             | cada RH o vínculo dele    | o RH da A entra no portal da pessoa na B: documentos, contracheque, prova, assinatura do certificado                 | o mais simples                                                                           | **vazamento entre empresas: descartada**                                                                                                                                                                                                                                                             |
@@ -154,10 +154,15 @@ Cinco conceitos:
 - **Senha provisória (vínculo):** gerada pelo RH, aparece uma vez, o banco guarda só o hash; vale para **aquela
   empresa**. Hoje ela não vence; a proposta é vencer em 7 dias (P3).
 - **`senha_origem_empresa_id` (credencial):** a empresa cuja provisória criou a senha atual. Quem recebeu essa
-  provisória pode conhecer a senha: viu a provisória, ou digitou a senha "pela" pessoa. Fica nulo quando a pessoa troca
-  a senha por conta própria (`trocar_senha`, ou a troca da etapa `ativar`). Serve à regra do caso 2.
+  provisória pode conhecer a senha: viu a provisória, ou digitou a senha "pela" pessoa. Quem pode trocar a senha dentro
+  dessa empresa é quem sabe a senha atual, o RH que a criou inclusive, e uma troca feita ali não prova que ele deixou
+  de saber a nova: `trocar_senha` e a troca da etapa `ativar` na própria empresa de origem **mantêm** a origem. Só a
+  troca da etapa `ativar` numa empresa **diferente** da origem (caso 2) a zera. Com isso vale esta regra: enquanto a
+  origem não é nula, **só a empresa de origem está liberada**. Os casos 1 e 3 e a cópia da `0145` já deixam assim, e
+  nenhuma ação libera outra empresa sem antes zerar a origem.
 - **`confirmado_em` (vínculo):** a primeira vez em que alguém liberou este vínculo **sabendo a senha**: criou a
-  primeira senha da credencial ou digitou a senha atual. Nunca é apagado. Serve à regra da §4.3 (defesa 1).
+  primeira senha da credencial ou digitou a senha atual. Nenhuma ação do RH o apaga: só a religação do caso 7 e o
+  procedimento do operador (§4.3) o zeram. Serve à regra da §4.3 (defesa 1).
 
 Os casos:
 
@@ -169,17 +174,19 @@ Os casos:
    portal em outra empresa" (§5.1, §8). Ela usa o link e digita a senha que já usa. Senha certa: B liberada e
    confirmada, sem mudar nada na A. Só que a senha atual pode ser conhecida pelo RH da A, que viu a provisória ou
    digitou a senha pela pessoa, e então ele entraria na B com ela. Por isso, quando `senha_origem_empresa_id` é de
-   **outra** empresa (a senha nasceu da provisória da A e a pessoa nunca a trocou por conta própria), o portal pede,
+   **outra** empresa (a senha nasceu da provisória da A, mesmo que a pessoa a tenha trocado dentro da A), o portal pede,
    antes de liberar a B, uma **senha nova que só ela conhece**: senha atual e senha nova na mesma tela. A troca não sobe
-   a geração (a A continua liberada), derruba as sessões abertas e zera `senha_origem_empresa_id`. É um passo só: nas
-   próximas empresas, só a senha atual. Daí em diante, CPF e senha levam à escolha entre A e B.
+   a geração (a A continua liberada), derruba as sessões abertas e zera `senha_origem_empresa_id`, e só esta troca a
+   zera. É um passo só: nas próximas empresas, só a senha atual. Daí em diante, CPF e senha levam à escolha entre A e B.
 3. **Esqueceu a senha:** o RH de uma empresa **em que a pessoa já entrou com a senha** (vínculo `confirmado`, §4.3),
    digamos a B, clica "Redefinir senha" e entrega a provisória. A pessoa entra com ela e cria uma senha nova. A geração
    sobe, a B fica liberada, **a A fica travada**, `senha_origem_empresa_id` passa a ser a B e todas as sessões abertas
    caem. A pessoa pede a provisória ao RH da A e, com ela, confirma a senha nova (caso 2, com a troca obrigatória: a
    senha nova nasceu da provisória da B): A liberada. Se a provisória é de uma empresa em que a pessoa nunca entrou com
    a senha, o portal recusa criar a senha nova (§4.3, defesa 1) e diz o que fazer: pedir a provisória a uma empresa em
-   que ela já entra.
+   que ela já entra. Se não resta nenhuma (saiu da A, entrou na B e esqueceu a senha antes de confirmar a B), o caminho
+   é o RH da B e, por ele, o suporte do SIGO (a Sinergia Digital, que opera o SaaS), que roda o procedimento do operador
+   (§4.3).
 4. **O RH desconfia que alguém sabe a senha:** "Redefinir senha" na B tira a liberação da B na hora (`geracao_liberada`
    fica nulo: a senha atual deixa de abrir a B e as sessões da B caem), como hoje. A outra empresa não muda. Se a pessoa
    criar senha nova com a provisória, cai no caso 3: as outras travam, e quem sabia a senha antiga perde todas.
@@ -195,10 +202,13 @@ Os casos:
    era da outra credencial. A credencial velha, se ficar sem vínculo, é apagada.
 
 O que o RH da A consegue com a provisória dele: entrar como o funcionário **na A** (como hoje) e, se o vínculo dele é
-`confirmado`, criar senha nova e travar as outras empresas (indisponibilidade, gravada nas trilhas e no registro do
-operador, §4.3). O que ele **não** consegue: abrir a B, ver o nome da B, liberar a B, **desde que não conheça a senha
-atual**. Se a conhece (viu a provisória ou digitou a senha), o caso 2 exige a troca antes de liberar a B; sem a troca,
-ele entraria na B com a senha antiga.
+`confirmado`, criar senha nova e travar as outras empresas (indisponibilidade, gravada no registro do operador e, na
+trilha das outras empresas, como `acesso_aguardando_provisoria`, §4.3 e §7). O que ele **não** consegue: abrir a B, ver
+o nome da B, liberar a B, **desde que não conheça a senha atual**. Se a conhece (viu a provisória ou digitou a senha), o
+caso 2 exige a troca antes de liberar a B, e a troca feita na própria A não adianta: a origem continua sendo a A, e a B
+só abre depois de a pessoa escolher uma senha nova na própria B. O que sobra é próprio da senha única da D16: se a
+pessoa deixa um RH digitar a senha dela (inclusive a senha nova da troca obrigatória), esse RH passa a conhecê-la, e ela
+abre todas as empresas liberadas (R1).
 
 ### 4.3 Cadastro com o CPF de outra pessoa (abuso entre empresas)
 
@@ -218,17 +228,21 @@ O desenho fecha cada ponto assim:
 - **Defesa 1: só vínculo confirmado cria senha nova numa credencial que já tem senha.** `ativar { nova_senha }` com a
   credencial **já com senha** só vale se o vínculo da provisória tem `confirmado_em`, isto é, se alguém já o liberou
   sabendo a senha. Senão, 403 `RESET_NEGADO` com texto igual para todos (§8), nada muda, e o evento `reset_recusado` vai
-  para a trilha da empresa e para o registro do operador. Credencial **sem senha** (a primeira senha, caso 1) aceita
-  qualquer vínculo. Fecha o ponto 2: o cadastro falso nunca soube a senha, então não consegue trocá-la nem travar as
-  empresas reais. Custo: quem esquece a senha e só tem, naquele momento, vínculos nunca confirmados (entrou numa empresa
-  nova e esqueceu antes de confirmar) precisa da provisória de uma empresa em que já entra (caso 3). Esse segundo passo
-  é o preço de não deixar a empresa que cadastrou o CPF mexer na senha.
+  só para o registro do operador: na trilha da empresa ele contaria ao RH que a credencial já tem senha, mesmo quando
+  quem tocou no botão foi a própria pessoa (§7). Credencial **sem senha** (a primeira senha, caso 1) aceita qualquer
+  vínculo. Fecha o ponto 2: o cadastro falso nunca soube a senha, então não consegue trocá-la nem travar as empresas
+  reais. Custo: quem esquece a senha precisa da provisória de uma empresa **em que já entrou com a senha e que ainda
+  está ativa** (caso 3); a de uma empresa nova, nunca confirmada, não serve. Se não resta nenhuma, a tela não tem saída:
+  é o caso de quem **saiu da A, entrou na B e esqueceu a senha**, o mesmo que motivou a D16. O vínculo confirmado é o da
+  A, mas o cadastro dela está inativo e a provisória dela nem conta (§5.1, passo 0); o da B nunca foi confirmado, porque
+  a pessoa não lembrava a senha para confirmar. O caminho é o RH da B, depois o suporte do SIGO, que roda o procedimento
+  do operador (abaixo). É o preço de não deixar a empresa que cadastrou o CPF mexer na senha.
 - **Defesa 2: mesma tela com e sem senha.** A etapa `senha_provisoria` do login não devolve mais `tem_senha`. A tela é
   a mesma para todos ("Crie sua senha pessoal" e o link "Já uso o portal em outra empresa"), então entrar com a
-  provisória não diz mais nada sobre o CPF. Quem quer saber tem de agir, e cada caminho deixa rastro: criar senha nova é
-  recusado (defesa 1) ou vira a primeira senha da credencial; errar a "senha atual" dá a mesma resposta com e sem senha
-  (401 `CREDENCIAIS`, o mesmo bcrypt, conta no bloqueio). Fecha o ponto 1 só em parte: sobra descobrir **por tentativa**
-  se há senha (R3).
+  provisória não diz mais nada sobre o CPF. Quem quer saber tem de agir, e cada caminho deixa rastro no registro do
+  operador: criar senha nova é recusado (defesa 1) ou vira a primeira senha da credencial; errar a "senha atual" dá a
+  mesma resposta com e sem senha (401 `CREDENCIAIS`, o mesmo bcrypt, conta no bloqueio). Fecha o ponto 1 só em parte:
+  sobra descobrir **por tentativa** se há senha (R3).
 - **Defesa 3: sem contagem de outras empresas.** `dados` deixa de levar `empresas_aguardando`. `outras_empresas` conta
   só empresas **liberadas**, e uma empresa só fica liberada quando alguém provou a senha atual (quem acabou de criar a
   senha com a provisória não tem nenhuma outra liberada). O aviso "tem empresa esperando" vira uma dica fixa, igual para
@@ -238,25 +252,42 @@ O desenho fecha cada ponto assim:
   também só aparece em vínculo `liberado`. O IP e o dispositivo completos vão para o registro do operador (defesa 5).
   Fecha o ponto 4.
 - **Defesa 5: registro e alerta para o operador.** `portal_credencial_evento` (§3.1) guarda `senha_criada`,
-  `reset_recusado`, `credencial_bloqueada`, `login_falha` (com IP e dispositivo) e
-  `credencial_redefinida_pelo_operador`, cada um com a empresa do vínculo que agiu. A consulta de alerta, só de leitura
-  (`tools/portal-credencial-alertas.sql`, que o Javerson roda), lista as credenciais com `reset_recusado`, com
-  `senha_criada` por duas ou mais empresas diferentes em 7 dias, ou com três ou mais `senha_criada` em 24 horas. Nesta
-  etapa o alerta é uma consulta, não uma notificação (P9). Com o registro o operador diz a uma vítima **qual** empresa
-  mexeu na senha, coisa que o evento `acesso_aguardando_provisoria` da empresa dela (§7) não diz, e decide o que
-  contar.
+  `reset_recusado`, `acesso_confirmado`, `troca_senha` (a da etapa `ativar`), `credencial_bloqueada`,
+  `login_falha` (com IP e dispositivo) e `credencial_redefinida_pelo_operador`, cada um com a empresa do vínculo que
+  agiu. São os eventos que, na trilha de uma empresa, contariam ao RH o que a pessoa faz em outra (§7). A consulta de
+  alerta, só de leitura (`tools/portal-credencial-alertas.sql`, que o Javerson roda), lista as credenciais com
+  `reset_recusado`, com `senha_criada` por duas ou mais empresas diferentes em 7 dias, ou com três ou mais
+  `senha_criada` em 24 horas. Nesta etapa o alerta é uma consulta, não uma notificação (P9). Com o registro o operador
+  diz a uma vítima **qual** empresa mexeu na senha, coisa que o evento `acesso_aguardando_provisoria` da empresa dela
+  (§7) não diz, e decide o que contar.
 
-**O que as defesas não resolvem: o CPF ocupado antes pela empresa real.** Se a empresa mal-intencionada cadastra o CPF
-**primeiro**, quando a credencial ainda não tem senha, ela cria a primeira senha (caso 1) e vira a dona dela. A empresa
-real que cadastrar depois liga o vínculo a essa credencial, a pessoa não sabe a senha e a defesa 1 recusa criar outra.
-Hoje o mesmo cadastro falso faz pior: o 409 impede a empresa real de criar o acesso com o CPF. A saída é o
-**procedimento do operador**, sem tela: depois de conferir quem é a pessoa fora do sistema (documento), ele redefine a
-credencial (zera a senha e a origem, sobe a geração e a versão da sessão, zera `geracao_liberada` de todos os vínculos
-e grava `credencial_redefinida_pelo_operador`). Cada empresa gera a provisória de novo, e a pessoa cria a senha. É o
-script `tools/portal-credencial-redefinir.sql`, que o Javerson roda (§9.2). A fase 2 (opção C) **não** substitui esse
-procedimento: um telefone "confirmado" por quem ocupou o CPF primeiro serviria ao ocupante. Como dissuasão, o uso fica
-na trilha da empresa que cadastrou e no registro do operador, e o termo de uso do portal deve proibir cadastrar CPF
-alheio (R6). O risco que sobra é o R11.
+**O que as defesas não resolvem: o CPF ocupado antes pela empresa real, e quem ficou sem nenhuma empresa confirmada.**
+Se a empresa mal-intencionada cadastra o CPF **primeiro**, quando a credencial ainda não tem senha, ela cria a primeira
+senha (caso 1) e vira a dona dela. A empresa real que cadastrar depois liga o vínculo a essa credencial, a pessoa não
+sabe a senha e a defesa 1 recusa criar outra. Hoje o mesmo cadastro falso faz pior: o 409 impede a empresa real de criar
+o acesso com o CPF. O outro caso é o de quem esqueceu a senha e não tem mais nenhuma empresa em que entra (custo da
+defesa 1). A saída dos dois é o **procedimento do operador**, sem tela: o RH da empresa em que a pessoa trabalha hoje
+pede ao suporte do SIGO e o operador, depois de conferir quem é a pessoa fora do sistema (documento) e **qual é a
+empresa dela** (a "conferida"), roda `tools/portal-credencial-redefinir.sql`, que o Javerson executa (§9.2), com o
+usuário, a empresa conferida e, se houver, as empresas que ocuparam o CPF (as "ocupantes"). Numa só transação, o
+script:
+
+1. troca a senha da credencial por um hash bcrypt de um segredo aleatório que ninguém guarda: a credencial continua "com
+   senha" e nenhuma senha abre, então não existe a janela "sem senha" em que qualquer vínculo cria a primeira. Zera a
+   origem e o bloqueio e sobe a geração e a versão da sessão (as sessões de todas as empresas caem);
+2. zera `geracao_liberada` e `confirmado_em` de todos os vínculos (todas as empresas passam a pedir provisória) e marca
+   `confirmado_em` **só** no vínculo da empresa conferida: só a provisória dela cria a senha nova (defesa 1);
+3. desativa o vínculo de cada empresa ocupante e sobe a `sessao_versao` dele. O ocupante fica sem senha, sem
+   `confirmado_em` e sem como criar senha nova, mesmo que o RH dele reative o cadastro, clique em "Redefinir senha" ou
+   cadastre a pessoa de novo: a defesa 1 responde `RESET_NEGADO`;
+4. grava `credencial_redefinida_pelo_operador`, com a empresa conferida e as ocupantes.
+
+O script não muda nada se a empresa conferida não tem vínculo ativo de cadastro ativo. Depois dele, o RH da empresa
+conferida gera a provisória ("Redefinir senha") e a pessoa cria a senha; as outras empresas dela pedem, cada uma, a sua
+provisória e a liberam com a senha nova (caso 2). A fase 2 (opção C) **não** substitui esse procedimento: um telefone
+"confirmado" por quem ocupou o CPF primeiro serviria ao ocupante (ela só cobre quem já tinha confirmado o WhatsApp antes
+de esquecer a senha). Como dissuasão, o uso fica no registro do operador (a trilha da empresa que cadastrou não pode
+mostrar a recusa, §7), e o termo de uso do portal deve proibir cadastrar CPF alheio (R6). O risco que sobra é o R11.
 
 ## 5. Login, escolha da empresa e sessão
 
@@ -306,8 +337,9 @@ Ações novas, sem sessão:
     `{ etapa: "nova_senha_obrigatoria" }` e não muda nada. Errada, ou credencial sem senha: 401 `CREDENCIAIS`, com o
     mesmo bcrypt nos dois casos;
   - `{ senha_atual, nova_senha }` (a segunda volta do caso 2): confere a senha atual e troca por uma nova, que passa
-    pelas mesmas regras; **não** sobe a geração, zera `senha_origem_empresa_id`, sobe a `sessao_versao` da credencial
-    (derruba as sessões abertas, as do RH da A inclusive) e libera o vínculo.
+    pelas mesmas regras; **não** sobe a geração, sobe a `sessao_versao` da credencial (derruba as sessões abertas, as do
+    RH da A inclusive) e libera o vínculo. Zera `senha_origem_empresa_id` **só** quando a empresa da provisória é
+    diferente da origem; na própria empresa de origem, a origem fica (§4.2).
 
 Os tokens intermediários vencem rápido: escolha em 5 min; ativação em 10 min, amarrada à provisória
 (`provisoria_criada_em`), para uma provisória nova anular o token da anterior. Eles levam **escopo próprio**
@@ -317,7 +349,9 @@ intermediário nunca vale como sessão, nem o de outro portal vale aqui. O de es
 a `sessao_versao` da credencial for a mesma.
 
 `trocar_senha` (com sessão) passa a exigir sempre a senha atual: o primeiro acesso virou a etapa `ativar`, e a trava
-`TROCAR_SENHA` (`index.ts:628-630`) sai. A troca não sobe a geração e zera `senha_origem_empresa_id`.
+`TROCAR_SENHA` (`index.ts:628-630`) sai. A troca não sobe a geração e **mantém** `senha_origem_empresa_id`: quem pode
+trocar a senha na sessão da empresa de origem é quem sabe a senha atual, o RH que a criou inclusive (§4.2). Ela derruba
+as sessões de todas as empresas (`vc`).
 
 ### 5.2 O que vai no token
 
@@ -375,8 +409,9 @@ O que muda dentro de `portal-funcionario/index.ts` (o resto fica igual):
 `dados` passa a levar `outras_empresas`: quantas **outras** empresas estão liberadas. Só conta quem prova a senha atual;
 não há número de empresas esperando liberação (§4.3, defesa 3). Com uma ou mais liberadas, o cabeçalho mostra "Trocar
 de empresa", que chama `empresas` (a lista das liberadas) e `trocar_empresa { funcionario_id }`. Sem pedir a senha de
-novo (a sessão já provou), o servidor devolve o token da outra empresa e grava `login` com
-`detalhe.via = "troca_de_empresa"` na trilha dela. O token novo **vence junto com o de origem** (o `exp` é o do token
+novo (a sessão já provou), o servidor devolve o token da outra empresa e grava `login` com `via: "senha"` na trilha
+dela, igual ao de quem entrou com a senha (§7: a trilha de uma empresa não diz que a pessoa veio de outra). O token novo
+**vence junto com o de origem** (o `exp` é o do token
 de origem, e o ttl passado a `signPortalToken` é o que sobra): alternar entre empresas não renova a sessão para sempre,
 e passadas as 12 h do login a pessoa entra de novo com a senha. A sessão da empresa de origem vale até sair ou vencer.
 
@@ -396,7 +431,8 @@ pessoa: duas sessões em empresas diferentes não dobram o teto.
   `criar` do RH: o servidor procura a credencial antes e liga o vínculo a ela ou a cria.
 - `criar` para funcionário com CPF devolve **sempre** `{ usuario, senha_provisoria, url_path }`, exista ou não
   credencial daquele CPF em outra empresa: as mesmas chaves, o mesmo status, o mesmo texto. O RH não fica sabendo se a
-  pessoa já usa o portal. A mensagem que a tela manda ao funcionário cobre os dois casos (§8).
+  pessoa já usa o portal, nem na resposta nem depois, pela trilha da empresa dele (§7: o que só existiria por haver
+  outra empresa vai para o registro do operador). A mensagem que a tela manda ao funcionário cobre os dois casos (§8).
 - Os 409 que continuam, nenhum com dado de outra empresa:
   - `JA_TEM_ACESSO`: o cadastro **desta** empresa já tem vínculo. A T37 e o `avisarNoPortal`
     (`lib/portal-funcionario-acesso.js:169-186`) dependem dele, e o spec da T33 mantém a ordem "409 antes do 403".
@@ -407,8 +443,8 @@ pessoa: duas sessões em empresas diferentes não dobram o teto.
   caso 6) e só aparece em vínculo `liberado` (§4.3, defesa 4).
 - O que sobra (R3 e R11): quem tem a provisória da B vê a mesma tela com e sem senha (defesa 2) e não vê quantas
   empresas há (defesa 3). Descobre **se há senha** só por tentativa: criar senha nova é recusado quando a credencial já
-  tem senha e o vínculo nunca foi confirmado (defesa 1), e a tentativa fica na trilha da empresa dele e no registro do
-  operador (defesa 5). Não descobre a empresa. Quem tem a provisória pode ser o RH que cadastrou um CPF alheio de
+  tem senha e o vínculo nunca foi confirmado (defesa 1), e a tentativa fica só no registro do operador (defesa 5), não
+  na trilha da empresa dele. Não descobre a empresa. Quem tem a provisória pode ser o RH que cadastrou um CPF alheio de
   propósito: §4.3.
 
 O que muda em `funcionario-acesso/index.ts` (o resto, inclusive as ações de matrícula, fica igual):
@@ -432,26 +468,30 @@ O que muda em `funcionario-acesso/index.ts` (o resto, inclusive as ações de ma
   evidência continua "a dona da credencial assinou, nesta sessão, deste IP e deste dispositivo". A validação pública não
   muda.
 - **Trilha:** cada evento vai para a trilha do cadastro da sessão, como hoje. Os eventos que acontecem antes de escolher
-  a empresa, ou que mexem com a pessoa toda, ficam assim:
+  a empresa, ou que mexem com a pessoa toda, ficam assim. A regra é que a trilha de uma empresa só grava o que ela
+  gravaria se a pessoa usasse o portal só nela (a única exceção é o `acesso_aguardando_provisoria`, abaixo): o RH lê,
+  na auditoria da matrícula e no dossiê, os eventos do funcionário sem matrícula (`MatriculaAuditoriaSheet.jsx:103-118`,
+  `exportarDossieEad.js:88-96`), então o que a trilha grava ele fica sabendo sem ter agido. O que contaria o que a
+  pessoa faz em outra empresa vai só para `portal_credencial_evento`, que o operador lê:
 
-| Evento                                                                       | Onde é gravado                                                             | Detalhe (sem dado de outra empresa)                                                                          |
-| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `login_falha` (inclusive o que bloqueia)                                     | trilha dos vínculos `liberado` da credencial; e `portal_credencial_evento` | trilha: `{ tentativa, bloqueou }`, sem IP e dispositivo; registro do operador: o mesmo, com IP e dispositivo |
-| `login`                                                                      | só a empresa escolhida                                                     | `{ via: "senha" \| "provisoria" \| "troca_de_empresa" }`                                                     |
-| `senha_criada` (provisória usada para criar a senha)                         | empresa da provisória; e `portal_credencial_evento`                        | `{ primeira: true \| false }`                                                                                |
-| `reset_recusado` (criar senha nova negado, §4.3)                             | empresa da provisória; e `portal_credencial_evento`                        | sem detalhe                                                                                                  |
-| `acesso_confirmado` (provisória usada com a senha atual)                     | empresa da provisória                                                      | `{ troca: true \| false }`: se a senha foi trocada na ativação                                               |
-| `acesso_aguardando_provisoria`                                               | cada **outra** empresa que travou                                          | `{ motivo: "senha_nova" }`                                                                                   |
-| `troca_senha` (voluntária, ou a da etapa `ativar`)                           | empresa da sessão (na `ativar`, a da provisória)                           | `{ via: "sessao" \| "ativacao" }`                                                                            |
-| `credencial_bloqueada`, `credencial_redefinida_pelo_operador`                | só `portal_credencial_evento`                                              | `credencial_bloqueada`: `{ tentativa }`; o outro, sem detalhe                                                |
-| `acesso_criado`, `senha_redefinida`, `acesso_desativado`, `acesso_reativado` | empresa do RH                                                              | `{ por }`, como hoje                                                                                         |
+| Evento                                                                                                                  | Onde é gravado                                                             | Detalhe (sem dado de outra empresa)                                                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `login_falha` (inclusive o que bloqueia)                                                                                | trilha dos vínculos `liberado` da credencial; e `portal_credencial_evento` | trilha: `{ tentativa, bloqueou }`, sem IP e dispositivo; registro do operador: o mesmo, com IP e dispositivo                                                        |
+| `login`                                                                                                                 | só a empresa escolhida                                                     | `{ via: "senha" \| "provisoria" }`. A troca de empresa (§5.4) grava o mesmo `login` de quem entrou com a senha                                                      |
+| `acesso_liberado` (a provisória liberou o vínculo: primeira senha criada, ou senha atual confirmada, com ou sem troca)  | empresa da provisória                                                      | sem detalhe: a trilha não diz se a pessoa já tinha senha nem se a trocou                                                                                            |
+| `senha_criada`, `acesso_confirmado`, `troca_senha` da etapa `ativar` e `reset_recusado` (criar senha nova negado, §4.3) | só `portal_credencial_evento`                                              | `senha_criada`: `{ primeira: true \| false }`; `acesso_confirmado`: `{ troca: true \| false }`; `troca_senha`: `{ via: "ativacao" }`; `reset_recusado`: sem detalhe |
+| `acesso_aguardando_provisoria`                                                                                          | cada **outra** empresa que travou (estava `liberado` e deixou de estar)    | `{ motivo: "senha_nova" }`                                                                                                                                          |
+| `troca_senha` voluntária (com sessão)                                                                                   | empresa da sessão                                                          | `{ via: "sessao" }`                                                                                                                                                 |
+| `credencial_bloqueada`, `credencial_redefinida_pelo_operador`                                                           | só `portal_credencial_evento`                                              | `credencial_bloqueada`: `{ tentativa }`; o outro, com a empresa conferida e as ocupantes                                                                            |
+| `acesso_criado`, `senha_redefinida`, `acesso_desativado`, `acesso_reativado`                                            | empresa do RH                                                              | `{ por }`, como hoje                                                                                                                                                |
 
 O `acesso_aguardando_provisoria` deixa a B saber que a senha mudou sem a provisória dela (portanto, por outra empresa
-ou, na fase 2, pelo próprio funcionário), mas não por qual. Sem ele, a Ficha da B mostraria "Precisa de nova senha
-provisória" sem explicação. Quem sabe por qual empresa foi é o operador, pelo `portal_credencial_evento`, e decide o que
-contar à vítima. Os eventos da trilha da empresa levam IP e dispositivo (`registrarEvento`,
-`_shared/portal-funcionario.ts:111`); o `login_falha` é a exceção, gravado sem eles (§4.3, defesa 4). Os eventos novos
-entram na lista de rótulos da trilha do RH (T18) e são de origem `servidor` (T17).
+ou, na fase 2, pelo próprio funcionário), mas não por qual. Só chega à B se ela estava `liberado`, isto é, se a pessoa
+já entrava nela, e é o único evento em que a trilha de uma empresa mostra algo que aconteceu fora dela (R3). Sem ele, a
+Ficha da B mostraria "Precisa de nova senha provisória" sem explicação. Quem sabe por qual empresa foi é o operador,
+pelo `portal_credencial_evento`, e decide o que contar à vítima. Os eventos da trilha da empresa levam IP e dispositivo
+(`registrarEvento`, `_shared/portal-funcionario.ts:111`); o `login_falha` é a exceção, gravado sem eles (§4.3, defesa
+4). Os eventos novos entram na lista de rótulos da trilha do RH (T18) e são de origem `servidor` (T17).
 
 ## 8. Tela (proposta)
 
@@ -469,7 +509,8 @@ entram na lista de rótulos da trilha do RH (T18) e são de origem `servidor` (T
   senha provisória, e quem gerou essa provisória pode saber qual é."
 - `RESET_NEGADO` (criar senha nova recusado): "Esta senha provisória não pode criar uma senha nova. Se você já usa o
   portal em outra empresa, toque em "Já uso o portal em outra empresa" e digite a senha que você usa. Se não lembra
-  dela, peça uma senha provisória ao RH de uma empresa em que você já entra." O texto é o mesmo para todos.
+  dela, peça uma senha provisória ao RH de uma empresa em que você já entra. Se não entra mais em nenhuma, peça ao RH
+  desta empresa que procure o suporte do SIGO." O texto é o mesmo para todos.
 - `PEDIR_PROVISORIA`: "Seu acesso precisa ser liberado de novo. Peça ao RH a senha provisória."
 - Dica fixa no rodapé do painel, igual para todos e sem número: "Trabalha em outra empresa e ela não aparece? Peça ao RH
   dela a senha provisória." Ela substitui o aviso com a contagem de empresas esperando (§4.3, defesa 3) e não diz o nome
@@ -510,9 +551,9 @@ Números: os próximos livres na hora, confirmados com o Javerson (hoje, nesta b
        numérico diferente do CPF, usuário de 11 dígitos de cadastro sem CPF, usuário com letras) = `manual`, que
        continua entrando e não se junta a outra empresa;
      - acesso com senha pessoal (`senha_provisoria = false`): credencial com o hash, `senha_geracao` 1 e
-       `senha_origem_empresa_id` = a empresa do acesso (a pessoa a criou com a provisória dela e não se sabe se a
-       trocou depois, então o caso 2 pede a troca quando ela entrar numa empresa nova); vínculo liberado na geração 1,
-       com `confirmado_em` = o último acesso (ou agora);
+       `senha_origem_empresa_id` = a empresa do acesso (a pessoa a criou com a provisória dela, então o caso 2 pede a
+       troca quando ela entrar numa empresa nova, e trocar a senha dentro da empresa não tira a origem); vínculo
+       liberado na geração 1, com `confirmado_em` = o último acesso (ou agora);
      - acesso com provisória pendente (`senha_provisoria = true`): credencial sem senha e geração 0; o hash antigo
        vira o `provisoria_hash` do vínculo, sem vencimento (a provisória já entregue continua valendo), com
        `geracao_liberada` e `confirmado_em` nulos.
@@ -543,9 +584,14 @@ Regras em módulo puro, com `node:test`. `supabase/functions/_shared/portal-cred
 - `decidirLogin` (as etapas da §5.1; o teste confere que a etapa `senha_provisoria` tem as mesmas chaves, e nenhum
   `tem_senha`, com e sem senha na credencial);
 - `sessaoValida` (cada item da §5.3) e `vinculoEscolhido`;
-- `efeitoDaSenhaNova` (geração, vínculo liberado, quais travam), `podeCriarSenhaNova` (defesa 1: credencial sem senha
-  aceita qualquer vínculo; com senha, só vínculo com `confirmado_em`) e `exigeTrocaNaAtivacao` (caso 2:
-  `senha_origem_empresa_id` de outra empresa exige a troca; nulo ou da mesma empresa não exige);
+- `efeitoDaSenhaNova` (geração, vínculo liberado, quais travam; o teste confere a regra do §4.2: com origem não nula,
+  só a origem fica liberada), `podeCriarSenhaNova` (defesa 1: credencial sem senha aceita qualquer vínculo; com senha,
+  só vínculo com `confirmado_em`; o hash inutilizável do operador conta como "com senha", então um vínculo sem
+  `confirmado_em` não cria senha nova nele, e o da empresa conferida cria), `exigeTrocaNaAtivacao` (caso 2:
+  `senha_origem_empresa_id` de outra empresa exige a troca, inclusive depois de um `trocar_senha` na empresa de origem;
+  nulo ou da mesma empresa não exige) e
+  `origemDepoisDaTroca` (`trocar_senha` e a troca da `ativar` na própria empresa de origem mantêm a origem; só a troca
+  da `ativar` em outra empresa a zera; origem nula continua nula);
 - `decidirCriarVinculo` (liga, cria, `OUTRO_CADASTRO_COM_ACESSO` ao criar e ao reativar, `USUARIO_EM_USO`; o teste
   confere que a resposta do `criar` tem as mesmas chaves com e sem credencial em outra empresa).
 
@@ -558,10 +604,14 @@ Mais:
   `statusAcesso` com o selo novo. Um teste de paridade importa `cpfValido` do servidor e `validarCpf` de `lib/cpf.js` e
   roda nas duas a mesma lista de CPFs válidos e inválidos (modelo: `portal-senha.test.js`, que importa o servidor).
 - Smoke `tools/smoke-portal-credencial.sql` (`begin; ... rollback;`, sem UUID real, que o Javerson roda): a cópia da
-  `0145` nos três tipos de linha (§9.1), o índice parcial e o trigger da credencial sem vínculo, inclusive o `update`.
+  `0145` nos três tipos de linha (§9.1), o índice parcial e o trigger da credencial sem vínculo, inclusive o `update`, e
+  o procedimento do operador (§4.3) numa credencial sintética com um ocupante: o hash fica preenchido, só a empresa
+  conferida fica com `confirmado_em`, nenhum vínculo fica com `geracao_liberada` e o vínculo do ocupante fica
+  desativado (o smoke repete o corpo do script).
 - Para o operador (§4.3, defesa 5), em `tools/`, que o Javerson roda e o agente não: `portal-credencial-alertas.sql`
-  (só leitura, as três regras da defesa 5) e `portal-credencial-redefinir.sql` (o procedimento do CPF ocupado, por
-  usuário, dentro de `begin; ... commit;`).
+  (só leitura, as três regras da defesa 5) e `portal-credencial-redefinir.sql` (o procedimento do operador da §4.3, por
+  usuário, com a empresa conferida e as ocupantes como parâmetros, dentro de `begin; ... commit;`; sem vínculo ativo de
+  cadastro ativo na empresa conferida, não muda nada).
 
 Arquivos que mudam: `portal-funcionario/index.ts` (login, sessão, `ativar`, `escolher_empresa`, `empresas`,
 `trocar_empresa`, `trocar_senha`, sinal, limites), `funcionario-acesso/index.ts` (`criar`, `redefinir`, `ativo`,
@@ -584,17 +634,27 @@ Os dois scripts do operador ficam em `tools/` e não rodam no deploy.
 
 - **R1 — O RH entra como o funcionário com a provisória.** Já acontece hoje. Continua restrito à empresa daquele RH:
   senha criada com a provisória só trava as outras se o vínculo dele é `confirmado` (§4.3), e a senha que ele conhece
-  morre antes de a pessoa liberar outra empresa (caso 2, troca obrigatória, P10). Sem a troca, o RH que viu ou digitou a
-  senha entraria na B. O uso fica na trilha com IP e dispositivo.
+  não abre outra empresa: a origem fica nela até a pessoa escolher uma senha nova na outra empresa (caso 2, troca
+  obrigatória, P10), e trocar a senha dentro da empresa de origem não tira a origem, porque quem a troca ali sabe a
+  atual. O que sobra é próprio da senha única da D16: se a pessoa deixa um RH digitar a senha dela, inclusive a senha
+  nova da troca obrigatória, esse RH passa a conhecê-la, e ela abre todas as empresas liberadas. O uso fica na trilha
+  com IP e dispositivo.
 - **R2 — Indisponibilidade cruzada.** Uma empresa em que a pessoa já entrou com a senha (ou a própria pessoa, pelo
   "criar senha nova") trava as outras até cada uma gerar provisória nova. Não expõe dado, mas atrapalha quem está em
-  duas empresas. A empresa em que a pessoa nunca entrou com a senha não consegue (defesa 1). Mitigação: o selo e o
-  evento explicam ao RH o que fazer; a fase 2 (opção C) tira o RH do caminho, para quem tem telefone confirmado.
+  duas empresas. A empresa em que a pessoa nunca entrou com a senha não consegue (defesa 1). Duas lacunas ficam: (a) o
+  **ex-empregador** mantém esse poder enquanto o RH dele puder reativar o cadastro e clicar "Redefinir senha", porque o
+  `confirmado_em` não é apagado pelo fluxo normal (§3.1); (b) quem **saiu da A, entrou na B e esqueceu a senha** (o caso
+  que motivou a D16) não tem saída na tela: o vínculo confirmado é o da A, com cadastro inativo, e o da B nunca foi
+  confirmado. O caminho é o RH da B, o suporte do SIGO e o procedimento do operador (§4.3): uma intervenção do operador
+  por pessoa, que a P11 pede para aceitar e a P12 propõe evitar. Mitigação: o selo e o evento explicam ao RH o que
+  fazer; a fase 2 (opção C) tira o RH do caminho, para quem tem telefone confirmado.
 - **R3 — Vazamento residual.** Quem tem a provisória da B não vê, ao entrar, se o CPF já tem senha (mesma tela,
   defesa 2) nem quantas empresas há (defesa 3). Ainda descobre **se há senha**, por tentativa: criar senha nova é
   recusado quando a credencial já tem senha e o vínculo nunca foi confirmado (defesa 1). Não descobre a empresa. Quem
-  tem a provisória é o funcionário ou o RH que a gerou, e este pode ser o adversário do R11: a tentativa fica na trilha
-  da empresa dele e no registro do operador (defesa 5).
+  tem a provisória é o funcionário ou o RH que a gerou, e este pode ser o adversário do R11: a tentativa fica no
+  registro do operador (defesa 5) e não na trilha da empresa dele, que o próprio RH leria sem ter agido (§7). A trilha
+  de uma empresa só mostra algo de fora dela em um caso, o `acesso_aguardando_provisoria`, num vínculo que já estava
+  liberado (a pessoa já entrava ali): ele diz que a senha mudou, sem dizer onde nem por quem.
 - **R4 — CPF digitado errado** liga o cadastro à credencial de outra pessoa. Nenhum dado cruza (a outra pessoa não sabe
   a senha da credencial; a empresa travada não aparece pelo nome), mas as duas pessoas se travam uma à outra a cada
   senha nova. Mitigação: dígitos verificadores ao criar o acesso; `cpf_mudou` e "Redefinir senha" religam o vínculo
@@ -621,22 +681,24 @@ Os dois scripts do operador ficam em `tools/` e não rodam no deploy.
   defesas da §4.3 ela **não** troca a senha de quem já usa o portal, não vê quantas empresas a pessoa tem e não recebe
   IP nem dispositivo de quem erra a senha. Sobra: (a) descobrir por tentativa se o CPF tem senha (R3); (b) se o CPF
   ainda **não tinha senha**, criar a primeira e ocupar o CPF: a empresa real que cadastrar depois não consegue criar a
-  senha da pessoa, e a saída é o procedimento do operador, que confere a identidade fora do sistema; (c) errar a senha
-  e bloquear a pessoa por 15 min (R5). Hoje o mesmo cadastro falso já ocupa o CPF pelo 409, sem saída para a empresa
-  real. Detecção: o registro e a consulta de alerta do operador (defesa 5); dissuasão: o termo de uso (R6). Aceitar o
-  que sobra é a P9.
+  senha da pessoa, e a saída é o procedimento do operador, que confere a identidade fora do sistema e tira o poder do
+  ocupante (desativa o vínculo dele e zera o `confirmado_em`); (c) errar a senha e bloquear a pessoa por 15 min (R5).
+  Hoje o mesmo cadastro falso já ocupa o CPF pelo 409, sem saída para a empresa real. Detecção: o registro e a consulta
+  de alerta do operador (defesa 5); dissuasão: o termo de uso (R6). Aceitar o que sobra é a P9 e a P11.
 
 ## 11. Perguntas ao Javerson
 
-| #   | Pergunta                                                                                                                                                                                                                                                                                                                        | Recomendação                                                              |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| P1  | Qual opção da §4.1 para criar, redefinir e desativar a senha?                                                                                                                                                                                                                                                                   | A                                                                         |
-| P2  | Na opção A, quem cria senha nova com a provisória de uma empresa em que já entrou com a senha trava as outras até cada uma gerar provisória nova. Aceita esse custo?                                                                                                                                                            | Sim: é o que impede o RH de uma empresa de entrar na outra                |
-| P3  | A senha provisória passa a vencer (hoje não vence)?                                                                                                                                                                                                                                                                             | Sim, em 7 dias                                                            |
-| P4  | Fase 2 com "Esqueci a senha" pelo WhatsApp que o próprio funcionário confirmou (opção C)?                                                                                                                                                                                                                                       | Só se pedir a provisória de cada empresa incomodar no uso                 |
-| P5  | Na tela, manter o nome "senha provisória" (e não "código de acesso")?                                                                                                                                                                                                                                                           | Sim: o RH e os funcionários já conhecem                                   |
-| P6  | Curso feito numa empresa não vale na outra (cada uma matricula e certifica)?                                                                                                                                                                                                                                                    | Sim; aproveitar é a D17                                                   |
-| P7  | A migração copia os acessos existentes (a provisória já entregue continua valendo) ou o RH os recria depois do deploy?                                                                                                                                                                                                          | Copiar                                                                    |
-| P8  | Usuário só com números passa a ser só o CPF do próprio cadastro, e o CPF precisa ter os dígitos verificadores certos para criar o acesso?                                                                                                                                                                                       | Sim                                                                       |
-| P9  | Aceita as defesas da §4.3 contra cadastro com CPF alheio (só vínculo já confirmado cria senha nova, mesma tela com e sem senha, registro e consulta de alerta) e o procedimento do operador, que confere a pessoa fora do sistema, para o CPF ocupado antes pela empresa real? Avisar o operador por WhatsApp fica para depois. | Sim: limita o estrago sem exigir prova de identidade; o que sobra é o R11 |
-| P10 | Ao entrar na segunda empresa, quem ainda não trocou por conta própria a senha criada com a provisória da primeira escolhe uma senha nova (um passo a mais, uma vez só)?                                                                                                                                                         | Sim: sem isso o RH que viu ou digitou a senha entraria na outra empresa   |
+| #   | Pergunta                                                                                                                                                                                                                                     | Recomendação                                                                                                                        |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| P1  | Qual opção da §4.1 para criar, redefinir e desativar a senha?                                                                                                                                                                                | A                                                                                                                                   |
+| P2  | Na opção A, quem cria senha nova com a provisória de uma empresa em que já entrou com a senha trava as outras até cada uma gerar provisória nova. Aceita esse custo?                                                                         | Sim: é o que impede o RH de uma empresa de entrar na outra                                                                          |
+| P3  | A senha provisória passa a vencer (hoje não vence)?                                                                                                                                                                                          | Sim, em 7 dias                                                                                                                      |
+| P4  | Fase 2 com "Esqueci a senha" pelo WhatsApp que o próprio funcionário confirmou (opção C)?                                                                                                                                                    | Só se pedir a provisória de cada empresa incomodar no uso                                                                           |
+| P5  | Na tela, manter o nome "senha provisória" (e não "código de acesso")?                                                                                                                                                                        | Sim: o RH e os funcionários já conhecem                                                                                             |
+| P6  | Curso feito numa empresa não vale na outra (cada uma matricula e certifica)?                                                                                                                                                                 | Sim; aproveitar é a D17                                                                                                             |
+| P7  | A migração copia os acessos existentes (a provisória já entregue continua valendo) ou o RH os recria depois do deploy?                                                                                                                       | Copiar                                                                                                                              |
+| P8  | Usuário só com números passa a ser só o CPF do próprio cadastro, e o CPF precisa ter os dígitos verificadores certos para criar o acesso?                                                                                                    | Sim                                                                                                                                 |
+| P9  | Aceita as defesas da §4.3 contra cadastro com CPF alheio (só vínculo já confirmado cria senha nova, mesma tela com e sem senha, registro e consulta de alerta para o operador)? Avisar o operador por WhatsApp fica para depois.             | Sim: limita o estrago sem exigir prova de identidade; o que sobra é o R11                                                           |
+| P10 | Ao entrar na segunda empresa, quem tem a senha criada com a provisória da primeira (mesmo que a tenha trocado dentro da primeira) escolhe uma senha nova na própria segunda (um passo a mais, uma vez só)?                                   | Sim: sem isso o RH que viu ou digitou a senha entraria na outra empresa. Sobra o RH a quem a pessoa deixa digitar a senha nova (R1) |
+| P11 | O CPF ocupado antes pela empresa real, e quem saiu da empresa em que era confirmado e esqueceu a senha, só se resolvem pelo operador: o RH pede ao suporte do SIGO, que confere a pessoa fora do sistema e roda o script. Aceita esse canal? | Sim, enquanto for raro; se virar rotina, a opção C (fase 2) cobre quem já confirmou o WhatsApp                                      |
+| P12 | Quando a credencial tem senha mas nenhuma empresa confirmada e ativa, o vínculo não confirmado pode criar senha nova sem passar pelo operador?                                                                                               | Não: o cadastro falso tomaria a credencial de quem não trabalha em nenhuma empresa do SIGO; rever se o operador virar gargalo       |
