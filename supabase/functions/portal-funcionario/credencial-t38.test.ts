@@ -144,6 +144,43 @@ test("a senha errada vai à trilha sem IP (defesa 4); a credencial só ao regist
   }
 });
 
+// revisão 1, I1: a ativação grava a credencial (senha, geração, sessões) e DEPOIS libera o vínculo. Se a liberação falha,
+// a senha já mudou: os eventos que dependem só dela (as empresas que travaram e o registro do operador) são gravados
+// antes de `liberarVinculo`, e só os da empresa da provisória esperam a liberação.
+test("ativar: os eventos da senha saem antes de liberar o vínculo e os da liberação, depois (I1)", () => {
+  const inteira = trechoDaAcao(portal, "ativar");
+  // o trecho da ação vai até o próximo `if (body.acao ...` ou seção; aqui só importa o que vem antes da sessão
+  const ativar = inteira.slice(0, inteira.indexOf("const payload = body.token") + 1 || undefined);
+  const posicoes = (trecho: string) => {
+    const achadas: number[] = [];
+    for (let i = ativar.indexOf(trecho); i >= 0; i = ativar.indexOf(trecho, i + 1)) achadas.push(i);
+    return achadas;
+  };
+  const gravaSenha = posicoes("gravarEventos(supabase, req, credencial.id, eventos.daSenha)");
+  const gravaLiberacao = posicoes(
+    "gravarEventos(supabase, req, credencial.id, eventos.daLiberacao)"
+  );
+  const libera = posicoes("await liberarVinculo(efeito.vinculo)");
+  // as três formas (senha nova, senha atual, senha atual + nova), cada uma na sua vez
+  assert.equal(gravaSenha.length, 3);
+  assert.equal(gravaLiberacao.length, 3);
+  assert.equal(libera.length, 3);
+  for (let n = 0; n < 3; n++) {
+    assert.ok(gravaSenha[n] < libera[n], `forma ${n}: os eventos da senha antes de liberar`);
+    assert.ok(libera[n] < gravaLiberacao[n], `forma ${n}: os da liberação depois`);
+    if (n > 0) assert.ok(gravaLiberacao[n - 1] < gravaSenha[n], `forma ${n}: formas em sequência`);
+  }
+  // a saída por vínculo não liberado nunca vem antes dos eventos da senha da mesma forma
+  for (const saida of posicoes("return vinculoNaoLiberado()")) {
+    assert.ok(
+      gravaSenha.some((g) => g < saida),
+      "vinculoNaoLiberado sem os eventos da senha antes"
+    );
+  }
+  // o registro nunca derruba a ação: o resultado de gravarEventos não decide a resposta
+  assert.equal(/(?:const|let)\s+\w+\s*=\s*await gravarEventos/.test(ativar), false);
+});
+
 test("a sessão é conferida por sessaoValida e o relógio e os limites são da pessoa (credencial)", () => {
   assert.match(portal, /const sessaoConferida = sessaoValida\(\{/);
   assert.match(portal, /payload\.scope !== ESCOPO_SESSAO/);

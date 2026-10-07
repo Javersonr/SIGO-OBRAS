@@ -747,18 +747,17 @@ Deno.serve(
           .select("id");
         if (error) return fail("Erro ao salvar a senha", 500);
         if (!gravadas?.length) return fail(MSG_ATIVACAO_VENCIDA, 409, { codigo: "ATIVACAO" });
+        // a senha já mudou e as outras empresas já travaram: o que depende só disso vai ao registro agora, mesmo que o
+        // vínculo não consiga ser liberado (I1); os eventos da empresa da provisória esperam a liberação
+        const eventos = eventosDaAtivacao({
+          forma: "senha_nova",
+          primeira: !credencial.senha_hash,
+          item,
+          travadas: efeito.travadas,
+        });
+        await gravarEventos(supabase, req, credencial.id, eventos.daSenha);
         if (!(await liberarVinculo(efeito.vinculo))) return vinculoNaoLiberado();
-        await gravarEventos(
-          supabase,
-          req,
-          credencial.id,
-          eventosDaAtivacao({
-            forma: "senha_nova",
-            primeira: !credencial.senha_hash,
-            item,
-            travadas: efeito.travadas,
-          })
-        );
+        await gravarEventos(supabase, req, credencial.id, eventos.daLiberacao);
         const token = await tokenDaSessao(credencial.id, efeito.credencial.sessao_versao, item);
         return respostaDaSessao(token, item);
       }
@@ -788,16 +787,23 @@ Deno.serve(
           return ok({ etapa: "nova_senha_obrigatoria" });
         }
         const efeito = efeitoDaConfirmacao({ credencial, item, agora, troca: false });
-        await supabase.from("portal_credencial").update(efeito.credencial).eq("id", credencial.id);
+        const { error: erroZerar } = await supabase
+          .from("portal_credencial")
+          .update(efeito.credencial)
+          .eq("id", credencial.id);
+        // só zera o contador de erros: não impede a liberação, mas a falha não passa em silêncio
+        if (erroZerar) console.error("[portal-funcionario] ativar: credencial:", erroZerar.message);
+        const eventos = eventosDaAtivacao({
+          forma: "senha_atual",
+          primeira: false,
+          item,
+          travadas: [],
+        });
+        await gravarEventos(supabase, req, credencial.id, eventos.daSenha);
         if (!(await liberarVinculo(efeito.vinculo))) {
           return fail(MSG_ATIVACAO_VENCIDA, 409, { codigo: "ATIVACAO" });
         }
-        await gravarEventos(
-          supabase,
-          req,
-          credencial.id,
-          eventosDaAtivacao({ forma: "senha_atual", primeira: false, item, travadas: [] })
-        );
+        await gravarEventos(supabase, req, credencial.id, eventos.daLiberacao);
         const token = await tokenDaSessao(credencial.id, credencial.sessao_versao, item);
         return respostaDaSessao(token, item);
       }
@@ -816,13 +822,11 @@ Deno.serve(
         .select("id");
       if (erroTroca) return fail("Erro ao salvar a senha", 500);
       if (!trocadas?.length) return fail(MSG_ATIVACAO_VENCIDA, 409, { codigo: "ATIVACAO" });
+      // a senha já mudou e as sessões já caíram: o troca_senha do operador vai agora, mesmo que o vínculo falhe (I1)
+      const eventos = eventosDaAtivacao({ forma: "troca", primeira: false, item, travadas: [] });
+      await gravarEventos(supabase, req, credencial.id, eventos.daSenha);
       if (!(await liberarVinculo(efeito.vinculo))) return vinculoNaoLiberado();
-      await gravarEventos(
-        supabase,
-        req,
-        credencial.id,
-        eventosDaAtivacao({ forma: "troca", primeira: false, item, travadas: [] })
-      );
+      await gravarEventos(supabase, req, credencial.id, eventos.daLiberacao);
       const token = await tokenDaSessao(
         credencial.id,
         efeito.credencial.sessao_versao ?? credencial.sessao_versao + 1,

@@ -770,38 +770,58 @@ export function efeitoDaConfirmacao(p: {
 // ------------------------------------------------------------------------------------------- eventos (§7)
 
 /**
- * Eventos da ativação. A trilha da empresa da provisória é IDÊNTICA nas três formas (`login` pela provisória e
- * `acesso_liberado`): ela não pode dizer se a pessoa já tinha senha nem se a trocou (revisão 3, m4). O que conta isso
- * vai só para o registro do operador. Cada empresa que travou recebe `acesso_aguardando_provisoria`, sem dizer qual
- * empresa mexeu.
+ * Eventos da ativação, em DOIS blocos que o `index.ts` grava em momentos diferentes (revisão 1, I1). A ordem das
+ * gravações é: (1) a credencial (senha, geração, sessões); (2) o vínculo da empresa da provisória, que só pega a linha
+ * se a provisória ainda é a do token; (3) os eventos.
+ * - `daSenha`: o que depende SÓ de a senha ter mudado. Grava logo depois de (1), ainda que (2) falhe: a senha mudou e
+ *   as outras empresas travaram de qualquer jeito. É o `acesso_aguardando_provisoria` de cada empresa que travou (sem
+ *   dizer qual empresa mexeu) e, no registro do operador, o `senha_criada` (forma `senha_nova`) ou o `troca_senha`
+ *   (forma `troca`). Sem isso, o RH de uma empresa confirmada trocaria a senha e travaria as outras sem deixar rastro
+ *   no registro em que a defesa 5 e a consulta de alertas se baseiam.
+ * - `daLiberacao`: o que depende de o vínculo ter sido liberado. Grava só depois de (2) dar certo. A trilha da empresa
+ *   da provisória é IDÊNTICA nas três formas (`login` pela provisória e `acesso_liberado`): ela não pode dizer se a
+ *   pessoa já tinha senha nem se a trocou (revisão 3, m4). O `acesso_confirmado` do operador também fica aqui: a
+ *   consulta de alertas usa a confirmação para inocentar uma recusa (regra 1), então só vale quando o acesso foi
+ *   mesmo confirmado.
  */
 export function eventosDaAtivacao(p: {
   forma: "senha_nova" | "senha_atual" | "troca";
   primeira: boolean;
   item: ItemDoVinculo;
   travadas: ItemDoVinculo[];
-}): Eventos {
+}): { daSenha: Eventos; daLiberacao: Eventos } {
   const { empresa_id, funcionario_id } = p.item.vinculo;
-  const trilha: EventoDaTrilha[] = [
-    { empresa_id, funcionario_id, evento: "login", detalhe: { via: "provisoria" } },
-    { empresa_id, funcionario_id, evento: EVENTO_ACESSO_LIBERADO, detalhe: null },
-    ...p.travadas.map((t) => ({
+  const daSenha: Eventos = {
+    trilha: p.travadas.map((t) => ({
       empresa_id: t.vinculo.empresa_id,
       funcionario_id: t.vinculo.funcionario_id,
       evento: EVENTO_ACESSO_AGUARDANDO_PROVISORIA,
       detalhe: { motivo: "senha_nova" },
     })),
-  ];
-  const operador: EventoDoOperador[] =
-    p.forma === "senha_nova"
-      ? [{ empresa_id, evento: OPERADOR_SENHA_CRIADA, detalhe: { primeira: p.primeira } }]
-      : p.forma === "senha_atual"
-        ? [{ empresa_id, evento: OPERADOR_ACESSO_CONFIRMADO, detalhe: { troca: false } }]
+    operador:
+      p.forma === "senha_nova"
+        ? [{ empresa_id, evento: OPERADOR_SENHA_CRIADA, detalhe: { primeira: p.primeira } }]
+        : p.forma === "troca"
+          ? [{ empresa_id, evento: OPERADOR_TROCA_SENHA, detalhe: { via: "ativacao" } }]
+          : [],
+  };
+  const daLiberacao: Eventos = {
+    trilha: [
+      { empresa_id, funcionario_id, evento: "login", detalhe: { via: "provisoria" } },
+      { empresa_id, funcionario_id, evento: EVENTO_ACESSO_LIBERADO, detalhe: null },
+    ],
+    operador:
+      p.forma === "senha_nova"
+        ? []
         : [
-            { empresa_id, evento: OPERADOR_ACESSO_CONFIRMADO, detalhe: { troca: true } },
-            { empresa_id, evento: OPERADOR_TROCA_SENHA, detalhe: { via: "ativacao" } },
-          ];
-  return { trilha, operador };
+            {
+              empresa_id,
+              evento: OPERADOR_ACESSO_CONFIRMADO,
+              detalhe: { troca: p.forma === "troca" },
+            },
+          ],
+  };
+  return { daSenha, daLiberacao };
 }
 
 /** Criar senha nova recusado (defesa 1): só no registro do operador; na trilha contaria que a credencial tem senha. */

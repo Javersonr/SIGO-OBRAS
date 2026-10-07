@@ -1085,33 +1085,40 @@ test("eventosDaAtivacao: a trilha da empresa é IDÊNTICA no caso 1, no caso 2 e
       detalhe: null,
     },
   ];
-  for (const f of formas) assert.deepEqual(f.trilha, esperada);
+  // a trilha de TODAS as empresas, na ordem em que o servidor grava (primeiro o que depende da senha)
+  for (const f of formas) {
+    assert.deepEqual(f.daLiberacao.trilha, esperada);
+    assert.deepEqual([...f.daSenha.trilha, ...f.daLiberacao.trilha], esperada);
+  }
 });
 
 test("eventosDaAtivacao: senha_criada, acesso_confirmado e troca_senha da ativação só no registro do operador", () => {
   const b = provisoria("b", 1);
   const nova = eventosDaAtivacao({ forma: "senha_nova", primeira: false, item: b, travadas: [] });
-  assert.deepEqual(nova.operador, [
+  assert.deepEqual(nova.daSenha.operador, [
     { empresa_id: "emp-b", evento: OPERADOR_SENHA_CRIADA, detalhe: { primeira: false } },
   ]);
+  assert.deepEqual(nova.daLiberacao.operador, []);
   const atual = eventosDaAtivacao({ forma: "senha_atual", primeira: false, item: b, travadas: [] });
-  assert.deepEqual(atual.operador, [
+  assert.deepEqual(atual.daSenha.operador, []);
+  assert.deepEqual(atual.daLiberacao.operador, [
     { empresa_id: "emp-b", evento: OPERADOR_ACESSO_CONFIRMADO, detalhe: { troca: false } },
   ]);
   const troca = eventosDaAtivacao({ forma: "troca", primeira: false, item: b, travadas: [] });
-  assert.deepEqual(troca.operador, [
-    { empresa_id: "emp-b", evento: OPERADOR_ACESSO_CONFIRMADO, detalhe: { troca: true } },
+  assert.deepEqual(troca.daSenha.operador, [
     { empresa_id: "emp-b", evento: OPERADOR_TROCA_SENHA, detalhe: { via: "ativacao" } },
   ]);
+  assert.deepEqual(troca.daLiberacao.operador, [
+    { empresa_id: "emp-b", evento: OPERADOR_ACESSO_CONFIRMADO, detalhe: { troca: true } },
+  ]);
   for (const f of [nova, atual, troca]) {
-    const nomes = f.trilha.map((e) => e.evento);
-    for (const doOperador of ["senha_criada", "acesso_confirmado", "reset_recusado"]) {
-      assert.equal(nomes.includes(doOperador), false, doOperador);
+    for (const bloco of [f.daSenha, f.daLiberacao]) {
+      const nomes = bloco.trilha.map((e) => e.evento);
+      for (const doOperador of ["senha_criada", "acesso_confirmado", "reset_recusado"]) {
+        assert.equal(nomes.includes(doOperador), false, doOperador);
+      }
+      assert.equal(nomes.includes("troca_senha"), false);
     }
-    assert.equal(
-      f.trilha.some((e) => e.evento === "troca_senha"),
-      false
-    );
   }
 });
 
@@ -1123,7 +1130,7 @@ test("eventosDaAtivacao: cada empresa que travou recebe acesso_aguardando_provis
     item: b,
     travadas: [item("a"), item("c")],
   });
-  assert.deepEqual(r.trilha.slice(2), [
+  assert.deepEqual(r.daSenha.trilha, [
     {
       empresa_id: "emp-a",
       funcionario_id: "func-a",
@@ -1137,7 +1144,63 @@ test("eventosDaAtivacao: cada empresa que travou recebe acesso_aguardando_provis
       detalhe: { motivo: "senha_nova" },
     },
   ]);
-  assert.equal(JSON.stringify(r.trilha.slice(2)).includes("emp-b"), false);
+  assert.equal(JSON.stringify(r.daSenha.trilha).includes("emp-b"), false);
+});
+
+// revisão 1, I1: a ativação grava a credencial primeiro e libera o vínculo depois; se a liberação falhar (a provisória
+// mudou no meio), a senha JÁ mudou. O que depende só da senha tem de poder ser gravado sem esperar a liberação.
+test("eventosDaAtivacao: o que depende só da senha (daSenha) não traz nada da empresa da provisória", () => {
+  const b = provisoria("b", 1);
+  const travadas = [item("a"), item("c")];
+  for (const forma of ["senha_nova", "troca"] as const) {
+    const r = eventosDaAtivacao({ forma, primeira: true, item: b, travadas });
+    // as travadas e o registro do operador estão em daSenha...
+    assert.ok(r.daSenha.operador.length > 0, forma);
+    // ...e nenhum evento da trilha de daSenha é da empresa da provisória nem é login/acesso_liberado
+    for (const e of r.daSenha.trilha) {
+      assert.equal(e.evento, EVENTO_ACESSO_AGUARDANDO_PROVISORIA, forma);
+      assert.notEqual(e.empresa_id, "emp-b", forma);
+    }
+  }
+  const nova = eventosDaAtivacao({ forma: "senha_nova", primeira: true, item: b, travadas });
+  assert.equal(nova.daSenha.trilha.length, 2);
+});
+
+test("eventosDaAtivacao: o que depende da liberação (daLiberacao) é só da empresa da provisória", () => {
+  const b = provisoria("b", 1);
+  const travadas = [item("a"), item("c")];
+  for (const forma of ["senha_nova", "senha_atual", "troca"] as const) {
+    const r = eventosDaAtivacao({ forma, primeira: false, item: b, travadas });
+    assert.deepEqual(
+      r.daLiberacao.trilha.map((e) => e.evento),
+      ["login", EVENTO_ACESSO_LIBERADO],
+      forma
+    );
+    for (const e of r.daLiberacao.trilha) assert.equal(e.empresa_id, "emp-b", forma);
+    // nunca o que conta que a senha mudou: se a liberação falha, estes não podem ter sido gravados
+    const doOperador = r.daLiberacao.operador.map((e) => e.evento);
+    assert.equal(doOperador.includes(OPERADOR_SENHA_CRIADA), false, forma);
+    assert.equal(doOperador.includes(OPERADOR_TROCA_SENHA), false, forma);
+    assert.equal(
+      r.daLiberacao.trilha.some((e) => e.evento === EVENTO_ACESSO_AGUARDANDO_PROVISORIA),
+      false,
+      forma
+    );
+  }
+});
+
+test("eventosDaAtivacao: acesso_confirmado só sai com a liberação (a consulta de alertas o usa para inocentar)", () => {
+  // tools/portal-credencial-alertas.sql, regra 1: um reset_recusado seguido de acesso_confirmado é a própria pessoa.
+  // Se a liberação falhasse e o acesso_confirmado já tivesse sido gravado, uma recusa suspeita sumiria da lista.
+  const b = provisoria("b", 1);
+  for (const forma of ["senha_nova", "senha_atual", "troca"] as const) {
+    const r = eventosDaAtivacao({ forma, primeira: false, item: b, travadas: [] });
+    assert.equal(
+      r.daSenha.operador.some((e) => e.evento === OPERADOR_ACESSO_CONFIRMADO),
+      false,
+      forma
+    );
+  }
 });
 
 test("eventoDoResetRecusado: só no registro do operador (a trilha da empresa não pode contar que há senha)", () => {
