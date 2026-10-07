@@ -57,6 +57,8 @@ import { aoMudarNomeDaPessoa, refDeAssinatura } from "@/lib/ead-assinatura";
 import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
 import { decidirAvisoAoRH } from "@/lib/ead-aviso-matricula";
 import { lerEmPaginas } from "@/lib/leitura-em-paginas";
+import { avisoDoDossie, textoDoAndamento } from "@/lib/ead-dossie";
+import { exportarDossieDoCurso } from "@/components/seguranca/exportarDossieEad";
 import { useConfirmar } from "@/components/shared/ConfirmarDialog";
 import MatriculaAuditoriaSheet from "@/components/seguranca/MatriculaAuditoriaSheet";
 import DuvidasTutorCard from "@/components/seguranca/DuvidasTutorCard";
@@ -88,6 +90,7 @@ import {
   ChevronDown,
   Eye,
   Info,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -202,6 +205,13 @@ export default function TreinamentosEadTab({
   const cursoSelRef = useRef(null);
   cursoSelRef.current = cursoSel;
   const [previaAberta, setPreviaAberta] = useState(false); // "Ver como aluno" (T28)
+  // Dossiê de fiscalização (T34): { cursoId, texto } enquanto o ZIP é montado (um por vez; o ref vale já no
+  // 2º clique, antes de a tela redesenhar) e o id da empresa que está na tela, para não baixar o dossiê
+  // de uma empresa que já foi trocada.
+  const [exportandoDossie, setExportandoDossie] = useState(null);
+  const exportandoDossieRef = useRef(false);
+  const empresaIdDaTelaRef = useRef(null);
+  empresaIdDaTelaRef.current = empresaAtiva?.id;
   const [matriculaDetalheId, setMatriculaDetalheId] = useState(null);
   // painel "Matricular funcionários": null = fechado; senão, como abre ({ modo, cursoId, funcionarioIds,
   // funcaoId, chave }). A senha provisória de um acesso recém-criado fica em `avisoAcesso`, só até o RH
@@ -725,6 +735,35 @@ export default function TreinamentosEadTab({
       else toast.error("Erro ao adicionar aula: " + (e?.message || e));
     } finally {
       encerrarEnvio(controle);
+    }
+  };
+
+  // ZIP de fiscalização do curso (NR-1, 1.6.5, 1.7.4 e Anexo II): projeto pedagógico, matrículas, trilha,
+  // tentativas com respostas e certificados. Lê o banco com a sessão do RH, não grava nada.
+  const exportarDossie = async (curso) => {
+    if (exportandoDossieRef.current) return;
+    exportandoDossieRef.current = true;
+    const empresaId = empresaAtiva?.id;
+    const mostrar = (passo) =>
+      setExportandoDossie({ cursoId: curso.id, texto: textoDoAndamento(passo) });
+    mostrar({ etapa: "lendo" });
+    try {
+      const resumo = await exportarDossieDoCurso({
+        empresa: empresaAtiva,
+        cursoId: curso.id,
+        geradoPor: user?.full_name || user?.email || "",
+        aoProgredir: mostrar,
+        aindaVale: () => empresaIdDaTelaRef.current === empresaId,
+      });
+      if (!resumo) return; // a empresa foi trocada no meio: nada foi baixado
+      const aviso = avisoDoDossie(resumo);
+      toast[aviso.tipo](aviso.texto, aviso.tipo === "warning" ? { duration: 20000 } : undefined);
+    } catch (e) {
+      console.error("[dossie] falha ao exportar:", e);
+      toast.error(`Não foi possível exportar o dossiê: ${e?.message || e}`);
+    } finally {
+      exportandoDossieRef.current = false;
+      setExportandoDossie(null);
     }
   };
 
@@ -1492,34 +1531,60 @@ export default function TreinamentosEadTab({
           {cursos.map((c) => {
             const qtdAulas = aulasDoCurso(c.id).length;
             return (
-              <button
+              <div
                 key={c.id}
-                onClick={() => setCursoSel(c)}
-                className="text-left rounded-lg border border-slate-200 p-3 hover:border-slate-400 bg-white"
+                className="flex flex-col rounded-lg border border-slate-200 bg-white hover:border-slate-400"
               >
-                <p className="font-medium text-slate-800">{c.nome}</p>
-                {c.ativo !== false && pendenciasCurso(c).length > 0 && (
-                  <Badge variant="outline" className="mt-1 text-amber-700">
-                    Publicado com pendências
-                  </Badge>
-                )}
-                {/* o apoio leva um selo neutro, não pendência: publica e matricula, só não emite (D3) */}
-                {seloDaModalidade(c.modalidade) && (
-                  <Badge variant="outline" className="mt-1 ml-1 text-slate-700">
-                    {seloDaModalidade(c.modalidade).texto}
-                  </Badge>
-                )}
-                <p className="text-xs text-slate-500 mt-1">
-                  {c.codigo ? c.codigo + " · " : ""}
-                  {qtdAulas} aula(s)
-                  {c.validade_meses ? ` · validade ${c.validade_meses} meses` : ""}
-                </p>
-                {c.ativo === false && (
-                  <Badge variant="outline" className="mt-2 text-amber-700 border-amber-300">
-                    Rascunho · não publicado
-                  </Badge>
-                )}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setCursoSel(c)}
+                  className="flex-1 p-3 text-left"
+                >
+                  <p className="font-medium text-slate-800">{c.nome}</p>
+                  {c.ativo !== false && pendenciasCurso(c).length > 0 && (
+                    <Badge variant="outline" className="mt-1 text-amber-700">
+                      Publicado com pendências
+                    </Badge>
+                  )}
+                  {/* o apoio leva um selo neutro, não pendência: publica e matricula, só não emite (D3) */}
+                  {seloDaModalidade(c.modalidade) && (
+                    <Badge variant="outline" className="mt-1 ml-1 text-slate-700">
+                      {seloDaModalidade(c.modalidade).texto}
+                    </Badge>
+                  )}
+                  <p className="text-xs text-slate-500 mt-1">
+                    {c.codigo ? c.codigo + " · " : ""}
+                    {qtdAulas} aula(s)
+                    {c.validade_meses ? ` · validade ${c.validade_meses} meses` : ""}
+                  </p>
+                  {c.ativo === false && (
+                    <Badge variant="outline" className="mt-2 text-amber-700 border-amber-300">
+                      Rascunho · não publicado
+                    </Badge>
+                  )}
+                </button>
+                <div className="border-t border-slate-100 px-2 py-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-slate-600"
+                    disabled={!!exportandoDossie}
+                    onClick={() => exportarDossie(c)}
+                    aria-label={`Exportar dossiê de fiscalização do curso ${c.nome}`}
+                    title="ZIP para a fiscalização: projeto pedagógico, matrículas, trilha de auditoria, tentativas da prova e certificados"
+                  >
+                    {exportandoDossie?.cursoId === c.id ? (
+                      <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4 mr-1" />
+                    )}
+                    {exportandoDossie?.cursoId === c.id
+                      ? exportandoDossie.texto
+                      : "Exportar dossiê"}
+                  </Button>
+                </div>
+              </div>
             );
           })}
           {cursos.length === 0 && (
