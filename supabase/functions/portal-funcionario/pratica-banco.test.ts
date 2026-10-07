@@ -258,10 +258,7 @@ test("sessão: a carga não passa do tempo do horário (um CHECK barato, como o 
   );
   assert.ok(sql.includes("drop constraint if exists treinamento_sessao_pratica_carga_horario_chk"));
   // a regra do front (validarSessao) e a do servidor (crédito por horário) dizem o mesmo
-  const front = readFileSync(
-    join(RAIZ, "apps", "web", "src", "lib", "ead-pratica.js"),
-    "utf8"
-  );
+  const front = readFileSync(join(RAIZ, "apps", "web", "src", "lib", "ead-pratica.js"), "utf8");
   assert.ok(front.includes("avisoDaCargaDaSessao") || front.includes("validarSessao"));
 });
 
@@ -277,7 +274,11 @@ test("sessão com participantes: não troca de curso, e não vai para o futuro d
   assert.ok(!/security definer/.test(f));
   // troca de curso: com qualquer participante vivo
   assert.ok(f.includes("new.curso_id is distinct from old.curso_id"));
-  assert.ok(f.includes("from public.treinamento_pratica_participante p where p.sessao_id = new.id and p.deleted_at is null"));
+  assert.ok(
+    f.includes(
+      "from public.treinamento_pratica_participante p where p.sessao_id = new.id and p.deleted_at is null"
+    )
+  );
   // data para o futuro: só se já há presença ou resultado lançados
   assert.ok(f.includes("(now() at time zone 'America/Sao_Paulo')::date"));
   assert.ok(f.includes("new.data > v_hoje"));
@@ -295,7 +296,8 @@ test("sessão com participantes: não troca de curso, e não vai para o futuro d
 });
 
 test("a descrição da tabela de participantes diz que vale a SOMA das cargas, não 'uma sessão' (N5)", () => {
-  const comentario = /comment on table public\.treinamento_pratica_participante is '(.*?)';/.exec(sql)?.[1] ?? "";
+  const comentario =
+    /comment on table public\.treinamento_pratica_participante is '(.*?)';/.exec(sql)?.[1] ?? "";
   assert.ok(comentario.includes("soma"), comentario);
   assert.ok(!comentario.includes("numa sessão viva do curso"), comentario);
   // o cabeçalho também

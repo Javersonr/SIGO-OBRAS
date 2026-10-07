@@ -391,7 +391,11 @@ test("textoDoPreRequisito: 'leitura_falhou' pede para tentar de novo, e só depo
   const texto = textoDoPreRequisito("leitura_falhou", "NR-10 Básico");
   assert.match(texto, /tente de novo/i);
   assert.match(texto, /RH/);
-  assert.doesNotMatch(texto, /NR-10 Básico/, "sem o nome: a leitura que falhou foi justo a do nome");
+  assert.doesNotMatch(
+    texto,
+    /NR-10 Básico/,
+    "sem o nome: a leitura que falhou foi justo a do nome"
+  );
 });
 
 test("preRequisitoDoCurso: curso exigido que a consulta não trouxe falha fechado", () => {

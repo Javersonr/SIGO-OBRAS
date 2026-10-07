@@ -66,7 +66,10 @@ test("eventual entra com o motivo, sem os espaços das pontas", () => {
 test("o motivo é aparado e contado como o banco faz: btrim de espaço/tab/CR/LF/FF/VT e char_length em caracteres (A6, T23)", () => {
   // quebra de linha e tab nas pontas saem; sobra o texto
   assert.deepEqual(
-    dadosDoTipoNoCertificado({ tipo: "eventual", motivo_eventual: "\t\r\n\f\v Troca de equipamento \n" }),
+    dadosDoTipoNoCertificado({
+      tipo: "eventual",
+      motivo_eventual: "\t\r\n\f\v Troca de equipamento \n",
+    }),
     { tipo_treinamento: "eventual", motivo_eventual: "Troca de equipamento" }
   );
   // 150 emojis são 300 unidades UTF-16 mas 150 caracteres: o banco aceita (<= 200), então o certificado afirma o tipo
