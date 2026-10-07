@@ -79,7 +79,11 @@ function eventosGravadosPeloServidor() {
   for (const m of acesso.matchAll(/\bevento\(([^)]*)\)/g)) {
     for (const s of m[1].matchAll(/"([a-z_]+)"/g)) nomes.add(s[1]);
   }
-  for (const arquivo of ["_shared/portal-funcionario.ts", "portal-funcionario/regras.ts"]) {
+  for (const arquivo of [
+    "_shared/portal-funcionario.ts",
+    "portal-funcionario/regras.ts",
+    "portal-funcionario/declaracao-ambiente.ts",
+  ]) {
     for (const m of lerFuncao(arquivo).matchAll(/export const EVENTO_[A-Z_]+ = "([a-z_]+)"/g)) {
       nomes.add(m[1]);
     }
@@ -99,12 +103,18 @@ describe("rótulos da trilha (T18)", () => {
       "acesso_reativado",
       "tentativa_liberada",
       "certificado_revogado",
+      "declaracao_ambiente",
     ]) {
       expect(nomes, esperado).toContain(esperado);
     }
     expect(nomes.size).toBeGreaterThanOrEqual(25);
     const semRotulo = [...nomes].filter((n) => !ROTULO_EVENTO[n]);
     expect(semRotulo).toEqual([]);
+  });
+
+  it("a declaração de ambiente e horário tem rótulo em português (T35)", () => {
+    expect(rotuloDoEvento("declaracao_ambiente")).toMatch(/declarou.*ambiente/i);
+    expect(tomDoEvento("declaracao_ambiente")).toBe("normal");
   });
 
   it("os eventos novos do RH e da apostila têm rótulo em português", () => {
@@ -164,6 +174,21 @@ describe("descreverDetalhe da trilha (T18)", () => {
     expect(texto).toContain("por rh@exemplo.test");
     expect(texto).toContain("ABCD-2345-EFGH");
     expect(texto).toContain("Prova feita por outra pessoa");
+  });
+
+  it("declaração de ambiente (T35): a versão do texto e se era o texto padrão, sem repetir o texto inteiro", () => {
+    expect(d("declaracao_ambiente", { versao: 2, texto_padrao: false, art: "ART 55" })).toBe(
+      "texto v2 · ART: ART 55"
+    );
+    expect(d("declaracao_ambiente", { versao: 2, texto_padrao: false })).toBe("texto v2");
+    expect(d("declaracao_ambiente", { versao: 0, texto_padrao: true })).toBe(
+      "texto padrão, sem aprovação do RT"
+    );
+    expect(d("declaracao_ambiente", undefined)).toBe("");
+    // o texto inteiro fica no evento (a prova), mas não polui a linha da trilha
+    expect(d("declaracao_ambiente", { versao: 1, texto: "Texto longo do RT" })).not.toContain(
+      "Texto longo"
+    );
   });
 
   it("acessos do RH continuam 'por <e-mail>'; evento sem detalhe fica vazio", () => {

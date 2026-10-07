@@ -16,6 +16,11 @@
  *   avaliacao { matricula_id, respostas:[{questao_id,resposta}] }  (exige iniciar_avaliacao antes; quem
  *     reprova na ÚLTIMA tentativa avisa o RH no sino via `notificar_gestores`, T24: ver avisos.ts)
  *   certificado { matricula_id, senha }          ciencia { ciencia_id }
+ *   declarar_ambiente { matricula_id, versao, local_adequado, horario_reservado, sem_outra_atividade } → T35: na 1ª
+ *     abertura do curso em cada dia (Brasília) o aluno confirma a orientação do RT e os três itens (local adequado,
+ *     horário reservado, sem outra atividade); o SERVIDOR grava o evento `declaracao_ambiente` (origem servidor) com o
+ *     texto inteiro, a versão e a ART que ele viu (ver declaracao-ambiente.ts). Uma por matrícula e dia. `dados`
+ *     leva o texto (`declaracao_ambiente`) e, em cada curso, `declaracao_hoje`. Versão desatualizada: 409 TEXTO_MUDOU.
  *   duvida { matricula_id, aula_id?, pergunta }  → { duvida, tutor_avisado } (T21: o aviso vai ao WhatsApp do
  *     tutor do curso, com o link para responder, só se o telefone for aceito; ver tutor.ts)
  *
@@ -89,6 +94,14 @@ import { carregarDocumentos, funcionarioPodeEntrar } from "./documentos.ts";
 import { confirmarCiencia, listarCienciasDoAluno } from "./ciencia.ts";
 import { destinoDoAvisoAoTutor, mensagemDuvidaAoTutor, tutorParaOAluno } from "./tutor.ts";
 import { projetoParaOAluno } from "./projeto.ts";
+import {
+  EVENTO_DECLARACAO_AMBIENTE,
+  declaracaoParaOAluno,
+  detalheDaDeclaracao,
+  lerDeclaracoesDoDia,
+  lerTextoDaDeclaracao,
+  validarDeclaracao,
+} from "./declaracao-ambiente.ts";
 import {
   bloqueioDeEmissaoPorPreRequisito,
   cursosExigidosDoBanco,
@@ -223,6 +236,11 @@ interface Body {
   respostas?: unknown;
   ciencia_id?: string;
   pergunta?: string;
+  // declarar_ambiente (T35)
+  versao?: number;
+  local_adequado?: boolean;
+  horario_reservado?: boolean;
+  sem_outra_atividade?: boolean;
 }
 
 const hora = (iso: string) =>
@@ -774,6 +792,20 @@ Deno.serve(
         empresaId,
       });
 
+      // Declaração de ambiente e horário (T35): o texto em vigor da empresa e, em cada matrícula, se o aluno já
+      // declarou hoje (dia de Brasília). Falha de leitura NÃO derruba o portal: sem o texto o curso abre sem a tela da
+      // declaração (o RH vê o dia sem declaração no relatório) e o rastro fica nos logs.
+      const [textoDaDeclaracao, declaracoesDeHoje] = await Promise.all([
+        lerTextoDaDeclaracao(supabase, empresaId),
+        lerDeclaracoesDoDia(supabase, {
+          funcionarioId,
+          empresaId,
+          matriculaIds: matIds,
+          agora: new Date(),
+          hoje: hojeEmBrasilia,
+        }),
+      ]);
+
       const progPor = new Map(
         // deno-lint-ignore no-explicit-any
         (prog ?? []).map((p: any) => [`${p.matricula_id}|${p.aula_id}`, p])
@@ -943,6 +975,12 @@ Deno.serve(
           pre_requisito: preRequisito,
           // "Parte prática: pendente" ou "realizada em DD/MM, em <local>" (T12); null fora do semipresencial
           pratica: pratica,
+          // o aluno já declarou o ambiente e o horário hoje neste curso (T35)? null = não deu para saber (o portal
+          // não mostra a tela da declaração)
+          declaracao_hoje:
+            textoDaDeclaracao.ok && declaracoesDeHoje.ok
+              ? { dia: hojeEmBrasilia, declarada: declaracoesDeHoje.declaradas.has(m.id) }
+              : null,
           // deno-lint-ignore no-explicit-any
           duvidas: (duvidas ?? []).filter((d: any) => d.curso_id === m.curso_id),
         };
@@ -972,6 +1010,10 @@ Deno.serve(
         empresa_logo_url: empresaLogoUrl,
         cursos: resposta,
         ciencias: listaDeCiencias.ciencias,
+        // a orientação do RT que o aluno confirma ao abrir o curso (T35); null = leitura falhou
+        declaracao_ambiente: textoDaDeclaracao.ok
+          ? declaracaoParaOAluno(textoDaDeclaracao.vigente)
+          : null,
       });
     }
 
@@ -1024,6 +1066,48 @@ Deno.serve(
         origem: "navegador",
       });
       return ok({ registrado: true });
+    }
+
+    // ---------------------------------------------------- declaração de ambiente
+    // 1ª abertura do curso em cada dia (T35; NR-1, Anexo II, 4.3 e 4.4): o aluno confirma a orientação do RT e os
+    // três itens. A matrícula é a do aluno da sessão; o texto vem do banco (só da empresa da sessão) e o aluno
+    // confirma a VERSÃO que leu; o evento vai para a trilha como evento de SERVIDOR, com o texto inteiro. Uma por
+    // matrícula e dia: repetir no mesmo dia responde ok sem gravar outra.
+    if (body.acao === "declarar_ambiente") {
+      const mat = await minhaMatricula(body.matricula_id);
+      if (!mat) return fail("Matrícula não encontrada", 404);
+      const hoje = dataBrasilia(new Date());
+      const jaDeclarou = await lerDeclaracoesDoDia(supabase, {
+        funcionarioId,
+        empresaId,
+        matriculaIds: [mat.id],
+        agora: new Date(),
+        hoje,
+      });
+      if (!jaDeclarou.ok) {
+        return fail("Não foi possível registrar a declaração agora. Tente de novo.", 503);
+      }
+      if (jaDeclarou.declaradas.has(mat.id)) {
+        return ok({ declarada: true, ja_declarada: true, dia: hoje });
+      }
+      const texto = await lerTextoDaDeclaracao(supabase, empresaId);
+      if (!texto.ok) {
+        return fail("Não foi possível registrar a declaração agora. Tente de novo.", 503);
+      }
+      const conferida = validarDeclaracao(body, texto.vigente);
+      if (!conferida.ok) {
+        return fail(conferida.mensagem, conferida.status, { codigo: conferida.codigo });
+      }
+      const gravado = await ev({
+        evento: EVENTO_DECLARACAO_AMBIENTE,
+        matricula_id: mat.id,
+        curso_id: mat.curso_id,
+        detalhe: detalheDaDeclaracao({ vigente: texto.vigente, dia: hoje }),
+      });
+      // sem a linha na trilha a declaração não existe: o aluno não pode achar que declarou
+      if (!gravado)
+        return fail("Não foi possível registrar a declaração agora. Tente de novo.", 503);
+      return ok({ declarada: true, ja_declarada: false, dia: hoje, versao: texto.vigente.versao });
     }
 
     // ------------------------------------------------------------ progresso

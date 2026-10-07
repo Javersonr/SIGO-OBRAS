@@ -90,6 +90,7 @@ import PreviaAlunoCurso from "@/components/seguranca/PreviaAlunoCurso";
 import SessoesPraticasCurso from "@/components/seguranca/SessoesPraticasCurso";
 import VencimentosEadPainel from "@/components/seguranca/VencimentosEadPainel";
 import MatriculasEadCard from "@/components/seguranca/MatriculasEadCard";
+import AmbienteHorarioEadCard from "@/components/seguranca/AmbienteHorarioEadCard";
 import MatricularEadSheet from "@/components/seguranca/MatricularEadSheet";
 import AvisoAcessoDialog from "@/components/seguranca/AvisoAcessoDialog";
 import { Button } from "@/components/ui/button";
@@ -1651,6 +1652,13 @@ export default function TreinamentosEadTab({
         onAvisar={avisarFuncionario}
         onRemover={removerMatricula}
         onRenovar={renovarMatricula}
+      />
+
+      {/* Ambiente e horário do aluno: texto da declaração (RT) e atividade por aluno e dia (T35) */}
+      <AmbienteHorarioEadCard
+        key={empresaAtiva?.id}
+        empresaId={empresaAtiva?.id}
+        funcionariosTodos={funcionariosTodos}
       />
 
       <DuvidasTutorCard

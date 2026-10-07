@@ -59,6 +59,7 @@ export const ROTULO_EVENTO = {
   abrir_certificado: "Baixou o certificado",
   abrir_projeto: "Abriu o projeto pedagógico",
   duvida_enviada: "Enviou dúvida ao tutor",
+  declaracao_ambiente: "Declarou o ambiente e o horário de estudo",
   ciencia: "Deu ciência de entrega",
 };
 
@@ -113,6 +114,14 @@ export function descreverDetalhe(evento) {
         d.por && `por ${d.por}`,
         Number.isInteger(d.tentativas_extras) &&
           `${plural(d.tentativas_extras, "tentativa extra", "tentativas extras")} no total`
+      );
+    case "declaracao_ambiente":
+      // o texto inteiro fica no evento (é a prova do que o aluno leu), mas não polui a linha da trilha
+      return juntar(
+        d.texto_padrao === true
+          ? "texto padrão, sem aprovação do RT"
+          : Number.isInteger(d.versao) && `texto v${d.versao}`,
+        d.art && `ART: ${d.art}`
       );
     case "certificado_revogado":
       return juntar(

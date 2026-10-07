@@ -31,6 +31,7 @@ import {
 } from "@/lib/portal-curso";
 import { LoginPortal, TrocarSenhaPortal } from "@/components/portal-funcionario/LoginPortal";
 import CursoPortal from "@/components/portal-funcionario/CursoPortal";
+import DeclaracaoAmbientePortal from "@/components/portal-funcionario/DeclaracaoAmbientePortal";
 import DocumentosPortal from "@/components/portal-funcionario/DocumentosPortal";
 import {
   EntregasPendentes,
@@ -39,6 +40,7 @@ import {
 import { historicoDeCienciasParcial, separarCiencias } from "@/lib/portal-ciencias";
 import { hojeEmBrasilia } from "@/lib/ead-vencimentos";
 import { prazoParaOAluno } from "@/lib/portal-prazo";
+import { precisaDeclararAmbiente } from "@/lib/portal-declaracao";
 
 /**
  * Portal do Funcionário — treinamentos EAD, ciência de entregas e certificados.
@@ -131,7 +133,9 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
   // falha ao buscar os dados (rede, servidor) x falha de uma ação do painel (ciência)
   const [erroCarga, setErroCarga] = useState("");
   const [erro, setErro] = useState("");
-  // matrícula aberta; `continuar` = o aluno apertou "Começar"/"Continuar": abre direto na próxima aula
+  // matrícula aberta; `continuar` = o aluno apertou "Começar"/"Continuar": abre direto na próxima aula;
+  // `declarar` = na 1ª abertura do curso no dia o aluno confirma antes o ambiente e o horário (T35). A decisão é
+  // tomada no clique que abre o curso, uma vez: passar da meia-noite com o curso aberto não derruba a tela.
   const [aberta, setAberta] = useState(null);
   const [aba, setAba] = useState("cursos");
   // quando os dados (e as URLs assinadas de vídeo/PDF, que valem 3 h) foram pedidos pela última vez
@@ -186,6 +190,20 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
   }
 
   const item = aberta && dados?.cursos?.find((c) => c.matricula.id === aberta.id);
+  if (item && aberta.declarar) {
+    return (
+      <DeclaracaoAmbientePortal
+        key={item.matricula.id}
+        item={item}
+        declaracao={dados?.declaracao_ambiente || null}
+        token={token}
+        recarregar={carregar}
+        onDeclarada={() => setAberta((atual) => (atual ? { ...atual, declarar: false } : atual))}
+        onErroSessao={onErroSessao}
+        onVoltar={() => setAberta(null)}
+      />
+    );
+  }
   if (item) {
     return (
       <CursoPortal
@@ -290,7 +308,17 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
             </div>
           </div>
           <Button
-            onClick={() => setAberta({ id: m.id, continuar: !concluido })}
+            onClick={() =>
+              setAberta({
+                id: m.id,
+                continuar: !concluido,
+                declarar: precisaDeclararAmbiente({
+                  item: c,
+                  declaracao: dados?.declaracao_ambiente,
+                  hoje: hojeEmBrasilia(),
+                }),
+              })
+            }
             className={`shrink-0 ${botao.certificado ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-900"}`}
           >
             {botao.certificado ? (
