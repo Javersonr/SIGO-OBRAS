@@ -91,6 +91,20 @@ describe("avisarNoPortal", () => {
     expect(dispararWhatsApp).toHaveBeenCalledTimes(1);
   });
 
+  it("já tem acesso (T38): a mensagem não sabe se a senha ainda abre esta empresa, então manda falar com o RH", async () => {
+    // o aviso da matrícula só sabe que o acesso existe (o 409 JA_TEM_ACESSO), não se a provisória venceu ou se a
+    // senha mudou em outra empresa: a última frase é a rede de segurança para quem não consegue entrar
+    invoke.mockResolvedValueOnce(jaTemAcesso());
+    const r = await avisarNoPortal(funcionario, "Você tem treinamentos.");
+    expect(r.texto).toMatch(/a sua senha. Se não conseguir entrar, fale com o RH.$/);
+    // quem acabou de receber a provisória não precisa dela: a mensagem já traz a senha
+    invoke.mockResolvedValueOnce({
+      data: { success: true, usuario: "12345678901", senha_provisoria: "Prov-123" },
+    });
+    const nova = await avisarNoPortal(funcionario, "Você tem treinamentos.");
+    expect(nova.texto).not.toContain("Se não conseguir entrar");
+  });
+
   it("decide pelo `codigo`, não pelo texto: mensagem reescrita no servidor não quebra", async () => {
     invoke.mockResolvedValueOnce(jaTemAcesso("Acesso existente para este funcionário"));
     await expect(avisarNoPortal(funcionario, "Aviso")).resolves.toMatchObject({

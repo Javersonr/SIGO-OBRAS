@@ -183,6 +183,12 @@ export function textoCredenciais({ nome, usuario, senha }) {
 /**
  * Manda um aviso com o link do portal. Se o funcionário ainda não tem acesso,
  * cria agora e junta usuário e senha provisória na mesma mensagem.
+ *
+ * Limitação (T38): com o acesso já existente (409 `JA_TEM_ACESSO`) esta função NÃO sabe o estado dele. A provisória
+ * dura 7 dias, então o acesso pode já "precisar de nova senha provisória" (`precisa_provisoria` do `status`), e a
+ * mensagem "Entre com o seu usuário (CPF) e a sua senha" não vale para quem nunca criou a senha. Por isso a frase
+ * termina mandando falar com o RH. O lembrete em lote (`prepararLoteDeAtrasados`) tem o estado em mãos e pula
+ * esses casos; consultar o `status` da empresa inteira a cada aviso individual seria caro demais.
  * @returns {{ via: "evolution"|"wa.me"|null, texto: string, credenciais: object|null }}
  */
 export async function avisarNoPortal(funcionario, aviso) {
@@ -198,7 +204,7 @@ export async function avisarNoPortal(funcionario, aviso) {
       ? `Usuário: ${credenciais.usuario}\n${linhaDaProvisoria(credenciais.senha_provisoria)}\n` +
           "(no primeiro acesso você cria a sua senha pessoal)\n\n" +
           LINHA_JA_USO_O_PORTAL
-      : "Entre com o seu usuário (CPF) e a sua senha."
+      : "Entre com o seu usuário (CPF) e a sua senha. Se não conseguir entrar, fale com o RH."
   );
   const texto = partes.join("\n\n");
   const via = funcionario.telefone ? await dispararWhatsApp(funcionario.telefone, texto) : null;
