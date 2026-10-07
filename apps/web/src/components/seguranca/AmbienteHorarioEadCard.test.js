@@ -61,7 +61,8 @@ describe("texto da declaração: lido da empresa e gravado como versão nova", (
     };
     varrer(raiz);
     expect(achados).toEqual([]);
-  });
+    // varre src/ inteiro: com a suíte toda rodando num PC lento, passa dos 5 s padrão
+  }, 30_000);
 
   it("o texto padrão aparece como pendente de aprovação do RT, e a ART como 'não informada' quando falta", () => {
     expect(cartao).toContain("Texto padrão: pendente de aprovação do RT");
