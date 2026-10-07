@@ -64,7 +64,10 @@ describe("texto da declaração: lido da empresa e gravado como versão nova", (
 
 describe("relatório: eventos de servidor do período, só quando o RH pede", () => {
   it("a consulta é da empresa, só origem servidor, desde o início do período e do mais novo para o mais antigo", () => {
-    const consulta = /TreinamentoEvento\.filter\(([\s\S]*?)\n {6}\);/.exec(cartao)?.[1] ?? "";
+    const consulta =
+      /lerEventosDoPeriodo = \(empresaId, inicio\) =>\s*sigo\.entities\.TreinamentoEvento\.filter\(([\s\S]*?)\n {2}\);/.exec(
+        cartao
+      )?.[1] ?? "";
     expect(consulta).toContain("empresa_id: empresaId");
     expect(consulta).toContain('origem: "servidor"');
     expect(consulta).toContain("created_at: { $gte: desdeDaConsulta(inicio) }");
@@ -89,6 +92,45 @@ describe("relatório: eventos de servidor do período, só quando o RH pede", ()
 
   it("o CSV leva as linhas do filtro, com BOM para o Excel", () => {
     expect(cartao).toContain('new Blob(["\\uFEFF" + csvDaAtividade(filtradas)]');
+  });
+});
+
+describe("relatório: a declaração só é cobrada do dia em que ela passou a existir", () => {
+  it("busca a PRIMEIRA declaração da empresa (de qualquer época, a mais antiga primeiro, só uma linha)", () => {
+    const consulta =
+      /lerPrimeiraDeclaracao = async \(empresaId\) => \{\s*const \[primeira\] = await sigo\.entities\.TreinamentoEvento\.filter\(([\s\S]*?)\n {2}\);/.exec(
+        cartao
+      )?.[1] ?? "";
+    expect(consulta).toContain("empresa_id: empresaId");
+    expect(consulta).toContain('origem: "servidor"');
+    expect(consulta).toContain("evento: EVENTO_DECLARACAO_AMBIENTE");
+    expect(consulta).toContain("SEM_SOFT_DELETE");
+    expect(consulta).toContain('sort_by: "created_at"');
+    expect(consulta).toContain("limit: 1");
+    // sem filtro de data: a primeira declaração pode ser mais antiga que o período mostrado
+    expect(consulta).not.toContain("$gte");
+  });
+
+  it("carrega os eventos do período e a primeira declaração juntos: se um falha, o relatório todo falha", () => {
+    expect(cartao).toMatch(
+      /Promise\.all\(\[\s*lerEventosDoPeriodo\(empresaId, inicio\),\s*lerPrimeiraDeclaracao\(empresaId\),\s*\]\)/
+    );
+    expect(cartao).toContain("setInicioCobranca(inicioDaCobranca(primeiraDeclaracao));");
+  });
+
+  it("monta as linhas com o corte da cobrança e mostra o aviso dele", () => {
+    expect(cartao).toMatch(/montarLinhasDeAtividade\(\{[^}]*cobrarDesde: inicioCobranca,?\s*\}\)/);
+    expect(cartao).toContain("avisoDaCobranca({ inicioCobranca, diaInicial })");
+    expect(cartao).toContain("{avisoCobranca.texto}");
+  });
+
+  it("trocar de empresa zera o corte junto com o relatório (não vale o da empresa anterior)", () => {
+    const efeito =
+      /useEffect\(\(\) => \{\s*pedidoRef\.current \+= 1;([\s\S]*?)\}, \[empresaId\]\);/.exec(
+        cartao
+      )?.[1] ?? "";
+    expect(efeito).toContain("setEventos(null)");
+    expect(efeito).toContain("setInicioCobranca(null)");
   });
 });
 

@@ -9,12 +9,18 @@ import { ClipboardCheck, Download, Loader2, Pencil, RefreshCw } from "lucide-rea
 import { toast } from "sonner";
 import DeclaracaoTextoDialog from "@/components/seguranca/DeclaracaoTextoDialog";
 import { hojeEmBrasilia } from "@/lib/ead-vencimentos";
-import { declaracaoVigente, historicoDeVersoes } from "@/lib/ead-declaracao-ambiente";
 import {
+  EVENTO_DECLARACAO_AMBIENTE,
+  declaracaoVigente,
+  historicoDeVersoes,
+} from "@/lib/ead-declaracao-ambiente";
+import {
+  avisoDaCobranca,
   csvDaAtividade,
   desdeDaConsulta,
   diaInicialDoPeriodo,
   filtrarAtividade,
+  inicioDaCobranca,
   montarLinhasDeAtividade,
   resumirAtividade,
   textoDaDeclaracao,
@@ -35,6 +41,27 @@ const CLASSE_DO_TOM = {
   atencao: "bg-amber-100 text-amber-800 border-amber-200",
   falta: "bg-red-100 text-red-800 border-red-200",
   neutro: "bg-slate-100 text-slate-600 border-slate-200",
+};
+
+// os eventos de servidor do período, do mais novo para o mais antigo
+const lerEventosDoPeriodo = (empresaId, inicio) =>
+  sigo.entities.TreinamentoEvento.filter(
+    {
+      empresa_id: empresaId,
+      origem: "servidor",
+      created_at: { $gte: desdeDaConsulta(inicio) },
+    },
+    { ...SEM_SOFT_DELETE, sort_by: "-created_at" }
+  );
+
+// a hora da primeira declaração da empresa, de qualquer época (não só do período): é dela que vem o dia em que a
+// declaração passou a ser cobrada. null = nenhuma ainda.
+const lerPrimeiraDeclaracao = async (empresaId) => {
+  const [primeira] = await sigo.entities.TreinamentoEvento.filter(
+    { empresa_id: empresaId, origem: "servidor", evento: EVENTO_DECLARACAO_AMBIENTE },
+    { ...SEM_SOFT_DELETE, sort_by: "created_at", limit: 1 }
+  );
+  return primeira?.created_at ?? null;
 };
 
 const fmtDataHora = (iso) =>
@@ -111,6 +138,8 @@ export default function AmbienteHorarioEadCard({ empresaId, funcionariosTodos = 
   const [carregandoRelatorio, setCarregandoRelatorio] = useState(false);
   const [erroRelatorio, setErroRelatorio] = useState(false);
   const [diaInicial, setDiaInicial] = useState("");
+  // o dia em que a falta de declaração passou a ser cobrada (null = a empresa ainda não tem nenhuma declaração)
+  const [inicioCobranca, setInicioCobranca] = useState(null);
   const [cortado, setCortado] = useState(false);
   const [busca, setBusca] = useState("");
   const [soSemDeclaracao, setSoSemDeclaracao] = useState(false);
@@ -122,6 +151,7 @@ export default function AmbienteHorarioEadCard({ empresaId, funcionariosTodos = 
   useEffect(() => {
     pedidoRef.current += 1;
     setEventos(null);
+    setInicioCobranca(null);
     setErroRelatorio(false);
     setCarregandoRelatorio(false);
   }, [empresaId]);
@@ -132,15 +162,14 @@ export default function AmbienteHorarioEadCard({ empresaId, funcionariosTodos = 
     setCarregandoRelatorio(true);
     setErroRelatorio(false);
     try {
-      const linhas = await sigo.entities.TreinamentoEvento.filter(
-        {
-          empresa_id: empresaId,
-          origem: "servidor",
-          created_at: { $gte: desdeDaConsulta(inicio) },
-        },
-        { ...SEM_SOFT_DELETE, sort_by: "-created_at" }
-      );
+      // sem o corte da cobrança os dias anteriores à declaração sairiam todos como "estudou sem declarar": se um
+      // dos dois pedidos falha, o relatório inteiro falha (melhor que acusar quem não devia)
+      const [linhas, primeiraDeclaracao] = await Promise.all([
+        lerEventosDoPeriodo(empresaId, inicio),
+        lerPrimeiraDeclaracao(empresaId),
+      ]);
       if (pedido !== pedidoRef.current) return;
+      setInicioCobranca(inicioDaCobranca(primeiraDeclaracao));
       setEventos(linhas);
       setCortado(linhas.length >= TETO_DE_EVENTOS_DO_SDK);
       setDiaInicial(inicio);
@@ -157,15 +186,24 @@ export default function AmbienteHorarioEadCard({ empresaId, funcionariosTodos = 
   const linhas = useMemo(
     () =>
       eventos
-        ? montarLinhasDeAtividade({ eventos, funcionarios: funcionariosTodos, desde: diaInicial })
+        ? montarLinhasDeAtividade({
+            eventos,
+            funcionarios: funcionariosTodos,
+            desde: diaInicial,
+            cobrarDesde: inicioCobranca,
+          })
         : [],
-    [eventos, funcionariosTodos, diaInicial]
+    [eventos, funcionariosTodos, diaInicial, inicioCobranca]
   );
   const filtradas = useMemo(
     () => filtrarAtividade(linhas, { busca, soSemDeclaracao }),
     [linhas, busca, soSemDeclaracao]
   );
   const resumo = useMemo(() => resumirAtividade(linhas), [linhas]);
+  const avisoCobranca = useMemo(
+    () => (eventos ? avisoDaCobranca({ inicioCobranca, diaInicial }) : null),
+    [eventos, inicioCobranca, diaInicial]
+  );
 
   const baixarCsv = () => {
     try {
@@ -366,6 +404,15 @@ export default function AmbienteHorarioEadCard({ empresaId, funcionariosTodos = 
 
           {eventos && (
             <>
+              {avisoCobranca && (
+                <p
+                  role="status"
+                  className={`text-xs ${avisoCobranca.tom === "atencao" ? "text-amber-700" : "text-slate-600"}`}
+                >
+                  {avisoCobranca.texto}
+                </p>
+              )}
+
               <div className="flex flex-wrap items-end gap-3">
                 <div className="min-w-[200px] flex-1">
                   <Label htmlFor="atividade-busca" className="text-xs">

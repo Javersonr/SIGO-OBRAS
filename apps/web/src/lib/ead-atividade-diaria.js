@@ -17,6 +17,11 @@
  * semipresencial o certificado sai depois da prática, sempre num dia diferente do da conclusão, e não pode virar
  * "estudou sem declarar". Quem passa da meia-noite com o curso aberto aparece com o dia seguinte sem declaração (a
  * declaração é na abertura do curso): é o que a regra diz.
+ *
+ * A declaração só é COBRADA a partir do dia em que ela passou a existir: o dia seguinte ao da primeira declaração da
+ * empresa (`inicioDaCobranca`). Antes disso (e no próprio dia da implantação, em que não dá para saber se o aluno
+ * estudou antes ou depois de a tela entrar no ar) o estudo aparece na janela, mas sem acusar falta: sem este corte,
+ * todo aluno que estudou nas semanas anteriores à publicação sairia como "estudou sem declarar".
  */
 import { normalizarTexto } from "./busca";
 import { celulaDoCsv } from "./ead-matriculas";
@@ -115,6 +120,20 @@ export function desdeDaConsulta(diaInicial) {
   return new Date(Date.UTC(a, m - 1, d) - MS_POR_DIA).toISOString();
 }
 
+/**
+ * O primeiro dia em que o relatório COBRA a declaração: o dia seguinte ao dia de Brasília da primeira declaração da
+ * empresa (`primeiraEm`, o `created_at` do primeiro evento `declaracao_ambiente`). Vale também para quem estudou
+ * entre a publicação da função e a do site, porque o corte vem da primeira declaração que de fato chegou, e não de
+ * uma data fixa. O dia da implantação fica de fora de propósito (ver o cabeçalho). `null` quando a empresa ainda não
+ * tem nenhuma declaração (ou a data não vale): nada é cobrado.
+ */
+export function inicioDaCobranca(primeiraEm) {
+  const dia = diaDeBrasilia(primeiraEm);
+  if (!dia) return null;
+  const [a, m, d] = dia.split("-").map(Number);
+  return new Date(Date.UTC(a, m - 1, d) + MS_POR_DIA).toISOString().slice(0, 10);
+}
+
 // ------------------------------------------------------------------------------------------------ janelas
 
 /**
@@ -126,11 +145,21 @@ export function desdeDaConsulta(diaInicial) {
  * - `estudou`: houve evento de estudo ligado a uma matrícula (`EVENTOS_DE_ESTUDO`: aula, apostila, prova,
  *   conclusão); declaração, dúvida e certificado não contam;
  * - `declaracoes`: as declarações do dia, `{ matriculaId, versao, textoPadrao, em }`;
- * - `semDeclaracao`: quantos cursos tiveram estudo no dia sem nenhuma declaração dele.
+ * - `cobrada`: o dia é cobrado (a declaração já existia, ver `cobrarDesde`);
+ * - `semDeclaracao`: quantos cursos tiveram estudo no dia sem nenhuma declaração dele. Sempre 0 em dia não cobrado.
  * `desde` ("AAAA-MM-DD"): não traz dia anterior a ele. Evento sem aluno ou com data ilegível é ignorado. A ordem de
  * entrada não importa. A ordem de saída é a de `montarLinhasDeAtividade`.
+ * `cobrarDesde` ("AAAA-MM-DD", de `inicioDaCobranca`): primeiro dia em que a falta de declaração é cobrada. Omitido,
+ * todo dia é cobrado; `null` (a empresa ainda não tem declaração) ou um valor que não é data, nenhum.
  */
-export function janelasPorAlunoEDia(eventos, { desde = null } = {}) {
+export function janelasPorAlunoEDia(eventos, { desde = null, cobrarDesde } = {}) {
+  const corte =
+    cobrarDesde === undefined
+      ? undefined
+      : typeof cobrarDesde === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cobrarDesde)
+        ? cobrarDesde
+        : null;
+  const cobra = (dia) => corte === undefined || (corte !== null && dia >= corte);
   const grupos = new Map();
   for (const e of Array.isArray(eventos) ? eventos : []) {
     if (!ehAtividadeDoAluno(e) || typeof e.funcionario_id !== "string" || !e.funcionario_id)
@@ -171,6 +200,7 @@ export function janelasPorAlunoEDia(eventos, { desde = null } = {}) {
   }
   return [...grupos.values()].map((g) => {
     const declaradas = new Set(g.declaracoes.map((d) => d.matriculaId));
+    const cobrada = cobra(g.dia);
     return {
       funcionarioId: g.funcionarioId,
       dia: g.dia,
@@ -179,8 +209,9 @@ export function janelasPorAlunoEDia(eventos, { desde = null } = {}) {
       minutos: Math.round((g.ultimo.ms - g.primeiro.ms) / 60_000),
       eventos: g.eventos,
       estudou: g.estudadas.size > 0,
+      cobrada,
       declaracoes: g.declaracoes.sort((a, b) => instante(a.em) - instante(b.em)),
-      semDeclaracao: [...g.estudadas].filter((m) => !declaradas.has(m)).length,
+      semDeclaracao: cobrada ? [...g.estudadas].filter((m) => !declaradas.has(m)).length : 0,
     };
   });
 }
@@ -191,11 +222,11 @@ const SEM_NOME = "(funcionário removido)";
  * As linhas da tela: `janelasPorAlunoEDia` com o nome do aluno (`funcionarios` é a lista de TODOS, inclusive
  * inativos), do dia mais novo para o mais antigo e, no mesmo dia, por nome.
  */
-export function montarLinhasDeAtividade({ eventos, funcionarios, desde = null } = {}) {
+export function montarLinhasDeAtividade({ eventos, funcionarios, desde = null, cobrarDesde } = {}) {
   const nomes = new Map(
     (Array.isArray(funcionarios) ? funcionarios : []).map((f) => [f.id, f.nome_completo])
   );
-  return janelasPorAlunoEDia(eventos, { desde })
+  return janelasPorAlunoEDia(eventos, { desde, cobrarDesde })
     .map((l) => ({ ...l, nome: nomes.get(l.funcionarioId) || SEM_NOME }))
     .sort((a, b) =>
       a.dia === b.dia ? a.nome.localeCompare(b.nome, "pt-BR") : a.dia < b.dia ? 1 : -1
@@ -216,16 +247,23 @@ export function textoDaJanela(linha) {
 
 const cursos = (n) => `${n} ${n === 1 ? "curso" : "cursos"}`;
 
+const TEXTO_ANTES_DA_COBRANCA = "Antes da cobrança da declaração";
+
 /**
  * A situação da declaração do dia, para a tela e o CSV: `{ tom, texto }`. `falta` (estudou sem declarar, vence
- * tudo), `atencao` (declarou com o texto padrão, que o RT ainda não aprovou), `ok` ou `neutro` (nada a declarar).
+ * tudo), `atencao` (declarou com o texto padrão, que o RT ainda não aprovou), `ok` ou `neutro` (nada a declarar, ou
+ * dia anterior à cobrança da declaração, em que houve estudo e não se acusa falta).
  */
 export function textoDaDeclaracao(linha) {
   if ((linha?.semDeclaracao ?? 0) > 0) {
     return { tom: "falta", texto: `Estudou sem declarar (${cursos(linha.semDeclaracao)})` };
   }
   const declaracoes = linha?.declaracoes ?? [];
-  if (!declaracoes.length) return { tom: "neutro", texto: "—" };
+  if (!declaracoes.length) {
+    return linha?.estudou && linha.cobrada === false
+      ? { tom: "neutro", texto: TEXTO_ANTES_DA_COBRANCA }
+      : { tom: "neutro", texto: "—" };
+  }
   const quantos = new Set(declaracoes.map((d) => d.matriculaId)).size;
   const inicio = quantos > 1 ? `Declarou em ${quantos} cursos` : "Declarou";
   if (declaracoes.some((d) => d.textoPadrao)) {
@@ -261,6 +299,31 @@ export function resumirAtividade(linhas) {
 }
 
 const dataBR = (dia) => String(dia).split("-").reverse().join("/");
+
+/**
+ * O aviso do relatório sobre o corte da cobrança, ou `null` quando não há o que avisar: `{ tom, texto }`.
+ * `inicioCobranca`: `inicioDaCobranca(...)` (null = a empresa ainda não tem nenhuma declaração); `diaInicial`: o
+ * primeiro dia do período mostrado. Só avisa quando o período tem dia sem cobrança.
+ */
+export function avisoDaCobranca({ inicioCobranca, diaInicial } = {}) {
+  if (inicioCobranca === null) {
+    return {
+      tom: "atencao",
+      texto:
+        "Nenhum aluno declarou ainda nesta empresa: nada é cobrado. A tabela mostra só a atividade, e a " +
+        "cobrança começa no dia seguinte ao da primeira declaração.",
+    };
+  }
+  if (typeof inicioCobranca !== "string" || !diaInicial || diaInicial >= inicioCobranca)
+    return null;
+  return {
+    tom: "neutro",
+    texto:
+      `A declaração só é cobrada a partir de ${dataBR(inicioCobranca)} (o dia seguinte ao da primeira ` +
+      `declaração da empresa). Os dias anteriores aparecem como "${TEXTO_ANTES_DA_COBRANCA}" e não ` +
+      "entram na contagem de quem estudou sem declarar.",
+  };
+}
 
 const COLUNAS_DO_CSV = [
   { titulo: "Aluno", valor: (l) => l.nome },

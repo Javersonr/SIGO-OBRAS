@@ -4,6 +4,7 @@ import {
   EVENTOS_DE_ESTUDO,
   EVENTOS_DO_RH,
   EVENTOS_FORA_DA_JANELA,
+  avisoDaCobranca,
   csvDaAtividade,
   desdeDaConsulta,
   diaDeBrasilia,
@@ -11,6 +12,7 @@ import {
   ehAtividadeDoAluno,
   filtrarAtividade,
   horaDeBrasilia,
+  inicioDaCobranca,
   janelasPorAlunoEDia,
   montarLinhasDeAtividade,
   resumirAtividade,
@@ -330,6 +332,157 @@ describe("janelasPorAlunoEDia", () => {
     expect(
       janelasPorAlunoEDia([ev("login", "2026-10-07T11:00:00Z", { funcionario_id: null })])
     ).toEqual([]);
+  });
+});
+
+describe("cobrança da declaração: só do dia em que ela passou a existir", () => {
+  const funcionarios = [
+    { id: "f1", nome_completo: "Ana Teste" },
+    { id: "f2", nome_completo: "Bruno Teste" },
+    { id: "f3", nome_completo: "Carla Teste" },
+  ];
+  // a primeira declaração da empresa foi no dia 07 (14:00 de Brasília): a cobrança começa no dia 08
+  const primeiraDeclaracao = "2026-10-07T17:00:00Z";
+  const estudo = (created_at, funcionario_id = "f1", matricula_id = "m1") =>
+    ev("aula_concluida", created_at, { funcionario_id, matricula_id });
+
+  it("o início da cobrança é o dia SEGUINTE ao da primeira declaração da empresa, em Brasília", () => {
+    expect(inicioDaCobranca(primeiraDeclaracao)).toBe("2026-10-08");
+    // 23h30 de Brasília do dia 07 (02h30 UTC do dia 08) ainda é dia 07: cobra a partir do 08
+    expect(inicioDaCobranca("2026-10-08T02:30:00Z")).toBe("2026-10-08");
+    // 00h10 de Brasília do dia 08 já é dia 08: cobra a partir do 09
+    expect(inicioDaCobranca("2026-10-08T03:10:00Z")).toBe("2026-10-09");
+    // virada de mês e de ano
+    expect(inicioDaCobranca("2026-10-31T15:00:00Z")).toBe("2026-11-01");
+    expect(inicioDaCobranca("2026-12-31T15:00:00Z")).toBe("2027-01-01");
+  });
+
+  it("sem declaração na empresa (ou data ilegível) não há início: null", () => {
+    for (const vazio of [null, undefined, "", "ontem", {}]) {
+      expect(inicioDaCobranca(vazio), String(vazio)).toBeNull();
+    }
+  });
+
+  it("dias antes da primeira declaração da empresa não são cobrados", () => {
+    const linhas = montarLinhasDeAtividade({
+      eventos: [
+        // dia 05: estudou quando a declaração nem existia
+        estudo("2026-10-05T12:00:00Z"),
+        // dia 07 (implantação): um aluno estudou de manhã, antes de a tela entrar no ar, e outro declarou à tarde
+        estudo("2026-10-07T11:00:00Z", "f2", "m2"),
+        ev("declaracao_ambiente", primeiraDeclaracao, {
+          funcionario_id: "f3",
+          matricula_id: "m3",
+          detalhe: { versao: 1, texto_padrao: false },
+        }),
+        // dia 08: já vale
+        estudo("2026-10-08T12:00:00Z"),
+      ],
+      funcionarios,
+      cobrarDesde: inicioDaCobranca(primeiraDeclaracao),
+    });
+    const de = (dia, nome) => linhas.find((l) => l.dia === dia && l.nome === nome);
+    // antes da declaração existir: estudou (é o fato), mas sem cobrança
+    expect(de("2026-10-05", "Ana Teste")).toMatchObject({
+      estudou: true,
+      cobrada: false,
+      semDeclaracao: 0,
+    });
+    // no dia da implantação ninguém é cobrado (não dá para saber se o aluno estudou antes ou depois do deploy)
+    expect(de("2026-10-07", "Bruno Teste")).toMatchObject({
+      estudou: true,
+      cobrada: false,
+      semDeclaracao: 0,
+    });
+    // quem declarou nesse dia continua aparecendo como declarou
+    expect(textoDaDeclaracao(de("2026-10-07", "Carla Teste"))).toEqual({
+      tom: "ok",
+      texto: "Declarou (texto v1)",
+    });
+    // a partir do dia seguinte, estudar sem declarar é falta
+    expect(de("2026-10-08", "Ana Teste")).toMatchObject({
+      estudou: true,
+      cobrada: true,
+      semDeclaracao: 1,
+    });
+  });
+
+  it("os dias não cobrados ficam de fora do resumo, do filtro 'só sem declaração' e viram texto neutro", () => {
+    const linhas = montarLinhasDeAtividade({
+      eventos: [estudo("2026-10-05T12:00:00Z"), estudo("2026-10-06T12:00:00Z", "f2", "m2")],
+      funcionarios,
+      cobrarDesde: "2026-10-08",
+    });
+    expect(linhas).toHaveLength(2);
+    expect(resumirAtividade(linhas)).toEqual({ alunos: 2, dias: 2, semDeclaracao: 0 });
+    expect(filtrarAtividade(linhas, { soSemDeclaracao: true })).toEqual([]);
+    for (const l of linhas) {
+      expect(textoDaDeclaracao(l)).toEqual({
+        tom: "neutro",
+        texto: "Antes da cobrança da declaração",
+      });
+    }
+    // o CSV diz o mesmo e não conta curso sem declaração
+    const [, primeira] = csvDaAtividade(linhas).split("\r\n");
+    expect(primeira.endsWith(";Antes da cobrança da declaração;0")).toBe(true);
+  });
+
+  it("a empresa que nunca teve declaração (cobrarDesde null) não é cobrada em nenhum dia", () => {
+    const [linha] = janelasPorAlunoEDia([estudo("2026-10-08T12:00:00Z")], { cobrarDesde: null });
+    expect(linha).toMatchObject({ estudou: true, cobrada: false, semDeclaracao: 0 });
+  });
+
+  it("sem informar a data de corte, todo dia é cobrado (como antes da correção)", () => {
+    const [linha] = janelasPorAlunoEDia([estudo("2026-10-05T12:00:00Z")]);
+    expect(linha).toMatchObject({ cobrada: true, semDeclaracao: 1 });
+  });
+
+  it("data de corte ilegível não cobra: na dúvida, não acusa ninguém", () => {
+    for (const ruim of ["", "ontem", "08/10/2026", 20261008]) {
+      const [linha] = janelasPorAlunoEDia([estudo("2026-10-08T12:00:00Z")], { cobrarDesde: ruim });
+      expect(linha, String(ruim)).toMatchObject({ cobrada: false, semDeclaracao: 0 });
+    }
+  });
+
+  it("o próprio dia do corte já é cobrado", () => {
+    const [linha] = janelasPorAlunoEDia([estudo("2026-10-08T12:00:00Z")], {
+      cobrarDesde: "2026-10-08",
+    });
+    expect(linha).toMatchObject({ cobrada: true, semDeclaracao: 1 });
+  });
+
+  it("o texto só explica o dia não cobrado quando houve estudo (login sem estudo continua '—')", () => {
+    const login = ev("login", "2026-10-05T12:00:00Z");
+    const [semEstudo] = janelasPorAlunoEDia([login], { cobrarDesde: "2026-10-08" });
+    expect(semEstudo).toMatchObject({ estudou: false, cobrada: false });
+    expect(textoDaDeclaracao(semEstudo)).toEqual({ tom: "neutro", texto: "—" });
+  });
+
+  describe("o aviso do relatório", () => {
+    it("sem nenhuma declaração na empresa: avisa que nada é cobrado", () => {
+      const aviso = avisoDaCobranca({ inicioCobranca: null, diaInicial: "2026-10-01" });
+      expect(aviso.tom).toBe("atencao");
+      expect(aviso.texto).toContain("Nenhum aluno declarou ainda");
+      expect(aviso.texto).toContain("nada é cobrado");
+    });
+
+    it("a cobrança começa depois do início do período: diz a data e o que acontece com os dias anteriores", () => {
+      const aviso = avisoDaCobranca({ inicioCobranca: "2026-10-08", diaInicial: "2026-09-24" });
+      expect(aviso.tom).toBe("neutro");
+      expect(aviso.texto).toContain("08/10/2026");
+      expect(aviso.texto).toContain("Antes da cobrança da declaração");
+    });
+
+    it("o período todo já é cobrado (ou não se sabe o corte): sem aviso", () => {
+      expect(
+        avisoDaCobranca({ inicioCobranca: "2026-10-08", diaInicial: "2026-10-08" })
+      ).toBeNull();
+      expect(
+        avisoDaCobranca({ inicioCobranca: "2026-10-08", diaInicial: "2026-10-20" })
+      ).toBeNull();
+      expect(avisoDaCobranca({ inicioCobranca: undefined, diaInicial: "2026-10-01" })).toBeNull();
+      expect(avisoDaCobranca({})).toBeNull();
+    });
   });
 });
 
