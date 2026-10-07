@@ -258,7 +258,16 @@ de **todas as matrículas daquele painel**:
   treinamento: ..." e a consulta pública em **/ValidarCertificado** mostra o tipo e o motivo. Certificado emitido antes
   da T23 não tem o tipo e continua como era. **O motivo aparece na consulta pública**: não escreva nome de pessoa nem dado
   sigiloso nele.
-- A matrícula que já existia antes da migração `0142` vale como **inicial** (o tipo dela nunca foi perguntado).
+- **Matrículas que já existiam antes da migração `0142`.** O tipo delas nunca foi perguntado e depois não dá para
+  corrigir (o RH não muda o tipo e o certificado emitido fica selado), então a própria `0142` preenche o tipo **uma vez,
+  na primeira aplicação**, pela mesma regra do **Automático**: **periódico** para a matrícula viva que tem outra
+  matrícula **concluída e anterior** do mesmo funcionário no mesmo curso (uma renovação feita pelo botão **Renovar**,
+  que existe desde a T20) e **inicial** para as demais. Rodar a migração de novo **não** repete o preenchimento (ele só
+  acontece se a coluna `tipo` ainda não existe) e, por isso, nunca desfaz a escolha do RH. A regra não enxerga o que foi
+  feito fora do portal (treinamento presencial): quem já fez o curso por fora e é matriculado pela primeira vez fica
+  como inicial. O certificado já emitido continua sem o tipo. A consulta de conferência no fim da migração mostra,
+  em `iniciais_com_concluida_anterior`, quantas matrículas iniciais ainda têm uma concluída anterior (0 logo depois da
+  primeira aplicação).
 
 **Pré-requisito.** No formulário do curso (**RH & Segurança → Treinamentos → curso**) o campo **Pré-requisito** escolhe o
 curso que o funcionário precisa ter **concluído e dentro da validade** antes deste. Exemplo: o NR-10 Complementar (SEP)
@@ -313,8 +322,9 @@ com `--no-verify-jwt`). Ordem: migração, depois a função, depois o front. A 
 lidas quando existem). A `0141` é idempotente: se a versão anterior dela (sem a marca do PDF) já tiver sido aplicada, rodar o arquivo de novo só acrescenta a coluna da marca.
 
 A T23 (tipo do treinamento e pré-requisito) acrescenta a migração **`0142`** (`tipo` e `motivo_eventual` na
-matrícula; `pre_requisito_curso_id` no curso, com os triggers contra o círculo e contra curso de outra empresa; sem
-alteração de dado) e muda o **portal-funcionario** (com `--no-verify-jwt`) e o **validar-certificado** (SEM
+matrícula, com o tipo das matrículas que já existem preenchido uma vez pela regra do Automático;
+`pre_requisito_curso_id` no curso, com os triggers contra o círculo e contra curso de outra empresa; nenhum outro dado
+é alterado) e muda o **portal-funcionario** (com `--no-verify-jwt`) e o **validar-certificado** (SEM
 `--no-verify-jwt`). A ordem importa: **migração, depois as funções, depois o front.** O `portal-funcionario` novo lê as
 colunas `tipo` e `motivo_eventual` da matrícula, e publicá-lo antes da migração derruba o portal inteiro; o front novo
 grava `tipo`, `motivo_eventual` e `pre_requisito_curso_id`, e publicá-lo antes da migração faz matricular e salvar

@@ -6,11 +6,13 @@
 // FORMA do arquivo, que é onde a T23 pode errar sem ninguém ver:
 //   - o número é o próximo livre e é um arquivo só; termina em `select 'ok' as res;`;
 //   - tipo (CHECK dos três valores) e motivo (obrigatório só no eventual, de 3 a 200 caracteres);
+//   - as matrículas que já existem recebem o tipo pela regra do "Automático" UMA vez só (na primeira aplicação,
+//     quando a coluna ainda não existe), em vez de virarem todas 'inicial' (revisão 1 da T23);
 //   - o trigger da 0130 continua aceitando o INSERT com tipo e motivo: ele só zera andamento e conclusão no
 //     INSERT, e depois do INSERT a empresa só muda tentativas_extras e deleted_at (o tipo não muda);
 //   - o pré-requisito é uma FK para o próprio curso (on delete set null), sem apontar para si nem para um círculo,
 //     da mesma empresa (trigger de referências com nome próprio: o `referencias_da_empresa_modelo` é da 0131);
-//   - a migração é idempotente e não mexe em dado real.
+//   - a migração é idempotente e o único dado que ela grava é esse preenchimento do tipo.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
@@ -39,6 +41,12 @@ const semComentarios = (sql: string) =>
 const compacto = (sql: string) => sql.replace(/\s+/g, " ").trim();
 const sql = compacto(semComentarios(migracao));
 
+/** O bloco `do $$ ... $$;` que cria a coluna tipo e preenche as matrículas antigas (sem comentários, compactado). */
+const blocosDo = [...sql.matchAll(/\bdo \$\$ (begin .*? end) \$\$;/g)];
+const bloco = blocosDo[0]?.[1] ?? "";
+/** A migração sem esse bloco: o que sobra tem de ser idempotente por si só. */
+const sqlForaDoBloco = sql.replace(/\bdo \$\$ begin .*? end \$\$;/, "");
+
 test("termina em select 'ok' as res; e roda numa transação só", () => {
   assert.ok(migracao.trimEnd().endsWith("select 'ok' as res;"));
   assert.equal([...sql.matchAll(/\bbegin;/g)].length, 1);
@@ -49,8 +57,8 @@ test("termina em select 'ok' as res; e roda numa transação só", () => {
 
 test("tipo: texto não nulo, padrão 'inicial', com CHECK dos três valores da NR-1", () => {
   assert.ok(
-    sql.includes(
-      "alter table public.treinamento_matricula add column if not exists tipo text not null default 'inicial'"
+    bloco.includes(
+      "alter table public.treinamento_matricula add column tipo text not null default 'inicial';"
     )
   );
   assert.ok(sql.includes("add column if not exists motivo_eventual text"));
@@ -70,6 +78,77 @@ test("motivo: obrigatório (3 a 200 caracteres) no eventual e nulo nos outros ti
   assert.ok(regra.includes("char_length(btrim(motivo_eventual)) >= 3"));
   assert.ok(regra.includes("char_length(motivo_eventual) <= 200"));
   assert.ok(regra.includes("else motivo_eventual is null"));
+});
+
+// ---------------------------------------------------- matrículas que já existem: tipo pela regra do Automático
+
+test("preenchimento: há um bloco só e ele guarda a primeira aplicação (a coluna tipo ainda não existe)", () => {
+  assert.equal(blocosDo.length, 1, "esperava um único bloco do $$ ... $$");
+  assert.ok(
+    bloco.startsWith(
+      "begin if not exists ( select 1 from information_schema.columns where table_schema = 'public' and table_name = 'treinamento_matricula' and column_name = 'tipo' ) then "
+    ),
+    "a guarda tem de ser a ausência da coluna tipo no information_schema"
+  );
+  assert.ok(bloco.endsWith("end if; end"), "o bloco inteiro fica dentro do if");
+});
+
+test("preenchimento: a coluna é criada e o UPDATE roda dentro da guarda, nessa ordem (rodar de novo não repete)", () => {
+  const entao = bloco.indexOf(") then ");
+  const cria = bloco.indexOf("add column tipo text not null default 'inicial';");
+  const atualiza = bloco.indexOf("update public.treinamento_matricula m set tipo = 'periodico'");
+  const fim = bloco.lastIndexOf("end if;");
+  assert.ok(entao > 0 && cria > entao, "a coluna é criada depois do then");
+  assert.ok(atualiza > cria, "o UPDATE vem depois de criar a coluna");
+  assert.ok(fim > atualiza, "o UPDATE termina antes do end if");
+  // nada de criar a coluna tipo, nem de atualizar matrícula, fora da guarda
+  assert.equal(/add column (if not exists )?tipo\b/.test(sqlForaDoBloco), false);
+  assert.equal(/(^|;)\s*update\b/.test(sqlForaDoBloco), false);
+});
+
+test("preenchimento: periódico = matrícula viva com outra concluída e anterior do mesmo funcionário e curso", () => {
+  const m =
+    /update public\.treinamento_matricula m set tipo = 'periodico' where (.*?) end if;/.exec(bloco);
+  assert.ok(m, "UPDATE do preenchimento não encontrado");
+  const regra = m[1];
+  assert.ok(regra.startsWith("m.deleted_at is null and exists ("), "só matrícula viva");
+  for (const condicao of [
+    "from public.treinamento_matricula a",
+    "a.empresa_id = m.empresa_id",
+    "a.funcionario_id = m.funcionario_id",
+    "a.curso_id = m.curso_id",
+    "a.id <> m.id",
+    "a.status = 'concluido'",
+    "a.deleted_at is null",
+    "a.created_at < m.created_at",
+  ]) {
+    assert.ok(regra.includes(condicao), `falta ${condicao}`);
+  }
+  // o UPDATE só grava a coluna tipo (nada de status, datas, nota ou motivo)
+  assert.deepEqual(
+    [...bloco.matchAll(/\bset (\w+) = /g)].map((x) => x[1]),
+    ["tipo"]
+  );
+  // todas as condições valem juntas: excluída, de outro curso, pessoa ou empresa não prova conclusão anterior
+  assert.equal(/\bor\b/.test(regra), false, "sem OR na regra");
+});
+
+test("preenchimento: nunca produz eventual, e o CHECK do motivo só entra depois das linhas preenchidas", () => {
+  // o motivo só existe no eventual, e o preenchimento nunca produz eventual
+  assert.equal(/set tipo = 'eventual'/.test(bloco), false);
+  assert.equal(bloco.includes("motivo_eventual"), false);
+  assert.ok(
+    sql.indexOf("add constraint treinamento_matricula_motivo_eventual_chk") > sql.indexOf(bloco)
+  );
+  assert.ok(sql.indexOf("add constraint treinamento_matricula_tipo_chk") > sql.indexOf(bloco));
+});
+
+test("conferência final conta as matrículas 'inicial' que ainda têm concluída anterior (0 na primeira aplicação)", () => {
+  const depois = sql.slice(sql.indexOf("commit;"));
+  assert.ok(depois.includes("as iniciais_com_concluida_anterior"));
+  assert.ok(depois.includes("m.tipo = 'inicial'"));
+  assert.ok(depois.includes("a.status = 'concluido'"));
+  assert.ok(depois.includes("a.created_at < m.created_at"));
 });
 
 // -------------------------------------------------------------------------- o trigger da 0130 não atrapalha
@@ -175,8 +254,11 @@ test("a 0131 (que copia o modelo para o curso) não mexe na coluna do pré-requi
 // ----------------------------------------------------------------------------------------- idempotência
 
 test("idempotente: coluna com if not exists; restrição e trigger recriados; função com create or replace", () => {
-  for (const m of sql.matchAll(/add column (?!if not exists)/g)) {
-    assert.fail(`add column sem "if not exists" em: ${sql.slice(m.index, m.index + 60)}`);
+  // a única coluna sem "if not exists" é a tipo, e ela só nasce dentro do bloco guardado (ver os testes acima)
+  for (const m of sqlForaDoBloco.matchAll(/add column (?!if not exists)/g)) {
+    assert.fail(
+      `add column sem "if not exists" em: ${sqlForaDoBloco.slice(m.index, m.index + 60)}`
+    );
   }
   // toda restrição nova é precedida do drop constraint if exists, do mesmo nome
   for (const m of sql.matchAll(/add constraint (\w+)/g)) {
@@ -195,7 +277,12 @@ test("idempotente: coluna com if not exists; restrição e trigger recriados; fu
   assert.equal(/\bcreate function\b/.test(sql), false, "função só com create or replace");
 });
 
-test("nenhum dado real é gravado, apagado ou apagado em massa", () => {
-  const comandos = /(^|;)\s*(insert into|update\s+public\.|delete from|truncate)\b/i;
-  assert.equal(comandos.test(semComentarios(migracao)), false);
+test("o único dado gravado é o tipo das matrículas antigas: nada de insert, delete, truncate nem outro update", () => {
+  assert.equal(
+    /(^|;)\s*(insert into|delete from|truncate)\b/i.test(semComentarios(migracao)),
+    false
+  );
+  // um UPDATE só, o do bloco (os triggers dizem "before insert or update of", que não começa comando)
+  assert.equal([...sql.matchAll(/(^|;)\s*update\b/gi)].length, 1);
+  assert.equal([...bloco.matchAll(/(^|;)\s*update\b/gi)].length, 1);
 });

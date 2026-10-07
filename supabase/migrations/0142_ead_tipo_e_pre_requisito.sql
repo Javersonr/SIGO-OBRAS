@@ -10,8 +10,11 @@
 -- O que muda:
 --
 --   treinamento_matricula
---     tipo            'inicial' (padrão) | 'periodico' | 'eventual'. O padrão vale para as matrículas que já
---                     existem (o tipo delas nunca foi perguntado) e para quem inserir sem dizer.
+--     tipo            'inicial' (padrão) | 'periodico' | 'eventual'. O padrão vale para quem inserir sem dizer. As
+--                     matrículas que JÁ existem não ficam todas 'inicial': na PRIMEIRA aplicação (a coluna ainda
+--                     não existe) elas recebem o tipo pela regra do "Automático" da tela de matrícula, ou seja,
+--                     'periodico' para a que tem outra matrícula concluída e anterior do mesmo funcionário no
+--                     mesmo curso (uma renovação) e 'inicial' para as demais (ver o passo 1 e o porquê abaixo).
 --     motivo_eventual texto de 3 a 200 caracteres, OBRIGATÓRIO quando o tipo é 'eventual' e NULO nos outros dois
 --                     (a restrição repete a regra da tela; sem ela, uma chamada direta à API poderia gravar
 --                     "eventual" sem motivo, ou um motivo enorme que sairia no certificado e na consulta pública).
@@ -33,9 +36,22 @@
 --     referencias_da_empresa_pre_requisito (trigger)  o curso exigido tem de ser da MESMA empresa (modelo: 0118;
 --                                                  o nome é outro porque referencias_da_empresa_modelo já é da 0131).
 --
--- Idempotente: as colunas são "add column if not exists"; as restrições e os triggers são recriados; a função é
--- "create or replace". Sem UPDATE de dados reais: nenhuma matrícula muda de tipo e nenhum curso ganha pré-requisito
--- sozinho (o RH escolhe o pré-requisito pela tela do curso).
+-- Por que as matrículas antigas não ficam todas 'inicial': o botão Renovar existe desde a T20, então já há
+-- renovações abertas ou concluídas sem certificado. Se todas virassem 'inicial', o aluno que emitisse o certificado
+-- depois do deploy teria "Tipo de treinamento: Inicial" congelado no hash, no PDF e na consulta pública de uma
+-- RECICLAGEM, e o mesmo "Inicial" iria para a tabela, o CSV e a planilha do dossiê. Nada depois corrigiria isso: a
+-- 0130 impede o RH de mudar o tipo e o certificado emitido fica selado. Por isso o preenchimento acontece UMA vez,
+-- aqui. O que a regra não consegue saber: um treinamento feito fora do portal (presencial) não aparece nas matrículas,
+-- então a primeira matrícula de quem já fez o curso por fora fica 'inicial'.
+--
+-- Idempotente: a coluna tipo só é criada, e as matrículas antigas só são preenchidas, se a coluna ainda não existe
+-- (guarda em information_schema), então rodar de novo NÃO volta a mexer no tipo, nem desfaz a escolha do RH; as demais
+-- colunas são "add column if not exists"; as restrições e os triggers são recriados; a função é "create or replace".
+-- O único UPDATE de dados é esse preenchimento (só a coluna tipo, só na primeira aplicação). Roda sem JWT (por
+-- exemplo com db query --linked), então chamador_eh_servidor() vale true e o trigger da 0130 deixa passar; as linhas
+-- alteradas ganham updated_at novo (trigger set_updated_at). Nenhum curso ganha pré-requisito sozinho (o RH escolhe o
+-- pré-requisito pela tela do curso). Se uma versão anterior desta migração (sem o preenchimento) já tiver sido aplicada,
+-- a coluna já existe e o preenchimento não roda: avise o Javerson antes de aplicar de novo.
 --
 -- Depois de aplicar: publicar portal-funcionario e validar-certificado (esta SEM --no-verify-jwt) e o site. A ORDEM
 -- importa: o portal-funcionario novo lê as colunas tipo e motivo_eventual; publicado antes desta migração, o portal
@@ -45,8 +61,41 @@
 begin;
 
 -- 1. tipo e motivo na matrícula -------------------------------------------------------------------------------
+-- tipo: cria a coluna e, SÓ nesta primeira vez, dá o tipo às matrículas que já existem (regra do "Automático" de
+-- lib/ead-tipo-matricula.js: periódico para quem já CONCLUIU o curso antes, inicial para quem nunca concluiu).
+-- "Concluída e anterior": outra matrícula viva do mesmo funcionário, no mesmo curso e da mesma empresa, com status
+-- 'concluido' e criada antes. O plpgsql só planeja o UPDATE depois do ALTER TABLE, por isso a coluna já existe nele.
+do $$
+begin
+  if not exists (
+    select 1
+      from information_schema.columns
+     where table_schema = 'public'
+       and table_name = 'treinamento_matricula'
+       and column_name = 'tipo'
+  ) then
+    alter table public.treinamento_matricula
+      add column tipo text not null default 'inicial';
+
+    update public.treinamento_matricula m
+       set tipo = 'periodico'
+     where m.deleted_at is null
+       and exists (
+         select 1
+           from public.treinamento_matricula a
+          where a.empresa_id = m.empresa_id
+            and a.funcionario_id = m.funcionario_id
+            and a.curso_id = m.curso_id
+            and a.id <> m.id
+            and a.status = 'concluido'
+            and a.deleted_at is null
+            and a.created_at < m.created_at
+       );
+  end if;
+end
+$$;
+
 alter table public.treinamento_matricula
-  add column if not exists tipo text not null default 'inicial',
   add column if not exists motivo_eventual text;
 
 alter table public.treinamento_matricula
@@ -147,8 +196,11 @@ create trigger referencias_da_empresa_pre_requisito
 
 commit;
 
--- Conferência (só leitura): as colunas existem, quantas matrículas já têm cada tipo (todas 'inicial' na primeira
--- aplicação) e quantos cursos já têm pré-requisito (0 na primeira aplicação; sobe conforme o RH escolhe pela tela).
+-- Conferência (só leitura): as colunas existem, quantas matrículas vivas têm cada tipo (na primeira aplicação, as
+-- periódicas são as renovações que já existiam e as iniciais, o resto; nenhuma eventual), quantas matrículas
+-- 'inicial' ainda têm uma concluída anterior (0 logo após a primeira aplicação; depois só sobe se o RH escolher
+-- "Inicial" de propósito) e quantos cursos já têm pré-requisito (0 na primeira aplicação; sobe conforme o RH escolhe
+-- pela tela).
 select (select count(*) from information_schema.columns
         where table_schema = 'public' and table_name = 'treinamento_matricula'
           and column_name in ('tipo', 'motivo_eventual')) as colunas_da_matricula_de_2,
@@ -161,6 +213,21 @@ select (select count(*) from information_schema.columns
          as matriculas_periodicas,
        (select count(*) from public.treinamento_matricula where deleted_at is null and tipo = 'eventual')
          as matriculas_eventuais,
+       (select count(*)
+          from public.treinamento_matricula m
+         where m.deleted_at is null
+           and m.tipo = 'inicial'
+           and exists (
+             select 1
+               from public.treinamento_matricula a
+              where a.empresa_id = m.empresa_id
+                and a.funcionario_id = m.funcionario_id
+                and a.curso_id = m.curso_id
+                and a.id <> m.id
+                and a.status = 'concluido'
+                and a.deleted_at is null
+                and a.created_at < m.created_at
+           )) as iniciais_com_concluida_anterior,
        (select count(*) from public.treinamento_curso
          where deleted_at is null and pre_requisito_curso_id is not null) as cursos_com_pre_requisito;
 
