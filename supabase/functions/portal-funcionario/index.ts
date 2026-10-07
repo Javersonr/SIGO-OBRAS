@@ -169,6 +169,7 @@ import {
   detalheDaProvaIniciada,
   detalheLimitado,
   fecharConclusaoAdiada,
+  horaDeBrasilia,
   inicioDaProva,
   liberacoesPorMatricula,
   logoAssinadoParaPdf,
@@ -187,10 +188,10 @@ import {
   sortearProva,
   textoDaModalidade,
   travaDoSinal,
-  ultimaLiberacao,
   validarEnvio,
 } from "./regras.ts";
 import { concluirSeCompleto, situacaoReal, trilhaDoCurso } from "./conclusao.ts";
+import { prepararProva, type RecusaDaProva } from "./prova.ts";
 import {
   consumirTentativa,
   ipDaRequisicao,
@@ -253,28 +254,11 @@ interface Body {
   sem_outra_atividade?: boolean;
 }
 
-const hora = (iso: string) =>
-  new Date(iso).toLocaleTimeString("pt-BR", {
-    timeZone: "America/Sao_Paulo",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
 // deno-lint-ignore no-explicit-any
 type Db = any;
 
-/** O que `prepararProva` devolve: a resposta de recusa, ou o que a prova precisa. */
-type FalhaOuProva =
-  | { falha: Response }
-  | {
-      falha: null;
-      // deno-lint-ignore no-explicit-any
-      questoes: any[];
-      // deno-lint-ignore no-explicit-any
-      curso: any;
-      usadas: number;
-      max: number | null;
-    };
+/** A recusa da prova (prova.ts) como resposta HTTP. */
+const recusaDaProva = (r: RecusaDaProva) => fail(r.mensagem, r.status, r.extra);
 
 /** A aula existe (não apagada) e é do curso, na empresa da sessão. */
 async function aulaDoCurso(supabase: Db, aulaId: string, cursoId: string, empresaId: string) {
@@ -419,7 +403,7 @@ Deno.serve(
       // senha certa: agora pode dizer o motivo
       if (bloqueado) {
         return fail(
-          `Acesso bloqueado por senhas erradas. Tente de novo às ${hora(acesso.bloqueado_ate)} ou fale com o RH.`,
+          `Acesso bloqueado por senhas erradas. Tente de novo às ${horaDeBrasilia(acesso.bloqueado_ate)} ou fale com o RH.`,
           423,
           { codigo: "BLOQUEADO" }
         );
@@ -1315,89 +1299,10 @@ Deno.serve(
     // `avaliacao_iniciada`, com a hora do servidor) e devolve as questões SEM gabarito. `avaliacao` só
     // aceita o envio de uma prova iniciada nesta tentativa e completa, e corrige com a ordem que o
     // servidor gravou: o navegador não escolhe a ordem, não define o início nem o tempo.
-
-    /**
-     * Confere se a matrícula pode fazer a prova AGORA e traz o que ela precisa. As duas ações recusam
-     * pelos mesmos motivos (já aprovado, aulas por concluir, sem questões, tentativas esgotadas,
-     * intervalo correndo). `comGabarito`: só a correção carrega `correta` e `comentario`; abrir a
-     * prova nunca os lê.
-     */
-    // deno-lint-ignore no-explicit-any
-    const prepararProva = async (mat: any, comGabarito: boolean): Promise<FalhaOuProva> => {
-      if (mat.avaliacao_aprovada) {
-        return { falha: fail("Você já foi aprovado nesta avaliação", 409) };
-      }
-      const trilha = await trilhaDoCurso(supabase, mat.curso_id, mat.id, empresaId);
-      // a trilha ilegível parece vazia, e "todas as aulas de uma lista vazia" liberaria a prova (A7)
-      if (!trilha.lida) return { falha: fail(MSG_TRILHA_INDISPONIVEL, 503) };
-      if (!trilha.aulas.every((a: { id: string }) => trilha.feitas.has(a.id))) {
-        return { falha: fail("Conclua todas as aulas antes da avaliação", 409) };
-      }
-      const [{ data: questoes }, { data: curso }, { data: anteriores }, { data: liberacoes }] =
-        await Promise.all([
-          supabase
-            .from("treinamento_questao")
-            .select(
-              comGabarito
-                ? "id, ordem, pergunta, opcoes, correta, comentario"
-                : "id, ordem, pergunta, opcoes"
-            )
-            .eq("curso_id", mat.curso_id)
-            .eq("empresa_id", empresaId)
-            .is("deleted_at", null)
-            .order("ordem", { ascending: true }),
-          supabase
-            .from("treinamento_curso")
-            .select("nota_minima, max_tentativas, intervalo_tentativa_min")
-            .eq("id", mat.curso_id)
-            .eq("empresa_id", empresaId)
-            .maybeSingle(),
-          supabase
-            .from("treinamento_tentativa")
-            .select("numero, aprovada, created_at")
-            .eq("matricula_id", mat.id)
-            .order("numero", { ascending: false }),
-          // liberação do RH (T18): depois da última tentativa, o intervalo não vale
-          supabase
-            .from("treinamento_evento")
-            .select("created_at")
-            .eq("matricula_id", mat.id)
-            .eq("empresa_id", empresaId)
-            .eq("evento", EVENTO_TENTATIVA_LIBERADA)
-            .order("created_at", { ascending: false })
-            .limit(1),
-        ]);
-      if (!questoes?.length) return { falha: fail("Este curso não tem avaliação", 400) };
-
-      const usadas = anteriores?.length ?? 0;
-      const tentativas = situacaoDasTentativas({
-        usadas,
-        curso,
-        matricula: mat,
-        ultima: anteriores?.[0],
-        liberadaEm: ultimaLiberacao(liberacoes),
-        agora: Date.now(),
-      });
-      if (tentativas.esgotada) {
-        return {
-          falha: fail("Você usou todas as tentativas. Procure o RH para liberar uma nova.", 403, {
-            codigo: "LIMITE_TENTATIVAS",
-          }),
-        };
-      }
-      if (tentativas.aguardarAte !== null) {
-        const libera = tentativas.aguardarAte;
-        return {
-          falha: fail(
-            `Nova tentativa liberada às ${hora(new Date(libera).toISOString())}. Revise as aulas enquanto isso.`,
-            429,
-            { codigo: "AGUARDAR", liberada_em: new Date(libera).toISOString() }
-          ),
-        };
-      }
-      // deno-lint-ignore no-explicit-any
-      return { falha: null, questoes: questoes as any[], curso, usadas, max: tentativas.max };
-    };
+    // As duas ações começam por `prepararProva` (prova.ts): ela confere se a matrícula pode fazer a prova e lê
+    // o que a prova precisa. Com qualquer leitura ilegível (aulas, progresso, questões, curso, tentativas ou
+    // liberações) responde 503 ANTES de abrir, corrigir ou gravar a tentativa (A7): a tentativa aprovada é
+    // imutável e a conclusão decide a partir dela.
 
     /** O último início de prova gravado nesta matrícula (a linha da trilha), ou erro de leitura. */
     // deno-lint-ignore no-explicit-any
@@ -1415,8 +1320,8 @@ Deno.serve(
     if (body.acao === "iniciar_avaliacao") {
       const mat = await minhaMatricula(body.matricula_id);
       if (!mat) return fail("Matrícula não encontrada", 404);
-      const preparo = await prepararProva(mat, false);
-      if (preparo.falha) return preparo.falha;
+      const preparo = await prepararProva(supabase, mat, empresaId, false);
+      if (preparo.falha) return recusaDaProva(preparo.falha);
       const { questoes, curso, max } = preparo;
       const numero = preparo.usadas + 1;
 
@@ -1457,8 +1362,8 @@ Deno.serve(
     if (body.acao === "avaliacao") {
       const mat = await minhaMatricula(body.matricula_id);
       if (!mat) return fail("Matrícula não encontrada", 404);
-      const preparo = await prepararProva(mat, true);
-      if (preparo.falha) return preparo.falha;
+      const preparo = await prepararProva(supabase, mat, empresaId, true);
+      if (preparo.falha) return recusaDaProva(preparo.falha);
       const { questoes, curso, max } = preparo;
       const numero = preparo.usadas + 1;
 

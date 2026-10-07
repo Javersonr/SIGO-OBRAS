@@ -15,6 +15,7 @@ const semComentarios = (texto: string) =>
 const codigoDoIndex = semComentarios(readFileSync(new URL("./index.ts", import.meta.url), "utf8"));
 const originalDaConclusao = readFileSync(new URL("./conclusao.ts", import.meta.url), "utf8");
 const codigoDaConclusao = semComentarios(originalDaConclusao);
+const codigoDaProva = semComentarios(readFileSync(new URL("./prova.ts", import.meta.url), "utf8"));
 
 /**
  * O corpo de uma função de topo, do `async function nome(` até a próxima função de topo. As da conclusão
@@ -238,18 +239,20 @@ test("A7: o index.ts usa a conclusão de conclusao.ts e não tem mais cópia pr�
   }
 });
 
-test("A7: toda leitura da trilha no index.ts confere `lida` antes de usar as aulas (503, nunca 'aula bloqueada')", () => {
+test("A7: toda leitura da trilha confere `lida` antes de usar as aulas (503, nunca 'aula bloqueada')", () => {
   const leituras = [
     ...codigoDoIndex.matchAll(/const trilha = await trilhaDoCurso\([^)]*\);\s*([^\n]*)/g),
   ];
-  // abrir_aula, progresso e a preparação da prova
-  assert.equal(leituras.length, 3, String(leituras.map((m) => m[0])));
+  // abrir_aula e progresso; a preparação da prova saiu para prova.ts na revisão 1 (guarda abaixo)
+  assert.equal(leituras.length, 2, String(leituras.map((m) => m[0])));
   for (const [, seguinte] of leituras) {
-    assert.match(
-      seguinte,
-      /if \(!trilha\.lida\) return (?:\{ falha: )?fail\(MSG_TRILHA_INDISPONIVEL, 503\)/
-    );
+    assert.match(seguinte, /if \(!trilha\.lida\) return fail\(MSG_TRILHA_INDISPONIVEL, 503\)/);
   }
+  // a da prova: a mesma conferência, em prova.ts (o comportamento está em prova.test.ts)
+  assert.match(
+    codigoDaProva,
+    /const trilha = await trilhaDoCurso\([^)]*\);\s*if \(!trilha\.lida\) return \{ falha: \{ mensagem: MSG_TRILHA_INDISPONIVEL, status: 503 \} \};/
+  );
 });
 
 test("A7: o certificado com a trilha ilegível responde 503 (bloqueioDaTrilhaNoCertificado), não 409 'Conclua o curso'", () => {
@@ -357,4 +360,65 @@ test("A7: a conclusão confere o erro de cada leitura (conclusao.ts) e manda a c
     concluir,
     /if \(!sit\.lida \|\| erroCurso\) \{[\s\S]*await esperar\(\);[\s\S]*await ler\(\);/
   );
+});
+
+// ------------------------------------- A7, revisão 1: a prova não é aberta nem corrigida com leitura que falhou
+// O comportamento está em prova.test.ts (banco injetado); aqui, a ligação no index.ts e a ordem em prova.ts.
+
+test("A7 (revisão 1): o index.ts usa prepararProva de prova.ts, sem cópia própria, e devolve a recusa", () => {
+  assert.match(
+    codigoDoIndex,
+    /import \{ prepararProva, type RecusaDaProva \} from "\.\/prova\.ts";/
+  );
+  assert.doesNotMatch(codigoDoIndex, /const prepararProva = /);
+  assert.match(
+    codigoDoIndex,
+    /const recusaDaProva = \(r: RecusaDaProva\) => fail\(r\.mensagem, r\.status, r\.extra\);/
+  );
+  // iniciar_avaliacao (sem gabarito) e avaliacao (com): a empresa da sessão, e a recusa sai antes de usar a prova
+  const chamadas = [
+    ...codigoDoIndex.matchAll(
+      /const preparo = await prepararProva\(supabase, mat, empresaId, (false|true)\);\s*if \(preparo\.falha\) return recusaDaProva\(preparo\.falha\);/g
+    ),
+  ].map((m) => m[1]);
+  assert.deepEqual(chamadas, ["false", "true"]);
+});
+
+test("A7 (revisão 1): o envio da prova só corrige e grava a tentativa depois da preparação sem falha", () => {
+  const inicio = codigoDoIndex.indexOf('body.acao === "avaliacao"');
+  assert.ok(inicio > 0, "ação avaliacao não encontrada");
+  const acao = codigoDoIndex.slice(
+    inicio,
+    codigoDoIndex.indexOf('body.acao === "certificado"', inicio)
+  );
+  const recusa = acao.indexOf("if (preparo.falha) return recusaDaProva(preparo.falha)");
+  assert.ok(recusa > 0, "a recusa da preparação não foi encontrada");
+  // a tentativa aprovada é imutável (0135): com o curso ilegível, nem a correção (nota mínima padrão) nem o INSERT
+  assert.ok(recusa < acao.indexOf("corrigirProva("));
+  assert.ok(recusa < acao.indexOf('.from("treinamento_tentativa").insert'));
+  // a nota mínima da correção vem do curso que a preparação leu
+  assert.match(acao, /notaMinima: curso\?\.nota_minima/);
+});
+
+test("A7 (revisão 1): prova.ts confere o erro das quatro leituras e responde 503 antes de qualquer regra da prova", () => {
+  for (const erro of ["erroQuestoes", "erroCurso", "erroAnteriores", "erroLiberacoes"]) {
+    assert.match(codigoDaProva, new RegExp(`error: ${erro}\\b`), erro);
+  }
+  // a causa de cada leitura vai ao log
+  assert.match(
+    codigoDaProva,
+    /console\.error\(`\$\{LOG\} prepararProva: \$\{leitura\}:`, causa\(erro\)\)/
+  );
+  const falha = codigoDaProva.indexOf(
+    "if (ilegivel) return { falha: { mensagem: MSG_PROVA_INDISPONIVEL, status: 503 } };"
+  );
+  assert.ok(falha > 0, "falta o 503 da prova com leitura ilegível");
+  // antes de "sem questões", do limite e do intervalo, e de a nota mínima do curso valer
+  assert.ok(falha < codigoDaProva.indexOf("!questoes?.length"));
+  assert.ok(falha < codigoDaProva.indexOf("situacaoDasTentativas({"));
+});
+
+test("A7 (revisão 1): prova.ts continua sem Deno e sem import de URL (testável no Node)", () => {
+  assert.doesNotMatch(codigoDaProva, /\bDeno\./);
+  assert.doesNotMatch(codigoDaProva, /from "https?:/);
 });

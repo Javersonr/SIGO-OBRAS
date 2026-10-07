@@ -35,6 +35,7 @@ import {
   dentroDoVolume,
   detalheDaProvaIniciada,
   fecharConclusaoAdiada,
+  horaDeBrasilia,
   detalheLimitado,
   inicioDaProva,
   liberacaoDasAulas,
@@ -688,6 +689,13 @@ test("proximaTentativaEm: aprovado ou sem intervalo não tem próxima tentativa 
   assert.equal(proximaTentativaEm(true, 30, HORA), null);
   for (const intervalo of [0, null, undefined, -1])
     assert.equal(proximaTentativaEm(false, intervalo, HORA), null);
+});
+
+// ---------------------------------------------------------------- horaDeBrasilia
+test("horaDeBrasilia: a hora de Brasília (HH:MM) de um instante em ISO, qualquer que seja o fuso do servidor", () => {
+  // 14h30 UTC = 11h30 em Brasília; 02h10 UTC = 23h10 do dia anterior
+  assert.equal(horaDeBrasilia("2026-10-07T14:30:00.000Z"), "11:30");
+  assert.equal(horaDeBrasilia("2026-10-07T02:10:00.000Z"), "23:10");
 });
 
 // ----------------------------------------------------------- datasDeConclusao

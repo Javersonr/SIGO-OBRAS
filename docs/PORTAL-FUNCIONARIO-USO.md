@@ -388,8 +388,9 @@ uma vez. Se ainda falha:
 
 - com as aulas ou o progresso ilegíveis, não conclui e **não** marca (o progresso chama a conclusão em toda aula
   concluída, então não dá para saber se era a última; marcar às cegas deixaria a retomada concluir uma trilha
-  incompleta). A causa vai ao log da função. Fica aberta até a próxima aula, a próxima aprovação ou o pedido de
-  certificado; no curso de apoio, que não tem certificado, só se o aluno voltar a uma ação que conclua;
+  incompleta). A causa vai ao log da função. A conclusão fica para a próxima ação que a chame: outra aula concluída, a
+  aprovação da prova ou o pedido de certificado. Se era a última aula de um curso de apoio (sem prova e sem
+  certificado), não há outra ação e a matrícula fica em andamento;
 - com as aulas e o progresso lidos e completos, e só a prova (questões ou aprovação) ilegível, não conclui e grava
   `conclusao_adiada` com o motivo "não foi possível ler a prova (questões ou aprovação)". A retomada relê tudo e mantém
   as duas travas (trilha completa e "fez a prova e não passou").
@@ -401,6 +402,15 @@ certificado, a aula, o progresso e a prova respondem 503 "Não foi possível con
 de novo em instantes." (antes: "Conclua o curso antes de emitir o certificado", "Aula não pertence ao curso" ou "Conclua
 a aula anterior primeiro"), e a abertura do portal com as questões ou as tentativas ilegíveis responde 503 "Não foi
 possível carregar seus cursos agora. Tente de novo em instantes." (o portal mostra o botão de tentar de novo).
+
+**Prova com leitura que falhou (A7, revisão 1).** Abrir e enviar a prova também só decidem com tudo lido: aulas,
+progresso, questões, curso, tentativas anteriores e liberações do RH. Antes, se só a leitura do curso falhasse no
+envio, a prova era corrigida com a nota mínima padrão (70), sem limite de tentativas e sem intervalo (um curso de 80%
+aprovava quem tirou 75%), e a tentativa aprovada é imutável: a conclusão do curso decide a partir dela. Agora, com
+qualquer uma dessas leituras ilegível, `iniciar_avaliacao` e `avaliacao` respondem 503 "Não foi possível conferir a
+prova agora. Tente de novo em instantes." antes de abrir, corrigir ou gravar a tentativa. As respostas do aluno ficam
+na tela para ele enviar de novo, e a causa de cada leitura vai ao log da função. A conferência mora em `prova.ts`
+(`prepararProva`, testada com banco injetado em `prova.test.ts`).
 
 **Prática lançada duas vezes (A7).** No semipresencial, a mesma sessão lançada mais de uma vez no mesmo dia, com o
 mesmo horário de início e de fim, conta uma vez só (com a maior carga), mesmo quando a carga é menor que o horário (4 h

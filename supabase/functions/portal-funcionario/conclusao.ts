@@ -20,7 +20,7 @@ type Db = any;
 const LOG = "[portal-funcionario]";
 
 /** A mensagem do erro do PostgREST (ou o próprio erro, se não for um objeto com `message`). */
-const causa = (erro: unknown) => (erro as { message?: unknown } | null)?.message ?? erro;
+export const causa = (erro: unknown) => (erro as { message?: unknown } | null)?.message ?? erro;
 
 /** A pausa antes da segunda leitura da trilha (a queda passageira de conexão costuma passar nesse tempo). */
 export const PAUSA_DA_SEGUNDA_LEITURA_MS = 300;

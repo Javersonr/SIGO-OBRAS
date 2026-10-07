@@ -216,6 +216,15 @@ export function proximaTentativaEm(
   return !aprovada && intervalo > 0 ? agora + intervalo * 60_000 : null;
 }
 
+/** A hora (HH:MM) de Brasília de um instante em ISO: a que o aluno lê em "liberada às ..." e no bloqueio do login. */
+export function horaDeBrasilia(iso: string): string {
+  return new Date(iso).toLocaleTimeString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 /**
  * Datas gravadas ao concluir: `data_conclusao` e, se o curso tem validade em meses,
  * `proxima_renovacao`. Os dois dias são os de BRASÍLIA (T8): o `toISOString()` dava o dia em UTC e, entre
