@@ -122,9 +122,15 @@ curso e onde liberar mais uma tentativa (Detalhes da matrícula, **Liberar tenta
 
 **Validade da NR-1 e da NR-6 (decisão D12: 24 meses).** Curso sem validade não vence, então enquanto a validade dos
 cursos NR-1 e NR-6 estiver vazia eles não aparecem no painel nem no aviso. A gravação dos 24 meses não está na migração:
-fica no script `tools/ead-validade-nr1-nr6.sql`, com uma prévia (só leitura) e a gravação comentada. Rode a prévia,
-mostre ao Javerson e só então descomente a gravação. Atenção: nos cursos ligados ao cadastro central a validade tem de
-ser gravada no **treinamento central**, que vale também para as exigências das funções que o usam.
+fica no script `tools/ead-validade-nr1-nr6.sql`, com uma prévia (só leitura) e a gravação comentada. Rode a prévia
+(`supabase db query --linked -f tools/ead-validade-nr1-nr6.sql`), mostre ao Javerson e só então descomente a gravação.
+A prévia é **uma consulta só, com uma linha por curso** (de propósito: o `db query` pode devolver só o resultado do
+último comando de um arquivo com vários, então uma segunda consulta esconderia a primeira). A coluna
+`o_que_a_gravacao_faz` diz se o curso é atingido pelo passo B1 (validade direto no curso), pelo B2 (validade no
+treinamento central) ou por nenhum; as demais mostram as matrículas já concluídas que não ganham data de renovação e,
+nos cursos ligados ao cadastro central, o que o treinamento central leva junto. Resultado sem nenhuma linha = não há
+nada a gravar. Atenção: nos cursos ligados ao cadastro central a validade tem de ser gravada no **treinamento
+central**, que vale também para as exigências das funções que o usam.
 
 O projeto completo de conformidade EAD continua documentado em `HANDOFF-PORTAL-TREINAMENTO.md`. Esta entrega acrescenta
 as áreas de documentos e as proteções necessárias ao fluxo solicitado; não declara concluídas todas as 38 tarefas
