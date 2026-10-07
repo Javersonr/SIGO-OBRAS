@@ -7,6 +7,8 @@ import {
   faixaDoVencimento,
   matriculaValida,
   selecionarVencimentos,
+  conclusoesVigentes,
+  exigenciasPorFuncao,
   precisaDeAviso,
   atividadeSemTreinamento,
   rotuloDoVencimento,
@@ -308,6 +310,86 @@ describe("selecionarVencimentos", () => {
       matriculas: [mat("a", "f1", "c1", { proxima_renovacao: HOJE })],
     });
     expect(r.itens[0]).toMatchObject({ dias: 0, faixa: "ate30" });
+  });
+});
+
+describe("conclusoesVigentes", () => {
+  const dados = (matriculas, extra = {}) => ({
+    matriculas,
+    cursos: [curso("c1"), curso("c-apoio", { modalidade: "apoio" })],
+    funcionarios: [func("f1"), func("f2", { ativo: false })],
+    certificados: [],
+    ...extra,
+  });
+  const ids = (mapa) => [...mapa.values()].map((m) => m.id).sort();
+
+  it("por funcionário e curso fica a conclusão de renovação mais distante", () => {
+    const r = conclusoesVigentes(
+      dados([
+        mat("antiga", "f1", "c1", { proxima_renovacao: "2026-10-01" }),
+        mat("nova", "f1", "c1", { proxima_renovacao: "2028-10-01" }),
+      ])
+    );
+    expect(ids(r)).toEqual(["nova"]);
+    expect(r.get("f1|c1").id).toBe("nova");
+  });
+
+  it("empate de data: vale a criada por último", () => {
+    const r = conclusoesVigentes(
+      dados([
+        mat("a", "f1", "c1", { created_at: "2026-01-01T00:00:00Z" }),
+        mat("b", "f1", "c1", { created_at: "2026-02-01T00:00:00Z" }),
+      ])
+    );
+    expect(ids(r)).toEqual(["b"]);
+  });
+
+  it("deixa de fora não concluída, sem data, revogada, de apoio, de inativo e excluída", () => {
+    const r = conclusoesVigentes(
+      dados(
+        [
+          mat("aberta", "f1", "c1", { status: "em_andamento" }),
+          mat("sem-data", "f1", "c1", { proxima_renovacao: null }),
+          mat("revogada", "f1", "c1"),
+          mat("apoio", "f1", "c-apoio"),
+          mat("inativo", "f2", "c1"),
+          mat("excluida", "f1", "c1", { deleted_at: "2026-09-01T00:00:00Z" }),
+        ],
+        { certificados: [{ matricula_id: "revogada", revogado_em: "2026-10-01T00:00:00Z" }] }
+      )
+    );
+    expect(ids(r)).toEqual([]);
+  });
+});
+
+describe("exigenciasPorFuncao", () => {
+  const t = (id, funcao_id, modelo, extra = {}) => ({
+    id,
+    funcao_id,
+    modelo_treinamento_id: modelo,
+    ativo: true,
+    obrigatorio: true,
+    ...extra,
+  });
+
+  it("agrupa por função, uma por modelo", () => {
+    const r = exigenciasPorFuncao([t("a", "fn1", "m1"), t("b", "fn1", "m1"), t("c", "fn1", "m2")]);
+    expect(r.get("fn1").map((e) => e.id)).toEqual(["a", "c"]);
+  });
+
+  it("opcional, inativa, excluída, sem função ou sem modelo não entram", () => {
+    const r = exigenciasPorFuncao([
+      t("a", "fn1", "m1", { obrigatorio: false }),
+      t("b", "fn1", "m2", { ativo: false }),
+      t("c", "fn1", "m3", { deleted_at: "2026-09-01T00:00:00Z" }),
+      t("d", null, "m4"),
+      t("e", "fn1", null),
+    ]);
+    expect(r.size).toBe(0);
+  });
+
+  it("sem lista: mapa vazio", () => {
+    expect(exigenciasPorFuncao(undefined).size).toBe(0);
   });
 });
 

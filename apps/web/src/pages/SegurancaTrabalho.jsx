@@ -89,6 +89,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
+import { sugestaoDeMatricula, textoDaSugestao } from "@/lib/ead-matricula-funcao";
 import { cn } from "@/lib/utils";
 import JSZip from "jszip";
 
@@ -100,6 +101,8 @@ export default function SegurancaTrabalho() {
   const tabFromUrl = urlParams.get("tab") || "funcionarios";
 
   const [activeTab, setActiveTab] = useState(tabFromUrl);
+  // admissão ou troca de função: leva o RH à aba Treinamentos com o painel de matrícula já na função
+  const [sugestaoMatricula, setSugestaoMatricula] = useState(null);
   const [funcionarios, setFuncionarios] = useState([]);
   const [funcoes, setFuncoes] = useState([]);
   const [inspecoesFerramental, setInspecoesFerramental] = useState([]);
@@ -398,6 +401,24 @@ export default function SegurancaTrabalho() {
     }, 1000);
   };
 
+  // Admissão ou troca de função (NR-1, 1.4.4 e 1.7.1.2.1: o treinamento vem antes da atividade): oferece
+  // matricular o funcionário nos treinamentos EAD que a função exige. `anterior` é o cadastro de antes
+  // (null = funcionário novo). A regra está em lib/ead-matricula-funcao.js (testada).
+  const sugerirMatricula = (anterior, atual) => {
+    const sugestao = sugestaoDeMatricula({ anterior, atual });
+    if (!sugestao) return;
+    toast(textoDaSugestao(sugestao, atual?.nome_completo), {
+      duration: 15000,
+      action: {
+        label: "Matricular",
+        onClick: () => {
+          setSugestaoMatricula(sugestao);
+          setActiveTab("treinamentos_ead");
+        },
+      },
+    });
+  };
+
   const handleSaveFuncionario = async () => {
     if (!funcionarioForm.nome_completo || !funcionarioForm.cpf) {
       toast.error("Preencha os campos obrigatórios");
@@ -414,10 +435,12 @@ export default function SegurancaTrabalho() {
       if (selectedFuncionario) {
         await sigo.entities.Funcionario.update(selectedFuncionario.id, data);
         toast.success("Funcionário atualizado com sucesso");
+        sugerirMatricula(selectedFuncionario, { ...selectedFuncionario, ...data });
       } else {
         const novoFuncionario = await sigo.entities.Funcionario.create(data);
         toast.success("Funcionário cadastrado com sucesso");
         setSelectedFuncionario(novoFuncionario);
+        sugerirMatricula(null, novoFuncionario);
       }
 
       setShowFuncionarioModal(false);
@@ -1180,13 +1203,25 @@ export default function SegurancaTrabalho() {
 
         {/* Aba Contratação (esteira com IA — spec RH & Segurança) */}
         <TabsContent value="contratacao">
-          {/* onRegistrado recarrega a lista de funcionários da página */}
-          <ContratacaoTab empresaAtiva={empresaAtiva} user={user} onRegistrado={loadData} />
+          {/* onRegistrado recarrega a lista de funcionários da página e sugere a matrícula da função */}
+          <ContratacaoTab
+            empresaAtiva={empresaAtiva}
+            user={user}
+            onRegistrado={(novo) => {
+              loadData();
+              sugerirMatricula(null, novo);
+            }}
+          />
         </TabsContent>
 
         {/* Aba Treinamentos EAD (cursos YouTube + Portal do Funcionário) */}
         <TabsContent value="treinamentos_ead">
-          <TreinamentosEadTab empresaAtiva={empresaAtiva} user={user} />
+          <TreinamentosEadTab
+            empresaAtiva={empresaAtiva}
+            user={user}
+            sugestaoMatricula={sugestaoMatricula}
+            onSugestaoConsumida={() => setSugestaoMatricula(null)}
+          />
         </TabsContent>
 
         {/* Aba Liberações SST excepcionais (notificação + revogação) */}

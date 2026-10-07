@@ -132,6 +132,52 @@ nos cursos ligados ao cadastro central, o que o treinamento central leva junto. 
 nada a gravar. Atenção: nos cursos ligados ao cadastro central a validade tem de ser gravada no **treinamento
 central**, que vale também para as exigências das funções que o usam.
 
+### Matrículas na tela do RH (T22)
+
+A tabela **Matrículas** da aba **RH & Segurança → Treinamentos** mostra 50 linhas por vez (**Mostrar mais** ou
+**Mostrar todas**) e serve para acompanhar centenas de matrículas:
+
+- **Buscar e filtrar.** A busca acha por funcionário, curso, função ou código do certificado, sem diferenciar acento.
+  Os filtros são curso, status (inclui **Atrasada**) e vencimento (as mesmas faixas do painel **Vencimentos**, mais
+  **Sem nova matrícula**). Clique no título de uma coluna para ordenar; a ordem padrão é a matrícula mais recente.
+- **Andamento.** Cada linha mostra as aulas concluídas (3/12), a nota da última prova, as tentativas usadas (2 de 4,
+  contando as extras que o RH liberou) e a data da matrícula. As colunas de aulas e tentativas chegam um instante
+  depois da tabela; se não carregarem, a tela avisa e deixa as colunas em branco.
+- **Ex-funcionário** aparece como "Nome (inativo)". Ele não recebe aviso pelo WhatsApp (o botão fica desligado), não
+  conta como atrasado e não renova.
+- **Exportar CSV** baixa as matrículas do filtro atual (não só as 50 da tela), com separador `;`, acentos para o Excel
+  e sem CPF. Só libera depois que as aulas e tentativas carregaram, para o arquivo não sair com zeros falsos.
+- **Renovar** aparece na matrícula concluída mais recente do funcionário naquele curso, quando ele está ativo, o curso
+  aceita matrícula e não há outra matrícula aberta. Cria uma matrícula nova, do zero; a anterior e o certificado dela
+  ficam como histórico, sem mudança. Curso de apoio não renova (não emite certificado). Depois de renovar, avise o
+  funcionário pelo ícone do WhatsApp da linha nova.
+
+**Matricular por função.** No painel **Matricular funcionários**, a aba **Por função** pede a função e mostra os
+treinamentos que ela exige (função → exigência → treinamento do cadastro central → curso do portal, migração `0131`),
+o curso em que cada um será matriculado e a situação de cada funcionário ativo da função (em dia, em andamento,
+vencida, certificado revogado ou sem matrícula). Já vem marcado quem falta, e só se criam as matrículas que faltam. O
+treinamento sem curso no portal, ou com curso em rascunho ou com pendências, aparece desligado com o motivo. **Curso de
+apoio** pode ser matriculado, mas não emite certificado e o painel avisa; ele também não cumpre a exigência quando o
+treinamento tem um curso EAD que emite. Ao **cadastrar um funcionário**, **trocar a função dele** ou **registrar uma
+contratação**, a tela oferece o botão **Matricular**, que abre esse painel já na função, com a pessoa marcada (NR-1,
+itens 1.4.4 e 1.7.1.2.1: o treinamento vem antes da atividade). A importação em lote de funcionários não faz essa oferta.
+
+**Aviso pelo WhatsApp e senha provisória.** O ícone do WhatsApp na linha avisa o funcionário com o link do portal e,
+se ele ainda não tem acesso, cria o acesso na hora. A mensagem **não é mais copiada sozinha** para a área de
+transferência. Quando o acesso é criado, uma janela mostra o usuário e a **senha provisória uma única vez** (ela não
+fica guardada em lugar nenhum) e o botão **Copiar mensagem**. A mesma janela abre, sem senha, quando nada foi enviado
+(sem telefone ou telefone inválido), para o RH copiar e entregar. Enviado pelo canal automático e sem acesso novo, só
+aparece o aviso de que foi enviado.
+
+**Prazo para concluir e aviso aos atrasados.** Por padrão **não há prazo**: ninguém fica atrasado (o comportamento de
+sempre). No campo **Prazo para concluir** (dias após a matrícula), acima da tabela, o RH define um prazo padrão. Ele
+fica salvo **só neste navegador** (por empresa), porque ainda não há onde guardá-lo para todos; quando o curso passar a
+ter prazo próprio (`prazo_conclusao_dias`, T25), o do curso vale mais. A matrícula aberta que passou do limite ganha o
+selo **Atrasada**, e o botão **Avisar atrasados** manda um lembrete pelo WhatsApp **automático**, uma mensagem por
+funcionário, juntando os cursos atrasados e sem senha. Só recebe quem já tem acesso ao portal, telefone válido e ainda
+não foi avisado hoje; os demais ficam listados com o motivo. Cada rodada manda no máximo 30 mensagens (o canal aceita 60
+por hora por usuário), com uma pausa entre elas, e para se o canal recusar.
+
 O projeto completo de conformidade EAD continua documentado em `HANDOFF-PORTAL-TREINAMENTO.md`. Esta entrega acrescenta
 as áreas de documentos e as proteções necessárias ao fluxo solicitado; não declara concluídas todas as 38 tarefas
 daquele documento. Permanecem, por exemplo, os desenhos e migrações de ciência protegida no banco,

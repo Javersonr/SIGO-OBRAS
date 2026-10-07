@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sigo, supabase, resolveStorageUrl } from "@/api/sigoClient";
-import { normalizarTexto } from "@/lib/busca";
 import {
   modelosDeTreinamento,
   modelosSemCurso,
@@ -24,7 +23,7 @@ import {
   requisitosDoCurso,
   tempoObrigatorioSeg,
 } from "@/lib/ead-requisitos";
-import { numerarAulas, renovacaoParaExibir } from "@/lib/portal-curso";
+import { numerarAulas } from "@/lib/portal-curso";
 import {
   reordenarAulas,
   matriculasNovas,
@@ -56,6 +55,8 @@ import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
 import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
 import { aoMudarNomeDaPessoa, refDeAssinatura } from "@/lib/ead-assinatura";
 import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
+import { decidirAvisoAoRH } from "@/lib/ead-aviso-matricula";
+import { lerEmPaginas } from "@/lib/leitura-em-paginas";
 import { useConfirmar } from "@/components/shared/ConfirmarDialog";
 import MatriculaAuditoriaSheet from "@/components/seguranca/MatriculaAuditoriaSheet";
 import DuvidasTutorCard from "@/components/seguranca/DuvidasTutorCard";
@@ -64,6 +65,9 @@ import AssinaturaCursoCampo from "@/components/seguranca/AssinaturaCursoCampo";
 import EnvioProgressoEad from "@/components/seguranca/EnvioProgressoEad";
 import PreviaAlunoCurso from "@/components/seguranca/PreviaAlunoCurso";
 import VencimentosEadPainel from "@/components/seguranca/VencimentosEadPainel";
+import MatriculasEadCard from "@/components/seguranca/MatriculasEadCard";
+import MatricularEadSheet from "@/components/seguranca/MatricularEadSheet";
+import AvisoAcessoDialog from "@/components/seguranca/AvisoAcessoDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -77,13 +81,10 @@ import {
   Loader2,
   Trash2,
   GraduationCap,
-  MessageCircle,
   Users,
   Video,
   Pencil,
-  ClipboardList,
   FileText,
-  Award,
   ChevronDown,
   Eye,
   Info,
@@ -109,7 +110,8 @@ const NOVA_AULA = {
   minutos: "",
   duracao: "",
 };
-const MAT_FORM_VAZIO = { curso_id: "", funcionario_ids: [] };
+// matrículas por INSERT: uma matrícula por função pode passar de uma centena de linhas
+const LOTE_DE_MATRICULAS = 200;
 // o aviso de matrícula bloqueada tem ~190 caracteres e diz onde clicar: o toast padrão (4 s) some
 // antes (o aviso da legenda mantida, ao trocar o vídeo de uma aula, também é longo)
 const DURACAO_AVISO_BLOQUEIO_MS = 10000;
@@ -131,12 +133,6 @@ const fmtData = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/"
 const resumoDaPergunta = (pergunta) => {
   const t = String(pergunta || "").trim();
   return t.length > 160 ? `${t.slice(0, 160)}...` : t;
-};
-
-const STATUS_BADGE = {
-  pendente: "bg-slate-100 text-slate-600",
-  em_andamento: "bg-amber-100 text-amber-700 border-amber-200",
-  concluido: "bg-emerald-100 text-emerald-700 border-emerald-200",
 };
 
 /**
@@ -181,12 +177,24 @@ function SeletorPessoa({ rotulo, pessoas, formatar, nome, onNome, onEscolher }) 
   );
 }
 
-export default function TreinamentosEadTab({ empresaAtiva, user }) {
+export default function TreinamentosEadTab({
+  empresaAtiva,
+  user,
+  sugestaoMatricula = null,
+  onSugestaoConsumida,
+}) {
   const [cursos, setCursos] = useState([]);
   const [aulas, setAulas] = useState([]);
   const [matriculas, setMatriculas] = useState([]);
   const [certificados, setCertificados] = useState([]);
+  // só os funcionários ATIVOS (matrícula, lista de presença, painel de vencimentos) e todos, inclusive
+  // ex-funcionários e excluídos (só para dar nome às matrículas antigas: "Fulano (inativo)")
   const [funcionarios, setFuncionarios] = useState([]);
+  const [funcionariosTodos, setFuncionariosTodos] = useState([]);
+  // andamento das matrículas (aulas feitas, tentativas): vem à parte, sem derrubar a tela se falhar
+  const [progresso, setProgresso] = useState([]);
+  const [tentativas, setTentativas] = useState([]);
+  const [andamento, setAndamento] = useState({ carregado: false, erro: false, parcial: false });
   const [carregando, setCarregando] = useState(true);
   const [cursoSel, setCursoSel] = useState(null); // Sheet de edição do curso
   // o curso que está no painel AGORA: uma gravação lenta (vídeo de até 1 GB) termina com o `cursoSel` do
@@ -195,9 +203,11 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   cursoSelRef.current = cursoSel;
   const [previaAberta, setPreviaAberta] = useState(false); // "Ver como aluno" (T28)
   const [matriculaDetalheId, setMatriculaDetalheId] = useState(null);
-  const [showMatricular, setShowMatricular] = useState(false);
-  const [matForm, setMatForm] = useState(MAT_FORM_VAZIO);
-  const [buscaFunc, setBuscaFunc] = useState("");
+  // painel "Matricular funcionários": null = fechado; senão, como abre ({ modo, cursoId, funcionarioIds,
+  // funcaoId, chave }). A senha provisória de um acesso recém-criado fica em `avisoAcesso`, só até o RH
+  // fechar a janela.
+  const [painelMatricula, setPainelMatricula] = useState(null);
+  const [avisoAcesso, setAvisoAcesso] = useState(null);
   const [novaAula, setNovaAula] = useState(NOVA_AULA);
   const [subindoProjeto, setSubindoProjeto] = useState(false);
   // Envio de arquivo ou gravação de aula em andamento (T30): { alvo: "nova" | id da aula, arquivo,
@@ -222,6 +232,44 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   if (!cargasRef.current) cargasRef.current = criarControleDeCarga();
   const cargas = cargasRef.current;
   cargas.definirEmpresa(empresaAtiva?.id);
+
+  // Aulas feitas e tentativas da prova de todas as matrículas da empresa (as colunas de progresso, nota e
+  // tentativas da tabela). Essas tabelas não têm `deleted_at` (só inclusão), então a consulta não filtra
+  // por ele, e trazem só as colunas que a tabela usa: a tentativa guarda a prova inteira em `jsonb`. Falhar
+  // aqui não derruba a tela: as colunas mostram "—" e a tabela avisa. Segue a mesma regra de carga
+  // superada de `recarregar`.
+  const carregarAndamento = async (carga) => {
+    try {
+      const filtroEmpresa = carga.empresaId;
+      const [prog, tent] = await Promise.all([
+        lerEmPaginas(() =>
+          supabase
+            .from("treinamento_progresso")
+            .select("matricula_id, aula_id, concluida")
+            .eq("empresa_id", filtroEmpresa)
+            .order("id", { ascending: true })
+        ),
+        lerEmPaginas(() =>
+          supabase
+            .from("treinamento_tentativa")
+            .select("matricula_id, numero, nota, aprovada")
+            .eq("empresa_id", filtroEmpresa)
+            .order("id", { ascending: true })
+        ),
+      ]);
+      if (!cargas.vale(carga)) return;
+      setProgresso(prog.linhas);
+      setTentativas(tent.linhas);
+      setAndamento({ carregado: true, erro: false, parcial: prog.truncado || tent.truncado });
+    } catch (e) {
+      if (!cargas.vale(carga)) return;
+      console.error("Erro ao carregar o andamento das matrículas:", e);
+      setProgresso([]);
+      setTentativas([]);
+      setAndamento({ carregado: true, erro: true, parcial: false });
+    }
+  };
+
   const recarregar = async () => {
     const carga = cargas.iniciar();
     if (!carga) return;
@@ -231,7 +279,8 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
         sigo.entities.TreinamentoCurso.filter(filtro),
         sigo.entities.TreinamentoAula.filter(filtro),
         sigo.entities.TreinamentoMatricula.filter(filtro),
-        sigo.entities.Funcionario.filter({ ...filtro, ativo: true }),
+        // todos, com os excluídos: a matrícula de um ex-funcionário precisa do nome dele
+        sigo.entities.Funcionario.filter(filtro, SEM_SOFT_DELETE),
         sigo.entities.TreinamentoCertificado.filter(filtro, SEM_SOFT_DELETE),
         sigo.entities.Treinamento.filter(filtro),
         sigo.entities.TreinamentoQuestao.filter(filtro),
@@ -240,10 +289,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       setCursos(cs);
       setAulas(porOrdem(as));
       setMatriculas(ms);
-      setFuncionarios(fs);
+      setFuncionariosTodos(fs);
+      setFuncionarios(fs.filter((f) => f.ativo === true && !f.deleted_at));
       setCertificados(certs);
       setTreinamentosConfig(tcfg);
       setTodasQuestoes(qs);
+      carregarAndamento(carga);
     } catch (e) {
       if (!cargas.vale(carga)) return;
       console.error(e);
@@ -268,9 +319,11 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
     setCarregando(true);
     setCursoSel(null);
     setMatriculaDetalheId(null);
-    setShowMatricular(false);
-    setMatForm(MAT_FORM_VAZIO);
-    setBuscaFunc("");
+    setPainelMatricula(null);
+    setAvisoAcesso(null);
+    setProgresso([]);
+    setTentativas([]);
+    setAndamento({ carregado: false, erro: false, parcial: false });
     setNovaQuestao(null);
     setAulaEditando(null);
     setNovaAula(NOVA_AULA);
@@ -298,6 +351,21 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
       setGravando(new Set(gravandoRef.current));
     }
   };
+
+  // Admissão ou troca de função (NR-1, 1.4.4 e 1.7.1.2.1): a página de RH abre esta aba com a sugestão e o
+  // painel de matrícula abre já na função do funcionário, com ele marcado. A sugestão é consumida uma vez.
+  const aoConsumirSugestaoRef = useRef(onSugestaoConsumida);
+  aoConsumirSugestaoRef.current = onSugestaoConsumida;
+  useEffect(() => {
+    if (!sugestaoMatricula || carregando) return;
+    setPainelMatricula({
+      modo: "funcao",
+      funcaoId: sugestaoMatricula.funcaoId,
+      funcionarioIds: [sugestaoMatricula.funcionarioId],
+      chave: Date.now(),
+    });
+    aoConsumirSugestaoRef.current?.();
+  }, [sugestaoMatricula, carregando]);
 
   // ------------------------------------------------- envio de arquivos (T30)
   // Tela fechada no meio do envio: cancela (o arquivo não ficaria ligado a nenhuma aula).
@@ -416,6 +484,28 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   // o que impede PUBLICAR e MATRICULAR (D3: o curso de apoio publica e matricula; só não emite)
   const pendenciasCurso = (curso) => pendenciasParaPublicar(requisitos(curso));
   const funcPorId = useMemo(() => new Map(funcionarios.map((f) => [f.id, f])), [funcionarios]);
+  // com os ex-funcionários: a tabela e os detalhes da matrícula mostram o nome de quem já saiu
+  const funcTodosPorId = useMemo(
+    () => new Map(funcionariosTodos.map((f) => [f.id, f])),
+    [funcionariosTodos]
+  );
+  // null = o curso aceita matrícula (publicado e sem requisito pendente; o de apoio aceita, D3); senão o
+  // motivo. É a conta de `pendenciasCurso`, estável entre renders para o painel de matrícula por função.
+  const cursoMatriculavel = useCallback(
+    (curso) => {
+      if (!curso) return "Curso não encontrado";
+      if (curso.ativo === false) return "Curso em rascunho (não publicado)";
+      const pendencias = pendenciasParaPublicar(
+        requisitosDoCurso({
+          curso,
+          aulas: aulas.filter((a) => a.curso_id === curso.id),
+          questoes: todasQuestoes.filter((q) => q.curso_id === curso.id),
+        })
+      );
+      return pendencias.length ? "Curso com pendências para publicar" : null;
+    },
+    [aulas, todasQuestoes]
+  );
   // um certificado por matrícula, consultado por linha da tabela sem varrer a lista a cada vez
   const certPorMatricula = useMemo(() => certificadosPorMatricula(certificados), [certificados]);
   const pessoas = useMemo(
@@ -985,35 +1075,38 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
   };
 
   // -------------------------------------------------------------- matrículas
-  const matricular = async () => {
-    if (!matForm.curso_id || matForm.funcionario_ids.length === 0) {
-      toast.error("Escolha o curso e ao menos um funcionário");
-      return;
+  // Abre o painel de matrícula (por funcionário ou por função); `inicial` traz o que já vem escolhido.
+  const abrirPainelMatricula = (inicial = {}) =>
+    setPainelMatricula({ modo: "funcionario", ...inicial, chave: Date.now() });
+
+  // Cria as matrículas que o painel montou (por funcionário ou por função; a conta é de lib/ead-matriculas
+  // e lib/ead-matricula-funcao). Cada curso é conferido de novo (pode ter sido despublicado depois de o
+  // painel abrir). As linhas vão em lotes de 200; se um lote falhar, o painel segue aberto com a
+  // seleção e a lista é recarregada, para a nova tentativa partir do que de fato ficou no banco. Devolve
+  // true quando gravou (o painel então fecha).
+  const criarMatriculas = async ({ novas, ignorados }) => {
+    if (novas.length === 0) {
+      toast.info("Nada a matricular: todos já estão matriculados ou com o treinamento em dia");
+      return false;
     }
-    const curso = cursos.find((c) => c.id === matForm.curso_id);
-    if (!curso || curso.ativo === false || pendenciasCurso(curso).length) {
+    const bloqueado = [...new Set(novas.map((n) => n.curso_id))].some((id) =>
+      cursoMatriculavel(cursos.find((c) => c.id === id))
+    );
+    if (bloqueado) {
       toast.error("Este curso ainda tem requisitos pendentes para novas matrículas");
-      return;
+      return false;
     }
     const empresaId = empresaAtiva.id;
-    const { novas, ignorados } = matriculasNovas({
-      matriculas,
-      cursoId: matForm.curso_id,
-      funcionarioIds: matForm.funcionario_ids,
-      empresaId,
-    });
-    if (novas.length === 0) {
-      toast.info("Todos os funcionários escolhidos já estão matriculados neste curso");
-      return;
-    }
-    // Um INSERT só: ou entram todos ou nenhum. Falhou: o painel segue aberto com a seleção, e a
-    // lista é recarregada para a nova tentativa partir do que de fato ficou no banco.
-    await gravar(
+    return gravar(
       "matricula",
       "Erro ao matricular (a lista foi atualizada; confira antes de tentar de novo)",
       async () => {
         try {
-          await sigo.entities.TreinamentoMatricula.bulkCreate(novas);
+          for (let i = 0; i < novas.length; i += LOTE_DE_MATRICULAS) {
+            await sigo.entities.TreinamentoMatricula.bulkCreate(
+              novas.slice(i, i + LOTE_DE_MATRICULAS)
+            );
+          }
         } finally {
           recarregar();
         }
@@ -1021,32 +1114,87 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
           `${novas.length} matrícula(s) criada(s)` +
             (ignorados ? " (já matriculados ignorados)" : "")
         );
-        // trocou de empresa durante a gravação: o painel e a seleção já são os da empresa nova
-        if (cargas.mesmaEmpresa(empresaId)) {
-          setShowMatricular(false);
-          setMatForm(MAT_FORM_VAZIO);
-        }
+        // trocou de empresa durante a gravação: o painel já é o da empresa nova
+        if (cargas.mesmaEmpresa(empresaId)) setPainelMatricula(null);
       }
     );
   };
 
-  // Avisa o funcionário (WhatsApp) com o link do portal; se ele ainda não tem
-  // login, o acesso é criado agora e a senha provisória vai junto.
+  // Avisa o funcionário (WhatsApp) com o link do portal; se ele ainda não tem login, o acesso é criado
+  // agora e a senha provisória vai junto. A mensagem NÃO vai mais para a área de transferência sozinha
+  // (T22): havendo senha nova, ou se nada foi enviado (sem telefone, telefone inválido), abre uma janela
+  // que mostra a senha uma vez e deixa o RH copiar a mensagem quando quiser. Ex-funcionário não recebe aviso
+  // nem ganha acesso (o botão da tabela já fica desligado; aqui é a segunda trava).
   const avisarFuncionario = async (funcionario) => {
-    if (!funcionario) return;
+    if (!funcionario || funcionario.ativo === false || funcionario.deleted_at) return;
     try {
       const r = await avisarNoPortal(
         funcionario,
         "🎓 Você tem treinamentos no Portal do Funcionário."
       );
-      await navigator.clipboard.writeText(r.texto).catch(() => {});
-      if (r.via === "evolution") toast.success("📲 Aviso enviado pelo WhatsApp");
-      else if (!funcionario.telefone)
-        toast.info("Sem telefone — mensagem copiada para você entregar");
-      if (r.credenciais) toast.success(`Acesso criado · usuário ${r.credenciais.usuario}`);
+      const decisao = decidirAvisoAoRH({ via: r.via, credenciais: r.credenciais });
+      if (decisao.aviso) toast[decisao.aviso.tipo](decisao.aviso.texto);
+      if (decisao.dialogo) {
+        setAvisoAcesso({
+          nome: funcionario.nome_completo,
+          usuario: r.credenciais?.usuario,
+          senha: r.credenciais?.senha_provisoria,
+          texto: r.texto,
+          situacao: decisao.situacao,
+          temSenha: decisao.temSenha,
+        });
+      }
     } catch (e) {
       toast.error("Erro ao avisar: " + (e?.message || e));
     }
+  };
+
+  // Renovar: cria uma matrícula nova (do zero) no mesmo curso. A concluída fica como histórico, com o
+  // certificado dela. O banco é consultado de novo antes de gravar: outro RH pode ter matriculado a pessoa
+  // enquanto a janela de confirmação estava aberta.
+  const renovarMatricula = async (linha) => {
+    const nome = linha.funcionario?.nome_completo || "O funcionário";
+    const concluidaEm = linha.dataConclusao
+      ? `, concluída em ${fmtData(linha.dataConclusao)},`
+      : "";
+    const confirmado = await confirmar({
+      titulo: "Renovar o treinamento?",
+      texto:
+        `${nome} faz o curso "${linha.cursoNome}" de novo, do zero, numa nova matrícula.\n\n` +
+        `A matrícula atual${concluidaEm} e o certificado dela não mudam: ficam como histórico.\n\n` +
+        "Depois de renovar, avise o funcionário pelo WhatsApp (ícone verde da nova linha).",
+      rotuloConfirmar: "Renovar",
+    });
+    if (!confirmado) return;
+    const empresaId = empresaAtiva.id;
+    await gravar(`renovar-${linha.id}`, "Erro ao renovar a matrícula", async () => {
+      const atuais = await sigo.entities.TreinamentoMatricula.filter({
+        empresa_id: empresaId,
+        funcionario_id: linha.funcionarioId,
+        curso_id: linha.cursoId,
+      });
+      const { novas } = matriculasNovas({
+        matriculas: atuais,
+        cursoId: linha.cursoId,
+        funcionarioIds: [linha.funcionarioId],
+        empresaId,
+      });
+      if (novas.length === 0) {
+        toast.info("Este funcionário já tem uma matrícula aberta neste curso");
+        recarregar();
+        return;
+      }
+      if (cursoMatriculavel(cursos.find((c) => c.id === linha.cursoId))) {
+        toast.error("Este curso ainda tem requisitos pendentes para novas matrículas");
+        return;
+      }
+      try {
+        await sigo.entities.TreinamentoMatricula.bulkCreate(novas);
+      } finally {
+        recarregar();
+      }
+      toast.success("Matrícula de renovação criada. Avise o funcionário pelo WhatsApp.");
+    });
   };
 
   // Matrícula com certificado emitido e não revogado não sai (T20): o curso sumiria do portal e da
@@ -1062,7 +1210,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
     const texto = textoConfirmarRemocao({
       matricula: m,
       certificado: cert,
-      nomeFuncionario: funcPorId.get(m.funcionario_id)?.nome_completo,
+      nomeFuncionario: funcTodosPorId.get(m.funcionario_id)?.nome_completo,
       nomeCurso: cursos.find((c) => c.id === m.curso_id)?.nome,
     });
     const confirmado = await confirmar({
@@ -1240,21 +1388,12 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
     );
   }
 
-  const funcsFiltrados = funcionarios.filter(
-    (f) => !buscaFunc || normalizarTexto(f.nome_completo).includes(normalizarTexto(buscaFunc))
-  );
-
   // Painel "Vencimentos" (T24): o botão Matricular abre o painel de matrícula já com o curso e o funcionário.
   // Só cursos que o painel de matrícula aceitaria (publicados e sem requisito pendente) têm o botão.
-  const cursoAceitaMatricula = (cursoId) => {
-    const curso = cursos.find((c) => c.id === cursoId);
-    return !!curso && curso.ativo !== false && pendenciasCurso(curso).length === 0;
-  };
-  const matricularDoPainel = (cursoId, funcionarioId) => {
-    setMatForm({ curso_id: cursoId, funcionario_ids: [funcionarioId] });
-    setBuscaFunc("");
-    setShowMatricular(true);
-  };
+  const cursoAceitaMatricula = (cursoId) =>
+    cursoMatriculavel(cursos.find((c) => c.id === cursoId)) === null;
+  const matricularDoPainel = (cursoId, funcionarioId) =>
+    abrirPainelMatricula({ cursoId, funcionarioIds: [funcionarioId] });
 
   return (
     <div className="space-y-6">
@@ -1392,128 +1531,25 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
         </CardContent>
       </Card>
 
-      {/* Matrículas */}
-      <Card>
-        <CardHeader className="pb-2 flex flex-row items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Users className="w-5 h-5" /> Matrículas ({matriculas.length})
-          </CardTitle>
-          <Button size="sm" variant="outline" onClick={() => setShowMatricular(true)}>
-            <Plus className="w-4 h-4 mr-1" /> Matricular funcionários
-          </Button>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-slate-500 border-b">
-                <th className="py-2 pr-3 font-medium">Funcionário</th>
-                <th className="py-2 pr-3 font-medium">Curso</th>
-                <th className="py-2 pr-3 font-medium">Status</th>
-                <th className="py-2 pr-3 font-medium">Conclusão</th>
-                <th className="py-2 pr-3 font-medium">Próx. renovação</th>
-                <th className="py-2 pr-3 font-medium">Certificado</th>
-                <th className="py-2 font-medium">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {matriculas.map((m) => {
-                const f = funcPorId.get(m.funcionario_id);
-                const curso = cursos.find((c) => c.id === m.curso_id);
-                // a tabela tem centenas de linhas iguais: o rótulo diz de quem é a matrícula
-                const quem = f?.nome_completo ? ` de ${f.nome_completo}` : "";
-                // certificado da matrícula: buscado uma vez por linha (a coluna e a lixeira usam o mesmo)
-                const cert = certPorMatricula.get(m.id);
-                const bloqueada = !podeRemoverMatricula(m, cert);
-                return (
-                  <tr key={m.id} className="border-b last:border-0 hover:bg-slate-50">
-                    <td className="py-2 pr-3 font-medium text-slate-800">
-                      {f?.nome_completo || "—"}
-                    </td>
-                    <td className="py-2 pr-3 text-slate-600">{curso?.nome || "—"}</td>
-                    <td className="py-2 pr-3">
-                      <Badge variant="outline" className={STATUS_BADGE[m.status] || ""}>
-                        {m.status.replace("_", " ")}
-                      </Badge>
-                    </td>
-                    <td className="py-2 pr-3 text-slate-600">{fmtData(m.data_conclusao)}</td>
-                    {/* curso de apoio não renova (D3), mesmo que a matrícula antiga tenha a data */}
-                    <td className="py-2 pr-3 text-slate-600">
-                      {fmtData(renovacaoParaExibir(curso, m))}
-                    </td>
-                    <td className="py-2 pr-3">
-                      {cert ? (
-                        <Badge
-                          variant="outline"
-                          className={
-                            cert.revogado_em
-                              ? "bg-red-50 text-red-700 border-red-200"
-                              : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          }
-                        >
-                          <Award className="w-3 h-3 mr-1" />
-                          {cert.revogado_em ? "revogado" : cert.codigo}
-                        </Badge>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="py-2">
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          title="Detalhes: tempo por aula, tentativas, trilha de acessos e certificado"
-                          aria-label={`Detalhes da matrícula${quem}`}
-                          onClick={() => setMatriculaDetalheId(m.id)}
-                        >
-                          <ClipboardList className="w-4 h-4 text-slate-600 hover:text-slate-900" />
-                        </button>
-                        <button
-                          type="button"
-                          title="Avisar pelo WhatsApp (cria o acesso ao portal se ainda não tiver)"
-                          aria-label={`Avisar no WhatsApp${quem}`}
-                          onClick={() => avisarFuncionario(f)}
-                        >
-                          <MessageCircle className="w-4 h-4 text-emerald-600 hover:text-emerald-800" />
-                        </button>
-                        <button
-                          type="button"
-                          title={
-                            bloqueada
-                              ? "Revogue o certificado antes de remover a matrícula"
-                              : "Remover matrícula"
-                          }
-                          aria-label={
-                            bloqueada
-                              ? `Remover matrícula${quem} (bloqueado: revogue o certificado antes)`
-                              : `Remover matrícula${quem}`
-                          }
-                          aria-disabled={bloqueada}
-                          onClick={() => removerMatricula(m)}
-                        >
-                          <Trash2
-                            className={
-                              bloqueada
-                                ? "w-4 h-4 text-slate-300 cursor-not-allowed"
-                                : "w-4 h-4 text-slate-400 hover:text-red-500"
-                            }
-                          />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {matriculas.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="py-6 text-center text-slate-500">
-                    Nenhuma matrícula — matricule funcionários num curso pra liberar o portal.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
+      {/* Matrículas: busca, filtros, andamento, renovar, CSV e aviso aos atrasados (T22) */}
+      <MatriculasEadCard
+        key={empresaAtiva?.id}
+        empresaId={empresaAtiva?.id}
+        matriculas={matriculas}
+        cursos={cursos}
+        funcionariosTodos={funcionariosTodos}
+        aulas={aulas}
+        progresso={progresso}
+        tentativas={tentativas}
+        certificados={certificados}
+        andamento={andamento}
+        cursoAceitaMatricula={cursoAceitaMatricula}
+        onMatricular={() => abrirPainelMatricula()}
+        onDetalhes={setMatriculaDetalheId}
+        onAvisar={avisarFuncionario}
+        onRemover={removerMatricula}
+        onRenovar={renovarMatricula}
+      />
 
       <DuvidasTutorCard
         empresaAtiva={empresaAtiva}
@@ -1530,7 +1566,7 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
           <MatriculaAuditoriaSheet
             matricula={m}
             curso={cursos.find((c) => c.id === m.curso_id)}
-            funcionario={funcPorId.get(m.funcionario_id)}
+            funcionario={funcTodosPorId.get(m.funcionario_id)}
             aulas={aulasDoCurso(m.curso_id)}
             empresaAtiva={empresaAtiva}
             onClose={() => setMatriculaDetalheId(null)}
@@ -2356,76 +2392,24 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
         </SheetContent>
       </Sheet>
 
-      {/* Sheet: matricular */}
-      <Sheet open={showMatricular} onOpenChange={setShowMatricular}>
-        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>Matricular funcionários</SheetTitle>
-          </SheetHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <Label className="text-xs">Curso</Label>
-              <select
-                className="mt-0.5 w-full h-9 rounded-md border border-slate-200 px-2 text-sm"
-                value={matForm.curso_id}
-                onChange={(e) => setMatForm({ ...matForm, curso_id: e.target.value })}
-              >
-                <option value="">Selecionar...</option>
-                {cursos
-                  .filter((c) => c.ativo !== false && pendenciasCurso(c).length === 0)
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nome}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <div>
-              <Label className="text-xs">Funcionários</Label>
-              <Input
-                placeholder="Buscar..."
-                value={buscaFunc}
-                onChange={(e) => setBuscaFunc(e.target.value)}
-                className="mt-0.5 h-9"
-              />
-              <div className="mt-2 max-h-72 overflow-y-auto space-y-1">
-                {funcsFiltrados.map((f) => {
-                  const marcado = matForm.funcionario_ids.includes(f.id);
-                  return (
-                    <label
-                      key={f.id}
-                      className="flex items-center gap-2 text-sm p-2 rounded hover:bg-slate-50 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={marcado}
-                        onChange={() =>
-                          setMatForm((prev) => ({
-                            ...prev,
-                            funcionario_ids: marcado
-                              ? prev.funcionario_ids.filter((x) => x !== f.id)
-                              : [...prev.funcionario_ids, f.id],
-                          }))
-                        }
-                      />
-                      <span className="flex-1">{f.nome_completo}</span>
-                      <span className="text-xs text-slate-400">{f.funcao_nome || ""}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-            <Button
-              onClick={matricular}
-              disabled={gravando.has("matricula")}
-              className="w-full bg-slate-900 hover:bg-slate-800"
-            >
-              {gravando.has("matricula") && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-              Matricular ({matForm.funcionario_ids.length})
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
+      {/* Sheet: matricular (por funcionário ou por função) */}
+      <MatricularEadSheet
+        aberto={!!painelMatricula}
+        inicial={painelMatricula}
+        cursos={cursos}
+        funcionarios={funcionarios}
+        treinamentos={treinamentosConfig}
+        matriculas={matriculas}
+        certificados={certificados}
+        empresaId={empresaAtiva?.id}
+        cursoMatriculavel={cursoMatriculavel}
+        gravando={gravando.has("matricula")}
+        onConfirmar={criarMatriculas}
+        onFechar={() => setPainelMatricula(null)}
+      />
+
+      {/* senha provisória (uma única vez) ou mensagem que não saiu */}
+      <AvisoAcessoDialog aviso={avisoAcesso} onFechar={() => setAvisoAcesso(null)} />
 
       {dialogoConfirmar}
     </div>

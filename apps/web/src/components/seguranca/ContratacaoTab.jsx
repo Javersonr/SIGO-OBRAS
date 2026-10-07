@@ -567,7 +567,7 @@ export default function ContratacaoTab({ empresaAtiva, user, onRegistrado }) {
         funcionario_id: funcionario.id,
       });
       toast.success("🎉 Funcionário registrado! Veja na aba Funcionários.");
-      onRegistrado?.(); // recarrega a lista de funcionários da página
+      onRegistrado?.(funcionario); // recarrega a lista de funcionários da página (e sugere matricular)
     } catch (e) {
       console.error(e);
       toast.error("Erro ao registrar: " + (e?.message || e));

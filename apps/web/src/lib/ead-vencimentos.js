@@ -99,6 +99,65 @@ export function matriculaValida(matricula, certificadoRevogado, hoje) {
 const porTexto = (a, b) => String(a ?? "").localeCompare(String(b ?? ""), "pt-BR");
 
 /**
+ * Por funcionário ATIVO e curso, a conclusão de renovação mais distante (empate: a criada por último).
+ * É a matrícula "vigente" do par, a única que conta como vencimento: as anteriores viraram histórico.
+ * Entram só as concluídas, vivas, com data de renovação válida, sem certificado revogado, de curso vivo
+ * que não seja de apoio. Chave do mapa: `funcionario_id|curso_id`. Quem usa: `selecionarVencimentos` e a
+ * tabela de matrículas do RH (`ead-matriculas.js`), para as duas telas dizerem o mesmo.
+ */
+export function conclusoesVigentes({
+  matriculas = [],
+  cursos = [],
+  funcionarios = [],
+  certificados = [],
+} = {}) {
+  const funcPorId = new Map(
+    (funcionarios ?? []).filter((f) => viva(f) && f.ativo !== false).map((f) => [f.id, f])
+  );
+  const cursoPorId = new Map((cursos ?? []).filter(viva).map((c) => [c.id, c]));
+  const revogada = revogadas(certificados);
+  const maisRecente = new Map();
+  for (const m of (matriculas ?? []).filter(viva)) {
+    if (m.status !== "concluido" || !m.proxima_renovacao || revogada.has(m.id)) continue;
+    const curso = cursoPorId.get(m.curso_id);
+    if (!curso || modalidadeDoCurso(curso) === "apoio") continue;
+    if (!funcPorId.has(m.funcionario_id)) continue;
+    if (diaEmMs(m.proxima_renovacao) === null) continue;
+    const chave = `${m.funcionario_id}|${m.curso_id}`;
+    const atual = maisRecente.get(chave);
+    const dia = String(m.proxima_renovacao).slice(0, 10);
+    const diaAtual = atual ? String(atual.proxima_renovacao).slice(0, 10) : "";
+    if (
+      !atual ||
+      dia > diaAtual ||
+      (dia === diaAtual && String(m.created_at ?? "") > String(atual.created_at ?? ""))
+    ) {
+      maisRecente.set(chave, m);
+    }
+  }
+  return maisRecente;
+}
+
+/**
+ * Exigências (treinamento da função) que valem para o EAD, por `funcao_id`: ativas, vivas, não opcionais
+ * (`obrigatorio === false` fica de fora), com função e com vínculo ao cadastro central
+ * (`modelo_treinamento_id`, migração 0131). Duas exigências do mesmo modelo são uma só para o aluno.
+ * Quem usa: `atividadeSemTreinamento` e a matrícula por função (`ead-matricula-funcao.js`).
+ * @returns {Map<string, object[]>}
+ */
+export function exigenciasPorFuncao(treinamentos = []) {
+  const porFuncao = new Map();
+  for (const t of treinamentos ?? []) {
+    if (!viva(t) || t.ativo === false || t.obrigatorio === false) continue;
+    if (!t.funcao_id || !t.modelo_treinamento_id) continue;
+    const lista = porFuncao.get(t.funcao_id) ?? [];
+    if (!lista.some((e) => e.modelo_treinamento_id === t.modelo_treinamento_id)) lista.push(t);
+    porFuncao.set(t.funcao_id, lista);
+  }
+  return porFuncao;
+}
+
+/**
  * Vencimentos do painel: `{ itens, resumo }`.
  *
  * Cada item é `{ matricula, curso, funcionario, vencimento, dias, faixa, renovacao }`, ordenado pela data
@@ -123,25 +182,7 @@ export function selecionarVencimentos({
   const abertas = new Set(todas.filter(emAberto).map((m) => `${m.funcionario_id}|${m.curso_id}`));
 
   // por funcionário e curso, a conclusão de renovação mais distante (empate: a criada por último)
-  const maisRecente = new Map();
-  for (const m of todas) {
-    if (m.status !== "concluido" || !m.proxima_renovacao || revogada.has(m.id)) continue;
-    const curso = cursoPorId.get(m.curso_id);
-    if (!curso || modalidadeDoCurso(curso) === "apoio") continue;
-    if (!funcPorId.has(m.funcionario_id)) continue;
-    if (diaEmMs(m.proxima_renovacao) === null) continue;
-    const chave = `${m.funcionario_id}|${m.curso_id}`;
-    const atual = maisRecente.get(chave);
-    const dia = String(m.proxima_renovacao).slice(0, 10);
-    const diaAtual = atual ? String(atual.proxima_renovacao).slice(0, 10) : "";
-    if (
-      !atual ||
-      dia > diaAtual ||
-      (dia === diaAtual && String(m.created_at ?? "") > String(atual.created_at ?? ""))
-    ) {
-      maisRecente.set(chave, m);
-    }
-  }
+  const maisRecente = conclusoesVigentes({ matriculas, cursos, funcionarios, certificados });
 
   const itens = [];
   for (const [chave, m] of maisRecente) {
@@ -227,15 +268,7 @@ export function atividadeSemTreinamento({
     lista.push(m);
     matriculasDoFuncionario.set(m.funcionario_id, lista);
   }
-  const exigenciasDaFuncao = new Map();
-  for (const t of treinamentos ?? []) {
-    if (!viva(t) || t.ativo === false || t.obrigatorio === false) continue;
-    if (!t.funcao_id || !t.modelo_treinamento_id) continue;
-    const lista = exigenciasDaFuncao.get(t.funcao_id) ?? [];
-    // duas exigências do mesmo modelo são uma só para o aluno
-    if (!lista.some((e) => e.modelo_treinamento_id === t.modelo_treinamento_id)) lista.push(t);
-    exigenciasDaFuncao.set(t.funcao_id, lista);
-  }
+  const exigenciasDaFuncao = exigenciasPorFuncao(treinamentos);
 
   const resultado = [];
   for (const f of (funcionarios ?? []).filter((x) => viva(x) && x.ativo !== false)) {
