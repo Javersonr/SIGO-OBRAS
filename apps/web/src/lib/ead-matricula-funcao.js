@@ -13,6 +13,12 @@
  * Curso de apoio (D3) pode ser matriculado, mas não emite certificado e por isso não cumpre a exigência
  * quando o modelo também tem curso que emite: a exigência só é "cumprida" por curso que emite certificado.
  * Se o modelo só tem curso de apoio, a matrícula nele conta (senão a pessoa seria cobrada para sempre).
+ *
+ * Exceção (revisão 1 da T22): o modelo tem curso que emite, mas NENHUM deles aceita matrícula agora (rascunho
+ * ou pendência), e o painel matricula no apoio. Aí quem já tem matrícula válida no apoio (aberta, ou concluída
+ * dentro da validade) não "falta": senão o painel criaria outra matrícula no mesmo curso a cada conclusão. A
+ * situação mostra "apoio feito (sem certificado)", para o RH não confundir com exigência cumprida. Quando o
+ * curso que emite volta a aceitar matrícula, o apoio deixa de contar e a pessoa volta a faltar nele.
  */
 import { emiteCertificado, modalidadeDoCurso } from "./ead-requisitos";
 import { exigenciasPorFuncao, matriculaValida } from "./ead-vencimentos";
@@ -41,6 +47,9 @@ export function funcoesDosFuncionarios(funcionarios) {
     .sort((a, b) => COLADOR.compare(a.nome, b.nome));
 }
 
+// Situações em que a exigência não está cumprida e o painel pode oferecer a matrícula.
+const SITUACOES_QUE_FALTAM = ["vencida", "revogada", "sem_matricula"];
+
 /**
  * Situação de um funcionário numa exigência: olha as matrículas dele nos cursos do modelo que "contam"
  * (os que emitem certificado; se nenhum emite, todos).
@@ -58,6 +67,21 @@ function situacaoNaExigencia(matriculasDele, cursosQueContam, revogadas, hoje) {
 }
 
 /**
+ * Situação no apoio, para quando o curso escolhido da exigência é de apoio porque nenhum curso que emite aceita
+ * matrícula: matrícula válida (aberta, ou concluída dentro da validade) em qualquer curso do modelo que não
+ * emite certificado. Sem nenhuma, null (vale a situação medida nos cursos que emitem).
+ * @returns {"apoio_feito"|"apoio_em_andamento"|null}
+ */
+function situacaoNoApoio(matriculasDele, cursosSemCertificado, revogadas, hoje) {
+  const ids = new Set(cursosSemCertificado.map((c) => c.id));
+  const validas = matriculasDele.filter(
+    (m) => ids.has(m.curso_id) && matriculaValida(m, revogadas.has(m.id), hoje)
+  );
+  if (validas.some((m) => m.status === "concluido")) return "apoio_feito";
+  return validas.length ? "apoio_em_andamento" : null;
+}
+
+/**
  * O que matricular numa função.
  *
  * `cursoMatriculavel(curso)` devolve null quando o curso aceita matrícula (publicado e sem pendência) ou o
@@ -67,8 +91,9 @@ function situacaoNaExigencia(matriculasDele, cursosQueContam, revogadas, hoje) {
  *    preferindo os que emitem certificado); sem ele, `motivo` é "sem_curso" (o treinamento não tem curso no
  *    portal) ou "indisponivel" (tem, mas nenhum aceita matrícula; `detalheMotivo` diz por quê);
  *  - `pessoas`: os funcionários ativos da função, por nome, `{ funcionario, itens, faltam }`. `itens` é a
- *    situação em cada exigência e `faltam` lista as exigências (com curso disponível) em que falta
- *    matrícula: vencida, revogada ou nunca matriculado.
+ *    situação em cada exigência (inclui "apoio_feito" e "apoio_em_andamento", ver o topo do arquivo) e
+ *    `faltam` lista as exigências (com curso disponível) em que falta matrícula: vencida, revogada ou
+ *    nunca matriculado.
  */
 export function planoDaFuncao({
   funcaoId,
@@ -126,11 +151,15 @@ export function planoDaFuncao({
       for (const e of exigencias) {
         const queEmitem = e.cursos.filter((c) => emiteCertificado(modalidadeDoCurso(c)));
         const queContam = queEmitem.length ? queEmitem : e.cursos;
-        const situacao = situacaoNaExigencia(suas, queContam, revogadas, hoje);
-        itens[e.id] = situacao;
-        if (e.curso && ["vencida", "revogada", "sem_matricula"].includes(situacao)) {
-          faltam.push(e.id);
+        let situacao = situacaoNaExigencia(suas, queContam, revogadas, hoje);
+        // O curso escolhido é de apoio, mas o modelo tem curso que emite (que não aceita matrícula agora):
+        // o apoio feito ou em andamento tira a pessoa de "faltam", sem virar exigência cumprida.
+        if (e.apoio && queEmitem.length && SITUACOES_QUE_FALTAM.includes(situacao)) {
+          const semCertificado = e.cursos.filter((c) => !emiteCertificado(modalidadeDoCurso(c)));
+          situacao = situacaoNoApoio(suas, semCertificado, revogadas, hoje) ?? situacao;
         }
+        itens[e.id] = situacao;
+        if (e.curso && SITUACOES_QUE_FALTAM.includes(situacao)) faltam.push(e.id);
       }
       return { funcionario, itens, faltam };
     });
@@ -144,6 +173,8 @@ const ROTULO_DA_SITUACAO = {
   vencida: "vencida",
   revogada: "certificado revogado",
   sem_matricula: "sem matrícula",
+  apoio_feito: "apoio feito (sem certificado)",
+  apoio_em_andamento: "apoio em andamento (sem certificado)",
 };
 
 /** Texto de tela da situação de uma pessoa numa exigência. */

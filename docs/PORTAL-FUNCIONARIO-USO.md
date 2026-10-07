@@ -158,9 +158,13 @@ o curso em que cada um será matriculado e a situação de cada funcionário ati
 vencida, certificado revogado ou sem matrícula). Já vem marcado quem falta, e só se criam as matrículas que faltam. O
 treinamento sem curso no portal, ou com curso em rascunho ou com pendências, aparece desligado com o motivo. **Curso de
 apoio** pode ser matriculado, mas não emite certificado e o painel avisa; ele também não cumpre a exigência quando o
-treinamento tem um curso EAD que emite. Ao **cadastrar um funcionário**, **trocar a função dele** ou **registrar uma
-contratação**, a tela oferece o botão **Matricular**, que abre esse painel já na função, com a pessoa marcada (NR-1,
-itens 1.4.4 e 1.7.1.2.1: o treinamento vem antes da atividade). A importação em lote de funcionários não faz essa oferta.
+treinamento tem um curso EAD que emite. Se esse curso EAD não aceita matrícula agora (rascunho ou pendência) e o
+treinamento tem curso de apoio publicado, o painel matricula no apoio, e quem já o fez (ou está fazendo) aparece como
+"apoio feito (sem certificado)" e não é matriculado de novo; quando o curso EAD voltar a aceitar matrícula, o apoio
+deixa de contar e a pessoa volta a aparecer como "sem matrícula". Ao **cadastrar um funcionário**, **trocar a função
+dele** ou **registrar uma contratação**, a tela oferece o botão **Matricular**, que abre esse painel já na função, com
+a pessoa marcada (NR-1, itens 1.4.4 e 1.7.1.2.1: o treinamento vem antes da atividade). A importação em lote de
+funcionários não faz essa oferta.
 
 **Aviso pelo WhatsApp e senha provisória.** O ícone do WhatsApp na linha avisa o funcionário com o link do portal e,
 se ele ainda não tem acesso, cria o acesso na hora. A mensagem **não é mais copiada sozinha** para a área de

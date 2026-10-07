@@ -283,6 +283,121 @@ describe("planoDaFuncao: pessoas", () => {
   });
 });
 
+// Revisão 1 (Important): o modelo tem um curso EAD que emite, mas ele não aceita matrícula agora
+// (rascunho ou pendência), e um curso de apoio publicado. O painel matricula no apoio; quem já fez o
+// apoio não pode voltar a "faltar", senão ganharia outra matrícula no mesmo curso a cada conclusão.
+describe("planoDaFuncao: curso EAD indisponível e apoio publicado", () => {
+  const rascunho = (c) => (c.id === "ead" ? "Curso em rascunho" : null);
+  const dados = (matriculas, extra = {}) =>
+    base({
+      funcionarios: [func("f1", "fn1")],
+      treinamentos: [exigencia("e1", "fn1", "m1")],
+      cursos: [curso("ead", "m1", { ativo: false }), curso("apoio", "m1", { modalidade: "apoio" })],
+      matriculas,
+      cursoMatriculavel: rascunho,
+      ...extra,
+    });
+
+  it("o curso escolhido é o de apoio, que aceita matrícula", () => {
+    const [e] = planoDaFuncao(dados([])).exigencias;
+    expect(e.curso.id).toBe("apoio");
+    expect(e.apoio).toBe(true);
+  });
+
+  it("quem nunca fez o apoio continua faltando (sem matrícula)", () => {
+    const [p] = planoDaFuncao(dados([])).pessoas;
+    expect(p.itens.e1).toBe("sem_matricula");
+    expect(p.faltam).toEqual(["e1"]);
+  });
+
+  it("apoio concluído e dentro da validade: não falta e a situação diz que é só o apoio", () => {
+    const [p] = planoDaFuncao(dados([concluida("m1", "f1", "apoio", null)])).pessoas;
+    expect(p.itens.e1).toBe("apoio_feito");
+    expect(p.faltam).toEqual([]);
+  });
+
+  it("apoio em andamento: não falta", () => {
+    const [p] = planoDaFuncao(dados([mat("m1", "f1", "apoio")])).pessoas;
+    expect(p.itens.e1).toBe("apoio_em_andamento");
+    expect(p.faltam).toEqual([]);
+  });
+
+  it("apoio concluído com a validade vencida: falta de novo", () => {
+    const [p] = planoDaFuncao(dados([concluida("m1", "f1", "apoio", "2026-10-01")])).pessoas;
+    expect(p.faltam).toEqual(["e1"]);
+  });
+
+  it("apoio concluído e vencido, mas com outro apoio aberto: não falta", () => {
+    const [p] = planoDaFuncao(
+      dados([concluida("m1", "f1", "apoio", "2026-10-01"), mat("m2", "f1", "apoio")])
+    ).pessoas;
+    expect(p.itens.e1).toBe("apoio_em_andamento");
+    expect(p.faltam).toEqual([]);
+  });
+
+  it("conclusão no curso EAD que emite (mesmo em rascunho agora) continua valendo como em dia", () => {
+    const [p] = planoDaFuncao(dados([concluida("m1", "f1", "ead")])).pessoas;
+    expect(p.itens.e1).toBe("em_dia");
+    expect(p.faltam).toEqual([]);
+  });
+
+  it("EAD vencido e apoio feito: o apoio é o que há para matricular, então não falta", () => {
+    const [p] = planoDaFuncao(
+      dados([concluida("m1", "f1", "ead", "2026-10-01"), concluida("m2", "f1", "apoio", null)])
+    ).pessoas;
+    expect(p.itens.e1).toBe("apoio_feito");
+    expect(p.faltam).toEqual([]);
+  });
+
+  it("matrícula num curso de apoio de OUTRO modelo não conta", () => {
+    const [p] = planoDaFuncao(
+      dados([concluida("m1", "f1", "apoio-de-outro", null)], {
+        cursos: [
+          curso("ead", "m1", { ativo: false }),
+          curso("apoio", "m1", { modalidade: "apoio" }),
+          curso("apoio-de-outro", "m2", { modalidade: "apoio" }),
+        ],
+      })
+    ).pessoas;
+    expect(p.itens.e1).toBe("sem_matricula");
+    expect(p.faltam).toEqual(["e1"]);
+  });
+
+  it("a matrícula por função não cria outra matrícula no apoio para quem já o concluiu", () => {
+    const matriculas = [concluida("m1", "f1", "apoio", null)];
+    const plano = planoDaFuncao(dados(matriculas));
+    const r = matriculasDoPlano({
+      plano,
+      exigenciaIds: ["e1"],
+      funcionarioIds: ["f1"],
+      matriculas,
+      empresaId: "emp",
+    });
+    expect(r.novas).toEqual([]);
+    expect(selecaoDaFuncao(plano).funcionarioIds).toEqual([]);
+  });
+
+  it("quem ainda não fez o apoio é matriculado nele", () => {
+    const plano = planoDaFuncao(dados([]));
+    const r = matriculasDoPlano({
+      plano,
+      exigenciaIds: ["e1"],
+      funcionarioIds: ["f1"],
+      matriculas: [],
+      empresaId: "emp",
+    });
+    expect(r.novas.map((n) => `${n.funcionario_id}>${n.curso_id}`)).toEqual(["f1>apoio"]);
+  });
+
+  it("com o curso EAD de volta a aceitar matrícula, o apoio feito não cumpre mais a exigência", () => {
+    const [p] = planoDaFuncao(
+      dados([concluida("m1", "f1", "apoio", null)], { cursoMatriculavel: aceitaTodos })
+    ).pessoas;
+    expect(p.itens.e1).toBe("sem_matricula");
+    expect(p.faltam).toEqual(["e1"]);
+  });
+});
+
 describe("idsQueFaltam", () => {
   const plano = planoDaFuncao(
     base({
@@ -355,6 +470,8 @@ describe("rotuloDaSituacao", () => {
     expect(rotuloDaSituacao("vencida")).toBe("vencida");
     expect(rotuloDaSituacao("revogada")).toBe("certificado revogado");
     expect(rotuloDaSituacao("sem_matricula")).toBe("sem matrícula");
+    expect(rotuloDaSituacao("apoio_feito")).toBe("apoio feito (sem certificado)");
+    expect(rotuloDaSituacao("apoio_em_andamento")).toBe("apoio em andamento (sem certificado)");
     expect(rotuloDaSituacao(undefined)).toBe("sem matrícula");
   });
 });
