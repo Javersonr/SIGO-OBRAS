@@ -560,6 +560,55 @@ describe("matriculasDoPlano", () => {
     });
     expect(r.novas).toEqual([]);
   });
+
+  describe("tipo do treinamento (T23)", () => {
+    // f1 concluiu c1 e c2 há muito tempo (vencidos); f2 nunca fez nada
+    const vencidas = [
+      concluida("a", "f1", "c1", "2026-01-01"),
+      concluida("b", "f1", "c2", "2026-01-01"),
+    ];
+    const planoComVencidas = planoDaFuncao(
+      base({
+        funcionarios: [func("f1", "fn1"), func("f2", "fn1")],
+        treinamentos: [exigencia("e1", "fn1", "m1"), exigencia("e2", "fn1", "m2")],
+        cursos: [curso("c1", "m1"), curso("c2", "m2")],
+        matriculas: vencidas,
+      })
+    );
+    const gerar = (extra = {}) =>
+      matriculasDoPlano({
+        plano: planoComVencidas,
+        exigenciaIds: ["e1", "e2"],
+        funcionarioIds: ["f1", "f2"],
+        matriculas: vencidas,
+        empresaId: "emp",
+        ...extra,
+      });
+    const tipos = (r) => r.novas.map((n) => `${n.funcionario_id}>${n.curso_id}:${n.tipo}`).sort();
+
+    it("sem escolha é o automático: renovação de quem já fez é periódica, a primeira vez é inicial", () => {
+      expect(tipos(gerar())).toEqual([
+        "f1>c1:periodico",
+        "f1>c2:periodico",
+        "f2>c1:inicial",
+        "f2>c2:inicial",
+      ]);
+    });
+
+    it("a escolha do RH vale para todas as linhas do plano, com o motivo só no eventual", () => {
+      const eventual = gerar({ tipo: "eventual", motivo: "Mudança de equipamento" });
+      expect(eventual.novas).toHaveLength(4);
+      for (const n of eventual.novas) {
+        expect(n.tipo).toBe("eventual");
+        expect(n.motivo_eventual).toBe("Mudança de equipamento");
+      }
+      const inicial = gerar({ tipo: "inicial", motivo: "sobrou" });
+      for (const n of inicial.novas) {
+        expect(n.tipo).toBe("inicial");
+        expect(n.motivo_eventual).toBeNull();
+      }
+    });
+  });
 });
 
 describe("sugestaoDeMatricula", () => {

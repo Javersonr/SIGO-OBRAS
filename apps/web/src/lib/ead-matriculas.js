@@ -16,6 +16,7 @@
 import { normalizarTexto } from "./busca";
 import { renovacaoParaExibir } from "./portal-curso";
 import { emiteCertificado, modalidadeDoCurso } from "./ead-requisitos";
+import { textoDoTipoDaMatricula } from "./ead-tipo-matricula";
 import {
   conclusoesVigentes,
   diasParaVencer,
@@ -148,7 +149,8 @@ const numeroOuNull = (v) => {
  * NULOS em vez de 0, para a tela e o CSV não afirmarem que ninguém começou.
  *
  * Campos de cada linha (além de `id`, `matricula`, `curso` e `funcionario`):
- *  - nomes: funcionarioNome, inativo, funcaoNome, cursoNome, cursoCodigo, modalidade, apoio;
+ *  - nomes: funcionarioNome, inativo, funcaoNome, cursoNome, cursoCodigo, modalidade, apoio, tipoTexto (o
+ *    tipo do treinamento da T23: "Inicial", "Periódico" ou "Eventual: motivo");
  *  - andamento: status, statusRotulo, aulasFeitas, aulasTotal, percentual (null sem aulas), nota,
  *    aprovada, tentativas, tentativasMax (null = sem limite), matriculadoEm;
  *  - fim: dataConclusao, renovacao ("renovar até"; null no curso de apoio), dias, vigente, faixa
@@ -274,6 +276,8 @@ export function montarLinhas({
       cursoCodigo: curso?.codigo || "",
       modalidade,
       apoio,
+      // inicial, periódico ou eventual com o motivo (T23); vazio na matrícula lida antes da migração 0142
+      tipoTexto: textoDoTipoDaMatricula(m),
       status: m.status,
       statusRotulo: rotuloDoStatus(m.status),
       aulasFeitas: andamentoCarregado ? aulasFeitas : null,
@@ -437,6 +441,7 @@ export const COLUNAS_DO_CSV = [
     titulo: "Modalidade",
     valor: (l) => (l.apoio ? "Apoio" : l.modalidade === "ead" ? "EAD" : l.modalidade),
   },
+  { titulo: "Tipo de treinamento", valor: (l) => l.tipoTexto },
   { titulo: "Status", valor: (l) => l.statusRotulo },
   { titulo: "Aulas concluídas", valor: (l) => l.aulasFeitas },
   { titulo: "Total de aulas", valor: (l) => l.aulasTotal },

@@ -6,6 +6,8 @@
  * ficam em ead-gestao.test.js. A tela só liga a rede: aqui se decide o que gravar.
  */
 
+import { tipoDaNovaMatricula } from "./ead-tipo-matricula";
+
 /**
  * Move a aula `aulaId` uma posição na lista (dir = -1 sobe, +1 desce) e devolve a lista renumerada
  * 1..n, que é o que a tela grava. `aulas` vem na ordem em que o RH enxerga (a da coluna `ordem`).
@@ -37,8 +39,13 @@ export function reordenarAulas(aulas, aulaId, dir) {
  * Matrículas a criar para os funcionários escolhidos num curso. Quem já tem matrícula aberta (não
  * concluída) no curso é ignorado; quem já concluiu pode ser matriculado de novo (renovação). Todas
  * as linhas levam as mesmas chaves, como o `bulkCreate` (um INSERT só) exige.
+ *
+ * Tipo do treinamento (T23, NR-1 1.7.1.2): `tipo` é a escolha do RH ("inicial", "periodico", "eventual" ou o
+ * automático, que é o padrão: periódico para quem já concluiu o curso, inicial para os outros) e `motivo` só vale
+ * no eventual. Cada linha leva `tipo` e `motivo_eventual` (sempre as duas chaves, o motivo nulo fora do eventual).
+ * A regra está em ead-tipo-matricula.js.
  */
-export function matriculasNovas({ matriculas, cursoId, funcionarioIds, empresaId }) {
+export function matriculasNovas({ matriculas, cursoId, funcionarioIds, empresaId, tipo, motivo }) {
   const abertos = new Set(
     (Array.isArray(matriculas) ? matriculas : [])
       .filter((m) => m?.curso_id === cursoId && m.status !== "concluido")
@@ -52,6 +59,7 @@ export function matriculasNovas({ matriculas, cursoId, funcionarioIds, empresaId
       curso_id: cursoId,
       funcionario_id,
       status: "pendente",
+      ...tipoDaNovaMatricula({ tipo, motivo, funcionarioId: funcionario_id, cursoId, matriculas }),
     }));
   return { novas, ignorados: escolhidos.length - novas.length };
 }

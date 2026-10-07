@@ -130,6 +130,44 @@ describe("ResultadoValidacao", () => {
     expect(html).not.toMatch(EMOJI);
   });
 
+  describe("tipo do treinamento (T23)", () => {
+    const com = (extra) => ({ ...achado, certificado: { ...certificado, ...extra } });
+    const exibir = (resultado) =>
+      tela(
+        <ResultadoValidacao resultado={resultado} consultadoEm="2026-10-06T12:00:00Z" {...aoLado} />
+      );
+
+    it("mostra o tipo do treinamento que o certificado traz", () => {
+      const html = exibir(com({ tipo_treinamento: "periodico", motivo_eventual: null }));
+      expect(html).toContain("Tipo de treinamento");
+      expect(html).toContain("Periódico");
+      expect(html).not.toContain("Motivo");
+    });
+
+    it("eventual mostra também o motivo", () => {
+      const html = exibir(
+        com({ tipo_treinamento: "eventual", motivo_eventual: "Mudança de procedimento de teste" })
+      );
+      expect(html).toContain("Eventual");
+      expect(html).toContain("Motivo");
+      expect(html).toContain("Mudança de procedimento de teste");
+    });
+
+    it("certificado de antes da T23 (sem o tipo) não ganha as linhas", () => {
+      for (const extra of [{}, { tipo_treinamento: null, motivo_eventual: null }]) {
+        const html = exibir(com(extra));
+        expect(html).not.toContain("Tipo de treinamento");
+        expect(html).not.toContain("Motivo");
+      }
+    });
+
+    it("tipo que a página não conhece não é impresso", () => {
+      const html = exibir(com({ tipo_treinamento: "reciclagem" }));
+      expect(html).not.toContain("Tipo de treinamento");
+      expect(html).not.toContain("reciclagem");
+    });
+  });
+
   it("código que não existe: mensagem, sem imprimir, com 'consultar outro código'", () => {
     const html = tela(
       <ResultadoValidacao resultado={{ valido: false, encontrado: false }} {...aoLado} />

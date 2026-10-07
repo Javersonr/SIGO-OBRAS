@@ -2,6 +2,23 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { baixarCertificadoPdf } from "./certificado-ead";
 import { ErroCertificado, MSG_QR_FALHOU } from "./certificado-ead-falhas";
 
+// Registro das chamadas a doc.text (texto e posição em mm), para conferir a geometria do certificado. O jsPDF
+// real continua fazendo o PDF: a troca só anota o que foi desenhado, sem mudar nada.
+const registro = vi.hoisted(() => ({ textos: [] }));
+vi.mock("jspdf", async (importarOriginal) => {
+  const real = await importarOriginal();
+  function JsPdfComRegistro(...args) {
+    const doc = new real.jsPDF(...args);
+    const desenhar = doc.text.bind(doc);
+    doc.text = (texto, x, y, ...resto) => {
+      registro.textos.push({ texto, x, y });
+      return desenhar(texto, x, y, ...resto);
+    };
+    return doc;
+  }
+  return { ...real, jsPDF: JsPdfComRegistro };
+});
+
 // PNG de 1x1 pixel: serve de QR e de logo nos testes (nada de dado real).
 const PNG_1X1 =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -162,6 +179,109 @@ describe("baixarCertificadoPdf: local de realização (T8)", () => {
     const texto = await textoDoPdf(c);
     expect(texto).not.toContain("Validade: at");
     expect(texto).toContain("Local de realiza");
+  });
+});
+
+describe("baixarCertificadoPdf: tipo do treinamento (T23)", () => {
+  const textoDoPdf = async (cert) => {
+    let texto = "";
+    await baixarCertificadoPdf(cert, {
+      gerarQr: async () => PNG_1X1,
+      salvar: (doc) => {
+        texto = doc.output();
+      },
+    });
+    return texto;
+  };
+  const comTipo = (extra, base = certificado()) => ({
+    ...base,
+    dados: { ...base.dados, ...extra },
+  });
+
+  it("imprime o tipo do treinamento gravado no certificado", async () => {
+    for (const [tipo, rotulo] of [
+      ["inicial", "Inicial"],
+      ["periodico", "Peri"],
+    ]) {
+      const texto = await textoDoPdf(comTipo({ tipo_treinamento: tipo }));
+      expect(texto).toContain("Tipo de treinamento: " + rotulo);
+      expect(texto).not.toContain("Motivo:");
+    }
+  });
+
+  it("tipo e validade saem na mesma linha (o certificado não ganha altura)", async () => {
+    const texto = await textoDoPdf(comTipo({ tipo_treinamento: "inicial" }));
+    expect(texto).toMatch(/Tipo de treinamento: Inicial\s+\S+\s+Validade: at/);
+  });
+
+  it("eventual imprime o motivo", async () => {
+    const texto = await textoDoPdf(
+      comTipo({ tipo_treinamento: "eventual", motivo_eventual: "Mudança de procedimento de teste" })
+    );
+    expect(texto).toContain("Tipo de treinamento: Eventual");
+    expect(texto).toContain("Motivo: Mudan");
+    expect(texto).toContain("procedimento de teste");
+  });
+
+  it("motivo comprido (200 caracteres) quebra em linhas e o PDF sai inteiro", async () => {
+    const motivo = "palavra ".repeat(40).trim().slice(0, 200);
+    const { salvos, salvar } = gravador();
+    await baixarCertificadoPdf(comTipo({ tipo_treinamento: "eventual", motivo_eventual: motivo }), {
+      gerarQr: async () => PNG_1X1,
+      salvar,
+    });
+    expect(salvos).toHaveLength(1);
+  });
+
+  it("o bloco de detalhes (tipo, motivo, validade e local) termina acima das imagens das assinaturas", async () => {
+    // Pior caso: motivo de 200 caracteres (duas linhas), validade e local, com as duas imagens de assinatura.
+    // As imagens começam em y = 142 - 1,5 - 18 = 122,5 mm (a linha das assinaturas fica em 142); o texto do
+    // bloco tem de acabar antes disso. Os y vêm das chamadas a doc.text, em milímetros.
+    registro.textos.length = 0;
+    const motivo = "palavra ".repeat(40).trim().slice(0, 200);
+    const cert = comTipo({
+      tipo_treinamento: "eventual",
+      motivo_eventual: motivo,
+      local: { ambiente: "Plataforma de Teste — https://exemplo.test/portal" },
+      instrutor: { nome: "Instrutor de Teste", qualificacao: "Eng. de Teste" },
+      responsavel_tecnico: { nome: "RT de Teste", registro: "CREA-XX 0000" },
+    });
+    const IMAGEM = { dataUrl: PNG_1X1, w: 300, h: 100 };
+    await baixarCertificadoPdf(cert, {
+      gerarQr: async () => PNG_1X1,
+      assinaturas: { instrutor: IMAGEM, responsavel_tecnico: IMAGEM },
+      salvar: () => {},
+    });
+    const doTexto = (re) => registro.textos.find((c) => re.test([c.texto].flat().join(" ")));
+    const tipo = doTexto(/Tipo de treinamento/);
+    const rotuloMotivo = doTexto(/Motivo:/);
+    const local = doTexto(/Local de realiza/);
+    expect(tipo && rotuloMotivo && local).toBeTruthy();
+    // de cima para baixo: tipo e validade, motivo, local
+    expect(tipo.y).toBeLessThan(rotuloMotivo.y);
+    expect(rotuloMotivo.y).toBeLessThan(local.y);
+    // o motivo de 200 caracteres ocupa duas linhas (~4,6 mm cada) e o local, uma
+    expect(
+      Array.isArray(rotuloMotivo.texto) ? rotuloMotivo.texto.length : 1
+    ).toBeGreaterThanOrEqual(2);
+    const ultimaLinhaDoLocal = local.y + ([local.texto].flat().length - 1) * 4.6;
+    expect(ultimaLinhaDoLocal).toBeLessThan(122.5);
+    // e nada do bloco encosta nas assinaturas, nem no texto de abertura que vem antes
+    expect(tipo.y).toBeGreaterThan(90);
+  });
+
+  it("certificado de antes da T23, sem o tipo, sai sem a linha e sem o motivo", async () => {
+    const texto = await textoDoPdf(certificado());
+    expect(texto).not.toContain("Tipo de treinamento");
+    expect(texto).not.toContain("Motivo:");
+    expect(texto).toContain("Validade: at");
+  });
+
+  it("motivo de certificado que não é eventual não sai impresso", async () => {
+    const texto = await textoDoPdf(
+      comTipo({ tipo_treinamento: "inicial", motivo_eventual: "não deve sair" })
+    );
+    expect(texto).not.toContain("não deve sair");
   });
 });
 

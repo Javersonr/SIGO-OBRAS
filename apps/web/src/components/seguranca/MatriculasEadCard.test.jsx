@@ -298,3 +298,34 @@ describe("MatriculasEadCard", () => {
     expect(html).not.toContain("dia(s) de atraso");
   });
 });
+
+describe("MatriculasEadCard: tipo do treinamento (T23)", () => {
+  const html = (matriculas) =>
+    tela(
+      <MatriculasEadCard
+        {...base({
+          funcionariosTodos: [funcionario("f1"), funcionario("f2"), funcionario("f3")],
+          matriculas,
+        })}
+      />
+    );
+
+  it("periódico e eventual aparecem sob o nome do curso, o eventual com o motivo", () => {
+    const saida = html([
+      matricula("m1", "f1", "c1", { tipo: "periodico", motivo_eventual: null }),
+      matricula("m2", "f2", "c1", { tipo: "eventual", motivo_eventual: "Mudança de procedimento" }),
+    ]);
+    expect(saida).toContain("Periódico");
+    expect(saida).toContain("Eventual: Mudança de procedimento");
+  });
+
+  it("inicial (o comum) e matrícula sem a coluna não levam a linha", () => {
+    const saida = html([
+      matricula("m1", "f1", "c1", { tipo: "inicial", motivo_eventual: null }),
+      matricula("m2", "f2", "c1"),
+    ]);
+    expect(saida).not.toContain("Periódico");
+    expect(saida).not.toContain("Eventual");
+    expect(saida).not.toContain("Inicial");
+  });
+});

@@ -7,7 +7,9 @@
  *  - integro: o hash gravado na emissão bate com `dados`, a assinatura e o código de hoje (false =
  *    o registro não confere, por alteração ou por forma de hash que não se reproduz; nunca null);
  *  - vencido: validade anterior ao dia de hoje em Brasília;
- *  - situacao: "valido" | "vencido" | "revogado" | "divergente"; `valido` só é true em "valido".
+ *  - situacao: "valido" | "vencido" | "revogado" | "divergente"; `valido` só é true em "valido";
+ *  - certificado.tipo_treinamento / motivo_eventual (T23): inicial, periódico ou eventual e, no eventual, o
+ *    motivo; null nos certificados emitidos antes da T23.
  * As regras estão em ./regras.ts (com teste).
  */
 import { createAdminClient } from "../_shared/supabase-admin.ts";
@@ -17,6 +19,7 @@ import {
   localDoCertificado,
   responsavelTecnicoPublico,
   resultadoDaConsulta,
+  tipoDoTreinamentoPublico,
 } from "./regras.ts";
 
 function mascararCpf(cpf?: string | null) {
@@ -61,6 +64,8 @@ Deno.serve(
 
     const d = cert.dados ?? {};
     const av = await avaliarCertificado(cert, new Date());
+    // tipo do treinamento (T23): inicial, periódico ou eventual (com o motivo); certificado antigo não o tem
+    const tipo = tipoDoTreinamentoPublico(d);
     return ok({
       encontrado: true,
       situacao: av.situacao,
@@ -77,6 +82,8 @@ Deno.serve(
         curso: d.curso?.nome,
         carga_horaria_horas: d.curso?.carga_horaria_horas,
         modalidade: d.curso?.modalidade,
+        tipo_treinamento: tipo?.tipo_treinamento ?? null,
+        motivo_eventual: tipo?.motivo_eventual ?? null,
         local: localDoCertificado(d),
         inicio: d.periodo?.inicio,
         conclusao: d.periodo?.conclusao,

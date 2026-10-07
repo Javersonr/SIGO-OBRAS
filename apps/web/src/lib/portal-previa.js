@@ -184,6 +184,8 @@ export function montarItemPrevia({ curso, aulas, questoes, urls } = {}) {
     certificado: null,
     pode_emitir_certificado: false,
     pendencias_certificado: [],
+    // a prévia não tem aluno: não há pré-requisito a cumprir (o servidor devolve null quando o curso não exige)
+    pre_requisito: null,
     duvidas: [],
   };
 }

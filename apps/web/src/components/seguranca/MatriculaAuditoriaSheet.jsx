@@ -23,6 +23,7 @@ import {
   carregarAssinaturasDoCertificado,
 } from "@/lib/ead-assinatura";
 import { numerarAulas } from "@/lib/portal-curso";
+import { textoDoTipoDaMatricula } from "@/lib/ead-tipo-matricula";
 import {
   ROTULO_ORIGEM_NAVEGADOR,
   abertaEmDaTentativa,
@@ -304,6 +305,10 @@ export default function MatriculaAuditoriaSheet({
                 ["Início", fmtDataHora(matricula.iniciado_em)],
                 ["Conclusão", matricula.data_conclusao?.split("-").reverse().join("/") || "—"],
                 ["Tempo total assistido", formatarTempo(totalAssistido)],
+                // inicial, periódico ou eventual com o motivo (T23); matrícula de antes da migração não o traz
+                ...(textoDoTipoDaMatricula(matricula)
+                  ? [["Tipo de treinamento", textoDoTipoDaMatricula(matricula)]]
+                  : []),
               ].map(([k, v]) => (
                 <div key={k} className="rounded-md bg-slate-50 p-2">
                   <p className="text-xs text-slate-500">{k}</p>

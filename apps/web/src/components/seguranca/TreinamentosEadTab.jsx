@@ -63,6 +63,12 @@ import {
 } from "@/lib/ead-projeto";
 import { nomeDoArquivoDoProjeto, pdfDoProjetoComoBlob } from "@/lib/ead-projeto-pdf";
 import { hojeEmBrasilia } from "@/lib/ead-vencimentos";
+import {
+  cursoExigidoDe,
+  preRequisitoFechariaCiclo,
+  resumoDosBloqueios,
+  separarPorPreRequisito,
+} from "@/lib/ead-pre-requisito";
 import { refDoUpload } from "@/lib/anexo-ref";
 import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
 import { decidirAvisoAoRH } from "@/lib/ead-aviso-matricula";
@@ -74,6 +80,7 @@ import InputTelefone from "@/components/shared/InputTelefone";
 import MatriculaAuditoriaSheet from "@/components/seguranca/MatriculaAuditoriaSheet";
 import DuvidasTutorCard from "@/components/seguranca/DuvidasTutorCard";
 import AulaLinhaEad from "@/components/seguranca/AulaLinhaEad";
+import PreRequisitoCursoCampo from "@/components/seguranca/PreRequisitoCursoCampo";
 import AssinaturaCursoCampo from "@/components/seguranca/AssinaturaCursoCampo";
 import ProjetoPedagogicoCurso from "@/components/seguranca/ProjetoPedagogicoCurso";
 import EnvioProgressoEad from "@/components/seguranca/EnvioProgressoEad";
@@ -569,6 +576,11 @@ export default function TreinamentosEadTab({
       toast.error("Dê um nome ao curso");
       return;
     }
+    // pré-requisito (T23): o curso escolhido não pode exigir este de volta (o banco também recusa)
+    if (preRequisitoFechariaCiclo(cursoSel.id, cursoSel.pre_requisito_curso_id, cursos)) {
+      toast.error("Este pré-requisito fecharia um círculo: o curso escolhido já exige este curso");
+      return;
+    }
     // tutor (T21, D4): nome, WhatsApp e atendimento são opcionais; o telefone só grava se o envio o aceita
     const tutor = dadosDoTutorParaGravar(cursoSel);
     if (!tutor.ok) {
@@ -589,6 +601,7 @@ export default function TreinamentosEadTab({
       empresa_id: empresaAtiva.id,
       modelo_treinamento_id: cursoSel.modelo_treinamento_id || null,
       modalidade: cursoSel.modalidade || "ead",
+      pre_requisito_curso_id: cursoSel.pre_requisito_curso_id || null,
       nome: cursoSel.nome.trim(),
       codigo: cursoSel.codigo || null,
       descricao: cursoSel.descricao || null,
@@ -1241,7 +1254,7 @@ export default function TreinamentosEadTab({
   // painel abrir). As linhas vão em lotes de 200; se um lote falhar, o painel segue aberto com a
   // seleção e a lista é recarregada, para a nova tentativa partir do que de fato ficou no banco. Devolve
   // true quando gravou (o painel então fecha).
-  const criarMatriculas = async ({ novas, ignorados }) => {
+  const criarMatriculas = async ({ novas, ignorados, bloqueados = 0 }) => {
     if (novas.length === 0) {
       toast.info("Nada a matricular: todos já estão matriculados ou com o treinamento em dia");
       return false;
@@ -1253,23 +1266,43 @@ export default function TreinamentosEadTab({
       toast.error("Este curso ainda tem requisitos pendentes para novas matrículas");
       return false;
     }
+    // Pré-requisito (T23): o painel já separou quem não o cumpre; aqui confere de novo com os dados da tela
+    // (outras telas chamam esta função) e só grava as liberadas. O servidor ainda recusa emitir sem ele.
+    const { liberadas, bloqueadas } = separarPorPreRequisito({
+      novas,
+      cursos,
+      matriculas,
+      certificados,
+      hoje: hojeEmBrasilia(),
+    });
+    if (liberadas.length === 0) {
+      const grupos = resumoDosBloqueios(bloqueadas, (id) => funcTodosPorId.get(id)?.nome_completo);
+      toast.error(
+        "Ninguém da seleção tem o pré-requisito do curso: " + grupos.map((g) => g.titulo).join("; ")
+      );
+      return false;
+    }
+    const semPreRequisito = bloqueados + bloqueadas.length;
     const empresaId = empresaAtiva.id;
     return gravar(
       "matricula",
       "Erro ao matricular (a lista foi atualizada; confira antes de tentar de novo)",
       async () => {
         try {
-          for (let i = 0; i < novas.length; i += LOTE_DE_MATRICULAS) {
+          for (let i = 0; i < liberadas.length; i += LOTE_DE_MATRICULAS) {
             await sigo.entities.TreinamentoMatricula.bulkCreate(
-              novas.slice(i, i + LOTE_DE_MATRICULAS)
+              liberadas.slice(i, i + LOTE_DE_MATRICULAS)
             );
           }
         } finally {
           recarregar();
         }
         toast.success(
-          `${novas.length} matrícula(s) criada(s)` +
-            (ignorados ? " (já matriculados ignorados)" : "")
+          `${liberadas.length} matrícula(s) criada(s)` +
+            (ignorados ? " (já matriculados ignorados)" : "") +
+            (semPreRequisito
+              ? `; ${semPreRequisito} sem o pré-requisito do curso não foram matriculados`
+              : "")
         );
         // trocou de empresa durante a gravação: o painel já é o da empresa nova
         if (cargas.mesmaEmpresa(empresaId)) setPainelMatricula(null);
@@ -1330,11 +1363,13 @@ export default function TreinamentosEadTab({
         funcionario_id: linha.funcionarioId,
         curso_id: linha.cursoId,
       });
+      // renovar é o treinamento periódico (T23)
       const { novas } = matriculasNovas({
         matriculas: atuais,
         cursoId: linha.cursoId,
         funcionarioIds: [linha.funcionarioId],
         empresaId,
+        tipo: "periodico",
       });
       if (novas.length === 0) {
         toast.info("Este funcionário já tem uma matrícula aberta neste curso");
@@ -1345,8 +1380,23 @@ export default function TreinamentosEadTab({
         toast.error("Este curso ainda tem requisitos pendentes para novas matrículas");
         return;
       }
+      // pré-requisito (T23): renovar o curso que exige outro pede o outro dentro da validade
+      const { liberadas, bloqueadas } = separarPorPreRequisito({
+        novas,
+        cursos,
+        matriculas,
+        certificados,
+        hoje: hojeEmBrasilia(),
+      });
+      if (liberadas.length === 0) {
+        const [grupo] = resumoDosBloqueios(bloqueadas, () => nome);
+        toast.error(
+          `Não dá para renovar agora. ${grupo?.titulo ?? "Falta o pré-requisito"} (${grupo?.pessoas[0]?.motivo ?? "não cumprido"}).`
+        );
+        return;
+      }
       try {
-        await sigo.entities.TreinamentoMatricula.bulkCreate(novas);
+        await sigo.entities.TreinamentoMatricula.bulkCreate(liberadas);
       } finally {
         recarregar();
       }
@@ -1676,6 +1726,12 @@ export default function TreinamentosEadTab({
                     {qtdAulas} aula(s)
                     {c.validade_meses ? ` · validade ${c.validade_meses} meses` : ""}
                   </p>
+                  {/* pré-requisito (T23): o curso só matricula e emite para quem concluiu o exigido */}
+                  {cursoExigidoDe(c, cursos) && (
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Exige: {cursoExigidoDe(c, cursos).curso?.nome ?? "(curso excluído)"}
+                    </p>
+                  )}
                   {c.ativo === false && (
                     <Badge variant="outline" className="mt-2 text-amber-700 border-amber-300">
                       Rascunho · não publicado
@@ -1829,6 +1885,13 @@ export default function TreinamentosEadTab({
                     </p>
                   )}
                 </div>
+                <PreRequisitoCursoCampo
+                  curso={cursoSel}
+                  cursos={cursos}
+                  onChange={(id) =>
+                    setCursoSel((prev) => ({ ...prev, pre_requisito_curso_id: id }))
+                  }
+                />
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">
                     <Label className="text-xs">Nome do curso</Label>

@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { apresentacaoDoResultado, avisoDeIntegridade, dataBr } from "@/lib/validacao-certificado";
 import { dataHoraBrasilia } from "@/lib/data-brasilia";
+import { tipoPublicoDoCertificado } from "@/lib/ead-tipo-matricula";
 import { fmtDataHora } from "./api";
 
 /**
@@ -47,6 +48,13 @@ export default function ResultadoValidacao({
   const apresentacao = c ? apresentacaoDoResultado(resultado, { validade: c.validade }) : null;
   const estilo = apresentacao ? ESTILO[apresentacao.tom] : null;
   const aviso = c ? avisoDeIntegridade(resultado) : null;
+  // tipo do treinamento (T23): inicial, periódico ou eventual (com o motivo); certificado antigo não o traz
+  const tipo = c
+    ? tipoPublicoDoCertificado({
+        tipo_treinamento: c.tipo_treinamento,
+        motivo_eventual: c.motivo_eventual,
+      })
+    : null;
   // código sem certificado (não existe): nada a imprimir, só consultar outro
   const imprimivel = !!(c && apresentacao);
 
@@ -85,6 +93,18 @@ export default function ResultadoValidacao({
               <dd>
                 {c.carga_horaria_horas} h · {c.modalidade}
               </dd>
+              {tipo && (
+                <>
+                  <dt className="text-slate-500">Tipo de treinamento</dt>
+                  <dd>{tipo.rotulo}</dd>
+                  {tipo.motivo && (
+                    <>
+                      <dt className="text-slate-500">Motivo</dt>
+                      <dd>{tipo.motivo}</dd>
+                    </>
+                  )}
+                </>
+              )}
               {c.local?.ambiente && (
                 <>
                   <dt className="text-slate-500">Local</dt>

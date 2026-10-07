@@ -750,13 +750,18 @@ export const COLUNAS_MATRICULA_ALUNO = [
 
 /**
  * O `select` da matrícula no servidor: as colunas do aluno mais `tentativas_extras`, que só o servidor
- * lê (o teto de tentativas soma as extras que o RH liberou). Serve a `minhaMatricula` (todas as ações) e
+ * lê (o teto de tentativas soma as extras que o RH liberou), `tipo` e `motivo_eventual` (T23: vão para o
+ * certificado, não para a tela do aluno). Serve a `minhaMatricula` (todas as ações) e
  * ao `dados`. Quem passar a ler outra coluna de `mat` no `index.ts` acrescenta aqui (o
  * `endurecimento.test.ts` acusa a que faltar).
  */
-export const COLUNAS_MATRICULA_PORTAL = [...COLUNAS_MATRICULA_ALUNO, "tentativas_extras"].join(
-  ", "
-);
+export const COLUNAS_MATRICULA_PORTAL = [
+  ...COLUNAS_MATRICULA_ALUNO,
+  "tentativas_extras",
+  // o tipo do treinamento e o motivo do eventual (T23) só o servidor lê: entram no certificado na emissão
+  "tipo",
+  "motivo_eventual",
+].join(", ");
 
 /**
  * A matrícula como o aluno a recebe em `dados`: só as `COLUNAS_MATRICULA_ALUNO` (a coluna que a consulta

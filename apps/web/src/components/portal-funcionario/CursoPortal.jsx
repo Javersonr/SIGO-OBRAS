@@ -54,6 +54,7 @@ import {
   aulaSeguinte,
   cursoDespublicado,
   cursoDeApoio,
+  preRequisitoPendente,
   MSG_CURSO_DE_APOIO,
   erroAposEnvioCerto,
   guardarPosicao,
@@ -808,6 +809,17 @@ export default function CursoPortal({
             className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"
           >
             {MSG_CURSO_DE_APOIO}
+          </div>
+        )}
+
+        {/* curso que exige outro (T23): o aluno sabe desde o começo que só emite o certificado com o curso
+            exigido concluído e dentro da validade; concluído, o aviso sai no bloco do certificado, abaixo */}
+        {mat.status !== "concluido" && preRequisitoPendente(item) && (
+          <div
+            role="status"
+            className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+          >
+            {preRequisitoPendente(item).texto}
           </div>
         )}
 

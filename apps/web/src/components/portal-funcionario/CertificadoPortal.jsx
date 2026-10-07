@@ -11,7 +11,7 @@ import {
   avisoAssinaturasNaoCarregadas,
   carregarAssinaturasDoCertificado,
 } from "@/lib/ead-assinatura";
-import { MSG_CURSO_DE_APOIO, cursoDeApoio } from "@/lib/portal-curso";
+import { MSG_CURSO_DE_APOIO, cursoDeApoio, preRequisitoPendente } from "@/lib/portal-curso";
 
 /**
  * Certificado do curso concluído. Emitir = ASSINAR: o funcionário confirma a
@@ -148,17 +148,37 @@ export default function CertificadoPortal({
   }
 
   if (!item.pode_emitir_certificado) {
+    // pré-requisito (T23): o aluno precisa concluir outro curso antes; é um aviso à parte dos requisitos do
+    // curso, que quem regulariza é o RH. Os dois podem aparecer juntos.
+    const preRequisito = preRequisitoPendente(item);
+    const pendenciasDoCurso = item.pendencias_certificado?.length
+      ? item.pendencias_certificado
+      : preRequisito
+        ? []
+        : ["Aguarde a revisão do curso pelo RH"];
     return (
-      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-        <p>Curso concluído. O certificado aguarda a regularização destes requisitos pelo RH:</p>
-        <ul className="list-disc pl-5 mt-2 space-y-1">
-          {(item.pendencias_certificado?.length
-            ? item.pendencias_certificado
-            : ["Aguarde a revisão do curso pelo RH"]
-          ).map((texto) => (
-            <li key={texto}>{texto}</li>
-          ))}
-        </ul>
+      <div className="space-y-3">
+        {preRequisito && (
+          <div
+            role="status"
+            className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
+          >
+            <p className="font-medium">
+              Curso concluído. Falta o pré-requisito para emitir o certificado.
+            </p>
+            <p className="mt-1">{preRequisito.texto}</p>
+          </div>
+        )}
+        {pendenciasDoCurso.length > 0 && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+            <p>Curso concluído. O certificado aguarda a regularização destes requisitos pelo RH:</p>
+            <ul className="list-disc pl-5 mt-2 space-y-1">
+              {pendenciasDoCurso.map((texto) => (
+                <li key={texto}>{texto}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     );
   }

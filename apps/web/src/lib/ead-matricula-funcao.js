@@ -208,10 +208,20 @@ export function selecaoDaFuncao(plano, preferidos = null) {
 /**
  * As matrículas a criar: para cada exigência marcada, o curso escolhido do plano e as pessoas marcadas que
  * precisam dele. `matriculas` (as de agora) só serve para não duplicar uma matrícula aberta que apareceu
- * depois de a tela montar o plano. Todas as linhas levam as mesmas chaves (o `bulkCreate` exige).
+ * depois de a tela montar o plano e para o tipo automático (periódico para quem já concluiu o curso). Todas as
+ * linhas levam as mesmas chaves (o `bulkCreate` exige). `tipo` e `motivo` são a escolha do RH (T23, ver
+ * `matriculasNovas`); sem escolha vale o automático.
  * @returns {{ novas: object[], ignorados: number }}
  */
-export function matriculasDoPlano({ plano, exigenciaIds, funcionarioIds, matriculas, empresaId }) {
+export function matriculasDoPlano({
+  plano,
+  exigenciaIds,
+  funcionarioIds,
+  matriculas,
+  empresaId,
+  tipo,
+  motivo,
+}) {
   const marcadas = new Set(exigenciaIds ?? []);
   const escolhidos = new Set(funcionarioIds ?? []);
   const novas = [];
@@ -222,7 +232,14 @@ export function matriculasDoPlano({ plano, exigenciaIds, funcionarioIds, matricu
     const quem = (plano.pessoas ?? [])
       .filter((p) => escolhidos.has(p.funcionario.id) && p.faltam.includes(e.id))
       .map((p) => p.funcionario.id);
-    const r = matriculasNovas({ matriculas, cursoId: e.curso.id, funcionarioIds: quem, empresaId });
+    const r = matriculasNovas({
+      matriculas,
+      cursoId: e.curso.id,
+      funcionarioIds: quem,
+      empresaId,
+      tipo,
+      motivo,
+    });
     ignorados += r.ignorados;
     for (const n of r.novas) {
       const chave = `${n.curso_id}|${n.funcionario_id}`;

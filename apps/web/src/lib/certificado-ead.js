@@ -10,6 +10,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { urlPublica } from "@/lib/url-publica";
 import { dataHoraBrasilia } from "@/lib/data-brasilia";
 import { formatoDaImagem, posicaoDaAssinatura } from "@/lib/ead-assinatura";
+import { linhasDoTipoNoCertificado } from "@/lib/ead-tipo-matricula";
 import {
   ErroCertificado,
   MSG_QR_FALHOU,
@@ -174,13 +175,29 @@ export async function baixarCertificadoPdf(cert, opcoes = {}) {
     align: "center",
     lineHeightFactor: 1.6,
   });
-  // linhas de rodapé do texto: validade e local de realização (NR-1, 1.7.1.1; certificado emitido antes
-  // da T8 não tem local e sai sem a linha)
-  let yDetalhe = 104;
-  if (d.periodo?.validade) {
+  // linhas de rodapé do texto: tipo do treinamento (NR-1, 1.7.1.2; T23), validade e local de realização
+  // (NR-1, 1.7.1.1). O certificado emitido antes da T8 não tem local e o de antes da T23 não tem tipo: saem sem a
+  // linha. Tipo e validade dividem a primeira linha (o certificado não ganha altura); o motivo do eventual
+  // (até 200 caracteres) vem numa linha própria, que pode quebrar em duas, e por isso o bloco sobe um pouco: as
+  // imagens das assinaturas começam em y = 122,5 e nada do bloco pode chegar lá.
+  const [linhaDoTipo, linhaDoMotivo] = linhasDoTipoNoCertificado(d);
+  let yDetalhe = linhaDoMotivo ? 98 : 104;
+  const tipoEValidade = [
+    linhaDoTipo,
+    d.periodo?.validade ? `Validade: até ${fmtData(d.periodo.validade)}` : null,
+  ]
+    .filter(Boolean)
+    .join("  ·  ");
+  if (tipoEValidade) {
     doc.setFontSize(10.5);
-    doc.text(`Validade: até ${fmtData(d.periodo.validade)}`, W / 2, yDetalhe, { align: "center" });
+    doc.text(doc.splitTextToSize(tipoEValidade, W - 60), W / 2, yDetalhe, { align: "center" });
     yDetalhe += 7;
+  }
+  if (linhaDoMotivo) {
+    doc.setFontSize(10.5);
+    const partes = doc.splitTextToSize(linhaDoMotivo, W - 60);
+    doc.text(partes, W / 2, yDetalhe, { align: "center" });
+    yDetalhe += partes.length * 4.6 + 2.4;
   }
   if (d.local?.ambiente) {
     doc.setFontSize(10.5);

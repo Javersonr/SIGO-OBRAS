@@ -405,6 +405,28 @@ describe("csvDasMatriculas", () => {
     expect(col(l, "Emitido em (Brasília)")).toContain("10/09/2026");
   });
 
+  it("tipo do treinamento da matrícula (T23): o texto e o motivo do eventual; sem a coluna, vazio", () => {
+    const csvTipo = csvDasMatriculas({
+      matriculas: [
+        { ...MATS[0], tipo: "periodico", motivo_eventual: null },
+        { ...MATS[1], tipo: "eventual", motivo_eventual: "Mudança de equipamento" },
+        MATS[2],
+      ],
+      curso: CURSO,
+      funcionarios: FUNCS,
+      aulas: AULAS,
+      progresso: PROG,
+      tentativas: TENT,
+      certificados: [CERT_M1],
+    });
+    const l = linhasDe(csvTipo).map(celulas);
+    const porId = (id) => l.slice(1).find((x) => x[l[0].indexOf("ID da matrícula")] === id);
+    const tipo = (id) => porId(id)[l[0].indexOf("Tipo de treinamento")];
+    expect(tipo("m1")).toBe("Periódico");
+    expect(tipo("m2")).toBe("Eventual: Mudança de equipamento");
+    expect(tipo("m3")).toBe("");
+  });
+
   it("sem nota na matrícula usa a da última tentativa; sem nenhuma, deixa vazio", () => {
     const m2 = linhas.find((x) => col(x, "ID da matrícula") === "m2");
     expect(col(m2, "Nota (%)")).toBe("40");

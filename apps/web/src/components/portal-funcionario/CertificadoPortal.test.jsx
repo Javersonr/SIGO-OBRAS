@@ -105,3 +105,73 @@ describe("CertificadoPortal e a modalidade do curso (T8)", () => {
     expect(saida).not.toContain(MSG_CURSO_DE_APOIO);
   });
 });
+
+describe("CertificadoPortal e o pré-requisito do curso (T23)", () => {
+  const FALTA = {
+    curso_id: "c0",
+    nome: "Curso exigido de teste",
+    atendido: false,
+    motivo: "sem_matricula",
+    texto:
+      'Para emitir este certificado é preciso ter concluído antes o curso "Curso exigido de teste", dentro da validade. Você ainda não fez esse curso: procure o RH.',
+  };
+  const EM_DIA = { ...FALTA, atendido: true, motivo: "concluido", texto: "Pré-requisito em dia." };
+
+  it("curso concluído sem o pré-requisito: diz o que falta e não mostra a assinatura nem a senha", () => {
+    const saida = html(
+      item({ pode_emitir_certificado: false, pre_requisito: FALTA, pendencias_certificado: [] })
+    );
+    expect(saida).toContain("Falta o pré-requisito");
+    expect(saida).toContain("Curso exigido de teste");
+    expect(saida).toContain("procure o RH");
+    expect(saida).not.toContain("Assine para emitir");
+    expect(saida).not.toContain('type="password"');
+    // não confunde com requisito do curso a regularizar pelo RH
+    expect(saida).not.toContain("aguarda a regularização");
+  });
+
+  it("pré-requisito e requisito do curso pendentes juntos: as duas explicações aparecem", () => {
+    const saida = html(
+      item({
+        pode_emitir_certificado: false,
+        pre_requisito: FALTA,
+        pendencias_certificado: ["Informe o instrutor"],
+      })
+    );
+    expect(saida).toContain("Falta o pré-requisito");
+    expect(saida).toContain("aguarda a regularização");
+    expect(saida).toContain("Informe o instrutor");
+  });
+
+  it("pré-requisito em dia: a assinatura aparece como sempre", () => {
+    const saida = html(item({ pre_requisito: EM_DIA }));
+    expect(saida).toContain("Assine para emitir");
+    expect(saida).not.toContain("Falta o pré-requisito");
+  });
+
+  it("curso sem pré-requisito (null ou ausente): nada muda", () => {
+    expect(html(item({ pre_requisito: null }))).toContain("Assine para emitir");
+    expect(html(item())).toContain("Assine para emitir");
+    const pendente = html(
+      item({ pode_emitir_certificado: false, pendencias_certificado: ["Informe o instrutor"] })
+    );
+    expect(pendente).toContain("aguarda a regularização");
+    expect(pendente).not.toContain("Falta o pré-requisito");
+  });
+
+  it("certificado já emitido não repete o aviso do pré-requisito", () => {
+    const saida = html(
+      item({
+        pre_requisito: FALTA,
+        pode_emitir_certificado: false,
+        certificado: {
+          codigo: "ABCD-2345-WXYZ",
+          dados: { periodo: { conclusao: "2026-10-05" } },
+          revogado: false,
+        },
+      })
+    );
+    expect(saida).toContain("Certificado emitido");
+    expect(saida).not.toContain("Falta o pré-requisito");
+  });
+});

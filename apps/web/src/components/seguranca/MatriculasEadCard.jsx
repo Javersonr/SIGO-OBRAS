@@ -504,6 +504,10 @@ export default function MatriculasEadCard({
                           Apoio
                         </Badge>
                       )}
+                      {/* tipo do treinamento (T23): só o que foge do comum (periódico e eventual) */}
+                      {l.matricula?.tipo && l.matricula.tipo !== "inicial" && (
+                        <span className="block text-xs text-slate-500">{l.tipoTexto}</span>
+                      )}
                     </td>
                     <td className="py-2 pr-3">
                       <Badge variant="outline" className={CLASSE_DO_STATUS[l.status] || ""}>

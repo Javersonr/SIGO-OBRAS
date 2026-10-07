@@ -13,8 +13,10 @@ import {
   resultadoDaConsulta,
   responsavelTecnicoPublico,
   situacaoDoCertificado,
+  tipoDoTreinamentoPublico,
   validadeDoCertificado,
 } from "./regras.ts";
+import { dadosDoTipoNoCertificado } from "../portal-funcionario/tipo-treinamento.ts";
 import {
   HASH_VERSAO_CANONICO,
   hashDoCertificado,
@@ -525,4 +527,87 @@ test("index.ts: o erro do select vira 500 (com console.error) antes de 'não enc
   assert.match(bloco, /fail\([\s\S]*?,\s*500\s*\)/);
   // a leitura não descarta o error (era o defeito: const { data: cert } = ...)
   assert.equal(/const \{ data: cert \}/.test(index), false);
+});
+
+// ------------------------------------------------------------------ tipo do treinamento (T23)
+
+test("tipoDoTreinamentoPublico: inicial e periódico saem só com o tipo", () => {
+  assert.deepEqual(tipoDoTreinamentoPublico({ tipo_treinamento: "inicial" }), {
+    tipo_treinamento: "inicial",
+    motivo_eventual: null,
+  });
+  assert.deepEqual(tipoDoTreinamentoPublico({ tipo_treinamento: "periodico" }), {
+    tipo_treinamento: "periodico",
+    motivo_eventual: null,
+  });
+});
+
+test("tipoDoTreinamentoPublico: eventual sai com o motivo; o motivo de outro tipo nunca sai", () => {
+  assert.deepEqual(
+    tipoDoTreinamentoPublico({
+      tipo_treinamento: "eventual",
+      motivo_eventual: "  Mudança de procedimento ",
+    }),
+    { tipo_treinamento: "eventual", motivo_eventual: "Mudança de procedimento" }
+  );
+  assert.deepEqual(
+    tipoDoTreinamentoPublico({ tipo_treinamento: "inicial", motivo_eventual: "não deve sair" }),
+    { tipo_treinamento: "inicial", motivo_eventual: null }
+  );
+});
+
+test("tipoDoTreinamentoPublico: certificado antigo (sem o tipo) ou com valor estranho não diz nada", () => {
+  for (const dados of [
+    {},
+    null,
+    undefined,
+    "texto",
+    [],
+    { tipo_treinamento: "reciclagem" },
+    { tipo_treinamento: 1 },
+    { tipo_treinamento: "Inicial" },
+  ]) {
+    assert.equal(tipoDoTreinamentoPublico(dados), null, JSON.stringify(dados));
+  }
+});
+
+test("tipoDoTreinamentoPublico: eventual sem motivo, ou com motivo fora dos limites, não afirma nada", () => {
+  for (const motivo of [undefined, null, "", "  ", "ab", "x".repeat(201), 7]) {
+    assert.equal(
+      tipoDoTreinamentoPublico({ tipo_treinamento: "eventual", motivo_eventual: motivo }),
+      null,
+      String(motivo)
+    );
+  }
+});
+
+test("tipoDoTreinamentoPublico diz o mesmo que o portal-funcionario congelou no certificado", () => {
+  for (const mat of [
+    { tipo: "inicial", motivo_eventual: null },
+    { tipo: "periodico", motivo_eventual: null },
+    { tipo: "eventual", motivo_eventual: "Retorno de afastamento" },
+    { tipo: "eventual", motivo_eventual: "ab" },
+    { tipo: "desconhecido", motivo_eventual: null },
+    {},
+  ]) {
+    const dados = dadosDoTipoNoCertificado(mat);
+    const publico = tipoDoTreinamentoPublico(dados);
+    assert.equal(
+      publico?.tipo_treinamento ?? null,
+      dados.tipo_treinamento ?? null,
+      JSON.stringify(mat)
+    );
+    assert.equal(
+      publico?.motivo_eventual ?? null,
+      dados.motivo_eventual ?? null,
+      JSON.stringify(mat)
+    );
+  }
+});
+
+test("index.ts: a consulta pública devolve o tipo e o motivo do certificado", () => {
+  const index = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+  assert.ok(index.includes("tipoDoTreinamentoPublico(d)"));
+  assert.ok(/tipo_treinamento:\s*tipo\?\.tipo_treinamento\s*\?\?\s*null/.test(index));
+  assert.ok(/motivo_eventual:\s*tipo\?\.motivo_eventual\s*\?\?\s*null/.test(index));
 });

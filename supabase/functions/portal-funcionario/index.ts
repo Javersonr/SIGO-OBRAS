@@ -21,7 +21,10 @@
  *
  * `certificado` só emite para curso EAD (modalidade do curso, T8): curso de apoio responde 409
  * `CURSO_DE_APOIO` e o semipresencial, 409 `PRATICA_PENDENTE` (até a T12); requisito do curso por
- * cumprir responde 409 `REQUISITOS` (só os que travam a EMISSÃO: `pendenciasParaEmitir`). O curso de apoio
+ * cumprir responde 409 `REQUISITOS` (só os que travam a EMISSÃO: `pendenciasParaEmitir`); curso que exige outro
+ * (`pre_requisito_curso_id`, T23) só emite com o curso exigido concluído e dentro da validade, senão 409
+ * `PRE_REQUISITO` (antes de pedir a senha; ver pre-requisito.ts). O tipo do treinamento da matrícula (inicial,
+ * periódico ou eventual, com o motivo do eventual) é congelado em `dados` (ver tipo-treinamento.ts). O curso de apoio
  * continua publicado e aceita matrícula (D3), só não emite e não grava `proxima_renovacao`; o reprovado
  * na prova recebe só "insatisfatório" (D10). O certificado traz o local (`dados.local`) e os dias de Brasília.
  * `dados.ciencias` leva TODAS as pendentes e as 30 confirmadas mais recentes (`listarCienciasDoAluno`).
@@ -71,6 +74,7 @@ import {
   HASH_VERSAO_CANONICO,
   EVENTO_CERTIFICADO_REVOGADO,
   EVENTO_TENTATIVA_LIBERADA,
+  dataBrasilia,
   type EventoPortal,
 } from "../_shared/portal-funcionario.ts";
 import { enviarWhatsAppTexto } from "../_shared/whatsapp-envio.ts";
@@ -79,6 +83,13 @@ import { carregarDocumentos, funcionarioPodeEntrar } from "./documentos.ts";
 import { confirmarCiencia, listarCienciasDoAluno } from "./ciencia.ts";
 import { destinoDoAvisoAoTutor, mensagemDuvidaAoTutor, tutorParaOAluno } from "./tutor.ts";
 import { projetoParaOAluno } from "./projeto.ts";
+import {
+  bloqueioDeEmissaoPorPreRequisito,
+  cursosExigidosDoBanco,
+  lerPreRequisito,
+  preRequisitoDoCurso,
+} from "./pre-requisito.ts";
+import { dadosDoTipoNoCertificado } from "./tipo-treinamento.ts";
 import { avisarGestores, avisoDeTentativasEsgotadas, esgotouAsTentativas } from "./avisos.ts";
 import {
   certificadoParaOAluno,
@@ -727,6 +738,16 @@ Deno.serve(
       ]);
       const liberadaEm = liberacoesPorMatricula(liberacoes);
 
+      // Pré-requisito entre cursos (T23): os cursos que os do aluno exigem podem não estar na lista dele.
+      // Uma consulta só, da empresa da sessão; as matrículas e os certificados vêm do que já foi lido acima.
+      const cursosExigidos = await cursosExigidosDoBanco(
+        supabase,
+        // deno-lint-ignore no-explicit-any
+        (cursos ?? []).map((c: any) => c.pre_requisito_curso_id),
+        empresaId
+      );
+      const hojeEmBrasilia = dataBrasilia(new Date());
+
       const progPor = new Map(
         // deno-lint-ignore no-explicit-any
         (prog ?? []).map((p: any) => [`${p.matricula_id}|${p.aula_id}`, p])
@@ -825,6 +846,14 @@ Deno.serve(
           // deno-lint-ignore no-explicit-any
           aprovacao: tents.find((t: any) => t.aprovada) ?? null,
         }).concluido;
+        // o curso exige outro? (null = não exige). Só emite com o curso exigido concluído e válido (T23)
+        const preRequisito = preRequisitoDoCurso({
+          curso,
+          cursosExigidos,
+          matriculas: matsDaEmpresa,
+          certificados: certificados ?? [],
+          hoje: hojeEmBrasilia,
+        });
         return {
           // a nota de quem ainda não foi aprovado não vai ao navegador (T16)
           matricula: matriculaParaAluno(m),
@@ -872,8 +901,11 @@ Deno.serve(
             concluidoReal &&
             !cert &&
             pendencias.length === 0 &&
-            emiteCertificado(modalidadeDoCurso(curso)),
+            emiteCertificado(modalidadeDoCurso(curso)) &&
+            preRequisito?.atendido !== false,
           pendencias_certificado: pendencias.map((r) => r.texto),
+          // o curso exigido antes deste e se o aluno já o cumpriu (T23); a tela explica o que falta
+          pre_requisito: preRequisito,
           // deno-lint-ignore no-explicit-any
           duvidas: (duvidas ?? []).filter((d: any) => d.curso_id === m.curso_id),
         };
@@ -1442,6 +1474,23 @@ Deno.serve(
       const sit = await situacaoReal(supabase, mat, empresaId);
       if (!sit.concluido) return fail("Conclua o curso antes de emitir o certificado", 409);
 
+      // Pré-requisito (T23): o curso exigido concluído e dentro da validade. Vem ANTES da senha (não gasta a
+      // reconfirmação à toa) e lê o banco de novo: a tela pode estar velha (o certificado do curso exigido
+      // pode ter vencido ou sido revogado depois). Falha de leitura não deixa emitir.
+      const pre = cursoDoCertificado.pre_requisito_curso_id
+        ? await lerPreRequisito(supabase, {
+            preCursoId: cursoDoCertificado.pre_requisito_curso_id,
+            funcionarioId,
+            empresaId,
+            hoje: dataBrasilia(new Date()),
+          })
+        : null;
+      if (pre && !pre.ok) {
+        return fail("Não foi possível validar o pré-requisito do curso agora. Tente de novo.", 503);
+      }
+      const semPre = pre?.ok ? bloqueioDeEmissaoPorPreRequisito(pre.situacao, pre.nome) : null;
+      if (semPre) return fail(semPre.mensagem, 409, { codigo: semPre.codigo });
+
       const reconfirmacao = await reconfirmar(body.senha ?? "");
       if (reconfirmacao === "limite") return muitasTentativas();
       if (reconfirmacao === "incorreta") {
@@ -1513,6 +1562,8 @@ Deno.serve(
         },
         // dias de Brasília (T8); conclusão e validade já foram gravadas assim em datasDeConclusao
         periodo: periodoDoCertificado(mat),
+        // tipo do treinamento (T23, NR-1 1.7.1.2): inicial, periódico ou eventual (com o motivo); entra no hash
+        ...dadosDoTipoNoCertificado(mat),
         // NR-1, 1.7.1.1: onde o treinamento foi realizado
         local: LOCAL_DO_CERTIFICADO,
         avaliacao: sit.aprovacao

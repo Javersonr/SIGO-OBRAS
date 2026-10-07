@@ -240,6 +240,47 @@ Treinamentos → curso**) há a seção **Projeto pedagógico (Anexo II 3.1)**:
   de matrículas, e o prazo do curso vale mais que o prazo padrão daquele navegador (T22). Curso sem prazo no projeto
   continua como era.
 
+### Tipo de treinamento e pré-requisito entre cursos (T23)
+
+**Tipo do treinamento (NR-1, itens 1.7.1.2 a 1.7.1.2.3.1).** O treinamento é **inicial** (antes de o funcionário começar
+a atividade), **periódico** (no prazo que a norma pede) ou **eventual** (mudança de procedimento, equipamento ou
+ambiente, ocorrência grave, retorno de afastamento longo...). No painel **Matricular funcionários** o RH escolhe o tipo
+de **todas as matrículas daquele painel**:
+
+- **Automático** (o padrão): **periódico** para quem já concluiu aquele curso antes (mesmo com o certificado vencido ou
+  revogado) e **inicial** para quem nunca o concluiu. O botão **Renovar** da tabela cria a matrícula como periódica.
+- **Inicial**, **Periódico** ou **Eventual** valem para todos os escolhidos. O **eventual exige o motivo** (3 a 200
+  caracteres).
+- O tipo e o motivo ficam **gravados na matrícula** e **não mudam depois** (só o servidor altera): quem errou remove a
+  matrícula e matricula de novo. Aparecem nos detalhes da matrícula, na coluna **Tipo de treinamento** do CSV da tabela e
+  do dossiê do curso e, para periódico e eventual, sob o nome do curso na tabela.
+- Na **emissão**, o servidor congela o tipo (e o motivo do eventual) no certificado: o PDF imprime "Tipo de
+  treinamento: ..." e a consulta pública em **/ValidarCertificado** mostra o tipo e o motivo. Certificado emitido antes
+  da T23 não tem o tipo e continua como era. **O motivo aparece na consulta pública**: não escreva nome de pessoa nem dado
+  sigiloso nele.
+- A matrícula que já existia antes da migração `0142` vale como **inicial** (o tipo dela nunca foi perguntado).
+
+**Pré-requisito.** No formulário do curso (**RH & Segurança → Treinamentos → curso**) o campo **Pré-requisito** escolhe o
+curso que o funcionário precisa ter **concluído e dentro da validade** antes deste. Exemplo: o NR-10 Complementar (SEP)
+exige o NR-10 Básico. O pré-requisito fica no **curso EAD**, não no cadastro central de treinamentos (a sincronização
+com o cadastro central não toca nele).
+
+- **Quem conta como "cumpriu".** Matrícula do funcionário no curso exigido que esteja concluída, sem certificado
+  revogado e com a validade em dia (no último dia ainda vale; curso sem validade vale sempre). Uma conclusão boa basta:
+  a antiga, vencida ou revogada, não derruba a renovação que já foi feita. Matrícula ainda aberta não conta. Só o curso
+  exigido **diretamente** é conferido.
+- **Matricular.** O painel lista quem não cumpre ("Para NR-10 SEP é preciso ter concluído NR-10 Básico: Fulano, ainda
+  não fez o curso") e **só matricula o resto**. Se ninguém da seleção cumpre, o botão fica desligado. **Renovar** um
+  curso que exige outro pede o outro dentro da validade.
+- **Emitir.** O servidor confere de novo na hora e, sem o pré-requisito, responde **409 `PRE_REQUISITO`** antes de
+  pedir a senha. O aluno vê o que falta no curso (aviso no alto, enquanto estuda) e no bloco do certificado (depois de
+  concluir): o curso fica concluído, mas o certificado só sai quando o curso exigido estiver em dia.
+- **Escolha do curso exigido.** A lista não traz o próprio curso, curso de apoio (conclui sem certificado, então nunca
+  valeria) nem curso que já exige este (o banco recusa o círculo). A lista de cursos mostra "Exige: ...". Curso exigido em
+  rascunho, semipresencial (ainda não emite) ou excluído gera aviso na tela do curso: ninguém consegue cumpri-lo.
+- **Fora do portal.** O pré-requisito cumprido **fora do portal** (por exemplo, o NR-10 Básico feito presencialmente
+  antes do EAD) **não é reconhecido**: hoje a saída é matricular a pessoa no curso exigido.
+
 ## Validação e publicação
 
 Validação local: testes do front, testes Node das Edge Functions, lint, `no-undef` nos componentes alterados,
@@ -270,6 +311,14 @@ do PDF do projeto, e as restrições de tamanho; sem alteração de dado) e muda
 com `--no-verify-jwt`). Ordem: migração, depois a função, depois o front. A migração vem **antes** do front: depois dele,
 "Salvar curso" passa a gravar as colunas novas. Publicar a função antes da migração não quebra nada (as colunas só são
 lidas quando existem). A `0141` é idempotente: se a versão anterior dela (sem a marca do PDF) já tiver sido aplicada, rodar o arquivo de novo só acrescenta a coluna da marca.
+
+A T23 (tipo do treinamento e pré-requisito) acrescenta a migração **`0142`** (`tipo` e `motivo_eventual` na
+matrícula; `pre_requisito_curso_id` no curso, com os triggers contra o círculo e contra curso de outra empresa; sem
+alteração de dado) e muda o **portal-funcionario** (com `--no-verify-jwt`) e o **validar-certificado** (SEM
+`--no-verify-jwt`). A ordem importa: **migração, depois as funções, depois o front.** O `portal-funcionario` novo lê as
+colunas `tipo` e `motivo_eventual` da matrícula, e publicá-lo antes da migração derruba o portal inteiro; o front novo
+grava `tipo`, `motivo_eventual` e `pre_requisito_curso_id`, e publicá-lo antes da migração faz matricular e salvar
+curso falharem.
 
 O teste completo de matrícula real, tempo de estudo, avaliação e certificado deve seguir o roteiro da seção 7 do
 handoff, com o Javerson e após as decisões e tarefas correspondentes.

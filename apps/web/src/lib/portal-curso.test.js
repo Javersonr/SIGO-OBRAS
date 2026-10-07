@@ -40,6 +40,7 @@ import {
   cursoDeApoio,
   renovacaoParaExibir,
   rotuloDoBotaoDoCurso,
+  preRequisitoPendente,
   MSG_CURSO_DE_APOIO,
 } from "./portal-curso";
 
@@ -1220,5 +1221,30 @@ describe("resumoDoResultado (o que a tela diz depois de enviar a prova)", () => 
     expect(resumoDoResultado({ aprovada: true }).titulo).toBe("Resultado: satisfatório");
     expect(resumoDoResultado(null).aprovada).toBe(false);
     expect(resumoDoResultado({}).titulo).toBe("Resultado: insatisfatório");
+  });
+});
+
+describe("preRequisitoPendente (T23)", () => {
+  const falta = {
+    curso_id: "c0",
+    nome: "Curso exigido",
+    atendido: false,
+    texto: "Falta o curso exigido",
+  };
+
+  it("devolve o pré-requisito que o aluno ainda não cumpriu", () => {
+    expect(preRequisitoPendente({ pre_requisito: falta })).toBe(falta);
+  });
+
+  it("em dia, ausente ou nulo: não há pendência", () => {
+    expect(preRequisitoPendente({ pre_requisito: { ...falta, atendido: true } })).toBeNull();
+    expect(preRequisitoPendente({ pre_requisito: null })).toBeNull();
+    expect(preRequisitoPendente({})).toBeNull();
+    expect(preRequisitoPendente(null)).toBeNull();
+    expect(preRequisitoPendente(undefined)).toBeNull();
+  });
+
+  it("só o valor `false` conta como não cumprido (resposta sem o campo não bloqueia nada na tela)", () => {
+    expect(preRequisitoPendente({ pre_requisito: { texto: "x" } })).toBeNull();
   });
 });

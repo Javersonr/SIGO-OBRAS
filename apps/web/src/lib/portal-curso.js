@@ -157,6 +157,17 @@ export function cursoDeApoio(curso) {
 }
 
 /**
+ * O pré-requisito que o aluno ainda não cumpriu (T23): `item.pre_requisito` vem do servidor em `dados` como
+ * `{ curso_id, nome, atendido, motivo, texto }` (null = o curso não exige outro). Devolve o objeto só quando
+ * `atendido === false`; em dia, ausente ou resposta de servidor sem o campo não há pendência. O `texto` já vem
+ * pronto do servidor, que é quem decide.
+ */
+export function preRequisitoPendente(item) {
+  const pre = item?.pre_requisito;
+  return pre && pre.atendido === false ? pre : null;
+}
+
+/**
  * Data (AAAA-MM-DD) de "renovar até" que a tela do aluno e a Ficha do RH mostram, ou null. Curso de apoio
  * não renova (D3: não há certificado): mesmo uma matrícula concluída ANTES da D3, que ficou com a data
  * gravada, não a mostra. O servidor já não a grava para o apoio (`datasDeConclusao`).

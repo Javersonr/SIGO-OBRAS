@@ -183,3 +183,124 @@ describe("MatricularEadSheet: por função", () => {
     expect(html).toContain("Eletricista (2)");
   });
 });
+
+describe("MatricularEadSheet: tipo do treinamento (T23)", () => {
+  it("tem o seletor do tipo, com o automático de padrão e as três opções da NR-1", () => {
+    const html = tela(formulario({ cursoId: "c1", funcionarioIds: ["f1"] }));
+    expect(html).toContain("Tipo de treinamento");
+    expect(html).toMatch(/<option value="automatico" selected/);
+    for (const rotulo of ["Automático", "Inicial", "Periódico", "Eventual"]) {
+      expect(html).toContain(rotulo);
+    }
+    expect(html).not.toContain("Motivo do treinamento eventual");
+  });
+
+  it("o seletor também aparece ao matricular por função", () => {
+    const html = tela(formulario({ modo: "funcao", funcaoId: "fn1" }));
+    expect(html).toContain("Tipo de treinamento");
+  });
+
+  it("eventual pede o motivo, com o teto de 200 caracteres, e avisa que ele sai no certificado", () => {
+    const html = tela(formulario({ cursoId: "c1", funcionarioIds: ["f1"], tipo: "eventual" }));
+    expect(html).toMatch(/<option value="eventual" selected/);
+    expect(html).toContain("Motivo do treinamento eventual");
+    expect(html).toMatch(/<input[^>]*maxLength="200"/);
+    expect(html).toContain("aparece no certificado e na consulta pública");
+  });
+
+  it("o motivo digitado volta no campo", () => {
+    const html = tela(
+      formulario({
+        cursoId: "c1",
+        funcionarioIds: ["f1"],
+        tipo: "eventual",
+        motivo: "Mudança de procedimento",
+      })
+    );
+    expect(html).toContain('value="Mudança de procedimento"');
+  });
+
+  it("tipo que o painel não conhece volta para o automático", () => {
+    const html = tela(formulario({ cursoId: "c1", funcionarioIds: ["f1"], tipo: "qualquer" }));
+    expect(html).toMatch(/<option value="automatico" selected/);
+  });
+});
+
+describe("MatricularEadSheet: pré-requisito (T23)", () => {
+  // o NR-10 SEP (c5) exige o NR-10 Basico (c1); f2 concluiu o c1 (válido até 2999), f1 nunca o fez
+  const sep = {
+    id: "c5",
+    nome: "NR-10 SEP",
+    ativo: true,
+    modelo_treinamento_id: "m5",
+    pre_requisito_curso_id: "c1",
+  };
+  const comSep = {
+    cursos: [...cursos, sep],
+    treinamentos: [...treinamentos, exigencia("e5", "m5", "NR-10 SEP")],
+  };
+  // o React escapa as aspas no HTML estático
+  const TITULO_DO_BLOQUEIO =
+    "Para &quot;NR-10 SEP&quot; é preciso ter concluído &quot;NR-10 Basico&quot;";
+  const bloqueio = (html) =>
+    html.split('aria-label="Pré-requisito não cumprido"')[1]?.split("<button")[0] ?? null;
+
+  it("curso com pré-requisito escolhido: o painel diz qual curso é exigido", () => {
+    const html = tela(formulario({ cursoId: "c5" }, comSep));
+    expect(html).toContain("Este curso exige ter concluído");
+    expect(html).toContain("NR-10 Basico");
+  });
+
+  it("curso sem pré-requisito não leva esse aviso nem a lista de bloqueados", () => {
+    const html = tela(formulario({ cursoId: "c1", funcionarioIds: ["f1"] }, comSep));
+    expect(html).not.toContain("Este curso exige ter concluído");
+    expect(bloqueio(html)).toBeNull();
+  });
+
+  it("quem não concluiu o curso exigido é listado como não matriculável; quem concluiu, não", () => {
+    const html = tela(formulario({ cursoId: "c5", funcionarioIds: ["f1", "f2"] }, comSep));
+    const lista = bloqueio(html);
+    expect(lista).not.toBeNull();
+    expect(lista).toContain(TITULO_DO_BLOQUEIO);
+    expect(lista).toContain("Funcionario f1");
+    expect(lista).toContain("ainda não fez o curso");
+    expect(lista).not.toContain("Funcionario f2");
+    // só f2 será matriculado
+    expect(html).toContain("Matricular (1)");
+  });
+
+  it("todos barrados: o botão fica desligado", () => {
+    const html = tela(formulario({ cursoId: "c5", funcionarioIds: ["f1"] }, comSep));
+    expect(bloqueio(html)).toContain("Funcionario f1");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Matricular \(0\)/);
+  });
+
+  it("pré-requisito vencido: diz que o certificado venceu", () => {
+    const vencida = [
+      {
+        id: "mt9",
+        funcionario_id: "f1",
+        curso_id: "c1",
+        status: "concluido",
+        proxima_renovacao: "2020-01-01",
+      },
+    ];
+    const html = tela(
+      formulario({ cursoId: "c5", funcionarioIds: ["f1"] }, { ...comSep, matriculas: vencida })
+    );
+    expect(bloqueio(html)).toContain("o certificado venceu");
+  });
+
+  it("por função: quem não tem o pré-requisito fica de fora da conta e aparece na lista", () => {
+    const html = tela(
+      formulario(
+        { modo: "funcao", funcaoId: "fn1", funcionarioIds: ["f1", "f2"], exigenciaIds: ["e5"] },
+        comSep
+      )
+    );
+    const lista = bloqueio(html);
+    expect(lista).toContain(TITULO_DO_BLOQUEIO);
+    expect(lista).toContain("Funcionario f1");
+    expect(lista).not.toContain("Funcionario f2");
+  });
+});

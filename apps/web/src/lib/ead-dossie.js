@@ -18,6 +18,7 @@ import { dataHoraBrasilia } from "./data-brasilia";
 import { detalharTentativa } from "./ead-tentativa";
 import { descreverDetalhe, formatarTempo, origemDoEvento, rotuloDoEvento } from "./ead-trilha";
 import { modalidadeDoCurso } from "./ead-requisitos";
+import { textoDoTipoDaMatricula } from "./ead-tipo-matricula";
 import { numerarAulas, renovacaoParaExibir } from "./portal-curso";
 import { ehBase44, extensaoDoArquivo } from "./anexo-ref";
 
@@ -217,6 +218,7 @@ const TITULOS_DAS_MATRICULAS = [
   "CPF",
   "Função",
   "Status",
+  "Tipo de treinamento",
   "Aulas concluídas",
   "Total de aulas",
   "Tempo assistido",
@@ -305,6 +307,8 @@ export function csvDasMatriculas({
       cpfFormatado(f?.cpf),
       textoOuVazio(f?.funcao_nome),
       rotuloDoStatus(m.status),
+      // inicial, periódico ou eventual com o motivo (T23, NR-1 1.7.1.2); vazio antes da migração 0142
+      textoDoTipoDaMatricula(m),
       concluidas.size,
       idsDasAulas.size,
       formatarTempo(segundos),

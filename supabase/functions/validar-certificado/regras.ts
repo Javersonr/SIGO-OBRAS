@@ -200,6 +200,38 @@ export function responsavelTecnicoPublico(
   return { nome, registro: typeof registro === "string" && registro.trim() ? registro : null };
 }
 
+// ------------------------------------------------------------------------------ tipo do treinamento
+
+/** Limites do motivo do treinamento eventual (os mesmos do CHECK da migração 0142 e de tipo-treinamento.ts). */
+const MOTIVO_EVENTUAL_MIN = 3;
+const MOTIVO_EVENTUAL_MAX = 200;
+
+/**
+ * Tipo do treinamento na consulta pública (NR-1 1.7.1.2): `dados.tipo_treinamento` (inicial, periódico ou
+ * eventual) e, só no eventual, `dados.motivo_eventual`, gravados na emissão desde a T23. Certificado emitido antes
+ * (sem a chave), valor desconhecido ou eventual sem motivo válido (3 a 200 caracteres) devolvem null e a página
+ * não mostra a linha: a consulta pública nunca afirma um tipo que o servidor não congelou. Inicial e periódico
+ * nunca levam motivo. A regra é a de `dadosDoTipoNoCertificado`, do portal-funcionario (conferida no teste); esta
+ * cópia existe porque uma função não importa o código da outra na hora de publicar.
+ */
+export function tipoDoTreinamentoPublico(dados: unknown): {
+  tipo_treinamento: "inicial" | "periodico" | "eventual";
+  motivo_eventual: string | null;
+} | null {
+  if (dados === null || typeof dados !== "object" || Array.isArray(dados)) return null;
+  const { tipo_treinamento: tipo, motivo_eventual: motivo } = dados as {
+    tipo_treinamento?: unknown;
+    motivo_eventual?: unknown;
+  };
+  if (tipo === "inicial" || tipo === "periodico") {
+    return { tipo_treinamento: tipo, motivo_eventual: null };
+  }
+  if (tipo !== "eventual") return null;
+  const texto = typeof motivo === "string" ? motivo.trim() : "";
+  if (texto.length < MOTIVO_EVENTUAL_MIN || texto.length > MOTIVO_EVENTUAL_MAX) return null;
+  return { tipo_treinamento: "eventual", motivo_eventual: texto };
+}
+
 // ------------------------------------------------------------------------------ situação
 
 /**

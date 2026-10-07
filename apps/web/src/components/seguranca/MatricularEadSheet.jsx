@@ -4,12 +4,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Info } from "lucide-react";
+import { Loader2, Info, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { normalizarTexto } from "@/lib/busca";
 import { matriculasNovas } from "@/lib/ead-gestao";
 import { hojeEmBrasilia } from "@/lib/ead-vencimentos";
 import { motivoSemCertificado } from "@/lib/ead-requisitos";
+import {
+  MOTIVO_EVENTUAL_MAX,
+  OPCOES_DE_TIPO,
+  TIPO_AUTOMATICO,
+  validarEscolhaDeTipo,
+} from "@/lib/ead-tipo-matricula";
+import {
+  cursoExigidoDe,
+  resumoDosBloqueios,
+  separarPorPreRequisito,
+} from "@/lib/ead-pre-requisito";
 import {
   funcoesDosFuncionarios,
   idsQueFaltam,
@@ -28,10 +39,17 @@ import {
  *
  * Curso de apoio (D3) aceita matrícula, mas NÃO emite certificado: o painel avisa antes de matricular.
  * A conta das matrículas é de `lib/ead-matricula-funcao.js` (testada); aqui só se desenha. Quem grava é
- * `onConfirmar({ novas, ignorados })`, que devolve `true` se gravou (o painel então fecha).
+ * `onConfirmar({ novas, ignorados, bloqueados })`, que devolve `true` se gravou (o painel então fecha).
  *
- * `inicial` = como o painel abre: `{ modo, cursoId, funcionarioIds, funcaoId, chave }`; cada `chave` nova
- * monta o formulário do zero (o estado nasce já com a função e as pessoas marcadas). `cursoMatriculavel(curso)` devolve null (aceita) ou o motivo de não aceitar.
+ * Tipo do treinamento (T23, NR-1 1.7.1.2): o RH escolhe inicial, periódico, eventual (com o motivo) ou o
+ * automático (periódico para quem já concluiu o curso, inicial para os outros); vale para todas as matrículas
+ * do painel (regra em `lib/ead-tipo-matricula.js`). Pré-requisito (T23): curso que exige outro só matricula
+ * quem o concluiu e está dentro da validade; o painel lista quem não pode e grava só o resto (regra em
+ * `lib/ead-pre-requisito.js`).
+ *
+ * `inicial` = como o painel abre: `{ modo, cursoId, funcionarioIds, funcaoId, tipo, motivo, chave }`; cada
+ * `chave` nova monta o formulário do zero (o estado nasce já com a função e as pessoas marcadas).
+ * `cursoMatriculavel(curso)` devolve null (aceita) ou o motivo de não aceitar.
  */
 const FORM_VAZIO = {
   modo: "funcionario",
@@ -40,16 +58,25 @@ const FORM_VAZIO = {
   funcaoId: "",
   exigenciaIds: [],
   busca: "",
+  tipo: TIPO_AUTOMATICO,
+  motivo: "",
 };
 
 // O que o formulário traz marcado ao abrir (por exemplo, a função e a pessoa da sugestão de admissão).
 function formularioInicial({ inicial, ...dadosDoPlano }) {
   const modo = inicial?.modo === "funcao" ? "funcao" : "funcionario";
+  // o tipo que o painel não conhece volta para o automático
+  const tipo = OPCOES_DE_TIPO.some((o) => o.valor === inicial?.tipo)
+    ? inicial.tipo
+    : TIPO_AUTOMATICO;
+  const motivo = typeof inicial?.motivo === "string" ? inicial.motivo : "";
   if (modo === "funcao" && inicial?.funcaoId) {
     const plano = planoDaFuncao({ funcaoId: inicial.funcaoId, ...dadosDoPlano });
     return {
       ...FORM_VAZIO,
       modo,
+      tipo,
+      motivo,
       funcaoId: inicial.funcaoId,
       ...selecaoDaFuncao(plano, inicial.funcionarioIds || null),
     };
@@ -57,6 +84,8 @@ function formularioInicial({ inicial, ...dadosDoPlano }) {
   return {
     ...FORM_VAZIO,
     modo,
+    tipo,
+    motivo,
     cursoId: inicial?.cursoId || "",
     funcionarioIds: modo === "funcionario" ? inicial?.funcionarioIds || [] : [],
   };
@@ -158,35 +187,78 @@ export function FormularioDeMatricula({
             funcionarioIds: form.funcionarioIds,
             matriculas,
             empresaId,
+            tipo: form.tipo,
+            motivo: form.motivo,
           })
         : { novas: [], ignorados: 0 },
-    [plano, form.exigenciaIds, form.funcionarioIds, matriculas, empresaId]
+    [plano, form.exigenciaIds, form.funcionarioIds, form.tipo, form.motivo, matriculas, empresaId]
   );
   const faltamNaSelecao = useMemo(
     () => (plano ? new Set(idsQueFaltam(plano, form.exigenciaIds)) : new Set()),
     [plano, form.exigenciaIds]
   );
 
+  // por funcionário: o que seria criado com a seleção de agora
+  const previaPorFuncionario = useMemo(
+    () =>
+      form.modo === "funcionario" && form.cursoId
+        ? matriculasNovas({
+            matriculas,
+            cursoId: form.cursoId,
+            funcionarioIds: form.funcionarioIds,
+            empresaId,
+            tipo: form.tipo,
+            motivo: form.motivo,
+          })
+        : { novas: [], ignorados: 0 },
+    [form.modo, form.cursoId, form.funcionarioIds, form.tipo, form.motivo, matriculas, empresaId]
+  );
+  const previaAtual = form.modo === "funcao" ? previa : previaPorFuncionario;
+  // pré-requisito (T23): quem não concluiu o curso exigido, dentro da validade, não é matriculado
+  const { liberadas, bloqueadas } = useMemo(
+    () =>
+      separarPorPreRequisito({ novas: previaAtual.novas, cursos, matriculas, certificados, hoje }),
+    [previaAtual, cursos, matriculas, certificados, hoje]
+  );
+  const nomePorId = useMemo(
+    () => new Map(funcionarios.map((f) => [f.id, f.nome_completo])),
+    [funcionarios]
+  );
+  const gruposBloqueados = useMemo(
+    () => resumoDosBloqueios(bloqueadas, (id) => nomePorId.get(id)),
+    [bloqueadas, nomePorId]
+  );
+  const exigidoDoCurso = cursoEscolhido ? cursoExigidoDe(cursoEscolhido, cursos) : null;
+  const todosBarrados = bloqueadas.length > 0 && liberadas.length === 0;
+
   const confirmar = async () => {
-    let resultado;
-    if (form.modo === "funcao") {
-      resultado = previa;
-    } else {
-      if (!form.cursoId || form.funcionarioIds.length === 0) {
-        toast.error("Escolha o curso e ao menos um funcionário");
-        return;
-      }
-      resultado = matriculasNovas({
-        matriculas,
-        cursoId: form.cursoId,
-        funcionarioIds: form.funcionarioIds,
-        empresaId,
-      });
+    if (form.modo === "funcionario" && (!form.cursoId || form.funcionarioIds.length === 0)) {
+      toast.error("Escolha o curso e ao menos um funcionário");
+      return;
     }
-    await onConfirmar(resultado);
+    // o tipo e, no eventual, o motivo (a prévia já os usou, mas só aqui se confere o que foi digitado)
+    const escolha = validarEscolhaDeTipo({ tipo: form.tipo, motivo: form.motivo });
+    if (!escolha.ok) {
+      toast.error(escolha.erro);
+      return;
+    }
+    if (todosBarrados) {
+      toast.error("Ninguém da seleção tem o pré-requisito do curso: veja a lista no painel");
+      return;
+    }
+    await onConfirmar({
+      novas: liberadas,
+      ignorados: previaAtual.ignorados,
+      bloqueados: bloqueadas.length,
+    });
   };
 
-  const quantas = form.modo === "funcao" ? previa.novas.length : form.funcionarioIds.length;
+  // quantas matrículas o botão cria: por função, as que o pré-requisito libera; por funcionário, quem foi
+  // escolhido menos quem o pré-requisito barra
+  const quantas =
+    form.modo === "funcao"
+      ? liberadas.length
+      : Math.max(0, form.funcionarioIds.length - bloqueadas.length);
 
   return (
     <SheetContent
@@ -251,6 +323,18 @@ export function FormularioDeMatricula({
                 >
                   <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   {avisoDoCurso}
+                </p>
+              )}
+              {exigidoDoCurso && (
+                <p
+                  role="note"
+                  className="mt-2 flex items-start gap-1.5 rounded-md border border-sky-200 bg-sky-50 p-2 text-xs text-sky-900"
+                >
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  Este curso exige ter concluído{" "}
+                  {exigidoDoCurso.curso ? `"${exigidoDoCurso.curso.nome}"` : "o curso exigido"},
+                  dentro da validade, antes da matrícula. Quem não tiver fica de fora e aparece na
+                  lista abaixo.
                 </p>
               )}
             </div>
@@ -434,17 +518,86 @@ export function FormularioDeMatricula({
           </>
         )}
 
+        {/* tipo do treinamento (T23): vale para todas as matrículas deste painel */}
+        <div>
+          <Label className="text-xs" htmlFor="mat-tipo">
+            Tipo de treinamento
+          </Label>
+          <select
+            id="mat-tipo"
+            className="mt-0.5 w-full h-9 rounded-md border border-slate-200 px-2 text-sm"
+            value={form.tipo}
+            onChange={(e) => setForm((f) => ({ ...f, tipo: e.target.value }))}
+          >
+            {OPCOES_DE_TIPO.map((o) => (
+              <option key={o.valor} value={o.valor}>
+                {o.rotulo}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-500">
+            {OPCOES_DE_TIPO.find((o) => o.valor === form.tipo)?.explicacao}
+          </p>
+          {form.tipo === "eventual" && (
+            <div className="mt-2">
+              <Label className="text-xs" htmlFor="mat-motivo">
+                Motivo do treinamento eventual
+              </Label>
+              <Input
+                id="mat-motivo"
+                value={form.motivo}
+                maxLength={MOTIVO_EVENTUAL_MAX}
+                onChange={(e) => setForm((f) => ({ ...f, motivo: e.target.value }))}
+                placeholder="Ex.: mudança de procedimento"
+                className="mt-0.5 h-9"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                O motivo aparece no certificado e na consulta pública: não escreva nome de pessoa
+                nem dado sigiloso. Até {MOTIVO_EVENTUAL_MAX} caracteres.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* pré-requisito (T23): quem não concluiu o curso exigido não é matriculado */}
+        {gruposBloqueados.length > 0 && (
+          <div
+            role="alert"
+            aria-label="Pré-requisito não cumprido"
+            className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
+          >
+            <p className="flex items-center gap-1.5 font-medium">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              {bloqueadas.length === 1
+                ? "1 pessoa não será matriculada por falta de pré-requisito"
+                : `${bloqueadas.length} pessoas não serão matriculadas por falta de pré-requisito`}
+            </p>
+            {gruposBloqueados.map((g) => (
+              <div key={g.titulo} className="mt-2">
+                <p>{g.titulo}:</p>
+                <ul className="mt-0.5 list-disc pl-5">
+                  {g.pessoas.map((p) => (
+                    <li key={p.funcionarioId}>
+                      {p.nome}: {p.motivo}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+
         {form.modo === "funcao" && plano && (
           <p className="text-xs text-slate-600" aria-live="polite">
-            {previa.novas.length === 0
+            {liberadas.length === 0
               ? "Nada a matricular com esta seleção."
-              : `${previa.novas.length} matrícula(s) serão criadas, só nos treinamentos que faltam a cada pessoa.`}
+              : `${liberadas.length} matrícula(s) serão criadas, só nos treinamentos que faltam a cada pessoa.`}
           </p>
         )}
 
         <Button
           onClick={confirmar}
-          disabled={gravando || (form.modo === "funcao" && quantas === 0)}
+          disabled={gravando || todosBarrados || (form.modo === "funcao" && quantas === 0)}
           className="w-full bg-slate-900 hover:bg-slate-800"
         >
           {gravando && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}

@@ -90,8 +90,22 @@ describe("matriculasNovas", () => {
   it("monta as matrículas pendentes, todas com o mesmo conjunto de chaves", () => {
     const r = matriculasNovas({ ...base, matriculas: [], funcionarioIds: ["f1", "f2"] });
     expect(r.novas).toEqual([
-      { empresa_id: "emp", curso_id: "c1", funcionario_id: "f1", status: "pendente" },
-      { empresa_id: "emp", curso_id: "c1", funcionario_id: "f2", status: "pendente" },
+      {
+        empresa_id: "emp",
+        curso_id: "c1",
+        funcionario_id: "f1",
+        status: "pendente",
+        tipo: "inicial",
+        motivo_eventual: null,
+      },
+      {
+        empresa_id: "emp",
+        curso_id: "c1",
+        funcionario_id: "f2",
+        status: "pendente",
+        tipo: "inicial",
+        motivo_eventual: null,
+      },
     ]);
     expect(r.ignorados).toBe(0);
     expect(new Set(r.novas.map((n) => Object.keys(n).join())).size).toBe(1);
@@ -130,6 +144,75 @@ describe("matriculasNovas", () => {
     expect(matriculasNovas({ ...base, matriculas: null, funcionarioIds: null })).toEqual({
       novas: [],
       ignorados: 0,
+    });
+  });
+
+  describe("tipo do treinamento (T23)", () => {
+    const concluida = { curso_id: "c1", funcionario_id: "f1", status: "concluido" };
+
+    it("sem escolha vale o automático: periódico para quem já concluiu o curso, inicial para os outros", () => {
+      const r = matriculasNovas({
+        ...base,
+        matriculas: [concluida],
+        funcionarioIds: ["f1", "f2"],
+      });
+      expect(r.novas.map((n) => [n.funcionario_id, n.tipo, n.motivo_eventual])).toEqual([
+        ["f1", "periodico", null],
+        ["f2", "inicial", null],
+      ]);
+    });
+
+    it("a escolha do RH vale para todos, e só o eventual leva o motivo", () => {
+      const comTipo = (tipo, motivo) =>
+        matriculasNovas({
+          ...base,
+          matriculas: [concluida],
+          funcionarioIds: ["f1", "f2"],
+          tipo,
+          motivo,
+        }).novas.map((n) => [n.tipo, n.motivo_eventual]);
+      expect(comTipo("inicial", "sobrou")).toEqual([
+        ["inicial", null],
+        ["inicial", null],
+      ]);
+      expect(comTipo("periodico", null)).toEqual([
+        ["periodico", null],
+        ["periodico", null],
+      ]);
+      expect(comTipo("eventual", "Mudança de procedimento")).toEqual([
+        ["eventual", "Mudança de procedimento"],
+        ["eventual", "Mudança de procedimento"],
+      ]);
+    });
+
+    it("todas as linhas levam as mesmas chaves, também no eventual (o bulkCreate exige)", () => {
+      const r = matriculasNovas({
+        ...base,
+        matriculas: [],
+        funcionarioIds: ["f1", "f2"],
+        tipo: "eventual",
+        motivo: "Retorno de afastamento",
+      });
+      expect(new Set(r.novas.map((n) => Object.keys(n).sort().join())).size).toBe(1);
+      expect(Object.keys(r.novas[0]).sort()).toEqual([
+        "curso_id",
+        "empresa_id",
+        "funcionario_id",
+        "motivo_eventual",
+        "status",
+        "tipo",
+      ]);
+    });
+
+    it("quem já tem matrícula aberta continua ignorado, qualquer que seja o tipo", () => {
+      const r = matriculasNovas({
+        ...base,
+        matriculas: [{ curso_id: "c1", funcionario_id: "f1", status: "pendente" }],
+        funcionarioIds: ["f1"],
+        tipo: "eventual",
+        motivo: "Ocorrência",
+      });
+      expect(r).toEqual({ novas: [], ignorados: 1 });
     });
   });
 });

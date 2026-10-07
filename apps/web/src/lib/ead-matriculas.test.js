@@ -943,3 +943,42 @@ describe("csvDasLinhas", () => {
     expect(csv).not.toMatch(/null|undefined|NaN/);
   });
 });
+
+describe("tipo do treinamento na tabela e no CSV (T23)", () => {
+  const linhasComTipo = () =>
+    montar({
+      matriculas: [
+        mat("m1", "f1", "c1", { tipo: "inicial", motivo_eventual: null }),
+        mat("m2", "f2", "c1", { tipo: "periodico", motivo_eventual: null }),
+        mat("m3", "f3", "c1", { tipo: "eventual", motivo_eventual: "Mudança de procedimento" }),
+        // matrícula lida antes da migração 0142 (sem a coluna)
+        mat("m4", "f4", "c1"),
+      ],
+      cursos: [curso("c1")],
+      funcionarios: [func("f1"), func("f2"), func("f3"), func("f4")],
+    });
+  const porId = (linhas, id) => linhas.find((l) => l.id === id);
+
+  it("cada linha traz o texto do tipo (o motivo no eventual); sem a coluna, em branco", () => {
+    const linhas = linhasComTipo();
+    expect(porId(linhas, "m1").tipoTexto).toBe("Inicial");
+    expect(porId(linhas, "m2").tipoTexto).toBe("Periódico");
+    expect(porId(linhas, "m3").tipoTexto).toBe("Eventual: Mudança de procedimento");
+    expect(porId(linhas, "m4").tipoTexto).toBe("");
+  });
+
+  it("o CSV tem a coluna 'Tipo de treinamento' logo depois da modalidade", () => {
+    const titulos = COLUNAS_DO_CSV.map((c) => c.titulo);
+    expect(titulos.indexOf("Tipo de treinamento")).toBe(titulos.indexOf("Modalidade") + 1);
+    const [, ...corpo] = csvDasLinhas(
+      ordenarLinhas(linhasComTipo(), { campo: "funcionario", direcao: "asc" })
+    ).split("\r\n");
+    const coluna = titulos.indexOf("Tipo de treinamento");
+    expect(corpo.map((l) => l.split(";")[coluna])).toEqual([
+      "Inicial",
+      "Periódico",
+      "Eventual: Mudança de procedimento",
+      "",
+    ]);
+  });
+});
