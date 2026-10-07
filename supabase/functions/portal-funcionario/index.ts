@@ -13,7 +13,8 @@
  *   dados                                       evento { evento, matricula_id?, aula_id?, detalhe? }
  *   progresso { matricula_id, aula_id, segundos_assistidos }  (a duração vem do cadastro da aula)
  *   iniciar_avaliacao { matricula_id }          → sorteia a prova NO SERVIDOR (sem gabarito)
- *   avaliacao { matricula_id, respostas:[{questao_id,resposta}] }  (exige iniciar_avaliacao antes)
+ *   avaliacao { matricula_id, respostas:[{questao_id,resposta}] }  (exige iniciar_avaliacao antes; quem
+ *     reprova na ÚLTIMA tentativa avisa o RH no sino via `notificar_gestores`, T24: ver avisos.ts)
  *   certificado { matricula_id, senha }          ciencia { ciencia_id }
  *   duvida { matricula_id, aula_id?, pergunta }
  *
@@ -75,6 +76,7 @@ import { enviarWhatsAppTexto, normalizarTelefoneBR } from "../_shared/whatsapp-e
 import { assinarDaEmpresa, refDaEmpresa } from "../_shared/storage-assinar.ts";
 import { carregarDocumentos, funcionarioPodeEntrar } from "./documentos.ts";
 import { confirmarCiencia, listarCienciasDoAluno } from "./ciencia.ts";
+import { avisarGestores, avisoDeTentativasEsgotadas, esgotouAsTentativas } from "./avisos.ts";
 import {
   certificadoParaOAluno,
   dadosParaOAluno,
@@ -1306,6 +1308,41 @@ Deno.serve(
         curso_id: mat.curso_id,
         detalhe: { tentativa: numero, nota, aprovada },
       });
+
+      // Aviso ao RH (T24): reprovou na última tentativa que tinha. O nome do aluno e do curso saem do
+      // banco pela sessão (empresa e funcionário do token), nunca do corpo; qualquer falha aqui só vai
+      // para o log e não muda a resposta da prova.
+      if (esgotouAsTentativas({ aprovada, numero, max })) {
+        try {
+          const [{ data: cursoAviso }, { data: funcionarioAviso }] = await Promise.all([
+            supabase
+              .from("treinamento_curso")
+              .select("nome")
+              .eq("id", mat.curso_id)
+              .eq("empresa_id", empresaId)
+              .maybeSingle(),
+            supabase
+              .from("funcionario")
+              .select("nome_completo")
+              .eq("id", funcionarioId)
+              .eq("empresa_id", empresaId)
+              .maybeSingle(),
+          ]);
+          await avisarGestores(
+            supabase,
+            empresaId,
+            avisoDeTentativasEsgotadas({
+              matriculaId: mat.id,
+              numero,
+              max,
+              funcionarioNome: funcionarioAviso?.nome_completo,
+              cursoNome: cursoAviso?.nome,
+            })
+          );
+        } catch (e) {
+          console.error("[portal-funcionario] aviso ao RH:", (e as Error)?.message);
+        }
+      }
 
       let concluiu = false;
       if (aprovada) {

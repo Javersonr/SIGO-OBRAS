@@ -93,6 +93,39 @@ certificados já emitidos, e por isso **o arquivo antigo nunca deve ser apagado 
 imagens sobre as linhas de assinatura; a consulta pública não mostra a imagem nem o caminho. Sem imagem (ou se ela não
 carregar) o certificado sai só com nome e registro, e a tela avisa que o PDF saiu sem a imagem.
 
+### Vencimentos e alertas (T24)
+
+No topo da aba **RH & Segurança → Treinamentos** há o painel **Vencimentos**, com duas partes.
+
+**Vencimentos.** Lista os treinamentos concluídos no portal que já venceram ou vencem em até 90 dias, em faixas de
+30, 60 e 90 dias (clique num número para filtrar), e marca os que estão **sem nova matrícula**: sem outra matrícula
+aberta do mesmo funcionário no mesmo curso. O botão **Matricular** abre o painel de matrícula já com o curso e o
+funcionário. Não entram: curso de apoio (não renova), curso sem validade, certificado revogado, matrícula removida e
+funcionário inativo. Por funcionário e curso vale só a conclusão mais recente. "Vence hoje" ainda é "a vencer". Uma
+reciclagem feita em **outro curso** (por exemplo, a "NR-10 Reciclagem" de quem fez o "NR-10 Básico") não é reconhecida
+como renovação, porque o cadastro não liga os dois cursos: use o botão para matricular no mesmo curso ou ignore o item.
+
+**Atividade sem treinamento (NR-1, item 1.7.1.2.1).** Lista o funcionário **ativo** que não tem matrícula válida em
+algum curso EAD que a função dele exige. O caminho é função → exigência da função (Configurações → Funções →
+Treinamentos) → treinamento do cadastro central (migração `0131`) → curso EAD publicado, de modalidade EAD. Matrícula
+válida é a em andamento ou pendente, ou a concluída dentro da validade com certificado não revogado. O motivo aparece
+em cada linha: sem matrícula, vencido sem nova matrícula ou certificado revogado sem nova matrícula. Exigência marcada
+como opcional, exigência sem vínculo com o cadastro central e exigência cujo treinamento não tem curso EAD publicado
+**não entram**: o EAD não tem como julgar, e o treinamento presencial lançado na Ficha não é considerado.
+
+**Avisos no sino.** O banco manda **um resumo por empresa por dia** (08h12 de Brasília) aos donos, Admin Holding, Admin
+e Gestor, com os vencidos e os que vencem em até 30 dias **sem nova matrícula** (função `alertar_treinamentos_ead`, só
+lê o EAD; o aviso antigo `alertar_treinamentos()`, dos treinamentos lançados à mão, continua como está). Rodar de novo
+no mesmo dia não duplica o aviso. Quando o aluno **reprova na última tentativa** que tinha (as do curso mais as extras
+que o RH liberou), o servidor também avisa o sino na hora, uma vez por tentativa esgotada; a mensagem diz quem, qual
+curso e onde liberar mais uma tentativa (Detalhes da matrícula, **Liberar tentativa**), sem nota nem gabarito.
+
+**Validade da NR-1 e da NR-6 (decisão D12: 24 meses).** Curso sem validade não vence, então enquanto a validade dos
+cursos NR-1 e NR-6 estiver vazia eles não aparecem no painel nem no aviso. A gravação dos 24 meses não está na migração:
+fica no script `tools/ead-validade-nr1-nr6.sql`, com uma prévia (só leitura) e a gravação comentada. Rode a prévia,
+mostre ao Javerson e só então descomente a gravação. Atenção: nos cursos ligados ao cadastro central a validade tem de
+ser gravada no **treinamento central**, que vale também para as exigências das funções que o usam.
+
 O projeto completo de conformidade EAD continua documentado em `HANDOFF-PORTAL-TREINAMENTO.md`. Esta entrega acrescenta
 as áreas de documentos e as proteções necessárias ao fluxo solicitado; não declara concluídas todas as 38 tarefas
 daquele documento. Permanecem, por exemplo, os desenhos e migrações de ciência protegida no banco,
@@ -117,6 +150,12 @@ A T29 (assinaturas) acrescenta a migração **`0137`** (colunas `instrutor_assin
 gravar essas colunas. Depois publique **portal-funcionario** (`--no-verify-jwt`) e **validar-certificado** (SEM
 `--no-verify-jwt`: a consulta pública passa a devolver só nome e registro do responsável técnico, sem o caminho da
 imagem) e, por último, o front.
+
+A T24 (vencimentos e alertas) acrescenta a migração **`0138`** (a função `alertar_treinamentos_ead` e o agendamento
+diário; sem alteração de dado) e muda o **portal-funcionario** (aviso ao RH quando o aluno esgota as tentativas, com
+`--no-verify-jwt`). Ordem: migração, depois a função, depois o front (o painel só lê dados que já existem). Depois de
+aplicar a migração, rode a função à mão uma vez e confira o sino:
+`supabase db query --linked "select public.alertar_treinamentos_ead() as empresas_avisadas;"`.
 
 O teste completo de matrícula real, tempo de estudo, avaliação e certificado deve seguir o roteiro da seção 7 do
 handoff, com o Javerson e após as decisões e tarefas correspondentes.

@@ -63,6 +63,7 @@ import AulaLinhaEad from "@/components/seguranca/AulaLinhaEad";
 import AssinaturaCursoCampo from "@/components/seguranca/AssinaturaCursoCampo";
 import EnvioProgressoEad from "@/components/seguranca/EnvioProgressoEad";
 import PreviaAlunoCurso from "@/components/seguranca/PreviaAlunoCurso";
+import VencimentosEadPainel from "@/components/seguranca/VencimentosEadPainel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -1243,8 +1244,30 @@ export default function TreinamentosEadTab({ empresaAtiva, user }) {
     (f) => !buscaFunc || normalizarTexto(f.nome_completo).includes(normalizarTexto(buscaFunc))
   );
 
+  // Painel "Vencimentos" (T24): o botão Matricular abre o painel de matrícula já com o curso e o funcionário.
+  // Só cursos que o painel de matrícula aceitaria (publicados e sem requisito pendente) têm o botão.
+  const cursoAceitaMatricula = (cursoId) => {
+    const curso = cursos.find((c) => c.id === cursoId);
+    return !!curso && curso.ativo !== false && pendenciasCurso(curso).length === 0;
+  };
+  const matricularDoPainel = (cursoId, funcionarioId) => {
+    setMatForm({ curso_id: cursoId, funcionario_ids: [funcionarioId] });
+    setBuscaFunc("");
+    setShowMatricular(true);
+  };
+
   return (
     <div className="space-y-6">
+      <VencimentosEadPainel
+        cursos={cursos}
+        matriculas={matriculas}
+        certificados={certificados}
+        funcionarios={funcionarios}
+        treinamentos={treinamentosConfig}
+        podeMatricular={cursoAceitaMatricula}
+        onMatricular={matricularDoPainel}
+      />
+
       {/* Cursos */}
       <Card>
         <CardHeader className="pb-2 flex flex-row items-center justify-between">
