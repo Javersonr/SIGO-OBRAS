@@ -78,7 +78,9 @@
 --   4. supabase db query --linked -f supabase/migrations/0147_permissoes_ead.sql
 --   5. supabase db query --linked -f tools/smoke-permissoes-ead.sql   (begin ... rollback) LOGO DEPOIS do passo 4 e
 --      antes de liberar o uso: ele roda como cada usuário e pega o que a migração quebraria (por exemplo, o cadastro de
---      funcionário). Se falhar, desfazer na hora pelo bloco "PARA DESFAZER" abaixo
+--      funcionário). Se FALHAR, desfazer na hora com supabase db query --linked -f tools/desfazer-permissoes-ead.sql
+--      (bloco "PARA DESFAZER" abaixo). Erro de ambiente do smoke ("Nenhum funcionário ativo para testar", funcionário
+--      de teste com documentos_rh_anexos ilegível) não é falha da migração: não manda desfazer
 --   6. push da tela e o roteiro manual do spec (§9)
 -- Entre 3 e 6 a tela antiga segue funcionando para Admin e dono; o cartão antigo de documentos recebe o erro claro
 -- do item 6 (não perde o PDF em silêncio) até o push. Depois de aplicar, os smokes antigos do EAD (trilha, prática,
@@ -87,19 +89,15 @@
 -- Idempotente: create or replace nas funções, drop if exists antes de cada trigger e policy, revoke/grant repetíveis.
 -- Sem UPDATE, INSERT ou DELETE de dado real.
 --
--- PARA DESFAZER (numa transação; volta ao comportamento de antes, sem mexer em dado):
---   begin;
---   drop trigger if exists zz_permissao_ead on public.treinamento_curso;            -- e nas outras 7 tabelas do item 2
---   drop trigger if exists zz_documentos_portal on public.funcionario;
---   drop policy if exists ead_leitura_com_permissao on public.treinamento_questao;  -- e em tentativa e evento
---   drop policy if exists treinamentos_insert_com_permissao on storage.objects;    -- e _update_ e _delete_
---   drop function if exists public.portal_documento_publicar(uuid, text, text, text, text);
---   drop function if exists public.portal_documento_retirar(uuid, text);
---   -- matricula_andamento_so_servidor: recriar como na 0130 (livres = tentativas_extras, deleted_at, updated_at)
---   -- certificado_so_revogacao: recriar como na 0119; recriar a policy tenant_revogar como na 0103 e
---   grant update on public.treinamento_certificado to authenticated;
---   commit;
---   (tem_permissao e as funções auxiliares podem ficar: sem trigger nem policy, ninguém as usa.)
+-- PARA DESFAZER (volta ao comportamento de antes, sem mexer em dado): o bloco completo, pronto para rodar, é o arquivo
+-- tools/desfazer-permissoes-ead.sql (uma transação só, repetível):
+--   supabase db query --linked -f tools/desfazer-permissoes-ead.sql
+-- Ele derruba os 8 triggers zz_permissao_ead e o zz_documentos_portal, as 3 policies de leitura e as 3 do Storage e as
+-- 9 funções novas, devolve matricula_andamento_so_servidor ao texto da 0130 e certificado_so_revogacao ao da 0119,
+-- recria a policy tenant_revogar (0103) e dá UPDATE no certificado a authenticated de volta. Rode antes do push da tela
+-- (passo 6): as RPC dos documentos saem junto. O arquivo fica fora deste cabeçalho para ser rodado como está, sem
+-- copiar comentário; o teste migracao-0147-desfazer.test.ts mantém os dois alinhados (um objeto novo aqui sem o
+-- drop lá acusa).
 
 begin;
 set local lock_timeout = '10s';

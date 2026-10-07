@@ -62,7 +62,8 @@
 --
 -- Como rodar (precisa da migração 0147 já aplicada; rode LOGO DEPOIS de aplicar
 -- a 0147 e antes de liberar o uso, porque termina em ROLLBACK e pega o que a
--- migração quebraria. Se falhar, desfaça pelo bloco "PARA DESFAZER" da 0147):
+-- migração quebraria. Se FALHAR, desfaça com tools/desfazer-permissoes-ead.sql; os erros de ambiente
+-- ("Nenhum funcionário ativo para testar", funcionário de teste ilegível) não mandam desfazer):
 --   supabase db query --linked -f tools/smoke-permissoes-ead.sql
 --   -- ou: psql "$DATABASE_URL" -f tools/smoke-permissoes-ead.sql
 -- Deve terminar imprimindo "SMOKE TEST OK" (e a linha da tabela de resultado).

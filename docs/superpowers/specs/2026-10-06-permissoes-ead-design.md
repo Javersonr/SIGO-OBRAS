@@ -446,6 +446,13 @@ O que mudou em relação ao texto acima, por ter vindo depois dele na branch:
   `anexos_do_portal` como `authenticated`; as duas ganharam `grant execute ... to authenticated` (funções puras),
   senão todo INSERT de funcionário e todo UPDATE com `documentos_rh_anexos` pela API falharia. O smoke passa a rodar
   logo depois da migração (passo 4), antes do push da tela e de liberar o uso, e cobre o INSERT e o UPDATE comuns.
+- **Revisão 2 (07/10):** o bloco "para desfazer" pedido na §9 virou o arquivo `tools/desfazer-permissoes-ead.sql`, pronto
+  para rodar (o cabeçalho da `0147` aponta para ele): o bloco abreviado do cabeçalho derrubava só 1 dos 8 triggers
+  `zz_permissao_ead`, 1 das 3 policies de leitura e 1 das 3 do Storage, e não trazia as funções da `0119` e da `0130`.
+  O arquivo derruba tudo o que a `0147` criou (inclusive as RPC dos documentos, então rode antes do push da tela),
+  devolve `matricula_andamento_so_servidor` e `certificado_so_revogacao` ao texto de antes, recria `tenant_revogar` e o
+  UPDATE do certificado. O teste `migracao-0147-desfazer.test.ts` compara o arquivo com a migração e com as migrações
+  que definiram o texto de antes (`0103`, `0119`, `0130`).
 - Arquivos: `supabase/migrations/0147_permissoes_ead.sql`, `tools/conferir-permissoes-ead.sql` (só leitura),
-  `tools/smoke-permissoes-ead.sql`, `supabase/functions/funcionario-acesso/{regras,index,duvida}.ts`,
+  `tools/smoke-permissoes-ead.sql`, `tools/desfazer-permissoes-ead.sql`, `supabase/functions/funcionario-acesso/{regras,index,duvida}.ts`,
   `apps/web/src/lib/ead-permissoes.js` e as telas da §8.
