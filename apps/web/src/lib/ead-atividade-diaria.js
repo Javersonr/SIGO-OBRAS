@@ -10,9 +10,13 @@
  * revogar certificado) e a senha errada no login (pode ser de outra pessoa).
  *
  * Junto da janela vai a situação da declaração de ambiente e horário (`declaracao_ambiente`, gravada pelo servidor
- * na 1ª abertura de cada curso no dia): "estudou" é ter evento ligado a uma matrícula no dia, e o curso que teve
- * estudo mas nenhuma declaração no dia é contado em `semDeclaracao`. Quem passa da meia-noite com o curso aberto
- * aparece com o dia seguinte sem declaração (a declaração é na abertura do curso): é o que a regra diz.
+ * na 1ª abertura de cada curso no dia): "estudou" é ter, no dia, um evento de ESTUDO (`EVENTOS_DE_ESTUDO`: aula,
+ * apostila, prova, conclusão) ligado a uma matrícula, e o curso que teve estudo mas nenhuma declaração no dia é
+ * contado em `semDeclaracao`. Assinar o certificado e mandar dúvida também ficam ligados a uma matrícula, mas não
+ * são estudo e o portal não pede a declaração para eles (curso concluído só abre para o certificado): no
+ * semipresencial o certificado sai depois da prática, sempre num dia diferente do da conclusão, e não pode virar
+ * "estudou sem declarar". Quem passa da meia-noite com o curso aberto aparece com o dia seguinte sem declaração (a
+ * declaração é na abertura do curso): é o que a regra diz.
  */
 import { normalizarTexto } from "./busca";
 import { celulaDoCsv } from "./ead-matriculas";
@@ -34,6 +38,28 @@ export const EVENTOS_DO_RH = [
 
 /** Fora da janela: as ações do RH e a senha errada no login (pode ser de outra pessoa, não é o aluno). */
 export const EVENTOS_FORA_DA_JANELA = [...EVENTOS_DO_RH, "login_falha"];
+
+/**
+ * Eventos de servidor que são ESTUDAR um curso (cada um ligado a uma matrícula): o progresso que o servidor creditou
+ * ou ajustou, a apostila lida, a aula e o curso concluídos, e a prova aberta ou enviada. Só estes fazem o dia contar
+ * como "estudou" e exigir a declaração. Ficam de fora, de propósito: `declaracao_ambiente` (é a própria declaração),
+ * `certificado_assinado`/`certificado_revogado` e `duvida_enviada` (acontecem depois da conclusão, em outro dia, e o
+ * portal não pede a declaração em curso concluído). A lista é fechada: um evento novo do portal só vira estudo se
+ * entrar aqui, e `ead-atividade-diaria.test.js` lê o `portal-funcionario` e acusa o evento que ninguém classificou.
+ */
+export const EVENTOS_DE_ESTUDO = [
+  "progresso_ajustado",
+  "apostila_lida",
+  "aula_concluida",
+  "curso_concluido",
+  "avaliacao_iniciada",
+  "avaliacao_envio",
+];
+
+/** O evento é de estudo? (Só o nome importa; a origem e o aluno são conferidos em `ehAtividadeDoAluno`.) */
+export function ehEventoDeEstudo(evento) {
+  return typeof evento?.evento === "string" && EVENTOS_DE_ESTUDO.includes(evento.evento);
+}
 
 /** O evento conta como atividade do aluno? (Evento de servidor e que não é do RH nem senha errada.) */
 export function ehAtividadeDoAluno(evento) {
@@ -97,7 +123,8 @@ export function desdeDaConsulta(diaInicial) {
  * - `primeiroEm`/`ultimoEm`: o primeiro e o último evento de servidor do aluno no dia (instantes ISO como vieram);
  * - `minutos`: do primeiro ao último, arredondado;
  * - `eventos`: quantos eventos de servidor do aluno há no dia;
- * - `estudou`: houve evento ligado a uma matrícula (aula, prova, dúvida, certificado, declaração...);
+ * - `estudou`: houve evento de estudo ligado a uma matrícula (`EVENTOS_DE_ESTUDO`: aula, apostila, prova,
+ *   conclusão); declaração, dúvida e certificado não contam;
  * - `declaracoes`: as declarações do dia, `{ matriculaId, versao, textoPadrao, em }`;
  * - `semDeclaracao`: quantos cursos tiveram estudo no dia sem nenhuma declaração dele.
  * `desde` ("AAAA-MM-DD"): não traz dia anterior a ele. Evento sem aluno ou com data ilegível é ignorado. A ordem de
@@ -129,7 +156,9 @@ export function janelasPorAlunoEDia(eventos, { desde = null } = {}) {
     g.eventos += 1;
     if (ms < g.primeiro.ms) g.primeiro = { ms, iso: e.created_at };
     if (ms > g.ultimo.ms) g.ultimo = { ms, iso: e.created_at };
-    if (typeof e.matricula_id === "string" && e.matricula_id) g.estudadas.add(e.matricula_id);
+    if (ehEventoDeEstudo(e) && typeof e.matricula_id === "string" && e.matricula_id) {
+      g.estudadas.add(e.matricula_id);
+    }
     if (e.evento === EVENTO_DECLARACAO_AMBIENTE && typeof e.matricula_id === "string") {
       const versao = e.detalhe?.versao;
       g.declaracoes.push({

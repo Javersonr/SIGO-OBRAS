@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
+  EVENTOS_DE_ESTUDO,
   EVENTOS_DO_RH,
   EVENTOS_FORA_DA_JANELA,
   csvDaAtividade,
@@ -104,6 +105,56 @@ describe("quais eventos contam para a janela do aluno", () => {
     expect(gravados).toContain("certificado_revogado");
     for (const nome of gravados) expect(EVENTOS_DO_RH, nome).toContain(nome);
     expect(EVENTOS_FORA_DA_JANELA).toContain("login_falha");
+  });
+
+  it("todo evento que o portal grava está classificado como estudo ou não (evento novo sem dono faz o teste acusar)", () => {
+    const ler = (caminho) =>
+      readFileSync(new URL(`../../../../supabase/functions/${caminho}`, import.meta.url), "utf8");
+    const index = ler("portal-funcionario/index.ts");
+    const constantes = [
+      "portal-funcionario/regras.ts",
+      "portal-funcionario/declaracao-ambiente.ts",
+      "_shared/portal-funcionario.ts",
+    ]
+      .map(ler)
+      .join("\n");
+    const gravados = new Set();
+    for (const m of index.matchAll(/\bevento:\s*"([a-z_]+)"/g)) gravados.add(m[1]);
+    // os que o portal grava por constante (EVENTO_PROVA_INICIADA, EVENTO_DECLARACAO_AMBIENTE, ...)
+    for (const m of index.matchAll(/\bevento:\s*(EVENTO_[A-Z_]+)\b/g)) {
+      const valor = new RegExp(`export const ${m[1]} = "([a-z_]+)"`).exec(constantes)?.[1];
+      expect(valor, `constante ${m[1]} não encontrada`).toBeTruthy();
+      gravados.add(valor);
+    }
+    // sem estes a leitura do código teria falhado em silêncio e o teste passaria vazio
+    expect(gravados.size).toBeGreaterThanOrEqual(12);
+    expect(gravados).toContain("aula_concluida");
+    expect(gravados).toContain("avaliacao_iniciada");
+    expect(gravados).toContain("certificado_assinado");
+    expect(gravados).toContain("declaracao_ambiente");
+
+    // o que o portal grava e NÃO é estudar: entrada e saída, declaração, certificado e dúvida
+    const naoSaoEstudo = [
+      "login",
+      "login_falha",
+      "logout",
+      "troca_senha",
+      "ciencia",
+      "declaracao_ambiente",
+      "certificado_assinado",
+      "certificado_revogado",
+      "duvida_enviada",
+    ];
+    for (const nome of gravados) {
+      expect(
+        EVENTOS_DE_ESTUDO.includes(nome) || naoSaoEstudo.includes(nome),
+        `o portal grava "${nome}" e ele não está em EVENTOS_DE_ESTUDO nem na lista dos que não são estudo`
+      ).toBe(true);
+    }
+    // e o contrário: um evento de estudo que o portal deixou de gravar (renomeado) não fica na lista por engano
+    for (const nome of EVENTOS_DE_ESTUDO) expect(gravados, nome).toContain(nome);
+    for (const nome of EVENTOS_DE_ESTUDO) expect(naoSaoEstudo, nome).not.toContain(nome);
+    for (const nome of EVENTOS_DO_RH) expect(EVENTOS_DE_ESTUDO, nome).not.toContain(nome);
   });
 });
 
@@ -210,6 +261,66 @@ describe("janelasPorAlunoEDia", () => {
     expect(linha.estudou).toBe(false);
     expect(linha.semDeclaracao).toBe(0);
     expect(linha.declaracoes).toEqual([]);
+  });
+
+  it("conclui o curso num dia e assina o certificado no outro: o dia do certificado não é 'estudou sem declarar'", () => {
+    // semipresencial (T12): o certificado só sai depois da prática, em outro dia; o portal não pede a declaração
+    // em curso concluído, então o relatório não pode cobrá-la
+    const linhas = montarLinhasDeAtividade({
+      eventos: [
+        ev("login", "2026-10-07T11:00:00Z"),
+        ev("declaracao_ambiente", "2026-10-07T11:02:00Z", {
+          matricula_id: "m1",
+          detalhe: { versao: 1, texto_padrao: false },
+        }),
+        ev("avaliacao_envio", "2026-10-07T12:00:00Z", { matricula_id: "m1" }),
+        ev("curso_concluido", "2026-10-07T12:00:01Z", { matricula_id: "m1" }),
+        // dia seguinte: só o certificado (e uma dúvida sobre o curso já concluído)
+        ev("login", "2026-10-08T14:00:00Z"),
+        ev("certificado_assinado", "2026-10-08T14:05:00Z", { matricula_id: "m1" }),
+        ev("duvida_enviada", "2026-10-08T14:10:00Z", { matricula_id: "m1" }),
+      ],
+      funcionarios: [{ id: "f1", nome_completo: "Ana Teste" }],
+    });
+    const dia7 = linhas.find((l) => l.dia === "2026-10-07");
+    const dia8 = linhas.find((l) => l.dia === "2026-10-08");
+    expect(dia7).toMatchObject({ estudou: true, semDeclaracao: 0 });
+    // o dia do certificado continua na janela do aluno (houve atividade), mas sem cobrança
+    expect(dia8).toMatchObject({ estudou: false, semDeclaracao: 0, eventos: 3, minutos: 10 });
+    expect(textoDaDeclaracao(dia8).tom).not.toBe("falta");
+    expect(filtrarAtividade(linhas, { soSemDeclaracao: true })).toEqual([]);
+    expect(resumirAtividade(linhas).semDeclaracao).toBe(0);
+  });
+
+  it("estudo é só aula, apostila, prova e conclusão: declaração, certificado e dúvida não contam", () => {
+    for (const nome of [
+      "progresso_ajustado",
+      "apostila_lida",
+      "aula_concluida",
+      "curso_concluido",
+      "avaliacao_iniciada",
+      "avaliacao_envio",
+    ]) {
+      const [linha] = janelasPorAlunoEDia([
+        ev(nome, "2026-10-07T12:00:00Z", { matricula_id: "m1" }),
+      ]);
+      expect(linha, nome).toMatchObject({ estudou: true, semDeclaracao: 1 });
+    }
+    // (o certificado revogado nem entra na janela: é ação do RH ou do sistema, ver EVENTOS_DO_RH)
+    for (const nome of ["declaracao_ambiente", "certificado_assinado", "duvida_enviada"]) {
+      const [linha] = janelasPorAlunoEDia([
+        ev(nome, "2026-10-07T12:00:00Z", { matricula_id: "m1" }),
+      ]);
+      expect(linha, nome).toMatchObject({ estudou: false, semDeclaracao: 0 });
+    }
+  });
+
+  it("estudou num curso e assinou o certificado de outro no mesmo dia: só o que estudou precisa declarar", () => {
+    const [linha] = janelasPorAlunoEDia([
+      ev("aula_concluida", "2026-10-07T12:00:00Z", { matricula_id: "m1" }),
+      ev("certificado_assinado", "2026-10-07T12:30:00Z", { matricula_id: "m2" }),
+    ]);
+    expect(linha).toMatchObject({ estudou: true, semDeclaracao: 1 });
   });
 
   it("entradas inválidas não derrubam a tela", () => {
