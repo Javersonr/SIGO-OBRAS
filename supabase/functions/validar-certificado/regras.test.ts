@@ -332,36 +332,96 @@ test("localDoCertificado (T12): o semipresencial devolve também o local da prá
   });
 });
 
+const sessaoGravada = (extra: Record<string, unknown> = {}) => ({
+  sessao_id: "sessao-interna",
+  data: "2026-10-05",
+  hora_inicio: "08:00",
+  hora_fim: "12:00",
+  local: "Pátio de treinamento de teste",
+  instrutor: { nome: "Instrutor de Teste", qualificacao: "Eng. de Teste" },
+  carga_horas: 4,
+  ...extra,
+});
+
 test("praticaPublica (T12): só data, local e carga da prática saem na consulta pública", () => {
   const dados = {
-    pratica: {
-      sessao_id: "sessao-interna",
-      data: "2026-10-05",
-      hora_inicio: "08:00",
-      hora_fim: "12:00",
-      local: "Pátio de treinamento de teste",
-      instrutor: { nome: "Instrutor de Teste", qualificacao: "Eng. de Teste" },
-      carga_horas: 4,
-      resultado: "satisfatorio",
-    },
+    pratica: { carga_horas: 4, resultado: "satisfatorio", sessoes: [sessaoGravada()] },
   };
   assert.deepEqual(praticaPublica(dados), {
     data: "2026-10-05",
+    data_fim: null,
     local: "Pátio de treinamento de teste",
     carga_horas: 4,
   });
+  // nada do que é interno vai junto (id da sessão, horário, instrutor)
+  const json = JSON.stringify(praticaPublica(dados));
+  for (const interno of ["sessao-interna", "08:00", "Instrutor de Teste"]) {
+    assert.ok(!json.includes(interno), interno);
+  }
   // certificado EAD (ou de antes da T12) não tem prática; dado torto também não vira prática
   assert.equal(praticaPublica({}), null);
   assert.equal(praticaPublica(null), null);
   assert.equal(praticaPublica({ pratica: null }), null);
   assert.equal(praticaPublica({ pratica: "texto" }), null);
-  assert.equal(praticaPublica({ pratica: { ...dados.pratica, data: "05/10/2026" } }), null);
+  assert.equal(praticaPublica({ pratica: { sessoes: "x" } }), null);
+  assert.equal(praticaPublica({ pratica: { sessoes: [] } }), null);
+  assert.equal(
+    praticaPublica({ pratica: { sessoes: [sessaoGravada({ data: "05/10/2026" })] } }),
+    null
+  );
   // sem local ou sem carga: o que existe sai, o resto vem null
-  assert.deepEqual(praticaPublica({ pratica: { data: "2026-10-05" } }), {
+  assert.deepEqual(praticaPublica({ pratica: { sessoes: [{ data: "2026-10-05" }] } }), {
     data: "2026-10-05",
+    data_fim: null,
     local: null,
     carga_horas: null,
   });
+});
+
+test("praticaPublica (T12): a prática de vários dias mostra o primeiro e o último dia, os locais e a carga somada", () => {
+  const dados = {
+    pratica: {
+      carga_horas: 16,
+      resultado: "satisfatorio",
+      // fora de ordem de propósito: a consulta ordena
+      sessoes: [
+        sessaoGravada({ sessao_id: "b", data: "2026-10-06", local: "Galpão B", carga_horas: 8 }),
+        sessaoGravada({ sessao_id: "a", data: "2026-10-05", carga_horas: 8 }),
+      ],
+    },
+  };
+  assert.deepEqual(praticaPublica(dados), {
+    data: "2026-10-05",
+    data_fim: "2026-10-06",
+    local: "Pátio de treinamento de teste e Galpão B",
+    carga_horas: 16,
+  });
+  // dois turnos no mesmo dia e no mesmo local: um dia e um local
+  const turnos = {
+    pratica: {
+      carga_horas: 8,
+      sessoes: [
+        sessaoGravada({ carga_horas: 4 }),
+        sessaoGravada({ sessao_id: "b", carga_horas: 4 }),
+      ],
+    },
+  };
+  assert.deepEqual(praticaPublica(turnos), {
+    data: "2026-10-05",
+    data_fim: null,
+    local: "Pátio de treinamento de teste",
+    carga_horas: 8,
+  });
+  // sem o total gravado, soma as sessões (sem erro de ponto flutuante)
+  const semTotal = {
+    pratica: {
+      sessoes: [
+        sessaoGravada({ carga_horas: 0.1 }),
+        sessaoGravada({ sessao_id: "b", carga_horas: 0.2 }),
+      ],
+    },
+  };
+  assert.equal(praticaPublica(semTotal)?.carga_horas, 0.3);
 });
 
 test("index.ts (T12): a consulta pública devolve a prática pela regra (não o objeto gravado inteiro)", () => {

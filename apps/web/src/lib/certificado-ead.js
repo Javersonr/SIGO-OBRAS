@@ -70,23 +70,136 @@ export function textoDoLocal(local) {
 
 const fmtHoras = (h) => `${String(Math.round((Number(h) || 0) * 100) / 100).replace(".", ",")} h`;
 
-/** O texto da parte prática no verso do certificado semipresencial (T12), a partir de `dados.pratica`. */
-export function textoDaPraticaNoVerso(pratica) {
-  if (!pratica) return null;
+/** "05/10/2026, das 08:00 às 17:00 (8 h), em Local. Instrutor: Nome, qualificação." de uma sessão congelada. */
+function textoDaSessaoPratica(sessao) {
   const horario =
-    pratica.hora_inicio && pratica.hora_fim
-      ? `, das ${pratica.hora_inicio} às ${pratica.hora_fim}`
+    sessao.hora_inicio && sessao.hora_fim
+      ? `, das ${sessao.hora_inicio} às ${sessao.hora_fim}`
       : "";
-  const carga = Number(pratica.carga_horas) > 0 ? ` (${fmtHoras(pratica.carga_horas)})` : "";
-  const instrutor = pratica.instrutor?.nome
-    ? ` Instrutor: ${pratica.instrutor.nome}${pratica.instrutor.qualificacao ? `, ${pratica.instrutor.qualificacao}` : ""}.`
+  const carga = Number(sessao.carga_horas) > 0 ? ` (${fmtHoras(sessao.carga_horas)})` : "";
+  const instrutor = sessao.instrutor?.nome
+    ? ` Instrutor: ${sessao.instrutor.nome}${sessao.instrutor.qualificacao ? `, ${sessao.instrutor.qualificacao}` : ""}.`
     : "";
+  return `${fmtData(sessao.data)}${horario}${carga}, em ${sessao.local || "—"}.${instrutor}`;
+}
+
+/**
+ * O texto da parte prática no verso do certificado semipresencial (T12), a partir de `dados.pratica` (as sessões
+ * que valeram, congeladas na emissão): uma lista de parágrafos, ou null sem prática. Uma sessão, uma linha; a
+ * prática de vários dias traz uma linha por sessão, com a carga somada.
+ */
+export function textoDaPraticaNoVerso(pratica) {
+  const sessoes = Array.isArray(pratica?.sessoes) ? pratica.sessoes : [];
+  if (!sessoes.length) return null;
   const resultado =
     pratica.resultado === "satisfatorio" ? "satisfatório" : pratica.resultado || "—";
-  return (
-    `Realizada em ${fmtData(pratica.data)}${horario}${carga}, em ${pratica.local || "—"}.` +
-    `${instrutor} Resultado: ${resultado}.`
-  );
+  if (sessoes.length === 1) {
+    return [`Realizada em ${textoDaSessaoPratica(sessoes[0])} Resultado: ${resultado}.`];
+  }
+  const total =
+    Number(pratica.carga_horas) > 0 ? ` (${fmtHoras(pratica.carga_horas)} no total)` : "";
+  return [
+    `Realizada em ${sessoes.length} sessões presenciais${total}:`,
+    ...sessoes.map((s) => `• ${textoDaSessaoPratica(s)}`),
+    `Resultado: ${resultado} em todas as sessões.`,
+  ];
+}
+
+// -------------------------------------------------------------------------------- o verso: conteúdo programático
+
+/** Altura de uma linha de texto do conteúdo (mm) com a fonte inteira; as escalas abaixo a reduzem junto com a fonte. */
+const LINHA_DO_VERSO = 4.4;
+/** De onde o conteúdo começa no verso (mm, abaixo do título e da linha do curso). */
+const Y_DO_CONTEUDO = 40;
+/**
+ * Fontes do conteúdo, da inteira à menor: a que couber é a usada. Passando da menor, o conteúdo segue numa página
+ * a mais (o texto nunca cobre o que está no pé do verso).
+ */
+const ESCALAS_DO_VERSO = [1, 0.92, 0.85, 0.78];
+
+/**
+ * Distribui os blocos do conteúdo programático (um módulo com as suas aulas, ou o texto corrido) pelas colunas e
+ * páginas do verso. `doc` só mede (fonte e `splitTextToSize`); quem desenha é quem chama, com o que sai daqui.
+ * Um bloco inteiro fica na mesma coluna quando cabe numa coluna vazia; o que é mais alto que uma coluna (o texto
+ * corrido do cadastro central não tem módulos) é partido por linha, para usar a 2ª coluna e depois a página
+ * seguinte. Tenta a fonte inteira com 1 coluna (se o conteúdo é curto) ou 2 e, não cabendo na página, fontes
+ * menores; só então abre página nova.
+ *
+ * @param {object} doc jsPDF (medição)
+ * @param {string[][]} blocos linhas por bloco; "# " no começo da linha marca o título do módulo
+ * @param {{ colunasBase: 1|2, limite: number, largura: number }} cfg `limite` = y máximo do conteúdo (mm) em
+ *   toda página; `largura` = largura útil da página (mm)
+ * @returns {{ escala: number, colunas: number, larguraCol: number, paginas: number,
+ *   itens: { pagina: number, col: number, y: number, partes: string[], titulo: boolean }[] }}
+ */
+export function distribuirConteudo(doc, blocos, { colunasBase, limite, largura }) {
+  const tentar = (escala, colunas, podeAbrirPagina) => {
+    const larguraCol = (largura - 40) / colunas;
+    const linha = LINHA_DO_VERSO * escala;
+    const medir = (l) => {
+      const titulo = l.startsWith("# ");
+      doc.setFont("helvetica", titulo ? "bold" : "normal");
+      doc.setFontSize((titulo ? 9.5 : 9) * escala);
+      return { titulo, partes: doc.splitTextToSize(titulo ? l.slice(2) : l, larguraCol - 4) };
+    };
+    const capacidade = limite - Y_DO_CONTEUDO;
+    const itens = [];
+    let pagina = 0;
+    let col = 0;
+    let y = Y_DO_CONTEUDO;
+    // próxima coluna, ou próxima página; false se não há (e não pode abrir página)
+    const avancar = () => {
+      col++;
+      if (col >= colunas) {
+        if (!podeAbrirPagina) return false;
+        col = 0;
+        pagina++;
+      }
+      y = Y_DO_CONTEUDO;
+      return true;
+    };
+    const colocar = (m) => {
+      let restantes = m.partes;
+      while (restantes.length) {
+        let cabem = Math.floor((limite - y + 1e-6) / linha);
+        // última tentativa (a que abre páginas): uma coluna vazia sempre recebe ao menos uma linha, senão um limite
+        // absurdo (bloco da prática gigante) faria o laço virar páginas vazias para sempre
+        if (cabem < 1 && y === Y_DO_CONTEUDO && podeAbrirPagina) cabem = 1;
+        const inteiroCabeNumaColunaVazia = restantes.length * linha <= capacidade;
+        if (
+          cabem < 1 ||
+          (cabem < restantes.length && y > Y_DO_CONTEUDO && inteiroCabeNumaColunaVazia)
+        ) {
+          if (!avancar()) return false;
+          continue;
+        }
+        const parte = restantes.slice(0, cabem);
+        itens.push({ pagina, col, y, partes: parte, titulo: m.titulo });
+        y += parte.length * linha + (m.titulo && parte.length === restantes.length ? 0.6 : 0);
+        restantes = restantes.slice(parte.length);
+        if (restantes.length && !avancar()) return false;
+      }
+      return true;
+    };
+    for (const bloco of blocos) {
+      const medidas = bloco.map(medir);
+      const altura = medidas.reduce((s, m) => s + m.partes.length * linha + 0.6, 0);
+      if (y + altura > limite && y > Y_DO_CONTEUDO && altura <= capacidade && !avancar())
+        return null;
+      for (const m of medidas) if (!colocar(m)) return null;
+    }
+    return { escala, colunas, larguraCol, paginas: pagina + 1, itens };
+  };
+
+  const colunasPossiveis = colunasBase === 1 ? [1, 2] : [2];
+  for (const escala of ESCALAS_DO_VERSO) {
+    for (const colunas of colunasPossiveis) {
+      const cabe = tentar(escala, colunas, false);
+      if (cabe) return cabe;
+    }
+  }
+  // nem a menor fonte cabe numa página: segue em páginas a mais, em 2 colunas, com a menor fonte
+  return tentar(ESCALAS_DO_VERSO[ESCALAS_DO_VERSO.length - 1], 2, true);
 }
 
 /** Linhas do conteúdo programático: texto do curso ou aulas por módulo. */
@@ -312,77 +425,90 @@ export async function baixarCertificadoPdf(cert, opcoes = {}) {
   rodape();
 
   // ------------------------------------------------------------------- verso
-  doc.addPage();
-  moldura();
-  doc.setTextColor(15, 23, 42);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(15);
-  doc.text("CONTEÚDO PROGRAMÁTICO", 18, 24);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9.5);
-  doc.setTextColor(71, 85, 105);
-  doc.text(
-    `${d.curso?.nome || ""} · ${d.curso?.carga_horaria_horas || "—"} h · ${d.curso?.modalidade || "EAD"}`,
-    18,
-    30
-  );
+  // semipresencial (T12): a parte prática ocupa o pé do verso (uma linha por sessão que valeu), então o conteúdo
+  // para acima dela. O bloco cresce para cima conforme as linhas (a fonte diminui até 6,5 pt, mas nunca corta
+  // texto) e o limite do conteúdo acompanha: o último baseline fica em H - 36,5, acima da nota do pé (H - 30).
+  const paragrafosDaPratica = textoDaPraticaNoVerso(d.pratica);
+  let linhasDaPratica = [];
+  let tamanhoDaPratica = 8.5;
+  if (paragrafosDaPratica) {
+    for (const tamanho of [8.5, 7.5, 6.5]) {
+      tamanhoDaPratica = tamanho;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(tamanho);
+      linhasDaPratica = paragrafosDaPratica.flatMap((p) => doc.splitTextToSize(p, W - 36 - 52));
+      if (linhasDaPratica.length <= 8) break;
+    }
+  }
+  // 0,3528 mm por pt e o espaçamento padrão de 1,15 do jsPDF
+  const passoDaPratica = tamanhoDaPratica * 0.3528 * 1.15;
+  const yPrimeiraDaPratica = H - 36.5 - (linhasDaPratica.length - 1) * passoDaPratica;
+  const yTituloDaPratica = yPrimeiraDaPratica - 4.5;
+  const LIMITE = paragrafosDaPratica ? yTituloDaPratica - 6 : H - 48;
 
-  // blocos = módulo + suas aulas; um módulo não é partido entre colunas
+  const cabecalhoDoVerso = (continuacao) => {
+    moldura();
+    doc.setTextColor(15, 23, 42);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(15);
+    doc.text(continuacao ? "CONTEÚDO PROGRAMÁTICO (continuação)" : "CONTEÚDO PROGRAMÁTICO", 18, 24);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(
+      `${d.curso?.nome || ""} · ${d.curso?.carga_horaria_horas || "—"} h · ${d.curso?.modalidade || "EAD"}`,
+      18,
+      30
+    );
+  };
+
+  // blocos = módulo + suas aulas (o módulo fica numa coluna só quando cabe); texto corrido, sem módulos, é um bloco
+  // só e é partido por linha. A distribuição decide colunas, fonte e páginas para nada passar do LIMITE.
   const linhas = linhasConteudo(d.curso);
-  const colunasVerso = linhas.length > 22 ? 2 : 1;
-  const larguraCol = (W - 36 - 40) / colunasVerso;
   const blocos = [];
   for (const l of linhas) {
     if (l.startsWith("# ") || !blocos.length) blocos.push([]);
     blocos[blocos.length - 1].push(l);
   }
-  const medir = (l) => {
-    const titulo = l.startsWith("# ");
-    doc.setFont("helvetica", titulo ? "bold" : "normal");
-    doc.setFontSize(titulo ? 9.5 : 9);
-    return doc.splitTextToSize(titulo ? l.slice(2) : l, larguraCol - 4);
-  };
-  const LINHA = 4.4;
-  // semipresencial (T12): a parte prática ocupa o pé do verso, então o conteúdo para mais acima
-  const textoPratica = textoDaPraticaNoVerso(d.pratica);
-  const LIMITE = textoPratica ? H - 66 : H - 48;
-  let col = 0;
-  let y = 40;
+  const distribuicao = distribuirConteudo(doc, blocos, {
+    colunasBase: linhas.length > 22 ? 2 : 1,
+    limite: LIMITE,
+    largura: W - 36,
+  });
+  doc.addPage();
+  cabecalhoDoVerso(false);
   doc.setTextColor(15, 23, 42);
-  for (const bloco of blocos) {
-    const altura = bloco.reduce((s, l) => s + medir(l).length * LINHA + 0.6, 0);
-    if (y + altura > LIMITE && y > 40 && col < colunasVerso - 1) {
-      col++;
-      y = 40;
+  for (let pagina = 0; pagina < distribuicao.paginas; pagina++) {
+    if (pagina > 0) {
+      // o conteúdo seguiu: página a mais com o mesmo cabeçalho, o código e o QR (a prática fica na última)
+      rodape();
+      doc.addPage();
+      cabecalhoDoVerso(true);
+      doc.setTextColor(15, 23, 42);
     }
-    for (const l of bloco) {
-      const partes = medir(l);
-      doc.text(partes, 18 + col * larguraCol, y);
-      y += partes.length * LINHA + (l.startsWith("# ") ? 0.6 : 0);
+    for (const item of distribuicao.itens.filter((i) => i.pagina === pagina)) {
+      doc.setFont("helvetica", item.titulo ? "bold" : "normal");
+      doc.setFontSize((item.titulo ? 9.5 : 9) * distribuicao.escala);
+      doc.text(item.partes, 18 + item.col * distribuicao.larguraCol, item.y);
     }
   }
 
-  // parte prática presencial (T12): dia, horário, carga, local, instrutor e resultado, congelados na emissão. À
-  // esquerda do QR (que começa em W - 44) e acima da nota do pé; a fonte diminui se o texto passar de 7 linhas.
-  if (textoPratica) {
+  // parte prática presencial (T12): dia, horário, carga, local e instrutor de cada sessão que valeu, congelados na
+  // emissão. À esquerda do QR (que começa em W - 44) e acima da nota do pé.
+  if (paragrafosDaPratica) {
     doc.setTextColor(15, 23, 42);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
-    doc.text("PARTE PRÁTICA PRESENCIAL", 18, H - 62);
+    doc.text("PARTE PRÁTICA PRESENCIAL", 18, yTituloDaPratica);
     doc.setFont("helvetica", "normal");
-    let partes = [];
-    for (const tamanho of [8.5, 7.5, 6.5]) {
-      doc.setFontSize(tamanho);
-      partes = doc.splitTextToSize(textoPratica, W - 36 - 52);
-      if (partes.length <= 7) break;
-    }
-    doc.text(partes.slice(0, 7), 18, H - 57.5);
+    doc.setFontSize(tamanhoDaPratica);
+    doc.text(linhasDaPratica, 18, yPrimeiraDaPratica);
   }
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(71, 85, 105);
-  if (textoPratica) {
+  if (paragrafosDaPratica) {
     doc.text(
       doc.splitTextToSize(
         "Teoria a distância com registro individual de acessos, atividades e avaliação (NR-1, item 1.7 e Anexo II); " +

@@ -31,7 +31,8 @@ const mudou = (a, b) =>
 /**
  * Presença e resultado de cada participante numa sessão prática (T12). O RH inclui as matrículas do curso,
  * marca quem esteve presente e lança "satisfatório" ou "insatisfatório"; o certificado do semipresencial só sai
- * para quem esteve presente e teve resultado satisfatório numa sessão já realizada. Quem lançou e quando são
+ * quando a soma das cargas das sessões já realizadas em que o aluno esteve presente e satisfatório chega à carga
+ * prática do curso (uma prática de vários dias vale pela soma dos dias). Quem lançou e quando são
  * gravados pelo banco (migração 0143), não por esta tela.
  *
  * `sessao` = null (fechada). `participantes` são os vivos da sessão; `candidatos`, as matrículas que ainda podem

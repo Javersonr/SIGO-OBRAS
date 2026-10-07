@@ -3,8 +3,9 @@
  *
  * O RH registra cada sessão prática (`treinamento_sessao_pratica`: data, horário, carga, local e instrutor) e,
  * nela, a presença e o resultado de cada matrícula (`treinamento_pratica_participante`), migração 0143. O
- * certificado do semipresencial só é emitido com uma participação "presente" e "satisfatório" numa sessão não
- * apagada do mesmo curso, já realizada (data até hoje, em Brasília). Quem decide é o servidor
+ * certificado do semipresencial só é emitido com a CARGA da prática cumprida: a soma das cargas das sessões não
+ * apagadas do mesmo curso, já realizadas (data até hoje, em Brasília), em que a matrícula esteve "presente" e
+ * "satisfatório" tem de chegar à carga prática do curso. Quem decide é o servidor
  * (`supabase/functions/portal-funcionario/pratica.ts`); `situacaoDaPratica` e `podeEmitirSemipresencial` são o
  * espelho dele (o `pratica.test.ts` confere os dois contra os mesmos casos). O resto do arquivo é da tela: o
  * formulário da sessão, quem pode entrar nela e os rótulos.
@@ -19,13 +20,39 @@ const diaValido = (data) =>
 const momento = (s) => `${diaValido(s.data)}|${String(s.hora_inicio ?? "")}`;
 const maisRecente = (a, b) => (momento(a) >= momento(b) ? a : b);
 const maisProxima = (a, b) => (momento(a) <= momento(b) ? a : b);
+const noTempo = (a, b) => (momento(a) < momento(b) ? -1 : momento(a) > momento(b) ? 1 : 0);
 const viva = (linha) => !!linha && !linha.deleted_at;
 
+/** Horas em centésimos de hora (inteiro: a soma não carrega erro de ponto flutuante). Valor que não é > 0 vale 0. */
+const emCentesimos = (horas) => {
+  const n = Number(horas);
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
+};
+
 /**
- * Situação da parte prática de uma matrícula: `{ situacao, sessao }`, com `situacao` em "realizada" (presente e
- * satisfatório numa sessão já realizada; `sessao` = a mais recente), "agendada" (sessão de hoje em diante ainda
- * sem resultado; a mais próxima), "insatisfatoria" (o último resultado lançado; essa sessão) ou "pendente"
- * (`sessao` null). Espelho de `situacaoDaPratica` do servidor.
+ * As sessões que valem no certificado: da mais antiga em diante, as primeiras cuja soma cobre a carga exigida. Sem
+ * carga exigida, a mais recente. `satisfatorias` já vem da mais antiga à mais recente.
+ */
+function sessoesQueValeram(satisfatorias, exigida) {
+  if (exigida === null) return satisfatorias.slice(-1);
+  const valeram = [];
+  let soma = 0;
+  for (const s of satisfatorias) {
+    valeram.push(s);
+    soma += emCentesimos(s.carga_horas);
+    if (soma >= exigida) break;
+  }
+  return valeram;
+}
+
+/**
+ * Situação da parte prática de uma matrícula: `{ situacao, sessao, sessoes, cumpridaHoras, exigidaHoras }`, com
+ * `situacao` em "realizada" (a carga prática do curso está coberta pela soma das sessões já realizadas em que a
+ * matrícula esteve presente e satisfatória; `sessoes` = as que valeram, da mais antiga à mais recente, e `sessao` =
+ * a última), "agendada" (sessão de hoje em diante ainda sem resultado; a mais próxima), "insatisfatoria" (o último
+ * resultado lançado; essa sessão), "parcial" (há sessão satisfatória, mas a soma ainda não cobre a carga) ou
+ * "pendente" (`sessao` null). `cargaPraticaHoras` é a carga prática do curso (sem ela, vale uma sessão
+ * satisfatória). Espelho de `situacaoDaPratica` do servidor.
  */
 export function situacaoDaPratica({
   matriculaId,
@@ -33,6 +60,7 @@ export function situacaoDaPratica({
   sessoes = [],
   participacoes = [],
   hoje,
+  cargaPraticaHoras = null,
 }) {
   const sessaoPorId = new Map();
   for (const s of sessoes ?? []) {
@@ -44,16 +72,33 @@ export function situacaoDaPratica({
     .filter((x) => !!x.sessao);
 
   const realizada = (s) => diaValido(s.data) <= hoje;
-  const satisfatorias = minhas
-    .filter(
-      (x) =>
-        x.participacao.presente === true &&
-        x.participacao.resultado === "satisfatorio" &&
-        realizada(x.sessao)
-    )
-    .map((x) => x.sessao);
-  if (satisfatorias.length) {
-    return { situacao: "realizada", sessao: satisfatorias.reduce(maisRecente) };
+  // uma sessão conta uma vez só, mesmo que a matrícula apareça duas vezes nela
+  const satisfatoriasPorId = new Map();
+  for (const x of minhas) {
+    if (
+      x.participacao.presente === true &&
+      x.participacao.resultado === "satisfatorio" &&
+      realizada(x.sessao)
+    ) {
+      satisfatoriasPorId.set(x.sessao.id, x.sessao);
+    }
+  }
+  const satisfatorias = [...satisfatoriasPorId.values()].sort(noTempo);
+  const cumprida = satisfatorias.reduce((soma, s) => soma + emCentesimos(s.carga_horas), 0);
+  const exigida = emCentesimos(cargaPraticaHoras) || null;
+  const horas = {
+    cumpridaHoras: cumprida / 100,
+    exigidaHoras: exigida === null ? null : exigida / 100,
+  };
+
+  if (satisfatorias.length && (exigida === null || cumprida >= exigida)) {
+    const valeram = sessoesQueValeram(satisfatorias, exigida);
+    return {
+      situacao: "realizada",
+      sessao: valeram[valeram.length - 1],
+      sessoes: valeram,
+      ...horas,
+    };
   }
 
   const marcadas = minhas
@@ -64,7 +109,9 @@ export function situacaoDaPratica({
         x.participacao.resultado !== "insatisfatorio"
     )
     .map((x) => x.sessao);
-  if (marcadas.length) return { situacao: "agendada", sessao: marcadas.reduce(maisProxima) };
+  if (marcadas.length) {
+    return { situacao: "agendada", sessao: marcadas.reduce(maisProxima), sessoes: [], ...horas };
+  }
 
   const avaliadas = minhas.filter(
     (x) =>
@@ -76,13 +123,17 @@ export function situacaoDaPratica({
       maisRecente(a.sessao, b.sessao) === a.sessao ? a : b
     );
     if (ultima.participacao.resultado === "insatisfatorio") {
-      return { situacao: "insatisfatoria", sessao: ultima.sessao };
+      return { situacao: "insatisfatoria", sessao: ultima.sessao, sessoes: [], ...horas };
     }
   }
-  return { situacao: "pendente", sessao: null };
+  if (satisfatorias.length) return { situacao: "parcial", sessao: null, sessoes: [], ...horas };
+  return { situacao: "pendente", sessao: null, sessoes: [], ...horas };
 }
 
-/** O semipresencial só emite com a prática realizada (presente e satisfatório). Espelho do servidor. */
+/**
+ * O semipresencial só emite com a prática realizada (presente e satisfatório, com a carga prática do curso coberta
+ * pela soma das sessões). Espelho do servidor.
+ */
 export function podeEmitirSemipresencial(entrada) {
   return situacaoDaPratica(entrada).situacao === "realizada";
 }
@@ -208,16 +259,18 @@ export function validarSessao(form) {
 }
 
 /**
- * Aviso (não bloqueia) quando a sessão tem menos horas que a carga prática do curso: o certificado declara a carga
- * prática do curso, e a regra de emissão olha só presença e resultado numa sessão.
+ * Aviso (não bloqueia) quando a sessão tem menos horas que a carga prática do curso. O certificado declara a carga
+ * prática do curso, e o servidor só o emite quando a SOMA das cargas das sessões satisfatórias do aluno chega a
+ * ela: uma sessão curta é normal na prática de vários dias, mas o RH precisa saber que faltam sessões.
  */
 export function avisoDaCargaDaSessao(sessao, curso) {
-  const daSessao = Math.round((Number(sessao?.carga_horas) || 0) * 100);
-  const doCurso = Math.round((Number(curso?.carga_pratica_horas) || 0) * 100);
+  const daSessao = emCentesimos(sessao?.carga_horas);
+  const doCurso = emCentesimos(curso?.carga_pratica_horas);
   if (!daSessao || !doCurso || daSessao >= doCurso) return null;
   return (
     `A carga desta sessão (${formatarHoras(daSessao / 100)}) é menor que a carga prática do curso ` +
-    `(${formatarHoras(doCurso / 100)}), que é a que sai no certificado. Confira antes de lançar os resultados.`
+    `(${formatarHoras(doCurso / 100)}), que é a que sai no certificado. O certificado só é liberado quando a ` +
+    "soma das sessões satisfatórias do aluno chegar a essa carga: registre as demais sessões."
   );
 }
 

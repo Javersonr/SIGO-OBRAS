@@ -185,26 +185,52 @@ export function localDoCertificado(dados: unknown): { ambiente: string; pratica?
 }
 
 /**
- * A parte prática presencial do semipresencial (`dados.pratica`, congelada na emissão desde a T12): só o dia, o
- * local e a carga saem na consulta pública (nada do id da sessão). Certificado EAD, ou com o dia fora do formato
- * AAAA-MM-DD, devolve null e a página não mostra a linha.
+ * A parte prática presencial do semipresencial (`dados.pratica`, congelada na emissão desde a T12): só o dia (ou o
+ * primeiro e o último dia, quando a prática teve vários), o local (ou os locais, sem repetir) e a carga saem na
+ * consulta pública (nada do id da sessão, do horário nem do instrutor). A carga é a soma das sessões congeladas.
+ * Certificado EAD, ou sem nenhuma sessão com o dia no formato AAAA-MM-DD, devolve null e a página não mostra a linha.
  */
-export function praticaPublica(
-  dados: unknown
-): { data: string; local: string | null; carga_horas: number | null } | null {
+export function praticaPublica(dados: unknown): {
+  data: string;
+  data_fim: string | null;
+  local: string | null;
+  carga_horas: number | null;
+} | null {
   const pratica = (dados as { pratica?: unknown } | null)?.pratica;
   if (pratica === null || typeof pratica !== "object" || Array.isArray(pratica)) return null;
-  const { data, local, carga_horas } = pratica as {
-    data?: unknown;
-    local?: unknown;
-    carga_horas?: unknown;
-  };
-  if (typeof data !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(data)) return null;
-  const carga = Number(carga_horas);
+  const { sessoes, carga_horas } = pratica as { sessoes?: unknown; carga_horas?: unknown };
+  if (!Array.isArray(sessoes)) return null;
+  const validas = sessoes
+    .filter((x): x is { data: string; local?: unknown; carga_horas?: unknown } => {
+      const d = (x as { data?: unknown } | null)?.data;
+      return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d);
+    })
+    .sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
+  if (!validas.length) return null;
+  const primeiro = validas[0].data;
+  const ultimo = validas[validas.length - 1].data;
+  const locais = [
+    ...new Set(
+      validas
+        .map((x) => (typeof x.local === "string" ? x.local.trim() : ""))
+        .filter((l) => l !== "")
+    ),
+  ];
+  const soma = validas.reduce((t, x) => t + Math.round((Number(x.carga_horas) || 0) * 100), 0);
+  const total = Number(carga_horas);
   return {
-    data,
-    local: typeof local === "string" && local.trim() ? local : null,
-    carga_horas: carga_horas != null && Number.isFinite(carga) && carga > 0 ? carga : null,
+    data: primeiro,
+    data_fim: ultimo !== primeiro ? ultimo : null,
+    local:
+      locais.length <= 1
+        ? (locais[0] ?? null)
+        : `${locais.slice(0, -1).join("; ")} e ${locais[locais.length - 1]}`,
+    carga_horas:
+      carga_horas != null && Number.isFinite(total) && total > 0
+        ? total
+        : soma > 0
+          ? soma / 100
+          : null,
   };
 }
 

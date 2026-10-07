@@ -20,10 +20,13 @@
  *     tutor do curso, com o link para responder, só se o telefone for aceito; ver tutor.ts)
  *
  * `certificado` só emite para curso EAD ou semipresencial (modalidade do curso, T8): curso de apoio responde 409
- * `CURSO_DE_APOIO`; o semipresencial (T12) só emite com a participação do aluno "presente" e "satisfatório" numa
- * sessão prática viva do curso, já realizada, senão 409 `PRATICA_PENDENTE` (antes de pedir a senha; ver
- * pratica.ts), e congela a sessão em `dados.pratica`, o local dela em `dados.local.pratica`, as duas cargas em
- * `dados.curso` e o período cobrindo o dia da prática; requisito do curso por
+ * `CURSO_DE_APOIO`; o semipresencial (T12) só emite com a CARGA da prática cumprida (a soma das sessões em que o
+ * aluno esteve "presente" e "satisfatório", já realizadas, chega à carga prática do curso), senão 409
+ * `PRATICA_PENDENTE` (antes de pedir a senha; ver pratica.ts), e congela as sessões que valeram em
+ * `dados.pratica`, os locais delas em `dados.local.pratica`, as duas cargas em `dados.curso` e o período
+ * cobrindo os dias da prática. A validade do semipresencial conta do FIM do treinamento (o maior dia entre a
+ * conclusão da teoria e o último dia da prática): o servidor regrava a `proxima_renovacao` da matrícula antes de
+ * gravar o certificado, para o certificado não nascer vencido; requisito do curso por
  * cumprir responde 409 `REQUISITOS` (só os que travam a EMISSÃO: `pendenciasParaEmitir`); curso que exige outro
  * (`pre_requisito_curso_id`, T23) só emite com o curso exigido concluído e dentro da validade, senão 409
  * `PRE_REQUISITO` (antes de pedir a senha; ver pre-requisito.ts). O tipo do treinamento da matrícula (inicial,
@@ -98,7 +101,7 @@ import {
   dadosDaPraticaNoCertificado,
   lerPratica,
   localComPratica,
-  periodoComPratica,
+  periodoDoSemipresencial,
   praticaParaOAluno,
   praticasDoBanco,
 } from "./pratica.ts";
@@ -1535,6 +1538,8 @@ Deno.serve(
               cursoId: mat.curso_id,
               empresaId,
               hoje: dataBrasilia(new Date()),
+              // a prática só está realizada quando a soma das sessões satisfatórias chega a esta carga
+              cargaPraticaHoras: cursoDoCertificado.carga_pratica_horas,
             })
           : null;
       if (praticaLida && !praticaLida.ok) {
@@ -1545,8 +1550,8 @@ Deno.serve(
       }
       const semPratica = praticaLida?.ok ? bloqueioDeEmissaoPorPratica(praticaLida.pratica) : null;
       if (semPratica) return fail(semPratica.mensagem, 409, { codigo: semPratica.codigo });
-      // a sessão que valeu (a satisfatória mais recente); null fora do semipresencial
-      const sessaoDaPratica = praticaLida?.ok ? praticaLida.pratica.sessao : null;
+      // as sessões que valeram (da mais antiga em diante, até cobrir a carga); vazio fora do semipresencial
+      const sessoesDaPratica = praticaLida?.ok ? praticaLida.pratica.sessoes : [];
 
       const reconfirmacao = await reconfirmar(body.senha ?? "");
       if (reconfirmacao === "limite") return muitasTentativas();
@@ -1605,6 +1610,19 @@ Deno.serve(
           pendencias: pendencias.map((r) => r.texto),
         });
 
+      // Validade do semipresencial (T12): conta do FIM do treinamento, o maior dia entre a conclusão da teoria e o
+      // último dia da prática que valeu. A `proxima_renovacao` que a matrícula guardou ao concluir a teoria é de
+      // antes da prática: num curso de 12 meses com a teoria feita 13 meses antes, o certificado nasceria vencido.
+      // `null` = não é semipresencial (o período fica como sempre foi).
+      const periodoDoSemi = sessoesDaPratica.length
+        ? periodoDoSemipresencial({
+            periodo: periodoDoCertificado(mat),
+            sessoes: sessoesDaPratica,
+            validadeMeses: curso.validade_meses,
+            modalidade: modalidadeDoCurso(curso),
+          })
+        : null;
+
       const dados = {
         aluno: { nome: func?.nome_completo, cpf: func?.cpf, funcao: func?.funcao_nome ?? null },
         empresa: { nome: emp?.razao_social || emp?.nome, cnpj: emp?.cnpj ?? null },
@@ -1615,7 +1633,7 @@ Deno.serve(
           // semipresencial (T12): "Semipresencial: teoria EAD (X h) + prática presencial (Y h)"
           modalidade: textoDaModalidade(modalidadeDoCurso(curso), curso),
           // e as duas cargas em número (só no semipresencial: o certificado EAD não muda)
-          ...(sessaoDaPratica
+          ...(sessoesDaPratica.length
             ? {
                 carga_teorica_horas: Number(curso.carga_teorica_horas),
                 carga_pratica_horas: Number(curso.carga_pratica_horas),
@@ -1626,18 +1644,18 @@ Deno.serve(
           aulas: (aulas ?? []).map((a: any) => ({ modulo: a.modulo, titulo: a.titulo })),
         },
         // dias de Brasília (T8); conclusão e validade já foram gravadas assim em datasDeConclusao. No
-        // semipresencial o período cobre também o dia da prática (T12); a validade não muda
-        periodo: sessaoDaPratica
-          ? periodoComPratica(periodoDoCertificado(mat), sessaoDaPratica.data ?? null)
-          : periodoDoCertificado(mat),
+        // semipresencial o período cobre também os dias da prática e a validade conta do fim do treinamento (T12)
+        periodo: periodoDoSemi ?? periodoDoCertificado(mat),
         // tipo do treinamento (T23, NR-1 1.7.1.2): inicial, periódico ou eventual (com o motivo); entra no hash
         ...dadosDoTipoNoCertificado(mat),
         // NR-1, 1.7.1.1: onde o treinamento foi realizado (no semipresencial, também o local da prática, T12)
-        local: sessaoDaPratica
-          ? localComPratica(LOCAL_DO_CERTIFICADO, sessaoDaPratica)
+        local: sessoesDaPratica.length
+          ? localComPratica(LOCAL_DO_CERTIFICADO, sessoesDaPratica)
           : LOCAL_DO_CERTIFICADO,
-        // a sessão prática que valeu, congelada (T12): editar a sessão depois não muda este certificado
-        ...(sessaoDaPratica ? { pratica: dadosDaPraticaNoCertificado(sessaoDaPratica) } : {}),
+        // as sessões práticas que valeram, congeladas (T12): editar a sessão depois não muda este certificado
+        ...(sessoesDaPratica.length
+          ? { pratica: dadosDaPraticaNoCertificado(sessoesDaPratica) }
+          : {}),
         avaliacao: sit.aprovacao
           ? { nota: sit.aprovacao.nota, tentativa: sit.aprovacao.numero }
           : null,
@@ -1656,6 +1674,24 @@ Deno.serve(
         // versão do hash: a validação pública sabe se refaz o hash canônico (2) ou o antigo (sem versão)
         hash_versao: HASH_VERSAO_CANONICO,
       };
+
+      // A matrícula passa a guardar a mesma validade que o certificado vai imprimir (o pré-requisito, os vencimentos
+      // e os avisos do RH leem a da matrícula). O trigger da 0130 deixa o servidor gravar. Se não gravar, não emite:
+      // validade da matrícula e do certificado divergentes é pior que pedir para tentar de novo.
+      if (periodoDoSemi && periodoDoSemi.validade !== (mat.proxima_renovacao ?? null)) {
+        const { error: erroValidade } = await supabase
+          .from("treinamento_matricula")
+          .update({ proxima_renovacao: periodoDoSemi.validade })
+          .eq("id", mat.id)
+          .eq("empresa_id", empresaId);
+        if (erroValidade) {
+          console.error("[portal-funcionario] certificado: validade da matrícula:", erroValidade);
+          return fail(
+            "Não foi possível calcular a validade do certificado agora. Tente de novo.",
+            503
+          );
+        }
+      }
 
       for (let i = 0; i < 3; i++) {
         const codigo = gerarCodigoCertificado();

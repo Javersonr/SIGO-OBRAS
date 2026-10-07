@@ -33,7 +33,8 @@ import PresencaSessaoDialog from "@/components/seguranca/PresencaSessaoDialog";
  * Seção "Sessões práticas" do curso semipresencial (T12). O RH registra cada sessão presencial (data, horário,
  * carga, local e instrutor reais), lança a presença e o resultado de cada matrícula, gera a lista de presença da
  * sessão (PDF) e anexa a lista assinada digitalizada (bucket `treinamentos`). O certificado do semipresencial só
- * sai, pelo servidor, para quem esteve "presente" e teve resultado "satisfatório" numa sessão já realizada.
+ * sai, pelo servidor, quando a soma das cargas das sessões já realizadas em que o aluno esteve "presente" e teve
+ * resultado "satisfatório" chega à carga prática do curso.
  *
  * Tudo é gravado direto pelas entidades (RLS por empresa). Quem lançou cada resultado e quando são gravados pelo
  * banco (0143); a trava por PERMISSÃO de quem pode lançar é da T33. Excluir é sempre lógico (deleted_at).
@@ -300,8 +301,8 @@ export default function SessoesPraticasCurso({
       <p className="text-xs text-slate-500">
         Parte prática presencial
         {cargaPratica ? ` (${formatarHoras(cargaPratica)} no curso)` : ""}. O certificado de cada
-        aluno só é emitido depois que ele estiver marcado como presente, com resultado satisfatório,
-        numa sessão já realizada.
+        aluno só é emitido depois que a soma das cargas das sessões já realizadas em que ele esteve
+        presente, com resultado satisfatório, chegar à carga prática do curso.
       </p>
 
       {carregando && (

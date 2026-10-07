@@ -70,6 +70,81 @@ describe("podeEmitirSemipresencial (T12): a regra do servidor, espelhada", () =>
     const r = situacaoDaPratica(entrada([sessao()], [participacao()]));
     expect(r.situacao).toBe("realizada");
     expect(r.sessao.id).toBe("s1");
+    expect(r.sessoes.map((x) => x.id)).toEqual(["s1"]);
+  });
+
+  describe("a carga da prática: a soma das sessões satisfatórias tem de chegar à carga do curso (I2)", () => {
+    const dia = (id, data, extra = {}) => sessao({ id, data, carga_horas: 8, ...extra });
+    const com = (sessoes, participacoes, cargaPraticaHoras = 16) => ({
+      ...entrada(sessoes, participacoes),
+      cargaPraticaHoras,
+    });
+    const doDia = (id, extra = {}) => participacao({ sessao_id: id, ...extra });
+
+    it("uma sessão de 8 h não libera o certificado de 16 h; as duas liberam, em ordem", () => {
+      const a = dia("a", "2026-10-05");
+      const b = dia("b", "2026-10-06");
+      const so1 = situacaoDaPratica(com([a], [doDia("a")]));
+      expect(so1.situacao).toBe("parcial");
+      expect([so1.cumpridaHoras, so1.exigidaHoras]).toEqual([8, 16]);
+      expect(podeEmitirSemipresencial(com([a], [doDia("a")]))).toBe(false);
+      const dois = situacaoDaPratica(com([b, a], [doDia("a"), doDia("b")]));
+      expect(dois.situacao).toBe("realizada");
+      expect(dois.sessoes.map((x) => x.id)).toEqual(["a", "b"]);
+      expect(dois.sessao.id).toBe("b");
+    });
+    it("uma sessão de 16 h basta, e as sessões que sobram ficam de fora", () => {
+      expect(
+        podeEmitirSemipresencial(com([dia("a", "2026-10-05", { carga_horas: 16 })], [doDia("a")]))
+      ).toBe(true);
+      const tres = situacaoDaPratica(
+        com(
+          [dia("a", "2026-10-05"), dia("b", "2026-10-06"), dia("c", "2026-10-07")],
+          [doDia("a"), doDia("b"), doDia("c")]
+        )
+      );
+      expect(tres.sessoes.map((x) => x.id)).toEqual(["a", "b"]);
+      expect(tres.cumpridaHoras).toBe(24);
+    });
+    it("ausente, insatisfatório, pendente, apagado e sessão futura não contam para a soma", () => {
+      const a = dia("a", "2026-10-05");
+      const b = dia("b", "2026-10-06");
+      for (const segunda of [
+        doDia("b", { presente: false, resultado: "pendente" }),
+        doDia("b", { resultado: "insatisfatorio" }),
+        doDia("b", { resultado: "pendente" }),
+        doDia("b", { deleted_at: "2026-10-06T10:00:00Z" }),
+      ]) {
+        expect(podeEmitirSemipresencial(com([a, b], [doDia("a"), segunda]))).toBe(false);
+      }
+      expect(
+        podeEmitirSemipresencial(com([a, dia("f", "2026-10-20")], [doDia("a"), doDia("f")]))
+      ).toBe(false);
+    });
+    it("sem a carga do curso vale uma sessão satisfatória; frações somam em centésimos", () => {
+      const a = dia("a", "2026-10-05", { carga_horas: 2 });
+      for (const carga of [null, 0, "", "abc"]) {
+        expect(podeEmitirSemipresencial(com([a], [doDia("a")], carga))).toBe(true);
+      }
+      const x = dia("x", "2026-10-05", { carga_horas: 0.1 });
+      const y = dia("y", "2026-10-06", { carga_horas: "0.2" });
+      expect(podeEmitirSemipresencial(com([x, y], [doDia("x"), doDia("y")], 0.3))).toBe(true);
+      expect(podeEmitirSemipresencial(com([x, y], [doDia("x"), doDia("y")], 0.31))).toBe(false);
+    });
+    it("reprovado por último é 'insatisfatoria' mesmo com horas cumpridas; com sessão marcada, 'agendada'", () => {
+      const a = dia("a", "2026-10-03");
+      const b = dia("b", "2026-10-04");
+      expect(
+        situacaoDaPratica(com([a, b], [doDia("a"), doDia("b", { resultado: "insatisfatorio" })]))
+          .situacao
+      ).toBe("insatisfatoria");
+      const proxima = dia("p", "2026-10-20");
+      const agendada = situacaoDaPratica(
+        com([a, proxima], [doDia("a"), doDia("p", { presente: false, resultado: "pendente" })])
+      );
+      expect(agendada.situacao).toBe("agendada");
+      expect(agendada.cumpridaHoras).toBe(8);
+    });
   });
 });
 
@@ -157,6 +232,8 @@ describe("sessão em branco, aviso de carga e descrição", () => {
   });
   it("avisa quando a carga da sessão é menor que a carga prática do curso", () => {
     expect(avisoDaCargaDaSessao({ carga_horas: 2 }, curso)).toMatch(/2 h.*4 h/);
+    // e explica que o certificado só sai quando a soma das sessões do aluno chega a essa carga
+    expect(avisoDaCargaDaSessao({ carga_horas: 2 }, curso)).toMatch(/soma das sessões/);
     expect(avisoDaCargaDaSessao({ carga_horas: 4 }, curso)).toBeNull();
     expect(avisoDaCargaDaSessao({ carga_horas: 6 }, curso)).toBeNull();
     expect(avisoDaCargaDaSessao({ carga_horas: 2 }, {})).toBeNull();

@@ -234,13 +234,29 @@ export function datasDeConclusao(
 ) {
   const dia = dataBrasilia(hoje);
   const datas: { data_conclusao: string; proxima_renovacao?: string } = { data_conclusao: dia };
-  if (validadeMeses && modalidade !== "apoio") {
-    const [a, m, d] = dia.split("-").map(Number);
-    const renova = new Date(Date.UTC(a, m - 1, d));
-    renova.setUTCMonth(renova.getUTCMonth() + validadeMeses);
-    datas.proxima_renovacao = renova.toISOString().slice(0, 10);
-  }
+  const renovacao = renovacaoAPartirDe(dia, validadeMeses, modalidade);
+  if (renovacao) datas.proxima_renovacao = renovacao;
   return datas;
+}
+
+/**
+ * O dia em que o treinamento volta a vencer: `dia` (AAAA-MM-DD, calendário de Brasília) mais `validadeMeses`.
+ * Null se o curso não tem validade, ou é de apoio, ou o dia não é uma data. É a conta de `datasDeConclusao`
+ * (mesmo estouro de dia 31) para quem parte de um dia que não é hoje: o semipresencial (T12) conta a validade
+ * do FIM do treinamento, que pode ser o dia da prática presencial, depois da conclusão da teoria.
+ */
+export function renovacaoAPartirDe(
+  dia: string | null | undefined,
+  validadeMeses?: number | null,
+  modalidade?: string | null
+): string | null {
+  const partes = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dia ?? "").trim());
+  if (!partes || !validadeMeses || modalidade === "apoio") return null;
+  const [, a, m, d] = partes.map(Number);
+  const renova = new Date(Date.UTC(a, m - 1, d));
+  if (Number.isNaN(renova.getTime())) return null;
+  renova.setUTCMonth(renova.getUTCMonth() + validadeMeses);
+  return renova.toISOString().slice(0, 10);
 }
 
 /** Dia de Brasília de um timestamp do banco; null se vazio ou se não for data. */

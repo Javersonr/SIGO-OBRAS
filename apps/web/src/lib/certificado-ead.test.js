@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { baixarCertificadoPdf } from "./certificado-ead";
+import { baixarCertificadoPdf, distribuirConteudo } from "./certificado-ead";
 import { ErroCertificado, MSG_QR_FALHOU } from "./certificado-ead-falhas";
 
 // Registro das chamadas a doc.text (texto e posição em mm), para conferir a geometria do certificado. O jsPDF
@@ -11,7 +11,7 @@ vi.mock("jspdf", async (importarOriginal) => {
     const doc = new real.jsPDF(...args);
     const desenhar = doc.text.bind(doc);
     doc.text = (texto, x, y, ...resto) => {
-      registro.textos.push({ texto, x, y });
+      registro.textos.push({ texto, x, y, pagina: doc.internal.getCurrentPageInfo().pageNumber });
       return desenhar(texto, x, y, ...resto);
     };
     return doc;
@@ -404,24 +404,29 @@ describe("baixarCertificadoPdf: semipresencial (T12)", () => {
         ...certificado().dados,
         curso: {
           ...certificado().dados.curso,
-          modalidade: "Semipresencial: teoria EAD (4 h) + prática presencial (36 h)",
+          modalidade: "Semipresencial: teoria EAD (32 h) + prática presencial (8 h)",
           carga_horaria_horas: 40,
-          carga_teorica_horas: 4,
-          carga_pratica_horas: 36,
+          carga_teorica_horas: 32,
+          carga_pratica_horas: 8,
         },
         local: {
           ambiente: "Plataforma de Teste — https://exemplo.test/portal",
           pratica: LOCAL_PRATICA,
         },
         pratica: {
-          sessao_id: "sessao-teste",
-          data: "2026-10-05",
-          hora_inicio: "08:00",
-          hora_fim: "17:00",
-          local: LOCAL_PRATICA,
-          instrutor: { nome: "Instrutor da Prática", qualificacao: "Técnico de Teste" },
-          carga_horas: 36,
+          carga_horas: 8,
           resultado: "satisfatorio",
+          sessoes: [
+            {
+              sessao_id: "sessao-teste",
+              data: "2026-10-05",
+              hora_inicio: "08:00",
+              hora_fim: "17:00",
+              local: LOCAL_PRATICA,
+              instrutor: { nome: "Instrutor da Prática", qualificacao: "Técnico de Teste" },
+              carga_horas: 8,
+            },
+          ],
         },
         ...extra,
       },
@@ -431,9 +436,9 @@ describe("baixarCertificadoPdf: semipresencial (T12)", () => {
     const texto = await textoDoPdf(semipresencial());
     // (o PDF escapa os parênteses: confere sem eles)
     expect(texto).toContain("Semipresencial: teoria EAD");
-    expect(texto).toContain("4 h");
+    expect(texto).toContain("32 h");
     expect(texto).toContain("presencial");
-    expect(texto).toContain("36 h");
+    expect(texto).toContain("8 h");
     expect(texto).toContain("Local de realiza");
     expect(texto).toContain("Plataforma de Teste");
     expect(texto).toContain(LOCAL_PRATICA);
@@ -448,7 +453,8 @@ describe("baixarCertificadoPdf: semipresencial (T12)", () => {
     expect(texto).toContain("08:00 às 17:00");
     expect(texto).toContain("Instrutor da Pr");
     expect(texto).toContain("Técnico de Teste");
-    expect(texto).toContain("36 h");
+    // (o PDF escapa os parênteses): a carga da sessão vem logo depois do horário
+    expect(texto).toContain("17:00 \\(8 h\\)");
     expect(texto).toContain("satisfatório");
     expect(texto).toContain("prática presencial registrada pela empresa");
   });
@@ -496,8 +502,11 @@ describe("baixarCertificadoPdf: semipresencial (T12)", () => {
   it("o bloco da prática no verso não invade o QR nem o rodapé", async () => {
     registro.textos.length = 0;
     const longo = semipresencial();
-    longo.dados.pratica.local = "W".repeat(120);
-    longo.dados.pratica.instrutor = { nome: "N".repeat(120), qualificacao: "Q".repeat(200) };
+    longo.dados.pratica.sessoes[0].local = "W".repeat(120);
+    longo.dados.pratica.sessoes[0].instrutor = {
+      nome: "N".repeat(120),
+      qualificacao: "Q".repeat(200),
+    };
     await baixarCertificadoPdf(longo, { gerarQr: async () => PNG_1X1, salvar: () => {} });
     const bloco = registro.textos.filter((c) => c.y > 140 && c.y < 190 && c.x < 30);
     expect(bloco.length).toBeGreaterThan(0);
@@ -506,5 +515,282 @@ describe("baixarCertificadoPdf: semipresencial (T12)", () => {
       const ultima = c.y + ([c.texto].flat().length - 1) * 3.6;
       expect(ultima).toBeLessThan(190);
     }
+  });
+});
+
+describe("baixarCertificadoPdf: verso com conteúdo programático longo e parte prática (T12, revisão 1)", () => {
+  const H = 210;
+  const TITULO = "PARTE PRÁTICA PRESENCIAL";
+  const LOCAL = "Pátio de treinamento de teste";
+  const sessaoDeTeste = (dia, extra = {}) => ({
+    sessao_id: `sessao-${dia}`,
+    data: `2026-10-${String(dia).padStart(2, "0")}`,
+    hora_inicio: "08:00",
+    hora_fim: "17:00",
+    local: LOCAL,
+    instrutor: { nome: "Instrutor da Prática", qualificacao: "Técnico de Teste" },
+    carga_horas: 8,
+    ...extra,
+  });
+  /** Certificado semipresencial (ou EAD, com `semPratica`) com o conteúdo programático dado. */
+  const comConteudo = ({ conteudo, sessoes = [sessaoDeTeste(5)], semPratica = false }) => {
+    const base = certificado();
+    return certificado({
+      dados: {
+        ...base.dados,
+        curso: {
+          ...base.dados.curso,
+          carga_horaria_horas: 40,
+          conteudo_programatico: conteudo,
+          ...(semPratica
+            ? {}
+            : {
+                modalidade: "Semipresencial: teoria EAD (24 h) + prática presencial (16 h)",
+                carga_teorica_horas: 24,
+                carga_pratica_horas: 16,
+              }),
+        },
+        ...(semPratica
+          ? {}
+          : {
+              local: { ambiente: "Plataforma de Teste — https://exemplo.test", pratica: LOCAL },
+              pratica: {
+                carga_horas: sessoes.reduce((t, s) => t + s.carga_horas, 0),
+                resultado: "satisfatorio",
+                sessoes,
+              },
+            }),
+      },
+    });
+  };
+  /** Gera o PDF e devolve o que foi desenhado (com a página) e quantas páginas saíram. */
+  const gerar = async (cert) => {
+    registro.textos.length = 0;
+    let paginas = 0;
+    let bruto = "";
+    await baixarCertificadoPdf(cert, {
+      gerarQr: async () => PNG_1X1,
+      salvar: (doc) => {
+        paginas = doc.getNumberOfPages();
+        bruto = doc.output();
+      },
+    });
+    const textos = registro.textos.map((c) => ({ ...c, linhas: [c.texto].flat() }));
+    return { paginas, bruto, textos };
+  };
+  /** As linhas de conteúdo (as que começam com "Item") e a última linha de cada texto desenhado. */
+  const doConteudo = (textos) => textos.filter((c) => c.linhas[0].startsWith("Item "));
+  const ultimaLinhaY = (c) => c.y + (c.linhas.length - 1) * 3.65;
+  const corrido = (n) =>
+    Array.from(
+      { length: n },
+      (_, i) => `Item ${i + 1}: texto corrido do conteúdo programático da NR-10`
+    ).join("\n");
+
+  it("texto corrido de 36 linhas (sem '# ') no semipresencial: usa a 2ª coluna e fica acima do bloco da prática", async () => {
+    const { paginas, textos } = await gerar(comConteudo({ conteudo: corrido(36) }));
+    expect(paginas).toBe(2);
+    const titulo = textos.find((c) => c.linhas[0] === TITULO);
+    expect(titulo).toBeTruthy();
+    const conteudo = doConteudo(textos);
+    expect(conteudo.length).toBe(36);
+    // o título e o texto da prática estão no verso e nada do conteúdo passa por cima deles
+    expect(titulo.pagina).toBe(2);
+    for (const c of conteudo) {
+      expect(c.pagina).toBe(2);
+      expect(ultimaLinhaY(c)).toBeLessThan(titulo.y - 3);
+    }
+    // a 2ª coluna foi usada (antes, um bloco só ficava na 1ª e escorria pela página)
+    expect(new Set(conteudo.map((c) => Math.round(c.x))).size).toBe(2);
+    // nenhuma linha começa abaixo do limite nem chega à folha de baixo
+    expect(Math.max(...conteudo.map((c) => c.y))).toBeLessThan(titulo.y - 5);
+  });
+
+  it("o mesmo conteúdo com módulos ('# ') também fica acima do bloco da prática", async () => {
+    const conteudo = Array.from({ length: 9 }, (_, m) =>
+      [
+        `# Módulo ${m + 1}`,
+        ...Array.from({ length: 4 }, (_, i) => `Item ${m * 4 + i + 1}: aula do módulo`),
+      ].join("\n")
+    ).join("\n");
+    const { paginas, textos } = await gerar(comConteudo({ conteudo }));
+    expect(paginas).toBe(2);
+    const titulo = textos.find((c) => c.linhas[0] === TITULO);
+    const aulas = doConteudo(textos);
+    expect(aulas.length).toBe(36);
+    for (const c of aulas) expect(ultimaLinhaY(c)).toBeLessThan(titulo.y - 3);
+  });
+
+  it("conteúdo que não cabe nem com a fonte menor abre página nova, sem nada por cima da prática", async () => {
+    const { paginas, textos, bruto } = await gerar(comConteudo({ conteudo: corrido(180) }));
+    expect(paginas).toBeGreaterThanOrEqual(3);
+    const titulos = textos.filter((c) => c.linhas[0] === TITULO);
+    expect(titulos.length).toBe(1);
+    // a prática está na última página; as páginas a mais repetem o cabeçalho e levam o código e o QR
+    expect(titulos[0].pagina).toBe(paginas);
+    expect(textos.filter((c) => c.linhas[0].startsWith("CONTEÚDO PROGRAMÁTICO")).length).toBe(
+      paginas - 1
+    );
+    expect(bruto).toContain("continua");
+    expect(textos.filter((c) => c.linhas[0].startsWith("Código de autenticidade")).length).toBe(
+      paginas
+    );
+    // todo o conteúdo está lá (nenhuma linha se perdeu) e acima do limite em TODAS as páginas
+    const conteudo = doConteudo(textos);
+    const todas = conteudo.flatMap((c) => c.linhas.filter((l) => l.startsWith("Item ")));
+    expect(todas.length).toBe(180);
+    for (const c of conteudo) expect(ultimaLinhaY(c)).toBeLessThan(titulos[0].y - 3);
+  });
+
+  it("certificado EAD com texto corrido muito longo: nada passa da nota do pé nem do rodapé", async () => {
+    const { paginas, textos } = await gerar(
+      comConteudo({ conteudo: corrido(160), semPratica: true })
+    );
+    expect(paginas).toBeGreaterThanOrEqual(3);
+    expect(textos.some((c) => c.linhas[0] === TITULO)).toBe(false);
+    for (const c of doConteudo(textos)) expect(ultimaLinhaY(c)).toBeLessThan(H - 48);
+  });
+
+  it("conteúdo curto sai como sempre saiu: 1 coluna, fonte inteira e uma página de verso", async () => {
+    const { paginas, textos } = await gerar(comConteudo({ conteudo: corrido(8) }));
+    expect(paginas).toBe(2);
+    const conteudo = doConteudo(textos);
+    expect(new Set(conteudo.map((c) => c.x)).size).toBe(1);
+    expect(conteudo[0].y).toBe(40);
+    expect(conteudo[1].y).toBeCloseTo(44.4, 5);
+  });
+
+  it("a prática de vários dias lista cada sessão no verso, com a carga somada, e o bloco cresce sem cortar texto", async () => {
+    const sessoes = [5, 6, 7, 8].map((dia) =>
+      sessaoDeTeste(dia, dia === 7 ? { local: "Galpão B de teste" } : {})
+    );
+    const { textos, bruto } = await gerar(comConteudo({ conteudo: corrido(30), sessoes }));
+    for (const dia of ["05/10/2026", "06/10/2026", "07/10/2026", "08/10/2026"]) {
+      expect(bruto).toContain(dia);
+    }
+    expect(bruto).toContain("4 sess");
+    expect(bruto).toContain("32 h no total");
+    expect(bruto).toContain("Galpão B de teste");
+    expect(bruto).toContain("em todas as sess");
+    // o bloco termina acima da nota do pé (H - 30) e o conteúdo, acima do título dele
+    const titulo = textos.find((c) => c.linhas[0] === TITULO);
+    const bloco = textos.find(
+      (c) => c.x === 18 && c.pagina === 2 && c.y > titulo.y && c.linhas.length > 3
+    );
+    expect(bloco).toBeTruthy();
+    expect(ultimaLinhaY({ ...bloco, linhas: bloco.linhas })).toBeLessThan(H - 33);
+    for (const c of doConteudo(textos)) expect(ultimaLinhaY(c)).toBeLessThan(titulo.y - 3);
+    // com 4 sessões o título sobe em relação ao de uma sessão só
+    const umaSessao = await gerar(comConteudo({ conteudo: corrido(30) }));
+    const tituloUma = umaSessao.textos.find((c) => c.linhas[0] === TITULO);
+    expect(titulo.y).toBeLessThan(tituloUma.y);
+  });
+
+  it("com uma sessão só, o bloco termina em H - 36,5 (acima da nota do pé, que continua em H - 30)", async () => {
+    const { textos } = await gerar(comConteudo({ conteudo: corrido(8) }));
+    const titulo = textos.find((c) => c.linhas[0] === TITULO);
+    const bloco = textos.find(
+      (c) => c.pagina === 2 && c.x === 18 && c.y > titulo.y && c.y < titulo.y + 6
+    );
+    expect(bloco.linhas[0]).toContain("Realizada em 05/10/2026");
+    // o título fica 4,5 mm acima da 1ª linha; a última linha do bloco, em H - 36,5 (fonte de 8,5 pt)
+    expect(bloco.y - titulo.y).toBeCloseTo(4.5, 5);
+    expect(bloco.y + (bloco.linhas.length - 1) * 8.5 * 0.3528 * 1.15).toBeCloseTo(H - 36.5, 5);
+    const nota = textos.find((c) => c.linhas[0].startsWith("Teoria a distância"));
+    expect(nota.y).toBe(H - 30);
+  });
+});
+
+describe("distribuirConteudo: colunas, fonte e páginas do conteúdo programático (T12, revisão 1)", () => {
+  // jsPDF de mentira: cada texto vira uma linha só (60 caracteres por linha de cada coluna não importam aqui)
+  const doc = {
+    setFont: () => {},
+    setFontSize: () => {},
+    splitTextToSize: (texto) => [texto],
+  };
+  const linhas = (n, prefixo = "Item") =>
+    Array.from({ length: n }, (_, i) => `${prefixo} ${i + 1}`);
+  const CFG = { colunasBase: 2, limite: 144, largura: 261 };
+
+  it("um bloco que cabe numa coluna vazia não é partido entre colunas", () => {
+    // 3 módulos de 8 linhas: 8 x 4,4 = 35 mm cada; dois cabem na 1ª coluna (40 a 144), o 3º vai para a 2ª
+    const blocos = [0, 1, 2].map((m) => [`# Módulo ${m}`, ...linhas(7, `M${m} aula`)]);
+    const r = distribuirConteudo(doc, blocos, CFG);
+    expect(r.paginas).toBe(1);
+    expect(r.escala).toBe(1);
+    for (const m of [0, 1, 2]) {
+      const doModulo = r.itens.filter(
+        (i) => i.partes[0].startsWith(`M${m} aula`) || i.partes[0] === `Módulo ${m}`
+      );
+      expect(new Set(doModulo.map((i) => i.col)).size).toBe(1);
+    }
+    expect(r.itens.find((i) => i.partes[0] === "Módulo 2").col).toBe(1);
+  });
+
+  it("um bloco mais alto que uma coluna (texto corrido) é partido por linha e usa a 2ª coluna", () => {
+    const r = distribuirConteudo(doc, [linhas(40)], CFG);
+    expect(r.paginas).toBe(1);
+    expect(r.escala).toBe(1);
+    expect(r.itens.length).toBe(40);
+    expect(new Set(r.itens.map((i) => i.col))).toEqual(new Set([0, 1]));
+    for (const i of r.itens) expect(i.y + 4.4).toBeLessThanOrEqual(CFG.limite + 1e-6);
+    // na ordem do texto: a 1ª coluna inteira antes da 2ª
+    const colunas = r.itens.map((i) => i.col);
+    expect(colunas).toEqual([...colunas].sort());
+  });
+
+  it("conteúdo curto com 1 coluna fica em 1 coluna e na fonte inteira", () => {
+    const r = distribuirConteudo(doc, [linhas(10)], { ...CFG, colunasBase: 1 });
+    expect(r.colunas).toBe(1);
+    expect(r.escala).toBe(1);
+    r.itens.forEach((item, k) => expect(item.y).toBeCloseTo(40 + k * 4.4, 6));
+    expect(r.itens.length).toBe(10);
+  });
+
+  it("conteúdo de 1 coluna que não cabe passa para 2 colunas antes de reduzir a fonte", () => {
+    const r = distribuirConteudo(doc, [linhas(30)], { ...CFG, colunasBase: 1 });
+    expect(r.colunas).toBe(2);
+    expect(r.escala).toBe(1);
+  });
+
+  it("o que não cabe com a fonte inteira usa uma fonte menor antes de abrir página", () => {
+    // 2 colunas de (144 - 40) / 4,4 = 23 linhas = 46; com 0,92 (4,05 mm): 25 por coluna = 50
+    const r = distribuirConteudo(doc, [linhas(49)], CFG);
+    expect(r.paginas).toBe(1);
+    expect(r.escala).toBeLessThan(1);
+    for (const i of r.itens) expect(i.y).toBeLessThan(CFG.limite);
+  });
+
+  it("passando da menor fonte, segue em páginas a mais, sem perder linha e sem passar do limite", () => {
+    const r = distribuirConteudo(doc, [linhas(300)], CFG);
+    expect(r.paginas).toBeGreaterThanOrEqual(3);
+    expect(r.escala).toBe(0.78);
+    expect(r.itens.length).toBe(300);
+    for (const i of r.itens) expect(i.y + 4.4 * 0.78).toBeLessThanOrEqual(CFG.limite + 1e-6);
+    // as páginas se enchem em ordem
+    const paginas = r.itens.map((i) => i.pagina);
+    expect(paginas).toEqual([...paginas].sort((a, b) => a - b));
+  });
+
+  it("um parágrafo mais alto que uma coluna inteira é partido (nada passa do limite)", () => {
+    const longo = { ...doc, splitTextToSize: () => linhas(80, "L") };
+    const r = distribuirConteudo(longo, [["texto muito longo"]], CFG);
+    const todas = r.itens.flatMap((i) => i.partes);
+    expect(todas.length).toBe(80);
+    for (const i of r.itens) {
+      expect(i.y + i.partes.length * 4.4 * r.escala).toBeLessThanOrEqual(CFG.limite + 1e-6);
+    }
+  });
+
+  it("limite absurdo (o bloco da prática ocupando quase a página) não trava: uma linha por coluna", () => {
+    const r = distribuirConteudo(doc, [linhas(5)], { ...CFG, limite: 41 });
+    expect(r.itens.length).toBe(5);
+    expect(r.paginas).toBeGreaterThanOrEqual(2);
+  });
+
+  it("sem conteúdo, nada é distribuído", () => {
+    const r = distribuirConteudo(doc, [], CFG);
+    expect(r.itens).toEqual([]);
+    expect(r.paginas).toBe(1);
   });
 });

@@ -40,6 +40,7 @@ import {
   provaDaOrdem,
   reconfirmarSenha,
   refsDasAulasLiberadas,
+  renovacaoAPartirDe,
   respostaDaCorrecao,
   resultadoDoSinal,
   situacaoDasTentativas,
@@ -758,6 +759,36 @@ test("datasDeConclusao: o dia 31 também estoura contando sobre a data de Brasí
     data_conclusao: "2026-01-31",
     proxima_renovacao: "2026-03-03",
   });
+});
+
+// ----------------------------------------------------------- renovacaoAPartirDe (T12)
+test("renovacaoAPartirDe: a validade conta de um dia dado, com a mesma conta de datasDeConclusao", () => {
+  assert.equal(renovacaoAPartirDe("2026-10-05", 12), "2027-10-05");
+  assert.equal(renovacaoAPartirDe("2026-10-05", 24, "semipresencial"), "2028-10-05");
+  assert.equal(renovacaoAPartirDe("2026-10-05", 3), "2027-01-05"); // vira o ano
+  // dia 31 que não existe no mês de destino estoura, como em datasDeConclusao
+  assert.equal(renovacaoAPartirDe("2026-01-31", 1), "2026-03-03");
+  // e dá o mesmo que datasDeConclusao quando o dia é o de hoje
+  const hoje = new Date("2026-10-05T15:00:00.000Z");
+  assert.equal(renovacaoAPartirDe("2026-10-05", 12), datasDeConclusao(hoje, 12).proxima_renovacao);
+});
+
+test("renovacaoAPartirDe: sem validade, de apoio ou sem dia válido não há renovação", () => {
+  for (const validade of [null, undefined, 0]) {
+    assert.equal(renovacaoAPartirDe("2026-10-05", validade), null);
+  }
+  assert.equal(renovacaoAPartirDe("2026-10-05", 12, "apoio"), null);
+  for (const dia of [null, undefined, "", "amanhã", "05/10/2026"]) {
+    assert.equal(renovacaoAPartirDe(dia, 12), null, String(dia));
+  }
+});
+
+test("semipresencial: a validade conta do fim do treinamento, não da teoria (12 meses, teoria em 01/10/2025, prática em 05/10/2026)", () => {
+  // a matrícula guardou a validade da TEORIA: 01/10/2026, anterior ao dia da prática
+  const daTeoria = datasDeConclusao(new Date("2025-10-01T15:00:00.000Z"), 12, "semipresencial");
+  assert.equal(daTeoria.proxima_renovacao, "2026-10-01");
+  // contada do dia da prática, a validade vai a 05/10/2027 (o certificado não nasce vencido)
+  assert.equal(renovacaoAPartirDe("2026-10-05", 12, "semipresencial"), "2027-10-05");
 });
 
 // ------------------------------------------------------- período do certificado (T8)

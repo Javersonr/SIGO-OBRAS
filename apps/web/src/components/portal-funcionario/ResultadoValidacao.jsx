@@ -111,12 +111,13 @@ export default function ResultadoValidacao({
                   <dd>{c.local.ambiente}</dd>
                 </>
               )}
-              {/* semipresencial (T12): o dia, o local e a carga da parte prática presencial */}
+              {/* semipresencial (T12): o dia (ou o primeiro e o último), o local e a carga da prática presencial */}
               {c.pratica?.data && (
                 <>
                   <dt className="text-slate-500">Prática presencial</dt>
                   <dd>
                     {dataBr(c.pratica.data)}
+                    {c.pratica.data_fim ? ` a ${dataBr(c.pratica.data_fim)}` : ""}
                     {c.pratica.local ? `, em ${c.pratica.local}` : ""}
                     {c.pratica.carga_horas
                       ? ` (${String(c.pratica.carga_horas).replace(".", ",")} h)`
