@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   EVENTOS_DE_ESTUDO,
+  EVENTOS_DE_FORA_DA_EMPRESA,
   EVENTOS_DO_RH,
   EVENTOS_DO_SISTEMA,
   EVENTOS_FORA_DA_JANELA,
@@ -115,7 +116,8 @@ describe("quais eventos contam para a janela do aluno", () => {
   it("todo evento que o portal grava está classificado como estudo ou não (evento novo sem dono faz o teste acusar)", () => {
     const ler = (caminho) =>
       readFileSync(new URL(`../../../../supabase/functions/${caminho}`, import.meta.url), "utf8");
-    const index = ler("portal-funcionario/index.ts");
+    // T38: os eventos da trilha do login e da ativação saem da regra pura (_shared/portal-credencial.ts)
+    const index = ler("portal-funcionario/index.ts") + "\n" + ler("_shared/portal-credencial.ts");
     const constantes = [
       "portal-funcionario/regras.ts",
       "portal-funcionario/declaracao-ambiente.ts",
@@ -152,6 +154,9 @@ describe("quais eventos contam para a janela do aluno", () => {
       // a conclusão que o sistema adiou e registrou depois (A6): não é o aluno estudando
       "conclusao_adiada",
       "conclusao_registrada",
+      // T38: a provisória liberou o acesso (é o aluno, mas não é estudo) e a senha mudou fora da empresa
+      "acesso_liberado",
+      "acesso_aguardando_provisoria",
     ];
     for (const nome of gravados) {
       expect(
@@ -166,6 +171,34 @@ describe("quais eventos contam para a janela do aluno", () => {
     for (const nome of EVENTOS_DO_SISTEMA) expect(EVENTOS_DE_ESTUDO, nome).not.toContain(nome);
     // e o portal grava os dois eventos do sistema (se mudar o nome lá, muda aqui)
     for (const nome of EVENTOS_DO_SISTEMA) expect(gravados, nome).toContain(nome);
+    // T38: o que a trilha recebe por algo de FORA da empresa é gravado pelo portal e fica fora da janela
+    for (const nome of EVENTOS_DE_FORA_DA_EMPRESA) {
+      expect(gravados, nome).toContain(nome);
+      expect(EVENTOS_FORA_DA_JANELA, nome).toContain(nome);
+      expect(EVENTOS_DE_ESTUDO, nome).not.toContain(nome);
+    }
+  });
+
+  it("T38: o procedimento do suporte (0145) só grava na trilha eventos que ficam fora da janela", () => {
+    const migracao = readFileSync(
+      new URL("../../../../supabase/migrations/0145_portal_credencial.sql", import.meta.url),
+      "utf8"
+    );
+    const corpo = migracao.slice(
+      migracao.indexOf(
+        "create or replace function public.portal_credencial_redefinir_pelo_operador("
+      )
+    );
+    const gravados = [
+      ...corpo.matchAll(
+        /insert into public\.treinamento_evento[^;]*?values\s*\([^,]+,[^,]+,\s*'([a-z_]+)'/g
+      ),
+    ].map((m) => m[1]);
+    expect(gravados.sort()).toEqual(["acesso_aguardando_provisoria", "acesso_desativado"]);
+    for (const nome of gravados) {
+      expect(EVENTOS_FORA_DA_JANELA, nome).toContain(nome);
+      expect(ehAtividadeDoAluno(ev(nome, "2026-10-07T12:00:00Z")), nome).toBe(false);
+    }
   });
 
   it("a conclusão que o sistema adiou ou registrou depois não é atividade do aluno (nem estende a janela do dia)", () => {
@@ -210,6 +243,35 @@ describe("janelasPorAlunoEDia", () => {
     const [linha] = janelasPorAlunoEDia(eventos);
     expect(linha.primeiroEm).toBe("2026-10-07T11:00:00Z");
     expect(linha.ultimoEm).toBe("2026-10-07T14:45:00Z");
+  });
+
+  it("T38: a senha que mudou fora da empresa (acesso_aguardando_provisoria) não abre nem estica a janela do dia", () => {
+    // sozinho, num dia sem estudo: não abre linha nenhuma
+    expect(
+      janelasPorAlunoEDia([ev("acesso_aguardando_provisoria", "2026-10-07T17:00:00Z")])
+    ).toEqual([]);
+    // depois do último evento do aluno: a janela termina no último evento DELE
+    const [linha] = janelasPorAlunoEDia([
+      ev("login", "2026-10-07T11:00:00Z"),
+      ev("aula_concluida", "2026-10-07T12:00:00Z", { matricula_id: "m1" }),
+      ev("acesso_aguardando_provisoria", "2026-10-07T21:00:00Z", {
+        detalhe: { motivo: "senha_nova" },
+      }),
+    ]);
+    expect(linha).toMatchObject({ ultimoEm: "2026-10-07T12:00:00Z", minutos: 60, eventos: 2 });
+    // e antes do primeiro evento do aluno também não abre a janela mais cedo
+    const [cedo] = janelasPorAlunoEDia([
+      ev("acesso_aguardando_provisoria", "2026-10-07T10:00:00Z", {
+        detalhe: { motivo: "suporte" },
+      }),
+      ev("login", "2026-10-07T11:00:00Z"),
+    ]);
+    expect(cedo).toMatchObject({ primeiroEm: "2026-10-07T11:00:00Z", eventos: 1 });
+    // a liberação do acesso pela provisória, o login (inclusive o da troca de empresa) e a troca de senha continuam
+    // sendo o aluno
+    for (const nome of ["acesso_liberado", "login", "troca_senha"]) {
+      expect(ehAtividadeDoAluno(ev(nome, "2026-10-07T12:00:00Z")), nome).toBe(true);
+    }
   });
 
   it("evento do navegador, do RH, senha errada e data ilegível não entram na janela", () => {

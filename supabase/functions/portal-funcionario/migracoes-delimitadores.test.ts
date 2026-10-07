@@ -214,14 +214,26 @@ const migracoes = readdirSync(pastaDasMigracoes)
   .filter((nome) => /^\d{4}_.+\.sql$/.test(nome))
   .map((nome) => ({ nome: `supabase/migrations/${nome}`, caminho: join(pastaDasMigracoes, nome) }));
 // os smokes e conferências do EAD também rodam no banco (e o `tools/*.sql` é do Javerson, não do agente); T33: o
-// smoke, a conferência e o desfazer das permissões do EAD também
+// smoke, a conferência e o desfazer das permissões do EAD também; T38: o smoke e os scripts do operador do portal
 const scriptsDoEad = readdirSync(pastaDasFerramentas)
   .filter((nome) =>
-    /^((smoke-ead-|conferir-checks-ead|ead-).+|(smoke|conferir|desfazer)-permissoes-ead)\.sql$/.test(
+    /^((smoke-ead-|conferir-checks-ead|ead-|portal-credencial-).+|(smoke|conferir|desfazer)-permissoes-ead|smoke-portal-credencial)\.sql$/.test(
       nome
     )
   )
   .map((nome) => ({ nome: `tools/${nome}`, caminho: join(pastaDasFerramentas, nome) }));
+
+test("T38: o smoke e os scripts do operador do portal estão entre os scripts examinados", () => {
+  const nomes = scriptsDoEad.map((s) => s.nome);
+  for (const nome of [
+    "tools/smoke-portal-credencial.sql",
+    "tools/portal-credencial-alertas.sql",
+    "tools/portal-credencial-conferir.sql",
+    "tools/portal-credencial-redefinir.sql",
+  ]) {
+    assert.ok(nomes.includes(nome), nome);
+  }
+});
 
 test("T33: o smoke, a conferência e o desfazer das permissões do EAD estão entre os scripts examinados", () => {
   const nomes = scriptsDoEad.map((s) => s.nome);

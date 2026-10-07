@@ -11,6 +11,7 @@ import {
   Award,
   XCircle,
   RefreshCw,
+  ArrowLeftRight,
 } from "lucide-react";
 import {
   chamarPortal,
@@ -29,7 +30,12 @@ import {
   renovacaoParaExibir,
   rotuloDoBotaoDoCurso,
 } from "@/lib/portal-curso";
-import { LoginPortal, TrocarSenhaPortal } from "@/components/portal-funcionario/LoginPortal";
+import {
+  ListaDeEmpresas,
+  LoginPortal,
+  TrocarSenhaPortal,
+} from "@/components/portal-funcionario/LoginPortal";
+import { TEXTOS_DO_LOGIN, passoDoLogin } from "@/lib/portal-login";
 import CursoPortal from "@/components/portal-funcionario/CursoPortal";
 import DeclaracaoAmbientePortal from "@/components/portal-funcionario/DeclaracaoAmbientePortal";
 import DocumentosPortal from "@/components/portal-funcionario/DocumentosPortal";
@@ -53,6 +59,10 @@ import { precisaDeclararAmbiente } from "@/lib/portal-declaracao";
  * Acesso com USUÁRIO (CPF) e SENHA pessoal criada no primeiro login (o RH
  * gera a provisória na ficha do funcionário). Links antigos com ?token= caem
  * aqui e pedem login — o link sozinho não identifica mais ninguém.
+ *
+ * T38: a senha é da pessoa e vale em todas as empresas em que ela tem cadastro. Com duas ou mais, ela escolhe a
+ * empresa ao entrar (LoginPortal) e pode trocar de empresa pelo cabeçalho; a sessão guardada no aparelho é a da
+ * última empresa escolhida.
  */
 export default function PortalFuncionario() {
   const [sessao, setSessao] = useState(() => sessaoPortal.ler());
@@ -87,10 +97,7 @@ export default function PortalFuncionario() {
     setUsuarioDoLogin("");
   };
 
-  const erroSessao = (e) => {
-    if (e?.codigo === "TROCAR_SENHA") atualizarSessao({ ...sessao, trocar_senha: true });
-    else sair(e?.message || "Sua sessão terminou — entre de novo");
-  };
+  const erroSessao = (e) => sair(e?.message || "Sua sessão terminou — entre de novo");
 
   if (!sessao?.token) {
     return (
@@ -105,33 +112,105 @@ export default function PortalFuncionario() {
     );
   }
 
-  if (sessao.trocar_senha || alterandoSenha) {
+  // (a sessão de antes da T38 podia guardar `trocar_senha`: hoje o primeiro acesso é a etapa da provisória, no login,
+  // e o token antigo cai no primeiro pedido com SESSAO)
+  if (alterandoSenha) {
     return (
       <TrocarSenhaPortal
         token={sessao.token}
         nome={sessao.nome}
         usuario={usuarioDoLogin}
-        obrigatoria={!!sessao.trocar_senha}
         onConcluir={(token) => {
-          atualizarSessao({ ...sessao, token, trocar_senha: false });
+          atualizarSessao({ ...sessao, token });
           setAlterandoSenha(false);
         }}
-        onCancelar={sessao.trocar_senha ? () => sair() : () => setAlterandoSenha(false)}
+        onCancelar={() => setAlterandoSenha(false)}
       />
     );
   }
 
   return (
     <PainelPortal
+      // outra empresa = outro painel (cursos, aba e curso aberto são daquela empresa)
+      key={sessao.token}
       token={sessao.token}
       onSair={() => sair()}
       onAlterarSenha={() => setAlterandoSenha(true)}
+      onTrocarEmpresa={(nova) => atualizarSessao(nova)}
       onErroSessao={erroSessao}
     />
   );
 }
 
-function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
+/**
+ * "Trocar de empresa" (T38): as OUTRAS empresas em que a pessoa já entra com a senha. Escolher uma devolve o token
+ * dela, que vence junto com o desta sessão (o servidor confere).
+ */
+function TrocaDeEmpresa({ token, onTrocada, onFechar, onErroSessao }) {
+  const [empresas, setEmpresas] = useState(null);
+  const [ocupado, setOcupado] = useState(null);
+  const [erro, setErro] = useState("");
+
+  useEffect(() => {
+    let vivo = true;
+    chamarPortal("empresas", {}, token)
+      .then((r) => vivo && setEmpresas(Array.isArray(r?.empresas) ? r.empresas : []))
+      .catch((e) => {
+        if (!vivo) return;
+        if (e.codigo === "SESSAO") onErroSessao(e);
+        else setErro(mensagemDeFalha(e));
+        setEmpresas([]);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [token]);
+
+  const escolher = async (empresa) => {
+    setErro("");
+    setOcupado(empresa.id);
+    try {
+      const r = await chamarPortal("trocar_empresa", { funcionario_id: empresa.id }, token);
+      const passo = passoDoLogin(r);
+      if (passo.tela === "painel") onTrocada(passo.sessao);
+      else setErro(passo.mensagem);
+    } catch (e) {
+      if (e.codigo === "SESSAO") onErroSessao(e);
+      else setErro(mensagemDeFalha(e));
+    } finally {
+      setOcupado(null);
+    }
+  };
+
+  return (
+    <Card>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="font-semibold text-slate-800">{TEXTOS_DO_LOGIN.escolherEmpresa}</p>
+          <Button size="sm" variant="ghost" onClick={onFechar}>
+            Fechar
+          </Button>
+        </div>
+        {empresas === null ? (
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <Loader2 className="w-4 h-4 animate-spin" /> Carregando suas empresas...
+          </div>
+        ) : empresas.length === 0 ? (
+          <p className="text-sm text-slate-500">{TEXTOS_DO_LOGIN.dicaOutraEmpresa}</p>
+        ) : (
+          <ListaDeEmpresas empresas={empresas} onEscolher={escolher} ocupado={ocupado} />
+        )}
+        {erro && (
+          <p role="alert" className="text-sm text-red-600">
+            {erro}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PainelPortal({ token, onSair, onAlterarSenha, onTrocarEmpresa, onErroSessao }) {
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [tentando, setTentando] = useState(false);
@@ -143,6 +222,8 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
   // tomada no clique que abre o curso, uma vez: passar da meia-noite com o curso aberto não derruba a tela.
   const [aberta, setAberta] = useState(null);
   const [aba, setAba] = useState("cursos");
+  // "Trocar de empresa" aberto (T38: só aparece com outra empresa liberada)
+  const [trocandoEmpresa, setTrocandoEmpresa] = useState(false);
   // quando os dados (e as URLs assinadas de vídeo/PDF, que valem 3 h) foram pedidos pela última vez
   const carregadoEmRef = useRef(0);
 
@@ -360,6 +441,17 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
               </p>
             )}
           </div>
+          {dados?.outras_empresas > 0 && (
+            <button
+              onClick={() => setTrocandoEmpresa((v) => !v)}
+              className="p-2 rounded-md hover:bg-white/10"
+              title={TEXTOS_DO_LOGIN.trocarDeEmpresa}
+              aria-label={TEXTOS_DO_LOGIN.trocarDeEmpresa}
+              aria-expanded={trocandoEmpresa}
+            >
+              <ArrowLeftRight className="w-5 h-5" />
+            </button>
+          )}
           <button
             onClick={onAlterarSenha}
             className="p-2 rounded-md hover:bg-white/10"
@@ -380,6 +472,14 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
       </header>
 
       <div className="max-w-3xl mx-auto p-4 space-y-3">
+        {trocandoEmpresa && (
+          <TrocaDeEmpresa
+            token={token}
+            onTrocada={onTrocarEmpresa}
+            onFechar={() => setTrocandoEmpresa(false)}
+            onErroSessao={onErroSessao}
+          />
+        )}
         <nav aria-label="Áreas do portal" className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {[
             ["cursos", "Cursos"],
@@ -482,6 +582,10 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
             )}
           </>
         )}
+        {/* T38: dica fixa, igual para todos e sem número nem nome de empresa (defesa 3, R4) */}
+        <p className="text-xs text-slate-500 text-center pt-4">
+          {TEXTOS_DO_LOGIN.dicaOutraEmpresa}
+        </p>
       </div>
     </div>
   );

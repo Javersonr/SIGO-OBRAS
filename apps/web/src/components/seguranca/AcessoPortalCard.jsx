@@ -71,8 +71,9 @@ export default function AcessoPortalCard({ funcionario, empresaAtiva, onMudou })
     const confirmado = await confirmar({
       titulo: "Gerar nova senha provisória?",
       texto:
-        `${funcionario.nome_completo}: a senha atual deixa de valer e ele terá de criar outra ` +
-        "no próximo acesso. A nova senha provisória aparece uma única vez, para você entregar.",
+        `${funcionario.nome_completo}: a senha atual deixa de abrir o portal nesta empresa até ele ` +
+        "entrar com a nova senha provisória, que vale por 7 dias. Ela aparece uma única vez, para você " +
+        "entregar.",
       rotuloConfirmar: "Gerar nova senha",
     });
     if (!confirmado) return;
@@ -143,6 +144,9 @@ export default function AcessoPortalCard({ funcionario, empresaAtiva, onMudou })
         </p>
       )}
 
+      {/* T38: a senha mudou fora desta empresa (ou o CPF mudou): o que fazer, sem dizer onde nem por quem */}
+      {status.dica && <p className="text-xs text-orange-700">{status.dica}</p>}
+
       {acesso === null && (
         <div className="flex flex-wrap items-end gap-2">
           {!funcionario.cpf && (
@@ -187,8 +191,9 @@ export default function AcessoPortalCard({ funcionario, empresaAtiva, onMudou })
       {credenciais && (
         <div className="rounded-md border border-amber-300 bg-amber-50 p-3 space-y-2">
           <p className="text-xs text-amber-800 font-medium">
-            Entregue agora — a senha provisória não aparece de novo. No primeiro acesso o
-            funcionário cria a senha pessoal dele.
+            Entregue agora — a senha provisória não aparece de novo e vale por 7 dias. No primeiro
+            acesso o funcionário cria a senha pessoal dele (ou, se já usa o portal em outra empresa,
+            confirma a senha que já usa).
           </p>
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div>

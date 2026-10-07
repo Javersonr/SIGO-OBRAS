@@ -39,6 +39,9 @@ export const ROTULO_EVENTO = {
   senha_redefinida: "Senha redefinida pelo RH",
   acesso_desativado: "Acesso desativado pelo RH",
   acesso_reativado: "Acesso reativado pelo RH",
+  // T38 (um login em mais de uma empresa): a provisória desta empresa liberou o acesso; e a senha mudou fora dela
+  acesso_liberado: "Acesso liberado com a senha provisória",
+  acesso_aguardando_provisoria: "Acesso passou a pedir nova senha provisória",
   abrir_curso: "Abriu o curso",
   abrir_aula: "Abriu a aula",
   play: "Iniciou o vídeo",
@@ -75,7 +78,13 @@ export function rotuloDoEvento(nome) {
 /** Cor da linha: "atencao" (âmbar), "revogado" (vermelho) ou "normal". */
 export function tomDoEvento(nome) {
   if (nome === "certificado_revogado") return "revogado";
-  if (nome === "progresso_ajustado" || nome === "login_falha") return "atencao";
+  if (
+    nome === "progresso_ajustado" ||
+    nome === "login_falha" ||
+    nome === "acesso_aguardando_provisoria"
+  ) {
+    return "atencao";
+  }
   return "normal";
 }
 
@@ -161,6 +170,16 @@ export function descreverDetalhe(evento) {
     case "duvida_resposta_editada":
       // o texto anterior inteiro fica no evento (é o que a trilha guarda), mas não polui a linha
       return juntar(d.por && `por ${d.por}`, "versão anterior guardada no registro");
+    case "login":
+      // T38: a entrada pela senha provisória (a ativação); a entrada com a senha pessoal não leva detalhe
+      return d.via === "provisoria" ? "com a senha provisória" : "";
+    case "acesso_aguardando_provisoria":
+      // T38: nunca diz qual empresa nem quem mudou a senha (quem sabe é o suporte do SIGO)
+      return d.motivo === "senha_nova"
+        ? "a senha do portal mudou fora desta empresa"
+        : d.motivo === "suporte"
+          ? "a senha foi redefinida pelo suporte do SIGO"
+          : "";
     default:
       return d.por ? `por ${d.por}` : "";
   }

@@ -81,6 +81,17 @@ export const EVENTO_TENTATIVA_LIBERADA = "tentativa_liberada";
 export const EVENTO_CERTIFICADO_REVOGADO = "certificado_revogado";
 /** A resposta de uma dúvida foi editada (A6, T21): o evento guarda a versão anterior inteira. */
 export const EVENTO_DUVIDA_RESPOSTA_EDITADA = "duvida_resposta_editada";
+/**
+ * T38 (um login em mais de uma empresa): a senha provisória desta empresa liberou o acesso (primeira senha criada ou
+ * senha atual confirmada, com ou sem troca). Sem detalhe: a trilha não diz se a pessoa já tinha senha.
+ */
+export const EVENTO_ACESSO_LIBERADO = "acesso_liberado";
+/**
+ * T38: o acesso desta empresa, que estava liberado, passou a pedir senha provisória nova porque a senha mudou fora
+ * dela (senha nova criada com a provisória de outra empresa, ou o procedimento do suporte do SIGO). Não diz onde nem
+ * por quem. Não é atividade do aluno (fica fora da janela do dia, T35).
+ */
+export const EVENTO_ACESSO_AGUARDANDO_PROVISORIA = "acesso_aguardando_provisoria";
 
 export interface EventoPortal {
   empresa_id: string;
@@ -101,16 +112,21 @@ export interface EventoPortal {
  * Grava na trilha de auditoria. Nunca derruba a ação principal. Devolve se o evento ficou gravado:
  * quase todo chamador ignora, mas quem depende da linha (a prova só abre se o início ficou na trilha)
  * confere. A trilha é só de inclusão: o banco recusa UPDATE e DELETE (migração 0135).
+ *
+ * `semOrigem` (T38, defesa 4 do spec): grava SEM IP e dispositivo. É o `login_falha`: a senha errada que chega à
+ * trilha de uma empresa pode ser da pessoa tentando entrar em outra, e o RH dessa empresa não pode ler de onde ela
+ * tentou. O IP e o dispositivo completos vão só para o registro do operador (`portal_credencial_evento`).
  */
 export async function registrarEvento(
   // deno-lint-ignore no-explicit-any
   supabase: any,
   req: Request,
-  e: EventoPortal
+  e: EventoPortal,
+  opcoes: { semOrigem?: boolean } = {}
 ): Promise<boolean> {
   const { error } = await supabase
     .from("treinamento_evento")
-    .insert({ ...e, ...origemDaRequisicao(req) });
+    .insert({ ...e, ...(opcoes.semOrigem ? {} : origemDaRequisicao(req)) });
   if (error) console.error("[portal-funcionario] evento:", e.evento, error.message);
   return !error;
 }

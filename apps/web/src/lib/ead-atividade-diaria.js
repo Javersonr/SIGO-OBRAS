@@ -7,7 +7,8 @@
  * (`treinamento_evento.origem = 'servidor'`: o que o servidor viu e decidiu, com a hora do servidor; o que o
  * navegador relata, como play e pausa, não entra). O RH compara a janela com o horário de trabalho do aluno. Não
  * contam como atividade do aluno: as ações do RH sobre ele (criar acesso, redefinir senha, liberar tentativa,
- * revogar certificado) e a senha errada no login (pode ser de outra pessoa).
+ * revogar certificado), a senha errada no login (pode ser de outra pessoa) e o aviso de que a senha do portal mudou
+ * fora da empresa (T38).
  *
  * Junto da janela vai a situação da declaração de ambiente e horário (`declaracao_ambiente`, gravada pelo servidor
  * na 1ª abertura de cada curso no dia): "estudou" é ter, no dia, um evento de ESTUDO (`EVENTOS_DE_ESTUDO`: aula,
@@ -50,10 +51,25 @@ export const EVENTOS_DO_RH = [
 export const EVENTOS_DO_SISTEMA = ["conclusao_adiada", "conclusao_registrada"];
 
 /**
- * Fora da janela: as ações do RH, os eventos do sistema e a senha errada no login (pode ser de outra pessoa, não é o
- * aluno).
+ * Eventos que a trilha da empresa recebe por algo que aconteceu FORA dela (T38, um login em mais de uma empresa): a
+ * senha do portal mudou em outra empresa, ou pelo suporte do SIGO, e o acesso desta passou a pedir senha provisória
+ * nova (`acesso_aguardando_provisoria`). Não é o aluno estudando: não abre nem estica a janela do dia, e o RH não vê
+ * como atividade do aluno a hora em que a senha mudou lá fora. (O `acesso_desativado` que o procedimento do suporte
+ * grava na empresa ocupante já está em `EVENTOS_DO_RH`.) `ead-atividade-diaria.test.js` confere que o portal e o
+ * procedimento do suporte (migração 0145) os gravam.
  */
-export const EVENTOS_FORA_DA_JANELA = [...EVENTOS_DO_RH, ...EVENTOS_DO_SISTEMA, "login_falha"];
+export const EVENTOS_DE_FORA_DA_EMPRESA = ["acesso_aguardando_provisoria"];
+
+/**
+ * Fora da janela: as ações do RH, os eventos do sistema, os que vêm de fora da empresa (T38) e a senha errada no
+ * login (pode ser de outra pessoa, não é o aluno).
+ */
+export const EVENTOS_FORA_DA_JANELA = [
+  ...EVENTOS_DO_RH,
+  ...EVENTOS_DO_SISTEMA,
+  ...EVENTOS_DE_FORA_DA_EMPRESA,
+  "login_falha",
+];
 
 /**
  * Eventos de servidor que são ESTUDAR um curso (cada um ligado a uma matrícula): o progresso que o servidor creditou

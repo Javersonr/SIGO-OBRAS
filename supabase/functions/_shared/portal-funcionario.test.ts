@@ -141,6 +141,25 @@ test("registrarEvento: evento relatado pelo navegador grava origem 'navegador'",
   assert.equal(supabase.linhas[0].linha.evento, "play");
 });
 
+test("registrarEvento: semOrigem grava sem IP e sem dispositivo (T38, defesa 4: login_falha na trilha da empresa)", async () => {
+  const supabase = fakeSupabase();
+  const r = await registrarEvento(
+    supabase,
+    req({ "x-forwarded-for": "198.51.100.7, 203.0.113.9", "user-agent": "Navegador/1.0" }),
+    { ...EVENTO, evento: "login_falha", detalhe: { tentativa: 1, bloqueou: false } },
+    { semOrigem: true }
+  );
+  assert.equal(r, true);
+  const linha = supabase.linhas[0].linha;
+  assert.equal("ip" in linha, false);
+  assert.equal("dispositivo" in linha, false);
+  assert.equal(linha.evento, "login_falha");
+  assert.deepEqual(linha.detalhe, { tentativa: 1, bloqueou: false });
+  // sem a opção, continua gravando os dois
+  await registrarEvento(supabase, req({ "user-agent": "Navegador/1.0" }), EVENTO);
+  assert.equal(supabase.linhas[1].linha.dispositivo, "Navegador/1.0");
+});
+
 test("registrarEvento: a origem do evento não vem do detalhe que o navegador manda", async () => {
   const supabase = fakeSupabase();
   await registrarEvento(supabase, req({}), {

@@ -53,7 +53,9 @@ npx supabase@2.118.0 functions deploy validar-certificado --project-ref fpyvdwpv
 
 **Aluno** (página pública `/PortalFuncionario`):
 
-1. Entra com usuário (CPF) e senha. O RH cria o acesso com senha provisória; o 1º login obriga a troca.
+1. Entra com usuário (CPF) e senha. O RH cria o acesso com senha provisória (vale 7 dias); com ela o aluno cria a
+   senha pessoal. Desde a T38 a senha é da pessoa e vale em todas as empresas em que ela tem cadastro: com duas ou
+   mais, escolhe a empresa ao entrar e troca de empresa pelo cabeçalho (cada empresa libera com a sua provisória).
 2. Vê as matrículas, com barra de progresso.
 3. Abre o curso: aulas em ordem (cada uma só libera com a anterior concluída). Vídeo conta tempo só tocando e com a aba
    visível, e conclui aos 90%. Apostila (PDF) e texto contam tempo de leitura e exigem o clique "Marcar como lida".
@@ -76,53 +78,57 @@ npx supabase@2.118.0 functions deploy validar-certificado --project-ref fpyvdwpv
 
 Nas tarefas, os arquivos aparecem pelo nome curto desta tabela.
 
-| Nome curto                      | Caminho                                                                                                    | Papel                                                                                             |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `PortalFuncionario.jsx`         | `apps/web/src/pages/PortalFuncionario.jsx`                                                                 | Login, troca de senha, painel do aluno                                                            |
-| `LoginPortal.jsx`               | `apps/web/src/components/portal-funcionario/LoginPortal.jsx`                                               | Login e troca de senha                                                                            |
-| `CursoPortal.jsx`               | `apps/web/src/components/portal-funcionario/CursoPortal.jsx`                                               | Aulas, contagem de tempo, prova, certificado                                                      |
-| `AvaliacaoPortal.jsx`           | `apps/web/src/components/portal-funcionario/AvaliacaoPortal.jsx`                                           | Prova                                                                                             |
-| `CertificadoPortal.jsx`         | `apps/web/src/components/portal-funcionario/CertificadoPortal.jsx`                                         | Assinatura e download do certificado                                                              |
-| `DuvidasPortal.jsx`             | `apps/web/src/components/portal-funcionario/DuvidasPortal.jsx`                                             | Dúvidas do aluno                                                                                  |
-| `api.js`                        | `apps/web/src/components/portal-funcionario/api.js`                                                        | `chamarPortal`, fila, sessão no `localStorage`                                                    |
-| `ValidarCertificado.jsx`        | `apps/web/src/pages/ValidarCertificado.jsx`                                                                | Validação pública                                                                                 |
-| `certificado-ead.js`            | `apps/web/src/lib/certificado-ead.js`                                                                      | PDF do certificado (gerado no navegador)                                                          |
-| `TreinamentosEadTab.jsx`        | `apps/web/src/components/seguranca/TreinamentosEadTab.jsx`                                                 | Aba do RH (montada em `pages/SegurancaTrabalho.jsx`)                                              |
-| `MatriculaAuditoriaSheet.jsx`   | `apps/web/src/components/seguranca/MatriculaAuditoriaSheet.jsx`                                            | Trilha de auditoria da matrícula                                                                  |
-| `DuvidasTutorCard.jsx`          | `apps/web/src/components/seguranca/DuvidasTutorCard.jsx`                                                   | Dúvidas (tutor)                                                                                   |
-| `AcessoPortalCard.jsx`          | `apps/web/src/components/seguranca/AcessoPortalCard.jsx` + `apps/web/src/lib/portal-funcionario-acesso.js` | Acesso ao portal (Ficha)                                                                          |
-| `index.ts`                      | `supabase/functions/portal-funcionario/index.ts` (1.301 linhas)                                            | Tudo do aluno: login, dados, progresso, prova, certificado, ciência, dúvida                       |
-| `funcionario-acesso`            | `supabase/functions/funcionario-acesso/index.ts`                                                           | RH cria/redefine/desativa acesso (JWT + permissão)                                                |
-| `validar-certificado`           | `supabase/functions/validar-certificado/index.ts`                                                          | Consulta pública (verify_jwt = true)                                                              |
-| `_shared/portal-funcionario.ts` | `supabase/functions/_shared/portal-funcionario.ts`                                                         | Usuário, senha provisória, regra de senha, IP/dispositivo, trilha, código e SHA-256 (módulo puro) |
-| `_shared/portal-token.ts`       | idem                                                                                                       | Token HMAC, comum aos portais (as 12 h são `TTL_SESSAO` do `index.ts`)                            |
-| `_shared/limite-tentativas.ts`  | idem                                                                                                       | Limitador por IP/conta (puro, com teste)                                                          |
-| `_shared/storage-assinar.ts`    | idem                                                                                                       | `refDaEmpresa`: só assina arquivo da pasta da empresa                                             |
+| Nome curto                      | Caminho                                                                                                    | Papel                                                                                              |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `PortalFuncionario.jsx`         | `apps/web/src/pages/PortalFuncionario.jsx`                                                                 | Login, troca de senha, painel do aluno                                                             |
+| `LoginPortal.jsx`               | `apps/web/src/components/portal-funcionario/LoginPortal.jsx`                                               | Login e troca de senha                                                                             |
+| `CursoPortal.jsx`               | `apps/web/src/components/portal-funcionario/CursoPortal.jsx`                                               | Aulas, contagem de tempo, prova, certificado                                                       |
+| `AvaliacaoPortal.jsx`           | `apps/web/src/components/portal-funcionario/AvaliacaoPortal.jsx`                                           | Prova                                                                                              |
+| `CertificadoPortal.jsx`         | `apps/web/src/components/portal-funcionario/CertificadoPortal.jsx`                                         | Assinatura e download do certificado                                                               |
+| `DuvidasPortal.jsx`             | `apps/web/src/components/portal-funcionario/DuvidasPortal.jsx`                                             | Dúvidas do aluno                                                                                   |
+| `api.js`                        | `apps/web/src/components/portal-funcionario/api.js`                                                        | `chamarPortal`, fila, sessão no `localStorage`                                                     |
+| `ValidarCertificado.jsx`        | `apps/web/src/pages/ValidarCertificado.jsx`                                                                | Validação pública                                                                                  |
+| `certificado-ead.js`            | `apps/web/src/lib/certificado-ead.js`                                                                      | PDF do certificado (gerado no navegador)                                                           |
+| `TreinamentosEadTab.jsx`        | `apps/web/src/components/seguranca/TreinamentosEadTab.jsx`                                                 | Aba do RH (montada em `pages/SegurancaTrabalho.jsx`)                                               |
+| `MatriculaAuditoriaSheet.jsx`   | `apps/web/src/components/seguranca/MatriculaAuditoriaSheet.jsx`                                            | Trilha de auditoria da matrícula                                                                   |
+| `DuvidasTutorCard.jsx`          | `apps/web/src/components/seguranca/DuvidasTutorCard.jsx`                                                   | Dúvidas (tutor)                                                                                    |
+| `AcessoPortalCard.jsx`          | `apps/web/src/components/seguranca/AcessoPortalCard.jsx` + `apps/web/src/lib/portal-funcionario-acesso.js` | Acesso ao portal (Ficha)                                                                           |
+| `index.ts`                      | `supabase/functions/portal-funcionario/index.ts` (1.301 linhas)                                            | Tudo do aluno: login, dados, progresso, prova, certificado, ciência, dúvida                        |
+| `funcionario-acesso`            | `supabase/functions/funcionario-acesso/index.ts`                                                           | RH cria/redefine/desativa acesso (JWT + permissão)                                                 |
+| `validar-certificado`           | `supabase/functions/validar-certificado/index.ts`                                                          | Consulta pública (verify_jwt = true)                                                               |
+| `_shared/portal-funcionario.ts` | `supabase/functions/_shared/portal-funcionario.ts`                                                         | Usuário, senha provisória, regra de senha, IP/dispositivo, trilha, código e SHA-256 (módulo puro)  |
+| `_shared/portal-credencial.ts`  | idem                                                                                                       | T38: credencial da pessoa, situação do vínculo, login (4 comparações), ativação, sessão, RH (puro) |
+| `_shared/portal-token.ts`       | idem                                                                                                       | Token HMAC, comum aos portais (as 12 h são `TTL_SESSAO` do `index.ts`)                             |
+| `_shared/limite-tentativas.ts`  | idem                                                                                                       | Limitador por IP/conta (puro, com teste)                                                           |
+| `_shared/storage-assinar.ts`    | idem                                                                                                       | `refDaEmpresa`: só assina arquivo da pasta da empresa                                              |
 
 Outros pontos: as rotas públicas estão em `apps/web/src/pages.config.js:31-32` e `apps/web/src/Layout.jsx:141-142`;
 o mapa de funções em `apps/web/src/api/sigoClient.js` (`portalFuncionario`, `funcionarioAcesso`, `validarCertificado`);
 bucket privado `treinamentos` (até 1 GB por arquivo; o aluno só recebe URL assinada de 3 h).
 
-**Tabelas** (todas com `empresa_id` e RLS):
+**Tabelas** (todas com `empresa_id` e RLS, menos a credencial da T38, que é da pessoa e só o servidor lê):
 
-| Tabela                      | O que guarda                                                                       | Escrita pela empresa (RLS + triggers)                              |
-| --------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `treinamento_curso`         | curso, carga, validade, nota, tentativas, intervalo, RT, instrutor, tutor, projeto | livre (inclusive `DELETE`, ver T17)                                |
-| `treinamento_aula`          | `ordem`, `modulo`, `tipo` (video/pdf/texto), `fonte`, refs, `duracao_seg`          | livre (inclusive `DELETE`)                                         |
-| `treinamento_questao`       | `pergunta`, `opcoes` (jsonb), `correta` (índice), `comentario`                     | livre (inclusive `DELETE`)                                         |
-| `treinamento_matricula`     | status, datas, nota, `tentativas_extras`, `deleted_at`                             | criar `pendente`; mudar só `tentativas_extras`/`deleted_at` (0130) |
-| `treinamento_progresso`     | segundos e conclusão por aula                                                      | só leitura (0130)                                                  |
-| `treinamento_tentativa`     | prova aplicada, respostas, ordem exibida, nota, IP, dispositivo                    | só leitura                                                         |
-| `treinamento_certificado`   | código, hash, `dados` congelados, assinatura do aluno, revogação                   | só revogar, uma vez (0119)                                         |
-| `treinamento_evento`        | trilha (hora do servidor, IP, dispositivo)                                         | só leitura                                                         |
-| `treinamento_duvida`        | pergunta, resposta                                                                 | só responder (0130)                                                |
-| `funcionario_portal_acesso` | usuário (único global), hash bcrypt, provisória, bloqueio, `sessao_versao`         | nenhuma (só servidor)                                              |
-| `entrega_ciencia`           | ciência eletrônica de entrega de EPI/ferramenta (aparece no portal)                | **livre** (ver T7)                                                 |
+| Tabela                      | O que guarda                                                                                                                                 | Escrita pela empresa (RLS + triggers)                              |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `treinamento_curso`         | curso, carga, validade, nota, tentativas, intervalo, RT, instrutor, tutor, projeto                                                           | livre (inclusive `DELETE`, ver T17)                                |
+| `treinamento_aula`          | `ordem`, `modulo`, `tipo` (video/pdf/texto), `fonte`, refs, `duracao_seg`                                                                    | livre (inclusive `DELETE`)                                         |
+| `treinamento_questao`       | `pergunta`, `opcoes` (jsonb), `correta` (índice), `comentario`                                                                               | livre (inclusive `DELETE`)                                         |
+| `treinamento_matricula`     | status, datas, nota, `tentativas_extras`, `deleted_at`                                                                                       | criar `pendente`; mudar só `tentativas_extras`/`deleted_at` (0130) |
+| `treinamento_progresso`     | segundos e conclusão por aula                                                                                                                | só leitura (0130)                                                  |
+| `treinamento_tentativa`     | prova aplicada, respostas, ordem exibida, nota, IP, dispositivo                                                                              | só leitura                                                         |
+| `treinamento_certificado`   | código, hash, `dados` congelados, assinatura do aluno, revogação                                                                             | só revogar, uma vez (0119)                                         |
+| `treinamento_evento`        | trilha (hora do servidor, IP, dispositivo)                                                                                                   | só leitura                                                         |
+| `treinamento_duvida`        | pergunta, resposta                                                                                                                           | só responder (0130)                                                |
+| `funcionario_portal_acesso` | vínculo do cadastro (T38): credencial, provisória da empresa (7 dias), geração liberada, confirmação, `sessao_versao`                        | nenhuma (só servidor)                                              |
+| `portal_credencial`         | a pessoa (T38): usuário (CPF ou com letras, único), hash bcrypt, geração e origem da senha, bloqueio, relógio do progresso; sem `empresa_id` | nenhuma (só servidor)                                              |
+| `portal_credencial_evento`  | registro do operador (T38): o que contaria a uma empresa o que a pessoa faz em outra; sem o CPF                                              | nenhuma (só servidor; só de inclusão)                              |
+| `entrega_ciencia`           | ciência eletrônica de entrega de EPI/ferramenta (aparece no portal)                                                                          | **livre** (ver T7)                                                 |
 
 **Migrações do EAD:** `0097` (tabelas base), `0098` (carga), `0100` (vídeo próprio, questões, bucket), `0101`
 (ciência), `0102` (legenda, comentário), `0103` (acesso, evento, tentativa, dúvida, certificado, colunas novas),
 `0112` (limitador), `0118` (referências da mesma empresa), `0119` (certificado só revoga), `0130` (andamento só pelo
-servidor). Base dos triggers: `chamador_eh_servidor()` em `0110`.
+servidor), `0145` (credencial única e vínculo por empresa, T38) e `0146` (limpeza do vínculo, T38, dias depois do
+deploy). Base dos triggers: `chamador_eh_servidor()` em `0110`.
 
 **Ferramenta:** `tools/ead-sync-cursos.py` carregou cursos, aulas e apostilas em produção. **Não rode.**
 
@@ -982,6 +988,12 @@ Por que estas ficaram em Baixa (os levantamentos tratavam algumas como Média):
   inquilino. Escrever spec com opções (usuário por empresa + escolha da empresa no login, ou login único com várias
   empresas) e esperar a decisão D16. **Aceite:** spec em `docs/superpowers/specs/` com OK do Javerson; nenhum código.
   **Migração:** sim, depois do desenho. **Produção:** nenhuma nesta etapa.
+- **Implementação (07/10/2026):** spec `docs/superpowers/specs/2026-10-07-portal-varias-empresas-design.md` aprovado
+  com todas as recomendações da §11 (P1 a P12). Credencial da pessoa e vínculo por empresa (`0145`), regras em
+  `_shared/portal-credencial.ts`, login com escolha da empresa e ativação pela provisória, troca de empresa, defesas
+  da §4.3, scripts do operador em `tools/portal-credencial-*.sql` e smoke `tools/smoke-portal-credencial.sql`.
+  **Produção:** `tools/portal-credencial-conferir.sql` (só leitura), `0145`, deploy de `portal-funcionario` e
+  `funcionario-acesso` logo em seguida, push no mesmo dia; `0146` dias depois, conferido o uso.
 
 ---
 
@@ -1004,7 +1016,7 @@ Por que estas ficaram em Baixa (os levantamentos tratavam algumas como Média):
 | D13 | Lista de presença                                  | Hoje 10 h/dia fixas, texto "EAD" (T1 conserta a quebra; T12 transforma em ficha da sessão)                                                                          | Modelo oficial da lista da sessão prática                                                                                                                                                                                                                                                   |
 | D14 | Conteúdo para terceiros                            | Hoje o conteúdo é de uso próprio                                                                                                                                    | Se o SIGO vender cursos, vira "instituição especializada" (Anexo II 2.1.1, 2.2, 4.1.1): contrato, termo de uso, entrega do projeto                                                                                                                                                          |
 | D15 | Agente                                             | —                                                                                                                                                                   | Rodapé de co-autoria dos commits do Codex; se o agente terá CLI do Supabase (hoje: não roda nada em produção)                                                                                                                                                                               |
-| D16 | Acesso em mais de uma empresa                      | Usuário único global (T38)                                                                                                                                          | Se vale mudar e qual modelo                                                                                                                                                                                                                                                                 |
+| D16 | Acesso em mais de uma empresa                      | Um login (CPF e senha) em todas as empresas, com escolha da empresa ao entrar; provisória por empresa (T38, `0145`/`0146`)                                          | Decidida em 06/10 e spec aprovado em 07/10 (P1 a P12 com as recomendações). Fica para depois: "Esqueci a senha" pelo WhatsApp (fase 2, P4) e o aviso ao operador por WhatsApp (P9)                                                                                                          |
 | D17 | Aproveitamento e convalidação (NR-1 1.7.6 a 1.7.8) | Nada                                                                                                                                                                | Só se a empresa for aproveitar conteúdo ou aceitar treinamento de outra organização                                                                                                                                                                                                         |
 
 ---

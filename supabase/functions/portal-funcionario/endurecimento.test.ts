@@ -33,9 +33,16 @@ function trechoDaAcao(nome: string): string {
 
 test("a ação legada link saiu do portal (nenhum chamador no front nem nas funções)", () => {
   assert.equal(/body\.acao\s*===\s*"link"/.test(codigo), false);
-  // só ela usava o usuário do SIGO (staff) e o funcionario_id do corpo
+  // só ela usava o usuário do SIGO (staff) e o funcionario_id do corpo para identificar o aluno
   assert.equal(codigo.includes("usuarioDaRequisicao"), false);
-  assert.equal(/body\.funcionario_id/.test(codigo), false);
+  // T38: o funcionario_id do corpo só existe na escolha da empresa (escolher_empresa e trocar_empresa) e só passa
+  // pela conferência vinculoEscolhido (cadastro LIBERADO da credencial do token); nenhum outro uso
+  const usos = [...codigo.matchAll(/body\.funcionario_id/g)].length;
+  const conferidos = [
+    ...codigo.matchAll(/vinculoEscolhido\(\{[^}]*funcionarioId: body\.funcionario_id,/g),
+  ].length;
+  assert.equal(usos, 2, "esperava só escolher_empresa e trocar_empresa");
+  assert.equal(conferidos, usos);
   // o cabeçalho da função não promete mais a ação
   assert.equal(/acao:\s*"link"/.test(indexTs), false);
 });
@@ -95,15 +102,16 @@ test("a reconfirmação passa a senha à regra (senha vazia não consome tentati
   const inicio = codigo.indexOf("const reconfirmar = (senha: string)");
   assert.ok(inicio >= 0, "falta o reconfirmar");
   const definicao = codigo.slice(inicio, codigo.indexOf("const muitasTentativas"));
-  assert.match(definicao, /reconfirmarSenha\(\{\s*funcionarioId,\s*senha,/);
+  // T38 (§5.5): o teto é da PESSOA (a credencial do token), não do cadastro de uma empresa
+  assert.match(definicao, /reconfirmarSenha\(\{\s*funcionarioId: credencialId,\s*senha,/);
 });
 
-test("o limite de volume é do funcionário da sessão e usa o limitador do login (sem IP)", () => {
+test("o limite de volume é da pessoa da sessão (credencial, T38) e usa o limitador do login (sem IP)", () => {
   const inicio = codigo.indexOf("const dentroDoLimite = ");
   assert.ok(inicio >= 0, "falta o dentroDoLimite");
   const definicao = codigo.slice(inicio, codigo.indexOf("const muitasAcoes"));
   assert.ok(definicao.includes("dentroDoVolume({"));
-  assert.ok(/funcionarioId,/.test(definicao), "o contador é do funcionário da sessão");
+  assert.ok(/funcionarioId: credencialId,/.test(definicao), "o contador é da pessoa da sessão");
   assert.ok(definicao.includes("consumirTentativa(supabase, escopo, janelaSeg, limites)"));
   assert.equal(/\bip\b|ipDaRequisicao/.test(definicao), false, "o volume não é por IP");
 });
@@ -114,8 +122,9 @@ test("o sinal do progresso só é gravado com a trava otimista em ultimo_sinal_e
   assert.equal(gravacoes.length, 1, "o progresso grava o sinal uma vez");
   assert.ok(trecho.includes("travaDoSinal("), "falta a trava no UPDATE do sinal");
   assert.ok(trecho.includes("resultadoDoSinal("), "falta conferir se a gravação valeu");
-  // o valor LIDO (o da sessão) é o que a trava confere
-  assert.ok(/travaDoSinal\([\s\S]{0,400}acesso\.ultimo_sinal_em/.test(trecho));
+  // o valor LIDO (o da sessão) é o que a trava confere; o relógio é da pessoa (a credencial, T38 §5.5)
+  assert.ok(/travaDoSinal\([\s\S]{0,400}credencial\.ultimo_sinal_em/.test(trecho));
+  assert.ok(/travaDoSinal\(\s*supabase\s*\.from\("portal_credencial"\)/.test(trecho));
   // perdeu a corrida: 409 com o código próprio, sem creditar nem gravar o progresso
   const mudou = trecho.indexOf(`"mudou"`);
   assert.ok(mudou >= 0, "o progresso não trata o sinal que mudou");
