@@ -74,6 +74,9 @@ const base = (extra = {}) => ({
   certificados: [],
   andamento: { carregado: true, erro: false, parcial: false },
   cursoAceitaMatricula: () => true,
+  // T33: os testes de antes são de quem pode tudo (matricular e criar o acesso ao portal)
+  podeMatricular: true,
+  podeCriarAcesso: true,
   onMatricular: noop,
   onDetalhes: noop,
   onAvisar: noop,
@@ -283,6 +286,47 @@ describe("MatriculasEadCard", () => {
     expect(html).toContain("Avisar atrasados (2)");
     expect(html).toContain("dia(s) de atraso");
     expect(html).toContain(">Prazo<");
+  });
+
+  it("T33: sem Treinamentos EAD → Matricular, nem matricular, avisar, renovar ou remover (só ver e Detalhes)", () => {
+    const html = tela(
+      <MatriculasEadCard
+        {...base({
+          podeMatricular: false,
+          cursos: [{ ...cursos[0], prazo_conclusao_dias: 30 }, cursos[1]],
+          funcionariosTodos: [funcionario("f1"), funcionario("f2")],
+          matriculas: [
+            matricula("m1", "f1", "c1", { created_at: "2020-01-01T12:00:00Z" }),
+            concluida("m2", "f2", "c1"),
+          ],
+        })}
+      />
+    );
+    expect(html).not.toContain("Avisar atrasados");
+    expect(html).not.toContain("Matricular funcionários");
+    expect(html).not.toContain('aria-label="Avisar no WhatsApp');
+    expect(html).not.toContain('aria-label="Renovar o treinamento');
+    expect(html).not.toContain('aria-label="Remover matrícula');
+    expect(html).toContain('aria-label="Detalhes da matrícula de Funcionario f1"');
+    expect(html).toContain("Exportar CSV");
+  });
+
+  it("T33 (C1): quem matricula mas não cria o acesso vê no aviso da linha a quem pedir", () => {
+    const html = tela(
+      <MatriculasEadCard
+        {...base({
+          podeCriarAcesso: false,
+          funcionariosTodos: [funcionario("f1")],
+          matriculas: [matricula("m1", "f1", "c1")],
+        })}
+      />
+    );
+    const botao = /<button[^>]*aria-label="Avisar no WhatsApp de Funcionario f1"[^>]*>/.exec(
+      html
+    )?.[0];
+    expect(botao).toBeTruthy();
+    expect(botao).toContain("Funcionários → Editar");
+    expect(botao).not.toContain("cria o acesso ao portal se ainda não tiver");
   });
 
   it("sem prazo nenhum, ninguém fica atrasado e não há aviso em lote (o comportamento de antes)", () => {

@@ -4,21 +4,155 @@
  * o `index.ts` só liga a rede e o banco. Teste: `regras.test.ts`, ao lado.
  *
  * Ambas as ações antes eram gravadas direto do navegador do RH (sem evento, sem autor confiável e,
- * na revogação, sem avisar o aluno). Agora passam pelo servidor, que confere a permissão "editar" da
- * aba Funcionários, grava o evento na trilha com o e-mail do RH (`detalhe.por`) e avisa o aluno.
+ * na revogação, sem avisar o aluno). Agora passam pelo servidor, que confere a permissão da ação (T33:
+ * aba Treinamentos EAD), grava o evento na trilha com o e-mail do RH (`detalhe.por`) e avisa o aluno.
+ *
+ * Permissões (T33, spec docs/superpowers/specs/2026-10-06-permissoes-ead-design.md, §7): cada ação tem um
+ * portão (`entrar`, conferido antes de qualquer leitura) e o que ela exige de fato (`agir`); basta uma
+ * permissão de cada lista (`permissaoDaAcao`). O acesso ao portal continua em Funcionários; quem só tem
+ * Treinamentos EAD → Matricular consulta o status recortado (`recortarAcessosParaEad`) e, no criar, só
+ * recebe o 409 de quem já tem acesso (`decidirCriar`: criar o acesso exige Funcionários → Editar, P3 = C1).
  */
 import { normalizarTelefoneBR } from "../_shared/whatsapp-envio.ts";
+import { temPermissaoServidor, type Vinculo } from "../_shared/conector/acesso.ts";
+import { MENSAGEM_SEM_EDICAO_DA_RESPOSTA } from "./duvida.ts";
 
 /** Ações de `funcionario-acesso` que mexem na matrícula (e não no login do portal). */
 export const ACOES_DE_MATRICULA = new Set(["liberar_tentativa", "revogar_certificado"]);
 
-/** Mensagem do 403 de cada ação (a tela mostra o texto como veio). */
-export const MENSAGEM_SEM_EDICAO: Record<string, string> = {
-  liberar_tentativa:
-    "Sem permissão para liberar tentativa: é preciso poder editar Funcionários em Segurança do Trabalho",
-  revogar_certificado:
-    "Sem permissão para revogar o certificado: é preciso poder editar Funcionários em Segurança do Trabalho",
+// ---------------------------------------------------------------- permissões (T33)
+
+/** Módulo e abas como aparecem no editor de permissões (ESTRUTURA_PERMISSOES do front). */
+export const MODULO_SST = "Segurança do Trabalho";
+export const ABA_FUNCIONARIOS = "Funcionários";
+export const ABA_EAD = "Treinamentos EAD";
+
+/** Uma permissão: [módulo, aba, função]. Função `null` = qualquer função da aba. */
+export type Permissao = readonly [string, string, string | null];
+
+const FUNCIONARIOS: Permissao = [MODULO_SST, ABA_FUNCIONARIOS, null];
+const FUNCIONARIOS_EDITAR: Permissao = [MODULO_SST, ABA_FUNCIONARIOS, "editar"];
+const ead = (funcao: string): Permissao => [MODULO_SST, ABA_EAD, funcao];
+
+/**
+ * A tabela da §7 do spec. `entrar`: sem nenhuma destas, 403 antes de ler qualquer coisa. `agir`: o que a
+ * ação exige de fato. Em `criar` as duas diferem de propósito: quem entra mas não age ainda recebe o 409
+ * `JA_TEM_ACESSO` (o aviso por linha e o "Avisar" da Ficha seguem só com o link), e o 403 quando o
+ * funcionário não tem acesso (criar entrega login e senha provisória: R9 do spec).
+ */
+const TABELA_DE_PERMISSOES: Record<string, { entrar: Permissao[]; agir: Permissao[] }> = {
+  status: { entrar: [FUNCIONARIOS, ead("matricular")], agir: [FUNCIONARIOS, ead("matricular")] },
+  criar: { entrar: [FUNCIONARIOS, ead("matricular")], agir: [FUNCIONARIOS_EDITAR] },
+  redefinir: { entrar: [FUNCIONARIOS], agir: [FUNCIONARIOS_EDITAR] },
+  ativo: { entrar: [FUNCIONARIOS], agir: [FUNCIONARIOS_EDITAR] },
+  liberar_tentativa: { entrar: [ead("liberar_tentativa")], agir: [ead("liberar_tentativa")] },
+  revogar_certificado: {
+    entrar: [ead("revogar_certificado")],
+    agir: [ead("revogar_certificado")],
+  },
+  // A6 (T21): editar a resposta é responder dúvida (a 1ª resposta exige o mesmo no banco, 0147)
+  editar_resposta_duvida: {
+    entrar: [ead("responder_duvidas")],
+    agir: [ead("responder_duvidas")],
+  },
 };
+
+/** Todas as ações que o `funcionario-acesso` conhece. */
+export const ACOES_DO_RH: ReadonlySet<string> = new Set(Object.keys(TABELA_DE_PERMISSOES));
+
+/** As duas listas da ação, ou `null` para ação desconhecida (o index responde 400). */
+export function permissaoDaAcao(acao: string): { entrar: Permissao[]; agir: Permissao[] } | null {
+  return Object.hasOwn(TABELA_DE_PERMISSOES, acao) ? TABELA_DE_PERMISSOES[acao] : null;
+}
+
+/**
+ * O que o chamador pode na ação. `vinculo` é o de `vinculoDoChamador` (empresa da sessão); só vale ativo e
+ * não excluído, o mesmo critério da função SQL `tem_permissao` (0147). Super admin passa em tudo.
+ * `listaCompleta` (ação `status`): super admin, Admin, dono ou quem tem Funcionários recebe a lista inteira;
+ * quem entra só pela aba nova recebe a recortada.
+ */
+export function avaliarPermissao(p: {
+  acao: string;
+  vinculo: Vinculo | null | undefined;
+  superAdmin: boolean;
+}): { entra: boolean; age: boolean; listaCompleta: boolean } {
+  const regra = permissaoDaAcao(p.acao);
+  if (!regra) return { entra: false, age: false, listaCompleta: false };
+  if (p.superAdmin) return { entra: true, age: true, listaCompleta: true };
+  const v = p.vinculo && p.vinculo.ativo === true && !p.vinculo.deleted_at ? p.vinculo : null;
+  const alguma = (lista: Permissao[]) =>
+    !!v && lista.some(([modulo, aba, funcao]) => temPermissaoServidor(v, modulo, aba, funcao));
+  return {
+    entra: alguma(regra.entrar),
+    age: alguma(regra.agir),
+    listaCompleta: alguma([FUNCIONARIOS]),
+  };
+}
+
+/**
+ * Criar o acesso ao portal, na ordem fixa: sem entrar, 403; funcionário que já tem acesso, 409
+ * `JA_TEM_ACESSO` (mesmo para quem não age: é assim que o aviso segue só com o link); sem agir, 403; senão
+ * cria. A ordem fica aqui, sob teste, e não só no `index.ts` (que o `node --test` não importa).
+ */
+export function decidirCriar(p: {
+  entra: boolean;
+  age: boolean;
+  jaTemAcesso: boolean;
+}): "sem_permissao" | "conflito" | "criar" {
+  if (!p.entra) return "sem_permissao";
+  if (p.jaTemAcesso) return "conflito";
+  if (!p.age) return "sem_permissao";
+  return "criar";
+}
+
+/**
+ * A lista do `status` para quem entra só por Treinamentos EAD → Matricular: só quem tem acesso e se ele
+ * está ativo (o "Avisar atrasados" não precisa de mais). Login (CPF), último acesso, bloqueio e primeiro
+ * acesso pendente ficam com quem tem Funcionários.
+ */
+export function recortarAcessosParaEad<T extends { funcionario_id: unknown; ativo: unknown }>(
+  acessos: T[] | null | undefined,
+  listaCompleta: boolean
+): T[] | Array<{ funcionario_id: T["funcionario_id"]; ativo: T["ativo"] }> {
+  if (listaCompleta) return acessos ?? [];
+  return (acessos ?? []).map((a) => ({ funcionario_id: a.funcionario_id, ativo: a.ativo }));
+}
+
+/** 403 do portão das ações do acesso ao portal (status, criar, redefinir, ativo). */
+export const MENSAGEM_SEM_ACESSO_AO_PORTAL =
+  "Sem permissão para gerenciar o acesso ao Portal do Funcionário";
+
+/** Mensagem do 403 de cada ação de escrita (a tela mostra o texto como veio): cita a permissão que falta. */
+export const MENSAGEM_SEM_EDICAO: Record<string, string> = {
+  criar:
+    "Este funcionário ainda não tem acesso ao portal. Criar o acesso exige Segurança do Trabalho → " +
+    "Funcionários → Editar.",
+  redefinir:
+    "Sem permissão para redefinir a senha do portal: é preciso Segurança do Trabalho → Funcionários → Editar",
+  ativo:
+    "Sem permissão para ativar ou desativar o acesso ao portal: é preciso Segurança do Trabalho → " +
+    "Funcionários → Editar",
+  liberar_tentativa:
+    "Sem permissão para liberar tentativa: é preciso Segurança do Trabalho → Treinamentos EAD → Liberar " +
+    "tentativa",
+  revogar_certificado:
+    "Sem permissão para revogar o certificado: é preciso Segurança do Trabalho → Treinamentos EAD → " +
+    "Revogar certificado",
+  editar_resposta_duvida: MENSAGEM_SEM_EDICAO_DA_RESPOSTA,
+};
+
+/**
+ * O texto do 403. No portão: as ações do acesso ao portal falam do portal; as do EAD (que entram e agem pela
+ * mesma função), da função que falta. No agir: a mensagem da ação.
+ */
+export function mensagemSemPermissao(acao: string, etapa: "entrar" | "agir"): string {
+  const doAcesso =
+    acao === "status" || acao === "criar" || acao === "redefinir" || acao === "ativo";
+  if (etapa === "entrar" && doAcesso) return MENSAGEM_SEM_ACESSO_AO_PORTAL;
+  return Object.hasOwn(MENSAGEM_SEM_EDICAO, acao)
+    ? MENSAGEM_SEM_EDICAO[acao]
+    : MENSAGEM_SEM_ACESSO_AO_PORTAL;
+}
 
 /**
  * Resultado de uma conferência: segue (`ok`) ou recusa com o status HTTP e o texto para o RH. `codigo`

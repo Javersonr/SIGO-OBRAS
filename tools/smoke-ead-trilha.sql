@@ -21,8 +21,10 @@
 --      nem DELETE em certificado (42501), e apagar o curso ou a matrícula, que cascateia para a trilha,
 --      também falha; INSERT de evento continua funcionando;
 --   4. usuário da empresa: não faz DELETE/TRUNCATE em curso, aula, questão, dúvida, certificado,
---      evento e tentativa (42501) nem UPDATE no evento; excluir curso logicamente (deleted_at) e
---      REVOGAR o certificado continuam funcionando; lê o evento com a origem;
+--      evento e tentativa (42501) nem UPDATE no evento; excluir curso logicamente (deleted_at)
+--      continua funcionando; lê o evento com a origem. Desde a 0147 (T33) o usuário de teste é um
+--      Admin sintético (o EAD exige a permissão da aba Treinamentos EAD) e REVOGAR o certificado
+--      pela API é recusado (42501): a revogação passa só pelo funcionario-acesso;
 --   5. super admin: também sem DELETE (o grant foi revogado; a policy ALL não basta);
 --   6. anônimo: sem acesso às tabelas;
 --   7. TRUNCATE barrado (testado numa tabela temporária com o mesmo trigger, para não tocar a trilha);
@@ -86,9 +88,15 @@ begin
   end if;
   raise notice '== empresa de teste: %', v_empresa;
 
+  -- T33 (0147): o EAD exige a permissão da aba Treinamentos EAD, lida do vínculo do e-mail do token. O usuário de
+  -- teste é um Admin sintético (e-mail @exemplo.test), que some no ROLLBACK.
+  insert into public.usuario_empresa (empresa_id, usuario_email, perfil, ativo, nome_completo)
+    values (v_empresa, 'smoke.trilha@exemplo.test', 'Admin', true, 'Smoke trilha');
+
   v_claims_usuario := jsonb_build_object(
     'role', 'authenticated',
     'sub', gen_random_uuid(),
+    'email', 'smoke.trilha@exemplo.test',
     'app_metadata', jsonb_build_object('empresa_id', v_empresa)
   )::text;
   v_claims_super := jsonb_build_object(
@@ -259,17 +267,14 @@ begin
     raise exception 'FALHOU: a exclusão lógica do curso deveria gravar deleted_at (linhas=%)', v_linhas;
   end if;
 
-  -- revogar o certificado (0119) segue funcionando: a trava é só do DELETE
-  update public.treinamento_certificado
-    set revogado_em = now(), revogado_por = 'smoke', motivo_revogacao = 'smoke'
-    where id = v_cert;
-  get diagnostics v_linhas = row_count;
-  if v_linhas <> 1 then
-    raise exception 'FALHOU: a revogação do certificado deveria continuar funcionando (linhas=%)', v_linhas;
-  end if;
+  -- revogar o certificado pela API deixou de valer na 0147 (T33): nem o Admin revoga por UPDATE (sem trilha nem
+  -- aviso ao aluno); a revogação passa só pelo funcionario-acesso. Apagar continua recusado.
+  perform public.smoke_trilha_recusa(format(
+    'update public.treinamento_certificado set revogado_em = now(), revogado_por = %L, motivo_revogacao = %L where id = %L',
+    'smoke', 'smoke', v_cert));
   perform public.smoke_trilha_recusa(format(
     'delete from public.treinamento_certificado where id = %L', v_cert));
-  raise notice '[usuário] OK exclusão lógica do curso e revogação do certificado funcionam';
+  raise notice '[usuário] OK exclusão lógica do curso funciona; revogar e apagar o certificado pela API, não';
 
   -- ------------------------------------------------------------- super admin
   reset role;

@@ -149,8 +149,9 @@ describe("relatório: a declaração só é cobrada do dia em que ela passou a e
 
 describe("a aba monta o cartão", () => {
   it("com a empresa da tela (key) e a lista de TODOS os funcionários (nome de quem já saiu)", () => {
+    // T33: o botão de editar o texto só com Treinamentos EAD → Editar
     expect(aba).toMatch(
-      /<AmbienteHorarioEadCard\s+key=\{empresaAtiva\?\.id\}\s+empresaId=\{empresaAtiva\?\.id\}\s+funcionariosTodos=\{funcionariosTodos\}\s*\/>/
+      /<AmbienteHorarioEadCard\s+key=\{empresaAtiva\?\.id\}\s+empresaId=\{empresaAtiva\?\.id\}\s+funcionariosTodos=\{funcionariosTodos\}\s+podeEditarTexto=\{pode\.editar\}\s*\/>/
     );
   });
 });

@@ -63,6 +63,12 @@ begin
   select count(*) into v_total from public.treinamento_declaracao_texto where empresa_id = v_empresa;
   raise notice '[versões já salvas na empresa de teste] %', v_total;
 
+  -- T33 (0147): salvar o texto exige Treinamentos EAD → Editar, lida do vínculo do e-mail do token. Os dois usuários
+  -- de teste são Admin sintéticos (e-mail @exemplo.test), que somem no ROLLBACK.
+  insert into public.usuario_empresa (empresa_id, usuario_email, perfil, ativo, nome_completo)
+    values (v_empresa, 'smoke.rt@exemplo.test', 'Admin', true, 'Smoke T35'),
+           (v_empresa, 'smoke.rt2@exemplo.test', 'Admin', true, 'Smoke T35');
+
   -- ---------------------------------------------------------------- usuário
   perform set_config('request.jwt.claims', jsonb_build_object(
     'role', 'authenticated',
@@ -97,6 +103,7 @@ begin
   perform set_config('request.jwt.claims', jsonb_build_object(
     'role', 'authenticated',
     'sub', v_sub2,
+    'email', 'smoke.rt2@exemplo.test',
     'app_metadata', jsonb_build_object('empresa_id', v_empresa)
   )::text, true);
   insert into public.treinamento_declaracao_texto (empresa_id, texto, art)

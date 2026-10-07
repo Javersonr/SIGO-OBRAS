@@ -40,6 +40,8 @@ export default function AulaLinhaEad({
   onRemover,
   onTrocarArquivo,
   onLegenda,
+  // T33: sem Treinamentos EAD → Editar a linha só mostra a aula (e "Ver"); quem protege é o banco
+  somenteLeitura = false,
 }) {
   const arquivoRef = useRef(null);
   const legendaRef = useRef(null);
@@ -84,82 +86,93 @@ export default function AulaLinhaEad({
         )}
       </div>
 
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        title="Subir na ordem"
-        aria-label={`Subir a aula ${aula.numero} na ordem`}
-        disabled={primeira || ordemOcupada}
-        onClick={onSubir}
-        className={`${CLASSE_ICONE} ${CLASSE_ICONE_DESABILITADO}`}
-      >
-        <ArrowUp />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        title="Descer na ordem"
-        aria-label={`Descer a aula ${aula.numero} na ordem`}
-        disabled={ultima || ordemOcupada}
-        onClick={onDescer}
-        className={`${CLASSE_ICONE} ${CLASSE_ICONE_DESABILITADO}`}
-      >
-        <ArrowDown />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        title="Editar aula"
-        aria-label={`Editar a aula ${aula.numero}`}
-        onClick={onEditar}
-        className={CLASSE_ICONE}
-      >
-        <Pencil />
-      </Button>
-
-      <DropdownMenu modal={false}>
-        <DropdownMenuTrigger asChild>
+      {!somenteLeitura && (
+        <>
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            title="Mais ações"
-            aria-label={`Mais ações da aula ${aula.numero}`}
+            title="Subir na ordem"
+            aria-label={`Subir a aula ${aula.numero} na ordem`}
+            disabled={primeira || ordemOcupada}
+            onClick={onSubir}
+            className={`${CLASSE_ICONE} ${CLASSE_ICONE_DESABILITADO}`}
+          >
+            <ArrowUp />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            title="Descer na ordem"
+            aria-label={`Descer a aula ${aula.numero} na ordem`}
+            disabled={ultima || ordemOcupada}
+            onClick={onDescer}
+            className={`${CLASSE_ICONE} ${CLASSE_ICONE_DESABILITADO}`}
+          >
+            <ArrowDown />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            title="Editar aula"
+            aria-label={`Editar a aula ${aula.numero}`}
+            onClick={onEditar}
             className={CLASSE_ICONE}
           >
-            <MoreVertical />
+            <Pencil />
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="z-[9999] w-56">
-          {tipo !== "texto" && (
-            <DropdownMenuItem onSelect={onVer}>
-              {tipo === "pdf" ? "Ver PDF" : "Ver vídeo"}
-            </DropdownMenuItem>
-          )}
-          {tipoArquivo && (
-            <DropdownMenuItem disabled={envioEmCurso} onSelect={() => arquivoRef.current?.click()}>
-              Trocar o arquivo ({rotuloTipo})
-            </DropdownMenuItem>
-          )}
-          {tipo === "video" && (
-            <DropdownMenuItem onSelect={() => legendaRef.current?.click()}>
-              {aula.legenda_ref ? "Trocar a legenda" : "Anexar legenda (.srt ou .vtt)"}
-            </DropdownMenuItem>
-          )}
-          {tipo !== "texto" && <DropdownMenuSeparator />}
-          <DropdownMenuItem
-            className="text-red-600 focus:bg-red-50 focus:text-red-700"
-            onSelect={onRemover}
-          >
-            Remover aula
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+        </>
+      )}
 
-      {tipoArquivo && (
+      {(!somenteLeitura || tipo !== "texto") && (
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              title="Mais ações"
+              aria-label={`Mais ações da aula ${aula.numero}`}
+              className={CLASSE_ICONE}
+            >
+              <MoreVertical />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="z-[9999] w-56">
+            {tipo !== "texto" && (
+              <DropdownMenuItem onSelect={onVer}>
+                {tipo === "pdf" ? "Ver PDF" : "Ver vídeo"}
+              </DropdownMenuItem>
+            )}
+            {!somenteLeitura && tipoArquivo && (
+              <DropdownMenuItem
+                disabled={envioEmCurso}
+                onSelect={() => arquivoRef.current?.click()}
+              >
+                Trocar o arquivo ({rotuloTipo})
+              </DropdownMenuItem>
+            )}
+            {!somenteLeitura && tipo === "video" && (
+              <DropdownMenuItem onSelect={() => legendaRef.current?.click()}>
+                {aula.legenda_ref ? "Trocar a legenda" : "Anexar legenda (.srt ou .vtt)"}
+              </DropdownMenuItem>
+            )}
+            {!somenteLeitura && tipo !== "texto" && <DropdownMenuSeparator />}
+            {!somenteLeitura && (
+              <DropdownMenuItem
+                className="text-red-600 focus:bg-red-50 focus:text-red-700"
+                onSelect={onRemover}
+              >
+                Remover aula
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+
+      {!somenteLeitura && tipoArquivo && (
         <input
           ref={arquivoRef}
           type="file"
@@ -174,7 +187,7 @@ export default function AulaLinhaEad({
           }}
         />
       )}
-      {tipo === "video" && (
+      {!somenteLeitura && tipo === "video" && (
         <input
           ref={legendaRef}
           type="file"

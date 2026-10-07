@@ -36,10 +36,10 @@ test("ações de matrícula: nomes combinados com a tela", () => {
   assert.deepEqual([...ACOES_DE_MATRICULA].sort(), ["liberar_tentativa", "revogar_certificado"]);
 });
 
-test("cada ação de matrícula tem a mensagem de falta de permissão (e fala de Funcionários)", () => {
+test("cada ação de matrícula tem a mensagem de falta de permissão (e fala da aba Treinamentos EAD, T33)", () => {
   for (const acao of ACOES_DE_MATRICULA) {
     const msg = MENSAGEM_SEM_EDICAO[acao];
-    assert.ok(msg && /Funcionários/.test(msg), `${acao}: ${msg}`);
+    assert.ok(msg && /Treinamentos EAD/.test(msg), `${acao}: ${msg}`);
   }
   assert.match(MENSAGEM_SEM_EDICAO.liberar_tentativa, /liberar/i);
   assert.match(MENSAGEM_SEM_EDICAO.revogar_certificado, /revogar/i);
@@ -592,11 +592,11 @@ test("falhaDoRegistro: efeito desfeito = 500 'tente de novo'; sem desfazer = có
 // ------------------------------------------------------------ o index.ts não foge das regras
 const INDEX = readFileSync(fileURLToPath(new URL("./index.ts", import.meta.url)), "utf8");
 
-test("index.ts: toda ação de matrícula exige a permissão 'editar' antes de ler a matrícula", () => {
+test("index.ts: toda ação de matrícula exige a permissão da ação (T33) antes de ler a matrícula", () => {
   const inicio = INDEX.indexOf("if (ACOES_DE_MATRICULA.has(acao)) {");
   assert.ok(inicio > 0, "bloco das ações de matrícula não encontrado");
   const bloco = INDEX.slice(inicio, inicio + 900);
-  const permissao = bloco.indexOf("if (!podeEditar) return fail(MENSAGEM_SEM_EDICAO[acao], 403)");
+  const permissao = bloco.indexOf("if (!pode.age) return fail(MENSAGEM_SEM_EDICAO[acao], 403)");
   const leitura = bloco.indexOf("matriculaDoChamador(");
   assert.ok(permissao !== -1, "a permissão não é conferida no bloco");
   assert.ok(leitura !== -1 && permissao < leitura, "a permissão vem antes de ler a matrícula");

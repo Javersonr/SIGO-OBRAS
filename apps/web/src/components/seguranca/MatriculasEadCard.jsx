@@ -32,6 +32,7 @@ import {
   resumirLinhas,
 } from "@/lib/ead-matriculas";
 import AvisoAtrasadosDialog from "@/components/seguranca/AvisoAtrasadosDialog";
+import { dicaDoAvisoDaLinha } from "@/lib/ead-aviso-matricula";
 
 /**
  * Tabela de matrículas da aba Treinamentos (T22): busca, filtros (curso, status, vencimento), ordenação por
@@ -170,6 +171,10 @@ export default function MatriculasEadCard({
   certificados,
   andamento,
   cursoAceitaMatricula,
+  // T33: Treinamentos EAD → Matricular (matricular, renovar, remover e avisar) e Funcionários → Editar (criar o
+  // acesso ao portal ao avisar quem ainda não tem). Só escondem botões: quem confere é o banco e o servidor.
+  podeMatricular = false,
+  podeCriarAcesso = false,
   onMatricular,
   onDetalhes,
   onAvisar,
@@ -278,7 +283,7 @@ export default function MatriculasEadCard({
           <Users className="w-5 h-5" /> Matrículas ({matriculas.length})
         </CardTitle>
         <div className="flex flex-wrap items-center gap-2">
-          {atrasadas.length > 0 && (
+          {podeMatricular && atrasadas.length > 0 && (
             <Button size="sm" variant="outline" onClick={() => setAvisandoAtrasados(true)}>
               <BellRing className="w-4 h-4 mr-1" /> Avisar atrasados ({atrasadas.length})
             </Button>
@@ -296,9 +301,11 @@ export default function MatriculasEadCard({
           >
             <Download className="w-4 h-4 mr-1" /> Exportar CSV
           </Button>
-          <Button size="sm" variant="outline" onClick={onMatricular}>
-            <Plus className="w-4 h-4 mr-1" /> Matricular funcionários
-          </Button>
+          {podeMatricular && (
+            <Button size="sm" variant="outline" onClick={onMatricular}>
+              <Plus className="w-4 h-4 mr-1" /> Matricular funcionários
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -608,27 +615,25 @@ export default function MatriculasEadCard({
                         >
                           <ClipboardList className="w-4 h-4 text-slate-600 hover:text-slate-900" />
                         </button>
-                        <button
-                          type="button"
-                          title={
-                            l.inativo
-                              ? "Funcionário inativo: não há a quem avisar"
-                              : "Avisar pelo WhatsApp (cria o acesso ao portal se ainda não tiver)"
-                          }
-                          aria-label={`Avisar no WhatsApp${quem}`}
-                          disabled={l.inativo}
-                          onClick={() => onAvisar(l.funcionario)}
-                          className="disabled:cursor-not-allowed"
-                        >
-                          <MessageCircle
-                            className={
-                              l.inativo
-                                ? "w-4 h-4 text-slate-300"
-                                : "w-4 h-4 text-emerald-600 hover:text-emerald-800"
-                            }
-                          />
-                        </button>
-                        {l.podeRenovar && (
+                        {podeMatricular && (
+                          <button
+                            type="button"
+                            title={dicaDoAvisoDaLinha({ inativo: l.inativo, podeCriarAcesso })}
+                            aria-label={`Avisar no WhatsApp${quem}`}
+                            disabled={l.inativo}
+                            onClick={() => onAvisar(l.funcionario)}
+                            className="disabled:cursor-not-allowed"
+                          >
+                            <MessageCircle
+                              className={
+                                l.inativo
+                                  ? "w-4 h-4 text-slate-300"
+                                  : "w-4 h-4 text-emerald-600 hover:text-emerald-800"
+                              }
+                            />
+                          </button>
+                        )}
+                        {podeMatricular && l.podeRenovar && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -645,29 +650,31 @@ export default function MatriculasEadCard({
                             <RotateCw className="w-3 h-3 mr-1" /> Renovar
                           </Button>
                         )}
-                        <button
-                          type="button"
-                          title={
-                            bloqueada
-                              ? "Revogue o certificado antes de remover a matrícula"
-                              : "Remover matrícula"
-                          }
-                          aria-label={
-                            bloqueada
-                              ? `Remover matrícula${quem} (bloqueado: revogue o certificado antes)`
-                              : `Remover matrícula${quem}`
-                          }
-                          aria-disabled={bloqueada}
-                          onClick={() => onRemover(l.matricula)}
-                        >
-                          <Trash2
-                            className={
+                        {podeMatricular && (
+                          <button
+                            type="button"
+                            title={
                               bloqueada
-                                ? "w-4 h-4 text-slate-300 cursor-not-allowed"
-                                : "w-4 h-4 text-slate-400 hover:text-red-500"
+                                ? "Revogue o certificado antes de remover a matrícula"
+                                : "Remover matrícula"
                             }
-                          />
-                        </button>
+                            aria-label={
+                              bloqueada
+                                ? `Remover matrícula${quem} (bloqueado: revogue o certificado antes)`
+                                : `Remover matrícula${quem}`
+                            }
+                            aria-disabled={bloqueada}
+                            onClick={() => onRemover(l.matricula)}
+                          >
+                            <Trash2
+                              className={
+                                bloqueada
+                                  ? "w-4 h-4 text-slate-300 cursor-not-allowed"
+                                  : "w-4 h-4 text-slate-400 hover:text-red-500"
+                              }
+                            />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -725,6 +732,7 @@ export default function MatriculasEadCard({
         aberto={avisandoAtrasados}
         linhas={atrasadas}
         empresaId={empresaId}
+        podeCriarAcesso={podeCriarAcesso}
         onFechar={() => setAvisandoAtrasados(false)}
       />
     </Card>

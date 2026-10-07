@@ -88,6 +88,12 @@ import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
 import { decidirAvisoAoRH } from "@/lib/ead-aviso-matricula";
 import { lerEmPaginas } from "@/lib/leitura-em-paginas";
 import { avisoDoDossie, textoDoAndamento } from "@/lib/ead-dossie";
+import {
+  NENHUMA_PERMISSAO_EAD,
+  dadosDoCursoParaGravar,
+  dicaDoPublicado,
+  podeSalvarCurso,
+} from "@/lib/ead-permissoes";
 import { exportarDossieDoCurso } from "@/components/seguranca/exportarDossieEad";
 import { useConfirmar } from "@/components/shared/ConfirmarDialog";
 import InputTelefone from "@/components/shared/InputTelefone";
@@ -217,6 +223,9 @@ function SeletorPessoa({ rotulo, pessoas, formatar, nome, onNome, onEscolher }) 
 export default function TreinamentosEadTab({
   empresaAtiva,
   user,
+  // T33: as funções da aba "Treinamentos EAD" (lib/ead-permissoes.js). Só espelho: os botões que a pessoa não pode
+  // usar ficam escondidos; quem protege é o banco (0147) e o servidor (funcionario-acesso).
+  pode = NENHUMA_PERMISSAO_EAD,
   sugestaoMatricula = null,
   onSugestaoConsumida,
   onDuvidasPendentes,
@@ -411,14 +420,17 @@ export default function TreinamentosEadTab({
   aoConsumirSugestaoRef.current = onSugestaoConsumida;
   useEffect(() => {
     if (!sugestaoMatricula || carregando) return;
-    setPainelMatricula({
-      modo: "funcao",
-      funcaoId: sugestaoMatricula.funcaoId,
-      funcionarioIds: [sugestaoMatricula.funcionarioId],
-      chave: Date.now(),
-    });
+    // T33: só quem pode matricular abre o painel (a página já só sugere a quem pode)
+    if (pode.matricular) {
+      setPainelMatricula({
+        modo: "funcao",
+        funcaoId: sugestaoMatricula.funcaoId,
+        funcionarioIds: [sugestaoMatricula.funcionarioId],
+        chave: Date.now(),
+      });
+    }
     aoConsumirSugestaoRef.current?.();
-  }, [sugestaoMatricula, carregando]);
+  }, [sugestaoMatricula, carregando, pode.matricular]);
 
   // ------------------------------------------------- envio de arquivos (T30)
   // Tela fechada no meio do envio: cancela (o arquivo não ficaria ligado a nenhuma aula).
@@ -700,8 +712,15 @@ export default function TreinamentosEadTab({
       ...projeto.dados,
       ativo: cursoSel.ativo !== false,
     };
+    // T33: o banco exige Editar para mudar o curso e Publicar para a chave "Publicado". Quem só tem uma delas grava
+    // só o que pode (só Editar: tudo menos "Publicado"; só Publicar: só "Publicado"); sem nenhuma, nada.
+    const paraGravar = dadosDoCursoParaGravar(dados, pode, { novo: !cursoSel.id });
+    if (!paraGravar) {
+      toast.error("Sem permissão para salvar o curso (Segurança do Trabalho → Treinamentos EAD)");
+      return;
+    }
     if (
-      dados.ativo &&
+      paraGravar.ativo &&
       !cursos.find((c) => c.id === cursoSel.id)?.ativo &&
       pendenciasCurso({ ...cursoSel, ...dados }).length
     ) {
@@ -710,7 +729,8 @@ export default function TreinamentosEadTab({
     }
     // nota mínima nova com alunos no meio do curso: o RH vê quantos antes de salvar (T30)
     if (
-      mudouNotaMinima(gravado, dados.nota_minima) &&
+      Object.hasOwn(paraGravar, "nota_minima") &&
+      mudouNotaMinima(gravado, paraGravar.nota_minima) &&
       !(await confirmarImpacto("nota_minima", { cursoId: cursoSel.id }))
     ) {
       return;
@@ -722,12 +742,12 @@ export default function TreinamentosEadTab({
       // Gravado, a imagem da assinatura passa a ser de quem assina (A6): as marcas "imagem sem dono" da tela
       // saem do formulário, e mudar o nome dali em diante retira a imagem (lib/ead-assinatura.js).
       if (cursoSel.id) {
-        await sigo.entities.TreinamentoCurso.update(cursoSel.id, dados);
+        await sigo.entities.TreinamentoCurso.update(cursoSel.id, paraGravar);
         setCursoSel((atual) =>
           mesmoFormulario(atual, cursoSel) ? semMarcasDeAssinatura(atual) : atual
         );
       } else {
-        const novo = await sigo.entities.TreinamentoCurso.create(dados);
+        const novo = await sigo.entities.TreinamentoCurso.create(paraGravar);
         // O id do curso novo só vai para o formulário que foi gravado. Painel fechado durante a
         // gravação: não reabre um curso em branco. Painel reaberto com OUTRO curso: o id não pode ir
         // para ele, senão o próximo "Salvar curso" gravaria os dados de outro curso por cima do novo.
@@ -738,8 +758,9 @@ export default function TreinamentosEadTab({
         );
       }
       toast.success("Curso salvo");
-      // o projeto mudou e o curso já tem PDF: o que o aluno e a fiscalização abrem ficou antigo (T25)
-      const avisoPdf = avisoDoPdfAoSalvar(antes, projeto.dados);
+      // o projeto mudou e o curso já tem PDF: o que o aluno e a fiscalização abrem ficou antigo (T25). Quem só
+      // publica não gravou o projeto (T33).
+      const avisoPdf = pode.editar ? avisoDoPdfAoSalvar(antes, projeto.dados) : null;
       if (avisoPdf) toast.warning(avisoPdf, { duration: 10000 });
       recarregar();
     });
@@ -1602,6 +1623,8 @@ export default function TreinamentosEadTab({
     cursoMatriculavel(cursos.find((c) => c.id === cursoId)) === null;
   const matricularDoPainel = (cursoId, funcionarioId) =>
     abrirPainelMatricula({ cursoId, funcionarioIds: [funcionarioId] });
+  // T33: sem Treinamentos EAD → Matricular, nenhum curso oferece o botão Matricular no painel de vencimentos
+  const nenhumCursoMatricula = () => false;
 
   return (
     <div className="space-y-6">
@@ -1613,7 +1636,7 @@ export default function TreinamentosEadTab({
         treinamentos={treinamentosConfig}
         tentativas={tentativas}
         andamento={andamento}
-        podeMatricular={cursoAceitaMatricula}
+        podeMatricular={pode.matricular ? cursoAceitaMatricula : nenhumCursoMatricula}
         onMatricular={matricularDoPainel}
         onAbrirCurso={(cursoId) => setCursoSel(cursos.find((c) => c.id === cursoId) ?? null)}
         onDetalhes={setMatriculaDetalheId}
@@ -1625,15 +1648,17 @@ export default function TreinamentosEadTab({
           <CardTitle className="text-base flex items-center gap-2">
             <GraduationCap className="w-5 h-5" /> Cursos ({cursos.length})
           </CardTitle>
-          <Button
-            size="sm"
-            onClick={() =>
-              setCursoSel(novoRascunho({ nome: "", validade_meses: "", ativo: false }))
-            }
-            className="bg-slate-900 hover:bg-slate-800"
-          >
-            <Plus className="w-4 h-4 mr-1" /> Novo curso
-          </Button>
+          {pode.editar && (
+            <Button
+              size="sm"
+              onClick={() =>
+                setCursoSel(novoRascunho({ nome: "", validade_meses: "", ativo: false }))
+              }
+              className="bg-slate-900 hover:bg-slate-800"
+            >
+              <Plus className="w-4 h-4 mr-1" /> Novo curso
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
           <p className="col-span-full text-sm text-slate-500">
@@ -1672,7 +1697,7 @@ export default function TreinamentosEadTab({
               </p>
             </div>
           </details>
-          {modelosSemCurso(treinamentosConfig, cursos).length > 0 && (
+          {pode.editar && modelosSemCurso(treinamentosConfig, cursos).length > 0 && (
             <div className="col-span-full rounded-lg border border-sky-200 bg-sky-50 p-3 space-y-2">
               <p className="text-sm font-medium">
                 Treinamentos do cadastro central ainda sem curso no portal
@@ -1795,6 +1820,8 @@ export default function TreinamentosEadTab({
         certificados={certificados}
         andamento={andamento}
         cursoAceitaMatricula={cursoAceitaMatricula}
+        podeMatricular={pode.matricular}
+        podeCriarAcesso={pode.criarAcessoPortal}
         onMatricular={() => abrirPainelMatricula()}
         onDetalhes={setMatriculaDetalheId}
         onAvisar={avisarFuncionario}
@@ -1807,6 +1834,7 @@ export default function TreinamentosEadTab({
         key={empresaAtiva?.id}
         empresaId={empresaAtiva?.id}
         funcionariosTodos={funcionariosTodos}
+        podeEditarTexto={pode.editar}
       />
 
       <DuvidasTutorCard
@@ -1816,6 +1844,7 @@ export default function TreinamentosEadTab({
         funcTodosPorId={funcTodosPorId}
         aulas={aulas}
         user={user}
+        podeResponder={pode.responderDuvidas}
         onPendentes={onDuvidasPendentes}
       />
 
@@ -1829,6 +1858,8 @@ export default function TreinamentosEadTab({
             funcionario={funcTodosPorId.get(m.funcionario_id)}
             aulas={aulasDoCurso(m.curso_id)}
             empresaAtiva={empresaAtiva}
+            podeLiberarTentativa={pode.liberarTentativa}
+            podeRevogar={pode.revogarCertificado}
             onClose={() => setMatriculaDetalheId(null)}
             // liberar tentativa e revogar o certificado avisam a tela na hora (T18): a lixeira da
             // matrícula depende do certificado estar revogado (T20), e não precisa mais recarregar
@@ -2069,6 +2100,7 @@ export default function TreinamentosEadTab({
                     rotulo="Assinatura do responsável técnico"
                     valor={cursoSel.responsavel_tecnico_assinatura_ref}
                     empresaId={empresaAtiva.id}
+                    somenteLeitura={!pode.editar}
                     onChange={trocarAssinatura("responsavel_tecnico")}
                   />
                   <div>
@@ -2096,6 +2128,7 @@ export default function TreinamentosEadTab({
                     rotulo="Assinatura do instrutor"
                     valor={cursoSel.instrutor_assinatura_ref}
                     empresaId={empresaAtiva.id}
+                    somenteLeitura={!pode.editar}
                     onChange={trocarAssinatura("instrutor")}
                   />
                   <div>
@@ -2155,7 +2188,12 @@ export default function TreinamentosEadTab({
                     aulas={aulasDoCurso(cursoSel.id)}
                     questoes={todasQuestoes.filter((q) => q.curso_id === cursoSel.id)}
                     onMudar={(mudanca) => setCursoSel((prev) => ({ ...prev, ...mudanca }))}
-                    podeGerarPdf={!!cursoSel.id}
+                    podeGerarPdf={!!cursoSel.id && pode.editar}
+                    motivoSemPdf={
+                      pode.editar
+                        ? undefined
+                        : "Gerar ou anexar o PDF do projeto exige Treinamentos EAD → Editar."
+                    }
                     gerandoPdf={gerandoProjeto}
                     subindoPdf={subindoProjeto}
                     salvandoCurso={gravando.has("curso")}
@@ -2167,7 +2205,10 @@ export default function TreinamentosEadTab({
                     <Switch
                       id="curso-publicado"
                       checked={cursoSel.ativo !== false}
-                      disabled={cursoSel.ativo === false && pendenciasCurso(cursoSel).length > 0}
+                      disabled={
+                        !pode.publicar ||
+                        (cursoSel.ativo === false && pendenciasCurso(cursoSel).length > 0)
+                      }
                       onCheckedChange={(v) => {
                         if (v && pendenciasCurso(cursoSel).length)
                           return toast.error("Regularize os requisitos antes de publicar");
@@ -2182,6 +2223,9 @@ export default function TreinamentosEadTab({
                         Deixe desligado enquanto o responsável técnico revisa vídeos, questões e
                         gabarito.
                       </p>
+                      {dicaDoPublicado(pode) && (
+                        <p className="text-xs text-amber-700 mt-0.5">{dicaDoPublicado(pode)}</p>
+                      )}
                     </div>
                   </div>
                   <div className="col-span-2 rounded-lg border p-3 space-y-2">
@@ -2215,14 +2259,16 @@ export default function TreinamentosEadTab({
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    onClick={salvarCurso}
-                    disabled={gravando.has("curso") || gerandoProjeto || subindoProjeto}
-                    className="bg-slate-900 hover:bg-slate-800"
-                  >
-                    {gravando.has("curso") && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-                    Salvar curso
-                  </Button>
+                  {podeSalvarCurso(pode, { novo: !cursoSel.id }) && (
+                    <Button
+                      onClick={salvarCurso}
+                      disabled={gravando.has("curso") || gerandoProjeto || subindoProjeto}
+                      className="bg-slate-900 hover:bg-slate-800"
+                    >
+                      {gravando.has("curso") && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+                      Salvar curso
+                    </Button>
+                  )}
                   {cursoSel.id && (
                     <Button
                       type="button"
@@ -2255,6 +2301,7 @@ export default function TreinamentosEadTab({
                             ultima={i === lista.length - 1}
                             ordemOcupada={gravando.has("ordem")}
                             envioEmCurso={!!envio}
+                            somenteLeitura={!pode.editar}
                             onSubir={() => moverAula(a, -1)}
                             onDescer={() => moverAula(a, 1)}
                             onEditar={() => abrirEdicaoAula(a)}
@@ -2340,92 +2387,154 @@ export default function TreinamentosEadTab({
                         </React.Fragment>
                       );
                     })}
-                    <div className="space-y-2 rounded-lg border border-dashed p-3">
-                      <p className="text-xs font-medium text-slate-600">Nova aula</p>
-                      <div className="grid grid-cols-2 gap-2">
+                    {pode.editar && (
+                      <div className="space-y-2 rounded-lg border border-dashed p-3">
+                        <p className="text-xs font-medium text-slate-600">Nova aula</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Input
+                            placeholder="Módulo (ex.: B04 · Medidas de controle)"
+                            value={novaAula.modulo}
+                            onChange={(e) => setNovaAula({ ...novaAula, modulo: e.target.value })}
+                            list="modulos-curso"
+                            className="h-9"
+                          />
+                          <datalist id="modulos-curso">
+                            {[
+                              ...new Set(
+                                aulasDoCurso(cursoSel.id)
+                                  .map((a) => a.modulo)
+                                  .filter(Boolean)
+                              ),
+                            ].map((m) => (
+                              <option key={m} value={m} />
+                            ))}
+                          </datalist>
+                          <div className="flex rounded-md border overflow-hidden text-sm">
+                            {[
+                              ["video", "Vídeo"],
+                              ["pdf", "PDF"],
+                              ["texto", "Texto"],
+                            ].map(([v, rot]) => (
+                              <button
+                                key={v}
+                                type="button"
+                                onClick={() => setNovaAula({ ...novaAula, tipo: v, arquivo: null })}
+                                className={`flex-1 py-1.5 ${
+                                  novaAula.tipo === v
+                                    ? "bg-slate-900 text-white"
+                                    : "bg-white text-slate-600 hover:bg-slate-50"
+                                }`}
+                              >
+                                {rot}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                         <Input
-                          placeholder="Módulo (ex.: B04 · Medidas de controle)"
-                          value={novaAula.modulo}
-                          onChange={(e) => setNovaAula({ ...novaAula, modulo: e.target.value })}
-                          list="modulos-curso"
+                          placeholder="Título da aula"
+                          value={novaAula.titulo}
+                          onChange={(e) => setNovaAula({ ...novaAula, titulo: e.target.value })}
                           className="h-9"
                         />
-                        <datalist id="modulos-curso">
-                          {[
-                            ...new Set(
-                              aulasDoCurso(cursoSel.id)
-                                .map((a) => a.modulo)
-                                .filter(Boolean)
-                            ),
-                          ].map((m) => (
-                            <option key={m} value={m} />
-                          ))}
-                        </datalist>
-                        <div className="flex rounded-md border overflow-hidden text-sm">
-                          {[
-                            ["video", "Vídeo"],
-                            ["pdf", "PDF"],
-                            ["texto", "Texto"],
-                          ].map(([v, rot]) => (
-                            <button
-                              key={v}
-                              type="button"
-                              onClick={() => setNovaAula({ ...novaAula, tipo: v, arquivo: null })}
-                              className={`flex-1 py-1.5 ${
-                                novaAula.tipo === v
-                                  ? "bg-slate-900 text-white"
-                                  : "bg-white text-slate-600 hover:bg-slate-50"
-                              }`}
-                            >
-                              {rot}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <Input
-                        placeholder="Título da aula"
-                        value={novaAula.titulo}
-                        onChange={(e) => setNovaAula({ ...novaAula, titulo: e.target.value })}
-                        className="h-9"
-                      />
-                      {novaAula.tipo !== "video" && (
-                        <div className="space-y-2">
-                          {novaAula.tipo === "pdf" ? (
+                        {novaAula.tipo !== "video" && (
+                          <div className="space-y-2">
+                            {novaAula.tipo === "pdf" ? (
+                              <label className="h-9 flex items-center gap-2 px-3 rounded-md border border-slate-200 text-sm text-slate-600 cursor-pointer hover:border-slate-400 truncate">
+                                <FileText className="w-4 h-4 shrink-0" />
+                                <span className="truncate">
+                                  {novaAula.arquivo
+                                    ? novaAula.arquivo.name
+                                    : "Anexar PDF da aula (até 100 MB)"}
+                                </span>
+                                <input
+                                  type="file"
+                                  accept={ACCEPT_AULA.pdf}
+                                  className="hidden"
+                                  onChange={(e) =>
+                                    setNovaAula({
+                                      ...novaAula,
+                                      arquivo: e.target.files?.[0] || null,
+                                    })
+                                  }
+                                />
+                              </label>
+                            ) : (
+                              <Textarea
+                                rows={5}
+                                placeholder="Texto da aula"
+                                value={novaAula.texto}
+                                onChange={(e) =>
+                                  setNovaAula({ ...novaAula, texto: e.target.value })
+                                }
+                              />
+                            )}
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                min={1}
+                                placeholder="Tempo mínimo de leitura (min)"
+                                value={novaAula.minutos}
+                                onChange={(e) =>
+                                  setNovaAula({ ...novaAula, minutos: e.target.value })
+                                }
+                                className="h-9"
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                title="Adicionar aula"
+                                aria-label="Adicionar aula"
+                                onClick={adicionarAula}
+                                disabled={!!envio}
+                              >
+                                {envio?.alvo === "nova" ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Plus className="w-4 h-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                        {novaAula.tipo === "video" && (
+                          <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[1fr_auto_1fr_auto]">
                             <label className="h-9 flex items-center gap-2 px-3 rounded-md border border-slate-200 text-sm text-slate-600 cursor-pointer hover:border-slate-400 truncate">
-                              <FileText className="w-4 h-4 shrink-0" />
+                              <Video className="w-4 h-4 shrink-0" />
                               <span className="truncate">
                                 {novaAula.arquivo
                                   ? novaAula.arquivo.name
-                                  : "Anexar PDF da aula (até 100 MB)"}
+                                  : "Anexar vídeo MP4 ou WebM (até 1 GB)"}
                               </span>
                               <input
                                 type="file"
-                                accept={ACCEPT_AULA.pdf}
+                                accept={ACCEPT_AULA.video}
                                 className="hidden"
                                 onChange={(e) =>
                                   setNovaAula({ ...novaAula, arquivo: e.target.files?.[0] || null })
                                 }
                               />
                             </label>
-                          ) : (
-                            <Textarea
-                              rows={5}
-                              placeholder="Texto da aula"
-                              value={novaAula.texto}
-                              onChange={(e) => setNovaAula({ ...novaAula, texto: e.target.value })}
-                            />
-                          )}
-                          <div className="flex items-center gap-2">
+                            <span className="text-center text-xs text-slate-400 sm:text-left">
+                              ou
+                            </span>
                             <Input
-                              type="number"
-                              min={1}
-                              placeholder="Tempo mínimo de leitura (min)"
-                              value={novaAula.minutos}
-                              onChange={(e) =>
-                                setNovaAula({ ...novaAula, minutos: e.target.value })
-                              }
+                              placeholder="Link do YouTube (não listado)"
+                              value={novaAula.url}
+                              onChange={(e) => setNovaAula({ ...novaAula, url: e.target.value })}
+                              disabled={!!novaAula.arquivo}
                               className="h-9"
                             />
+                            {!novaAula.arquivo && (
+                              <Input
+                                placeholder="Duração (mm:ss)"
+                                aria-label="Duração do vídeo do YouTube"
+                                value={novaAula.duracao}
+                                onChange={(e) =>
+                                  setNovaAula({ ...novaAula, duracao: e.target.value })
+                                }
+                                className="h-9"
+                              />
+                            )}
                             <Button
                               size="sm"
                               variant="outline"
@@ -2433,77 +2542,22 @@ export default function TreinamentosEadTab({
                               aria-label="Adicionar aula"
                               onClick={adicionarAula}
                               disabled={!!envio}
+                              className="w-full sm:w-auto"
                             >
                               {envio?.alvo === "nova" ? (
                                 <Loader2 className="w-4 h-4 animate-spin" />
                               ) : (
                                 <Plus className="w-4 h-4" />
                               )}
+                              <span className="sm:hidden">Adicionar aula</span>
                             </Button>
                           </div>
-                        </div>
-                      )}
-                      {novaAula.tipo === "video" && (
-                        <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[1fr_auto_1fr_auto]">
-                          <label className="h-9 flex items-center gap-2 px-3 rounded-md border border-slate-200 text-sm text-slate-600 cursor-pointer hover:border-slate-400 truncate">
-                            <Video className="w-4 h-4 shrink-0" />
-                            <span className="truncate">
-                              {novaAula.arquivo
-                                ? novaAula.arquivo.name
-                                : "Anexar vídeo MP4 ou WebM (até 1 GB)"}
-                            </span>
-                            <input
-                              type="file"
-                              accept={ACCEPT_AULA.video}
-                              className="hidden"
-                              onChange={(e) =>
-                                setNovaAula({ ...novaAula, arquivo: e.target.files?.[0] || null })
-                              }
-                            />
-                          </label>
-                          <span className="text-center text-xs text-slate-400 sm:text-left">
-                            ou
-                          </span>
-                          <Input
-                            placeholder="Link do YouTube (não listado)"
-                            value={novaAula.url}
-                            onChange={(e) => setNovaAula({ ...novaAula, url: e.target.value })}
-                            disabled={!!novaAula.arquivo}
-                            className="h-9"
-                          />
-                          {!novaAula.arquivo && (
-                            <Input
-                              placeholder="Duração (mm:ss)"
-                              aria-label="Duração do vídeo do YouTube"
-                              value={novaAula.duracao}
-                              onChange={(e) =>
-                                setNovaAula({ ...novaAula, duracao: e.target.value })
-                              }
-                              className="h-9"
-                            />
-                          )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            title="Adicionar aula"
-                            aria-label="Adicionar aula"
-                            onClick={adicionarAula}
-                            disabled={!!envio}
-                            className="w-full sm:w-auto"
-                          >
-                            {envio?.alvo === "nova" ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Plus className="w-4 h-4" />
-                            )}
-                            <span className="sm:hidden">Adicionar aula</span>
-                          </Button>
-                        </div>
-                      )}
-                      {envio?.alvo === "nova" && (
-                        <EnvioProgressoEad envio={envio} onCancelar={cancelarEnvio} />
-                      )}
-                    </div>
+                        )}
+                        {envio?.alvo === "nova" && (
+                          <EnvioProgressoEad envio={envio} onCancelar={cancelarEnvio} />
+                        )}
+                      </div>
+                    )}
                     <p className="text-xs text-slate-400">
                       Aulas abrem em ordem. Vídeo conclui com 90% do tempo assistido (a duração é
                       cadastrada pelo RH); PDF e texto, com o tempo mínimo de leitura. O tempo só
@@ -2518,6 +2572,7 @@ export default function TreinamentosEadTab({
                         matriculas={matriculas}
                         funcPorId={funcPorId}
                         funcTodosPorId={funcTodosPorId}
+                        podeEditar={pode.editar}
                         onAbrirArquivo={abrirReferencia}
                       />
                     ) : modalidadeDoCurso(cursoSel) === "semipresencial" ? (
@@ -2539,17 +2594,19 @@ export default function TreinamentosEadTab({
                         <h4 className="font-semibold text-slate-800">
                           Avaliação final ({questoes.length} questão(ões))
                         </h4>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            setNovaQuestao(
-                              novoRascunho({ pergunta: "", opcoes: ["", "", "", ""], correta: 0 })
-                            )
-                          }
-                        >
-                          <Plus className="w-4 h-4 mr-1" /> Questão
-                        </Button>
+                        {pode.editar && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setNovaQuestao(
+                                novoRascunho({ pergunta: "", opcoes: ["", "", "", ""], correta: 0 })
+                              )
+                            }
+                          >
+                            <Plus className="w-4 h-4 mr-1" /> Questão
+                          </Button>
+                        )}
                       </div>
                       {questoes.map((q, qi) => (
                         <div key={q.id} className="text-sm bg-slate-50 rounded p-2">
@@ -2557,33 +2614,37 @@ export default function TreinamentosEadTab({
                             <span className="flex-1 font-medium">
                               {qi + 1}. {q.pergunta}
                             </span>
-                            <button
-                              type="button"
-                              title="Editar questão"
-                              aria-label={`Editar a questão ${qi + 1}`}
-                              onClick={() =>
-                                setNovaQuestao({
-                                  id: q.id,
-                                  pergunta: q.pergunta || "",
-                                  opcoes:
-                                    Array.isArray(q.opcoes) && q.opcoes.length >= 2
-                                      ? [...q.opcoes]
-                                      : ["", ""],
-                                  correta: q.correta ?? 0,
-                                  comentario: q.comentario || "",
-                                })
-                              }
-                            >
-                              <Pencil className="w-4 h-4 text-slate-400 hover:text-slate-800" />
-                            </button>
-                            <button
-                              type="button"
-                              title="Excluir questão"
-                              aria-label={`Excluir a questão ${qi + 1}`}
-                              onClick={() => excluirQuestao(q)}
-                            >
-                              <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
-                            </button>
+                            {pode.editar && (
+                              <>
+                                <button
+                                  type="button"
+                                  title="Editar questão"
+                                  aria-label={`Editar a questão ${qi + 1}`}
+                                  onClick={() =>
+                                    setNovaQuestao({
+                                      id: q.id,
+                                      pergunta: q.pergunta || "",
+                                      opcoes:
+                                        Array.isArray(q.opcoes) && q.opcoes.length >= 2
+                                          ? [...q.opcoes]
+                                          : ["", ""],
+                                      correta: q.correta ?? 0,
+                                      comentario: q.comentario || "",
+                                    })
+                                  }
+                                >
+                                  <Pencil className="w-4 h-4 text-slate-400 hover:text-slate-800" />
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Excluir questão"
+                                  aria-label={`Excluir a questão ${qi + 1}`}
+                                  onClick={() => excluirQuestao(q)}
+                                >
+                                  <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
+                                </button>
+                              </>
+                            )}
                           </div>
                           <ul className="mt-1 ml-4 space-y-0.5">
                             {(q.opcoes || []).map((o, i) => (

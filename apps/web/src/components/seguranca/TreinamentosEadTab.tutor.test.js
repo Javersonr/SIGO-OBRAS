@@ -81,7 +81,9 @@ describe("dúvidas: cartão do RH e contador da aba", () => {
     expect(pagina).toMatch(
       /\.from\("treinamento_duvida"\)\s*\.select\("id", \{ count: "exact", head: true \}\)\s*\.eq\("empresa_id", empresaAtiva\.id\)\s*\.is\("deleted_at", null\)\s*\.or\(FILTRO_SEM_RESPOSTA\)/
     );
-    expect(pagina).toMatch(/const verTreinamentos =\s*perfil === "Admin" \|\| temPermissao\(/);
+    // T33: quem vê a aba é quem tem a permissão própria "Treinamentos EAD" (qualquer função)
+    expect(pagina).toMatch(/const podeEad = permissoesEad\(temPermissao\);/);
+    expect(pagina).toMatch(/const verTreinamentos = podeEad\.visualizar;/);
     expect(pagina).toMatch(
       /if \(!empresaAtiva\?\.id \|\| !verTreinamentos\) \{\s*setDuvidasPendentes\(0\)/
     );

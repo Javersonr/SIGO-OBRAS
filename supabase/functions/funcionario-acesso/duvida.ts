@@ -13,9 +13,10 @@ import type { Conferencia } from "./regras.ts";
 /** Ações de `funcionario-acesso` que mexem na resposta de uma dúvida. */
 export const ACOES_DE_DUVIDA = new Set(["editar_resposta_duvida"]);
 
-/** Mensagem do 403 (a tela mostra o texto como veio). */
+/** Mensagem do 403 (a tela mostra o texto como veio). T33: responder e editar a resposta são do tutor. */
 export const MENSAGEM_SEM_EDICAO_DA_RESPOSTA =
-  "Sem permissão para editar a resposta: é preciso poder editar Funcionários em Segurança do Trabalho";
+  "Sem permissão para editar a resposta: é preciso Segurança do Trabalho → Treinamentos EAD → Responder " +
+  "dúvidas";
 
 /**
  * Tamanho máximo da resposta. A versão anterior vai inteira para a trilha, que não se apaga: o teto evita que

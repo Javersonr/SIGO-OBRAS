@@ -120,9 +120,30 @@ const MOTIVO_PULADO = {
   avisado_hoje: "Já recebeu o aviso hoje",
 };
 
-/** Texto de tela do motivo de um funcionário não receber o aviso em lote. */
-export function rotuloDoMotivoPulado(motivo) {
+/**
+ * Quem só matricula (sem Segurança do Trabalho → Funcionários → Editar) não cria o acesso ao portal (T33, P3 = C1):
+ * criar entrega o login e a senha provisória, e com ela se leem os documentos do funcionário no portal.
+ */
+const SEM_ACESSO_SEM_CRIAR =
+  "Sem acesso ao portal: peça a quem tem Segurança do Trabalho → Funcionários → Editar para criar o acesso " +
+  "(Ficha do funcionário)";
+
+/**
+ * Texto de tela do motivo de um funcionário não receber o aviso em lote. `podeCriarAcesso` (padrão true) = quem vê a
+ * tela pode criar o acesso ao portal; sem isso, o "sem acesso" manda procurar quem pode.
+ */
+export function rotuloDoMotivoPulado(motivo, { podeCriarAcesso = true } = {}) {
+  if (motivo === "sem_acesso" && !podeCriarAcesso) return SEM_ACESSO_SEM_CRIAR;
   return MOTIVO_PULADO[motivo] ?? "Não foi possível avisar";
+}
+
+/** A dica do botão do WhatsApp da linha da matrícula (T22; T33: quem só matricula não cria o acesso). */
+export function dicaDoAvisoDaLinha({ inativo, podeCriarAcesso }) {
+  if (inativo) return "Funcionário inativo: não há a quem avisar";
+  return podeCriarAcesso
+    ? "Avisar pelo WhatsApp (cria o acesso ao portal se ainda não tiver)"
+    : "Avisar pelo WhatsApp quem já tem acesso ao portal (criar o acesso exige Segurança do Trabalho → " +
+        "Funcionários → Editar)";
 }
 
 /**

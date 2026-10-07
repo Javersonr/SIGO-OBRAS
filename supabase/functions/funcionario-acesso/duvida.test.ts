@@ -37,9 +37,9 @@ test("a ação nova é só de dúvida e se chama editar_resposta_duvida", () => 
   assert.deepEqual([...ACOES_DE_DUVIDA], ["editar_resposta_duvida"]);
 });
 
-test("o evento é de nome fixo, e a mensagem de falta de permissão fala de Funcionários", () => {
+test("o evento é de nome fixo, e a mensagem de falta de permissão fala da função do tutor (T33)", () => {
   assert.equal(EVENTO_DUVIDA_RESPOSTA_EDITADA, "duvida_resposta_editada");
-  assert.match(MENSAGEM_SEM_EDICAO_DA_RESPOSTA, /editar Funcionários/);
+  assert.match(MENSAGEM_SEM_EDICAO_DA_RESPOSTA, /Treinamentos EAD → Responder dúvidas/);
 });
 
 test("validarDuvidaId: aceita só uuid (com espaços, em maiúscula); o resto é 400 sem ir ao banco", () => {
@@ -176,13 +176,13 @@ function corpoDa(nome: string): string {
   return codigoDoIndex.slice(inicio, Math.min(...[fim, deno].filter((n) => n > inicio)));
 }
 
-test("index.ts: a ação exige a permissão 'editar' e lê a dúvida só da empresa da sessão", () => {
+test("index.ts: a ação exige a permissão da ação (T33) e lê a dúvida só da empresa da sessão", () => {
   const principal = codigoDoIndex.slice(codigoDoIndex.indexOf("Deno.serve("));
   const bloco = principal.slice(principal.indexOf("ACOES_DE_DUVIDA.has(acao)"));
   assert.ok(principal.includes("ACOES_DE_DUVIDA.has(acao)"));
   assert.ok(
-    bloco.indexOf("if (!podeEditar)") >= 0 &&
-      bloco.indexOf("if (!podeEditar)") < bloco.indexOf("duvidaDoChamador("),
+    bloco.indexOf("if (!pode.age)") >= 0 &&
+      bloco.indexOf("if (!pode.age)") < bloco.indexOf("duvidaDoChamador("),
     "a permissão vem antes de ler a dúvida"
   );
   assert.match(bloco, /MENSAGEM_SEM_EDICAO_DA_RESPOSTA/);

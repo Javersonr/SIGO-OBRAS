@@ -124,6 +124,14 @@ Idioma do projeto: **português do Brasil** (textos de tela, comentários, commi
   `service_role` se a função for só do servidor), como na migração `0110` (`:1264-1268`). Sem o `grant`, o front não
   consegue chamar a RPC.
 - `jsonb` vindo do legado pode ser string: use `public.jsonb_to_array()` antes de tratar como lista.
+- Permissão fina no banco: `public.tem_permissao(modulo, aba, funcao)` (0147, espelho do `temPermissaoServidor`). Nas
+  tabelas do EAD o trigger `zz_permissao_ead` tem de ser o ÚLTIMO trigger BEFORE (ordem alfabética: ele confere a
+  linha como vai ser gravada); não crie trigger com nome depois de `zz_` nelas.
+- Função de trigger que **não** é `security definer` roda como `authenticated`, e o Postgres confere o `EXECUTE` de toda
+  função que ela chama com esse papel: o `revoke ... from public, anon, authenticated` das funções auxiliares dela
+  derruba o INSERT/UPDATE da tabela inteira (`permission denied for function`). Dê `grant execute ... to authenticated`
+  às auxiliares puras (modelo: `anexos_como_lista` e `anexos_do_portal` na `0147`) e, no smoke, exercite a escrita
+  comum como `authenticated`; `smoke_t33_recusa` confere a mensagem, porque `42501` também é "permission denied".
 - Teste de banco: script em `tools/smoke-*.sql` dentro de `begin; ... rollback;` (modelo:
   `tools/smoke-compras-aprovacao.sql`). Quem roda é o Javerson.
 

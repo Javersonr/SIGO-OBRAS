@@ -78,8 +78,9 @@ describe("TreinamentosEadTab: a imagem da assinatura acompanha o nome de quem as
       )?.[0];
     expect(salvar).toBeTruthy();
     // curso existente e curso novo (o id do novo entra no mesmo setCursoSel)
+    // T33: grava o que a permissão deixa (paraGravar, lib/ead-permissoes.js)
     expect(salvar).toMatch(
-      /await sigo\.entities\.TreinamentoCurso\.update\(cursoSel\.id, dados\);\s*setCursoSel\(\(atual\) =>\s*mesmoFormulario\(atual, cursoSel\) \? semMarcasDeAssinatura\(atual\) : atual/
+      /await sigo\.entities\.TreinamentoCurso\.update\(cursoSel\.id, paraGravar\);\s*setCursoSel\(\(atual\) =>\s*mesmoFormulario\(atual, cursoSel\) \? semMarcasDeAssinatura\(atual\) : atual/
     );
     expect(salvar).toMatch(/\.\.\.semMarcasDeAssinatura\(atual\), id: novo\.id/);
   });

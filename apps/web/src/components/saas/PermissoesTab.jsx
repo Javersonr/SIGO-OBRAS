@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { FUNCOES_EAD } from "@/lib/ead-permissoes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -70,6 +71,8 @@ const ESTRUTURA_PERMISSOES = {
   "Segurança do Trabalho": {
     abas: {
       Funcionários: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      // T33: a aba do Portal de Treinamento (EAD); as funções são as de lib/ead-permissoes.js
+      "Treinamentos EAD": { funcoes: [...FUNCOES_EAD] },
       "Dados Pessoais": { funcoes: ["visualizar", "editar"] },
       Documentação: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
       "Dados Bancários": { funcoes: ["visualizar", "editar"] },

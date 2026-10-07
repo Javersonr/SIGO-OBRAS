@@ -24,6 +24,38 @@ export function validarPdfPortal(file, tipo, competencia) {
   return null;
 }
 
+/**
+ * Os parâmetros da RPC `portal_documento_publicar` (migração 0147, T33). O banco monta o item (id, origem,
+ * publicado, data e quem publicou) e o grava num UPDATE só; a tela só manda o que o RH escolheu e o arquivo enviado.
+ */
+export function parametrosDaPublicacao({ funcionarioId, tipo, competencia, ref, nomeArquivo }) {
+  return {
+    p_funcionario_id: funcionarioId,
+    p_tipo: tipo,
+    p_competencia: tipo === "documentacao" ? null : competencia || null,
+    p_ref: ref,
+    p_nome_arquivo: nomeArquivo,
+  };
+}
+
+/**
+ * Quem publica e quem retira PDF do portal (P2 do spec da T33): aba RH de Segurança do Trabalho, `criar` publica e
+ * `deletar` retira. Só interface: quem confere é o banco (as RPC).
+ */
+export function permissoesDocumentosPortal(temPermissao) {
+  const tem = (funcao) => {
+    try {
+      return (
+        typeof temPermissao === "function" &&
+        temPermissao("Segurança do Trabalho", "RH", funcao) === true
+      );
+    } catch {
+      return false;
+    }
+  };
+  return { publicar: tem("criar"), retirar: tem("deletar") };
+}
+
 /** Mantém anexos legados e recusa alterar um item de outro funcionário. */
 export function retirarDocumentoPortal(lista, id, funcionarioId) {
   return lista.filter(

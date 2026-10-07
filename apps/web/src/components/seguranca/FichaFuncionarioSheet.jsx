@@ -66,6 +66,8 @@ export default function FichaFuncionarioSheet({
   onSalvo,
   onEditarCompleto,
   onAcessoMudou,
+  // T33 (P2): publicar e retirar PDF do portal = aba RH (criar / deletar); só interface, quem confere é o banco
+  podeDocumentosPortal = { publicar: false, retirar: false },
 }) {
   const [form, setForm] = useState(funcionario || {});
   const [advertencias, setAdvertencias] = useState([]);
@@ -322,6 +324,8 @@ export default function FichaFuncionarioSheet({
               funcionario={funcionario}
               empresaAtiva={empresaAtiva}
               onSalvo={onSalvo}
+              podePublicar={podeDocumentosPortal.publicar}
+              podeRetirar={podeDocumentosPortal.retirar}
             />
 
             {/* Documentos pessoais */}
