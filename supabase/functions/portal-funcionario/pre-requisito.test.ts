@@ -32,20 +32,26 @@ const concluida = (extra = {}) => ({
 });
 const semRevogadas = new Set<string>();
 
-/** Tudo o que a regra recebe: curso exigido, matrículas do aluno nele, certificados revogados e o dia. */
+/**
+ * Tudo o que a regra recebe: curso exigido, matrículas do aluno nele, certificados revogados, certificados vivos
+ * (só o semipresencial olha, T12) e o dia.
+ */
 function situacao(p: {
   curso?: unknown;
   matriculas?: unknown[];
   revogadas?: Set<string>;
+  certificadas?: Set<string>;
   hoje?: string;
 }) {
   return situacaoDoPreRequisito({
     curso: (p.curso === undefined ? BASICO : p.curso) as never,
     matriculas: (p.matriculas ?? []) as never,
     revogadas: p.revogadas ?? semRevogadas,
+    certificadas: p.certificadas,
     hoje: p.hoje ?? HOJE,
   });
 }
+const BASICO_SEMI = { ...BASICO, modalidade: "semipresencial" };
 
 // ---------------------------------------------------------------------------------- a regra
 
@@ -150,8 +156,77 @@ test("curso exigido que não existe, foi excluído ou nunca emite certificado: f
   assert.equal(situacao({ curso: semModalidade, matriculas: [concluida()] }).atendido, true);
 });
 
+test("T12: curso exigido semipresencial só vale com o certificado emitido (a teoria concluída não basta)", () => {
+  // concluiu a teoria, mas a prática (e, com ela, o certificado) ainda não saiu
+  assert.deepEqual(situacao({ curso: BASICO_SEMI, matriculas: [concluida()] }), {
+    atendido: false,
+    motivo: "pratica_pendente",
+  });
+  assert.deepEqual(
+    situacao({ curso: BASICO_SEMI, matriculas: [concluida()], certificadas: new Set() }),
+    { atendido: false, motivo: "pratica_pendente" }
+  );
+  // com o certificado vivo dessa matrícula, vale (como o EAD)
+  assert.deepEqual(
+    situacao({ curso: BASICO_SEMI, matriculas: [concluida()], certificadas: new Set(["m1"]) }),
+    { atendido: true, motivo: "concluido" }
+  );
+  // certificado de OUTRA matrícula não vale para esta
+  assert.equal(
+    situacao({ curso: BASICO_SEMI, matriculas: [concluida()], certificadas: new Set(["m9"]) })
+      .atendido,
+    false
+  );
+  // revogado e vencido continuam com o motivo de sempre
+  assert.equal(
+    situacao({
+      curso: BASICO_SEMI,
+      matriculas: [concluida()],
+      revogadas: new Set(["m1"]),
+      certificadas: new Set(),
+    }).motivo,
+    "revogado"
+  );
+  assert.equal(
+    situacao({
+      curso: BASICO_SEMI,
+      matriculas: [concluida({ proxima_renovacao: "2026-10-01" })],
+      certificadas: new Set(["m1"]),
+    }).motivo,
+    "vencido"
+  );
+  // ainda fazendo outra matrícula: em andamento
+  assert.equal(
+    situacao({
+      curso: BASICO_SEMI,
+      matriculas: [concluida(), concluida({ id: "m2", status: "em_andamento" })],
+    }).motivo,
+    "em_andamento"
+  );
+  // o EAD continua sem olhar o certificado (a conclusão basta, como na T23)
+  assert.equal(situacao({ matriculas: [concluida()], certificadas: new Set() }).atendido, true);
+  // o texto diz o que falta
+  assert.match(textoDoPreRequisito("pratica_pendente", "NR-10 Básico"), /parte prática/);
+  assert.match(textoDoPreRequisito("pratica_pendente", "NR-10 Básico"), /NR-10 Básico/);
+});
+
 test("o espelho do front diz o mesmo em todos os casos acima", () => {
   const casos = [
+    { curso: BASICO_SEMI, matriculas: [concluida()] },
+    { curso: BASICO_SEMI, matriculas: [concluida()], certificadas: new Set(["m1"]) },
+    { curso: BASICO_SEMI, matriculas: [concluida()], certificadas: new Set(["m9"]) },
+    {
+      curso: BASICO_SEMI,
+      matriculas: [concluida()],
+      revogadas: new Set(["m1"]),
+      certificadas: new Set<string>(),
+    },
+    {
+      curso: BASICO_SEMI,
+      matriculas: [concluida({ proxima_renovacao: "2026-10-01" })],
+      certificadas: new Set(["m1"]),
+    },
+    { matriculas: [concluida()], certificadas: new Set<string>() },
     { matriculas: [concluida()] },
     { matriculas: [concluida({ proxima_renovacao: null })] },
     { matriculas: [concluida({ proxima_renovacao: HOJE })] },
@@ -182,6 +257,7 @@ test("o espelho do front diz o mesmo em todos os casos acima", () => {
     const comum = {
       curso: caso.curso === undefined ? BASICO : caso.curso,
       matriculas: caso.matriculas,
+      certificadas: (caso as { certificadas?: Set<string> }).certificadas,
       hoje: HOJE,
     };
     assert.deepEqual(
@@ -206,6 +282,7 @@ test("o 409 PRE_REQUISITO diz qual curso falta e por quê; atendido não bloquei
     "revogado",
     "curso_excluido",
     "curso_sem_certificado",
+    "pratica_pendente",
   ] as const;
   const textos = new Set<string>();
   for (const motivo of motivos) {
@@ -267,6 +344,20 @@ test("preRequisitoDoCurso: devolve o curso exigido, se está atendido e o texto 
     certificados: [],
   });
   assert.equal(outro?.motivo, "sem_matricula");
+  // T12: semipresencial exigido: o certificado vivo vem da mesma lista de certificados do aluno
+  const semi = { ...entrada, cursosExigidos: [BASICO_SEMI] };
+  assert.equal(
+    preRequisitoDoCurso({ ...semi, matriculas: [concluida()], certificados: [] })?.motivo,
+    "pratica_pendente"
+  );
+  assert.equal(
+    preRequisitoDoCurso({
+      ...semi,
+      matriculas: [concluida()],
+      certificados: [{ matricula_id: "m1", revogado_em: null }],
+    })?.atendido,
+    true
+  );
 });
 
 test("preRequisitoDoCurso: curso exigido que a consulta não trouxe falha fechado", () => {
@@ -349,17 +440,41 @@ test("lerPreRequisito: lê o curso, as matrículas e os certificados revogados, 
   assert.ok(tem(certs, ["eq", "empresa_id", "empresa-1"]));
   assert.ok(tem(certs, ["eq", "funcionario_id", "func-1"]));
   assert.ok(tem(certs, ["eq", "curso_id", "curso-basico"]));
-  assert.ok(tem(certs, ["not", "revogado_em", "is", null]));
+  // T12: lê os vivos e os revogados (o semipresencial exigido só vale com o certificado emitido)
+  assert.ok(tem(certs, ["select", "matricula_id, revogado_em"]));
 });
 
 test("lerPreRequisito: certificado revogado da matrícula concluída derruba o pré-requisito", async () => {
   const { db } = bancoDeTeste({
     treinamento_curso: { data: BASICO },
     treinamento_matricula: { data: [concluida()] },
-    treinamento_certificado: { data: [{ matricula_id: "m1" }] },
+    treinamento_certificado: {
+      data: [{ matricula_id: "m1", revogado_em: "2026-10-02T00:00:00Z" }],
+    },
   });
   const r = await lerPreRequisito(db, PEDIDO);
   assert.equal(r.ok && r.situacao.motivo, "revogado");
+});
+
+test("lerPreRequisito (T12): curso exigido semipresencial só vale com o certificado vivo da matrícula", async () => {
+  const sem = await lerPreRequisito(
+    bancoDeTeste({
+      treinamento_curso: { data: BASICO_SEMI },
+      treinamento_matricula: { data: [concluida()] },
+      treinamento_certificado: { data: [] },
+    }).db,
+    PEDIDO
+  );
+  assert.equal(sem.ok && sem.situacao.motivo, "pratica_pendente");
+  const com = await lerPreRequisito(
+    bancoDeTeste({
+      treinamento_curso: { data: BASICO_SEMI },
+      treinamento_matricula: { data: [concluida()] },
+      treinamento_certificado: { data: [{ matricula_id: "m1", revogado_em: null }] },
+    }).db,
+    PEDIDO
+  );
+  assert.deepEqual(com.ok && com.situacao, { atendido: true, motivo: "concluido" });
 });
 
 test("lerPreRequisito: curso que não está na empresa (ou foi apagado) é 'curso excluído', sem nome", async () => {

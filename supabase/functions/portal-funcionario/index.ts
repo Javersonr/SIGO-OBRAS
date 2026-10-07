@@ -19,8 +19,11 @@
  *   duvida { matricula_id, aula_id?, pergunta }  → { duvida, tutor_avisado } (T21: o aviso vai ao WhatsApp do
  *     tutor do curso, com o link para responder, só se o telefone for aceito; ver tutor.ts)
  *
- * `certificado` só emite para curso EAD (modalidade do curso, T8): curso de apoio responde 409
- * `CURSO_DE_APOIO` e o semipresencial, 409 `PRATICA_PENDENTE` (até a T12); requisito do curso por
+ * `certificado` só emite para curso EAD ou semipresencial (modalidade do curso, T8): curso de apoio responde 409
+ * `CURSO_DE_APOIO`; o semipresencial (T12) só emite com a participação do aluno "presente" e "satisfatório" numa
+ * sessão prática viva do curso, já realizada, senão 409 `PRATICA_PENDENTE` (antes de pedir a senha; ver
+ * pratica.ts), e congela a sessão em `dados.pratica`, o local dela em `dados.local.pratica`, as duas cargas em
+ * `dados.curso` e o período cobrindo o dia da prática; requisito do curso por
  * cumprir responde 409 `REQUISITOS` (só os que travam a EMISSÃO: `pendenciasParaEmitir`); curso que exige outro
  * (`pre_requisito_curso_id`, T23) só emite com o curso exigido concluído e dentro da validade, senão 409
  * `PRE_REQUISITO` (antes de pedir a senha; ver pre-requisito.ts). O tipo do treinamento da matrícula (inicial,
@@ -90,6 +93,15 @@ import {
   preRequisitoDoCurso,
 } from "./pre-requisito.ts";
 import { dadosDoTipoNoCertificado } from "./tipo-treinamento.ts";
+import {
+  bloqueioDeEmissaoPorPratica,
+  dadosDaPraticaNoCertificado,
+  lerPratica,
+  localComPratica,
+  periodoComPratica,
+  praticaParaOAluno,
+  praticasDoBanco,
+} from "./pratica.ts";
 import { avisarGestores, avisoDeTentativasEsgotadas, esgotouAsTentativas } from "./avisos.ts";
 import {
   certificadoParaOAluno,
@@ -747,6 +759,17 @@ Deno.serve(
         empresaId
       );
       const hojeEmBrasilia = dataBrasilia(new Date());
+      // Parte prática presencial (T12): as sessões dos cursos semipresenciais do aluno e as participações das
+      // matrículas dele, só da empresa da sessão. Sem curso semipresencial não consulta; falha = "pendente".
+      const praticas = await praticasDoBanco(supabase, {
+        cursoIds: (cursos ?? [])
+          // deno-lint-ignore no-explicit-any
+          .filter((c: any) => modalidadeDoCurso(c) === "semipresencial")
+          // deno-lint-ignore no-explicit-any
+          .map((c: any) => c.id),
+        matriculaIds: matIds,
+        empresaId,
+      });
 
       const progPor = new Map(
         // deno-lint-ignore no-explicit-any
@@ -854,6 +877,14 @@ Deno.serve(
           certificados: certificados ?? [],
           hoje: hojeEmBrasilia,
         });
+        // a parte prática do semipresencial (null nos outros cursos): só emite com ela realizada (T12)
+        const pratica = praticaParaOAluno({
+          curso,
+          matricula: m,
+          sessoes: praticas.sessoes,
+          participacoes: praticas.participacoes,
+          hoje: hojeEmBrasilia,
+        });
         return {
           // a nota de quem ainda não foi aprovado não vai ao navegador (T16)
           matricula: matriculaParaAluno(m),
@@ -902,10 +933,13 @@ Deno.serve(
             !cert &&
             pendencias.length === 0 &&
             emiteCertificado(modalidadeDoCurso(curso)) &&
-            preRequisito?.atendido !== false,
+            preRequisito?.atendido !== false &&
+            (pratica === null || pratica.situacao === "realizada"),
           pendencias_certificado: pendencias.map((r) => r.texto),
           // o curso exigido antes deste e se o aluno já o cumpriu (T23); a tela explica o que falta
           pre_requisito: preRequisito,
+          // "Parte prática: pendente" ou "realizada em DD/MM, em <local>" (T12); null fora do semipresencial
+          pratica: pratica,
           // deno-lint-ignore no-explicit-any
           duvidas: (duvidas ?? []).filter((d: any) => d.curso_id === m.curso_id),
         };
@@ -1452,8 +1486,8 @@ Deno.serve(
         });
       }
 
-      // Modalidade (T8): curso de apoio nunca emite, e o semipresencial só emitirá com a prática
-      // registrada (T12). Vem ANTES da senha: não gasta a reconfirmação do aluno à toa.
+      // Modalidade (T8): curso de apoio nunca emite; o semipresencial depende da prática da matrícula,
+      // conferida abaixo (T12). Vem ANTES da senha: não gasta a reconfirmação do aluno à toa.
       const { data: cursoDoCertificado, error: erroCurso } = await supabase
         .from("treinamento_curso")
         .select("*")
@@ -1490,6 +1524,29 @@ Deno.serve(
       }
       const semPre = pre?.ok ? bloqueioDeEmissaoPorPreRequisito(pre.situacao, pre.nome) : null;
       if (semPre) return fail(semPre.mensagem, 409, { codigo: semPre.codigo });
+
+      // Parte prática presencial (T12): o semipresencial só emite com a participação do aluno "presente" e
+      // "satisfatório" numa sessão viva do curso, já realizada. Lê o banco de novo (a tela pode estar velha:
+      // o RH pode ter mudado o resultado ou apagado a sessão) e vem ANTES da senha. Falha de leitura não emite.
+      const praticaLida =
+        modalidadeDoCurso(cursoDoCertificado) === "semipresencial"
+          ? await lerPratica(supabase, {
+              matriculaId: mat.id,
+              cursoId: mat.curso_id,
+              empresaId,
+              hoje: dataBrasilia(new Date()),
+            })
+          : null;
+      if (praticaLida && !praticaLida.ok) {
+        return fail(
+          "Não foi possível conferir a parte prática do curso agora. Tente de novo.",
+          503
+        );
+      }
+      const semPratica = praticaLida?.ok ? bloqueioDeEmissaoPorPratica(praticaLida.pratica) : null;
+      if (semPratica) return fail(semPratica.mensagem, 409, { codigo: semPratica.codigo });
+      // a sessão que valeu (a satisfatória mais recente); null fora do semipresencial
+      const sessaoDaPratica = praticaLida?.ok ? praticaLida.pratica.sessao : null;
 
       const reconfirmacao = await reconfirmar(body.senha ?? "");
       if (reconfirmacao === "limite") return muitasTentativas();
@@ -1555,17 +1612,32 @@ Deno.serve(
           nome: curso.nome,
           codigo: curso.codigo,
           carga_horaria_horas: curso.carga_horaria_horas,
-          modalidade: textoDaModalidade(modalidadeDoCurso(curso)),
+          // semipresencial (T12): "Semipresencial: teoria EAD (X h) + prática presencial (Y h)"
+          modalidade: textoDaModalidade(modalidadeDoCurso(curso), curso),
+          // e as duas cargas em número (só no semipresencial: o certificado EAD não muda)
+          ...(sessaoDaPratica
+            ? {
+                carga_teorica_horas: Number(curso.carga_teorica_horas),
+                carga_pratica_horas: Number(curso.carga_pratica_horas),
+              }
+            : {}),
           conteudo_programatico: curso.conteudo_programatico || null,
           // deno-lint-ignore no-explicit-any
           aulas: (aulas ?? []).map((a: any) => ({ modulo: a.modulo, titulo: a.titulo })),
         },
-        // dias de Brasília (T8); conclusão e validade já foram gravadas assim em datasDeConclusao
-        periodo: periodoDoCertificado(mat),
+        // dias de Brasília (T8); conclusão e validade já foram gravadas assim em datasDeConclusao. No
+        // semipresencial o período cobre também o dia da prática (T12); a validade não muda
+        periodo: sessaoDaPratica
+          ? periodoComPratica(periodoDoCertificado(mat), sessaoDaPratica.data ?? null)
+          : periodoDoCertificado(mat),
         // tipo do treinamento (T23, NR-1 1.7.1.2): inicial, periódico ou eventual (com o motivo); entra no hash
         ...dadosDoTipoNoCertificado(mat),
-        // NR-1, 1.7.1.1: onde o treinamento foi realizado
-        local: LOCAL_DO_CERTIFICADO,
+        // NR-1, 1.7.1.1: onde o treinamento foi realizado (no semipresencial, também o local da prática, T12)
+        local: sessaoDaPratica
+          ? localComPratica(LOCAL_DO_CERTIFICADO, sessaoDaPratica)
+          : LOCAL_DO_CERTIFICADO,
+        // a sessão prática que valeu, congelada (T12): editar a sessão depois não muda este certificado
+        ...(sessaoDaPratica ? { pratica: dadosDaPraticaNoCertificado(sessaoDaPratica) } : {}),
         avaliacao: sit.aprovacao
           ? { nota: sit.aprovacao.nota, tentativa: sit.aprovacao.numero }
           : null,

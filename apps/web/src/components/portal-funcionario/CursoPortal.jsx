@@ -54,6 +54,8 @@ import {
   aulaSeguinte,
   cursoDespublicado,
   cursoDeApoio,
+  praticaDoCurso,
+  praticaPendente,
   preRequisitoPendente,
   MSG_CURSO_DE_APOIO,
   erroAposEnvioCerto,
@@ -820,6 +822,17 @@ export default function CursoPortal({
             className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
           >
             {preRequisitoPendente(item).texto}
+          </div>
+        )}
+
+        {/* parte prática presencial do semipresencial (T12): "pendente" ou "realizada em DD/MM, em <local>"; com a
+            teoria concluída e a prática pendente, o aviso sai no bloco do certificado, logo abaixo */}
+        {praticaDoCurso(item) && !(mat.status === "concluido" && praticaPendente(item)) && (
+          <div
+            role="status"
+            className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"
+          >
+            {praticaDoCurso(item).texto}
           </div>
         )}
 

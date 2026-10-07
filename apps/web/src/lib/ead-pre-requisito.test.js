@@ -357,12 +357,60 @@ describe("avisoDoCursoExigido (o que a tela do curso diz sobre o pré-requisito 
     expect(aviso).toMatch(/não está publicado/);
   });
 
-  it("curso que ainda não emite certificado (semipresencial) ou nunca emite (apoio)", () => {
-    expect(avisoDoCursoExigido({ id: "a", ativo: true, modalidade: "semipresencial" })).toMatch(
-      /ainda não emite certificado/
-    );
+  it("semipresencial (T12) só vale com o certificado emitido; apoio nunca emite", () => {
+    const semi = avisoDoCursoExigido({ id: "a", ativo: true, modalidade: "semipresencial" });
+    expect(semi).toMatch(/semipresencial/);
+    expect(semi).toMatch(/certificado emitido/);
+    expect(semi).toMatch(/prática presencial/);
+    expect(semi).not.toMatch(/ainda não emite certificado/);
     expect(avisoDoCursoExigido({ id: "a", ativo: true, modalidade: "apoio" })).toMatch(
       /não emite certificado/
     );
+  });
+});
+
+describe("curso exigido semipresencial (T12): a teoria concluída não basta", () => {
+  const cursos = [
+    { id: "basico", nome: "Básico semipresencial", modalidade: "semipresencial", ativo: true },
+    { id: "sep", nome: "SEP", modalidade: "ead", ativo: true, pre_requisito_curso_id: "basico" },
+  ];
+  const concluida = {
+    id: "m1",
+    funcionario_id: "f1",
+    curso_id: "basico",
+    status: "concluido",
+    proxima_renovacao: "2028-10-01",
+  };
+  const hoje = "2026-10-07";
+  it("sem o certificado do curso exigido: falta a prática; com ele vivo, atende", () => {
+    const base = { curso: cursos[1], cursos, funcionarioId: "f1", matriculas: [concluida], hoje };
+    expect(situacaoDoPreRequisitoDoFuncionario({ ...base, certificados: [] })).toEqual({
+      atendido: false,
+      motivo: "pratica_pendente",
+    });
+    expect(
+      situacaoDoPreRequisitoDoFuncionario({
+        ...base,
+        certificados: [{ matricula_id: "m1", revogado_em: null }],
+      })
+    ).toEqual({ atendido: true, motivo: "concluido" });
+    expect(
+      situacaoDoPreRequisitoDoFuncionario({
+        ...base,
+        certificados: [{ matricula_id: "m1", revogado_em: "2026-10-02T00:00:00Z" }],
+      }).motivo
+    ).toBe("revogado");
+  });
+  it("o painel de matrícula barra quem só concluiu a teoria, com o motivo", () => {
+    const { liberadas, bloqueadas } = separarPorPreRequisito({
+      novas: [{ curso_id: "sep", funcionario_id: "f1" }],
+      cursos,
+      matriculas: [concluida],
+      certificados: [],
+      hoje,
+    });
+    expect(liberadas).toEqual([]);
+    expect(bloqueadas[0].motivo).toBe("pratica_pendente");
+    expect(motivoDoBloqueioNaMatricula("pratica_pendente")).toMatch(/parte prática/);
   });
 });

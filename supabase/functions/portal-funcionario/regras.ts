@@ -19,6 +19,7 @@
 
 import type { Consumo, Limite } from "../_shared/limite-tentativas.ts";
 import { dataBrasilia, hashDoCertificado } from "../_shared/portal-funcionario.ts";
+import { formatarHoras } from "./requisitos.ts";
 
 /** Vídeo conclui sozinho a partir de 90% assistidos. */
 export const PCT_CONCLUSAO = 0.9;
@@ -269,7 +270,7 @@ export function periodoDoCertificado(mat: {
 
 /**
  * Onde o treinamento foi realizado (NR-1, 1.7.1.1: o certificado traz o local). No EAD, é a plataforma;
- * a prática presencial do semipresencial acrescentará o endereço (T12).
+ * no semipresencial, `dados.local` leva também o local da prática presencial (`localComPratica`, T12).
  */
 export const LOCAL_DO_CERTIFICADO = {
   ambiente: "Plataforma SIGO Obras — https://www.sigoobras.com.br/PortalFuncionario",
@@ -277,14 +278,27 @@ export const LOCAL_DO_CERTIFICADO = {
 
 /**
  * Texto da modalidade impresso em `dados.curso.modalidade` do certificado (e no PDF e na validação
- * pública). O texto do EAD é o que os certificados já emitidos trazem. Só o EAD emite hoje; os outros
- * textos existem para a T12 e para o RH ler o curso, nunca para valer como "a distância" no lugar.
+ * pública). O texto do EAD é o que os certificados já emitidos trazem. O semipresencial (T12) diz quanto é
+ * teoria e quanto é prática, com as cargas do curso EAD: "Semipresencial: teoria EAD (X h) + prática
+ * presencial (Y h)"; sem as duas cargas (o requisito CARGAS não deixa emitir assim), o texto genérico.
  */
-export function textoDaModalidade(modalidade: string | null | undefined): string {
+export function textoDaModalidade(
+  modalidade: string | null | undefined,
+  curso?: { carga_teorica_horas?: unknown; carga_pratica_horas?: unknown } | null
+): string {
   const m = modalidade || "ead";
   if (m === "ead") return "Ensino a distância (EAD) — NR-1, Anexo II";
-  if (m === "semipresencial")
+  if (m === "semipresencial") {
+    const teorica = Number(curso?.carga_teorica_horas);
+    const pratica = Number(curso?.carga_pratica_horas);
+    if (teorica > 0 && pratica > 0) {
+      return (
+        `Semipresencial: teoria EAD (${formatarHoras(teorica)}) + ` +
+        `prática presencial (${formatarHoras(pratica)})`
+      );
+    }
     return "Semipresencial — teoria em ensino a distância (EAD) e prática presencial";
+  }
   if (m === "apoio") return "Material de apoio ao treinamento presencial (não emite certificado)";
   return `Modalidade não reconhecida (${m})`;
 }

@@ -13,6 +13,10 @@
  * O motivo de "não atendido" serve só ao texto (em andamento > vencido > revogado > sem matrícula). Curso exigido
  * que não existe mais, foi excluído ou é de apoio (conclui sem certificado) falha fechado.
  *
+ * Curso exigido SEMIPRESENCIAL (T12): a matrícula conclui com a TEORIA, antes da prática presencial; nele, a
+ * conclusão só vale com o certificado VIVO (emitido e não revogado) daquela matrícula, que o servidor só emite com
+ * a prática satisfatória. Teoria concluída sem certificado = motivo "pratica_pendente".
+ *
  * Os testes ficam em ead-pre-requisito.test.js. Este arquivo só importa `ead-requisitos.js` (com a extensão, como
  * ele mesmo faz): o teste do servidor (node:test) o carrega direto, sem o resolvedor do Vite.
  */
@@ -29,22 +33,37 @@ function venceu(validade, hoje) {
 
 /**
  * Situação do pré-requisito de UM funcionário. `curso` é o curso EXIGIDO (null = não achado); `matriculas`, as do
- * funcionário nele; `revogadas` (Set), os ids das matrículas cujo certificado foi revogado; `hoje`, "AAAA-MM-DD"
+ * funcionário nele; `revogadas` (Set), os ids das matrículas cujo certificado foi revogado; `certificadas` (Set),
+ * os ids das matrículas com certificado vivo (só o semipresencial olha; ausente = nenhuma); `hoje`, "AAAA-MM-DD"
  * de Brasília.
- * @returns {{ atendido: boolean, motivo: "concluido"|"sem_matricula"|"em_andamento"|"vencido"|"revogado"|
- *   "curso_excluido"|"curso_sem_certificado" }}
+ * @returns {{ atendido: boolean, motivo: "concluido"|"sem_matricula"|"em_andamento"|"pratica_pendente"|"vencido"|
+ *   "revogado"|"curso_excluido"|"curso_sem_certificado" }}
  */
-export function situacaoDoPreRequisito({ curso, matriculas = [], revogadas = new Set(), hoje }) {
+export function situacaoDoPreRequisito({
+  curso,
+  matriculas = [],
+  revogadas = new Set(),
+  certificadas,
+  hoje,
+}) {
   if (!curso || curso.deleted_at) return { atendido: false, motivo: "curso_excluido" };
-  if (modalidadeDoCurso(curso) === "apoio") {
+  const modalidade = modalidadeDoCurso(curso);
+  if (modalidade === "apoio") {
     return { atendido: false, motivo: "curso_sem_certificado" };
   }
+  // semipresencial (T12): a teoria concluída só vale com o certificado vivo, que exige a prática satisfatória
+  const exigeCertificado = modalidade === "semipresencial";
+  const certificada = (m) => !!certificadas?.has(m.id);
   const vivas = (matriculas ?? []).filter(viva);
   const concluidas = vivas.filter((m) => m.status === "concluido");
-  const vale = (m) => !revogadas.has(m.id) && !venceu(m.proxima_renovacao, hoje);
+  const emDia = (m) => !revogadas.has(m.id) && !venceu(m.proxima_renovacao, hoje);
+  const vale = (m) => emDia(m) && (!exigeCertificado || certificada(m));
   if (concluidas.some(vale)) return { atendido: true, motivo: "concluido" };
   if (vivas.some((m) => m.status !== "concluido"))
     return { atendido: false, motivo: "em_andamento" };
+  if (exigeCertificado && concluidas.some(emDia)) {
+    return { atendido: false, motivo: "pratica_pendente" };
+  }
   if (concluidas.some((m) => !revogadas.has(m.id) && venceu(m.proxima_renovacao, hoje))) {
     return { atendido: false, motivo: "vencido" };
   }
@@ -68,6 +87,13 @@ const revogadasDe = (certificados) =>
       .filter((c) => c?.revogado_em)
       .map((c) => c.matricula_id)
   );
+// matrículas com certificado vivo (emitido e não revogado): o semipresencial exigido só vale com ele (T12)
+const certificadasDe = (certificados) =>
+  new Set(
+    (Array.isArray(certificados) ? certificados : [])
+      .filter((c) => c?.matricula_id && !c.revogado_em)
+      .map((c) => c.matricula_id)
+  );
 
 /**
  * A situação do pré-requisito de `curso` para o funcionário, com o que a tela da empresa tem em mãos (todas as
@@ -89,6 +115,7 @@ export function situacaoDoPreRequisitoDoFuncionario({
       (m) => m?.funcionario_id === funcionarioId && m.curso_id === exigido.id
     ),
     revogadas: revogadasDe(certificados),
+    certificadas: certificadasDe(certificados),
     hoje,
   });
 }
@@ -108,6 +135,7 @@ export function separarPorPreRequisito({
 }) {
   const cursoPorId = new Map((cursos ?? []).map((c) => [c?.id, c]));
   const revogadas = revogadasDe(certificados);
+  const certificadas = certificadasDe(certificados);
   const porPar = new Map();
   for (const m of matriculas ?? []) {
     const chave = `${m?.funcionario_id}|${m?.curso_id}`;
@@ -127,6 +155,7 @@ export function separarPorPreRequisito({
       curso: exigido.curso,
       matriculas: porPar.get(`${nova.funcionario_id}|${exigido.id}`) ?? [],
       revogadas,
+      certificadas,
       hoje,
     });
     if (situacao.atendido) {
@@ -149,6 +178,7 @@ export function separarPorPreRequisito({
 const MOTIVOS_NA_MATRICULA = {
   sem_matricula: "ainda não fez o curso",
   em_andamento: "ainda não concluiu o curso",
+  pratica_pendente: "falta a parte prática presencial (ou o certificado) do curso",
   vencido: "o certificado venceu",
   revogado: "o certificado foi revogado",
   curso_excluido: "o curso exigido foi excluído",
@@ -228,7 +258,8 @@ export function cursosQuePodemSerPreRequisito({ cursoId, cursos, atualId = null 
  * bloqueia salvar): o RH pode estar montando os dois cursos ao mesmo tempo.
  * - rascunho (`ativo === false`): ninguém conclui o curso exigido enquanto ele não for publicado;
  * - apoio: nunca emite certificado, então nunca vale como pré-requisito (o servidor falha fechado);
- * - semipresencial: ainda não emite certificado (T12), então ninguém o cumpre até a prática presencial existir.
+ * - semipresencial (T12): só vale com o certificado emitido, ou seja, com a prática presencial satisfatória; a
+ *   teoria concluída não basta.
  */
 export function avisoDoCursoExigido(exigido) {
   if (!exigido) return null;
@@ -237,7 +268,7 @@ export function avisoDoCursoExigido(exigido) {
     return "O curso exigido é de apoio: ele não emite certificado e por isso não vale como pré-requisito.";
   }
   if (modalidade === "semipresencial") {
-    return "O curso exigido é semipresencial e ainda não emite certificado: ninguém consegue cumprir o pré-requisito até isso mudar.";
+    return "O curso exigido é semipresencial: só vale com o certificado emitido, ou seja, depois da prática presencial satisfatória (a teoria concluída não basta).";
   }
   if (exigido.ativo === false) {
     return "O curso exigido não está publicado: ninguém consegue cumpri-lo até ele ser publicado e concluído.";

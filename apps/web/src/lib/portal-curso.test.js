@@ -40,6 +40,8 @@ import {
   cursoDeApoio,
   renovacaoParaExibir,
   rotuloDoBotaoDoCurso,
+  praticaDoCurso,
+  praticaPendente,
   preRequisitoPendente,
   MSG_CURSO_DE_APOIO,
 } from "./portal-curso";
@@ -1246,5 +1248,36 @@ describe("preRequisitoPendente (T23)", () => {
 
   it("só o valor `false` conta como não cumprido (resposta sem o campo não bloqueia nada na tela)", () => {
     expect(preRequisitoPendente({ pre_requisito: { texto: "x" } })).toBeNull();
+  });
+});
+
+describe("parte prática do semipresencial no portal (T12)", () => {
+  const realizada = {
+    situacao: "realizada",
+    data: "2026-10-05",
+    local: "Pátio de teste",
+    texto: "Parte prática: realizada em 05/10/2026, em Pátio de teste.",
+  };
+  const pendente = {
+    situacao: "pendente",
+    data: null,
+    local: null,
+    texto: "Parte prática: pendente.",
+  };
+  it("praticaDoCurso: o que o servidor mandou (com texto), ou null", () => {
+    expect(praticaDoCurso({ pratica: realizada })).toBe(realizada);
+    expect(praticaDoCurso({ pratica: pendente })).toBe(pendente);
+    expect(praticaDoCurso({ pratica: null })).toBeNull();
+    expect(praticaDoCurso({})).toBeNull();
+    expect(praticaDoCurso({ pratica: { situacao: "pendente" } })).toBeNull();
+  });
+  it("praticaPendente: só quando ainda não foi realizada", () => {
+    expect(praticaPendente({ pratica: pendente })).toBe(pendente);
+    expect(praticaPendente({ pratica: { ...pendente, situacao: "agendada" } })).not.toBeNull();
+    expect(
+      praticaPendente({ pratica: { ...pendente, situacao: "insatisfatoria" } })
+    ).not.toBeNull();
+    expect(praticaPendente({ pratica: realizada })).toBeNull();
+    expect(praticaPendente({})).toBeNull();
   });
 });

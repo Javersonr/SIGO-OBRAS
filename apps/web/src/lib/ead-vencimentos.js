@@ -242,8 +242,8 @@ export function precisaDeAviso(item) {
  * O caminho é função → exigência da função (`treinamento` com `funcao_id`) → treinamento central
  * (`modelo_treinamento_id`, migração 0131) → curso EAD (`treinamento_curso.modelo_treinamento_id`). Só
  * contam como exigência as ativas, não removidas e não marcadas como opcionais (`obrigatorio === false`).
- * Só habilita o curso EAD publicado (`ativo !== false`) e de modalidade EAD: o de apoio não emite
- * certificado e o semipresencial ainda não emite. Exigência sem nenhum curso assim fica de fora: o EAD não
+ * Só habilita o curso EAD publicado (`ativo !== false`) cuja modalidade emite certificado (EAD ou, desde a T12,
+ * semipresencial): o de apoio não emite. Exigência sem nenhum curso assim fica de fora: o EAD não
  * tem como julgar, e o treinamento presencial registrado na Ficha não entra nesta conta.
  *
  * Devolve `[{ funcionario, pendencias: [{ exigencia, cursos, motivo }] }]` por nome do funcionário, só de

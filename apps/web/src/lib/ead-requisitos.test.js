@@ -3,6 +3,7 @@ import { marcaDoProjeto } from "./ead-projeto-marca";
 import {
   MODALIDADES,
   TEXTO_PDF_DO_PROJETO_DESATUALIZADO,
+  cargaTeoricaDoCurso,
   emiteCertificado,
   modalidadeDoCurso,
   motivoSemCertificado,
@@ -17,6 +18,8 @@ const curso = {
   instrutor_nome: "Instrutor teste",
   responsavel_tecnico_nome: "RT teste",
 };
+// semipresencial de 1 h: teoria e prática que somam a carga total (o lastro de 1 h cobre a teoria de 0,5 h)
+const CARGAS_SEMI = { carga_teorica_horas: 0.5, carga_pratica_horas: 0.5 };
 const aulas = [{ tipo: "texto", conteudo_texto: "Texto teste", duracao_seg: 3600 }];
 const questoes = Array.from({ length: 5 }, () => ({}));
 // o que impede PUBLICAR e MATRICULAR
@@ -49,15 +52,21 @@ describe("requisitos dos cursos", () => {
     expect(tempoObrigatorioSeg([{ duracao_seg: 3600, deleted_at: "2026-10-01" }])).toBe(0);
   });
   it("a modalidade do curso decide se emite certificado; o nome NR-35 não decide mais", () => {
-    // semipresencial (e valor desconhecido) travam publicar, matricular e emitir, como a T8 deixou
-    for (const modalidade of ["semipresencial", "inventada"]) {
-      expect(pendencias({ curso: { ...curso, modalidade }, aulas, questoes })).toContain(
-        "MODALIDADE"
-      );
-      expect(pendenciasDeEmissao({ curso: { ...curso, modalidade }, aulas, questoes })).toContain(
-        "MODALIDADE"
-      );
-    }
+    // valor desconhecido trava publicar, matricular e emitir
+    expect(pendencias({ curso: { ...curso, modalidade: "inventada" }, aulas, questoes })).toContain(
+      "MODALIDADE"
+    );
+    expect(
+      pendenciasDeEmissao({ curso: { ...curso, modalidade: "inventada" }, aulas, questoes })
+    ).toContain("MODALIDADE");
+    // semipresencial (T12): a modalidade emite; a prática presencial é condição da MATRÍCULA (ead-pratica.js)
+    const semi = {
+      curso: { ...curso, ...CARGAS_SEMI, modalidade: "semipresencial" },
+      aulas,
+      questoes,
+    };
+    expect(pendencias(semi)).toEqual([]);
+    expect(pendenciasDeEmissao(semi)).toEqual([]);
     // EAD (marcado ou ausente) emite, mesmo com NR-35 no nome ou no código
     for (const modalidade of [undefined, "ead"]) {
       const dados = {
@@ -96,16 +105,92 @@ describe("requisitos dos cursos", () => {
       ).texto;
     expect(texto("apoio")).toBe(motivoSemCertificado("apoio"));
     expect(texto("apoio")).toMatch(/não emite certificado/);
-    expect(texto("semipresencial")).toMatch(/prática presencial/);
+    expect(motivoSemCertificado("semipresencial")).toMatch(/prática presencial/);
+    expect(motivoSemCertificado("semipresencial")).toMatch(/satisfatória/);
   });
-  it("modalidadeDoCurso: ausente ou vazia vale EAD; emiteCertificado só para EAD", () => {
+  it("modalidadeDoCurso: ausente ou vazia vale EAD; emiteCertificado para EAD e semipresencial (T12)", () => {
     expect(modalidadeDoCurso({})).toBe("ead");
     expect(modalidadeDoCurso({ modalidade: "" })).toBe("ead");
     expect(modalidadeDoCurso({ modalidade: "apoio" })).toBe("apoio");
     expect(emiteCertificado("ead")).toBe(true);
     expect(emiteCertificado("apoio")).toBe(false);
-    expect(emiteCertificado("semipresencial")).toBe(false);
+    expect(emiteCertificado("semipresencial")).toBe(true);
+    expect(emiteCertificado("inventada")).toBe(false);
     expect(MODALIDADES).toEqual(["ead", "semipresencial", "apoio"]);
+  });
+});
+
+describe("semipresencial (T12): carga teórica e prática do curso EAD", () => {
+  const semi = (valores = {}, aulasDoCurso = aulas) => ({
+    curso: { ...curso, carga_horaria_horas: 2, modalidade: "semipresencial", ...valores },
+    aulas: aulasDoCurso,
+    questoes,
+  });
+  const cargas = (dados) => requisitosDoCurso(dados).find((r) => r.codigo === "CARGAS");
+  const lastro = (dados) => requisitosDoCurso(dados).find((r) => r.codigo === "LASTRO");
+
+  it("exige as duas cargas preenchidas e somando a carga total", () => {
+    expect(pendencias(semi())).toContain("CARGAS");
+    expect(pendencias(semi({ carga_teorica_horas: 1 }))).toContain("CARGAS");
+    expect(pendencias(semi({ carga_pratica_horas: 1 }))).toContain("CARGAS");
+    expect(pendencias(semi({ carga_teorica_horas: 1, carga_pratica_horas: 2 }))).toContain(
+      "CARGAS"
+    );
+    expect(pendencias(semi({ carga_teorica_horas: 0, carga_pratica_horas: 2 }))).toContain(
+      "CARGAS"
+    );
+    expect(pendencias(semi({ carga_teorica_horas: 1, carga_pratica_horas: 1 }))).toEqual([]);
+    // decimais (1,5 h + 0,5 h) somam sem erro de arredondamento; texto do formulário também vale
+    expect(cargas(semi({ carga_teorica_horas: 1.5, carga_pratica_horas: 0.5 })).ok).toBe(true);
+    expect(cargas(semi({ carga_teorica_horas: "1.5", carga_pratica_horas: "0.5" })).ok).toBe(true);
+    expect(
+      cargas(semi({ carga_horaria_horas: 0.3, carga_teorica_horas: 0.1, carga_pratica_horas: 0.2 }))
+        .ok
+    ).toBe(true);
+  });
+  it("trava publicar, matricular e emitir; o texto diz o que falta", () => {
+    const r = cargas(semi());
+    expect(r).toMatchObject({ ok: false, bloqueia: true, bloqueiaEmissao: true });
+    expect(r.texto).toMatch(/carga teórica/i);
+    expect(r.texto).toMatch(/prática/i);
+    const soma = cargas(semi({ carga_teorica_horas: 1, carga_pratica_horas: 2 }));
+    expect(soma.texto).toMatch(/somam 3 h/);
+    expect(soma.texto).toMatch(/2 h/);
+    expect(cargas(semi({ carga_teorica_horas: 1.5, carga_pratica_horas: 2 })).texto).toMatch(
+      /1,5 h/
+    );
+  });
+  it("o LASTRO do semipresencial usa a carga TEÓRICA (C3); o EAD continua com a total", () => {
+    // 1 h de conteúdo: cobre a teoria de 1 h de um semipresencial de 2 h...
+    expect(lastro(semi({ carga_teorica_horas: 1, carga_pratica_horas: 1 })).ok).toBe(true);
+    // ...mas não a teoria de 1,5 h
+    expect(lastro(semi({ carga_teorica_horas: 1.5, carga_pratica_horas: 0.5 })).ok).toBe(false);
+    expect(lastro(semi({ carga_teorica_horas: 1.5, carga_pratica_horas: 0.5 })).texto).toMatch(
+      /carga teórica/
+    );
+    // sem a carga teórica, o lastro fica pendente
+    expect(lastro(semi()).ok).toBe(false);
+    // EAD: carga teórica preenchida por engano não reduz o lastro (vale a carga total)
+    const ead = {
+      curso: { ...curso, carga_horaria_horas: 2, carga_teorica_horas: 1 },
+      aulas,
+      questoes,
+    };
+    expect(lastro(ead).ok).toBe(false);
+    expect(lastro(ead).texto).toBe("O conteúdo cadastrado não cobre a carga horária declarada");
+  });
+  it("EAD e apoio não ganham o requisito das cargas", () => {
+    expect(cargas({ curso, aulas, questoes })).toBeUndefined();
+    expect(cargas({ curso: { ...curso, modalidade: "apoio" }, aulas, questoes })).toBeUndefined();
+  });
+  it("cargaTeoricaDoCurso: teórica no semipresencial, total nos outros", () => {
+    expect(cargaTeoricaDoCurso({ modalidade: "semipresencial", carga_teorica_horas: "1.5" })).toBe(
+      1.5
+    );
+    expect(cargaTeoricaDoCurso({ modalidade: "semipresencial", carga_horaria_horas: 4 })).toBe(0);
+    expect(cargaTeoricaDoCurso({ carga_horaria_horas: 4, carga_teorica_horas: 1 })).toBe(4);
+    expect(cargaTeoricaDoCurso({ modalidade: "apoio", carga_horaria_horas: "8" })).toBe(8);
+    expect(cargaTeoricaDoCurso({})).toBe(0);
   });
 });
 

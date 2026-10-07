@@ -24,6 +24,7 @@ import {
   ehRenovacao,
   limparRascunhosPortal,
   mensagemDeFalha,
+  praticaDoCurso,
   progressoDoCurso,
   renovacaoParaExibir,
   rotuloDoBotaoDoCurso,
@@ -219,6 +220,8 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
     // curso de apoio não tem certificado nem renovação (D3): sem "renovar até" e sem botão de certificado
     const renovaAte = renovacaoParaExibir(c.curso, m);
     const botao = rotuloDoBotaoDoCurso(c);
+    // parte prática presencial do semipresencial (T12); null nos outros cursos
+    const pratica = praticaDoCurso(c);
     // prazo para concluir do projeto pedagógico do curso (T25); só para quem ainda está fazendo
     const prazo = concluido
       ? null
@@ -267,6 +270,16 @@ function PainelPortal({ token, onSair, onAlterarSenha, onErroSessao }) {
               <p className="text-xs text-amber-700 mt-0.5">
                 O RH despublicou este curso (pode estar em revisão). Em caso de dúvida, fale com o
                 RH.
+              </p>
+            )}
+            {/* semipresencial (T12): "Parte prática: pendente" ou "realizada em DD/MM, em <local>" */}
+            {pratica && (
+              <p
+                className={`text-xs mt-0.5 ${
+                  pratica.situacao === "realizada" ? "text-slate-500" : "text-amber-700"
+                }`}
+              >
+                {pratica.texto}
               </p>
             )}
             <div className="h-2 bg-slate-100 rounded-full mt-2 overflow-hidden">

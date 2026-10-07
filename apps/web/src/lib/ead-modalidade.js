@@ -15,8 +15,9 @@ export const OPCOES_MODALIDADE = [
     valor: "semipresencial",
     rotulo: "Semipresencial",
     explicacao:
-      "Teoria a distância no portal e prática presencial. Ainda não emite certificado: " +
-      "falta o registro da prática presencial.",
+      "Teoria a distância no portal e prática presencial, registrada abaixo em Sessões práticas " +
+      "(salve o curso antes). O certificado de cada aluno só é emitido com a prática presencial " +
+      "satisfatória.",
   },
   {
     valor: "apoio",

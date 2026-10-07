@@ -805,6 +805,22 @@ test("textoDaModalidade: valor desconhecido nunca vira EAD", () => {
   assert.ok(!/EAD/.test(textoDaModalidade("inventada")));
 });
 
+test("textoDaModalidade (T12): semipresencial com as duas cargas do curso diz quanto é teoria e quanto é prática", () => {
+  const curso = { modalidade: "semipresencial", carga_teorica_horas: 4, carga_pratica_horas: "36" };
+  assert.equal(
+    textoDaModalidade("semipresencial", curso),
+    "Semipresencial: teoria EAD (4 h) + prática presencial (36 h)"
+  );
+  assert.equal(
+    textoDaModalidade("semipresencial", { carga_teorica_horas: 1.5, carga_pratica_horas: 0.5 }),
+    "Semipresencial: teoria EAD (1,5 h) + prática presencial (0,5 h)"
+  );
+  // sem as cargas (o requisito CARGAS não deixa emitir assim), o texto genérico
+  assert.equal(textoDaModalidade("semipresencial", {}), textoDaModalidade("semipresencial"));
+  // o curso só muda o texto do semipresencial: o EAD continua igual ao dos certificados já emitidos
+  assert.equal(textoDaModalidade("ead", curso), "Ensino a distância (EAD) — NR-1, Anexo II");
+});
+
 test("local do certificado: a plataforma e o endereço do portal do funcionário", () => {
   assert.deepEqual(LOCAL_DO_CERTIFICADO, {
     ambiente: "Plataforma SIGO Obras — https://www.sigoobras.com.br/PortalFuncionario",

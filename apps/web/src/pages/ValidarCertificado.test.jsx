@@ -224,3 +224,27 @@ describe("ResultadoValidacao", () => {
     expect(botaoComTexto(vencido, "Imprimir")).not.toBeNull();
   });
 });
+
+describe("ResultadoValidacao: semipresencial (T12)", () => {
+  const aoLado = { onImprimir: () => {}, onConsultarOutro: () => {} };
+  it("mostra as duas cargas (na modalidade) e o dia, o local e a carga da prática presencial", () => {
+    const semi = {
+      ...achado,
+      certificado: {
+        ...certificado,
+        carga_horaria_horas: 40,
+        modalidade: "Semipresencial: teoria EAD (4 h) + prática presencial (36 h)",
+        local: { ambiente: "Plataforma de Teste", pratica: "Pátio de teste" },
+        pratica: { data: "2026-10-05", local: "Pátio de teste", carga_horas: 36 },
+      },
+    };
+    const html = tela(<ResultadoValidacao resultado={semi} {...aoLado} />);
+    expect(html).toContain("teoria EAD (4 h) + prática presencial (36 h)");
+    expect(html).toContain("Prática presencial");
+    expect(html).toContain("05/10/2026, em Pátio de teste (36 h)");
+  });
+  it("certificado EAD não tem a linha da prática", () => {
+    const html = tela(<ResultadoValidacao resultado={achado} {...aoLado} />);
+    expect(html).not.toContain("Prática presencial");
+  });
+});

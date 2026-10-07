@@ -18,11 +18,13 @@ import {
 import { normalizarQuestao } from "@/lib/ead-questao";
 import { parseDuracao, formatDuracao, lerDuracaoVideo } from "@/lib/ead-duracao";
 import {
+  formatarHoras,
   modalidadeDoCurso,
   pendenciasParaPublicar,
   requisitosDoCurso,
   tempoObrigatorioSeg,
 } from "@/lib/ead-requisitos";
+import { cargasDoCursoParaGravar } from "@/lib/ead-pratica";
 import { numerarAulas } from "@/lib/portal-curso";
 import {
   reordenarAulas,
@@ -51,7 +53,7 @@ import {
   textoConfirmarRemocaoAula,
 } from "@/lib/ead-impacto";
 import { srtParaVtt } from "@/lib/legendas";
-import { logoParaPdf, desenharLogo } from "@/lib/pdf-empresa";
+import { logoParaPdf } from "@/lib/pdf-empresa";
 import { pessoasDosTreinamentos } from "@/lib/instrutores-config";
 import { aoMudarNomeDaPessoa, refDeAssinatura } from "@/lib/ead-assinatura";
 import { MAX_TUTOR_ATENDIMENTO, MAX_TUTOR_NOME, dadosDoTutorParaGravar } from "@/lib/ead-tutor";
@@ -85,6 +87,7 @@ import AssinaturaCursoCampo from "@/components/seguranca/AssinaturaCursoCampo";
 import ProjetoPedagogicoCurso from "@/components/seguranca/ProjetoPedagogicoCurso";
 import EnvioProgressoEad from "@/components/seguranca/EnvioProgressoEad";
 import PreviaAlunoCurso from "@/components/seguranca/PreviaAlunoCurso";
+import SessoesPraticasCurso from "@/components/seguranca/SessoesPraticasCurso";
 import VencimentosEadPainel from "@/components/seguranca/VencimentosEadPainel";
 import MatriculasEadCard from "@/components/seguranca/MatriculasEadCard";
 import MatricularEadSheet from "@/components/seguranca/MatricularEadSheet";
@@ -102,7 +105,6 @@ import {
   Loader2,
   Trash2,
   GraduationCap,
-  Users,
   Video,
   Pencil,
   FileText,
@@ -609,6 +611,9 @@ export default function TreinamentosEadTab({
       carga_horaria_horas: cursoSel.carga_horaria_horas
         ? Number(cursoSel.carga_horaria_horas)
         : null,
+      // semipresencial (T12): carga teórica (EAD) e prática (presencial), só do curso EAD (o cadastro central
+      // não as sobrescreve); nos outros cursos ficam vazias
+      ...cargasDoCursoParaGravar(cursoSel, gravado),
       nota_minima: cursoSel.nota_minima ? Number(cursoSel.nota_minima) : 70,
       max_tentativas:
         cursoSel.max_tentativas === "" || cursoSel.max_tentativas == null
@@ -1443,149 +1448,6 @@ export default function TreinamentosEadTab({
     });
   };
 
-  // Lista de Presença: uma folha por DIA de treinamento, padrão 10h/dia
-  // (curso de 40h = 4 dias; carga restante no último dia).
-  const HORAS_DIA = 10;
-  const gerarListasPresenca = async (curso) => {
-    try {
-      // a folha diz "Modalidade: EAD" e declara conteúdo feito na plataforma: só vale para curso EAD (T8)
-      if (modalidadeDoCurso(curso) !== "ead") {
-        toast.error(
-          "A lista de presença do portal vale só para curso EAD. Este curso é de apoio ou " +
-            "semipresencial: use a lista da turma presencial."
-        );
-        return;
-      }
-      const carga = Number(curso.carga_horaria_horas) || 0;
-      if (!carga) {
-        toast.error("Informe a carga horária do curso antes de gerar as listas");
-        return;
-      }
-      const participantes = matriculas
-        .filter((m) => m.curso_id === curso.id)
-        .map((m) => funcPorId.get(m.funcionario_id))
-        .filter(Boolean);
-      if (!participantes.length) {
-        toast.error("Nenhum funcionário matriculado neste curso");
-        return;
-      }
-      const inicioStr = prompt("Data do 1º dia de treinamento (DD/MM/AAAA):");
-      if (!inicioStr) return;
-      const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(inicioStr.trim());
-      if (!m) {
-        toast.error("Data inválida — use DD/MM/AAAA");
-        return;
-      }
-      const instrutor = prompt("Nome do instrutor (opcional):") || "";
-      const inicio = new Date(+m[3], +m[2] - 1, +m[1]);
-      const dias = Math.ceil(carga / HORAS_DIA);
-
-      const { jsPDF } = await import("jspdf");
-      const doc = new jsPDF();
-      const W = doc.internal.pageSize.getWidth();
-      const logo = await logoParaPdf(empresaAtiva);
-
-      const aulasCurso = aulasDoCurso(curso.id);
-
-      for (let dia = 0; dia < dias; dia++) {
-        if (dia > 0) doc.addPage();
-        const data = new Date(inicio);
-        data.setDate(data.getDate() + dia);
-        const horasDoDia = Math.min(HORAS_DIA, carga - dia * HORAS_DIA);
-        let y = desenharLogo(doc, logo, 10);
-        if (!logo) y = 16;
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(13);
-        doc.text("LISTA DE PRESENÇA — TREINAMENTO", W / 2, y + 2, { align: "center" });
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "normal");
-        y += 9;
-        doc.text(
-          `${empresaAtiva?.razao_social || empresaAtiva?.nome || ""} — CNPJ ${empresaAtiva?.cnpj || "-"}` +
-            `${empresaAtiva?.endereco ? ` — ${empresaAtiva.endereco}` : ""}`,
-          15,
-          y
-        );
-        y += 6;
-        doc.text(
-          `Treinamento: ${curso.nome}${curso.codigo ? ` (${curso.codigo})` : ""} — Carga horária total: ${carga}h — ` +
-            `Modalidade: EAD (plataforma própria, com registro eletrônico individual de conclusão)`,
-          15,
-          y,
-          { maxWidth: W - 30 }
-        );
-        y += 10;
-        doc.text(
-          `Dia ${dia + 1} de ${dias} — Data: ${data.toLocaleDateString("pt-BR")} — ` +
-            `Horário: 07:00 às 12:00 / 13:00 às 18:00 — Carga do dia: ${horasDoDia}h`,
-          15,
-          y
-        );
-        y += 6;
-        if (aulasCurso.length) {
-          const conteudo = "Conteúdo programático: " + aulasCurso.map((a) => a.titulo).join("; ");
-          const linhas = doc.splitTextToSize(conteudo, W - 30);
-          doc.text(linhas, 15, y);
-          y += linhas.length * 4.5 + 3;
-        }
-        // cabeçalho da tabela
-        doc.setFont("helvetica", "bold");
-        doc.text("Nº", 15, y);
-        doc.text("Nome", 24, y);
-        doc.text("CPF", 92, y);
-        doc.text("Função", 124, y);
-        doc.text("Assinatura", 158, y);
-        doc.setFont("helvetica", "normal");
-        y += 2.5;
-        doc.line(15, y, W - 15, y);
-        y += 7;
-        participantes.forEach((f, i) => {
-          if (y > 262) {
-            doc.addPage();
-            y = 20;
-          }
-          doc.text(String(i + 1), 15, y);
-          doc.text((f.nome_completo || "").slice(0, 38), 24, y);
-          doc.text(f.cpf || "-", 92, y);
-          doc.text((f.funcao_nome || "-").slice(0, 20), 124, y, { maxWidth: 32 });
-          doc.line(158, y + 1, W - 15, y + 1);
-          y += 9;
-        });
-        y = Math.max(y + 8, 240);
-        if (y > 262) {
-          doc.addPage();
-          y = 40;
-        }
-        doc.setFontSize(8);
-        doc.text(
-          "Declaramos que os participantes acima realizaram o conteúdo do dia na modalidade EAD, " +
-            "com controle individual de acesso e conclusão registrado eletronicamente na plataforma.",
-          15,
-          y,
-          { maxWidth: W - 30 }
-        );
-        doc.setFontSize(9);
-        y += 14;
-        doc.line(15, y, 95, y);
-        doc.text(`Instrutor${instrutor ? `: ${instrutor}` : ""}`, 15, y + 5);
-        doc.line(115, y, W - 15, y);
-        doc.text(curso.responsavel_tecnico_nome || "Responsável técnico", 115, y + 5, {
-          maxWidth: W - 130,
-        });
-        if (curso.responsavel_tecnico_registro) {
-          doc.text(curso.responsavel_tecnico_registro, 115, y + 10, { maxWidth: W - 130 });
-        }
-      }
-      doc.save(
-        `Lista_Presenca_${(curso.nome || "curso").replace(/\s+/g, "_")}_${inicioStr.replaceAll("/", "-")}.pdf`
-      );
-      toast.success(`${dias} folha(s) de presença gerada(s) — ${HORAS_DIA}h/dia`);
-    } catch (erro) {
-      console.error("Erro ao gerar listas de presença:", erro);
-      toast.error("Não foi possível gerar as listas de presença. Tente novamente.");
-    }
-  };
-
   // ------------------------------------------------------------------ UI
   if (carregando) {
     return (
@@ -1884,6 +1746,49 @@ export default function TreinamentosEadTab({
                       {avisoDaModalidade(cursoSel)}
                     </p>
                   )}
+                  {/* T12: a divisão da carga é só deste curso EAD (o cadastro central não a sobrescreve) */}
+                  {modalidadeDoCurso(cursoSel) === "semipresencial" && (
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <Label htmlFor="curso-carga-teorica" className="text-xs">
+                          Carga teórica, EAD no portal (h)
+                        </Label>
+                        <Input
+                          id="curso-carga-teorica"
+                          type="number"
+                          min={0}
+                          step="0.5"
+                          value={cursoSel.carga_teorica_horas ?? ""}
+                          onChange={(e) =>
+                            setCursoSel({ ...cursoSel, carga_teorica_horas: e.target.value })
+                          }
+                          className="mt-0.5"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="curso-carga-pratica" className="text-xs">
+                          Carga prática, presencial (h)
+                        </Label>
+                        <Input
+                          id="curso-carga-pratica"
+                          type="number"
+                          min={0}
+                          step="0.5"
+                          value={cursoSel.carga_pratica_horas ?? ""}
+                          onChange={(e) =>
+                            setCursoSel({ ...cursoSel, carga_pratica_horas: e.target.value })
+                          }
+                          className="mt-0.5"
+                        />
+                      </div>
+                      <p className="col-span-2 text-xs text-slate-600">
+                        As duas somadas dão a carga horária total (
+                        {formatarHoras(cursoSel.carga_horaria_horas)}), que vem do cadastro central.
+                        O conteúdo do portal precisa cobrir a carga teórica. Valem só para este
+                        curso EAD: as exigências das funções não mudam.
+                      </p>
+                    </div>
+                  )}
                 </div>
                 <PreRequisitoCursoCampo
                   curso={cursoSel}
@@ -2140,6 +2045,9 @@ export default function TreinamentosEadTab({
                       Conteúdo medido:{" "}
                       {formatDuracao(tempoObrigatorioSeg(aulasDoCurso(cursoSel.id)))} (min:seg) ·
                       Carga declarada: {cursoSel.carga_horaria_horas || 0} h
+                      {modalidadeDoCurso(cursoSel) === "semipresencial" &&
+                        ` (teórica ${formatarHoras(cursoSel.carga_teorica_horas)} + prática ` +
+                          `${formatarHoras(cursoSel.carga_pratica_horas)}; o conteúdo cobre a teórica)`}
                     </p>
                     <ul className="text-xs space-y-1">
                       {requisitos(cursoSel)
@@ -2454,14 +2362,24 @@ export default function TreinamentosEadTab({
                       cadastrada pelo RH); PDF e texto, com o tempo mínimo de leitura. O tempo só
                       conta com a tela do aluno aberta.
                     </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => gerarListasPresenca(cursoSel)}
-                      className="mt-2"
-                    >
-                      <Users className="w-4 h-4 mr-1" /> Listas de Presença (PDF — 10h/dia)
-                    </Button>
+                    {/* T12: a lista de presença é da sessão prática presencial (semipresencial); a folha antiga
+                        do EAD (10 h por dia, horário fixo) saiu */}
+                    {modalidadeDoCurso(cursoSel) === "semipresencial" ? (
+                      <SessoesPraticasCurso
+                        curso={cursos.find((c) => c.id === cursoSel.id) ?? cursoSel}
+                        empresaAtiva={empresaAtiva}
+                        matriculas={matriculas}
+                        funcPorId={funcPorId}
+                        funcTodosPorId={funcTodosPorId}
+                        onAbrirArquivo={abrirReferencia}
+                      />
+                    ) : (
+                      <p className="text-xs text-slate-400">
+                        A lista de presença é da sessão prática presencial dos cursos
+                        semipresenciais. No EAD, o registro de cada aluno é a trilha de auditoria
+                        (Detalhes da matrícula) e o dossiê do curso.
+                      </p>
+                    )}
 
                     {/* Avaliação final */}
                     <div className="border-t pt-3 mt-3 space-y-2">

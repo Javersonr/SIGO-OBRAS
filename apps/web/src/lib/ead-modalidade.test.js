@@ -23,6 +23,9 @@ describe("opções de modalidade da tela do curso", () => {
   it("explica o que cada modalidade faz com o certificado", () => {
     expect(explicacaoDaModalidade("ead")).toMatch(/emite certificado/i);
     expect(explicacaoDaModalidade("semipresencial")).toMatch(/prática presencial/i);
+    // T12: o semipresencial emite, com a prática satisfatória registrada nas sessões práticas
+    expect(explicacaoDaModalidade("semipresencial")).toMatch(/Sessões práticas/);
+    expect(explicacaoDaModalidade("semipresencial")).not.toMatch(/Ainda não emite/i);
     expect(explicacaoDaModalidade("apoio")).toMatch(/não emite certificado/i);
   });
   it("modalidade ausente vale EAD; desconhecida aparece como está", () => {

@@ -17,6 +17,11 @@
  * certificado e sem data de renovação, então nunca poderia valer) não atendem o pré-requisito. A leitura que falha
  * não vira "atendido": quem emite responde 503.
  *
+ * Curso exigido SEMIPRESENCIAL (T12): a matrícula fica "concluída" quando o aluno termina a TEORIA, antes da prática
+ * presencial. Por isso, nele, a conclusão só vale com o certificado VIVO (emitido e não revogado) daquela matrícula,
+ * que o servidor só emite com a prática satisfatória (pratica.ts). Teoria concluída sem certificado = motivo
+ * "pratica_pendente" (depois de "em andamento" na ordem dos motivos).
+ *
  * Só o curso EXIGIDO diretamente é conferido: se o NR-10 Básico exige outro curso, essa exigência já foi conferida
  * quando o Básico foi emitido.
  */
@@ -26,6 +31,7 @@ export type MotivoDoPreRequisito =
   | "concluido"
   | "sem_matricula"
   | "em_andamento"
+  | "pratica_pendente"
   | "vencido"
   | "revogado"
   | "curso_excluido"
@@ -63,25 +69,36 @@ function venceu(validade: unknown, hoje: string): boolean {
 
 /**
  * Situação do pré-requisito de um funcionário. `curso` é o curso EXIGIDO (null = não achado); `matriculas`, as do
- * funcionário nele; `revogadas`, os ids das matrículas cujo certificado foi revogado; `hoje`, o dia de Brasília.
+ * funcionário nele; `revogadas`, os ids das matrículas cujo certificado foi revogado; `certificadas`, os ids das
+ * matrículas com certificado VIVO (só o curso exigido semipresencial olha; ausente = nenhuma); `hoje`, o dia de
+ * Brasília.
  */
 export function situacaoDoPreRequisito(p: {
   curso: CursoExigido | null | undefined;
   matriculas: MatriculaNoCursoExigido[];
   revogadas: ReadonlySet<string>;
+  certificadas?: ReadonlySet<string>;
   hoje: string;
 }): SituacaoDoPreRequisito {
   if (!p.curso || p.curso.deleted_at) return { atendido: false, motivo: "curso_excluido" };
-  if (modalidadeDoCurso(p.curso) === "apoio") {
+  const modalidade = modalidadeDoCurso(p.curso);
+  if (modalidade === "apoio") {
     return { atendido: false, motivo: "curso_sem_certificado" };
   }
+  // semipresencial (T12): a teoria concluída só vale com o certificado vivo, que exige a prática satisfatória
+  const exigeCertificado = modalidade === "semipresencial";
+  const certificada = (m: MatriculaNoCursoExigido) => !!p.certificadas?.has(m.id);
   const vivas = (p.matriculas ?? []).filter((m) => !m.deleted_at);
   const concluidas = vivas.filter((m) => m.status === "concluido");
-  const vale = (m: MatriculaNoCursoExigido) =>
+  const emDia = (m: MatriculaNoCursoExigido) =>
     !p.revogadas.has(m.id) && !venceu(m.proxima_renovacao, p.hoje);
+  const vale = (m: MatriculaNoCursoExigido) => emDia(m) && (!exigeCertificado || certificada(m));
   if (concluidas.some(vale)) return { atendido: true, motivo: "concluido" };
   if (vivas.some((m) => m.status !== "concluido")) {
     return { atendido: false, motivo: "em_andamento" };
+  }
+  if (exigeCertificado && concluidas.some(emDia)) {
+    return { atendido: false, motivo: "pratica_pendente" };
   }
   if (concluidas.some((m) => !p.revogadas.has(m.id) && venceu(m.proxima_renovacao, p.hoje))) {
     return { atendido: false, motivo: "vencido" };
@@ -107,6 +124,8 @@ export function textoDoPreRequisito(
       return `${exige} Você ainda não fez esse curso: procure o RH.`;
     case "em_andamento":
       return `${exige} Termine esse curso primeiro.`;
+    case "pratica_pendente":
+      return `${exige} Falta a parte prática presencial dele (ou o certificado dele ainda não foi emitido): procure o RH.`;
     case "vencido":
       return `${exige} O seu certificado nele venceu: procure o RH para renovar.`;
     case "revogado":
@@ -128,6 +147,19 @@ export function bloqueioDeEmissaoPorPreRequisito(
 ): { codigo: "PRE_REQUISITO"; mensagem: string } | null {
   if (situacao.atendido) return null;
   return { codigo: "PRE_REQUISITO", mensagem: textoDoPreRequisito(situacao.motivo, nomeDoCurso) };
+}
+
+/** Os ids das matrículas com certificado revogado e com certificado vivo (emitido e não revogado). */
+function certificadosPorMatricula(
+  certificados: { matricula_id?: string | null; revogado_em?: string | null }[] | null | undefined
+): { revogadas: Set<string>; certificadas: Set<string> } {
+  const revogadas = new Set<string>();
+  const certificadas = new Set<string>();
+  for (const c of certificados ?? []) {
+    if (!c?.matricula_id) continue;
+    (c.revogado_em ? revogadas : certificadas).add(c.matricula_id);
+  }
+  return { revogadas, certificadas };
 }
 
 /** O pré-requisito de um curso como o `dados` o entrega ao aluno. */
@@ -152,13 +184,12 @@ export function preRequisitoDoCurso(p: {
   const preId = p.curso?.pre_requisito_curso_id;
   if (!preId) return null;
   const exigido = (p.cursosExigidos ?? []).find((c) => c.id === preId) ?? null;
-  const revogadas = new Set<string>();
-  for (const c of p.certificados ?? [])
-    if (c?.revogado_em && c.matricula_id) revogadas.add(c.matricula_id);
+  const { revogadas, certificadas } = certificadosPorMatricula(p.certificados);
   const situacao = situacaoDoPreRequisito({
     curso: exigido,
     matriculas: (p.matriculas ?? []).filter((m) => m.curso_id === preId),
     revogadas,
+    certificadas,
     hoje: p.hoje,
   });
   const nome = exigido?.nome ?? null;
@@ -209,8 +240,9 @@ export async function cursosExigidosDoBanco(
 
 /**
  * Lê no banco, na hora da emissão, o pré-requisito de um funcionário: o curso exigido, as matrículas dele nele
- * e os certificados revogados. Service role ignora a RLS: as três consultas levam a empresa (e o funcionário) da
- * SESSÃO, nunca do corpo da requisição. Falha em qualquer uma = `{ ok: false }` (quem emite responde 503).
+ * e os certificados dele nesse curso (vivos e revogados: o semipresencial exigido só vale com o vivo, T12).
+ * Service role ignora a RLS: as três consultas levam a empresa (e o funcionário) da SESSÃO, nunca do corpo da
+ * requisição. Falha em qualquer uma = `{ ok: false }` (quem emite responde 503).
  */
 export async function lerPreRequisito(
   // deno-lint-ignore no-explicit-any
@@ -233,11 +265,10 @@ export async function lerPreRequisito(
       .is("deleted_at", null),
     supabase
       .from("treinamento_certificado")
-      .select("matricula_id")
+      .select("matricula_id, revogado_em")
       .eq("curso_id", p.preCursoId)
       .eq("funcionario_id", p.funcionarioId)
-      .eq("empresa_id", p.empresaId)
-      .not("revogado_em", "is", null),
+      .eq("empresa_id", p.empresaId),
   ]);
   for (const [etapa, r] of [
     ["curso", curso],
@@ -250,9 +281,7 @@ export async function lerPreRequisito(
     }
   }
   const exigido: CursoExigido | null = curso.data ?? null;
-  const revogadas = new Set<string>(
-    (certificados.data ?? []).map((c: { matricula_id: string }) => c.matricula_id)
-  );
+  const { revogadas, certificadas } = certificadosPorMatricula(certificados.data);
   return {
     ok: true,
     nome: exigido?.nome ?? null,
@@ -260,6 +289,7 @@ export async function lerPreRequisito(
       curso: exigido,
       matriculas: matriculas.data ?? [],
       revogadas,
+      certificadas,
       hoje: p.hoje,
     }),
   };

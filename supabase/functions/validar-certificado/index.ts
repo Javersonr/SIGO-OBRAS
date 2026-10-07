@@ -10,6 +10,8 @@
  *  - situacao: "valido" | "vencido" | "revogado" | "divergente"; `valido` só é true em "valido";
  *  - certificado.tipo_treinamento / motivo_eventual (T23): inicial, periódico ou eventual e, no eventual, o
  *    motivo; null nos certificados emitidos antes da T23.
+ *  - certificado.pratica (T12): dia, local e carga da parte prática presencial do semipresencial; null no EAD.
+ *    O local da prática também vem em certificado.local.pratica.
  * As regras estão em ./regras.ts (com teste).
  */
 import { createAdminClient } from "../_shared/supabase-admin.ts";
@@ -17,6 +19,7 @@ import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import {
   avaliarCertificado,
   localDoCertificado,
+  praticaPublica,
   responsavelTecnicoPublico,
   resultadoDaConsulta,
   tipoDoTreinamentoPublico,
@@ -85,6 +88,8 @@ Deno.serve(
         tipo_treinamento: tipo?.tipo_treinamento ?? null,
         motivo_eventual: tipo?.motivo_eventual ?? null,
         local: localDoCertificado(d),
+        // parte prática do semipresencial (T12): só dia, local e carga
+        pratica: praticaPublica(d),
         inicio: d.periodo?.inicio,
         conclusao: d.periodo?.conclusao,
         validade: av.validade,

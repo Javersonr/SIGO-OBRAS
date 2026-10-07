@@ -11,7 +11,12 @@ import {
   avisoAssinaturasNaoCarregadas,
   carregarAssinaturasDoCertificado,
 } from "@/lib/ead-assinatura";
-import { MSG_CURSO_DE_APOIO, cursoDeApoio, preRequisitoPendente } from "@/lib/portal-curso";
+import {
+  MSG_CURSO_DE_APOIO,
+  cursoDeApoio,
+  praticaPendente,
+  preRequisitoPendente,
+} from "@/lib/portal-curso";
 
 /**
  * Certificado do curso concluído. Emitir = ASSINAR: o funcionário confirma a
@@ -151,13 +156,26 @@ export default function CertificadoPortal({
     // pré-requisito (T23): o aluno precisa concluir outro curso antes; é um aviso à parte dos requisitos do
     // curso, que quem regulariza é o RH. Os dois podem aparecer juntos.
     const preRequisito = preRequisitoPendente(item);
+    // parte prática do semipresencial (T12): condição do aluno, à parte dos requisitos do curso
+    const pratica = praticaPendente(item);
     const pendenciasDoCurso = item.pendencias_certificado?.length
       ? item.pendencias_certificado
-      : preRequisito
+      : preRequisito || pratica
         ? []
         : ["Aguarde a revisão do curso pelo RH"];
     return (
       <div className="space-y-3">
+        {pratica && (
+          <div
+            role="status"
+            className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
+          >
+            <p className="font-medium">
+              Teoria concluída. Falta a parte prática presencial para emitir o certificado.
+            </p>
+            <p className="mt-1">{pratica.texto}</p>
+          </div>
+        )}
         {preRequisito && (
           <div
             role="status"

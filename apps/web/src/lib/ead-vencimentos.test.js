@@ -525,12 +525,11 @@ describe("atividadeSemTreinamento", () => {
     expect(r.find((x) => x.funcionario.id === "f1").pendencias).toHaveLength(2);
   });
 
-  it("curso de apoio, semipresencial, rascunho ou removido não habilita ninguém", () => {
+  it("curso de apoio, rascunho ou removido não habilita ninguém", () => {
     const r = atividadeSemTreinamento({
       ...base,
       cursos: [
         curso("c1", { modelo_treinamento_id: "m1", modalidade: "apoio" }),
-        curso("c2", { modelo_treinamento_id: "m2", modalidade: "semipresencial" }),
         curso("c3", { modelo_treinamento_id: "m1", ativo: false }),
         curso("c4", { modelo_treinamento_id: "m1", deleted_at: "2026-09-01" }),
       ],
@@ -538,6 +537,17 @@ describe("atividadeSemTreinamento", () => {
     });
     // nenhuma exigência tem curso EAD publicado: o EAD não sabe julgar, ninguém é alertado
     expect(r).toEqual([]);
+  });
+
+  it("T12: o curso semipresencial publicado habilita a exigência (ele emite certificado, com a prática)", () => {
+    const r = atividadeSemTreinamento({
+      ...base,
+      cursos: [curso("c2", { modelo_treinamento_id: "m2", modalidade: "semipresencial" })],
+      matriculas: [],
+    });
+    const f1 = r.find((x) => x.funcionario.id === "f1");
+    expect(f1.pendencias.map((p) => [p.exigencia.id, p.motivo])).toEqual([["t2", "sem_matricula"]]);
+    expect(f1.pendencias[0].cursos.map((c) => c.id)).toEqual(["c2"]);
   });
 
   it("a exigência fica satisfeita por qualquer um dos cursos EAD ligados ao mesmo modelo", () => {

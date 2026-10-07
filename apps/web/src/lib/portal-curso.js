@@ -168,6 +168,22 @@ export function preRequisitoPendente(item) {
 }
 
 /**
+ * A parte prática presencial do curso semipresencial (T12): `item.pratica` vem do servidor em `dados` como
+ * `{ situacao, data, local, texto }` ("Parte prática: pendente" ou "realizada em DD/MM/AAAA, em <local>"); null nos
+ * cursos que não são semipresenciais. O `texto` já vem pronto do servidor, que é quem decide.
+ */
+export function praticaDoCurso(item) {
+  const pratica = item?.pratica;
+  return pratica && typeof pratica.texto === "string" && pratica.texto ? pratica : null;
+}
+
+/** A parte prática que ainda falta para emitir o certificado (T12), ou null (realizada, ou o curso não tem). */
+export function praticaPendente(item) {
+  const pratica = praticaDoCurso(item);
+  return pratica && pratica.situacao !== "realizada" ? pratica : null;
+}
+
+/**
  * Data (AAAA-MM-DD) de "renovar até" que a tela do aluno e a Ficha do RH mostram, ou null. Curso de apoio
  * não renova (D3: não há certificado): mesmo uma matrícula concluída ANTES da D3, que ficou com a data
  * gravada, não a mostra. O servidor já não a grava para o apoio (`datasDeConclusao`).

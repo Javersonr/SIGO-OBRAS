@@ -174,12 +174,38 @@ export function estaVencido(validade: unknown, hoje: string): boolean {
 
 /**
  * Onde o treinamento foi realizado (`dados.local`, gravado desde a T8): só o ambiente sai na consulta
- * pública. Certificado anterior à T8 não tem local: devolve null e a página não mostra a linha.
+ * pública e, no semipresencial (T12), o local da prática presencial (`pratica`). Certificado anterior à T8 não
+ * tem local: devolve null e a página não mostra a linha.
  */
-export function localDoCertificado(dados: unknown): { ambiente: string } | null {
+export function localDoCertificado(dados: unknown): { ambiente: string; pratica?: string } | null {
   const local = (dados as { local?: unknown } | null)?.local;
-  const ambiente = (local as { ambiente?: unknown } | null | undefined)?.ambiente;
-  return typeof ambiente === "string" && ambiente.trim() ? { ambiente } : null;
+  const { ambiente, pratica } = (local ?? {}) as { ambiente?: unknown; pratica?: unknown };
+  if (typeof ambiente !== "string" || !ambiente.trim()) return null;
+  return typeof pratica === "string" && pratica.trim() ? { ambiente, pratica } : { ambiente };
+}
+
+/**
+ * A parte prática presencial do semipresencial (`dados.pratica`, congelada na emissão desde a T12): só o dia, o
+ * local e a carga saem na consulta pública (nada do id da sessão). Certificado EAD, ou com o dia fora do formato
+ * AAAA-MM-DD, devolve null e a página não mostra a linha.
+ */
+export function praticaPublica(
+  dados: unknown
+): { data: string; local: string | null; carga_horas: number | null } | null {
+  const pratica = (dados as { pratica?: unknown } | null)?.pratica;
+  if (pratica === null || typeof pratica !== "object" || Array.isArray(pratica)) return null;
+  const { data, local, carga_horas } = pratica as {
+    data?: unknown;
+    local?: unknown;
+    carga_horas?: unknown;
+  };
+  if (typeof data !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(data)) return null;
+  const carga = Number(carga_horas);
+  return {
+    data,
+    local: typeof local === "string" && local.trim() ? local : null,
+    carga_horas: carga_horas != null && Number.isFinite(carga) && carga > 0 ? carga : null,
+  };
 }
 
 // ------------------------------------------------------------------------------ responsável técnico

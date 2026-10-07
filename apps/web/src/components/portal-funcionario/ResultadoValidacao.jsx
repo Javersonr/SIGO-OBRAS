@@ -111,6 +111,19 @@ export default function ResultadoValidacao({
                   <dd>{c.local.ambiente}</dd>
                 </>
               )}
+              {/* semipresencial (T12): o dia, o local e a carga da parte prática presencial */}
+              {c.pratica?.data && (
+                <>
+                  <dt className="text-slate-500">Prática presencial</dt>
+                  <dd>
+                    {dataBr(c.pratica.data)}
+                    {c.pratica.local ? `, em ${c.pratica.local}` : ""}
+                    {c.pratica.carga_horas
+                      ? ` (${String(c.pratica.carga_horas).replace(".", ",")} h)`
+                      : ""}
+                  </dd>
+                </>
+              )}
               <dt className="text-slate-500">Período</dt>
               <dd>
                 {dataBr(c.inicio)} a {dataBr(c.conclusao)}

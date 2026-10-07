@@ -2,8 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   bloqueioDeEmissaoPorModalidade,
+  cargaTeoricaDoCurso,
   duracaoParaProgresso,
   emiteCertificado,
+  formatarHoras,
   modalidadeDoCurso,
   motivoSemCertificado,
   pendenciasParaEmitir,
@@ -13,7 +15,9 @@ import {
 } from "./requisitos.ts";
 import { marcaDoProjeto } from "./projeto.ts";
 import {
+  cargaTeoricaDoCurso as cargaTeoricaFront,
   emiteCertificado as emiteFront,
+  formatarHoras as formatarHorasFront,
   modalidadeDoCurso as modalidadeFront,
   motivoSemCertificado as motivoFront,
   pendenciasParaEmitir as emitirFront,
@@ -27,6 +31,8 @@ const curso = {
   instrutor_nome: "Instrutor teste",
   responsavel_tecnico_nome: "RT teste",
 };
+// semipresencial de 1 h: teoria e prática que somam a carga total (o lastro de 1 h cobre a teoria de 0,5 h)
+const CARGAS_SEMI = { carga_teorica_horas: 0.5, carga_pratica_horas: 0.5 };
 const aulas = [{ tipo: "texto", conteudo_texto: "Texto teste", duracao_seg: 3600 }];
 const questoes = Array.from({ length: 5 }, () => ({}));
 // o que impede PUBLICAR e MATRICULAR
@@ -66,6 +72,31 @@ test("front e servidor usam os mesmos requisitos, inclusive bordas", () => {
     { curso: { ...curso, tutor_telefone: "(11) 9999-000" }, aulas, questoes },
     { curso: { ...curso, tutor_telefone: "   " }, aulas, questoes },
     { curso: { ...curso, tutor_telefone: "abc", tutor_nome: "Tutor teste" }, aulas, questoes },
+    // T12: semipresencial com as cargas (teoria + prática = total), com a soma errada, com a teoria maior que o
+    // conteúdo, e um EAD com carga teórica gravada por engano (o lastro do EAD continua sendo a carga total)
+    { curso: { ...curso, ...CARGAS_SEMI, modalidade: "semipresencial" }, aulas, questoes },
+    {
+      curso: {
+        ...curso,
+        modalidade: "semipresencial",
+        carga_teorica_horas: 1,
+        carga_pratica_horas: 1,
+      },
+      aulas,
+      questoes,
+    },
+    {
+      curso: {
+        ...curso,
+        carga_horaria_horas: 3,
+        modalidade: "semipresencial",
+        carga_teorica_horas: "2",
+        carga_pratica_horas: "1",
+      },
+      aulas,
+      questoes,
+    },
+    { curso: { ...curso, carga_horaria_horas: 2, carga_teorica_horas: 1 }, aulas, questoes },
   ];
   for (const caso of casos) {
     assert.deepEqual(requisitosDoCurso(caso), requisitosFront(caso));
@@ -83,9 +114,12 @@ test("front e servidor usam os mesmos requisitos, inclusive bordas", () => {
   // PUBLICAR/MATRICULAR: só o 2º caso (curso completo), o EAD marcado e o de apoio completo passam
   // (D3: apoio não trava a publicação nem a matrícula)
   // (o tutor é só aviso: os casos 12 a 17, curso completo com ou sem telefone, publicam e emitem)
-  const publicaveis = [1, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17];
-  // EMITIR: só o curso completo EAD (o apoio nunca emite)
-  const emissiveis = [1, 6, 11, 12, 13, 14, 15, 16, 17];
+  // T12: o semipresencial sem as cargas (8), com a soma errada (19) ou com a teoria maior que o conteúdo (20)
+  // não publica; com as cargas certas (18), publica e emite (a prática é condição da matrícula, à parte). O EAD
+  // com carga teórica gravada (21) mede o lastro pela carga total (2 h > 1 h de conteúdo): não publica.
+  const publicaveis = [1, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 18];
+  // EMITIR: o curso completo EAD ou semipresencial (o apoio nunca emite)
+  const emissiveis = [1, 6, 11, 12, 13, 14, 15, 16, 17, 18];
   for (const [i, caso] of casos.entries()) {
     assert.equal(
       pendenciasParaPublicar(requisitosDoCurso(caso)).length > 0,
@@ -128,26 +162,34 @@ test("o nome ou o código do curso NÃO decidem a modalidade (o filtro por 'NR-3
     []
   );
 });
-test("D3: apoio não trava publicar nem matricular, só emitir; semipresencial e desconhecida travam tudo", () => {
+test("D3 e T12: apoio só trava emitir; semipresencial emite como curso; desconhecida trava tudo", () => {
   const mod = (modalidade?: string) =>
-    requisitosDoCurso({ curso: { ...curso, modalidade }, aulas, questoes }).find(
+    requisitosDoCurso({ curso: { ...curso, ...CARGAS_SEMI, modalidade }, aulas, questoes }).find(
       (r) => r.codigo === "MODALIDADE"
     )!;
   assert.equal(mod("ead").ok, true);
   assert.equal(mod(undefined).ok, true);
-  for (const m of ["apoio", "semipresencial", "inventada"]) {
-    assert.equal(mod(m).ok, false, m); // nenhum dos três emite certificado
+  // T12: o requisito do CURSO não trava o semipresencial; a prática é condição de cada MATRÍCULA (pratica.ts)
+  assert.equal(mod("semipresencial").ok, true);
+  for (const m of ["apoio", "inventada"]) {
+    assert.equal(mod(m).ok, false, m); // nenhum dos dois emite certificado
     assert.equal(mod(m).bloqueiaEmissao, true, m);
   }
-  // publicar e matricular: o apoio passa (material de estudo); os outros dois continuam travados
+  // publicar e matricular: o apoio passa (material de estudo); a desconhecida continua travada
   assert.equal(mod("apoio").bloqueia, false);
-  assert.equal(mod("semipresencial").bloqueia, true);
   assert.equal(mod("inventada").bloqueia, true);
-  const dados = (modalidade: string) => ({ curso: { ...curso, modalidade }, aulas, questoes });
+  const dados = (modalidade: string, extra = {}) => ({
+    curso: { ...curso, modalidade, ...extra },
+    aulas,
+    questoes,
+  });
   assert.deepEqual(pendencias(dados("apoio")), []);
   assert.deepEqual(pendenciasDeEmissao(dados("apoio")), ["MODALIDADE"]);
-  assert.deepEqual(pendencias(dados("semipresencial")), ["MODALIDADE"]);
-  assert.deepEqual(pendenciasDeEmissao(dados("semipresencial")), ["MODALIDADE"]);
+  // semipresencial sem as cargas: o que trava são as cargas e o lastro da teoria, não a modalidade
+  assert.deepEqual(pendencias(dados("semipresencial")), ["CARGAS", "LASTRO"]);
+  assert.deepEqual(pendenciasDeEmissao(dados("semipresencial")), ["CARGAS", "LASTRO"]);
+  assert.deepEqual(pendencias(dados("semipresencial", CARGAS_SEMI)), []);
+  assert.deepEqual(pendenciasDeEmissao(dados("semipresencial", CARGAS_SEMI)), []);
   // os outros requisitos do curso continuam valendo para o apoio (a D3 só separa a modalidade)
   assert.deepEqual(
     pendencias({ curso: { ...curso, modalidade: "apoio", instrutor_nome: "" }, aulas, questoes }),
@@ -161,8 +203,82 @@ test("D3: apoio não trava publicar nem matricular, só emitir; semipresencial e
   // o texto diz o motivo certo de cada modalidade
   assert.match(mod("apoio").texto, /apoio/i);
   assert.match(mod("apoio").texto, /não emite certificado/i);
-  assert.match(mod("semipresencial").texto, /semipresencial/i);
-  assert.match(mod("semipresencial").texto, /prática presencial/i);
+  assert.match(motivoSemCertificado("semipresencial"), /semipresencial/i);
+  assert.match(motivoSemCertificado("semipresencial"), /prática presencial/i);
+});
+test("T12: CARGAS e LASTRO do semipresencial, iguais no front e no servidor", () => {
+  const semi = (valores: Record<string, unknown> = {}) => ({
+    curso: { ...curso, carga_horaria_horas: 2, modalidade: "semipresencial", ...valores },
+    aulas,
+    questoes,
+  });
+  const item = (codigo: string, dados: ReturnType<typeof semi>) =>
+    requisitosDoCurso(dados).find((r) => r.codigo === codigo);
+  // as duas cargas, preenchidas e somando a total
+  assert.equal(item("CARGAS", semi())?.ok, false);
+  assert.equal(item("CARGAS", semi({ carga_teorica_horas: 1 }))?.ok, false);
+  assert.equal(item("CARGAS", semi({ carga_teorica_horas: 1, carga_pratica_horas: 2 }))?.ok, false);
+  assert.equal(item("CARGAS", semi({ carga_teorica_horas: 1, carga_pratica_horas: 1 }))?.ok, true);
+  assert.equal(
+    item(
+      "CARGAS",
+      semi({ carga_horaria_horas: 0.3, carga_teorica_horas: 0.1, carga_pratica_horas: 0.2 })
+    )?.ok,
+    true
+  );
+  assert.match(
+    item("CARGAS", semi({ carga_teorica_horas: 1.5, carga_pratica_horas: 2 }))!.texto,
+    /1,5 h.*2 h.*somam 3,5 h.*\(2 h\)/
+  );
+  assert.equal(item("CARGAS", semi())?.bloqueia, true);
+  assert.equal(item("CARGAS", semi())?.bloqueiaEmissao, true);
+  // o lastro é a carga teórica (C3): 1 h de conteúdo cobre 1 h de teoria, não 1,5 h
+  assert.equal(item("LASTRO", semi({ carga_teorica_horas: 1, carga_pratica_horas: 1 }))?.ok, true);
+  assert.equal(
+    item("LASTRO", semi({ carga_teorica_horas: 1.5, carga_pratica_horas: 0.5 }))?.ok,
+    false
+  );
+  assert.match(item("LASTRO", semi())!.texto, /carga teórica/);
+  // EAD e apoio não ganham o requisito das cargas
+  assert.equal(item("CARGAS", { curso, aulas, questoes }), undefined);
+  assert.equal(
+    item("CARGAS", { curso: { ...curso, modalidade: "apoio" }, aulas, questoes }),
+    undefined
+  );
+  // as duas cópias dizem o mesmo
+  for (const valores of [
+    {},
+    { carga_teorica_horas: 1 },
+    { carga_teorica_horas: 1, carga_pratica_horas: 2 },
+    { carga_teorica_horas: "1", carga_pratica_horas: "1" },
+    { carga_teorica_horas: 1.5, carga_pratica_horas: 0.5 },
+    { carga_teorica_horas: -1, carga_pratica_horas: 3 },
+    { carga_horaria_horas: null, carga_teorica_horas: 1, carga_pratica_horas: 1 },
+  ]) {
+    const caso = semi(valores);
+    assert.deepEqual(requisitosDoCurso(caso), requisitosFront(caso), JSON.stringify(valores));
+  }
+  for (const c of [
+    {},
+    { carga_horaria_horas: 4 },
+    { modalidade: "semipresencial", carga_teorica_horas: "1.5", carga_horaria_horas: 4 },
+    { modalidade: "semipresencial", carga_horaria_horas: 4 },
+    { modalidade: "apoio", carga_horaria_horas: "8", carga_teorica_horas: 1 },
+    null,
+  ]) {
+    assert.equal(cargaTeoricaDoCurso(c), cargaTeoricaFront(c), JSON.stringify(c));
+  }
+  assert.equal(
+    cargaTeoricaDoCurso({ modalidade: "semipresencial", carga_teorica_horas: 1.5 }),
+    1.5
+  );
+  assert.equal(cargaTeoricaDoCurso({ carga_horaria_horas: 4, carga_teorica_horas: 1 }), 4);
+  for (const h of [1, 1.5, "2.25", 0, null, 0.1 + 0.2, 40]) {
+    assert.equal(formatarHoras(h), formatarHorasFront(h), String(h));
+  }
+  assert.equal(formatarHoras(1.5), "1,5 h");
+  assert.equal(formatarHoras(0.1 + 0.2), "0,3 h");
+  assert.equal(formatarHoras(40), "40 h");
 });
 test("motivoSemCertificado e emiteCertificado: servidor e front dizem o mesmo", () => {
   for (const m of ["ead", "apoio", "semipresencial", "inventada", undefined, null, ""]) {
@@ -174,16 +290,15 @@ test("motivoSemCertificado e emiteCertificado: servidor e front dizem o mesmo", 
   }
   assert.equal(emiteCertificado("ead"), true);
   assert.equal(emiteCertificado("apoio"), false);
-  assert.equal(emiteCertificado("semipresencial"), false);
+  assert.equal(emiteCertificado("semipresencial"), true);
 });
-test("emissão pela modalidade: apoio e semipresencial têm código próprio (409), EAD passa", () => {
+test("emissão pela modalidade: apoio tem código próprio (409); EAD e semipresencial passam", () => {
   assert.equal(bloqueioDeEmissaoPorModalidade("ead"), null);
   const apoio = bloqueioDeEmissaoPorModalidade("apoio");
   assert.equal(apoio?.codigo, "CURSO_DE_APOIO");
   assert.equal(apoio?.mensagem, motivoSemCertificado("apoio"));
-  const semi = bloqueioDeEmissaoPorModalidade("semipresencial");
-  assert.equal(semi?.codigo, "PRATICA_PENDENTE");
-  assert.equal(semi?.mensagem, motivoSemCertificado("semipresencial"));
+  // T12: o semipresencial passa aqui; o 409 PRATICA_PENDENTE vem da prática da matrícula (pratica.ts)
+  assert.equal(bloqueioDeEmissaoPorModalidade("semipresencial"), null);
   // valor que o banco não aceita (CHECK da 0136): não emite, e o código diz o porquê
   assert.equal(bloqueioDeEmissaoPorModalidade("inventada")?.codigo, "MODALIDADE_INVALIDA");
 });

@@ -10,6 +10,7 @@ import {
   dataDeBrasilia,
   estaVencido,
   localDoCertificado,
+  praticaPublica,
   resultadoDaConsulta,
   responsavelTecnicoPublico,
   situacaoDoCertificado,
@@ -312,6 +313,61 @@ test("localDoCertificado: devolve o ambiente gravado em dados.local; sem local, 
 test("localDoCertificado: só o ambiente sai na consulta pública (nada além dele)", () => {
   const l = localDoCertificado({ local: { ambiente: "Plataforma", interno: "não sai" } });
   assert.deepEqual(l, { ambiente: "Plataforma" });
+});
+
+// ------------------------------------------------------------------ prática presencial (T12)
+test("localDoCertificado (T12): o semipresencial devolve também o local da prática", () => {
+  assert.deepEqual(
+    localDoCertificado({
+      local: { ambiente: "Plataforma", pratica: "Pátio de treinamento de teste" },
+    }),
+    { ambiente: "Plataforma", pratica: "Pátio de treinamento de teste" }
+  );
+  // prática vazia ou que não é texto não sai
+  assert.deepEqual(localDoCertificado({ local: { ambiente: "Plataforma", pratica: "  " } }), {
+    ambiente: "Plataforma",
+  });
+  assert.deepEqual(localDoCertificado({ local: { ambiente: "Plataforma", pratica: 1 } }), {
+    ambiente: "Plataforma",
+  });
+});
+
+test("praticaPublica (T12): só data, local e carga da prática saem na consulta pública", () => {
+  const dados = {
+    pratica: {
+      sessao_id: "sessao-interna",
+      data: "2026-10-05",
+      hora_inicio: "08:00",
+      hora_fim: "12:00",
+      local: "Pátio de treinamento de teste",
+      instrutor: { nome: "Instrutor de Teste", qualificacao: "Eng. de Teste" },
+      carga_horas: 4,
+      resultado: "satisfatorio",
+    },
+  };
+  assert.deepEqual(praticaPublica(dados), {
+    data: "2026-10-05",
+    local: "Pátio de treinamento de teste",
+    carga_horas: 4,
+  });
+  // certificado EAD (ou de antes da T12) não tem prática; dado torto também não vira prática
+  assert.equal(praticaPublica({}), null);
+  assert.equal(praticaPublica(null), null);
+  assert.equal(praticaPublica({ pratica: null }), null);
+  assert.equal(praticaPublica({ pratica: "texto" }), null);
+  assert.equal(praticaPublica({ pratica: { ...dados.pratica, data: "05/10/2026" } }), null);
+  // sem local ou sem carga: o que existe sai, o resto vem null
+  assert.deepEqual(praticaPublica({ pratica: { data: "2026-10-05" } }), {
+    data: "2026-10-05",
+    local: null,
+    carga_horas: null,
+  });
+});
+
+test("index.ts (T12): a consulta pública devolve a prática pela regra (não o objeto gravado inteiro)", () => {
+  const index = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+  assert.ok(/pratica:\s*praticaPublica\(d\)/.test(index));
+  assert.ok(!/pratica:\s*d\.pratica/.test(index));
 });
 
 // ------------------------------------------------------------------ responsável técnico (T29)

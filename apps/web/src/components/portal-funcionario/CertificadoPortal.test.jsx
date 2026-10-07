@@ -175,3 +175,49 @@ describe("CertificadoPortal e o pré-requisito do curso (T23)", () => {
     expect(saida).not.toContain("Falta o pré-requisito");
   });
 });
+
+describe("CertificadoPortal e a parte prática do semipresencial (T12)", () => {
+  const PENDENTE = {
+    situacao: "pendente",
+    data: null,
+    local: null,
+    texto:
+      "Parte prática: pendente. O RH registra a sessão presencial e o resultado de cada aluno.",
+  };
+  const REALIZADA = {
+    situacao: "realizada",
+    data: "2026-10-05",
+    local: "Pátio de teste",
+    texto: "Parte prática: realizada em 05/10/2026, em Pátio de teste.",
+  };
+  const semi = { id: "c1", nome: "Curso semipresencial de teste", modalidade: "semipresencial" };
+
+  it("teoria concluída sem a prática: explica o que falta, sem assinatura nem senha", () => {
+    const saida = html(item({ curso: semi, pode_emitir_certificado: false, pratica: PENDENTE }));
+    expect(saida).toContain("Falta a parte prática presencial");
+    expect(saida).toContain(PENDENTE.texto);
+    expect(saida).not.toContain("Assine para emitir");
+    expect(saida).not.toContain('type="password"');
+    // não é requisito do curso para o RH regularizar
+    expect(saida).not.toContain("aguarda a regularização");
+  });
+
+  it("prática realizada: a assinatura aparece como sempre", () => {
+    const saida = html(item({ curso: semi, pratica: REALIZADA }));
+    expect(saida).toContain("Assine para emitir");
+    expect(saida).not.toContain("Falta a parte prática");
+  });
+
+  it("prática pendente e requisito do curso pendente juntos: as duas explicações aparecem", () => {
+    const saida = html(
+      item({
+        curso: semi,
+        pode_emitir_certificado: false,
+        pratica: PENDENTE,
+        pendencias_certificado: ["Informe o instrutor"],
+      })
+    );
+    expect(saida).toContain("Falta a parte prática presencial");
+    expect(saida).toContain("aguarda a regularização");
+  });
+});

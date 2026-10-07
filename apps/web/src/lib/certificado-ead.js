@@ -57,6 +57,38 @@ async function qrPng(texto) {
   }
 }
 
+/**
+ * A linha "Local de realização" da frente. No EAD, o ambiente gravado (a plataforma e o endereço). No semipresencial
+ * (T12, `local.pratica`), a teoria na plataforma (só o nome, sem a URL, que o QR e o rodapé já levam) e o local da
+ * prática presencial.
+ */
+export function textoDoLocal(local) {
+  if (!local?.pratica) return `Local de realização: ${local?.ambiente ?? ""}`;
+  const plataforma = String(local.ambiente ?? "").split(" — ")[0];
+  return `Local de realização: teoria a distância na ${plataforma}; prática presencial em ${local.pratica}`;
+}
+
+const fmtHoras = (h) => `${String(Math.round((Number(h) || 0) * 100) / 100).replace(".", ",")} h`;
+
+/** O texto da parte prática no verso do certificado semipresencial (T12), a partir de `dados.pratica`. */
+export function textoDaPraticaNoVerso(pratica) {
+  if (!pratica) return null;
+  const horario =
+    pratica.hora_inicio && pratica.hora_fim
+      ? `, das ${pratica.hora_inicio} às ${pratica.hora_fim}`
+      : "";
+  const carga = Number(pratica.carga_horas) > 0 ? ` (${fmtHoras(pratica.carga_horas)})` : "";
+  const instrutor = pratica.instrutor?.nome
+    ? ` Instrutor: ${pratica.instrutor.nome}${pratica.instrutor.qualificacao ? `, ${pratica.instrutor.qualificacao}` : ""}.`
+    : "";
+  const resultado =
+    pratica.resultado === "satisfatorio" ? "satisfatório" : pratica.resultado || "—";
+  return (
+    `Realizada em ${fmtData(pratica.data)}${horario}${carga}, em ${pratica.local || "—"}.` +
+    `${instrutor} Resultado: ${resultado}.`
+  );
+}
+
 /** Linhas do conteúdo programático: texto do curso ou aulas por módulo. */
 function linhasConteudo(curso) {
   if (curso?.conteudo_programatico) {
@@ -200,13 +232,16 @@ export async function baixarCertificadoPdf(cert, opcoes = {}) {
     yDetalhe += partes.length * 4.6 + 2.4;
   }
   if (d.local?.ambiente) {
-    doc.setFontSize(10.5);
-    doc.text(
-      doc.splitTextToSize(`Local de realização: ${d.local.ambiente}`, W - 60),
-      W / 2,
-      yDetalhe,
-      { align: "center" }
-    );
+    // semipresencial (T12): o local da prática vem junto, e a fonte diminui se for preciso para o local (até 120
+    // caracteres) caber em duas linhas sem chegar nas imagens das assinaturas
+    const texto = textoDoLocal(d.local);
+    let partes = [];
+    for (const tamanho of [10.5, 9.5, 8.5]) {
+      doc.setFontSize(tamanho);
+      partes = doc.splitTextToSize(texto, W - 60);
+      if (partes.length <= 2) break;
+    }
+    doc.text(partes, W / 2, yDetalhe, { align: "center" });
   }
 
   // assinaturas
@@ -308,7 +343,9 @@ export async function baixarCertificadoPdf(cert, opcoes = {}) {
     return doc.splitTextToSize(titulo ? l.slice(2) : l, larguraCol - 4);
   };
   const LINHA = 4.4;
-  const LIMITE = H - 48;
+  // semipresencial (T12): a parte prática ocupa o pé do verso, então o conteúdo para mais acima
+  const textoPratica = textoDaPraticaNoVerso(d.pratica);
+  const LIMITE = textoPratica ? H - 66 : H - 48;
   let col = 0;
   let y = 40;
   doc.setTextColor(15, 23, 42);
@@ -325,14 +362,43 @@ export async function baixarCertificadoPdf(cert, opcoes = {}) {
     }
   }
 
+  // parte prática presencial (T12): dia, horário, carga, local, instrutor e resultado, congelados na emissão. À
+  // esquerda do QR (que começa em W - 44) e acima da nota do pé; a fonte diminui se o texto passar de 7 linhas.
+  if (textoPratica) {
+    doc.setTextColor(15, 23, 42);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text("PARTE PRÁTICA PRESENCIAL", 18, H - 62);
+    doc.setFont("helvetica", "normal");
+    let partes = [];
+    for (const tamanho of [8.5, 7.5, 6.5]) {
+      doc.setFontSize(tamanho);
+      partes = doc.splitTextToSize(textoPratica, W - 36 - 52);
+      if (partes.length <= 7) break;
+    }
+    doc.text(partes.slice(0, 7), 18, H - 57.5);
+  }
+
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(71, 85, 105);
-  doc.text(
-    "Treinamento a distância com registro individual de acessos, atividades e avaliação (NR-1, item 1.7 e Anexo II).",
-    18,
-    H - 30
-  );
+  if (textoPratica) {
+    doc.text(
+      doc.splitTextToSize(
+        "Teoria a distância com registro individual de acessos, atividades e avaliação (NR-1, item 1.7 e Anexo II); " +
+          "prática presencial registrada pela empresa, com a presença e o resultado de cada participante.",
+        W - 36 - 52
+      ),
+      18,
+      H - 30
+    );
+  } else {
+    doc.text(
+      "Treinamento a distância com registro individual de acessos, atividades e avaliação (NR-1, item 1.7 e Anexo II).",
+      18,
+      H - 30
+    );
+  }
   rodape();
 
   const nome = (d.aluno?.nome || "certificado").replace(/[^\p{L}\p{N}]+/gu, "_");

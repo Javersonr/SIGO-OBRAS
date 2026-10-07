@@ -385,3 +385,126 @@ describe("baixarCertificadoPdf: assinaturas do instrutor e do responsável técn
     expect(r.assinaturasDesenhadas).toEqual(["instrutor", "responsavel_tecnico"]);
   });
 });
+
+describe("baixarCertificadoPdf: semipresencial (T12)", () => {
+  const textoDoPdf = async (cert) => {
+    let texto = "";
+    await baixarCertificadoPdf(cert, {
+      gerarQr: async () => PNG_1X1,
+      salvar: (doc) => {
+        texto = doc.output();
+      },
+    });
+    return texto;
+  };
+  const LOCAL_PRATICA = "Pátio de treinamento de teste";
+  const semipresencial = (extra = {}) =>
+    certificado({
+      dados: {
+        ...certificado().dados,
+        curso: {
+          ...certificado().dados.curso,
+          modalidade: "Semipresencial: teoria EAD (4 h) + prática presencial (36 h)",
+          carga_horaria_horas: 40,
+          carga_teorica_horas: 4,
+          carga_pratica_horas: 36,
+        },
+        local: {
+          ambiente: "Plataforma de Teste — https://exemplo.test/portal",
+          pratica: LOCAL_PRATICA,
+        },
+        pratica: {
+          sessao_id: "sessao-teste",
+          data: "2026-10-05",
+          hora_inicio: "08:00",
+          hora_fim: "17:00",
+          local: LOCAL_PRATICA,
+          instrutor: { nome: "Instrutor da Prática", qualificacao: "Técnico de Teste" },
+          carga_horas: 36,
+          resultado: "satisfatorio",
+        },
+        ...extra,
+      },
+    });
+
+  it("a frente mostra as duas cargas (na modalidade) e o local da prática", async () => {
+    const texto = await textoDoPdf(semipresencial());
+    // (o PDF escapa os parênteses: confere sem eles)
+    expect(texto).toContain("Semipresencial: teoria EAD");
+    expect(texto).toContain("4 h");
+    expect(texto).toContain("presencial");
+    expect(texto).toContain("36 h");
+    expect(texto).toContain("Local de realiza");
+    expect(texto).toContain("Plataforma de Teste");
+    expect(texto).toContain(LOCAL_PRATICA);
+    // a URL da plataforma sai da linha do semipresencial (o QR e o rodapé já levam o endereço)
+    expect(texto).not.toContain("https://exemplo.test/portal");
+  });
+
+  it("o verso traz a parte prática: dia, horário, local, instrutor, carga e resultado", async () => {
+    const texto = await textoDoPdf(semipresencial());
+    expect(texto).toContain("PARTE PR");
+    expect(texto).toContain("05/10/2026");
+    expect(texto).toContain("08:00 às 17:00");
+    expect(texto).toContain("Instrutor da Pr");
+    expect(texto).toContain("Técnico de Teste");
+    expect(texto).toContain("36 h");
+    expect(texto).toContain("satisfatório");
+    expect(texto).toContain("prática presencial registrada pela empresa");
+  });
+
+  it("certificado EAD continua sem a parte prática e com a nota de sempre", async () => {
+    const texto = await textoDoPdf(certificado());
+    expect(texto).not.toContain("PARTE PR");
+    expect(texto).toContain("Treinamento a distância com registro individual");
+  });
+
+  it("local da prática comprido em maiúsculas e motivo de 200 caracteres: o bloco termina acima das assinaturas", async () => {
+    registro.textos.length = 0;
+    const motivo = "palavra ".repeat(40).trim().slice(0, 200);
+    const local = "W".repeat(120);
+    const cert = semipresencial({
+      tipo_treinamento: "eventual",
+      motivo_eventual: motivo,
+      local: { ambiente: "Plataforma SIGO Obras — https://exemplo.test/portal", pratica: local },
+      instrutor: { nome: "Instrutor de Teste", qualificacao: "Eng. de Teste" },
+      responsavel_tecnico: { nome: "RT de Teste", registro: "CREA-XX 0000" },
+    });
+    cert.dados.curso.nome =
+      "NR-10 BÁSICO — SEGURANÇA EM INSTALAÇÕES E SERVIÇOS EM ELETRICIDADE (CURSO DE TESTE COMPRIDO)";
+    const IMAGEM = { dataUrl: PNG_1X1, w: 300, h: 100 };
+    await baixarCertificadoPdf(cert, {
+      gerarQr: async () => PNG_1X1,
+      assinaturas: { instrutor: IMAGEM, responsavel_tecnico: IMAGEM },
+      salvar: () => {},
+    });
+    const doTexto = (re) => registro.textos.find((c) => re.test([c.texto].flat().join(" ")));
+    const corpo = doTexto(/^Certificamos que/);
+    const tipo = doTexto(/Tipo de treinamento/);
+    const linhaDoLocal = doTexto(/Local de realiza/);
+    expect(corpo && tipo && linhaDoLocal).toBeTruthy();
+    // o local cabe em duas linhas (a fonte diminui se for preciso) e termina antes das imagens (122,5 mm)
+    const linhas = [linhaDoLocal.texto].flat().length;
+    expect(linhas).toBeLessThanOrEqual(2);
+    expect(linhaDoLocal.y + (linhas - 1) * 4.6).toBeLessThan(122.5);
+    // o texto de abertura (com a modalidade maior) termina antes do bloco de detalhes
+    const linhasDoCorpo = [corpo.texto].flat().length;
+    const fimDoCorpo = corpo.y + (linhasDoCorpo - 1) * 12.5 * 1.6 * 0.3528;
+    expect(fimDoCorpo).toBeLessThan(tipo.y - 3);
+  });
+
+  it("o bloco da prática no verso não invade o QR nem o rodapé", async () => {
+    registro.textos.length = 0;
+    const longo = semipresencial();
+    longo.dados.pratica.local = "W".repeat(120);
+    longo.dados.pratica.instrutor = { nome: "N".repeat(120), qualificacao: "Q".repeat(200) };
+    await baixarCertificadoPdf(longo, { gerarQr: async () => PNG_1X1, salvar: () => {} });
+    const bloco = registro.textos.filter((c) => c.y > 140 && c.y < 190 && c.x < 30);
+    expect(bloco.length).toBeGreaterThan(0);
+    // o texto do verso (fora o rodapé, que fica em H - 17,5 e H - 13,5) acaba antes de H - 20 = 190 mm
+    for (const c of registro.textos.filter((t) => t.y > 150 && t.y < 192)) {
+      const ultima = c.y + ([c.texto].flat().length - 1) * 3.6;
+      expect(ultima).toBeLessThan(190);
+    }
+  });
+});
