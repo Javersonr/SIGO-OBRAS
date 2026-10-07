@@ -257,6 +257,9 @@ export function responsavelTecnicoPublico(
 /** Limites do motivo do treinamento eventual (os mesmos do CHECK da migração 0142 e de tipo-treinamento.ts). */
 const MOTIVO_EVENTUAL_MIN = 3;
 const MOTIVO_EVENTUAL_MAX = 200;
+// aparar e contar como o CHECK da 0142 (btrim de espaço, tab, CR, LF, FF e VT; char_length em caracteres): a mesma
+// regra do portal-funcionario/tipo-treinamento.ts, que decide o que entra no certificado (A6, T23)
+const ESPACOS_DO_BANCO = /^[ \t\r\n\f\v]+|[ \t\r\n\f\v]+$/g;
 
 /**
  * Tipo do treinamento na consulta pública (NR-1 1.7.1.2): `dados.tipo_treinamento` (inicial, periódico ou
@@ -279,8 +282,9 @@ export function tipoDoTreinamentoPublico(dados: unknown): {
     return { tipo_treinamento: tipo, motivo_eventual: null };
   }
   if (tipo !== "eventual") return null;
-  const texto = typeof motivo === "string" ? motivo.trim() : "";
-  if (texto.length < MOTIVO_EVENTUAL_MIN || texto.length > MOTIVO_EVENTUAL_MAX) return null;
+  const texto = typeof motivo === "string" ? motivo.replace(ESPACOS_DO_BANCO, "") : "";
+  const tamanho = [...texto].length;
+  if (tamanho < MOTIVO_EVENTUAL_MIN || tamanho > MOTIVO_EVENTUAL_MAX) return null;
   return { tipo_treinamento: "eventual", motivo_eventual: texto };
 }
 

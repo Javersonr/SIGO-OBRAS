@@ -72,7 +72,10 @@ export interface PraticaDaMatricula {
   sessao: SessaoPratica | null;
   /** Só na situação "realizada": as sessões que valeram, da mais antiga à mais recente. Nas outras, vazio. */
   sessoes: SessaoPratica[];
-  /** Soma das cargas das sessões já realizadas em que a matrícula esteve presente e satisfatória (horas). */
+  /**
+   * As horas das sessões já realizadas em que a matrícula esteve presente e satisfatória (soma das cargas, limitada
+   * ao tempo de relógio que os horários cobrem em cada dia: sessão repetida não dobra, ver `creditoEmCentesimos`).
+   */
   cumpridaHoras: number;
   /** A carga prática do curso (horas); null = o curso não a informou. */
   exigidaHoras: number | null;
@@ -94,10 +97,67 @@ const emCentesimos = (horas: unknown): number => {
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
 };
 
+/** Minutos desde 00:00 de "HH:MM" ou "HH:MM:SS"; null se não for um horário. */
+const minutosDoDia = (hora: unknown): number | null => {
+  const m = typeof hora === "string" ? /^(\d{2}):(\d{2})(?::\d{2})?$/.exec(hora.trim()) : null;
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  return h < 24 && min < 60 ? h * 60 + min : null;
+};
+
+/**
+ * Horas (em centésimos) que as sessões de UMA matrícula realmente cobrem (A6, T12 N1). A soma das cargas
+ * declaradas inflava quando o RH lançava a mesma sessão duas vezes (mesmo dia e horário), ou duas sessões que
+ * se cruzam: duas de 8 h iguais davam 16 h de prática para um dia só. Por dia, vale a soma das cargas
+ * limitada ao tempo de relógio que os horários das sessões do dia cobrem (a união dos intervalos): a
+ * repetida não soma, as que se cruzam valem o tempo coberto, e os turnos separados (manhã e tarde) somam. Sessão
+ * sem horário válido (o CHECK do banco não deixa, mas a regra não presume) vale a carga declarada, sem limite.
+ * Dias diferentes sempre somam. Quem muda esta conta muda também a cópia do front (lib/ead-pratica.js).
+ */
+function creditoEmCentesimos(sessoes: SessaoPratica[]): number {
+  const porDia = new Map<string, SessaoPratica[]>();
+  for (const s of sessoes) {
+    const dia = diaValido(s.data) ?? "";
+    porDia.set(dia, [...(porDia.get(dia) ?? []), s]);
+  }
+  let total = 0;
+  for (const doDia of porDia.values()) {
+    const intervalos: [number, number][] = [];
+    let declarada = 0; // as cargas das sessões do dia que têm horário válido
+    for (const s of doDia) {
+      const carga = emCentesimos(s.carga_horas);
+      const de = minutosDoDia(s.hora_inicio);
+      const ate = minutosDoDia(s.hora_fim);
+      if (de !== null && ate !== null && ate > de) {
+        intervalos.push([de, ate]);
+        declarada += carga;
+      } else {
+        total += carga;
+      }
+    }
+    intervalos.sort((a, b) => a[0] - b[0]);
+    let coberto = 0;
+    let fimAtual = -1;
+    for (const [de, ate] of intervalos) {
+      if (de > fimAtual) {
+        coberto += ate - de;
+        fimAtual = ate;
+      } else if (ate > fimAtual) {
+        coberto += ate - fimAtual;
+        fimAtual = ate;
+      }
+    }
+    total += Math.min(declarada, Math.round((coberto / 60) * 100));
+  }
+  return total;
+}
+
 /**
  * As sessões que valem no certificado: da mais antiga em diante, as primeiras cuja soma cobre a carga exigida (as
- * que sobram, de quem fez mais sessões do que o curso pede, ficam de fora). Sem carga exigida, a mais recente.
- * `satisfatorias` já vem da mais antiga à mais recente.
+ * que sobram, de quem fez mais sessões do que o curso pede, ficam de fora, e a sessão que não acrescenta tempo, como
+ * a lançada duas vezes, também). Sem carga exigida, a mais recente. `satisfatorias` já vem da mais antiga à mais
+ * recente.
  */
 function sessoesQueValeram(
   satisfatorias: SessaoPratica[],
@@ -105,11 +165,13 @@ function sessoesQueValeram(
 ): SessaoPratica[] {
   if (exigida === null) return satisfatorias.slice(-1);
   const valeram: SessaoPratica[] = [];
-  let soma = 0;
+  let credito = 0;
   for (const s of satisfatorias) {
+    const novo = creditoEmCentesimos([...valeram, s]);
+    if (novo <= credito) continue;
     valeram.push(s);
-    soma += emCentesimos(s.carga_horas);
-    if (soma >= exigida) break;
+    credito = novo;
+    if (credito >= exigida) break;
   }
   return valeram;
 }
@@ -152,7 +214,7 @@ export function situacaoDaPratica(p: {
     }
   }
   const satisfatorias = [...satisfatoriasPorId.values()].sort(noTempo);
-  const cumprida = satisfatorias.reduce((soma, s) => soma + emCentesimos(s.carga_horas), 0);
+  const cumprida = creditoEmCentesimos(satisfatorias);
   const exigida = emCentesimos(p.cargaPraticaHoras) || null;
   const horas = {
     cumpridaHoras: cumprida / 100,
@@ -320,7 +382,7 @@ export function dadosDaPraticaNoCertificado(sessoes: SessaoPratica[]): PraticaNo
       carga_horas: carga > 0 ? carga / 100 : null,
     };
   });
-  const total = sessoes.reduce((soma, s) => soma + emCentesimos(s.carga_horas), 0);
+  const total = creditoEmCentesimos(sessoes);
   return {
     carga_horas: total > 0 ? total / 100 : null,
     resultado: "satisfatorio",
@@ -435,6 +497,46 @@ export function praticaParaOAluno(p: {
   };
 }
 
+/**
+ * O item `pratica` de um curso do aluno quando o certificado JÁ foi emitido (A6, T12 M3): a prática congelada nele
+ * (`dados.pratica`), não a das sessões vivas. Depois da emissão o RH ainda pode apagar ou editar uma sessão (o
+ * certificado emitido não muda), e o portal passava a mostrar "Parte prática: pendente", em âmbar, ao lado do
+ * certificado válido. Null se o certificado não traz prática (EAD, ou emitido antes da T12): quem chama usa a viva.
+ */
+export function praticaDoCertificado(dados: unknown): PraticaParaOAluno | null {
+  const pratica = (dados as { pratica?: { sessoes?: unknown; carga_horas?: unknown } } | null)
+    ?.pratica;
+  const congeladas = Array.isArray(pratica?.sessoes) ? pratica.sessoes : [];
+  const sessoes = congeladas
+    .filter((s: unknown): s is Record<string, unknown> => !!s && typeof s === "object")
+    .map(
+      (s): SessaoPratica => ({
+        id: String(s.sessao_id ?? ""),
+        data: typeof s.data === "string" ? s.data : null,
+        hora_inicio: typeof s.hora_inicio === "string" ? s.hora_inicio : null,
+        hora_fim: typeof s.hora_fim === "string" ? s.hora_fim : null,
+        carga_horas: typeof s.carga_horas === "number" ? s.carga_horas : null,
+        local: typeof s.local === "string" ? s.local : null,
+      })
+    )
+    .sort(noTempo);
+  if (!sessoes.length) return null;
+  const ultima = sessoes[sessoes.length - 1];
+  const congelada: PraticaDaMatricula = {
+    situacao: "realizada",
+    sessao: ultima,
+    sessoes,
+    cumpridaHoras: Number(pratica?.carga_horas) || 0,
+    exigidaHoras: null,
+  };
+  return {
+    situacao: "realizada",
+    data: diaValido(ultima.data),
+    local: locaisDasSessoes(sessoes) || null,
+    texto: textoDaPratica(congelada),
+  };
+}
+
 /** Deixa nos logs a causa de um erro do banco (a resposta ao aluno é genérica). Nada de dado pessoal. */
 function registrarErro(etapa: string, erro: unknown) {
   const e = erro as { message?: unknown; code?: unknown } | null;
@@ -451,11 +553,52 @@ const COLUNAS_SESSAO =
   "id, curso_id, data, hora_inicio, hora_fim, carga_horas, local, instrutor_nome, instrutor_qualificacao, deleted_at";
 const COLUNAS_PARTICIPACAO = "sessao_id, matricula_id, presente, resultado, deleted_at";
 
+/** Ids por consulta `.in(...)`: o filtro vai na URL, e uns 80 UUIDs cabem folgados. */
+const IDS_POR_CONSULTA = 80;
+
 /**
- * Lê no banco, na hora da emissão, a prática de UMA matrícula: as sessões vivas do curso e as participações vivas
- * da matrícula. Service role ignora a RLS: as duas consultas levam a empresa da SESSÃO do portal, e a matrícula
- * já foi conferida como do aluno (`minhaMatricula`). `cargaPraticaHoras` é a do curso (lido pelo chamador).
- * Falha em qualquer uma = `{ ok: false }` (quem emite responde 503): leitura que falha nunca vira "realizada".
+ * As sessões vivas com estes ids, da empresa da SESSÃO (A6, T12 N6). A leitura parte das PARTICIPAÇÕES da matrícula
+ * e traz só as sessões delas: a de todas as sessões do curso esbarrava no teto de 1.000 linhas do PostgREST, e num
+ * curso com muitas sessões acumuladas a do aluno podia ficar de fora (a emissão responderia 409 indevido, ou o
+ * portal "pendente"). Sessão que não tem participação da matrícula nunca conta para ela, então nada se perde. O
+ * `filtrarCurso` põe o filtro do(s) curso(s) na consulta. Sem ids não consulta. Devolve o erro da primeira
+ * consulta que falhar.
+ */
+async function lerSessoesPorId(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  p: {
+    ids: string[];
+    empresaId: string;
+    // deno-lint-ignore no-explicit-any
+    filtrarCurso: (consulta: any) => any;
+  }
+): Promise<{ data: SessaoPratica[]; error: unknown }> {
+  const sessoes: SessaoPratica[] = [];
+  for (let i = 0; i < p.ids.length; i += IDS_POR_CONSULTA) {
+    const consulta = p.filtrarCurso(
+      supabase
+        .from("treinamento_sessao_pratica")
+        .select(COLUNAS_SESSAO)
+        .in("id", p.ids.slice(i, i + IDS_POR_CONSULTA))
+    );
+    const r = await consulta.eq("empresa_id", p.empresaId).is("deleted_at", null);
+    if (r.error) return { data: [], error: r.error };
+    sessoes.push(...(r.data ?? []));
+  }
+  return { data: sessoes, error: null };
+}
+
+const idsDasSessoes = (participacoes: ParticipacaoNaPratica[]) => [
+  ...new Set(participacoes.map((x) => x?.sessao_id).filter((id): id is string => !!id)),
+];
+
+/**
+ * Lê no banco, na hora da emissão, a prática de UMA matrícula: as participações vivas da matrícula e, delas, as
+ * sessões vivas do curso. Service role ignora a RLS: as duas consultas levam a empresa da SESSÃO do portal, e a
+ * matrícula já foi conferida como do aluno (`minhaMatricula`). `cargaPraticaHoras` é a do curso (lido pelo
+ * chamador). Falha em qualquer uma = `{ ok: false }` (quem emite responde 503): leitura que falha nunca vira
+ * "realizada".
  */
 export async function lerPratica(
   // deno-lint-ignore no-explicit-any
@@ -468,36 +611,33 @@ export async function lerPratica(
     cargaPraticaHoras?: number | string | null;
   }
 ): Promise<{ ok: true; pratica: PraticaDaMatricula } | { ok: false }> {
-  const [sessoes, participacoes] = await Promise.all([
-    supabase
-      .from("treinamento_sessao_pratica")
-      .select(COLUNAS_SESSAO)
-      .eq("curso_id", p.cursoId)
-      .eq("empresa_id", p.empresaId)
-      .is("deleted_at", null),
-    supabase
-      .from("treinamento_pratica_participante")
-      .select(COLUNAS_PARTICIPACAO)
-      .eq("matricula_id", p.matriculaId)
-      .eq("empresa_id", p.empresaId)
-      .is("deleted_at", null),
-  ]);
-  for (const [etapa, r] of [
-    ["sessões", sessoes],
-    ["participações", participacoes],
-  ] as const) {
-    if (r.error) {
-      registrarErro(etapa, r.error);
-      return { ok: false };
-    }
+  const participacoes = await supabase
+    .from("treinamento_pratica_participante")
+    .select(COLUNAS_PARTICIPACAO)
+    .eq("matricula_id", p.matriculaId)
+    .eq("empresa_id", p.empresaId)
+    .is("deleted_at", null);
+  if (participacoes.error) {
+    registrarErro("participações", participacoes.error);
+    return { ok: false };
+  }
+  const minhas: ParticipacaoNaPratica[] = participacoes.data ?? [];
+  const sessoes = await lerSessoesPorId(supabase, {
+    ids: idsDasSessoes(minhas),
+    empresaId: p.empresaId,
+    filtrarCurso: (consulta) => consulta.eq("curso_id", p.cursoId),
+  });
+  if (sessoes.error) {
+    registrarErro("sessões", sessoes.error);
+    return { ok: false };
   }
   return {
     ok: true,
     pratica: situacaoDaPratica({
       matriculaId: p.matriculaId,
       cursoId: p.cursoId,
-      sessoes: sessoes.data ?? [],
-      participacoes: participacoes.data ?? [],
+      sessoes: sessoes.data,
+      participacoes: minhas,
       hoje: p.hoje,
       cargaPraticaHoras: p.cargaPraticaHoras,
     }),
@@ -505,10 +645,10 @@ export async function lerPratica(
 }
 
 /**
- * As sessões dos cursos semipresenciais do aluno e as participações das matrículas dele, só da empresa da sessão
- * (para a ação `dados`). Sem curso semipresencial não consulta. Falha de leitura devolve vazio e deixa o rastro
- * no log: o aluno vê a prática "pendente" (falha fechado) e a emissão, que lê de novo e é quem decide, responde
- * 503.
+ * As participações das matrículas do aluno e as sessões delas, nos cursos semipresenciais dele, só da empresa da
+ * sessão (para a ação `dados`). Sem curso semipresencial não consulta. Falha de leitura devolve vazio e deixa o
+ * rastro no log: o aluno vê a prática "pendente" (falha fechado) e a emissão, que lê de novo e é quem decide,
+ * responde 503.
  */
 export async function praticasDoBanco(
   // deno-lint-ignore no-explicit-any
@@ -521,23 +661,25 @@ export async function praticasDoBanco(
   ];
   const matriculas = [...new Set(p.matriculaIds.filter(Boolean))];
   if (!cursos.length || !matriculas.length) return vazio;
-  const [sessoes, participacoes] = await Promise.all([
-    supabase
-      .from("treinamento_sessao_pratica")
-      .select(COLUNAS_SESSAO)
-      .in("curso_id", cursos)
-      .eq("empresa_id", p.empresaId)
-      .is("deleted_at", null),
-    supabase
-      .from("treinamento_pratica_participante")
-      .select(COLUNAS_PARTICIPACAO)
-      .in("matricula_id", matriculas)
-      .eq("empresa_id", p.empresaId)
-      .is("deleted_at", null),
-  ]);
-  if (sessoes.error || participacoes.error) {
-    registrarErro("leitura para o portal", sessoes.error ?? participacoes.error);
+  const participacoes = await supabase
+    .from("treinamento_pratica_participante")
+    .select(COLUNAS_PARTICIPACAO)
+    .in("matricula_id", matriculas)
+    .eq("empresa_id", p.empresaId)
+    .is("deleted_at", null);
+  if (participacoes.error) {
+    registrarErro("leitura para o portal", participacoes.error);
     return vazio;
   }
-  return { sessoes: sessoes.data ?? [], participacoes: participacoes.data ?? [] };
+  const minhas: ParticipacaoNaPratica[] = participacoes.data ?? [];
+  const sessoes = await lerSessoesPorId(supabase, {
+    ids: idsDasSessoes(minhas),
+    empresaId: p.empresaId,
+    filtrarCurso: (consulta) => consulta.in("curso_id", cursos),
+  });
+  if (sessoes.error) {
+    registrarErro("leitura para o portal", sessoes.error);
+    return vazio;
+  }
+  return { sessoes: sessoes.data, participacoes: minhas };
 }

@@ -123,7 +123,8 @@ describe("matricular e renovar", () => {
     expect(cria).toBeGreaterThan(consulta);
     // não mexe na matrícula antiga: o histórico e o certificado ficam como estão
     expect(renovar).not.toMatch(/TreinamentoMatricula\.(update|delete)/);
-    expect(renovar).not.toMatch(/TreinamentoCertificado/);
+    // (só LÊ os certificados do curso exigido, para conferir o pré-requisito; nunca grava nem apaga um) (A6, T23)
+    expect(renovar).not.toMatch(/TreinamentoCertificado\.(create|bulkCreate|update|delete)/);
   });
 
   it("o painel por função usa o vínculo da migração 0131 (exigência → modelo → curso)", () => {

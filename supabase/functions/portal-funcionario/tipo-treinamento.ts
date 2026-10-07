@@ -19,6 +19,13 @@ export type TipoDeTreinamento = (typeof TIPOS_DE_TREINAMENTO)[number];
 export const MOTIVO_EVENTUAL_MIN = 3;
 export const MOTIVO_EVENTUAL_MAX = 200;
 
+// Aparar e contar como o CHECK da 0142: `btrim(motivo_eventual, E' \t\r\n\f\x0b')` tira só espaço, tab, CR, LF, FF e VT, e
+// `char_length` conta caracteres (o `.length` do JS conta unidades UTF-16: um emoji vale 2). Com regras diferentes,
+// um motivo que o banco aceitou saía do certificado sem o tipo (A6, T23).
+const ESPACOS_DO_BANCO = /^[ \t\r\n\f\v]+|[ \t\r\n\f\v]+$/g;
+const apararMotivo = (v: unknown): string =>
+  typeof v === "string" ? v.replace(ESPACOS_DO_BANCO, "") : "";
+
 /** O que entra em `dados` do certificado: o tipo e, só no eventual, o motivo. */
 export interface TipoNoCertificado {
   tipo_treinamento?: TipoDeTreinamento;
@@ -38,7 +45,8 @@ export function dadosDoTipoNoCertificado(
   const tipo = mat?.tipo;
   if (tipo === "inicial" || tipo === "periodico") return { tipo_treinamento: tipo };
   if (tipo !== "eventual") return {};
-  const motivo = typeof mat?.motivo_eventual === "string" ? mat.motivo_eventual.trim() : "";
-  if (motivo.length < MOTIVO_EVENTUAL_MIN || motivo.length > MOTIVO_EVENTUAL_MAX) return {};
+  const motivo = apararMotivo(mat?.motivo_eventual);
+  const tamanho = [...motivo].length;
+  if (tamanho < MOTIVO_EVENTUAL_MIN || tamanho > MOTIVO_EVENTUAL_MAX) return {};
   return { tipo_treinamento: "eventual", motivo_eventual: motivo };
 }

@@ -67,14 +67,17 @@ import {
 } from "@/lib/ead-assinatura";
 import { MAX_TUTOR_ATENDIMENTO, MAX_TUTOR_NOME, dadosDoTutorParaGravar } from "@/lib/ead-tutor";
 import {
+  AVISO_PROJETO_OCUPADO,
   avisoDoPdfAoSalvar,
   camposDoProjeto,
+  comProjetoNormalizado,
   dadosDoProjetoParaGravar,
   marcaDoProjeto,
 } from "@/lib/ead-projeto";
 import { nomeDoArquivoDoProjeto, pdfDoProjetoComoBlob } from "@/lib/ead-projeto-pdf";
 import { hojeEmBrasilia } from "@/lib/ead-vencimentos";
 import {
+  comLeituraFrescaDoPreRequisito,
   cursoExigidoDe,
   preRequisitoFechariaCiclo,
   resumoDosBloqueios,
@@ -255,6 +258,8 @@ export default function TreinamentosEadTab({
   // "Gerar PDF do projeto" (T25) em andamento; o ref vale já no 2º clique, antes de a tela redesenhar
   const [gerandoProjeto, setGerandoProjeto] = useState(false);
   const gerandoProjetoRef = useRef(false);
+  // anexar o PDF próprio em andamento: o ref vale já no 2º clique e para o Salvar curso (A6, T25)
+  const subindoProjetoRef = useRef(false);
   // Envio de arquivo ou gravação de aula em andamento (T30): { alvo: "nova" | id da aula, arquivo,
   // fase, percentual, enviado, total }. `envioRef` guarda o AbortController (botão Cancelar) e é a
   // trava de um envio por vez: o estado só chega no render seguinte.
@@ -529,6 +534,16 @@ export default function TreinamentosEadTab({
       aulas: aulasDoCurso(curso.id),
       questoes: todasQuestoes.filter((q) => q.curso_id === curso.id),
     });
+  // A lista de requisitos do FORMULÁRIO lê o projeto como seria gravado (A6, T25): o formulário cru podia dizer
+  // "PDF desatualizado" logo depois de gerar o PDF (a revisão sugerida de 2 anos só existe no que vai ao banco),
+  // enquanto a seção, que já normaliza, dizia "em dia".
+  const requisitosDoFormulario = (curso) =>
+    requisitos(
+      comProjetoNormalizado(curso, {
+        aulas: aulasDoCurso(curso.id),
+        questoes: todasQuestoes.filter((q) => q.curso_id === curso.id),
+      })
+    );
   // o que impede PUBLICAR e MATRICULAR (D3: o curso de apoio publica e matricula; só não emite)
   const pendenciasCurso = (curso) => pendenciasParaPublicar(requisitos(curso));
   const funcPorId = useMemo(() => new Map(funcionarios.map((f) => [f.id, f])), [funcionarios]);
@@ -560,6 +575,12 @@ export default function TreinamentosEadTab({
     () => pessoasDosTreinamentos(treinamentosConfig, empresaAtiva?.id),
     [treinamentosConfig, empresaAtiva?.id]
   );
+  // O curso como está GRAVADO (A6, T12): a seção das sessões práticas segue a modalidade do banco, não a do
+  // formulário. Trocar o seletor para Semipresencial sem salvar abria a seção e deixava criar sessão num curso
+  // que no banco é EAD (e o contrário escondia as sessões de um curso semipresencial).
+  const cursoGravadoDoFormulario = cursoSel?.id
+    ? (cursos.find((c) => c.id === cursoSel.id) ?? null)
+    : null;
   // Troca a imagem da assinatura (T29) só no formulário que a pediu E para a pessoa que estava no campo: o
   // envio é lento e o RH pode ter aberto outro curso, mudado o nome ou escolhido outra pessoa enquanto ele
   // terminava (a regra e os avisos estão em lib/ead-assinatura.js, `aoTrocarImagemDaAssinatura`). Lê o
@@ -595,6 +616,12 @@ export default function TreinamentosEadTab({
 
   // ------------------------------------------------------------------ cursos
   const salvarCurso = async () => {
+    // o PDF do projeto está sendo gerado ou anexado: ele grava o projeto e o ref, e um Salvar no meio podia ser
+    // desfeito pela gravação dele (A6, T25)
+    if (gerandoProjetoRef.current || subindoProjetoRef.current) {
+      toast.error(AVISO_PROJETO_OCUPADO);
+      return;
+    }
     // curso novo exige o treinamento do cadastro central; curso antigo, gravado sem ele, pode ser salvo
     // sem o vínculo (o RH precisa despublicar, preencher o instrutor e marcar a modalidade, C4)
     const gravado = cursoSel?.id ? cursos.find((c) => c.id === cursoSel.id) : null;
@@ -688,6 +715,9 @@ export default function TreinamentosEadTab({
       return;
     }
     await gravar("curso", "Erro ao salvar o curso", async () => {
+      // o curso como estava no banco ANTES deste salvar: a lista da tela só se atualiza depois da gravação, e um "Gerar
+      // PDF" feito segundos antes ainda não aparece nela (A6, T25)
+      const antes = cursoSel.id ? await lerCursoAgora(cursoSel.id, gravado) : gravado;
       // Gravado, a imagem da assinatura passa a ser de quem assina (A6): as marcas "imagem sem dono" da tela
       // saem do formulário, e mudar o nome dali em diante retira a imagem (lib/ead-assinatura.js).
       if (cursoSel.id) {
@@ -708,7 +738,7 @@ export default function TreinamentosEadTab({
       }
       toast.success("Curso salvo");
       // o projeto mudou e o curso já tem PDF: o que o aluno e a fiscalização abrem ficou antigo (T25)
-      const avisoPdf = avisoDoPdfAoSalvar(gravado, projeto.dados);
+      const avisoPdf = avisoDoPdfAoSalvar(antes, projeto.dados);
       if (avisoPdf) toast.warning(avisoPdf, { duration: 10000 });
       recarregar();
     });
@@ -877,18 +907,44 @@ export default function TreinamentosEadTab({
     }
   };
 
+  // O curso como está no banco AGORA. A lista da tela só se atualiza depois da gravação: um
+  // "Salvar curso" ou um "Gerar PDF" feito segundos antes ainda não aparece nela (A6, T25). Falhou a leitura: vale a
+  // da tela, e o erro fica no console.
+  const lerCursoAgora = async (id, reserva) => {
+    try {
+      return (await sigo.entities.TreinamentoCurso.get(id)) ?? reserva;
+    } catch (e) {
+      console.error("[projeto-pedagogico] curso não relido, vale o da tela:", e);
+      return reserva;
+    }
+  };
+
   const enviarProjetoPedagogico = async (arquivo) => {
     if (!arquivo || !cursoSel?.id) return;
+    if (
+      gerandoProjetoRef.current ||
+      subindoProjetoRef.current ||
+      gravandoRef.current.has("curso")
+    ) {
+      toast.error(AVISO_PROJETO_OCUPADO);
+      return;
+    }
+    subindoProjetoRef.current = true;
     setSubindoProjeto(true);
     try {
       const res = await sigo.integrations.Core.UploadFile({
         file: arquivo,
         bucket: "treinamentos",
       });
-      const ref = `${res.bucket}/${res.path}`;
+      const ref = refDoUpload(res);
+      if (!ref) throw new Error("o envio do arquivo não devolveu a referência");
       // O PDF próprio é o do projeto que está SALVO no curso: a marca dos campos de hoje vai junto, e o requisito
       // do projeto só fica em ordem enquanto o projeto não mudar depois dele (sem a marca, ficaria desatualizado).
-      const gravado = cursos.find((c) => c.id === cursoSel.id);
+      // O projeto salvo vem do banco: um "Salvar curso" feito segundos antes ainda não chegou na lista da tela.
+      const gravado = await lerCursoAgora(
+        cursoSel.id,
+        cursos.find((c) => c.id === cursoSel.id)
+      );
       const projeto_pdf_marca = gravado ? marcaDoProjeto(gravado) : null;
       await sigo.entities.TreinamentoCurso.update(cursoSel.id, {
         projeto_pedagogico_ref: ref,
@@ -905,6 +961,7 @@ export default function TreinamentosEadTab({
     } catch (e) {
       toast.error("Erro ao anexar: " + (e?.message || e));
     } finally {
+      subindoProjetoRef.current = false;
       setSubindoProjeto(false);
     }
   };
@@ -915,27 +972,35 @@ export default function TreinamentosEadTab({
   const gerarProjetoPedagogicoPdf = async () => {
     const formulario = cursoSel;
     if (!formulario?.id || gerandoProjetoRef.current) return;
-    const gravado = cursos.find((c) => c.id === formulario.id);
-    if (!gravado) {
-      toast.error("Salve o curso antes de gerar o PDF do projeto");
+    // Salvar curso ou o anexo do PDF próprio em andamento: este Gerar gravaria por cima do que eles gravam (A6, T25)
+    if (subindoProjetoRef.current || gravandoRef.current.has("curso")) {
+      toast.error(AVISO_PROJETO_OCUPADO);
       return;
     }
-    const aulasDoProjeto = aulasDoCurso(formulario.id);
-    const questoesDoProjeto = todasQuestoes.filter((q) => q.curso_id === formulario.id);
-    // a conferência (e a validação, que exige os 15 itens) vale para o que vai no PDF: os dados salvos do curso
-    // com o projeto escrito na tela
-    const projeto = dadosDoProjetoParaGravar(
-      { ...gravado, ...camposDoProjeto(formulario) },
-      { aulas: aulasDoProjeto, questoes: questoesDoProjeto }
-    );
-    if (!projeto.ok) {
-      toast.error(projeto.erro);
+    const gravadoNaTela = cursos.find((c) => c.id === formulario.id);
+    if (!gravadoNaTela) {
+      toast.error("Salve o curso antes de gerar o PDF do projeto");
       return;
     }
     gerandoProjetoRef.current = true;
     setGerandoProjeto(true);
     const empresaId = empresaAtiva?.id;
     try {
+      // o curso como está no banco AGORA: a lista da tela só se atualiza depois da gravação, e um "Salvar curso" feito
+      // segundos antes (nome, carga, responsável técnico) ainda não aparece nela (A6, T25)
+      const gravado = await lerCursoAgora(formulario.id, gravadoNaTela);
+      const aulasDoProjeto = aulasDoCurso(formulario.id);
+      const questoesDoProjeto = todasQuestoes.filter((q) => q.curso_id === formulario.id);
+      // a conferência (e a validação, que exige os 15 itens) vale para o que vai no PDF: os dados salvos do curso
+      // com o projeto escrito na tela
+      const projeto = dadosDoProjetoParaGravar(
+        { ...gravado, ...camposDoProjeto(formulario) },
+        { aulas: aulasDoProjeto, questoes: questoesDoProjeto }
+      );
+      if (!projeto.ok) {
+        toast.error(projeto.erro);
+        return;
+      }
       const logo = await logoParaPdf(empresaAtiva);
       const blob = await pdfDoProjetoComoBlob(
         {
@@ -1431,12 +1496,37 @@ export default function TreinamentosEadTab({
         toast.error("Este curso ainda tem requisitos pendentes para novas matrículas");
         return;
       }
-      // pré-requisito (T23): renovar o curso que exige outro pede o outro dentro da validade
+      // pré-requisito (T23): renovar o curso que exige outro pede o outro dentro da validade. O que a tela sabe do
+      // curso exigido pode ter minutos (o RH pode ter concluído, revogado ou apagado ali): relê do banco as
+      // matrículas e os certificados DESTE funcionário nele antes de conferir (A6). O servidor segue sendo a trava.
+      const preId = cursos.find((c) => c.id === linha.cursoId)?.pre_requisito_curso_id;
+      let conferir = { matriculas, certificados };
+      if (preId) {
+        const matriculasFrescas = await sigo.entities.TreinamentoMatricula.filter({
+          empresa_id: empresaId,
+          funcionario_id: linha.funcionarioId,
+          curso_id: preId,
+        });
+        const certificadosFrescos = matriculasFrescas.length
+          ? await sigo.entities.TreinamentoCertificado.filter(
+              { empresa_id: empresaId, matricula_id: { $in: matriculasFrescas.map((m) => m.id) } },
+              SEM_SOFT_DELETE
+            )
+          : [];
+        conferir = comLeituraFrescaDoPreRequisito({
+          matriculas,
+          certificados,
+          funcionarioId: linha.funcionarioId,
+          cursoId: preId,
+          matriculasFrescas,
+          certificadosFrescos,
+        });
+      }
       const { liberadas, bloqueadas } = separarPorPreRequisito({
         novas,
         cursos,
-        matriculas,
-        certificados,
+        matriculas: conferir.matriculas,
+        certificados: conferir.certificados,
         hoje: hojeEmBrasilia(),
       });
       if (liberadas.length === 0) {
@@ -2067,6 +2157,7 @@ export default function TreinamentosEadTab({
                     podeGerarPdf={!!cursoSel.id}
                     gerandoPdf={gerandoProjeto}
                     subindoPdf={subindoProjeto}
+                    salvandoCurso={gravando.has("curso")}
                     onGerarPdf={gerarProjetoPedagogicoPdf}
                     onAnexarPdf={enviarProjetoPedagogico}
                     onVerPdf={() => abrirReferencia(cursoSel.projeto_pedagogico_ref)}
@@ -2105,7 +2196,7 @@ export default function TreinamentosEadTab({
                           `${formatarHoras(cursoSel.carga_pratica_horas)}; o conteúdo cobre a teórica)`}
                     </p>
                     <ul className="text-xs space-y-1">
-                      {requisitos(cursoSel)
+                      {requisitosDoFormulario(cursoSel)
                         .filter((r) => !r.ok)
                         .map((r) => {
                           const { prefixo, tom } = apresentacaoDoRequisito(r);
@@ -2125,7 +2216,7 @@ export default function TreinamentosEadTab({
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
                     onClick={salvarCurso}
-                    disabled={gravando.has("curso")}
+                    disabled={gravando.has("curso") || gerandoProjeto || subindoProjeto}
                     className="bg-slate-900 hover:bg-slate-800"
                   >
                     {gravando.has("curso") && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
@@ -2419,15 +2510,20 @@ export default function TreinamentosEadTab({
                     </p>
                     {/* T12: a lista de presença é da sessão prática presencial (semipresencial); a folha antiga
                         do EAD (10 h por dia, horário fixo) saiu */}
-                    {modalidadeDoCurso(cursoSel) === "semipresencial" ? (
+                    {modalidadeDoCurso(cursoGravadoDoFormulario) === "semipresencial" ? (
                       <SessoesPraticasCurso
-                        curso={cursos.find((c) => c.id === cursoSel.id) ?? cursoSel}
+                        curso={cursoGravadoDoFormulario}
                         empresaAtiva={empresaAtiva}
                         matriculas={matriculas}
                         funcPorId={funcPorId}
                         funcTodosPorId={funcTodosPorId}
                         onAbrirArquivo={abrirReferencia}
                       />
+                    ) : modalidadeDoCurso(cursoSel) === "semipresencial" ? (
+                      <p className="text-xs text-amber-700">
+                        Salve o curso como semipresencial para registrar as sessões práticas
+                        presenciais e a lista de presença.
+                      </p>
                     ) : (
                       <p className="text-xs text-slate-400">
                         A lista de presença é da sessão prática presencial dos cursos

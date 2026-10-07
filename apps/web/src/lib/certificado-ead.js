@@ -68,6 +68,30 @@ export function textoDoLocal(local) {
   return `Local de realização: teoria a distância na ${plataforma}; prática presencial em ${local.pratica}`;
 }
 
+/**
+ * A linha "Local de realização" resumida para quando os locais da prática não cabem em duas linhas (A6, T12 N4):
+ * o primeiro local (cortado em 40 caracteres) e "e mais N local(is) (ver o verso)", porque o verso lista a
+ * sessão de cada dia com o seu local. Devolve null quando não há mais de um local diferente nas sessões (nada a
+ * resumir: o texto normal já é o do único local) ou o certificado não é de semipresencial.
+ */
+export function textoDoLocalResumido(d) {
+  const locais = [
+    ...new Set(
+      (d?.pratica?.sessoes ?? [])
+        .map((sessao) => String(sessao?.local ?? "").trim())
+        .filter(Boolean)
+    ),
+  ];
+  if (locais.length < 2) return null;
+  const plataforma = String(d?.local?.ambiente ?? "").split(" — ")[0];
+  const primeiro = locais[0].length > 40 ? `${locais[0].slice(0, 37)}...` : locais[0];
+  const outros = locais.length - 1;
+  return (
+    `Local de realização: teoria a distância na ${plataforma}; prática presencial em ${primeiro} ` +
+    `e mais ${outros} ${outros === 1 ? "local" : "locais"} (ver o verso)`
+  );
+}
+
 const fmtHoras = (h) => `${String(Math.round((Number(h) || 0) * 100) / 100).replace(".", ",")} h`;
 
 /** "05/10/2026, das 08:00 às 17:00 (8 h), em Local. Instrutor: Nome, qualificação." de uma sessão congelada. */
@@ -353,6 +377,12 @@ export async function baixarCertificadoPdf(cert, opcoes = {}) {
       doc.setFontSize(tamanho);
       partes = doc.splitTextToSize(texto, W - 60);
       if (partes.length <= 2) break;
+    }
+    // vários locais longos: mesmo na menor fonte passam de duas linhas e chegariam às imagens das assinaturas.
+    // A frente resume ("e mais N locais, ver o verso") e o verso lista cada sessão com o seu local (A6).
+    if (partes.length > 2) {
+      const resumido = textoDoLocalResumido(d);
+      if (resumido) partes = doc.splitTextToSize(resumido, W - 60);
     }
     doc.text(partes, W / 2, yDetalhe, { align: "center" });
   }

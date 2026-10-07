@@ -24,6 +24,8 @@ import {
   detalheDaDeclaracao,
   lerDeclaracoesDoDia,
   lerTextoDaDeclaracao,
+  VERSOES_LIDAS,
+  tamanhoDoTexto,
   matriculasDeclaradasNoDia,
   validarDeclaracao,
 } from "./declaracao-ambiente.ts";
@@ -65,6 +67,25 @@ test("com versões salvas vale a de maior número, aprovada pelo RT, com a ART a
     art: "ART 123",
     aprovado: true,
   });
+});
+
+test("aparar e contar como o banco: btrim só de espaço, tab, CR, LF, FF e VT; char_length conta caracteres (A6, T35)", () => {
+  const miolo = "Texto bom, com mais de vinte caracteres.";
+  // o que o banco apara, o servidor apara
+  assert.equal(
+    declaracaoVigente([{ versao: 1, texto: " \t\r\n\f\v" + miolo + "\n \t" }]).texto,
+    miolo
+  );
+  // o que o banco NÃO apara (espaço sem quebra, BOM), o servidor também não: a linha que o banco guardou vale
+  const bom = "\ufeff" + miolo + "\u00a0";
+  assert.equal(declaracaoVigente([{ versao: 1, texto: bom }]).texto, bom);
+  // 10 emojis são 20 unidades UTF-16 mas 10 caracteres: o banco (char_length) recusa, e o servidor também
+  assert.equal(tamanhoDoTexto("😀".repeat(10)), 10);
+  assert.equal(declaracaoVigente([{ versao: 1, texto: "😀".repeat(10) }]).aprovado, false);
+  assert.equal(declaracaoVigente([{ versao: 1, texto: "😀".repeat(20) }]).aprovado, true);
+  // e o teto: 3000 emojis (6000 unidades) cabem nos 4000 caracteres; 4001 não
+  assert.equal(declaracaoVigente([{ versao: 1, texto: "😀".repeat(3000) }]).aprovado, true);
+  assert.equal(declaracaoVigente([{ versao: 1, texto: "😀".repeat(4001) }]).aprovado, false);
 });
 
 test("linha estragada (versão inválida, texto vazio ou curto demais) é ignorada, nunca vira o texto vigente", () => {
@@ -256,6 +277,23 @@ test("lerTextoDaDeclaracao: a versão mais nova SÓ da empresa da sessão; sem l
   assert.deepEqual(vazio, { ok: true, vigente: PADRAO });
 });
 
+test("lerTextoDaDeclaracao lê as últimas versões, não só a mais nova (A6, T35)", async () => {
+  // a última linha gravada pode ser inválida para o JS (gravada fora da tela): ler só ela mandava o aluno para o
+  // texto padrão, enquanto a tela do RT ainda mostrava a versão anterior
+  assert.ok(VERSOES_LIDAS >= 5 && VERSOES_LIDAS <= 50, String(VERSOES_LIDAS));
+  const db = bancoFalso({
+    data: [
+      { versao: 6, texto: "curto" },
+      { versao: 5, texto: "Texto vigente, com mais de vinte caracteres.", art: null },
+    ],
+    error: null,
+  });
+  const r = await lerTextoDaDeclaracao(db, "empresa-1");
+  assert.equal(r.ok && r.vigente.versao, 5);
+  const limite = db.chamadas[0].passos.find((p) => p[0] === "limit");
+  assert.equal(limite?.[1], VERSOES_LIDAS);
+});
+
 test("lerTextoDaDeclaracao: erro do banco NÃO vira o texto padrão (falha fechado, com rastro no log)", async () => {
   const antes = console.error;
   const logs: string[] = [];
@@ -347,6 +385,9 @@ test("o front e o servidor falam do mesmo texto padrão, dos mesmos itens e dos 
       { versao: 2, texto: "curto" },
     ],
     [{ versao: "3", texto: "Texto com mais de vinte caracteres." }],
+    [{ versao: 1, texto: "😀".repeat(10) }],
+    [{ versao: 1, texto: "😀".repeat(3000), art: "A".repeat(120) }],
+    [{ versao: 2, texto: "\u00a0Texto com mais de vinte caracteres.\n\t" }],
   ];
   for (const linhas of casos) {
     assert.deepEqual(espelho.declaracaoVigente(linhas), declaracaoVigente(linhas as never));
@@ -366,6 +407,16 @@ function trechoDaAcao(nome: string): string {
   const proximo = resto.search(/\n {4}(?:if \(body\.acao === |\/\/ -{5,})/);
   return codigo.slice(inicio, proximo >= 0 ? inicio + 10 + proximo : undefined);
 }
+
+test("declarar_ambiente gasta o teto do evento ANTES de ler ou gravar (A6, T35)", () => {
+  const acao = trechoDaAcao("declarar_ambiente");
+  const limite = acao.indexOf("dentroDoLimite(acaoDeVolumeDoEvento(EVENTO_DECLARACAO_AMBIENTE))");
+  assert.ok(limite >= 0, "falta o teto de volume");
+  assert.ok(acao.includes("return muitasAcoes();"));
+  assert.ok(limite < acao.indexOf("minhaMatricula("), "o teto vem antes de qualquer leitura");
+  assert.ok(limite < acao.indexOf("lerDeclaracoesDoDia("));
+  assert.ok(limite < acao.indexOf("ev({"));
+});
 
 test("declarar_ambiente é ação do aluno com sessão: depois da troca da senha provisória", () => {
   const acao = codigo.indexOf(`body.acao === "declarar_ambiente"`);

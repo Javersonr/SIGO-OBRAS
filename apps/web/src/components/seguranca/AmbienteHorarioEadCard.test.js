@@ -29,6 +29,18 @@ describe("texto da declaração: lido da empresa e gravado como versão nova", (
     }
   });
 
+  it("antes de gravar relê as versões: se outro RT salvou uma depois, avisa e não grava (A6, T35)", () => {
+    const salvar = /const salvarTexto = async[\s\S]*?\n {2}\};/.exec(cartao)?.[0] ?? "";
+    expect(salvar).toContain("conflitoDeEdicao(vigente.versao, atuais)");
+    expect(salvar).toMatch(
+      /if \(conflito\) \{\s*setVersoes\(atuais\);\s*toast\.error\(mensagemDeConflitoDeEdicao\(conflito\)\);\s*return false;\s*\}/
+    );
+    // a leitura vem antes do INSERT
+    expect(salvar.indexOf("conflitoDeEdicao(")).toBeLessThan(
+      salvar.indexOf("TreinamentoDeclaracaoTexto.create(")
+    );
+  });
+
   it("nenhuma tela corrige ou apaga uma versão (só inclusão, como o banco)", () => {
     const raiz = fileURLToPath(new URL("../../", import.meta.url));
     const achados = [];
@@ -72,7 +84,8 @@ describe("relatório: eventos de servidor do período, só quando o RH pede", ()
     expect(consulta).toContain('origem: "servidor"');
     expect(consulta).toContain("created_at: { $gte: desdeDaConsulta(inicio) }");
     expect(consulta).toContain("SEM_SOFT_DELETE");
-    expect(consulta).toContain('sort_by: "-created_at"');
+    // empate de hora entre páginas: o id desempata, para a linha da fronteira não sumir nem repetir (A6, T35)
+    expect(consulta).toContain('sort_by: "-created_at,-id"');
   });
 
   it("não consulta ao montar: só no botão (a trilha pode ter dezenas de milhares de linhas)", () => {

@@ -35,7 +35,8 @@ export type MotivoDoPreRequisito =
   | "vencido"
   | "revogado"
   | "curso_excluido"
-  | "curso_sem_certificado";
+  | "curso_sem_certificado"
+  | "leitura_falhou";
 
 export interface SituacaoDoPreRequisito {
   atendido: boolean;
@@ -132,6 +133,9 @@ export function textoDoPreRequisito(
       return `${exige} O certificado dele foi revogado pela empresa: procure o RH.`;
     case "curso_sem_certificado":
       return `${exige} Esse curso não emite certificado e por isso não vale como pré-requisito: procure o RH.`;
+    case "leitura_falhou":
+      // a leitura que falhou foi a do curso exigido (nome e estado): não dá para dizer qual é nem que sumiu
+      return "Não foi possível conferir o pré-requisito agora. Tente de novo em instantes; se continuar, procure o RH.";
     default:
       return "O curso exigido antes deste não está mais disponível. Procure o RH para revisar o pré-requisito.";
   }
@@ -172,17 +176,29 @@ export interface PreRequisitoParaOAluno extends SituacaoDoPreRequisito {
 /**
  * O item `pre_requisito` de um curso do aluno em `dados`: null se o curso não exige nenhum. Usa o que a ação já
  * carregou: as matrículas do aluno (de todos os cursos), os certificados dele e os cursos exigidos
- * (`cursosExigidosDoBanco`). Curso exigido que a consulta não trouxe falha fechado ("curso excluído").
+ * (`cursosExigidosDoBanco`). Curso exigido que a consulta não trouxe falha fechado ("curso excluído"). Consulta que
+ * FALHOU (`cursosExigidos` nulo) também não atende, mas com o motivo `leitura_falhou`: o texto não afirma que o
+ * curso foi excluído (A6, T23).
  */
 export function preRequisitoDoCurso(p: {
   curso: { pre_requisito_curso_id?: string | null } | null | undefined;
-  cursosExigidos: CursoExigido[];
+  cursosExigidos: CursoExigido[] | null;
   matriculas: MatriculaNoCursoExigido[];
   certificados: { matricula_id?: string | null; revogado_em?: string | null }[];
   hoje: string;
 }): PreRequisitoParaOAluno | null {
   const preId = p.curso?.pre_requisito_curso_id;
   if (!preId) return null;
+  if (p.cursosExigidos === null) {
+    const motivo = "leitura_falhou";
+    return {
+      curso_id: preId,
+      nome: null,
+      atendido: false,
+      motivo,
+      texto: textoDoPreRequisito(motivo, null),
+    };
+  }
   const exigido = (p.cursosExigidos ?? []).find((c) => c.id === preId) ?? null;
   const { revogadas, certificadas } = certificadosPorMatricula(p.certificados);
   const situacao = situacaoDoPreRequisito({
@@ -215,15 +231,16 @@ function registrarErro(etapa: string, erro: unknown) {
 
 /**
  * Os cursos exigidos (id, nome, modalidade, exclusão) por um conjunto de cursos do aluno, só da empresa da
- * sessão. Sem ids não consulta. Falha de leitura devolve vazio e deixa o rastro no log: o `dados` mostra o
- * pré-requisito como "não atendido" (falha fechado) e a emissão, que lê de novo e é quem decide, responde 503.
+ * sessão. Sem ids não consulta (devolve []). Falha de leitura devolve `null` e deixa o rastro no log: o `dados`
+ * mostra o pré-requisito como "não atendido" com o motivo `leitura_falhou` (falha fechado, sem dizer que o curso foi
+ * excluído) e a emissão, que lê de novo e é quem decide, responde 503.
  */
 export async function cursosExigidosDoBanco(
   // deno-lint-ignore no-explicit-any
   supabase: any,
   ids: (string | null | undefined)[],
   empresaId: string
-): Promise<CursoExigido[]> {
+): Promise<CursoExigido[] | null> {
   const unicos = [...new Set(ids.filter((id): id is string => typeof id === "string" && !!id))];
   if (unicos.length === 0) return [];
   const { data, error } = await supabase
@@ -233,7 +250,7 @@ export async function cursosExigidosDoBanco(
     .eq("empresa_id", empresaId);
   if (error) {
     registrarErro("leitura dos cursos exigidos", error);
-    return [];
+    return null;
   }
   return data ?? [];
 }

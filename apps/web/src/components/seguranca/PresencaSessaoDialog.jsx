@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -11,22 +11,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Trash2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
+import { diaBrasilia } from "@/lib/data-brasilia";
 import {
   LIMITES_DA_SESSAO,
   RESULTADOS_DA_PRATICA,
   descricaoDaSessao,
+  linhaDoParticipante,
+  linhaMudou,
+  mesclarRascunhos,
   participanteParaGravar,
+  rotuloDaMatriculaDoCandidato,
   sessaoNoFuturo,
 } from "@/lib/ead-pratica";
 
 const fmtDia = (dia) => (dia ? String(dia).slice(0, 10).split("-").reverse().join("/") : "—");
-const linhaDe = (p) => ({
-  presente: p.presente === true,
-  resultado: p.resultado || "pendente",
-  observacao: p.observacao || "",
-});
-const mudou = (a, b) =>
-  a.presente !== b.presente || a.resultado !== b.resultado || a.observacao !== b.observacao;
 
 /**
  * Presença e resultado de cada participante numa sessão prática (T12). O RH inclui as matrículas do curso,
@@ -55,20 +53,35 @@ export default function PresencaSessaoDialog({
   const [gravando, setGravando] = useState(false);
   const futura = sessaoNoFuturo(sessao, hoje);
 
-  // o rascunho de cada linha recomeça do que está gravado quando a sessão ou os participantes mudam
+  // Trocou a sessão: o rascunho recomeça do que está gravado. Recarregou a MESMA sessão (incluir alguém, salvar
+  // outra linha): a linha que o RH mexeu e não salvou fica, e as outras recebem o gravado novo (A6, T12 M6).
   const gravadas = useMemo(
-    () => Object.fromEntries(participantes.map((p) => [p.id, linhaDe(p)])),
+    () => Object.fromEntries(participantes.map((p) => [p.id, linhaDoParticipante(p)])),
     [participantes]
   );
+  const gravadasAntigasRef = useRef({});
+  const sessaoDasLinhasRef = useRef(null);
   useEffect(() => {
-    setLinhas(gravadas);
-  }, [gravadas]);
+    const mesmaSessao = sessaoDasLinhasRef.current === sessao?.id;
+    setLinhas((atual) =>
+      mesmaSessao
+        ? mesclarRascunhos({
+            rascunhos: atual,
+            antigas: gravadasAntigasRef.current,
+            novas: gravadas,
+          })
+        : gravadas
+    );
+    sessaoDasLinhasRef.current = sessao?.id ?? null;
+    gravadasAntigasRef.current = gravadas;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gravadas, sessao?.id]);
   useEffect(() => {
     setMarcados(new Set());
   }, [sessao?.id]);
 
   const alteradas = participantes.filter(
-    (p) => linhas[p.id] && mudou(linhas[p.id], gravadas[p.id])
+    (p) => linhas[p.id] && linhaMudou(linhas[p.id], gravadas[p.id])
   );
   const ordenados = [...participantes].sort((a, b) =>
     String(nomeDe(a.funcionario_id)).localeCompare(String(nomeDe(b.funcionario_id)), "pt-BR")
@@ -156,7 +169,7 @@ export default function PresencaSessaoDialog({
             </p>
           )}
           {ordenados.map((p) => {
-            const linha = linhas[p.id] ?? linhaDe(p);
+            const linha = linhas[p.id] ?? linhaDoParticipante(p);
             const nome = nomeDe(p.funcionario_id);
             return (
               <div
@@ -167,7 +180,7 @@ export default function PresencaSessaoDialog({
                   <p className="font-medium text-slate-800 truncate">{nome}</p>
                   {p.avaliado_em && (
                     <p className="text-[11px] text-slate-500">
-                      Lançado em {fmtDia(String(p.avaliado_em).slice(0, 10))}
+                      Lançado em {diaBrasilia(p.avaliado_em)}
                     </p>
                   )}
                 </div>
@@ -249,7 +262,12 @@ export default function PresencaSessaoDialog({
                     disabled={gravando}
                     onChange={() => alternar(c.matricula.id)}
                   />
-                  {c.funcionario?.nome_completo || "Funcionário"}
+                  <span>
+                    {c.funcionario?.nome_completo || "Funcionário"}
+                    <span className="ml-1 text-xs text-slate-500">
+                      ({rotuloDaMatriculaDoCandidato(c.matricula)})
+                    </span>
+                  </span>
                 </label>
               ))}
             </div>

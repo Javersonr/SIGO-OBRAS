@@ -45,8 +45,12 @@ function inteiroOuNulo(valor) {
 /** O dia "AAAA-MM-DD" (a coluna `date` já vem assim); o formulário também. */
 const dia = (valor) => aparar(valor).slice(0, 10);
 
-/** `modulos_objetivos` é jsonb: uma lista de { modulo, objetivo }; dado vindo do legado pode ser texto. */
-function listaDeObjetivos(valor) {
+/**
+ * `modulos_objetivos` é jsonb: uma lista de { modulo, objetivo }; dado vindo do legado pode ser texto. Devolve a
+ * lista como está (qualquer elemento), ou [] se não for uma lista. É a ÚNICA leitura da lista: a tela
+ * (`ead-projeto.js`) e a marca usam esta, para a marca do que se grava bater com a do banco (A6, T25).
+ */
+export function lerListaDeObjetivos(valor) {
   let v = valor;
   if (typeof v === "string") {
     try {
@@ -55,12 +59,22 @@ function listaDeObjetivos(valor) {
       return [];
     }
   }
+  return Array.isArray(v) ? v : [];
+}
+
+/** Os objetivos que valem (com texto), aparados, na ordem gravada: [{ modulo, objetivo }]. Lixo fica de fora. */
+export function objetivosValidos(valor) {
   const saida = [];
-  for (const e of Array.isArray(v) ? v : []) {
+  for (const e of lerListaDeObjetivos(valor)) {
     if (!e || typeof e !== "object" || typeof e.objetivo !== "string") continue;
     const objetivo = e.objetivo.trim();
-    if (objetivo) saida.push([aparar(e.modulo), objetivo]);
+    if (objetivo) saida.push({ modulo: aparar(e.modulo), objetivo });
   }
+  return saida;
+}
+
+function listaDeObjetivos(valor) {
+  const saida = objetivosValidos(valor).map((e) => [e.modulo, e.objetivo]);
   // a ordem em que a lista foi gravada não muda o que o PDF diz: ordena pelo nome do módulo
   const comparar = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
   return saida.sort((a, b) => comparar(a[0], b[0]) || comparar(a[1], b[1]));

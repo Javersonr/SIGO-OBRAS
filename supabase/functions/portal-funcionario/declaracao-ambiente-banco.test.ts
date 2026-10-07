@@ -113,8 +113,11 @@ test("versão, quem salvou e quando vêm do banco, com trava para salvamentos si
     "";
   assert.ok(corpo, "falta o trigger declaracao_texto_pelo_banco");
   assert.ok(corpo.includes("set search_path = public"));
-  assert.ok(corpo.includes("new.texto := btrim(new.texto)"));
-  assert.ok(corpo.includes("new.art := nullif(btrim(coalesce(new.art, '')), '')"));
+  // o mesmo conjunto que o JS apara (declaracao-ambiente.ts / ead-declaracao-ambiente.js): espaço, tab, CR, LF, FF e VT
+  assert.ok(corpo.includes("new.texto := btrim(new.texto, E' \\t\\r\\n\\f\\x0b')"));
+  assert.ok(
+    corpo.includes("new.art := nullif(btrim(coalesce(new.art, ''), E' \\t\\r\\n\\f\\x0b'), '')")
+  );
   assert.ok(corpo.includes("pg_advisory_xact_lock("));
   assert.ok(corpo.includes("coalesce(max(t.versao), 0) + 1"));
   assert.ok(corpo.includes("into new.versao"));
@@ -132,6 +135,28 @@ test("versão, quem salvou e quando vêm do banco, com trava para salvamentos si
       "revoke all on function public.declaracao_texto_pelo_banco() from public, anon, authenticated"
     )
   );
+});
+
+test("dois índices parciais na trilha para o relatório do RH (A6, T35): só índice, nenhuma coluna nem dado", () => {
+  assert.ok(
+    sql.includes(
+      "create index if not exists treinamento_evento_servidor_idx on public.treinamento_evento (empresa_id, created_at desc, id desc) where origem = 'servidor'"
+    )
+  );
+  assert.ok(
+    sql.includes(
+      "create index if not exists treinamento_evento_declaracao_idx on public.treinamento_evento (empresa_id, created_at) where evento = 'declaracao_ambiente'"
+    )
+  );
+  // o evento do relatório é lido por "empresa + servidor + período": o índice cobre essa consulta
+  assert.ok(!/create unique index[^;]*treinamento_evento\b/.test(sql), "índice único na trilha");
+});
+
+test("o cabeçalho avisa do expurgo: apagar a empresa com versões salvas exige sigo.permitir_expurgo", () => {
+  assert.ok(migracao.includes("on delete cascade"));
+  const cabecalho = migracao.slice(0, migracao.indexOf("begin;"));
+  assert.ok(cabecalho.includes("sigo.permitir_expurgo"));
+  assert.ok(/apagar de verdade a empresa|apagar a empresa/i.test(cabecalho));
 });
 
 test("só inclusão: a trava da trilha (0135) em UPDATE, DELETE e TRUNCATE", () => {

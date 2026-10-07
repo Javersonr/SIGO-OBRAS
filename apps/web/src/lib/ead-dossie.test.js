@@ -17,6 +17,7 @@ import {
   avisoDoDossie,
   textoDoAndamento,
 } from "./ead-dossie";
+import { marcaDoProjeto } from "./ead-projeto-marca";
 
 // Dados sintéticos: nenhum nome, CPF, IP ou identificador real.
 const EMPRESA = { nome: "Empresa Teste Ltda", cnpj: "00.000.000/0001-00" };
@@ -36,6 +37,8 @@ const CURSO = {
   instrutor_nome: "Instrutor Teste",
   instrutor_qualificacao: "Qualificação Teste",
   projeto_pedagogico_ref: "treinamentos/empresa/projeto.pdf",
+  // o PDF do projeto foi gravado com o projeto de hoje (sem campo do projeto preenchido): marca em dia (A6, T25)
+  projeto_pdf_marca: marcaDoProjeto({}),
   conteudo_programatico: "Item um\nItem dois",
 };
 const AULAS = [
@@ -771,6 +774,44 @@ describe("montarDossie", () => {
     );
     const zip = await abrir(r.conteudo);
     expect(nomes(zip)).toContain("dossie_ead_NRT_2026-10-06/projeto-pedagogico.docx");
+  });
+
+  it("PDF do projeto desatualizado (o projeto mudou depois dele): entra no pacote COM aviso no LEIA-ME (A6, T25)", async () => {
+    for (const marca of ["v1:0000000000deadbeef", null, ""]) {
+      const r = await montarDossie(
+        entrada({ curso: { ...CURSO, projeto_pdf_marca: marca } }),
+        deps()
+      );
+      // o arquivo vai, como está anexado: quem decide é o RH, que agora sabe
+      expect(r.resumo.projeto).toBe("incluido");
+      const zip = await abrir(r.conteudo);
+      expect(nomes(zip)).toContain("dossie_ead_NRT_2026-10-06/projeto-pedagogico.pdf");
+      expect(r.resumo.avisos.join(" ")).toMatch(/desatualizado/i);
+      const leiame = await zip.file("dossie_ead_NRT_2026-10-06/LEIA-ME.txt").async("string");
+      expect(leiame).toMatch(/projeto pedagógico anexado está desatualizado/i);
+    }
+  });
+
+  it("PDF do projeto em dia, ou sem PDF: nenhum aviso de desatualizado", async () => {
+    const em_dia = await montarDossie(entrada(), deps());
+    expect(em_dia.resumo.avisos.join(" ")).not.toMatch(/desatualizado/i);
+    const sem = await montarDossie(
+      entrada({ curso: { ...CURSO, projeto_pedagogico_ref: null, projeto_pdf_marca: null } }),
+      deps()
+    );
+    expect(sem.resumo.avisos.join(" ")).not.toMatch(/desatualizado/i);
+    // projeto de sistema antigo (Base44): o aviso é o do arquivo perdido, não o de desatualizado
+    const antigo = await montarDossie(
+      entrada({
+        curso: {
+          ...CURSO,
+          projeto_pedagogico_ref: "https://x.base44.app/projeto.pdf",
+          projeto_pdf_marca: null,
+        },
+      }),
+      deps()
+    );
+    expect(antigo.resumo.avisos.join(" ")).not.toMatch(/desatualizado/i);
   });
 
   it("curso sem projeto anexado: gera o dossiê e avisa, sem chamar o leitor", async () => {

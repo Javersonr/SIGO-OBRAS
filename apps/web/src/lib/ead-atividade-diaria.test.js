@@ -18,6 +18,7 @@ import {
   resumirAtividade,
   textoDaDeclaracao,
   textoDaJanela,
+  textosDoResumo,
 } from "./ead-atividade-diaria";
 
 /**
@@ -414,7 +415,12 @@ describe("cobrança da declaração: só do dia em que ela passou a existir", ()
       cobrarDesde: "2026-10-08",
     });
     expect(linhas).toHaveLength(2);
-    expect(resumirAtividade(linhas)).toEqual({ alunos: 2, dias: 2, semDeclaracao: 0 });
+    expect(resumirAtividade(linhas)).toEqual({
+      alunos: 2,
+      dias: 2,
+      registros: 2,
+      semDeclaracao: 0,
+    });
     expect(filtrarAtividade(linhas, { soSemDeclaracao: true })).toEqual([]);
     for (const l of linhas) {
       expect(textoDaDeclaracao(l)).toEqual({
@@ -518,6 +524,39 @@ describe("montarLinhasDeAtividade", () => {
   });
 });
 
+describe("evento repetido pela paginação (A6, T35)", () => {
+  it("o mesmo evento (mesmo id) lido em duas páginas conta uma vez só", () => {
+    // a consulta pagina por `range` do mais novo para o mais antigo: enquanto os alunos gravam eventos novos, a
+    // fronteira das páginas anda e a mesma linha vem duas vezes. Sem tratar, a coluna "Eventos" inflava.
+    const a = ev("login", "2026-10-07T11:00:00Z", { id: "e1" });
+    const b = ev("aula_concluida", "2026-10-07T12:00:00Z", { id: "e2", matricula_id: "m1" });
+    const [linha] = janelasPorAlunoEDia([b, a, { ...b }, { ...a }]);
+    expect(linha.eventos).toBe(2);
+    expect(linha.minutos).toBe(60);
+    expect(linha.semDeclaracao).toBe(1);
+  });
+
+  it("evento sem id (ou com id vazio) nunca é descartado: dois eventos iguais sem id são dois", () => {
+    const [linha] = janelasPorAlunoEDia([
+      ev("login", "2026-10-07T11:00:00Z"),
+      ev("login", "2026-10-07T11:00:00Z"),
+      ev("login", "2026-10-07T11:00:00Z", { id: "" }),
+    ]);
+    expect(linha.eventos).toBe(3);
+  });
+
+  it("a mesma declaração repetida pela paginação não vira duas declarações", () => {
+    const d = ev("declaracao_ambiente", "2026-10-07T11:00:00Z", {
+      id: "d1",
+      matricula_id: "m1",
+      detalhe: { versao: 2, texto_padrao: false },
+    });
+    const [linha] = janelasPorAlunoEDia([d, { ...d }]);
+    expect(linha.declaracoes).toHaveLength(1);
+    expect(linha.eventos).toBe(1);
+  });
+});
+
 describe("textos da tela", () => {
   const base = {
     primeiroEm: "2026-10-07T11:03:00Z",
@@ -534,8 +573,12 @@ describe("textos da tela", () => {
     expect(textoDaJanela({ ...base, minutos: 45, ultimoEm: "2026-10-07T11:48:00Z" })).toBe(
       "08:03 às 08:48 (45 min)"
     );
-    expect(textoDaJanela({ ...base, minutos: 0, ultimoEm: base.primeiroEm })).toBe(
+    expect(textoDaJanela({ ...base, eventos: 1, minutos: 0, ultimoEm: base.primeiroEm })).toBe(
       "08:03 (um evento)"
+    );
+    // A6 (T35): vários eventos no mesmo minuto não são "um evento"
+    expect(textoDaJanela({ ...base, eventos: 4, minutos: 0, ultimoEm: base.primeiroEm })).toBe(
+      "08:03 (4 eventos no mesmo minuto)"
     );
     expect(textoDaJanela({ ...base, minutos: 120, ultimoEm: "2026-10-07T13:03:00Z" })).toBe(
       "08:03 às 10:03 (2h00)"
@@ -607,8 +650,29 @@ describe("filtros, resumo e CSV", () => {
   });
 
   it("o resumo: alunos, dias com atividade e dias que estudaram sem declarar", () => {
-    expect(resumirAtividade(linhas)).toEqual({ alunos: 2, dias: 2, semDeclaracao: 1 });
-    expect(resumirAtividade([])).toEqual({ alunos: 0, dias: 0, semDeclaracao: 0 });
+    // dois alunos no MESMO dia: são 2 linhas (registros) e 1 dia (A6, T35)
+    expect(resumirAtividade(linhas)).toEqual({
+      alunos: 2,
+      dias: 1,
+      registros: 2,
+      semDeclaracao: 1,
+    });
+    expect(resumirAtividade([])).toEqual({ alunos: 0, dias: 0, registros: 0, semDeclaracao: 0 });
+  });
+
+  it("os textos do resumo contam dias distintos e dizem 'registro de aluno e dia' (A6, T35)", () => {
+    expect(textosDoResumo({ alunos: 2, dias: 1, registros: 2, semDeclaracao: 1 })).toEqual({
+      alunos: "2 alunos",
+      dias: "1 dia com atividade",
+      registros: "2 registros de aluno e dia",
+      semDeclaracao: "1 registro com estudo sem declaração",
+    });
+    expect(textosDoResumo({ alunos: 1, dias: 3, registros: 1, semDeclaracao: 0 })).toEqual({
+      alunos: "1 aluno",
+      dias: "3 dias com atividade",
+      registros: "1 registro de aluno e dia",
+      semDeclaracao: "0 registros com estudo sem declaração",
+    });
   });
 
   it("o CSV tem cabeçalho, uma linha por aluno e dia, datas e horas de Brasília e CRLF", () => {

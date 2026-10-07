@@ -45,6 +45,17 @@ describe("validarEscolhaDeTipo (o que o RH escolheu ao matricular)", () => {
     }
   });
 
+  it("o motivo é contado em caracteres, como o char_length do banco: emoji vale 1, não 2 (A6, T23)", () => {
+    const emojis = "😀".repeat(150); // 300 unidades UTF-16, 150 caracteres
+    expect(validarEscolhaDeTipo({ tipo: "eventual", motivo: emojis })).toEqual({
+      ok: true,
+      tipo: "eventual",
+      motivo: emojis,
+    });
+    expect(validarEscolhaDeTipo({ tipo: "eventual", motivo: "😀".repeat(201) }).ok).toBe(false);
+    expect(validarEscolhaDeTipo({ tipo: "eventual", motivo: "😀😀" }).ok).toBe(false);
+  });
+
   it("eventual exige motivo; sem ele, não grava e diz por quê", () => {
     for (const motivo of [undefined, null, "", "   ", "ab", "  ab  "]) {
       const r = validarEscolhaDeTipo({ tipo: "eventual", motivo });

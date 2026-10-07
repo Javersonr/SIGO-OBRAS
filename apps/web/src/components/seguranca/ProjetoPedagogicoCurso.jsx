@@ -141,12 +141,15 @@ export default function ProjetoPedagogicoCurso({
   podeGerarPdf = false,
   gerandoPdf = false,
   subindoPdf = false,
+  // o curso está sendo salvo (A6, T25): gerar ou anexar o PDF junto desfazia o que o Salvar gravou
+  salvandoCurso = false,
   onGerarPdf,
   onAnexarPdf,
   onVerPdf,
   hoje,
 }) {
   const dia = hoje || hojeEmBrasilia();
+  const ocupado = gerandoPdf || subindoPdf || salvandoCurso;
   const projeto = useMemo(
     () => montarProjeto({ curso, aulas, questoes }),
     [curso, aulas, questoes]
@@ -314,7 +317,7 @@ export default function ProjetoPedagogicoCurso({
           type="button"
           size="sm"
           variant="outline"
-          disabled={!podeGerarPdf || gerandoPdf || subindoPdf}
+          disabled={!podeGerarPdf || gerandoPdf || subindoPdf || salvandoCurso}
           onClick={onGerarPdf}
           title={
             podeGerarPdf
@@ -330,7 +333,11 @@ export default function ProjetoPedagogicoCurso({
           Gerar PDF do projeto
         </Button>
         {podeGerarPdf && (
-          <label className="cursor-pointer rounded-md border px-2 py-1 text-xs hover:border-slate-400">
+          <label
+            className={`rounded-md border px-2 py-1 text-xs ${
+              ocupado ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:border-slate-400"
+            }`}
+          >
             {subindoPdf ? (
               <Loader2 className="inline h-3 w-3 animate-spin" aria-hidden="true" />
             ) : curso?.projeto_pedagogico_ref ? (
@@ -342,6 +349,7 @@ export default function ProjetoPedagogicoCurso({
               type="file"
               accept="application/pdf"
               className="hidden"
+              disabled={gerandoPdf || subindoPdf || salvandoCurso}
               onChange={(e) => {
                 onAnexarPdf?.(e.target.files?.[0]);
                 e.target.value = "";

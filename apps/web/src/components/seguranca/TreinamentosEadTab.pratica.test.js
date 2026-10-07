@@ -27,8 +27,10 @@ describe("aba Treinamentos: a lista de presença antiga do EAD saiu (T12)", () =
     expect(aba).toContain(
       'import SessoesPraticasCurso from "@/components/seguranca/SessoesPraticasCurso"'
     );
+    // a seção segue a modalidade GRAVADA do curso, não a do formulário (A6, T12 M7): ver
+    // TreinamentosEadTab.acompanhamento.test.js
     expect(aba).toMatch(
-      /modalidadeDoCurso\(cursoSel\) === "semipresencial" \? \(\s*<SessoesPraticasCurso[\s\S]{0,400}onAbrirArquivo=\{abrirReferencia\}/
+      /modalidadeDoCurso\(cursoGravadoDoFormulario\) === "semipresencial" \? \(\s*<SessoesPraticasCurso[\s\S]{0,400}onAbrirArquivo=\{abrirReferencia\}/
     );
     expect(aba).toContain("A lista de presença é da sessão prática presencial dos cursos");
   });

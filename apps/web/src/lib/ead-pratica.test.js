@@ -1,11 +1,16 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   LIMITES_DA_SESSAO,
   RESULTADOS_DA_PRATICA,
   avisoDaCargaDaSessao,
   cargasDoCursoParaGravar,
   descricaoDaSessao,
+  linhaDoParticipante,
+  linhaMudou,
   matriculasParaASessao,
+  mesclarRascunhos,
+  rotuloDaMatriculaDoCandidato,
   participanteParaGravar,
   podeEmitirSemipresencial,
   resumoDaSessao,
@@ -74,7 +79,9 @@ describe("podeEmitirSemipresencial (T12): a regra do servidor, espelhada", () =>
   });
 
   describe("a carga da prática: a soma das sessões satisfatórias tem de chegar à carga do curso (I2)", () => {
-    const dia = (id, data, extra = {}) => sessao({ id, data, carga_horas: 8, ...extra });
+    // 8 h num dia de 9 h de relógio (a carga de uma sessão nunca passa do tempo do horário: 0143)
+    const dia = (id, data, extra = {}) =>
+      sessao({ id, data, carga_horas: 8, hora_fim: "17:00:00", ...extra });
     const com = (sessoes, participacoes, cargaPraticaHoras = 16) => ({
       ...entrada(sessoes, participacoes),
       cargaPraticaHoras,
@@ -95,7 +102,18 @@ describe("podeEmitirSemipresencial (T12): a regra do servidor, espelhada", () =>
     });
     it("uma sessão de 16 h basta, e as sessões que sobram ficam de fora", () => {
       expect(
-        podeEmitirSemipresencial(com([dia("a", "2026-10-05", { carga_horas: 16 })], [doDia("a")]))
+        podeEmitirSemipresencial(
+          com(
+            [
+              dia("a", "2026-10-05", {
+                carga_horas: 16,
+                hora_inicio: "06:00:00",
+                hora_fim: "23:00:00",
+              }),
+            ],
+            [doDia("a")]
+          )
+        )
       ).toBe(true);
       const tres = situacaoDaPratica(
         com(
@@ -387,5 +405,97 @@ describe("lista de presença assinada (arquivo)", () => {
     );
     expect(validarArquivoDaLista({ type: "image/heic", size: 1024 }).erro).toMatch(/PDF/);
     expect(validarArquivoDaLista(null).ok).toBe(false);
+  });
+});
+
+describe("mesclarRascunhos (A6, T12 M6): recarregar a lista não apaga o que o RH digitou e não salvou", () => {
+  const gravada = (extra = {}) => ({
+    presente: false,
+    resultado: "pendente",
+    observacao: "",
+    ...extra,
+  });
+
+  it("a linha que o RH mexeu e não salvou fica; a que ele não mexeu recebe o que veio do banco", () => {
+    const antigas = { p1: gravada(), p2: gravada() };
+    const novas = {
+      p1: gravada(),
+      p2: gravada({ presente: true, resultado: "satisfatorio" }), // outra pessoa lançou a presença do p2
+    };
+    const rascunhos = {
+      p1: gravada({ presente: true, observacao: "chegou atrasado" }),
+      p2: gravada(),
+    };
+    const r = mesclarRascunhos({ rascunhos, antigas, novas });
+    expect(r.p1).toEqual(rascunhos.p1);
+    expect(r.p2).toEqual(novas.p2);
+  });
+
+  it("participante novo entra com o que está gravado; o que saiu da sessão some", () => {
+    const antigas = { p1: gravada(), p2: gravada() };
+    const novas = { p1: gravada(), p3: gravada({ presente: true }) };
+    const rascunhos = { p1: gravada(), p2: gravada({ presente: true }) };
+    const r = mesclarRascunhos({ rascunhos, antigas, novas });
+    expect(Object.keys(r).sort()).toEqual(["p1", "p3"]);
+    expect(r.p3).toEqual(novas.p3);
+  });
+
+  it("depois de salvar a linha, o rascunho e o gravado coincidem: nada sobra de diferente", () => {
+    const antigas = { p1: gravada() };
+    const rascunho = gravada({ presente: true, resultado: "satisfatorio" });
+    const novas = { p1: rascunho };
+    expect(mesclarRascunhos({ rascunhos: { p1: rascunho }, antigas, novas })).toEqual(novas);
+  });
+
+  it("entradas vazias ou nulas não derrubam", () => {
+    expect(mesclarRascunhos()).toEqual({});
+    expect(mesclarRascunhos({ rascunhos: null, antigas: null, novas: { p1: gravada() } })).toEqual({
+      p1: gravada(),
+    });
+  });
+
+  it("linhaDoParticipante e linhaMudou são a comparação que a tela usa", () => {
+    expect(
+      linhaDoParticipante({ presente: true, resultado: "satisfatorio", observacao: "ok" })
+    ).toEqual({
+      presente: true,
+      resultado: "satisfatorio",
+      observacao: "ok",
+    });
+    expect(linhaDoParticipante({})).toEqual(gravada());
+    expect(linhaDoParticipante(null)).toEqual(gravada());
+    expect(linhaMudou(gravada(), gravada())).toBe(false);
+    expect(linhaMudou(gravada(), gravada({ observacao: "x" }))).toBe(true);
+    expect(linhaMudou(gravada(), gravada({ resultado: "insatisfatorio" }))).toBe(true);
+  });
+});
+
+describe("rotuloDaMatriculaDoCandidato (A6, T12 N3): a matrícula certa na lista da sessão", () => {
+  it("diz o dia da matrícula (em Brasília) e a situação, para separar a antiga, concluída, da de renovação", () => {
+    expect(
+      rotuloDaMatriculaDoCandidato({ created_at: "2026-10-06T02:30:00Z", status: "concluido" })
+    ).toBe("matrícula de 05/10/2026, concluída");
+    expect(
+      rotuloDaMatriculaDoCandidato({ created_at: "2026-10-06T15:00:00Z", status: "em_andamento" })
+    ).toBe("matrícula de 06/10/2026, em andamento");
+    expect(
+      rotuloDaMatriculaDoCandidato({ created_at: "2026-10-06T15:00:00Z", status: "pendente" })
+    ).toBe("matrícula de 06/10/2026, pendente");
+  });
+
+  it("matrícula sem data ou com situação desconhecida não quebra a lista", () => {
+    expect(rotuloDaMatriculaDoCandidato({ status: "pendente" })).toBe("matrícula pendente");
+    expect(rotuloDaMatriculaDoCandidato({ created_at: "2026-10-06T15:00:00Z" })).toBe(
+      "matrícula de 06/10/2026"
+    );
+    expect(rotuloDaMatriculaDoCandidato(null)).toBe("");
+  });
+
+  it("o diálogo mostra o rótulo ao lado do nome de cada candidato", () => {
+    const dialogo = readFileSync(
+      new URL("../components/seguranca/PresencaSessaoDialog.jsx", import.meta.url),
+      "utf8"
+    );
+    expect(dialogo).toContain("rotuloDaMatriculaDoCandidato(c.matricula)");
   });
 });

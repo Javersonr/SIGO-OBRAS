@@ -7,12 +7,15 @@
  * apagadas do mesmo curso, já realizadas (data até hoje, em Brasília), em que a matrícula esteve "presente" e
  * "satisfatório" tem de chegar à carga prática do curso. Quem decide é o servidor
  * (`supabase/functions/portal-funcionario/pratica.ts`); `situacaoDaPratica` e `podeEmitirSemipresencial` são o
- * espelho dele (o `pratica.test.ts` confere os dois contra os mesmos casos). O resto do arquivo é da tela: o
- * formulário da sessão, quem pode entrar nela e os rótulos.
+ * espelho dele (o `pratica.test.ts` confere os dois contra os mesmos casos). NENHUMA tela os usa hoje (A6, T12 N7):
+ * existem só para a paridade das duas cópias, e a tela do RH ainda não mostra "8 h de 16 h" por aluno nem quem já
+ * pode emitir; quem os ligar a uma tela mantém a regra em um lugar só. O resto do arquivo é da tela: o formulário
+ * da sessão, quem pode entrar nela e os rótulos.
  *
  * Só importa arquivos com a extensão (o teste do servidor carrega este arquivo direto, sem o resolvedor do Vite).
  */
 import { formatarHoras } from "./ead-requisitos.js";
+import { diaBrasilia } from "./data-brasilia.js";
 
 const DIA = /^\d{4}-\d{2}-\d{2}$/;
 const diaValido = (data) =>
@@ -29,18 +32,77 @@ const emCentesimos = (horas) => {
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
 };
 
+/** Minutos desde 00:00 de "HH:MM" ou "HH:MM:SS"; null se não for um horário. */
+const minutosDoDia = (hora) => {
+  const m = typeof hora === "string" ? /^(\d{2}):(\d{2})(?::\d{2})?$/.exec(hora.trim()) : null;
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  return h < 24 && min < 60 ? h * 60 + min : null;
+};
+
 /**
- * As sessões que valem no certificado: da mais antiga em diante, as primeiras cuja soma cobre a carga exigida. Sem
- * carga exigida, a mais recente. `satisfatorias` já vem da mais antiga à mais recente.
+ * Horas (em centésimos) que as sessões de UMA matrícula realmente cobrem (A6, T12 N1). A soma das cargas
+ * declaradas inflava quando o RH lançava a mesma sessão duas vezes (mesmo dia e horário), ou duas sessões que
+ * se cruzam: duas de 8 h iguais davam 16 h de prática para um dia só. Por dia, vale a soma das cargas
+ * limitada ao tempo de relógio que os horários das sessões do dia cobrem (a união dos intervalos): a
+ * repetida não soma, as que se cruzam valem o tempo coberto, e os turnos separados (manhã e tarde) somam. Sessão
+ * sem horário válido (o CHECK do banco não deixa, mas a regra não presume) vale a carga declarada, sem limite.
+ * Dias diferentes sempre somam. Quem muda esta conta muda também a cópia do front (lib/ead-pratica.js).
+ */
+function creditoEmCentesimos(sessoes) {
+  const porDia = new Map();
+  for (const s of sessoes) {
+    const dia = diaValido(s.data) ?? "";
+    porDia.set(dia, [...(porDia.get(dia) ?? []), s]);
+  }
+  let total = 0;
+  for (const doDia of porDia.values()) {
+    const intervalos = [];
+    let declarada = 0; // as cargas das sessões do dia que têm horário válido
+    for (const s of doDia) {
+      const carga = emCentesimos(s.carga_horas);
+      const de = minutosDoDia(s.hora_inicio);
+      const ate = minutosDoDia(s.hora_fim);
+      if (de !== null && ate !== null && ate > de) {
+        intervalos.push([de, ate]);
+        declarada += carga;
+      } else {
+        total += carga;
+      }
+    }
+    intervalos.sort((a, b) => a[0] - b[0]);
+    let coberto = 0;
+    let fimAtual = -1;
+    for (const [de, ate] of intervalos) {
+      if (de > fimAtual) {
+        coberto += ate - de;
+        fimAtual = ate;
+      } else if (ate > fimAtual) {
+        coberto += ate - fimAtual;
+        fimAtual = ate;
+      }
+    }
+    total += Math.min(declarada, Math.round((coberto / 60) * 100));
+  }
+  return total;
+}
+
+/**
+ * As sessões que valem no certificado: da mais antiga em diante, as primeiras cuja soma cobre a carga exigida (a
+ * sessão que não acrescenta tempo, como a lançada duas vezes, fica de fora). Sem carga exigida, a mais recente.
+ * `satisfatorias` já vem da mais antiga à mais recente.
  */
 function sessoesQueValeram(satisfatorias, exigida) {
   if (exigida === null) return satisfatorias.slice(-1);
   const valeram = [];
-  let soma = 0;
+  let credito = 0;
   for (const s of satisfatorias) {
+    const novo = creditoEmCentesimos([...valeram, s]);
+    if (novo <= credito) continue;
     valeram.push(s);
-    soma += emCentesimos(s.carga_horas);
-    if (soma >= exigida) break;
+    credito = novo;
+    if (credito >= exigida) break;
   }
   return valeram;
 }
@@ -84,7 +146,7 @@ export function situacaoDaPratica({
     }
   }
   const satisfatorias = [...satisfatoriasPorId.values()].sort(noTempo);
-  const cumprida = satisfatorias.reduce((soma, s) => soma + emCentesimos(s.carga_horas), 0);
+  const cumprida = creditoEmCentesimos(satisfatorias);
   const exigida = emCentesimos(cargaPraticaHoras) || null;
   const horas = {
     cumpridaHoras: cumprida / 100,
@@ -321,6 +383,54 @@ export function matriculasParaASessao({
         "pt-BR"
       )
     );
+}
+
+/** A linha de presença e resultado de um participante como a tela a edita. */
+export const linhaDoParticipante = (p) => ({
+  presente: p?.presente === true,
+  resultado: p?.resultado || "pendente",
+  observacao: p?.observacao || "",
+});
+
+/** As duas linhas (de `linhaDoParticipante`) diferem? */
+export const linhaMudou = (a, b) =>
+  a.presente !== b.presente || a.resultado !== b.resultado || a.observacao !== b.observacao;
+
+/**
+ * O rascunho da lista de presença depois de recarregar os participantes (A6, T12 M6). Recarregar (incluir um
+ * participante, salvar outra linha) zerava tudo o que o RH tinha marcado e ainda não salvo. Agora: a linha que ele
+ * MEXEU (rascunho diferente do que estava gravado antes) fica como está; a que ele não mexeu recebe o gravado novo;
+ * participante novo entra com o gravado; o que saiu da sessão some. `rascunhos`, `antigas` e `novas` são mapas
+ * id -> linha (`linhaDoParticipante`).
+ */
+export function mesclarRascunhos({ rascunhos, antigas, novas } = {}) {
+  const saida = {};
+  for (const [id, nova] of Object.entries(novas ?? {})) {
+    const rascunho = rascunhos?.[id];
+    const antiga = antigas?.[id];
+    saida[id] = rascunho && antiga && linhaMudou(rascunho, antiga) ? rascunho : nova;
+  }
+  return saida;
+}
+
+const SITUACAO_DA_MATRICULA = {
+  pendente: "pendente",
+  em_andamento: "em andamento",
+  concluido: "concluída",
+};
+
+/**
+ * Rótulo curto da matrícula na lista de quem pode entrar na sessão (A6, T12 N3): "matrícula de 05/10/2026,
+ * concluída". A renovação cria uma matrícula nova e deixa a antiga, concluída e já certificada, viva: o mesmo
+ * funcionário aparece duas vezes com o mesmo nome, e marcar a antiga deixa a nova "pendente". O dia é o de Brasília.
+ */
+export function rotuloDaMatriculaDoCandidato(matricula) {
+  if (!matricula) return "";
+  const dia = matricula.created_at ? diaBrasilia(matricula.created_at) : "";
+  const situacao = SITUACAO_DA_MATRICULA[matricula.status] ?? "";
+  const comDia = dia && dia !== "—" ? `matrícula de ${dia}` : "matrícula";
+  if (!situacao) return comDia;
+  return comDia === "matrícula" ? `${comDia} ${situacao}` : `${comDia}, ${situacao}`;
 }
 
 /** Contagem da sessão (só participantes vivos). */

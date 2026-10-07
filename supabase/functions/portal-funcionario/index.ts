@@ -116,6 +116,7 @@ import {
   lerPratica,
   localComPratica,
   periodoDoSemipresencial,
+  praticaDoCertificado,
   praticaParaOAluno,
   praticasDoBanco,
 } from "./pratica.ts";
@@ -972,8 +973,10 @@ Deno.serve(
           pendencias_certificado: pendencias.map((r) => r.texto),
           // o curso exigido antes deste e se o aluno já o cumpriu (T23); a tela explica o que falta
           pre_requisito: preRequisito,
-          // "Parte prática: pendente" ou "realizada em DD/MM, em <local>" (T12); null fora do semipresencial
-          pratica: pratica,
+          // "Parte prática: pendente" ou "realizada em DD/MM, em <local>" (T12); null fora do semipresencial. Com o
+          // certificado emitido vale a prática congelada nele: o RH apagar uma sessão depois não pode mostrar
+          // "pendente" ao lado do certificado válido (A6). A emissão confere sempre as sessões vivas.
+          pratica: (cert ? praticaDoCertificado(cert.dados) : null) ?? pratica,
           // o aluno já declarou o ambiente e o horário hoje neste curso (T35)? null = não deu para saber (o portal
           // não mostra a tela da declaração)
           declaracao_hoje:
@@ -1074,6 +1077,11 @@ Deno.serve(
     // confirma a VERSÃO que leu; o evento vai para a trilha como evento de SERVIDOR, com o texto inteiro. Uma por
     // matrícula e dia: repetir no mesmo dia responde ok sem gravar outra.
     if (body.acao === "declarar_ambiente") {
+      // teto do evento (A6, T35): sem ele, um script com o token do aluno repetia o pedido em paralelo e enchia a
+      // trilha (só de inclusão) de declarações do mesmo dia
+      if (!(await dentroDoLimite(acaoDeVolumeDoEvento(EVENTO_DECLARACAO_AMBIENTE)))) {
+        return muitasAcoes();
+      }
       const mat = await minhaMatricula(body.matricula_id);
       if (!mat) return fail("Matrícula não encontrada", 404);
       const hoje = dataBrasilia(new Date());

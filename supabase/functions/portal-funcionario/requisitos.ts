@@ -145,7 +145,7 @@ export function tempoObrigatorioSeg(aulas: any[] = []) {
 }
 // O PDF do projeto foi gerado (ou anexado) com um projeto diferente do que está no curso (T25)
 export const TEXTO_PDF_DO_PROJETO_DESATUALIZADO =
-  "O PDF do projeto pedagógico está desatualizado: o projeto ou a validação mudaram depois de gerá-lo. Gere o PDF de novo";
+  "O PDF do projeto pedagógico está desatualizado: o projeto ou a validação mudaram depois de gerá-lo. Gere o PDF de novo (ou anexe o seu de novo)";
 export function requisitosDoCurso({
   curso = {},
   aulas = [],

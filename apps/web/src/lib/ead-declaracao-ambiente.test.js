@@ -8,9 +8,12 @@ import {
   TEXTO_PADRAO_DA_DECLARACAO,
   declaracaoVigente,
   historicoDeVersoes,
+  conflitoDeEdicao,
   igualAoVigente,
+  mensagemDeConflitoDeEdicao,
   normalizarDeclaracao,
   proximaVersaoDaDeclaracao,
+  tamanhoDoTexto,
   validarDeclaracaoDoRT,
 } from "./ead-declaracao-ambiente";
 
@@ -38,6 +41,80 @@ describe("o texto padrão e os itens", () => {
 
   it("o evento é o que o servidor grava na trilha", () => {
     expect(EVENTO_DECLARACAO_AMBIENTE).toBe("declaracao_ambiente");
+  });
+});
+
+describe("contar e aparar como o banco (A6, T35)", () => {
+  it("o tamanho é em caracteres (char_length), não em unidades UTF-16", () => {
+    expect(tamanhoDoTexto("😀".repeat(10))).toBe(10);
+    expect(tamanhoDoTexto("ação")).toBe(4);
+    expect(tamanhoDoTexto(null)).toBe(0);
+    expect(validarDeclaracaoDoRT({ texto: "😀".repeat(10) }).ok).toBe(false);
+    expect(validarDeclaracaoDoRT({ texto: "😀".repeat(3000) }).ok).toBe(true);
+    const longo = validarDeclaracaoDoRT({ texto: "😀".repeat(4001) });
+    expect(longo.erros.texto).toContain("tem 4001");
+    expect(validarDeclaracaoDoRT({ texto: texto(1), art: "😀".repeat(120) }).ok).toBe(true);
+    expect(
+      validarDeclaracaoDoRT({ texto: texto(1), art: "😀".repeat(121) }).erros.art
+    ).toBeTruthy();
+  });
+
+  it("apara só o que o btrim do banco apara (espaço, tab, CR, LF, FF e VT)", () => {
+    expect(normalizarDeclaracao({ texto: " \t\r\n\f\vabc\n ", art: " \n " })).toEqual({
+      texto: "abc",
+      art: null,
+    });
+    // espaço sem quebra e BOM ficam, como no banco
+    expect(normalizarDeclaracao({ texto: "\u00a0abc\ufeff" }).texto).toBe("\u00a0abc\ufeff");
+  });
+});
+
+describe("dois RTs editando a partir da mesma versão (A6, T35)", () => {
+  const linhas = [
+    { versao: 1, texto: texto(1), art: null, salvo_por_email: "rt1@exemplo.test" },
+    {
+      versao: 2,
+      texto: texto(2),
+      art: "ART 2",
+      salvo_por_email: "rt2@exemplo.test",
+      created_at: "2026-10-07T14:05:00Z",
+    },
+  ];
+
+  it("a janela abriu na versão 1 e a 2 já foi salva: é conflito, com quem salvou e quando", () => {
+    expect(conflitoDeEdicao(1, linhas)).toEqual({
+      versao: 2,
+      salvoPor: "rt2@exemplo.test",
+      salvoEm: "2026-10-07T14:05:00Z",
+    });
+  });
+
+  it("sem versão nova (a da tela é a vigente) ou com a tela mais nova que a lida: não é conflito", () => {
+    expect(conflitoDeEdicao(2, linhas)).toBeNull();
+    expect(conflitoDeEdicao(3, linhas)).toBeNull();
+    expect(conflitoDeEdicao(0, [])).toBeNull();
+    expect(conflitoDeEdicao(0, null)).toBeNull();
+  });
+
+  it("a janela aberta no texto padrão (versão 0) e outra pessoa aprovou a versão 1: é conflito", () => {
+    expect(conflitoDeEdicao(0, [linhas[0]])).toMatchObject({ versao: 1 });
+  });
+
+  it("linha estragada não conta como versão nova", () => {
+    expect(conflitoDeEdicao(2, [...linhas, { versao: 3, texto: "curto" }])).toBeNull();
+  });
+
+  it("a mensagem diz quem, quando (hora de Brasília), a versão e que nada foi salvo", () => {
+    const msg = mensagemDeConflitoDeEdicao(conflitoDeEdicao(1, linhas));
+    expect(msg).toContain("rt2@exemplo.test");
+    expect(msg).toContain("07/10/2026 11:05");
+    expect(msg).toContain("versão 2");
+    expect(msg).toMatch(/nada foi salvo/i);
+    // sem autor nem hora gravados, a frase continua inteira
+    const sem = mensagemDeConflitoDeEdicao({ versao: 4, salvoPor: null, salvoEm: null });
+    expect(sem).toContain("outra pessoa");
+    expect(sem).toContain("versão 4");
+    expect(sem).not.toMatch(/undefined|null|Invalid/);
   });
 });
 

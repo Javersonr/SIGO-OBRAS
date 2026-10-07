@@ -18,13 +18,14 @@ export const MARCADOS_VAZIOS = Object.freeze(
 
 /**
  * Esta matrícula precisa da declaração ANTES de abrir o curso? Sim quando o aluno ainda não declarou hoje neste
- * curso. Não: na prévia do RT ("Ver como aluno", nada é gravado); curso concluído (só abre para o certificado);
+ * curso. Não: curso concluído (só abre para o certificado);
  * sem o texto em `dados` ou sem o estado do curso (o servidor não conseguiu ler: o portal não trava o aluno, e o
  * relatório do RH mostra o dia sem declaração). A declaração dos dados vale só para o dia em que o servidor a
- * calculou: com o portal aberto desde ontem, ela conta como não feita.
+ * calculou: com o portal aberto desde ontem, ela conta como não feita. A prévia do RT ("Ver como aluno", nada é
+ * gravado) não chama esta função: ela monta o `CursoPortal` direto.
  */
-export function precisaDeclararAmbiente({ item, declaracao, hoje, previa = false } = {}) {
-  if (previa || !declaracao || !item?.declaracao_hoje) return false;
+export function precisaDeclararAmbiente({ item, declaracao, hoje } = {}) {
+  if (!declaracao || !item?.declaracao_hoje) return false;
   if (item.matricula?.status === "concluido") return false;
   const { declarada, dia } = item.declaracao_hoje;
   return !(declarada === true && dia === hoje);

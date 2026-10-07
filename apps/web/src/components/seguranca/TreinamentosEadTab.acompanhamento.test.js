@@ -49,3 +49,31 @@ describe("matrícula aberta repetida (23505) com mensagem clara (T32)", () => {
     );
   });
 });
+
+describe("a lista de presença não perde o rascunho ao recarregar (A6, T12 M6)", () => {
+  const dialogo = ler("./PresencaSessaoDialog.jsx");
+
+  it("recarregar os participantes mescla com o rascunho (mesclarRascunhos); só trocar de sessão zera", () => {
+    expect(dialogo).toContain("mesclarRascunhos({");
+    expect(dialogo).toMatch(/gravadasAntigasRef\.current = gravadas/);
+    // a forma antiga (setLinhas(gravadas) a cada recarga) não pode voltar
+    expect(dialogo).not.toMatch(/setLinhas\(gravadas\)/);
+    // trocar de sessão começa do que está gravado
+    expect(dialogo).toMatch(/mesmaSessao = sessaoDasLinhasRef\.current === sessao\?\.id/);
+  });
+});
+
+describe("sessões práticas seguem a modalidade GRAVADA do curso, não a do formulário (A6, T12 M7)", () => {
+  it("o formulário muda para semipresencial sem salvar: a seção não abre; o aviso manda salvar", () => {
+    const secao = aba.slice(aba.indexOf("T12: a lista de presença é da sessão prática presencial"));
+    const trecho = secao.slice(0, 1800);
+    expect(aba).toContain("const cursoGravadoDoFormulario =");
+    expect(trecho).toContain('modalidadeDoCurso(cursoGravadoDoFormulario) === "semipresencial"');
+    expect(trecho).toContain("curso={cursoGravadoDoFormulario}");
+    // a forma antiga (a modalidade do formulário abria a seção) não pode voltar
+    expect(trecho).not.toMatch(
+      /modalidadeDoCurso\(cursoSel\) === "semipresencial" \? \(\s*<SessoesPraticasCurso/
+    );
+    expect(trecho).toContain("Salve o curso como semipresencial");
+  });
+});

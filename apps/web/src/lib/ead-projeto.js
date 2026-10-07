@@ -24,7 +24,12 @@
  * marca dos 12 campos do projeto (`projeto_pdf_marca`, lib ead-projeto-marca.js); o PDF só vale enquanto a marca
  * bate com a dos campos de hoje. Mudou texto, validação ou data de revisão depois do PDF: "desatualizado".
  */
-import { estadoDoPdfDoProjeto, marcaDoProjeto } from "./ead-projeto-marca";
+import {
+  estadoDoPdfDoProjeto,
+  lerListaDeObjetivos,
+  marcaDoProjeto,
+  objetivosValidos,
+} from "./ead-projeto-marca";
 import { MIN_QUESTOES, modalidadeDoCurso } from "./ead-requisitos";
 import { diasParaVencer, hojeEmBrasilia } from "./ead-vencimentos";
 import { numerarAulas } from "./portal-curso";
@@ -243,27 +248,12 @@ export function modulosDoCurso(aulas) {
 }
 
 // `modulos_objetivos` é jsonb: uma lista de { modulo, objetivo }. Dado vindo do legado pode ser texto (AGENTS.md).
-function lerLista(valor) {
-  let v = valor;
-  if (typeof v === "string") {
-    try {
-      v = JSON.parse(v);
-    } catch {
-      return [];
-    }
-  }
-  return Array.isArray(v) ? v : [];
-}
+// A leitura é a da marca (ead-projeto-marca.js): uma só, para a marca do que se grava bater com a do banco.
+const lerLista = lerListaDeObjetivos;
 
 /** Os objetivos que valem (com texto), aparados: [{ modulo, objetivo }]. Lixo e entrada vazia ficam de fora. */
 export function objetivosDosModulos(valor) {
-  const saida = [];
-  for (const e of lerLista(valor)) {
-    if (!e || typeof e !== "object" || typeof e.objetivo !== "string") continue;
-    const objetivo = e.objetivo.trim();
-    if (objetivo) saida.push({ modulo: texto(e.modulo), objetivo });
-  }
-  return saida;
+  return objetivosValidos(valor);
 }
 
 /** O objetivo do módulo como está na lista (sem aparar: é o que o RH está digitando). */
@@ -598,14 +588,29 @@ export function aoMudarValidacao(curso, novaData) {
  * os 12 campos do formulário, já como seriam gravados: aparados e só com os módulos que existem nas aulas).
  */
 export function estadoDoPdfDoFormulario(curso, { aulas, questoes } = {}) {
-  const normal = dadosDoProjetoParaGravar(curso, { aulas, questoes });
-  return estadoDoPdfDoProjeto(normal.ok ? { ...curso, ...normal.dados } : curso);
+  return estadoDoPdfDoProjeto(comProjetoNormalizado(curso, { aulas, questoes }));
 }
+
+/**
+ * O curso do formulário com os 12 campos do projeto como SERIAM gravados (aparados, só com os módulos que existem
+ * nas aulas, a revisão sugerida de 2 anos quando há validação sem data). É o que a marca do PDF enxerga: a seção e
+ * a lista de requisitos do formulário usam esta, para não discordarem logo depois de gerar o PDF (A6, T25). Se o
+ * projeto não passa na conferência de gravação, devolve o curso como veio.
+ */
+export function comProjetoNormalizado(curso, { aulas, questoes } = {}) {
+  if (!curso) return curso;
+  const normal = dadosDoProjetoParaGravar(curso, { aulas, questoes });
+  return normal.ok ? { ...curso, ...normal.dados } : curso;
+}
+
+/** O que a tela diz a quem tenta salvar o curso, gerar o PDF do projeto ou anexar um PDF próprio ao mesmo tempo. */
+export const AVISO_PROJETO_OCUPADO =
+  "Aguarde: o curso está sendo salvo, ou o PDF do projeto está sendo gerado ou enviado. Tente de novo em instantes.";
 
 /** O que a tela diz depois de "Salvar curso" mudar o projeto de um curso que já tem PDF. */
 export const AVISO_PDF_DESATUALIZADO =
   "O projeto mudou depois de o PDF ser gerado: o aluno e a fiscalização ainda veem o PDF antigo. " +
-  'Clique em "Gerar PDF do projeto" para atualizá-lo.';
+  'Clique em "Gerar PDF do projeto" para atualizá-lo (ou anexe o seu de novo).';
 
 /**
  * O aviso para o RH depois de salvar, ou null. `gravado` é o curso como estava no banco e `dados` os 12 campos do

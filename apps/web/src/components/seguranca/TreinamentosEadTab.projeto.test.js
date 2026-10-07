@@ -40,7 +40,8 @@ describe("Salvar curso: o projeto pedagógico só é gravado depois de validado"
 
   it("projeto mudado com PDF já gerado: avisa para gerar o PDF de novo, depois de salvar", () => {
     // a regra (só avisa se o projeto mudou neste salvar e o PDF passou a destoar) está em lib/ead-projeto.js
-    expect(salvar).toMatch(/avisoDoPdfAoSalvar\(gravado, projeto\.dados\)/);
+    // o curso "antes" vem do banco (lerCursoAgora), não da lista da tela, que só atualiza depois do recarregar()
+    expect(salvar).toMatch(/avisoDoPdfAoSalvar\(antes, projeto\.dados\)/);
     expect(salvar).toMatch(/if \(avisoPdf\) toast\.warning\(avisoPdf,/);
     const aposGravar = salvar.slice(salvar.indexOf("await gravar("));
     expect(aposGravar.indexOf('toast.success("Curso salvo")')).toBeLessThan(
@@ -49,6 +50,45 @@ describe("Salvar curso: o projeto pedagógico só é gravado depois de validado"
     expect(aposGravar.indexOf("avisoDoPdfAoSalvar(")).toBeLessThan(
       aposGravar.indexOf("recarregar()")
     );
+  });
+});
+
+describe("Salvar curso e o PDF do projeto não se atropelam (A6, T25 R2)", () => {
+  const salvar = funcao(aba, "salvarCurso");
+
+  it("Salvar curso recusa enquanto o PDF do projeto é gerado ou anexado", () => {
+    expect(salvar).toMatch(
+      /if \(gerandoProjetoRef\.current \|\| subindoProjetoRef\.current\) \{\s*toast\.error\(AVISO_PROJETO_OCUPADO\);\s*return;\s*\}/
+    );
+  });
+
+  it("o botão Salvar curso fica desabilitado também durante o PDF; o spinner é só da gravação", () => {
+    expect(aba).toMatch(
+      /disabled=\{gravando\.has\("curso"\) \|\| gerandoProjeto \|\| subindoProjeto\}/
+    );
+  });
+
+  it("a seção sabe que o curso está sendo salvo (Gerar e anexar ficam desabilitados)", () => {
+    expect(aba).toMatch(
+      /<ProjetoPedagogicoCurso[\s\S]*?salvandoCurso=\{gravando\.has\("curso"\)\}[\s\S]*?\/>/
+    );
+    const secao = readFileSync(new URL("./ProjetoPedagogicoCurso.jsx", import.meta.url), "utf8");
+    expect(secao).toMatch(
+      /disabled=\{!podeGerarPdf \|\| gerandoPdf \|\| subindoPdf \|\| salvandoCurso\}/
+    );
+    expect(secao).toMatch(
+      /<input\s+type="file"[\s\S]*?disabled=\{gerandoPdf \|\| subindoPdf \|\| salvandoCurso\}/
+    );
+  });
+});
+
+describe("a lista de requisitos do formulário usa o projeto como seria gravado (A6, T25 R1)", () => {
+  it("o curso aberto passa por comProjetoNormalizado antes de a lista de pendências ser desenhada", () => {
+    expect(aba).toContain("const requisitosDoFormulario = (curso) =>");
+    expect(aba).toMatch(/comProjetoNormalizado\(curso, \{/);
+    expect(aba).toContain("requisitosDoFormulario(cursoSel)");
+    // a lista do formulário não lê mais o formulário cru
+    expect(aba).not.toMatch(/\{requisitos\(cursoSel\)\s*\.filter/);
   });
 });
 
@@ -62,11 +102,34 @@ describe("Gerar PDF do projeto", () => {
     expect(gerar).toMatch(/finally \{\s*gerandoProjetoRef\.current = false;/);
   });
 
+  it("não roda junto com Salvar curso nem com o anexo do PDF próprio (A6, T25 R2)", () => {
+    expect(gerar).toMatch(
+      /if \(subindoProjetoRef\.current \|\| gravandoRef\.current\.has\("curso"\)\) \{\s*toast\.error\(AVISO_PROJETO_OCUPADO\);\s*return;\s*\}/
+    );
+    // a conferência vem antes de marcar "gerando" (recusar não deixa a trava ligada)
+    expect(gerar.indexOf("AVISO_PROJETO_OCUPADO")).toBeLessThan(
+      gerar.indexOf("gerandoProjetoRef.current = true")
+    );
+  });
+
+  it("relê o curso do banco antes de montar o PDF: a lista da tela pode estar velha (A6, T25 R3)", () => {
+    expect(gerar).toMatch(/const gravado = await lerCursoAgora\(formulario\.id, gravadoNaTela\);/);
+    expect(gerar.indexOf("lerCursoAgora(")).toBeGreaterThan(
+      gerar.indexOf("gerandoProjetoRef.current = true")
+    );
+    expect(gerar.indexOf("lerCursoAgora(")).toBeLessThan(
+      gerar.indexOf("dadosDoProjetoParaGravar(")
+    );
+  });
+
   it("valida o projeto da tela antes de gerar e usa os dados JÁ SALVOS do curso no PDF", () => {
     expect(gerar).toMatch(
       /dadosDoProjetoParaGravar\(\s*\{ \.\.\.gravado, \.\.\.camposDoProjeto\(formulario\) \},/
     );
     expect(gerar).toMatch(/cursos\.find\(\(c\) => c\.id === formulario\.id\)/);
+    expect(gerar).toMatch(
+      /if \(!gravadoNaTela\) \{\s*toast\.error\("Salve o curso antes de gerar o PDF do projeto"\)/
+    );
     expect(gerar).toMatch(/curso: \{ \.\.\.gravado, \.\.\.projeto\.dados \}/);
     expect(gerar.indexOf("dadosDoProjetoParaGravar(")).toBeLessThan(
       gerar.indexOf("pdfDoProjetoComoBlob(")
@@ -105,9 +168,28 @@ describe("Gerar PDF do projeto", () => {
 describe("PDF próprio anexado pelo RH", () => {
   const anexar = funcao(aba, "enviarProjetoPedagogico");
 
+  it("não roda junto com Salvar curso nem com o Gerar PDF (A6, T25 R2/M6)", () => {
+    expect(anexar).toMatch(
+      /if \(\s*gerandoProjetoRef\.current \|\|\s*subindoProjetoRef\.current \|\|\s*gravandoRef\.current\.has\("curso"\)\s*\) \{\s*toast\.error\(AVISO_PROJETO_OCUPADO\);\s*return;\s*\}/
+    );
+    expect(anexar).toContain("subindoProjetoRef.current = true");
+    expect(anexar).toMatch(/finally \{\s*subindoProjetoRef\.current = false;/);
+  });
+
+  it("monta a referência com refDoUpload e recusa o envio que não devolveu uma (A6, T25 M12)", () => {
+    expect(anexar).toContain("const ref = refDoUpload(res);");
+    expect(anexar).toMatch(
+      /if \(!ref\) throw new Error\("o envio do arquivo não devolveu a referência"\);/
+    );
+    expect(anexar).not.toContain("${res.bucket}/${res.path}");
+  });
+
   it("grava a marca do projeto SALVO junto com a referência (sem ela o requisito ficaria pendente)", () => {
     expect(anexar).not.toBe("");
-    expect(anexar).toMatch(/const gravado = cursos\.find\(\(c\) => c\.id === cursoSel\.id\);/);
+    // o projeto salvo vem do banco (lerCursoAgora): "Salvar curso" logo antes ainda não chegou na lista da tela
+    expect(anexar).toMatch(
+      /const gravado = await lerCursoAgora\(\s*cursoSel\.id,\s*cursos\.find\(\(c\) => c\.id === cursoSel\.id\)\s*\);/
+    );
     expect(anexar).toMatch(
       /const projeto_pdf_marca = gravado \? marcaDoProjeto\(gravado\) : null;/
     );

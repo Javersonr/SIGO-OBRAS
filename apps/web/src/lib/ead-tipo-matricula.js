@@ -67,13 +67,15 @@ export function validarEscolhaDeTipo({ tipo, motivo } = {}) {
   }
   if (tipo !== "eventual") return { ok: true, tipo, motivo: null };
   const texto = String(motivo ?? "").trim();
-  if (texto.length < MOTIVO_EVENTUAL_MIN) {
+  // em caracteres, como o char_length do banco (o .length do JS conta um emoji como 2)
+  const tamanho = [...texto].length;
+  if (tamanho < MOTIVO_EVENTUAL_MIN) {
     return {
       ok: false,
       erro: `Informe o motivo do treinamento eventual (pelo menos ${MOTIVO_EVENTUAL_MIN} caracteres)`,
     };
   }
-  if (texto.length > MOTIVO_EVENTUAL_MAX) {
+  if (tamanho > MOTIVO_EVENTUAL_MAX) {
     return {
       ok: false,
       erro: `O motivo do treinamento eventual tem no máximo ${MOTIVO_EVENTUAL_MAX} caracteres`,

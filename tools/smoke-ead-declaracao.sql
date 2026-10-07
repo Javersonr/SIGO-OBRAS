@@ -75,7 +75,7 @@ begin
   -- 2. a versão, quem salvou e quando são do banco; texto e ART são aparados
   insert into public.treinamento_declaracao_texto
     (empresa_id, versao, texto, art, salvo_por, salvo_por_email, created_at)
-    values (v_empresa, 999, '   SMOKE T35 orientação do RT, versão um.   ', '   ART SMOKE 1   ',
+    values (v_empresa, 999, E'\t \n  SMOKE T35 orientação do RT, versão um.  \r\n', E'   ART SMOKE 1\t',
             gen_random_uuid(), 'forjado@exemplo.test', now() - interval '30 days')
     returning * into v_linha;
   if v_linha.versao <> v_total + 1 then
@@ -91,7 +91,7 @@ begin
     raise exception 'FALHOU: salvo_por/e-mail/created_at deveriam vir do banco (% / % / %)',
       v_linha.salvo_por, v_linha.salvo_por_email, v_linha.created_at;
   end if;
-  raise notice '[versão 1] OK número, autor e hora vêm do banco; texto e ART aparados';
+  raise notice '[versão 1] OK número, autor e hora vêm do banco; texto e ART aparados (espaço, tab, CR e LF)';
 
   -- a segunda versão, de outro usuário, sem ART (vazia vira nula)
   perform set_config('request.jwt.claims', jsonb_build_object(

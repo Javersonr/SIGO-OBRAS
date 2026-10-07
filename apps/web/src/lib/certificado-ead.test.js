@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { baixarCertificadoPdf, distribuirConteudo } from "./certificado-ead";
+import { baixarCertificadoPdf, distribuirConteudo, textoDoLocalResumido } from "./certificado-ead";
 import { ErroCertificado, MSG_QR_FALHOU } from "./certificado-ead-falhas";
 
 // Registro das chamadas a doc.text (texto e posição em mm), para conferir a geometria do certificado. O jsPDF
@@ -497,6 +497,72 @@ describe("baixarCertificadoPdf: semipresencial (T12)", () => {
     const linhasDoCorpo = [corpo.texto].flat().length;
     const fimDoCorpo = corpo.y + (linhasDoCorpo - 1) * 12.5 * 1.6 * 0.3528;
     expect(fimDoCorpo).toBeLessThan(tipo.y - 3);
+  });
+
+  it("três locais longos da prática: a linha da frente resume (primeiro local e 'mais N', ver o verso) e cabe em 2 linhas (A6, T12 N4)", async () => {
+    registro.textos.length = 0;
+    const locais = ["W", "X", "Y"].map((c) => c.repeat(120));
+    const cert = semipresencial({
+      local: {
+        ambiente: "Plataforma SIGO Obras — https://exemplo.test/portal",
+        pratica: `${locais[0]}; ${locais[1]} e ${locais[2]}`,
+      },
+      pratica: {
+        carga_horas: 24,
+        resultado: "satisfatorio",
+        sessoes: locais.map((local, i) => ({
+          sessao_id: `s${i}`,
+          data: `2026-10-0${i + 1}`,
+          hora_inicio: "08:00",
+          hora_fim: "17:00",
+          local,
+          instrutor: { nome: "Instrutor da Prática", qualificacao: "Técnico de Teste" },
+          carga_horas: 8,
+        })),
+      },
+      instrutor: { nome: "Instrutor de Teste", qualificacao: "Eng. de Teste" },
+      responsavel_tecnico: { nome: "RT de Teste", registro: "CREA-XX 0000" },
+    });
+    const IMAGEM = { dataUrl: PNG_1X1, w: 300, h: 100 };
+    await baixarCertificadoPdf(cert, {
+      gerarQr: async () => PNG_1X1,
+      assinaturas: { instrutor: IMAGEM, responsavel_tecnico: IMAGEM },
+      salvar: () => {},
+    });
+    const linha = registro.textos.find((c) => /Local de realiza/.test([c.texto].flat().join(" ")));
+    expect(linha).toBeTruthy();
+    const linhas = [linha.texto].flat();
+    expect(linhas.length).toBeLessThanOrEqual(2);
+    // termina antes das imagens das assinaturas (122,5 mm)
+    expect(linha.y + (linhas.length - 1) * 4.6).toBeLessThan(122.5);
+    const texto = linhas.join(" ");
+    expect(texto).toMatch(/e mais 2 locais/);
+    expect(texto).toMatch(/ver o verso/);
+    expect(texto).toContain("W");
+    // o verso continua listando todos os locais (cada sessão com o seu)
+    const todo = registro.textos.map((c) => [c.texto].flat().join(" ")).join("\n");
+    expect(todo).toContain("X".repeat(30));
+    expect(todo).toContain("Y".repeat(30));
+  });
+
+  it("textoDoLocalResumido: só resume quando há mais de um local; um local só segue inteiro na linha normal", () => {
+    const sessao = (local) => ({ local });
+    expect(textoDoLocalResumido({ pratica: { sessoes: [sessao("A")] } })).toBeNull();
+    expect(textoDoLocalResumido({ pratica: { sessoes: [sessao("A"), sessao("A")] } })).toBeNull();
+    expect(textoDoLocalResumido({})).toBeNull();
+    const dois = textoDoLocalResumido({
+      local: { ambiente: "Plataforma SIGO Obras — https://exemplo.test/portal" },
+      pratica: { sessoes: [sessao("Local A"), sessao("Local B")] },
+    });
+    expect(dois).toBe(
+      "Local de realização: teoria a distância na Plataforma SIGO Obras; prática presencial em Local A e mais 1 local (ver o verso)"
+    );
+    const longo = textoDoLocalResumido({
+      local: { ambiente: "Plataforma SIGO Obras — https://exemplo.test/portal" },
+      pratica: { sessoes: [sessao("Z".repeat(120)), sessao("Local B")] },
+    });
+    expect(longo).toContain(`${"Z".repeat(37)}...`);
+    expect(longo).not.toContain("Z".repeat(38));
   });
 
   it("o bloco da prática no verso não invade o QR nem o rodapé", async () => {

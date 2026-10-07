@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   avisoDoCursoExigido,
+  comLeituraFrescaDoPreRequisito,
   cursoExigidoDe,
   cursosQuePodemSerPreRequisito,
   motivoDoBloqueioNaMatricula,
@@ -41,6 +42,70 @@ const nova = (extra = {}) => ({
   tipo: "inicial",
   motivo_eventual: null,
   ...extra,
+});
+
+describe("a leitura fresca do pré-requisito troca o que a tela sabia daquele par (A6, T23)", () => {
+  const certificado = (extra = {}) => ({
+    id: "k1",
+    matricula_id: "m1",
+    revogado_em: null,
+    ...extra,
+  });
+
+  it("a tela achava que o Básico estava aberto; o banco já diz concluído: vale o banco", () => {
+    const velha = { id: "m1", funcionario_id: "f1", curso_id: "c-basico", status: "em_andamento" };
+    const fresca = { ...velha, status: "concluido", proxima_renovacao: "2027-10-01" };
+    const outraPessoa = {
+      id: "m9",
+      funcionario_id: "f2",
+      curso_id: "c-basico",
+      status: "concluido",
+    };
+    const outroCurso = { id: "m8", funcionario_id: "f1", curso_id: "c-outro", status: "concluido" };
+    const r = comLeituraFrescaDoPreRequisito({
+      matriculas: [velha, outraPessoa, outroCurso],
+      certificados: [certificado({ matricula_id: "m9", id: "k9" }), certificado({ id: "k-velho" })],
+      funcionarioId: "f1",
+      cursoId: "c-basico",
+      matriculasFrescas: [fresca],
+      certificadosFrescos: [certificado({ id: "k-novo", revogado_em: "2026-10-05T00:00:00Z" })],
+    });
+    expect(r.matriculas.map((m) => m.id).sort()).toEqual(["m1", "m8", "m9"]);
+    expect(r.matriculas.find((m) => m.id === "m1").status).toBe("concluido");
+    // o certificado velho do par sai; o de outra pessoa fica; o fresco entra
+    expect(r.certificados.map((c) => c.id).sort()).toEqual(["k-novo", "k9"]);
+    // e a regra enxerga a revogação que a tela ainda não sabia
+    const nova = { funcionario_id: "f1", curso_id: "c-sep" };
+    const { liberadas, bloqueadas } = separarPorPreRequisito({
+      novas: [nova],
+      cursos: CURSOS,
+      matriculas: r.matriculas,
+      certificados: r.certificados,
+      hoje: HOJE,
+    });
+    expect(liberadas).toEqual([]);
+    expect(bloqueadas[0].motivo).toBe("revogado");
+  });
+
+  it("sem nada fresco no par (matrícula apagada), o par fica vazio: o pré-requisito não é atendido", () => {
+    const velha = { id: "m1", funcionario_id: "f1", curso_id: "c-basico", status: "concluido" };
+    const r = comLeituraFrescaDoPreRequisito({
+      matriculas: [velha],
+      certificados: [certificado()],
+      funcionarioId: "f1",
+      cursoId: "c-basico",
+      matriculasFrescas: [],
+      certificadosFrescos: [],
+    });
+    expect(r).toEqual({ matriculas: [], certificados: [] });
+  });
+
+  it("entrada nula não derruba", () => {
+    expect(comLeituraFrescaDoPreRequisito({ funcionarioId: "f1", cursoId: "c-basico" })).toEqual({
+      matriculas: [],
+      certificados: [],
+    });
+  });
 });
 
 describe("situacaoDoPreRequisito (a regra, igual à do servidor)", () => {

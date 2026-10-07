@@ -19,6 +19,8 @@
  * não importa `@/api/sigoClient`. Testes em portal-previa.test.js.
  */
 
+import { MAX_DEDICACAO_MIN, MAX_PRAZO_DIAS } from "./ead-projeto";
+
 /** Id da matrícula de mentira da prévia: não existe no banco. */
 export const ID_MATRICULA_PREVIA = "previa";
 
@@ -103,8 +105,8 @@ function projetoParaAPrevia(curso) {
     return Number.isInteger(n) && n >= 1 && n <= maximo ? n : null;
   };
   return {
-    prazo_conclusao_dias: inteiro(curso?.prazo_conclusao_dias, 3650),
-    dedicacao_diaria_min: inteiro(curso?.dedicacao_diaria_min, 1440),
+    prazo_conclusao_dias: inteiro(curso?.prazo_conclusao_dias, MAX_PRAZO_DIAS),
+    dedicacao_diaria_min: inteiro(curso?.dedicacao_diaria_min, MAX_DEDICACAO_MIN),
   };
 }
 

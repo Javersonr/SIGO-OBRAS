@@ -26,7 +26,10 @@
 --      pendente e excluir (soft) funcionam;
 --   7. trocar sessão, matrícula ou funcionário do participante: 42501;
 --   8. DELETE/TRUNCATE de verdade (as duas tabelas) e o anônimo: 42501;
---   9. exclusão lógica (deleted_at) funciona e libera incluir a matrícula de novo.
+--   9. exclusão lógica (deleted_at) funciona e libera incluir a matrícula de novo;
+--  10. (A6) carga acima do tempo do horário: recusada (23514); sessão apagada não recebe participante (42501);
+--      sessão com participante vivo não troca de curso (23514); com presença lançada ela não vai para
+--      depois de hoje (23514), e sem presença nem resultado ela pode ser remarcada.
 --
 -- Como rodar (precisa da migração 0143 já aplicada):
 --   supabase db query --linked -f tools/smoke-ead-pratica.sql
@@ -48,6 +51,7 @@ declare
   v_futura uuid;         -- sessão da semana que vem
   v_part uuid;
   v_part_futura uuid;
+  v_part_novo uuid;      -- participante incluído de novo na sessão de hoje (passo 10)
   v_linha public.treinamento_pratica_participante;
   v_sql text;
   v_falhou boolean;
@@ -102,6 +106,9 @@ begin
            v_empresa, v_curso, v_hoje, '08:00', '09:00', 'SMOKE local', 'SMOKE instrutor'),
     format('insert into public.treinamento_sessao_pratica (empresa_id, curso_id, data, hora_inicio, hora_fim, carga_horas, local, instrutor_nome) values (%L, %L, %L, %L, %L, 1, %L, %L)',
            v_empresa, v_curso, v_hoje, '08:00', '09:00', 'ab', 'SMOKE instrutor'),
+    -- A6: 24 h de carga num horário de 1 h (a carga não passa do tempo do horário)
+    format('insert into public.treinamento_sessao_pratica (empresa_id, curso_id, data, hora_inicio, hora_fim, carga_horas, local, instrutor_nome) values (%L, %L, %L, %L, %L, 24, %L, %L)',
+           v_empresa, v_curso, v_hoje, '08:00', '09:00', 'SMOKE local', 'SMOKE instrutor'),
     format('insert into public.treinamento_sessao_pratica (empresa_id, curso_id, data, hora_inicio, hora_fim, carga_horas, local, instrutor_nome, lista_presenca_ref) values (%L, %L, %L, %L, %L, 1, %L, %L, %L)',
            v_empresa, v_curso, v_hoje, '08:00', '09:00', 'SMOKE local', 'SMOKE instrutor',
            'https://exemplo.test/lista.pdf'),
@@ -122,7 +129,7 @@ begin
       raise exception 'FALHOU: o banco aceitou: %', v_sql;
     end if;
   end loop;
-  raise notice '[restrições do curso e da sessão] OK (7 recusas)';
+  raise notice '[restrições do curso e da sessão] OK (8 recusas)';
 
   -- 4. sessões válidas: hoje (com a lista da própria empresa) e a da semana que vem
   insert into public.treinamento_sessao_pratica
@@ -251,9 +258,50 @@ begin
   -- 10. exclusão lógica libera incluir a mesma matrícula de novo na sessão
   update public.treinamento_pratica_participante set deleted_at = now() where id = v_part;
   insert into public.treinamento_pratica_participante (empresa_id, sessao_id, matricula_id, funcionario_id)
-    values (v_empresa, v_sessao, v_mat, v_func);
+    values (v_empresa, v_sessao, v_mat, v_func)
+    returning id into v_part_novo;
   update public.treinamento_sessao_pratica set deleted_at = now() where id = v_futura;
   raise notice '[exclusão lógica] OK';
+
+  -- 11. A6: sessão apagada não recebe participante (42501); sessão com participante vivo não troca de curso
+  --     (23514); com presença lançada a sessão não vai para depois de hoje (23514), e sem presença ela remarca
+  foreach v_sql in array array[
+    format('insert into public.treinamento_pratica_participante (empresa_id, sessao_id, matricula_id, funcionario_id) values (%L, %L, %L, %L)',
+           v_empresa, v_futura, v_mat, v_func) || ' -- 42501',
+    format('update public.treinamento_sessao_pratica set curso_id = %L where id = %L',
+           v_outro, v_sessao) || ' -- 23514'
+  ] loop
+    v_esperado := substring(v_sql from '-- (\d{5})$');
+    v_falhou := false;
+    begin
+      execute v_sql;
+    exception when others then
+      if sqlstate <> v_esperado then
+        raise exception 'FALHOU: esperava % e veio % (%) em: %', v_esperado, sqlstate, sqlerrm, v_sql;
+      end if;
+      v_falhou := true;
+    end;
+    if not v_falhou then
+      raise exception 'FALHOU: o banco aceitou: %', v_sql;
+    end if;
+  end loop;
+  -- sem presença nem resultado lançados (o participante novo é "pendente"), remarcar para a semana que vem pode
+  update public.treinamento_sessao_pratica set data = v_hoje + 3 where id = v_sessao;
+  update public.treinamento_sessao_pratica set data = v_hoje where id = v_sessao;
+  update public.treinamento_pratica_participante set presente = true where id = v_part_novo;
+  v_falhou := false;
+  begin
+    update public.treinamento_sessao_pratica set data = v_hoje + 3 where id = v_sessao;
+  exception when others then
+    if sqlstate <> '23514' then
+      raise exception 'FALHOU: esperava 23514 e veio % (%)', sqlstate, sqlerrm;
+    end if;
+    v_falhou := true;
+  end;
+  if not v_falhou then
+    raise exception 'FALHOU: o banco remarcou para o futuro uma sessão com presença lançada';
+  end if;
+  raise notice '[sessão apagada e sessão com participantes] OK';
 
   -- ----------------------------------------------------------------- anônimo
   reset role;

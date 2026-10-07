@@ -687,6 +687,29 @@ test("tipoDoTreinamentoPublico: certificado antigo (sem o tipo) ou com valor est
   }
 });
 
+test("tipoDoTreinamentoPublico: o motivo é aparado e contado como o banco (btrim e char_length) (A6, T23)", () => {
+  assert.deepEqual(
+    tipoDoTreinamentoPublico({
+      tipo_treinamento: "eventual",
+      motivo_eventual: "\t\r\n\f\v Troca de equipamento \n",
+    }),
+    { tipo_treinamento: "eventual", motivo_eventual: "Troca de equipamento" }
+  );
+  const emojis = "😀".repeat(150);
+  assert.deepEqual(
+    tipoDoTreinamentoPublico({ tipo_treinamento: "eventual", motivo_eventual: emojis }),
+    { tipo_treinamento: "eventual", motivo_eventual: emojis }
+  );
+  assert.equal(
+    tipoDoTreinamentoPublico({ tipo_treinamento: "eventual", motivo_eventual: "😀".repeat(201) }),
+    null
+  );
+  assert.equal(
+    tipoDoTreinamentoPublico({ tipo_treinamento: "eventual", motivo_eventual: "\n\n\n" }),
+    null
+  );
+});
+
 test("tipoDoTreinamentoPublico: eventual sem motivo, ou com motivo fora dos limites, não afirma nada", () => {
   for (const motivo of [undefined, null, "", "  ", "ab", "x".repeat(201), 7]) {
     assert.equal(

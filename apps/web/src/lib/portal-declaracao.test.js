@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   MARCADOS_VAZIOS,
   corpoDaDeclaracao,
@@ -70,10 +71,20 @@ describe("precisaDeclararAmbiente: na 1ª abertura do curso em cada dia", () => 
     ).toBe(false);
   });
 
-  it("prévia do RT ('Ver como aluno') nunca pede: nada é gravado", () => {
+  it("a prévia do RT ('Ver como aluno') não passa por aqui: nada é gravado (A6, T35)", () => {
+    // o parâmetro `previa` não existia em nenhum chamador: a prévia monta o `CursoPortal` direto, sem a declaração.
+    // O que trava é este teste de fiação, e a função não aceita mais a flag.
+    const ler = (caminho) => readFileSync(new URL(caminho, import.meta.url), "utf8");
+    for (const caminho of [
+      "../components/seguranca/PreviaAlunoCurso.jsx",
+      "../components/portal-funcionario/CursoPortal.jsx",
+    ]) {
+      expect(ler(caminho), caminho).not.toMatch(/precisaDeclararAmbiente|declarar_ambiente/);
+    }
+    // e a função não tem flag de prévia: quem a chamasse com previa: true continuaria sendo cobrado
     expect(
       precisaDeclararAmbiente({ item: item(), declaracao: texto, hoje: HOJE, previa: true })
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("sem o texto (o servidor não conseguiu lê-lo) ou sem o estado do curso: o portal não trava o aluno", () => {

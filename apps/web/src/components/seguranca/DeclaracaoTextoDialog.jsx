@@ -21,6 +21,7 @@ import {
   TEXTO_MIN,
   igualAoVigente,
   normalizarDeclaracao,
+  tamanhoDoTexto,
   validarDeclaracaoDoRT,
 } from "@/lib/ead-declaracao-ambiente";
 
@@ -72,7 +73,8 @@ export default function DeclaracaoTextoDialog({ aberto, vigente, onFechar, onSal
     }
   };
 
-  const erroTexto = (tentou || texto.length > TEXTO_MAX) && conferido.erros.texto;
+  const erroTexto =
+    (tentou || tamanhoDoTexto(normalizado.texto) > TEXTO_MAX) && conferido.erros.texto;
   const erroArt = conferido.erros.art;
 
   return (
@@ -110,10 +112,12 @@ export default function DeclaracaoTextoDialog({ aberto, vigente, onFechar, onSal
                   </Label>
                   <span
                     className={`text-xs ${
-                      texto.trim().length > TEXTO_MAX ? "text-red-700" : "text-slate-500"
+                      tamanhoDoTexto(normalizado.texto) > TEXTO_MAX
+                        ? "text-red-700"
+                        : "text-slate-500"
                     }`}
                   >
-                    {texto.trim().length} / {TEXTO_MAX}
+                    {tamanhoDoTexto(normalizado.texto)} / {TEXTO_MAX}
                   </span>
                 </div>
                 <Textarea

@@ -22,7 +22,9 @@
 -- Travas do banco (além da RLS por empresa, `apply_tenant_rls`):
 --   - o trigger declaracao_texto_pelo_banco decide o que o cliente não escolhe: `versao` (a maior da empresa + 1, com
 --     trava de transação para dois salvamentos ao mesmo tempo não repetirem o número), `salvo_por`, `salvo_por_email`
---     e `created_at`; apara o texto e a ART (ART vazia vira nula);
+--     e `created_at`; apara o texto e a ART (ART vazia vira nula). O aparar é o do código (declaracao-ambiente.ts e
+--     ead-declaracao-ambiente.js): `btrim` só de espaço, tab, CR, LF, FF e VT (o `btrim` simples tira só o espaço, e uma
+--     linha com quebra de linha nas pontas passava no banco e não passava no JS);
 --   - o trigger trilha_imutavel (0135) recusa UPDATE, DELETE e TRUNCATE, até para o service role e o super admin (só o
 --     expurgo deliberado, `set local sigo.permitir_expurgo = 'on'`, como na trilha); `authenticated` nem tem o
 --     privilégio de UPDATE, DELETE ou TRUNCATE; `anon` não tem nada;
@@ -33,10 +35,17 @@
 -- `salvo_por_email`, que o cliente não forja), mas a trava por PERMISSÃO (só quem é RT ou tem a função de editar o
 -- texto) é da T33 (spec das permissões do EAD), ainda não implementada.
 --
--- DEPENDÊNCIA: a função public.trilha_imutavel() da 0135 (a migração para com uma mensagem clara se ela não existir).
--- Esta migração NÃO altera treinamento_evento: o evento novo usa as colunas que já existem.
+-- EXPURGO: a trava da 0135 também dispara no DELETE em cascata (`empresa_id ... on delete cascade`). Com versões
+-- salvas, apagar de verdade a empresa passa a exigir `set local sigo.permitir_expurgo = 'on'` na mesma transação,
+-- como a 0135 documenta para as tabelas da trilha. Sem versão salva (o texto padrão), nada muda.
 --
--- Idempotente: tabela e colunas "if not exists"; restrições, índices, policies, triggers e função são recriados.
+-- DEPENDÊNCIA: a função public.trilha_imutavel() da 0135 (a migração para com uma mensagem clara se ela não existir).
+-- Esta migração NÃO altera as colunas nem os dados de treinamento_evento (o evento novo usa as colunas que já
+-- existem). Só ganha dois índices parciais para o relatório do RH (A6): a leitura "eventos de servidor da empresa no
+-- período" e a "primeira declaração da empresa". Criar índice trava a gravação na tabela enquanto ele é construído
+-- (segundos, numa tabela deste tamanho): aplique fora do horário de pico se ela já tiver milhões de linhas.
+--
+-- Idempotente: tabela, colunas e índices "if not exists"; restrições, policies, triggers e função são recriados.
 -- Sem UPDATE de dados reais e sem criar nenhuma versão: nenhum texto é aprovado por aqui (o RT salva pela tela).
 --
 -- Depois de aplicar: publicar portal-funcionario (--no-verify-jwt) e o site. Teste do banco:
@@ -113,8 +122,9 @@ language plpgsql
 set search_path = public
 as $$
 begin
-  new.texto := btrim(new.texto);
-  new.art := nullif(btrim(coalesce(new.art, '')), '');
+  -- só espaço, tab, CR, LF, FF e VT (\x0b): o mesmo conjunto do aparar do código (ver o cabeçalho)
+  new.texto := btrim(new.texto, E' \t\r\n\f\x0b');
+  new.art := nullif(btrim(coalesce(new.art, ''), E' \t\r\n\f\x0b'), '');
   -- dois salvamentos ao mesmo tempo na mesma empresa: um de cada vez, para não repetirem o número da versão
   perform pg_advisory_xact_lock(
     hashtextextended('treinamento_declaracao_texto:' || new.empresa_id::text, 0)
@@ -147,10 +157,23 @@ create trigger trilha_imutavel_truncate
   before truncate on public.treinamento_declaracao_texto
   for each statement execute function public.trilha_imutavel();
 
+-- 5. índices do relatório do RH (A6) ---------------------------------------------------------------------------------
+-- O relatório lê "origem = servidor" da empresa por período, do mais novo para o mais antigo (created_at, id). Sem
+-- índice próprio ele varria as linhas da empresa pelos índices antigos (por matrícula e por funcionário, 0103).
+create index if not exists treinamento_evento_servidor_idx
+  on public.treinamento_evento (empresa_id, created_at desc, id desc)
+  where origem = 'servidor';
+
+-- a primeira declaração da empresa (de qualquer época): é dela que vem o dia em que a falta passa a ser cobrada
+create index if not exists treinamento_evento_declaracao_idx
+  on public.treinamento_evento (empresa_id, created_at)
+  where evento = 'declaracao_ambiente';
+
 commit;
 
 -- Conferência (só leitura): na primeira aplicação a tabela existe com RLS ligada, tem os 3 triggers próprios (a versão
--- pelo banco e as duas travas de imutabilidade) e está vazia: o texto padrão vale até o RT salvar o dele.
+-- pelo banco e as duas travas de imutabilidade), os 2 índices do relatório existem e a tabela está vazia: o texto
+-- padrão vale até o RT salvar o dele.
 select (select count(*) from pg_class
         where relnamespace = 'public'::regnamespace
           and relname = 'treinamento_declaracao_texto'
@@ -160,6 +183,11 @@ select (select count(*) from pg_class
           and tgrelid = 'public.treinamento_declaracao_texto'::regclass
           and tgname in ('declaracao_texto_pelo_banco', 'trilha_imutavel', 'trilha_imutavel_truncate'))
          as triggers_de_3,
+       (select count(*) from pg_indexes
+        where schemaname = 'public'
+          and tablename = 'treinamento_evento'
+          and indexname in ('treinamento_evento_servidor_idx', 'treinamento_evento_declaracao_idx'))
+         as indices_de_2,
        (select count(*) from public.treinamento_declaracao_texto) as versoes_salvas;
 
 select 'ok' as res;

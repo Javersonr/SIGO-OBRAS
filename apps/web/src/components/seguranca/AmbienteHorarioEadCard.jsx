@@ -11,8 +11,10 @@ import DeclaracaoTextoDialog from "@/components/seguranca/DeclaracaoTextoDialog"
 import { hojeEmBrasilia } from "@/lib/ead-vencimentos";
 import {
   EVENTO_DECLARACAO_AMBIENTE,
+  conflitoDeEdicao,
   declaracaoVigente,
   historicoDeVersoes,
+  mensagemDeConflitoDeEdicao,
 } from "@/lib/ead-declaracao-ambiente";
 import {
   avisoDaCobranca,
@@ -25,7 +27,9 @@ import {
   resumirAtividade,
   textoDaDeclaracao,
   textoDaJanela,
+  textosDoResumo,
 } from "@/lib/ead-atividade-diaria";
+import { dataHoraCurtaBrasilia } from "@/lib/data-brasilia";
 
 // tabelas só de inclusão (sem deleted_at): o SDK precisa de includeDeleted
 const SEM_SOFT_DELETE = { includeDeleted: true };
@@ -51,7 +55,9 @@ const lerEventosDoPeriodo = (empresaId, inicio) =>
       origem: "servidor",
       created_at: { $gte: desdeDaConsulta(inicio) },
     },
-    { ...SEM_SOFT_DELETE, sort_by: "-created_at" }
+    // o id desempata eventos da mesma hora: a ordem fica estável entre as páginas do SDK (a repetição que sobra,
+    // por evento novo gravado no meio da leitura, é tratada por `janelasPorAlunoEDia` pelo id)
+    { ...SEM_SOFT_DELETE, sort_by: "-created_at,-id" }
   );
 
 // a hora da primeira declaração da empresa, de qualquer época (não só do período): é dela que vem o dia em que a
@@ -64,8 +70,8 @@ const lerPrimeiraDeclaracao = async (empresaId) => {
   return primeira?.created_at ?? null;
 };
 
-const fmtDataHora = (iso) =>
-  iso ? new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "";
+// hora de Brasília, qualquer que seja o fuso do aparelho de quem abre a tela (A6, T35)
+const fmtDataHora = dataHoraCurtaBrasilia;
 const fmtDia = (dia) => String(dia).split("-").reverse().join("/");
 
 /**
@@ -113,6 +119,18 @@ export default function AmbienteHorarioEadCard({ empresaId, funcionariosTodos = 
 
   const salvarTexto = async ({ texto, art }) => {
     try {
+      // outro RT pode ter salvado uma versão depois que esta janela abriu: relê antes de gravar, para não passar
+      // por cima do texto dele sem aviso (A6, T35). O texto digitado fica na janela.
+      const atuais = await sigo.entities.TreinamentoDeclaracaoTexto.filter(
+        { empresa_id: empresaId },
+        SEM_SOFT_DELETE
+      );
+      const conflito = conflitoDeEdicao(vigente.versao, atuais);
+      if (conflito) {
+        setVersoes(atuais);
+        toast.error(mensagemDeConflitoDeEdicao(conflito));
+        return false;
+      }
       await sigo.entities.TreinamentoDeclaracaoTexto.create({
         empresa_id: empresaId,
         texto,
@@ -200,6 +218,7 @@ export default function AmbienteHorarioEadCard({ empresaId, funcionariosTodos = 
     [linhas, busca, soSemDeclaracao]
   );
   const resumo = useMemo(() => resumirAtividade(linhas), [linhas]);
+  const textosDoQuadro = useMemo(() => textosDoResumo(resumo), [resumo]);
   const avisoCobranca = useMemo(
     () => (eventos ? avisoDaCobranca({ inicioCobranca, diaInicial }) : null),
     [eventos, inicioCobranca, diaInicial]
@@ -445,10 +464,9 @@ export default function AmbienteHorarioEadCard({ empresaId, funcionariosTodos = 
               </div>
 
               <p className="text-xs text-slate-500" aria-live="polite">
-                {resumo.alunos} {resumo.alunos === 1 ? "aluno" : "alunos"} · {resumo.dias}{" "}
-                {resumo.dias === 1 ? "dia com atividade" : "dias com atividade"} ·{" "}
+                {textosDoQuadro.alunos} · {textosDoQuadro.dias} · {textosDoQuadro.registros} ·{" "}
                 <span className={resumo.semDeclaracao ? "font-medium text-red-700" : ""}>
-                  {resumo.semDeclaracao} com estudo sem declaração
+                  {textosDoQuadro.semDeclaracao}
                 </span>
                 {filtradas.length !== linhas.length && ` · ${filtradas.length} no filtro`}
               </p>

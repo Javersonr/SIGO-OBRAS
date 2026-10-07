@@ -121,6 +121,32 @@ export function situacaoDoPreRequisitoDoFuncionario({
 }
 
 /**
+ * A lista de matrículas e a de certificados da tela, com o que acabou de ser lido no banco para UM par funcionário x
+ * curso exigido no lugar do que a tela sabia dele (A6, T23). O Renovar relê o par antes de conferir o pré-requisito:
+ * a lista da tela pode ter minutos, e o RH pode ter concluído, revogado ou apagado ali nesse meio-tempo. Os
+ * certificados do par que a tela tinha saem (pelo id da matrícula antiga) e entram os frescos.
+ * @returns {{ matriculas: object[], certificados: object[] }}
+ */
+export function comLeituraFrescaDoPreRequisito({
+  matriculas = [],
+  certificados = [],
+  funcionarioId,
+  cursoId,
+  matriculasFrescas = [],
+  certificadosFrescos = [],
+} = {}) {
+  const doPar = (m) => m?.funcionario_id === funcionarioId && m?.curso_id === cursoId;
+  const antigas = new Set((matriculas ?? []).filter(doPar).map((m) => m.id));
+  return {
+    matriculas: [...(matriculas ?? []).filter((m) => !doPar(m)), ...(matriculasFrescas ?? [])],
+    certificados: [
+      ...(certificados ?? []).filter((c) => !antigas.has(c?.matricula_id)),
+      ...(certificadosFrescos ?? []),
+    ],
+  };
+}
+
+/**
  * Separa as matrículas que o painel quer criar entre as que podem ser gravadas e as que o pré-requisito barra.
  * `novas` são as linhas de `matriculasNovas` (precisam de `curso_id` e `funcionario_id`). Cada bloqueada traz
  * `{ nova, funcionarioId, cursoId, cursoNome, preRequisitoId, preRequisitoNome, motivo }` para a tela explicar.

@@ -65,7 +65,16 @@ export interface TextoDaDeclaracao {
   aprovado: boolean;
 }
 
-const aparar = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
+// Aparar e contar do MESMO jeito que o banco (0144): `btrim(texto, E' \t\r\n\f\x0b')` tira só espaço, tab, CR, LF,
+// FF e VT (o `trim()` do JS tira também espaço sem quebra, BOM e outros), e `char_length` conta caracteres (o
+// `.length` do JS conta unidades UTF-16: um emoji vale 2). Com regras diferentes, uma linha que o banco aceitou podia
+// ser "inválida" aqui e mandar o aluno para o texto padrão (A6, T35). O espelho do front tem a mesma regra.
+const ESPACOS_DO_BANCO = /^[ \t\r\n\f\v]+|[ \t\r\n\f\v]+$/g;
+const aparar = (v: unknown): string =>
+  typeof v === "string" ? v.replace(ESPACOS_DO_BANCO, "") : "";
+
+/** O tamanho do texto em caracteres, como o `char_length` do banco (não em unidades UTF-16). */
+export const tamanhoDoTexto = (v: unknown): number => (typeof v === "string" ? [...v].length : 0);
 
 /**
  * O texto em vigor entre as linhas lidas do banco: a de maior `versao` que for válida (inteiro >= 1, texto de
@@ -79,7 +88,8 @@ export function declaracaoVigente(linhas: unknown): TextoDaDeclaracao {
     const versao = l?.versao;
     const texto = aparar(l?.texto);
     if (typeof versao !== "number" || !Number.isInteger(versao) || versao < 1) continue;
-    if (texto.length < TEXTO_MIN || texto.length > TEXTO_MAX) continue;
+    const tamanho = tamanhoDoTexto(texto);
+    if (tamanho < TEXTO_MIN || tamanho > TEXTO_MAX) continue;
     if (!melhor || versao > melhor.versao) {
       melhor = { versao, texto, art: aparar(l?.art) || null, aprovado: true };
     }
@@ -178,6 +188,13 @@ function registrarErro(etapa: string, erro: unknown) {
 }
 
 /**
+ * Quantas versões o servidor lê para achar a vigente (as mais novas). Ler só a última mandava o aluno para o texto
+ * padrão se ela fosse inválida (gravada fora da tela), com a tela do RT ainda mostrando a anterior; `declaracaoVigente`
+ * escolhe a maior versão VÁLIDA entre estas.
+ */
+export const VERSOES_LIDAS = 20;
+
+/**
  * Lê o texto em vigor da empresa da SESSÃO (service role ignora a RLS: o filtro por empresa é daqui). Sem versão
  * salva vale o padrão. Falha de leitura = `{ ok: false }`: nunca vira o texto padrão, porque o aluno estaria
  * confirmando um texto que o RT pode já ter trocado.
@@ -192,7 +209,7 @@ export async function lerTextoDaDeclaracao(
     .select("versao, texto, art")
     .eq("empresa_id", empresaId)
     .order("versao", { ascending: false })
-    .limit(1);
+    .limit(VERSOES_LIDAS);
   if (error) {
     registrarErro("texto em vigor", error);
     return { ok: false };

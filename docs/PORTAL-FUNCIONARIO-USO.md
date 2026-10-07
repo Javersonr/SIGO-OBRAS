@@ -65,9 +65,13 @@ criados antes do cadastro central.
 **Curso de apoio (decisão D3, 06/10/2026).** Ele continua **publicado e aceita matrícula** como material de estudo; só
 não emite certificado. No requisito "Modalidade" o apoio bloqueia somente a **emissão** (no front e no servidor, que
 usam a mesma regra), nunca a publicação nem a matrícula. Na lista de cursos do RH ele ganha o selo neutro "Apoio — sem
-certificado" (não "Publicado com pendências"). O semipresencial continua sem publicar, matricular nem emitir até a T12,
-e os outros requisitos do curso (carga x conteúdo medido, instrutor, responsável técnico, questões) valem para o apoio
-como para qualquer curso. Não há o que renovar: a conclusão do apoio **não grava `proxima_renovacao`**, o portal não
+certificado" (não "Publicado com pendências"). O semipresencial continua sem publicar, matricular nem emitir até a T12.
+**D3 completa (acompanhamento A6, 07/10/2026):** o apoio é material de estudo, então os requisitos que só existem por
+causa do certificado **não se aplicam a ele** e saem da lista do curso, no front e no servidor (mesma regra, com teste de
+paridade): o mínimo de questões, o conteúdo medido x carga declarada, o instrutor, o responsável técnico, o projeto
+pedagógico e a validade. Ficam as aulas, o conteúdo, a carga, o conteúdo programático e a modalidade. A lista de cursos
+não mostra "validade N meses" para o apoio e o curso não pede "Confira a validade". Um curso que deixa de ser apoio volta
+a ser cobrado do que faltava (a lista é calculada na hora). Não há o que renovar: a conclusão do apoio **não grava `proxima_renovacao`**, o portal não
 mostra "renovar até" nem o botão "Certificado" (o cartão concluído diz "Rever material"), e a Ficha do funcionário e a
 tabela de matrículas do RH não mostram a renovação. Matrículas de apoio concluídas antes da D3 que já tinham a data
 gravada também deixam de mostrá-la (a tela não a exibe; o banco não é alterado).
@@ -265,9 +269,19 @@ de **todas as matrículas daquele painel**:
   que existe desde a T20) e **inicial** para as demais. Rodar a migração de novo **não** repete o preenchimento (ele só
   acontece se a coluna `tipo` ainda não existe) e, por isso, nunca desfaz a escolha do RH. A regra não enxerga o que foi
   feito fora do portal (treinamento presencial): quem já fez o curso por fora e é matriculado pela primeira vez fica
-  como inicial. O certificado já emitido continua sem o tipo. A consulta de conferência no fim da migração mostra,
-  em `iniciais_com_concluida_anterior`, quantas matrículas iniciais ainda têm uma concluída anterior (0 logo depois da
-  primeira aplicação).
+  como inicial. O certificado já emitido continua sem o tipo. "Anterior" é a ordem de `created_at`: duas matrículas
+  importadas com o mesmo `created_at` (carga do legado) não contam uma para a outra, e, se o índice único da `0139`
+  (`treinamento_matricula_viva_uidx`) não pôde ser criado em produção, uma matrícula repetida aberta antes de a outra
+  concluir também vira periódica. A consulta de conferência no fim da migração mostra, em
+  `iniciais_com_concluida_anterior`, quantas matrículas iniciais ainda têm uma concluída anterior: **0 logo depois da
+  primeira aplicação**. Depois, um número maior que zero **não** quer dizer que o RH escolheu "Inicial" de propósito:
+  pode ser uma matrícula criada por uma aba antiga do SIGO (aberta desde antes do deploy), que não manda o tipo, ou uma
+  gravação direta pela API sem o tipo, e a coluna assume "inicial". Rode a conferência **depois** de publicar o site e de
+  os RHs recarregarem as abas; se o número passar de zero, o Javerson decide se roda o mesmo UPDATE só para as linhas
+  criadas depois da migração (o certificado emitido fica selado com o tipo, e o RH não muda o tipo depois). O motivo do
+  eventual é aparado e contado do mesmo jeito no banco, no servidor e na consulta pública (espaço, tab, CR, LF, FF e VT
+  nas pontas; limite em caracteres, não em bytes). O smoke `tools/smoke-ead-pre-requisito.sql` confere os CHECKs, o
+  tipo imutável para o RH e o pré-requisito (sem ciclo, da mesma empresa), dentro de um `begin ... rollback`.
 
 **Pré-requisito.** No formulário do curso (**RH & Segurança → Treinamentos → curso**) o campo **Pré-requisito** escolhe o
 curso que o funcionário precisa ter **concluído e dentro da validade** antes deste. Exemplo: o NR-10 Complementar (SEP)
@@ -329,6 +343,15 @@ matrícula, com o tipo das matrículas que já existem preenchido uma vez pela r
 colunas `tipo` e `motivo_eventual` da matrícula, e publicá-lo antes da migração derruba o portal inteiro; o front novo
 grava `tipo`, `motivo_eventual` e `pre_requisito_curso_id`, e publicá-lo antes da migração faz matricular e salvar
 curso falharem.
+
+O acompanhamento técnico A6 (07/10/2026) **editou no lugar** as migrações ainda não aplicadas `0136`, `0137`, `0139`,
+`0142`, `0143` e `0144` (todas idempotentes). Antes de aplicar, confirme que a
+versão anterior de cada uma não foi aplicada em nenhum lugar; se foi, rodar o arquivo novo é seguro (cada uma só
+acrescenta o que falta e recria restrições, triggers e funções; o preenchimento do tipo da `0142` só roda se a coluna
+`tipo` ainda não existe). A `0144` também cria dois índices parciais em `treinamento_evento` (relatório do RH): numa
+tabela grande, aplique fora do horário de pico. Funções alteradas: **portal-funcionario** e **funcionario-acesso**
+(`--no-verify-jwt`) e **validar-certificado** (SEM `--no-verify-jwt`). O smoke de cada migração fica em `tools/`
+(`smoke-ead-pratica.sql`, `smoke-ead-declaracao.sql`, `smoke-ead-pre-requisito.sql`).
 
 O teste completo de matrícula real, tempo de estudo, avaliação e certificado deve seguir o roteiro da seção 7 do
 handoff, com o Javerson e após as decisões e tarefas correspondentes.

@@ -11,6 +11,7 @@ import {
   avisoDoPdfAoSalvar,
   camposDoProjeto,
   comObjetivoDoModulo,
+  comProjetoNormalizado,
   dadosDoProjetoParaGravar,
   estadoDoPdfDoFormulario,
   estadoDoPdfDoProjeto,
@@ -25,6 +26,7 @@ import {
   situacaoDaRevisao,
   somarAnos,
 } from "./ead-projeto";
+import { camposCanonicosDoProjeto } from "./ead-projeto-marca";
 import { requisitosDoCurso } from "./ead-requisitos";
 
 // Só dados sintéticos: o repositório é público e o texto do projeto é do responsável técnico (D5).
@@ -954,6 +956,110 @@ describe("PDF x projeto (revisão da T25): a marca do que foi para o PDF", () =>
       // o curso gravado está mudado (PDF antigo); o RH volta o texto e salva
       expect(avisoDoPdfAoSalvar(mudado, dadosGravados(original))).toBeNull();
     });
+  });
+});
+
+describe("a lista de requisitos do formulário lê o projeto como seria gravado (A6, T25 R1)", () => {
+  const PDF = "treinamentos/empresa/2026/10/projeto.pdf";
+  const contexto = { aulas, questoes, hoje: HOJE };
+  const requisito = (linha) =>
+    requisitosDoCurso({ curso: linha, aulas, questoes }).find((r) => r.codigo === "PROJETO");
+
+  it("validação sem data de revisão: o banco recebe a sugestão de 2 anos, e a lista não pode dizer 'desatualizado'", () => {
+    // o RH preenche a validação, deixa "Próxima revisão" vazia e clica em "Gerar PDF do projeto": o banco recebe
+    // a revisão sugerida (2 anos) e a marca dela, mas o campo da tela continua vazio
+    const formulario = {
+      ...curso,
+      projeto_validado_por: "RT Teste",
+      projeto_validado_em: "2026-10-01",
+      proxima_revisao: "",
+    };
+    const gravado = dadosDoProjetoParaGravar(formulario, contexto);
+    expect(gravado.ok).toBe(true);
+    expect(gravado.dados.proxima_revisao).toBe("2028-10-01");
+    const comPdf = {
+      ...formulario,
+      projeto_pedagogico_ref: PDF,
+      projeto_pdf_marca: marcaDoProjeto(gravado.dados),
+    };
+    // o formulário cru destoa do que foi para o PDF (o defeito)
+    expect(requisito(comPdf).ok).toBe(false);
+    // a mesma conta que a seção usa: com o projeto normalizado a lista concorda com ela
+    expect(estadoDoPdfDoFormulario(comPdf, contexto)).toBe("atual");
+    expect(requisito(comProjetoNormalizado(comPdf, contexto)).ok).toBe(true);
+    expect(comProjetoNormalizado(comPdf, contexto).proxima_revisao).toBe("2028-10-01");
+  });
+
+  it("módulo que deixou de existir nas aulas: o objetivo dele não conta na marca da lista", () => {
+    const formulario = {
+      ...curso,
+      modulos_objetivos: [...curso.modulos_objetivos, { modulo: "Módulo apagado", objetivo: "x" }],
+    };
+    const gravado = dadosDoProjetoParaGravar(formulario, contexto);
+    const comPdf = {
+      ...formulario,
+      projeto_pedagogico_ref: PDF,
+      projeto_pdf_marca: marcaDoProjeto(gravado.dados),
+    };
+    expect(comProjetoNormalizado(comPdf, contexto).modulos_objetivos).toHaveLength(2);
+    expect(estadoDoPdfDoFormulario(comPdf, contexto)).toBe("atual");
+  });
+
+  it("projeto que não passa na conferência (limite de texto, data futura) fica como está: sem inventar valor", () => {
+    const ruim = { ...curso, projeto_validado_em: "2999-01-01", projeto_validado_por: "RT Teste" };
+    expect(comProjetoNormalizado(ruim, contexto)).toBe(ruim);
+    expect(comProjetoNormalizado(null, contexto)).toBeNull();
+  });
+});
+
+describe("a lista de objetivos tem uma leitura só (A6, T25 R6)", () => {
+  it("objetivosDosModulos e a forma canônica da marca leem do mesmo jeito, nos mesmos casos", () => {
+    const casos = [
+      undefined,
+      null,
+      "",
+      "não é json",
+      "[]",
+      "{}",
+      JSON.stringify([{ modulo: " M1 ", objetivo: " Texto " }]),
+      JSON.stringify([
+        { modulo: "M1", objetivo: "   " },
+        { modulo: "M2", objetivo: "ok" },
+      ]),
+      [
+        { modulo: "B", objetivo: "segundo" },
+        { modulo: "A", objetivo: "primeiro" },
+      ],
+      [{ modulo: "M1", objetivo: 5 }, null, "x", { objetivo: "sem módulo" }],
+      { modulo: "M1", objetivo: "objeto solto" },
+    ];
+    for (const valor of casos) {
+      const doModulo = objetivosDosModulos(valor).map((e) => [e.modulo, e.objetivo]);
+      const canonico = camposCanonicosDoProjeto({ modulos_objetivos: valor })[2];
+      // a marca ordena pelo nome do módulo: a mesma lista, só em outra ordem
+      const ordenado = [...doModulo].sort((a, b) =>
+        a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0
+      );
+      expect(canonico, JSON.stringify(valor)).toEqual(ordenado);
+    }
+  });
+});
+
+describe("o aviso de PDF desatualizado diz o que fazer com o PDF próprio também (A6, T25 R4)", () => {
+  it("o toast e o requisito mandam gerar o PDF de novo OU anexar o seu de novo", () => {
+    expect(AVISO_PDF_DESATUALIZADO).toMatch(/anexe o seu de novo/);
+    const r = requisitosDoCurso({
+      curso: {
+        ...curso,
+        projeto_validado_por: "RT Teste",
+        projeto_validado_em: "2026-10-01",
+        projeto_pedagogico_ref: "treinamentos/e/p.pdf",
+        projeto_pdf_marca: "v1:x",
+      },
+      aulas,
+      questoes,
+    }).find((x) => x.codigo === "PROJETO");
+    expect(r.texto).toMatch(/anexe o seu de novo/);
   });
 });
 

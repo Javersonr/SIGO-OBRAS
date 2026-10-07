@@ -75,8 +75,11 @@ test("motivo: obrigatório (3 a 200 caracteres) no eventual e nulo nos outros ti
   const regra = m[1];
   assert.ok(regra.includes("when tipo = 'eventual'"));
   assert.ok(regra.includes("motivo_eventual is not null"));
-  assert.ok(regra.includes("char_length(btrim(motivo_eventual)) >= 3"));
-  assert.ok(regra.includes("char_length(motivo_eventual) <= 200"));
+  // o mesmo aparar e a mesma contagem do servidor e da consulta pública (A6, T23): btrim de espaço, tab, CR, LF, FF
+  // e VT, e char_length (caracteres), sobre o texto JÁ aparado nos dois limites
+  const aparado = "btrim(motivo_eventual, E' \\t\\r\\n\\f\\x0b')";
+  assert.ok(regra.includes(`char_length(${aparado}) >= 3`));
+  assert.ok(regra.includes(`char_length(${aparado}) <= 200`));
   assert.ok(regra.includes("else motivo_eventual is null"));
 });
 
@@ -285,4 +288,42 @@ test("o único dado gravado é o tipo das matrículas antigas: nada de insert, d
   // um UPDATE só, o do bloco (os triggers dizem "before insert or update of", que não começa comando)
   assert.equal([...sql.matchAll(/(^|;)\s*update\b/gi)].length, 1);
   assert.equal([...bloco.matchAll(/(^|;)\s*update\b/gi)].length, 1);
+});
+
+test("a conferência avisa que o 'inicial' pode entrar errado depois (aba antiga, API sem tipo) e a regra diz que usa created_at (A6)", () => {
+  // N1 da revisão 2: o texto antigo dizia que o número só sobe se o RH escolher "Inicial" de propósito
+  assert.equal(/só sobe se o RH escolher/.test(migracao), false);
+  const conferencia = migracao.slice(migracao.indexOf("-- Conferência (só leitura)"));
+  assert.ok(conferencia.includes("aba antiga"));
+  assert.ok(conferencia.includes("DEPOIS de publicar o site"));
+  assert.ok(conferencia.includes("recarregarem"));
+  // N3: a ordem é created_at, e o índice da 0139 pode faltar em produção
+  const cabecalho = migracao.slice(0, migracao.indexOf("begin;"));
+  assert.ok(cabecalho.includes("ordem de created_at"));
+  assert.ok(cabecalho.includes("treinamento_matricula_viva_uidx"));
+});
+
+const smoke = lerArquivo("tools", "smoke-ead-pre-requisito.sql");
+
+test("existe o smoke da 0142: roda numa transação que termina em rollback, sem UUID fixo (A6)", () => {
+  assert.ok(/^begin;$/m.test(smoke));
+  assert.ok(smoke.trimEnd().endsWith("rollback;"));
+  assert.ok(smoke.includes("SMOKE TEST OK"));
+  assert.equal(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/.test(smoke),
+    false,
+    "UUID fixo no smoke"
+  );
+  // confere as recusas do banco que a 0142 criou
+  for (const trecho of [
+    "'ab'",
+    "repeat('x', 201)",
+    "repeat(chr(128512), 150)",
+    "pre_requisito_curso_id = id",
+    "círculo de 3 cursos",
+    "42501",
+    "23514",
+  ]) {
+    assert.ok(smoke.includes(trecho), trecho);
+  }
 });

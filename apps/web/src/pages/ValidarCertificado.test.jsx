@@ -233,15 +233,15 @@ describe("ResultadoValidacao: semipresencial (T12)", () => {
       certificado: {
         ...certificado,
         carga_horaria_horas: 40,
-        modalidade: "Semipresencial: teoria EAD (4 h) + prática presencial (36 h)",
+        modalidade: "Semipresencial: teoria EAD (32 h) + prática presencial (8 h)",
         local: { ambiente: "Plataforma de Teste", pratica: "Pátio de teste" },
-        pratica: { data: "2026-10-05", local: "Pátio de teste", carga_horas: 36 },
+        pratica: { data: "2026-10-05", local: "Pátio de teste", carga_horas: 8 },
       },
     };
     const html = tela(<ResultadoValidacao resultado={semi} {...aoLado} />);
-    expect(html).toContain("teoria EAD (4 h) + prática presencial (36 h)");
+    expect(html).toContain("teoria EAD (32 h) + prática presencial (8 h)");
     expect(html).toContain("Prática presencial");
-    expect(html).toContain("05/10/2026, em Pátio de teste (36 h)");
+    expect(html).toContain("05/10/2026, em Pátio de teste (8 h)");
   });
   it("a prática de vários dias mostra do primeiro ao último dia, com os locais e a carga somada", () => {
     const semi = {

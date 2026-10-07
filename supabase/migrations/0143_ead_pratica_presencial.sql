@@ -5,8 +5,10 @@
 -- presencial (NR-10) sairia ao fim da teoria em vídeo, declarando EAD, e a "Lista de Presença" da tela do RH declarava
 -- EAD com horário fixo de 10 h por dia e não gravava nada. Agora o RH registra cada sessão prática (data, horário,
 -- carga, local e instrutor reais) e, nela, a presença e o resultado de cada matrícula; o servidor só emite o
--- certificado do curso semipresencial para quem esteve "presente" e teve resultado "satisfatório" numa sessão não
--- apagada do mesmo curso, já realizada (portal-funcionario/pratica.ts, 409 PRATICA_PENDENTE).
+-- certificado do curso semipresencial para quem esteve "presente" e teve resultado "satisfatório" em sessões não
+-- apagadas do mesmo curso, já realizadas, cuja soma das cargas chega à carga prática do curso (limitada, em cada
+-- dia, ao tempo de relógio dos horários: sessão lançada duas vezes não dobra; portal-funcionario/pratica.ts, 409
+-- PRATICA_PENDENTE).
 --
 -- O que muda:
 --
@@ -39,6 +41,10 @@
 --     curso, grava o funcionário da matrícula (nunca o que o cliente mandou), não deixa trocar sessão, matrícula ou
 --     funcionário depois (remove e inclui de novo) e recusa presença ou resultado numa sessão de data futura
 --     (Brasília): o que não aconteceu não é lançado;
+--   - a carga de uma sessão não passa do tempo do horário (CHECK) e o trigger pratica_participante_coerente não
+--     deixa entrar em sessão ou matrícula apagada;
+--   - o trigger pratica_sessao_com_participantes não deixa a sessão mudar de curso com participante vivo, nem ir
+--     para depois de hoje com presença ou resultado já lançados;
 --   - referências da mesma empresa (0118) em curso_id, sessao_id, matricula_id e funcionario_id.
 --
 -- LIMITAÇÃO CONHECIDA (depende da T33): a RLS deixa QUALQUER usuário autenticado da empresa gravar "presente +
@@ -114,6 +120,14 @@ alter table public.treinamento_sessao_pratica
   add constraint treinamento_sessao_pratica_carga_chk
   check (carga_horas > 0 and carga_horas <= 24);
 
+-- a carga não passa do tempo de relógio da sessão (A6): 24 h numa sessão das 08h às 09h inflaria a carga que o
+-- certificado declara. Mesma conta que a tela já faz (validarSessao), agora também no banco.
+alter table public.treinamento_sessao_pratica
+  drop constraint if exists treinamento_sessao_pratica_carga_horario_chk;
+alter table public.treinamento_sessao_pratica
+  add constraint treinamento_sessao_pratica_carga_horario_chk
+  check (carga_horas * 3600 <= extract(epoch from (hora_fim - hora_inicio)));
+
 alter table public.treinamento_sessao_pratica
   drop constraint if exists treinamento_sessao_pratica_textos_chk;
 alter table public.treinamento_sessao_pratica
@@ -183,7 +197,7 @@ alter table public.treinamento_pratica_participante
   check (observacao is null or char_length(observacao) <= 300);
 
 comment on table public.treinamento_pratica_participante is
-  'T12: presença e resultado (pendente, satisfatorio, insatisfatorio) de uma matrícula numa sessão prática. O certificado do semipresencial exige presente + satisfatorio numa sessão viva do curso, já realizada. avaliado_por/avaliado_em vêm do trigger. A trava por permissão de quem lança depende da T33.';
+  'T12: presença e resultado (pendente, satisfatorio, insatisfatorio) de uma matrícula numa sessão prática. O certificado do semipresencial exige presente + satisfatorio em sessões vivas do curso, já realizadas, cuja soma das cargas chegue à carga prática do curso. avaliado_por/avaliado_em vêm do trigger. A trava por permissão de quem lança depende da T33.';
 comment on column public.treinamento_pratica_participante.avaliado_por is
   'auth.uid() de quem mudou a presença ou o resultado pela última vez (gravado pelo trigger pratica_avaliacao_pelo_banco, nunca pelo cliente).';
 
@@ -247,9 +261,10 @@ begin
     into v_sessao
     from public.treinamento_sessao_pratica s
    where s.id = new.sessao_id
-     and s.empresa_id = new.empresa_id;
+     and s.empresa_id = new.empresa_id
+     and (s.deleted_at is null or new.deleted_at is not null);
   if not found then
-    raise exception 'Acesso negado: sessão prática não encontrada nesta empresa' using errcode = '42501';
+    raise exception 'Acesso negado: sessão prática não encontrada (ou apagada) nesta empresa' using errcode = '42501';
   end if;
 
   if tg_op = 'INSERT' then
@@ -257,9 +272,10 @@ begin
       into v_matricula
       from public.treinamento_matricula m
      where m.id = new.matricula_id
-       and m.empresa_id = new.empresa_id;
+       and m.empresa_id = new.empresa_id
+       and (m.deleted_at is null or new.deleted_at is not null);
     if not found then
-      raise exception 'Acesso negado: matrícula não encontrada nesta empresa' using errcode = '42501';
+      raise exception 'Acesso negado: matrícula não encontrada (ou apagada) nesta empresa' using errcode = '42501';
     end if;
     if v_matricula.curso_id is distinct from v_sessao.curso_id then
       raise exception 'A matrícula é de outro curso: só entra na sessão prática quem está matriculado no curso dela'
@@ -290,6 +306,46 @@ drop trigger if exists pratica_participante_coerente on public.treinamento_prati
 create trigger pratica_participante_coerente
   before insert or update on public.treinamento_pratica_participante
   for each row execute function public.pratica_participante_coerente();
+
+-- 7b. sessão com participantes: não muda de curso, e não volta para o futuro com resultado lançado -------------
+-- O trigger do participante só confere "mesmo curso" e "nada no futuro" na hora de incluir ou lançar. Sem esta,
+-- o RH mudava o curso da sessão (ou a data, para depois de hoje) DEPOIS de haver participantes e a coerência
+-- deixava de valer sem aviso (A6). Com participante vivo a sessão não troca de curso (apague a sessão e crie
+-- outra); com presença ou resultado já lançados ela não vai para depois de hoje. Sem participante, edita livre.
+create or replace function public.pratica_sessao_com_participantes()
+returns trigger
+language plpgsql
+set search_path = public
+as $
+declare
+  v_hoje date := (now() at time zone 'America/Sao_Paulo')::date;
+begin
+  if new.curso_id is distinct from old.curso_id
+     and exists (select 1 from public.treinamento_pratica_participante p
+                  where p.sessao_id = new.id and p.deleted_at is null) then
+    raise exception 'A sessão já tem participantes: ela não muda de curso (apague a sessão e crie outra)'
+      using errcode = '23514';
+  end if;
+
+  if new.deleted_at is null
+     and new.data is distinct from old.data
+     and new.data > v_hoje
+     and exists (select 1 from public.treinamento_pratica_participante p
+                  where p.sessao_id = new.id and p.deleted_at is null
+                    and (p.presente or p.resultado <> 'pendente')) then
+    raise exception 'A sessão já tem presença ou resultado lançados: ela não pode ser remarcada para depois de hoje'
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$;
+revoke all on function public.pratica_sessao_com_participantes() from public, anon, authenticated;
+
+drop trigger if exists pratica_sessao_com_participantes on public.treinamento_sessao_pratica;
+create trigger pratica_sessao_com_participantes
+  before update on public.treinamento_sessao_pratica
+  for each row execute function public.pratica_sessao_com_participantes();
 
 -- 8. quem avaliou e quando: sempre do banco --------------------------------------------------------------------
 -- Mudou a presença ou o resultado: grava auth.uid() (null para o servidor/SQL sem JWT) e now(). Não mudou: mantém o
@@ -328,8 +384,8 @@ create trigger pratica_avaliacao_pelo_banco
 commit;
 
 -- Conferência (só leitura): as colunas, as tabelas com RLS, os triggers e o que já existe. Na primeira aplicação:
--- 2 colunas no curso, as duas tabelas com RLS ligada e vazias, 4 triggers próprios (2 por tabela, fora o
--- updated_at) e nenhum curso com carga teórica ou prática (quem preenche é o Javerson, pela tela).
+-- 2 colunas no curso, as duas tabelas com RLS ligada e vazias, 5 triggers próprios (3 no participante e 2 na
+-- sessão, fora o updated_at) e nenhum curso com carga teórica ou prática (quem preenche é o Javerson, pela tela).
 select (select count(*) from information_schema.columns
         where table_schema = 'public' and table_name = 'treinamento_curso'
           and column_name in ('carga_teorica_horas', 'carga_pratica_horas')) as colunas_do_curso_de_2,
@@ -339,9 +395,10 @@ select (select count(*) from information_schema.columns
           and relrowsecurity) as tabelas_com_rls_de_2,
        (select count(*) from pg_trigger
         where not tgisinternal
-          and tgname in ('pratica_participante_coerente', 'pratica_avaliacao_pelo_banco', 'referencias_da_empresa')
+          and tgname in ('pratica_participante_coerente', 'pratica_avaliacao_pelo_banco', 'referencias_da_empresa',
+                         'pratica_sessao_com_participantes')
           and tgrelid in ('public.treinamento_sessao_pratica'::regclass,
-                          'public.treinamento_pratica_participante'::regclass)) as triggers_de_4,
+                          'public.treinamento_pratica_participante'::regclass)) as triggers_de_5,
        (select count(*) from public.treinamento_sessao_pratica) as sessoes,
        (select count(*) from public.treinamento_pratica_participante) as participantes,
        (select count(*) from public.treinamento_curso

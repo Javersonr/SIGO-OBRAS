@@ -17,6 +17,7 @@ import { celulaDoCsv, diaEmBrasilia, nomeDoFuncionario, rotuloDoStatus } from ".
 import { dataHoraBrasilia } from "./data-brasilia";
 import { detalharTentativa } from "./ead-tentativa";
 import { descreverDetalhe, formatarTempo, origemDoEvento, rotuloDoEvento } from "./ead-trilha";
+import { estadoDoPdfDoProjeto } from "./ead-projeto-marca";
 import { modalidadeDoCurso } from "./ead-requisitos";
 import { textoDoTipoDaMatricula } from "./ead-tipo-matricula";
 import { numerarAulas, renovacaoParaExibir } from "./portal-curso";
@@ -594,6 +595,11 @@ const AVISO_SEM_PROJETO =
 const AVISO_PROJETO_ANTIGO =
   "O projeto pedagógico do curso foi anexado em um sistema antigo e o arquivo não existe mais. Anexe o PDF de " +
   "novo no cadastro do curso e exporte de novo.";
+// o PDF vai como está anexado; o aviso diz que o projeto (ou a validação) mudou depois dele (A6, T25)
+const AVISO_PROJETO_DESATUALIZADO =
+  "O projeto pedagógico anexado está desatualizado: o projeto ou a validação do responsável técnico mudaram " +
+  "depois de o PDF ser gerado, e este pacote leva o PDF como está. Gere o PDF de novo (ou anexe o seu de novo) " +
+  "no cadastro do curso e exporte de novo antes de entregar à fiscalização.";
 const AVISO_PROJETO_FALHOU =
   "O projeto pedagógico não pôde ser baixado agora e não está neste pacote. Confira a conexão e exporte de novo.";
 
@@ -670,6 +676,7 @@ export async function montarDossie(entrada, deps = {}) {
       pasta.file(caminho, bytes);
       arquivos.push({ caminho, descricao: "projeto pedagógico do curso, como está anexado." });
       projeto = "incluido";
+      if (estadoDoPdfDoProjeto(curso) === "desatualizado") avisos.push(AVISO_PROJETO_DESATUALIZADO);
     } catch (erro) {
       projeto = "falhou";
       avisos.push(AVISO_PROJETO_FALHOU);

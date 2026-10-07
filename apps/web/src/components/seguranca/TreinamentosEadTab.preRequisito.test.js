@@ -68,6 +68,20 @@ describe("matrícula: tipo do treinamento e pré-requisito", () => {
     );
   });
 
+  it("renovar relê do banco as matrículas e os certificados do curso exigido antes de conferir (A6, T23)", () => {
+    const renovar = funcao(aba, "renovarMatricula");
+    expect(renovar).toContain("comLeituraFrescaDoPreRequisito({");
+    expect(renovar).toMatch(/curso_id: preId/);
+    expect(renovar).toMatch(/matricula_id: \{ \$in: /);
+    // a conferência usa as listas já com a leitura fresca, e a leitura vem antes dela
+    expect(renovar).toMatch(
+      /separarPorPreRequisito\(\{[\s\S]*?matriculas: conferir\.matriculas,[\s\S]*?certificados: conferir\.certificados,/
+    );
+    expect(renovar.indexOf("comLeituraFrescaDoPreRequisito(")).toBeLessThan(
+      renovar.indexOf("separarPorPreRequisito(")
+    );
+  });
+
   it("a renovação grava a matrícula que a regra montou (com tipo e motivo), não uma linha à mão", () => {
     const renovar = funcao(aba, "renovarMatricula");
     expect(renovar).toMatch(/TreinamentoMatricula\.bulkCreate\(liberadas\)/);

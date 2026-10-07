@@ -162,9 +162,16 @@ export function janelasPorAlunoEDia(eventos, { desde = null, cobrarDesde } = {})
         : null;
   const cobra = (dia) => corte === undefined || (corte !== null && dia >= corte);
   const grupos = new Map();
+  // a consulta pagina o período (`range`) enquanto os alunos gravam: a fronteira das páginas anda e a mesma linha
+  // pode vir duas vezes. O `id` do evento diz quem é repetido; sem id, o evento vale como está (A6, T35).
+  const vistos = new Set();
   for (const e of Array.isArray(eventos) ? eventos : []) {
     if (!ehAtividadeDoAluno(e) || typeof e.funcionario_id !== "string" || !e.funcionario_id)
       continue;
+    if (typeof e.id === "string" && e.id) {
+      if (vistos.has(e.id)) continue;
+      vistos.add(e.id);
+    }
     const ms = instante(e.created_at);
     if (ms === null) continue;
     const dia = hojeEmBrasilia(new Date(ms));
@@ -236,10 +243,18 @@ export function montarLinhasDeAtividade({ eventos, funcionarios, desde = null, c
 
 // ------------------------------------------------------------------------------------------------ tela
 
-/** "08:03 às 11:47 (3h44)", "08:03 às 08:48 (45 min)" ou "08:03 (um evento)". Horas de Brasília. */
+/**
+ * "08:03 às 11:47 (3h44)", "08:03 às 08:48 (45 min)", "08:03 (um evento)" ou "08:03 (4 eventos no mesmo minuto)".
+ * Horas de Brasília. "Um evento" só quando houve UM: vários no mesmo minuto também dão janela de 0 min, e dizer
+ * "um evento" escondia a atividade (A6, T35).
+ */
 export function textoDaJanela(linha) {
   const inicio = horaDeBrasilia(linha?.primeiroEm);
-  if (!linha || !(linha.minutos > 0)) return `${inicio} (um evento)`;
+  if (!linha || !(linha.minutos > 0)) {
+    return linha?.eventos > 1
+      ? `${inicio} (${linha.eventos} eventos no mesmo minuto)`
+      : `${inicio} (um evento)`;
+  }
   const horas = Math.floor(linha.minutos / 60);
   const resto = linha.minutos % 60;
   const duracao = horas ? `${horas}h${String(resto).padStart(2, "0")}` : `${resto} min`;
@@ -289,13 +304,32 @@ export function filtrarAtividade(linhas, { busca = "", soSemDeclaracao = false }
   );
 }
 
-/** O quadro do topo: alunos com atividade, dias (linhas) e dias em que houve estudo sem declaração. */
+/**
+ * O quadro do topo: alunos com atividade, dias DISTINTOS, registros (uma linha por aluno e dia) e registros em que
+ * houve estudo sem declaração. `dias` já foi o número de linhas: dois alunos no mesmo dia davam "2 dias" (A6, T35).
+ */
 export function resumirAtividade(linhas) {
   const lista = Array.isArray(linhas) ? linhas : [];
   return {
     alunos: new Set(lista.map((l) => l.funcionarioId)).size,
-    dias: lista.length,
+    dias: new Set(lista.map((l) => l.dia)).size,
+    registros: lista.length,
     semDeclaracao: lista.filter((l) => l.semDeclaracao > 0).length,
+  };
+}
+
+/**
+ * Os textos do quadro do topo, no singular e no plural certos (A6, T35). "Registro" é uma linha da tabela: um aluno
+ * em um dia. O mesmo dia com dois alunos é UM dia e DOIS registros.
+ */
+export function textosDoResumo(resumo) {
+  const { alunos = 0, dias = 0, registros = 0, semDeclaracao = 0 } = resumo ?? {};
+  const registro = (n) => `${n} ${n === 1 ? "registro" : "registros"}`;
+  return {
+    alunos: `${alunos} ${alunos === 1 ? "aluno" : "alunos"}`,
+    dias: `${dias} ${dias === 1 ? "dia" : "dias"} com atividade`,
+    registros: `${registro(registros)} de aluno e dia`,
+    semDeclaracao: `${registro(semDeclaracao)} com estudo sem declaração`,
   };
 }
 

@@ -19,6 +19,7 @@ import {
   periodoComPratica,
   periodoDoSemipresencial,
   podeEmitirSemipresencial,
+  praticaDoCertificado,
   praticaParaOAluno,
   praticasDoBanco,
   situacaoDaPratica,
@@ -356,7 +357,13 @@ test("dadosDaPraticaNoCertificado: congela dia, horário, local, instrutor e car
 
 test("dadosDaPraticaNoCertificado: a prática de vários dias congela todas as sessões, em ordem de data, e soma as cargas", () => {
   const dia1 = sessao({ id: "a", data: "2026-10-05", carga_horas: 8, hora_fim: "17:00:00" });
-  const dia2 = sessao({ id: "b", data: "2026-10-06", carga_horas: 8, local: "Galpão B" });
+  const dia2 = sessao({
+    id: "b",
+    data: "2026-10-06",
+    carga_horas: 8,
+    hora_fim: "17:00:00",
+    local: "Galpão B",
+  });
   const dados = dadosDaPraticaNoCertificado([dia2 as never, dia1 as never]);
   assert.deepEqual(
     dados.sessoes.map((x) => [x.sessao_id, x.data, x.local, x.carga_horas]),
@@ -506,11 +513,28 @@ test("carga da prática: as duas sessões de 8 h somam 16 h e liberam, com as du
 });
 
 test("carga da prática: uma sessão só de 16 h também vale, e o excesso de sessões fica fora do certificado", () => {
+  // 16 h num dia só (06h às 23h): a carga cabe no relógio (a sessão com mais horas que o horário não existe: 0143)
+  assert.equal(
+    podeEmitirSemipresencial(
+      comCarga(
+        [
+          oito("a", "2026-10-05", {
+            carga_horas: 16,
+            hora_inicio: "06:00:00",
+            hora_fim: "23:00:00",
+          }),
+        ],
+        [participacao({ sessao_id: "a" })]
+      )
+    ),
+    true
+  );
+  // e a carga declarada acima do horário não rende mais que o horário (a conta limita ao relógio)
   assert.equal(
     podeEmitirSemipresencial(
       comCarga([oito("a", "2026-10-05", { carga_horas: 16 })], [participacao({ sessao_id: "a" })])
     ),
-    true
+    false
   );
   // três sessões de 8 h para 16 h: valem as duas primeiras
   const tres = comCarga(
@@ -847,10 +871,53 @@ test("lerPratica: lê as sessões do curso e as participações da matrícula, s
   assert.ok(tem(sessoes, ["eq", "curso_id", CURSO]));
   assert.ok(tem(sessoes, ["eq", "empresa_id", "empresa-1"]));
   assert.ok(tem(sessoes, ["is", "deleted_at", null]));
+  // só as sessões das participações da matrícula (A6, N6): não as do curso inteiro, que passam do teto do PostgREST
+  assert.ok(tem(sessoes, ["in", "id", ["s1"]]));
   const parts = chamadas.find((c) => c.tabela === "treinamento_pratica_participante");
   assert.ok(tem(parts, ["eq", "matricula_id", MAT]));
   assert.ok(tem(parts, ["eq", "empresa_id", "empresa-1"]));
   assert.ok(tem(parts, ["is", "deleted_at", null]));
+  // as participações são lidas ANTES das sessões (as sessões dependem delas)
+  assert.ok(chamadas.indexOf(parts!) < chamadas.indexOf(sessoes!));
+});
+
+test("lerPratica: sem participação não lê sessão nenhuma (nada a contar), e a falha de uma delas não vira 'realizada' (A6, N6)", async () => {
+  const { db, chamadas } = bancoDeTeste({
+    treinamento_sessao_pratica: { data: [sessao()] },
+    treinamento_pratica_participante: { data: [] },
+  });
+  const r = await lerPratica(db, {
+    matriculaId: MAT,
+    cursoId: CURSO,
+    empresaId: "empresa-1",
+    hoje: HOJE,
+  });
+  assert.equal(r.ok && r.pratica.situacao, "pendente");
+  assert.equal(
+    chamadas.filter((c) => c.tabela === "treinamento_sessao_pratica").length,
+    0,
+    "sem participação, nenhuma consulta de sessão"
+  );
+});
+
+test("lerPratica: muitas participações viram várias consultas pequenas de sessão (o filtro vai na URL)", async () => {
+  const ids = Array.from({ length: 170 }, (_, i) => `sessao-${i}`);
+  const { db, chamadas } = bancoDeTeste({
+    treinamento_sessao_pratica: { data: [] },
+    treinamento_pratica_participante: { data: ids.map((sessao_id) => participacao({ sessao_id })) },
+  });
+  await lerPratica(db, { matriculaId: MAT, cursoId: CURSO, empresaId: "empresa-1", hoje: HOJE });
+  const consultas = chamadas.filter((c) => c.tabela === "treinamento_sessao_pratica");
+  assert.equal(consultas.length, 3);
+  const tamanhos = consultas.map(
+    (c) => (c.filtros.find((f) => f[0] === "in")![2] as string[]).length
+  );
+  assert.deepEqual(tamanhos, [80, 80, 10]);
+  // e cada consulta leva o filtro da empresa e do curso
+  for (const c of consultas) {
+    assert.ok(tem(c, ["eq", "empresa_id", "empresa-1"]));
+    assert.ok(tem(c, ["eq", "curso_id", CURSO]));
+  }
 });
 
 test("lerPratica: a carga prática do curso decide se as sessões bastam", async () => {
@@ -917,6 +984,7 @@ test("praticasDoBanco: sem curso semipresencial não consulta; com erro devolve 
   assert.equal(r.participacoes.length, 1);
   const sessoes = chamadas.find((c) => c.tabela === "treinamento_sessao_pratica");
   assert.ok(tem(sessoes, ["in", "curso_id", [CURSO]]), "sem repetir o curso");
+  assert.ok(tem(sessoes, ["in", "id", ["s1"]]), "só as sessões das participações (A6, N6)");
   assert.ok(tem(sessoes, ["eq", "empresa_id", "empresa-1"]));
   const parts = chamadas.find((c) => c.tabela === "treinamento_pratica_participante");
   assert.ok(tem(parts, ["in", "matricula_id", [MAT]]));
@@ -924,11 +992,25 @@ test("praticasDoBanco: sem curso semipresencial não consulta; com erro devolve 
   let falhou: unknown;
   await silenciar(async () => {
     falhou = await praticasDoBanco(
-      bancoDeTeste({ treinamento_sessao_pratica: { data: null, error: { message: "x" } } }).db,
+      bancoDeTeste({
+        treinamento_sessao_pratica: { data: null, error: { message: "x" } },
+        treinamento_pratica_participante: { data: [participacao()] },
+      }).db,
       { cursoIds: [CURSO], matriculaIds: [MAT], empresaId: "e" }
     );
   });
   assert.deepEqual(falhou, { sessoes: [], participacoes: [] });
+  // erro nas participações também devolve vazio
+  let falhouParts: unknown;
+  await silenciar(async () => {
+    falhouParts = await praticasDoBanco(
+      bancoDeTeste({
+        treinamento_pratica_participante: { data: null, error: { message: "y" } },
+      }).db,
+      { cursoIds: [CURSO], matriculaIds: [MAT], empresaId: "e" }
+    );
+  });
+  assert.deepEqual(falhouParts, { sessoes: [], participacoes: [] });
 });
 
 // ---------------------------------------------------------------------------------- o index.ts usa a regra
@@ -1067,7 +1149,194 @@ test("dados: o semipresencial recebe a parte prática e só emite com ela realiz
   const t = trecho("dados");
   assert.ok(t.includes("praticasDoBanco("));
   assert.ok(t.includes("praticaParaOAluno("));
-  assert.ok(/pratica:\s*pratica\b/.test(t));
+  // com o certificado emitido a linha mostra a prática congelada nele (A6, M3); sem ele, a das sessões vivas
+  assert.ok(
+    /pratica:\s*\(cert \? praticaDoCertificado\(cert\.dados\) : null\) \?\? pratica\b/.test(t)
+  );
   // curso que não é semipresencial não tem prática (null) e não depende dela
   assert.ok(/\(pratica === null \|\| pratica\.situacao === "realizada"\)/.test(t));
+});
+
+// ---------------------------------------------------------------------------------- sessões que se sobrepõem (A6, T12 N1)
+
+/** Sessão de `carga` horas das `de` às `ate` (HH:MM), num dia: o resto do cenário da carga da prática. */
+const no = (
+  id: string,
+  data: string,
+  de: string,
+  ate: string,
+  carga: number,
+  extra: Record<string, unknown> = {}
+) =>
+  sessao({
+    id,
+    data,
+    hora_inicio: `${de}:00`,
+    hora_fim: `${ate}:00`,
+    carga_horas: carga,
+    ...extra,
+  });
+const ambas = (...ids: string[]) => ids.map((sessao_id) => participacao({ sessao_id }));
+
+test("sobreposição: a mesma sessão lançada duas vezes (mesmo dia e horário) vale uma vez só, não o dobro", () => {
+  const original = no("a", "2026-10-05", "08:00", "16:00", 8);
+  const duplicada = no("a2", "2026-10-05", "08:00", "16:00", 8);
+  const caso = comCarga([original, duplicada], ambas("a", "a2"));
+  const r = situacaoDaPratica(caso);
+  // antes: 8 + 8 = 16 h e o certificado de 16 h de prática saía com 1 dia só
+  assert.equal(r.cumpridaHoras, 8);
+  assert.equal(r.situacao, "parcial");
+  assert.equal(podeEmitirSemipresencial(caso), false);
+  assert.match(bloqueioDeEmissaoPorPratica(r)!.mensagem, /Cumpridas 8 h das 16 h/);
+});
+
+test("sobreposição: sessões que se cruzam no mesmo dia valem o tempo coberto (a união dos horários)", () => {
+  // 08-12 (4 h) e 10-14 (4 h): 8 h declaradas, mas só 6 h de relógio (08 às 14)
+  const caso = comCarga(
+    [no("a", "2026-10-05", "08:00", "12:00", 4), no("b", "2026-10-05", "10:00", "14:00", 4)],
+    ambas("a", "b")
+  );
+  assert.equal(situacaoDaPratica(caso).cumpridaHoras, 6);
+  // sessões do mesmo dia que NÃO se cruzam (manhã e tarde) somam normalmente
+  const turnos = comCarga(
+    [no("a", "2026-10-05", "08:00", "12:00", 4), no("b", "2026-10-05", "13:00", "17:00", 4)],
+    ambas("a", "b")
+  );
+  assert.equal(situacaoDaPratica(turnos).cumpridaHoras, 8);
+});
+
+test("sobreposição: o limite é por dia: o mesmo horário em dias diferentes soma", () => {
+  const dois = comCarga(
+    [no("a", "2026-10-05", "08:00", "16:00", 8), no("b", "2026-10-06", "08:00", "16:00", 8)],
+    ambas("a", "b")
+  );
+  const r = situacaoDaPratica(dois);
+  assert.equal(r.cumpridaHoras, 16);
+  assert.equal(r.situacao, "realizada");
+});
+
+test("sobreposição: a carga declarada menor que o horário continua valendo (8 h num dia de 9 h)", () => {
+  const um = comCarga([no("a", "2026-10-05", "08:00", "17:00", 8)], ambas("a"));
+  assert.equal(situacaoDaPratica(um).cumpridaHoras, 8);
+});
+
+test("sobreposição: sem horário válido (o banco não deixa, mas a regra não presume) vale a carga declarada", () => {
+  const semHorario = comCarga(
+    [
+      no("a", "2026-10-05", "08:00", "16:00", 8),
+      sessao({ id: "b", data: "2026-10-05", hora_inicio: null, hora_fim: null, carga_horas: 8 }),
+    ],
+    ambas("a", "b")
+  );
+  assert.equal(situacaoDaPratica(semHorario).cumpridaHoras, 16);
+});
+
+test("sobreposição: a sessão repetida não vai para o certificado, e a soma congelada é a que valeu", () => {
+  const caso = comCarga(
+    [
+      no("a", "2026-10-05", "08:00", "16:00", 8),
+      no("a2", "2026-10-05", "08:00", "16:00", 8),
+      no("b", "2026-10-06", "08:00", "16:00", 8),
+    ],
+    ambas("a", "a2", "b")
+  );
+  const r = situacaoDaPratica(caso);
+  assert.equal(r.situacao, "realizada");
+  assert.deepEqual(
+    r.sessoes.map((s) => s.id),
+    ["a", "b"]
+  );
+  assert.equal(r.cumpridaHoras, 16);
+  assert.equal(dadosDaPraticaNoCertificado(r.sessoes).carga_horas, 16);
+  // e se o RH congelasse as duas repetidas, a soma declarada seria só a do tempo coberto
+  const repetidas = [
+    no("a", "2026-10-05", "08:00", "16:00", 8),
+    no("a2", "2026-10-05", "08:00", "16:00", 8),
+  ];
+  assert.equal(dadosDaPraticaNoCertificado(repetidas).carga_horas, 8);
+});
+
+test("sobreposição: o espelho do front diz o mesmo (situação, sessões e horas)", () => {
+  const casos = [
+    comCarga(
+      [no("a", "2026-10-05", "08:00", "16:00", 8), no("a2", "2026-10-05", "08:00", "16:00", 8)],
+      ambas("a", "a2")
+    ),
+    comCarga(
+      [no("a", "2026-10-05", "08:00", "12:00", 4), no("b", "2026-10-05", "10:00", "14:00", 4)],
+      ambas("a", "b")
+    ),
+    comCarga(
+      [
+        no("a", "2026-10-05", "08:00", "16:00", 8),
+        no("a2", "2026-10-05", "08:00", "16:00", 8),
+        no("b", "2026-10-06", "08:00", "16:00", 8),
+      ],
+      ambas("a", "a2", "b")
+    ),
+    comCarga(
+      [
+        no("a", "2026-10-05", "08:00", "16:00", 8),
+        sessao({ id: "b", data: "2026-10-05", hora_inicio: null, hora_fim: null, carga_horas: 8 }),
+      ],
+      ambas("a", "b")
+    ),
+  ];
+  for (const [i, caso] of casos.entries()) {
+    assert.deepEqual(situacaoNoFront(caso), situacaoDaPratica(caso), `caso ${i}`);
+  }
+});
+
+// ---------------------------------------------------------------------------------- certificado emitido (A6, T12 M3)
+
+test("praticaDoCertificado: com o certificado emitido, a parte prática mostrada é a que ficou congelada nele", () => {
+  const dados = {
+    pratica: dadosDaPraticaNoCertificado([
+      no("b", "2026-10-06", "08:00", "16:00", 8, { local: "Galpão B" }) as never,
+      no("a", "2026-10-05", "08:00", "16:00", 8) as never,
+    ]),
+  };
+  const r = praticaDoCertificado(dados);
+  assert.ok(r);
+  assert.equal(r.situacao, "realizada");
+  assert.equal(r.data, "2026-10-06"); // o último dia
+  assert.equal(r.local, "Pátio de treinamento de teste e Galpão B");
+  assert.equal(
+    r.texto,
+    "Parte prática: realizada em 05/10/2026 e 06/10/2026, em Pátio de treinamento de teste e Galpão B."
+  );
+});
+
+test("praticaDoCertificado: certificado sem prática congelada (EAD, ou de antes da T12) devolve null", () => {
+  for (const dados of [
+    null,
+    undefined,
+    {},
+    { pratica: null },
+    { pratica: { sessoes: [] } },
+    "x",
+    7,
+  ]) {
+    assert.equal(praticaDoCertificado(dados), null, JSON.stringify(dados));
+  }
+  // linha que não é objeto no meio das sessões não derruba
+  const r = praticaDoCertificado({
+    pratica: { sessoes: [null, 3, { sessao_id: "a", data: "2026-10-05" }] },
+  });
+  assert.equal(r?.situacao, "realizada");
+});
+
+test("index.ts: dados mostra a prática do certificado quando há certificado, e a das sessões vivas quando não há (M3)", () => {
+  const codigo = readFileSync(new URL("./index.ts", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  assert.match(codigo, /praticaDoCertificado\(cert\.dados\)/);
+  // a prática viva continua sendo calculada e é a que vale quando o certificado não a traz
+  assert.match(codigo, /const pratica = praticaParaOAluno\(\{/);
+  assert.match(
+    codigo,
+    /pratica:\s*\(cert \? praticaDoCertificado\(cert\.dados\) : null\) \?\? pratica\b/
+  );
+  // a emissão continua conferindo as sessões VIVAS (o certificado emitido não pode abrir caminho a outro)
+  assert.match(codigo, /pratica === null \|\| pratica\.situacao === "realizada"/);
 });

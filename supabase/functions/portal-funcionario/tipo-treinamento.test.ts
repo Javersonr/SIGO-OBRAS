@@ -63,6 +63,28 @@ test("eventual entra com o motivo, sem os espaços das pontas", () => {
   );
 });
 
+test("o motivo é aparado e contado como o banco faz: btrim de espaço/tab/CR/LF/FF/VT e char_length em caracteres (A6, T23)", () => {
+  // quebra de linha e tab nas pontas saem; sobra o texto
+  assert.deepEqual(
+    dadosDoTipoNoCertificado({ tipo: "eventual", motivo_eventual: "\t\r\n\f\v Troca de equipamento \n" }),
+    { tipo_treinamento: "eventual", motivo_eventual: "Troca de equipamento" }
+  );
+  // 150 emojis são 300 unidades UTF-16 mas 150 caracteres: o banco aceita (<= 200), então o certificado afirma o tipo
+  const emojis = "😀".repeat(150);
+  assert.deepEqual(dadosDoTipoNoCertificado({ tipo: "eventual", motivo_eventual: emojis }), {
+    tipo_treinamento: "eventual",
+    motivo_eventual: emojis,
+  });
+  // 201 emojis passam do limite; 2 emojis não chegam aos 3 caracteres
+  assert.deepEqual(
+    dadosDoTipoNoCertificado({ tipo: "eventual", motivo_eventual: "😀".repeat(201) }),
+    {}
+  );
+  assert.deepEqual(dadosDoTipoNoCertificado({ tipo: "eventual", motivo_eventual: "😀😀" }), {});
+  // só quebras de linha: depois de aparar não sobra nada (o banco também recusa)
+  assert.deepEqual(dadosDoTipoNoCertificado({ tipo: "eventual", motivo_eventual: "\n\n\n" }), {});
+});
+
 test("eventual sem motivo, ou com motivo curto ou longo demais, não afirma nada (certificado sem o tipo)", () => {
   for (const motivo of [
     null,

@@ -42,7 +42,11 @@
 -- RECICLAGEM, e o mesmo "Inicial" iria para a tabela, o CSV e a planilha do dossiê. Nada depois corrigiria isso: a
 -- 0130 impede o RH de mudar o tipo e o certificado emitido fica selado. Por isso o preenchimento acontece UMA vez,
 -- aqui. O que a regra não consegue saber: um treinamento feito fora do portal (presencial) não aparece nas matrículas,
--- então a primeira matrícula de quem já fez o curso por fora fica 'inicial'.
+-- então a primeira matrícula de quem já fez o curso por fora fica 'inicial'. A regra também depende do dado: "anterior"
+-- é a ordem de created_at, então duas matrículas importadas com o MESMO created_at (carga do legado) não contam uma
+-- para a outra; e, se o índice único treinamento_matricula_viva_uidx (0139) não pôde ser criado em produção (havia
+-- matrícula aberta repetida), uma matrícula repetida aberta antes de a outra concluir também vira 'periodico'. Olhe a
+-- conferência no fim com isso em mente.
 --
 -- Idempotente: a coluna tipo só é criada, e as matrículas antigas só são preenchidas, se a coluna ainda não existe
 -- (guarda em information_schema), então rodar de novo NÃO volta a mexer no tipo, nem desfaz a escolha do RH; as demais
@@ -104,7 +108,10 @@ alter table public.treinamento_matricula
   add constraint treinamento_matricula_tipo_chk
   check (tipo in ('inicial', 'periodico', 'eventual'));
 
--- eventual leva motivo (3 a 200 caracteres úteis); inicial e periódico não levam
+-- eventual leva motivo (3 a 200 caracteres úteis); inicial e periódico não levam. "Úteis" = sem espaço, tab, CR, LF, FF
+-- e VT nas pontas (\x0b é o VT), nos DOIS limites: é o mesmo aparar e a mesma contagem do servidor e da consulta
+-- pública (tipo-treinamento.ts e validar-certificado/regras.ts). Com o btrim simples (só espaço) e o limite sobre o
+-- texto cru, um motivo gravado pela API podia passar aqui e sair do certificado sem o tipo (A6).
 alter table public.treinamento_matricula
   drop constraint if exists treinamento_matricula_motivo_eventual_chk;
 alter table public.treinamento_matricula
@@ -112,8 +119,8 @@ alter table public.treinamento_matricula
   check (
     case when tipo = 'eventual'
       then motivo_eventual is not null
-        and char_length(btrim(motivo_eventual)) >= 3
-        and char_length(motivo_eventual) <= 200
+        and char_length(btrim(motivo_eventual, E' \t\r\n\f\x0b')) >= 3
+        and char_length(btrim(motivo_eventual, E' \t\r\n\f\x0b')) <= 200
       else motivo_eventual is null
     end
   );
@@ -198,9 +205,13 @@ commit;
 
 -- Conferência (só leitura): as colunas existem, quantas matrículas vivas têm cada tipo (na primeira aplicação, as
 -- periódicas são as renovações que já existiam e as iniciais, o resto; nenhuma eventual), quantas matrículas
--- 'inicial' ainda têm uma concluída anterior (0 logo após a primeira aplicação; depois só sobe se o RH escolher
--- "Inicial" de propósito) e quantos cursos já têm pré-requisito (0 na primeira aplicação; sobe conforme o RH escolhe
--- pela tela).
+-- 'inicial' ainda têm uma concluída anterior e quantos cursos já têm pré-requisito (0 na primeira aplicação; sobe
+-- conforme o RH escolhe pela tela). iniciais_com_concluida_anterior é 0 logo após a primeira aplicação. DEPOIS, um
+-- número maior que zero NÃO quer dizer que o RH escolheu "Inicial" de propósito: pode ser uma matrícula criada por uma
+-- aba antiga do SIGO (aberta desde antes do deploy), que não manda o tipo, ou uma gravação direta pela API sem o tipo,
+-- e a coluna assume 'inicial'. Por isso, rode esta conferência DEPOIS de publicar o site e de os RHs recarregarem as
+-- abas; se o número passar de zero, o Javerson decide se roda o mesmo UPDATE só para as linhas criadas depois da
+-- migração (um certificado emitido fica selado com o tipo, e o RH não muda o tipo depois).
 select (select count(*) from information_schema.columns
         where table_schema = 'public' and table_name = 'treinamento_matricula'
           and column_name in ('tipo', 'motivo_eventual')) as colunas_da_matricula_de_2,

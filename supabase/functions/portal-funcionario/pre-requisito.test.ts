@@ -360,6 +360,40 @@ test("preRequisitoDoCurso: devolve o curso exigido, se está atendido e o texto 
   );
 });
 
+test("preRequisitoDoCurso: a leitura dos cursos exigidos FALHOU: não atendido, e o texto não diz 'curso excluído' (A6, T23)", () => {
+  const r = preRequisitoDoCurso({
+    curso: { id: "c2", pre_requisito_curso_id: "curso-basico" },
+    cursosExigidos: null,
+    matriculas: [concluida({ curso_id: "curso-basico" })],
+    certificados: [],
+    hoje: HOJE,
+  });
+  assert.equal(r?.atendido, false);
+  assert.equal(r?.motivo, "leitura_falhou");
+  assert.equal(r?.curso_id, "curso-basico");
+  assert.equal(r?.nome, null);
+  assert.match(r?.texto ?? "", /não foi possível conferir/i);
+  assert.doesNotMatch(r?.texto ?? "", /não está mais disponível|excluído/i);
+  // e o curso sem pré-requisito continua sem item, mesmo com a leitura falha
+  assert.equal(
+    preRequisitoDoCurso({
+      curso: { id: "c1", pre_requisito_curso_id: null },
+      cursosExigidos: null,
+      matriculas: [],
+      certificados: [],
+      hoje: HOJE,
+    }),
+    null
+  );
+});
+
+test("textoDoPreRequisito: 'leitura_falhou' pede para tentar de novo, e só depois o RH", () => {
+  const texto = textoDoPreRequisito("leitura_falhou", "NR-10 Básico");
+  assert.match(texto, /tente de novo/i);
+  assert.match(texto, /RH/);
+  assert.doesNotMatch(texto, /NR-10 Básico/, "sem o nome: a leitura que falhou foi justo a do nome");
+});
+
 test("preRequisitoDoCurso: curso exigido que a consulta não trouxe falha fechado", () => {
   const r = preRequisitoDoCurso({
     curso: { id: "c2", pre_requisito_curso_id: "curso-sumido" },
@@ -521,7 +555,7 @@ test("cursosExigidosDoBanco: lê só id, nome, modalidade e exclusão dos cursos
   assert.ok(tem(chamadas[0], ["select", "id, nome, modalidade, deleted_at"]));
 });
 
-test("cursosExigidosDoBanco: sem ids não consulta; com erro devolve vazio (o aluno fica 'não atendido')", async () => {
+test("cursosExigidosDoBanco: sem ids não consulta; com erro devolve null (o aluno fica 'não atendido', sem dizer que o curso sumiu)", async () => {
   const sem = bancoDeTeste({});
   assert.deepEqual(await cursosExigidosDoBanco(sem.db, [], "empresa-1"), []);
   assert.equal(sem.chamadas.length, 0);
@@ -529,7 +563,7 @@ test("cursosExigidosDoBanco: sem ids não consulta; com erro devolve vazio (o al
   console.error = () => {};
   try {
     const { db } = bancoDeTeste({ treinamento_curso: { data: null, error: { message: "x" } } });
-    assert.deepEqual(await cursosExigidosDoBanco(db, ["a"], "empresa-1"), []);
+    assert.equal(await cursosExigidosDoBanco(db, ["a"], "empresa-1"), null);
   } finally {
     console.error = original;
   }

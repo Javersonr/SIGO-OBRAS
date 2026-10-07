@@ -9,6 +9,7 @@ import {
   criarApiPrevia,
 } from "./portal-previa";
 import { provaParaTela } from "./portal-curso";
+import { MAX_DEDICACAO_MIN, MAX_PRAZO_DIAS } from "./ead-projeto";
 
 // dados sintéticos: nada de produção
 const curso = {
@@ -95,6 +96,28 @@ const urls = {
 };
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe("os limites do prazo e da dedicação são os da regra do projeto (A6, T25 R6)", () => {
+  it("o máximo vale, o máximo mais um vira null (sem número repetido na prévia)", () => {
+    const item = (extra) =>
+      montarItemPrevia({ curso: { ...curso, ...extra }, aulas, questoes }).curso;
+    expect(item({ prazo_conclusao_dias: MAX_PRAZO_DIAS }).prazo_conclusao_dias).toBe(
+      MAX_PRAZO_DIAS
+    );
+    expect(item({ prazo_conclusao_dias: MAX_PRAZO_DIAS + 1 }).prazo_conclusao_dias).toBeNull();
+    expect(item({ dedicacao_diaria_min: MAX_DEDICACAO_MIN }).dedicacao_diaria_min).toBe(
+      MAX_DEDICACAO_MIN
+    );
+    expect(item({ dedicacao_diaria_min: MAX_DEDICACAO_MIN + 1 }).dedicacao_diaria_min).toBeNull();
+  });
+
+  it("a prévia não repete os números 3650 e 1440 (importa as constantes da regra)", () => {
+    const fonte = readFileSync(new URL("./portal-previa.js", import.meta.url), "utf8");
+    expect(fonte).not.toMatch(/\b3650\b|\b1440\b/);
+    expect(fonte).toMatch(/MAX_PRAZO_DIAS/);
+    expect(fonte).toMatch(/MAX_DEDICACAO_MIN/);
+  });
+});
 
 describe("refsDaPrevia", () => {
   it("lista só as referências que o portal assinaria, sem repetir", () => {
