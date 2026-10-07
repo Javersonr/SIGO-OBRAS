@@ -5,6 +5,8 @@
   acompanhamento de 05/10: (a) a propagação do cadastro central (`0131`) e (b) os documentos do portal (`5d2655f`).
 - **Base:** branch `feat/portal-treinamento` em `a6bccff`. Os números de linha citados são desse commit.
 - **Aceite da T33:** este spec com o OK do Javerson. A implementação vem depois, em outra tarefa, com migração.
+- **Revisão 1 (07/10/2026):** a ação `status` do `funcionario-acesso` passa a aceitar também quem só tem Treinamentos
+  EAD → `matricular`, porque o "Avisar atrasados" da aba depende dela (§3, §7, §8, §9 e P3).
 
 ---
 
@@ -52,15 +54,15 @@ caminho: tela, API e propagação do cadastro central. A tela só espelha.
 Nova aba **"Treinamentos EAD"** no módulo "Segurança do Trabalho" de `ESTRUTURA_PERMISSOES`
 (`components/shared/PermissoesGranularesEditor.jsx:84`):
 
-| Função                | O que libera                                                                                                                                                                                                                                           | Onde é conferida     |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------- |
-| `visualizar`          | Ver a aba (cursos, matrículas, trilha, dossiê, vencimentos, dúvidas, "Ver como aluno"); ler questões, tentativas e trilha                                                                                                                              | tela + leitura §4.4  |
-| `editar`              | Criar curso; alterar dados do curso, aulas, questões, projeto pedagógico, imagens de assinatura, modalidade e vínculo com o cadastro central; enviar ou trocar arquivo de aula; alterar no cadastro central um treinamento que tem curso EAD vinculado | trigger + Storage    |
-| `publicar`            | Ligar e desligar "Publicado"; excluir curso; desativar no cadastro central um treinamento com curso EAD vinculado                                                                                                                                      | trigger              |
-| `matricular`          | Matricular (por funcionário, por função, renovar), avisar o aluno e remover matrícula sem certificado válido                                                                                                                                           | trigger              |
-| `liberar_tentativa`   | Liberar tentativa extra                                                                                                                                                                                                                                | `funcionario-acesso` |
-| `revogar_certificado` | Revogar certificado                                                                                                                                                                                                                                    | `funcionario-acesso` |
-| `responder_duvidas`   | Responder dúvida (tutor)                                                                                                                                                                                                                               | trigger              |
+| Função                | O que libera                                                                                                                                                                                                                                           | Onde é conferida                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| `visualizar`          | Ver a aba (cursos, matrículas, trilha, dossiê, vencimentos, dúvidas, "Ver como aluno"); ler questões, tentativas e trilha                                                                                                                              | tela + leitura §4.4                                |
+| `editar`              | Criar curso; alterar dados do curso, aulas, questões, projeto pedagógico, imagens de assinatura, modalidade e vínculo com o cadastro central; enviar ou trocar arquivo de aula; alterar no cadastro central um treinamento que tem curso EAD vinculado | trigger + Storage                                  |
+| `publicar`            | Ligar e desligar "Publicado"; excluir curso; desativar no cadastro central um treinamento com curso EAD vinculado                                                                                                                                      | trigger                                            |
+| `matricular`          | Matricular (por funcionário, por função, renovar), avisar o aluno (por linha e "Avisar atrasados"; criar o acesso ao portal e consultar quem já tem acesso, P3) e remover matrícula sem certificado válido                                             | trigger + `funcionario-acesso` (`criar`, `status`) |
+| `liberar_tentativa`   | Liberar tentativa extra                                                                                                                                                                                                                                | `funcionario-acesso`                               |
+| `revogar_certificado` | Revogar certificado                                                                                                                                                                                                                                    | `funcionario-acesso`                               |
+| `responder_duvidas`   | Responder dúvida (tutor)                                                                                                                                                                                                                               | trigger                                            |
 
 Regras gerais:
 
@@ -70,7 +72,8 @@ Regras gerais:
 - **Ler é ter qualquer função da aba:** quem tem só `editar` vê o que edita. Assim a leitura não depende de lembrar de
   marcar `visualizar`.
 - **Acesso ao portal** (criar, redefinir, desativar, ver situação) continua em "Funcionários", porque fica na Ficha e o
-  portal também mostra documentos e ciências. Única mudança proposta: ver P3.
+  portal também mostra documentos e ciências. Única mudança proposta: quem tem Treinamentos EAD → `matricular` também
+  cria o acesso e consulta a situação dele (`status`, só com `ativo`), para matricular e avisar atrasados: ver P3.
 - **Documentos do portal** (contracheque, folha de ponto, documentação) vão para a aba "RH": `criar` publica o PDF e
   `deletar` retira (P2).
 - **T12 (prática presencial, ainda não feita):** as sessões entram em `editar`; o lançamento de presença e resultado
@@ -216,21 +219,36 @@ Detalhe da B2:
 
 ## 7. (c) Ações do RH no servidor (`funcionario-acesso`)
 
-- Função pura nova em `funcionario-acesso/regras.ts`: `permissaoDaAcao(acao)` devolve as permissões aceitas (basta
-  uma):
+- Função pura nova em `funcionario-acesso/regras.ts`: `permissaoDaAcao(acao)` devolve duas listas de permissões (basta
+  uma de cada lista):
+  - `entrar`: o portão que hoje fica em `index.ts:376-378` e vale antes de qualquer ação. Sem ele, 403 "Sem permissão
+    para gerenciar o acesso ao Portal do Funcionário".
+  - `agir`: o que a ação exige de fato (hoje o `podeEditar` de `:380`, com a mensagem de `MENSAGEM_SEM_EDICAO`).
+  - As duas existem para manter o que já funciona: em `criar`, quem entra mas não age ainda recebe o 409
+    `JA_TEM_ACESSO` antes do 403 (é assim que `avisarNoPortal` segue quando o funcionário já tem acesso, como no
+    "Avisar" da Ficha).
 
-| Ação                  | Permissão                                                                |
-| --------------------- | ------------------------------------------------------------------------ |
-| `status`              | Funcionários (qualquer função), como hoje                                |
-| `criar`               | Funcionários → `editar`, ou Treinamentos EAD → `matricular` (P3)         |
-| `redefinir`, `ativo`  | Funcionários → `editar`, como hoje                                       |
-| `liberar_tentativa`   | Treinamentos EAD → `liberar_tentativa` (hoje: Funcionários → `editar`)   |
-| `revogar_certificado` | Treinamentos EAD → `revogar_certificado` (hoje: Funcionários → `editar`) |
+| Ação                  | Entrar                                                            | Agir                                                            |
+| --------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------- |
+| `status`              | Funcionários (qualquer função) ou Treinamentos EAD → `matricular` | o mesmo que entrar                                              |
+| `criar`               | Funcionários (qualquer função) ou Treinamentos EAD → `matricular` | Funcionários → `editar` ou Treinamentos EAD → `matricular` (P3) |
+| `redefinir`, `ativo`  | Funcionários (qualquer função)                                    | Funcionários → `editar`, como hoje                              |
+| `liberar_tentativa`   | Treinamentos EAD → `liberar_tentativa`                            | o mesmo que entrar (hoje: Funcionários → `editar`)              |
+| `revogar_certificado` | Treinamentos EAD → `revogar_certificado`                          | o mesmo que entrar (hoje: Funcionários → `editar`)              |
 
-- `index.ts` troca o `MODULO`/`ABA` fixos (`:67-68`, `:370-383`) por `permissaoDaAcao`, e `MENSAGEM_SEM_EDICAO`
-  (`regras.ts:15-21`) passa a citar a permissão nova.
+- `index.ts` troca o `MODULO`/`ABA` fixos (`:67-68`) e a conferência única de `:370-383` pela decisão de
+  `permissaoDaAcao`, e `MENSAGEM_SEM_EDICAO` (`regras.ts:15-21`) passa a citar a permissão nova.
+- **Por que `status` também aceita a aba nova:** o "Avisar atrasados" da aba Treinamentos chama `status`
+  (`AvisoAtrasadosDialog.jsx:90-91`) para saber quem já tem acesso ao portal (o lote só usa `funcionario_id` e `ativo`,
+  `lib/ead-aviso-matricula.js:159-176`). Sem isso, quem só recebe a aba nova leva 403 e o diálogo mostra "Não foi
+  possível conferir o acesso ao portal". Como `status` devolve o login (o CPF) e o último acesso de todos os
+  funcionários da empresa, quem entra só pela aba nova recebe a lista **recortada**: só `funcionario_id` e `ativo`
+  (função pura `recortarAcessosParaEad`). Super admin e quem tem Funcionários seguem recebendo a lista inteira. Só
+  `matricular` entra: quem tem apenas `visualizar` não vê o botão de avisar e não precisa do `status`. A chamada de
+  `SegurancaTrabalho.jsx:350` (coluna de acesso da lista de funcionários) segue só avisando no console quando vier 403.
 - `criar` entra em P3 porque, ao matricular quem ainda não tem acesso, a tela chama `funcionarioAcesso` "criar" e
-  entrega a senha provisória. Sem P3, quem só matricula precisa também de Funcionários → `editar`.
+  entrega a senha provisória. Sem P3, quem só matricula precisa também de Funcionários → `editar` (e de Funcionários,
+  qualquer função, para o `status` do "Avisar atrasados").
 
 ## 8. Tela (espelho; quem protege é o banco)
 
@@ -243,6 +261,9 @@ Detalhe da B2:
   o curso não publica).
 - `MatriculaAuditoriaSheet.jsx`: "Liberar tentativa" e "Revogar" só com a função de cada um. `DuvidasTutorCard.jsx`:
   "Responder" só com `responder_duvidas`.
+- `MatriculasEadCard.jsx`: o botão "Avisar atrasados" (`:283`) e o aviso por linha (`:611-614`) só aparecem com
+  `matricular`. O diálogo chama `status` (`AvisoAtrasadosDialog.jsx:90-91`) e o aviso por linha chama `criar`; as duas
+  ações aceitam quem só tem a aba nova (§7), e o `status` dele vem recortado.
 - `DocumentosPortalCard.jsx`: passa a chamar as RPC; enviar com RH → `criar`, retirar com RH → `deletar`; sem nenhuma
   das duas, só a lista.
 - Erro `42501` do banco vira toast com a mensagem como veio (já é o padrão do `gravar` da aba). Em Configurações, o erro
@@ -281,17 +302,32 @@ e da `0130` como eram):
 3. Deploy do `funcionario-acesso` (`--no-verify-jwt`).
 4. Aplicar a migração.
 5. Push da fase 2 (tela).
-6. Smoke e roteiro manual (seção 7 do handoff) com três usuários de teste: sem a aba, só com `visualizar`, e com tudo.
+6. Smoke e roteiro manual (seção 7 do handoff) com quatro usuários de teste: sem a aba, só com `visualizar`, só com
+   Treinamentos EAD → `matricular` (sem Funcionários) e com tudo.
 
 Entre os passos 3 e 5, a tela antiga continua funcionando para Admin e dono. O cartão antigo de documentos recebe o
 erro claro da §6 (não perde o PDF em silêncio) até o push.
 
 **Testes da implementação:**
 
-- `node --test`: `permissaoDaAcao` (RED/GREEN) e, em `acesso.test.ts`, a tabela de casos de permissão que o smoke SQL
-  repete igual (sem vínculo, vínculo inativo, Admin, dono, aba como `true`, função `true`/`false`, permissões em texto
-  JSON e em texto duas vezes, JSON inválido).
+- `node --test`, `permissaoDaAcao` (RED/GREEN): uma linha de teste por célula da tabela da §7, com estes casos:
+  - só Funcionários → `visualizar`: entra em `status` e em `criar` (e não age em `criar`, então recebe o 409 quando o
+    funcionário já tem acesso e o 403 quando não tem), entra em `redefinir`, e não entra em `liberar_tentativa` nem em
+    `revogar_certificado`;
+  - só Treinamentos EAD → `matricular`: entra e age em `status` e em `criar`, e não entra em `redefinir`, `ativo`,
+    `liberar_tentativa` nem `revogar_certificado`;
+  - só Treinamentos EAD → `visualizar` (ou só `liberar_tentativa`): não entra em `status` nem em `criar`;
+  - Funcionários → `editar` sem a aba nova: não entra em `liberar_tentativa` nem em `revogar_certificado`.
+- `node --test`, `recortarAcessosParaEad`: devolve só `funcionario_id` e `ativo` (sem `usuario`, `ultimo_acesso`,
+  `bloqueado` nem `primeiro_acesso_pendente`); quem tem Funcionários ou é super admin recebe a lista inteira.
+- `node --test`, `acesso.test.ts`: a tabela de casos de permissão que o smoke SQL repete igual (sem vínculo, vínculo
+  inativo, Admin, dono, aba como `true`, função `true`/`false`, permissões em texto JSON e em texto duas vezes, JSON
+  inválido).
 - Vitest: `ead-permissoes.js`.
+- Roteiro manual do usuário só com Treinamentos EAD → `matricular` (sem Funcionários): "Avisar atrasados" abre, lista os
+  atrasados e não mostra "Não foi possível conferir o acesso ao portal"; matricular quem ainda não tem acesso cria o
+  acesso e entrega a senha; Redefinir senha e Desativar (Ficha) continuam fora do alcance. Com só `visualizar`, o botão
+  "Avisar atrasados" não aparece e a chamada direta de `status` recebe 403.
 - Smoke SQL: cada linha da tabela da §4.2; propagação do cadastro central com e sem `editar`/`publicar`;
   `tentativas_extras` e revogação pelo cliente recusadas; remoção de matrícula com certificado válido recusada; questão,
   tentativa e evento invisíveis sem a aba; as duas RPC; salvamento do formulário inteiro com a lista velha preserva o
@@ -321,12 +357,12 @@ erro claro da §6 (não perde o PDF em silêncio) até o push.
 
 ## 11. Perguntas ao Javerson
 
-| #   | Pergunta                                                                                                                               | Recomendação                                          |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| P1  | A aba "Treinamentos EAD" com as 7 funções da §3 serve?                                                                                 | Sim                                                   |
-| P2  | Documentos do portal: aba RH (`criar`/`deletar`), Funcionários → `editar` (a mesma do acesso) ou uma aba nova "Portal do Funcionário"? | Aba RH (contracheque e folha de ponto são do RH)      |
-| P3  | Quem tem Treinamentos EAD → `matricular` pode criar o acesso ao portal na hora da matrícula, sem Funcionários → `editar`?              | Sim (só criar; redefinir e desativar seguem na Ficha) |
-| P4  | Desativar no cadastro central um treinamento com curso EAD vinculado exige Treinamentos EAD → `publicar`?                              | Sim                                                   |
-| P5  | Esconder gabarito, tentativas e trilha (IP e dispositivo) de quem não tem a aba?                                                       | Sim                                                   |
-| P6  | (a) A1, (b) B2 e o desenho geral S1?                                                                                                   | Sim                                                   |
-| P7  | Número da migração (`0140`, e `0141` se os documentos forem separados) e fase 1 separada ou junto com a 2 (depende da conferência)?    | `0140`; decidir a fase depois da conferência          |
+| #   | Pergunta                                                                                                                                                                                                  | Recomendação                                                      |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| P1  | A aba "Treinamentos EAD" com as 7 funções da §3 serve?                                                                                                                                                    | Sim                                                               |
+| P2  | Documentos do portal: aba RH (`criar`/`deletar`), Funcionários → `editar` (a mesma do acesso) ou uma aba nova "Portal do Funcionário"?                                                                    | Aba RH (contracheque e folha de ponto são do RH)                  |
+| P3  | Quem tem Treinamentos EAD → `matricular` pode criar o acesso ao portal na hora da matrícula, sem Funcionários → `editar`, e consultar quem já tem acesso (só `ativo`, sem CPF) para o "Avisar atrasados"? | Sim (só criar e consultar; redefinir e desativar seguem na Ficha) |
+| P4  | Desativar no cadastro central um treinamento com curso EAD vinculado exige Treinamentos EAD → `publicar`?                                                                                                 | Sim                                                               |
+| P5  | Esconder gabarito, tentativas e trilha (IP e dispositivo) de quem não tem a aba?                                                                                                                          | Sim                                                               |
+| P6  | (a) A1, (b) B2 e o desenho geral S1?                                                                                                                                                                      | Sim                                                               |
+| P7  | Número da migração (`0140`, e `0141` se os documentos forem separados) e fase 1 separada ou junto com a 2 (depende da conferência)?                                                                       | `0140`; decidir a fase depois da conferência                      |
