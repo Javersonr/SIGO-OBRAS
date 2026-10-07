@@ -35,6 +35,10 @@ export default [
       "unused-imports": pluginUnusedImports,
     },
     rules: {
+      // variável inexistente quebra só em tempo de execução (ReferenceError); o bloco `rules`
+      // sobrescreve o `recommended`, então a regra precisa ser ligada aqui de forma explícita.
+      // `src/lib` fica fora desta config (sem os globais do navegador); quem cobre ali é o teste.
+      "no-undef": "error",
       "no-unused-vars": "off",
       "react/jsx-uses-vars": "error",
       "react/jsx-uses-react": "error",

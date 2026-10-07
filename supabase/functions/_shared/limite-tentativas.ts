@@ -53,19 +53,36 @@ export function normalizarIp(bruto: string): string {
   return `${grupos.join(":")}::/64`;
 }
 
+/** Maior IP que se grava: o IPv6 em texto vai até 45 caracteres; sobra folga, sem aceitar lixo longo. */
+export const TAMANHO_MAX_IP = 64;
+
 /**
- * IP do cliente. O gateway do Supabase CONCATENA o X-Forwarded-For que o
- * cliente mandar ("falso, ip-real"), então vale a entrada mais à DIREITA — a
- * primeira é forjável e deixaria girar o limite por requisição.
+ * IP do cliente como o gateway entregou, sem normalizar. O gateway do Supabase
+ * CONCATENA o X-Forwarded-For que o cliente mandar ("falso, ip-real"), então
+ * vale a entrada mais à DIREITA — a primeira é forjável e deixaria girar o
+ * limite por requisição (e falsificar o IP gravado na trilha, na prova, no
+ * certificado e na ciência). Sem X-Forwarded-For, cai para o x-real-ip; sem
+ * nenhum dos dois, null (cf-connecting-ip é do cliente e não vale). O valor sai cortado em
+ * `TAMANHO_MAX_IP` caracteres: ele é gravado como evidência (trilha, prova, certificado, ciência) e o
+ * IPv6 mais longo em texto tem 45, então o corte só pega cabeçalho que nem é um IP.
  */
-export function ipDaRequisicao(req: Request): string | null {
+export function ipBrutoDaRequisicao(req: Request): string | null {
   const xff = req.headers.get("x-forwarded-for") ?? "";
   const ultimo = xff
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
     .pop();
-  const bruto = ultimo || req.headers.get("x-real-ip")?.trim() || "";
+  const bruto = ultimo || req.headers.get("x-real-ip")?.trim();
+  return bruto ? bruto.slice(0, TAMANHO_MAX_IP) : null;
+}
+
+/**
+ * IP do cliente para o limitador: o IP bruto normalizado (IPv6 reduzido ao
+ * /64). Quem grava o endereço como evidência usa `ipBrutoDaRequisicao`.
+ */
+export function ipDaRequisicao(req: Request): string | null {
+  const bruto = ipBrutoDaRequisicao(req);
   return bruto ? normalizarIp(bruto) : null;
 }
 

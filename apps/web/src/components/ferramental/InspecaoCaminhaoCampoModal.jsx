@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import ImgStorage from "@/components/ImgStorage";
+import { safeParseJSON } from "@/lib/json-utils";
 
 export default function InspecaoCaminhaoCampoModal({
   open,

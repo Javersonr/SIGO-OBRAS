@@ -3,8 +3,16 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { HardHat, Loader2, Eye, EyeOff, KeyRound } from "lucide-react";
+import { HardHat, Loader2, Eye, EyeOff, KeyRound, Check, Circle } from "lucide-react";
 import { chamarPortal } from "./api";
+import {
+  avisoDeSenhaLonga,
+  confirmacaoDivergiu,
+  normalizarUsuario,
+  podeTrocarSenha,
+  regrasDaSenha,
+  senhaNovaIgualAtual,
+} from "@/lib/portal-senha";
 
 function Moldura({ titulo, subtitulo, children }) {
   return (
@@ -54,6 +62,30 @@ function CampoSenha({ id, valor, onChange, autoComplete, rotulo }) {
   );
 }
 
+/** As regras da senha, visíveis antes de enviar: cada uma vira "cumprida" conforme o aluno digita. */
+function RegrasDaSenha({ regras }) {
+  return (
+    <ul className="space-y-1 text-xs" aria-label="Regras da senha">
+      {regras.map((r) => (
+        <li
+          key={r.id}
+          className={`flex items-start gap-1.5 ${r.ok ? "text-emerald-700" : "text-slate-500"}`}
+        >
+          {r.ok ? (
+            <Check className="w-3.5 h-3.5 mt-px shrink-0" aria-label="Cumprida" />
+          ) : (
+            <Circle
+              className="w-3.5 h-3.5 mt-px shrink-0"
+              aria-label={r.aoSalvar ? "Conferida ao salvar" : "Pendente"}
+            />
+          )}
+          <span>{r.texto}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function LoginPortal({ aviso, onEntrar }) {
   const [usuario, setUsuario] = useState("");
   const [senha, setSenha] = useState("");
@@ -66,7 +98,14 @@ export function LoginPortal({ aviso, onEntrar }) {
     setEntrando(true);
     try {
       const r = await chamarPortal("login", { usuario, senha });
-      onEntrar({ token: r.token, nome: r.nome, trocar_senha: r.trocar_senha });
+      // `usuario` (já normalizado) só segue em memória, para a troca de senha conferir "senha igual ao
+      // CPF"; a página NÃO o guarda no aparelho junto com a sessão
+      onEntrar({
+        token: r.token,
+        nome: r.nome,
+        trocar_senha: r.trocar_senha,
+        usuario: normalizarUsuario(usuario),
+      });
     } catch (err) {
       setErro(err.message);
     } finally {
@@ -79,16 +118,24 @@ export function LoginPortal({ aviso, onEntrar }) {
       {aviso && <p className="text-sm text-amber-700 bg-amber-50 rounded-md p-2">{aviso}</p>}
       <form onSubmit={entrar} className="space-y-4">
         <div>
-          <Label htmlFor="usuario">Usuário (seu CPF)</Label>
+          <Label htmlFor="usuario">CPF ou usuário</Label>
+          {/* teclado de TEXTO: o RH pode criar usuário com letras para quem não tem CPF */}
           <Input
             id="usuario"
             value={usuario}
             onChange={(e) => setUsuario(e.target.value)}
-            inputMode="numeric"
+            inputMode="text"
             autoComplete="username"
-            placeholder="000.000.000-00"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder="CPF ou usuário"
+            aria-describedby="usuario-dica"
             className="h-11 mt-1"
           />
+          <p id="usuario-dica" className="text-xs text-slate-500 mt-1">
+            Digite o seu CPF (com ou sem pontos) ou o usuário que o RH informou.
+          </p>
         </div>
         <CampoSenha
           id="senha"
@@ -115,18 +162,32 @@ export function LoginPortal({ aviso, onEntrar }) {
 }
 
 /** Troca de senha: obrigatória no 1º acesso (senha provisória) ou voluntária. */
-export function TrocarSenhaPortal({ token, obrigatoria, nome, onConcluir, onCancelar }) {
+export function TrocarSenhaPortal({
+  token,
+  obrigatoria,
+  nome,
+  usuario = "",
+  onConcluir,
+  onCancelar,
+}) {
   const [atual, setAtual] = useState("");
   const [nova, setNova] = useState("");
   const [confirma, setConfirma] = useState("");
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
 
+  // `usuario` vem do login (só em memória). Sem ele (tela recarregada), a regra "diferente do CPF" fica
+  // por conta do servidor, que confere de novo em toda troca.
+  const dados = { atual, nova, confirma, obrigatoria, usuario };
+  const pode = podeTrocarSenha(dados);
+
   const salvar = async (e) => {
     e.preventDefault();
     setErro("");
-    if (nova !== confirma) {
-      setErro("As duas senhas não são iguais");
+    if (!pode) {
+      setErro(
+        "Confira os campos: a nova senha precisa cumprir as regras e as duas têm de ser iguais"
+      );
       return;
     }
     setSalvando(true);
@@ -165,26 +226,47 @@ export function TrocarSenhaPortal({ token, obrigatoria, nome, onConcluir, onCanc
             autoComplete="current-password"
           />
         )}
-        <CampoSenha
-          id="senha-nova"
-          rotulo="Nova senha (mínimo 6 caracteres)"
-          valor={nova}
-          onChange={setNova}
-          autoComplete="new-password"
-        />
-        <CampoSenha
-          id="senha-confirma"
-          rotulo="Repita a nova senha"
-          valor={confirma}
-          onChange={setConfirma}
-          autoComplete="new-password"
-        />
+        <div className="space-y-2">
+          <CampoSenha
+            id="senha-nova"
+            rotulo="Nova senha"
+            valor={nova}
+            onChange={setNova}
+            autoComplete="new-password"
+          />
+          {/* sem `maxLength`: o campo cortaria a senha colada em silêncio; o aviso e a regra de tamanho
+              dizem o que houve (T27) */}
+          {avisoDeSenhaLonga(nova) && (
+            <p role="alert" className="text-xs text-red-600">
+              {avisoDeSenhaLonga(nova)}
+            </p>
+          )}
+          <RegrasDaSenha regras={regrasDaSenha(nova, usuario)} />
+          {!obrigatoria && senhaNovaIgualAtual(nova, atual) && (
+            <p className="text-xs text-amber-700">Escolha uma senha diferente da atual</p>
+          )}
+        </div>
+        <div className="space-y-1">
+          <CampoSenha
+            id="senha-confirma"
+            rotulo="Repita a nova senha"
+            valor={confirma}
+            onChange={setConfirma}
+            autoComplete="new-password"
+          />
+          {/* o aviso fica sob o campo que passou do limite: a confirmação colada com 80 caracteres
+              não pode acusar o campo "Nova senha" (A5) */}
+          {avisoDeSenhaLonga(confirma) && (
+            <p role="alert" className="text-xs text-red-600">
+              {avisoDeSenhaLonga(confirma)}
+            </p>
+          )}
+          {confirmacaoDivergiu(nova, confirma) && (
+            <p className="text-xs text-amber-700">As duas senhas não são iguais</p>
+          )}
+        </div>
         {erro && <p className="text-sm text-red-600">{erro}</p>}
-        <Button
-          type="submit"
-          className="w-full h-11 bg-slate-900"
-          disabled={salvando || nova.length < 6 || !confirma}
-        >
+        <Button type="submit" className="w-full h-11 bg-slate-900" disabled={salvando || !pode}>
           {salvando ? (
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
           ) : (

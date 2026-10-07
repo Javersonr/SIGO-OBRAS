@@ -11,6 +11,7 @@
  * a edge function supabase/functions/ia-processar.
  */
 import { sigo } from "@/api/sigoClient";
+import { carregarPdfjs } from "@/lib/pdfjs";
 
 // Página com menos que isso de texto (e com imagem) = digitalizada.
 const MIN_CHARS_TEXTO = 150;
@@ -55,33 +56,8 @@ export function categoriaPeloNome(nome, primeiro = false) {
 }
 
 // ---------------------------------------------------------------------------
-// pdf.js
+// pdf.js (carregador em lib/pdfjs.js, compartilhado com a apostila do portal)
 // ---------------------------------------------------------------------------
-let pdfjsPromise = null;
-
-/** Carrega o pdf.js só quando usa (build legacy p/ navegador sem Promise.withResolvers). */
-function carregarPdfjs() {
-  if (!pdfjsPromise) {
-    pdfjsPromise = (async () => {
-      const moderno = typeof Promise.withResolvers === "function";
-      const [pdfjs, worker] = moderno
-        ? await Promise.all([
-            import("pdfjs-dist"),
-            import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
-          ])
-        : await Promise.all([
-            import("pdfjs-dist/legacy/build/pdf.mjs"),
-            import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url"),
-          ]);
-      pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
-      return pdfjs;
-    })().catch((e) => {
-      pdfjsPromise = null; // deixa tentar de novo (ex.: chunk falhou no deploy)
-      throw e;
-    });
-  }
-  return pdfjsPromise;
-}
 
 /**
  * Texto de uma página a partir do getTextContent(): respeita hasEOL, quebra

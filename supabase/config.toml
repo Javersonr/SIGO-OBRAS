@@ -80,3 +80,19 @@ verify_jwt = false
 
 [functions.mcp-oauth]
 verify_jwt = false
+
+# Portal de Treinamento (EAD). O valor fica escrito aqui, e não só na flag do deploy, para que um deploy feito
+# sem a flag (por exemplo, o de todas as funções) não troque o comportamento de nenhuma destas três.
+#   portal-funcionario:  o aluno entra com usuário e senha do portal (token próprio), sem JWT do Supabase.
+#   funcionario-acesso:  o RH chama com a sessão do SIGO e a função confere o vínculo e a permissão por dentro
+#                        (não é o gateway que valida). Deploy com --no-verify-jwt.
+#   validar-certificado: consulta PÚBLICA de autenticidade, chamada com a chave anônima (que é um JWT): o
+#                        gateway exige JWT, então o deploy vai SEM --no-verify-jwt.
+[functions.portal-funcionario]
+verify_jwt = false
+
+[functions.funcionario-acesso]
+verify_jwt = false
+
+[functions.validar-certificado]
+verify_jwt = true

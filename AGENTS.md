@@ -85,8 +85,9 @@ Idioma do projeto: **português do Brasil** (textos de tela, comentários, commi
   relativo a `apps/web` (ex.: `src/components/seguranca/X.jsx`; com `apps/web/src/...` nenhum arquivo é encontrado).
   `src/lib` fica fora da config do ESLint (roda sem os globais do navegador e dá falso erro em `document`, `window`,
   `setTimeout`): ali quem cobre é o teste.
-- Node: `.nvmrc` = 20; CI em Node 22. Os testes `.ts` das Edge Functions precisam de Node >= 23.6 (type stripping); no
-  Node 22.6+ use `node --experimental-strip-types --test ...`. Não há Deno instalado no PC do Javerson.
+- Node: `.nvmrc` = 20; CI em Node 22, exceto o job `test`, que usa Node 24. Os testes `.ts` das Edge Functions
+  precisam de Node >= 23.6 (type stripping); no Node 22.6+ use `node --experimental-strip-types --test ...`. Não há Deno
+  instalado no PC do Javerson.
 - Scripts que **não** devem ser usados (regra 1): todos os `npm run supabase:*` (por exemplo,
   `supabase:functions:deploy` publica todas as funções sem `--no-verify-jwt` e quebra os portais, e `supabase:types`
   usa `--linked`) e `npm run sdk:test` (por padrão vai ao projeto de produção).
@@ -96,7 +97,8 @@ Idioma do projeto: **português do Brasil** (textos de tela, comentários, commi
 ## CI, hooks e commits
 
 - `.github/workflows/ci.yml` (push e PR para `master`): Prettier no repositório todo, ESLint de `apps/web`, build, smoke
-  do SDK (só com secrets) e checagem de migração vazia. **Não roda Vitest nem `node --test`**: rode à mão.
+  do SDK (só com secrets), checagem de migração vazia e o job `test` (Vitest de `apps/web` e `node --test` das Edge
+  Functions, ambos exigidos pelo "CI Success"). Rode os dois à mão antes de entregar: o CI só avisa depois do PR.
 - `.github/workflows/deploy-hostgator.yml`: push em `master` que toque `apps/web/**`, `shared/sdk/**` ou o próprio
   workflow publica o site (FTP com `--delete`); também há disparo manual (`workflow_dispatch`, ou seja,
   `gh workflow run`). Merge de PR em `master` é push. Mudança só em `supabase/`, `docs/` ou `tools/` não publica o site.

@@ -6,40 +6,192 @@
  * obriga a troca. A sessão é um token HMAC de 12h amarrado à `sessao_versao`
  * do acesso: redefinir a senha ou desativar derruba as sessões abertas.
  *
- * Ações sem sessão:
+ * Ação sem sessão:
  *   { acao:"login", usuario, senha }            → { token, trocar_senha, nome }
- *   { acao:"link", funcionario_id }  [STAFF]    → { url_path, usuario, tem_acesso }
  * Ações com sessão ({ token }):
- *   trocar_senha { nova_senha, senha_atual? }   logout
+ *   trocar_senha { nova_senha, senha_atual? }   logout  (senha_atual é obrigatória fora do 1º acesso)
  *   dados                                       evento { evento, matricula_id?, aula_id?, detalhe? }
- *   progresso { matricula_id, aula_id, segundos_assistidos, duracao_seg? }
- *   avaliacao { matricula_id, respostas:[{questao_id,resposta}] }
+ *   progresso { matricula_id, aula_id, segundos_assistidos }  (a duração vem do cadastro da aula)
+ *   iniciar_avaliacao { matricula_id }          → sorteia a prova NO SERVIDOR (sem gabarito)
+ *   avaliacao { matricula_id, respostas:[{questao_id,resposta}] }  (exige iniciar_avaliacao antes; quem
+ *     reprova na ÚLTIMA tentativa avisa o RH no sino via `notificar_gestores`, T24: ver avisos.ts)
  *   certificado { matricula_id, senha }          ciencia { ciencia_id }
- *   duvida { matricula_id, aula_id?, pergunta }
+ *   declarar_ambiente { matricula_id, versao, local_adequado, horario_reservado, sem_outra_atividade } → T35: na 1ª
+ *     abertura do curso em cada dia (Brasília) o aluno confirma a orientação do RT e os três itens (local adequado,
+ *     horário reservado, sem outra atividade); o SERVIDOR grava o evento `declaracao_ambiente` (origem servidor) com o
+ *     texto inteiro, a versão e a ART que ele viu (ver declaracao-ambiente.ts). Uma por matrícula e dia. `dados`
+ *     leva o texto (`declaracao_ambiente`) e, em cada curso, `declaracao_hoje`. Versão desatualizada: 409 TEXTO_MUDOU.
+ *   duvida { matricula_id, aula_id?, pergunta }  → { duvida, tutor_avisado } (T21: o aviso vai ao WhatsApp do
+ *     tutor do curso, com o link para responder, só se o telefone for aceito; ver tutor.ts)
+ *
+ * `certificado` só emite para curso EAD ou semipresencial (modalidade do curso, T8): curso de apoio responde 409
+ * `CURSO_DE_APOIO`; o semipresencial (T12) só emite com a CARGA da prática cumprida (a soma das sessões em que o
+ * aluno esteve "presente" e "satisfatório", já realizadas, chega à carga prática do curso), senão 409
+ * `PRATICA_PENDENTE` (antes de pedir a senha; ver pratica.ts), e congela as sessões que valeram em
+ * `dados.pratica`, os locais delas em `dados.local.pratica`, as duas cargas em `dados.curso` e o período
+ * cobrindo os dias da prática. A validade do semipresencial conta do FIM do treinamento (o maior dia entre a
+ * conclusão da teoria e o último dia da prática): o servidor regrava a `proxima_renovacao` da matrícula antes de
+ * gravar o certificado, para o certificado não nascer vencido; requisito do curso por
+ * cumprir responde 409 `REQUISITOS` (só os que travam a EMISSÃO: `pendenciasParaEmitir`); curso que exige outro
+ * (`pre_requisito_curso_id`, T23) só emite com o curso exigido concluído e dentro da validade, senão 409
+ * `PRE_REQUISITO` (antes de pedir a senha; ver pre-requisito.ts). O tipo do treinamento da matrícula (inicial,
+ * periódico ou eventual, com o motivo do eventual) é congelado em `dados` (ver tipo-treinamento.ts). O curso de apoio
+ * continua publicado e aceita matrícula (D3), só não emite e não grava `proxima_renovacao`; o reprovado
+ * na prova recebe só "insatisfatório" (D10). O certificado traz o local (`dados.local`) e os dias de Brasília.
+ * `dados.ciencias` leva TODAS as pendentes e as 30 confirmadas mais recentes (`listarCienciasDoAluno`); se só
+ * essa leitura falha, vai `null` (o portal avisa) e a lista de cursos segue normal.
+ * Depois do INSERT o hash é refeito a partir do que o banco devolveu: se não se reproduz, o certificado
+ * NÃO é entregue, é anulado (revogado pelo sistema) e a emissão responde 500 `EMISSAO_ANULADA` (T10, M5).
+ *
+ * Assinaturas (T29, D7: vale a imagem): o curso guarda a referência "assinaturas/<empresa>/..." da imagem do
+ * instrutor e do RT; a emissão a CONGELA em `assinatura_ref` dentro de `dados.instrutor` e de
+ * `dados.responsavel_tecnico` (entra no hash; ver assinaturas.ts). O aluno nunca recebe a referência: `dados`
+ * troca por `tem_assinatura` + `assinatura_url` (URL assinada, só da pasta da empresa) e a ação `certificado`
+ * a tira da resposta. Falha ao assinar = PDF sem a imagem; certificado sem imagem sai só com nome e registro.
+ *
+ * Reconfirmar a senha com a sessão aberta (`certificado` e `trocar_senha` com a senha atual) tem limite de
+ * tentativas por funcionário (escopo próprio, 5 em 15 min); passou do teto responde 429 `LIMITE`. Senha
+ * vazia é "incorreta" sem consumir tentativa (T27).
+ *
+ * `evento` e `progresso` (que o navegador repete sozinho) também têm teto por funcionário, em escopos
+ * próprios (`VOLUME_POR_ACAO`, em regras.ts); passou do teto responde 429 `LIMITE`. O evento tem três
+ * tetos (abrir_aula, play/pausa e o resto), para o play repetido do vídeo não travar a troca de aula.
+ * O `progresso` ainda só grava o sinal (ultimo_sinal_em) se ninguém o mudou desde que o pedido o leu
+ * (trava otimista): quem perde a corrida responde 409 `SINAL_CONCORRENTE` e não credita tempo (T31).
+ *
+ * `dados` não leva as questões (saem sorteadas em iniciar_avaliacao) e só assina URL e manda o texto das
+ * aulas LIBERADAS: a aula bloqueada vai na lista, mas sem conteúdo (T16).
  *
  * Trilha de auditoria (NR-1, Anexo II): todo acesso e atividade vira uma linha
  * em treinamento_evento com data/hora DO SERVIDOR, IP e dispositivo. O tempo
  * assistido informado pelo navegador é limitado pelo relógio do servidor
  * (ultimo_sinal_em), então não dá para "declarar" tempo que não passou.
+ * A trilha é só de inclusão (0135): treinamento_evento, treinamento_tentativa e
+ * treinamento_certificado só recebem INSERT daqui; o banco recusa UPDATE/DELETE. A única exceção é a
+ * anulação de uma emissão que não conferiu (revogação do sistema, `dadosDaAnulacaoNaEmissao`).
+ * Os eventos que o navegador relata (ação `evento`) levam origem "navegador".
  */
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { signPortalToken, verifyPortalToken } from "../_shared/portal-token.ts";
-import { usuarioDaRequisicao } from "../_shared/usuario-request.ts";
 import { hashPassword, verifyPassword } from "../_shared/passwords.ts";
 import {
   normalizarUsuario,
   motivoSenhaInvalida,
+  inteiroAleatorioSeguro,
   registrarEvento,
   origemDaRequisicao,
   gerarCodigoCertificado,
-  sha256Hex,
+  hashDoCertificado,
+  HASH_VERSAO_CANONICO,
+  EVENTO_CERTIFICADO_REVOGADO,
+  EVENTO_TENTATIVA_LIBERADA,
+  dataBrasilia,
   type EventoPortal,
 } from "../_shared/portal-funcionario.ts";
-import { enviarWhatsAppTexto, normalizarTelefoneBR } from "../_shared/whatsapp-envio.ts";
-import { refDaEmpresa } from "../_shared/storage-assinar.ts";
+import { enviarWhatsAppTexto } from "../_shared/whatsapp-envio.ts";
+import { assinarDaEmpresa, refDaEmpresa } from "../_shared/storage-assinar.ts";
 import { carregarDocumentos, funcionarioPodeEntrar } from "./documentos.ts";
-import { requisitosDoCurso, duracaoParaProgresso } from "./requisitos.ts";
+import { confirmarCiencia, listarCienciasDoAluno } from "./ciencia.ts";
+import { destinoDoAvisoAoTutor, mensagemDuvidaAoTutor, tutorParaOAluno } from "./tutor.ts";
+import { projetoParaOAluno } from "./projeto.ts";
+import {
+  EVENTO_DECLARACAO_AMBIENTE,
+  declaracaoParaOAluno,
+  detalheDaDeclaracao,
+  lerDeclaracoesDoDia,
+  lerTextoDaDeclaracao,
+  validarDeclaracao,
+} from "./declaracao-ambiente.ts";
+import {
+  bloqueioDeEmissaoPorPreRequisito,
+  cursosExigidosDoBanco,
+  lerPreRequisito,
+  preRequisitoDoCurso,
+} from "./pre-requisito.ts";
+import { dadosDoTipoNoCertificado } from "./tipo-treinamento.ts";
+import {
+  bloqueioDeEmissaoPorPratica,
+  dadosDaPraticaNoCertificado,
+  lerPratica,
+  localComPratica,
+  periodoDoSemipresencial,
+  praticaDoCertificado,
+  praticaParaOAluno,
+  praticasDoBanco,
+} from "./pratica.ts";
+import { avisarGestores, avisoDeTentativasEsgotadas, esgotouAsTentativas } from "./avisos.ts";
+import {
+  certificadoParaOAluno,
+  dadosParaOAluno,
+  instrutorDoCertificado,
+  refsDasAssinaturas,
+  responsavelTecnicoDoCertificado,
+} from "./assinaturas.ts";
+import {
+  bloqueioDeEmissaoPorModalidade,
+  duracaoParaProgresso,
+  emiteCertificado,
+  modalidadeDoCurso,
+  pendenciasParaEmitir,
+  requisitosDoCurso,
+} from "./requisitos.ts";
+import {
+  COLUNAS_MATRICULA_PORTAL,
+  EVENTO_CONCLUSAO_ADIADA,
+  EVENTO_CONCLUSAO_REGISTRADA,
+  EVENTO_PROVA_INICIADA,
+  LOCAL_DO_CERTIFICADO,
+  MSG_EMISSAO_ANULADA,
+  MSG_MUITAS_ACOES,
+  MSG_SINAL_CONCORRENTE,
+  MSG_TRILHA_INDISPONIVEL,
+  MOTIVO_EMISSAO_ANULADA,
+  NOTA_MINIMA_PADRAO,
+  POR_SISTEMA,
+  TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG,
+  type AcaoComVolume,
+  type MotivoDaConclusaoAdiada,
+  acaoDeVolumeDoEvento,
+  aulaLiberada,
+  aulasParaAluno,
+  bloqueioDaTrilhaNoCertificado,
+  certificadoParaResposta,
+  comRastroDeFalha,
+  conclusaoDaAula,
+  conclusoesAdiadas,
+  conferirEmissaoDoCertificado,
+  corrigirProva,
+  creditarTempo,
+  cursoPublicado,
+  dadosDaAnulacaoNaEmissao,
+  dentroDoVolume,
+  detalheDaProvaIniciada,
+  detalheLimitado,
+  fecharConclusaoAdiada,
+  horaDeBrasilia,
+  inicioDaProva,
+  liberacoesPorMatricula,
+  logoAssinadoParaPdf,
+  matriculaParaAluno,
+  periodoDoCertificado,
+  type ProgressoDaAula,
+  provaDaOrdem,
+  proximaTentativaEm,
+  reconfirmarSenha,
+  refsDasAulasLiberadas,
+  respostaDaCorrecao,
+  resultadoDoSinal,
+  retomarConclusoes,
+  situacaoDasTentativas,
+  situacaoDaTrilha,
+  sortearProva,
+  textoDaModalidade,
+  travaDoSinal,
+  validarEnvio,
+} from "./regras.ts";
+import { concluirSeCompleto, situacaoReal, trilhaDoCurso } from "./conclusao.ts";
+import { prepararProva, type RecusaDaProva } from "./prova.ts";
 import {
   consumirTentativa,
   ipDaRequisicao,
@@ -49,8 +201,6 @@ import {
 
 const TTL_SESSAO = 60 * 60 * 12;
 const TTL_ARQUIVO = 60 * 60 * 3; // URLs assinadas de vídeo/legenda/PDF
-const PCT_CONCLUSAO = 0.9;
-const TOLERANCIA_SEG = 2; // folga de rede por sinal de progresso
 const MAX_FALHAS_LOGIN = 5;
 const BLOQUEIO_MIN = 15;
 const TEMPO_MINIMO_PADRAO = 60; // aula de PDF/texto sem tempo definido
@@ -64,7 +214,6 @@ const MSG_CREDENCIAIS = "Credenciais inválidas: confira o usuário (CPF) e a se
 // cada dúvida manda WhatsApp ao tutor pelo canal único do SaaS
 const JANELA_DUVIDA_SEG = 60 * 60;
 const MAX_DUVIDAS_POR_HORA = 10;
-const MAX_DETALHE = 2000; // caracteres do JSON do detalhe de um evento
 
 const EVENTOS_CLIENTE = new Set([
   "abrir_curso",
@@ -88,67 +237,28 @@ interface Body {
   senha?: string;
   senha_atual?: string;
   nova_senha?: string;
-  funcionario_id?: string;
   token?: string;
   evento?: string;
   detalhe?: Record<string, unknown>;
   matricula_id?: string;
   aula_id?: string;
   segundos_assistidos?: number;
-  duracao_seg?: number;
   concluir?: boolean;
-  respostas?: { questao_id: string; resposta: number; ordem_opcoes?: number[] }[];
+  respostas?: unknown;
   ciencia_id?: string;
   pergunta?: string;
+  // declarar_ambiente (T35)
+  versao?: number;
+  local_adequado?: boolean;
+  horario_reservado?: boolean;
+  sem_outra_atividade?: boolean;
 }
-
-const hora = (iso: string) =>
-  new Date(iso).toLocaleTimeString("pt-BR", {
-    timeZone: "America/Sao_Paulo",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 
 // deno-lint-ignore no-explicit-any
 type Db = any;
 
-/**
- * Aulas do curso em ordem + quais estão concluídas nesta matrícula. Só aulas
- * da empresa da sessão (curso_id de outra empresa → trilha vazia).
- */
-async function trilhaDoCurso(
-  supabase: Db,
-  cursoId: string,
-  matriculaId: string,
-  empresaId: string
-) {
-  const [{ data: aulas }, { data: progs }] = await Promise.all([
-    supabase
-      .from("treinamento_aula")
-      .select("id, ordem, tipo, duracao_seg")
-      .eq("curso_id", cursoId)
-      .eq("empresa_id", empresaId)
-      .is("deleted_at", null)
-      .order("ordem", { ascending: true }),
-    supabase
-      .from("treinamento_progresso")
-      .select("aula_id, concluida")
-      .eq("matricula_id", matriculaId),
-  ]);
-  // deno-lint-ignore no-explicit-any
-  const feitas = new Set((progs ?? []).filter((p: any) => p.concluida).map((p: any) => p.aula_id));
-  return { aulas: aulas ?? [], feitas };
-}
-
-/** Progresso linear: só libera a aula se todas as anteriores estão concluídas. */
-// deno-lint-ignore no-explicit-any
-function aulaLiberada(trilha: { aulas: any[]; feitas: Set<unknown> }, aulaId: string) {
-  for (const a of trilha.aulas) {
-    if (a.id === aulaId) return true;
-    if (!trilha.feitas.has(a.id)) return false;
-  }
-  return false;
-}
+/** A recusa da prova (prova.ts) como resposta HTTP. */
+const recusaDaProva = (r: RecusaDaProva) => fail(r.mensagem, r.status, r.extra);
 
 /** A aula existe (não apagada) e é do curso, na empresa da sessão. */
 async function aulaDoCurso(supabase: Db, aulaId: string, cursoId: string, empresaId: string) {
@@ -164,89 +274,28 @@ async function aulaDoCurso(supabase: Db, aulaId: string, cursoId: string, empres
 }
 
 /**
- * Detalhe do evento vindo do navegador, limitado: objeto pequeno passa como
- * veio; o resto vira { cortado, tamanho, json } com o JSON serializado cortado.
+ * As matrículas (entre `matriculaIds`, do funcionário e da empresa da sessão) cuja conclusão está adiada e ainda
+ * não foi registrada: lê os eventos `conclusao_adiada` e `conclusao_registrada` e deixa a conta para
+ * `conclusoesAdiadas` (regras.ts). Erro de leitura LANÇA: não pode virar "nenhuma pendência" em silêncio, e quem
+ * chama (`retomarConclusoes`) registra a causa, não conclui nada e não derruba o `dados`.
  */
-function detalheLimitado(d: unknown): Record<string, unknown> | null {
-  if (d === null || d === undefined) return null;
-  let json: string | undefined;
-  try {
-    json = JSON.stringify(d);
-  } catch {
-    return { invalido: true };
-  }
-  if (json === undefined) return null;
-  const objeto = typeof d === "object" && !Array.isArray(d);
-  if (objeto && json.length <= MAX_DETALHE) return d as Record<string, unknown>;
-  return {
-    cortado: json.length > MAX_DETALHE,
-    tamanho: json.length,
-    json: json.slice(0, MAX_DETALHE),
-  };
-}
-
-/**
- * Conclusão recalculada só com o que o SERVIDOR grava: todas as aulas da
- * trilha concluídas no progresso e, se o curso tem prova, uma tentativa
- * APROVADA desta matrícula neste curso. Não usa matricula.status nem
- * avaliacao_aprovada (a empresa grava a matrícula pela API).
- */
-// deno-lint-ignore no-explicit-any
-async function situacaoReal(supabase: Db, mat: any, empresaId: string) {
-  const [trilha, { data: questoes }, { data: aprovadas }] = await Promise.all([
-    trilhaDoCurso(supabase, mat.curso_id, mat.id, empresaId),
-    supabase
-      .from("treinamento_questao")
-      .select("id")
-      .eq("curso_id", mat.curso_id)
-      .eq("empresa_id", empresaId)
-      .is("deleted_at", null)
-      .limit(1),
-    supabase
-      .from("treinamento_tentativa")
-      .select("numero, nota")
-      .eq("matricula_id", mat.id)
-      .eq("curso_id", mat.curso_id)
-      .eq("empresa_id", empresaId)
-      .eq("aprovada", true)
-      .order("numero", { ascending: false })
-      .limit(1),
-  ]);
-  const aulasOk =
-    trilha.aulas.length > 0 && trilha.aulas.every((a: { id: string }) => trilha.feitas.has(a.id));
-  const temAvaliacao = (questoes ?? []).length > 0;
-  const aprovacao: { numero: number; nota: number } | null = aprovadas?.[0] ?? null;
-  return { aulasOk, temAvaliacao, aprovacao, concluido: aulasOk && (!temAvaliacao || !!aprovacao) };
-}
-
-// deno-lint-ignore no-explicit-any
-async function concluirSeCompleto(supabase: Db, mat: any, empresaId: string) {
-  const [sit, { data: curso }] = await Promise.all([
-    situacaoReal(supabase, mat, empresaId),
-    supabase
-      .from("treinamento_curso")
-      .select("validade_meses")
-      .eq("id", mat.curso_id)
-      .eq("empresa_id", empresaId)
-      .maybeSingle(),
-  ]);
-  // precisaAvaliacao = "é a hora da prova": só quando TODAS as aulas terminaram
-  if (!sit.aulasOk) return { status: "em_andamento", concluiu: false, precisaAvaliacao: false };
-  if (!sit.concluido) {
-    return { status: "em_andamento", concluiu: false, precisaAvaliacao: sit.temAvaliacao };
-  }
-  const hoje = new Date();
-  const patch: Record<string, unknown> = {
-    status: "concluido",
-    data_conclusao: hoje.toISOString().slice(0, 10),
-  };
-  if (curso?.validade_meses) {
-    const renova = new Date(hoje);
-    renova.setMonth(renova.getMonth() + curso.validade_meses);
-    patch.proxima_renovacao = renova.toISOString().slice(0, 10);
-  }
-  await supabase.from("treinamento_matricula").update(patch).eq("id", mat.id);
-  return { status: "concluido", concluiu: true, precisaAvaliacao: false };
+async function conclusoesAdiadasDoBanco(
+  supabase: Db,
+  {
+    empresaId,
+    funcionarioId,
+    matriculaIds,
+  }: { empresaId: string; funcionarioId: string; matriculaIds: string[] }
+): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("treinamento_evento")
+    .select("matricula_id, evento, created_at")
+    .eq("empresa_id", empresaId)
+    .eq("funcionario_id", funcionarioId)
+    .in("evento", [EVENTO_CONCLUSAO_ADIADA, EVENTO_CONCLUSAO_REGISTRADA])
+    .in("matricula_id", matriculaIds);
+  if (error) throw error;
+  return conclusoesAdiadas(data ?? []);
 }
 
 /**
@@ -297,32 +346,6 @@ Deno.serve(
     }
     const supabase = createAdminClient();
     const agoraIso = () => new Date().toISOString();
-
-    // ------------------------------------------------ link (legado, STAFF)
-    if (body.acao === "link") {
-      const staff = await usuarioDaRequisicao(req);
-      if (!staff) return fail("Sessão inválida", 401);
-      const { data: func } = await supabase
-        .from("funcionario")
-        .select("id, empresa_id")
-        .eq("id", body.funcionario_id ?? "")
-        .is("deleted_at", null)
-        .maybeSingle();
-      if (!func) return fail("Funcionário não encontrado", 404);
-      if (!staff.is_super_admin && func.empresa_id !== staff.empresa_id) {
-        return fail("Funcionário de outra empresa", 403);
-      }
-      const { data: acesso } = await supabase
-        .from("funcionario_portal_acesso")
-        .select("usuario")
-        .eq("funcionario_id", func.id)
-        .maybeSingle();
-      return ok({
-        url_path: "/PortalFuncionario",
-        usuario: acesso?.usuario ?? null,
-        tem_acesso: !!acesso,
-      });
-    }
 
     // ---------------------------------------------------------------- login
     if (body.acao === "login") {
@@ -380,7 +403,7 @@ Deno.serve(
       // senha certa: agora pode dizer o motivo
       if (bloqueado) {
         return fail(
-          `Acesso bloqueado por senhas erradas. Tente de novo às ${hora(acesso.bloqueado_ate)} ou fale com o RH.`,
+          `Acesso bloqueado por senhas erradas. Tente de novo às ${horaDeBrasilia(acesso.bloqueado_ate)} ou fale com o RH.`,
           423,
           { codigo: "BLOQUEADO" }
         );
@@ -443,6 +466,37 @@ Deno.serve(
         funcionario_id: funcionarioId,
         ...e,
       });
+    // A trilha ficou completa (última aula ou aprovação) e a conclusão não pôde ser gravada: a marca que a abertura
+    // do portal usa para retomar SÓ esta matrícula (A6, revisão 2). Só as ações de aula e de prova a usam.
+    // deno-lint-ignore no-explicit-any
+    const adiarConclusao = (mat: any) => (motivo: MotivoDaConclusaoAdiada) =>
+      ev({
+        evento: EVENTO_CONCLUSAO_ADIADA,
+        matricula_id: mat.id,
+        curso_id: mat.curso_id,
+        detalhe: { motivo },
+      });
+    // A matrícula foi concluída pela aula, pela prova ou pelo pedido de certificado: se havia uma conclusão adiada
+    // pendente, grava `conclusao_registrada` e fecha a marca (A7). Nunca lança: a conclusão já está gravada.
+    const fecharAdiada = (
+      // deno-lint-ignore no-explicit-any
+      mat: any,
+      dataConclusao: string | null,
+      origem: "aula" | "prova" | "certificado"
+    ) =>
+      fecharConclusaoAdiada({
+        matriculaId: mat.id,
+        lerAdiadas: (ids) =>
+          conclusoesAdiadasDoBanco(supabase, { empresaId, funcionarioId, matriculaIds: ids }),
+        registrarConclusao: () =>
+          ev({
+            evento: EVENTO_CONCLUSAO_REGISTRADA,
+            matricula_id: mat.id,
+            curso_id: mat.curso_id,
+            detalhe: { data_conclusao: dataConclusao, origem },
+          }),
+        registrar: (mensagem, causa) => console.error(`[portal-funcionario] ${mensagem}`, causa),
+      });
 
     const { data: funcionarioSessao, error: erroFuncionarioSessao } = await supabase
       .from("funcionario")
@@ -455,12 +509,40 @@ Deno.serve(
       return fail("Cadastro inativo — fale com o RH", 401, { codigo: "SESSAO" });
     }
 
+    // Reconfirmação da senha com a sessão aberta (assinar o certificado e trocar a senha informando a
+    // atual): limite de tentativas por funcionário, em escopo próprio, consumido ANTES de conferir (T27).
+    const reconfirmar = (senha: string) =>
+      reconfirmarSenha({
+        funcionarioId,
+        senha,
+        consumir: (escopo, janelaSeg, limites) =>
+          consumirTentativa(supabase, escopo, janelaSeg, limites),
+        conferir: async () => (await verifyPassword(senha, acesso.senha_hash)).ok,
+        liberar: (consumo) => liberarTentativas(supabase, consumo),
+      });
+    const muitasTentativas = () => fail(MSG_MUITAS_TENTATIVAS, 429, { codigo: "LIMITE" });
+    // Volume de `evento` e `progresso` (T31): teto por funcionário, consumido ANTES do trabalho. O evento
+    // tem três tetos (`acaoDeVolumeDoEvento`): abrir_aula, play/pausa e o resto, para o play repetido do
+    // vídeo não travar a troca de aula. Fora do ar, o limitador não derruba o portal (`consumirTentativa`
+    // libera e registra o erro).
+    const dentroDoLimite = (acao: AcaoComVolume) =>
+      dentroDoVolume({
+        acao,
+        funcionarioId,
+        consumir: (escopo, janelaSeg, limites) =>
+          consumirTentativa(supabase, escopo, janelaSeg, limites),
+      });
+    const muitasAcoes = () => fail(MSG_MUITAS_ACOES, 429, { codigo: "LIMITE" });
+
     // --------------------------------------------------------- trocar senha
     if (body.acao === "trocar_senha") {
       const nova = body.nova_senha ?? "";
       if (!acesso.senha_provisoria) {
-        const { ok: atualOk } = await verifyPassword(body.senha_atual ?? "", acesso.senha_hash);
-        if (!atualOk) return fail("Senha atual incorreta", 400);
+        // a senha atual é obrigatória na troca voluntária (só o 1º acesso, com a provisória, dispensa)
+        if (!body.senha_atual) return fail("Informe a sua senha atual", 400);
+        const reconfirmacao = await reconfirmar(body.senha_atual);
+        if (reconfirmacao === "limite") return muitasTentativas();
+        if (reconfirmacao === "incorreta") return fail("Senha atual incorreta", 400);
       }
       const motivo = motivoSenhaInvalida(nova, acesso.usuario);
       if (motivo) return fail(motivo, 400);
@@ -528,7 +610,7 @@ Deno.serve(
       if (!id) return null;
       const { data } = await supabase
         .from("treinamento_matricula")
-        .select("*")
+        .select(COLUNAS_MATRICULA_PORTAL)
         .eq("id", id)
         .eq("funcionario_id", funcionarioId)
         .eq("empresa_id", empresaId)
@@ -553,10 +635,14 @@ Deno.serve(
           .eq("id", funcionarioId)
           .eq("empresa_id", empresaId)
           .maybeSingle(),
-        supabase.from("empresa").select("nome, razao_social").eq("id", empresaId).maybeSingle(),
+        supabase
+          .from("empresa")
+          .select("nome, razao_social, logo_url")
+          .eq("id", empresaId)
+          .maybeSingle(),
         supabase
           .from("treinamento_matricula")
-          .select("*")
+          .select(COLUNAS_MATRICULA_PORTAL)
           .eq("funcionario_id", funcionarioId)
           .eq("empresa_id", empresaId)
           .is("deleted_at", null),
@@ -572,10 +658,11 @@ Deno.serve(
         { data: cursos },
         { data: aulas },
         { data: prog },
-        { data: questoes },
-        { data: tentativas },
+        { data: questoes, error: erroQuestoes },
+        { data: tentativas, error: erroTentativas },
         { data: certificados },
         { data: duvidas },
+        { data: liberacoes },
       ] = await Promise.all([
         cursoIds.length
           ? supabase
@@ -596,14 +683,15 @@ Deno.serve(
         matIds.length
           ? supabase.from("treinamento_progresso").select("*").in("matricula_id", matIds)
           : vazio,
+        // só para contar (tem_avaliacao e total_questoes): o texto e as alternativas saem apenas em
+        // iniciar_avaliacao, já sorteados, e o gabarito nunca sai antes da aprovação (T16)
         cursoIds.length
           ? supabase
               .from("treinamento_questao")
-              .select("id, curso_id, ordem, pergunta, opcoes") // SEM gabarito!
+              .select("id, curso_id")
               .in("curso_id", cursoIds)
               .eq("empresa_id", empresaId)
               .is("deleted_at", null)
-              .order("ordem", { ascending: true })
           : vazio,
         matIds.length
           ? supabase
@@ -629,24 +717,70 @@ Deno.serve(
               .is("deleted_at", null)
               .order("created_at", { ascending: false })
           : vazio,
+        // liberações do RH (T18): quem foi liberado depois da última tentativa não espera o intervalo
+        matIds.length
+          ? supabase
+              .from("treinamento_evento")
+              .select("matricula_id, created_at")
+              .eq("empresa_id", empresaId)
+              .eq("funcionario_id", funcionarioId)
+              .eq("evento", EVENTO_TENTATIVA_LIBERADA)
+              .in("matricula_id", matIds)
+          : vazio,
       ]);
+      // Questões e tentativas decidem o que o aluno vê da prova e as duas travas da retomada da conclusão (a trilha
+      // completa e "fez a prova e não passou"). Lidas com erro, viravam "curso sem prova" e "nunca fez a prova":
+      // a retomada podia concluir sem aprovação e a tela mostrava o curso como pronto para o certificado. Sem elas
+      // o `dados` não monta nada (A7): 503 e o portal oferece tentar de novo.
+      if (erroQuestoes || erroTentativas) {
+        if (erroQuestoes) {
+          console.error("[portal-funcionario] dados: questões:", erroQuestoes.message);
+        }
+        if (erroTentativas) {
+          console.error("[portal-funcionario] dados: tentativas:", erroTentativas.message);
+        }
+        return fail(
+          "Não foi possível carregar seus cursos agora. Tente de novo em instantes.",
+          503
+        );
+      }
+      const liberadaEm = liberacoesPorMatricula(liberacoes);
 
-      // deno-lint-ignore no-explicit-any
-      const assinada = await assinarRefs(
+      // Pré-requisito entre cursos (T23): os cursos que os do aluno exigem podem não estar na lista dele.
+      // Uma consulta só, da empresa da sessão; as matrículas e os certificados vêm do que já foi lido acima.
+      const cursosExigidos = await cursosExigidosDoBanco(
         supabase,
-        [
-          // deno-lint-ignore no-explicit-any
-          ...(aulas ?? []).flatMap((a: any) => [
-            a.tipo === "video" && a.fonte === "upload" ? a.video_ref : null,
-            a.legenda_ref,
-            a.tipo === "pdf" ? a.arquivo_ref : null,
-          ]),
-          // deno-lint-ignore no-explicit-any
-          ...(cursos ?? []).map((c: any) => c.projeto_pedagogico_ref),
-        ],
+        // deno-lint-ignore no-explicit-any
+        (cursos ?? []).map((c: any) => c.pre_requisito_curso_id),
         empresaId
       );
-      const url = (ref?: string | null) => (ref ? (assinada.get(ref) ?? null) : null);
+      const hojeEmBrasilia = dataBrasilia(new Date());
+      // Parte prática presencial (T12): as sessões dos cursos semipresenciais do aluno e as participações das
+      // matrículas dele, só da empresa da sessão. Sem curso semipresencial não consulta; falha = "pendente".
+      const praticas = await praticasDoBanco(supabase, {
+        cursoIds: (cursos ?? [])
+          // deno-lint-ignore no-explicit-any
+          .filter((c: any) => modalidadeDoCurso(c) === "semipresencial")
+          // deno-lint-ignore no-explicit-any
+          .map((c: any) => c.id),
+        matriculaIds: matIds,
+        empresaId,
+      });
+
+      // Declaração de ambiente e horário (T35): o texto em vigor da empresa e, em cada matrícula, se o aluno já
+      // declarou hoje (dia de Brasília). Falha de leitura NÃO derruba o portal: sem o texto o curso abre sem a tela da
+      // declaração (o RH vê o dia sem declaração no relatório) e o rastro fica nos logs.
+      const [textoDaDeclaracao, declaracoesDeHoje] = await Promise.all([
+        lerTextoDaDeclaracao(supabase, empresaId),
+        lerDeclaracoesDoDia(supabase, {
+          funcionarioId,
+          empresaId,
+          matriculaIds: matIds,
+          agora: new Date(),
+          hoje: hojeEmBrasilia,
+        }),
+      ]);
+
       const progPor = new Map(
         // deno-lint-ignore no-explicit-any
         (prog ?? []).map((p: any) => [`${p.matricula_id}|${p.aula_id}`, p])
@@ -659,64 +793,159 @@ Deno.serve(
       const matsDaEmpresa = (mats ?? []).filter((m: { curso_id: string }) =>
         cursosDaEmpresa.has(m.curso_id)
       );
+      // aulas do curso e progresso desta matrícula (a regra de liberação está em regras.ts)
+      // deno-lint-ignore no-explicit-any
+      const aulasDoCurso = (cursoId: string) =>
+        (aulas ?? []).filter((a: any) => a.curso_id === cursoId);
+      const progressoDa =
+        (matriculaId: string) =>
+        (aulaId: string): ProgressoDaAula =>
+          progPor.get(`${matriculaId}|${aulaId}`) as ProgressoDaAula;
+
+      // A trilha desta matrícula está completa (todas as aulas e, se há prova, a aprovação)? É a conta de
+      // `situacaoReal` feita só com o que este `dados` já leu: serve a `concluidoReal` de cada curso (abaixo) e à
+      // segunda chance da conclusão.
+      // deno-lint-ignore no-explicit-any
+      const concluidoNaTrilha = (m: any) => {
+        const aulasDaMatricula = aulasDoCurso(m.curso_id);
+        const progresso = progressoDa(m.id);
+        return situacaoDaTrilha({
+          aulas: aulasDaMatricula,
+          feitas: new Set(
+            // deno-lint-ignore no-explicit-any
+            aulasDaMatricula.filter((a: any) => progresso(a.id)?.concluida).map((a: any) => a.id)
+          ),
+          // deno-lint-ignore no-explicit-any
+          temAvaliacao: (questoes ?? []).some((q: any) => q.curso_id === m.curso_id),
+          aprovacao:
+            // deno-lint-ignore no-explicit-any
+            (tentativas ?? []).find((t: any) => t.matricula_id === m.id && t.aprovada) ?? null,
+        }).concluido;
+      };
+
+      // Segunda chance da conclusão (A6, revisões 1 e 2): a matrícula que a trilha dá por completa, que o banco ainda
+      // tem aberta E cuja conclusão foi ADIADA (a leitura do curso ou a gravação falhou quando o aluno terminou) é
+      // concluída agora, ANTES de montar a resposta (o pré-requisito dos outros cursos lê o status). Trilha que só
+      // parece completa (o RH apagou as questões de quem reprovou, ou uma aula que o aluno não fez) não é concluída
+      // aqui. Só custa consultas com matrícula aberta e trilha completa; idempotente.
+      await retomarConclusoes({
+        matriculas: matsDaEmpresa,
+        concluidoNaTrilha,
+        // fez a prova e nenhuma tentativa passou: a trilha só parece completa porque não há mais questões vivas
+        provaSemAprovacao: (m) => {
+          // deno-lint-ignore no-explicit-any
+          const dela = (tentativas ?? []).filter((t: any) => t.matricula_id === m.id);
+          // deno-lint-ignore no-explicit-any
+          return dela.length > 0 && !dela.some((t: any) => t.aprovada);
+        },
+        lerAdiadas: (ids) =>
+          conclusoesAdiadasDoBanco(supabase, { empresaId, funcionarioId, matriculaIds: ids }),
+        concluir: async (m) => {
+          // sem `adiar`: a marca já existe, e cada abertura do portal com o curso ilegível não pode gerar outra
+          const resultado = await concluirSeCompleto(supabase, m, empresaId);
+          if (resultado.concluiu) {
+            // o rastro de quando e como a conclusão foi registrada (não é `curso_concluido`: abrir o portal não é
+            // estudar); só se a conclusão foi mesmo gravada
+            await ev({
+              evento: EVENTO_CONCLUSAO_REGISTRADA,
+              matricula_id: m.id,
+              curso_id: m.curso_id,
+              detalhe: { data_conclusao: resultado.data_conclusao, origem: "retomada" },
+            });
+          }
+          return resultado;
+        },
+        // a mesma leitura das outras ações: matrícula do próprio funcionário, na empresa da sessão, colunas fixas
+        reler: (m) => minhaMatricula(m.id),
+        registrar: (mensagem, causa) => console.error(`[portal-funcionario] ${mensagem}`, causa),
+      });
+
+      // Só as aulas LIBERADAS têm arquivo assinado (T16): a URL vale 3 h e pode ser repassada, então
+      // aula bloqueada não ganha URL. A próxima aula recebe a sua quando for liberada (o portal
+      // recarrega os dados ao concluir uma aula).
+      const assinada = await assinarRefs(
+        supabase,
+        [
+          ...matsDaEmpresa.flatMap((m: { id: string; curso_id: string }) =>
+            refsDasAulasLiberadas(aulasDoCurso(m.curso_id), progressoDa(m.id))
+          ),
+          // deno-lint-ignore no-explicit-any
+          ...(cursos ?? []).map((c: any) => c.projeto_pedagogico_ref),
+        ],
+        empresaId
+      );
+      const url = (ref?: string | null) => (ref ? (assinada.get(ref) ?? null) : null);
+
+      // Imagens da assinatura do instrutor e do RT para o PDF do certificado (T29): URL assinada só da
+      // pasta da empresa da sessão; a referência não vai ao aluno (`dadosParaOAluno`). Falha ao assinar =
+      // PDF sem a imagem (a tela avisa); nunca derruba os `dados`, a tela inicial do portal. Só chama o
+      // Storage quando o aluno tem certificado com assinatura.
+      let assinadasDasAssinaturas = new Map<string, string>();
+      const refsDasAssinaturasDoAluno = refsDasAssinaturas(certificados, empresaId);
+      if (refsDasAssinaturasDoAluno.length) {
+        try {
+          assinadasDasAssinaturas = await assinarRefs(
+            supabase,
+            refsDasAssinaturasDoAluno,
+            empresaId
+          );
+        } catch (erro) {
+          console.error("[portal-funcionario] assinaturas do certificado não assinadas:", erro);
+        }
+      }
 
       // deno-lint-ignore no-explicit-any
       const resposta = matsDaEmpresa.map((m: any) => {
         // deno-lint-ignore no-explicit-any
         const curso: any = (cursos ?? []).find((c: any) => c.id === m.curso_id) || null;
-        let anterioresOk = true;
-        const aulasCurso = (aulas ?? [])
-          // deno-lint-ignore no-explicit-any
-          .filter((a: any) => a.curso_id === m.curso_id)
-          // deno-lint-ignore no-explicit-any
-          .map((a: any) => {
-            // deno-lint-ignore no-explicit-any
-            const p: any = progPor.get(`${m.id}|${a.id}`);
-            const concluida = p?.concluida ?? false;
-            const liberada = anterioresOk;
-            anterioresOk = anterioresOk && concluida;
-            return {
-              id: a.id,
-              ordem: a.ordem,
-              modulo: a.modulo,
-              tipo: a.tipo || "video",
-              titulo: a.titulo,
-              fonte: a.fonte || "youtube",
-              youtube_id: a.youtube_id,
-              video_url: a.tipo === "video" && a.fonte === "upload" ? url(a.video_ref) : null,
-              legenda_url: url(a.legenda_ref),
-              arquivo_url: a.tipo === "pdf" ? url(a.arquivo_ref) : null,
-              conteudo_texto: a.tipo === "texto" ? a.conteudo_texto : null,
-              duracao_seg: a.duracao_seg || (a.tipo === "video" ? null : TEMPO_MINIMO_PADRAO),
-              segundos_assistidos: p?.segundos_assistidos ?? 0,
-              concluida,
-              liberada,
-            };
-          });
+        const aulasCurso = aulasParaAluno({
+          aulas: aulasDoCurso(m.curso_id),
+          progresso: progressoDa(m.id),
+          urlDe: url,
+          tempoMinimoPadrao: TEMPO_MINIMO_PADRAO,
+        });
         // deno-lint-ignore no-explicit-any
         const questoesCurso = (questoes ?? []).filter((q: any) => q.curso_id === m.curso_id);
         // deno-lint-ignore no-explicit-any
         const tents = (tentativas ?? []).filter((t: any) => t.matricula_id === m.id);
-        const ultima = tents[tents.length - 1];
-        const max =
-          curso?.max_tentativas > 0 ? curso.max_tentativas + (m.tentativas_extras || 0) : null;
-        const liberaEm =
-          ultima && !ultima.aprovada && curso?.intervalo_tentativa_min > 0
-            ? Date.parse(ultima.created_at) + curso.intervalo_tentativa_min * 60_000
-            : 0;
+        const { max, esgotada, aguardarAte } = situacaoDasTentativas({
+          usadas: tents.length,
+          curso,
+          matricula: m,
+          ultima: tents[tents.length - 1],
+          liberadaEm: liberadaEm.get(m.id),
+          agora,
+        });
         // deno-lint-ignore no-explicit-any
         const cert: any = (certificados ?? []).find((c: any) => c.matricula_id === m.id) || null;
-        const pendencias = requisitosDoCurso({
-          curso: curso || {},
-          aulas: (aulas ?? []).filter((a: { curso_id: string }) => a.curso_id === m.curso_id),
-          questoes: questoesCurso,
-        }).filter((r) => r.bloqueia && !r.ok);
-        const concluidoReal =
-          aulasCurso.length > 0 &&
-          aulasCurso.every((a: { concluida: boolean }) => a.concluida) &&
-          (questoesCurso.length === 0 || tents.some((t: { aprovada: boolean }) => t.aprovada));
-        return {
+        // o que impede EMITIR (D3: o curso de apoio publica e matricula, mas nunca emite)
+        const pendencias = pendenciasParaEmitir(
+          requisitosDoCurso({
+            curso: curso || {},
+            aulas: (aulas ?? []).filter((a: { curso_id: string }) => a.curso_id === m.curso_id),
+            questoes: questoesCurso,
+          })
+        );
+        const concluidoReal = concluidoNaTrilha(m);
+        // o curso exige outro? (null = não exige). Só emite com o curso exigido concluído e válido (T23)
+        const preRequisito = preRequisitoDoCurso({
+          curso,
+          cursosExigidos,
+          matriculas: matsDaEmpresa,
+          certificados: certificados ?? [],
+          hoje: hojeEmBrasilia,
+        });
+        // a parte prática do semipresencial (null nos outros cursos): só emite com ela realizada (T12)
+        const pratica = praticaParaOAluno({
+          curso,
           matricula: m,
+          sessoes: praticas.sessoes,
+          participacoes: praticas.participacoes,
+          hoje: hojeEmBrasilia,
+        });
+        return {
+          // a nota de quem ainda não foi aprovado não vai ao navegador (T16)
+          matricula: matriculaParaAluno(m),
           curso: curso && {
             id: curso.id,
             nome: curso.nome,
@@ -725,50 +954,98 @@ Deno.serve(
             carga_horaria_horas: curso.carga_horaria_horas,
             projeto_pedagogico_url: url(curso.projeto_pedagogico_ref),
             tem_avaliacao: questoesCurso.length > 0,
+            // o portal mostra um selo quando o RH despublicou o curso (T14)
+            ativo: cursoPublicado(curso),
+            // "apoio" é material de estudo e não emite certificado (T8): o portal explica isso
+            modalidade: modalidadeDoCurso(curso),
+            // o tutor do curso (T21, D4): o aluno vê o nome e o atendimento (horário e prazo de resposta);
+            // o telefone fica só no servidor
+            ...tutorParaOAluno(curso),
+            // do projeto pedagógico (T25) o aluno recebe só o prazo para concluir e a dedicação diária; o texto
+            // do projeto chega pelo PDF (`projeto_pedagogico_url`)
+            ...projetoParaOAluno(curso),
           },
           aulas: aulasCurso,
-          questoes: questoesCurso,
+          // as questões NÃO vão aqui (T16): saem sorteadas, sem gabarito, em iniciar_avaliacao
           avaliacao: {
+            total_questoes: questoesCurso.length,
             tentativas_usadas: tents.length,
             tentativas_max: max,
-            limite_atingido: max !== null && tents.length >= max && !m.avaliacao_aprovada,
-            proxima_em: liberaEm > agora ? new Date(liberaEm).toISOString() : null,
-            nota_minima: curso?.nota_minima ?? 70,
+            limite_atingido: esgotada && !m.avaliacao_aprovada,
+            proxima_em: aguardarAte !== null ? new Date(aguardarAte).toISOString() : null,
+            nota_minima: curso?.nota_minima ?? NOTA_MINIMA_PADRAO,
           },
           certificado: cert && {
             codigo: cert.codigo,
-            dados: cert.dados,
+            dados: dadosParaOAluno(cert.dados, empresaId, (ref) =>
+              assinadasDasAssinaturas.get(ref)
+            ),
             assinatura_aluno: cert.assinatura_aluno,
             emitido_em: cert.emitido_em,
             hash_sha256: cert.hash_sha256,
             revogado: !!cert.revogado_em,
           },
-          pode_emitir_certificado: concluidoReal && !cert && pendencias.length === 0,
+          // curso de apoio nunca emite (a modalidade também é um dos requisitos acima)
+          pode_emitir_certificado:
+            concluidoReal &&
+            !cert &&
+            pendencias.length === 0 &&
+            emiteCertificado(modalidadeDoCurso(curso)) &&
+            preRequisito?.atendido !== false &&
+            (pratica === null || pratica.situacao === "realizada"),
           pendencias_certificado: pendencias.map((r) => r.texto),
+          // o curso exigido antes deste e se o aluno já o cumpriu (T23); a tela explica o que falta
+          pre_requisito: preRequisito,
+          // "Parte prática: pendente" ou "realizada em DD/MM, em <local>" (T12); null fora do semipresencial. Com o
+          // certificado emitido vale a prática congelada nele: o RH apagar uma sessão depois não pode mostrar
+          // "pendente" ao lado do certificado válido (A6). A emissão confere sempre as sessões vivas.
+          pratica: (cert ? praticaDoCertificado(cert.dados) : null) ?? pratica,
+          // o aluno já declarou o ambiente e o horário hoje neste curso (T35)? null = não deu para saber (o portal
+          // não mostra a tela da declaração)
+          declaracao_hoje:
+            textoDaDeclaracao.ok && declaracoesDeHoje.ok
+              ? { dia: hojeEmBrasilia, declarada: declaracoesDeHoje.declaradas.has(m.id) }
+              : null,
           // deno-lint-ignore no-explicit-any
           duvidas: (duvidas ?? []).filter((d: any) => d.curso_id === m.curso_id),
         };
       });
 
-      const { data: ciencias } = await supabase
-        .from("entrega_ciencia")
-        .select("id, tipo, descricao, itens, status, created_at, confirmada_em")
-        .eq("funcionario_id", funcionarioId)
-        .eq("empresa_id", empresaId)
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .limit(30);
+      // todas as pendentes + as últimas confirmadas (só o histórico tem limite; ciencia.ts). Falha só desta
+      // lista (a causa já foi para o log) NÃO derruba os cursos: sai `ciencias: null` e o portal avisa que as
+      // entregas não carregaram, em vez de esconder as pendentes em silêncio ou tirar a tela de cursos do ar.
+      const listaDeCiencias = await listarCienciasDoAluno(supabase, { funcionarioId, empresaId });
+
+      // Logo da empresa para o PDF do certificado (T15): URL assinada só da pasta da empresa da
+      // sessão. Só vale a chamada ao Storage quando o aluno tem certificado para baixar; quem
+      // emite um agora recarrega os `dados` e recebe o logo junto.
+      const empresaLogoUrl = (certificados ?? []).length
+        ? await logoAssinadoParaPdf(
+            emp?.logo_url,
+            // falha ao assinar = PDF sem logo para o aluno; o rastro fica nos logs da função
+            comRastroDeFalha(
+              (refs: string[]) => assinarDaEmpresa(supabase, refs, empresaId),
+              (erro) => console.error("[portal-funcionario] logo da empresa não assinado:", erro)
+            )
+          )
+        : null;
 
       return ok({
         funcionario: func,
         empresa_nome: emp?.nome || emp?.razao_social || "",
+        empresa_logo_url: empresaLogoUrl,
         cursos: resposta,
-        ciencias: ciencias ?? [],
+        ciencias: listaDeCiencias.ok ? listaDeCiencias.ciencias : null,
+        // a orientação do RT que o aluno confirma ao abrir o curso (T35); null = leitura falhou
+        declaracao_ambiente: textoDaDeclaracao.ok
+          ? declaracaoParaOAluno(textoDaDeclaracao.vigente)
+          : null,
       });
     }
 
     // --------------------------------------------------------------- evento
     if (body.acao === "evento") {
+      if (!(await dentroDoLimite(acaoDeVolumeDoEvento(body.evento)))) return muitasAcoes();
       const nome = body.evento ?? "";
       if (!EVENTOS_CLIENTE.has(nome)) return fail("Evento inválido", 400);
       const mat = await minhaMatricula(body.matricula_id);
@@ -784,6 +1061,8 @@ Deno.serve(
       if (nome === "abrir_aula") {
         if (!mat || !body.aula_id) return fail("matricula_id e aula_id são obrigatórios", 400);
         const trilha = await trilhaDoCurso(supabase, mat.curso_id, mat.id, empresaId);
+        // leitura que falhou não é "aula de outro curso" nem "aula bloqueada" (A7)
+        if (!trilha.lida) return fail(MSG_TRILHA_INDISPONIVEL, 503);
         if (!trilha.aulas.some((a: { id: string }) => a.id === body.aula_id)) {
           return fail("Aula não pertence ao curso", 400);
         }
@@ -811,15 +1090,67 @@ Deno.serve(
         curso_id: mat?.curso_id ?? null,
         aula_id: body.aula_id ?? null,
         detalhe: detalheLimitado(body.detalhe),
+        // quem relata é o navegador do aluno: o servidor só carimba a hora e o IP (T17)
+        origem: "navegador",
       });
       return ok({ registrado: true });
     }
 
+    // ---------------------------------------------------- declaração de ambiente
+    // 1ª abertura do curso em cada dia (T35; NR-1, Anexo II, 4.3 e 4.4): o aluno confirma a orientação do RT e os
+    // três itens. A matrícula é a do aluno da sessão; o texto vem do banco (só da empresa da sessão) e o aluno
+    // confirma a VERSÃO que leu; o evento vai para a trilha como evento de SERVIDOR, com o texto inteiro. Uma por
+    // matrícula e dia: repetir no mesmo dia responde ok sem gravar outra.
+    if (body.acao === "declarar_ambiente") {
+      // teto do evento (A6, T35): sem ele, um script com o token do aluno repetia o pedido em paralelo e enchia a
+      // trilha (só de inclusão) de declarações do mesmo dia
+      if (!(await dentroDoLimite(acaoDeVolumeDoEvento(EVENTO_DECLARACAO_AMBIENTE)))) {
+        return muitasAcoes();
+      }
+      const mat = await minhaMatricula(body.matricula_id);
+      if (!mat) return fail("Matrícula não encontrada", 404);
+      const hoje = dataBrasilia(new Date());
+      const jaDeclarou = await lerDeclaracoesDoDia(supabase, {
+        funcionarioId,
+        empresaId,
+        matriculaIds: [mat.id],
+        agora: new Date(),
+        hoje,
+      });
+      if (!jaDeclarou.ok) {
+        return fail("Não foi possível registrar a declaração agora. Tente de novo.", 503);
+      }
+      if (jaDeclarou.declaradas.has(mat.id)) {
+        return ok({ declarada: true, ja_declarada: true, dia: hoje });
+      }
+      const texto = await lerTextoDaDeclaracao(supabase, empresaId);
+      if (!texto.ok) {
+        return fail("Não foi possível registrar a declaração agora. Tente de novo.", 503);
+      }
+      const conferida = validarDeclaracao(body, texto.vigente);
+      if (!conferida.ok) {
+        return fail(conferida.mensagem, conferida.status, { codigo: conferida.codigo });
+      }
+      const gravado = await ev({
+        evento: EVENTO_DECLARACAO_AMBIENTE,
+        matricula_id: mat.id,
+        curso_id: mat.curso_id,
+        detalhe: detalheDaDeclaracao({ vigente: texto.vigente, dia: hoje }),
+      });
+      // sem a linha na trilha a declaração não existe: o aluno não pode achar que declarou
+      if (!gravado)
+        return fail("Não foi possível registrar a declaração agora. Tente de novo.", 503);
+      return ok({ declarada: true, ja_declarada: false, dia: hoje, versao: texto.vigente.versao });
+    }
+
     // ------------------------------------------------------------ progresso
     if (body.acao === "progresso") {
+      if (!(await dentroDoLimite("progresso"))) return muitasAcoes();
       const mat = await minhaMatricula(body.matricula_id);
       if (!mat || !body.aula_id) return fail("Matrícula não encontrada", 404);
       const trilha = await trilhaDoCurso(supabase, mat.curso_id, mat.id, empresaId);
+      // leitura que falhou não é "aula de outro curso" nem "aula bloqueada": nada é creditado (A7)
+      if (!trilha.lida) return fail(MSG_TRILHA_INDISPONIVEL, 503);
       // deno-lint-ignore no-explicit-any
       const aula: any = trilha.aulas.find((a: { id: string }) => a.id === body.aula_id);
       if (!aula) return fail("Aula não pertence ao curso", 400);
@@ -845,18 +1176,35 @@ Deno.serve(
       // O navegador informa o total; o servidor só aceita o que cabe no tempo
       // real passado desde o último sinal deste funcionário (qualquer aba/aula).
       const agora = Date.now();
-      const ultimoSinal = acesso.ultimo_sinal_em ? Date.parse(acesso.ultimo_sinal_em) : agora;
-      const decorrido = Math.max(0, (agora - ultimoSinal) / 1000);
-      const pedido = Math.max(0, Math.floor(Number(body.segundos_assistidos) || 0) - jaTinha);
-      const aceito = Math.min(pedido, Math.floor(decorrido + TOLERANCIA_SEG));
-      let novoSeg = jaTinha + aceito;
-      if (duracao) novoSeg = Math.min(novoSeg, duracao);
+      const { decorrido, pedido, aceito, novoSeg, ajustado } = creditarTempo({
+        jaTinha,
+        informado: body.segundos_assistidos,
+        ultimoSinalEm: acesso.ultimo_sinal_em,
+        agora,
+        duracao,
+      });
 
-      await supabase
-        .from("funcionario_portal_acesso")
-        .update({ ultimo_sinal_em: new Date(agora).toISOString() })
-        .eq("funcionario_id", funcionarioId);
-      if (pedido > aceito + TOLERANCIA_SEG) {
+      // Trava otimista (T31): o sinal só é gravado se ninguém o mudou desde que este pedido o leu (o
+      // `acesso` do começo). Dois progressos simultâneos liam o mesmo sinal e creditavam o mesmo tempo
+      // decorrido, cada um; agora o UPDATE do Postgres deixa passar só o primeiro, e o outro responde 409
+      // sem creditar nada (o navegador reenvia o total no próximo ciclo).
+      const { data: sinalGravado, error: erroSinal } = await travaDoSinal(
+        supabase
+          .from("funcionario_portal_acesso")
+          .update({ ultimo_sinal_em: new Date(agora).toISOString() })
+          .eq("funcionario_id", funcionarioId)
+          .eq("empresa_id", empresaId),
+        acesso.ultimo_sinal_em
+      ).select("funcionario_id");
+      const sinal = resultadoDoSinal({ erro: erroSinal, linhas: sinalGravado?.length });
+      if (sinal === "erro") {
+        console.error("[portal-funcionario] sinal do progresso:", erroSinal);
+        return fail("Erro ao salvar progresso", 500);
+      }
+      if (sinal === "mudou") {
+        return fail(MSG_SINAL_CONCORRENTE, 409, { codigo: "SINAL_CONCORRENTE" });
+      }
+      if (ajustado) {
         await ev({
           evento: "progresso_ajustado",
           matricula_id: mat.id,
@@ -868,19 +1216,21 @@ Deno.serve(
 
       // vídeo conclui sozinho aos 90% assistidos; apostila (pdf/texto) exige o
       // tempo de leitura COMPLETO e o clique explícito em "Marcar como lida"
-      const ehVideo = !aula.tipo || aula.tipo === "video";
-      const minimoSeg = ehVideo ? Math.ceil(duracao * PCT_CONCLUSAO) : duracao;
-      const atingiuTempo = duracao > 0 && novoSeg >= minimoSeg;
-      if (body.concluir === true && !ehVideo && !atingiuTempo) {
-        const faltam = Math.ceil((duracao - novoSeg) / 60);
+      const { ehVideo, concluirCedo, faltamSeg, concluiu, podeConcluir } = conclusaoDaAula({
+        tipo: aula.tipo,
+        duracao,
+        segundos: novoSeg,
+        jaConcluida: atual?.concluida,
+        pediuConcluir: body.concluir,
+      });
+      if (concluirCedo) {
+        const faltam = Math.ceil(faltamSeg / 60);
         return fail(`Continue lendo: ainda faltam ${faltam} min do tempo mínimo de leitura.`, 409, {
           codigo: "TEMPO_LEITURA",
           segundos_assistidos: novoSeg,
-          faltam_seg: duracao - novoSeg,
+          faltam_seg: faltamSeg,
         });
       }
-      const concluiu =
-        atual?.concluida || (ehVideo ? atingiuTempo : atingiuTempo && body.concluir === true);
       const { error: upErr } = await supabase.from("treinamento_progresso").upsert(
         {
           empresa_id: empresaId,
@@ -897,7 +1247,12 @@ Deno.serve(
         return fail("Erro ao salvar progresso", 500);
       }
 
-      let resultado = { status: mat.status, concluiu: false, precisaAvaliacao: false };
+      let resultado = {
+        status: mat.status,
+        concluiu: false,
+        precisaAvaliacao: false,
+        data_conclusao: null as string | null,
+      };
       if (concluiu && !atual?.concluida) {
         if (!ehVideo) {
           await ev({
@@ -915,9 +1270,10 @@ Deno.serve(
           aula_id: aula.id,
           detalhe: { segundos: novoSeg, duracao },
         });
-        resultado = await concluirSeCompleto(supabase, mat, empresaId);
+        resultado = await concluirSeCompleto(supabase, mat, empresaId, adiarConclusao(mat));
         if (resultado.concluiu) {
           await ev({ evento: "curso_concluido", matricula_id: mat.id, curso_id: mat.curso_id });
+          await fecharAdiada(mat, resultado.data_conclusao, "aula");
         }
       }
       if (resultado.status !== mat.status && resultado.status !== "concluido") {
@@ -929,7 +1285,7 @@ Deno.serve(
 
       return ok({
         segundos_assistidos: novoSeg,
-        pode_concluir: !ehVideo && atingiuTempo && !concluiu,
+        pode_concluir: podeConcluir,
         aula_concluida: concluiu,
         curso_concluido: resultado.concluiu,
         precisa_avaliacao: resultado.precisaAvaliacao && !mat.avaliacao_aprovada,
@@ -938,81 +1294,103 @@ Deno.serve(
     }
 
     // ------------------------------------------------------------ avaliação
-    if (body.acao === "avaliacao") {
-      const respostas = body.respostas ?? [];
+    // A prova é do SERVIDOR (T16). `iniciar_avaliacao` confere se o aluno pode fazê-la, sorteia a ordem
+    // das questões e das alternativas (sorteio criptográfico), grava o sorteio na trilha (evento
+    // `avaliacao_iniciada`, com a hora do servidor) e devolve as questões SEM gabarito. `avaliacao` só
+    // aceita o envio de uma prova iniciada nesta tentativa e completa, e corrige com a ordem que o
+    // servidor gravou: o navegador não escolhe a ordem, não define o início nem o tempo.
+    // As duas ações começam por `prepararProva` (prova.ts): ela confere se a matrícula pode fazer a prova e lê
+    // o que a prova precisa. Com qualquer leitura ilegível (aulas, progresso, questões, curso, tentativas ou
+    // liberações) responde 503 ANTES de abrir, corrigir ou gravar a tentativa (A7): a tentativa aprovada é
+    // imutável e a conclusão decide a partir dela.
+
+    /** O último início de prova gravado nesta matrícula (a linha da trilha), ou erro de leitura. */
+    // deno-lint-ignore no-explicit-any
+    const ultimoInicioDaProva = (mat: any) =>
+      supabase
+        .from("treinamento_evento")
+        .select("created_at, detalhe")
+        .eq("matricula_id", mat.id)
+        .eq("empresa_id", empresaId)
+        .eq("evento", EVENTO_PROVA_INICIADA)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (body.acao === "iniciar_avaliacao") {
       const mat = await minhaMatricula(body.matricula_id);
       if (!mat) return fail("Matrícula não encontrada", 404);
-      if (!respostas.length) return fail("Envie as respostas", 400);
-      if (mat.avaliacao_aprovada) return fail("Você já foi aprovado nesta avaliação", 409);
+      const preparo = await prepararProva(supabase, mat, empresaId, false);
+      if (preparo.falha) return recusaDaProva(preparo.falha);
+      const { questoes, curso, max } = preparo;
+      const numero = preparo.usadas + 1;
 
-      const trilha = await trilhaDoCurso(supabase, mat.curso_id, mat.id, empresaId);
-      if (!trilha.aulas.every((a: { id: string }) => trilha.feitas.has(a.id))) {
-        return fail("Conclua todas as aulas antes da avaliação", 409);
-      }
-      const [{ data: questoes }, { data: curso }, { data: anteriores }] = await Promise.all([
-        supabase
-          .from("treinamento_questao")
-          .select("id, ordem, pergunta, opcoes, correta, comentario")
-          .eq("curso_id", mat.curso_id)
-          .eq("empresa_id", empresaId)
-          .is("deleted_at", null)
-          .order("ordem", { ascending: true }),
-        supabase
-          .from("treinamento_curso")
-          .select("nota_minima, max_tentativas, intervalo_tentativa_min")
-          .eq("id", mat.curso_id)
-          .eq("empresa_id", empresaId)
-          .maybeSingle(),
-        supabase
-          .from("treinamento_tentativa")
-          .select("numero, aprovada, created_at")
-          .eq("matricula_id", mat.id)
-          .order("numero", { ascending: false }),
-      ]);
-      if (!questoes?.length) return fail("Este curso não tem avaliação", 400);
-
-      const usadas = anteriores?.length ?? 0;
-      const max =
-        curso?.max_tentativas > 0 ? curso.max_tentativas + (mat.tentativas_extras || 0) : null;
-      if (max !== null && usadas >= max) {
-        return fail("Você usou todas as tentativas. Procure o RH para liberar uma nova.", 403, {
-          codigo: "LIMITE_TENTATIVAS",
+      // Prova já aberta nesta tentativa (o aluno recarregou a página ou voltou às aulas e abriu de novo):
+      // mantém o mesmo sorteio e a hora do primeiro início, e não grava outro evento. Se o RH mexeu nas
+      // questões nesse meio tempo, a ordem gravada não confere e a prova é sorteada de novo.
+      const { data: gravado, error: erroLeitura } = await ultimoInicioDaProva(mat);
+      if (erroLeitura) return fail("Não foi possível abrir a prova. Tente de novo.", 503);
+      const inicio = inicioDaProva(gravado);
+      let prova =
+        inicio && inicio.tentativa === numero ? provaDaOrdem(questoes, inicio.ordem) : null;
+      if (!prova) {
+        prova = sortearProva(questoes, inteiroAleatorioSeguro);
+        const gravou = await ev({
+          evento: EVENTO_PROVA_INICIADA,
+          matricula_id: mat.id,
+          curso_id: mat.curso_id,
+          detalhe: detalheDaProvaIniciada({ tentativa: numero, agora: Date.now(), prova }),
         });
-      }
-      const ultima = anteriores?.[0];
-      if (ultima && !ultima.aprovada && curso?.intervalo_tentativa_min > 0) {
-        const libera = Date.parse(ultima.created_at) + curso.intervalo_tentativa_min * 60_000;
-        if (Date.now() < libera) {
-          return fail(
-            `Nova tentativa liberada às ${hora(new Date(libera).toISOString())}. Revise as aulas enquanto isso.`,
-            429,
-            { codigo: "AGUARDAR", liberada_em: new Date(libera).toISOString() }
-          );
-        }
+        // sem o início na trilha o envio seria recusado: melhor nem abrir a prova
+        if (!gravou) return fail("Não foi possível abrir a prova. Tente de novo.", 503);
       }
 
-      const marcada = new Map(respostas.map((r) => [r.questao_id, Number(r.resposta)]));
-      // ordem em que o portal EXIBIU (questões e alternativas são sorteadas)
+      return ok({
+        tentativa: numero,
+        tentativas_max: max,
+        nota_minima: curso?.nota_minima ?? NOTA_MINIMA_PADRAO,
+        // só o que o aluno vê: sem `correta`, sem `comentario`
+        questoes: prova.map(({ id, pergunta, opcoes, ordem_opcoes }) => ({
+          id,
+          pergunta,
+          opcoes,
+          ordem_opcoes,
+        })),
+      });
+    }
+
+    if (body.acao === "avaliacao") {
+      const mat = await minhaMatricula(body.matricula_id);
+      if (!mat) return fail("Matrícula não encontrada", 404);
+      const preparo = await prepararProva(supabase, mat, empresaId, true);
+      if (preparo.falha) return recusaDaProva(preparo.falha);
+      const { questoes, curso, max } = preparo;
+      const numero = preparo.usadas + 1;
+
+      // início desta tentativa, resposta de todas as questões e tempo mínimo (regras em regras.ts)
+      const { data: gravado, error: erroLeitura } = await ultimoInicioDaProva(mat);
+      if (erroLeitura) return fail("Não foi possível validar a prova. Tente de novo.", 503);
+      const envio = validarEnvio({
+        questoes,
+        respostas: body.respostas,
+        inicio: inicioDaProva(gravado),
+        numero,
+        agora: Date.now(),
+        tempoMinimoPorQuestaoSeg: TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG,
+      });
+      if (!envio.ok) {
+        return fail(envio.mensagem, envio.status, { codigo: envio.codigo, ...envio.extra });
+      }
+
+      // a ordem exibida é a que o SERVIDOR sorteou (não a que o navegador diz ter mostrado)
       const exibicao = new Map(
-        respostas.map((r, i) => [
-          r.questao_id,
-          {
-            posicao: i + 1,
-            ordem_opcoes:
-              Array.isArray(r.ordem_opcoes) &&
-              r.ordem_opcoes.length <= 12 &&
-              r.ordem_opcoes.every((x) => Number.isInteger(x))
-                ? r.ordem_opcoes
-                : null,
-          },
-        ])
+        envio.prova.map((q, i) => [q.id, { posicao: i + 1, ordem_opcoes: q.ordem_opcoes }])
       );
-      const acertou = (q: { id: string; correta: number }) => marcada.get(q.id) === q.correta;
-      const acertos = questoes.filter(acertou).length;
-      const nota = Math.round((acertos / questoes.length) * 100);
-      const minima = curso?.nota_minima ?? 70;
-      const aprovada = nota >= minima;
-      const numero = usadas + 1;
+      const { marcada, acertou, acertos, nota, minima, aprovada } = corrigirProva({
+        questoes,
+        respostas: envio.respostas,
+        notaMinima: curso?.nota_minima,
+      });
 
       const { error: tErr } = await supabase.from("treinamento_tentativa").insert({
         empresa_id: empresaId,
@@ -1031,7 +1409,7 @@ Deno.serve(
         // deno-lint-ignore no-explicit-any
         respostas: questoes.map((q: any) => ({
           questao_id: q.id,
-          resposta: marcada.has(q.id) ? marcada.get(q.id) : null,
+          resposta: marcada.get(q.id) ?? null,
           acertou: acertou(q),
           posicao_exibida: exibicao.get(q.id)?.posicao ?? null,
           ordem_opcoes_exibida: exibicao.get(q.id)?.ordem_opcoes ?? null,
@@ -1057,13 +1435,49 @@ Deno.serve(
         detalhe: { tentativa: numero, nota, aprovada },
       });
 
+      // Aviso ao RH (T24): reprovou na última tentativa que tinha. O nome do aluno e do curso saem do
+      // banco pela sessão (empresa e funcionário do token), nunca do corpo; qualquer falha aqui só vai
+      // para o log e não muda a resposta da prova.
+      if (esgotouAsTentativas({ aprovada, numero, max })) {
+        try {
+          const [{ data: cursoAviso }, { data: funcionarioAviso }] = await Promise.all([
+            supabase
+              .from("treinamento_curso")
+              .select("nome")
+              .eq("id", mat.curso_id)
+              .eq("empresa_id", empresaId)
+              .maybeSingle(),
+            supabase
+              .from("funcionario")
+              .select("nome_completo")
+              .eq("id", funcionarioId)
+              .eq("empresa_id", empresaId)
+              .maybeSingle(),
+          ]);
+          await avisarGestores(
+            supabase,
+            empresaId,
+            avisoDeTentativasEsgotadas({
+              matriculaId: mat.id,
+              numero,
+              max,
+              funcionarioNome: funcionarioAviso?.nome_completo,
+              cursoNome: cursoAviso?.nome,
+            })
+          );
+        } catch (e) {
+          console.error("[portal-funcionario] aviso ao RH:", (e as Error)?.message);
+        }
+      }
+
       let concluiu = false;
       if (aprovada) {
         // concluirSeCompleto confere a tentativa aprovada recém-gravada
-        const r = await concluirSeCompleto(supabase, mat, empresaId);
+        const r = await concluirSeCompleto(supabase, mat, empresaId, adiarConclusao(mat));
         concluiu = r.concluiu;
         if (concluiu) {
           await ev({ evento: "curso_concluido", matricula_id: mat.id, curso_id: mat.curso_id });
+          await fecharAdiada(mat, r.data_conclusao, "prova");
         }
       }
 
@@ -1078,23 +1492,27 @@ Deno.serve(
             comentario: q.comentario ?? null,
           }))
         : null;
-      const liberaEm =
-        !aprovada && curso?.intervalo_tentativa_min > 0
-          ? new Date(Date.now() + curso.intervalo_tentativa_min * 60_000).toISOString()
-          : null;
+      const liberaMs = proximaTentativaEm(aprovada, curso?.intervalo_tentativa_min, Date.now());
+      const liberaEm = liberaMs !== null ? new Date(liberaMs).toISOString() : null;
 
-      return ok({
-        nota,
-        nota_minima: minima,
-        aprovada,
-        acertos,
-        total: questoes.length,
-        tentativa: numero,
-        tentativas_max: max,
-        proxima_em: liberaEm,
-        curso_concluido: concluiu,
-        revisao,
-      });
+      // Reprovado: "insatisfatório", tentativas e próxima liberação; nota, acertos e total só enquanto
+      // REPROVADO_VE_NOTA (D10: hoje `false`, o reprovado não recebe; eles deixariam deduzir o gabarito).
+      // Aprovado: como antes.
+      // Regra em regras.ts.
+      return ok(
+        respostaDaCorrecao({
+          aprovada,
+          nota,
+          notaMinima: minima,
+          acertos,
+          total: questoes.length,
+          tentativa: numero,
+          tentativasMax: max,
+          proximaEm: liberaEm,
+          cursoConcluido: concluiu,
+          revisao,
+        })
+      );
     }
 
     // ---------------------------------------------------------- certificado
@@ -1104,37 +1522,115 @@ Deno.serve(
       let mat = await minhaMatricula(body.matricula_id);
       if (!mat) return fail("Matrícula não encontrada", 404);
 
-      const { data: existente } = await supabase
+      const { data: existente, error: erroExistente } = await supabase
         .from("treinamento_certificado")
         .select("codigo, dados, assinatura_aluno, emitido_em, hash_sha256, revogado_em")
         .eq("matricula_id", mat.id)
         .maybeSingle();
-      if (existente) {
-        return ok({ certificado: { ...existente, revogado: !!existente.revogado_em } });
+      // falha de leitura não é "ainda não há certificado": seguir emitiria por cima de um que existe
+      if (erroExistente) {
+        console.error("[portal-funcionario] certificado: leitura do existente:", erroExistente);
+        return fail("Não foi possível consultar seu certificado agora. Tente de novo.", 503);
       }
+      if (existente) {
+        return ok({
+          certificado: certificadoParaOAluno(certificadoParaResposta(existente), empresaId),
+        });
+      }
+
+      // Modalidade (T8): curso de apoio nunca emite; o semipresencial depende da prática da matrícula,
+      // conferida abaixo (T12). Vem ANTES da senha: não gasta a reconfirmação do aluno à toa.
+      const { data: cursoDoCertificado, error: erroCurso } = await supabase
+        .from("treinamento_curso")
+        .select("*")
+        .eq("id", mat.curso_id)
+        .eq("empresa_id", empresaId)
+        .maybeSingle();
+      // falha de leitura é 503 (como o resto da ação), não "curso não encontrado"
+      if (erroCurso) {
+        console.error("[portal-funcionario] certificado: leitura do curso:", erroCurso);
+        return fail("Não foi possível validar o curso agora. Tente de novo.", 503);
+      }
+      if (!cursoDoCertificado) return fail("Curso não encontrado", 404);
+      const semEmissao = bloqueioDeEmissaoPorModalidade(modalidadeDoCurso(cursoDoCertificado));
+      if (semEmissao) return fail(semEmissao.mensagem, 409, { codigo: semEmissao.codigo });
 
       // NR-1: conclusão recalculada aqui (progresso + tentativa aprovada), não
       // pelo status da matrícula, que a empresa grava pela API.
+      // Leitura que falhou é 503 (tentar de novo), não 409 "Conclua o curso" (A7).
       const sit = await situacaoReal(supabase, mat, empresaId);
-      if (!sit.concluido) return fail("Conclua o curso antes de emitir o certificado", 409);
+      const semTrilha = bloqueioDaTrilhaNoCertificado(sit);
+      if (semTrilha) return fail(semTrilha.mensagem, semTrilha.status);
 
-      const { ok: senhaOk } = await verifyPassword(body.senha ?? "", acesso.senha_hash);
-      if (!senhaOk) return fail("Senha incorreta — a assinatura não foi feita", 400);
+      // Pré-requisito (T23): o curso exigido concluído e dentro da validade. Vem ANTES da senha (não gasta a
+      // reconfirmação à toa) e lê o banco de novo: a tela pode estar velha (o certificado do curso exigido
+      // pode ter vencido ou sido revogado depois). Falha de leitura não deixa emitir.
+      const pre = cursoDoCertificado.pre_requisito_curso_id
+        ? await lerPreRequisito(supabase, {
+            preCursoId: cursoDoCertificado.pre_requisito_curso_id,
+            funcionarioId,
+            empresaId,
+            hoje: dataBrasilia(new Date()),
+          })
+        : null;
+      if (pre && !pre.ok) {
+        return fail("Não foi possível validar o pré-requisito do curso agora. Tente de novo.", 503);
+      }
+      const semPre = pre?.ok ? bloqueioDeEmissaoPorPreRequisito(pre.situacao, pre.nome) : null;
+      if (semPre) return fail(semPre.mensagem, 409, { codigo: semPre.codigo });
+
+      // Parte prática presencial (T12): o semipresencial só emite com a participação do aluno "presente" e
+      // "satisfatório" numa sessão viva do curso, já realizada. Lê o banco de novo (a tela pode estar velha:
+      // o RH pode ter mudado o resultado ou apagado a sessão) e vem ANTES da senha. Falha de leitura não emite.
+      const praticaLida =
+        modalidadeDoCurso(cursoDoCertificado) === "semipresencial"
+          ? await lerPratica(supabase, {
+              matriculaId: mat.id,
+              cursoId: mat.curso_id,
+              empresaId,
+              hoje: dataBrasilia(new Date()),
+              // a prática só está realizada quando a soma das sessões satisfatórias chega a esta carga
+              cargaPraticaHoras: cursoDoCertificado.carga_pratica_horas,
+            })
+          : null;
+      if (praticaLida && !praticaLida.ok) {
+        return fail(
+          "Não foi possível conferir a parte prática do curso agora. Tente de novo.",
+          503
+        );
+      }
+      const semPratica = praticaLida?.ok ? bloqueioDeEmissaoPorPratica(praticaLida.pratica) : null;
+      if (semPratica) return fail(semPratica.mensagem, 409, { codigo: semPratica.codigo });
+      // as sessões que valeram (da mais antiga em diante, até cobrir a carga); vazio fora do semipresencial
+      const sessoesDaPratica = praticaLida?.ok ? praticaLida.pratica.sessoes : [];
+
+      const reconfirmacao = await reconfirmar(body.senha ?? "");
+      if (reconfirmacao === "limite") return muitasTentativas();
+      if (reconfirmacao === "incorreta") {
+        return fail("Senha incorreta — a assinatura não foi feita", 400);
+      }
 
       // matrícula sem o status/data que o servidor grava ao concluir: regrava
       // antes de montar o certificado (conclusão e validade vêm dela)
       if (mat.status !== "concluido" || !mat.data_conclusao) {
-        await concluirSeCompleto(supabase, mat, empresaId);
+        const conclusao = await concluirSeCompleto(supabase, mat, empresaId);
+        // A trilha está completa (conferido acima), então não concluir aqui é falha de leitura do curso, não "o
+        // curso não terminou": 503 para tentar de novo, e nunca um certificado sem a conclusão registrada (A6).
+        if (!conclusao.concluiu) {
+          return fail("Não foi possível registrar a conclusão do curso agora. Tente de novo.", 503);
+        }
+        // a conclusão que estava adiada foi registrada por aqui: fecha a marca na trilha (A7)
+        await fecharAdiada(mat, conclusao.data_conclusao, "certificado");
         mat = (await minhaMatricula(mat.id)) ?? mat;
+        // a releitura confirma: o certificado congela a data e a validade da matrícula, então uma matrícula que ainda
+        // aparece aberta (UPDATE que não pegou, releitura que falhou) não emite
+        if (mat.status !== "concluido" || !mat.data_conclusao) {
+          return fail("Não foi possível registrar a conclusão do curso agora. Tente de novo.", 503);
+        }
       }
 
-      const [{ data: curso }, { data: func }, { data: emp }, { data: aulas }] = await Promise.all([
-        supabase
-          .from("treinamento_curso")
-          .select("*")
-          .eq("id", mat.curso_id)
-          .eq("empresa_id", empresaId)
-          .maybeSingle(),
+      const curso = cursoDoCertificado;
+      const [{ data: func }, { data: emp }, { data: aulas }] = await Promise.all([
         supabase
           .from("funcionario")
           .select("nome_completo, cpf, funcao_nome")
@@ -1164,16 +1660,31 @@ Deno.serve(
         .eq("empresa_id", empresaId)
         .is("deleted_at", null);
       if (erroQuestoes) return fail("Não foi possível validar os requisitos do curso", 503);
-      const pendencias = requisitosDoCurso({
-        curso: curso || {},
-        aulas: aulas || [],
-        questoes: Array.from({ length: nQuestoes || 0 }, () => ({})),
-      }).filter((r) => r.bloqueia && !r.ok);
+      const pendencias = pendenciasParaEmitir(
+        requisitosDoCurso({
+          curso: curso || {},
+          aulas: aulas || [],
+          questoes: Array.from({ length: nQuestoes || 0 }, () => ({})),
+        })
+      );
       if (pendencias.length)
         return fail("O certificado aguarda a regularização do curso pelo RH", 409, {
           codigo: "REQUISITOS",
           pendencias: pendencias.map((r) => r.texto),
         });
+
+      // Validade do semipresencial (T12): conta do FIM do treinamento, o maior dia entre a conclusão da teoria e o
+      // último dia da prática que valeu. A `proxima_renovacao` que a matrícula guardou ao concluir a teoria é de
+      // antes da prática: num curso de 12 meses com a teoria feita 13 meses antes, o certificado nasceria vencido.
+      // `null` = não é semipresencial (o período fica como sempre foi).
+      const periodoDoSemi = sessoesDaPratica.length
+        ? periodoDoSemipresencial({
+            periodo: periodoDoCertificado(mat),
+            sessoes: sessoesDaPratica,
+            validadeMeses: curso.validade_meses,
+            modalidade: modalidadeDoCurso(curso),
+          })
+        : null;
 
       const dados = {
         aluno: { nome: func?.nome_completo, cpf: func?.cpf, funcao: func?.funcao_nome ?? null },
@@ -1182,27 +1693,39 @@ Deno.serve(
           nome: curso.nome,
           codigo: curso.codigo,
           carga_horaria_horas: curso.carga_horaria_horas,
-          modalidade: "Ensino a distância (EAD) — NR-1, Anexo II",
+          // semipresencial (T12): "Semipresencial: teoria EAD (X h) + prática presencial (Y h)"
+          modalidade: textoDaModalidade(modalidadeDoCurso(curso), curso),
+          // e as duas cargas em número (só no semipresencial: o certificado EAD não muda)
+          ...(sessoesDaPratica.length
+            ? {
+                carga_teorica_horas: Number(curso.carga_teorica_horas),
+                carga_pratica_horas: Number(curso.carga_pratica_horas),
+              }
+            : {}),
           conteudo_programatico: curso.conteudo_programatico || null,
           // deno-lint-ignore no-explicit-any
           aulas: (aulas ?? []).map((a: any) => ({ modulo: a.modulo, titulo: a.titulo })),
         },
-        periodo: {
-          inicio: (mat.iniciado_em ?? mat.created_at)?.slice(0, 10),
-          conclusao: mat.data_conclusao,
-          validade: mat.proxima_renovacao ?? null,
-        },
+        // dias de Brasília (T8); conclusão e validade já foram gravadas assim em datasDeConclusao. No
+        // semipresencial o período cobre também os dias da prática e a validade conta do fim do treinamento (T12)
+        periodo: periodoDoSemi ?? periodoDoCertificado(mat),
+        // tipo do treinamento (T23, NR-1 1.7.1.2): inicial, periódico ou eventual (com o motivo); entra no hash
+        ...dadosDoTipoNoCertificado(mat),
+        // NR-1, 1.7.1.1: onde o treinamento foi realizado (no semipresencial, também o local da prática, T12)
+        local: sessoesDaPratica.length
+          ? localComPratica(LOCAL_DO_CERTIFICADO, sessoesDaPratica)
+          : LOCAL_DO_CERTIFICADO,
+        // as sessões práticas que valeram, congeladas (T12): editar a sessão depois não muda este certificado
+        ...(sessoesDaPratica.length
+          ? { pratica: dadosDaPraticaNoCertificado(sessoesDaPratica) }
+          : {}),
         avaliacao: sit.aprovacao
           ? { nota: sit.aprovacao.nota, tentativa: sit.aprovacao.numero }
           : null,
-        instrutor: {
-          nome: curso.instrutor_nome ?? null,
-          qualificacao: curso.instrutor_qualificacao ?? null,
-        },
-        responsavel_tecnico: {
-          nome: curso.responsavel_tecnico_nome ?? null,
-          registro: curso.responsavel_tecnico_registro ?? null,
-        },
+        // nome, qualificação/registro e, quando o RH anexou, a referência da imagem da assinatura (T29).
+        // Tudo congelado aqui: entra no hash, e trocar a imagem do curso depois não muda este certificado
+        instrutor: instrutorDoCertificado(curso, empresaId),
+        responsavel_tecnico: responsavelTecnicoDoCertificado(curso, empresaId),
       };
       const assinatura = {
         metodo: "senha_pessoal_portal_funcionario",
@@ -1211,11 +1734,33 @@ Deno.serve(
           "Declaro que realizei pessoalmente este treinamento, assisti às aulas e fiz a avaliação.",
         assinado_em: agoraIso(),
         ...origemDaRequisicao(req),
+        // versão do hash: a validação pública sabe se refaz o hash canônico (2) ou o antigo (sem versão)
+        hash_versao: HASH_VERSAO_CANONICO,
       };
+
+      // A matrícula passa a guardar a mesma validade que o certificado vai imprimir (o pré-requisito, os vencimentos
+      // e os avisos do RH leem a da matrícula). O trigger da 0130 deixa o servidor gravar. Se não gravar, não emite:
+      // validade da matrícula e do certificado divergentes é pior que pedir para tentar de novo.
+      if (periodoDoSemi && periodoDoSemi.validade !== (mat.proxima_renovacao ?? null)) {
+        const { error: erroValidade } = await supabase
+          .from("treinamento_matricula")
+          .update({ proxima_renovacao: periodoDoSemi.validade })
+          .eq("id", mat.id)
+          .eq("empresa_id", empresaId);
+        if (erroValidade) {
+          console.error("[portal-funcionario] certificado: validade da matrícula:", erroValidade);
+          return fail(
+            "Não foi possível calcular a validade do certificado agora. Tente de novo.",
+            503
+          );
+        }
+      }
 
       for (let i = 0; i < 3; i++) {
         const codigo = gerarCodigoCertificado();
-        const hash = await sha256Hex(JSON.stringify({ codigo, dados, assinatura }));
+        // JSON canônico (chaves ordenadas): o jsonb do banco reordena as chaves, e só assim o hash
+        // dá para refazer a partir do que ficou gravado (validar-certificado confere isso)
+        const hash = await hashDoCertificado(codigo, dados, assinatura);
         const { data: cert, error } = await supabase
           .from("treinamento_certificado")
           .insert({
@@ -1228,28 +1773,95 @@ Deno.serve(
             dados,
             assinatura_aluno: assinatura,
           })
-          .select("codigo, dados, assinatura_aluno, emitido_em, hash_sha256")
+          .select("id, codigo, dados, assinatura_aluno, emitido_em, hash_sha256")
           .single();
         if (!error) {
+          // O que o banco devolveu tem de dar o mesmo hash (T10, M5). Se não der, a validação pública
+          // acusaria "Dados não conferem" num certificado recém-emitido: ele NÃO é entregue e é
+          // anulado (revogado pelo sistema; o servidor não apaga, a trilha é só de inclusão, 0135).
+          const emissao = await conferirEmissaoDoCertificado({
+            hashEmitido: hash,
+            gravado: cert,
+            aoDivergir: (refeito) =>
+              console.error(
+                "[portal-funcionario] certificado: hash não reproduzível pelo banco",
+                codigo,
+                "gravado:",
+                hash,
+                "refeito:",
+                refeito
+              ),
+            // a exceção da anulação (rede, banco) tem a causa registrada: sem isto só sobrava "NÃO anulado"
+            aoFalharAnulacao: (erro) =>
+              console.error("[portal-funcionario] certificado: a anulação lançou", codigo, erro),
+            anular: async () => {
+              const { data: anulados, error: erroAnular } = await supabase
+                .from("treinamento_certificado")
+                .update(dadosDaAnulacaoNaEmissao(new Date()))
+                .eq("id", cert.id)
+                .eq("empresa_id", empresaId)
+                .is("revogado_em", null)
+                .select("id");
+              if (erroAnular) {
+                console.error(
+                  "[portal-funcionario] certificado: não anulou a emissão",
+                  codigo,
+                  erroAnular.message
+                );
+                return false;
+              }
+              return (anulados?.length ?? 0) > 0;
+            },
+          });
+          if (!emissao.entregar) {
+            console.error(
+              "[portal-funcionario] certificado: emissão NÃO entregue (hash não reproduzível)",
+              codigo,
+              emissao.anulado ? "anulado" : "NÃO anulado: confira a linha"
+            );
+            if (emissao.anulado) {
+              await ev({
+                evento: EVENTO_CERTIFICADO_REVOGADO,
+                matricula_id: mat.id,
+                curso_id: mat.curso_id,
+                detalhe: { por: POR_SISTEMA, codigo, motivo: MOTIVO_EMISSAO_ANULADA },
+              });
+            }
+            return fail(MSG_EMISSAO_ANULADA, 500, { codigo: "EMISSAO_ANULADA" });
+          }
           await ev({
             evento: "certificado_assinado",
             matricula_id: mat.id,
             curso_id: mat.curso_id,
             detalhe: { codigo },
           });
-          return ok({ certificado: { ...cert, revogado: false } });
+          // o id da linha só serve para anular; não vai ao navegador. A referência da assinatura também
+          // não: o portal recarrega os `dados` e recebe a URL assinada (T29)
+          const { id: _idDaLinha, ...certificado } = cert;
+          certificado.dados = dadosParaOAluno(certificado.dados, empresaId, () => null);
+          return ok({ certificado: { ...certificado, revogado: false } });
         }
         if (error.code !== "23505") {
           console.error("[portal-funcionario] certificado:", error);
           return fail("Erro ao emitir certificado", 500);
         }
         // 23505 no codigo: sorteia outro; na matricula_id: outra aba já emitiu
-        const { data: jaEmitido } = await supabase
+        const { data: jaEmitido, error: erroJaEmitido } = await supabase
           .from("treinamento_certificado")
-          .select("codigo, dados, assinatura_aluno, emitido_em, hash_sha256")
+          .select("codigo, dados, assinatura_aluno, emitido_em, hash_sha256, revogado_em")
           .eq("matricula_id", mat.id)
           .maybeSingle();
-        if (jaEmitido) return ok({ certificado: { ...jaEmitido, revogado: false } });
+        // sem ler o erro, a falha de leitura sorteava outro código e tentava inserir de novo
+        if (erroJaEmitido) {
+          console.error("[portal-funcionario] certificado: leitura após o 23505:", erroJaEmitido);
+          return fail("Não foi possível consultar seu certificado agora. Tente de novo.", 503);
+        }
+        // o certificado de outra aba pode já ter sido revogado: `revogado` vem da coluna
+        if (jaEmitido) {
+          return ok({
+            certificado: certificadoParaOAluno(certificadoParaResposta(jaEmitido), empresaId),
+          });
+        }
       }
       return fail("Erro ao gerar o código do certificado — tente de novo", 500);
     }
@@ -1258,29 +1870,26 @@ Deno.serve(
     // Confirmação = assinatura eletrônica simples (Lei 14.063/2020): quem
     // (login pessoal), quando, o quê e de onde (IP/dispositivo).
     if (body.acao === "ciencia") {
-      if (!body.ciencia_id) return fail("ciencia_id é obrigatório", 400);
-      const { data: ciencia } = await supabase
-        .from("entrega_ciencia")
-        .select("id, status")
-        .eq("id", body.ciencia_id)
-        .eq("funcionario_id", funcionarioId)
-        .eq("empresa_id", empresaId)
-        .is("deleted_at", null)
-        .maybeSingle();
-      if (!ciencia) return fail("Registro não encontrado", 404);
-      if (ciencia.status === "confirmada") return ok({ message: "Já confirmada" });
+      const cienciaId = body.ciencia_id;
+      if (!cienciaId) return fail("ciencia_id é obrigatório", 400);
       const evidencia = {
         metodo: "portal_funcionario_login",
         usuario: acesso.usuario,
         confirmado_em: agoraIso(),
         ...origemDaRequisicao(req),
       };
-      const { error } = await supabase
-        .from("entrega_ciencia")
-        .update({ status: "confirmada", confirmada_em: evidencia.confirmado_em, evidencia })
-        .eq("id", ciencia.id);
-      if (error) return fail("Erro ao registrar ciência", 500);
-      await ev({ evento: "ciencia", detalhe: { ciencia_id: ciencia.id } });
+      // só o servidor confirma (trigger da 0134) e só uma vez: o UPDATE exige status pendente,
+      // então uma 2ª aba não sobrescreve a evidência da 1ª (regra e testes em ciencia.ts)
+      const r = await confirmarCiencia(supabase, {
+        cienciaId,
+        funcionarioId,
+        empresaId,
+        evidencia,
+      });
+      if (r.resultado === "nao_encontrada") return fail("Registro não encontrado", 404);
+      if (r.resultado === "ja_confirmada") return ok({ message: "Já confirmada" });
+      if (r.resultado === "erro") return fail("Erro ao registrar ciência", 500);
+      await ev({ evento: "ciencia", detalhe: { ciencia_id: cienciaId } });
       return ok({ message: "Ciência registrada", evidencia });
     }
 
@@ -1327,7 +1936,10 @@ Deno.serve(
         detalhe: { duvida_id: duvida.id },
       });
 
-      const [{ data: curso }, { data: func }] = await Promise.all([
+      // O aviso ao tutor (T21): o curso, o aluno e a aula vêm do banco pela sessão (nunca do corpo). Só sai
+      // com telefone que o envio aceita (destinoDoAvisoAoTutor); a falha do envio não derruba a dúvida, que
+      // já está gravada, e a resposta diz ao portal se o tutor foi avisado.
+      const [{ data: curso }, { data: func }, { data: aula }] = await Promise.all([
         supabase
           .from("treinamento_curso")
           .select("nome, tutor_telefone")
@@ -1340,19 +1952,36 @@ Deno.serve(
           .eq("id", funcionarioId)
           .eq("empresa_id", empresaId)
           .maybeSingle(),
+        body.aula_id
+          ? supabase
+              .from("treinamento_aula")
+              .select("titulo")
+              .eq("id", body.aula_id)
+              .eq("curso_id", mat.curso_id)
+              .eq("empresa_id", empresaId)
+              .is("deleted_at", null)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
       ]);
-      const tel = normalizarTelefoneBR(curso?.tutor_telefone ?? "");
-      if (tel) {
+      const destino = destinoDoAvisoAoTutor(curso);
+      let tutorAvisado = false;
+      if (destino) {
         try {
           await enviarWhatsAppTexto(
-            tel,
-            `❓ Dúvida no curso ${curso?.nome}\nDe: ${func?.nome_completo}\n\n"${pergunta}"\n\nResponda no SIGO → RH & Segurança → Treinamentos → Dúvidas.`
+            destino,
+            mensagemDuvidaAoTutor({
+              cursoNome: curso?.nome,
+              alunoNome: func?.nome_completo,
+              aulaTitulo: aula?.titulo,
+              pergunta,
+            })
           );
+          tutorAvisado = true;
         } catch (e) {
           console.error("[portal-funcionario] aviso ao tutor:", (e as Error)?.message);
         }
       }
-      return ok({ duvida });
+      return ok({ duvida, tutor_avisado: tutorAvisado });
     }
 
     return fail("Ação desconhecida", 400);

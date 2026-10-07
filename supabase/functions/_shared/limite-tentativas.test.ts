@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import {
   chaveLimite,
   consumirTentativa,
+  ipBrutoDaRequisicao,
   ipDaRequisicao,
   liberarTentativas,
   normalizarIp,
@@ -23,6 +24,51 @@ test("IP: cai para x-real-ip e ignora cf-connecting-ip (header do cliente no *.s
   assert.equal(ipDaRequisicao(req({ "x-real-ip": "200.1.2.3" })), "200.1.2.3");
   assert.equal(ipDaRequisicao(req({ "cf-connecting-ip": "9.9.9.9" })), null);
   assert.equal(ipDaRequisicao(req({})), null);
+});
+
+test("IP bruto: entrada mais à direita do X-Forwarded-For, sem normalizar nada", () => {
+  assert.equal(
+    ipBrutoDaRequisicao(req({ "x-forwarded-for": "198.51.100.7, 203.0.113.9" })),
+    "203.0.113.9"
+  );
+  assert.equal(ipBrutoDaRequisicao(req({ "x-forwarded-for": " 203.0.113.9 ,  " })), "203.0.113.9");
+  assert.equal(
+    ipBrutoDaRequisicao(req({ "x-forwarded-for": "198.51.100.7, 2001:db8:abcd:12::1" })),
+    "2001:db8:abcd:12::1"
+  );
+});
+
+test("IP bruto: cai para x-real-ip, ignora cf-connecting-ip e sem cabeçalho é null", () => {
+  assert.equal(ipBrutoDaRequisicao(req({ "x-real-ip": " 203.0.113.9 " })), "203.0.113.9");
+  assert.equal(
+    ipBrutoDaRequisicao(req({ "x-forwarded-for": "", "x-real-ip": "203.0.113.9" })),
+    "203.0.113.9"
+  );
+  assert.equal(ipBrutoDaRequisicao(req({ "cf-connecting-ip": "198.51.100.7" })), null);
+  assert.equal(ipBrutoDaRequisicao(req({})), null);
+});
+
+test("IP bruto: x-real-ip enorme é cortado em 64 caracteres (a evidência não vira lixo ilimitado)", () => {
+  const longo = "9".repeat(500);
+  const r = ipBrutoDaRequisicao(req({ "x-real-ip": longo }));
+  assert.equal(r?.length, 64);
+  assert.equal(r, longo.slice(0, 64));
+  // o IPv6 mais longo em texto (45 caracteres, com IPv4 embutido) passa inteiro
+  const ipv6 = "0000:0000:0000:0000:0000:ffff:255.255.255.255";
+  assert.equal(ipBrutoDaRequisicao(req({ "x-real-ip": ipv6 })), ipv6);
+  // a entrada do X-Forwarded-For vem do gateway, mas também não passa de 64
+  assert.equal(
+    ipBrutoDaRequisicao(req({ "x-forwarded-for": "198.51.100.7, " + longo }))?.length,
+    64
+  );
+  // o corte não mexe no IP normal
+  assert.equal(ipBrutoDaRequisicao(req({ "x-real-ip": "203.0.113.9" })), "203.0.113.9");
+});
+
+test("IP do limitador = IP bruto normalizado (IPv6 vira /64 só aqui)", () => {
+  const r = req({ "x-forwarded-for": "198.51.100.7, 2001:db8:abcd:12:1111:2222:3333:4444" });
+  assert.equal(ipBrutoDaRequisicao(r), "2001:db8:abcd:12:1111:2222:3333:4444");
+  assert.equal(ipDaRequisicao(r), "2001:db8:abcd:12::/64");
 });
 
 test("normalizarIp: IPv4 com porta e IPv4 mapeado em IPv6", () => {

@@ -1,6 +1,6 @@
 import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
-import { sigo, resolveStorageUrl, refDoStorage } from "@/api/sigoClient";
+import { sigo, supabase, resolveStorageUrl, refDoStorage } from "@/api/sigoClient";
 import { refDoUpload } from "@/lib/anexo-ref";
 import ImgStorage from "@/components/ImgStorage";
 import { useEmpresa } from "../Layout";
@@ -89,7 +89,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
+import { sugestaoDeMatricula, textoDaSugestao } from "@/lib/ead-matricula-funcao";
 import { cn } from "@/lib/utils";
+import { FILTRO_SEM_RESPOSTA, rotuloDaAbaTreinamentos, textoPendentes } from "@/lib/ead-duvidas";
 import JSZip from "jszip";
 
 export default function SegurancaTrabalho() {
@@ -100,6 +102,8 @@ export default function SegurancaTrabalho() {
   const tabFromUrl = urlParams.get("tab") || "funcionarios";
 
   const [activeTab, setActiveTab] = useState(tabFromUrl);
+  // admissão ou troca de função: leva o RH à aba Treinamentos com o painel de matrícula já na função
+  const [sugestaoMatricula, setSugestaoMatricula] = useState(null);
   const [funcionarios, setFuncionarios] = useState([]);
   const [funcoes, setFuncoes] = useState([]);
   const [inspecoesFerramental, setInspecoesFerramental] = useState([]);
@@ -354,6 +358,36 @@ export default function SegurancaTrabalho() {
     carregarAcessosPortal();
   }, [empresaAtiva?.id]);
 
+  // Dúvidas dos alunos sem resposta (T21): o número aparece no gatilho da aba "Treinamentos" antes de o RH abri-la.
+  // Aqui fica a contagem de quando a tela abre e de quando o RH volta de outra aba; com a aba aberta, o cartão de
+  // dúvidas manda o número da lista que ele mesmo carregou (onDuvidasPendentes). Só conta quem enxerga a aba.
+  const [duvidasPendentes, setDuvidasPendentes] = useState(0);
+  const verTreinamentos =
+    perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários");
+  useEffect(() => {
+    if (!empresaAtiva?.id || !verTreinamentos) {
+      setDuvidasPendentes(0);
+      return undefined;
+    }
+    let vale = true;
+    // a mesma conta do cartão de dúvidas (lib/ead-duvidas.js): resposta nula ou vazia, dúvida não excluída
+    supabase
+      .from("treinamento_duvida")
+      .select("id", { count: "exact", head: true })
+      .eq("empresa_id", empresaAtiva.id)
+      .is("deleted_at", null)
+      .or(FILTRO_SEM_RESPOSTA)
+      .then(({ count, error }) => {
+        if (error) throw error;
+        if (vale) setDuvidasPendentes(count ?? 0);
+      })
+      // sem a contagem o gatilho só fica sem número: nada mais depende dela
+      .catch((e) => console.warn("[SegurancaTrabalho] dúvidas sem resposta:", e?.message));
+    return () => {
+      vale = false;
+    };
+  }, [empresaAtiva?.id, verTreinamentos, activeTab]);
+
   const loadData = async () => {
     try {
       const [funcionariosList, funcoesList, ferramentalList, caminhaoList, caminhoesList] =
@@ -398,6 +432,24 @@ export default function SegurancaTrabalho() {
     }, 1000);
   };
 
+  // Admissão ou troca de função (NR-1, 1.4.4 e 1.7.1.2.1: o treinamento vem antes da atividade): oferece
+  // matricular o funcionário nos treinamentos EAD que a função exige. `anterior` é o cadastro de antes
+  // (null = funcionário novo). A regra está em lib/ead-matricula-funcao.js (testada).
+  const sugerirMatricula = (anterior, atual) => {
+    const sugestao = sugestaoDeMatricula({ anterior, atual });
+    if (!sugestao) return;
+    toast(textoDaSugestao(sugestao, atual?.nome_completo), {
+      duration: 15000,
+      action: {
+        label: "Matricular",
+        onClick: () => {
+          setSugestaoMatricula(sugestao);
+          setActiveTab("treinamentos_ead");
+        },
+      },
+    });
+  };
+
   const handleSaveFuncionario = async () => {
     if (!funcionarioForm.nome_completo || !funcionarioForm.cpf) {
       toast.error("Preencha os campos obrigatórios");
@@ -414,10 +466,12 @@ export default function SegurancaTrabalho() {
       if (selectedFuncionario) {
         await sigo.entities.Funcionario.update(selectedFuncionario.id, data);
         toast.success("Funcionário atualizado com sucesso");
+        sugerirMatricula(selectedFuncionario, { ...selectedFuncionario, ...data });
       } else {
         const novoFuncionario = await sigo.entities.Funcionario.create(data);
         toast.success("Funcionário cadastrado com sucesso");
         setSelectedFuncionario(novoFuncionario);
+        sugerirMatricula(null, novoFuncionario);
       }
 
       setShowFuncionarioModal(false);
@@ -1115,7 +1169,9 @@ export default function SegurancaTrabalho() {
                 <SelectItem value="contratacao">Contratação</SelectItem>
               )}
               {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
-                <SelectItem value="treinamentos_ead">Treinamentos</SelectItem>
+                <SelectItem value="treinamentos_ead">
+                  {rotuloDaAbaTreinamentos(duvidasPendentes)}
+                </SelectItem>
               )}
               {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
                 <SelectItem value="funcionarios">Funcionários</SelectItem>
@@ -1149,7 +1205,18 @@ export default function SegurancaTrabalho() {
             <TabsTrigger value="contratacao">Contratação</TabsTrigger>
           )}
           {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
-            <TabsTrigger value="treinamentos_ead">Treinamentos</TabsTrigger>
+            <TabsTrigger value="treinamentos_ead">
+              Treinamentos
+              {duvidasPendentes > 0 && (
+                <span
+                  className="ml-1.5 inline-flex min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[11px] font-semibold leading-5 text-white"
+                  title={textoPendentes(duvidasPendentes)}
+                >
+                  {duvidasPendentes > 99 ? "99+" : duvidasPendentes}
+                  <span className="sr-only"> ({textoPendentes(duvidasPendentes)})</span>
+                </span>
+              )}
+            </TabsTrigger>
           )}
           {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
             <TabsTrigger value="funcionarios">Funcionários</TabsTrigger>
@@ -1180,13 +1247,26 @@ export default function SegurancaTrabalho() {
 
         {/* Aba Contratação (esteira com IA — spec RH & Segurança) */}
         <TabsContent value="contratacao">
-          {/* onRegistrado recarrega a lista de funcionários da página */}
-          <ContratacaoTab empresaAtiva={empresaAtiva} user={user} onRegistrado={loadData} />
+          {/* onRegistrado recarrega a lista de funcionários da página e sugere a matrícula da função */}
+          <ContratacaoTab
+            empresaAtiva={empresaAtiva}
+            user={user}
+            onRegistrado={(novo) => {
+              loadData();
+              sugerirMatricula(null, novo);
+            }}
+          />
         </TabsContent>
 
         {/* Aba Treinamentos EAD (cursos YouTube + Portal do Funcionário) */}
         <TabsContent value="treinamentos_ead">
-          <TreinamentosEadTab empresaAtiva={empresaAtiva} user={user} />
+          <TreinamentosEadTab
+            empresaAtiva={empresaAtiva}
+            user={user}
+            sugestaoMatricula={sugestaoMatricula}
+            onSugestaoConsumida={() => setSugestaoMatricula(null)}
+            onDuvidasPendentes={setDuvidasPendentes}
+          />
         </TabsContent>
 
         {/* Aba Liberações SST excepcionais (notificação + revogação) */}

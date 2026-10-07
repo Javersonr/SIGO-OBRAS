@@ -31,6 +31,18 @@ export const sessaoPortal = {
   },
 };
 
+/**
+ * `localStorage` do navegador ou null (modo privado/bloqueado: acessar já pode lançar). Serve ao que o
+ * portal guarda no aparelho para não perder o andamento: posição do vídeo e respostas da prova.
+ */
+export function armazenamentoPortal() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 export class ErroPortal extends Error {
   constructor(mensagem, codigo, extra) {
     super(mensagem);
@@ -45,6 +57,13 @@ export async function chamarPortal(acao, dados = {}, token) {
     throw new ErroPortal(data.error || "Erro no portal", data.codigo, data);
   return data;
 }
+
+/**
+ * API que os componentes do portal usam por padrão. A prévia do responsável técnico ("Ver como aluno")
+ * injeta outra no lugar, que nunca fala com o servidor (`criarApiPrevia`, em lib/portal-previa.js):
+ * `previa: true` faz os componentes esconderem o que só vale para aluno matriculado.
+ */
+export const apiPortal = { previa: false, chamarPortal };
 
 /**
  * Fila: eventos e progresso vão ao servidor NA ORDEM em que aconteceram — o

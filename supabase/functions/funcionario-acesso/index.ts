@@ -5,12 +5,34 @@
  * sessão (super admin passa). Ações:
  *   { acao:"status", empresa_id? }                   → { acessos:[...] } da empresa
  *   { acao:"criar", funcionario_id, usuario? }       → { usuario, senha_provisoria }
+ *                                                      (já tem acesso: 409 com `codigo: "JA_TEM_ACESSO"`)
  *   { acao:"redefinir", funcionario_id }             → { usuario, senha_provisoria }
  *   { acao:"ativo", funcionario_id, ativo:boolean }  → { ativo }
+ *   { acao:"liberar_tentativa", matricula_id, tentativas_extras_vistas }
+ *                                                    → { tentativas_extras } (T18)
+ *   { acao:"revogar_certificado", matricula_id, motivo }
+ *                                                    → { revogado, aviso_whatsapp } (T18)
+ *   { acao:"editar_resposta_duvida", duvida_id, resposta }
+ *                                                    → { editada } (A6, T21)
  *
  * Permissão (espelha a aba Funcionários de RH & Segurança, onde fica a ficha
  * com o AcessoPortalCard): super admin, Admin, dono ou permissão na aba.
- * "status" basta ver a aba; criar/redefinir/ativar exigem a função "editar".
+ * "status" basta ver a aba; criar/redefinir/ativar e as ações de matrícula
+ * exigem a função "editar".
+ *
+ * As ações de matrícula (regras em ./regras.ts) gravam um evento na trilha com
+ * o e-mail do RH (`detalhe.por`): `tentativa_liberada` (que também zera o
+ * intervalo entre tentativas no portal) e `certificado_revogado` (que avisa o
+ * aluno por WhatsApp, sem derrubar a revogação se o aviso falhar ou demorar: o aviso tem
+ * tempo limite). Sem o evento a ação é desfeita (500 `TRILHA_FALHOU`, pode repetir); se nem
+ * desfazer dá, o efeito fica gravado sem evento e a resposta é 500 `EFEITO_SEM_REGISTRO`, que
+ * manda NÃO repetir e avisar o suporte. O servidor também barra a repetição: a liberação traz o
+ * número de extras que a tela mostrava (`tentativas_extras_vistas`, obrigatório) e só soma se a
+ * matrícula ainda tem esse número; senão 409 `CONFLITO` e nada é gravado.
+ *
+ * Editar a resposta de uma dúvida (A6, T21) também passa por aqui: o servidor troca o texto e grava o evento
+ * `duvida_resposta_editada` com a versão ANTERIOR inteira (a trilha é só de inclusão), com a mesma regra de
+ * desfazer se o evento não grava (regras em ./duvida.ts). A primeira resposta segue pela tela do RH.
  *
  * A senha provisória volta UMA vez (para o RH entregar); no primeiro acesso o
  * funcionário cria a própria senha, que ninguém do RH conhece.
@@ -21,15 +43,54 @@ import { usuarioDaRequisicao } from "../_shared/usuario-request.ts";
 import { hashPassword } from "../_shared/passwords.ts";
 import { temPermissaoServidor, type Vinculo } from "../_shared/conector/acesso.ts";
 import {
+  EVENTO_CERTIFICADO_REVOGADO,
+  EVENTO_DUVIDA_RESPOSTA_EDITADA,
+  EVENTO_TENTATIVA_LIBERADA,
   normalizarUsuario,
   gerarSenhaProvisoria,
   registrarEvento,
 } from "../_shared/portal-funcionario.ts";
+import { CanalNaoConfiguradoError, enviarWhatsAppTexto } from "../_shared/whatsapp-envio.ts";
+import {
+  ACOES_DE_MATRICULA,
+  MENSAGEM_SEM_EDICAO,
+  avisarAluno,
+  dadosDaRevogacao,
+  dadosParaDesfazerRevogacao,
+  decidirLiberacao,
+  decidirRevogacao,
+  destinoDoAviso,
+  detalheDaLiberacao,
+  detalheDaRevogacao,
+  falhaDoRegistro,
+  motivoDaRevogacao,
+  registrarOuDesfazer,
+  textoAvisoRevogacao,
+  validarExtrasVistas,
+  validarMatriculaId,
+} from "./regras.ts";
+import {
+  ACOES_DE_DUVIDA,
+  MENSAGEM_SEM_EDICAO_DA_RESPOSTA,
+  dadosDaEdicao,
+  dadosParaDesfazerEdicao,
+  decidirEdicaoDaResposta,
+  detalheDaEdicao,
+  falhaDoRegistroDaEdicao,
+  validarDuvidaId,
+  validarRespostaDaDuvida,
+} from "./duvida.ts";
 
 // mesmo módulo/aba do front (pages/SegurancaTrabalho.jsx → aba Funcionários)
 const MODULO = "Segurança do Trabalho";
 const ABA = "Funcionários";
-const ACOES_ESCRITA = new Set(["criar", "redefinir", "ativo"]);
+const ACOES_ESCRITA = new Set([
+  "criar",
+  "redefinir",
+  "ativo",
+  ...ACOES_DE_MATRICULA,
+  ...ACOES_DE_DUVIDA,
+]);
 
 interface Body {
   acao?: string;
@@ -37,7 +98,14 @@ interface Body {
   funcionario_id?: string;
   usuario?: string;
   ativo?: boolean;
+  matricula_id?: string;
+  motivo?: string;
+  tentativas_extras_vistas?: unknown;
+  duvida_id?: string;
+  resposta?: unknown;
 }
+
+type Staff = { email: string; is_super_admin: boolean; empresa_id: string | null };
 
 /**
  * Vínculo ATIVO do chamador na empresa da sessão (e-mail do usuário do JWT +
@@ -64,6 +132,389 @@ async function vinculoDoChamador(
   return data ?? null;
 }
 
+/**
+ * A matrícula da requisição, só se for da empresa da sessão (super admin vê qualquer uma). Matrícula de
+ * outra empresa responde como inexistente. Erro de leitura lança (vira 500).
+ */
+async function matriculaDoChamador(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  staff: Staff,
+  matriculaId: string
+) {
+  const { data, error } = await supabase
+    .from("treinamento_matricula")
+    .select(
+      "id, empresa_id, funcionario_id, curso_id, tentativas_extras, avaliacao_aprovada, deleted_at"
+    )
+    .eq("id", matriculaId)
+    .maybeSingle();
+  if (error) throw new Error("treinamento_matricula: " + error.message);
+  if (!data || (!staff.is_super_admin && data.empresa_id !== staff.empresa_id)) return null;
+  return data;
+}
+
+/**
+ * A dúvida da requisição, só se for da empresa da sessão (super admin vê qualquer uma). Dúvida de outra
+ * empresa responde como inexistente. Erro de leitura lança (vira 500).
+ */
+async function duvidaDoChamador(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  staff: Staff,
+  duvidaId: string
+) {
+  const { data, error } = await supabase
+    .from("treinamento_duvida")
+    .select(
+      "id, empresa_id, funcionario_id, curso_id, matricula_id, resposta, respondida_por, respondida_em, updated_at, deleted_at"
+    )
+    .eq("id", duvidaId)
+    .maybeSingle();
+  if (error) throw new Error("treinamento_duvida: " + error.message);
+  if (!data || (!staff.is_super_admin && data.empresa_id !== staff.empresa_id)) return null;
+  return data;
+}
+
+/** Nome do usuário do SIGO (o que a tela já gravava em `respondida_por`); sem ele, o e-mail da sessão. */
+async function nomeDoAutor(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  email: string
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("usuario_custom")
+    .select("nome_completo")
+    .eq("email", email.toLowerCase())
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) {
+    console.error("[funcionario-acesso] nome do autor da resposta:", error.message);
+    return email;
+  }
+  const nome = typeof data?.nome_completo === "string" ? data.nome_completo.trim() : "";
+  return nome || email;
+}
+
+/**
+ * Edita a resposta de uma dúvida já respondida (A6, T21). Grava só se a dúvida continua como foi lida
+ * (`updated_at`: duas edições seguidas não perdem uma versão), e o evento `duvida_resposta_editada` leva a
+ * versão ANTERIOR inteira e o e-mail de quem editou. Sem o evento a edição é desfeita (a resposta anterior
+ * volta); se nem desfazer dá, a resposta é `EFEITO_SEM_REGISTRO` e a versão anterior vai para o log.
+ */
+async function editarRespostaDaDuvida(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  req: Request,
+  staff: Staff,
+  // deno-lint-ignore no-explicit-any
+  duvida: any,
+  respostaNova: string
+): Promise<Response> {
+  const decisao = decidirEdicaoDaResposta(duvida, respostaNova);
+  if (!decisao.ok) {
+    return fail(
+      decisao.mensagem,
+      decisao.status,
+      decisao.codigo ? { codigo: decisao.codigo } : undefined
+    );
+  }
+  if (!decisao.mudou) return ok({ editada: false });
+
+  const quando = new Date();
+  const autor = await nomeDoAutor(supabase, staff.email);
+  const nova = dadosDaEdicao({ resposta: respostaNova, por: autor, agora: quando });
+  let gravar = supabase
+    .from("treinamento_duvida")
+    .update(nova)
+    .eq("id", duvida.id)
+    .eq("empresa_id", duvida.empresa_id)
+    .is("deleted_at", null);
+  gravar = decisao.lidaEm ? gravar.eq("updated_at", decisao.lidaEm) : gravar;
+  const { data: gravadas, error } = await gravar.select("id, updated_at");
+  if (error) {
+    console.error("[funcionario-acesso] editar_resposta_duvida:", error.message);
+    return fail("Erro ao editar a resposta", 500);
+  }
+  if (!gravadas?.length) {
+    return fail("A dúvida mudou agora há pouco. Atualize a tela e tente de novo.", 409, {
+      codigo: "CONFLITO",
+    });
+  }
+
+  const registro = await registrarOuDesfazer({
+    // a exceção de um passo (rede, banco) conta como falha; a causa fica no log
+    aoFalhar: (passo, erro) =>
+      console.error("[funcionario-acesso] editar_resposta_duvida: o passo lançou:", passo, erro),
+    registrar: () =>
+      registrarEvento(supabase, req, {
+        empresa_id: duvida.empresa_id,
+        funcionario_id: duvida.funcionario_id,
+        matricula_id: duvida.matricula_id ?? null,
+        curso_id: duvida.curso_id,
+        evento: EVENTO_DUVIDA_RESPOSTA_EDITADA,
+        detalhe: detalheDaEdicao({
+          por: staff.email,
+          duvidaId: duvida.id,
+          anterior: decisao.anterior,
+        }),
+      }),
+    desfazer: async () => {
+      const { data: desfeitas, error: erroDesfazer } = await supabase
+        .from("treinamento_duvida")
+        .update(dadosParaDesfazerEdicao(decisao.anterior))
+        .eq("id", duvida.id)
+        .eq("empresa_id", duvida.empresa_id)
+        .eq("respondida_em", nova.respondida_em)
+        .select("id");
+      if (erroDesfazer) {
+        console.error(
+          "[funcionario-acesso] editar_resposta_duvida: não desfez:",
+          erroDesfazer.message
+        );
+      }
+      // 0 linhas = a dúvida já tinha mudado de novo: a edição continua gravada
+      return !erroDesfazer && (desfeitas?.length ?? 0) > 0;
+    },
+  });
+  if (registro !== "registrado") {
+    if (registro === "sem_registro") {
+      console.error(
+        "[funcionario-acesso] editar_resposta_duvida: EFEITO SEM REGISTRO. A dúvida",
+        duvida.id,
+        "ficou com a resposta nova e a trilha não tem o evento. VERSÃO ANTERIOR (guarde):",
+        JSON.stringify(decisao.anterior),
+        "Autor:",
+        staff.email
+      );
+    }
+    const falha = falhaDoRegistroDaEdicao(registro);
+    return fail(falha.mensagem, falha.status, { codigo: falha.codigo });
+  }
+  return ok({ editada: true });
+}
+
+/**
+ * Libera mais uma tentativa da avaliação. Só soma se a matrícula tem as extras que a TELA mostrava
+ * (`extrasVistas`, do pedido): depois de uma falha sem registro na trilha, repetir com a tela antiga dá
+ * 409 em vez de somar de novo (T18, M4). A soma também só grava se a matrícula ainda tem o valor lido
+ * (dois cliques seguidos não perdem uma liberação) e o evento `tentativa_liberada` é o que faz o portal
+ * ignorar o intervalo: sem o evento a liberação é desfeita, para a trilha e a matrícula não divergirem.
+ */
+async function liberarTentativa(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  req: Request,
+  staff: Staff,
+  // deno-lint-ignore no-explicit-any
+  mat: any,
+  extrasVistas: number
+): Promise<Response> {
+  const decisao = decidirLiberacao(mat, extrasVistas);
+  if (!decisao.ok) {
+    if (decisao.codigo === "CONFLITO") {
+      // nada foi gravado; o log ajuda o suporte a conferir (a trilha pode não ter o evento da anterior)
+      console.warn(
+        "[funcionario-acesso] liberar_tentativa recusada: a tela mostrava",
+        extrasVistas,
+        "tentativas extras e a matrícula tem",
+        mat.tentativas_extras ?? 0,
+        "(pode ser o 2º clique depois de uma falha sem registro). Matrícula:",
+        mat.id,
+        "Autor:",
+        staff.email
+      );
+    }
+    return fail(
+      decisao.mensagem,
+      decisao.status,
+      decisao.codigo ? { codigo: decisao.codigo } : undefined
+    );
+  }
+
+  const { data: gravadas, error } = await supabase
+    .from("treinamento_matricula")
+    .update({ tentativas_extras: decisao.extrasNovas })
+    .eq("id", mat.id)
+    .eq("empresa_id", mat.empresa_id)
+    .eq("tentativas_extras", decisao.extrasAtuais)
+    .is("deleted_at", null)
+    .select("id");
+  if (error) {
+    console.error("[funcionario-acesso] liberar_tentativa:", error.message);
+    return fail("Erro ao liberar a tentativa", 500);
+  }
+  if (!gravadas?.length) {
+    return fail("A matrícula mudou agora há pouco. Atualize a tela e tente de novo.", 409, {
+      codigo: "CONFLITO",
+    });
+  }
+
+  // O evento é o que faz o portal ignorar o intervalo: sem ele a liberação é desfeita. Se nem desfazer
+  // dá (o banco falhou duas vezes seguidas), a resposta é outra e o suporte confere (T18, M4).
+  const registro = await registrarOuDesfazer({
+    // a exceção de um passo (rede, banco) conta como falha; a causa fica no log
+    aoFalhar: (passo, erro) =>
+      console.error("[funcionario-acesso] liberar_tentativa: o passo lançou:", passo, erro),
+    registrar: () =>
+      registrarEvento(supabase, req, {
+        empresa_id: mat.empresa_id,
+        funcionario_id: mat.funcionario_id,
+        matricula_id: mat.id,
+        curso_id: mat.curso_id,
+        evento: EVENTO_TENTATIVA_LIBERADA,
+        detalhe: detalheDaLiberacao({ por: staff.email, extrasNovas: decisao.extrasNovas }),
+      }),
+    desfazer: async () => {
+      const { data: desfeitas, error: erroDesfazer } = await supabase
+        .from("treinamento_matricula")
+        .update({ tentativas_extras: decisao.extrasAtuais })
+        .eq("id", mat.id)
+        .eq("empresa_id", mat.empresa_id)
+        .eq("tentativas_extras", decisao.extrasNovas)
+        .select("id");
+      if (erroDesfazer) {
+        console.error("[funcionario-acesso] liberar_tentativa: não desfez:", erroDesfazer.message);
+      }
+      // 0 linhas = o valor já tinha mudado: o efeito continua gravado
+      return !erroDesfazer && (desfeitas?.length ?? 0) > 0;
+    },
+  });
+  if (registro !== "registrado") {
+    const falha = falhaDoRegistro({ acao: "liberar_tentativa", resultado: registro });
+    if (registro === "sem_registro") {
+      console.error(
+        "[funcionario-acesso] liberar_tentativa: EFEITO SEM REGISTRO. A matrícula ficou com",
+        decisao.extrasNovas,
+        "tentativas extras (eram",
+        decisao.extrasAtuais + ") e a trilha não tem o evento. Matrícula:",
+        mat.id,
+        "Autor:",
+        staff.email
+      );
+    }
+    return fail(falha.mensagem, falha.status, { codigo: falha.codigo });
+  }
+  return ok({ tentativas_extras: decisao.extrasNovas });
+}
+
+/**
+ * Revoga o certificado da matrícula (só a empresa dona revoga; o servidor confere que ainda vale, para
+ * não sobrescrever autor e motivo de uma revogação anterior), registra `certificado_revogado` na trilha
+ * e avisa o aluno por WhatsApp. A revogação sem registro de quem a fez não fica (é desfeita); já o
+ * aviso é só um recado: se falhar, a revogação vale e o RH vê o motivo na resposta.
+ */
+async function revogarCertificado(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  req: Request,
+  staff: Staff,
+  // deno-lint-ignore no-explicit-any
+  mat: any,
+  motivo: string
+): Promise<Response> {
+  const { data: cert, error: erroLeitura } = await supabase
+    .from("treinamento_certificado")
+    .select("id, codigo, dados, revogado_em")
+    .eq("matricula_id", mat.id)
+    .eq("empresa_id", mat.empresa_id)
+    .maybeSingle();
+  if (erroLeitura) {
+    console.error("[funcionario-acesso] revogar_certificado:", erroLeitura.message);
+    return fail("Erro ao carregar o certificado", 500);
+  }
+  const decisao = decidirRevogacao(cert);
+  if (!decisao.ok) return fail(decisao.mensagem, decisao.status);
+
+  const quando = new Date();
+  const { data: revogados, error } = await supabase
+    .from("treinamento_certificado")
+    .update(dadosDaRevogacao({ agora: quando, por: staff.email, motivo }))
+    .eq("id", cert.id)
+    .eq("empresa_id", mat.empresa_id)
+    .is("revogado_em", null)
+    .select("id");
+  if (error) {
+    console.error("[funcionario-acesso] revogar_certificado:", error.message);
+    return fail("Erro ao revogar o certificado", 500);
+  }
+  if (!revogados?.length) return fail("O certificado já está revogado", 409);
+
+  const registro = await registrarOuDesfazer({
+    // a exceção de um passo (rede, banco) conta como falha; a causa fica no log
+    aoFalhar: (passo, erro) =>
+      console.error("[funcionario-acesso] revogar_certificado: o passo lançou:", passo, erro),
+    registrar: () =>
+      registrarEvento(supabase, req, {
+        empresa_id: mat.empresa_id,
+        funcionario_id: mat.funcionario_id,
+        matricula_id: mat.id,
+        curso_id: mat.curso_id,
+        evento: EVENTO_CERTIFICADO_REVOGADO,
+        detalhe: detalheDaRevogacao({ por: staff.email, codigo: cert.codigo, motivo }),
+      }),
+    desfazer: async () => {
+      const { data: desfeitos, error: erroDesfazer } = await supabase
+        .from("treinamento_certificado")
+        .update(dadosParaDesfazerRevogacao())
+        .eq("id", cert.id)
+        .eq("empresa_id", mat.empresa_id)
+        .eq("revogado_em", quando.toISOString())
+        .select("id");
+      if (erroDesfazer) {
+        console.error(
+          "[funcionario-acesso] revogar_certificado: não desfez:",
+          erroDesfazer.message
+        );
+      }
+      return !erroDesfazer && (desfeitos?.length ?? 0) > 0;
+    },
+  });
+  if (registro !== "registrado") {
+    const falha = falhaDoRegistro({ acao: "revogar_certificado", resultado: registro });
+    if (registro === "sem_registro") {
+      console.error(
+        "[funcionario-acesso] revogar_certificado: EFEITO SEM REGISTRO. Certificado",
+        cert.codigo,
+        "revogado sem o evento na trilha e sem aviso ao aluno. Matrícula:",
+        mat.id,
+        "Autor:",
+        staff.email
+      );
+    }
+    return fail(falha.mensagem, falha.status, { codigo: falha.codigo });
+  }
+
+  const { data: func, error: erroFunc } = await supabase
+    .from("funcionario")
+    .select("nome_completo, telefone, ativo, deleted_at")
+    .eq("id", mat.funcionario_id)
+    .eq("empresa_id", mat.empresa_id)
+    .maybeSingle();
+  // erro de leitura NÃO é "funcionário inativo": o aviso é dado como falho e o RH avisa por outro meio
+  if (erroFunc) {
+    console.error(
+      "[funcionario-acesso] aviso da revogação: não leu o funcionário:",
+      erroFunc.message
+    );
+  }
+  const aviso = await avisarAluno({
+    destino: destinoDoAviso(func, erroFunc),
+    texto: textoAvisoRevogacao({
+      nome: func?.nome_completo,
+      curso: cert.dados?.curso?.nome,
+      codigo: cert.codigo,
+      empresa: cert.dados?.empresa?.nome,
+      motivo,
+    }),
+    enviar: enviarWhatsAppTexto,
+    canalNaoConfigurado: (e) => e instanceof CanalNaoConfiguradoError,
+    aoFalhar: (e) =>
+      console.error("[funcionario-acesso] aviso da revogação:", (e as Error)?.message),
+  });
+  return ok({ revogado: true, aviso_whatsapp: aviso });
+}
+
 Deno.serve(
   withCors(async (req) => {
     if (req.method === "OPTIONS") return preflightResponse();
@@ -85,7 +536,7 @@ Deno.serve(
     // Antes: qualquer usuário da empresa (Compras, Estoque...) redefinia a
     // senha de qualquer funcionário e recebia a provisória. Agora: ver a aba
     // para qualquer ação; "editar" para o que altera o acesso (logo antes de
-    // alterar, para o 409 "já tem acesso" do avisarNoPortal seguir igual).
+    // alterar, para o 409 JA_TEM_ACESSO do avisarNoPortal seguir igual).
     let podeEditar = true;
     if (!staff.is_super_admin) {
       const vinculo = await vinculoDoChamador(supabase, staff.email, staff.empresa_id);
@@ -120,6 +571,41 @@ Deno.serve(
       });
     }
 
+    // Ações de matrícula (T18): a identidade e a empresa vêm da sessão; a matrícula, do banco.
+    if (ACOES_DE_MATRICULA.has(acao)) {
+      if (!podeEditar) return fail(MENSAGEM_SEM_EDICAO[acao], 403);
+      const idDaMatricula = validarMatriculaId(body.matricula_id);
+      if (!idDaMatricula.ok) return fail(idDaMatricula.mensagem, idDaMatricula.status);
+      let motivo = "";
+      let extrasVistas = 0;
+      if (acao === "revogar_certificado") {
+        const m = motivoDaRevogacao(body.motivo);
+        if (!m.ok) return fail(m.mensagem, m.status);
+        motivo = m.motivo;
+      } else {
+        const v = validarExtrasVistas(body.tentativas_extras_vistas);
+        if (!v.ok) return fail(v.mensagem, v.status);
+        extrasVistas = v.extrasVistas;
+      }
+      const mat = await matriculaDoChamador(supabase, staff, idDaMatricula.id);
+      if (!mat || mat.deleted_at) return fail("Matrícula não encontrada", 404);
+      return acao === "liberar_tentativa"
+        ? liberarTentativa(supabase, req, staff, mat, extrasVistas)
+        : revogarCertificado(supabase, req, staff, mat, motivo);
+    }
+
+    // Edição da resposta de uma dúvida (A6, T21): dúvida e empresa vêm do banco e da sessão; o autor é o da sessão.
+    if (ACOES_DE_DUVIDA.has(acao)) {
+      if (!podeEditar) return fail(MENSAGEM_SEM_EDICAO_DA_RESPOSTA, 403);
+      const idDaDuvida = validarDuvidaId(body.duvida_id);
+      if (!idDaDuvida.ok) return fail(idDaDuvida.mensagem, idDaDuvida.status);
+      const texto = validarRespostaDaDuvida(body.resposta);
+      if (!texto.ok) return fail(texto.mensagem, texto.status);
+      const duvida = await duvidaDoChamador(supabase, staff, idDaDuvida.id);
+      if (!duvida || duvida.deleted_at) return fail("Dúvida não encontrada", 404);
+      return editarRespostaDaDuvida(supabase, req, staff, duvida, texto.resposta);
+    }
+
     if (!body.funcionario_id) return fail("funcionario_id é obrigatório", 400);
     const { data: func } = await supabase
       .from("funcionario")
@@ -145,7 +631,12 @@ Deno.serve(
       });
 
     if (body.acao === "criar") {
-      if (atual) return fail("Este funcionário já tem acesso — use Redefinir senha", 409);
+      // `codigo`: é por ele que o front (avisarNoPortal) reconhece este caso; o texto pode mudar
+      if (atual) {
+        return fail("Este funcionário já tem acesso — use Redefinir senha", 409, {
+          codigo: "JA_TEM_ACESSO",
+        });
+      }
       if (!podeEditar) return semEdicao();
       const usuario = normalizarUsuario(body.usuario || func.cpf || "");
       if (!usuario) {

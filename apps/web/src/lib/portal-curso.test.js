@@ -1,0 +1,1283 @@
+import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import {
+  PREFIXO_POSICAO,
+  PREFIXO_PROVA,
+  numerarAulas,
+  proximaAulaPendente,
+  aulaSeguinte,
+  progressoDoCurso,
+  ordenarMatriculas,
+  agruparMatriculas,
+  ehRenovacao,
+  cursoDespublicado,
+  posicaoParaRetomar,
+  guardarPosicao,
+  lerPosicao,
+  respostasValidas,
+  resumoRespostas,
+  textoSairDaProva,
+  guardarRascunhoProva,
+  lerRascunhoProva,
+  limparRascunhoProva,
+  limparRascunhosPortal,
+  MAX_ESPERA_MS,
+  MSG_SEM_CONEXAO,
+  MSG_SERVICO_INDISPONIVEL,
+  msAteLiberar,
+  msTemporizadorProva,
+  provaAguardando,
+  mensagemDeFalha,
+  CODIGOS_DE_AVISO_PASSAGEIRO,
+  textoDoAvisoPassageiro,
+  erroAposEnvioCerto,
+  provaParaTela,
+  provaPrecisaReabrir,
+  avisoDaProvaReaberta,
+  resumoDoResultado,
+  urlDoProjetoPedagogico,
+  abrirProjetoPedagogico,
+  cursoDeApoio,
+  renovacaoParaExibir,
+  rotuloDoBotaoDoCurso,
+  praticaDoCurso,
+  praticaPendente,
+  preRequisitoPendente,
+  MSG_CURSO_DE_APOIO,
+} from "./portal-curso";
+
+/** Storage de mentira: guarda em memória e deixa ver o que foi gravado. */
+function criarStorage(inicial = {}) {
+  const dados = new Map(Object.entries(inicial));
+  return {
+    dados,
+    get length() {
+      return dados.size;
+    },
+    key: (i) => [...dados.keys()][i] ?? null,
+    getItem: (k) => (dados.has(k) ? dados.get(k) : null),
+    setItem: (k, v) => dados.set(k, String(v)),
+    removeItem: (k) => dados.delete(k),
+  };
+}
+
+const storageQuebrado = {
+  get length() {
+    throw new Error("sem storage");
+  },
+  key() {
+    throw new Error("sem storage");
+  },
+  getItem() {
+    throw new Error("sem storage");
+  },
+  setItem() {
+    throw new Error("cota cheia");
+  },
+  removeItem() {
+    throw new Error("sem storage");
+  },
+};
+
+const aula = (id, extra = {}) => ({ id, ordem: 1, concluida: false, liberada: false, ...extra });
+
+describe("numerarAulas", () => {
+  it("numera pela posição na lista (1, 2, 3...), ignorando a coluna ordem", () => {
+    const lista = [
+      aula("a", { ordem: 0, titulo: "Guia do curso" }),
+      aula("b", { ordem: 1 }),
+      aula("c", { ordem: 7 }),
+    ];
+    const numeradas = numerarAulas(lista);
+    expect(numeradas.map((a) => a.numero)).toEqual([1, 2, 3]);
+    expect(numeradas[0].titulo).toBe("Guia do curso");
+    expect(numeradas.map((a) => a.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("não altera a lista de entrada e mantém a ordem recebida", () => {
+    const lista = [aula("x", { ordem: 9 }), aula("y", { ordem: 2 })];
+    const numeradas = numerarAulas(lista);
+    expect(lista[0].numero).toBeUndefined();
+    expect(numeradas.map((a) => a.id)).toEqual(["x", "y"]);
+  });
+
+  it("aceita lista vazia, nula ou que não é lista", () => {
+    expect(numerarAulas([])).toEqual([]);
+    expect(numerarAulas(null)).toEqual([]);
+    expect(numerarAulas(undefined)).toEqual([]);
+    expect(numerarAulas("aulas")).toEqual([]);
+  });
+});
+
+describe("proximaAulaPendente", () => {
+  it("é a primeira aula não concluída que já está liberada", () => {
+    const lista = [
+      aula("a", { concluida: true, liberada: true }),
+      aula("b", { concluida: true, liberada: true }),
+      aula("c", { liberada: true }),
+      aula("d"),
+    ];
+    expect(proximaAulaPendente(lista).id).toBe("c");
+  });
+
+  it("curso novo: a primeira aula", () => {
+    expect(proximaAulaPendente([aula("a", { liberada: true }), aula("b")]).id).toBe("a");
+  });
+
+  it("tudo concluído, lista vazia ou entrada inválida: null", () => {
+    expect(
+      proximaAulaPendente([
+        aula("a", { concluida: true, liberada: true }),
+        aula("b", { concluida: true, liberada: true }),
+      ])
+    ).toBeNull();
+    expect(proximaAulaPendente([])).toBeNull();
+    expect(proximaAulaPendente(null)).toBeNull();
+    expect(proximaAulaPendente(undefined)).toBeNull();
+  });
+
+  it("a primeira pendente ainda bloqueada (dado inconsistente) não vira beco sem saída: null", () => {
+    expect(proximaAulaPendente([aula("a"), aula("b")])).toBeNull();
+  });
+
+  it("ignora itens nulos no meio da lista", () => {
+    expect(proximaAulaPendente([null, aula("a", { liberada: true })]).id).toBe("a");
+  });
+});
+
+describe("aulaSeguinte (botão Próxima aula)", () => {
+  const lista = [
+    aula("a", { concluida: true, liberada: true }),
+    aula("b", { concluida: true, liberada: true }),
+    aula("c", { liberada: true }),
+    aula("d"),
+  ];
+
+  it("é a aula logo depois da informada, quando já está liberada", () => {
+    expect(aulaSeguinte(lista, "a").id).toBe("b");
+    expect(aulaSeguinte(lista, "b").id).toBe("c");
+  });
+
+  it("revendo uma aula antiga, segue a ordem (não pula para a pendente)", () => {
+    expect(aulaSeguinte(lista, "a").id).not.toBe(proximaAulaPendente(lista).id);
+  });
+
+  it("a seguinte ainda bloqueada, a última aula e id desconhecido: null", () => {
+    expect(aulaSeguinte(lista, "c")).toBeNull();
+    expect(aulaSeguinte(lista, "d")).toBeNull();
+    expect(aulaSeguinte(lista, "nao-existe")).toBeNull();
+  });
+
+  it("entrada inválida: null", () => {
+    expect(aulaSeguinte(null, "a")).toBeNull();
+    expect(aulaSeguinte([], "a")).toBeNull();
+    expect(aulaSeguinte(lista, undefined)).toBeNull();
+  });
+});
+
+describe("progressoDoCurso", () => {
+  it("conta aulas e percentual (para baixo)", () => {
+    const lista = [aula("a", { concluida: true }), aula("b", { concluida: true }), aula("c")];
+    expect(progressoDoCurso(lista)).toEqual({
+      total: 3,
+      feitas: 2,
+      percentual: 66,
+      semAulas: false,
+    });
+  });
+
+  it("curso sem aulas é sinalizado (não divide por zero)", () => {
+    expect(progressoDoCurso([])).toEqual({ total: 0, feitas: 0, percentual: 0, semAulas: true });
+    expect(progressoDoCurso(null)).toEqual({ total: 0, feitas: 0, percentual: 0, semAulas: true });
+  });
+
+  it("tudo feito = 100", () => {
+    expect(progressoDoCurso([aula("a", { concluida: true })]).percentual).toBe(100);
+  });
+});
+
+const item = (id, status, extra = {}, curso = {}) => ({
+  matricula: { id, status, curso_id: `curso-${id}`, ...extra },
+  curso: { id: `curso-${id}`, nome: `Curso ${id}`, ...curso },
+});
+
+describe("ordenarMatriculas", () => {
+  it("em andamento primeiro, depois pendentes, e por último os concluídos", () => {
+    const itens = [
+      item("conc", "concluido", { data_conclusao: "2026-03-01" }),
+      item("pend", "pendente", { created_at: "2026-01-01T10:00:00Z" }),
+      item("and", "em_andamento", { created_at: "2026-02-01T10:00:00Z" }),
+    ];
+    expect(ordenarMatriculas(itens).map((i) => i.matricula.id)).toEqual(["and", "pend", "conc"]);
+  });
+
+  it("concluídos: o mais recente primeiro (por data de conclusão)", () => {
+    const itens = [
+      item("velho", "concluido", { data_conclusao: "2025-01-10" }),
+      item("novo", "concluido", { data_conclusao: "2026-09-30" }),
+      item("meio", "concluido", { data_conclusao: "2026-02-15" }),
+    ];
+    expect(ordenarMatriculas(itens).map((i) => i.matricula.id)).toEqual(["novo", "meio", "velho"]);
+  });
+
+  it("concluído sem data vai para o fim dos concluídos", () => {
+    const itens = [
+      item("sem", "concluido", {}),
+      item("com", "concluido", { data_conclusao: "2024-05-05" }),
+    ];
+    expect(ordenarMatriculas(itens).map((i) => i.matricula.id)).toEqual(["com", "sem"]);
+  });
+
+  it("não concluídos: atribuição mais antiga primeiro, depois o nome (NR-6 antes de NR-10)", () => {
+    const itens = [
+      item("b", "pendente", { created_at: "2026-05-02T00:00:00Z" }, { nome: "NR-6" }),
+      item("a", "pendente", { created_at: "2026-05-01T00:00:00Z" }, { nome: "NR-35" }),
+      item("c", "pendente", { created_at: "2026-05-02T00:00:00Z" }, { nome: "NR-10" }),
+    ];
+    expect(ordenarMatriculas(itens).map((i) => i.matricula.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("não muda a lista de entrada e aceita entrada inválida", () => {
+    const itens = [item("conc", "concluido"), item("and", "em_andamento")];
+    const copia = [...itens];
+    ordenarMatriculas(itens);
+    expect(itens).toEqual(copia);
+    expect(ordenarMatriculas(null)).toEqual([]);
+    expect(ordenarMatriculas(undefined)).toEqual([]);
+  });
+
+  it("renovação: a nova (pendente) vem antes da antiga (concluída), nunca as duas iguais na ordem de chegada", () => {
+    const antiga = item("1", "concluido", { curso_id: "nr10", data_conclusao: "2024-06-01" });
+    const nova = item("2", "pendente", { curso_id: "nr10", created_at: "2026-09-01T00:00:00Z" });
+    expect(ordenarMatriculas([antiga, nova]).map((i) => i.matricula.id)).toEqual(["2", "1"]);
+    expect(ordenarMatriculas([nova, antiga]).map((i) => i.matricula.id)).toEqual(["2", "1"]);
+  });
+
+  it("status desconhecido fica entre os não concluídos, depois dos pendentes", () => {
+    const itens = [item("x", "qualquer"), item("p", "pendente"), item("c", "concluido")];
+    expect(ordenarMatriculas(itens).map((i) => i.matricula.id)).toEqual(["p", "x", "c"]);
+  });
+});
+
+describe("agruparMatriculas", () => {
+  it("separa em andamento e concluídos, cada um já ordenado", () => {
+    const itens = [
+      item("c1", "concluido", { data_conclusao: "2025-01-01" }),
+      item("p", "pendente"),
+      item("c2", "concluido", { data_conclusao: "2026-01-01" }),
+      item("a", "em_andamento"),
+    ];
+    const { andamento, concluidos } = agruparMatriculas(itens);
+    expect(andamento.map((i) => i.matricula.id)).toEqual(["a", "p"]);
+    expect(concluidos.map((i) => i.matricula.id)).toEqual(["c2", "c1"]);
+  });
+
+  it("sem matrículas: dois grupos vazios", () => {
+    expect(agruparMatriculas([])).toEqual({ andamento: [], concluidos: [] });
+    expect(agruparMatriculas(null)).toEqual({ andamento: [], concluidos: [] });
+  });
+});
+
+describe("ehRenovacao", () => {
+  it("matrícula não concluída de curso que o aluno já concluiu é renovação", () => {
+    const antiga = item("1", "concluido", { curso_id: "nr10" });
+    const nova = item("2", "pendente", { curso_id: "nr10" });
+    const outra = item("3", "pendente", { curso_id: "nr35" });
+    expect(ehRenovacao(nova, [antiga, nova, outra])).toBe(true);
+    expect(ehRenovacao(outra, [antiga, nova, outra])).toBe(false);
+  });
+
+  it("a concluída nunca é renovação, mesmo havendo outra do mesmo curso", () => {
+    const antiga = item("1", "concluido", { curso_id: "nr10" });
+    const nova = item("2", "pendente", { curso_id: "nr10" });
+    expect(ehRenovacao(antiga, [antiga, nova])).toBe(false);
+  });
+
+  it("entrada inválida: false", () => {
+    expect(ehRenovacao(null, [])).toBe(false);
+    expect(ehRenovacao(item("1", "pendente"), null)).toBe(false);
+  });
+});
+
+describe("cursoDespublicado", () => {
+  it("só ativo === false é despublicado (campo ausente = curso publicado)", () => {
+    expect(cursoDespublicado({ ativo: false })).toBe(true);
+    expect(cursoDespublicado({ ativo: true })).toBe(false);
+    expect(cursoDespublicado({})).toBe(false);
+    expect(cursoDespublicado(null)).toBe(false);
+    expect(cursoDespublicado(undefined)).toBe(false);
+  });
+});
+
+describe("cursoDeApoio", () => {
+  it("só modalidade 'apoio' é material de apoio (ausente = EAD)", () => {
+    expect(cursoDeApoio({ modalidade: "apoio" })).toBe(true);
+    expect(cursoDeApoio({ modalidade: "ead" })).toBe(false);
+    expect(cursoDeApoio({ modalidade: "semipresencial" })).toBe(false);
+    expect(cursoDeApoio({})).toBe(false);
+    expect(cursoDeApoio(null)).toBe(false);
+    expect(cursoDeApoio(undefined)).toBe(false);
+  });
+
+  it("o aviso do curso de apoio é o texto combinado com o RH", () => {
+    expect(MSG_CURSO_DE_APOIO).toBe(
+      "Material de apoio ao treinamento presencial: não emite certificado"
+    );
+  });
+});
+
+describe("curso de apoio não sugere certificado nem renovação (D3)", () => {
+  const concluido = (modalidade, extra = {}) =>
+    item("1", "concluido", { data_conclusao: "2026-09-10", ...extra }, { modalidade });
+
+  it("renovacaoParaExibir: o apoio nunca mostra 'renovar até', mesmo com a data gravada de antes da D3", () => {
+    const mat = { proxima_renovacao: "2028-09-10" };
+    expect(renovacaoParaExibir({ modalidade: "apoio" }, mat)).toBeNull();
+    // EAD, semipresencial e curso lido sem a coluna seguem mostrando a data
+    for (const modalidade of ["ead", "semipresencial", undefined]) {
+      expect(renovacaoParaExibir({ modalidade }, mat)).toBe("2028-09-10");
+    }
+    expect(renovacaoParaExibir({ modalidade: "ead" }, { proxima_renovacao: null })).toBeNull();
+    expect(renovacaoParaExibir(null, mat)).toBe("2028-09-10");
+    expect(renovacaoParaExibir({ modalidade: "ead" }, null)).toBeNull();
+  });
+
+  it("rotuloDoBotaoDoCurso: concluído com certificado = 'Certificado'; concluído de apoio = 'Rever material', sem ícone de prêmio", () => {
+    expect(rotuloDoBotaoDoCurso(concluido("ead"))).toEqual({
+      texto: "Certificado",
+      certificado: true,
+    });
+    expect(rotuloDoBotaoDoCurso(concluido("semipresencial"))).toEqual({
+      texto: "Certificado",
+      certificado: true,
+    });
+    const apoio = rotuloDoBotaoDoCurso(concluido("apoio"));
+    expect(apoio).toEqual({ texto: "Rever material", certificado: false });
+    expect(apoio.texto).not.toMatch(/certificado/i);
+  });
+
+  it("rotuloDoBotaoDoCurso: em andamento segue 'Começar' e 'Continuar', qualquer modalidade", () => {
+    for (const modalidade of ["ead", "apoio"]) {
+      expect(rotuloDoBotaoDoCurso(item("2", "pendente", {}, { modalidade }))).toEqual({
+        texto: "Começar",
+        certificado: false,
+      });
+      expect(rotuloDoBotaoDoCurso(item("3", "em_andamento", {}, { modalidade }))).toEqual({
+        texto: "Continuar",
+        certificado: false,
+      });
+    }
+  });
+
+  it("ehRenovacao: nova matrícula de um curso de apoio já concluído é estudo de novo, não 'Renovação'", () => {
+    const antiga = item("1", "concluido", { curso_id: "nr35" }, { modalidade: "apoio" });
+    const nova = item("2", "pendente", { curso_id: "nr35" }, { modalidade: "apoio" });
+    expect(ehRenovacao(nova, [antiga, nova])).toBe(false);
+    // o mesmo cenário num curso com certificado continua sendo renovação
+    const antigaEad = item("3", "concluido", { curso_id: "nr10" }, { modalidade: "ead" });
+    const novaEad = item("4", "pendente", { curso_id: "nr10" }, { modalidade: "ead" });
+    expect(ehRenovacao(novaEad, [antigaEad, novaEad])).toBe(true);
+  });
+});
+
+describe("posicaoParaRetomar", () => {
+  it("usa a posição guardada no aparelho quando existe", () => {
+    expect(posicaoParaRetomar({ salva: 125.7, segundosAssistidos: 300, duracao: 600 })).toBe(125);
+  });
+
+  it("sem posição guardada, usa o tempo já contado pelo servidor", () => {
+    expect(posicaoParaRetomar({ salva: null, segundosAssistidos: 300, duracao: 600 })).toBe(300);
+    expect(posicaoParaRetomar({ segundosAssistidos: 42, duracao: 600 })).toBe(42);
+  });
+
+  it("aula concluída recomeça do início (o aluno está revendo)", () => {
+    expect(
+      posicaoParaRetomar({ salva: 200, segundosAssistidos: 600, duracao: 600, concluida: true })
+    ).toBe(0);
+  });
+
+  it("começo e fim do vídeo não retomam: abaixo de 5 s ou nos últimos 5 s volta ao início", () => {
+    expect(posicaoParaRetomar({ salva: 4.9, duracao: 600 })).toBe(0);
+    expect(posicaoParaRetomar({ salva: 5, duracao: 600 })).toBe(5);
+    expect(posicaoParaRetomar({ salva: 594, duracao: 600 })).toBe(594);
+    expect(posicaoParaRetomar({ salva: 595, duracao: 600 })).toBe(0);
+    expect(posicaoParaRetomar({ salva: 700, duracao: 600 })).toBe(0);
+  });
+
+  it("posição guardada 0 (recomeçou) vale: não cai no tempo contado", () => {
+    expect(posicaoParaRetomar({ salva: 0, segundosAssistidos: 300, duracao: 600 })).toBe(0);
+  });
+
+  it("sem duração válida ainda retoma pelo que se sabe (YouTube ou cadastro incompleto)", () => {
+    expect(posicaoParaRetomar({ salva: 90, duracao: null })).toBe(90);
+    expect(posicaoParaRetomar({ salva: 90, duracao: 0 })).toBe(90);
+  });
+
+  it("valores inválidos viram 0", () => {
+    for (const ruim of [NaN, -3, "abc", Infinity, {}, []]) {
+      expect(posicaoParaRetomar({ salva: ruim, segundosAssistidos: ruim, duracao: 600 })).toBe(0);
+    }
+    expect(posicaoParaRetomar({})).toBe(0);
+    expect(posicaoParaRetomar()).toBe(0);
+  });
+});
+
+describe("posição do vídeo no navegador", () => {
+  it("guarda e lê por matrícula e aula", () => {
+    const st = criarStorage();
+    guardarPosicao(st, "m1", "a1", 83.4);
+    expect(lerPosicao(st, "m1", "a1")).toBe(83);
+    expect(lerPosicao(st, "m1", "a2")).toBeNull();
+    expect(lerPosicao(st, "m2", "a1")).toBeNull();
+    expect([...st.dados.keys()][0].startsWith(PREFIXO_POSICAO)).toBe(true);
+  });
+
+  it("ignora posição inválida (não sobrescreve) e guarda 0 como recomeço", () => {
+    const st = criarStorage();
+    guardarPosicao(st, "m1", "a1", 50);
+    guardarPosicao(st, "m1", "a1", NaN);
+    expect(lerPosicao(st, "m1", "a1")).toBe(50);
+    guardarPosicao(st, "m1", "a1", 0);
+    expect(lerPosicao(st, "m1", "a1")).toBe(0);
+  });
+
+  it("valor corrompido no storage vira null", () => {
+    const st = criarStorage({ [`${PREFIXO_POSICAO}m1:a1`]: "lixo" });
+    expect(lerPosicao(st, "m1", "a1")).toBeNull();
+  });
+
+  it("sem storage ou storage que falha: não lança", () => {
+    expect(() => guardarPosicao(null, "m", "a", 10)).not.toThrow();
+    expect(() => guardarPosicao(storageQuebrado, "m", "a", 10)).not.toThrow();
+    expect(lerPosicao(null, "m", "a")).toBeNull();
+    expect(lerPosicao(storageQuebrado, "m", "a")).toBeNull();
+  });
+});
+
+const questoes = [
+  { id: "q1", opcoes: ["a", "b", "c", "d"] },
+  { id: "q2", opcoes: ["a", "b", "c"] },
+  { id: "q3", opcoes: ["a", "b"] },
+];
+
+describe("resumoRespostas", () => {
+  it("conta respondidas e aponta a primeira sem resposta (índice 0 conta como resposta)", () => {
+    expect(resumoRespostas(questoes, { q1: 0, q3: 1 })).toEqual({
+      total: 3,
+      respondidas: 2,
+      faltam: 1,
+      primeiraSemResposta: 1,
+      completa: false,
+    });
+  });
+
+  it("prova completa", () => {
+    const r = resumoRespostas(questoes, { q1: 3, q2: 0, q3: 1 });
+    expect(r.completa).toBe(true);
+    expect(r.primeiraSemResposta).toBe(-1);
+    expect(r.faltam).toBe(0);
+  });
+
+  it("nenhuma resposta: primeira é a questão 0", () => {
+    const r = resumoRespostas(questoes, {});
+    expect(r.respondidas).toBe(0);
+    expect(r.primeiraSemResposta).toBe(0);
+    expect(r.completa).toBe(false);
+  });
+
+  it("resposta de questão que não está na prova não conta", () => {
+    expect(resumoRespostas(questoes, { q1: 0, fantasma: 2 }).respondidas).toBe(1);
+  });
+
+  it("prova sem questões nunca é completa (não há o que enviar)", () => {
+    expect(resumoRespostas([], {})).toEqual({
+      total: 0,
+      respondidas: 0,
+      faltam: 0,
+      primeiraSemResposta: -1,
+      completa: false,
+    });
+    expect(resumoRespostas(null, null).total).toBe(0);
+  });
+});
+
+describe("textoSairDaProva (aviso ao voltar às aulas no meio da prova)", () => {
+  it("aluno: diz quantas respondeu e que as respostas ficam no aparelho", () => {
+    const texto = textoSairDaProva({ respondidas: 3, total: 10 });
+    expect(texto).toContain("respondeu 3 de 10 questões");
+    expect(texto).toContain("ficam guardadas neste aparelho");
+    expect(texto).toContain("só vale depois de enviada");
+  });
+
+  it("prévia: nada é guardado, então o texto NÃO promete guardar", () => {
+    const texto = textoSairDaProva({ respondidas: 2, total: 5, previa: true });
+    expect(texto).toContain("respondeu 2 de 5 questões");
+    expect(texto).toMatch(/nada é guardado/);
+    expect(texto).toMatch(/se perdem/);
+    expect(texto).not.toMatch(/ficam guardadas|voltam quando/);
+  });
+});
+
+describe("respostasValidas", () => {
+  it("mantém só resposta de questão existente e alternativa que existe", () => {
+    expect(respostasValidas(questoes, { q1: 3, q2: 3, q3: 0, fantasma: 1, q4: 0 })).toEqual({
+      q1: 3,
+      q3: 0,
+    });
+  });
+
+  it("recusa tipo errado, negativo e decimal", () => {
+    expect(respostasValidas(questoes, { q1: "1", q2: -1, q3: 0.5 })).toEqual({});
+    expect(respostasValidas(questoes, null)).toEqual({});
+    expect(respostasValidas(null, { q1: 0 })).toEqual({});
+  });
+});
+
+describe("rascunho da prova no navegador", () => {
+  it("guarda e recupera só as respostas ainda válidas", () => {
+    const st = criarStorage();
+    guardarRascunhoProva(st, "m1", 2, { q1: 1, q2: 2, q3: 0 });
+    expect(lerRascunhoProva(st, "m1", 2, questoes)).toEqual({ q1: 1, q2: 2, q3: 0 });
+    // a prova mudou: q2 ficou com 2 alternativas e q3 sumiu
+    const mudou = [
+      { id: "q1", opcoes: ["a", "b"] },
+      { id: "q2", opcoes: ["a", "b"] },
+    ];
+    expect(lerRascunhoProva(st, "m1", 2, mudou)).toEqual({ q1: 1 });
+  });
+
+  it("é por matrícula e por tentativa: o rascunho da tentativa anterior não volta", () => {
+    const st = criarStorage();
+    guardarRascunhoProva(st, "m1", 1, { q1: 1 });
+    expect(lerRascunhoProva(st, "m1", 2, questoes)).toEqual({});
+    expect(lerRascunhoProva(st, "m2", 1, questoes)).toEqual({});
+    expect(lerRascunhoProva(st, "m1", 1, questoes)).toEqual({ q1: 1 });
+  });
+
+  it("rascunho vazio apaga o que havia", () => {
+    const st = criarStorage();
+    guardarRascunhoProva(st, "m1", 1, { q1: 1 });
+    guardarRascunhoProva(st, "m1", 1, {});
+    expect(st.dados.size).toBe(0);
+  });
+
+  it("limparRascunhoProva remove só o da matrícula e tentativa", () => {
+    const st = criarStorage();
+    guardarRascunhoProva(st, "m1", 1, { q1: 1 });
+    guardarRascunhoProva(st, "m1", 2, { q1: 0 });
+    limparRascunhoProva(st, "m1", 1);
+    expect(lerRascunhoProva(st, "m1", 1, questoes)).toEqual({});
+    expect(lerRascunhoProva(st, "m1", 2, questoes)).toEqual({ q1: 0 });
+  });
+
+  it("conteúdo corrompido ou com formato errado vira {}", () => {
+    const st = criarStorage({
+      [`${PREFIXO_PROVA}m1:1`]: "{não é json",
+      [`${PREFIXO_PROVA}m1:2`]: JSON.stringify([1, 2, 3]),
+      [`${PREFIXO_PROVA}m1:3`]: JSON.stringify({ respostas: "x" }),
+    });
+    expect(lerRascunhoProva(st, "m1", 1, questoes)).toEqual({});
+    expect(lerRascunhoProva(st, "m1", 2, questoes)).toEqual({});
+    expect(lerRascunhoProva(st, "m1", 3, questoes)).toEqual({});
+  });
+
+  it("sem storage ou storage que falha: não lança", () => {
+    expect(() => guardarRascunhoProva(null, "m", 1, { q1: 0 })).not.toThrow();
+    expect(() => guardarRascunhoProva(storageQuebrado, "m", 1, { q1: 0 })).not.toThrow();
+    expect(() => limparRascunhoProva(storageQuebrado, "m", 1)).not.toThrow();
+    expect(lerRascunhoProva(storageQuebrado, "m", 1, questoes)).toEqual({});
+    expect(lerRascunhoProva(null, "m", 1, questoes)).toEqual({});
+  });
+});
+
+describe("limparRascunhosPortal (ao sair do portal)", () => {
+  it("remove posições e rascunhos de prova e deixa o resto do storage", () => {
+    const st = criarStorage({ sigo_portal_funcionario: "sessao", outra: "1" });
+    guardarPosicao(st, "m1", "a1", 50);
+    guardarRascunhoProva(st, "m1", 1, { q1: 1 });
+    limparRascunhosPortal(st);
+    expect([...st.dados.keys()].sort()).toEqual(["outra", "sigo_portal_funcionario"]);
+  });
+
+  it("sem storage ou storage que falha: não lança", () => {
+    expect(() => limparRascunhosPortal(null)).not.toThrow();
+    expect(() => limparRascunhosPortal(storageQuebrado)).not.toThrow();
+  });
+});
+
+describe("msAteLiberar e provaAguardando (temporizador da nova tentativa)", () => {
+  const agora = Date.parse("2026-10-05T12:00:00Z");
+
+  it("faltando tempo: milissegundos até o horário", () => {
+    expect(msAteLiberar("2026-10-05T12:00:30Z", agora)).toBe(30000);
+    expect(provaAguardando("2026-10-05T12:00:30Z", agora)).toBe(true);
+  });
+
+  it("no horário exato ou depois: liberada", () => {
+    expect(msAteLiberar("2026-10-05T12:00:00Z", agora)).toBe(0);
+    expect(msAteLiberar("2026-10-05T11:59:00Z", agora)).toBe(0);
+    expect(provaAguardando("2026-10-05T12:00:00Z", agora)).toBe(false);
+    expect(provaAguardando("2026-10-05T11:00:00Z", agora)).toBe(false);
+  });
+
+  it("sem horário ou inválido: não há espera", () => {
+    for (const ruim of [null, undefined, "", "ontem", NaN]) {
+      expect(msAteLiberar(ruim, agora)).toBe(0);
+      expect(provaAguardando(ruim, agora)).toBe(false);
+    }
+  });
+
+  it("espera muito longa é limitada ao máximo do setTimeout (o temporizador rearma depois)", () => {
+    const longe = new Date(agora + 90 * 24 * 3600 * 1000).toISOString();
+    expect(msAteLiberar(longe, agora)).toBe(2147483647);
+    expect(provaAguardando(longe, agora)).toBe(true);
+  });
+});
+
+describe("msTemporizadorProva (o setTimeout que reabilita a prova)", () => {
+  const agora = Date.parse("2026-10-05T12:00:00Z");
+  const em = (ms) => new Date(agora + ms).toISOString();
+
+  it("faltando tempo: a espera mais uma folga curta, para o relógio do servidor já ter passado", () => {
+    expect(msTemporizadorProva(em(30000), agora)).toBe(30300);
+    expect(msTemporizadorProva(em(30000), agora, 1000)).toBe(31000);
+  });
+
+  it("sem espera (horário passado, ausente ou inválido): 0, nenhum temporizador", () => {
+    for (const ruim of [em(0), em(-60000), null, undefined, "", "ontem"]) {
+      expect(msTemporizadorProva(ruim, agora)).toBe(0);
+    }
+  });
+
+  it("nunca passa do máximo do setTimeout: acima disso o navegador dispara na hora e a tela entra em laço", () => {
+    // o intervalo entre tentativas é digitado pelo RH; 90 dias em minutos é um valor possível no campo
+    for (const dias of [24.8, 25, 90, 36500]) {
+      const espera = msTemporizadorProva(em(dias * 24 * 3600 * 1000), agora);
+      expect(espera).toBeGreaterThan(0);
+      expect(espera).toBeLessThanOrEqual(MAX_ESPERA_MS);
+    }
+    // bem na beirada: a folga não empurra para além do máximo
+    expect(msTemporizadorProva(em(MAX_ESPERA_MS), agora)).toBe(MAX_ESPERA_MS);
+    expect(msTemporizadorProva(em(MAX_ESPERA_MS - 100), agora)).toBe(MAX_ESPERA_MS);
+    expect(msTemporizadorProva(em(MAX_ESPERA_MS - 1000), agora)).toBe(MAX_ESPERA_MS - 700);
+  });
+});
+
+describe("urlDoProjetoPedagogico (link renovado do projeto pedagógico)", () => {
+  const dados = (url, matriculaId = "m1") => ({
+    cursos: [
+      { matricula: { id: "outra" }, curso: { projeto_pedagogico_url: "https://outro.test/a.pdf" } },
+      { matricula: { id: matriculaId }, curso: { projeto_pedagogico_url: url } },
+    ],
+  });
+
+  it("devolve a URL do curso da matrícula, não a de outro curso", () => {
+    expect(urlDoProjetoPedagogico(dados("https://sig.test/projeto.pdf?t=1"), "m1")).toBe(
+      "https://sig.test/projeto.pdf?t=1"
+    );
+  });
+
+  it("sem dados (a busca falhou), matrícula ausente ou sem projeto: null", () => {
+    expect(urlDoProjetoPedagogico(null, "m1")).toBeNull();
+    expect(urlDoProjetoPedagogico(undefined, "m1")).toBeNull();
+    expect(urlDoProjetoPedagogico({}, "m1")).toBeNull();
+    expect(urlDoProjetoPedagogico(dados("https://sig.test/p.pdf"), "nao-existe")).toBeNull();
+    for (const sem of [null, undefined, ""]) {
+      expect(urlDoProjetoPedagogico(dados(sem), "m1")).toBeNull();
+    }
+  });
+
+  it("link que não é http(s) não abre (nada de about:blank nem javascript:)", () => {
+    for (const ruim of ["about:blank", "javascript:alert(1)", "/relativo.pdf", "   "]) {
+      expect(urlDoProjetoPedagogico(dados(ruim), "m1")).toBeNull();
+    }
+  });
+});
+
+describe("abrirProjetoPedagogico (botão do cabeçalho do curso)", () => {
+  const URL_ANTIGA = "https://sig.test/projeto.pdf?token=antigo";
+  const URL_NOVA = "https://sig.test/projeto.pdf?token=novo";
+  const dadosCom = (url) => ({
+    cursos: [{ matricula: { id: "m1" }, curso: { projeto_pedagogico_url: url } }],
+  });
+
+  /** `window` de mentira: registra as aberturas e devolve uma aba de mentira (ou null = pop-up bloqueado). */
+  function ambiente({ bloqueada = false } = {}) {
+    const aberturas = [];
+    const aba = { closed: false, opener: "janela-do-portal", location: { href: "" } };
+    aba.close = () => {
+      aba.closed = true;
+    };
+    const janela = {
+      open: (...args) => {
+        aberturas.push(args);
+        return bloqueada ? null : aba;
+      },
+    };
+    return { janela, aba, aberturas };
+  }
+
+  const base = { urlAtual: URL_ANTIGA, matriculaId: "m1" };
+
+  it("link ainda válido: abre direto, na hora, sem buscar os dados", async () => {
+    const { janela, aberturas } = ambiente();
+    let buscou = 0;
+    const r = await abrirProjetoPedagogico({
+      ...base,
+      janela,
+      vencida: false,
+      recarregar: async () => {
+        buscou += 1;
+        return null;
+      },
+    });
+    expect(r).toBe("aberto");
+    expect(aberturas).toEqual([[URL_ANTIGA, "_blank", "noopener"]]);
+    expect(buscou).toBe(0);
+  });
+
+  it("link válido mas que não é http(s): não abre nada", async () => {
+    const { janela, aberturas } = ambiente();
+    for (const ruim of [null, "", "about:blank", "javascript:alert(1)"]) {
+      const r = await abrirProjetoPedagogico({
+        ...base,
+        urlAtual: ruim,
+        janela,
+        vencida: false,
+        recarregar: async () => null,
+      });
+      expect(r).toBe("sem_link");
+    }
+    expect(aberturas).toHaveLength(0);
+  });
+
+  it("link possivelmente vencido: a aba abre JÁ no clique (antes da busca) e vai ao link renovado", async () => {
+    const { janela, aba, aberturas } = ambiente();
+    let chamadas = 0;
+    const promessa = abrirProjetoPedagogico({
+      ...base,
+      janela,
+      vencida: true,
+      recarregar: async () => {
+        chamadas += 1;
+        return dadosCom(URL_NOVA);
+      },
+    });
+    // síncrono, como no clique: a aba em branco já abriu e os dados já estão sendo buscados
+    expect(aberturas).toEqual([["", "_blank"]]);
+    expect(chamadas).toBe(1);
+    expect(aba.opener).toBeNull(); // a aba em branco não fica ligada ao portal
+    expect(aba.location.href).toBe(""); // ainda esperando o link novo
+    expect(await promessa).toBe("aberto");
+    expect(aba.location.href).toBe(URL_NOVA); // nunca o link velho
+    expect(aba.closed).toBe(false);
+  });
+
+  it("não conseguiu renovar (sem rede ou sem link no curso): fecha a aba vazia e avisa", async () => {
+    for (const recarregar of [
+      async () => null, // a busca falhou
+      async () => dadosCom(null), // o curso não tem mais projeto
+      async () => {
+        throw new Error("falha inesperada");
+      },
+    ]) {
+      const { janela, aba } = ambiente();
+      const r = await abrirProjetoPedagogico({ ...base, janela, vencida: true, recarregar });
+      expect(r).toBe("sem_link");
+      expect(aba.closed).toBe(true); // nada de aba em branco esquecida nem de link morto
+      expect(aba.location.href).toBe("");
+    }
+  });
+
+  it("pop-up bloqueado: renova mesmo assim e pede para tocar de novo (link já novo)", async () => {
+    const { janela } = ambiente({ bloqueada: true });
+    const r = await abrirProjetoPedagogico({
+      ...base,
+      janela,
+      vencida: true,
+      recarregar: async () => dadosCom(URL_NOVA),
+    });
+    expect(r).toBe("renovado");
+  });
+
+  it("o aluno fechou a aba enquanto esperava: renovado, sem mexer na aba fechada", async () => {
+    const { janela, aba } = ambiente();
+    const r = await abrirProjetoPedagogico({
+      ...base,
+      janela,
+      vencida: true,
+      recarregar: async () => {
+        aba.closed = true;
+        return dadosCom(URL_NOVA);
+      },
+    });
+    expect(r).toBe("renovado");
+    expect(aba.location.href).toBe("");
+  });
+
+  it("avisa o início e o fim da busca (o botão mostra andamento), mesmo quando ela falha", async () => {
+    for (const recarregar of [
+      async () => dadosCom(URL_NOVA),
+      async () => {
+        throw new Error("x");
+      },
+    ]) {
+      const { janela } = ambiente();
+      const marcas = [];
+      await abrirProjetoPedagogico({
+        ...base,
+        janela,
+        vencida: true,
+        recarregar,
+        aoComecarBusca: () => marcas.push("comecou"),
+        aoTerminarBusca: () => marcas.push("terminou"),
+      });
+      expect(marcas).toEqual(["comecou", "terminou"]);
+    }
+  });
+
+  it("a aba que não aceita mexer no opener (navegador restrito) não impede de abrir", async () => {
+    const aba = { closed: false, location: { href: "" }, close() {} };
+    Object.defineProperty(aba, "opener", {
+      get: () => "x",
+      set: () => {
+        throw new Error("opener somente leitura");
+      },
+    });
+    const janela = { open: () => aba };
+    const r = await abrirProjetoPedagogico({
+      ...base,
+      janela,
+      vencida: true,
+      recarregar: async () => dadosCom(URL_NOVA),
+    });
+    expect(r).toBe("aberto");
+    expect(aba.location.href).toBe(URL_NOVA);
+  });
+});
+
+describe("mensagemDeFalha (erro de rede em português)", () => {
+  it("falha de conexão do supabase-js ou do navegador vira texto para o aluno", () => {
+    for (const msg of [
+      "Failed to send a request to the Edge Function",
+      "Relay Error invoking the Edge Function",
+      "Failed to fetch",
+      "NetworkError when attempting to fetch resource.",
+      "Load failed",
+      "The network connection was lost.",
+      "The Internet connection appears to be offline.",
+      "signal timed out",
+      "The operation was aborted.",
+    ]) {
+      const texto = mensagemDeFalha(new Error(msg));
+      expect(texto).toBe(MSG_SEM_CONEXAO);
+      expect(texto).toMatch(/conex/i);
+      expect(texto).not.toMatch(/edge function|fetch/i);
+    }
+  });
+
+  it("erro da plataforma em inglês (função com erro HTTP, 5xx, função fora do ar) vira texto em português", () => {
+    for (const msg of [
+      "Edge Function returned a non-2xx status code",
+      "Internal Server Error",
+      "502 Bad Gateway",
+      "Service Unavailable",
+      "Gateway Timeout",
+      "Requested function was not found",
+      "BOOT_ERROR",
+      "WORKER_LIMIT",
+      "Unexpected token '<', \"<!doctype \"... is not valid JSON",
+    ]) {
+      const texto = mensagemDeFalha(new Error(msg));
+      expect(texto).toBe(MSG_SERVICO_INDISPONIVEL);
+      expect(texto).toMatch(/indispon/i);
+      expect(texto).toMatch(/avise o RH/i);
+      expect(texto).not.toMatch(/edge function|non-2xx|gateway|server error|json/i);
+    }
+  });
+
+  it("erro de plataforma no formato REAL do cliente: frase em inglês + código em `extra.code` (A1, m1)", () => {
+    // `invokeFn` (sigoClient) usa `body.error || body.message` como mensagem e deixa o corpo inteiro em
+    // `extra`; `ErroPortal` (api.js) guarda isso em `.extra`. O código de plataforma é `code`.
+    const comoOCliente = (message, code) =>
+      Object.assign(new Error(message), { codigo: null, extra: { code, message } });
+    for (const erro of [
+      comoOCliente("Function failed to start (please check logs)", "BOOT_ERROR"),
+      comoOCliente(
+        "Function failed due to not having enough compute resources (please check logs)",
+        "WORKER_LIMIT"
+      ),
+      comoOCliente("Function exited due to an error (please check logs)", "WORKER_ERROR"),
+    ]) {
+      const texto = mensagemDeFalha(erro);
+      expect(texto, erro.message).toBe(MSG_SERVICO_INDISPONIVEL);
+      expect(texto).not.toMatch(/function|logs|compute/i);
+    }
+  });
+
+  it("as mesmas frases de plataforma, sem o código, também viram texto em português", () => {
+    for (const msg of [
+      "Function failed to start (please check logs)",
+      "Function failed due to not having enough compute resources (please check logs)",
+      "Function exited due to an error (please check logs)",
+    ]) {
+      expect(mensagemDeFalha(new Error(msg)), msg).toBe(MSG_SERVICO_INDISPONIVEL);
+    }
+  });
+
+  it("só o código de plataforma em `extra.code` (mensagem vazia ou diferente) basta", () => {
+    for (const code of ["BOOT_ERROR", "WORKER_LIMIT", "WORKER_ERROR", "NOT_FOUND"]) {
+      expect(mensagemDeFalha({ message: "", extra: { code } }), code).toBe(
+        MSG_SERVICO_INDISPONIVEL
+      );
+      expect(mensagemDeFalha({ message: "texto qualquer", extra: { code } }), code).toBe(
+        MSG_SERVICO_INDISPONIVEL
+      );
+    }
+  });
+
+  it("`extra.code` que não é de plataforma (ou ausente, ou que não é texto) não esconde o texto do servidor", () => {
+    expect(
+      mensagemDeFalha({ message: "Aula não pertence ao curso", extra: { code: "OUTRO" } })
+    ).toBe("Aula não pertence ao curso");
+    expect(mensagemDeFalha({ message: "Muitas ações", extra: {} })).toBe("Muitas ações");
+    expect(mensagemDeFalha({ message: "Muitas ações", extra: { code: 500 } })).toBe("Muitas ações");
+    expect(mensagemDeFalha({ message: "Muitas ações", extra: null })).toBe("Muitas ações");
+  });
+
+  it("o texto em português do servidor que fala de erro ou função passa como veio", () => {
+    for (const msg of [
+      "Função indisponível no momento",
+      "Erro ao carregar o curso",
+      "Aula não pertence ao curso",
+    ]) {
+      expect(mensagemDeFalha(new Error(msg))).toBe(msg);
+    }
+  });
+
+  it("mensagem que o servidor mandou em português passa como veio", () => {
+    expect(mensagemDeFalha(new Error("Cadastro inativo"))).toBe("Cadastro inativo");
+    expect(mensagemDeFalha({ message: "Aula não pertence ao curso" })).toBe(
+      "Aula não pertence ao curso"
+    );
+  });
+
+  it("sem mensagem: texto padrão", () => {
+    for (const vazio of [null, undefined, {}, new Error(""), "x".repeat(0)]) {
+      expect(mensagemDeFalha(vazio)).toMatch(/tente de novo/i);
+    }
+  });
+});
+
+// ------------------------------------------------ aviso passageiro de envio (T31, M2)
+
+describe("aviso de envio recusado (409/429) que some no próximo envio que dá certo", () => {
+  const comCodigo = (codigo, message = "Muitas ações. Aguarde.") =>
+    Object.assign(new Error(message), { codigo, extra: { codigo } });
+
+  it("os códigos são os que o servidor usa para o sinal simultâneo (409) e o limite de volume (429)", () => {
+    const servidor = readFileSync(
+      new URL("../../../../supabase/functions/portal-funcionario/index.ts", import.meta.url),
+      "utf8"
+    );
+    expect(CODIGOS_DE_AVISO_PASSAGEIRO).toEqual(["SINAL_CONCORRENTE", "LIMITE"]);
+    for (const codigo of CODIGOS_DE_AVISO_PASSAGEIRO) {
+      expect(servidor).toContain(`codigo: "${codigo}"`);
+    }
+  });
+
+  it("409 de sinal simultâneo e 429 de volume são avisos passageiros; o texto é o do servidor", () => {
+    expect(textoDoAvisoPassageiro(comCodigo("LIMITE"))).toBe("Muitas ações. Aguarde.");
+    expect(
+      textoDoAvisoPassageiro(comCodigo("SINAL_CONCORRENTE", "Enviado ao mesmo tempo por outra aba"))
+    ).toBe("Enviado ao mesmo tempo por outra aba");
+  });
+
+  it("outros erros (sessão, leitura, rede, servidor) não são passageiros: ficam até o aluno fechar", () => {
+    for (const erro of [
+      comCodigo("SESSAO", "Sessão expirada"),
+      comCodigo("TEMPO_LEITURA", "Falta tempo de leitura"),
+      comCodigo("TROCAR_SENHA", "Troque a senha"),
+      new Error("Failed to fetch"),
+      new Error("Aula não pertence ao curso"),
+      null,
+      undefined,
+      {},
+    ]) {
+      expect(textoDoAvisoPassageiro(erro)).toBe("");
+    }
+  });
+
+  it("o envio que deu certo tira o aviso passageiro que ainda está na tela", () => {
+    expect(erroAposEnvioCerto("Muitas ações. Aguarde.", "Muitas ações. Aguarde.")).toBe("");
+  });
+
+  it("não apaga outro erro que o aluno está lendo (o do projeto pedagógico, por exemplo)", () => {
+    expect(erroAposEnvioCerto("Não foi possível renovar o link", "Muitas ações. Aguarde.")).toBe(
+      "Não foi possível renovar o link"
+    );
+  });
+
+  it("sem aviso passageiro registrado, o erro da tela fica como está (inclusive vazio)", () => {
+    expect(erroAposEnvioCerto("Algum erro", "")).toBe("Algum erro");
+    expect(erroAposEnvioCerto("Algum erro", null)).toBe("Algum erro");
+    expect(erroAposEnvioCerto("", "")).toBe("");
+    expect(erroAposEnvioCerto("", "Muitas ações. Aguarde.")).toBe("");
+  });
+});
+
+// ------------------------------------------------ prova sorteada pelo servidor (T16)
+
+/** O que a ação `iniciar_avaliacao` devolve: questões já sorteadas e SEM gabarito. */
+const respostaIniciar = () => ({
+  success: true,
+  tentativa: 2,
+  tentativas_max: 3,
+  nota_minima: 70,
+  questoes: [
+    { id: "q2", pergunta: "Segunda?", opcoes: ["c", "a", "b"], ordem_opcoes: [2, 0, 1] },
+    { id: "q1", pergunta: "Primeira?", opcoes: ["y", "x"], ordem_opcoes: [1, 0] },
+  ],
+});
+const comQuestoes = (questoes) => ({ ...respostaIniciar(), questoes });
+
+describe("provaParaTela (a prova que o servidor sorteou, pronta para a tela)", () => {
+  it("mantém a ordem do servidor e liga cada texto ao índice ORIGINAL da alternativa", () => {
+    const prova = provaParaTela(respostaIniciar());
+    expect(prova.tentativa).toBe(2);
+    expect(prova.tentativasMax).toBe(3);
+    expect(prova.notaMinima).toBe(70);
+    expect(prova.questoes.map((q) => q.id)).toEqual(["q2", "q1"]); // ordem do servidor
+    expect(prova.questoes[0].exibicao).toEqual([
+      { texto: "c", indice: 2 },
+      { texto: "a", indice: 0 },
+      { texto: "b", indice: 1 },
+    ]);
+    expect(prova.questoes[0].pergunta).toBe("Segunda?");
+    // `opcoes` serve à conferência do rascunho (respostasValidas): tem o tamanho da questão
+    expect(prova.questoes[0].opcoes).toHaveLength(3);
+  });
+
+  it("o aluno nunca recebe gabarito nem comentário, nem se a resposta os trouxesse", () => {
+    const comGabarito = respostaIniciar();
+    comGabarito.questoes[0].correta = 0;
+    comGabarito.questoes[0].comentario = "Comentário reservado";
+    const prova = provaParaTela(comGabarito);
+    expect(JSON.stringify(prova)).not.toContain("Comentário reservado");
+    for (const q of prova.questoes) {
+      expect("correta" in q).toBe(false);
+      expect("comentario" in q).toBe(false);
+    }
+  });
+
+  it("na prévia do RT o gabarito e o comentário passam", () => {
+    const resposta = respostaIniciar();
+    resposta.questoes[0].correta = 0;
+    resposta.questoes[0].comentario = "Comentário do RT";
+    const prova = provaParaTela(resposta, { previa: true });
+    expect(prova.questoes[0].correta).toBe(0);
+    expect(prova.questoes[0].comentario).toBe("Comentário do RT");
+    expect(prova.questoes[1].comentario).toBeNull();
+  });
+
+  it("resposta malformada vira null (a tela mostra o problema em vez de quebrar)", () => {
+    const questao = (mudancas) => ({
+      id: "q1",
+      pergunta: "P",
+      opcoes: ["a", "b"],
+      ordem_opcoes: [0, 1],
+      ...mudancas,
+    });
+    const ruins = [
+      null,
+      undefined,
+      {},
+      { questoes: [] },
+      { questoes: "q1" },
+      { ...respostaIniciar(), tentativa: 0 },
+      { ...respostaIniciar(), tentativa: "2" },
+      comQuestoes([questao({ ordem_opcoes: undefined })]), // sem a ordem
+      comQuestoes([questao({ ordem_opcoes: [0] })]), // tamanho diferente
+      comQuestoes([questao({ ordem_opcoes: [0, 0] })]), // repetido
+      comQuestoes([questao({ ordem_opcoes: [0, 2] })]), // fora do intervalo
+      comQuestoes([questao({ opcoes: [], ordem_opcoes: [] })]), // sem alternativas
+      comQuestoes([questao({ id: "" })]),
+      comQuestoes([questao({ pergunta: 5 })]),
+      comQuestoes([null]),
+    ];
+    for (const ruim of ruins) expect(provaParaTela(ruim), JSON.stringify(ruim)).toBeNull();
+  });
+
+  it("não altera a resposta recebida", () => {
+    const resposta = respostaIniciar();
+    const copia = JSON.parse(JSON.stringify(resposta));
+    provaParaTela(resposta);
+    expect(resposta).toEqual(copia);
+  });
+
+  it("o rascunho guardado vale para a prova sorteada (a resposta é pelo índice original)", () => {
+    const prova = provaParaTela(respostaIniciar());
+    const storage = criarStorage();
+    guardarRascunhoProva(storage, "m1", prova.tentativa, { q2: 2, q1: 0 });
+    expect(lerRascunhoProva(storage, "m1", prova.tentativa, prova.questoes)).toEqual({
+      q2: 2,
+      q1: 0,
+    });
+    // um novo sorteio da mesma prova (outra ordem) continua aceitando as mesmas respostas
+    const outraOrdem = provaParaTela(
+      comQuestoes([
+        { id: "q1", pergunta: "Primeira?", opcoes: ["x", "y"], ordem_opcoes: [0, 1] },
+        { id: "q2", pergunta: "Segunda?", opcoes: ["a", "b", "c"], ordem_opcoes: [0, 1, 2] },
+      ])
+    );
+    expect(lerRascunhoProva(storage, "m1", 2, outraOrdem.questoes)).toEqual({ q2: 2, q1: 0 });
+  });
+});
+
+describe("provaPrecisaReabrir e avisoDaProvaReaberta (envio recusado porque a prova não vale mais)", () => {
+  it("só os dois códigos de prova desatualizada pedem para abrir a prova de novo", () => {
+    expect(provaPrecisaReabrir({ codigo: "PROVA_NAO_INICIADA" })).toBe(true);
+    expect(provaPrecisaReabrir({ codigo: "PROVA_ALTERADA" })).toBe(true);
+    const outros = ["RESPOSTAS_INCOMPLETAS", "TEMPO_MINIMO_PROVA", "LIMITE_TENTATIVAS", "AGUARDAR"];
+    for (const outro of [...outros, "SESSAO", null, undefined]) {
+      expect(provaPrecisaReabrir({ codigo: outro })).toBe(false);
+    }
+    expect(provaPrecisaReabrir(null)).toBe(false);
+    expect(provaPrecisaReabrir(new Error("sem código"))).toBe(false);
+  });
+
+  it("cada motivo tem o seu aviso, em português", () => {
+    expect(avisoDaProvaReaberta({ codigo: "PROVA_ALTERADA" })).toMatch(/RH alterou as questões/);
+    expect(avisoDaProvaReaberta({ codigo: "PROVA_NAO_INICIADA" })).toMatch(/aberta de novo/);
+    expect(avisoDaProvaReaberta({ codigo: "OUTRO" })).toMatch(/aberta de novo/);
+  });
+});
+
+describe("resumoDoResultado (o que a tela diz depois de enviar a prova)", () => {
+  it("aprovado vê a nota, os acertos e o convite à correção comentada", () => {
+    const r = resumoDoResultado({
+      aprovada: true,
+      nota: 80,
+      acertos: 4,
+      total: 5,
+      nota_minima: 70,
+    });
+    expect(r.aprovada).toBe(true);
+    expect(r.titulo).toBe("Nota: 80% (4/5)");
+    expect(r.mensagem).toMatch(/Aprovado/);
+    expect(r.tentativas).toBeNull();
+    expect(r.esgotada).toBe(false);
+  });
+
+  it("reprovado sem nota (como o servidor responde hoje) vê só 'insatisfatório'", () => {
+    const r = resumoDoResultado({
+      aprovada: false,
+      resultado: "insatisfatorio",
+      nota_minima: 70,
+      tentativa: 1,
+      tentativas_max: 3,
+    });
+    expect(r.aprovada).toBe(false);
+    expect(r.titulo).toBe("Resultado: insatisfatório");
+    expect(r.mensagem).toBe("Não atingiu a nota mínima (70%).");
+    expect(r.tentativas).toBe("Você ainda tem 2 tentativas.");
+    expect(r.esgotada).toBe(false);
+    // nada de nota, acertos ou total na tela
+    expect(JSON.stringify(r)).not.toMatch(/Nota:|\d\/\d/);
+  });
+
+  it("conta as tentativas que restam, no singular e no plural", () => {
+    const base = { aprovada: false, nota_minima: 70, tentativas_max: 3 };
+    const restam = (tentativa) => resumoDoResultado({ ...base, tentativa }).tentativas;
+    expect(restam(2)).toBe("Você ainda tem 1 tentativa.");
+    expect(restam(1)).toBe("Você ainda tem 2 tentativas.");
+  });
+
+  it("acabaram as tentativas: manda procurar o RH", () => {
+    const r = resumoDoResultado({
+      aprovada: false,
+      nota_minima: 70,
+      tentativa: 3,
+      tentativas_max: 3,
+    });
+    expect(r.tentativas).toBe("Você usou todas as tentativas. Procure o RH para liberar uma nova.");
+    expect(r.esgotada).toBe(true); // a tela não promete "nova tentativa liberada em..."
+  });
+
+  it("sem limite de tentativas não há contagem", () => {
+    const base = { aprovada: false, nota_minima: 70, tentativa: 4 };
+    expect(resumoDoResultado({ ...base, tentativas_max: null }).tentativas).toBeNull();
+    expect(resumoDoResultado(base).tentativas).toBeNull();
+    expect(resumoDoResultado(base).esgotada).toBe(false);
+  });
+
+  it("se o servidor voltar a mandar a nota ao reprovado, a tela mostra", () => {
+    const completa = { aprovada: false, nota: 40, acertos: 2, total: 5, nota_minima: 70 };
+    expect(resumoDoResultado(completa).titulo).toBe("Nota: 40% (2/5)");
+    expect(resumoDoResultado({ aprovada: false, nota: 40, nota_minima: 70 }).titulo).toBe(
+      "Nota: 40%"
+    );
+  });
+
+  it("resposta incompleta não quebra: aprovado sem nota diz 'satisfatório'", () => {
+    expect(resumoDoResultado({ aprovada: true }).titulo).toBe("Resultado: satisfatório");
+    expect(resumoDoResultado(null).aprovada).toBe(false);
+    expect(resumoDoResultado({}).titulo).toBe("Resultado: insatisfatório");
+  });
+});
+
+describe("preRequisitoPendente (T23)", () => {
+  const falta = {
+    curso_id: "c0",
+    nome: "Curso exigido",
+    atendido: false,
+    texto: "Falta o curso exigido",
+  };
+
+  it("devolve o pré-requisito que o aluno ainda não cumpriu", () => {
+    expect(preRequisitoPendente({ pre_requisito: falta })).toBe(falta);
+  });
+
+  it("em dia, ausente ou nulo: não há pendência", () => {
+    expect(preRequisitoPendente({ pre_requisito: { ...falta, atendido: true } })).toBeNull();
+    expect(preRequisitoPendente({ pre_requisito: null })).toBeNull();
+    expect(preRequisitoPendente({})).toBeNull();
+    expect(preRequisitoPendente(null)).toBeNull();
+    expect(preRequisitoPendente(undefined)).toBeNull();
+  });
+
+  it("só o valor `false` conta como não cumprido (resposta sem o campo não bloqueia nada na tela)", () => {
+    expect(preRequisitoPendente({ pre_requisito: { texto: "x" } })).toBeNull();
+  });
+});
+
+describe("parte prática do semipresencial no portal (T12)", () => {
+  const realizada = {
+    situacao: "realizada",
+    data: "2026-10-05",
+    local: "Pátio de teste",
+    texto: "Parte prática: realizada em 05/10/2026, em Pátio de teste.",
+  };
+  const pendente = {
+    situacao: "pendente",
+    data: null,
+    local: null,
+    texto: "Parte prática: pendente.",
+  };
+  it("praticaDoCurso: o que o servidor mandou (com texto), ou null", () => {
+    expect(praticaDoCurso({ pratica: realizada })).toBe(realizada);
+    expect(praticaDoCurso({ pratica: pendente })).toBe(pendente);
+    expect(praticaDoCurso({ pratica: null })).toBeNull();
+    expect(praticaDoCurso({})).toBeNull();
+    expect(praticaDoCurso({ pratica: { situacao: "pendente" } })).toBeNull();
+  });
+  it("praticaPendente: só quando ainda não foi realizada", () => {
+    expect(praticaPendente({ pratica: pendente })).toBe(pendente);
+    expect(praticaPendente({ pratica: { ...pendente, situacao: "agendada" } })).not.toBeNull();
+    expect(
+      praticaPendente({ pratica: { ...pendente, situacao: "insatisfatoria" } })
+    ).not.toBeNull();
+    expect(praticaPendente({ pratica: realizada })).toBeNull();
+    expect(praticaPendente({})).toBeNull();
+  });
+});

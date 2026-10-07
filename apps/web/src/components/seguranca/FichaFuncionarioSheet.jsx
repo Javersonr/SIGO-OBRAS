@@ -1,7 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import AnexoViewer from "@/components/shared/AnexoViewer";
 import { avisarNoPortal } from "@/lib/portal-funcionario-acesso";
+import { renovacaoParaExibir } from "@/lib/portal-curso";
+import { certificadoDaFicha } from "@/lib/ead-dossie";
+import { avisoAssinaturasNaoCarregadas } from "@/lib/ead-assinatura";
+import { mensagemFalhaCertificado } from "@/lib/certificado-ead-falhas";
+import { criarGeradorDeCertificado } from "@/components/seguranca/certificadoParaRH";
 import { copiarOuOferecer } from "@/lib/whatsapp";
 import AcessoPortalCard from "@/components/seguranca/AcessoPortalCard";
 import DocumentosPortalCard from "@/components/seguranca/DocumentosPortalCard";
@@ -26,6 +31,7 @@ import {
   ClipboardCheck,
   GraduationCap,
   Upload,
+  Award,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -73,6 +79,9 @@ export default function FichaFuncionarioSheet({
   const [carregando, setCarregando] = useState(true);
   const [novaAdv, setNovaAdv] = useState(null); // {data, tipo, motivo}
   const [ocupado, setOcupado] = useState(false);
+  // certificado do curso EAD sendo gerado (id do certificado): um por vez; o ref vale já no 2º clique
+  const [baixandoCertificado, setBaixandoCertificado] = useState(null);
+  const baixandoCertificadoRef = useRef(false);
 
   useEffect(() => {
     setForm(funcionario || {});
@@ -82,7 +91,7 @@ export default function FichaFuncionarioSheet({
   const carregarHistorico = async (f) => {
     setCarregando(true);
     try {
-      const [advs, insps, mats, cursosCat, movs, ferrs] = await Promise.all([
+      const [advs, insps, mats, cursosCat, movs, ferrs, certs] = await Promise.all([
         sigo.entities.FuncionarioAdvertencia.filter({
           empresa_id: empresaAtiva.id,
           funcionario_id: f.id,
@@ -101,7 +110,17 @@ export default function FichaFuncionarioSheet({
           funcionario_id: f.id,
         }),
         sigo.entities.Ferramenta.filter({ empresa_id: empresaAtiva.id, funcionario_id: f.id }),
+        // certificados do EAD (T34): tabela só de inclusão, sem deleted_at. Uma falha aqui não derruba o
+        // histórico inteiro: a Ficha abre sem o botão do certificado e avisa.
+        sigo.entities.TreinamentoCertificado.filter(
+          { empresa_id: empresaAtiva.id, funcionario_id: f.id },
+          { includeDeleted: true }
+        ).catch((e) => {
+          console.error("Erro ao carregar os certificados do funcionário:", e);
+          return null;
+        }),
       ]);
+      if (!certs) toast.warning("Não foi possível carregar os certificados do funcionário.");
       const cien = await sigo.entities.EntregaCiencia.filter({
         empresa_id: empresaAtiva.id,
         funcionario_id: f.id,
@@ -115,15 +134,46 @@ export default function FichaFuncionarioSheet({
         movs.sort((a, b) => (b.data_movimentacao || "").localeCompare(a.data_movimentacao || ""))
       );
       setFerramentasPosse(ferrs);
-      const nomeCurso = new Map(cursosCat.map((c) => [c.id, c.nome]));
+      const cursoPorId = new Map(cursosCat.map((c) => [c.id, c]));
       setCursos(
-        mats.map((m) => ({ ...m, curso_nome: nomeCurso.get(m.curso_id) || "(curso removido)" }))
+        mats.map((m) => ({
+          ...m,
+          curso_nome: cursoPorId.get(m.curso_id)?.nome || "(curso removido)",
+          // o curso de apoio não renova (D3): sem data, a Ficha não mostra "renova"
+          renova_ate: renovacaoParaExibir(cursoPorId.get(m.curso_id), m),
+          // o certificado do curso EAD (T34); o curso de apoio não emite e não mostra nenhum
+          certificadoEad: certificadoDaFicha({
+            curso: cursoPorId.get(m.curso_id),
+            matricula: m,
+            certificados: certs || [],
+          }),
+        }))
       );
     } catch (e) {
       console.error(e);
       toast.error("Erro ao carregar histórico");
     } finally {
       setCarregando(false);
+    }
+  };
+
+  // Baixa o PDF do certificado do curso EAD (frente e verso, com o QR de validação). O logo e as imagens de
+  // assinatura vêm do Storage pela sessão do RH, em URL assinada na hora (nada é gravado).
+  const baixarCertificado = async (certificado) => {
+    if (baixandoCertificadoRef.current) return;
+    baixandoCertificadoRef.current = true;
+    setBaixandoCertificado(certificado.id);
+    try {
+      const { faltaram } = await criarGeradorDeCertificado(empresaAtiva)(certificado);
+      if (faltaram.length) {
+        toast.warning(avisoAssinaturasNaoCarregadas(faltaram), { duration: 12000 });
+      }
+    } catch (e) {
+      console.error("[certificado] falha ao baixar:", e);
+      toast.error(mensagemFalhaCertificado(e));
+    } finally {
+      baixandoCertificadoRef.current = false;
+      setBaixandoCertificado(null);
     }
   };
 
@@ -418,9 +468,9 @@ export default function FichaFuncionarioSheet({
                     {cursos.map((m) => (
                       <div
                         key={m.id}
-                        className="flex items-center gap-2 text-sm bg-white border rounded p-2"
+                        className="flex flex-wrap items-center gap-2 text-sm bg-white border rounded p-2"
                       >
-                        <span className="flex-1">{m.curso_nome}</span>
+                        <span className="min-w-0 flex-1 basis-40">{m.curso_nome}</span>
                         <Badge
                           variant="outline"
                           className={
@@ -436,8 +486,39 @@ export default function FichaFuncionarioSheet({
                         {m.data_conclusao && (
                           <span className="text-xs text-slate-500">
                             {fmtData(m.data_conclusao)}
-                            {m.proxima_renovacao ? ` · renova ${fmtData(m.proxima_renovacao)}` : ""}
+                            {m.renova_ate ? ` · renova ${fmtData(m.renova_ate)}` : ""}
                           </span>
+                        )}
+                        {m.certificadoEad?.revogado && (
+                          <Badge
+                            variant="outline"
+                            className="bg-red-100 text-red-700 border-red-200"
+                          >
+                            certificado revogado
+                          </Badge>
+                        )}
+                        {m.certificadoEad && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            disabled={!!baixandoCertificado}
+                            onClick={() => baixarCertificado(m.certificadoEad.certificado)}
+                            aria-label={`Baixar o certificado do curso ${m.curso_nome}`}
+                            title={
+                              m.certificadoEad.revogado
+                                ? "Certificado revogado: o PDF sai marcado como revogado"
+                                : "Baixar o PDF do certificado"
+                            }
+                          >
+                            {baixandoCertificado === m.certificadoEad.certificado.id ? (
+                              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                            ) : (
+                              <Award className="w-3 h-3 mr-1" />
+                            )}
+                            Certificado
+                          </Button>
                         )}
                       </div>
                     ))}

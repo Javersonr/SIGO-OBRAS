@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Wrench } from "lucide-react";
 import { toast } from "sonner";
+import { safeParseJSON } from "@/lib/json-utils";
 
 export default function ManutencaoEditarModal({
   open,
