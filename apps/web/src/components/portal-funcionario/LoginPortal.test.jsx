@@ -26,12 +26,17 @@ vi.mock("@/api/sigoClient", () => ({
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { LoginPortal, TrocarSenhaPortal } from "./LoginPortal";
+import {
+  AtivarAcessoPortal,
+  EscolherEmpresaPortal,
+  LoginPortal,
+  TrocarSenhaPortal,
+} from "./LoginPortal";
 
 const fonte = readFileSync(fileURLToPath(new URL("LoginPortal.jsx", import.meta.url)), "utf8");
 
 /**
- * Primeira tela do login e da troca de senha (T27), só com dados sintéticos. `renderToStaticMarkup` não
+ * Primeira tela do login, da ativação pela provisória e da troca de senha (T27, T38), só com dados sintéticos. `renderToStaticMarkup` não
  * roda efeitos nem eventos: o que depende de digitar (botão habilitado, regras cumpridas) está em
  * lib/portal-senha.test.js, e o limite de tentativas, em portal-funcionario/regras.test.ts.
  */
@@ -56,11 +61,31 @@ describe("LoginPortal", () => {
   });
 });
 
-describe("TrocarSenhaPortal", () => {
-  const props = { token: "t", nome: "Fulano de Tal", onConcluir: () => {}, onCancelar: () => {} };
+const botaoDeEnviar = (html) => html.match(/<button[^>]*type="submit"[^>]*>/)?.[0] ?? "";
+
+describe("AtivarAcessoPortal: entrou com a senha provisória (T38)", () => {
+  const props = {
+    tokenAtivacao: "ta",
+    empresaNome: "Empresa Teste",
+    onEntrar: () => {},
+    onVoltar: () => {},
+  };
+
+  it("a MESMA tela para todos: 'Crie sua senha pessoal' com o link 'Já uso o portal em outra empresa'", () => {
+    const html = tela(<AtivarAcessoPortal {...props} usuario="11122233344" />);
+    expect(html).toContain("Crie sua senha pessoal");
+    expect(html).toContain("Já uso o portal em outra empresa");
+    expect(html).toContain("Empresa Teste");
+    // o aviso fixo, igual para todos (a tela não sabe se a pessoa já tem senha)
+    expect(html).toContain(
+      "A senha nova vale em todas as empresas. Se você já usa o portal em outra empresa, o RH dela vai precisar"
+    );
+    // criar a senha não pede a senha atual
+    expect(campo(html, "senha-atual")).toBe("");
+  });
 
   it("mostra as regras da senha antes de enviar, sem repetir só o 'mínimo 6'", () => {
-    const html = tela(<TrocarSenhaPortal {...props} obrigatoria usuario="11122233344" />);
+    const html = tela(<AtivarAcessoPortal {...props} usuario="11122233344" />);
     expect(html).toContain("Pelo menos 6 caracteres");
     expect(html).toContain("Diferente do seu CPF ou usuário");
     expect(html).toContain("senha fácil");
@@ -68,40 +93,73 @@ describe("TrocarSenhaPortal", () => {
   });
 
   it("não corta a senha colada em silêncio: sem maxLength, com o aviso do limite de 72 (T27, m4)", () => {
-    const html = tela(<TrocarSenhaPortal {...props} obrigatoria usuario="" />);
+    const html = tela(<AtivarAcessoPortal {...props} usuario="" />);
     expect(campo(html, "senha-nova")).not.toContain("maxLength");
     expect(campo(html, "senha-confirma")).not.toContain("maxLength");
-    // o aviso é da lib (testado em portal-senha.test.js); aqui se confere que a tela o mostra
     expect(fonte).toContain("avisoDeSenhaLonga(nova)");
     expect(fonte).toContain("avisoDeSenhaLonga(confirma)");
-    // nada digitado, nada de aviso
     expect(html).not.toContain("o máximo é 72");
   });
 
-  it("usuário conhecido: a regra do CPF aparece como regra comum; desconhecido: diz que o servidor confere ao salvar (T27, M1)", () => {
-    const conhecido = tela(<TrocarSenhaPortal {...props} obrigatoria usuario="11122233344" />);
-    expect(conhecido).toContain("Diferente do seu CPF ou usuário");
-    expect(conhecido).not.toContain("servidor confere");
-    const recarregada = tela(<TrocarSenhaPortal {...props} obrigatoria usuario="" />);
+  it("usuário desconhecido (tela recarregada): a regra do CPF diz que o servidor confere ao salvar (T27, M1)", () => {
+    const recarregada = tela(<AtivarAcessoPortal {...props} usuario="" />);
     expect(recarregada).toContain("Diferente do seu CPF ou usuário (o servidor confere ao salvar)");
     expect(recarregada).toContain('aria-label="Conferida ao salvar"');
-    // nunca com o ícone de "cumprida"
     expect(recarregada).not.toContain('aria-label="Cumprida"');
   });
 
-  it("1º acesso não pede a senha atual; a troca voluntária pede", () => {
-    const primeiro = tela(<TrocarSenhaPortal {...props} obrigatoria usuario="" />);
-    expect(campo(primeiro, "senha-atual")).toBe("");
-    const voluntaria = tela(<TrocarSenhaPortal {...props} obrigatoria={false} usuario="" />);
-    expect(campo(voluntaria, "senha-atual")).not.toBe("");
-    expect(voluntaria).toContain("Senha atual");
+  it("o botão começa desligado (nada digitado)", () => {
+    expect(botaoDeEnviar(tela(<AtivarAcessoPortal {...props} usuario="" />))).toContain("disabled");
   });
 
-  it("o botão começa desligado nas duas trocas (nada digitado)", () => {
-    for (const obrigatoria of [true, false]) {
-      const html = tela(<TrocarSenhaPortal {...props} obrigatoria={obrigatoria} usuario="" />);
-      const botao = html.match(/<button[^>]*type="submit"[^>]*>/)?.[0] ?? "";
-      expect(botao).toContain("disabled");
-    }
+  it("a troca obrigatória e o 'Já uso' usam os textos do spec (lib/portal-login.js)", () => {
+    expect(fonte).toContain("TEXTOS_DO_LOGIN.trocaObrigatoria");
+    expect(fonte).toContain("TEXTOS_DO_LOGIN.digiteASenhaQueUsa");
+    // o erro RESET_NEGADO destaca o link; o token vencido volta ao login
+    expect(fonte).toContain("reacaoAoErroDaAtivacao(err)");
+  });
+});
+
+describe("EscolherEmpresaPortal: duas ou mais empresas liberadas (T38)", () => {
+  it("pergunta em qual empresa entrar, com um botão por empresa", () => {
+    const html = tela(
+      <EscolherEmpresaPortal
+        tokenEscolha="te"
+        empresas={[
+          { id: "f-a", nome: "Empresa A", logo_url: null },
+          { id: "f-b", nome: "Empresa B", logo_url: "https://exemplo.test/logo.png" },
+        ]}
+        onEntrar={() => {}}
+        onVoltar={() => {}}
+      />
+    );
+    expect(html).toContain("Em qual empresa você quer entrar?");
+    expect(html).toContain("Empresa A");
+    expect(html).toContain("Empresa B");
+    expect(html).toContain('src="https://exemplo.test/logo.png"');
+  });
+});
+
+describe("TrocarSenhaPortal: troca voluntária (T38: sempre com a senha atual)", () => {
+  const props = { token: "t", nome: "Fulano de Tal", onConcluir: () => {}, onCancelar: () => {} };
+
+  it("pede a senha atual e avisa que a nova vale em todas as empresas", () => {
+    const html = tela(<TrocarSenhaPortal {...props} usuario="" />);
+    expect(campo(html, "senha-atual")).not.toBe("");
+    expect(html).toContain("Senha atual");
+    expect(html).toContain("A senha nova vale em todas as empresas em que você usa o portal.");
+  });
+
+  it("mostra as regras e começa com o botão desligado", () => {
+    const html = tela(<TrocarSenhaPortal {...props} usuario="11122233344" />);
+    expect(html).toContain("Pelo menos 6 caracteres");
+    expect(botaoDeEnviar(html)).toContain("disabled");
+  });
+
+  it("manda sempre a senha atual (o primeiro acesso não passa mais por aqui)", () => {
+    expect(fonte).toContain(
+      'chamarPortal("trocar_senha", { nova_senha: nova, senha_atual: atual }, token)'
+    );
+    expect(fonte).not.toContain("obrigatoria ? undefined : atual");
   });
 });

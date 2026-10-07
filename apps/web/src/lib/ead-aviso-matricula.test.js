@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
+  VALIDADE_PROVISORIA_DIAS as VALIDADE_NO_SERVIDOR,
+  statusDoVinculo,
+} from "../../../../supabase/functions/_shared/portal-credencial.ts";
+import {
   decidirAvisoAoRH,
   textoDoDialogoDeAviso,
   textoDeAtraso,
@@ -137,6 +141,28 @@ describe("textoDeAtraso", () => {
     // ainda não leva a senha nem o usuário, só orienta
     expect(t).not.toMatch(/\d{6}/);
     expect(t).toContain(url);
+  });
+
+  it("primeiro acesso pendente (T38, P3): diz que a provisória vale 7 dias, como a do servidor, e o que fazer se venceu", () => {
+    const t = textoDeAtraso({
+      nome: "Beto",
+      itens: [{ cursoNome: "X", limite: "2026-10-01" }],
+      urlPortal: url,
+      primeiroAcessoPendente: true,
+    });
+    expect(VALIDADE_NO_SERVIDOR).toBe(7);
+    expect(t).toContain(`vale por ${VALIDADE_NO_SERVIDOR} dias`);
+    expect(t).toMatch(/venceu.*fale com o RH/);
+  });
+
+  it("texto comum (T38): quem não consegue entrar é mandado ao RH, sem falar em senha provisória", () => {
+    const t = textoDeAtraso({
+      nome: "Beto",
+      itens: [{ cursoNome: "X", limite: "2026-10-01" }],
+      urlPortal: url,
+    });
+    expect(t).toMatch(/usuário \(CPF\) e a sua senha\. Se não conseguir entrar, fale com o RH\.$/);
+    expect(t).not.toMatch(/senha provisória/);
   });
 
   it("sem nome ainda cumprimenta", () => {
@@ -282,6 +308,134 @@ describe("prepararLoteDeAtrasados", () => {
     expect(r.despublicados).toBe(0);
   });
 
+  it("T38: acesso que precisa de nova senha provisória não recebe o lembrete e aparece entre os de fora", () => {
+    const r = montar(
+      [linha("m1", "f1"), linha("m2", "f2"), linha("m3", "f3")],
+      [
+        acesso("f1", { precisa_provisoria: true, primeiro_acesso_pendente: false }),
+        acesso("f2", { precisa_provisoria: false, primeiro_acesso_pendente: false }),
+        acesso("f3", { primeiro_acesso_pendente: true, precisa_provisoria: false }),
+      ]
+    );
+    expect(r.enviar.map((e) => e.funcionarioId)).toEqual(["f2", "f3"]);
+    expect(r.pulados).toEqual([
+      expect.objectContaining({ funcionarioId: "f1", motivo: "precisa_provisoria" }),
+    ]);
+  });
+
+  it("T38: a ordem dos motivos de fora: avisado hoje e desativado vêm antes; o telefone depois", () => {
+    const r = montar(
+      [
+        linha("m1", "f1"),
+        linha("m2", "f2"),
+        linha("m3", "f3", { funcionario: { id: "f3", nome_completo: "C", telefone: "" } }),
+      ],
+      [
+        acesso("f1", { precisa_provisoria: true }),
+        acesso("f2", { precisa_provisoria: true, ativo: false }),
+        acesso("f3", { precisa_provisoria: true }),
+      ],
+      { avisadosHoje: ["f1"] }
+    );
+    const motivo = (id) => r.pulados.find((p) => p.funcionarioId === id)?.motivo;
+    expect(r.enviar).toEqual([]);
+    expect(motivo("f1")).toBe("avisado_hoje");
+    expect(motivo("f2")).toBe("acesso_desativado");
+    // sem telefone E sem senha que abra: o que o RH precisa resolver primeiro é o acesso
+    expect(motivo("f3")).toBe("precisa_provisoria");
+  });
+
+  it("T38: com o status do servidor, só o 'travado' e o 'cpf_mudou' ficam de fora; o liberado e o aguardando recebem", () => {
+    const AGORA = Date.parse("2026-10-07T12:00:00Z");
+    const DIA = 86_400_000;
+    const iso = (ms) => new Date(ms).toISOString();
+    const credencial = {
+      id: "cred-1",
+      usuario: "12345678909",
+      tipo: "cpf",
+      senha_hash: "$2a$10$hash",
+      senha_geracao: 1,
+      senha_origem_empresa_id: null,
+      sessao_versao: 1,
+      tentativas: 0,
+      bloqueado_ate: null,
+    };
+    const cadastro = (funcionarioId, extra = {}) => ({
+      id: funcionarioId,
+      empresa_id: "emp-1",
+      cpf: "123.456.789-09",
+      ativo: true,
+      deleted_at: null,
+      ...extra,
+    });
+    const vinculo = (funcionarioId, extra = {}) => ({
+      funcionario_id: funcionarioId,
+      empresa_id: "emp-1",
+      credencial_id: "cred-1",
+      ativo: true,
+      sessao_versao: 1,
+      provisoria_hash: null,
+      provisoria_criada_em: null,
+      provisoria_expira_em: null,
+      geracao_liberada: 1,
+      confirmado_em: iso(AGORA - 30 * DIA),
+      ...extra,
+    });
+    const status = (v, c = cadastro(v.funcionario_id)) =>
+      statusDoVinculo({ vinculo: v, credencial, cadastro: c, agora: AGORA });
+    const acessos = [
+      // entra com a senha que já tem
+      status(vinculo("f1")),
+      // recebeu a provisória há 1 dia e ainda não entrou
+      status(
+        vinculo("f2", {
+          geracao_liberada: null,
+          provisoria_hash: "$2a$10$p",
+          provisoria_criada_em: iso(AGORA - DIA),
+          provisoria_expira_em: iso(AGORA + 6 * DIA),
+        })
+      ),
+      // a provisória venceu sem uso (o caso comum depois da P3)
+      status(
+        vinculo("f3", {
+          geracao_liberada: null,
+          provisoria_hash: "$2a$10$p",
+          provisoria_criada_em: iso(AGORA - 8 * DIA),
+          provisoria_expira_em: iso(AGORA - DIA),
+        })
+      ),
+      // a senha mudou em outra empresa (a geração subiu)
+      status(vinculo("f4", { geracao_liberada: 0 })),
+      // o CPF do cadastro mudou
+      status(vinculo("f5"), cadastro("f5", { cpf: "987.654.321-00" })),
+    ];
+    expect(acessos.map((a) => a.situacao)).toEqual([
+      "liberado",
+      "aguardando_provisoria",
+      "travado",
+      "travado",
+      "cpf_mudou",
+    ]);
+    const r = montar(
+      ["f1", "f2", "f3", "f4", "f5"].map((id) => linha(`m-${id}`, id)),
+      acessos
+    );
+    expect(r.enviar.map((e) => e.funcionarioId)).toEqual(["f1", "f2"]);
+    expect(r.enviar[0].texto).toMatch(/e a sua senha/);
+    expect(r.enviar[1].texto).toMatch(/senha provisória/);
+    expect(r.pulados.map((p) => [p.funcionarioId, p.motivo])).toEqual([
+      ["f3", "precisa_provisoria"],
+      ["f4", "precisa_provisoria"],
+      ["f5", "precisa_provisoria"],
+    ]);
+  });
+
+  it("T38: status de quem só matricula (recortado, sem os campos novos) segue como antes", () => {
+    const r = montar([linha("m1", "f1")], [acesso("f1")]);
+    expect(r.enviar).toHaveLength(1);
+    expect(r.enviar[0].primeiroAcessoPendente).toBe(false);
+  });
+
   it("os itens saem do mais antigo para o mais novo", () => {
     const r = montar(
       [
@@ -425,6 +579,7 @@ describe("rotuloDoMotivoPulado", () => {
       "acesso_desativado",
       "acesso_desconhecido",
       "avisado_hoje",
+      "precisa_provisoria",
     ]) {
       expect(rotuloDoMotivoPulado(m).length).toBeGreaterThan(5);
     }
@@ -441,6 +596,24 @@ describe("rotuloDoMotivoPulado", () => {
     );
     expect(rotuloDoMotivoPulado("sem_telefone", { podeCriarAcesso: false })).toBe(
       rotuloDoMotivoPulado("sem_telefone")
+    );
+  });
+});
+
+describe("rotuloDoMotivoPulado: precisa_provisoria (T38)", () => {
+  it("manda gerar uma nova senha provisória em Redefinir senha, na Ficha do funcionário", () => {
+    const texto = rotuloDoMotivoPulado("precisa_provisoria");
+    expect(texto).toMatch(/nova senha provisória/);
+    expect(texto).toMatch(/Redefinir senha/);
+    expect(texto).toMatch(/Ficha do funcionário/);
+  });
+
+  it("quem vê a lista mas não edita Funcionários é mandado a quem pode redefinir", () => {
+    const texto = rotuloDoMotivoPulado("precisa_provisoria", { podeCriarAcesso: false });
+    expect(texto).toMatch(/nova senha provisória/);
+    expect(texto).toMatch(/Funcionários → Editar/);
+    expect(rotuloDoMotivoPulado("precisa_provisoria", { podeCriarAcesso: true })).toBe(
+      rotuloDoMotivoPulado("precisa_provisoria")
     );
   });
 });

@@ -315,3 +315,39 @@ describe("conclusão adiada e registrada pelo sistema (A6, revisão 2)", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// T38: um login em mais de uma empresa
+// ---------------------------------------------------------------------------------------------
+
+describe("eventos do portal com um login em mais de uma empresa (T38)", () => {
+  it("a liberação pela provisória e o aviso de senha que mudou fora da empresa têm rótulo", () => {
+    expect(rotuloDoEvento("acesso_liberado")).toBe("Acesso liberado com a senha provisória");
+    expect(rotuloDoEvento("acesso_aguardando_provisoria")).toBe(
+      "Acesso passou a pedir nova senha provisória"
+    );
+    expect(tomDoEvento("acesso_aguardando_provisoria")).toBe("atencao");
+  });
+
+  it("o detalhe não diz qual empresa mexeu nem se a pessoa já tinha senha", () => {
+    expect(
+      descreverDetalhe({
+        evento: "acesso_aguardando_provisoria",
+        detalhe: { motivo: "senha_nova" },
+      })
+    ).toBe("a senha do portal mudou fora desta empresa");
+    expect(
+      descreverDetalhe({ evento: "acesso_aguardando_provisoria", detalhe: { motivo: "suporte" } })
+    ).toBe("a senha foi redefinida pelo suporte do SIGO");
+    expect(descreverDetalhe({ evento: "acesso_aguardando_provisoria", detalhe: {} })).toBe("");
+    expect(descreverDetalhe({ evento: "acesso_liberado", detalhe: null })).toBe("");
+    expect(descreverDetalhe({ evento: "login", detalhe: { via: "provisoria" } })).toBe(
+      "com a senha provisória"
+    );
+    expect(descreverDetalhe({ evento: "login", detalhe: { via: "senha" } })).toBe("");
+    // o procedimento do suporte desativa o vínculo da empresa que ocupou o CPF
+    expect(
+      descreverDetalhe({ evento: "acesso_desativado", detalhe: { por: "suporte do SIGO" } })
+    ).toBe("por suporte do SIGO");
+  });
+});

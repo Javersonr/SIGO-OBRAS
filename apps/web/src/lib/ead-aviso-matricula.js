@@ -84,9 +84,21 @@ export const LIMITE_DO_LOTE = 30;
 const ITENS_NO_TEXTO = 8;
 
 /**
+ * A senha provisória vale 7 dias (T38, P3: `VALIDADE_PROVISORIA_DIAS` do servidor; o teste confere os dois lados).
+ * Declarada aqui e não importada de `portal-funcionario-acesso.js` para esta lib continuar pura (aquele arquivo
+ * puxa o cliente do SIGO).
+ */
+const VALIDADE_PROVISORIA_DIAS = 7;
+
+/**
  * A mensagem do lembrete: os cursos atrasados com o prazo de cada um e o link do portal. Não leva senha:
  * só vai a quem já tem acesso. Quem ainda não fez o primeiro acesso (`primeiroAcessoPendente`) não tem "a sua
- * senha": a mensagem manda usar a provisória que o RH passou e criar a pessoal (A6).
+ * senha": a mensagem manda usar a provisória que o RH passou, que vale 7 dias, e criar a pessoal (A6, T38).
+ *
+ * Quem tem a provisória vencida ou perdida (`precisa_provisoria` no status) NÃO chega aqui: o lote o deixa de
+ * fora (`prepararLoteDeAtrasados`), porque nenhuma das duas frases é verdade para ele. A frase comum termina
+ * mandando falar com o RH: ela também sai quando o status veio recortado (quem só matricula não recebe o estado
+ * do acesso) e o RH não pôde saber que a senha mudou.
  * @param {{ nome: string, itens: Array<{ cursoNome: string, limite: string }>, urlPortal: string,
  *   primeiroAcessoPendente?: boolean }} p
  */
@@ -104,9 +116,10 @@ export function textoDeAtraso({ nome, itens, urlPortal, primeiroAcessoPendente =
     linhas.join("\n"),
     `Conclua o quanto antes: ${urlPortal}`,
     primeiroAcessoPendente
-      ? "Entre com o seu usuário (CPF) e a senha provisória que o RH passou; no primeiro acesso você " +
-        "cria a sua senha. Se não tiver mais a senha provisória, fale com o RH."
-      : "Entre com o seu usuário (CPF) e a sua senha.",
+      ? "Entre com o seu usuário (CPF) e a senha provisória que o RH passou (vale por " +
+        `${VALIDADE_PROVISORIA_DIAS} dias); no primeiro acesso você cria a sua senha. Se a senha provisória ` +
+        "já venceu ou você não a tem mais, fale com o RH."
+      : "Entre com o seu usuário (CPF) e a sua senha. Se não conseguir entrar, fale com o RH.",
   ].join("\n\n");
 }
 
@@ -116,6 +129,9 @@ const MOTIVO_PULADO = {
   sem_acesso:
     "Sem acesso ao portal: use o botão do WhatsApp da linha da matrícula, que cria o acesso e envia a senha",
   acesso_desativado: "Acesso ao portal desativado: reative na Ficha do funcionário",
+  precisa_provisoria:
+    "Precisa de nova senha provisória (a anterior venceu, a senha mudou ou o CPF do cadastro mudou): " +
+    "gere em Redefinir senha na Ficha do funcionário",
   acesso_desconhecido: "Não foi possível conferir o acesso ao portal",
   avisado_hoje: "Já recebeu o aviso hoje",
 };
@@ -129,11 +145,21 @@ const SEM_ACESSO_SEM_CRIAR =
   "(Ficha do funcionário)";
 
 /**
+ * Mesma ideia para o acesso que precisa de nova senha provisória (T38): quem recebe a lista completa do status
+ * (qualquer função de Funcionários) vê o estado, mas redefinir exige Funcionários → Editar.
+ */
+const PRECISA_PROVISORIA_SEM_REDEFINIR =
+  "Precisa de nova senha provisória (a anterior venceu, a senha mudou ou o CPF do cadastro mudou): peça a " +
+  "quem tem Segurança do Trabalho → Funcionários → Editar para gerar em Redefinir senha (Ficha do funcionário)";
+
+/**
  * Texto de tela do motivo de um funcionário não receber o aviso em lote. `podeCriarAcesso` (padrão true) = quem vê a
- * tela pode criar o acesso ao portal; sem isso, o "sem acesso" manda procurar quem pode.
+ * tela pode criar o acesso ao portal (e redefinir a senha); sem isso, o "sem acesso" e o "precisa de nova senha
+ * provisória" mandam procurar quem pode.
  */
 export function rotuloDoMotivoPulado(motivo, { podeCriarAcesso = true } = {}) {
   if (motivo === "sem_acesso" && !podeCriarAcesso) return SEM_ACESSO_SEM_CRIAR;
+  if (motivo === "precisa_provisoria" && !podeCriarAcesso) return PRECISA_PROVISORIA_SEM_REDEFINIR;
   return MOTIVO_PULADO[motivo] ?? "Não foi possível avisar";
 }
 
@@ -149,7 +175,8 @@ export function dicaDoAvisoDaLinha({ inativo, podeCriarAcesso }) {
 /**
  * Separa quem recebe o lembrete de quem fica de fora. `linhas` são as linhas da tabela
  * (`montarLinhas`); só entram as `atrasada`. `acessos` = a lista de `funcionarioAcesso.status`
- * (`funcionario_id`, `ativo`, `bloqueado`), ou null se não deu para consultar (ninguém é enviado).
+ * (`funcionario_id`, `ativo`, `bloqueado`, `primeiro_acesso_pendente`, `precisa_provisoria`), ou null se não
+ * deu para consultar (ninguém é enviado). Quem só matricula recebe a lista recortada (`funcionario_id` e `ativo`).
  * Quem tem acesso bloqueado por erro de senha ainda recebe: o bloqueio passa sozinho. `avisadosHoje` são os
  * ids de quem já recebeu o lembrete hoje (uma rodada anterior): ficam de fora para ninguém receber duas vezes.
  *
@@ -157,6 +184,11 @@ export function dicaDoAvisoDaLinha({ inativo, podeCriarAcesso }) {
  * lembrete não pode cobrá-lo; `despublicados` conta as matrículas atrasadas ignoradas por isso, e quem só
  * tem atraso nelas não recebe nem aparece em `pulados`. Quem ainda não fez o primeiro acesso recebe o texto
  * da senha provisória, não "a sua senha" (`textoDeAtraso`).
+ *
+ * T38: acesso com `precisa_provisoria` (a provisória venceu sem uso, a senha mudou em outra empresa ou o CPF do
+ * cadastro mudou) fica de fora com o motivo `precisa_provisoria`. Nenhum texto do lembrete serve a ele: não
+ * há senha que abra esta empresa, e cada tentativa errada conta no bloqueio da pessoa em todas as empresas.
+ * O RH vê o caso entre os que ficaram de fora e gera a nova provisória (Redefinir senha na Ficha).
  * @returns {{
  *   enviar: Array<{ funcionarioId: string, nome: string, telefone: string, numero: string,
  *                   itens: Array<{ cursoNome: string, limite: string, diasDeAtraso: number }>, texto: string,
@@ -212,6 +244,7 @@ export function prepararLoteDeAtrasados({
     else if (!acessoDe) pular("acesso_desconhecido");
     else if (!acesso) pular("sem_acesso");
     else if (acesso.ativo === false) pular("acesso_desativado");
+    else if (acesso.precisa_provisoria === true) pular("precisa_provisoria");
     else if (!digitosTelefone(telefone)) pular("sem_telefone");
     else if (!telefoneValido(telefone)) pular("telefone_invalido");
     else {

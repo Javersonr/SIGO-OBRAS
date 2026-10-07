@@ -1,6 +1,7 @@
 # Portal do Funcionário em mais de uma empresa: um login (CPF e senha) e a escolha da empresa
 
-- **Data:** 07/10/2026. **Status:** proposta, aguardando o OK do Javerson. Nada é implementado antes do OK.
+- **Data:** 07/10/2026. **Status:** aprovado pelo Javerson em 07/10/2026, com todas as recomendações da §11 (P1 a
+  P12). Implementado na branch `feat/portal-treinamento` (migrações `0145` e `0146`, `_shared/portal-credencial.ts`).
 - **Tarefa:** T38 do `docs/HANDOFF-PORTAL-TREINAMENTO.md` (M9).
 - **Decisão D16 (Javerson, 06/10/2026):** não criar acessos separados por empresa. O funcionário usa o **mesmo login
   (CPF e senha)** e, se tem cadastro em mais de uma empresa, **escolhe a empresa ao entrar**. Este spec detalha como.
@@ -411,9 +412,9 @@ não há número de empresas esperando liberação (§4.3, defesa 3). Com uma ou
 de empresa", que chama `empresas` (a lista das liberadas) e `trocar_empresa { funcionario_id }`. Sem pedir a senha de
 novo (a sessão já provou), o servidor devolve o token da outra empresa e grava `login` com `via: "senha"` na trilha
 dela, igual ao de quem entrou com a senha (§7: a trilha de uma empresa não diz que a pessoa veio de outra). O token novo
-**vence junto com o de origem** (o `exp` é o do token
-de origem, e o ttl passado a `signPortalToken` é o que sobra): alternar entre empresas não renova a sessão para sempre,
-e passadas as 12 h do login a pessoa entra de novo com a senha. A sessão da empresa de origem vale até sair ou vencer.
+**vence junto com o de origem** (o `exp` é o do token de origem, e o ttl passado a `signPortalToken` é o que sobra):
+alternar entre empresas não renova a sessão para sempre, e passadas as 12 h do login a pessoa entra de novo com a
+senha. A sessão da empresa de origem vale até sair ou vencer.
 
 ### 5.5 Relógio do progresso e limites, por pessoa
 
@@ -595,9 +596,8 @@ Regras em módulo puro, com `node:test`. `supabase/functions/_shared/portal-cred
   só vínculo com `confirmado_em`; o hash inutilizável do operador conta como "com senha", então um vínculo sem
   `confirmado_em` não cria senha nova nele, e o da empresa conferida cria), `exigeTrocaNaAtivacao` (caso 2:
   `senha_origem_empresa_id` de outra empresa exige a troca, inclusive depois de um `trocar_senha` na empresa de origem;
-  nulo ou da mesma empresa não exige) e
-  `origemDepoisDaTroca` (`trocar_senha` e a troca da `ativar` na própria empresa de origem mantêm a origem; só a troca
-  da `ativar` em outra empresa a zera; origem nula continua nula);
+  nulo ou da mesma empresa não exige) e `origemDepoisDaTroca` (`trocar_senha` e a troca da `ativar` na própria empresa
+  de origem mantêm a origem; só a troca da `ativar` em outra empresa a zera; origem nula continua nula);
 - `decidirCriarVinculo` (liga, cria, `OUTRO_CADASTRO_COM_ACESSO` ao criar e ao reativar, `USUARIO_EM_USO`; o teste
   confere que a resposta do `criar` tem as mesmas chaves com e sem credencial em outra empresa).
 

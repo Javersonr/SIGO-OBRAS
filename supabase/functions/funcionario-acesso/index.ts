@@ -39,6 +39,18 @@
  *
  * A senha provisória volta UMA vez (para o RH entregar); no primeiro acesso o
  * funcionário cria a própria senha, que ninguém do RH conhece.
+ *
+ * T38 (um login em mais de uma empresa; spec docs/superpowers/specs/2026-10-07-portal-varias-empresas-design.md):
+ * a senha é da PESSOA (`portal_credencial`) e cada cadastro tem o seu VÍNCULO (`funcionario_portal_acesso`). O RH só
+ * mexe no vínculo da empresa dele:
+ *   - criar: com CPF no cadastro o usuário é SEMPRE o CPF (dígitos verificadores certos; o `usuario` do corpo é
+ *     ignorado); a credencial do CPF, de qualquer empresa, é ligada ao cadastro, e a resposta é a mesma exista ela ou
+ *     não. 409: `JA_TEM_ACESSO` (este cadastro), `OUTRO_CADASTRO_COM_ACESSO` (outro cadastro ativo da pessoa NESTA
+ *     empresa), `USUARIO_EM_USO` (usuário com letras já usado). Nenhum diz nada de outra empresa;
+ *   - redefinir: provisória nova do vínculo (vence em 7 dias), a senha atual deixa de abrir esta empresa e as sessões
+ *     dela caem; não mexe na senha pessoal nem no bloqueio (é da pessoa); religa ao CPF novo quando o CPF mudou;
+ *   - ativo: só o vínculo desta empresa; reativar recusa `OUTRO_CADASTRO_COM_ACESSO`;
+ *   - status: só os vínculos da empresa, com a situação (`statusDoVinculo`); "Bloqueado" só em vínculo liberado.
  */
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
@@ -49,10 +61,29 @@ import {
   EVENTO_CERTIFICADO_REVOGADO,
   EVENTO_DUVIDA_RESPOSTA_EDITADA,
   EVENTO_TENTATIVA_LIBERADA,
-  normalizarUsuario,
   gerarSenhaProvisoria,
   registrarEvento,
 } from "../_shared/portal-funcionario.ts";
+import {
+  COLUNAS_CADASTRO,
+  COLUNAS_CREDENCIAL,
+  COLUNAS_VINCULO,
+  alvoDaRedefinicao,
+  conflitoDeOutroCadastro,
+  decidirCriarVinculo,
+  efeitoDaRedefinicao,
+  montarItens,
+  provisoriaNova,
+  respostaDoCriar,
+  statusDoVinculo,
+  usuarioDoAcesso,
+  lerEmLotes,
+  type CadastroDoPortal,
+  type CredencialDoPortal,
+  type ItemDoVinculo,
+  type Recusa,
+  type VinculoDoPortal,
+} from "../_shared/portal-credencial.ts";
 import { CanalNaoConfiguradoError, enviarWhatsAppTexto } from "../_shared/whatsapp-envio.ts";
 import {
   ACOES_DE_MATRICULA,
@@ -103,6 +134,96 @@ interface Body {
 }
 
 type Staff = { email: string; is_super_admin: boolean; empresa_id: string | null };
+
+/**
+ * A credencial de um usuário (o CPF ou o usuário com letras) e se ela é ÓRFÃ (nenhum vínculo e sem senha: sobra de
+ * um `criar` cujo vínculo falhou ao gravar; as funções não apagam linha alguma, então ela é reaproveitada). Saber se
+ * há vínculo em qualquer empresa só serve a essa decisão: a resposta ao RH é a mesma. Erro de leitura lança.
+ */
+async function credencialDoUsuario(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  usuario: string
+): Promise<{ id: string; tipo: "cpf" | "manual"; orfa: boolean } | null> {
+  const { data, error } = await supabase
+    .from("portal_credencial")
+    .select("id, tipo, senha_hash")
+    .eq("usuario", usuario)
+    .maybeSingle();
+  if (error) throw new Error("credencial: " + error.message);
+  if (!data) return null;
+  const { data: vinculos, error: erroVinculos } = await supabase
+    .from("funcionario_portal_acesso")
+    .select("funcionario_id")
+    .eq("credencial_id", data.id)
+    .limit(1);
+  if (erroVinculos) throw new Error("vínculos da credencial: " + erroVinculos.message);
+  return { id: data.id, tipo: data.tipo, orfa: !data.senha_hash && !(vinculos ?? []).length };
+}
+
+/**
+ * Os vínculos de uma credencial (a pessoa) NA empresa do RH, com o cadastro de cada um: a regra do outro cadastro da
+ * mesma pessoa na mesma empresa (§3.3 do spec da T38). Nunca lê vínculo de outra empresa. Erro de leitura lança.
+ */
+async function vinculosDaCredencialNaEmpresa(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  credencialId: string,
+  empresaId: string
+): Promise<ItemDoVinculo[]> {
+  const { data: vinculos, error } = await supabase
+    .from("funcionario_portal_acesso")
+    .select(COLUNAS_VINCULO)
+    .eq("credencial_id", credencialId)
+    .eq("empresa_id", empresaId);
+  if (error) throw new Error("vínculos da pessoa: " + error.message);
+  const ids = (vinculos ?? []).map((v: VinculoDoPortal) => v.funcionario_id);
+  if (!ids.length) return [];
+  // sem filtro de deleted_at: o cadastro apagado conta como inativo (readmissão)
+  const { data: cadastros, error: erroCadastros } = await supabase
+    .from("funcionario")
+    .select(COLUNAS_CADASTRO)
+    .in("id", ids)
+    .eq("empresa_id", empresaId);
+  if (erroCadastros) throw new Error("cadastros da pessoa: " + erroCadastros.message);
+  return montarItens(vinculos, cadastros);
+}
+
+/**
+ * Readmissão (§3.3): desativa o vínculo dos outros cadastros (inativos ou apagados) da pessoa nesta empresa, derruba
+ * as sessões deles e grava `acesso_desativado` na trilha de cada um. Erro lança (o chamador responde 500).
+ */
+async function desativarOutrosCadastros(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  req: Request,
+  staff: Staff,
+  empresaId: string,
+  funcionarioIds: string[]
+) {
+  for (const funcionarioId of funcionarioIds) {
+    const { data: v, error } = await supabase
+      .from("funcionario_portal_acesso")
+      .select("sessao_versao")
+      .eq("funcionario_id", funcionarioId)
+      .eq("empresa_id", empresaId)
+      .maybeSingle();
+    if (error) throw new Error("vínculo antigo: " + error.message);
+    if (!v) continue;
+    const { error: erroUpdate } = await supabase
+      .from("funcionario_portal_acesso")
+      .update({ ativo: false, sessao_versao: v.sessao_versao + 1 })
+      .eq("funcionario_id", funcionarioId)
+      .eq("empresa_id", empresaId);
+    if (erroUpdate) throw new Error("desativar o vínculo antigo: " + erroUpdate.message);
+    await registrarEvento(supabase, req, {
+      empresa_id: empresaId,
+      funcionario_id: funcionarioId,
+      evento: "acesso_desativado",
+      detalhe: { por: staff.email, motivo: "outro_cadastro" },
+    });
+  }
+}
 
 /**
  * Vínculo ATIVO do chamador na empresa da sessão (e-mail do usuário do JWT +
@@ -545,20 +666,45 @@ Deno.serve(
       const empresaId =
         staff.is_super_admin && body.empresa_id ? body.empresa_id : staff.empresa_id;
       if (!empresaId) return fail("Sessão sem empresa ativa", 400);
-      const { data, error } = await supabase
+      // Só os vínculos da empresa (T38). A credencial de cada um é lida pelo id que o vínculo DESTA empresa aponta
+      // (nunca por CPF nem em lista aberta), e só para calcular a situação e mostrar o usuário.
+      const { data: vinculos, error } = await supabase
         .from("funcionario_portal_acesso")
-        .select("funcionario_id, usuario, ativo, senha_provisoria, bloqueado_ate, ultimo_acesso")
+        .select(COLUNAS_VINCULO)
         .eq("empresa_id", empresaId);
       if (error) return fail("Erro ao carregar acessos", 500);
+      const idsDasCredenciais = [
+        ...new Set((vinculos ?? []).map((v: VinculoDoPortal) => v.credencial_id).filter(Boolean)),
+      ];
+      const idsDosCadastros = (vinculos ?? []).map((v: VinculoDoPortal) => v.funcionario_id);
+      // em lotes: a lista é de um vínculo por funcionário da empresa, e o filtro in(...) vai na URL
+      const [
+        { data: credenciais, error: erroCredenciais },
+        { data: cadastros, error: erroCadastros },
+      ] = await Promise.all([
+        lerEmLotes<CredencialDoPortal>(idsDasCredenciais as string[], (lote) =>
+          supabase.from("portal_credencial").select(COLUNAS_CREDENCIAL).in("id", lote)
+        ),
+        lerEmLotes<CadastroDoPortal>(idsDosCadastros, (lote) =>
+          supabase
+            .from("funcionario")
+            .select(COLUNAS_CADASTRO)
+            .in("id", lote)
+            .eq("empresa_id", empresaId)
+        ),
+      ]);
+      if (erroCredenciais || erroCadastros) return fail("Erro ao carregar acessos", 500);
       const agora = Date.now();
-      const acessos = (data ?? []).map((a) => ({
-        funcionario_id: a.funcionario_id,
-        usuario: a.usuario,
-        ativo: a.ativo,
-        primeiro_acesso_pendente: a.senha_provisoria,
-        bloqueado: !!a.bloqueado_ate && Date.parse(a.bloqueado_ate) > agora,
-        ultimo_acesso: a.ultimo_acesso,
-      }));
+      const credencialPorId = new Map(credenciais.map((c) => [c.id, c]));
+      const acessos = montarItens(vinculos, cadastros).map(({ vinculo, cadastro }) =>
+        statusDoVinculo({
+          vinculo,
+          cadastro,
+          credencial:
+            (vinculo.credencial_id ? credencialPorId.get(vinculo.credencial_id) : null) ?? null,
+          agora,
+        })
+      );
       // quem entra só por Treinamentos EAD → Matricular não recebe login (CPF) nem último acesso
       return ok({ acessos: recortarAcessosParaEad(acessos, pode.listaCompleta) });
     }
@@ -601,7 +747,7 @@ Deno.serve(
     if (!body.funcionario_id) return fail("funcionario_id é obrigatório", 400);
     const { data: func } = await supabase
       .from("funcionario")
-      .select("id, empresa_id, cpf, nome_completo")
+      .select("id, empresa_id, cpf, nome_completo, ativo, deleted_at, data_admissao")
       .eq("id", body.funcionario_id)
       .is("deleted_at", null)
       .maybeSingle();
@@ -611,7 +757,7 @@ Deno.serve(
     }
     const { data: atual } = await supabase
       .from("funcionario_portal_acesso")
-      .select("usuario, sessao_versao, ativo")
+      .select(COLUNAS_VINCULO)
       .eq("funcionario_id", func.id)
       .maybeSingle();
     const evento = (nome: string) =>
@@ -621,6 +767,19 @@ Deno.serve(
         evento: nome,
         detalhe: { por: staff.email },
       });
+    const recusar = (r: Recusa) => fail(r.mensagem, r.status, { codigo: r.codigo });
+    // 23505 do vínculo: o próprio cadastro ganhou acesso agora há pouco (chave do funcionário) ou outro cadastro da
+    // pessoa nesta empresa ficou ativo antes (índice "um vínculo ativo por pessoa e empresa", 0145)
+    const conflitoDoVinculo = (mensagem: unknown) =>
+      String(mensagem ?? "").includes("funcionario_portal_acesso_pkey")
+        ? fail("Este funcionário já tem acesso — use Redefinir senha", 409, {
+            codigo: "JA_TEM_ACESSO",
+          })
+        : fail(
+            "Outro cadastro desta pessoa nesta empresa já tem acesso ao portal. Atualize a tela e confira.",
+            409,
+            { codigo: "OUTRO_CADASTRO_COM_ACESSO" }
+          );
 
     if (body.acao === "criar") {
       // A ordem "409 antes do 403" é a de decidirCriar (regras.ts, sob teste): quem só matricula recebe o 409
@@ -633,64 +792,183 @@ Deno.serve(
         });
       }
       if (decisao === "sem_permissao") return fail(MENSAGEM_SEM_EDICAO.criar, 403);
-      const usuario = normalizarUsuario(body.usuario || func.cpf || "");
-      if (!usuario) {
-        return fail("Funcionário sem CPF cadastrado — informe um usuário", 400);
+      // T38: com CPF no cadastro o usuário é SEMPRE o CPF, com os dígitos verificadores certos (o `usuario` do corpo
+      // é ignorado); sem CPF, um usuário com letras. A credencial do CPF, de qualquer empresa, é LIGADA ao cadastro
+      // novo, e a resposta é a mesma exista ela ou não (o RH não fica sabendo se a pessoa já usa o portal).
+      const usuario = usuarioDoAcesso({ cpf: func.cpf, usuarioInformado: body.usuario });
+      if (!usuario.ok) return recusar(usuario);
+      let existente: Awaited<ReturnType<typeof credencialDoUsuario>> = null;
+      let plano;
+      try {
+        existente = await credencialDoUsuario(supabase, usuario.usuario);
+        plano = decidirCriarVinculo({
+          funcionarioId: func.id,
+          usuario,
+          credencialExistente: existente,
+          outrosNaEmpresa: existente
+            ? await vinculosDaCredencialNaEmpresa(supabase, existente.id, func.empresa_id)
+            : [],
+        });
+      } catch (e) {
+        console.error("[funcionario-acesso] criar:", (e as Error).message);
+        return fail("Erro ao criar acesso", 500);
       }
-      if (/^\d+$/.test(usuario) && usuario.length !== 11) {
-        return fail(
-          "CPF do funcionário incompleto — corrija o cadastro ou informe outro usuário",
-          400
-        );
+      if (!plano.ok) return recusar(plano);
+      let credencialId: string = existente?.id ?? "";
+      if (!credencialId) {
+        const { data: nova, error: erroNova } = await supabase
+          .from("portal_credencial")
+          .insert({ usuario: usuario.usuario, tipo: usuario.tipo })
+          .select("id")
+          .single();
+        if (erroNova || !nova) {
+          if (erroNova?.code === "23505") {
+            return fail(
+              "O acesso foi criado agora há pouco por outro pedido. Atualize a tela.",
+              409,
+              {
+                codigo: "CONFLITO",
+              }
+            );
+          }
+          console.error("[funcionario-acesso] criar credencial:", erroNova);
+          return fail("Erro ao criar acesso", 500);
+        }
+        credencialId = nova.id;
+      }
+      // (se algo abaixo falhar, a credencial recém-criada fica órfã e o próximo "criar" a reaproveita)
+      try {
+        await desativarOutrosCadastros(supabase, req, staff, func.empresa_id, plano.desativar);
+      } catch (e) {
+        console.error("[funcionario-acesso] criar (readmissão):", (e as Error).message);
+        return fail("Erro ao criar acesso", 500);
       }
       const senha = gerarSenhaProvisoria();
       const { error } = await supabase.from("funcionario_portal_acesso").insert({
         funcionario_id: func.id,
         empresa_id: func.empresa_id,
-        usuario,
-        senha_hash: await hashPassword(senha),
-        senha_provisoria: true,
+        credencial_id: credencialId,
         ativo: true,
         criado_por: staff.email,
+        provisoria_hash: await hashPassword(senha),
+        ...provisoriaNova(Date.now()),
+        geracao_liberada: null,
+        confirmado_em: null,
       });
       if (error) {
-        if (error.code === "23505") {
-          return fail(`O usuário "${usuario}" já está em uso — informe outro`, 409);
-        }
+        if (error.code === "23505") return conflitoDoVinculo(error.message);
         console.error("[funcionario-acesso] criar:", error);
         return fail("Erro ao criar acesso", 500);
       }
       await evento("acesso_criado");
-      return ok({ usuario, senha_provisoria: senha, url_path: "/PortalFuncionario" });
+      return ok(respostaDoCriar({ usuario: usuario.usuario, senha }));
     }
 
     if (!atual) return fail("Este funcionário ainda não tem acesso ao portal", 404);
     if (!pode.age) return fail(MENSAGEM_SEM_EDICAO[acao], 403); // redefinir / ativo
 
     if (body.acao === "redefinir") {
+      // Nova provisória do vínculo (7 dias); a senha atual deixa de abrir esta empresa e as sessões dela caem. Não
+      // mexe na senha pessoal, na geração nem no bloqueio (é da pessoa: o RH de uma empresa não desbloqueia as
+      // outras). Com o CPF corrigido (caso 7) ou cadastrado depois (R9), religa o vínculo à credencial do CPF.
+      const { data: credencialAtual, error: erroCredencial } = atual.credencial_id
+        ? await supabase
+            .from("portal_credencial")
+            .select(COLUNAS_CREDENCIAL)
+            .eq("id", atual.credencial_id)
+            .maybeSingle()
+        : { data: null, error: null };
+      if (erroCredencial) return fail("Erro ao redefinir senha", 500);
+      const alvo = alvoDaRedefinicao({ cadastro: func, credencialAtual: credencialAtual ?? null });
+      if (!alvo.ok) return recusar(alvo);
+      let credencialId: string = atual.credencial_id ?? "";
+      let usuarioFinal: string = credencialAtual?.usuario ?? "";
+      let religarPara: string | null = null;
+      let desativar: string[] = [];
+      try {
+        if (alvo.religar) {
+          const existente = await credencialDoUsuario(supabase, alvo.usuario);
+          const plano = decidirCriarVinculo({
+            funcionarioId: func.id,
+            usuario: { usuario: alvo.usuario, tipo: alvo.tipo },
+            credencialExistente: existente,
+            outrosNaEmpresa: existente
+              ? await vinculosDaCredencialNaEmpresa(supabase, existente.id, func.empresa_id)
+              : [],
+          });
+          if (!plano.ok) return recusar(plano);
+          desativar = plano.desativar;
+          if (existente) {
+            credencialId = existente.id;
+          } else {
+            const { data: nova, error: erroNova } = await supabase
+              .from("portal_credencial")
+              .insert({ usuario: alvo.usuario, tipo: alvo.tipo })
+              .select("id")
+              .single();
+            if (erroNova || !nova) throw new Error("credencial nova: " + erroNova?.message);
+            credencialId = nova.id;
+          }
+          religarPara = credencialId;
+          usuarioFinal = alvo.usuario;
+        } else {
+          const outro = conflitoDeOutroCadastro({
+            funcionarioId: func.id,
+            outrosNaEmpresa: await vinculosDaCredencialNaEmpresa(
+              supabase,
+              credencialId,
+              func.empresa_id
+            ),
+          });
+          if (!outro.ok) return recusar(outro);
+          desativar = outro.desativar;
+        }
+        await desativarOutrosCadastros(supabase, req, staff, func.empresa_id, desativar);
+      } catch (e) {
+        console.error("[funcionario-acesso] redefinir:", (e as Error).message);
+        return fail("Erro ao redefinir senha", 500);
+      }
       const senha = gerarSenhaProvisoria();
       const { error } = await supabase
         .from("funcionario_portal_acesso")
-        .update({
-          senha_hash: await hashPassword(senha),
-          senha_provisoria: true,
-          ativo: true,
-          tentativas: 0,
-          bloqueado_ate: null,
-          sessao_versao: atual.sessao_versao + 1,
-        })
+        .update(
+          efeitoDaRedefinicao({
+            vinculo: atual,
+            provisoriaHash: await hashPassword(senha),
+            agora: Date.now(),
+            religarPara,
+          })
+        )
         .eq("funcionario_id", func.id);
-      if (error) return fail("Erro ao redefinir senha", 500);
+      if (error) {
+        if (error.code === "23505") return conflitoDoVinculo(error.message);
+        return fail("Erro ao redefinir senha", 500);
+      }
       await evento("senha_redefinida");
-      return ok({
-        usuario: atual.usuario,
-        senha_provisoria: senha,
-        url_path: "/PortalFuncionario",
-      });
+      return ok(respostaDoCriar({ usuario: usuarioFinal, senha }));
     }
 
     if (body.acao === "ativo") {
       const ativo = body.ativo === true;
+      // reativar: a pessoa não pode ter dois vínculos ativos na mesma empresa (outro cadastro ativo = 409; o de
+      // cadastro inativo é desativado, como na readmissão)
+      if (ativo && !atual.ativo && atual.credencial_id) {
+        try {
+          const outro = conflitoDeOutroCadastro({
+            funcionarioId: func.id,
+            outrosNaEmpresa: await vinculosDaCredencialNaEmpresa(
+              supabase,
+              atual.credencial_id,
+              func.empresa_id
+            ),
+          });
+          if (!outro.ok) return recusar(outro);
+          await desativarOutrosCadastros(supabase, req, staff, func.empresa_id, outro.desativar);
+        } catch (e) {
+          console.error("[funcionario-acesso] reativar:", (e as Error).message);
+          return fail("Erro ao alterar acesso", 500);
+        }
+      }
       const { error } = await supabase
         .from("funcionario_portal_acesso")
         .update({
@@ -699,7 +977,10 @@ Deno.serve(
           sessao_versao: ativo ? atual.sessao_versao : atual.sessao_versao + 1,
         })
         .eq("funcionario_id", func.id);
-      if (error) return fail("Erro ao alterar acesso", 500);
+      if (error) {
+        if (error.code === "23505") return conflitoDoVinculo(error.message);
+        return fail("Erro ao alterar acesso", 500);
+      }
       await evento(ativo ? "acesso_reativado" : "acesso_desativado");
       return ok({ ativo });
     }

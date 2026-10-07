@@ -157,17 +157,38 @@ export function avisoDaRevogacao(resposta) {
 
 const primeiroNome = (nome) => (nome || "").trim().split(/\s+/)[0] || "";
 
+/** A senha provisória vence em 7 dias (T38, P3; `VALIDADE_PROVISORIA_DIAS` do servidor). */
+export const VALIDADE_PROVISORIA_DIAS = 7;
+
+/**
+ * T38 (um login em mais de uma empresa): quem já usa o portal em outra empresa entra com a provisória desta e digita
+ * a senha que já usa. A linha vai em toda mensagem que leva uma senha provisória.
+ */
+export const LINHA_JA_USO_O_PORTAL =
+  'Se você já usa o portal em outra empresa, entre com o CPF e esta senha provisória, toque em "Já uso o portal ' +
+  'em outra empresa" e digite a senha que você já usa.';
+
+const linhaDaProvisoria = (senha) =>
+  `Senha provisória: ${senha} (vale por ${VALIDADE_PROVISORIA_DIAS} dias)`;
+
 export function textoCredenciais({ nome, usuario, senha }) {
   return (
     `🔐 Olá, ${primeiroNome(nome)}! Este é o seu acesso ao Portal do Funcionário:\n${urlPortal()}\n\n` +
-    `Usuário: ${usuario}\nSenha provisória: ${senha}\n\n` +
-    "No primeiro acesso você vai criar a sua senha pessoal. Não compartilhe sua senha com ninguém."
+    `Usuário: ${usuario}\n${linhaDaProvisoria(senha)}\n\n` +
+    "No primeiro acesso você vai criar a sua senha pessoal. Não compartilhe sua senha com ninguém.\n\n" +
+    LINHA_JA_USO_O_PORTAL
   );
 }
 
 /**
  * Manda um aviso com o link do portal. Se o funcionário ainda não tem acesso,
  * cria agora e junta usuário e senha provisória na mesma mensagem.
+ *
+ * Limitação (T38): com o acesso já existente (409 `JA_TEM_ACESSO`) esta função NÃO sabe o estado dele. A provisória
+ * dura 7 dias, então o acesso pode já "precisar de nova senha provisória" (`precisa_provisoria` do `status`), e a
+ * mensagem "Entre com o seu usuário (CPF) e a sua senha" não vale para quem nunca criou a senha. Por isso a frase
+ * termina mandando falar com o RH. O lembrete em lote (`prepararLoteDeAtrasados`) tem o estado em mãos e pula
+ * esses casos; consultar o `status` da empresa inteira a cada aviso individual seria caro demais.
  * @returns {{ via: "evolution"|"wa.me"|null, texto: string, credenciais: object|null }}
  */
 export async function avisarNoPortal(funcionario, aviso) {
@@ -180,20 +201,37 @@ export async function avisarNoPortal(funcionario, aviso) {
   const partes = [aviso, `Acesse: ${urlPortal()}`];
   partes.push(
     credenciais
-      ? `Usuário: ${credenciais.usuario}\nSenha provisória: ${credenciais.senha_provisoria}\n` +
-          "(no primeiro acesso você cria a sua senha pessoal)"
-      : "Entre com o seu usuário (CPF) e a sua senha."
+      ? `Usuário: ${credenciais.usuario}\n${linhaDaProvisoria(credenciais.senha_provisoria)}\n` +
+          "(no primeiro acesso você cria a sua senha pessoal)\n\n" +
+          LINHA_JA_USO_O_PORTAL
+      : "Entre com o seu usuário (CPF) e a sua senha. Se não conseguir entrar, fale com o RH."
   );
   const texto = partes.join("\n\n");
   const via = funcionario.telefone ? await dispararWhatsApp(funcionario.telefone, texto) : null;
   return { via, texto, credenciais };
 }
 
-/** Rótulo e cor do status do acesso (lista de funcionários e ficha). */
+/** O que fazer quando o acesso pede nova senha provisória (T38). */
+export const DICA_PRECISA_PROVISORIA =
+  "A senha do portal mudou ou o CPF do cadastro mudou. Gere uma senha provisória em Redefinir senha e " +
+  "entregue ao funcionário.";
+
+/**
+ * Rótulo e cor do status do acesso (lista de funcionários e ficha). T38: "Precisa de nova senha provisória" quando o
+ * servidor diz `precisa_provisoria` (a senha foi criada com a provisória de outra empresa, a provisória desta venceu
+ * sem uso, ou o CPF do cadastro mudou), com a `dica`. O servidor só manda `bloqueado` em acesso liberado, e nada
+ * aqui diz se a provisória pode ou não criar senha nova (isso revelaria se a pessoa já tem senha).
+ */
 export function statusAcesso(acesso) {
   if (!acesso) return { rotulo: "Sem acesso", classe: "text-slate-500 border-slate-200" };
   if (!acesso.ativo)
     return { rotulo: "Desativado", classe: "bg-slate-100 text-slate-600 border-slate-300" };
+  if (acesso.precisa_provisoria)
+    return {
+      rotulo: "Precisa de nova senha provisória",
+      classe: "bg-orange-100 text-orange-700 border-orange-200",
+      dica: DICA_PRECISA_PROVISORIA,
+    };
   if (acesso.bloqueado)
     return { rotulo: "Bloqueado", classe: "bg-red-100 text-red-700 border-red-200" };
   if (acesso.primeiro_acesso_pendente)

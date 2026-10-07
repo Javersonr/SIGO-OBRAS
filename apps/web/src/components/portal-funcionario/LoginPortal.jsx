@@ -3,7 +3,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { HardHat, Loader2, Eye, EyeOff, KeyRound, Check, Circle } from "lucide-react";
+import {
+  HardHat,
+  Loader2,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Check,
+  Circle,
+  Building2,
+  ChevronRight,
+} from "lucide-react";
 import { chamarPortal } from "./api";
 import {
   avisoDeSenhaLonga,
@@ -13,6 +23,14 @@ import {
   regrasDaSenha,
   senhaNovaIgualAtual,
 } from "@/lib/portal-senha";
+import {
+  TEXTOS_DO_LOGIN,
+  passoDaAtivacao,
+  passoDoLogin,
+  pedidoDaAtivacao,
+  podeEnviarAtivacao,
+  reacaoAoErroDaAtivacao,
+} from "@/lib/portal-login";
 
 function Moldura({ titulo, subtitulo, children }) {
   return (
@@ -86,26 +104,308 @@ function RegrasDaSenha({ regras }) {
   );
 }
 
+/**
+ * A senha nova e a confirmação, com as regras (T27). `atual` (quando há) serve para avisar "diferente da atual".
+ * Usado na criação da senha, na troca obrigatória da 2ª empresa e na troca voluntária.
+ */
+function CamposDaSenhaNova({ nova, setNova, confirma, setConfirma, usuario, atual }) {
+  return (
+    <>
+      <div className="space-y-2">
+        <CampoSenha
+          id="senha-nova"
+          rotulo="Nova senha"
+          valor={nova}
+          onChange={setNova}
+          autoComplete="new-password"
+        />
+        {/* sem `maxLength`: o campo cortaria a senha colada em silêncio; o aviso e a regra de tamanho
+            dizem o que houve (T27) */}
+        {avisoDeSenhaLonga(nova) && (
+          <p role="alert" className="text-xs text-red-600">
+            {avisoDeSenhaLonga(nova)}
+          </p>
+        )}
+        <RegrasDaSenha regras={regrasDaSenha(nova, usuario)} />
+        {atual && senhaNovaIgualAtual(nova, atual) && (
+          <p className="text-xs text-amber-700">Escolha uma senha diferente da atual</p>
+        )}
+      </div>
+      <div className="space-y-1">
+        <CampoSenha
+          id="senha-confirma"
+          rotulo="Repita a nova senha"
+          valor={confirma}
+          onChange={setConfirma}
+          autoComplete="new-password"
+        />
+        {/* o aviso fica sob o campo que passou do limite: a confirmação colada com 80 caracteres
+            não pode acusar o campo "Nova senha" (A5) */}
+        {avisoDeSenhaLonga(confirma) && (
+          <p role="alert" className="text-xs text-red-600">
+            {avisoDeSenhaLonga(confirma)}
+          </p>
+        )}
+        {confirmacaoDivergiu(nova, confirma) && (
+          <p className="text-xs text-amber-700">As duas senhas não são iguais</p>
+        )}
+      </div>
+    </>
+  );
+}
+
+/**
+ * Lista de empresas para escolher (no login com duas ou mais empresas liberadas e no "Trocar de empresa"): um botão
+ * por empresa, com logo e nome. `id` é o cadastro do funcionário naquela empresa.
+ */
+export function ListaDeEmpresas({ empresas, onEscolher, ocupado }) {
+  return (
+    <div className="space-y-2" role="list" aria-label="Empresas">
+      {empresas.map((e) => (
+        <button
+          key={e.id}
+          type="button"
+          role="listitem"
+          onClick={() => onEscolher(e)}
+          disabled={!!ocupado}
+          className="w-full flex items-center gap-3 rounded-lg border bg-white p-3 text-left hover:bg-slate-50 disabled:opacity-60"
+        >
+          {e.logo_url ? (
+            <img
+              src={e.logo_url}
+              alt=""
+              className="w-10 h-10 rounded-md object-contain bg-white border"
+            />
+          ) : (
+            <span className="w-10 h-10 rounded-md bg-slate-100 flex items-center justify-center text-slate-500">
+              <Building2 className="w-5 h-5" />
+            </span>
+          )}
+          <span className="flex-1 font-medium text-slate-800">{e.nome || "Empresa"}</span>
+          {ocupado === e.id ? (
+            <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-slate-400" />
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Depois da senha certa com duas ou mais empresas liberadas: "Em qual empresa você quer entrar?" (T38). */
+export function EscolherEmpresaPortal({ tokenEscolha, empresas, onEntrar, onVoltar }) {
+  const [ocupado, setOcupado] = useState(null);
+  const [erro, setErro] = useState("");
+
+  const escolher = async (empresa) => {
+    setErro("");
+    setOcupado(empresa.id);
+    try {
+      const r = await chamarPortal("escolher_empresa", {
+        token_escolha: tokenEscolha,
+        funcionario_id: empresa.id,
+      });
+      const passo = passoDoLogin(r);
+      if (passo.tela === "painel") onEntrar(passo.sessao);
+      else setErro(passo.mensagem || "Não foi possível entrar. Tente de novo.");
+    } catch (e) {
+      // o token da escolha vence em 5 min: volta ao login com o aviso
+      if (e.codigo === "SESSAO") onVoltar(e.message);
+      else setErro(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
+
+  return (
+    <Moldura titulo={TEXTOS_DO_LOGIN.escolherEmpresa} subtitulo="Portal do Funcionário">
+      <ListaDeEmpresas empresas={empresas} onEscolher={escolher} ocupado={ocupado} />
+      {erro && <p className="text-sm text-red-600">{erro}</p>}
+      <Button type="button" variant="ghost" className="w-full" onClick={() => onVoltar("")}>
+        Voltar
+      </Button>
+    </Moldura>
+  );
+}
+
+/**
+ * Entrou com a senha provisória (T38): a MESMA tela para todos ("Crie sua senha pessoal", com o link "Já uso o portal
+ * em outra empresa"), porque a tela não pode dizer se o CPF já tem senha (defesa 2). Três modos:
+ *  - `criar`: a senha nova (a primeira, ou a de quem esqueceu, pela provisória de uma empresa em que já entrava);
+ *  - `ja_uso`: a senha que a pessoa já usa em outra empresa;
+ *  - `troca`: a senha atual nasceu da provisória de outra empresa, então a pessoa escolhe uma nova (P10).
+ */
+export function AtivarAcessoPortal({ tokenAtivacao, empresaNome, usuario, onEntrar, onVoltar }) {
+  const [modo, setModo] = useState("criar");
+  const [atual, setAtual] = useState("");
+  const [nova, setNova] = useState("");
+  const [confirma, setConfirma] = useState("");
+  const [erro, setErro] = useState("");
+  const [destacarJaUso, setDestacarJaUso] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+
+  const pode = podeEnviarAtivacao({ modo, atual, nova, confirma, usuario });
+
+  const mudarModo = (m) => {
+    setModo(m);
+    setErro("");
+    setDestacarJaUso(false);
+    setNova("");
+    setConfirma("");
+    if (m === "criar") setAtual("");
+  };
+
+  const enviar = async (e) => {
+    e.preventDefault();
+    setErro("");
+    if (!pode) {
+      setErro(
+        modo === "ja_uso"
+          ? "Digite a senha que você já usa"
+          : "Confira os campos: a nova senha precisa cumprir as regras e as duas têm de ser iguais"
+      );
+      return;
+    }
+    setSalvando(true);
+    try {
+      const r = await chamarPortal("ativar", {
+        token_ativacao: tokenAtivacao,
+        ...pedidoDaAtivacao({ modo, atual, nova }),
+      });
+      const passo = passoDaAtivacao(r);
+      if (passo.tela === "troca_obrigatoria") {
+        // a senha atual continua digitada (em memória); falta escolher a nova
+        setModo("troca");
+        setNova("");
+        setConfirma("");
+      } else if (passo.tela === "painel") {
+        onEntrar(passo.sessao);
+      } else {
+        setErro(passo.mensagem);
+      }
+    } catch (err) {
+      const reacao = reacaoAoErroDaAtivacao(err);
+      if (reacao.voltarAoLogin) {
+        onVoltar(reacao.mensagem);
+        return;
+      }
+      setErro(reacao.mensagem);
+      setDestacarJaUso(reacao.destacarJaUso);
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const titulo =
+    modo === "ja_uso"
+      ? TEXTOS_DO_LOGIN.digiteASenhaQueUsa
+      : modo === "troca"
+        ? "Escolha uma senha nova"
+        : TEXTOS_DO_LOGIN.crieSuaSenha;
+
+  return (
+    <Moldura titulo={titulo} subtitulo={empresaNome || "Portal do Funcionário"}>
+      {modo === "criar" && (
+        <Button
+          type="button"
+          variant={destacarJaUso ? "outline" : "link"}
+          className={`h-auto p-0 ${destacarJaUso ? "w-full py-2 border-amber-400 text-amber-800" : "text-slate-700 underline"}`}
+          onClick={() => mudarModo("ja_uso")}
+        >
+          {TEXTOS_DO_LOGIN.jaUsoOutraEmpresa}
+        </Button>
+      )}
+      {modo === "criar" && (
+        <p className="text-sm text-slate-600">
+          A senha que você recebeu é provisória. Crie agora uma senha que só você saiba — ela vale
+          como a sua assinatura nos treinamentos e nas entregas de EPI e ferramentas.
+        </p>
+      )}
+      {modo === "troca" && (
+        <p className="text-sm text-slate-600">{TEXTOS_DO_LOGIN.trocaObrigatoria}</p>
+      )}
+      <form onSubmit={enviar} className="space-y-4">
+        {modo === "ja_uso" && (
+          <CampoSenha
+            id="senha-atual"
+            rotulo="Senha que você já usa"
+            valor={atual}
+            onChange={setAtual}
+            autoComplete="current-password"
+          />
+        )}
+        {modo !== "ja_uso" && (
+          <CamposDaSenhaNova
+            nova={nova}
+            setNova={setNova}
+            confirma={confirma}
+            setConfirma={setConfirma}
+            usuario={usuario}
+            atual={modo === "troca" ? atual : ""}
+          />
+        )}
+        {erro && (
+          <p role="alert" className="text-sm text-red-600">
+            {erro}
+          </p>
+        )}
+        <Button type="submit" className="w-full h-11 bg-slate-900" disabled={salvando || !pode}>
+          {salvando ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <KeyRound className="w-4 h-4 mr-2" />
+          )}
+          {modo === "ja_uso" ? "Entrar" : modo === "troca" ? "Salvar e entrar" : "Salvar senha"}
+        </Button>
+        {modo === "ja_uso" && (
+          <Button
+            type="button"
+            variant="link"
+            className="w-full"
+            onClick={() => mudarModo("criar")}
+          >
+            {TEXTOS_DO_LOGIN.voltarParaCriar}
+          </Button>
+        )}
+        <Button type="button" variant="ghost" className="w-full" onClick={() => onVoltar("")}>
+          Sair
+        </Button>
+      </form>
+      {modo === "criar" && (
+        <p className="text-xs text-slate-500">{TEXTOS_DO_LOGIN.avisoSenhaNova}</p>
+      )}
+    </Moldura>
+  );
+}
+
 export function LoginPortal({ aviso, onEntrar }) {
   const [usuario, setUsuario] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
   const [entrando, setEntrando] = useState(false);
+  // T38: depois da senha, a escolha da empresa ou a ativação pela provisória
+  const [etapa, setEtapa] = useState(null);
+  const [avisoDaEtapa, setAvisoDaEtapa] = useState("");
+
+  // `usuario` (já normalizado) só segue em memória, para as regras da senha conferirem "senha igual ao CPF"; a
+  // página NÃO o guarda no aparelho junto com a sessão
+  const entrarCom = (sessao) => onEntrar({ ...sessao, usuario: normalizarUsuario(usuario) });
 
   const entrar = async (e) => {
     e.preventDefault();
     setErro("");
+    setAvisoDaEtapa("");
     setEntrando(true);
     try {
       const r = await chamarPortal("login", { usuario, senha });
-      // `usuario` (já normalizado) só segue em memória, para a troca de senha conferir "senha igual ao
-      // CPF"; a página NÃO o guarda no aparelho junto com a sessão
-      onEntrar({
-        token: r.token,
-        nome: r.nome,
-        trocar_senha: r.trocar_senha,
-        usuario: normalizarUsuario(usuario),
-      });
+      const passo = passoDoLogin(r);
+      if (passo.tela === "painel") entrarCom(passo.sessao);
+      else if (passo.tela === "erro") setErro(passo.mensagem);
+      else {
+        setSenha("");
+        setEtapa(passo);
+      }
     } catch (err) {
       setErro(err.message);
     } finally {
@@ -113,9 +413,40 @@ export function LoginPortal({ aviso, onEntrar }) {
     }
   };
 
+  const voltar = (mensagem) => {
+    setEtapa(null);
+    setSenha("");
+    setAvisoDaEtapa(mensagem || "");
+  };
+
+  if (etapa?.tela === "escolher") {
+    return (
+      <EscolherEmpresaPortal
+        tokenEscolha={etapa.tokenEscolha}
+        empresas={etapa.empresas}
+        onEntrar={entrarCom}
+        onVoltar={voltar}
+      />
+    );
+  }
+  if (etapa?.tela === "ativar") {
+    return (
+      <AtivarAcessoPortal
+        tokenAtivacao={etapa.tokenAtivacao}
+        empresaNome={etapa.empresaNome}
+        usuario={normalizarUsuario(usuario)}
+        onEntrar={entrarCom}
+        onVoltar={voltar}
+      />
+    );
+  }
+
+  const avisoNaTela = avisoDaEtapa || aviso;
   return (
     <Moldura titulo="Portal do Funcionário" subtitulo="Treinamentos e entregas">
-      {aviso && <p className="text-sm text-amber-700 bg-amber-50 rounded-md p-2">{aviso}</p>}
+      {avisoNaTela && (
+        <p className="text-sm text-amber-700 bg-amber-50 rounded-md p-2">{avisoNaTela}</p>
+      )}
       <form onSubmit={entrar} className="space-y-4">
         <div>
           <Label htmlFor="usuario">CPF ou usuário</Label>
@@ -161,15 +492,11 @@ export function LoginPortal({ aviso, onEntrar }) {
   );
 }
 
-/** Troca de senha: obrigatória no 1º acesso (senha provisória) ou voluntária. */
-export function TrocarSenhaPortal({
-  token,
-  obrigatoria,
-  nome,
-  usuario = "",
-  onConcluir,
-  onCancelar,
-}) {
+/**
+ * Troca de senha VOLUNTÁRIA, com a senha atual (o primeiro acesso virou a etapa da provisória, T38). A senha é da
+ * pessoa: a nova vale em todas as empresas e as sessões abertas nas outras caem.
+ */
+export function TrocarSenhaPortal({ token, nome, usuario = "", onConcluir, onCancelar }) {
   const [atual, setAtual] = useState("");
   const [nova, setNova] = useState("");
   const [confirma, setConfirma] = useState("");
@@ -178,8 +505,7 @@ export function TrocarSenhaPortal({
 
   // `usuario` vem do login (só em memória). Sem ele (tela recarregada), a regra "diferente do CPF" fica
   // por conta do servidor, que confere de novo em toda troca.
-  const dados = { atual, nova, confirma, obrigatoria, usuario };
-  const pode = podeTrocarSenha(dados);
+  const pode = podeTrocarSenha({ atual, nova, confirma, obrigatoria: false, usuario });
 
   const salvar = async (e) => {
     e.preventDefault();
@@ -192,11 +518,7 @@ export function TrocarSenhaPortal({
     }
     setSalvando(true);
     try {
-      const r = await chamarPortal(
-        "trocar_senha",
-        { nova_senha: nova, senha_atual: obrigatoria ? undefined : atual },
-        token
-      );
+      const r = await chamarPortal("trocar_senha", { nova_senha: nova, senha_atual: atual }, token);
       onConcluir(r.token);
     } catch (err) {
       setErro(err.message);
@@ -207,64 +529,26 @@ export function TrocarSenhaPortal({
 
   return (
     <Moldura
-      titulo={obrigatoria ? "Crie sua senha pessoal" : "Alterar senha"}
+      titulo="Alterar senha"
       subtitulo={nome ? `Olá, ${nome.split(" ")[0]}` : "Portal do Funcionário"}
     >
-      {obrigatoria && (
-        <p className="text-sm text-slate-600">
-          A senha que você recebeu é provisória. Crie agora uma senha que só você saiba — ela vale
-          como a sua assinatura nos treinamentos e nas entregas de EPI e ferramentas.
-        </p>
-      )}
+      <p className="text-sm text-slate-600">{TEXTOS_DO_LOGIN.avisoTrocaDeSenha}</p>
       <form onSubmit={salvar} className="space-y-4">
-        {!obrigatoria && (
-          <CampoSenha
-            id="senha-atual"
-            rotulo="Senha atual"
-            valor={atual}
-            onChange={setAtual}
-            autoComplete="current-password"
-          />
-        )}
-        <div className="space-y-2">
-          <CampoSenha
-            id="senha-nova"
-            rotulo="Nova senha"
-            valor={nova}
-            onChange={setNova}
-            autoComplete="new-password"
-          />
-          {/* sem `maxLength`: o campo cortaria a senha colada em silêncio; o aviso e a regra de tamanho
-              dizem o que houve (T27) */}
-          {avisoDeSenhaLonga(nova) && (
-            <p role="alert" className="text-xs text-red-600">
-              {avisoDeSenhaLonga(nova)}
-            </p>
-          )}
-          <RegrasDaSenha regras={regrasDaSenha(nova, usuario)} />
-          {!obrigatoria && senhaNovaIgualAtual(nova, atual) && (
-            <p className="text-xs text-amber-700">Escolha uma senha diferente da atual</p>
-          )}
-        </div>
-        <div className="space-y-1">
-          <CampoSenha
-            id="senha-confirma"
-            rotulo="Repita a nova senha"
-            valor={confirma}
-            onChange={setConfirma}
-            autoComplete="new-password"
-          />
-          {/* o aviso fica sob o campo que passou do limite: a confirmação colada com 80 caracteres
-              não pode acusar o campo "Nova senha" (A5) */}
-          {avisoDeSenhaLonga(confirma) && (
-            <p role="alert" className="text-xs text-red-600">
-              {avisoDeSenhaLonga(confirma)}
-            </p>
-          )}
-          {confirmacaoDivergiu(nova, confirma) && (
-            <p className="text-xs text-amber-700">As duas senhas não são iguais</p>
-          )}
-        </div>
+        <CampoSenha
+          id="senha-atual"
+          rotulo="Senha atual"
+          valor={atual}
+          onChange={setAtual}
+          autoComplete="current-password"
+        />
+        <CamposDaSenhaNova
+          nova={nova}
+          setNova={setNova}
+          confirma={confirma}
+          setConfirma={setConfirma}
+          usuario={usuario}
+          atual={atual}
+        />
         {erro && <p className="text-sm text-red-600">{erro}</p>}
         <Button type="submit" className="w-full h-11 bg-slate-900" disabled={salvando || !pode}>
           {salvando ? (
@@ -276,7 +560,7 @@ export function TrocarSenhaPortal({
         </Button>
         {onCancelar && (
           <Button type="button" variant="ghost" className="w-full" onClick={onCancelar}>
-            {obrigatoria ? "Sair" : "Cancelar"}
+            Cancelar
           </Button>
         )}
       </form>

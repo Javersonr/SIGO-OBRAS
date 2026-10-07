@@ -1,16 +1,27 @@
 /**
  * portal-funcionario — Portal do Funcionário (treinamentos EAD + ciências).
  *
- * O funcionário entra com USUÁRIO (CPF) e SENHA pessoal; o RH cria o acesso
- * com senha provisória (edge function funcionario-acesso) e o primeiro login
- * obriga a troca. A sessão é um token HMAC de 12h amarrado à `sessao_versao`
- * do acesso: redefinir a senha ou desativar derruba as sessões abertas.
+ * O funcionário entra com USUÁRIO (CPF) e SENHA pessoal. Desde a T38 a senha é da PESSOA (`portal_credencial`) e
+ * vale em todas as empresas em que ela tem cadastro ativo; cada cadastro tem o seu VÍNCULO
+ * (`funcionario_portal_acesso`), com a senha provisória que o RH daquela empresa gera (funcionario-acesso) e que
+ * vence em 7 dias. Regras puras em `_shared/portal-credencial.ts`; spec em
+ * docs/superpowers/specs/2026-10-07-portal-varias-empresas-design.md. A sessão é um token HMAC de 12h com a empresa
+ * escolhida, amarrado à `sessao_versao` do vínculo (`v`: redefinir, desativar e sair nesta empresa derrubam as
+ * sessões desta empresa) e à da credencial (`vc`: senha criada com provisória e troca de senha derrubam todas).
  *
- * Ação sem sessão:
- *   { acao:"login", usuario, senha }            → { token, trocar_senha, nome }
+ * Ações sem sessão:
+ *   { acao:"login", usuario, senha }  → { token, nome, empresa_nome } (uma empresa liberada), ou
+ *     { etapa:"escolher_empresa", token_escolha, empresas:[{ id, nome, logo_url }] } (duas ou mais), ou
+ *     { etapa:"senha_provisoria", token_ativacao, empresa:{ nome } } (entrou com a provisória: a MESMA resposta com e
+ *     sem senha na credencial). Sempre 4 comparações de senha (`conferirLogin`): o tempo não diz o que existe.
+ *   { acao:"escolher_empresa", token_escolha, funcionario_id } → a sessão da empresa escolhida (só vínculo liberado)
+ *   { acao:"ativar", token_ativacao, nova_senha } (criar a senha: 403 RESET_NEGADO se a credencial já tem senha e o
+ *     vínculo nunca foi confirmado), { senha_atual } (já uso o portal em outra empresa; pode responder
+ *     { etapa:"nova_senha_obrigatoria" }) ou { senha_atual, nova_senha } → a sessão da empresa da provisória
  * Ações com sessão ({ token }):
- *   trocar_senha { nova_senha, senha_atual? }   logout  (senha_atual é obrigatória fora do 1º acesso)
- *   dados                                       evento { evento, matricula_id?, aula_id?, detalhe? }
+ *   trocar_senha { senha_atual, nova_senha } (vale em todas as empresas)   logout
+ *   empresas → as OUTRAS empresas liberadas      trocar_empresa { funcionario_id } → o token da outra (vence junto)
+ *   dados (leva `outras_empresas`)              evento { evento, matricula_id?, aula_id?, detalhe? }
  *   progresso { matricula_id, aula_id, segundos_assistidos }  (a duração vem do cadastro da aula)
  *   iniciar_avaliacao { matricula_id }          → sorteia a prova NO SERVIDOR (sem gabarito)
  *   avaliacao { matricula_id, respostas:[{questao_id,resposta}] }  (exige iniciar_avaliacao antes; quem
@@ -50,14 +61,15 @@
  * a tira da resposta. Falha ao assinar = PDF sem a imagem; certificado sem imagem sai só com nome e registro.
  *
  * Reconfirmar a senha com a sessão aberta (`certificado` e `trocar_senha` com a senha atual) tem limite de
- * tentativas por funcionário (escopo próprio, 5 em 15 min); passou do teto responde 429 `LIMITE`. Senha
- * vazia é "incorreta" sem consumir tentativa (T27).
+ * tentativas por PESSOA (a credencial, T38 §5.5; escopo próprio, 5 em 15 min); passou do teto responde 429
+ * `LIMITE`. Senha vazia é "incorreta" sem consumir tentativa (T27).
  *
- * `evento` e `progresso` (que o navegador repete sozinho) também têm teto por funcionário, em escopos
+ * `evento` e `progresso` (que o navegador repete sozinho) também têm teto por pessoa, em escopos
  * próprios (`VOLUME_POR_ACAO`, em regras.ts); passou do teto responde 429 `LIMITE`. O evento tem três
  * tetos (abrir_aula, play/pausa e o resto), para o play repetido do vídeo não travar a troca de aula.
- * O `progresso` ainda só grava o sinal (ultimo_sinal_em) se ninguém o mudou desde que o pedido o leu
- * (trava otimista): quem perde a corrida responde 409 `SINAL_CONCORRENTE` e não credita tempo (T31).
+ * O `progresso` ainda só grava o sinal (ultimo_sinal_em, na credencial: duas empresas ao mesmo tempo dividem o
+ * mesmo relógio) se ninguém o mudou desde que o pedido o leu (trava otimista): quem perde a corrida responde 409
+ * `SINAL_CONCORRENTE` e não credita tempo (T31).
  *
  * `dados` não leva as questões (saem sorteadas em iniciar_avaliacao) e só assina URL e manda o texto das
  * aulas LIBERADAS: a aula bloqueada vai na lista, mas sem conteúdo (T16).
@@ -76,6 +88,42 @@ import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { signPortalToken, verifyPortalToken } from "../_shared/portal-token.ts";
 import { hashPassword, verifyPassword } from "../_shared/passwords.ts";
 import {
+  ESCOPO_ATIVACAO,
+  ESCOPO_ESCOLHA,
+  ESCOPO_SESSAO,
+  MSG_ATIVACAO_VENCIDA,
+  MSG_PEDIR_PROVISORIA,
+  MSG_RESET_NEGADO,
+  TTL_ATIVACAO_SEG,
+  TTL_ESCOLHA_SEG,
+  ativacaoValida,
+  conferirLogin,
+  criarComparador,
+  decidirLogin,
+  efeitoDaConfirmacao,
+  efeitoDaSenhaNova,
+  estaBloqueada,
+  eventoDoResetRecusado,
+  eventosDaAtivacao,
+  eventosDaFalhaDeLogin,
+  exigeTrocaNaAtivacao,
+  falhaDeLogin,
+  lerPessoaDoBanco,
+  outrasEmpresasLiberadas,
+  outrosVinculosLiberados,
+  podeCriarSenhaNova,
+  provisoriasDoLogin,
+  registrarEventoDaCredencial,
+  sessaoValida,
+  ttlDaTroca,
+  vinculoEscolhido,
+  COLUNAS_CREDENCIAL,
+  COLUNAS_VINCULO,
+  type CredencialDoPortal,
+  type Eventos,
+  type ItemDoVinculo,
+} from "../_shared/portal-credencial.ts";
+import {
   normalizarUsuario,
   motivoSenhaInvalida,
   inteiroAleatorioSeguro,
@@ -91,7 +139,7 @@ import {
 } from "../_shared/portal-funcionario.ts";
 import { enviarWhatsAppTexto } from "../_shared/whatsapp-envio.ts";
 import { assinarDaEmpresa, refDaEmpresa } from "../_shared/storage-assinar.ts";
-import { carregarDocumentos, funcionarioPodeEntrar } from "./documentos.ts";
+import { carregarDocumentos } from "./documentos.ts";
 import { confirmarCiencia, listarCienciasDoAluno } from "./ciencia.ts";
 import { destinoDoAvisoAoTutor, mensagemDuvidaAoTutor, tutorParaOAluno } from "./tutor.ts";
 import { projetoParaOAluno } from "./projeto.ts";
@@ -201,8 +249,6 @@ import {
 
 const TTL_SESSAO = 60 * 60 * 12;
 const TTL_ARQUIVO = 60 * 60 * 3; // URLs assinadas de vídeo/legenda/PDF
-const MAX_FALHAS_LOGIN = 5;
-const BLOQUEIO_MIN = 15;
 const TEMPO_MINIMO_PADRAO = 60; // aula de PDF/texto sem tempo definido
 // limitador atômico do login (mesmos tetos do login-custom)
 const JANELA_LOGIN_SEG = 15 * 60;
@@ -230,6 +276,12 @@ const EVENTOS_CLIENTE = new Set([
 
 // comparação de senha com usuário inexistente gasta o mesmo tempo
 const HASH_FICTICIO = await hashPassword(crypto.randomUUID());
+// O login e a ativação só aceitam bcrypt; outro formato paga o bcrypt do fictício e não confere (T38, R10)
+const compararSenha = criarComparador(
+  async (senha, hash) => (await verifyPassword(senha, hash)).ok,
+  HASH_FICTICIO
+);
+const MSG_SEM_LEITURA = "Não foi possível entrar agora. Tente de novo em instantes.";
 
 interface Body {
   acao?: string;
@@ -238,6 +290,10 @@ interface Body {
   senha_atual?: string;
   nova_senha?: string;
   token?: string;
+  // T38: etapas do login sem sessão e a escolha da empresa
+  token_escolha?: string;
+  token_ativacao?: string;
+  funcionario_id?: string;
   evento?: string;
   detalhe?: Record<string, unknown>;
   matricula_id?: string;
@@ -333,6 +389,61 @@ async function assinarRefs(
   return assinada;
 }
 
+/**
+ * Grava os eventos de uma decisão do login (T38, §7): os da trilha de cada empresa (o `login_falha` vai sem IP e
+ * dispositivo: `semOrigemNaTrilha`) e os do registro do operador (com os dois). Nunca derruba a ação.
+ */
+async function gravarEventos(
+  supabase: Db,
+  req: Request,
+  credencialId: string,
+  eventos: Eventos,
+  opcoes: { semOrigemNaTrilha?: boolean } = {}
+) {
+  for (const e of eventos.trilha) {
+    await registrarEvento(supabase, req, e, { semOrigem: !!opcoes.semOrigemNaTrilha });
+  }
+  for (const e of eventos.operador) {
+    await registrarEventoDaCredencial(supabase, req, { credencial_id: credencialId, ...e });
+  }
+}
+
+/** Nome e logo das empresas (só as dos vínculos da própria pessoa). Falha de leitura = sem nome. */
+async function empresasDoBanco(supabase: Db, ids: string[]) {
+  const mapa = new Map<string, { nome: string; logo_url: string | null }>();
+  if (!ids.length) return mapa;
+  const { data, error } = await supabase
+    .from("empresa")
+    .select("id, nome, razao_social, logo_url")
+    .in("id", [...new Set(ids)]);
+  if (error) console.error("[portal-funcionario] nomes das empresas:", error.message);
+  for (const e of data ?? []) {
+    mapa.set(e.id, { nome: e.nome || e.razao_social || "", logo_url: e.logo_url ?? null });
+  }
+  return mapa;
+}
+
+/**
+ * A lista "Em qual empresa você quer entrar?": só vínculos liberados da própria pessoa. `id` é o funcionario_id
+ * daquele cadastro (dado dela); o logo vai como URL assinada só da pasta da empresa (falha = sem logo).
+ */
+async function empresasParaEscolha(supabase: Db, itens: ItemDoVinculo[]) {
+  const empresas = await empresasDoBanco(
+    supabase,
+    itens.map((i) => i.vinculo.empresa_id)
+  );
+  const lista = await Promise.all(
+    itens.map(async (i) => {
+      const emp = empresas.get(i.vinculo.empresa_id);
+      const logo = await logoAssinadoParaPdf(emp?.logo_url, (refs: string[]) =>
+        assinarDaEmpresa(supabase, refs, i.vinculo.empresa_id)
+      );
+      return { id: i.vinculo.funcionario_id, nome: emp?.nome ?? "", logo_url: logo };
+    })
+  );
+  return lista.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
 Deno.serve(
   withCors(async (req) => {
     if (req.method === "OPTIONS") return preflightResponse();
@@ -347,6 +458,94 @@ Deno.serve(
     const supabase = createAdminClient();
     const agoraIso = () => new Date().toISOString();
 
+    // Sessão de uma empresa (T38): token com a credencial (a pessoa), a empresa e o cadastro escolhidos; `v` é a
+    // versão do vínculo e `vc`, a da credencial. `ttl` menor só na troca de empresa (vence junto com o de origem).
+    const tokenDaSessao = (
+      credencialId: string,
+      vc: number,
+      item: ItemDoVinculo,
+      ttl = TTL_SESSAO
+    ) =>
+      signPortalToken(
+        {
+          scope: ESCOPO_SESSAO,
+          credencial_id: credencialId,
+          empresa_id: item.vinculo.empresa_id,
+          funcionario_id: item.vinculo.funcionario_id,
+          v: item.vinculo.sessao_versao,
+          vc,
+        },
+        ttl
+      );
+    // A resposta de quem entrou (o nome do cadastro e o da empresa, para o cabeçalho do portal).
+    const respostaDaSessao = async (token: string, item: ItemDoVinculo) => {
+      const empresa = (await empresasDoBanco(supabase, [item.vinculo.empresa_id])).get(
+        item.vinculo.empresa_id
+      );
+      return ok({
+        token,
+        nome: item.cadastro?.nome_completo ?? "",
+        empresa_nome: empresa?.nome ?? "",
+      });
+    };
+    // Entrou com a senha pessoal (login com uma empresa liberada, escolha da empresa ou troca de empresa): último
+    // acesso NESTA empresa e `login` na trilha dela, igual em todos os caminhos (§5.4: a trilha não diz que a pessoa
+    // veio de outra empresa).
+    const entrarComSenha = async (
+      credencial: CredencialDoPortal,
+      item: ItemDoVinculo,
+      ttl = TTL_SESSAO
+    ) => {
+      await supabase
+        .from("funcionario_portal_acesso")
+        .update({ ultimo_acesso: agoraIso() })
+        .eq("funcionario_id", item.vinculo.funcionario_id)
+        .eq("empresa_id", item.vinculo.empresa_id);
+      await registrarEvento(supabase, req, {
+        empresa_id: item.vinculo.empresa_id,
+        funcionario_id: item.vinculo.funcionario_id,
+        evento: "login",
+        detalhe: { via: "senha" },
+      });
+      const token = await tokenDaSessao(credencial.id, credencial.sessao_versao, item, ttl);
+      return respostaDaSessao(token, item);
+    };
+    // Senha errada (no login ou na senha atual da ativação): conta na credencial (bloqueia na 5ª) e grava
+    // `login_falha` na trilha dos vínculos liberados, sem IP e dispositivo, e no registro do operador, com os dois.
+    const contarFalhaDeSenha = async (
+      credencial: CredencialDoPortal,
+      itens: ItemDoVinculo[],
+      agora: number
+    ) => {
+      const falha = falhaDeLogin({ credencial, agora });
+      await supabase
+        .from("portal_credencial")
+        .update({ tentativas: falha.tentativas, bloqueado_ate: falha.bloqueado_ate })
+        .eq("id", credencial.id);
+      await gravarEventos(
+        supabase,
+        req,
+        credencial.id,
+        eventosDaFalhaDeLogin({
+          credencial,
+          itens,
+          agora,
+          tentativa: falha.tentativa,
+          bloqueou: falha.bloqueou,
+        }),
+        { semOrigemNaTrilha: true }
+      );
+    };
+    // Mesma resposta para CPF inexistente, senha errada e acesso bloqueado ou desativado: 423/403 só depois de a
+    // senha conferir (enumeração de CPF).
+    const credenciaisInvalidas = () => fail(MSG_CREDENCIAIS, 401, { codigo: "CREDENCIAIS" });
+    const bloqueadoAte = (ate: string) =>
+      fail(
+        `Acesso bloqueado por senhas erradas. Tente de novo às ${horaDeBrasilia(ate)} ou fale com o RH.`,
+        423,
+        { codigo: "BLOQUEADO" }
+      );
+
     // ---------------------------------------------------------------- login
     if (body.acao === "login") {
       const usuario = normalizarUsuario(body.usuario ?? "");
@@ -355,7 +554,7 @@ Deno.serve(
 
       // Limite de tentativas por IP e por CPF (padrão do login-custom): consumido
       // ANTES de conferir a senha — rajada paralela não passa do teto (o
-      // contador `tentativas` abaixo é lido-e-gravado, não segura concorrência).
+      // contador `tentativas` da credencial é lido-e-gravado, não segura concorrência).
       // CPF não cadastrado também conta: o 429 não revela quem existe.
       const limite = await consumirTentativa(supabase, "funcionario-login", JANELA_LOGIN_SEG, [
         { tipo: "ip", valor: ipDaRequisicao(req), max: MAX_LOGIN_POR_IP },
@@ -363,102 +562,333 @@ Deno.serve(
       ]);
       if (!limite.permitido) return fail(MSG_MUITAS_TENTATIVAS, 429, { codigo: "LIMITE" });
 
-      const { data: acesso } = await supabase
-        .from("funcionario_portal_acesso")
-        .select("*")
-        .eq("usuario", usuario)
-        .maybeSingle();
-      // Mesma resposta para CPF inexistente, senha errada, acesso bloqueado ou
-      // desativado: 423/403 só depois de a senha conferir (enumeração de CPF).
-      const credenciaisInvalidas = () => fail(MSG_CREDENCIAIS, 401, { codigo: "CREDENCIAIS" });
-      if (!acesso) {
-        await verifyPassword(senha, HASH_FICTICIO);
+      // A pessoa e os vínculos dela (cada um com o cadastro), lidos sempre; depois, SEMPRE as 4 comparações (a
+      // pessoal e três provisórias), sem sair antes: o tempo não diz se o CPF existe, se tem senha nem quantas
+      // provisórias tem (§5.1, passo 0). Só então a decisão.
+      const lida = await lerPessoaDoBanco(supabase, { usuario });
+      if (!lida.ok) return fail(MSG_SEM_LEITURA, 503);
+      const { credencial, itens } = lida;
+      const agora = Date.now();
+      const conferencia = await conferirLogin({
+        senha,
+        credencial,
+        provisorias: provisoriasDoLogin({ itens, credencial, agora }),
+        comparar: compararSenha,
+        hashFicticio: HASH_FICTICIO,
+      });
+      const decisao = decidirLogin({ credencial, conferencia, itens, agora });
+
+      if (decisao.tipo === "credenciais") {
+        if (decisao.contarFalha && credencial) await contarFalhaDeSenha(credencial, itens, agora);
         return credenciaisInvalidas();
       }
-      const ev = (e: Omit<EventoPortal, "empresa_id" | "funcionario_id">) =>
-        registrarEvento(supabase, req, {
-          empresa_id: acesso.empresa_id,
-          funcionario_id: acesso.funcionario_id,
-          ...e,
-        });
-
-      const bloqueado = !!acesso.bloqueado_ate && Date.parse(acesso.bloqueado_ate) > Date.now();
-      const { ok: senhaOk } = await verifyPassword(senha, acesso.senha_hash);
-      if (!senhaOk) {
-        // bloqueado ou desativado: não conta falha (como antes)
-        if (bloqueado || !acesso.ativo) return credenciaisInvalidas();
-        const tentativas = acesso.tentativas + 1;
-        const bloquear = tentativas >= MAX_FALHAS_LOGIN;
-        const bloqueadoAte = bloquear
-          ? new Date(Date.now() + BLOQUEIO_MIN * 60_000).toISOString()
-          : null;
-        await supabase
-          .from("funcionario_portal_acesso")
-          .update({ tentativas: bloquear ? 0 : tentativas, bloqueado_ate: bloqueadoAte })
-          .eq("funcionario_id", acesso.funcionario_id);
-        await ev({ evento: "login_falha", detalhe: { tentativa: tentativas, bloqueou: bloquear } });
-        return credenciaisInvalidas();
+      // a senha conferiu: agora pode dizer o motivo (sem o nome de nenhuma empresa, R4)
+      if (decisao.tipo === "bloqueado") return bloqueadoAte(decisao.ate);
+      if (decisao.tipo === "pedir_provisoria") {
+        return fail(MSG_PEDIR_PROVISORIA, 403, { codigo: "PEDIR_PROVISORIA" });
       }
-
-      // senha certa: agora pode dizer o motivo
-      if (bloqueado) {
-        return fail(
-          `Acesso bloqueado por senhas erradas. Tente de novo às ${horaDeBrasilia(acesso.bloqueado_ate)} ou fale com o RH.`,
-          423,
-          { codigo: "BLOQUEADO" }
-        );
-      }
-      if (!acesso.ativo)
+      if (decisao.tipo === "cadastro_inativo") return fail("Cadastro inativo — fale com o RH", 403);
+      if (decisao.tipo === "desativado") {
         return fail("Acesso desativado — fale com o RH", 403, { codigo: "DESATIVADO" });
+      }
+      await liberarTentativas(supabase, limite);
+      if (!credencial) return credenciaisInvalidas(); // (não acontece: a decisão já exigiu a credencial)
+
+      if (decisao.tipo === "senha_provisoria") {
+        // A MESMA resposta com e sem senha na credencial (defesa 2): a tela é a mesma para todos. A empresa é a da
+        // provisória, que quem a digitou já conhece. O token de ativação é amarrado à provisória (`pc`).
+        const v = decisao.item.vinculo;
+        const tokenAtivacao = await signPortalToken(
+          {
+            scope: ESCOPO_ATIVACAO,
+            credencial_id: credencial.id,
+            empresa_id: v.empresa_id,
+            funcionario_id: v.funcionario_id,
+            pc: v.provisoria_criada_em,
+          },
+          TTL_ATIVACAO_SEG
+        );
+        const empresa = (await empresasDoBanco(supabase, [v.empresa_id])).get(v.empresa_id);
+        return ok({
+          etapa: "senha_provisoria",
+          token_ativacao: tokenAtivacao,
+          empresa: { nome: empresa?.nome ?? "" },
+        });
+      }
+
+      // senha pessoal certa: o contador de erros da pessoa zera
+      await supabase
+        .from("portal_credencial")
+        .update({ tentativas: 0, bloqueado_ate: null })
+        .eq("id", credencial.id);
+      if (decisao.tipo === "escolher") {
+        const tokenEscolha = await signPortalToken(
+          {
+            scope: ESCOPO_ESCOLHA,
+            empresa_id: "",
+            credencial_id: credencial.id,
+            vc: credencial.sessao_versao,
+          },
+          TTL_ESCOLHA_SEG
+        );
+        return ok({
+          etapa: "escolher_empresa",
+          token_escolha: tokenEscolha,
+          empresas: await empresasParaEscolha(supabase, decisao.itens),
+        });
+      }
+      return entrarComSenha(credencial, decisao.item);
+    }
+
+    // ------------------------------------------------------ escolher empresa
+    // Depois da senha certa com duas ou mais empresas liberadas: o cadastro escolhido só vale se for de um vínculo
+    // LIBERADO da credencial do token (e o token só vale com a mesma versão da credencial).
+    if (body.acao === "escolher_empresa") {
+      const escolha = body.token_escolha ? await verifyPortalToken(body.token_escolha) : null;
+      if (
+        !escolha ||
+        escolha.scope !== ESCOPO_ESCOLHA ||
+        typeof escolha.credencial_id !== "string"
+      ) {
+        return fail("Entre de novo com o seu usuário e a sua senha", 401, { codigo: "SESSAO" });
+      }
+      const lida = await lerPessoaDoBanco(supabase, { id: escolha.credencial_id });
+      if (!lida.ok) return fail(MSG_SEM_LEITURA, 503);
+      const { credencial, itens } = lida;
+      if (!credencial || credencial.sessao_versao !== escolha.vc) {
+        return fail("Entre de novo com o seu usuário e a sua senha", 401, { codigo: "SESSAO" });
+      }
+      const item = vinculoEscolhido({
+        itens,
+        credencial,
+        funcionarioId: body.funcionario_id,
+        agora: Date.now(),
+      });
+      if (!item) {
+        return fail("Esta empresa não está disponível agora. Entre de novo.", 401, {
+          codigo: "SESSAO",
+        });
+      }
+      return entrarComSenha(credencial, item);
+    }
+
+    // ---------------------------------------------------------------- ativar
+    // Depois de entrar com a senha provisória (§5.1): criar a senha (`nova_senha`), confirmar a que já usa em outra
+    // empresa (`senha_atual`) ou confirmar e trocar (`senha_atual` + `nova_senha`, obrigatório quando a senha atual
+    // nasceu da provisória de outra empresa). Em todas, o vínculo da provisória fica liberado e confirmado, a
+    // provisória é apagada e a resposta é a sessão daquela empresa.
+    if (body.acao === "ativar") {
+      const ativacao = body.token_ativacao ? await verifyPortalToken(body.token_ativacao) : null;
+      if (
+        !ativacao ||
+        ativacao.scope !== ESCOPO_ATIVACAO ||
+        typeof ativacao.credencial_id !== "string"
+      ) {
+        return fail(MSG_ATIVACAO_VENCIDA, 401, { codigo: "ATIVACAO" });
+      }
+      const lida = await lerPessoaDoBanco(supabase, { id: ativacao.credencial_id });
+      if (!lida.ok) return fail(MSG_SEM_LEITURA, 503);
+      const { credencial, itens } = lida;
+      const agora = Date.now();
+      const item = itens.find((i) => i.vinculo.funcionario_id === ativacao.funcionario_id) ?? null;
+      if (
+        !credencial ||
+        !item ||
+        !ativacaoValida({
+          payload: ativacao,
+          credencial,
+          vinculo: item.vinculo,
+          cadastro: item.cadastro,
+          agora,
+        })
+      ) {
+        return fail(MSG_ATIVACAO_VENCIDA, 401, { codigo: "ATIVACAO" });
+      }
+      const empresaDaProvisoria = item.vinculo.empresa_id;
+      const nova = typeof body.nova_senha === "string" ? body.nova_senha : "";
+      const atual = typeof body.senha_atual === "string" ? body.senha_atual : "";
+      // o vínculo da provisória fica liberado; só se a provisória ainda é a do token (uma nova anula esta)
+      const liberarVinculo = async (efeito: Record<string, unknown>) => {
+        const { data, error } = await supabase
+          .from("funcionario_portal_acesso")
+          .update(efeito)
+          .eq("funcionario_id", item.vinculo.funcionario_id)
+          .eq("empresa_id", empresaDaProvisoria)
+          .eq("provisoria_criada_em", item.vinculo.provisoria_criada_em)
+          .select("funcionario_id");
+        if (error) console.error("[portal-funcionario] ativar: vínculo:", error.message);
+        return !error && (data?.length ?? 0) > 0;
+      };
+      const vinculoNaoLiberado = () =>
+        fail(
+          "Sua senha foi salva, mas o acesso desta empresa não foi liberado (a senha provisória mudou). Entre de " +
+            "novo com o CPF e a senha provisória mais recente.",
+          409,
+          { codigo: "ATIVACAO" }
+        );
+
+      // ------------------------------------------------ criar a senha (casos 1 e 3)
+      if (!atual) {
+        if (!nova) return fail("Crie a sua senha pessoal", 400);
+        // defesa 1: credencial com senha só cria senha nova pela provisória de um vínculo já confirmado
+        if (!podeCriarSenhaNova({ credencial, vinculo: item.vinculo })) {
+          await gravarEventos(supabase, req, credencial.id, eventoDoResetRecusado(item));
+          return fail(MSG_RESET_NEGADO, 403, { codigo: "RESET_NEGADO" });
+        }
+        const motivo = motivoSenhaInvalida(nova, credencial.usuario);
+        if (motivo) return fail(motivo, 400);
+        const efeito = efeitoDaSenhaNova({ credencial, item, itens, agora });
+        // trava otimista na geração lida: duas ativações ao mesmo tempo, só a primeira grava
+        const { data: gravadas, error } = await supabase
+          .from("portal_credencial")
+          .update({ ...efeito.credencial, senha_hash: await hashPassword(nova) })
+          .eq("id", credencial.id)
+          .eq("senha_geracao", credencial.senha_geracao)
+          .select("id");
+        if (error) return fail("Erro ao salvar a senha", 500);
+        if (!gravadas?.length) return fail(MSG_ATIVACAO_VENCIDA, 409, { codigo: "ATIVACAO" });
+        // a senha já mudou e as outras empresas já travaram: o que depende só disso vai ao registro agora, mesmo que o
+        // vínculo não consiga ser liberado (I1); os eventos da empresa da provisória esperam a liberação
+        const eventos = eventosDaAtivacao({
+          forma: "senha_nova",
+          primeira: !credencial.senha_hash,
+          item,
+          travadas: efeito.travadas,
+        });
+        await gravarEventos(supabase, req, credencial.id, eventos.daSenha);
+        if (!(await liberarVinculo(efeito.vinculo))) return vinculoNaoLiberado();
+        await gravarEventos(supabase, req, credencial.id, eventos.daLiberacao);
+        const token = await tokenDaSessao(credencial.id, efeito.credencial.sessao_versao, item);
+        return respostaDaSessao(token, item);
+      }
+
+      // ------------------------------------- já uso o portal em outra empresa (caso 2)
+      // A senha atual é tentativa de senha: limitador por IP e pessoa, e o bloqueio da credencial (caso 6). Credencial
+      // sem senha paga o mesmo bcrypt (fictício) e responde igual à senha errada.
+      const limite = await consumirTentativa(supabase, "funcionario-ativar", JANELA_LOGIN_SEG, [
+        { tipo: "ip", valor: ipDaRequisicao(req), max: MAX_LOGIN_POR_IP },
+        { tipo: "conta", valor: credencial.id, max: MAX_LOGIN_POR_CONTA },
+      ]);
+      if (!limite.permitido) return fail(MSG_MUITAS_TENTATIVAS, 429, { codigo: "LIMITE" });
+      const confere =
+        (await compararSenha(atual, credencial.senha_hash || HASH_FICTICIO)) &&
+        !!credencial.senha_hash;
+      const bloqueada = estaBloqueada(credencial, agora);
+      if (!confere) {
+        if (!bloqueada) await contarFalhaDeSenha(credencial, itens, agora);
+        return credenciaisInvalidas();
+      }
+      if (bloqueada) return bloqueadoAte(credencial.bloqueado_ate as string);
       await liberarTentativas(supabase, limite);
 
-      // funcionário da MESMA empresa do acesso (acesso apontando p/ outra = inativo)
-      const { data: func } = await supabase
-        .from("funcionario")
-        .select("nome_completo, ativo, deleted_at")
-        .eq("id", acesso.funcionario_id)
-        .eq("empresa_id", acesso.empresa_id)
-        .maybeSingle();
-      if (!funcionarioPodeEntrar(func)) return fail("Cadastro inativo — fale com o RH", 403);
+      if (!nova) {
+        // a senha atual nasceu da provisória de OUTRA empresa: antes de liberar, uma senha nova (P10)
+        if (exigeTrocaNaAtivacao({ credencial, empresaId: empresaDaProvisoria })) {
+          return ok({ etapa: "nova_senha_obrigatoria" });
+        }
+        const efeito = efeitoDaConfirmacao({ credencial, item, agora, troca: false });
+        const { error: erroZerar } = await supabase
+          .from("portal_credencial")
+          .update(efeito.credencial)
+          .eq("id", credencial.id);
+        // só zera o contador de erros: não impede a liberação, mas a falha não passa em silêncio
+        if (erroZerar) console.error("[portal-funcionario] ativar: credencial:", erroZerar.message);
+        const eventos = eventosDaAtivacao({
+          forma: "senha_atual",
+          primeira: false,
+          item,
+          travadas: [],
+        });
+        await gravarEventos(supabase, req, credencial.id, eventos.daSenha);
+        if (!(await liberarVinculo(efeito.vinculo))) {
+          return fail(MSG_ATIVACAO_VENCIDA, 409, { codigo: "ATIVACAO" });
+        }
+        await gravarEventos(supabase, req, credencial.id, eventos.daLiberacao);
+        const token = await tokenDaSessao(credencial.id, credencial.sessao_versao, item);
+        return respostaDaSessao(token, item);
+      }
 
-      await supabase
-        .from("funcionario_portal_acesso")
-        .update({ tentativas: 0, bloqueado_ate: null, ultimo_acesso: agoraIso() })
-        .eq("funcionario_id", acesso.funcionario_id);
-      await ev({ evento: "login", detalhe: { senha_provisoria: acesso.senha_provisoria } });
-
-      const token = await signPortalToken(
-        {
-          scope: "funcionario_sessao",
-          empresa_id: acesso.empresa_id,
-          funcionario_id: acesso.funcionario_id,
-          v: acesso.sessao_versao,
-        },
-        TTL_SESSAO
+      // confirmar e trocar: a geração não sobe (as outras empresas continuam liberadas), todas as sessões caem e a
+      // origem só zera quando a provisória é de outra empresa (origemDepoisDaTroca)
+      const motivo = motivoSenhaInvalida(nova, credencial.usuario);
+      if (motivo) return fail(motivo, 400);
+      if (nova === atual) return fail("A nova senha tem de ser diferente da atual", 400);
+      const efeito = efeitoDaConfirmacao({ credencial, item, agora, troca: true });
+      const { data: trocadas, error: erroTroca } = await supabase
+        .from("portal_credencial")
+        .update({ ...efeito.credencial, senha_hash: await hashPassword(nova) })
+        .eq("id", credencial.id)
+        .eq("senha_hash", credencial.senha_hash)
+        .select("id");
+      if (erroTroca) return fail("Erro ao salvar a senha", 500);
+      if (!trocadas?.length) return fail(MSG_ATIVACAO_VENCIDA, 409, { codigo: "ATIVACAO" });
+      // a senha já mudou e as sessões já caíram: o troca_senha do operador vai agora, mesmo que o vínculo falhe (I1)
+      const eventos = eventosDaAtivacao({ forma: "troca", primeira: false, item, travadas: [] });
+      await gravarEventos(supabase, req, credencial.id, eventos.daSenha);
+      if (!(await liberarVinculo(efeito.vinculo))) return vinculoNaoLiberado();
+      await gravarEventos(supabase, req, credencial.id, eventos.daLiberacao);
+      const token = await tokenDaSessao(
+        credencial.id,
+        efeito.credencial.sessao_versao ?? credencial.sessao_versao + 1,
+        item
       );
-      return ok({ token, trocar_senha: acesso.senha_provisoria, nome: func.nome_completo });
+      return respostaDaSessao(token, item);
     }
 
     // --------------------------------------------------------------- sessão
+    // A conferência de toda ação com sessão (§5.3, `sessaoValida`): escopo de sessão; a credencial existe e a versão
+    // dela (`vc`) confere; o vínculo é do funcionário, da credencial e da empresa do token, com a versão `v`; o
+    // cadastro é da empresa do token, ativo, com o mesmo CPF; e o vínculo está liberado. Token de antes da T38 (sem
+    // `credencial_id`) cai aqui. Depois dela, todas as ações filtram pela empresa e pelo funcionário do TOKEN.
     const payload = body.token ? await verifyPortalToken(body.token) : null;
-    if (!payload || payload.scope !== "funcionario_sessao" || !payload.funcionario_id) {
+    const credencialId = typeof payload?.credencial_id === "string" ? payload.credencial_id : "";
+    const funcionarioId = typeof payload?.funcionario_id === "string" ? payload.funcionario_id : "";
+    const empresaId = typeof payload?.empresa_id === "string" ? payload.empresa_id : "";
+    if (
+      !payload ||
+      payload.scope !== ESCOPO_SESSAO ||
+      !credencialId ||
+      !funcionarioId ||
+      !empresaId
+    ) {
       return fail("Entre com seu usuário e senha para continuar", 401, { codigo: "SESSAO" });
     }
-    const funcionarioId = payload.funcionario_id as string;
-    const empresaId = payload.empresa_id as string;
-    const { data: acesso } = await supabase
-      .from("funcionario_portal_acesso")
-      .select("*")
-      .eq("funcionario_id", funcionarioId)
-      .maybeSingle();
-    if (
-      !acesso ||
-      !acesso.ativo ||
-      acesso.sessao_versao !== payload.v ||
-      !empresaId ||
-      acesso.empresa_id !== empresaId
-    ) {
-      return fail("Sua sessão terminou — entre de novo", 401, { codigo: "SESSAO" });
+    const [
+      { data: credencial, error: erroCredencial },
+      { data: vinculoDaSessao, error: erroVinculo },
+      { data: funcionarioSessao, error: erroFuncionarioSessao },
+    ] = await Promise.all([
+      supabase
+        .from("portal_credencial")
+        .select(COLUNAS_CREDENCIAL)
+        .eq("id", credencialId)
+        .maybeSingle(),
+      supabase
+        .from("funcionario_portal_acesso")
+        .select(COLUNAS_VINCULO)
+        .eq("funcionario_id", funcionarioId)
+        .maybeSingle(),
+      supabase
+        .from("funcionario")
+        .select("id, empresa_id, cpf, ativo, deleted_at")
+        .eq("id", funcionarioId)
+        .eq("empresa_id", empresaId)
+        .maybeSingle(),
+    ]);
+    if (erroCredencial || erroVinculo || erroFuncionarioSessao) {
+      return fail("Não foi possível validar seu acesso", 503);
+    }
+    const sessaoConferida = sessaoValida({
+      payload,
+      credencial,
+      vinculo: vinculoDaSessao,
+      cadastro: funcionarioSessao,
+      agora: Date.now(),
+    });
+    if (!sessaoConferida.ok) {
+      return sessaoConferida.motivo === "cadastro_inativo"
+        ? fail("Cadastro inativo — fale com o RH", 401, { codigo: "SESSAO" })
+        : fail("Sua sessão terminou — entre de novo", 401, { codigo: "SESSAO" });
     }
     const ev = (e: Omit<EventoPortal, "empresa_id" | "funcionario_id">) =>
       registrarEvento(supabase, req, {
@@ -498,94 +928,122 @@ Deno.serve(
         registrar: (mensagem, causa) => console.error(`[portal-funcionario] ${mensagem}`, causa),
       });
 
-    const { data: funcionarioSessao, error: erroFuncionarioSessao } = await supabase
-      .from("funcionario")
-      .select("id, ativo, deleted_at")
-      .eq("id", funcionarioId)
-      .eq("empresa_id", empresaId)
-      .maybeSingle();
-    if (erroFuncionarioSessao) return fail("Não foi possível validar seu acesso", 503);
-    if (!funcionarioPodeEntrar(funcionarioSessao)) {
-      return fail("Cadastro inativo — fale com o RH", 401, { codigo: "SESSAO" });
-    }
-
     // Reconfirmação da senha com a sessão aberta (assinar o certificado e trocar a senha informando a
-    // atual): limite de tentativas por funcionário, em escopo próprio, consumido ANTES de conferir (T27).
+    // atual): limite de tentativas por PESSOA (a credencial: duas sessões em empresas diferentes não dobram o
+    // teto, T38 §5.5), em escopo próprio, consumido ANTES de conferir (T27).
     const reconfirmar = (senha: string) =>
       reconfirmarSenha({
-        funcionarioId,
+        funcionarioId: credencialId,
         senha,
         consumir: (escopo, janelaSeg, limites) =>
           consumirTentativa(supabase, escopo, janelaSeg, limites),
-        conferir: async () => (await verifyPassword(senha, acesso.senha_hash)).ok,
+        conferir: async () =>
+          !!credencial.senha_hash && (await verifyPassword(senha, credencial.senha_hash)).ok,
         liberar: (consumo) => liberarTentativas(supabase, consumo),
       });
     const muitasTentativas = () => fail(MSG_MUITAS_TENTATIVAS, 429, { codigo: "LIMITE" });
-    // Volume de `evento` e `progresso` (T31): teto por funcionário, consumido ANTES do trabalho. O evento
+    // Volume de `evento` e `progresso` (T31): teto por PESSOA (T38 §5.5), consumido ANTES do trabalho. O evento
     // tem três tetos (`acaoDeVolumeDoEvento`): abrir_aula, play/pausa e o resto, para o play repetido do
     // vídeo não travar a troca de aula. Fora do ar, o limitador não derruba o portal (`consumirTentativa`
     // libera e registra o erro).
     const dentroDoLimite = (acao: AcaoComVolume) =>
       dentroDoVolume({
         acao,
-        funcionarioId,
+        funcionarioId: credencialId,
         consumir: (escopo, janelaSeg, limites) =>
           consumirTentativa(supabase, escopo, janelaSeg, limites),
       });
     const muitasAcoes = () => fail(MSG_MUITAS_ACOES, 429, { codigo: "LIMITE" });
 
     // --------------------------------------------------------- trocar senha
+    // A senha é da pessoa: vale em todas as empresas e a troca derruba as sessões de todas (`vc`). A senha atual é
+    // sempre obrigatória (o primeiro acesso virou a etapa "ativar"). Não sobe a geração e MANTÉM a origem da senha
+    // (origemDepoisDaTroca, via sessão): quem troca aqui pode ser quem a criou.
     if (body.acao === "trocar_senha") {
       const nova = body.nova_senha ?? "";
-      if (!acesso.senha_provisoria) {
-        // a senha atual é obrigatória na troca voluntária (só o 1º acesso, com a provisória, dispensa)
-        if (!body.senha_atual) return fail("Informe a sua senha atual", 400);
-        const reconfirmacao = await reconfirmar(body.senha_atual);
-        if (reconfirmacao === "limite") return muitasTentativas();
-        if (reconfirmacao === "incorreta") return fail("Senha atual incorreta", 400);
-      }
-      const motivo = motivoSenhaInvalida(nova, acesso.usuario);
+      if (!body.senha_atual) return fail("Informe a sua senha atual", 400);
+      const reconfirmacao = await reconfirmar(body.senha_atual);
+      if (reconfirmacao === "limite") return muitasTentativas();
+      if (reconfirmacao === "incorreta") return fail("Senha atual incorreta", 400);
+      const motivo = motivoSenhaInvalida(nova, credencial.usuario);
       if (motivo) return fail(motivo, 400);
-      if ((await verifyPassword(nova, acesso.senha_hash)).ok) {
+      if (credencial.senha_hash && (await verifyPassword(nova, credencial.senha_hash)).ok) {
         return fail("A nova senha tem de ser diferente da atual", 400);
       }
-      const versao = acesso.sessao_versao + 1;
-      const { error } = await supabase
-        .from("funcionario_portal_acesso")
+      const vc = credencial.sessao_versao + 1;
+      const { data: trocadas, error } = await supabase
+        .from("portal_credencial")
         .update({
           senha_hash: await hashPassword(nova),
-          senha_provisoria: false,
-          sessao_versao: versao,
+          sessao_versao: vc,
+          senha_alterada_em: agoraIso(),
         })
-        .eq("funcionario_id", funcionarioId);
+        .eq("id", credencialId)
+        .eq("sessao_versao", credencial.sessao_versao)
+        .select("id");
       if (error) return fail("Erro ao salvar a senha", 500);
-      await ev({ evento: "troca_senha", detalhe: { era_provisoria: acesso.senha_provisoria } });
+      if (!trocadas?.length) {
+        return fail("Sua senha mudou agora há pouco — entre de novo", 401, { codigo: "SESSAO" });
+      }
+      await ev({ evento: "troca_senha", detalhe: { via: "sessao" } });
       const token = await signPortalToken(
         {
-          scope: "funcionario_sessao",
+          scope: ESCOPO_SESSAO,
+          credencial_id: credencialId,
           empresa_id: empresaId,
           funcionario_id: funcionarioId,
-          v: versao,
+          v: vinculoDaSessao.sessao_versao,
+          vc,
         },
         TTL_SESSAO
       );
       return ok({ token });
     }
 
+    // Sair derruba as sessões desta empresa (o vínculo), em todos os aparelhos, como antes da T38.
     if (body.acao === "logout") {
       const { error } = await supabase
         .from("funcionario_portal_acesso")
-        .update({ sessao_versao: acesso.sessao_versao + 1 })
+        .update({ sessao_versao: vinculoDaSessao.sessao_versao + 1 })
         .eq("funcionario_id", funcionarioId)
         .eq("empresa_id", empresaId)
-        .eq("sessao_versao", acesso.sessao_versao);
+        .eq("sessao_versao", vinculoDaSessao.sessao_versao);
       if (error) return fail("Não foi possível encerrar sua sessão", 500);
       await ev({ evento: "logout" });
       return ok({ message: "Até logo" });
     }
 
-    if (acesso.senha_provisoria) {
-      return fail("Crie sua senha pessoal para continuar", 403, { codigo: "TROCAR_SENHA" });
+    // ------------------------------------------------- trocar de empresa (§5.4)
+    // `empresas`: as OUTRAS empresas liberadas da pessoa. `trocar_empresa`: o token da escolhida, sem pedir a senha de
+    // novo (a sessão já provou), que vence JUNTO com o de origem (alternar não renova a sessão para sempre). A trilha
+    // da outra empresa recebe o mesmo `login` de quem entrou com a senha.
+    if (body.acao === "empresas" || body.acao === "trocar_empresa") {
+      const lida = await lerPessoaDoBanco(supabase, { id: credencialId });
+      if (!lida.ok || !lida.credencial) {
+        return fail("Não foi possível carregar as suas empresas agora. Tente de novo.", 503);
+      }
+      const agora = Date.now();
+      if (body.acao === "empresas") {
+        const outras = outrosVinculosLiberados({
+          itens: lida.itens,
+          credencial: lida.credencial,
+          empresaId,
+          agora,
+        });
+        return ok({ empresas: await empresasParaEscolha(supabase, outras) });
+      }
+      const item = vinculoEscolhido({
+        itens: lida.itens,
+        credencial: lida.credencial,
+        funcionarioId: body.funcionario_id,
+        agora,
+      });
+      if (!item || item.vinculo.empresa_id === empresaId) {
+        return fail("Esta empresa não está disponível para você agora", 403);
+      }
+      const ttl = ttlDaTroca({ expOrigem: payload.exp, agoraSeg: Math.floor(agora / 1000) });
+      if (ttl <= 0) return fail("Sua sessão terminou — entre de novo", 401, { codigo: "SESSAO" });
+      return entrarComSenha(lida.credencial, item, ttl);
     }
 
     // Nenhum ID do corpo é usado: documentos sempre pertencem ao token validado.
@@ -1030,10 +1488,24 @@ Deno.serve(
           )
         : null;
 
+      // Quantas OUTRAS empresas da pessoa estão liberadas (T38): com uma ou mais, o portal mostra "Trocar de
+      // empresa". Só conta quem já provou a senha; nada de "empresas esperando" (defesa 3). Falha de leitura = 0.
+      const pessoa = await lerPessoaDoBanco(supabase, { id: credencialId });
+      const outrasEmpresas =
+        pessoa.ok && pessoa.credencial
+          ? outrasEmpresasLiberadas({
+              itens: pessoa.itens,
+              credencial: pessoa.credencial,
+              empresaId,
+              agora: Date.now(),
+            })
+          : 0;
+
       return ok({
         funcionario: func,
         empresa_nome: emp?.nome || emp?.razao_social || "",
         empresa_logo_url: empresaLogoUrl,
+        outras_empresas: outrasEmpresas,
         cursos: resposta,
         ciencias: listaDeCiencias.ok ? listaDeCiencias.ciencias : null,
         // a orientação do RT que o aluno confirma ao abrir o curso (T35); null = leitura falhou
@@ -1069,11 +1541,11 @@ Deno.serve(
         if (!aulaLiberada(trilha, body.aula_id)) {
           return fail("Conclua a aula anterior primeiro", 409, { codigo: "AULA_BLOQUEADA" });
         }
-        // o relógio da aula começa agora
+        // o relógio da aula começa agora (é da PESSOA: duas empresas ao mesmo tempo dividem o relógio, T38 §5.5)
         await supabase
-          .from("funcionario_portal_acesso")
+          .from("portal_credencial")
           .update({ ultimo_sinal_em: agoraIso() })
-          .eq("funcionario_id", funcionarioId);
+          .eq("id", credencialId);
         if (!mat.iniciado_em || mat.status === "pendente") {
           await supabase
             .from("treinamento_matricula")
@@ -1179,23 +1651,23 @@ Deno.serve(
       const { decorrido, pedido, aceito, novoSeg, ajustado } = creditarTempo({
         jaTinha,
         informado: body.segundos_assistidos,
-        ultimoSinalEm: acesso.ultimo_sinal_em,
+        ultimoSinalEm: credencial.ultimo_sinal_em,
         agora,
         duracao,
       });
 
-      // Trava otimista (T31): o sinal só é gravado se ninguém o mudou desde que este pedido o leu (o
-      // `acesso` do começo). Dois progressos simultâneos liam o mesmo sinal e creditavam o mesmo tempo
+      // Trava otimista (T31): o sinal só é gravado se ninguém o mudou desde que este pedido o leu (a
+      // `credencial` do começo). Dois progressos simultâneos liam o mesmo sinal e creditavam o mesmo tempo
       // decorrido, cada um; agora o UPDATE do Postgres deixa passar só o primeiro, e o outro responde 409
-      // sem creditar nada (o navegador reenvia o total no próximo ciclo).
+      // sem creditar nada (o navegador reenvia o total no próximo ciclo). O sinal é da PESSOA (T38 §5.5): um
+      // curso da A e outro da B ao mesmo tempo não somam o dobro (período exclusivo, NR-1 Anexo II 4.4).
       const { data: sinalGravado, error: erroSinal } = await travaDoSinal(
         supabase
-          .from("funcionario_portal_acesso")
+          .from("portal_credencial")
           .update({ ultimo_sinal_em: new Date(agora).toISOString() })
-          .eq("funcionario_id", funcionarioId)
-          .eq("empresa_id", empresaId),
-        acesso.ultimo_sinal_em
-      ).select("funcionario_id");
+          .eq("id", credencialId),
+        credencial.ultimo_sinal_em
+      ).select("id");
       const sinal = resultadoDoSinal({ erro: erroSinal, linhas: sinalGravado?.length });
       if (sinal === "erro") {
         console.error("[portal-funcionario] sinal do progresso:", erroSinal);
@@ -1729,7 +2201,7 @@ Deno.serve(
       };
       const assinatura = {
         metodo: "senha_pessoal_portal_funcionario",
-        usuario: acesso.usuario,
+        usuario: credencial.usuario,
         declaracao:
           "Declaro que realizei pessoalmente este treinamento, assisti às aulas e fiz a avaliação.",
         assinado_em: agoraIso(),
@@ -1874,7 +2346,7 @@ Deno.serve(
       if (!cienciaId) return fail("ciencia_id é obrigatório", 400);
       const evidencia = {
         metodo: "portal_funcionario_login",
-        usuario: acesso.usuario,
+        usuario: credencial.usuario,
         confirmado_em: agoraIso(),
         ...origemDaRequisicao(req),
       };

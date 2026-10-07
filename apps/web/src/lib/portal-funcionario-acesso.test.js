@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
+import { VALIDADE_PROVISORIA_DIAS as VALIDADE_NO_SERVIDOR } from "../../../../supabase/functions/_shared/portal-credencial.ts";
 
 const { invoke, dispararWhatsApp } = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -21,6 +22,9 @@ import {
   MOTIVO_REVOGACAO_MIN,
   extrasDaMatricula,
   falhaDaAcaoDoRH,
+  statusAcesso,
+  textoCredenciais,
+  VALIDADE_PROVISORIA_DIAS,
   validarMotivoRevogacao,
 } from "./portal-funcionario-acesso";
 
@@ -85,6 +89,20 @@ describe("avisarNoPortal", () => {
     expect(r.texto).toContain("Entre com o seu usuário (CPF) e a sua senha.");
     expect(r.texto).not.toContain("Senha provisória");
     expect(dispararWhatsApp).toHaveBeenCalledTimes(1);
+  });
+
+  it("já tem acesso (T38): a mensagem não sabe se a senha ainda abre esta empresa, então manda falar com o RH", async () => {
+    // o aviso da matrícula só sabe que o acesso existe (o 409 JA_TEM_ACESSO), não se a provisória venceu ou se a
+    // senha mudou em outra empresa: a última frase é a rede de segurança para quem não consegue entrar
+    invoke.mockResolvedValueOnce(jaTemAcesso());
+    const r = await avisarNoPortal(funcionario, "Você tem treinamentos.");
+    expect(r.texto).toMatch(/a sua senha. Se não conseguir entrar, fale com o RH.$/);
+    // quem acabou de receber a provisória não precisa dela: a mensagem já traz a senha
+    invoke.mockResolvedValueOnce({
+      data: { success: true, usuario: "12345678901", senha_provisoria: "Prov-123" },
+    });
+    const nova = await avisarNoPortal(funcionario, "Você tem treinamentos.");
+    expect(nova.texto).not.toContain("Se não conseguir entrar");
   });
 
   it("decide pelo `codigo`, não pelo texto: mensagem reescrita no servidor não quebra", async () => {
@@ -381,5 +399,54 @@ describe("validarMotivoRevogacao: confere antes de ir ao servidor", () => {
     );
     expect(Number(/MOTIVO_REVOGACAO_MIN = (\d+)/.exec(servidor)?.[1])).toBe(MOTIVO_REVOGACAO_MIN);
     expect(Number(/MOTIVO_REVOGACAO_MAX = (\d+)/.exec(servidor)?.[1])).toBe(MOTIVO_REVOGACAO_MAX);
+  });
+});
+
+describe("T38: um login em mais de uma empresa (mensagem e selo)", () => {
+  const LINHA_JA_USO =
+    'Se você já usa o portal em outra empresa, entre com o CPF e esta senha provisória, toque em "Já uso o ' +
+    'portal em outra empresa" e digite a senha que você já usa.';
+
+  it("a mensagem com a provisória ensina quem já usa o portal em outra empresa e diz que ela vence", () => {
+    const t = textoCredenciais({
+      nome: "Fulano de Tal",
+      usuario: "12345678901",
+      senha: "ABCD2345",
+    });
+    expect(t).toContain("Senha provisória: ABCD2345 (vale por 7 dias)");
+    expect(t).toContain(LINHA_JA_USO);
+  });
+
+  it("avisarNoPortal: a mensagem com as credenciais leva a mesma linha; sem credenciais, não", async () => {
+    invoke.mockResolvedValueOnce({
+      data: { success: true, usuario: "12345678901", senha_provisoria: "Prov-123" },
+    });
+    const comCredenciais = await avisarNoPortal(funcionario, "Você tem treinamentos.");
+    expect(comCredenciais.texto).toContain("Senha provisória: Prov-123 (vale por 7 dias)");
+    expect(comCredenciais.texto).toContain(LINHA_JA_USO);
+    invoke.mockResolvedValueOnce(jaTemAcesso());
+    const semCredenciais = await avisarNoPortal(funcionario, "Você tem treinamentos.");
+    expect(semCredenciais.texto).not.toContain(LINHA_JA_USO);
+  });
+
+  it("a validade da provisória da mensagem é a do servidor (7 dias, P3)", () => {
+    expect(VALIDADE_PROVISORIA_DIAS).toBe(VALIDADE_NO_SERVIDOR);
+  });
+
+  it("statusAcesso: selo 'Precisa de nova senha provisória' com a dica do que fazer", () => {
+    const s = statusAcesso({ ativo: true, precisa_provisoria: true, situacao: "travado" });
+    expect(s.rotulo).toBe("Precisa de nova senha provisória");
+    expect(s.dica).toBe(
+      "A senha do portal mudou ou o CPF do cadastro mudou. Gere uma senha provisória em Redefinir senha e " +
+        "entregue ao funcionário."
+    );
+    // desativado vem antes; os outros selos continuam
+    expect(statusAcesso({ ativo: false, precisa_provisoria: true }).rotulo).toBe("Desativado");
+    expect(statusAcesso({ ativo: true, bloqueado: true }).rotulo).toBe("Bloqueado");
+    expect(statusAcesso({ ativo: true, primeiro_acesso_pendente: true }).rotulo).toBe(
+      "Aguardando 1º acesso"
+    );
+    expect(statusAcesso({ ativo: true }).rotulo).toBe("Ativo");
+    expect(statusAcesso(null).rotulo).toBe("Sem acesso");
   });
 });
