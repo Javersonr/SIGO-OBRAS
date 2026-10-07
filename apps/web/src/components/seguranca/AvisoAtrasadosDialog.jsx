@@ -58,7 +58,15 @@ function gravarAvisados(empresaId, ids) {
  *
  * `linhas` = as linhas da tabela de matrículas (as `atrasada` entram). Fechada com `aberto` falso.
  */
-export default function AvisoAtrasadosDialog({ aberto, linhas, empresaId, onFechar }) {
+// T33: `podeCriarAcesso` (Funcionários → Editar) muda só o texto de quem ficou de fora por não ter acesso ao portal:
+// quem não pode criar o acesso é mandado a quem pode.
+export default function AvisoAtrasadosDialog({
+  aberto,
+  linhas,
+  empresaId,
+  onFechar,
+  podeCriarAcesso = false,
+}) {
   const [carregando, setCarregando] = useState(false);
   const [acessos, setAcessos] = useState(null); // null = não deu para consultar
   const [erroAcessos, setErroAcessos] = useState("");
@@ -221,7 +229,7 @@ export default function AvisoAtrasadosDialog({ aberto, linhas, empresaId, onFech
                   {lote.pulados.map((p) => (
                     <li key={p.funcionarioId}>
                       <span className="font-medium">{p.nome}</span>:{" "}
-                      {rotuloDoMotivoPulado(p.motivo)}
+                      {rotuloDoMotivoPulado(p.motivo, { podeCriarAcesso })}
                     </li>
                   ))}
                 </ul>

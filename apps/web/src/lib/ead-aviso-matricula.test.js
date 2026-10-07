@@ -10,6 +10,7 @@ import {
   deveInterromperOLote,
   resumirLote,
   rotuloDoMotivoPulado,
+  dicaDoAvisoDaLinha,
   LIMITE_DO_LOTE,
 } from "./ead-aviso-matricula";
 
@@ -428,5 +429,33 @@ describe("rotuloDoMotivoPulado", () => {
       expect(rotuloDoMotivoPulado(m).length).toBeGreaterThan(5);
     }
     expect(rotuloDoMotivoPulado("sem_acesso")).toMatch(/botão do WhatsApp/);
+  });
+
+  it("T33 (C1): quem não pode criar o acesso é mandado a quem tem Funcionários → Editar", () => {
+    const texto = rotuloDoMotivoPulado("sem_acesso", { podeCriarAcesso: false });
+    expect(texto).toMatch(/Funcionários → Editar/);
+    expect(texto).not.toMatch(/cria o acesso e envia a senha/);
+    // quem pode criar segue com o texto de antes; os outros motivos não mudam
+    expect(rotuloDoMotivoPulado("sem_acesso", { podeCriarAcesso: true })).toBe(
+      rotuloDoMotivoPulado("sem_acesso")
+    );
+    expect(rotuloDoMotivoPulado("sem_telefone", { podeCriarAcesso: false })).toBe(
+      rotuloDoMotivoPulado("sem_telefone")
+    );
+  });
+});
+
+describe("dicaDoAvisoDaLinha (T33)", () => {
+  it("inativo não é avisado; quem cria o acesso vê a dica de antes; quem não cria, a quem pedir", () => {
+    expect(dicaDoAvisoDaLinha({ inativo: true, podeCriarAcesso: true })).toBe(
+      "Funcionário inativo: não há a quem avisar"
+    );
+    expect(dicaDoAvisoDaLinha({ inativo: false, podeCriarAcesso: true })).toBe(
+      "Avisar pelo WhatsApp (cria o acesso ao portal se ainda não tiver)"
+    );
+    const semCriar = dicaDoAvisoDaLinha({ inativo: false, podeCriarAcesso: false });
+    expect(semCriar).toMatch(/^Avisar pelo WhatsApp/);
+    expect(semCriar).toMatch(/Funcionários → Editar/);
+    expect(semCriar).not.toMatch(/cria o acesso/);
   });
 });

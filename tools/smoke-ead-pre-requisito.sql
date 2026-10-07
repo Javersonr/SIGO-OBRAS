@@ -83,10 +83,16 @@ begin
      and c.deleted_at is null
    limit 1;
 
+  -- T33 (0147): gravar no EAD exige a permissão da aba Treinamentos EAD, lida do vínculo do e-mail do token. O usuário
+  -- de teste é um Admin sintético (e-mail @exemplo.test), que some no ROLLBACK.
+  insert into public.usuario_empresa (empresa_id, usuario_email, perfil, ativo, nome_completo)
+    values (v_empresa, 'smoke.t23@exemplo.test', 'Admin', true, 'Smoke T23');
+
   -- ---------------------------------------------------------------- usuário
   perform set_config('request.jwt.claims', jsonb_build_object(
     'role', 'authenticated',
     'sub', v_sub,
+    'email', 'smoke.t23@exemplo.test',
     'app_metadata', jsonb_build_object('empresa_id', v_empresa)
   )::text, true);
   set local role authenticated;

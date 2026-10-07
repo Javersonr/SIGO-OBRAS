@@ -25,7 +25,14 @@ import {
  * referência e continua desenhando a imagem. Referência antiga (Base44, arquivo perdido) não aparece como
  * imagem: o RH vê o aviso e anexa de novo.
  */
-export default function AssinaturaCursoCampo({ rotulo, valor, empresaId, onChange }) {
+// T33: `somenteLeitura` (sem Treinamentos EAD → Editar) mostra a imagem sem os botões de anexar e remover.
+export default function AssinaturaCursoCampo({
+  rotulo,
+  valor,
+  empresaId,
+  onChange,
+  somenteLeitura = false,
+}) {
   const [enviando, setEnviando] = useState(false);
   const ref = refDeAssinatura(valor, empresaId);
 
@@ -81,22 +88,24 @@ export default function AssinaturaCursoCampo({ rotulo, valor, empresaId, onChang
           className="h-12 max-w-[10rem] rounded border bg-white object-contain"
         />
       )}
-      <label className="text-xs border rounded-md px-2 py-1 cursor-pointer hover:border-slate-400 flex items-center gap-1">
-        {enviando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-        {ref ? "Trocar imagem" : "Anexar imagem"}
-        <input
-          type="file"
-          accept={ACCEPT_ASSINATURA}
-          className="hidden"
-          disabled={enviando}
-          aria-label={`Anexar imagem: ${rotulo}`}
-          onChange={(e) => {
-            enviar(e.target.files?.[0]);
-            e.target.value = "";
-          }}
-        />
-      </label>
-      {valor && (
+      {!somenteLeitura && (
+        <label className="text-xs border rounded-md px-2 py-1 cursor-pointer hover:border-slate-400 flex items-center gap-1">
+          {enviando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+          {ref ? "Trocar imagem" : "Anexar imagem"}
+          <input
+            type="file"
+            accept={ACCEPT_ASSINATURA}
+            className="hidden"
+            disabled={enviando}
+            aria-label={`Anexar imagem: ${rotulo}`}
+            onChange={(e) => {
+              enviar(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+        </label>
+      )}
+      {!somenteLeitura && valor && (
         <Button
           type="button"
           variant="ghost"

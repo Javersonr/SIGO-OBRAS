@@ -15,10 +15,13 @@
  *   { acao:"editar_resposta_duvida", duvida_id, resposta }
  *                                                    → { editada } (A6, T21)
  *
- * Permissão (espelha a aba Funcionários de RH & Segurança, onde fica a ficha
- * com o AcessoPortalCard): super admin, Admin, dono ou permissão na aba.
- * "status" basta ver a aba; criar/redefinir/ativar e as ações de matrícula
- * exigem a função "editar".
+ * Permissão (T33, `permissaoDaAcao` em ./regras.ts): super admin, Admin, dono ou a
+ * permissão da ação. O acesso ao portal (criar, redefinir, ativar) segue em
+ * Segurança do Trabalho → Funcionários (a Ficha); "status" aceita também quem tem
+ * Treinamentos EAD → Matricular, com a lista recortada (só funcionario_id e ativo),
+ * e "criar" o deixa entrar só para o 409 JA_TEM_ACESSO (criar exige Funcionários →
+ * Editar: `decidirCriar`). Liberar tentativa, revogar certificado e editar a resposta
+ * de uma dúvida exigem a função própria da aba Treinamentos EAD.
  *
  * As ações de matrícula (regras em ./regras.ts) gravam um evento na trilha com
  * o e-mail do RH (`detalhe.por`): `tentativa_liberada` (que também zera o
@@ -41,7 +44,7 @@ import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { usuarioDaRequisicao } from "../_shared/usuario-request.ts";
 import { hashPassword } from "../_shared/passwords.ts";
-import { temPermissaoServidor, type Vinculo } from "../_shared/conector/acesso.ts";
+import type { Vinculo } from "../_shared/conector/acesso.ts";
 import {
   EVENTO_CERTIFICADO_REVOGADO,
   EVENTO_DUVIDA_RESPOSTA_EDITADA,
@@ -54,16 +57,21 @@ import { CanalNaoConfiguradoError, enviarWhatsAppTexto } from "../_shared/whatsa
 import {
   ACOES_DE_MATRICULA,
   MENSAGEM_SEM_EDICAO,
+  avaliarPermissao,
   avisarAluno,
   dadosDaRevogacao,
   dadosParaDesfazerRevogacao,
+  decidirCriar,
   decidirLiberacao,
   decidirRevogacao,
   destinoDoAviso,
   detalheDaLiberacao,
   detalheDaRevogacao,
   falhaDoRegistro,
+  mensagemSemPermissao,
   motivoDaRevogacao,
+  permissaoDaAcao,
+  recortarAcessosParaEad,
   registrarOuDesfazer,
   textoAvisoRevogacao,
   validarExtrasVistas,
@@ -80,17 +88,6 @@ import {
   validarDuvidaId,
   validarRespostaDaDuvida,
 } from "./duvida.ts";
-
-// mesmo módulo/aba do front (pages/SegurancaTrabalho.jsx → aba Funcionários)
-const MODULO = "Segurança do Trabalho";
-const ABA = "Funcionários";
-const ACOES_ESCRITA = new Set([
-  "criar",
-  "redefinir",
-  "ativo",
-  ...ACOES_DE_MATRICULA,
-  ...ACOES_DE_DUVIDA,
-]);
 
 interface Body {
   acao?: string;
@@ -530,23 +527,18 @@ Deno.serve(
       return fail("Payload inválido", 400);
     }
     const acao = body.acao ?? "";
-    if (acao !== "status" && !ACOES_ESCRITA.has(acao)) return fail("Ação desconhecida", 400);
+    if (!permissaoDaAcao(acao)) return fail("Ação desconhecida", 400);
     const supabase = createAdminClient();
 
-    // Antes: qualquer usuário da empresa (Compras, Estoque...) redefinia a
-    // senha de qualquer funcionário e recebia a provisória. Agora: ver a aba
-    // para qualquer ação; "editar" para o que altera o acesso (logo antes de
-    // alterar, para o 409 JA_TEM_ACESSO do avisarNoPortal seguir igual).
-    let podeEditar = true;
-    if (!staff.is_super_admin) {
-      const vinculo = await vinculoDoChamador(supabase, staff.email, staff.empresa_id);
-      if (!vinculo || !temPermissaoServidor(vinculo, MODULO, ABA)) {
-        return fail("Sem permissão para gerenciar o acesso ao Portal do Funcionário", 403);
-      }
-      podeEditar = temPermissaoServidor(vinculo, MODULO, ABA, "editar");
-    }
-    const semEdicao = () =>
-      fail("Sem permissão para alterar o acesso ao Portal do Funcionário", 403);
+    // Antes: qualquer usuário da empresa (Compras, Estoque...) redefinia a senha de qualquer funcionário e
+    // recebia a provisória; depois, a aba Funcionários liberava tudo, inclusive liberar tentativa e revogar
+    // certificado. Agora (T33): o portão da ação (entrar) antes de qualquer leitura e o que ela exige (agir)
+    // logo antes de alterar, para o 409 JA_TEM_ACESSO do avisarNoPortal seguir igual (decidirCriar).
+    const vinculo: Vinculo | null = staff.is_super_admin
+      ? null
+      : await vinculoDoChamador(supabase, staff.email, staff.empresa_id);
+    const pode = avaliarPermissao({ acao, vinculo, superAdmin: staff.is_super_admin });
+    if (!pode.entra) return fail(mensagemSemPermissao(acao, "entrar"), 403);
 
     if (acao === "status") {
       // super admin consulta a empresa aberta na tela; os demais, só a da sessão
@@ -559,21 +551,21 @@ Deno.serve(
         .eq("empresa_id", empresaId);
       if (error) return fail("Erro ao carregar acessos", 500);
       const agora = Date.now();
-      return ok({
-        acessos: (data ?? []).map((a) => ({
-          funcionario_id: a.funcionario_id,
-          usuario: a.usuario,
-          ativo: a.ativo,
-          primeiro_acesso_pendente: a.senha_provisoria,
-          bloqueado: !!a.bloqueado_ate && Date.parse(a.bloqueado_ate) > agora,
-          ultimo_acesso: a.ultimo_acesso,
-        })),
-      });
+      const acessos = (data ?? []).map((a) => ({
+        funcionario_id: a.funcionario_id,
+        usuario: a.usuario,
+        ativo: a.ativo,
+        primeiro_acesso_pendente: a.senha_provisoria,
+        bloqueado: !!a.bloqueado_ate && Date.parse(a.bloqueado_ate) > agora,
+        ultimo_acesso: a.ultimo_acesso,
+      }));
+      // quem entra só por Treinamentos EAD → Matricular não recebe login (CPF) nem último acesso
+      return ok({ acessos: recortarAcessosParaEad(acessos, pode.listaCompleta) });
     }
 
     // Ações de matrícula (T18): a identidade e a empresa vêm da sessão; a matrícula, do banco.
     if (ACOES_DE_MATRICULA.has(acao)) {
-      if (!podeEditar) return fail(MENSAGEM_SEM_EDICAO[acao], 403);
+      if (!pode.age) return fail(MENSAGEM_SEM_EDICAO[acao], 403);
       const idDaMatricula = validarMatriculaId(body.matricula_id);
       if (!idDaMatricula.ok) return fail(idDaMatricula.mensagem, idDaMatricula.status);
       let motivo = "";
@@ -596,7 +588,7 @@ Deno.serve(
 
     // Edição da resposta de uma dúvida (A6, T21): dúvida e empresa vêm do banco e da sessão; o autor é o da sessão.
     if (ACOES_DE_DUVIDA.has(acao)) {
-      if (!podeEditar) return fail(MENSAGEM_SEM_EDICAO_DA_RESPOSTA, 403);
+      if (!pode.age) return fail(MENSAGEM_SEM_EDICAO_DA_RESPOSTA, 403);
       const idDaDuvida = validarDuvidaId(body.duvida_id);
       if (!idDaDuvida.ok) return fail(idDaDuvida.mensagem, idDaDuvida.status);
       const texto = validarRespostaDaDuvida(body.resposta);
@@ -631,13 +623,16 @@ Deno.serve(
       });
 
     if (body.acao === "criar") {
+      // A ordem "409 antes do 403" é a de decidirCriar (regras.ts, sob teste): quem só matricula recebe o 409
+      // de quem já tem acesso (o aviso sai só com o link) e nunca cria o acesso (P3 = C1).
+      const decisao = decidirCriar({ entra: pode.entra, age: pode.age, jaTemAcesso: !!atual });
       // `codigo`: é por ele que o front (avisarNoPortal) reconhece este caso; o texto pode mudar
-      if (atual) {
+      if (decisao === "conflito") {
         return fail("Este funcionário já tem acesso — use Redefinir senha", 409, {
           codigo: "JA_TEM_ACESSO",
         });
       }
-      if (!podeEditar) return semEdicao();
+      if (decisao === "sem_permissao") return fail(MENSAGEM_SEM_EDICAO.criar, 403);
       const usuario = normalizarUsuario(body.usuario || func.cpf || "");
       if (!usuario) {
         return fail("Funcionário sem CPF cadastrado — informe um usuário", 400);
@@ -670,7 +665,7 @@ Deno.serve(
     }
 
     if (!atual) return fail("Este funcionário ainda não tem acesso ao portal", 404);
-    if (!podeEditar) return semEdicao(); // redefinir / ativo
+    if (!pode.age) return fail(MENSAGEM_SEM_EDICAO[acao], 403); // redefinir / ativo
 
     if (body.acao === "redefinir") {
       const senha = gerarSenhaProvisoria();

@@ -92,6 +92,8 @@ import { toast } from "sonner";
 import { sugestaoDeMatricula, textoDaSugestao } from "@/lib/ead-matricula-funcao";
 import { cn } from "@/lib/utils";
 import { FILTRO_SEM_RESPOSTA, rotuloDaAbaTreinamentos, textoPendentes } from "@/lib/ead-duvidas";
+import { permissoesEad } from "@/lib/ead-permissoes";
+import { permissoesDocumentosPortal } from "@/lib/portal-documentos";
 import JSZip from "jszip";
 
 export default function SegurancaTrabalho() {
@@ -362,8 +364,10 @@ export default function SegurancaTrabalho() {
   // Aqui fica a contagem de quando a tela abre e de quando o RH volta de outra aba; com a aba aberta, o cartão de
   // dúvidas manda o número da lista que ele mesmo carregou (onDuvidasPendentes). Só conta quem enxerga a aba.
   const [duvidasPendentes, setDuvidasPendentes] = useState(0);
-  const verTreinamentos =
-    perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários");
+  // T33: a aba Treinamentos é da permissão própria "Treinamentos EAD" (qualquer função), não mais de Funcionários.
+  // Só espelha: quem protege é o banco (0147) e o servidor (funcionario-acesso).
+  const podeEad = permissoesEad(temPermissao);
+  const verTreinamentos = podeEad.visualizar;
   useEffect(() => {
     if (!empresaAtiva?.id || !verTreinamentos) {
       setDuvidasPendentes(0);
@@ -436,6 +440,8 @@ export default function SegurancaTrabalho() {
   // matricular o funcionário nos treinamentos EAD que a função exige. `anterior` é o cadastro de antes
   // (null = funcionário novo). A regra está em lib/ead-matricula-funcao.js (testada).
   const sugerirMatricula = (anterior, atual) => {
+    // T33: só oferece a matrícula a quem pode matricular (Treinamentos EAD → Matricular)
+    if (!podeEad.matricular) return;
     const sugestao = sugestaoDeMatricula({ anterior, atual });
     if (!sugestao) return;
     toast(textoDaSugestao(sugestao, atual?.nome_completo), {
@@ -1168,7 +1174,7 @@ export default function SegurancaTrabalho() {
               {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
                 <SelectItem value="contratacao">Contratação</SelectItem>
               )}
-              {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
+              {verTreinamentos && (
                 <SelectItem value="treinamentos_ead">
                   {rotuloDaAbaTreinamentos(duvidasPendentes)}
                 </SelectItem>
@@ -1204,7 +1210,7 @@ export default function SegurancaTrabalho() {
           {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
             <TabsTrigger value="contratacao">Contratação</TabsTrigger>
           )}
-          {(perfil === "Admin" || temPermissao("Segurança do Trabalho", "Funcionários")) && (
+          {verTreinamentos && (
             <TabsTrigger value="treinamentos_ead">
               Treinamentos
               {duvidasPendentes > 0 && (
@@ -1260,13 +1266,20 @@ export default function SegurancaTrabalho() {
 
         {/* Aba Treinamentos EAD (cursos YouTube + Portal do Funcionário) */}
         <TabsContent value="treinamentos_ead">
-          <TreinamentosEadTab
-            empresaAtiva={empresaAtiva}
-            user={user}
-            sugestaoMatricula={sugestaoMatricula}
-            onSugestaoConsumida={() => setSugestaoMatricula(null)}
-            onDuvidasPendentes={setDuvidasPendentes}
-          />
+          {verTreinamentos ? (
+            <TreinamentosEadTab
+              empresaAtiva={empresaAtiva}
+              user={user}
+              pode={podeEad}
+              sugestaoMatricula={sugestaoMatricula}
+              onSugestaoConsumida={() => setSugestaoMatricula(null)}
+              onDuvidasPendentes={setDuvidasPendentes}
+            />
+          ) : (
+            <p className="py-12 text-center text-sm text-slate-500">
+              Sem permissão para a aba Treinamentos (Segurança do Trabalho → Treinamentos EAD).
+            </p>
+          )}
         </TabsContent>
 
         {/* Aba Liberações SST excepcionais (notificação + revogação) */}
@@ -2504,6 +2517,7 @@ export default function SegurancaTrabalho() {
         onClose={() => setFichaFuncionario(null)}
         onSalvo={loadData}
         onAcessoMudou={carregarAcessosPortal}
+        podeDocumentosPortal={permissoesDocumentosPortal(temPermissao)}
         onEditarCompleto={(f) => {
           setFichaFuncionario(null);
           abrirEdicaoCompleta(f);

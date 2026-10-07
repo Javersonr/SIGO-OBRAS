@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
+import { FUNCOES_EAD } from "@/lib/ead-permissoes";
 
 // ESTRUTURA CANÔNICA DE PERMISSÕES
 // ATENÇÃO: Este é o ÚNICO local onde a estrutura deve ser definida
@@ -84,6 +85,8 @@ export const ESTRUTURA_PERMISSOES = {
   "Segurança do Trabalho": {
     abas: {
       Funcionários: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
+      // T33: a aba do Portal de Treinamento (EAD); as funções são as de lib/ead-permissoes.js
+      "Treinamentos EAD": { funcoes: [...FUNCOES_EAD] },
       "Dados Pessoais": { funcoes: ["visualizar", "editar"] },
       Documentação: { funcoes: ["visualizar", "criar", "editar", "deletar"] },
       "Dados Bancários": { funcoes: ["visualizar", "editar"] },

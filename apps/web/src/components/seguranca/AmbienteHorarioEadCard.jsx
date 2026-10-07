@@ -84,7 +84,12 @@ const fmtDia = (dia) => String(dia).split("-").reverse().join("/");
  * As regras estão em `lib/ead-declaracao-ambiente.js` e `lib/ead-atividade-diaria.js` (testadas); aqui só se
  * desenha e se liga a tela. A trava por permissão de quem edita o texto depende da T33.
  */
-export default function AmbienteHorarioEadCard({ empresaId, funcionariosTodos = [] }) {
+// T33: `podeEditarTexto` (Treinamentos EAD → Editar) mostra o botão de editar o texto; quem confere é o banco (0147).
+export default function AmbienteHorarioEadCard({
+  empresaId,
+  funcionariosTodos = [],
+  podeEditarTexto = false,
+}) {
   // ---------------------------------------------------------------- o texto
   const [versoes, setVersoes] = useState([]);
   const [carregandoTexto, setCarregandoTexto] = useState(true);
@@ -264,15 +269,17 @@ export default function AmbienteHorarioEadCard({ empresaId, funcionariosTodos = 
             <h3 id="declaracao-titulo" className="text-sm font-semibold text-slate-800">
               Texto da declaração
             </h3>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setEditando(true)}
-              disabled={carregandoTexto || erroTexto}
-            >
-              <Pencil className="mr-1 h-4 w-4" />
-              {vigente.aprovado ? "Editar texto e ART" : "Revisar e aprovar o texto"}
-            </Button>
+            {podeEditarTexto && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setEditando(true)}
+                disabled={carregandoTexto || erroTexto}
+              >
+                <Pencil className="mr-1 h-4 w-4" />
+                {vigente.aprovado ? "Editar texto e ART" : "Revisar e aprovar o texto"}
+              </Button>
+            )}
           </div>
 
           {carregandoTexto ? (

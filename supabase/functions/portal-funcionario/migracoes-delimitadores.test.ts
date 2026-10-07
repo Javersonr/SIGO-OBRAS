@@ -213,10 +213,19 @@ const pastaDasFerramentas = join(RAIZ, "tools");
 const migracoes = readdirSync(pastaDasMigracoes)
   .filter((nome) => /^\d{4}_.+\.sql$/.test(nome))
   .map((nome) => ({ nome: `supabase/migrations/${nome}`, caminho: join(pastaDasMigracoes, nome) }));
-// os smokes e conferências do EAD também rodam no banco (e o `tools/*.sql` é do Javerson, não do agente)
+// os smokes e conferências do EAD também rodam no banco (e o `tools/*.sql` é do Javerson, não do agente); T33: o
+// smoke e a conferência das permissões do EAD também
 const scriptsDoEad = readdirSync(pastaDasFerramentas)
-  .filter((nome) => /^(smoke-ead-|conferir-checks-ead|ead-).+\.sql$/.test(nome))
+  .filter((nome) =>
+    /^((smoke-ead-|conferir-checks-ead|ead-).+|(smoke|conferir)-permissoes-ead)\.sql$/.test(nome)
+  )
   .map((nome) => ({ nome: `tools/${nome}`, caminho: join(pastaDasFerramentas, nome) }));
+
+test("T33: o smoke e a conferência das permissões do EAD estão entre os scripts examinados", () => {
+  const nomes = scriptsDoEad.map((s) => s.nome);
+  assert.ok(nomes.includes("tools/smoke-permissoes-ead.sql"), nomes.join(", "));
+  assert.ok(nomes.includes("tools/conferir-permissoes-ead.sql"), nomes.join(", "));
+});
 
 test("há migrações e scripts do EAD para examinar (o teste não passa vazio)", () => {
   assert.ok(migracoes.length > 100, `migrações achadas: ${migracoes.length}`);

@@ -1,6 +1,7 @@
 # Permissões do Portal de Treinamento (EAD): cursos, cadastro central, documentos e ações do RH
 
-- **Data:** 06/10/2026. **Status:** proposta, aguardando o OK do Javerson. Nada é implementado antes do OK.
+- **Data:** 06/10/2026. **Status:** aprovado pelo Javerson em 07/10/2026 como recomendado (P1 a P7); implementado
+  na migração `0147_permissoes_ead.sql` (ver "Implementação" no fim).
 - **Tarefa:** T33 do `docs/HANDOFF-PORTAL-TREINAMENTO.md` (FR-12, M2), com o escopo ampliado pelo conflito C8 do
   acompanhamento de 05/10: (a) a propagação do cadastro central (`0131`) e (b) os documentos do portal (`5d2655f`).
 - **Base:** branch `feat/portal-treinamento` em `a6bccff`. Os números de linha citados são desse commit.
@@ -426,3 +427,21 @@ erro claro da §6 (não perde o PDF em silêncio) até o push.
 | P5  | Esconder gabarito, tentativas e trilha (IP e dispositivo) de quem não tem a aba?                                                                                                                                                                                                                                                 | Sim                                                                                                                                                                       |
 | P6  | (a) A1, (b) B2 e o desenho geral S1?                                                                                                                                                                                                                                                                                             | Sim                                                                                                                                                                       |
 | P7  | Número da migração (`0147`, e `0148` se os documentos forem separados) e fase 1 separada ou junto com a 2 (depende da conferência)?                                                                                                                                                                                              | `0147`; decidir a fase depois da conferência                                                                                                                              |
+
+## 12. Implementação (07/10/2026)
+
+O que mudou em relação ao texto acima, por ter vindo depois dele na branch:
+
+- **T12 (prática presencial) e T35 (texto da declaração) já existem.** Sessão prática, presença e resultado
+  (`treinamento_sessao_pratica`, `treinamento_pratica_participante`) e o texto da declaração
+  (`treinamento_declaracao_texto`) entram no `zz_permissao_ead` com Treinamentos EAD → `editar`. A função própria do
+  lançamento (`avaliar_pratica`, §3) segue reservada: até ela ser aprovada, lançar presença e resultado também exige
+  `editar` (antes era livre para qualquer usuário da empresa).
+- **Editar a resposta de uma dúvida (A6, ação `editar_resposta_duvida` do `funcionario-acesso`)** exige Treinamentos
+  EAD → `responder_duvidas`, a mesma função da primeira resposta.
+- `PermissoesTab.jsx` (perfis do SaaS) ganhou a aba nova na cópia própria em vez de importar a canônica: as duas
+  cópias já são diferentes em outras abas, e trocar mudaria a tela do SaaS.
+- O trigger `zz_documentos_portal` também recusa INSERT de funcionário já com item do portal (API).
+- Arquivos: `supabase/migrations/0147_permissoes_ead.sql`, `tools/conferir-permissoes-ead.sql` (só leitura),
+  `tools/smoke-permissoes-ead.sql`, `supabase/functions/funcionario-acesso/{regras,index,duvida}.ts`,
+  `apps/web/src/lib/ead-permissoes.js` e as telas da §8.

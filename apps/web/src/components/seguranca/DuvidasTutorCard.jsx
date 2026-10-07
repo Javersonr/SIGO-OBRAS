@@ -43,6 +43,9 @@ export function CartaoDeDuvida({
   onEditar,
   onCancelar,
   onSalvar,
+  // T33: Treinamentos EAD → Responder dúvidas. Sem ela, a dúvida aparece sem o campo de resposta e sem "Editar
+  // resposta" (quem confere é o banco, na 1ª resposta, e o funcionario-acesso, na edição).
+  podeResponder = false,
 }) {
   const respondida = !ehPendente(d);
   return (
@@ -59,16 +62,22 @@ export function CartaoDeDuvida({
             <span className="text-xs text-emerald-600">
               {d.respondida_por} · {fmtDataHora(d.respondida_em)}
             </span>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 px-2 text-emerald-800"
-              onClick={onEditar}
-            >
-              <Pencil className="w-3.5 h-3.5 mr-1" /> Editar resposta
-            </Button>
+            {podeResponder && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-emerald-800"
+                onClick={onEditar}
+              >
+                <Pencil className="w-3.5 h-3.5 mr-1" /> Editar resposta
+              </Button>
+            )}
           </div>
         </div>
+      ) : !podeResponder ? (
+        <p className="text-xs text-slate-500">
+          Sem resposta ainda. Responder exige a permissão Treinamentos EAD → Responder dúvidas.
+        </p>
       ) : (
         <div className="space-y-2">
           <div className="flex gap-2 items-end">
@@ -139,6 +148,7 @@ export default function DuvidasTutorCard({
   user,
   onPendentes,
   duvidasIniciais,
+  podeResponder = false,
 }) {
   const [duvidas, setDuvidas] = useState(duvidasIniciais ?? []);
   const [carregado, setCarregado] = useState(Boolean(duvidasIniciais));
@@ -385,6 +395,7 @@ export default function DuvidasTutorCard({
             onEditar={() => iniciarEdicao(d)}
             onCancelar={cancelarEdicao}
             onSalvar={() => responder(d)}
+            podeResponder={podeResponder}
           />
         ))}
       </CardContent>

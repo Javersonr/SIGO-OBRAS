@@ -231,7 +231,12 @@ export default function TreinamentoModal({
       onClose();
     } catch (error) {
       console.error("Erro ao salvar treinamento:", error);
-      alert("Erro ao salvar treinamento");
+      // T33: a recusa do banco (ex.: modelo com curso EAD vinculado exige Treinamentos EAD → Editar) vem como veio
+      alert(
+        error?.message
+          ? "Erro ao salvar treinamento: " + error.message
+          : "Erro ao salvar treinamento"
+      );
     } finally {
       setLoading(false);
     }

@@ -148,9 +148,24 @@ describe("CartaoDeDuvida", () => {
     onEditar: () => {},
     onCancelar: () => {},
     onSalvar: () => {},
+    // T33: os testes de antes são do tutor (Treinamentos EAD → Responder dúvidas)
+    podeResponder: true,
     ...extra,
   });
   const tela = (extra) => renderToStaticMarkup(<CartaoDeDuvida {...props(extra)} />);
+
+  it("T33: sem Responder dúvidas, nem o campo de resposta nem 'Editar resposta'", () => {
+    const pendente = tela({ podeResponder: false });
+    expect(pendente).toContain("Pergunta 1?");
+    expect(pendente).not.toContain("<textarea");
+    expect(pendente).toContain("Treinamentos EAD → Responder dúvidas");
+    const respondida = tela({
+      podeResponder: false,
+      duvida: duvida(2, { resposta: "Resposta 2", respondida_por: "Tutor Teste" }),
+    });
+    expect(respondida).toContain("Resposta 2");
+    expect(respondida).not.toContain("Editar resposta");
+  });
 
   it("dúvida sem resposta mostra o campo para responder, sem 'Editar resposta'", () => {
     const html = tela();

@@ -50,6 +50,9 @@ export default function SessoesPraticasCurso({
   funcPorId,
   funcTodosPorId,
   onAbrirArquivo,
+  // T33: registrar sessão, presença e resultado e anexar a lista assinada exigem Treinamentos EAD → Editar (até a
+  // função própria do lançamento ser aprovada). Sem ela, a seção só mostra as sessões e a lista em PDF.
+  podeEditar = false,
 }) {
   const [sessoes, setSessoes] = useState([]);
   const [participantes, setParticipantes] = useState([]);
@@ -294,9 +297,11 @@ export default function SessoesPraticasCurso({
         <h4 className="font-semibold text-slate-800 flex items-center gap-2">
           <Users className="w-4 h-4" /> Sessões práticas ({sessoes.length})
         </h4>
-        <Button variant="outline" size="sm" onClick={() => setEditando({})}>
-          <CalendarPlus className="w-4 h-4 mr-1" /> Nova sessão
-        </Button>
+        {podeEditar && (
+          <Button variant="outline" size="sm" onClick={() => setEditando({})}>
+            <CalendarPlus className="w-4 h-4 mr-1" /> Nova sessão
+          </Button>
+        )}
       </div>
       <p className="text-xs text-slate-500">
         Parte prática presencial
@@ -341,34 +346,43 @@ export default function SessoesPraticasCurso({
                   insatisfatório(s)
                 </p>
               </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setEditando({ sessao: s })}
-                  aria-label="Editar a sessão"
-                  title="Editar a sessão"
-                >
-                  <Pencil className="w-4 h-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => removerSessao(s)}
-                  aria-label="Remover a sessão"
-                  title="Remover a sessão"
-                  className="text-red-500 hover:text-red-700"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
+              {podeEditar && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setEditando({ sessao: s })}
+                    aria-label="Editar a sessão"
+                    title="Editar a sessão"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removerSessao(s)}
+                    aria-label="Remover a sessão"
+                    title="Remover a sessão"
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" size="sm" variant="outline" onClick={() => setPresencaId(s.id)}>
-                <Users className="w-4 h-4 mr-1" /> Presença e resultado
-              </Button>
+              {podeEditar && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setPresencaId(s.id)}
+                >
+                  <Users className="w-4 h-4 mr-1" /> Presença e resultado
+                </Button>
+              )}
               <Button
                 type="button"
                 size="sm"
@@ -393,21 +407,23 @@ export default function SessoesPraticasCurso({
                   <FileText className="w-4 h-4 mr-1" /> Ver lista assinada
                 </Button>
               )}
-              <label className="text-xs border rounded-md px-2 py-1.5 cursor-pointer hover:border-slate-400 flex items-center gap-1">
-                <Upload className="w-3 h-3" />
-                {s.lista_presenca_ref ? "Trocar lista assinada" : "Anexar lista assinada"}
-                <input
-                  type="file"
-                  accept={ACCEPT_LISTA_ASSINADA}
-                  className="hidden"
-                  disabled={ocupado === s.id}
-                  aria-label="Anexar a lista de presença assinada (PDF ou foto)"
-                  onChange={(e) => {
-                    anexarLista(s, e.target.files?.[0]);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
+              {podeEditar && (
+                <label className="text-xs border rounded-md px-2 py-1.5 cursor-pointer hover:border-slate-400 flex items-center gap-1">
+                  <Upload className="w-3 h-3" />
+                  {s.lista_presenca_ref ? "Trocar lista assinada" : "Anexar lista assinada"}
+                  <input
+                    type="file"
+                    accept={ACCEPT_LISTA_ASSINADA}
+                    className="hidden"
+                    disabled={ocupado === s.id}
+                    aria-label="Anexar a lista de presença assinada (PDF ou foto)"
+                    onChange={(e) => {
+                      anexarLista(s, e.target.files?.[0]);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              )}
             </div>
           </div>
         );

@@ -72,10 +72,17 @@ begin
   end if;
   raise notice '== empresa de teste: %', v_empresa;
 
+  -- T33 (0147): gravar no EAD exige a permissão da aba Treinamentos EAD, lida do vínculo do e-mail do token. Os dois
+  -- usuários de teste são Admin sintéticos (e-mail @exemplo.test), que somem no ROLLBACK.
+  insert into public.usuario_empresa (empresa_id, usuario_email, perfil, ativo, nome_completo)
+    values (v_empresa, 'smoke.t12.um@exemplo.test', 'Admin', true, 'Smoke T12'),
+           (v_empresa, 'smoke.t12.dois@exemplo.test', 'Admin', true, 'Smoke T12');
+
   -- ---------------------------------------------------------------- usuário
   perform set_config('request.jwt.claims', jsonb_build_object(
     'role', 'authenticated',
     'sub', v_sub,
+    'email', 'smoke.t12.um@exemplo.test',
     'app_metadata', jsonb_build_object('empresa_id', v_empresa)
   )::text, true);
   set local role authenticated;
@@ -164,6 +171,7 @@ begin
   perform set_config('request.jwt.claims', jsonb_build_object(
     'role', 'authenticated',
     'sub', v_sub2,
+    'email', 'smoke.t12.dois@exemplo.test',
     'app_metadata', jsonb_build_object('empresa_id', v_empresa)
   )::text, true);
   update public.treinamento_pratica_participante

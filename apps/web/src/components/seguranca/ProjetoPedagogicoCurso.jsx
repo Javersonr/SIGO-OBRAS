@@ -139,6 +139,8 @@ export default function ProjetoPedagogicoCurso({
   questoes = [],
   onMudar,
   podeGerarPdf = false,
+  // T33: por que não dá para gerar o PDF quando o motivo não é "salve o curso antes" (ex.: falta a permissão)
+  motivoSemPdf,
   gerandoPdf = false,
   subindoPdf = false,
   // o curso está sendo salvo (A6, T25): gerar ou anexar o PDF junto desfazia o que o Salvar gravou
@@ -322,7 +324,7 @@ export default function ProjetoPedagogicoCurso({
           title={
             podeGerarPdf
               ? "Grava o projeto escrito aqui e gera o PDF com os 15 itens"
-              : "Salve o curso antes de gerar o PDF do projeto"
+              : motivoSemPdf || "Salve o curso antes de gerar o PDF do projeto"
           }
         >
           {gerandoPdf ? (
@@ -373,7 +375,7 @@ export default function ProjetoPedagogicoCurso({
         <p className="w-full text-xs text-slate-500">
           {podeGerarPdf
             ? "O PDF usa o projeto escrito aqui e os dados já salvos do curso (nome, carga, responsável técnico, instrutor). Gerar de novo troca o PDF que o aluno vê. Um PDF próprio vale para o projeto salvo na hora do envio: mudou o projeto, anexe de novo."
-            : "Salve o curso para gerar o PDF do projeto."}
+            : motivoSemPdf || "Salve o curso para gerar o PDF do projeto."}
         </p>
       </div>
     </section>

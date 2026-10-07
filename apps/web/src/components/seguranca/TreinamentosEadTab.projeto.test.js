@@ -206,8 +206,9 @@ describe("a seção no formulário do curso", () => {
       'import ProjetoPedagogicoCurso from "@/components/seguranca/ProjetoPedagogicoCurso"'
     );
     expect(aba).toMatch(/<ProjetoPedagogicoCurso[\s\S]*?curso=\{cursoSel\}[\s\S]*?\/>/);
+    // T33: gerar e anexar o PDF exigem também Treinamentos EAD → Editar
     expect(aba).toMatch(
-      /<ProjetoPedagogicoCurso[\s\S]*?podeGerarPdf=\{!!cursoSel\.id\}[\s\S]*?\/>/
+      /<ProjetoPedagogicoCurso[\s\S]*?podeGerarPdf=\{!!cursoSel\.id && pode\.editar\}[\s\S]*?\/>/
     );
     expect(aba).toMatch(
       /<ProjetoPedagogicoCurso[\s\S]*?onGerarPdf=\{gerarProjetoPedagogicoPdf\}[\s\S]*?\/>/

@@ -70,6 +70,10 @@ export default function MatriculaAuditoriaSheet({
   funcionario,
   aulas,
   empresaAtiva,
+  // T33: Treinamentos EAD → Liberar tentativa / Revogar certificado. Só escondem os botões: quem confere é o
+  // funcionario-acesso.
+  podeLiberarTentativa = false,
+  podeRevogar = false,
   onClose,
   onMudou,
 }) {
@@ -357,7 +361,7 @@ export default function MatriculaAuditoriaSheet({
                     : ""}
                   )
                 </h3>
-                {!matricula.avaliacao_aprovada && (
+                {podeLiberarTentativa && !matricula.avaliacao_aprovada && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -478,7 +482,7 @@ export default function MatriculaAuditoriaSheet({
                       )}{" "}
                       Baixar PDF
                     </Button>
-                    {!certificado.revogado_em && (
+                    {podeRevogar && !certificado.revogado_em && (
                       <Button
                         size="sm"
                         variant="outline"
