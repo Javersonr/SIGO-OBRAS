@@ -493,6 +493,12 @@ pelo `portal_credencial_evento`, e decide o que contar à vítima. Os eventos da
 (`registrarEvento`, `_shared/portal-funcionario.ts:111`); o `login_falha` é a exceção, gravado sem eles (§4.3, defesa
 4). Os eventos novos entram na lista de rótulos da trilha do RH (T18) e são de origem `servidor` (T17).
 
+**Período exclusivo (T35, NR-1 Anexo II 4.4).** O `acesso_aguardando_provisoria` e qualquer evento que o
+procedimento do operador (§4.3) grave na trilha de uma empresa **não** são atividade do aluno: entram em
+`EVENTOS_FORA_DA_JANELA` (`apps/web/src/lib/ead-atividade-diaria.js`), para não abrir nem esticar a janela do dia que o
+RH da B vê, nem mostrar a ela, como atividade do aluno, a hora em que a senha mudou fora dela. Continuam contando como
+atividade do aluno o `acesso_liberado`, o `login` (inclusive o da troca de empresa) e o `troca_senha`.
+
 ## 8. Tela (proposta)
 
 **Aluno** (`LoginPortal.jsx`, `pages/PortalFuncionario.jsx`):
@@ -616,7 +622,9 @@ Mais:
 Arquivos que mudam: `portal-funcionario/index.ts` (login, sessão, `ativar`, `escolher_empresa`, `empresas`,
 `trocar_empresa`, `trocar_senha`, sinal, limites), `funcionario-acesso/index.ts` (`criar`, `redefinir`, `ativo`,
 `status`), `_shared/portal-funcionario.ts`, `LoginPortal.jsx`, `pages/PortalFuncionario.jsx`, `AcessoPortalCard.jsx`,
-`lib/portal-funcionario-acesso.js` e o handoff (§2.2 diz "usuário (único global)").
+`lib/portal-funcionario-acesso.js`, `lib/ead-atividade-diaria.js` + teste (o `acesso_aguardando_provisoria` e os eventos
+do procedimento do operador em `EVENTOS_FORA_DA_JANELA`; caso de teste: esse evento sozinho não abre a janela do dia e,
+depois do último evento do aluno, não a estica) e o handoff (§2.2 diz "usuário (único global)").
 
 ### 9.3 Produção (o Javerson, na ordem, quando a implementação estiver pronta)
 

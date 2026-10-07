@@ -315,8 +315,8 @@ exigindo Funcionários → `editar`, nos três caminhos.
 
 ## 9. Plano de migração e de produção
 
-**Migração** `0140_permissoes_ead.sql` (o número é o próximo livre desta branch, que já usa `0134` a `0139`; o
-`master` tem até `0133`; confirmar com o Javerson). Idempotente, cabeçalho com o porquê, sem UPDATE de dado real,
+**Migração** `0147_permissoes_ead.sql` (próximo livre desta branch em 07/10: `0134` a `0144` já usados e `0145`/`0146`
+reservados ao spec da T38; o `master` tem até `0133`). Idempotente, cabeçalho com o porquê, sem UPDATE de dado real,
 `select 'ok' as res;` no fim, e no cabeçalho o bloco "para desfazer" (`drop trigger`, `drop policy`, funções da `0119`
 e da `0130` como eram):
 
@@ -327,7 +327,7 @@ e da `0130` como eram):
    `revoke update` do certificado (§4.3).
 4. Policies restritivas de leitura (§4.4) e do Storage (§4.5).
 5. RPC `portal_documento_*` e trigger `zz_documentos_portal` (§6). Se o Javerson preferir aplicar em separado, este
-   item vira a `0141`.
+   item vira a `0148`.
 
 **Arquivos de apoio** (na implementação):
 
@@ -425,4 +425,4 @@ erro claro da §6 (não perde o PDF em silêncio) até o push.
 | P4  | Desativar no cadastro central um treinamento com curso EAD vinculado exige Treinamentos EAD → `publicar`?                                                                                                                                                                                                                        | Sim                                                                                                                                                                       |
 | P5  | Esconder gabarito, tentativas e trilha (IP e dispositivo) de quem não tem a aba?                                                                                                                                                                                                                                                 | Sim                                                                                                                                                                       |
 | P6  | (a) A1, (b) B2 e o desenho geral S1?                                                                                                                                                                                                                                                                                             | Sim                                                                                                                                                                       |
-| P7  | Número da migração (`0140`, e `0141` se os documentos forem separados) e fase 1 separada ou junto com a 2 (depende da conferência)?                                                                                                                                                                                              | `0140`; decidir a fase depois da conferência                                                                                                                              |
+| P7  | Número da migração (`0147`, e `0148` se os documentos forem separados) e fase 1 separada ou junto com a 2 (depende da conferência)?                                                                                                                                                                                              | `0147`; decidir a fase depois da conferência                                                                                                                              |
