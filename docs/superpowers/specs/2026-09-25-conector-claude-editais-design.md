@@ -410,6 +410,28 @@ corretas, exigidas pelo Claude.
    - `issuer` com caminho e OIDC discovery servido pela função;
    - domínio customizado do Supabase.
 
+### 6.1 Resultado do Passo 0 (registrado em 08/10/2026)
+
+- **Publicação (itens 1 e 2):** feita no Plano 1 (28/09). CLI `2.118.0`.
+- **Claude Code com OAuth (item 3):** `empresa_atual` respondeu certo em 05/10 e de novo em 08/10, pelo Claude Code
+  desktop. Usuário, empresa da chave (Sinergia Construções e Serviços) e as 4 permissões vieram certos.
+- **Tempos (item 4), medidos em 08/10 sem gravar nada, em duas rodadas:**
+  - descoberta do servidor no www: 0,07–0,11 s;
+  - metadata do recurso: 0,30–0,39 s;
+  - `/register` recusado: 0,29–0,56 s;
+  - `/token` inválido: 0,36–0,48 s;
+  - `mcp` sem chave: 0,21 s.
+
+  Todos ficaram muito abaixo do limite de 10 s. A descoberta a partir do `issuer` no www funcionou, então o item 5 não
+  foi necessário.
+
+- **Pendente (Javerson):**
+  - claude.ai pelo link de instalação;
+  - Claude Code com a chave manual (`SIGO_CHAVE` no `tools/conector/verificar-conector.mjs`).
+
+  Os dois entram no aceite da Task 18 do Plano 2. Se o claude.ai falhar na descoberta, só o `mcp-oauth` muda (item 5).
+  As ferramentas do Plano 2 não dependem disso.
+
 ## 7. Mudanças no banco (migrações via `supabase db query --linked -f`)
 
 Tabelas de autorização, **sem nenhum grant para `anon` e `authenticated`** (só servidor):
