@@ -44,6 +44,7 @@ function ambiente(
     objetos?: Record<string, number[]>;
     consumir?: boolean;
     atestadoExiste?: boolean;
+    devolucaoFalha?: boolean; // o UPDATE que devolve o link a pendente (usado_em = null) dá erro
   } = {}
 ) {
   const objetos = opcoes.objetos ?? {};
@@ -63,6 +64,9 @@ function ambiente(
       }
       if (c.tabela === "mcp_link_envio" && c.op === "insert") return { data: [{ id: LINK }] };
       if (c.tabela === "mcp_link_envio" && c.op === "update") {
+        if (opcoes.devolucaoFalha && (c.payload as Record<string, unknown>).usado_em === null) {
+          return { error: { message: "banco fora do ar" } };
+        }
         const consumo = (c.payload as Record<string, unknown>).usado_em !== undefined;
         return { data: consumo && opcoes.consumir === false ? null : { id: LINK } };
       }
@@ -431,6 +435,45 @@ test("registrarEnvio: falha ao gravar os arquivos devolve o link para pendente",
     return q;
   };
   await assert.rejects(() => registrar(amb), /disco cheio/);
+  const updates = amb.chamadas.filter((c) => c.tabela === "mcp_link_envio" && c.op === "update");
+  assert.deepEqual(
+    updates.map((c) => c.payload),
+    [
+      { usado_em: AGORA.toISOString(), usado_por: "claude" },
+      { usado_em: null, usado_por: null },
+    ]
+  );
+});
+
+test("registrarEnvio: se a volta do link a pendente também falhar, o erro original sai e a falha vai ao log", async () => {
+  const a1 = arq(1, "Edital.pdf");
+  const amb = ambiente({
+    link: linkDaOportunidade([a1]),
+    objetos: { [a1.caminho]: PDF },
+    devolucaoFalha: true,
+  });
+  const { admin } = amb;
+  const original = admin.from;
+  admin.from = (t: string) => {
+    const q = original(t);
+    if (t !== "arquivo_oportunidade") return q;
+    q.insert = () => ({
+      select: () => Promise.resolve({ data: null, error: { message: "disco cheio" } }),
+    });
+    return q;
+  };
+  const logs: unknown[][] = [];
+  const consoleError = console.error;
+  console.error = (...args: unknown[]) => {
+    logs.push(args);
+  };
+  try {
+    await assert.rejects(() => registrar(amb), /disco cheio/);
+  } finally {
+    console.error = consoleError;
+  }
+  // a volta foi tentada e falhou: o link fica "usado" no banco e o log é o único rastro
+  assert.deepEqual(logs, [["[conector] envio: devolver o link a pendente:", "banco fora do ar"]]);
   const updates = amb.chamadas.filter((c) => c.tabela === "mcp_link_envio" && c.op === "update");
   assert.deepEqual(
     updates.map((c) => c.payload),

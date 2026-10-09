@@ -327,9 +327,12 @@ export async function registrarEnvio(
         ? await registrarNaOportunidade(db, link, validos, p)
         : await registrarNoAtestado(db, link, validos);
   } catch (e) {
+    // se a volta também falhar (queda do banco), o erro original continua saindo; a falha vai ao log
     await db
       .atualizar("mcp_link_envio", link.id, { usado_em: null, usado_por: null })
-      .catch(() => {});
+      .catch((e2) =>
+        console.error("[conector] envio: devolver o link a pendente:", (e2 as Error)?.message)
+      );
     throw e;
   }
 
