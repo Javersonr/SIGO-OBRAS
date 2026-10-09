@@ -744,11 +744,26 @@ test("defs: anotações do §5, schemas fechados, instruções curtas e o prompt
   assert.equal(props.edital.additionalProperties, false);
   assert.equal("required" in props.edital, false);
   assert.ok(INSTRUCOES_EDITAL.join("\n").length <= 800);
+  // o Atende? depende do acervo inteiro: as instruções mandam ler todas as páginas do ler_acervo
+  assert.ok(
+    INSTRUCOES_EDITAL.join("\n").includes("ler_acervo e leia TODAS as páginas (proxima_pagina"),
+    "as instruções do edital não mandam paginar o ler_acervo"
+  );
 
   assert.equal(PROMPTS_EDITAL[0].name, "analisar_edital");
   const texto = PROMPTS_EDITAL[0].montar({});
   for (const linha of [...METODO_LEITURA_EDITAL, ...REGRAS_ATENDE]) {
     assert.ok(texto.includes(linha), linha);
+  }
+  // passo 5: o prompt manda ler todas as páginas antes de avaliar
+  const passo5 = texto.split("\n").find((l) => l.startsWith("5. Chame ler_acervo")) ?? "";
+  for (const trecho of [
+    "total_atestados passar de por_pagina",
+    "leia TODAS as páginas",
+    "proxima_pagina ser null",
+    "antes de avaliar",
+  ]) {
+    assert.ok(passo5.includes(trecho), `o passo 5 não cita "${trecho}"`);
   }
   assert.equal(texto.includes("oportunidade_id ="), false);
   assert.ok(

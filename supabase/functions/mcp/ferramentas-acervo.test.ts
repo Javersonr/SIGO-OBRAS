@@ -522,6 +522,76 @@ test("ler_acervo: página que passa do teto vira saida_grande com o por_pagina q
   // um atestado só (ou o detalhe por id) nunca é recusado
   const um = await ferramenta("ler_acervo").executar({ por_pagina: 1 }, deps);
   assert.equal(um.resultado.isError, false);
+  // recomeçar com outro por_pagina muda as páginas: a mensagem manda voltar à página 1
+  assert.ok(String(e.erro).includes("Recomece da página 1"), String(e.erro));
+});
+
+test("ler_acervo: proxima_pagina e total_paginas levam o Claude a ler o acervo inteiro", async () => {
+  const { deps } = montar(acervoGrande(7, 2));
+  const ler = async (args: Record<string, unknown>) =>
+    sc(await ferramenta("ler_acervo").executar(args, deps));
+  const idsDe = (s: Record<string, unknown>) => (s.atestados as { id: string }[]).map((a) => a.id);
+
+  // página 1 de 3: aponta a próxima
+  const p1 = await ler({ por_pagina: 3 });
+  assert.equal(p1.total_atestados, 7);
+  assert.equal(p1.total_paginas, 3);
+  assert.equal(p1.pagina, 1);
+  assert.equal(p1.proxima_pagina, 2);
+  assert.equal((p1.atestados as unknown[]).length, 3);
+
+  // seguindo proxima_pagina até null, o Claude lê os 7 atestados, cada um uma vez
+  const lidos: string[] = [];
+  let pagina: unknown = 1;
+  let voltas = 0;
+  while (pagina !== null && voltas++ < 10) {
+    const s = await ler({ por_pagina: 3, pagina });
+    lidos.push(...idsDe(s));
+    pagina = s.proxima_pagina;
+  }
+  assert.equal(voltas, 3);
+  assert.deepEqual(
+    lidos,
+    Array.from({ length: 7 }, (_, i) => idGrande(i))
+  );
+
+  // última página: sem próxima; além do fim: vazia e sem próxima
+  const p3 = await ler({ por_pagina: 3, pagina: 3 });
+  assert.equal(p3.proxima_pagina, null);
+  assert.equal(p3.total_paginas, 3);
+  assert.equal((p3.atestados as unknown[]).length, 1);
+  const alemDoFim = await ler({ por_pagina: 3, pagina: 4 });
+  assert.equal(alemDoFim.proxima_pagina, null);
+  assert.deepEqual(alemDoFim.atestados, []);
+
+  // acervo que cabe numa página: uma página só, sem próxima
+  const tudo = await ler({});
+  assert.equal(tudo.total_paginas, 1);
+  assert.equal(tudo.proxima_pagina, null);
+  // sem atestados lidos (só profissionais): nada a paginar
+  const profissionais = await ler({ tipo: "profissionais" });
+  assert.equal(profissionais.total_paginas, 0);
+  assert.equal(profissionais.proxima_pagina, null);
+
+  // a descrição da ferramenta e as instruções mandam ler todas as páginas antes do Atende?
+  const descricao = FERRAMENTAS_ACERVO[0].def.description;
+  for (const trecho of [
+    "total_atestados passar de por_pagina",
+    "leia TODAS as páginas",
+    "proxima_pagina ser null",
+    "antes de avaliar o Atende?",
+  ]) {
+    assert.ok(descricao.includes(trecho), `a descrição não cita "${trecho}"`);
+  }
+  const instrucoes = INSTRUCOES_ACERVO.join("\n");
+  for (const trecho of [
+    "total_atestados passar de por_pagina",
+    "leia todas as páginas",
+    "proxima_pagina",
+    "antes de avaliar o Atende?",
+  ]) {
+    assert.ok(instrucoes.includes(trecho), `as instruções não citam "${trecho}"`);
+  }
 });
 
 const CADASTRO = {

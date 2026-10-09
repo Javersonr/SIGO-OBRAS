@@ -399,7 +399,7 @@ const CRIAR_OU_ATUALIZAR: Ferramenta = {
         campos_gravados: Object.keys(plano.novos),
         exigencias: resumoExigencias(extraido),
         proximo_passo:
-          "Chame ler_acervo, avalie as exigências técnicas e de registro e grave com registrar_atende (atestado_ids = ids do ler_acervo). Depois anexe os PDFs com gerar_link_envio.",
+          "Chame ler_acervo e leia todas as páginas (proxima_pagina até null), avalie as exigências técnicas e de registro e grave com registrar_atende (atestado_ids = ids do ler_acervo). Depois anexe os PDFs com gerar_link_envio.",
       },
       { alvo: id }
     );
@@ -576,7 +576,7 @@ const ADICIONAR_NOTA: Ferramenta = {
 export const INSTRUCOES_EDITAL: string[] = [
   "Edital: antes de criar, procure com buscar_oportunidades (nº/ano ou palavras) e leia com obter_oportunidade; grave com criar_ou_atualizar_oportunidade.",
   "Se ela devolver duplicatas, mostre as candidatas e pergunte: atualizar uma (oportunidade_id) ou criar outra (confirmar_nova: true).",
-  "Depois chame ler_acervo, avalie só as exigências técnicas e de registro e grave com registrar_atende, citando os atestados pelo id (UUID); a parte econômico-financeira é calculada pelo SIGO: não avalie nem peça valores.",
+  "Depois chame ler_acervo e leia TODAS as páginas (proxima_pagina até null) antes de avaliar; avalie só as exigências técnicas e de registro e grave com registrar_atende, citando os atestados pelo id (UUID); a parte econômico-financeira é calculada pelo SIGO: não avalie nem peça valores.",
   "Para anexar os PDFs do edital, use gerar_link_envio. O prompt analisar_edital traz o método completo.",
 ];
 
@@ -607,7 +607,7 @@ const ANALISAR_EDITAL: PromptDef = {
       "2. Leia o edital anexado no chat (todas as páginas e anexos). Se ele já está no SIGO, use ler_edital_anexado (o texto vem por página).",
       "3. Monte o JSON do edital no formato do campo edital de criar_ou_atualizar_oportunidade, seguindo o MÉTODO abaixo.",
       "4. Procure com buscar_oportunidades (nº/ano do edital) e grave com criar_ou_atualizar_oportunidade (com oportunidade_id para atualizar). Se vierem duplicatas, mostre as candidatas e pergunte ao usuário antes de usar confirmar_nova: true.",
-      "5. Chame ler_acervo (atestados com id UUID, quantitativos e profissionais).",
+      "5. Chame ler_acervo (atestados com id UUID, quantitativos e profissionais). Ele é paginado: se total_atestados passar de por_pagina, leia TODAS as páginas (pagina 2, 3… com o mesmo por_pagina, até proxima_pagina ser null) antes de avaliar. Um acervo lido pela metade leva a um Não atende errado.",
       "6. Avalie cada exigência técnico-operacional (op), técnico-profissional (pr) e de registro (rg) devolvida em exigencias com as REGRAS DO ATENDE abaixo, citando os atestados pelo id (UUID) em atestado_ids. Não avalie as econômicas (ec): o SIGO calcula com o balanço da empresa.",
       "7. Grave com registrar_atende.",
       `8. Anexe os PDFs com gerar_link_envio (categorias: ${CATEGORIAS_EDITAL.join(", ")}).`,

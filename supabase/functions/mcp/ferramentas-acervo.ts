@@ -119,7 +119,7 @@ const LER_ACERVO: Ferramenta = {
     name: "ler_acervo",
     title: "Ler o acervo técnico da empresa",
     description:
-      "Lê o acervo técnico da empresa no SIGO: perfil (registro no CREA, porte, cadastros e alertas), CATs e atestados (com id, quantitativos por categoria e a síntese de cada obra) e os profissionais. Paginado (10 atestados por página, no máximo 25); filtra por atestado, categoria ou texto (nº, contratante, objeto, cidade). Não traz valores econômicos (capital, patrimônio, índices, faturamento) nem o valor dos contratos.",
+      "Lê o acervo técnico da empresa no SIGO: perfil (registro no CREA, porte, cadastros e alertas), CATs e atestados (com id, quantitativos por categoria e a síntese de cada obra) e os profissionais. Paginado (10 atestados por página, no máximo 25): se total_atestados passar de por_pagina, leia TODAS as páginas (pagina 2, 3… com o mesmo por_pagina, até proxima_pagina ser null) antes de avaliar o Atende? ou concluir que um atestado não existe. Filtra por atestado, categoria ou texto (nº, contratante, objeto, cidade). Não traz valores econômicos (capital, patrimônio, índices, faturamento) nem o valor dos contratos.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -296,6 +296,8 @@ const LER_ACERVO: Ferramenta = {
               ativo: p.ativo ?? null,
             }));
 
+    // o Atende? depende do acervo inteiro: a saída diz quantas páginas há e qual é a próxima
+    const totalPaginas = Math.ceil(total / porPagina);
     const saida = {
       perfil,
       atestados,
@@ -303,13 +305,15 @@ const LER_ACERVO: Ferramenta = {
       total_atestados: total,
       pagina,
       por_pagina: porPagina,
+      total_paginas: totalPaginas,
+      proxima_pagina: pagina < totalPaginas ? pagina + 1 : null,
       categorias: CATEGORIAS_ACERVO,
     };
     // acervo com muitos quantitativos por obra: recusa a página grande em vez de deixar o cliente cortar
     const tamanho = JSON.stringify(saida, null, 2).length;
     if (tamanho > LIMITE_SAIDA && atestados.length > 1) {
       return falha(
-        `A página do acervo passou do limite de ${LIMITE_SAIDA} caracteres. Peça menos atestados por página (por_pagina menor) ou um atestado_id.`,
+        `A página do acervo passou do limite de ${LIMITE_SAIDA} caracteres. Recomece da página 1 com um por_pagina menor (o mesmo em todas as páginas) ou peça um atestado_id.`,
         "saida_grande",
         {
           tamanho,
@@ -466,6 +470,7 @@ export const FERRAMENTAS_ACERVO: Ferramenta[] = [LER_ACERVO, CADASTRAR_ATESTADO]
 
 export const INSTRUCOES_ACERVO: string[] = [
   "Acervo: ler_acervo traz atestados (com id), quantitativos e profissionais, sem valores econômicos; a parte econômica é do servidor.",
+  "ler_acervo é paginado: se total_atestados passar de por_pagina, leia todas as páginas (proxima_pagina até null, mesmo por_pagina) antes de avaliar o Atende?; acervo pela metade dá resultado errado.",
   "Para cadastrar CAT/atestado, extraia contratante, obra, período, profissional, ART e quantitativos com a categoria (ids de ler_acervo.categorias; fora delas, outro) e UMA síntese por categoria: o total da obra.",
   "Mostre a conferência em tabela e só chame cadastrar_atestado com confirmado_pelo_usuario: true depois do OK; criado: false = a CAT já existe.",
   "Depois anexe o PDF: gerar_link_envio com alvo atestado e o atestado_id.",
