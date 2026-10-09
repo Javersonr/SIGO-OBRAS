@@ -22,7 +22,7 @@ import {
   schemaEdital,
   type EditalConsolidado,
   type RespostaTecnica,
-} from "./edital-schemas.ts";
+} from "../_shared/edital/edital-schemas.ts";
 import {
   apelidarAtestados,
   arr,
@@ -44,14 +44,11 @@ import {
   rotuloOrigem,
   sanearEdital,
   texto,
-  type Acervo,
-  type AcervoAtestado,
-  type AcervoPerfil,
-  type AcervoProfissional,
-  type AcervoQuantitativo,
   type Juncao,
   type MotivoFraca,
-} from "./edital-regras.ts";
+} from "../_shared/edital/edital-regras.ts";
+import { carregarAcervo, fonteDoAdmin, garantirIds, hojeBR } from "../_shared/edital/acervo.ts";
+import { promptAtende, promptExtracao } from "../_shared/edital/prompts-ia.ts";
 import { contabilizar, type MedidorUso } from "./ia-uso.ts";
 
 type Obj = Record<string, unknown>;
@@ -88,16 +85,6 @@ function inteiroPositivo(v: unknown): number | null {
   return Number.isInteger(n) && n >= 1 ? n : null;
 }
 
-/** "AAAA-MM-DD" no fuso de Brasília (validade de certidão, sessão) */
-function hojeBR(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
-
 /** todas as "pagina" numéricas de uma estrutura (para validar a saída do modelo) */
 function paginasCitadas(v: unknown, out = new Set<number>()): Set<number> {
   if (Array.isArray(v)) for (const x of v) paginasCitadas(x, out);
@@ -111,35 +98,6 @@ function paginasCitadas(v: unknown, out = new Set<number>()): Set<number> {
 }
 
 // ─── edital_extrair_parte ───────────────────────────────────────────────────
-
-function promptExtracao(nome: string, parte: number, total: number, errata: boolean): string {
-  return [
-    "Você é analista de licitações de uma empresa brasileira de engenharia elétrica e construção (redes de distribuição, iluminação pública, obras).",
-    `Abaixo está a PARTE ${parte} de ${total} do arquivo "${nome}"${errata ? " — ERRATA/RETIFICAÇÃO: o que estiver aqui substitui o edital original" : ""}, página a página, com marcadores "=== PÁGINA n ===". Páginas escaneadas vêm como imagem, cada uma precedida do seu marcador.`,
-    "",
-    "Preencha o JSON SOMENTE com o que está escrito NESTAS páginas:",
-    "- NÃO invente nem deduza: o que não estiver escrito fica null; lista sem ocorrência fica [].",
-    '- "pagina" = o n do marcador "=== PÁGINA n ===" onde a informação aparece (em toda data, exigência e observação).',
-    "- Datas em AAAA-MM-DD; horas em HH:MM (24 h). Valores em número: 1.234.567,89 → 1234567.89. Percentuais em pontos: 10% → 10.",
-    '- "trecho": copie o trecho do edital que fundamenta a exigência (até ~300 caracteres).',
-    '- ids das exigências: "op1","op2"… (operacional), "pr1"… (profissional), "ec1"… (econômica), "rg1"… (registros).',
-    "",
-    "O QUE MAIS IMPORTA (decide se a empresa pode participar):",
-    "1. QUALIFICAÇÃO TÉCNICA — separe:",
-    '   • tecnica_operacional = capacidade técnico-OPERACIONAL: atestados em nome da EMPRESA licitante. Uma entrada por parcela de maior relevância/serviço: servico, quantidade MÍNIMA exigida e unidade; percentual_minimo quando o edital fala em % (ex.: "50% do quantitativo") — se o edital der só o total da parcela e o %, calcule quantidade = total × %; somatorio_permitido (true = aceita somar atestados; false = exige atestado único ou veda somatório; null = não diz); exige_execucao (true quando exige EXECUÇÃO — projeto, fiscalização ou consultoria não bastam).',
-    "   • tecnica_profissional = capacidade técnico-PROFISSIONAL: CAT/acervo do PROFISSIONAL de nível superior do quadro da empresa (ex.: engenheiro eletricista), com a formação em profissional e serviço/quantidade se houver.",
-    '   "Atestado em nome da licitante" = operacional; "CAT do responsável técnico/profissional" = profissional.',
-    '2. QUALIFICAÇÃO ECONÔMICO-FINANCEIRA (economica): capital social mínimo (capital_social), patrimônio líquido mínimo (patrimonio_liquido) ou "capital social OU patrimônio líquido" (capital_ou_pl) — com valor_minimo em R$ e/ou percentual_do_estimado; índices liquidez_corrente, liquidez_geral e solvencia_geral (valor_minimo = índice mínimo, ex.: 1.0) e endividamento (valor_minimo = índice MÁXIMO); ccl (capital circulante líquido); faturamento (valor e exercicio). Balanço, certidão de falência e demais documentos vão em outros_documentos.',
-    "3. REGISTROS: registro da empresa no CREA/CAU (crea), visto no CREA do estado (visto_crea), cadastro/credenciamento em concessionária de energia (cadastro_concessionaria), outros (outro).",
-    '4. PRAZOS: sessão pública/abertura (sessao), limite de propostas (proposta_limite), impugnação (impugnacao_limite), esclarecimentos (esclarecimento_limite) e visita técnica (obrigatória ou facultativa, data, hora e, em descricao, local/como agendar). Prazo relativo ("até 3 dias úteis antes da sessão") → data null e explique em observacoes_importantes.',
-    "5. Também: garantia de proposta, exclusividade ME/EPP, consórcio, subcontratação, critério de julgamento, regime e prazo de execução, vigência, valor estimado, órgão e CNPJ, nº do edital e do processo, modalidade, forma (eletrônica/presencial), portal (plataforma/link da disputa) e local (cidade/UF).",
-    "6. itens: lotes/itens da planilha com quantidade, unidade e valores (no máximo 80 linhas; se houver mais, fique com os de maior valor e registre em avisos).",
-    '- titulo_sugerido: curto (até 80 caracteres), ex.: "Iluminação pública LED — Pref. de Araxá/MG" (só se o objeto aparecer nestas páginas).',
-    "- observacoes_importantes: só o que muda a decisão ou o preparo (amostra, exigência incomum, penalidade atípica, prazo relativo) — no máximo 15.",
-    "- avisos: problemas de leitura (página ilegível, tabela cortada).",
-    "- paginas_lidas: quantas páginas você recebeu.",
-  ].join("\n");
-}
 
 const limparTexto = (t: string) =>
   t
@@ -392,126 +350,6 @@ export async function editalConsolidar(body: Obj, medidor?: MedidorUso): Promise
 
 // ─── edital_atende ──────────────────────────────────────────────────────────
 
-function promptAtende(empresa: string, ids: string[]): string {
-  return [
-    `Você é o analista de habilitação da empresa ${empresa}. Decida, exigência por exigência, se o ACERVO da empresa atende à qualificação TÉCNICA e aos REGISTROS do edital (o econômico-financeiro já foi calculado pelo sistema — não avalie).`,
-    'Use SOMENTE o acervo listado. Os atestados são identificados por códigos ENTRE COLCHETES: [AT1], [AT2]… Em "atestados" e em cats_anexar cite apenas esses códigos; no texto (comprovacao, justificativa, pendencias, riscos) escreva o código sempre com os colchetes, ex.: "[AT3]" — nunca A3/AT3 soltos (A1…A4 são grupos tarifários). Não invente CAT, quantidade ou profissional.',
-    `Responda UM item para CADA exigência: ${ids.join(", ")}.`,
-    "",
-    "REGRAS (siga à risca):",
-    '1. Somatório × atestado único: somatório PERMITIDO → compare com os TOTAIS (somatório das CATs); VEDADO → compare com o TETO POR OBRA ÚNICA; edital não diz → compare primeiro com o teto por obra única e, se só atender somando atestados, use "ressalva" (depende de o edital aceitar somatório).',
-    '2. exige execução = sim: CAT sem execução na ART (só projeto/consultoria/fiscalização/assessoria) NÃO comprova — "nao_atende" se for a única prova; cite o motivo.',
-    '3. Quantidade na atividade técnica da ART (marcada [ART] ou em "atividade técnica da ART") vale mais do que a que aparece só na observação/planilha; se a prova depender só da observação, use "ressalva".',
-    '4. CAT EM ANDAMENTO ou com divergência conhecida (campo riscos) que afete a prova ⇒ no máximo "ressalva", citando o risco.',
-    "5. Tipo cat_profissional (obra executada por OUTRA empresa) só vale para capacidade técnico-PROFISSIONAL e só se o profissional tiver vínculo com a empresa (quadro técnico); NUNCA para técnico-operacional.",
-    '6. Tipo atestado (sem CAT) só vale se o edital aceitar atestado sem registro no CREA; se o edital não disser, "ressalva".',
-    "7. CAO comprova o acervo operacional apenas das ARTs que cobre.",
-    "8. Quantidade mínima: use a quantidade exigida. Se o edital não fixar, registre na justificativa que a Lei 14.133/2021 (art. 67, §§ 1º e 2º) limita a exigência às parcelas de maior relevância e a até 50% do quantitativo delas.",
-    '9. Compare unidades compatíveis (1 km = 1.000 m). Luminária de IP, refletor e substituição de luminária são categorias diferentes; serviço similar ou de complexidade superior só conta se o edital aceitar — na dúvida, "ressalva" explicando.',
-    "10. Técnico-profissional: confira o quadro técnico (formação exigida, RT, vínculo, restrições) e se há CAT em nome do profissional com o serviço/quantidade.",
-    "11. Registros: CREA da empresa; visto no CREA da UF da licitação quando a empresa é de outra UF (em regra só para contratar — trate como ressalva/pendência, salvo se o edital exigir na habilitação); cadastro na concessionária: confira órgão, grupos e validades dos cadastros.",
-    "12. Considere as OBSERVAÇÕES/REGRAS e os ALERTAS da empresa (o que ela NÃO tem, melhores CATs por serviço).",
-    '13. status: "atende" (comprovado), "ressalva" (atende com risco/condição), "nao_atende" (o acervo não tem), "verificar" (faltam dados para decidir).',
-    '14. comprovacao: objetiva, com o nº da CAT e a quantidade (ex.: "CAT 3239747/2025 – Planura: 157 postes (teto por obra)"); justificativa: 1 a 3 frases.',
-    "15. cats_anexar: CATs/CAO/atestados a juntar na habilitação e o motivo. pendencias: providências antes da sessão. riscos: pontos que podem inabilitar.",
-  ].join("\n");
-}
-
-type Consulta = (
-  de: number,
-  ate: number
-) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>;
-
-/** PostgREST devolve no máx. 1000 linhas por chamada: pagina até acabar */
-async function buscarTodos(consulta: Consulta): Promise<Obj[]> {
-  const out: Obj[] = [];
-  for (let de = 0; de < 20_000; de += 1000) {
-    const { data, error } = await consulta(de, de + 999);
-    if (error) throw new Error(`Falha ao ler o acervo: ${error.message}`);
-    out.push(...((data ?? []) as Obj[]));
-    if (!data || data.length < 1000) break;
-  }
-  return out;
-}
-
-async function carregarAcervo(empresaId: string): Promise<{ acervo: Acervo; empresa: Obj | null }> {
-  const sb = createAdminClient();
-  const [perfilR, empresaR, profissionais, atestados, quantitativos] = await Promise.all([
-    sb
-      .from("acervo_perfil")
-      .select("*")
-      .eq("empresa_id", empresaId)
-      .is("deleted_at", null)
-      .order("updated_at", { ascending: false })
-      .limit(1),
-    sb.from("empresa").select("id, nome, razao_social, estado").eq("id", empresaId).maybeSingle(),
-    buscarTodos((de, ate) =>
-      sb
-        .from("acervo_profissional")
-        .select(
-          "id, nome, registro, titulos, atribuicoes, restricoes, vinculo_desde, responsavel_tecnico, ativo, observacoes"
-        )
-        .eq("empresa_id", empresaId)
-        .is("deleted_at", null)
-        .order("nome")
-        .order("id")
-        .range(de, ate)
-    ),
-    buscarTodos((de, ate) =>
-      sb
-        .from("acervo_atestado")
-        .select(
-          "id, tipo, numero, conselho, art_numero, contratante, valor, data_inicio, data_fim, objeto, cidade, uf, codigos_crea, atividades, com_execucao, situacao, profissional_nome, empresa_executora, cobre_arts, riscos, ordem"
-        )
-        .eq("empresa_id", empresaId)
-        .is("deleted_at", null)
-        .order("ordem", { ascending: true, nullsFirst: false })
-        .order("id")
-        .range(de, ate)
-    ),
-    buscarTodos((de, ate) =>
-      sb
-        .from("acervo_quantitativo")
-        .select(
-          "atestado_id, categoria, descricao, quantidade, unidade, especificacao, na_atividade_tecnica, observacao, ordem"
-        )
-        .eq("empresa_id", empresaId)
-        .is("deleted_at", null)
-        .order("atestado_id")
-        .order("ordem", { ascending: true, nullsFirst: false })
-        .order("id")
-        .range(de, ate)
-    ),
-  ]);
-  if (perfilR.error) throw new Error(`Falha ao ler o acervo: ${perfilR.error.message}`);
-  const atestadosDaEmpresa = atestados as unknown as AcervoAtestado[];
-  const ids = new Set(atestadosDaEmpresa.map((a) => a.id));
-  return {
-    acervo: {
-      perfil: ((perfilR.data ?? [])[0] as AcervoPerfil | undefined) ?? null,
-      profissionais: profissionais as unknown as AcervoProfissional[],
-      atestados: atestadosDaEmpresa,
-      // quantitativo só de atestado desta empresa (defesa extra)
-      quantitativos: (quantitativos as unknown as AcervoQuantitativo[]).filter((q) =>
-        ids.has(q.atestado_id)
-      ),
-    },
-    empresa: (empresaR.data as Obj | null) ?? null,
-  };
-}
-
-/** ids vindos do front: se faltarem/repetirem, renumera (senão preserva p/ casar com o front) */
-function garantirIds(e: EditalConsolidado): void {
-  const h = e.habilitacao;
-  const todos = [
-    ...h.tecnica_operacional,
-    ...h.tecnica_profissional,
-    ...h.economica,
-    ...h.registros,
-  ].map((x) => x.id);
-  if (todos.some((id) => !id) || new Set(todos).size !== todos.length) renumerarIds(e);
-}
-
 export async function editalAtende(
   body: Obj,
   usuario: Usuario,
@@ -528,7 +366,12 @@ export async function editalAtende(
   const extraido = sanearEdital(body.extraido);
   garantirIds(extraido);
 
-  const { acervo, empresa: emp } = await carregarAcervo(empresaId);
+  const sb = createAdminClient();
+  const [acervo, empresaR] = await Promise.all([
+    carregarAcervo(fonteDoAdmin(sb, empresaId)),
+    sb.from("empresa").select("id, nome, razao_social, estado").eq("id", empresaId).maybeSingle(),
+  ]);
+  const emp = (empresaR.data as Obj | null) ?? null;
   if (!acervo.perfil && !acervo.atestados.length && !acervo.profissionais.length) {
     return fail("Cadastre o acervo da empresa (Oportunidades → Acervo técnico)", 422, {
       codigo: "SEM_ACERVO",

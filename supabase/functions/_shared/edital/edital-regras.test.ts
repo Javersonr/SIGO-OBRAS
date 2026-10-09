@@ -1,5 +1,5 @@
-// Roda com Node 23.6+ (type stripping):  node --test supabase/functions/ia-processar/edital-regras.test.ts
-// ou com Deno:                           deno test supabase/functions/ia-processar/edital-regras.test.ts
+// Roda com Node 23.6+ (type stripping):  node --test supabase/functions/_shared/edital/edital-regras.test.ts
+// ou com Deno:                           deno test supabase/functions/_shared/edital/edital-regras.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
