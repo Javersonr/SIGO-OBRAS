@@ -7,6 +7,8 @@ description: Converte a planilha orçamentária de uma licitação de prefeitura
 
 Você recebe a planilha orçamentária de um edital (PDF ou Excel), e o cronograma físico-financeiro quando houver, e devolve um `.xlsx` no **modelo do SIGO Obras**. O usuário importa esse arquivo no SIGO (Oportunidade → aba Orçamento → **Importar planilha**; o cronograma, na aba Planejamento → **Cronograma físico-financeiro** → **Importar**), que o lê sem IA: os nomes das abas, os cabeçalhos e os rótulos têm de ser **exatamente** os deste documento. O desconto da proposta é aplicado depois, dentro do SIGO.
 
+**Com o conector do SIGO Obras** nesta conversa (as ferramentas `empresa_atual` e `importar_orcamento` existem), grave direto no SIGO pelas ferramentas: veja a seção **Com o conector do SIGO Obras**, no fim deste documento.
+
 ## Resultado
 
 - Arquivo `Orcamento SIGO - <órgão>.xlsx` (ex.: `Orcamento SIGO - PM Itatinga.xlsx`), sem `\ / : * ? " < > |` no nome.
@@ -360,3 +362,46 @@ print(conferir_modelo_sigo("Orcamento SIGO - PM Exemplo.xlsx"))
 > - Cronograma: N meses e E etapas, copiado do edital sem reperiodizar; cada linha soma 100,00% (ou: a etapa X soma Y%). Sem cronograma no edital: "O edital não traz cronograma físico-financeiro; a aba Cronograma não foi criada."
 >
 > Para importar: SIGO → Oportunidade → aba **Orçamento** → **Importar planilha**. Confira a prévia e confirme; depois aplique o desconto no campo **Desconto (%)**. O cronograma, com o mesmo arquivo: aba **Planejamento** → **Cronograma físico-financeiro** → **Importar**.
+
+## Com o conector do SIGO Obras
+
+Quando as ferramentas `empresa_atual` e `importar_orcamento` do conector do SIGO Obras existem nesta conversa, **grave direto no SIGO** pelas ferramentas, em vez de pedir ao usuário para importar o arquivo. Sem o conector, nada muda: siga o resto deste documento.
+
+1. Chame `empresa_atual` e confirme a empresa. Ache a oportunidade com `buscar_oportunidades` (ou use a que o usuário indicar); o `oportunidade_id` é o UUID dela.
+2. Monte as linhas com as mesmas regras deste documento (fidelidade, numeração, etapas, preço com BDI, sem desconto) e, em vez das células da aba `Orçamento`, mande uma lista `linhas`, uma entrada por linha, na mesma ordem:
+
+   | Coluna do modelo      | Campo de `linhas[]`                                                |
+   | --------------------- | ------------------------------------------------------------------ |
+   | `Item`                | `item`, em texto (`"1"`, `"1.1"`, `"1.10"`)                        |
+   | `Código`              | `codigo`                                                           |
+   | `Fonte`               | `fonte`                                                            |
+   | `Descrição`           | `descricao`                                                        |
+   | `Unidade`             | `unidade`                                                          |
+   | `Quantidade`          | `quantidade`, número (null na etapa)                               |
+   | `Preço unitário (R$)` | `preco_unitario`, número, com BDI e sem desconto (null na etapa)   |
+   | `Total (R$)`          | `total`, número, como na planilha da prefeitura (só para conferir) |
+
+3. A aba `Informações` vai no objeto `informacoes`:
+
+   | Rótulo da aba              | Campo de `informacoes` |
+   | -------------------------- | ---------------------- |
+   | `Órgão`                    | `orgao`                |
+   | `Objeto`                   | `objeto`               |
+   | `Edital/Processo`          | `edital`               |
+   | `Data-base`                | `data_base`            |
+   | `BDI (%)`                  | `bdi`                  |
+   | `Fonte de preços`          | `fonte_precos`         |
+   | `Total da prefeitura (R$)` | `total_prefeitura`     |
+   | `Observações`              | `observacoes`          |
+
+4. Mostre a conferência ao usuário (etapas, itens, soma, total da prefeitura e diferença) e **pergunte o desconto (%) da proposta antes de gravar**.
+5. Grave nesta ordem:
+   1. `importar_orcamento` com `oportunidade_id`, `linhas` e `informacoes`. Se voltar `gravado: false` e `motivo: "ja_existe"`, faça ao usuário a `pergunta` que veio ("Substituir os N itens atuais?") e só com o "sim" chame de novo com `substituir: true`. Erro `validacao`: corrija o que veio em `erros` ("Linha n" conta como no Excel: a 1ª entrada de `linhas` é a linha 2) e chame de novo. Todo item precisa estar dentro de uma etapa.
+   2. `aplicar_desconto` com o `desconto_pct` que o usuário informou (12,35 ou 12.35). Se voltar `orcamento_mudou`, chame de novo.
+   3. Se houver a aba `Cronograma`: `importar_cronograma` com `meses` e `linhas: [{item, pct}]`, uma entrada por etapa de nível 1 (`item` = o `Item` da etapa; `pct` = os % de `Mês 1` a `Mês N`, vazio = 0). O `ja_existe` funciona como no orçamento: `substituir: true` só depois de o usuário confirmar.
+   4. `registrar_proposta` com o `oportunidade_id`: registra a versão da proposta (Rascunho) com o total com desconto.
+   5. Para conferir o que ficou gravado, use `ler_orcamento`.
+6. O Excel continua: grave o `.xlsx` com `gravar_modelo_sigo`, como sempre, e anexe nos Arquivos da oportunidade com `gerar_link_envio` (alvo `oportunidade`, pasta `Envelope 01 – Proposta`). O usuário solta o arquivo na página do link; no Claude Code, envie pelo comando que o link devolve e chame `registrar_arquivos`.
+7. Responda com o que foi gravado (etapas, itens, total de referência, total da proposta e desconto real; meses do cronograma e as linhas que não fecham 100,00%) e com o aviso: "Baixe o PDF oficial no SIGO: Oportunidade → Orçamento → **Exportar proposta** e Planejamento → **Exportar cronograma** (desmarque 'Registrar como nova versão', que o Claude já registrou)", com o link da oportunidade.
+
+Se o usuário pedir algo que as ferramentas não fazem (apagar a oportunidade, mexer no financeiro, gerar o PDF da proposta), diga que o conector não faz e não invente.

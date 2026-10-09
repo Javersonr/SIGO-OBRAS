@@ -10,6 +10,11 @@ import {
 } from "./orcamento-modelo";
 import { ABA_CRONOGRAMA, cabecalhoCronograma } from "./cronograma-modelo";
 import { MAX_MESES } from "./cronograma-ff";
+import {
+  CAMPOS_INFORMACOES_CONECTOR,
+  CAMPOS_LINHA_CONECTOR,
+} from "../../../../supabase/functions/_shared/orcamento/modelo.ts";
+import { NOMES_FERRAMENTAS } from "../../../../supabase/functions/_shared/conector/permissoes-ferramentas.ts";
 
 const skill = readFileSync(
   new URL("../../public/skills/orcamento-prefeitura-sigo/SKILL.md", import.meta.url),
@@ -75,5 +80,56 @@ describe("montarZipSkill", () => {
   });
   it("caminho público da skill", () => {
     expect(CAMINHO_SKILL).toBe(`/skills/${NOME_SKILL}/SKILL.md`);
+  });
+});
+
+describe("SKILL.md com o conector do SIGO Obras", () => {
+  const secao = skill.slice(skill.indexOf("## Com o conector do SIGO Obras"));
+
+  it("tem a seção, avisada no começo do documento", () => {
+    expect(skill.indexOf("## Com o conector do SIGO Obras")).toBeGreaterThan(0);
+    const intro = skill.slice(0, skill.indexOf("## Resultado"));
+    expect(intro).toContain("**Com o conector do SIGO Obras**");
+  });
+  it("cita as 5 ferramentas da parte D, o gerar_link_envio e como saber se o conector existe", () => {
+    const nomes = [
+      "empresa_atual",
+      "importar_orcamento",
+      "aplicar_desconto",
+      "importar_cronograma",
+      "registrar_proposta",
+      "ler_orcamento",
+      "gerar_link_envio",
+      "buscar_oportunidades",
+      "registrar_arquivos",
+    ];
+    for (const nome of nomes) {
+      expect(secao).toContain(`\`${nome}\``);
+      // o nome citado na skill tem de ser uma ferramenta que o servidor realmente expõe
+      expect(NOMES_FERRAMENTAS).toContain(nome);
+    }
+  });
+  it("cada campo de linhas[] e de informacoes do conector aparece em crase", () => {
+    for (const campo of [...CAMPOS_LINHA_CONECTOR, ...CAMPOS_INFORMACOES_CONECTOR]) {
+      expect(secao).toContain(`\`${campo}\``);
+    }
+  });
+  it("gravações na ordem, desconto perguntado antes, substituir só com confirmação, pasta e PDF", () => {
+    const passo5 = secao.slice(secao.indexOf("5. Grave nesta ordem"));
+    const posicoes = [
+      "importar_orcamento",
+      "aplicar_desconto",
+      "importar_cronograma",
+      "registrar_proposta",
+    ].map((n) => passo5.indexOf(`\`${n}\``));
+    expect(posicoes.every((p) => p > 0)).toBe(true);
+    expect([...posicoes].sort((a, b) => a - b)).toEqual(posicoes);
+    expect(secao.indexOf("pergunte o desconto")).toBeLessThan(
+      secao.indexOf("5. Grave nesta ordem")
+    );
+    expect(secao).toContain("`substituir: true`");
+    expect(secao).toContain("Envelope 01 – Proposta");
+    expect(secao).toContain("**Exportar proposta**");
+    expect(secao).toContain("**Exportar cronograma**");
   });
 });
