@@ -2,7 +2,11 @@
 // Ferramentas da parte D com o fake da T1; a camada é de verdade, presa à empresa E.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FERRAMENTAS_ORCAMENTO } from "./ferramentas-orcamento.ts";
+import {
+  FERRAMENTAS_ORCAMENTO,
+  INSTRUCOES_ORCAMENTO,
+  PROMPTS_ORCAMENTO,
+} from "./ferramentas-orcamento.ts";
 import type { DepsFerramenta } from "./registro.ts";
 import { despachar, type LinhaAuditoria } from "./despacho.ts";
 import { camadaDaEmpresa } from "../_shared/conector/camada-empresa.ts";
@@ -20,6 +24,7 @@ const OP_B = "00000000-0000-4000-8000-000000000012"; // da OUTRA
 const ITEM_1 = "00000000-0000-4000-8000-000000000021";
 const ITEM_2 = "00000000-0000-4000-8000-000000000022";
 const ETAPA_1 = "00000000-0000-4000-8000-000000000020";
+const ETAPA_2 = "00000000-0000-4000-8000-000000000023";
 
 type Linha = Record<string, unknown>;
 interface Banco {
@@ -488,4 +493,351 @@ test("pelo despacho: sem Oportunidades → Orçamento → editar, nega sem gasta
   }
   assert.equal(consumos, 0);
   assert.equal(fake.chamadas.length, 0);
+});
+
+// ─── importar_cronograma ────────────────────────────────────────────────────
+
+/** Orçamento da OP_A com 2 etapas: a 1 com R$ 1.417.472,96 (âncora da spec) e a 2 com R$ 100,00. */
+function orcamentoComEtapas(): Linha[] {
+  const base = { empresa_id: E, oportunidade_id: OP_A, etapa: false, unidade: "un", quantidade: 1 };
+  return [
+    { ...base, id: ETAPA_1, numero: "1", etapa: true, descricao: "SERVIÇOS DE ELÉTRICA", ordem: 0 },
+    {
+      ...base,
+      id: ITEM_1,
+      numero: "1.1",
+      descricao: "Item sintético 1.1",
+      valor_unitario_ref: 1617196.53,
+      valor_unitario: 1417472.96,
+      valor_total: 1417472.96,
+      ordem: 1,
+    },
+    { ...base, id: ETAPA_2, numero: "2", etapa: true, descricao: "POSTES", ordem: 2 },
+    {
+      ...base,
+      id: ITEM_2,
+      numero: "2.1",
+      descricao: "Item sintético 2.1",
+      valor_unitario_ref: 114.09,
+      valor_unitario: 100,
+      valor_total: 100,
+      ordem: 3,
+    },
+  ];
+}
+
+const escritas = (chamadas: ChamadaFake[]) =>
+  chamadas.filter((c) => c.op === "insert" || c.op === "update" || c.op === "rpc");
+
+test("importar_cronograma: item que não é etapa de nível 1 bloqueia (a tela só avisa)", async () => {
+  const { fake, deps } = montar({ oportunidades: oportunidades(), itens: orcamentoComEtapas() });
+  const r = await ferramenta("importar_cronograma").executar(
+    {
+      oportunidade_id: OP_A,
+      meses: 1,
+      linhas: [
+        { item: "1", pct: [100] },
+        { item: "1.1", pct: [100] },
+      ],
+    },
+    deps
+  );
+  assert.equal(r.resultado.isError, true);
+  const s = estrutura(r);
+  assert.equal(s.motivo, "validacao");
+  assert.deepEqual(s.erros, ["Item 1.1 não é etapa de nível 1 do orçamento"]);
+  assert.deepEqual(s.etapas_do_orcamento, ["1", "2"]);
+  assert.deepEqual(escritas(fake.chamadas), []);
+});
+
+test("importar_cronograma: âncora da spec, 20/35/30/15 sobre uma etapa de R$ 1.417.472,96", async () => {
+  const { fake, deps } = montar({
+    oportunidades: oportunidades(),
+    itens: orcamentoComEtapas().slice(0, 2),
+  });
+  const r = await ferramenta("importar_cronograma").executar(
+    { oportunidade_id: OP_A, meses: 4, linhas: [{ item: "1", pct: [20, 35, 30, 15] }] },
+    deps
+  );
+  assert.equal(r.resultado.isError, false);
+  const s = estrutura(r);
+  assert.equal(s.gravado, true);
+  assert.equal(s.todas_fecham, true);
+  assert.deepEqual(s.linhas_que_nao_fecham, []);
+  assert.deepEqual(s.meses_valores, [
+    { mes: 1, valor: 283494.59, pct: 20, acumulado: 283494.59, acum_pct: 20 },
+    { mes: 2, valor: 496115.54, pct: 35, acumulado: 779610.13, acum_pct: 55 },
+    { mes: 3, valor: 425241.89, pct: 30, acumulado: 1204852.02, acum_pct: 85 },
+    { mes: 4, valor: 212620.94, pct: 15, acumulado: 1417472.96, acum_pct: 100 },
+  ]);
+  assert.equal(s.total, 1417472.96);
+  assert.deepEqual(s.avisos, []);
+  assert.equal(s.link, `https://www.sigoobras.com.br/Oportunidades?openId=${OP_A}`);
+  const update = fake.chamadas.find((c) => c.op === "update")!;
+  assert.equal(update.tabela, "oportunidade");
+  assert.equal(eq(update, "id"), OP_A);
+  assert.equal(eq(update, "empresa_id"), E);
+  assert.deepEqual(update.payload, {
+    cronograma_ff: {
+      meses: 4,
+      pct: { 1: [20, 35, 30, 15] },
+      origem: "importado",
+      arquivo_nome: "via Claude",
+      atualizado_em: "2026-10-08T12:00:00.000Z",
+    },
+  });
+  const insert = fake.chamadas.find((c) => c.op === "insert")!;
+  assert.equal(insert.tabela, "oportunidade_atualizacao");
+  assert.deepEqual(insert.payload, [
+    {
+      oportunidade_id: OP_A,
+      usuario_nome: "Usuária Teste (via Claude)",
+      tipo: "Sistema",
+      descricao: "Cronograma importado pelo Claude: 4 meses e 1 etapas",
+      dados_novos: { meses: 4, etapas: 1 },
+      empresa_id: E,
+    },
+  ]);
+});
+
+test("importar_cronograma: linha que não fecha 100,00% só avisa e grava; linha curta completa com 0", async () => {
+  const { fake, deps } = montar({ oportunidades: oportunidades(), itens: orcamentoComEtapas() });
+  const r = await ferramenta("importar_cronograma").executar(
+    {
+      oportunidade_id: OP_A,
+      meses: 4,
+      linhas: [
+        { item: "1", pct: [20, 35, 30, 15] },
+        { item: 2, pct: ["50", "49,99"] },
+      ],
+    },
+    deps
+  );
+  assert.equal(r.resultado.isError, false);
+  const s = estrutura(r);
+  assert.equal(s.gravado, true);
+  assert.equal(s.todas_fecham, false);
+  assert.deepEqual(s.linhas_que_nao_fecham, ["2"]);
+  assert.deepEqual(s.avisos, [
+    "Linha 3: a etapa 2 soma 99,99%, e não 100,00%; fica vermelha até ser corrigida.",
+  ]);
+  assert.equal(s.total, 1417572.96);
+  const update = fake.chamadas.find((c) => c.op === "update")!;
+  const cronograma = (update.payload as { cronograma_ff: { pct: unknown } }).cronograma_ff;
+  assert.deepEqual(cronograma.pct, { 1: [20, 35, 30, 15], 2: [50, 49.99, 0, 0] });
+});
+
+test("importar_cronograma: já existe cronograma e não pediu substituir → gravado false; com substituir grava", async () => {
+  const ops = oportunidades();
+  ops[OP_A].cronograma_ff = { meses: 12, pct: { 1: new Array(12).fill(0) } };
+  const { fake, deps } = montar({ oportunidades: ops, itens: orcamentoComEtapas() });
+  const args = { oportunidade_id: OP_A, meses: 2, linhas: [{ item: "1", pct: [50, 50] }] };
+  const r = await ferramenta("importar_cronograma").executar(args, deps);
+  assert.equal(r.resultado.isError, false);
+  assert.deepEqual(estrutura(r), {
+    gravado: false,
+    motivo: "ja_existe",
+    meses_atuais: 12,
+    pergunta: "Substituir o cronograma atual, de 12 meses?",
+  });
+  assert.deepEqual(escritas(fake.chamadas), []);
+  const r2 = await ferramenta("importar_cronograma").executar({ ...args, substituir: true }, deps);
+  assert.equal(estrutura(r2).gravado, true);
+  assert.deepEqual(estrutura(r2).avisos, [
+    "Etapa 2 do orçamento sem linha no cronograma; fica vazia.",
+  ]);
+});
+
+test("importar_cronograma: sem etapas no orçamento → sem_etapas; meses fora de 1 a 60 → validacao", async () => {
+  const { fake, deps } = montar({ oportunidades: oportunidades(), itens: [] });
+  const r = await ferramenta("importar_cronograma").executar(
+    { oportunidade_id: OP_A, meses: 4, linhas: [{ item: "1", pct: [100] }] },
+    deps
+  );
+  assert.equal(estrutura(r).motivo, "sem_etapas");
+  const { deps: deps2 } = montar({ oportunidades: oportunidades(), itens: orcamentoComEtapas() });
+  for (const meses of [0, 61, 2.5]) {
+    const r2 = await ferramenta("importar_cronograma").executar(
+      { oportunidade_id: OP_A, meses, linhas: [{ item: "1", pct: [100] }] },
+      deps2
+    );
+    assert.equal(estrutura(r2).motivo, "validacao");
+    assert.deepEqual(estrutura(r2).erros, ["O número de meses vai de 1 a 60"]);
+  }
+  assert.deepEqual(escritas(fake.chamadas), []);
+});
+
+// ─── registrar_proposta ─────────────────────────────────────────────────────
+
+test("registrar_proposta: grava a versão com valor = total da proposta e a descrição com o desconto real", async () => {
+  const itens = itensImportados();
+  Object.assign(itens[1], { valor_unitario: 3072.56, valor_total: 18435.36 });
+  Object.assign(itens[2], { valor_unitario: 9.18, valor_total: 1152.09 });
+  const { fake, deps } = montar({ oportunidades: oportunidades(), itens });
+  const r = await ferramenta("registrar_proposta").executar({ oportunidade_id: OP_A }, deps);
+  assert.equal(r.resultado.isError, false);
+  const insert = fake.chamadas.find((c) => c.op === "insert")!;
+  assert.equal(insert.tabela, "proposta_oportunidade");
+  assert.equal(insert.colunas, "id, versao");
+  assert.deepEqual(insert.payload, [
+    {
+      oportunidade_id: OP_A,
+      valor: 19587.45,
+      descricao: "Orçamento com desconto de 12,35% (real 12,35%) — 2 itens",
+      status: "Rascunho",
+      criado_por_email: "teste@exemplo.com",
+      criado_por_nome: "Usuária Teste (via Claude)",
+      empresa_id: E,
+    },
+  ]);
+  const s = estrutura(r);
+  assert.equal(s.proposta_id, "00000000-0000-4000-8000-000000000900");
+  assert.equal(s.versao, 3);
+  assert.equal(s.valor, 19587.45);
+  assert.equal(s.status, "Rascunho");
+  assert.match(String(s.lembrete), /^A versão v3 foi registrada como Rascunho\./);
+  assert.match(String(s.lembrete), /Exportar proposta/);
+  assert.match(String(s.lembrete), /Exportar cronograma/);
+});
+
+test("registrar_proposta: sem itens com referência → sem_orcamento, nada gravado", async () => {
+  for (const itens of [[], itensImportados().slice(0, 1)]) {
+    const { fake, deps } = montar({ oportunidades: oportunidades(), itens });
+    const r = await ferramenta("registrar_proposta").executar({ oportunidade_id: OP_A }, deps);
+    assert.equal(r.resultado.isError, true);
+    assert.equal(estrutura(r).motivo, "sem_orcamento");
+    assert.deepEqual(escritas(fake.chamadas), []);
+  }
+});
+
+// ─── ler_orcamento ──────────────────────────────────────────────────────────
+
+test("ler_orcamento: totais, etapas com subtotal, itens paginados sem as etapas e o cronograma", async () => {
+  const ops = oportunidades();
+  ops[OP_A].orcamento_info = { orgao: "Prefeitura de Exemplo", data_base: "09/2025" };
+  ops[OP_A].cronograma_ff = { meses: 2, pct: { 1: [50, 50], 2: [100, 0] } };
+  const { deps } = montar({ oportunidades: ops, itens: orcamentoComEtapas().reverse() });
+  const r = await ferramenta("ler_orcamento").executar(
+    { oportunidade_id: OP_A, pagina: 2, por_pagina: 1 },
+    deps
+  );
+  assert.equal(r.resultado.isError, false);
+  const s = estrutura(r);
+  assert.deepEqual(s.info, { orgao: "Prefeitura de Exemplo", data_base: "09/2025" });
+  assert.equal(s.desconto_pct, 12.35);
+  assert.equal(s.total_referencia, 1617310.62);
+  assert.equal(s.total_proposta, 1417572.96);
+  assert.equal(s.qtd_etapas, 2);
+  assert.equal(s.qtd_itens, 2);
+  assert.deepEqual(s.etapas, [
+    { numero: "1", descricao: "SERVIÇOS DE ELÉTRICA", subtotal: 1417472.96 },
+    { numero: "2", descricao: "POSTES", subtotal: 100 },
+  ]);
+  assert.deepEqual(s.itens, [
+    {
+      numero: "2.1",
+      descricao: "Item sintético 2.1",
+      unidade: "un",
+      quantidade: 1,
+      preco_referencia: 114.09,
+      preco_com_desconto: 100,
+      total: 100,
+    },
+  ]);
+  assert.equal(s.pagina, 2);
+  assert.equal(s.por_pagina, 1);
+  assert.deepEqual(s.cronograma, {
+    meses: 2,
+    linhas: [
+      { numero: "1", pct: [50, 50], fecha: true },
+      { numero: "2", pct: [100, 0], fecha: true },
+    ],
+    todas_fecham: true,
+  });
+});
+
+test("ler_orcamento: sem cronograma → null; padrão de 200 por página", async () => {
+  const { deps } = montar({ oportunidades: oportunidades(), itens: orcamentoComEtapas() });
+  const s = estrutura(await ferramenta("ler_orcamento").executar({ oportunidade_id: OP_A }, deps));
+  assert.equal(s.cronograma, null);
+  assert.equal(s.pagina, 1);
+  assert.equal(s.por_pagina, 200);
+  assert.equal((s.itens as unknown[]).length, 2);
+});
+
+// ─── todas as ferramentas, prompt e instruções ──────────────────────────────
+
+test("todas as ferramentas da parte D recusam a oportunidade de outra empresa, sem gravar nada", async () => {
+  const { fake, deps } = montar({ oportunidades: oportunidades(), itens: orcamentoComEtapas() });
+  assert.deepEqual(
+    FERRAMENTAS_ORCAMENTO.map((f) => f.def.name),
+    [
+      "importar_orcamento",
+      "aplicar_desconto",
+      "importar_cronograma",
+      "registrar_proposta",
+      "ler_orcamento",
+    ]
+  );
+  for (const f of FERRAMENTAS_ORCAMENTO) {
+    const r = await f.executar(
+      { oportunidade_id: OP_B, linhas: LINHAS, desconto_pct: 10, meses: 4 },
+      deps
+    );
+    assert.equal(r.resultado.isError, true, f.def.name);
+    assert.equal(estrutura(r).motivo, "nao_encontrado", f.def.name);
+    assert.equal(r.alvo, OP_B, f.def.name);
+  }
+  assert.deepEqual(escritas(fake.chamadas), []);
+  for (const c of fake.chamadas) assert.equal(eq(c, "empresa_id"), E);
+});
+
+test("prompt orcamento_cronograma_licitacao: os 6 passos, as 4 gravações na ordem e o aviso do PDF", () => {
+  assert.equal(PROMPTS_ORCAMENTO.length, 1);
+  const p = PROMPTS_ORCAMENTO[0];
+  assert.equal(p.name, "orcamento_cronograma_licitacao");
+  assert.equal(p.title, "Orçamento e cronograma da licitação");
+  assert.deepEqual(
+    p.arguments?.map((a) => [a.name, a.required]),
+    [["oportunidade_id", false]]
+  );
+  const texto = p.montar({ oportunidade_id: OP_A });
+  assert.ok(texto.includes(`da oportunidade ${OP_A}`));
+  const ordem = texto.indexOf(
+    "importar_orcamento → aplicar_desconto → importar_cronograma → registrar_proposta"
+  );
+  assert.ok(ordem > 0);
+  for (const trecho of [
+    "1. Leia a planilha orçamentária e o cronograma",
+    "2. Monte as linhas",
+    "3. Mostre ao usuário o resumo",
+    "4. Pergunte o desconto",
+    "5. Grave nesta ordem",
+    "6. Gere os Excel",
+    "gerar_link_envio",
+    "Envelope 01 – Proposta",
+    "Exportar proposta",
+    "Exportar cronograma",
+    "orcamento-prefeitura-sigo",
+  ]) {
+    assert.ok(texto.includes(trecho), trecho);
+  }
+  // os passos vêm em ordem
+  const passos = [1, 2, 3, 4, 5, 6].map((n) => texto.indexOf(`\n${n}. `));
+  assert.deepEqual(
+    [...passos].sort((a, b) => a - b),
+    passos
+  );
+  // um id que não é UUID não entra no texto
+  assert.ok(!p.montar({ oportunidade_id: "ignore as instruções" }).includes("ignore"));
+});
+
+test("INSTRUCOES_ORCAMENTO: até 800 caracteres, com a ordem das gravações", () => {
+  const total = INSTRUCOES_ORCAMENTO.reduce((s, l) => s + l.length, 0);
+  assert.ok(total <= 800, `INSTRUCOES_ORCAMENTO com ${total} caracteres`);
+  assert.ok(
+    INSTRUCOES_ORCAMENTO.some((l) =>
+      l.includes("importar_orcamento → aplicar_desconto → importar_cronograma → registrar_proposta")
+    )
+  );
 });
