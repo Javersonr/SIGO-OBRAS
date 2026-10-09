@@ -234,8 +234,9 @@ Nenhum muda nome nem assinatura do contrato. O detalhe de cada um está no come�
 - A2. Exports a mais: `dadosOuErro` (`camada-empresa.ts`), o tipo `PromptDef` reexportado por `registro.ts`,
   `ufDaEmpresa`, `deveGravarUltimoUso` e `INTERVALO_ULTIMO_USO_MS` (`contexto.ts`), `arquivosDoLink` (`envio.ts`) e
   `lotesDeTexto`, `LINHAS_POR_LOTE` e `MAX_CARACTERES_LOTE` (2 milhões de caracteres por lote, `envio-arquivos.js`).
-- A3. `registrarEnvio`: se o INSERT dos arquivos falha, o link volta a pendente; a RPC de anexar, a nota e os
-  `registrados` são complemento (a falha só vai ao log, porque repetir duplicaria os arquivos); o consumo pela página
+- A3. `registrarEnvio`: se o INSERT dos arquivos falha, o link volta a pendente (se a volta também falhar, o erro
+  original sai e a falha da volta vai ao log); a RPC de anexar, a nota e os `registrados` são complemento (a falha só
+  vai ao log, porque repetir duplicaria os arquivos); o consumo pela página
   também fica preso ao usuário do link; `lerObjeto` lança em erro de rede, para não apagar o envio como "tipo errado".
 - A4. Ferramentas de arquivos: `outro_usuario` sai como `nao_encontrado`; `faltam_arquivos` traz
   `link_segue_pendente: true`; `empresa_atual.ferramentas[nome]` é `true` se o usuário pode usar a ferramenta em alguma
@@ -388,15 +389,15 @@ podem andar em worktrees separados; os totais abaixo valem para a ordem numéric
 
 | Task | `node --test` (pass, 0 fail) | Vitest (arquivos / testes) | Task | `node --test` (pass, 0 fail) | Vitest (arquivos / testes) |
 | ---- | ---------------------------- | -------------------------- | ---- | ---------------------------- | -------------------------- |
-| base | 1258                         | 122 / 2367                 | T9   | 1420                         | 124 / 2388                 |
-| T1   | 1269                         | 122 / 2367                 | T10  | 1431                         | 125 / 2391                 |
-| T2   | 1309                         | 122 / 2367                 | T11  | 1444                         | 125 / 2391                 |
-| T3   | 1319                         | 122 / 2367                 | T12  | 1467                         | 126 / 2405                 |
-| T4   | 1360                         | 122 / 2367                 | T13  | 1493                         | 128 / 2434                 |
-| T5   | 1366                         | 123 / 2377                 | T14  | 1507                         | 128 / 2434                 |
-| T6   | 1375                         | 123 / 2377                 | T15  | 1519                         | 128 / 2434                 |
-| T7   | 1394                         | 124 / 2388                 | T16  | 1519                         | 128 / 2438                 |
-| T8   | 1401                         | 124 / 2388                 | T17  | 1520                         | 128 / 2438                 |
+| base | 1258                         | 122 / 2367                 | T9   | 1421                         | 124 / 2388                 |
+| T1   | 1269                         | 122 / 2367                 | T10  | 1432                         | 125 / 2391                 |
+| T2   | 1309                         | 122 / 2367                 | T11  | 1445                         | 125 / 2391                 |
+| T3   | 1319                         | 122 / 2367                 | T12  | 1468                         | 126 / 2405                 |
+| T4   | 1361                         | 122 / 2367                 | T13  | 1494                         | 128 / 2434                 |
+| T5   | 1367                         | 123 / 2377                 | T14  | 1508                         | 128 / 2434                 |
+| T6   | 1376                         | 123 / 2377                 | T15  | 1520                         | 128 / 2434                 |
+| T7   | 1395                         | 124 / 2388                 | T16  | 1520                         | 128 / 2438                 |
+| T8   | 1402                         | 124 / 2388                 | T17  | 1521                         | 128 / 2438                 |
 
 O total do `node --test` inclui o `portal-funcionario/migracoes-delimitadores.test.ts`, que gera **um teste por
 migração**: cada migração nova soma 1. Se o `master` andar (outra migração ou outro teste), os totais mudam na mesma
@@ -5277,7 +5278,9 @@ Decisões de detalhe desta task:
 
 - `registrarEnvio` grava os arquivos num INSERT só. Se esse INSERT falhar, o link volta a pendente (dá para tentar de
   novo); a RPC `edital_analise_anexar_arquivos`, a nota em `oportunidade_atualizacao` e a gravação de `registrados` no
-  link são complemento: uma falha nelas só vai para o log (repetir duplicaria os arquivos).
+  link são complemento: uma falha nelas só vai para o log (repetir duplicaria os arquivos). Se a própria volta a
+  pendente falhar (o banco costuma cair junto com o INSERT), o erro original continua sendo lançado e a falha da
+  volta vai para o log; sem isso o link ficaria `usado`, sem registros e sem rastro.
 - O consumo atômico prende também a origem "pagina" ao usuário do link (`.eq("usuario_custom_id", …)`), além da
   origem "claude" à autorização.
 - `lerObjeto` lança em falha do Storage ou do download: um erro de rede não vira "tipo errado" (que apagaria o envio).
@@ -5914,6 +5917,7 @@ function ambiente(
     objetos?: Record<string, number[]>;
     consumir?: boolean;
     atestadoExiste?: boolean;
+    devolucaoFalha?: boolean; // o UPDATE que devolve o link a pendente (usado_em = null) dá erro
   } = {}
 ) {
   const objetos = opcoes.objetos ?? {};
@@ -5933,6 +5937,9 @@ function ambiente(
       }
       if (c.tabela === "mcp_link_envio" && c.op === "insert") return { data: [{ id: LINK }] };
       if (c.tabela === "mcp_link_envio" && c.op === "update") {
+        if (opcoes.devolucaoFalha && (c.payload as Record<string, unknown>).usado_em === null) {
+          return { error: { message: "banco fora do ar" } };
+        }
         const consumo = (c.payload as Record<string, unknown>).usado_em !== undefined;
         return { data: consumo && opcoes.consumir === false ? null : { id: LINK } };
       }
@@ -6301,6 +6308,45 @@ test("registrarEnvio: falha ao gravar os arquivos devolve o link para pendente",
     return q;
   };
   await assert.rejects(() => registrar(amb), /disco cheio/);
+  const updates = amb.chamadas.filter((c) => c.tabela === "mcp_link_envio" && c.op === "update");
+  assert.deepEqual(
+    updates.map((c) => c.payload),
+    [
+      { usado_em: AGORA.toISOString(), usado_por: "claude" },
+      { usado_em: null, usado_por: null },
+    ]
+  );
+});
+
+test("registrarEnvio: se a volta do link a pendente também falhar, o erro original sai e a falha vai ao log", async () => {
+  const a1 = arq(1, "Edital.pdf");
+  const amb = ambiente({
+    link: linkDaOportunidade([a1]),
+    objetos: { [a1.caminho]: PDF },
+    devolucaoFalha: true,
+  });
+  const { admin } = amb;
+  const original = admin.from;
+  admin.from = (t: string) => {
+    const q = original(t);
+    if (t !== "arquivo_oportunidade") return q;
+    q.insert = () => ({
+      select: () => Promise.resolve({ data: null, error: { message: "disco cheio" } }),
+    });
+    return q;
+  };
+  const logs: unknown[][] = [];
+  const consoleError = console.error;
+  console.error = (...args: unknown[]) => {
+    logs.push(args);
+  };
+  try {
+    await assert.rejects(() => registrar(amb), /disco cheio/);
+  } finally {
+    console.error = consoleError;
+  }
+  // a volta foi tentada e falhou: o link fica "usado" no banco e o log é o único rastro
+  assert.deepEqual(logs, [["[conector] envio: devolver o link a pendente:", "banco fora do ar"]]);
   const updates = amb.chamadas.filter((c) => c.tabela === "mcp_link_envio" && c.op === "update");
   assert.deepEqual(
     updates.map((c) => c.payload),
@@ -6683,9 +6729,12 @@ export async function registrarEnvio(
         ? await registrarNaOportunidade(db, link, validos, p)
         : await registrarNoAtestado(db, link, validos);
   } catch (e) {
+    // se a volta também falhar (queda do banco), o erro original continua saindo; a falha vai ao log
     await db
       .atualizar("mcp_link_envio", link.id, { usado_em: null, usado_por: null })
-      .catch(() => {});
+      .catch((e2) =>
+        console.error("[conector] envio: devolver o link a pendente:", (e2 as Error)?.message)
+      );
     throw e;
   }
 
@@ -6790,7 +6839,7 @@ export async function lerLinkPorId(
 - [ ] **Step 8: Rodar e ver passar**
 
 Run: o mesmo comando do Step 6.
-Expected: PASS (14 testes).
+Expected: PASS (15 testes).
 
 - [ ] **Step 9: Escrever as migrações e o smoke**
 
@@ -8117,7 +8166,7 @@ cd /c/Users/javer/sigoobras-wt-conector2 && T4TS="supabase/functions/_shared/con
 Expected:
 
 - "All matched files use Prettier code style!";
-- `node --test`: `tests 1360`, `pass 1360`, `fail 0` (1319 + 39 desta task + 2 do `migracoes-delimitadores` para a
+- `node --test`: `tests 1361`, `pass 1361`, `fail 0` (1319 + 40 desta task + 2 do `migracoes-delimitadores` para a
   0149 e a 0150);
 - Vitest: 122 arquivos e 2367 testes.
 
@@ -9660,7 +9709,7 @@ Expected:
 - ESLint com `no-undef`: 0 erros (os avisos que já existiam em `Layout.jsx` e `OportunidadeDetalhe.jsx` continuam);
 - `npm run lint` sem erros e `npm run build` termina sem erro, com o chunk `EnviarArquivos-*.js` em
   `apps/web/dist/assets`;
-- `node --test`: `tests 1366`, `pass 1366`, `fail 0` (1360 + 6);
+- `node --test`: `tests 1367`, `pass 1367`, `fail 0` (1361 + 6);
 - Vitest: 123 arquivos e 2377 testes (122 + 1 e 2367 + 10).
 
 Não há teste de DOM: a página, o botão e o upload do edital entram no roteiro manual da Task 18.
@@ -9740,8 +9789,8 @@ escritas a partir do contrato (§4.1–§4.7).
    `cats_anexar` entra em `atestados_invalidos`.
 
 **Contagem dos testes desta parte:** `node --test` ganha 9 (T6), 19 (T7), 7 (T8: 6 + 1 do
-`portal-funcionario/migracoes-delimitadores.test.ts`, que examina toda migração nova) e 19 (T9), 54 no total: de 1366
-(fim da T5) para 1420. O Vitest ganha 1 arquivo e 11 testes (T7): de 123/2377 para 124/2388. Na conferência final
+`portal-funcionario/migracoes-delimitadores.test.ts`, que examina toda migração nova) e 19 (T9), 54 no total: de 1367
+(fim da T5) para 1421. O Vitest ganha 1 arquivo e 11 testes (T7): de 123/2377 para 124/2388. Na conferência final
 (cópia limpa do `master`, tasks na ordem T1→T17), estes totais saíram exatamente assim, com a parte A de verdade no
 lugar das versões mínimas.
 
@@ -10370,8 +10419,8 @@ npx prettier --check supabase/functions/_shared/edital supabase/functions/ia-pro
   supabase/functions/ia-processar/edital-schemas.ts supabase/functions/ia-processar/edital-regras.ts
 ```
 
-Expected: a primeira rodada termina com `ℹ pass 67` e `ℹ fail 0`; a suíte toda com `ℹ tests 1375`, `ℹ pass 1375` e
-`ℹ fail 0` (1366 da T5 + 9); o Prettier diz `All matched files use Prettier code style!`. O Vitest não muda nesta task
+Expected: a primeira rodada termina com `ℹ pass 67` e `ℹ fail 0`; a suíte toda com `ℹ tests 1376`, `ℹ pass 1376` e
+`ℹ fail 0` (1367 da T5 + 9); o Prettier diz `All matched files use Prettier code style!`. O Vitest não muda nesta task
 (123 arquivos e 2377 testes).
 
 - [ ] **Step 13: Commit**
@@ -11608,7 +11657,7 @@ npx prettier --check supabase/functions/_shared/edital apps/web/src/lib/edital-c
 npm run build
 ```
 
-Expected: `node --test` com `ℹ tests 1394`, `ℹ pass 1394` e `ℹ fail 0` (1375 + 19); Prettier `All matched files use
+Expected: `node --test` com `ℹ tests 1395`, `ℹ pass 1395` e `ℹ fail 0` (1376 + 19); Prettier `All matched files use
 Prettier code style!`; Vitest `Test Files 124 passed (124)` e `Tests 2388 passed (2388)` (123 + 1 e 2377 + 11); build
 sem erro (o arquivo novo do front é só teste e não entra no bundle).
 
@@ -12521,7 +12570,7 @@ npx prettier --check supabase/functions/mcp/ferramentas-edital.ts supabase/funct
 (cd apps/web && npx vitest run 2>&1 | grep -E 'Test Files|Tests ')
 ```
 
-Expected: `ℹ tests 1401`, `ℹ pass 1401` e `ℹ fail 0` (1394 + 7: 6 das ferramentas e 1 do `migracoes-delimitadores`
+Expected: `ℹ tests 1402`, `ℹ pass 1402` e `ℹ fail 0` (1395 + 7: 6 das ferramentas e 1 do `migracoes-delimitadores`
 para a 0151); Prettier `All matched files use Prettier code style!` (o Prettier não formata `.sql`); Vitest igual ao da
 T7 (124 arquivos e 2388 testes).
 
@@ -14128,7 +14177,7 @@ npx prettier --check supabase/functions/_shared/edital supabase/functions/mcp/fe
 (cd apps/web && npx vitest run 2>&1 | grep -E 'Test Files|Tests ')
 ```
 
-Expected: `ℹ tests 1420`, `ℹ pass 1420` e `ℹ fail 0` (1401 + 19); Prettier `All matched files use Prettier code
+Expected: `ℹ tests 1421`, `ℹ pass 1421` e `ℹ fail 0` (1402 + 19); Prettier `All matched files use Prettier code
 style!`; Vitest igual ao da T7 (124 arquivos e 2388 testes). O `ferramentas.test.ts` da T2 continua verde (nomes únicos, `title`, anotações, `additionalProperties: false`,
 exigência diferente de `NEGAR` e `INSTRUCOES` ≤ 4000 caracteres).
 
@@ -14243,8 +14292,8 @@ num Postgres em memória (PGlite).
   - T11: 13.
 - O Vitest ganha 1 arquivo e 3 testes (T10).
 
-Na conferência final (cópia limpa do `master`, tasks na ordem T1→T17), o `node --test` foi de 1420 (fim da T9) para
-1444, e o Vitest de 124 arquivos e 2388 testes para 125 e 2391.
+Na conferência final (cópia limpa do `master`, tasks na ordem T1→T17), o `node --test` foi de 1421 (fim da T9) para
+1445, e o Vitest de 124 arquivos e 2388 testes para 125 e 2391.
 
 ---
 
@@ -15658,7 +15707,7 @@ npx prettier --check supabase/functions/_shared/edital/acervo-categorias.ts \
 
 Expected:
 
-- `node --test` com `ℹ tests 1431`, `ℹ pass 1431` e `ℹ fail 0` (1420 da T9 + 11: 10 das regras e 1 do
+- `node --test` com `ℹ tests 1432`, `ℹ pass 1432` e `ℹ fail 0` (1421 da T9 + 11: 10 das regras e 1 do
   `migracoes-delimitadores` para a 0152);
 - Prettier `All matched files use Prettier code style!` (o Prettier não formata `.sql`);
 - Vitest `Test Files 125 passed (125)` e `Tests 2391 passed (2391)` (124 + 1 e 2388 + 3).
@@ -16866,7 +16915,7 @@ npx prettier --check supabase/functions/mcp/ferramentas-acervo.ts supabase/funct
 (cd apps/web && npx vitest run 2>&1 | grep -E 'Test Files|Tests ')
 ```
 
-Expected: `ℹ tests 1444`, `ℹ pass 1444` e `ℹ fail 0` (1431 + 13); Prettier `All matched files use Prettier code
+Expected: `ℹ tests 1445`, `ℹ pass 1445` e `ℹ fail 0` (1432 + 13); Prettier `All matched files use Prettier code
 style!`; Vitest igual ao da T10 (125 arquivos e 2391 testes).
 
 - [ ] **Step 6: Commit**
@@ -16958,7 +17007,7 @@ arquivos `.ts` da parte e `npm run build`. O SQL não rodou em banco (não há P
 **Contagem dos testes desta parte:** `node --test` ganha 23 (T12), 26 (T13), 14 (T14: 13 + 1 do
 `portal-funcionario/migracoes-delimitadores.test.ts`, que examina toda migração nova) e 12 (T15), 75 no total. O Vitest
 ganha 3 arquivos e 47 testes: 1 arquivo e 14 testes (T12), 2 arquivos e 29 testes (T13) e 4 testes (T16). Na
-conferência final (cópia limpa do `master`, tasks na ordem T1→T17): 1444 (fim da T11) → 1519 no `node --test` e
+conferência final (cópia limpa do `master`, tasks na ordem T1→T17): 1445 (fim da T11) → 1520 no `node --test` e
 125/2391 → 128/2438 no Vitest.
 
 ---
@@ -18284,7 +18333,7 @@ npx prettier --check supabase/functions/_shared/orcamento apps/web/src/lib/orcam
 (cd apps/web && npx vitest run 2>&1 | grep -E 'Test Files|Tests ')
 ```
 
-Expected: `ℹ tests 1467`, `ℹ pass 1467` e `ℹ fail 0` (1444 da T11 + 23); `All matched files use Prettier code style!`;
+Expected: `ℹ tests 1468`, `ℹ pass 1468` e `ℹ fail 0` (1445 da T11 + 23); `All matched files use Prettier code style!`;
 Vitest `Test Files 126 passed (126)` e `Tests 2405 passed (2405)` (125 + 1 e 2391 + 14).
 
 - [ ] **Step 7: Commit**
@@ -20365,7 +20414,7 @@ npx prettier --check supabase/functions/_shared/orcamento apps/web/src/lib/model
 (cd apps/web && npx vitest run 2>&1 | grep -E 'Test Files|Tests ')
 ```
 
-Expected: `ℹ tests 1493`, `ℹ pass 1493` e `ℹ fail 0` (1467 + 26); Prettier `All matched files use Prettier code
+Expected: `ℹ tests 1494`, `ℹ pass 1494` e `ℹ fail 0` (1468 + 26); Prettier `All matched files use Prettier code
 style!`; Vitest `Test Files 128 passed (128)` e `Tests 2434 passed (2434)` (126 + 2 e 2405 + 29).
 
 - [ ] **Step 7: Commit**
@@ -21775,7 +21824,7 @@ npx prettier --check supabase/functions/mcp/ferramentas-orcamento.ts supabase/fu
 (cd apps/web && npx vitest run 2>&1 | grep -E 'Test Files|Tests ')
 ```
 
-Expected: `ℹ tests 1507`, `ℹ pass 1507` e `ℹ fail 0` (1493 + 14: 13 das ferramentas e 1 do `migracoes-delimitadores`
+Expected: `ℹ tests 1508`, `ℹ pass 1508` e `ℹ fail 0` (1494 + 14: 13 das ferramentas e 1 do `migracoes-delimitadores`
 para a 0153); Prettier `All matched files use Prettier code style!` (o Prettier não formata `.sql`); Vitest igual ao da
 T13 (128 arquivos e 2434 testes).
 
@@ -22680,7 +22729,7 @@ npx prettier --check supabase/functions/mcp/ferramentas-orcamento.ts supabase/fu
 (cd apps/web && npx vitest run 2>&1 | grep -E 'Test Files|Tests ')
 ```
 
-Expected: `ℹ tests 1519`, `ℹ pass 1519` e `ℹ fail 0` (1507 + 12); Prettier `All matched files use Prettier code
+Expected: `ℹ tests 1520`, `ℹ pass 1520` e `ℹ fail 0` (1508 + 12); Prettier `All matched files use Prettier code
 style!`; Vitest igual ao da T14 (128 arquivos e 2434 testes).
 
 - [ ] **Step 6: Commit**
@@ -22878,7 +22927,7 @@ npx prettier --check apps/web/public/skills/orcamento-prefeitura-sigo/SKILL.md a
 npm run build > /dev/null 2>&1; echo "build: $?"
 ```
 
-Expected: `ℹ tests 1519` e `ℹ fail 0` (igual à T15); Prettier `All matched files use Prettier code style!`; Vitest
+Expected: `ℹ tests 1520` e `ℹ fail 0` (igual à T15); Prettier `All matched files use Prettier code style!`; Vitest
 `Test Files 128 passed (128)` e `Tests 2438 passed (2438)` (2434 + 4); `build: 0`.
 
 - [ ] **Step 6: Commit**
@@ -23605,7 +23654,7 @@ Expected:
 
 - "All matched files use Prettier code style!";
 - os 5 smokes: `smoke-conector-acervo.sql`, `-busca.sql`, `-envio.sql`, `-oauth.sql` e `-orcamento.sql`;
-- `node --test`: `tests 1520`, `pass 1520`, `fail 0` (1519 da Task 16 + 1, o teste de completude);
+- `node --test`: `tests 1521`, `pass 1521`, `fail 0` (1520 da Task 16 + 1, o teste de completude);
 - Vitest: 128 arquivos e 2438 testes (iguais aos da Task 16).
 
 - [ ] **Step 8: Commit**
@@ -23677,7 +23726,7 @@ Depois, as duas suítes no `master`:
 cd /c/Users/javer/sigoobras-base && node --test "supabase/functions/**/*.test.ts" 2>&1 | grep -E '^ℹ (tests|pass|fail)' && (cd apps/web && npx vitest run 2>&1 | grep -E 'Test Files|Tests ')
 ```
 
-Expected: `ℹ fail 0` e todos os arquivos do Vitest `passed` (1520 e 128/2438 se o `master` não andou desde o
+Expected: `ℹ fail 0` e todos os arquivos do Vitest `passed` (1521 e 128/2438 se o `master` não andou desde o
 `e8f4ced`; mais, se outras sessões acrescentaram testes).
 
 - [ ] **Step 2: Pedir OK ao Javerson e consultar os buckets (P3, só leitura)**
