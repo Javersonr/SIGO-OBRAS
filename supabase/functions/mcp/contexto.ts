@@ -34,13 +34,45 @@ export interface ContextoMcp {
 /** `ultimo_uso` da autorização só é regravado depois deste intervalo (menos escrita por chamada). */
 export const INTERVALO_ULTIMO_USO_MS = 5 * 60_000;
 
-/** UF da empresa (coluna estado): 2 letras maiúsculas, ou null. */
+const UFS = new Set([
+  "AC",
+  "AL",
+  "AP",
+  "AM",
+  "BA",
+  "CE",
+  "DF",
+  "ES",
+  "GO",
+  "MA",
+  "MT",
+  "MS",
+  "MG",
+  "PA",
+  "PB",
+  "PR",
+  "PE",
+  "PI",
+  "RJ",
+  "RN",
+  "RS",
+  "RO",
+  "RR",
+  "SC",
+  "SP",
+  "SE",
+  "TO",
+]);
+
+/**
+ * UF da empresa (coluna estado): uma das 27 UFs, em maiúsculas, ou null. Estado gravado por extenso
+ * (cadastro antigo) vira null: cortar para 2 letras daria outra UF ("Mato Grosso" viraria "MA").
+ */
 export function ufDaEmpresa(estado: unknown): string | null {
   const uf = String(estado ?? "")
     .trim()
-    .toUpperCase()
-    .slice(0, 2);
-  return /^[A-Z]{2}$/.test(uf) ? uf : null;
+    .toUpperCase();
+  return UFS.has(uf) ? uf : null;
 }
 
 /** Regrava o ultimo_uso? Sim se nunca foi gravado ou se passou do intervalo. */

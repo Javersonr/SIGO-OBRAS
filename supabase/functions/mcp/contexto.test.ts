@@ -283,11 +283,18 @@ test("ctx: vinculoId do usuario_empresa, uf da empresa e nome que cai para o e-m
   assert.equal(r.ctx.usuario.nome, "user@x.com");
 });
 
-test("ufDaEmpresa: duas letras maiúsculas ou null", () => {
+test("ufDaEmpresa: uma das 27 UFs em maiúsculas ou null", () => {
   assert.equal(ufDaEmpresa(" sp "), "SP");
   assert.equal(ufDaEmpresa(null), null);
   assert.equal(ufDaEmpresa(""), null);
   assert.equal(ufDaEmpresa("1"), null);
+  assert.equal(ufDaEmpresa("XX"), null);
+  // por extenso não vira outra UF: cortar em 2 letras daria MA, PA, MI, RO, AM
+  assert.equal(ufDaEmpresa("Mato Grosso"), null);
+  assert.equal(ufDaEmpresa("Paraná"), null);
+  assert.equal(ufDaEmpresa("Minas Gerais"), null);
+  assert.equal(ufDaEmpresa("Roraima"), null);
+  assert.equal(ufDaEmpresa("Amapá"), null);
 });
 
 test("ultimo_uso: só regrava se nulo ou com mais de 5 min", async () => {
