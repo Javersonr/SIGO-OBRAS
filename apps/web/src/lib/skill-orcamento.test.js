@@ -124,9 +124,10 @@ describe("SKILL.md com o conector do SIGO Obras", () => {
     ].map((n) => passo5.indexOf(`\`${n}\``));
     expect(posicoes.every((p) => p > 0)).toBe(true);
     expect([...posicoes].sort((a, b) => a - b)).toEqual(posicoes);
-    expect(secao.indexOf("pergunte o desconto")).toBeLessThan(
-      secao.indexOf("5. Grave nesta ordem")
-    );
+    // a frase precisa existir: sem isso, indexOf devolve -1 e o "antes" passa sem querer
+    const iPergunta = secao.indexOf("pergunte o desconto");
+    expect(iPergunta).toBeGreaterThan(0);
+    expect(iPergunta).toBeLessThan(secao.indexOf("5. Grave nesta ordem"));
     expect(secao).toContain("`substituir: true`");
     expect(secao).toContain("Envelope 01 – Proposta");
     expect(secao).toContain("**Exportar proposta**");
