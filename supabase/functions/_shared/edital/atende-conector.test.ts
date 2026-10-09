@@ -31,7 +31,7 @@ const PERFIL: AcervoPerfil = {
   alertas: ["PL de R$ 1.234.567,89 no balanço de 2025"],
 };
 
-function resultado(economica: Record<string, unknown>[]) {
+function resultado(economica: Record<string, unknown>[], perfil: AcervoPerfil = PERFIL) {
   const extraido = sanearEdital({
     valor_estimado: null,
     habilitacao: {
@@ -39,7 +39,7 @@ function resultado(economica: Record<string, unknown>[]) {
       economica,
     },
   });
-  const acervo: Acervo = { perfil: PERFIL, profissionais: [], atestados: [], quantitativos: [] };
+  const acervo: Acervo = { perfil, profissionais: [], atestados: [], quantitativos: [] };
   return montarAtende({
     extraido,
     acervo,
@@ -65,13 +65,19 @@ function resultado(economica: Record<string, unknown>[]) {
   });
 }
 
-test("valoresEconomicos: só números > 0 do perfil, inclusive o faturamento", () => {
+test("valoresEconomicos: os números do perfil (negativos também, zero não), inclusive o faturamento", () => {
   assert.deepEqual(
     valoresEconomicos(PERFIL).sort((a, b) => a - b),
     [0.41, 1.85, 2.37, 3.12, 345678.9, 500000, 1234567.89, 3456789.01]
   );
   assert.deepEqual(valoresEconomicos(null), []);
   assert.deepEqual(valoresEconomicos({ capital_social: 0, faturamento: "x" }), []);
+  assert.deepEqual(
+    valoresEconomicos({ ccl: -150000, patrimonio_liquido: "-80000.5", liquidez_geral: 0 }).sort(
+      (a, b) => a - b
+    ),
+    [-150000, -80000.5]
+  );
 });
 
 test("ocultarValores: troca brl e fmtNum, sem pegar pedaço de outro número", () => {
@@ -127,4 +133,46 @@ test("itens técnicos ficam iguais; null passa", () => {
   );
   assert.equal(saida.veredito, r.veredito);
   assert.equal(atendeParaConector(null, [1]), null);
+});
+
+test("PL e CCL negativos: nem o '-R$' nem o teto negativo saem para o Claude", () => {
+  const negativo: AcervoPerfil = {
+    porte: "EPP",
+    capital_social: 500000,
+    patrimonio_liquido: -80000.5,
+    ccl: -150000,
+    exercicio_balanco: 2025,
+    alertas: ["CCL de -R$ 150.000,00 e PL de -R$ 80.000,50 no balanço de 2025"],
+  };
+  const r = resultado(
+    [
+      { id: "ec1", tipo: "patrimonio_liquido", valor_minimo: 2000000 },
+      { id: "ec2", tipo: "ccl", valor_minimo: 100000 },
+      { id: "ec3", tipo: "patrimonio_liquido", percentual_do_estimado: 10 },
+      { id: "ec4", tipo: "capital_ou_pl", valor_minimo: 100000 },
+    ],
+    negativo
+  );
+  const completo = JSON.stringify(r);
+  // o gravado para a tela tem os valores (e o teto negativo que a regra escreve)
+  for (const presente of [brl(-150000), brl(-80000.5), `de até ${brl(-800005)}`]) {
+    assert.ok(completo.includes(presente), presente);
+  }
+  const saida = atendeParaConector(r, valoresEconomicos(negativo))!;
+  const json = JSON.stringify(saida);
+  for (const proibido of [
+    "-R$",
+    "-150.000",
+    "-80.000",
+    "800.005",
+    brl(2080000.5), // "Faltam" do PL
+    brl(250000), // "Faltam" do CCL
+  ]) {
+    assert.equal(json.includes(proibido), false, proibido);
+  }
+  assert.ok(json.includes(`de até ${VALOR_OCULTO}`));
+  const ec1 = saida.itens.find((i) => i.exigencia_id === "ec1")!;
+  assert.match(ec1.justificativa, /Faltam \[valor da empresa\]/);
+  assert.match(ec1.justificativa, /Exigido R\$\s2\.000\.000,00/); // o mínimo do edital continua
+  assert.match(saida.alertas[0], /CCL de \[valor da empresa\] e PL de \[valor da empresa\]/);
 });

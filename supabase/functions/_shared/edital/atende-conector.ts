@@ -21,17 +21,20 @@ const CAMPOS_ECONOMICOS = [
   "endividamento_geral",
 ] as const;
 
-/** Os números > 0 do perfil que não podem sair pelo conector. */
+/**
+ * Os números do perfil que não podem sair pelo conector. Negativos entram (PL a descoberto e CCL
+ * negativo saem da regra como "-R$ x"); o zero não, porque fmtNum(0) = "0" apagaria todo "0" solto.
+ */
 export function valoresEconomicos(perfil: AcervoPerfil | null): number[] {
   if (!perfil) return [];
   const out = new Set<number>();
   for (const c of CAMPOS_ECONOMICOS) {
     const n = numero(perfil[c]);
-    if (n !== null && n > 0) out.add(n);
+    if (n !== null && n !== 0) out.add(n);
   }
   for (const f of arr(perfil.faturamento)) {
     const n = numero(obj(f).receita_bruta);
-    if (n !== null && n > 0) out.add(n);
+    if (n !== null && n !== 0) out.add(n);
   }
   return [...out];
 }
@@ -58,8 +61,11 @@ export function ocultarValores(texto: string | null, valores: number[]): string 
   return out;
 }
 
-/** "Faltam R$ x" e "… de até R$ x" (teto) do item econômico também revelam o valor da empresa. */
-const DERIVADOS = /\b(Faltam|até)(\s+)R\$\s?[\d.]+,\d{2}/g;
+/**
+ * "Faltam R$ x" e "… de até R$ x" (teto) do item econômico também revelam o valor da empresa.
+ * O "-?" pega o teto de um PL/CCL negativo ("de até -R$ 800.005,00").
+ */
+const DERIVADOS = /\b(Faltam|até)(\s+)-?R\$\s?[\d.]+,\d{2}/g;
 
 function itemEconomico(i: ItemAtende, valores: number[]): ItemAtende {
   const limpar = (t: string | null) =>
