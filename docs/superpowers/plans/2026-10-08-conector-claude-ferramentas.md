@@ -12794,7 +12794,7 @@ EOF
     `RespostaTecnicaUuid`, `validarRespostaTecnica`, `paraApelidos` e `resumoExigencias`, mais `normalizarCampo`
     (o do `LerEditalSheet`) e `NOME_PADRAO`;
   - `ferramentas-edital.ts`: as ferramentas `criar_ou_atualizar_oportunidade`, `registrar_atende` e `adicionar_nota`
-    (§5, linhas 8–10), `INSTRUCOES_EDITAL` (605 caracteres) e `PROMPTS_EDITAL = [analisar_edital]`.
+    (§5, linhas 8–10), `INSTRUCOES_EDITAL` (669 caracteres) e `PROMPTS_EDITAL = [analisar_edital]`.
 
 - [ ] **Step 1: Teste das regras de gravação**
 
@@ -13815,11 +13815,26 @@ test("defs: anotações do §5, schemas fechados, instruções curtas e o prompt
   assert.equal(props.edital.additionalProperties, false);
   assert.equal("required" in props.edital, false);
   assert.ok(INSTRUCOES_EDITAL.join("\n").length <= 800);
+  // o Atende? depende do acervo inteiro: as instruções mandam ler todas as páginas do ler_acervo
+  assert.ok(
+    INSTRUCOES_EDITAL.join("\n").includes("ler_acervo e leia TODAS as páginas (proxima_pagina"),
+    "as instruções do edital não mandam paginar o ler_acervo"
+  );
 
   assert.equal(PROMPTS_EDITAL[0].name, "analisar_edital");
   const texto = PROMPTS_EDITAL[0].montar({});
   for (const linha of [...METODO_LEITURA_EDITAL, ...REGRAS_ATENDE]) {
     assert.ok(texto.includes(linha), linha);
+  }
+  // passo 5: o prompt manda ler todas as páginas antes de avaliar
+  const passo5 = texto.split("\n").find((l) => l.startsWith("5. Chame ler_acervo")) ?? "";
+  for (const trecho of [
+    "total_atestados passar de por_pagina",
+    "leia TODAS as páginas",
+    "proxima_pagina ser null",
+    "antes de avaliar",
+  ]) {
+    assert.ok(passo5.includes(trecho), `o passo 5 não cita "${trecho}"`);
   }
   assert.equal(texto.includes("oportunidade_id ="), false);
   assert.ok(
@@ -14084,7 +14099,7 @@ const CRIAR_OU_ATUALIZAR: Ferramenta = {
         campos_gravados: Object.keys(plano.novos),
         exigencias: resumoExigencias(extraido),
         proximo_passo:
-          "Chame ler_acervo, avalie as exigências técnicas e de registro e grave com registrar_atende (atestado_ids = ids do ler_acervo). Depois anexe os PDFs com gerar_link_envio.",
+          "Chame ler_acervo e leia todas as páginas (proxima_pagina até null), avalie as exigências técnicas e de registro e grave com registrar_atende (atestado_ids = ids do ler_acervo). Depois anexe os PDFs com gerar_link_envio.",
       },
       { alvo: id }
     );
@@ -14261,7 +14276,7 @@ const ADICIONAR_NOTA: Ferramenta = {
 export const INSTRUCOES_EDITAL: string[] = [
   "Edital: antes de criar, procure com buscar_oportunidades (nº/ano ou palavras) e leia com obter_oportunidade; grave com criar_ou_atualizar_oportunidade.",
   "Se ela devolver duplicatas, mostre as candidatas e pergunte: atualizar uma (oportunidade_id) ou criar outra (confirmar_nova: true).",
-  "Depois chame ler_acervo, avalie só as exigências técnicas e de registro e grave com registrar_atende, citando os atestados pelo id (UUID); a parte econômico-financeira é calculada pelo SIGO: não avalie nem peça valores.",
+  "Depois chame ler_acervo e leia TODAS as páginas (proxima_pagina até null) antes de avaliar; avalie só as exigências técnicas e de registro e grave com registrar_atende, citando os atestados pelo id (UUID); a parte econômico-financeira é calculada pelo SIGO: não avalie nem peça valores.",
   "Para anexar os PDFs do edital, use gerar_link_envio. O prompt analisar_edital traz o método completo.",
 ];
 
@@ -14292,7 +14307,7 @@ const ANALISAR_EDITAL: PromptDef = {
       "2. Leia o edital anexado no chat (todas as páginas e anexos). Se ele já está no SIGO, use ler_edital_anexado (o texto vem por página).",
       "3. Monte o JSON do edital no formato do campo edital de criar_ou_atualizar_oportunidade, seguindo o MÉTODO abaixo.",
       "4. Procure com buscar_oportunidades (nº/ano do edital) e grave com criar_ou_atualizar_oportunidade (com oportunidade_id para atualizar). Se vierem duplicatas, mostre as candidatas e pergunte ao usuário antes de usar confirmar_nova: true.",
-      "5. Chame ler_acervo (atestados com id UUID, quantitativos e profissionais).",
+      "5. Chame ler_acervo (atestados com id UUID, quantitativos e profissionais). Ele é paginado: se total_atestados passar de por_pagina, leia TODAS as páginas (pagina 2, 3… com o mesmo por_pagina, até proxima_pagina ser null) antes de avaliar. Um acervo lido pela metade leva a um Não atende errado.",
       "6. Avalie cada exigência técnico-operacional (op), técnico-profissional (pr) e de registro (rg) devolvida em exigencias com as REGRAS DO ATENDE abaixo, citando os atestados pelo id (UUID) em atestado_ids. Não avalie as econômicas (ec): o SIGO calcula com o balanço da empresa.",
       "7. Grave com registrar_atende.",
       `8. Anexe os PDFs com gerar_link_envio (categorias: ${CATEGORIAS_EDITAL.join(", ")}).`,
@@ -14452,7 +14467,15 @@ num Postgres em memória (PGlite).
       os quantitativos completos (~5 mil caracteres com 15 linhas; com o padrão 50 do contrato a primeira chamada
       passava de 270 mil caracteres). Se a página passar de 99 mil caracteres de texto (`LIMITE_BLOCO`, o mesmo teto do
       texto do edital), a ferramenta devolve o erro `saida_grande` com `tamanho`, `limite` e `por_pagina_sugerido`, em
-      vez de deixar o cliente cortar. Uma página de um atestado só nunca é recusada.
+      vez de deixar o cliente cortar, e manda recomeçar da página 1 com o novo `por_pagina`. Uma página de um atestado
+      só nunca é recusada;
+    - **a saída diz como ler o acervo inteiro:** além de `total_atestados`, `pagina` e `por_pagina`, traz
+      `total_paginas` e `proxima_pagina` (o número da próxima página ou `null` na última). A descrição da
+      ferramenta, o `INSTRUCOES_ACERVO`, as `INSTRUCOES_EDITAL`, o `proximo_passo` do
+      `criar_ou_atualizar_oportunidade` e o passo 5 do prompt `analisar_edital` mandam ler **todas** as páginas, com o
+      mesmo `por_pagina`, até `proxima_pagina` ser `null`, antes de avaliar o Atende?. O `registrar_atende` só recusa
+      id inexistente: sem essa ordem, uma empresa com mais de 10 atestados teria o acervo lido pela metade e um "Não
+      atende" errado, sem erro nenhum.
 11. **`cadastrar_atestado` duplicado** é auditado como `ok` com motivo `duplicado`, e o alvo é o atestado que já existia.
 12. **Exports a mais** (só acréscimos):
     - `unidadeDaCategoria` e `TipoDocAcervo` (`acervo-categorias.ts`);
@@ -14461,13 +14484,13 @@ num Postgres em memória (PGlite).
 
 **Contagem dos testes desta parte:**
 
-- `node --test` ganha 26:
+- `node --test` ganha 27:
   - T10: 11 (10 das regras e 1 do `portal-funcionario/migracoes-delimitadores.test.ts`, que examina toda migração nova);
-  - T11: 15.
+  - T11: 16.
 - O Vitest ganha 1 arquivo e 3 testes (T10).
 
 Na conferência final (cópia limpa do `master`, tasks na ordem T1→T17), o `node --test` foi de 1422 (fim da T9) para
-1448, e o Vitest de 124 arquivos e 2390 testes para 125 e 2393.
+1449, e o Vitest de 124 arquivos e 2390 testes para 125 e 2393.
 
 ---
 
@@ -15946,7 +15969,7 @@ EOF
   - a RPC `conector_cadastrar_atestado` (0152).
 - Produces:
   - `FERRAMENTAS_ACERVO` = `[ler_acervo, cadastrar_atestado]` (§5, linhas 11 e 12);
-  - `INSTRUCOES_ACERVO` (4 linhas, 553 caracteres);
+  - `INSTRUCOES_ACERVO` (5 linhas, 750 caracteres);
   - `PROMPTS_ACERVO` = `[cadastrar_acervo]`, com `arguments: []`;
   - `COLUNAS_PERFIL_CONECTOR` e `COLUNAS_ATESTADO_CONECTOR`.
 
@@ -15961,8 +15984,11 @@ EOF
     o nº também só com dígitos);
   - paginação no TypeScript (`por_pagina` de 1 a 25, padrão 10); quantitativos lidos só para os atestados da página
     (`in("atestado_id", …)`);
+  - a saída traz `total_paginas` e `proxima_pagina` (número ou `null` na última página), e a descrição da ferramenta
+    e o `INSTRUCOES_ACERVO` mandam ler todas as páginas antes de avaliar o Atende?;
   - teto de tamanho: página de mais de um atestado cujo texto passa de 99 mil caracteres (`LIMITE_BLOCO`) →
-    `saida_grande` com `tamanho`, `limite` e `por_pagina_sugerido`, em vez de resposta cortada pelo cliente;
+    `saida_grande` com `tamanho`, `limite` e `por_pagina_sugerido`, em vez de resposta cortada pelo cliente (a
+    mensagem manda recomeçar da página 1);
   - entrada fora da faixa → `validacao` com a lista `erros` e as `categorias`.
 - `cadastrar_atestado` (gravação, limite 60/h):
   - `validarAtestado` (inválido, inclusive sem `confirmado_pelo_usuario: true`: `validacao`, sem tocar no banco);
@@ -16502,6 +16528,76 @@ test("ler_acervo: página que passa do teto vira saida_grande com o por_pagina q
   // um atestado só (ou o detalhe por id) nunca é recusado
   const um = await ferramenta("ler_acervo").executar({ por_pagina: 1 }, deps);
   assert.equal(um.resultado.isError, false);
+  // recomeçar com outro por_pagina muda as páginas: a mensagem manda voltar à página 1
+  assert.ok(String(e.erro).includes("Recomece da página 1"), String(e.erro));
+});
+
+test("ler_acervo: proxima_pagina e total_paginas levam o Claude a ler o acervo inteiro", async () => {
+  const { deps } = montar(acervoGrande(7, 2));
+  const ler = async (args: Record<string, unknown>) =>
+    sc(await ferramenta("ler_acervo").executar(args, deps));
+  const idsDe = (s: Record<string, unknown>) => (s.atestados as { id: string }[]).map((a) => a.id);
+
+  // página 1 de 3: aponta a próxima
+  const p1 = await ler({ por_pagina: 3 });
+  assert.equal(p1.total_atestados, 7);
+  assert.equal(p1.total_paginas, 3);
+  assert.equal(p1.pagina, 1);
+  assert.equal(p1.proxima_pagina, 2);
+  assert.equal((p1.atestados as unknown[]).length, 3);
+
+  // seguindo proxima_pagina até null, o Claude lê os 7 atestados, cada um uma vez
+  const lidos: string[] = [];
+  let pagina: unknown = 1;
+  let voltas = 0;
+  while (pagina !== null && voltas++ < 10) {
+    const s = await ler({ por_pagina: 3, pagina });
+    lidos.push(...idsDe(s));
+    pagina = s.proxima_pagina;
+  }
+  assert.equal(voltas, 3);
+  assert.deepEqual(
+    lidos,
+    Array.from({ length: 7 }, (_, i) => idGrande(i))
+  );
+
+  // última página: sem próxima; além do fim: vazia e sem próxima
+  const p3 = await ler({ por_pagina: 3, pagina: 3 });
+  assert.equal(p3.proxima_pagina, null);
+  assert.equal(p3.total_paginas, 3);
+  assert.equal((p3.atestados as unknown[]).length, 1);
+  const alemDoFim = await ler({ por_pagina: 3, pagina: 4 });
+  assert.equal(alemDoFim.proxima_pagina, null);
+  assert.deepEqual(alemDoFim.atestados, []);
+
+  // acervo que cabe numa página: uma página só, sem próxima
+  const tudo = await ler({});
+  assert.equal(tudo.total_paginas, 1);
+  assert.equal(tudo.proxima_pagina, null);
+  // sem atestados lidos (só profissionais): nada a paginar
+  const profissionais = await ler({ tipo: "profissionais" });
+  assert.equal(profissionais.total_paginas, 0);
+  assert.equal(profissionais.proxima_pagina, null);
+
+  // a descrição da ferramenta e as instruções mandam ler todas as páginas antes do Atende?
+  const descricao = FERRAMENTAS_ACERVO[0].def.description;
+  for (const trecho of [
+    "total_atestados passar de por_pagina",
+    "leia TODAS as páginas",
+    "proxima_pagina ser null",
+    "antes de avaliar o Atende?",
+  ]) {
+    assert.ok(descricao.includes(trecho), `a descrição não cita "${trecho}"`);
+  }
+  const instrucoes = INSTRUCOES_ACERVO.join("\n");
+  for (const trecho of [
+    "total_atestados passar de por_pagina",
+    "leia todas as páginas",
+    "proxima_pagina",
+    "antes de avaliar o Atende?",
+  ]) {
+    assert.ok(instrucoes.includes(trecho), `as instruções não citam "${trecho}"`);
+  }
 });
 
 const CADASTRO = {
@@ -16791,7 +16887,7 @@ const LER_ACERVO: Ferramenta = {
     name: "ler_acervo",
     title: "Ler o acervo técnico da empresa",
     description:
-      "Lê o acervo técnico da empresa no SIGO: perfil (registro no CREA, porte, cadastros e alertas), CATs e atestados (com id, quantitativos por categoria e a síntese de cada obra) e os profissionais. Paginado (10 atestados por página, no máximo 25); filtra por atestado, categoria ou texto (nº, contratante, objeto, cidade). Não traz valores econômicos (capital, patrimônio, índices, faturamento) nem o valor dos contratos.",
+      "Lê o acervo técnico da empresa no SIGO: perfil (registro no CREA, porte, cadastros e alertas), CATs e atestados (com id, quantitativos por categoria e a síntese de cada obra) e os profissionais. Paginado (10 atestados por página, no máximo 25): se total_atestados passar de por_pagina, leia TODAS as páginas (pagina 2, 3… com o mesmo por_pagina, até proxima_pagina ser null) antes de avaliar o Atende? ou concluir que um atestado não existe. Filtra por atestado, categoria ou texto (nº, contratante, objeto, cidade). Não traz valores econômicos (capital, patrimônio, índices, faturamento) nem o valor dos contratos.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -16968,6 +17064,8 @@ const LER_ACERVO: Ferramenta = {
               ativo: p.ativo ?? null,
             }));
 
+    // o Atende? depende do acervo inteiro: a saída diz quantas páginas há e qual é a próxima
+    const totalPaginas = Math.ceil(total / porPagina);
     const saida = {
       perfil,
       atestados,
@@ -16975,13 +17073,15 @@ const LER_ACERVO: Ferramenta = {
       total_atestados: total,
       pagina,
       por_pagina: porPagina,
+      total_paginas: totalPaginas,
+      proxima_pagina: pagina < totalPaginas ? pagina + 1 : null,
       categorias: CATEGORIAS_ACERVO,
     };
     // acervo com muitos quantitativos por obra: recusa a página grande em vez de deixar o cliente cortar
     const tamanho = JSON.stringify(saida, null, 2).length;
     if (tamanho > LIMITE_SAIDA && atestados.length > 1) {
       return falha(
-        `A página do acervo passou do limite de ${LIMITE_SAIDA} caracteres. Peça menos atestados por página (por_pagina menor) ou um atestado_id.`,
+        `A página do acervo passou do limite de ${LIMITE_SAIDA} caracteres. Recomece da página 1 com um por_pagina menor (o mesmo em todas as páginas) ou peça um atestado_id.`,
         "saida_grande",
         {
           tamanho,
@@ -17138,6 +17238,7 @@ export const FERRAMENTAS_ACERVO: Ferramenta[] = [LER_ACERVO, CADASTRAR_ATESTADO]
 
 export const INSTRUCOES_ACERVO: string[] = [
   "Acervo: ler_acervo traz atestados (com id), quantitativos e profissionais, sem valores econômicos; a parte econômica é do servidor.",
+  "ler_acervo é paginado: se total_atestados passar de por_pagina, leia todas as páginas (proxima_pagina até null, mesmo por_pagina) antes de avaliar o Atende?; acervo pela metade dá resultado errado.",
   "Para cadastrar CAT/atestado, extraia contratante, obra, período, profissional, ART e quantitativos com a categoria (ids de ler_acervo.categorias; fora delas, outro) e UMA síntese por categoria: o total da obra.",
   "Mostre a conferência em tabela e só chame cadastrar_atestado com confirmado_pelo_usuario: true depois do OK; criado: false = a CAT já existe.",
   "Depois anexe o PDF: gerar_link_envio com alvo atestado e o atestado_id.",
@@ -17182,7 +17283,7 @@ export const PROMPTS_ACERVO: PromptDef[] = [
 
 Run: `cd /c/Users/javer/sigoobras-wt-conector2 && node --test supabase/functions/mcp/ferramentas-acervo.test.ts supabase/functions/mcp/ferramentas.test.ts 2>&1 | grep -E '^ℹ (pass|fail)'`
 
-Expected: `ℹ fail 0`, com os 15 testes do acervo passando. O `ferramentas.test.ts` da T2 também passa: nomes únicos,
+Expected: `ℹ fail 0`, com os 16 testes do acervo passando. O `ferramentas.test.ts` da T2 também passa: nomes únicos,
 `title`, anotações, `inputSchema` fechado em todos os objetos (inclusive `profissional` e os itens de `quantitativos`),
 `INSTRUCOES` ≤ 4000 e nomes de prompt únicos.
 
@@ -17197,7 +17298,7 @@ npx prettier --check supabase/functions/mcp/ferramentas-acervo.ts supabase/funct
 (cd apps/web && npx vitest run 2>&1 | grep -E 'Test Files|Tests ')
 ```
 
-Expected: `ℹ tests 1448`, `ℹ pass 1448` e `ℹ fail 0` (1433 + 15); Prettier `All matched files use Prettier code
+Expected: `ℹ tests 1449`, `ℹ pass 1449` e `ℹ fail 0` (1433 + 16); Prettier `All matched files use Prettier code
 style!`; Vitest igual ao da T10 (125 arquivos e 2393 testes).
 
 - [ ] **Step 6: Commit**
