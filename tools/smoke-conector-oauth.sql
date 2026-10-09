@@ -83,9 +83,11 @@ begin
   raise notice '[1] aprovar ok';
 
   -- 2. trocar o código
+  -- As conferências abaixo usam "is distinct from" porque "<>" com NULL dá NULL e o IF não dispara:
+  -- um sucesso por engano ({"ok": true}, sem "motivo") passaria calado.
   r := public.conector_trocar_codigo('smoke-cod-1', 'smoke-at-1', now() + interval '1 hour',
     'smoke-rt-1', now() + interval '30 days', v_familia);
-  if (r ->> 'ok')::boolean is distinct from true or (r ->> 'autorizacao_id')::uuid <> v_aut then
+  if (r ->> 'ok')::boolean is distinct from true or (r ->> 'autorizacao_id')::uuid is distinct from v_aut then
     raise exception 'FALHOU: troca → %', r;
   end if;
   select count(*) into v_n from public.conector_chave where autorizacao_id = v_aut and familia = v_familia;
@@ -94,24 +96,25 @@ begin
   if v_n <> 1 then raise exception 'FALHOU: troca não gravou o ultimo_uso do cliente'; end if;
   r := public.conector_trocar_codigo('smoke-cod-1', 'smoke-at-x', now() + interval '1 hour',
     'smoke-rt-x', now() + interval '30 days', gen_random_uuid());
-  if r ->> 'motivo' <> 'reutilizado' or (r ->> 'autorizacao_id')::uuid <> v_aut then
+  if (r ->> 'motivo') is distinct from 'reutilizado'
+     or (r ->> 'autorizacao_id')::uuid is distinct from v_aut then
     raise exception 'FALHOU: 2ª troca → % (esperado reutilizado)', r;
   end if;
   r := public.conector_trocar_codigo('smoke-nao-existe', 'smoke-at-y', now() + interval '1 hour',
     'smoke-rt-y', now() + interval '30 days', gen_random_uuid());
-  if r ->> 'motivo' <> 'invalido' then raise exception 'FALHOU: código desconhecido → %', r; end if;
+  if (r ->> 'motivo') is distinct from 'invalido' then raise exception 'FALHOU: código desconhecido → %', r; end if;
   raise notice '[2] trocar ok (reutilizado e invalido conferidos)';
 
   -- 3. renovar duas vezes com a mesma chave
   r := public.conector_renovar('smoke-rt-1', 'smoke-at-2', now() + interval '1 hour',
     'smoke-rt-2', now() + interval '30 days');
   v_familia2 := (r ->> 'familia')::uuid;
-  if (r ->> 'ok')::boolean is distinct from true or v_familia2 <> v_familia then
+  if (r ->> 'ok')::boolean is distinct from true or v_familia2 is distinct from v_familia then
     raise exception 'FALHOU: renovação → %', r;
   end if;
   r := public.conector_renovar('smoke-rt-1', 'smoke-at-3', now() + interval '1 hour',
     'smoke-rt-3', now() + interval '30 days');
-  if r ->> 'motivo' <> 'corrida' then raise exception 'FALHOU: 2ª renovação → % (esperado corrida)', r; end if;
+  if (r ->> 'motivo') is distinct from 'corrida' then raise exception 'FALHOU: 2ª renovação → % (esperado corrida)', r; end if;
   raise notice '[3] renovar ok (corrida conferida)';
 
   -- 4. chave manual
