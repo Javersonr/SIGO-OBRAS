@@ -371,6 +371,7 @@ export async function editalAtende(
     carregarAcervo(fonteDoAdmin(sb, empresaId)),
     sb.from("empresa").select("id, nome, razao_social, estado").eq("id", empresaId).maybeSingle(),
   ]);
+  if (empresaR.error) throw new Error(`Falha ao ler a empresa: ${empresaR.error.message}`);
   const emp = (empresaR.data as Obj | null) ?? null;
   if (!acervo.perfil && !acervo.atestados.length && !acervo.profissionais.length) {
     return fail("Cadastre o acervo da empresa (Oportunidades → Acervo técnico)", 422, {
