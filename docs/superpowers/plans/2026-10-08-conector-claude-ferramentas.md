@@ -244,6 +244,7 @@ Nenhum muda nome nem assinatura do contrato. O detalhe de cada um está no come�
 - A5. `arquivo_texto_pagina` não dá `DELETE` ao `authenticated`: a tela regrava pelo `deleteMany` do SDK (exclusão
   lógica).
 - A6. Task 5: teste a mais (`mcp-oauth/envio-tela.test.ts`); a página mostra logo ao abrir o aviso de trocar de empresa;
+  `gravarTextoPaginas` apaga o texto parcial se um lote falhar (2 testes a mais no `envio-arquivos.test.js`);
   o `LerEditalSheet` lê o PDF uma segunda vez para gravar o texto, sem mexer em `edital-ia.js`; o Step 13 deixa 25 MB
   no front enquanto a P3 não estiver confirmada.
 - A7. Task 17: o teste de completude confere nomes, ordem, anotações e obrigatórios do §5; o `isolamento-conector.mjs`
@@ -389,15 +390,15 @@ podem andar em worktrees separados; os totais abaixo valem para a ordem numéric
 
 | Task | `node --test` (pass, 0 fail) | Vitest (arquivos / testes) | Task | `node --test` (pass, 0 fail) | Vitest (arquivos / testes) |
 | ---- | ---------------------------- | -------------------------- | ---- | ---------------------------- | -------------------------- |
-| base | 1258                         | 122 / 2367                 | T9   | 1421                         | 124 / 2388                 |
-| T1   | 1269                         | 122 / 2367                 | T10  | 1432                         | 125 / 2391                 |
-| T2   | 1309                         | 122 / 2367                 | T11  | 1445                         | 125 / 2391                 |
-| T3   | 1319                         | 122 / 2367                 | T12  | 1468                         | 126 / 2405                 |
-| T4   | 1361                         | 122 / 2367                 | T13  | 1494                         | 128 / 2434                 |
-| T5   | 1367                         | 123 / 2377                 | T14  | 1508                         | 128 / 2434                 |
-| T6   | 1376                         | 123 / 2377                 | T15  | 1520                         | 128 / 2434                 |
-| T7   | 1395                         | 124 / 2388                 | T16  | 1520                         | 128 / 2438                 |
-| T8   | 1402                         | 124 / 2388                 | T17  | 1521                         | 128 / 2438                 |
+| base | 1258                         | 122 / 2367                 | T9   | 1421                         | 124 / 2390                 |
+| T1   | 1269                         | 122 / 2367                 | T10  | 1432                         | 125 / 2393                 |
+| T2   | 1309                         | 122 / 2367                 | T11  | 1445                         | 125 / 2393                 |
+| T3   | 1319                         | 122 / 2367                 | T12  | 1468                         | 126 / 2407                 |
+| T4   | 1361                         | 122 / 2367                 | T13  | 1494                         | 128 / 2436                 |
+| T5   | 1367                         | 123 / 2379                 | T14  | 1508                         | 128 / 2436                 |
+| T6   | 1376                         | 123 / 2379                 | T15  | 1520                         | 128 / 2436                 |
+| T7   | 1395                         | 124 / 2390                 | T16  | 1520                         | 128 / 2440                 |
+| T8   | 1402                         | 124 / 2390                 | T17  | 1521                         | 128 / 2440                 |
 
 O total do `node --test` inclui o `portal-funcionario/migracoes-delimitadores.test.ts`, que gera **um teste por
 migração**: cada migração nova soma 1. Se o `master` andar (outra migração ou outro teste), os totais mudam na mesma
@@ -1063,7 +1064,7 @@ tabelas, colunas, RPCs e formatos JSON são os do contrato do Plano 2 (§1–§5
 **Como esta parte foi conferida (08/10, cópia do `master` `e8f4ced` fora do repositório):**
 
 - `node --test "supabase/functions/**/*.test.ts"` depois de cada task, com os totais escritos em cada "Expected".
-- `cd apps/web && npx vitest run` depois da Task 5: 123 arquivos e 2377 testes.
+- `cd apps/web && npx vitest run` depois da Task 5: 123 arquivos e 2379 testes.
 - `npx prettier --check` em todos os arquivos `.ts`, `.js`, `.jsx`, `.mjs` e `.md` desta parte.
 - `npx eslint --rule "no-undef: error"` nos arquivos de tela da Task 5, `npm run lint` e `npm run build` (gera o chunk
   `EnviarArquivos-*.js`).
@@ -8243,6 +8244,10 @@ Comportamento:
   para o "Preparar para o Claude".
 - O `LerEditalSheet` grava o texto dos PDFs locais logo depois de anexá-los; falha só gera `toast.warning`. O
   `LIMITE_UPLOAD` passa a vir de `LIMITE_ANEXO_OPORTUNIDADE`, e as mensagens mostram o limite em MB.
+- `gravarTextoPaginas` nunca deixa texto parcial: se um lote falhar, apaga (`deleteMany`) o que os lotes anteriores
+  gravaram e relança o erro original (se a limpeza também falhar, só vai ao `console.error`). O arquivo fica sem
+  texto e o `ler_edital_anexado` responde `sem_texto`, em vez de entregar ao Claude um edital cortado como se
+  fosse inteiro.
 
 - [ ] **Step 1: Escrever o teste das ações da página (servidor)**
 
@@ -8751,7 +8756,7 @@ interface UsuarioTela {
 
 <!-- prettier-ignore -->
 ```js
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   arquivoCabeNoSlot,
   CATEGORIAS_COM_TEXTO,
@@ -8862,29 +8867,40 @@ describe("lotesDeTexto", () => {
 });
 
 describe("gravarTextoPaginas", () => {
-  function entidadeFalsa() {
+  function entidadeFalsa({ falhaNoLote = 0, falhaNaLimpeza = false } = {}) {
     const ordem = [];
+    let lotes = 0;
+    let apagadas = 0;
     return {
       ordem,
       async deleteMany(criterio) {
         ordem.push(["deleteMany", criterio]);
+        apagadas += 1;
+        if (falhaNaLimpeza && apagadas > 1) throw new Error("limpeza fora do ar");
         return { success: true };
       },
       async bulkCreate(linhas) {
+        lotes += 1;
+        if (lotes === falhaNoLote) throw new Error("lote recusado");
         ordem.push(["bulkCreate", linhas.length]);
         return linhas;
       },
     };
   }
 
+  const paginas450 = Array.from({ length: 450 }, (_, i) => ({
+    n: i + 1,
+    texto: `p${i + 1}`,
+    escaneada: false,
+  }));
+
   it("apaga as páginas antigas ANTES e grava em lotes de 200", async () => {
     const ent = entidadeFalsa();
-    const paginas = Array.from({ length: 450 }, (_, i) => ({
-      n: i + 1,
-      texto: `p${i + 1}`,
-      escaneada: false,
-    }));
-    const n = await gravarTextoPaginas(ent, { empresaId: E, arquivoId: ARQ, paginas });
+    const n = await gravarTextoPaginas(ent, {
+      empresaId: E,
+      arquivoId: ARQ,
+      paginas: paginas450,
+    });
     expect(n).toBe(450);
     expect(ent.ordem).toEqual([
       ["deleteMany", { empresa_id: E, arquivo_id: ARQ }],
@@ -8892,6 +8908,32 @@ describe("gravarTextoPaginas", () => {
       ["bulkCreate", 200],
       ["bulkCreate", 50],
     ]);
+  });
+
+  it("o 2º bulkCreate lança: o deleteMany roda de novo e o erro original sobe", async () => {
+    const ent = entidadeFalsa({ falhaNoLote: 2 });
+    await expect(
+      gravarTextoPaginas(ent, { empresaId: E, arquivoId: ARQ, paginas: paginas450 })
+    ).rejects.toThrow("lote recusado");
+    expect(ent.ordem).toEqual([
+      ["deleteMany", { empresa_id: E, arquivo_id: ARQ }],
+      ["bulkCreate", 200],
+      ["deleteMany", { empresa_id: E, arquivo_id: ARQ }],
+    ]);
+  });
+
+  it("se a limpeza também falhar, o erro original sobe e a falha dela vai ao console", async () => {
+    const ent = entidadeFalsa({ falhaNoLote: 2, falhaNaLimpeza: true });
+    const console_ = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(
+        gravarTextoPaginas(ent, { empresaId: E, arquivoId: ARQ, paginas: paginas450 })
+      ).rejects.toThrow("lote recusado");
+      expect(console_).toHaveBeenCalledTimes(1);
+      expect(String(console_.mock.calls[0][1])).toContain("limpeza fora do ar");
+    } finally {
+      console_.mockRestore();
+    }
   });
 
   it("PDF sem páginas só limpa o texto antigo; sem empresa ou arquivo lança", async () => {
@@ -9003,12 +9045,26 @@ export function lotesDeTexto(linhas) {
 /**
  * Regrava o texto do arquivo: "apaga" (deleted_at) as páginas anteriores e grava as novas em lotes.
  * `entidade` = sigo.entities.ArquivoTextoPagina (injetada). Devolve o nº de páginas gravadas.
+ *
+ * Se um lote falhar, apaga de novo o que os lotes anteriores gravaram e relança o erro original: o
+ * arquivo termina SEM texto (o conector responde "sem_texto" e manda usar "Preparar para o
+ * Claude"). Texto parcial é pior, porque o Claude o leria como o edital inteiro.
  */
 export async function gravarTextoPaginas(entidade, { empresaId, arquivoId, paginas }) {
   if (!empresaId || !arquivoId) throw new Error("Empresa e arquivo são obrigatórios");
   const linhas = montarLinhasTexto(paginas, { empresaId, arquivoId });
-  await entidade.deleteMany({ empresa_id: empresaId, arquivo_id: arquivoId });
-  for (const lote of lotesDeTexto(linhas)) await entidade.bulkCreate(lote);
+  const apagar = () => entidade.deleteMany({ empresa_id: empresaId, arquivo_id: arquivoId });
+  await apagar();
+  try {
+    for (const lote of lotesDeTexto(linhas)) await entidade.bulkCreate(lote);
+  } catch (erro) {
+    try {
+      await apagar();
+    } catch (erroLimpeza) {
+      console.error("[envio-arquivos] não consegui apagar o texto parcial:", erroLimpeza);
+    }
+    throw erro;
+  }
   return linhas.length;
 }
 ```
@@ -9016,7 +9072,7 @@ export async function gravarTextoPaginas(entidade, { empresaId, arquivoId, pagin
 - [ ] **Step 9: Rodar e ver passar**
 
 Run: o mesmo comando do Step 7.
-Expected: PASS (10 testes).
+Expected: PASS (12 testes).
 
 - [ ] **Step 10: A página de envio**
 
@@ -9710,7 +9766,7 @@ Expected:
 - `npm run lint` sem erros e `npm run build` termina sem erro, com o chunk `EnviarArquivos-*.js` em
   `apps/web/dist/assets`;
 - `node --test`: `tests 1367`, `pass 1367`, `fail 0` (1361 + 6);
-- Vitest: 123 arquivos e 2377 testes (122 + 1 e 2367 + 10).
+- Vitest: 123 arquivos e 2379 testes (122 + 1 e 2367 + 12).
 
 Não há teste de DOM: a página, o botão e o upload do edital entram no roteiro manual da Task 18.
 
@@ -9790,7 +9846,7 @@ escritas a partir do contrato (§4.1–§4.7).
 
 **Contagem dos testes desta parte:** `node --test` ganha 9 (T6), 19 (T7), 7 (T8: 6 + 1 do
 `portal-funcionario/migracoes-delimitadores.test.ts`, que examina toda migração nova) e 19 (T9), 54 no total: de 1367
-(fim da T5) para 1421. O Vitest ganha 1 arquivo e 11 testes (T7): de 123/2377 para 124/2388. Na conferência final
+(fim da T5) para 1421. O Vitest ganha 1 arquivo e 11 testes (T7): de 123/2379 para 124/2390. Na conferência final
 (cópia limpa do `master`, tasks na ordem T1→T17), estes totais saíram exatamente assim, com a parte A de verdade no
 lugar das versões mínimas.
 
@@ -10421,7 +10477,7 @@ npx prettier --check supabase/functions/_shared/edital supabase/functions/ia-pro
 
 Expected: a primeira rodada termina com `ℹ pass 67` e `ℹ fail 0`; a suíte toda com `ℹ tests 1376`, `ℹ pass 1376` e
 `ℹ fail 0` (1367 da T5 + 9); o Prettier diz `All matched files use Prettier code style!`. O Vitest não muda nesta task
-(123 arquivos e 2377 testes).
+(123 arquivos e 2379 testes).
 
 - [ ] **Step 13: Commit**
 
@@ -11658,7 +11714,7 @@ npm run build
 ```
 
 Expected: `node --test` com `ℹ tests 1395`, `ℹ pass 1395` e `ℹ fail 0` (1376 + 19); Prettier `All matched files use
-Prettier code style!`; Vitest `Test Files 124 passed (124)` e `Tests 2388 passed (2388)` (123 + 1 e 2377 + 11); build
+Prettier code style!`; Vitest `Test Files 124 passed (124)` e `Tests 2390 passed (2390)` (123 + 1 e 2379 + 11); build
 sem erro (o arquivo novo do front é só teste e não entra no bundle).
 
 - [ ] **Step 15: Commit**
@@ -12572,7 +12628,7 @@ npx prettier --check supabase/functions/mcp/ferramentas-edital.ts supabase/funct
 
 Expected: `ℹ tests 1402`, `ℹ pass 1402` e `ℹ fail 0` (1395 + 7: 6 das ferramentas e 1 do `migracoes-delimitadores`
 para a 0151); Prettier `All matched files use Prettier code style!` (o Prettier não formata `.sql`); Vitest igual ao da
-T7 (124 arquivos e 2388 testes).
+T7 (124 arquivos e 2390 testes).
 
 - [ ] **Step 8: Commit**
 
@@ -14178,7 +14234,7 @@ npx prettier --check supabase/functions/_shared/edital supabase/functions/mcp/fe
 ```
 
 Expected: `ℹ tests 1421`, `ℹ pass 1421` e `ℹ fail 0` (1402 + 19); Prettier `All matched files use Prettier code
-style!`; Vitest igual ao da T7 (124 arquivos e 2388 testes). O `ferramentas.test.ts` da T2 continua verde (nomes únicos, `title`, anotações, `additionalProperties: false`,
+style!`; Vitest igual ao da T7 (124 arquivos e 2390 testes). O `ferramentas.test.ts` da T2 continua verde (nomes únicos, `title`, anotações, `additionalProperties: false`,
 exigência diferente de `NEGAR` e `INSTRUCOES` ≤ 4000 caracteres).
 
 - [ ] **Step 10: Commit**
@@ -14293,7 +14349,7 @@ num Postgres em memória (PGlite).
 - O Vitest ganha 1 arquivo e 3 testes (T10).
 
 Na conferência final (cópia limpa do `master`, tasks na ordem T1→T17), o `node --test` foi de 1421 (fim da T9) para
-1445, e o Vitest de 124 arquivos e 2388 testes para 125 e 2391.
+1445, e o Vitest de 124 arquivos e 2390 testes para 125 e 2393.
 
 ---
 
@@ -15710,7 +15766,7 @@ Expected:
 - `node --test` com `ℹ tests 1432`, `ℹ pass 1432` e `ℹ fail 0` (1421 da T9 + 11: 10 das regras e 1 do
   `migracoes-delimitadores` para a 0152);
 - Prettier `All matched files use Prettier code style!` (o Prettier não formata `.sql`);
-- Vitest `Test Files 125 passed (125)` e `Tests 2391 passed (2391)` (124 + 1 e 2388 + 3).
+- Vitest `Test Files 125 passed (125)` e `Tests 2393 passed (2393)` (124 + 1 e 2390 + 3).
 
 O front só ganha um teste (`src/lib`, fora do bundle), então não precisa de `npm run build` nem de `no-undef`.
 
@@ -16916,7 +16972,7 @@ npx prettier --check supabase/functions/mcp/ferramentas-acervo.ts supabase/funct
 ```
 
 Expected: `ℹ tests 1445`, `ℹ pass 1445` e `ℹ fail 0` (1432 + 13); Prettier `All matched files use Prettier code
-style!`; Vitest igual ao da T10 (125 arquivos e 2391 testes).
+style!`; Vitest igual ao da T10 (125 arquivos e 2393 testes).
 
 - [ ] **Step 6: Commit**
 
@@ -17008,7 +17064,7 @@ arquivos `.ts` da parte e `npm run build`. O SQL não rodou em banco (não há P
 `portal-funcionario/migracoes-delimitadores.test.ts`, que examina toda migração nova) e 12 (T15), 75 no total. O Vitest
 ganha 3 arquivos e 47 testes: 1 arquivo e 14 testes (T12), 2 arquivos e 29 testes (T13) e 4 testes (T16). Na
 conferência final (cópia limpa do `master`, tasks na ordem T1→T17): 1445 (fim da T11) → 1520 no `node --test` e
-125/2391 → 128/2438 no Vitest.
+125/2393 → 128/2440 no Vitest.
 
 ---
 
@@ -18334,7 +18390,7 @@ npx prettier --check supabase/functions/_shared/orcamento apps/web/src/lib/orcam
 ```
 
 Expected: `ℹ tests 1468`, `ℹ pass 1468` e `ℹ fail 0` (1445 da T11 + 23); `All matched files use Prettier code style!`;
-Vitest `Test Files 126 passed (126)` e `Tests 2405 passed (2405)` (125 + 1 e 2391 + 14).
+Vitest `Test Files 126 passed (126)` e `Tests 2407 passed (2407)` (125 + 1 e 2393 + 14).
 
 - [ ] **Step 7: Commit**
 
@@ -20415,7 +20471,7 @@ npx prettier --check supabase/functions/_shared/orcamento apps/web/src/lib/model
 ```
 
 Expected: `ℹ tests 1494`, `ℹ pass 1494` e `ℹ fail 0` (1468 + 26); Prettier `All matched files use Prettier code
-style!`; Vitest `Test Files 128 passed (128)` e `Tests 2434 passed (2434)` (126 + 2 e 2405 + 29).
+style!`; Vitest `Test Files 128 passed (128)` e `Tests 2436 passed (2436)` (126 + 2 e 2407 + 29).
 
 - [ ] **Step 7: Commit**
 
@@ -21826,7 +21882,7 @@ npx prettier --check supabase/functions/mcp/ferramentas-orcamento.ts supabase/fu
 
 Expected: `ℹ tests 1508`, `ℹ pass 1508` e `ℹ fail 0` (1494 + 14: 13 das ferramentas e 1 do `migracoes-delimitadores`
 para a 0153); Prettier `All matched files use Prettier code style!` (o Prettier não formata `.sql`); Vitest igual ao da
-T13 (128 arquivos e 2434 testes).
+T13 (128 arquivos e 2436 testes).
 
 - [ ] **Step 8: Commit**
 
@@ -22730,7 +22786,7 @@ npx prettier --check supabase/functions/mcp/ferramentas-orcamento.ts supabase/fu
 ```
 
 Expected: `ℹ tests 1520`, `ℹ pass 1520` e `ℹ fail 0` (1508 + 12); Prettier `All matched files use Prettier code
-style!`; Vitest igual ao da T14 (128 arquivos e 2434 testes).
+style!`; Vitest igual ao da T14 (128 arquivos e 2436 testes).
 
 - [ ] **Step 6: Commit**
 
@@ -22928,7 +22984,7 @@ npm run build > /dev/null 2>&1; echo "build: $?"
 ```
 
 Expected: `ℹ tests 1520` e `ℹ fail 0` (igual à T15); Prettier `All matched files use Prettier code style!`; Vitest
-`Test Files 128 passed (128)` e `Tests 2438 passed (2438)` (2434 + 4); `build: 0`.
+`Test Files 128 passed (128)` e `Tests 2440 passed (2440)` (2436 + 4); `build: 0`.
 
 - [ ] **Step 6: Commit**
 
@@ -23655,7 +23711,7 @@ Expected:
 - "All matched files use Prettier code style!";
 - os 5 smokes: `smoke-conector-acervo.sql`, `-busca.sql`, `-envio.sql`, `-oauth.sql` e `-orcamento.sql`;
 - `node --test`: `tests 1521`, `pass 1521`, `fail 0` (1520 da Task 16 + 1, o teste de completude);
-- Vitest: 128 arquivos e 2438 testes (iguais aos da Task 16).
+- Vitest: 128 arquivos e 2440 testes (iguais aos da Task 16).
 
 - [ ] **Step 8: Commit**
 
@@ -23726,7 +23782,7 @@ Depois, as duas suítes no `master`:
 cd /c/Users/javer/sigoobras-base && node --test "supabase/functions/**/*.test.ts" 2>&1 | grep -E '^ℹ (tests|pass|fail)' && (cd apps/web && npx vitest run 2>&1 | grep -E 'Test Files|Tests ')
 ```
 
-Expected: `ℹ fail 0` e todos os arquivos do Vitest `passed` (1521 e 128/2438 se o `master` não andou desde o
+Expected: `ℹ fail 0` e todos os arquivos do Vitest `passed` (1521 e 128/2440 se o `master` não andou desde o
 `e8f4ced`; mais, se outras sessões acrescentaram testes).
 
 - [ ] **Step 2: Pedir OK ao Javerson e consultar os buckets (P3, só leitura)**
