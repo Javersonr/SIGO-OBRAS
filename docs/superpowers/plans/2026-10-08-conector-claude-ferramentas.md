@@ -22831,7 +22831,9 @@ importação pela tela; sem o conector, nada muda. Os nomes dos campos ficam pre
 **Interfaces:**
 
 - Consumes: `CAMPOS_LINHA_CONECTOR` e `CAMPOS_INFORMACOES_CONECTOR` (`_shared/orcamento/modelo.ts`, T13, importados
-  pelo caminho relativo); os nomes das ferramentas da T14/T15 e o `gerar_link_envio` da T4.
+  pelo caminho relativo); `NOMES_FERRAMENTAS` (`_shared/conector/permissoes-ferramentas.ts`, a lista das 17 do
+  servidor, para prender por teste os nomes que a skill cita); os nomes das ferramentas da T14/T15 e o
+  `gerar_link_envio` da T4.
 - Produces: o texto da skill (arquivo público, baixado pelo botão "Skill do Claude").
 
 - [ ] **Step 1: Acrescentar os testes**
@@ -22846,6 +22848,7 @@ import {
   CAMPOS_INFORMACOES_CONECTOR,
   CAMPOS_LINHA_CONECTOR,
 } from "../../../../supabase/functions/_shared/orcamento/modelo.ts";
+import { NOMES_FERRAMENTAS } from "../../../../supabase/functions/_shared/conector/permissoes-ferramentas.ts";
 ```
 
 2. acrescente no fim do arquivo (uma linha em branco antes):
@@ -22869,8 +22872,14 @@ describe("SKILL.md com o conector do SIGO Obras", () => {
       "registrar_proposta",
       "ler_orcamento",
       "gerar_link_envio",
+      "buscar_oportunidades",
+      "registrar_arquivos",
     ];
-    for (const nome of nomes) expect(secao).toContain(`\`${nome}\``);
+    for (const nome of nomes) {
+      expect(secao).toContain(`\`${nome}\``);
+      // o nome citado na skill tem de ser uma ferramenta que o servidor realmente expõe
+      expect(NOMES_FERRAMENTAS).toContain(nome);
+    }
   });
   it("cada campo de linhas[] e de informacoes do conector aparece em crase", () => {
     for (const campo of [...CAMPOS_LINHA_CONECTOR, ...CAMPOS_INFORMACOES_CONECTOR]) {
@@ -22887,9 +22896,10 @@ describe("SKILL.md com o conector do SIGO Obras", () => {
     ].map((n) => passo5.indexOf(`\`${n}\``));
     expect(posicoes.every((p) => p > 0)).toBe(true);
     expect([...posicoes].sort((a, b) => a - b)).toEqual(posicoes);
-    expect(secao.indexOf("pergunte o desconto")).toBeLessThan(
-      secao.indexOf("5. Grave nesta ordem")
-    );
+    // a frase precisa existir: sem isso, indexOf devolve -1 e o "antes" passa sem querer
+    const iPergunta = secao.indexOf("pergunte o desconto");
+    expect(iPergunta).toBeGreaterThan(0);
+    expect(iPergunta).toBeLessThan(secao.indexOf("5. Grave nesta ordem"));
     expect(secao).toContain("`substituir: true`");
     expect(secao).toContain("Envelope 01 – Proposta");
     expect(secao).toContain("**Exportar proposta**");
