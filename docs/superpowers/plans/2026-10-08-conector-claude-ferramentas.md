@@ -12132,7 +12132,10 @@ Expected: `✔ supabase/migrations/0151_busca_oportunidade.sql: todo $$ ou $tag$
 
 - [ ] **Step 3: Teste das duas ferramentas**
 
-`supabase/functions/mcp/ferramentas-edital.test.ts` (fake da T1; a camada é de verdade, presa à empresa `E`):
+`supabase/functions/mcp/ferramentas-edital.test.ts` (fake da T1; a camada é de verdade, presa à empresa `E`; o perfil
+falso devolve as 8 colunas econômicas com valores distintos, cada um escrito no "Atende?" gravado em `brl()` e/ou
+`fmtNum()`, e o teste de `obter_oportunidade` varre o JSON inteiro atrás de todos e confere que o SELECT do perfil pede
+exatamente essas 8 colunas: se uma sair de `COLUNAS_PERFIL_ECONOMICO`, o valor vaza e o teste fica vermelho):
 
 <!-- prettier-ignore -->
 ```ts
@@ -12156,6 +12159,29 @@ const OP_B = "00000000-0000-4000-8000-000000000012"; // da OUTRA
 const ARQ_1 = "00000000-0000-4000-8000-000000000021";
 const ARQ_2 = "00000000-0000-4000-8000-000000000022";
 const PL = 1234567.89;
+// perfil econômico da empresa: as 8 colunas que só o servidor lê (COLUNAS_PERFIL_ECONOMICO), com
+// valores distintos entre si para que cada um só possa ter saído da sua própria coluna
+const FAT_2025 = 7654321.09;
+const PERFIL = {
+  capital_social: 500000,
+  patrimonio_liquido: PL,
+  ccl: 345678.12,
+  liquidez_corrente: 1.234,
+  liquidez_geral: 1.567,
+  solvencia_geral: 2.891,
+  endividamento_geral: 0.432,
+  faturamento: [{ ano: 2025, receita_bruta: FAT_2025 }],
+};
+const VALORES_DA_EMPRESA = [
+  PERFIL.capital_social,
+  PERFIL.patrimonio_liquido,
+  PERFIL.ccl,
+  PERFIL.liquidez_corrente,
+  PERFIL.liquidez_geral,
+  PERFIL.solvencia_geral,
+  PERFIL.endividamento_geral,
+  FAT_2025,
+];
 
 const ferramenta = (nome: string) => {
   const f = FERRAMENTAS_EDITAL.find((x) => x.def.name === nome);
@@ -12299,11 +12325,24 @@ const ATENDE = {
       atestados: [],
       justificativa: `Exigido ${brl(100000)}; a empresa tem ${brl(PL)} — Patrimônio líquido. Atende.`,
     },
+    {
+      exigencia_id: "ec2",
+      grupo: "economica",
+      exigencia: "Capital social, CCL e índices",
+      qtd_exigida: 300000,
+      unidade: "R$",
+      status: "atende",
+      comprovacao: `Capital social ${brl(PERFIL.capital_social)}; CCL ${brl(PERFIL.ccl)}; receita bruta de 2025 ${brl(FAT_2025)}`,
+      atestados: [],
+      justificativa: `Liquidez corrente ${fmtNum(PERFIL.liquidez_corrente)}, geral ${fmtNum(PERFIL.liquidez_geral)}, solvência geral ${fmtNum(PERFIL.solvencia_geral)}, endividamento geral ${fmtNum(PERFIL.endividamento_geral)}. Atende.`,
+    },
   ],
   veredito: "atende",
   cats_anexar: [],
-  pendencias: [],
-  riscos: [],
+  pendencias: [`Conferir o capital social de ${fmtNum(PERFIL.capital_social)} no contrato`],
+  riscos: [
+    `Receita bruta de 2025 (${fmtNum(FAT_2025)}) perto do mínimo; CCL ${fmtNum(PERFIL.ccl)}`,
+  ],
   alertas: [`PL ${fmtNum(PL)} no último balanço`],
   analisado_em: "2026-10-08T12:00:00.000Z",
   modelo: "Claude (conector)",
@@ -12336,7 +12375,7 @@ function responderObter(c: ChamadaFake): RespostaFake | undefined {
     return { data: linha ?? null };
   }
   if (c.tabela === "acervo_perfil") {
-    return { data: [{ patrimonio_liquido: PL, capital_social: 500000, registro_crea_pj: "X" }] };
+    return { data: [{ ...PERFIL, registro_crea_pj: "X" }] };
   }
   if (c.tabela === "arquivo_oportunidade" && eq(c, "oportunidade_id") === OP_A) {
     return {
@@ -12398,14 +12437,28 @@ test("obter_oportunidade: campos, análise, arquivos com texto e nada dos valore
     s.arquivos.map((a) => a.texto),
     [{ paginas: 40, escaneadas: 2 }, null]
   );
+  // nenhum dos 8 valores econômicos sai, em nenhuma das duas formas (R$ e número). O guarda não
+  // pode ser vazio: o "Atende?" gravado tem de conter cada valor, senão o assert abaixo não prova nada
+  const gravado = JSON.stringify(ATENDE);
   const json = r.resultado.content[0].text;
-  for (const proibido of [brl(PL), fmtNum(PL), "1234567", "500000"]) {
+  for (const v of VALORES_DA_EMPRESA) {
+    assert.ok(gravado.includes(brl(v)) || gravado.includes(fmtNum(v)), `fixture sem ${v}`);
+    for (const proibido of [brl(v), fmtNum(v)]) {
+      assert.equal(json.includes(proibido), false, proibido);
+    }
+  }
+  for (const proibido of ["1234567", "500000", "345678", "7654321"]) {
     assert.equal(json.includes(proibido), false, proibido);
   }
   assert.match(s.analise.atende.itens[1].comprovacao, /\[valor da empresa\]/);
+  assert.match(s.analise.atende.itens[2].comprovacao, /\[valor da empresa\]/);
   assert.equal(s.analise.atende.itens[0].comprovacao, "CAT 1/2025: 12 postes");
-  // o perfil é lido só com as colunas econômicas, e só no servidor
+  // o perfil é lido só com as colunas econômicas (as 8, nem uma a menos), e só no servidor
   const perfil = fake.chamadas.find((c) => c.tabela === "acervo_perfil")!;
+  const colunasLidas = String(perfil.colunas)
+    .split(",")
+    .map((c) => c.trim());
+  assert.deepEqual(colunasLidas.sort(), Object.keys(PERFIL).sort());
   assert.equal(perfil.colunas?.includes("registro_crea_pj"), false);
   const texto = fake.chamadas.find((c) => c.tabela === "conector_texto_disponivel")!;
   assert.deepEqual(texto.payload, { p_arquivo_ids: [ARQ_1, ARQ_2], p_empresa_id: E });
