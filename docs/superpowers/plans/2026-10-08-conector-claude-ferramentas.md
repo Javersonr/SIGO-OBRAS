@@ -11462,7 +11462,8 @@ Expected: `ℹ pass 7` e `ℹ fail 0`.
 - [ ] **Step 10: Teste do "Atende?" sem valores da empresa**
 
 `supabase/functions/_shared/edital/atende-conector.test.ts` (o resultado é montado pelo `montarAtende` de verdade, com
-um perfil sintético, para pegar os textos que a regra escreve):
+um perfil sintético, para pegar os textos que a regra escreve; o último teste usa um perfil com PL e CCL negativos e
+confere que nem o "-R$" nem o teto negativo saem):
 
 <!-- prettier-ignore -->
 ```ts
@@ -11499,7 +11500,7 @@ const PERFIL: AcervoPerfil = {
   alertas: ["PL de R$ 1.234.567,89 no balanço de 2025"],
 };
 
-function resultado(economica: Record<string, unknown>[]) {
+function resultado(economica: Record<string, unknown>[], perfil: AcervoPerfil = PERFIL) {
   const extraido = sanearEdital({
     valor_estimado: null,
     habilitacao: {
@@ -11507,7 +11508,7 @@ function resultado(economica: Record<string, unknown>[]) {
       economica,
     },
   });
-  const acervo: Acervo = { perfil: PERFIL, profissionais: [], atestados: [], quantitativos: [] };
+  const acervo: Acervo = { perfil, profissionais: [], atestados: [], quantitativos: [] };
   return montarAtende({
     extraido,
     acervo,
@@ -11533,13 +11534,19 @@ function resultado(economica: Record<string, unknown>[]) {
   });
 }
 
-test("valoresEconomicos: só números > 0 do perfil, inclusive o faturamento", () => {
+test("valoresEconomicos: os números do perfil (negativos também, zero não), inclusive o faturamento", () => {
   assert.deepEqual(
     valoresEconomicos(PERFIL).sort((a, b) => a - b),
     [0.41, 1.85, 2.37, 3.12, 345678.9, 500000, 1234567.89, 3456789.01]
   );
   assert.deepEqual(valoresEconomicos(null), []);
   assert.deepEqual(valoresEconomicos({ capital_social: 0, faturamento: "x" }), []);
+  assert.deepEqual(
+    valoresEconomicos({ ccl: -150000, patrimonio_liquido: "-80000.5", liquidez_geral: 0 }).sort(
+      (a, b) => a - b
+    ),
+    [-150000, -80000.5]
+  );
 });
 
 test("ocultarValores: troca brl e fmtNum, sem pegar pedaço de outro número", () => {
@@ -11596,6 +11603,48 @@ test("itens técnicos ficam iguais; null passa", () => {
   assert.equal(saida.veredito, r.veredito);
   assert.equal(atendeParaConector(null, [1]), null);
 });
+
+test("PL e CCL negativos: nem o '-R$' nem o teto negativo saem para o Claude", () => {
+  const negativo: AcervoPerfil = {
+    porte: "EPP",
+    capital_social: 500000,
+    patrimonio_liquido: -80000.5,
+    ccl: -150000,
+    exercicio_balanco: 2025,
+    alertas: ["CCL de -R$ 150.000,00 e PL de -R$ 80.000,50 no balanço de 2025"],
+  };
+  const r = resultado(
+    [
+      { id: "ec1", tipo: "patrimonio_liquido", valor_minimo: 2000000 },
+      { id: "ec2", tipo: "ccl", valor_minimo: 100000 },
+      { id: "ec3", tipo: "patrimonio_liquido", percentual_do_estimado: 10 },
+      { id: "ec4", tipo: "capital_ou_pl", valor_minimo: 100000 },
+    ],
+    negativo
+  );
+  const completo = JSON.stringify(r);
+  // o gravado para a tela tem os valores (e o teto negativo que a regra escreve)
+  for (const presente of [brl(-150000), brl(-80000.5), `de até ${brl(-800005)}`]) {
+    assert.ok(completo.includes(presente), presente);
+  }
+  const saida = atendeParaConector(r, valoresEconomicos(negativo))!;
+  const json = JSON.stringify(saida);
+  for (const proibido of [
+    "-R$",
+    "-150.000",
+    "-80.000",
+    "800.005",
+    brl(2080000.5), // "Faltam" do PL
+    brl(250000), // "Faltam" do CCL
+  ]) {
+    assert.equal(json.includes(proibido), false, proibido);
+  }
+  assert.ok(json.includes(`de até ${VALOR_OCULTO}`));
+  const ec1 = saida.itens.find((i) => i.exigencia_id === "ec1")!;
+  assert.match(ec1.justificativa, /Faltam \[valor da empresa\]/);
+  assert.match(ec1.justificativa, /Exigido R\$\s2\.000\.000,00/); // o mínimo do edital continua
+  assert.match(saida.alertas[0], /CCL de \[valor da empresa\] e PL de \[valor da empresa\]/);
+});
 ```
 
 - [ ] **Step 11: Rodar e ver falhar**
@@ -11633,17 +11682,20 @@ const CAMPOS_ECONOMICOS = [
   "endividamento_geral",
 ] as const;
 
-/** Os números > 0 do perfil que não podem sair pelo conector. */
+/**
+ * Os números do perfil que não podem sair pelo conector. Negativos entram (PL a descoberto e CCL
+ * negativo saem da regra como "-R$ x"); o zero não, porque fmtNum(0) = "0" apagaria todo "0" solto.
+ */
 export function valoresEconomicos(perfil: AcervoPerfil | null): number[] {
   if (!perfil) return [];
   const out = new Set<number>();
   for (const c of CAMPOS_ECONOMICOS) {
     const n = numero(perfil[c]);
-    if (n !== null && n > 0) out.add(n);
+    if (n !== null && n !== 0) out.add(n);
   }
   for (const f of arr(perfil.faturamento)) {
     const n = numero(obj(f).receita_bruta);
-    if (n !== null && n > 0) out.add(n);
+    if (n !== null && n !== 0) out.add(n);
   }
   return [...out];
 }
@@ -11659,18 +11711,22 @@ export function ocultarValores(texto: string | null, valores: number[]): string 
     formas.add(fmtNum(v));
   }
   // a forma mais longa primeiro: "R$ 1.234,56" antes de "1.234,56"; o espaço do brl() (U+00A0)
-  // casa com qualquer espaço, para pegar também o valor digitado nos alertas do acervo
+  // casa com qualquer espaço (\s cobre U+00A0 e U+202F), para pegar também o valor digitado
+  // com espaço comum nos alertas do acervo
   let out = texto;
   for (const f of [...formas].sort((a, b) => b.length - a.length)) {
-    const padrao = escaparRegex(f).replace(/ /g, "\\s?");
+    const padrao = escaparRegex(f).replace(/\s/g, "\\s?");
     const re = new RegExp(`(?<![\\p{L}\\p{N}_.,])${padrao}(?![\\p{L}\\p{N}_]|[.,]\\d)`, "gu");
     out = out.replace(re, VALOR_OCULTO);
   }
   return out;
 }
 
-/** "Faltam R$ x" e "… de até R$ x" (teto) do item econômico também revelam o valor da empresa. */
-const DERIVADOS = /\b(Faltam|até)(\s+)R\$\s?[\d.]+,\d{2}/g;
+/**
+ * "Faltam R$ x" e "… de até R$ x" (teto) do item econômico também revelam o valor da empresa.
+ * O "-?" pega o teto de um PL/CCL negativo ("de até -R$ 800.005,00").
+ */
+const DERIVADOS = /\b(Faltam|até)(\s+)-?R\$\s?[\d.]+,\d{2}/g;
 
 function itemEconomico(i: ItemAtende, valores: number[]): ItemAtende {
   const limpar = (t: string | null) =>
@@ -11703,7 +11759,7 @@ export function atendeParaConector(
 
 Run: `cd /c/Users/javer/sigoobras-wt-conector2 && node --test supabase/functions/_shared/edital/atende-conector.test.ts`
 
-Expected: `ℹ pass 5` e `ℹ fail 0`.
+Expected: `ℹ pass 6` e `ℹ fail 0`.
 
 - [ ] **Step 14: Suítes, Prettier e build**
 
@@ -11717,7 +11773,7 @@ npx prettier --check supabase/functions/_shared/edital apps/web/src/lib/edital-c
 npm run build
 ```
 
-Expected: `node --test` com `ℹ tests 1395`, `ℹ pass 1395` e `ℹ fail 0` (1376 + 19); Prettier `All matched files use
+Expected: `node --test` com `ℹ tests 1396`, `ℹ pass 1396` e `ℹ fail 0` (1376 + 20); Prettier `All matched files use
 Prettier code style!`; Vitest `Test Files 124 passed (124)` e `Tests 2390 passed (2390)` (123 + 1 e 2379 + 11); build
 sem erro (o arquivo novo do front é só teste e não entra no bundle).
 
@@ -12630,7 +12686,7 @@ npx prettier --check supabase/functions/mcp/ferramentas-edital.ts supabase/funct
 (cd apps/web && npx vitest run 2>&1 | grep -E 'Test Files|Tests ')
 ```
 
-Expected: `ℹ tests 1402`, `ℹ pass 1402` e `ℹ fail 0` (1395 + 7: 6 das ferramentas e 1 do `migracoes-delimitadores`
+Expected: `ℹ tests 1403`, `ℹ pass 1403` e `ℹ fail 0` (1396 + 7: 6 das ferramentas e 1 do `migracoes-delimitadores`
 para a 0151); Prettier `All matched files use Prettier code style!` (o Prettier não formata `.sql`); Vitest igual ao da
 T7 (124 arquivos e 2390 testes).
 
@@ -14237,7 +14293,7 @@ npx prettier --check supabase/functions/_shared/edital supabase/functions/mcp/fe
 (cd apps/web && npx vitest run 2>&1 | grep -E 'Test Files|Tests ')
 ```
 
-Expected: `ℹ tests 1421`, `ℹ pass 1421` e `ℹ fail 0` (1402 + 19); Prettier `All matched files use Prettier code
+Expected: `ℹ tests 1422`, `ℹ pass 1422` e `ℹ fail 0` (1403 + 19); Prettier `All matched files use Prettier code
 style!`; Vitest igual ao da T7 (124 arquivos e 2390 testes). O `ferramentas.test.ts` da T2 continua verde (nomes únicos, `title`, anotações, `additionalProperties: false`,
 exigência diferente de `NEGAR` e `INSTRUCOES` ≤ 4000 caracteres).
 
@@ -15767,7 +15823,7 @@ npx prettier --check supabase/functions/_shared/edital/acervo-categorias.ts \
 
 Expected:
 
-- `node --test` com `ℹ tests 1432`, `ℹ pass 1432` e `ℹ fail 0` (1421 da T9 + 11: 10 das regras e 1 do
+- `node --test` com `ℹ tests 1433`, `ℹ pass 1433` e `ℹ fail 0` (1422 da T9 + 11: 10 das regras e 1 do
   `migracoes-delimitadores` para a 0152);
 - Prettier `All matched files use Prettier code style!` (o Prettier não formata `.sql`);
 - Vitest `Test Files 125 passed (125)` e `Tests 2393 passed (2393)` (124 + 1 e 2390 + 3).
@@ -16975,7 +17031,7 @@ npx prettier --check supabase/functions/mcp/ferramentas-acervo.ts supabase/funct
 (cd apps/web && npx vitest run 2>&1 | grep -E 'Test Files|Tests ')
 ```
 
-Expected: `ℹ tests 1445`, `ℹ pass 1445` e `ℹ fail 0` (1432 + 13); Prettier `All matched files use Prettier code
+Expected: `ℹ tests 1446`, `ℹ pass 1446` e `ℹ fail 0` (1433 + 13); Prettier `All matched files use Prettier code
 style!`; Vitest igual ao da T10 (125 arquivos e 2393 testes).
 
 - [ ] **Step 6: Commit**
