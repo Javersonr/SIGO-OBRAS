@@ -88,11 +88,25 @@ export function lotesDeTexto(linhas) {
 /**
  * Regrava o texto do arquivo: "apaga" (deleted_at) as páginas anteriores e grava as novas em lotes.
  * `entidade` = sigo.entities.ArquivoTextoPagina (injetada). Devolve o nº de páginas gravadas.
+ *
+ * Se um lote falhar, apaga de novo o que os lotes anteriores gravaram e relança o erro original: o
+ * arquivo termina SEM texto (o conector responde "sem_texto" e manda usar "Preparar para o
+ * Claude"). Texto parcial é pior, porque o Claude o leria como o edital inteiro.
  */
 export async function gravarTextoPaginas(entidade, { empresaId, arquivoId, paginas }) {
   if (!empresaId || !arquivoId) throw new Error("Empresa e arquivo são obrigatórios");
   const linhas = montarLinhasTexto(paginas, { empresaId, arquivoId });
-  await entidade.deleteMany({ empresa_id: empresaId, arquivo_id: arquivoId });
-  for (const lote of lotesDeTexto(linhas)) await entidade.bulkCreate(lote);
+  const apagar = () => entidade.deleteMany({ empresa_id: empresaId, arquivo_id: arquivoId });
+  await apagar();
+  try {
+    for (const lote of lotesDeTexto(linhas)) await entidade.bulkCreate(lote);
+  } catch (erro) {
+    try {
+      await apagar();
+    } catch (erroLimpeza) {
+      console.error("[envio-arquivos] não consegui apagar o texto parcial:", erroLimpeza);
+    }
+    throw erro;
+  }
   return linhas.length;
 }

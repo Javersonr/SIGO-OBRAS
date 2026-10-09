@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   arquivoCabeNoSlot,
   CATEGORIAS_COM_TEXTO,
@@ -109,29 +109,40 @@ describe("lotesDeTexto", () => {
 });
 
 describe("gravarTextoPaginas", () => {
-  function entidadeFalsa() {
+  function entidadeFalsa({ falhaNoLote = 0, falhaNaLimpeza = false } = {}) {
     const ordem = [];
+    let lotes = 0;
+    let apagadas = 0;
     return {
       ordem,
       async deleteMany(criterio) {
         ordem.push(["deleteMany", criterio]);
+        apagadas += 1;
+        if (falhaNaLimpeza && apagadas > 1) throw new Error("limpeza fora do ar");
         return { success: true };
       },
       async bulkCreate(linhas) {
+        lotes += 1;
+        if (lotes === falhaNoLote) throw new Error("lote recusado");
         ordem.push(["bulkCreate", linhas.length]);
         return linhas;
       },
     };
   }
 
+  const paginas450 = Array.from({ length: 450 }, (_, i) => ({
+    n: i + 1,
+    texto: `p${i + 1}`,
+    escaneada: false,
+  }));
+
   it("apaga as páginas antigas ANTES e grava em lotes de 200", async () => {
     const ent = entidadeFalsa();
-    const paginas = Array.from({ length: 450 }, (_, i) => ({
-      n: i + 1,
-      texto: `p${i + 1}`,
-      escaneada: false,
-    }));
-    const n = await gravarTextoPaginas(ent, { empresaId: E, arquivoId: ARQ, paginas });
+    const n = await gravarTextoPaginas(ent, {
+      empresaId: E,
+      arquivoId: ARQ,
+      paginas: paginas450,
+    });
     expect(n).toBe(450);
     expect(ent.ordem).toEqual([
       ["deleteMany", { empresa_id: E, arquivo_id: ARQ }],
@@ -139,6 +150,32 @@ describe("gravarTextoPaginas", () => {
       ["bulkCreate", 200],
       ["bulkCreate", 50],
     ]);
+  });
+
+  it("o 2º bulkCreate lança: o deleteMany roda de novo e o erro original sobe", async () => {
+    const ent = entidadeFalsa({ falhaNoLote: 2 });
+    await expect(
+      gravarTextoPaginas(ent, { empresaId: E, arquivoId: ARQ, paginas: paginas450 })
+    ).rejects.toThrow("lote recusado");
+    expect(ent.ordem).toEqual([
+      ["deleteMany", { empresa_id: E, arquivo_id: ARQ }],
+      ["bulkCreate", 200],
+      ["deleteMany", { empresa_id: E, arquivo_id: ARQ }],
+    ]);
+  });
+
+  it("se a limpeza também falhar, o erro original sobe e a falha dela vai ao console", async () => {
+    const ent = entidadeFalsa({ falhaNoLote: 2, falhaNaLimpeza: true });
+    const console_ = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(
+        gravarTextoPaginas(ent, { empresaId: E, arquivoId: ARQ, paginas: paginas450 })
+      ).rejects.toThrow("lote recusado");
+      expect(console_).toHaveBeenCalledTimes(1);
+      expect(String(console_.mock.calls[0][1])).toContain("limpeza fora do ar");
+    } finally {
+      console_.mockRestore();
+    }
   });
 
   it("PDF sem páginas só limpa o texto antigo; sem empresa ou arquivo lança", async () => {
