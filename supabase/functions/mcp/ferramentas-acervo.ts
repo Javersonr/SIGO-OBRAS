@@ -12,8 +12,9 @@
  * Tudo pela CamadaEmpresa (empresa da chave). Puro (importável no Node).
  */
 import type { PromptDef } from "../_shared/mcp/protocolo.ts";
-import type { Consulta } from "../_shared/conector/camada-empresa.ts";
+import { dadosOuErro, type Consulta } from "../_shared/conector/camada-empresa.ts";
 import { inteiroNaFaixa, textoCurto, uuidOuNull } from "../_shared/conector/entrada.ts";
+import { LIMITE_BLOCO } from "../_shared/conector/envio-regras.ts";
 import {
   ATIVIDADES_ACERVO,
   CATEGORIAS_ACERVO,
@@ -43,6 +44,11 @@ const COLUNAS_PROFISSIONAL =
 const MAX_ATESTADOS_LIDOS = 2000;
 const TIPOS_LEITURA = ["tudo", "atestados", "profissionais"] as const;
 const VALOR_OCULTO = "[valor da empresa]";
+/** Cada atestado leva os quantitativos completos (~5 mil caracteres com 15 linhas): página curta. */
+const POR_PAGINA_PADRAO = 10;
+const POR_PAGINA_MAX = 25;
+/** Teto do texto da resposta, o mesmo do texto do edital: o cliente do Claude corta ou recusa mais. */
+const LIMITE_SAIDA = LIMITE_BLOCO;
 
 type Obj = Record<string, unknown>;
 interface AtestadoLido extends Obj {
@@ -77,12 +83,13 @@ function semValorEmReais<T>(t: T): T | string {
   return typeof t === "string" ? t.replace(/R\$\s*[\d.,]*\d/g, VALOR_OCULTO) : t;
 }
 
-function dados<T>(
-  r: { data: T | null; error: { message: string } | null },
-  onde: string
-): T | null {
-  if (r.error) throw new Error(`Falha ao ler ${onde}: ${r.error.message}`);
-  return r.data ?? null;
+/** Quantos atestados da página cabem no teto de texto (pelo menos 1), contando o resto da saída. */
+function quantosCabem(saida: Obj, atestados: Obj[]): number {
+  for (let n = atestados.length - 1; n > 1; n--) {
+    const texto = JSON.stringify({ ...saida, atestados: atestados.slice(0, n) }, null, 2);
+    if (texto.length <= LIMITE_SAIDA) return n;
+  }
+  return 1;
 }
 
 // a ordem sai do TypeScript (não depende da ordem em que a camada aplica os filtros)
@@ -112,7 +119,7 @@ const LER_ACERVO: Ferramenta = {
     name: "ler_acervo",
     title: "Ler o acervo técnico da empresa",
     description:
-      "Lê o acervo técnico da empresa no SIGO: perfil (registro no CREA, porte, cadastros e alertas), CATs e atestados (com id, quantitativos por categoria e a síntese de cada obra) e os profissionais. Paginado; filtra por atestado, categoria ou texto (nº, contratante, objeto, cidade). Não traz valores econômicos (capital, patrimônio, índices, faturamento) nem o valor dos contratos.",
+      "Lê o acervo técnico da empresa no SIGO: perfil (registro no CREA, porte, cadastros e alertas), CATs e atestados (com id, quantitativos por categoria e a síntese de cada obra) e os profissionais. Paginado (10 atestados por página, no máximo 25); filtra por atestado, categoria ou texto (nº, contratante, objeto, cidade). Não traz valores econômicos (capital, patrimônio, índices, faturamento) nem o valor dos contratos.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -134,7 +141,12 @@ const LER_ACERVO: Ferramenta = {
           description: "palavras no nº, contratante, objeto ou cidade (sem acento)",
         },
         pagina: { type: "integer", minimum: 1, description: "padrão 1" },
-        por_pagina: { type: "integer", minimum: 1, maximum: 100, description: "padrão 50" },
+        por_pagina: {
+          type: "integer",
+          minimum: 1,
+          maximum: POR_PAGINA_MAX,
+          description: `padrão ${POR_PAGINA_PADRAO}`,
+        },
       },
       required: [],
     },
@@ -148,8 +160,10 @@ const LER_ACERVO: Ferramenta = {
     }
     const pagina = vazio(args.pagina) ? 1 : inteiroNaFaixa(args.pagina, 1, 1_000_000);
     if (pagina === null) erros.push("pagina: inteiro a partir de 1");
-    const porPagina = vazio(args.por_pagina) ? 50 : inteiroNaFaixa(args.por_pagina, 1, 100);
-    if (porPagina === null) erros.push("por_pagina: inteiro de 1 a 100");
+    const porPagina = vazio(args.por_pagina)
+      ? POR_PAGINA_PADRAO
+      : inteiroNaFaixa(args.por_pagina, 1, POR_PAGINA_MAX);
+    if (porPagina === null) erros.push(`por_pagina: inteiro de 1 a ${POR_PAGINA_MAX}`);
     const categoria = vazio(args.categoria) ? null : categoriaValida(args.categoria);
     if (categoria === "outro" && normalizar(args.categoria) !== "outro") {
       erros.push(`categoria: "${String(args.categoria)}" fora da lista (veja categorias)`);
@@ -166,13 +180,12 @@ const LER_ACERVO: Ferramenta = {
 
     let perfil: Obj | null = null;
     if (tipo === "tudo") {
-      const p = dados<Obj>(
+      const p = dadosOuErro<Obj>(
         await db
           .ler("acervo_perfil", COLUNAS_PERFIL_CONECTOR)
           .order("updated_at", { ascending: false })
           .limit(1)
-          .maybeSingle(),
-        "o perfil do acervo"
+          .maybeSingle()
       );
       perfil = p && {
         registro_crea_pj: p.registro_crea_pj ?? null,
@@ -283,18 +296,29 @@ const LER_ACERVO: Ferramenta = {
               ativo: p.ativo ?? null,
             }));
 
-    return sucesso(
-      {
-        perfil,
-        atestados,
-        profissionais,
-        total_atestados: total,
-        pagina,
-        por_pagina: porPagina,
-        categorias: CATEGORIAS_ACERVO,
-      },
-      { alvo: atestadoId }
-    );
+    const saida = {
+      perfil,
+      atestados,
+      profissionais,
+      total_atestados: total,
+      pagina,
+      por_pagina: porPagina,
+      categorias: CATEGORIAS_ACERVO,
+    };
+    // acervo com muitos quantitativos por obra: recusa a página grande em vez de deixar o cliente cortar
+    const tamanho = JSON.stringify(saida, null, 2).length;
+    if (tamanho > LIMITE_SAIDA && atestados.length > 1) {
+      return falha(
+        `A página do acervo passou do limite de ${LIMITE_SAIDA} caracteres. Peça menos atestados por página (por_pagina menor) ou um atestado_id.`,
+        "saida_grande",
+        {
+          tamanho,
+          limite: LIMITE_SAIDA,
+          por_pagina_sugerido: quantosCabem(saida, atestados),
+        }
+      );
+    }
+    return sucesso(saida, { alvo: atestadoId });
   },
 };
 

@@ -418,7 +418,7 @@ test("ler_acervo: atestado de outra empresa → nao_encontrado; entradas fora da
   assert.equal(sc(r).motivo, "nao_encontrado");
   assert.equal(r.alvo, AT_OUTRA);
   const v = await ferramenta("ler_acervo").executar(
-    { categoria: "iluminacao", por_pagina: 101, pagina: 0, tipo: "obras" },
+    { categoria: "iluminacao", por_pagina: 26, pagina: 0, tipo: "obras" },
     deps
   );
   assert.equal(v.resultado.isError, true);
@@ -426,7 +426,7 @@ test("ler_acervo: atestado de outra empresa → nao_encontrado; entradas fora da
   assert.deepEqual(sc(v).erros, [
     "tipo: use tudo, atestados, profissionais",
     "pagina: inteiro a partir de 1",
-    "por_pagina: inteiro de 1 a 100",
+    "por_pagina: inteiro de 1 a 25",
     'categoria: "iluminacao" fora da lista (veja categorias)',
   ]);
 });
@@ -442,6 +442,86 @@ test("ler_acervo: tipo profissionais traz só os profissionais", async () => {
     chamadas.map((c) => c.tabela),
     ["acervo_profissional"]
   );
+});
+
+// acervo grande: n atestados, cada um com q quantitativos de descrição longa
+const idGrande = (i: number) => `00000000-0000-4000-8000-${String(1000 + i).padStart(12, "0")}`;
+function acervoGrande(n: number, q: number) {
+  const atestados = Array.from({ length: n }, (_, i) =>
+    atestado(idGrande(i), i + 1, { numero: `CAT ${i + 1}/2025` })
+  );
+  const quantitativos = atestados.flatMap((a, i) =>
+    Array.from({ length: q }, (_, k) => ({
+      atestado_id: a.id,
+      categoria: "poste",
+      descricao: `Fornecimento e instalação de poste de concreto duplo T ${i}-${k}, 11 m`,
+      quantidade: k + 1,
+      unidade: "un",
+      especificacao: null,
+      na_atividade_tecnica: false,
+      observacao: k === 0 ? "síntese" : "detalhe",
+      ordem: k + 1,
+    }))
+  );
+  // a camada lê em páginas de 1000 linhas (range): o fake tem de respeitar o intervalo
+  const fatia = (linhas: unknown[], c: ChamadaFake) => {
+    const [de, ate] = (c.filtros.find((f) => f.metodo === "range")?.args ?? [
+      0,
+      Infinity,
+    ]) as number[];
+    return linhas.slice(de, ate + 1);
+  };
+  return (c: ChamadaFake) => {
+    if (c.tabela === "acervo_atestado") return { data: fatia(atestados, c) };
+    if (c.tabela === "acervo_quantitativo") {
+      const ids = inDe(c, "atestado_id");
+      return {
+        data: fatia(
+          quantitativos.filter((x) => !ids || ids.includes(x.atestado_id)),
+          c
+        ),
+      };
+    }
+    return responder(c);
+  };
+}
+
+test("ler_acervo: a chamada sem argumentos num acervo de 50 atestados × 15 quantitativos cabe em 99 mil caracteres", async () => {
+  const { deps } = montar(acervoGrande(50, 15));
+  const r = await ferramenta("ler_acervo").executar({}, deps);
+  assert.equal(r.resultado.isError, false);
+  const s = sc(r);
+  assert.equal(s.total_atestados, 50);
+  assert.equal(s.por_pagina, 10);
+  assert.equal((s.atestados as unknown[]).length, 10);
+  const texto = r.resultado.content[0].text;
+  assert.ok(texto.length < 99_000, `o texto da resposta tem ${texto.length} caracteres`);
+  const props = (FERRAMENTAS_ACERVO[0].def.inputSchema.properties ?? {}) as Record<
+    string,
+    Record<string, unknown>
+  >;
+  assert.equal(props.por_pagina.maximum, 25);
+  assert.equal(props.por_pagina.description, "padrão 10");
+});
+
+test("ler_acervo: página que passa do teto vira saida_grande com o por_pagina que cabe", async () => {
+  const { deps } = montar(acervoGrande(30, 40));
+  const r = await ferramenta("ler_acervo").executar({ por_pagina: 25 }, deps);
+  assert.equal(r.resultado.isError, true);
+  const e = sc(r);
+  assert.equal(e.motivo, "saida_grande");
+  assert.equal(e.limite, 99_000);
+  assert.ok((e.tamanho as number) > 99_000);
+  const sugerido = e.por_pagina_sugerido as number;
+  assert.ok(sugerido >= 1 && sugerido < 25, `sugerido ${sugerido}`);
+  // com o sugerido a página volta inteira e dentro do teto
+  const ok = await ferramenta("ler_acervo").executar({ por_pagina: sugerido }, deps);
+  assert.equal(ok.resultado.isError, false);
+  assert.equal((sc(ok).atestados as unknown[]).length, sugerido);
+  assert.ok(ok.resultado.content[0].text.length <= 99_000);
+  // um atestado só (ou o detalhe por id) nunca é recusado
+  const um = await ferramenta("ler_acervo").executar({ por_pagina: 1 }, deps);
+  assert.equal(um.resultado.isError, false);
 });
 
 const CADASTRO = {
