@@ -67,6 +67,7 @@ import ImgStorage from "@/components/ImgStorage";
 import LerEditalSheet from "@/components/oportunidades/edital/LerEditalSheet";
 import EditalResumoCard from "./EditalResumoCard";
 import ArquivosPastas from "./ArquivosPastas";
+import PrepararParaClaudeButton from "./PrepararParaClaudeButton";
 import {
   PASTA_OUTROS,
   lerPastasExtras,
@@ -255,6 +256,8 @@ export default function OportunidadeDetalhe({
     isAdmin ||
     can("Oportunidades", "Orçamento", "editar") ||
     can("Oportunidades", "Orcamento", "editar");
+  // "Preparar para o Claude" grava o texto do PDF (arquivo_texto_pagina): quem anexa arquivos
+  const podePrepararParaClaude = isAdmin || can("Oportunidades", "Arquivos", "criar");
   // detalhe fechado por fora (excluir/arquivar): não reabre a leitura depois
   useEffect(() => {
     if (!open) {
@@ -1741,6 +1744,9 @@ export default function OportunidadeDetalhe({
                                 >
                                   <Eye className="w-3 h-3" />
                                 </Button>
+                              )}
+                              {isPdf && podePrepararParaClaude && (
+                                <PrepararParaClaudeButton arquivo={arq} />
                               )}
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>

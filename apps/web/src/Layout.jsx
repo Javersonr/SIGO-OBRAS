@@ -150,6 +150,8 @@ export default function Layout({ children, currentPageName }) {
     // Sem menu/sidebar; a própria página exige o login (custom_auth)
     "TrocarSenha",
     "AutorizarConector",
+    // Envio de arquivos do conector do Claude: a própria página exige a sessão (como a acima)
+    "EnviarArquivos",
     "index",
     "Index",
   ];

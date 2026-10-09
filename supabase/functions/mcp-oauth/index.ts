@@ -8,7 +8,8 @@
  *   POST …/mcp-oauth/revoke    form (RFC 7009)  → 200
  * Ações da tela do SIGO (/AutorizarConector e Meu Perfil), POST JSON {acao},
  * com a sessão da SPA (JWT do Supabase): contexto | aprovar | negar | listar |
- * revogar | gerar_manual.
+ * revogar | gerar_manual, e as da página de envio de arquivos (/EnviarArquivos):
+ * link_envio | concluir_envio (envio-tela.ts).
  * Metadata do AS: estática em https://www.sigoobras.com.br/.well-known/oauth-authorization-server
  *
  * Segredos: só o SHA-256 vai para o banco (conector_codigo / conector_chave).
@@ -63,6 +64,7 @@ import {
 } from "../_shared/conector/oauth-regras.ts";
 import { recursoDoConector } from "../_shared/conector/recurso.ts";
 import { revogarAutorizacao } from "../_shared/conector/revogar.ts";
+import { acaoConcluirEnvio, acaoLinkEnvio, type UsuarioTela } from "./envio-tela.ts";
 import { sessaoAnteriorATrocaDeSenha } from "../_shared/conector/sessao.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -482,14 +484,6 @@ async function revogarToken(req: Request, admin: Admin): Promise<Response> {
 
 // ─── Ações da tela (sessão da SPA) ──────────────────────────────────────────
 
-interface UsuarioTela {
-  id: string;
-  email: string;
-  nome: string;
-  senhaProvisoria: boolean;
-  senhaAlteradaEm: string | null;
-}
-
 const sessaoInvalida = () => fail(MSG_SESSAO, 401, { codigo: "sessao_invalida" });
 
 /** Limitador da tela: fora do ar → 503 (não é "muitas tentativas"). */
@@ -631,6 +625,10 @@ async function acaoDaTela(req: Request, admin: Admin): Promise<Response> {
       return await revogarDaTela(req, body, uc, admin);
     case "gerar_manual":
       return await gerarManual(req, body, uc, admin);
+    case "link_envio":
+      return await acaoLinkEnvio(body, uc, admin);
+    case "concluir_envio":
+      return await acaoConcluirEnvio(body, uc, admin);
     default:
       return fail("Ação desconhecida", 400);
   }
