@@ -1,0 +1,86 @@
+{
+  "orgao": "Prefeitura Municipal de Cidade Exemplo",
+  "cnpj_orgao": null,
+  "numero_edital": "012/2026",
+  "numero_processo": "PA 045/2026",
+  "modalidade": "pregao",
+  "forma": "eletronica",
+  "portal": "Portal de Compras Exemplo",
+  "objeto": "Contratação de empresa especializada para execução de serviços de manutenção e eficientização da iluminação pública, com substituição de luminárias por LED, fornecimento de materiais, mão de obra e equipamentos",
+  "titulo_sugerido": null,
+  "valor_estimado": "R$ 1.234.567,89",
+  "criterio_julgamento": "Menor preço global",
+  "regime_execucao": "Empreitada por preço unitário",
+  "prazo_execucao": "12 meses",
+  "vigencia": "12 meses",
+  "local": {
+    "cidade": "Cidade Exemplo",
+    "uf": "minas gerais",
+    "endereco": "Rua Exemplo, 100 - Centro"
+  },
+  "datas": {
+    "sessao": { "data": "15/10/2026", "hora": "9h30", "pagina": 1 },
+    "proposta_limite": { "data": "2026-10-15", "hora": "09:00:00", "pagina": 1 },
+    "impugnacao_limite": { "data": "31/02/2026", "hora": "14:00:00", "pagina": 2 },
+    "esclarecimento_limite": { "data": "2026-10-10", "hora": null, "pagina": 2 },
+    "visita_tecnica": {
+      "obrigatoria": false,
+      "data": "2026-10-05",
+      "hora": "10h",
+      "descricao": "Agendar com o setor de licitações",
+      "pagina": 3
+    }
+  },
+  "garantia_proposta": { "exigida": true, "percentual": 1, "valor": null, "pagina": 4 },
+  "exclusiva_me_epp": false,
+  "consorcio_permitido": false,
+  "subcontratacao_permitida": null,
+  "habilitacao": {
+    "tecnica_operacional": [
+      {
+        "id": "op1",
+        "descricao": "Substituição de luminárias de iluminação pública por LED",
+        "servico": "Substituição de luminárias LED",
+        "quantidade": 500,
+        "unidade": "un",
+        "percentual_minimo": 50,
+        "somatorio_permitido": true,
+        "exige_execucao": true,
+        "pagina": 12,
+        "trecho": "atestado de execução de substituição de no mínimo 500 luminárias LED"
+      }
+    ],
+    "tecnica_profissional": [
+      {
+        "id": "pr1",
+        "descricao": "Engenheiro eletricista com CAT de iluminação pública",
+        "profissional": "Engenheiro eletricista",
+        "servico": "Iluminação pública",
+        "quantidade": null,
+        "unidade": null,
+        "pagina": 12,
+        "trecho": null
+      }
+    ],
+    "economica": [
+      {
+        "id": "ec1",
+        "tipo": "patrimonio_liquido",
+        "valor_minimo": 123456.79,
+        "percentual_do_estimado": 10,
+        "exercicio": null,
+        "descricao": "Patrimônio líquido mínimo de 10% do valor estimado",
+        "pagina": 13,
+        "trecho": null
+      }
+    ],
+    "registros": [
+      { "id": "rg1", "tipo": "crea", "descricao": "Registro da empresa no CREA", "pagina": 13 }
+    ],
+    "outros_documentos": [{ "descricao": "Balanço patrimonial do último exercício", "pagina": 13 }]
+  },
+  "itens": [],
+  "observacoes_importantes": [{ "texto": "Amostra de luminária em até 3 dias úteis", "pagina": 8 }],
+  "paginas_lidas": 40,
+  "avisos": []
+}
