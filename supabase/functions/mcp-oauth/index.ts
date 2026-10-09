@@ -50,20 +50,26 @@ import {
   ESCOPO,
   ISSUER,
   lerFormUnico,
+  mimeEssencia,
   montarRedirectErro,
   montarRedirectSucesso,
   nomeDoApp,
+  registroAberto,
   respostaRegistro,
+  revogacaoPermitida,
+  stateValido,
   validarPedidoAutorizacao,
   validarRegistro,
 } from "../_shared/conector/oauth-regras.ts";
+import { recursoDoConector } from "../_shared/conector/recurso.ts";
 import { revogarAutorizacao } from "../_shared/conector/revogar.ts";
+import { sessaoAnteriorATrocaDeSenha } from "../_shared/conector/sessao.ts";
 
 // deno-lint-ignore no-explicit-any
 type Admin = any;
 type Obj = Record<string, unknown>;
 
-const RECURSO = recursoCanonico(`${Deno.env.get("SUPABASE_URL") ?? ""}/functions/v1/mcp`) as string;
+const RECURSO = recursoDoConector(Deno.env.get("SUPABASE_URL"));
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SEM_CACHE = {
   "content-type": "application/json",
@@ -141,8 +147,9 @@ async function comErroServidor(nome: string, fn: () => Promise<Response>): Promi
 
 async function registrar(req: Request, admin: Admin): Promise<Response> {
   // RFC 7591 §3.1: corpo JSON. Aceitar text/plain deixava qualquer página
-  // registrar clientes sem preflight a partir do navegador dos visitantes.
-  if (!/application\/json/i.test(req.headers.get("content-type") ?? "")) {
+  // registrar clientes sem preflight a partir do navegador dos visitantes; a
+  // conferência é pela ESSÊNCIA do tipo ("text/plain;application/json" não passa).
+  if (mimeEssencia(req.headers.get("content-type")) !== "application/json") {
     return jsonOAuth(
       erroOAuth("invalid_client_metadata", "Envie o registro como application/json"),
       400
@@ -174,6 +181,24 @@ async function registrar(req: Request, admin: Admin): Promise<Response> {
   }
   const v = validarRegistro(corpo);
   if (!v.ok) return jsonOAuth(erroOAuth(v.erro, v.descricao), 400);
+  // Teto global (FINAL M5): registro em massa não enche a tabela; a limpeza
+  // diária (conector_limpeza, 0148) apaga os clientes nunca usados.
+  const { count: semUso, error: erroTeto } = await admin
+    .from("conector_cliente")
+    .select("id", { count: "exact", head: true })
+    .is("ultimo_uso", null)
+    .gt("criado_em", new Date(Date.now() - 86_400_000).toISOString());
+  if (erroTeto) {
+    console.error("[mcp-oauth] register/teto:", erroTeto.message);
+    return jsonOAuth(erroOAuth("server_error", MSG_INDISPONIVEL), 503, ESPERA_INDISPONIVEL);
+  }
+  if (!registroAberto(semUso ?? 0)) {
+    return jsonOAuth(
+      erroOAuth("server_error", "Registro de aplicativos temporariamente indisponível"),
+      503,
+      { "retry-after": "3600" }
+    );
+  }
   const clientId = gerarSegredo(PREFIXO.cliente, 16);
   const { error } = await admin.from("conector_cliente").insert({
     client_id: clientId,
@@ -237,71 +262,72 @@ async function autorizacaoAtiva(admin: Admin, id: string) {
   return data;
 }
 
-async function emitirPar(admin: Admin, aut: { id: string; criado_em: string }, familia: string) {
+/** Par novo de chaves (em claro só aqui) com as validades; o INSERT é das RPCs (0148). */
+async function parNovo(aut: { criado_em: string }) {
   const acesso = gerarSegredo(PREFIXO.acesso);
   const renovacao = gerarSegredo(PREFIXO.renovacao);
   const limite = new Date(aut.criado_em).getTime() + DURACAO.renovacaoMaximaMs;
-  const expRenovacao = new Date(
-    Math.min(Date.now() + DURACAO.renovacaoOciosaMs, limite)
-  ).toISOString();
-  const { error } = await admin.from("conector_chave").insert([
-    {
-      chave_hash: await hashSegredo(acesso),
-      autorizacao_id: aut.id,
-      tipo: "acesso",
-      familia,
-      expira_em: daquiMs(DURACAO.acessoMs),
-    },
-    {
-      chave_hash: await hashSegredo(renovacao),
-      autorizacao_id: aut.id,
-      tipo: "renovacao",
-      familia,
-      expira_em: expRenovacao,
-    },
-  ]);
-  if (error) throw new Error(error.message);
-  await admin.from("conector_autorizacao").update({ ultimo_uso: agoraIso() }).eq("id", aut.id);
   return {
-    access_token: acesso,
+    acesso,
+    renovacao,
+    acessoHash: await hashSegredo(acesso),
+    renovacaoHash: await hashSegredo(renovacao),
+    acessoExpira: daquiMs(DURACAO.acessoMs),
+    renovacaoExpira: new Date(
+      Math.min(Date.now() + DURACAO.renovacaoOciosaMs, limite)
+    ).toISOString(),
+  };
+}
+
+function respostaToken(par: { acesso: string; renovacao: string }) {
+  return {
+    access_token: par.acesso,
     token_type: "Bearer",
     expires_in: Math.floor(DURACAO.acessoMs / 1000),
-    refresh_token: renovacao,
+    refresh_token: par.renovacao,
     scope: ESCOPO,
   };
 }
 
+/**
+ * Troca do código (T8 M1): confere TUDO antes de consumir. Qualquer conferência
+ * que falha queima o código (uso único também para a tentativa errada). O consumo
+ * e a emissão das duas chaves são uma transação só (conector_trocar_codigo):
+ * falha no INSERT não deixa um código queimado que pareceria "reutilizado".
+ */
 async function trocarCodigo(f: Record<string, string>, admin: Admin): Promise<Response> {
   const { code, redirect_uri, client_id, code_verifier } = f;
   if (!code || !redirect_uri || !client_id || !code_verifier) {
     return jsonOAuth(erroOAuth("invalid_request", "Faltam parâmetros"), 400);
   }
   const hash = await hashSegredo(code);
-  // uso único e atômico
   const { data: cod, error } = await admin
     .from("conector_codigo")
-    .update({ usado_em: agoraIso() })
+    .select(
+      "autorizacao_id, cliente_id, redirect_uri, code_challenge, resource, expira_em, usado_em"
+    )
     .eq("codigo_hash", hash)
-    .is("usado_em", null)
-    .gt("expira_em", agoraIso())
-    .select("autorizacao_id, cliente_id, redirect_uri, code_challenge, resource")
     .maybeSingle();
   if (error) {
     console.error("[mcp-oauth] token/code:", error.message);
     return jsonOAuth(erroOAuth("server_error"), 500);
   }
-  if (!cod) {
+  if (!cod) return jsonOAuth(erroOAuth("invalid_grant"), 400);
+  if (cod.usado_em) {
     // código reaproveitado → provável vazamento: derruba a autorização (RFC 6749 §4.1.2)
-    const { data: usado, error: erroUsado } = await admin
-      .from("conector_codigo")
-      .select("autorizacao_id")
-      .eq("codigo_hash", hash)
-      .not("usado_em", "is", null)
-      .maybeSingle();
-    if (erroUsado) throw new Error(erroUsado.message);
-    if (usado) await revogarAutorizacao(admin, usado.autorizacao_id, "codigo_reutilizado");
+    await revogarAutorizacao(admin, cod.autorizacao_id, "codigo_reutilizado");
     return jsonOAuth(erroOAuth("invalid_grant"), 400);
   }
+  const queimar = async (erro: "invalid_grant" | "invalid_target" = "invalid_grant") => {
+    const { error: e } = await admin
+      .from("conector_codigo")
+      .update({ usado_em: agoraIso() })
+      .eq("codigo_hash", hash)
+      .is("usado_em", null);
+    if (e) console.error("[mcp-oauth] token/queimar:", e.message);
+    return jsonOAuth(erroOAuth(erro), 400);
+  };
+  if (new Date(cod.expira_em).getTime() <= Date.now()) return await queimar();
   const { data: cli, error: erroCli } = await admin
     .from("conector_cliente")
     .select("id, client_id")
@@ -309,18 +335,32 @@ async function trocarCodigo(f: Record<string, string>, admin: Admin): Promise<Re
     .maybeSingle();
   if (erroCli) throw new Error(erroCli.message);
   if (!cli || cli.client_id !== client_id || cod.redirect_uri !== redirect_uri) {
-    return jsonOAuth(erroOAuth("invalid_grant"), 400);
+    return await queimar();
   }
-  if (!(await pkceS256Confere(code_verifier, cod.code_challenge)))
-    return jsonOAuth(erroOAuth("invalid_grant"), 400);
+  if (!(await pkceS256Confere(code_verifier, cod.code_challenge))) return await queimar();
   if (f.resource !== undefined && recursoCanonico(f.resource) !== cod.resource) {
-    return jsonOAuth(erroOAuth("invalid_target"), 400);
+    return await queimar("invalid_target");
   }
   const aut = await autorizacaoAtiva(admin, cod.autorizacao_id);
-  if (!aut) return jsonOAuth(erroOAuth("invalid_grant"), 400);
-  const par = await emitirPar(admin, aut, crypto.randomUUID());
-  await admin.from("conector_cliente").update({ ultimo_uso: agoraIso() }).eq("id", cli.id);
-  return jsonOAuth(par);
+  if (!aut) return await queimar();
+  const par = await parNovo(aut);
+  const { data: r, error: erroRpc } = await admin.rpc("conector_trocar_codigo", {
+    p_codigo_hash: hash,
+    p_acesso_hash: par.acessoHash,
+    p_acesso_expira: par.acessoExpira,
+    p_renovacao_hash: par.renovacaoHash,
+    p_renovacao_expira: par.renovacaoExpira,
+    p_familia: crypto.randomUUID(),
+  });
+  if (erroRpc) throw new Error(erroRpc.message);
+  if (r?.ok !== true) {
+    // outra troca com o mesmo código ganhou a corrida entre a leitura e o consumo
+    if (r?.motivo === "reutilizado" && r.autorizacao_id) {
+      await revogarAutorizacao(admin, r.autorizacao_id, "codigo_reutilizado");
+    }
+    return jsonOAuth(erroOAuth("invalid_grant"), 400);
+  }
+  return jsonOAuth(respostaToken(par));
 }
 
 async function renovar(f: Record<string, string>, admin: Admin): Promise<Response> {
@@ -362,47 +402,82 @@ async function renovar(f: Record<string, string>, admin: Admin): Promise<Respons
     return jsonOAuth(erroOAuth("invalid_grant"), 400);
   }
   if (decisao !== "ok") return jsonOAuth(erroOAuth("invalid_grant"), 400);
-  const { data: marcada, error: erroMarcada } = await admin
-    .from("conector_chave")
-    .update({ substituida_em: agoraIso() })
-    .eq("chave_hash", hash)
-    .is("substituida_em", null)
-    .is("revogada_em", null)
-    .select("chave_hash")
-    .maybeSingle();
-  if (erroMarcada) throw new Error(erroMarcada.message);
-  if (!marcada) return jsonOAuth(erroOAuth("invalid_grant"), 400); // outra renovação chegou antes
-  return jsonOAuth(await emitirPar(admin, aut, ch.familia));
+  // T8 M1: marcar a velha e gravar o par novo numa transação só (conector_renovar)
+  const par = await parNovo(aut);
+  const { data: r, error: erroRpc } = await admin.rpc("conector_renovar", {
+    p_chave_hash: hash,
+    p_acesso_hash: par.acessoHash,
+    p_acesso_expira: par.acessoExpira,
+    p_renovacao_hash: par.renovacaoHash,
+    p_renovacao_expira: par.renovacaoExpira,
+  });
+  if (erroRpc) throw new Error(erroRpc.message);
+  // "corrida": outra renovação com a mesma chave chegou antes
+  if (r?.ok !== true) return jsonOAuth(erroOAuth("invalid_grant"), 400);
+  return jsonOAuth(respostaToken(par));
 }
 
 async function revogarToken(req: Request, admin: Admin): Promise<Response> {
+  // Limite por IP (M5): o IP de saída da Anthropic é compartilhado, daí o teto alto
+  const lim = await consumirTentativa(
+    admin,
+    "mcp-oauth:revoke",
+    3600,
+    [{ tipo: "ip", valor: ipDaRequisicao(req), max: 3000 }],
+    { falharFechado: true }
+  );
+  if (lim.indisponivel) return jsonOAuth(erroOAuth("server_error"), 503, ESPERA_INDISPONIVEL);
+  if (!lim.permitido) {
+    return jsonOAuth(erroOAuth("invalid_request", MSG_MUITAS_TENTATIVAS), 429, ESPERA_LIMITE);
+  }
   const f = lerFormUnico(await req.text());
   if (!f?.token) return jsonOAuth(erroOAuth("invalid_request"), 400);
+  const semEfeito = () =>
+    new Response(null, { status: 200, headers: { "cache-control": "no-store" } });
   const hash = await hashSegredo(f.token);
-  const { data: ch, error } = await admin
-    .from("conector_chave")
-    .select("autorizacao_id, tipo")
-    .eq("chave_hash", hash)
-    .maybeSingle();
-  if (error) {
-    // RFC 7009 §2.2.1: falha do servidor é 503, nunca 200 de falso sucesso.
-    console.error("[mcp-oauth] revoke:", error.message);
-    return jsonOAuth(erroOAuth("server_error"), 503);
-  }
-  if (ch?.tipo === "acesso") {
-    const { error: e2 } = await admin
+  try {
+    const { data: ch, error } = await admin
       .from("conector_chave")
-      .update({ revogada_em: agoraIso() })
+      .select("autorizacao_id, tipo")
       .eq("chave_hash", hash)
-      .is("revogada_em", null);
-    if (e2) {
-      console.error("[mcp-oauth] revoke:", e2.message);
-      return jsonOAuth(erroOAuth("server_error"), 503);
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!ch) return semEfeito(); // RFC 7009 §2.2: chave desconhecida também é 200
+    const { data: aut, error: erroAut } = await admin
+      .from("conector_autorizacao")
+      .select("tipo, cliente_id")
+      .eq("id", ch.autorizacao_id)
+      .maybeSingle();
+    if (erroAut) throw new Error(erroAut.message);
+    // a chave manual só se revoga na tela (Meu Perfil → Claude)
+    if (!aut || ch.tipo === "manual" || aut.tipo === "manual") return semEfeito();
+    let clientIdDaAutorizacao: string | null = null;
+    if (aut.cliente_id) {
+      const { data: cli, error: erroCli } = await admin
+        .from("conector_cliente")
+        .select("client_id")
+        .eq("id", aut.cliente_id)
+        .maybeSingle();
+      if (erroCli) throw new Error(erroCli.message);
+      clientIdDaAutorizacao = cli?.client_id ?? null;
     }
-  } else if (ch) {
-    await revogarAutorizacao(admin, ch.autorizacao_id, "revogado_pelo_cliente");
+    if (!revogacaoPermitida(f.client_id, clientIdDaAutorizacao)) return semEfeito();
+    if (ch.tipo === "acesso") {
+      const { error: e2 } = await admin
+        .from("conector_chave")
+        .update({ revogada_em: agoraIso() })
+        .eq("chave_hash", hash)
+        .is("revogada_em", null);
+      if (e2) throw new Error(e2.message);
+    } else {
+      await revogarAutorizacao(admin, ch.autorizacao_id, "revogado_pelo_cliente");
+    }
+  } catch (e) {
+    // RFC 7009 §2.2.1: falha do servidor é 503, nunca 200 de falso sucesso
+    console.error("[mcp-oauth] revoke:", (e as Error)?.message ?? String(e));
+    return jsonOAuth(erroOAuth("server_error"), 503, ESPERA_INDISPONIVEL);
   }
-  return new Response(null, { status: 200, headers: { "cache-control": "no-store" } });
+  return semEfeito();
 }
 
 // ─── Ações da tela (sessão da SPA) ──────────────────────────────────────────
@@ -434,6 +509,9 @@ async function usuarioDaSessao(req: Request, admin: Admin): Promise<UsuarioTela 
   );
   if (!uc || uc.ativo !== true || uc.deleted_at) return null;
   if ((caller.email ?? "").toLowerCase() !== String(uc.email).toLowerCase()) return null;
+  // FINAL amr: JWT de antes da última troca de senha não cria conexão nem link
+  const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+  if (sessaoAnteriorATrocaDeSenha(token, uc.senha_alterada_em)) return null;
   return {
     id: uc.id,
     email: String(uc.email).toLowerCase(),
@@ -599,39 +677,32 @@ async function aprovar(req: Request, body: Obj, uc: UsuarioTela, admin: Admin): 
   if (!(await empresasLiberadas(admin, uc.email)).some((e) => e.id === empresaId)) {
     return fail("Escolha uma empresa liberada para o conector.", 403);
   }
-  const { data: aut, error } = await admin
-    .from("conector_autorizacao")
-    .insert({
-      empresa_id: empresaId,
-      usuario_custom_id: uc.id,
-      usuario_email: uc.email,
-      cliente_id: cli.id,
-      tipo: "oauth",
-      resource: RECURSO,
-      escopo: ESCOPO,
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
+  // T8 M2: autorização e código numa transação só (sem autorização órfã)
   const codigo = gerarSegredo(PREFIXO.codigo);
-  const { error: e2 } = await admin.from("conector_codigo").insert({
-    codigo_hash: await hashSegredo(codigo),
-    autorizacao_id: aut.id,
-    cliente_id: cli.id,
-    redirect_uri: v.pedido.redirect_uri,
-    code_challenge: v.pedido.code_challenge,
-    resource: RECURSO,
-    expira_em: daquiMs(DURACAO.codigoMs),
+  const { data: autId, error } = await admin.rpc("conector_aprovar", {
+    p_empresa_id: empresaId,
+    p_usuario_custom_id: uc.id,
+    p_usuario_email: uc.email,
+    p_cliente_id: cli.id,
+    p_resource: RECURSO,
+    p_escopo: ESCOPO,
+    p_codigo_hash: await hashSegredo(codigo),
+    p_redirect_uri: v.pedido.redirect_uri,
+    p_code_challenge: v.pedido.code_challenge,
+    p_codigo_expira_em: daquiMs(DURACAO.codigoMs),
   });
-  if (e2) throw new Error(e2.message);
+  if (error || !autId) throw new Error(error?.message ?? "conector_aprovar sem id");
   if (!(await sessaoSegueValida(req))) {
-    await revogarAutorizacao(admin, aut.id, "sessao_encerrada");
+    await revogarAutorizacao(admin, autId, "sessao_encerrada");
     return sessaoInvalida();
   }
+  // "(conexao)" é gravada AQUI, na aprovação, antes de o Claude trocar o código:
+  // marca o consentimento do usuário mesmo que a troca nunca aconteça (a limpeza
+  // diária revoga depois a autorização que não recebeu chave).
   await auditar(admin, {
     empresa_id: empresaId,
     usuario_email: uc.email,
-    autorizacao_id: aut.id,
+    autorizacao_id: autId,
     cliente: nomeDoApp("oauth", cli.tipo),
     ferramenta: "(conexao)",
     ip: ipDaRequisicao(req),
@@ -642,6 +713,7 @@ async function aprovar(req: Request, body: Obj, uc: UsuarioTela, admin: Admin): 
 }
 
 async function negar(body: Obj, admin: Admin): Promise<Response> {
+  if (!stateValido(body.state)) return fail("state inválido", 400);
   const cli = await clienteDoPedido(admin, body.client_id, body.redirect_uri);
   if (!cli) return fail("Pedido de autorização inválido.", 400);
   const state = typeof body.state === "string" && body.state ? body.state : undefined;
@@ -665,7 +737,7 @@ async function listar(uc: UsuarioTela, admin: Admin): Promise<Response> {
     .is("revogado_em", null)
     .gte("criado_em", desde)
     .order("criado_em", { ascending: false })
-    .limit(50);
+    .limit(200); // filtra as efetivadas e só então corta em 50 (FINAL "listar 50")
   if (erroAuts) throw new Error(erroAuts.message);
   const candidatas = ((auts ?? []) as Obj[]).filter(
     (a) => !revogadaPelaTrocaDeSenha(String(a.criado_em), uc.senhaAlteradaEm)
@@ -682,7 +754,9 @@ async function listar(uc: UsuarioTela, admin: Admin): Promise<Response> {
     : { data: [], error: null };
   if (erroVivas) throw new Error(erroVivas.message);
   const comChaveViva = new Set(((vivas ?? []) as Obj[]).map((c) => String(c.autorizacao_id)));
-  const lista = candidatas.filter((a) => a.tipo === "manual" || comChaveViva.has(String(a.id)));
+  const lista = candidatas
+    .filter((a) => a.tipo === "manual" || comChaveViva.has(String(a.id)))
+    .slice(0, 50);
 
   const empIds = [...new Set(lista.map((a) => String(a.empresa_id)))];
   const cliIds = [
@@ -775,38 +849,28 @@ async function gerarManual(
   if (!(await empresasLiberadas(admin, uc.email)).some((e) => e.id === empresaId)) {
     return fail("O conector do Claude não está liberado para esta empresa.", 403);
   }
-  const { data: aut, error } = await admin
-    .from("conector_autorizacao")
-    .insert({
-      empresa_id: empresaId,
-      usuario_custom_id: uc.id,
-      usuario_email: uc.email,
-      cliente_id: null,
-      tipo: "manual",
-      resource: RECURSO,
-      escopo: ESCOPO,
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
+  // T8 M2: autorização e chave manual numa transação só
   const chave = gerarSegredo(PREFIXO.manual);
   const expira = daquiMs(DURACAO.manualMs);
-  const { error: e2 } = await admin.from("conector_chave").insert({
-    chave_hash: await hashSegredo(chave),
-    autorizacao_id: aut.id,
-    tipo: "manual",
-    familia: crypto.randomUUID(),
-    expira_em: expira,
+  const { data: autId, error } = await admin.rpc("conector_criar_manual", {
+    p_empresa_id: empresaId,
+    p_usuario_custom_id: uc.id,
+    p_usuario_email: uc.email,
+    p_resource: RECURSO,
+    p_escopo: ESCOPO,
+    p_chave_hash: await hashSegredo(chave),
+    p_familia: crypto.randomUUID(),
+    p_expira_em: expira,
   });
-  if (e2) throw new Error(e2.message);
+  if (error || !autId) throw new Error(error?.message ?? "conector_criar_manual sem id");
   if (!(await sessaoSegueValida(req))) {
-    await revogarAutorizacao(admin, aut.id, "sessao_encerrada");
+    await revogarAutorizacao(admin, autId, "sessao_encerrada");
     return sessaoInvalida();
   }
   await auditar(admin, {
     empresa_id: empresaId,
     usuario_email: uc.email,
-    autorizacao_id: aut.id,
+    autorizacao_id: autId,
     cliente: nomeDoApp("manual", null),
     ferramenta: "(chave_manual)",
     ip: ipDaRequisicao(req),

@@ -97,3 +97,12 @@ test("revogarAutorizacao: marca a autorização e todas as chaves dela", async (
     ]
   );
 });
+
+test("revogarAutorizacao: erro no 2º update (chaves) lança", async () => {
+  const admin = fakeAdmin({ conector_chave: { error: { message: "falhou nas chaves" } } });
+  await assert.rejects(() => revogarAutorizacao(admin, "a9", "usuario"), /falhou nas chaves/);
+  assert.deepEqual(
+    admin.chamadas.map((c) => c.tabela),
+    ["conector_autorizacao", "conector_chave"]
+  );
+});

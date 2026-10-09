@@ -232,3 +232,39 @@ export function decidirRenovacao(
   if (new Date(ch.inicio_autorizacao).getTime() + DURACAO.renovacaoMaximaMs <= t) return "invalida";
   return "ok";
 }
+
+/** Essência do Content-Type (RFC 9110 §8.3.1): "Application/JSON; charset=utf-8" → "application/json". */
+export function mimeEssencia(contentType: string | null | undefined): string {
+  return String(contentType ?? "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Teto global do registro aberto (DCR): acima de tantos clientes NUNCA usados nas últimas 24 h, o
+ * /register responde 503. Barra o enchimento da tabela por registro em massa; a limpeza diária
+ * (conector_limpeza, 0148) apaga os clientes sem uso.
+ */
+export const TETO_CLIENTES_SEM_USO_24H = 2000;
+
+export function registroAberto(qtdClientesSemUso24h: number): boolean {
+  return Number.isFinite(qtdClientesSemUso24h) && qtdClientesSemUso24h < TETO_CLIENTES_SEM_USO_24H;
+}
+
+/** `state` do OAuth: ausente, vazio ou texto de até 1000 caracteres. */
+export function stateValido(s: unknown): boolean {
+  return s === undefined || s === null || s === "" || (typeof s === "string" && s.length <= 1000);
+}
+
+/**
+ * /revoke (RFC 7009): client_id ausente → aceita (revogar só exige possuir a chave, e o Claude nem
+ * sempre manda); presente → tem de ser o da autorização.
+ */
+export function revogacaoPermitida(
+  clientIdPedido: string | undefined,
+  clientIdDaAutorizacao: string | null
+): boolean {
+  if (clientIdPedido === undefined) return true;
+  return clientIdDaAutorizacao !== null && clientIdPedido === clientIdDaAutorizacao;
+}
