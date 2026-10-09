@@ -1906,6 +1906,8 @@ Decisões de detalhe desta task:
 - `naoEncontrado("arquivo")` diz "Arquivo não encontrado nesta oportunidade."; as outras dizem "… nesta empresa.".
 - O despacho nunca deixa a auditoria derrubar a resposta (erro ao auditar só vai para o log).
 - O `ultimo_uso` regravado também loga o `error` devolvido pelo supabase-js (não só a promessa rejeitada).
+- `ufDaEmpresa` só aceita uma das 27 UFs (texto aparado, em maiúsculas, sem cortar): estado por extenso ou com
+  código inexistente vira `null`. Cortar para 2 letras devolvia outra UF ("Mato Grosso" virava "MA").
 
 - [ ] **Step 1: Escrever os testes das regras puras (permissões, entrada e recurso)**
 
@@ -3089,11 +3091,18 @@ test("ctx: vinculoId do usuario_empresa, uf da empresa e nome que cai para o e-m
   assert.equal(r.ctx.usuario.nome, "user@x.com");
 });
 
-test("ufDaEmpresa: duas letras maiúsculas ou null", () => {
+test("ufDaEmpresa: uma das 27 UFs em maiúsculas ou null", () => {
   assert.equal(ufDaEmpresa(" sp "), "SP");
   assert.equal(ufDaEmpresa(null), null);
   assert.equal(ufDaEmpresa(""), null);
   assert.equal(ufDaEmpresa("1"), null);
+  assert.equal(ufDaEmpresa("XX"), null);
+  // por extenso não vira outra UF: cortar em 2 letras daria MA, PA, MI, RO, AM
+  assert.equal(ufDaEmpresa("Mato Grosso"), null);
+  assert.equal(ufDaEmpresa("Paraná"), null);
+  assert.equal(ufDaEmpresa("Minas Gerais"), null);
+  assert.equal(ufDaEmpresa("Roraima"), null);
+  assert.equal(ufDaEmpresa("Amapá"), null);
 });
 
 test("ultimo_uso: só regrava se nulo ou com mais de 5 min", async () => {
@@ -3321,13 +3330,45 @@ export interface ContextoMcp {
 /** `ultimo_uso` da autorização só é regravado depois deste intervalo (menos escrita por chamada). */
 export const INTERVALO_ULTIMO_USO_MS = 5 * 60_000;
 
-/** UF da empresa (coluna estado): 2 letras maiúsculas, ou null. */
+const UFS = new Set([
+  "AC",
+  "AL",
+  "AP",
+  "AM",
+  "BA",
+  "CE",
+  "DF",
+  "ES",
+  "GO",
+  "MA",
+  "MT",
+  "MS",
+  "MG",
+  "PA",
+  "PB",
+  "PR",
+  "PE",
+  "PI",
+  "RJ",
+  "RN",
+  "RS",
+  "RO",
+  "RR",
+  "SC",
+  "SP",
+  "SE",
+  "TO",
+]);
+
+/**
+ * UF da empresa (coluna estado): uma das 27 UFs, em maiúsculas, ou null. Estado gravado por extenso
+ * (cadastro antigo) vira null: cortar para 2 letras daria outra UF ("Mato Grosso" viraria "MA").
+ */
 export function ufDaEmpresa(estado: unknown): string | null {
   const uf = String(estado ?? "")
     .trim()
-    .toUpperCase()
-    .slice(0, 2);
-  return /^[A-Z]{2}$/.test(uf) ? uf : null;
+    .toUpperCase();
+  return UFS.has(uf) ? uf : null;
 }
 
 /** Regrava o ultimo_uso? Sim se nunca foi gravado ou se passou do intervalo. */
