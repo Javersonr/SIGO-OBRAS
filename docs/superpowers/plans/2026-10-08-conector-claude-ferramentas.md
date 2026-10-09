@@ -10446,9 +10446,13 @@ Em `supabase/functions/ia-processar/edital.ts`:
      carregarAcervo(fonteDoAdmin(sb, empresaId)),
      sb.from("empresa").select("id, nome, razao_social, estado").eq("id", empresaId).maybeSingle(),
    ]);
+   if (empresaR.error) throw new Error(`Falha ao ler a empresa: ${empresaR.error.message}`);
    const emp = (empresaR.data as Obj | null) ?? null;
    ```
 
+   A linha do `throw` é nova de propósito: antes a falha só da leitura da `empresa` era engolida, e o "Atende?" saía
+   com o nome "licitante" e sem a UF (a regra 11, visto no CREA da UF, era julgada sem a UF). Agora a falha segue o
+   mesmo caminho da carga do acervo (`Falha ao ler o acervo: …`): o `catch` do `index.ts` devolve 500 com a mensagem.
    O resto da função não muda (`hojeBR()` sem argumento usa a hora atual, como antes).
 
 Confira que nada ficou para trás e que o arquivo continua TypeScript válido:
@@ -10460,7 +10464,7 @@ node --check supabase/functions/ia-processar/edital.ts && echo CHECK_OK && \
 git diff --numstat -- supabase/functions/ia-processar/edital.ts
 ```
 
-Expected: o `grep` não imprime nada; depois `CHECK_OK` e `10	167	supabase/functions/ia-processar/edital.ts` (10 linhas
+Expected: o `grep` não imprime nada; depois `CHECK_OK` e `11	167	supabase/functions/ia-processar/edital.ts` (11 linhas
 novas e 167 apagadas).
 
 - [ ] **Step 12: Suítes e Prettier**
@@ -10510,7 +10514,7 @@ Como testar: node --test "supabase/functions/**/*.test.ts"
 
 Produção (Javerson, depois do merge, no passo 6 da ordem do plano):
   npx supabase@2.118.0 functions deploy ia-processar --project-ref fpyvdwpvxrubrkdwrqbs --use-api
-  (SEM --no-verify-jwt; o comportamento da leitura de edital não muda)
+  (SEM --no-verify-jwt; a leitura de edital só muda ao falhar a consulta da empresa: agora dá erro 500)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
