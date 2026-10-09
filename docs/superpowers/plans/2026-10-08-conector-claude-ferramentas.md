@@ -23951,8 +23951,9 @@ Todos os comandos rodam na raiz do repositório, já com o merge em `master`.
    npx supabase@2.118.0 functions deploy mcp --project-ref fpyvdwpvxrubrkdwrqbs --no-verify-jwt --use-api
    ```
 
-6. A leitura de edital da tela, **sem** `--no-verify-jwt` (o comportamento não muda; só o código foi para
-   `_shared/edital/`):
+6. A leitura de edital da tela, **sem** `--no-verify-jwt` (o código foi para `_shared/edital/`; a leitura só muda ao
+   falhar a consulta da empresa no "Atende?": agora a função devolve erro 500 com "Falha ao ler a empresa: …", em vez
+   de o resultado sair degradado, sem a UF do visto no CREA):
 
    ```bash
    npx supabase@2.118.0 functions deploy ia-processar --project-ref fpyvdwpvxrubrkdwrqbs --use-api
@@ -24238,8 +24239,8 @@ Expected: `Deployed Functions on project fpyvdwpvxrubrkdwrqbs: mcp`.
 
 - [ ] **Step 11: Pedir OK ao Javerson e publicar a `ia-processar` (sem `--no-verify-jwt`)**
 
-Pergunte: "Posso publicar a `ia-processar` (só o código foi para `_shared/edital/`; a leitura de edital da tela não
-muda)?". Só com o "sim":
+Pergunte: "Posso publicar a `ia-processar` (o código foi para `_shared/edital/`; a leitura de edital da tela só muda
+ao falhar a consulta da empresa no 'Atende?': agora dá erro 500 em vez de sair degradada)?". Só com o "sim":
 
 <!-- prettier-ignore -->
 ```bash
