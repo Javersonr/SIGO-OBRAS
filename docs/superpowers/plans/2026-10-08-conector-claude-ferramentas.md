@@ -908,7 +908,7 @@ objetos internos também têm `additionalProperties: false`. A coluna **I** é o
 | 8   | `criar_ou_atualizar_oportunidade` | B/T9  | não     | false | **`edital`** (`semObrigatorios(schemaEdital())`); `oportunidade_id`; `confirmar_nova` (boolean)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Gravou: `{ oportunidade_id, criada, link, campos_gravados: string[], exigencias: {tecnica_operacional:[{id, descricao}], tecnica_profissional:[{id, descricao}], economica:[{id, tipo, descricao}], registros:[{id, tipo, descricao}]}, proximo_passo }`. Duplicatas: `{ criada: false, motivo: "duplicatas", duplicatas: Candidata[], pergunta }`, com isError false                                                                                                                                                                                                                                                                                 |
 | 9   | `registrar_atende`                | B/T9  | não     | true  | **`oportunidade_id`**, **`itens`** `[{**exigencia_id**, **status** (STATUS_ATENDE), comprovacao, atestado_ids: uuid[], **justificativa**}]`, `cats_anexar` `[{**atestado_id**, **motivo**}]`, `pendencias` string[], `riscos` string[]                                                                                                                                                                                                                                                                                                                                              | `{ oportunidade_id, link, atende: AtendeResultado sem valores econômicos }`. Recusa (isError `validacao`): `{ exigencias_invalidas, atestados_invalidos, erros }`; sem análise: `sem_analise`                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | 10  | `adicionar_nota`                  | B/T9  | não     | false | **`oportunidade_id`**, **`texto`** (1–5000)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `{ nota_id, oportunidade_id, link }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 11  | `ler_acervo`                      | C/T11 | sim     | true  | `tipo` ("tudo"\|"atestados"\|"profissionais", padrão "tudo"), `atestado_id`, `categoria`, `busca` (≤100), `pagina` (≥1), `por_pagina` (1–100, padrão 50)                                                                                                                                                                                                                                                                                                                                                                                                                            | `{ perfil: {registro_crea_pj, porte, razao_social_anterior, cadastros, alertas, observacoes} \| null, atestados: [{id, tipo, numero, conselho, art_numero, contratante, objeto, cidade, uf, data_inicio, data_fim, atividades, com_execucao, situacao, profissional_nome, empresa_executora, cobre_arts, riscos, observacoes, tem_pdf, quantitativos:[{categoria, descricao, quantidade, unidade, especificacao, na_atividade_tecnica, observacao}]}], profissionais: [{id, nome, registro, titulos, atribuicoes, restricoes, vinculo_desde, responsavel_tecnico, ativo}], total_atestados, pagina, por_pagina, categorias: [{id, label, unidade}] }` |
+| 11  | `ler_acervo`                      | C/T11 | sim     | true  | `tipo` ("tudo"\|"atestados"\|"profissionais", padrão "tudo"), `atestado_id`, `categoria`, `busca` (≤100), `pagina` (≥1), `por_pagina` (1–25, padrão 10)                                                                                                                                                                                                                                                                                                                                                                                                                             | `{ perfil: {registro_crea_pj, porte, razao_social_anterior, cadastros, alertas, observacoes} \| null, atestados: [{id, tipo, numero, conselho, art_numero, contratante, objeto, cidade, uf, data_inicio, data_fim, atividades, com_execucao, situacao, profissional_nome, empresa_executora, cobre_arts, riscos, observacoes, tem_pdf, quantitativos:[{categoria, descricao, quantidade, unidade, especificacao, na_atividade_tecnica, observacao}]}], profissionais: [{id, nome, registro, titulos, atribuicoes, restricoes, vinculo_desde, responsavel_tecnico, ativo}], total_atestados, pagina, por_pagina, categorias: [{id, label, unidade}] }` |
 | 12  | `cadastrar_atestado`              | C/T11 | não     | false | **`confirmado_pelo_usuario`** (deve ser `true`), **`tipo`** (cat\|atestado\|cao\|cat_profissional), `numero`, `conselho`, `art_numero`, `contratante`, `contratante_cnpj`, `contrato`, `data_inicio`, `data_fim`, **`objeto`**, `cidade`, `uf`, `atividades` string[], `com_execucao`, `situacao` (concluida\|em_andamento), `profissional` `{**nome**, registro, titulos}`, `empresa_executora`, `cobre_arts` string[], `riscos`, `observacoes`, **`quantitativos`** `[{**categoria**, **descricao**, quantidade, unidade, especificacao, na_atividade_tecnica, sintese}]` (1–200) | `{ criado: true, atestado_id, profissional: {id, criado} \| null, quantitativos, sinteses: [{categoria, quantidade, unidade}], avisos, proximo_passo }`. Duplicado: `{ criado: false, motivo: "duplicado", atestado_id }`, com isError false                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 13  | `importar_orcamento`              | D/T14 | não     | false | **`oportunidade_id`**, **`linhas`** `LinhaConector[]` (1–3000), `informacoes` `InformacoesConector`, `substituir` (boolean), `arquivo_nome` (≤200, padrão "via Claude")                                                                                                                                                                                                                                                                                                                                                                                                             | `{ gravado: true, etapas, itens, total_referencia, total_prefeitura, desconto_aplicado_pct, avisos, link }`. Já existe: `{ gravado: false, motivo: "ja_existe", itens_atuais, pergunta: "Substituir os N itens atuais?" }`. Erro `validacao`: `{ erros (até 50), total_erros, avisos }`                                                                                                                                                                                                                                                                                                                                                               |
 | 14  | `aplicar_desconto`                | D/T14 | não     | true  | **`oportunidade_id`**, **`desconto_pct`** (number ou texto, regras do `validarDesconto`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `{ desconto_pct, itens_alterados, total_referencia, total_proposta, desconto_real, link }`. Erros: `validacao`, `sem_orcamento`, `orcamento_mudou`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -10446,9 +10446,13 @@ Em `supabase/functions/ia-processar/edital.ts`:
      carregarAcervo(fonteDoAdmin(sb, empresaId)),
      sb.from("empresa").select("id, nome, razao_social, estado").eq("id", empresaId).maybeSingle(),
    ]);
+   if (empresaR.error) throw new Error(`Falha ao ler a empresa: ${empresaR.error.message}`);
    const emp = (empresaR.data as Obj | null) ?? null;
    ```
 
+   A linha do `throw` é nova de propósito: antes a falha só da leitura da `empresa` era engolida, e o "Atende?" saía
+   com o nome "licitante" e sem a UF (a regra 11, visto no CREA da UF, era julgada sem a UF). Agora a falha segue o
+   mesmo caminho da carga do acervo (`Falha ao ler o acervo: …`): o `catch` do `index.ts` devolve 500 com a mensagem.
    O resto da função não muda (`hojeBR()` sem argumento usa a hora atual, como antes).
 
 Confira que nada ficou para trás e que o arquivo continua TypeScript válido:
@@ -10460,7 +10464,7 @@ node --check supabase/functions/ia-processar/edital.ts && echo CHECK_OK && \
 git diff --numstat -- supabase/functions/ia-processar/edital.ts
 ```
 
-Expected: o `grep` não imprime nada; depois `CHECK_OK` e `10	167	supabase/functions/ia-processar/edital.ts` (10 linhas
+Expected: o `grep` não imprime nada; depois `CHECK_OK` e `11	167	supabase/functions/ia-processar/edital.ts` (11 linhas
 novas e 167 apagadas).
 
 - [ ] **Step 12: Suítes e Prettier**
@@ -10510,7 +10514,7 @@ Como testar: node --test "supabase/functions/**/*.test.ts"
 
 Produção (Javerson, depois do merge, no passo 6 da ordem do plano):
   npx supabase@2.118.0 functions deploy ia-processar --project-ref fpyvdwpvxrubrkdwrqbs --use-api
-  (SEM --no-verify-jwt; o comportamento da leitura de edital não muda)
+  (SEM --no-verify-jwt; a leitura de edital só muda ao falhar a consulta da empresa: agora dá erro 500)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
@@ -11458,7 +11462,8 @@ Expected: `ℹ pass 7` e `ℹ fail 0`.
 - [ ] **Step 10: Teste do "Atende?" sem valores da empresa**
 
 `supabase/functions/_shared/edital/atende-conector.test.ts` (o resultado é montado pelo `montarAtende` de verdade, com
-um perfil sintético, para pegar os textos que a regra escreve):
+um perfil sintético, para pegar os textos que a regra escreve; o último teste usa um perfil com PL e CCL negativos e
+confere que nem o "-R$" nem o teto negativo saem):
 
 <!-- prettier-ignore -->
 ```ts
@@ -11495,7 +11500,7 @@ const PERFIL: AcervoPerfil = {
   alertas: ["PL de R$ 1.234.567,89 no balanço de 2025"],
 };
 
-function resultado(economica: Record<string, unknown>[]) {
+function resultado(economica: Record<string, unknown>[], perfil: AcervoPerfil = PERFIL) {
   const extraido = sanearEdital({
     valor_estimado: null,
     habilitacao: {
@@ -11503,7 +11508,7 @@ function resultado(economica: Record<string, unknown>[]) {
       economica,
     },
   });
-  const acervo: Acervo = { perfil: PERFIL, profissionais: [], atestados: [], quantitativos: [] };
+  const acervo: Acervo = { perfil, profissionais: [], atestados: [], quantitativos: [] };
   return montarAtende({
     extraido,
     acervo,
@@ -11529,13 +11534,19 @@ function resultado(economica: Record<string, unknown>[]) {
   });
 }
 
-test("valoresEconomicos: só números > 0 do perfil, inclusive o faturamento", () => {
+test("valoresEconomicos: os números do perfil (negativos também, zero não), inclusive o faturamento", () => {
   assert.deepEqual(
     valoresEconomicos(PERFIL).sort((a, b) => a - b),
     [0.41, 1.85, 2.37, 3.12, 345678.9, 500000, 1234567.89, 3456789.01]
   );
   assert.deepEqual(valoresEconomicos(null), []);
   assert.deepEqual(valoresEconomicos({ capital_social: 0, faturamento: "x" }), []);
+  assert.deepEqual(
+    valoresEconomicos({ ccl: -150000, patrimonio_liquido: "-80000.5", liquidez_geral: 0 }).sort(
+      (a, b) => a - b
+    ),
+    [-150000, -80000.5]
+  );
 });
 
 test("ocultarValores: troca brl e fmtNum, sem pegar pedaço de outro número", () => {
@@ -11592,6 +11603,48 @@ test("itens técnicos ficam iguais; null passa", () => {
   assert.equal(saida.veredito, r.veredito);
   assert.equal(atendeParaConector(null, [1]), null);
 });
+
+test("PL e CCL negativos: nem o '-R$' nem o teto negativo saem para o Claude", () => {
+  const negativo: AcervoPerfil = {
+    porte: "EPP",
+    capital_social: 500000,
+    patrimonio_liquido: -80000.5,
+    ccl: -150000,
+    exercicio_balanco: 2025,
+    alertas: ["CCL de -R$ 150.000,00 e PL de -R$ 80.000,50 no balanço de 2025"],
+  };
+  const r = resultado(
+    [
+      { id: "ec1", tipo: "patrimonio_liquido", valor_minimo: 2000000 },
+      { id: "ec2", tipo: "ccl", valor_minimo: 100000 },
+      { id: "ec3", tipo: "patrimonio_liquido", percentual_do_estimado: 10 },
+      { id: "ec4", tipo: "capital_ou_pl", valor_minimo: 100000 },
+    ],
+    negativo
+  );
+  const completo = JSON.stringify(r);
+  // o gravado para a tela tem os valores (e o teto negativo que a regra escreve)
+  for (const presente of [brl(-150000), brl(-80000.5), `de até ${brl(-800005)}`]) {
+    assert.ok(completo.includes(presente), presente);
+  }
+  const saida = atendeParaConector(r, valoresEconomicos(negativo))!;
+  const json = JSON.stringify(saida);
+  for (const proibido of [
+    "-R$",
+    "-150.000",
+    "-80.000",
+    "800.005",
+    brl(2080000.5), // "Faltam" do PL
+    brl(250000), // "Faltam" do CCL
+  ]) {
+    assert.equal(json.includes(proibido), false, proibido);
+  }
+  assert.ok(json.includes(`de até ${VALOR_OCULTO}`));
+  const ec1 = saida.itens.find((i) => i.exigencia_id === "ec1")!;
+  assert.match(ec1.justificativa, /Faltam \[valor da empresa\]/);
+  assert.match(ec1.justificativa, /Exigido R\$\s2\.000\.000,00/); // o mínimo do edital continua
+  assert.match(saida.alertas[0], /CCL de \[valor da empresa\] e PL de \[valor da empresa\]/);
+});
 ```
 
 - [ ] **Step 11: Rodar e ver falhar**
@@ -11629,17 +11682,20 @@ const CAMPOS_ECONOMICOS = [
   "endividamento_geral",
 ] as const;
 
-/** Os números > 0 do perfil que não podem sair pelo conector. */
+/**
+ * Os números do perfil que não podem sair pelo conector. Negativos entram (PL a descoberto e CCL
+ * negativo saem da regra como "-R$ x"); o zero não, porque fmtNum(0) = "0" apagaria todo "0" solto.
+ */
 export function valoresEconomicos(perfil: AcervoPerfil | null): number[] {
   if (!perfil) return [];
   const out = new Set<number>();
   for (const c of CAMPOS_ECONOMICOS) {
     const n = numero(perfil[c]);
-    if (n !== null && n > 0) out.add(n);
+    if (n !== null && n !== 0) out.add(n);
   }
   for (const f of arr(perfil.faturamento)) {
     const n = numero(obj(f).receita_bruta);
-    if (n !== null && n > 0) out.add(n);
+    if (n !== null && n !== 0) out.add(n);
   }
   return [...out];
 }
@@ -11655,18 +11711,22 @@ export function ocultarValores(texto: string | null, valores: number[]): string 
     formas.add(fmtNum(v));
   }
   // a forma mais longa primeiro: "R$ 1.234,56" antes de "1.234,56"; o espaço do brl() (U+00A0)
-  // casa com qualquer espaço, para pegar também o valor digitado nos alertas do acervo
+  // casa com qualquer espaço (\s cobre U+00A0 e U+202F), para pegar também o valor digitado
+  // com espaço comum nos alertas do acervo
   let out = texto;
   for (const f of [...formas].sort((a, b) => b.length - a.length)) {
-    const padrao = escaparRegex(f).replace(/ /g, "\\s?");
+    const padrao = escaparRegex(f).replace(/\s/g, "\\s?");
     const re = new RegExp(`(?<![\\p{L}\\p{N}_.,])${padrao}(?![\\p{L}\\p{N}_]|[.,]\\d)`, "gu");
     out = out.replace(re, VALOR_OCULTO);
   }
   return out;
 }
 
-/** "Faltam R$ x" e "… de até R$ x" (teto) do item econômico também revelam o valor da empresa. */
-const DERIVADOS = /\b(Faltam|até)(\s+)R\$\s?[\d.]+,\d{2}/g;
+/**
+ * "Faltam R$ x" e "… de até R$ x" (teto) do item econômico também revelam o valor da empresa.
+ * O "-?" pega o teto de um PL/CCL negativo ("de até -R$ 800.005,00").
+ */
+const DERIVADOS = /\b(Faltam|até)(\s+)-?R\$\s?[\d.]+,\d{2}/g;
 
 function itemEconomico(i: ItemAtende, valores: number[]): ItemAtende {
   const limpar = (t: string | null) =>
@@ -11699,7 +11759,7 @@ export function atendeParaConector(
 
 Run: `cd /c/Users/javer/sigoobras-wt-conector2 && node --test supabase/functions/_shared/edital/atende-conector.test.ts`
 
-Expected: `ℹ pass 5` e `ℹ fail 0`.
+Expected: `ℹ pass 6` e `ℹ fail 0`.
 
 - [ ] **Step 14: Suítes, Prettier e build**
 
@@ -11713,7 +11773,7 @@ npx prettier --check supabase/functions/_shared/edital apps/web/src/lib/edital-c
 npm run build
 ```
 
-Expected: `node --test` com `ℹ tests 1395`, `ℹ pass 1395` e `ℹ fail 0` (1376 + 19); Prettier `All matched files use
+Expected: `node --test` com `ℹ tests 1396`, `ℹ pass 1396` e `ℹ fail 0` (1376 + 20); Prettier `All matched files use
 Prettier code style!`; Vitest `Test Files 124 passed (124)` e `Tests 2390 passed (2390)` (123 + 1 e 2379 + 11); build
 sem erro (o arquivo novo do front é só teste e não entra no bundle).
 
@@ -12072,7 +12132,10 @@ Expected: `✔ supabase/migrations/0151_busca_oportunidade.sql: todo $$ ou $tag$
 
 - [ ] **Step 3: Teste das duas ferramentas**
 
-`supabase/functions/mcp/ferramentas-edital.test.ts` (fake da T1; a camada é de verdade, presa à empresa `E`):
+`supabase/functions/mcp/ferramentas-edital.test.ts` (fake da T1; a camada é de verdade, presa à empresa `E`; o perfil
+falso devolve as 8 colunas econômicas com valores distintos, cada um escrito no "Atende?" gravado em `brl()` e/ou
+`fmtNum()`, e o teste de `obter_oportunidade` varre o JSON inteiro atrás de todos e confere que o SELECT do perfil pede
+exatamente essas 8 colunas: se uma sair de `COLUNAS_PERFIL_ECONOMICO`, o valor vaza e o teste fica vermelho):
 
 <!-- prettier-ignore -->
 ```ts
@@ -12096,6 +12159,29 @@ const OP_B = "00000000-0000-4000-8000-000000000012"; // da OUTRA
 const ARQ_1 = "00000000-0000-4000-8000-000000000021";
 const ARQ_2 = "00000000-0000-4000-8000-000000000022";
 const PL = 1234567.89;
+// perfil econômico da empresa: as 8 colunas que só o servidor lê (COLUNAS_PERFIL_ECONOMICO), com
+// valores distintos entre si para que cada um só possa ter saído da sua própria coluna
+const FAT_2025 = 7654321.09;
+const PERFIL = {
+  capital_social: 500000,
+  patrimonio_liquido: PL,
+  ccl: 345678.12,
+  liquidez_corrente: 1.234,
+  liquidez_geral: 1.567,
+  solvencia_geral: 2.891,
+  endividamento_geral: 0.432,
+  faturamento: [{ ano: 2025, receita_bruta: FAT_2025 }],
+};
+const VALORES_DA_EMPRESA = [
+  PERFIL.capital_social,
+  PERFIL.patrimonio_liquido,
+  PERFIL.ccl,
+  PERFIL.liquidez_corrente,
+  PERFIL.liquidez_geral,
+  PERFIL.solvencia_geral,
+  PERFIL.endividamento_geral,
+  FAT_2025,
+];
 
 const ferramenta = (nome: string) => {
   const f = FERRAMENTAS_EDITAL.find((x) => x.def.name === nome);
@@ -12239,11 +12325,24 @@ const ATENDE = {
       atestados: [],
       justificativa: `Exigido ${brl(100000)}; a empresa tem ${brl(PL)} — Patrimônio líquido. Atende.`,
     },
+    {
+      exigencia_id: "ec2",
+      grupo: "economica",
+      exigencia: "Capital social, CCL e índices",
+      qtd_exigida: 300000,
+      unidade: "R$",
+      status: "atende",
+      comprovacao: `Capital social ${brl(PERFIL.capital_social)}; CCL ${brl(PERFIL.ccl)}; receita bruta de 2025 ${brl(FAT_2025)}`,
+      atestados: [],
+      justificativa: `Liquidez corrente ${fmtNum(PERFIL.liquidez_corrente)}, geral ${fmtNum(PERFIL.liquidez_geral)}, solvência geral ${fmtNum(PERFIL.solvencia_geral)}, endividamento geral ${fmtNum(PERFIL.endividamento_geral)}. Atende.`,
+    },
   ],
   veredito: "atende",
   cats_anexar: [],
-  pendencias: [],
-  riscos: [],
+  pendencias: [`Conferir o capital social de ${fmtNum(PERFIL.capital_social)} no contrato`],
+  riscos: [
+    `Receita bruta de 2025 (${fmtNum(FAT_2025)}) perto do mínimo; CCL ${fmtNum(PERFIL.ccl)}`,
+  ],
   alertas: [`PL ${fmtNum(PL)} no último balanço`],
   analisado_em: "2026-10-08T12:00:00.000Z",
   modelo: "Claude (conector)",
@@ -12276,7 +12375,7 @@ function responderObter(c: ChamadaFake): RespostaFake | undefined {
     return { data: linha ?? null };
   }
   if (c.tabela === "acervo_perfil") {
-    return { data: [{ patrimonio_liquido: PL, capital_social: 500000, registro_crea_pj: "X" }] };
+    return { data: [{ ...PERFIL, registro_crea_pj: "X" }] };
   }
   if (c.tabela === "arquivo_oportunidade" && eq(c, "oportunidade_id") === OP_A) {
     return {
@@ -12338,14 +12437,28 @@ test("obter_oportunidade: campos, análise, arquivos com texto e nada dos valore
     s.arquivos.map((a) => a.texto),
     [{ paginas: 40, escaneadas: 2 }, null]
   );
+  // nenhum dos 8 valores econômicos sai, em nenhuma das duas formas (R$ e número). O guarda não
+  // pode ser vazio: o "Atende?" gravado tem de conter cada valor, senão o assert abaixo não prova nada
+  const gravado = JSON.stringify(ATENDE);
   const json = r.resultado.content[0].text;
-  for (const proibido of [brl(PL), fmtNum(PL), "1234567", "500000"]) {
+  for (const v of VALORES_DA_EMPRESA) {
+    assert.ok(gravado.includes(brl(v)) || gravado.includes(fmtNum(v)), `fixture sem ${v}`);
+    for (const proibido of [brl(v), fmtNum(v)]) {
+      assert.equal(json.includes(proibido), false, proibido);
+    }
+  }
+  for (const proibido of ["1234567", "500000", "345678", "7654321"]) {
     assert.equal(json.includes(proibido), false, proibido);
   }
   assert.match(s.analise.atende.itens[1].comprovacao, /\[valor da empresa\]/);
+  assert.match(s.analise.atende.itens[2].comprovacao, /\[valor da empresa\]/);
   assert.equal(s.analise.atende.itens[0].comprovacao, "CAT 1/2025: 12 postes");
-  // o perfil é lido só com as colunas econômicas, e só no servidor
+  // o perfil é lido só com as colunas econômicas (as 8, nem uma a menos), e só no servidor
   const perfil = fake.chamadas.find((c) => c.tabela === "acervo_perfil")!;
+  const colunasLidas = String(perfil.colunas)
+    .split(",")
+    .map((c) => c.trim());
+  assert.deepEqual(colunasLidas.sort(), Object.keys(PERFIL).sort());
   assert.equal(perfil.colunas?.includes("registro_crea_pj"), false);
   const texto = fake.chamadas.find((c) => c.tabela === "conector_texto_disponivel")!;
   assert.deepEqual(texto.payload, { p_arquivo_ids: [ARQ_1, ARQ_2], p_empresa_id: E });
@@ -12626,7 +12739,7 @@ npx prettier --check supabase/functions/mcp/ferramentas-edital.ts supabase/funct
 (cd apps/web && npx vitest run 2>&1 | grep -E 'Test Files|Tests ')
 ```
 
-Expected: `ℹ tests 1402`, `ℹ pass 1402` e `ℹ fail 0` (1395 + 7: 6 das ferramentas e 1 do `migracoes-delimitadores`
+Expected: `ℹ tests 1403`, `ℹ pass 1403` e `ℹ fail 0` (1396 + 7: 6 das ferramentas e 1 do `migracoes-delimitadores`
 para a 0151); Prettier `All matched files use Prettier code style!` (o Prettier não formata `.sql`); Vitest igual ao da
 T7 (124 arquivos e 2390 testes).
 
@@ -12681,7 +12794,7 @@ EOF
     `RespostaTecnicaUuid`, `validarRespostaTecnica`, `paraApelidos` e `resumoExigencias`, mais `normalizarCampo`
     (o do `LerEditalSheet`) e `NOME_PADRAO`;
   - `ferramentas-edital.ts`: as ferramentas `criar_ou_atualizar_oportunidade`, `registrar_atende` e `adicionar_nota`
-    (§5, linhas 8–10), `INSTRUCOES_EDITAL` (605 caracteres) e `PROMPTS_EDITAL = [analisar_edital]`.
+    (§5, linhas 8–10), `INSTRUCOES_EDITAL` (669 caracteres) e `PROMPTS_EDITAL = [analisar_edital]`.
 
 - [ ] **Step 1: Teste das regras de gravação**
 
@@ -13702,11 +13815,26 @@ test("defs: anotações do §5, schemas fechados, instruções curtas e o prompt
   assert.equal(props.edital.additionalProperties, false);
   assert.equal("required" in props.edital, false);
   assert.ok(INSTRUCOES_EDITAL.join("\n").length <= 800);
+  // o Atende? depende do acervo inteiro: as instruções mandam ler todas as páginas do ler_acervo
+  assert.ok(
+    INSTRUCOES_EDITAL.join("\n").includes("ler_acervo e leia TODAS as páginas (proxima_pagina"),
+    "as instruções do edital não mandam paginar o ler_acervo"
+  );
 
   assert.equal(PROMPTS_EDITAL[0].name, "analisar_edital");
   const texto = PROMPTS_EDITAL[0].montar({});
   for (const linha of [...METODO_LEITURA_EDITAL, ...REGRAS_ATENDE]) {
     assert.ok(texto.includes(linha), linha);
+  }
+  // passo 5: o prompt manda ler todas as páginas antes de avaliar
+  const passo5 = texto.split("\n").find((l) => l.startsWith("5. Chame ler_acervo")) ?? "";
+  for (const trecho of [
+    "total_atestados passar de por_pagina",
+    "leia TODAS as páginas",
+    "proxima_pagina ser null",
+    "antes de avaliar",
+  ]) {
+    assert.ok(passo5.includes(trecho), `o passo 5 não cita "${trecho}"`);
   }
   assert.equal(texto.includes("oportunidade_id ="), false);
   assert.ok(
@@ -13971,7 +14099,7 @@ const CRIAR_OU_ATUALIZAR: Ferramenta = {
         campos_gravados: Object.keys(plano.novos),
         exigencias: resumoExigencias(extraido),
         proximo_passo:
-          "Chame ler_acervo, avalie as exigências técnicas e de registro e grave com registrar_atende (atestado_ids = ids do ler_acervo). Depois anexe os PDFs com gerar_link_envio.",
+          "Chame ler_acervo e leia todas as páginas (proxima_pagina até null), avalie as exigências técnicas e de registro e grave com registrar_atende (atestado_ids = ids do ler_acervo). Depois anexe os PDFs com gerar_link_envio.",
       },
       { alvo: id }
     );
@@ -14148,7 +14276,7 @@ const ADICIONAR_NOTA: Ferramenta = {
 export const INSTRUCOES_EDITAL: string[] = [
   "Edital: antes de criar, procure com buscar_oportunidades (nº/ano ou palavras) e leia com obter_oportunidade; grave com criar_ou_atualizar_oportunidade.",
   "Se ela devolver duplicatas, mostre as candidatas e pergunte: atualizar uma (oportunidade_id) ou criar outra (confirmar_nova: true).",
-  "Depois chame ler_acervo, avalie só as exigências técnicas e de registro e grave com registrar_atende, citando os atestados pelo id (UUID); a parte econômico-financeira é calculada pelo SIGO: não avalie nem peça valores.",
+  "Depois chame ler_acervo e leia TODAS as páginas (proxima_pagina até null) antes de avaliar; avalie só as exigências técnicas e de registro e grave com registrar_atende, citando os atestados pelo id (UUID); a parte econômico-financeira é calculada pelo SIGO: não avalie nem peça valores.",
   "Para anexar os PDFs do edital, use gerar_link_envio. O prompt analisar_edital traz o método completo.",
 ];
 
@@ -14179,7 +14307,7 @@ const ANALISAR_EDITAL: PromptDef = {
       "2. Leia o edital anexado no chat (todas as páginas e anexos). Se ele já está no SIGO, use ler_edital_anexado (o texto vem por página).",
       "3. Monte o JSON do edital no formato do campo edital de criar_ou_atualizar_oportunidade, seguindo o MÉTODO abaixo.",
       "4. Procure com buscar_oportunidades (nº/ano do edital) e grave com criar_ou_atualizar_oportunidade (com oportunidade_id para atualizar). Se vierem duplicatas, mostre as candidatas e pergunte ao usuário antes de usar confirmar_nova: true.",
-      "5. Chame ler_acervo (atestados com id UUID, quantitativos e profissionais).",
+      "5. Chame ler_acervo (atestados com id UUID, quantitativos e profissionais). Ele é paginado: se total_atestados passar de por_pagina, leia TODAS as páginas (pagina 2, 3… com o mesmo por_pagina, até proxima_pagina ser null) antes de avaliar. Um acervo lido pela metade leva a um Não atende errado.",
       "6. Avalie cada exigência técnico-operacional (op), técnico-profissional (pr) e de registro (rg) devolvida em exigencias com as REGRAS DO ATENDE abaixo, citando os atestados pelo id (UUID) em atestado_ids. Não avalie as econômicas (ec): o SIGO calcula com o balanço da empresa.",
       "7. Grave com registrar_atende.",
       `8. Anexe os PDFs com gerar_link_envio (categorias: ${CATEGORIAS_EDITAL.join(", ")}).`,
@@ -14233,7 +14361,7 @@ npx prettier --check supabase/functions/_shared/edital supabase/functions/mcp/fe
 (cd apps/web && npx vitest run 2>&1 | grep -E 'Test Files|Tests ')
 ```
 
-Expected: `ℹ tests 1421`, `ℹ pass 1421` e `ℹ fail 0` (1402 + 19); Prettier `All matched files use Prettier code
+Expected: `ℹ tests 1422`, `ℹ pass 1422` e `ℹ fail 0` (1403 + 19); Prettier `All matched files use Prettier code
 style!`; Vitest igual ao da T7 (124 arquivos e 2390 testes). O `ferramentas.test.ts` da T2 continua verde (nomes únicos, `title`, anotações, `additionalProperties: false`,
 exigência diferente de `NEGAR` e `INSTRUCOES` ≤ 4000 caracteres).
 
@@ -14280,14 +14408,14 @@ num Postgres em memória (PGlite).
 
 **O que a parte C consome:**
 
-- T1: `camadaDaEmpresa` e os tipos `CamadaEmpresa` e `Consulta` (`_shared/conector/camada-empresa.ts`);
+- T1: `camadaDaEmpresa`, `dadosOuErro` e os tipos `CamadaEmpresa` e `Consulta` (`_shared/conector/camada-empresa.ts`);
   `criarFakeAdmin` e `ChamadaFake` (`_shared/conector/testes/fake-admin.ts`), nos testes;
 - T2: `Ferramenta`, `DepsFerramenta`, `sucesso`, `falha` e `naoEncontrado` (`mcp/registro.ts`); `textoCurto`,
   `uuidOuNull`, `inteiroNaFaixa` e `booleanoOuNull` (`_shared/conector/entrada.ts`); `despachar` e `LinhaAuditoria`
   (`mcp/despacho.ts`, só no teste da T11); o esqueleto `mcp/ferramentas-acervo.ts`; o mapa de exigências, que já dá
   `LER` ao `ler_acervo` e `EDITAR_OPORTUNIDADE` ao `cadastrar_atestado`;
-- T4: no banco, a 0149 (`public.sem_acento`); e o `gerar_link_envio` com alvo `atestado`, só citado nas instruções e no
-  prompt;
+- T4: no banco, a 0149 (`public.sem_acento`); o `LIMITE_BLOCO` (`_shared/conector/envio-regras.ts`), teto de texto da
+  resposta do `ler_acervo`; e o `gerar_link_envio` com alvo `atestado`, só citado nas instruções e no prompt;
 - T6: `normalizar`, `normalizarUnidade` e `numero` (`_shared/edital/edital-regras.ts`);
 - T7: `dataDoEdital` e `ufDoEdital` (`_shared/edital/campos-oportunidade.ts`).
 
@@ -14334,7 +14462,20 @@ num Postgres em memória (PGlite).
       `"profissionais"` volta `atestados: []` e `total_atestados: 0`;
     - os atestados são ordenados por `ordem` e `id`, e os profissionais por nome, no TypeScript: a ordem não depende da
       ordem em que a camada aplica os filtros;
-    - uma empresa com mais de 2000 atestados recebe o erro da camada (`excecao`).
+    - uma empresa com mais de 2000 atestados recebe o erro da camada (`excecao`);
+    - **a página é curta e a resposta tem teto:** `por_pagina` vai de 1 a 25 e o padrão é 10, porque cada atestado leva
+      os quantitativos completos (~5 mil caracteres com 15 linhas; com o padrão 50 do contrato a primeira chamada
+      passava de 270 mil caracteres). Se a página passar de 99 mil caracteres de texto (`LIMITE_BLOCO`, o mesmo teto do
+      texto do edital), a ferramenta devolve o erro `saida_grande` com `tamanho`, `limite` e `por_pagina_sugerido`, em
+      vez de deixar o cliente cortar, e manda recomeçar da página 1 com o novo `por_pagina`. Uma página de um atestado
+      só nunca é recusada;
+    - **a saída diz como ler o acervo inteiro:** além de `total_atestados`, `pagina` e `por_pagina`, traz
+      `total_paginas` e `proxima_pagina` (o número da próxima página ou `null` na última). A descrição da
+      ferramenta, o `INSTRUCOES_ACERVO`, as `INSTRUCOES_EDITAL`, o `proximo_passo` do
+      `criar_ou_atualizar_oportunidade` e o passo 5 do prompt `analisar_edital` mandam ler **todas** as páginas, com o
+      mesmo `por_pagina`, até `proxima_pagina` ser `null`, antes de avaliar o Atende?. O `registrar_atende` só recusa
+      id inexistente: sem essa ordem, uma empresa com mais de 10 atestados teria o acervo lido pela metade e um "Não
+      atende" errado, sem erro nenhum.
 11. **`cadastrar_atestado` duplicado** é auditado como `ok` com motivo `duplicado`, e o alvo é o atestado que já existia.
 12. **Exports a mais** (só acréscimos):
     - `unidadeDaCategoria` e `TipoDocAcervo` (`acervo-categorias.ts`);
@@ -14343,13 +14484,13 @@ num Postgres em memória (PGlite).
 
 **Contagem dos testes desta parte:**
 
-- `node --test` ganha 24:
+- `node --test` ganha 27:
   - T10: 11 (10 das regras e 1 do `portal-funcionario/migracoes-delimitadores.test.ts`, que examina toda migração nova);
-  - T11: 13.
+  - T11: 16.
 - O Vitest ganha 1 arquivo e 3 testes (T10).
 
-Na conferência final (cópia limpa do `master`, tasks na ordem T1→T17), o `node --test` foi de 1421 (fim da T9) para
-1445, e o Vitest de 124 arquivos e 2390 testes para 125 e 2393.
+Na conferência final (cópia limpa do `master`, tasks na ordem T1→T17), o `node --test` foi de 1422 (fim da T9) para
+1449, e o Vitest de 124 arquivos e 2390 testes para 125 e 2393.
 
 ---
 
@@ -15763,7 +15904,7 @@ npx prettier --check supabase/functions/_shared/edital/acervo-categorias.ts \
 
 Expected:
 
-- `node --test` com `ℹ tests 1432`, `ℹ pass 1432` e `ℹ fail 0` (1421 da T9 + 11: 10 das regras e 1 do
+- `node --test` com `ℹ tests 1433`, `ℹ pass 1433` e `ℹ fail 0` (1422 da T9 + 11: 10 das regras e 1 do
   `migracoes-delimitadores` para a 0152);
 - Prettier `All matched files use Prettier code style!` (o Prettier não formata `.sql`);
 - Vitest `Test Files 125 passed (125)` e `Tests 2393 passed (2393)` (124 + 1 e 2390 + 3).
@@ -15818,16 +15959,17 @@ EOF
 **Interfaces:**
 
 - Consumes:
-  - `CamadaEmpresa` (`ler`, `lerTodos`, `porId` e `rpc`) e `Consulta` (T1);
+  - `CamadaEmpresa` (`ler`, `lerTodos`, `porId` e `rpc`), `Consulta` e `dadosOuErro` (T1);
   - `Ferramenta`, `sucesso`, `falha` e `naoEncontrado`; `inteiroNaFaixa`, `textoCurto` e `uuidOuNull`; `despachar`
     (só no teste) (T2);
+  - `LIMITE_BLOCO` (`_shared/conector/envio-regras.ts`, T4): o teto de 99 mil caracteres da resposta;
   - `CATEGORIAS_ACERVO`, `TIPOS_DOC_ACERVO`, `ATIVIDADES_ACERVO`, `categoriaValida`, `validarAtestado`,
     `numeroCatNormalizado`, `MAX_QUANTITATIVOS` e `MSG_SEM_CONFIRMACAO` (T10);
   - `normalizar` e `numero` (T6);
   - a RPC `conector_cadastrar_atestado` (0152).
 - Produces:
   - `FERRAMENTAS_ACERVO` = `[ler_acervo, cadastrar_atestado]` (§5, linhas 11 e 12);
-  - `INSTRUCOES_ACERVO` (4 linhas, 553 caracteres);
+  - `INSTRUCOES_ACERVO` (5 linhas, 750 caracteres);
   - `PROMPTS_ACERVO` = `[cadastrar_acervo]`, com `arguments: []`;
   - `COLUNAS_PERFIL_CONECTOR` e `COLUNAS_ATESTADO_CONECTOR`.
 
@@ -15840,7 +15982,13 @@ EOF
   - filtros, nesta ordem: `atestado_id` (`porId`; inexistente ou de outra empresa → `nao_encontrado`); `categoria`
     (atestados com algum quantitativo dela); `busca` (cada palavra sem acento no nº, contratante, objeto ou cidade, e
     o nº também só com dígitos);
-  - paginação no TypeScript; quantitativos lidos só para os atestados da página (`in("atestado_id", …)`);
+  - paginação no TypeScript (`por_pagina` de 1 a 25, padrão 10); quantitativos lidos só para os atestados da página
+    (`in("atestado_id", …)`);
+  - a saída traz `total_paginas` e `proxima_pagina` (número ou `null` na última página), e a descrição da ferramenta
+    e o `INSTRUCOES_ACERVO` mandam ler todas as páginas antes de avaliar o Atende?;
+  - teto de tamanho: página de mais de um atestado cujo texto passa de 99 mil caracteres (`LIMITE_BLOCO`) →
+    `saida_grande` com `tamanho`, `limite` e `por_pagina_sugerido`, em vez de resposta cortada pelo cliente (a
+    mensagem manda recomeçar da página 1);
   - entrada fora da faixa → `validacao` com a lista `erros` e as `categorias`.
 - `cadastrar_atestado` (gravação, limite 60/h):
   - `validarAtestado` (inválido, inclusive sem `confirmado_pelo_usuario: true`: `validacao`, sem tocar no banco);
@@ -16276,7 +16424,7 @@ test("ler_acervo: atestado de outra empresa → nao_encontrado; entradas fora da
   assert.equal(sc(r).motivo, "nao_encontrado");
   assert.equal(r.alvo, AT_OUTRA);
   const v = await ferramenta("ler_acervo").executar(
-    { categoria: "iluminacao", por_pagina: 101, pagina: 0, tipo: "obras" },
+    { categoria: "iluminacao", por_pagina: 26, pagina: 0, tipo: "obras" },
     deps
   );
   assert.equal(v.resultado.isError, true);
@@ -16284,7 +16432,7 @@ test("ler_acervo: atestado de outra empresa → nao_encontrado; entradas fora da
   assert.deepEqual(sc(v).erros, [
     "tipo: use tudo, atestados, profissionais",
     "pagina: inteiro a partir de 1",
-    "por_pagina: inteiro de 1 a 100",
+    "por_pagina: inteiro de 1 a 25",
     'categoria: "iluminacao" fora da lista (veja categorias)',
   ]);
 });
@@ -16300,6 +16448,156 @@ test("ler_acervo: tipo profissionais traz só os profissionais", async () => {
     chamadas.map((c) => c.tabela),
     ["acervo_profissional"]
   );
+});
+
+// acervo grande: n atestados, cada um com q quantitativos de descrição longa
+const idGrande = (i: number) => `00000000-0000-4000-8000-${String(1000 + i).padStart(12, "0")}`;
+function acervoGrande(n: number, q: number) {
+  const atestados = Array.from({ length: n }, (_, i) =>
+    atestado(idGrande(i), i + 1, { numero: `CAT ${i + 1}/2025` })
+  );
+  const quantitativos = atestados.flatMap((a, i) =>
+    Array.from({ length: q }, (_, k) => ({
+      atestado_id: a.id,
+      categoria: "poste",
+      descricao: `Fornecimento e instalação de poste de concreto duplo T ${i}-${k}, 11 m`,
+      quantidade: k + 1,
+      unidade: "un",
+      especificacao: null,
+      na_atividade_tecnica: false,
+      observacao: k === 0 ? "síntese" : "detalhe",
+      ordem: k + 1,
+    }))
+  );
+  // a camada lê em páginas de 1000 linhas (range): o fake tem de respeitar o intervalo
+  const fatia = (linhas: unknown[], c: ChamadaFake) => {
+    const [de, ate] = (c.filtros.find((f) => f.metodo === "range")?.args ?? [
+      0,
+      Infinity,
+    ]) as number[];
+    return linhas.slice(de, ate + 1);
+  };
+  return (c: ChamadaFake) => {
+    if (c.tabela === "acervo_atestado") return { data: fatia(atestados, c) };
+    if (c.tabela === "acervo_quantitativo") {
+      const ids = inDe(c, "atestado_id");
+      return {
+        data: fatia(
+          quantitativos.filter((x) => !ids || ids.includes(x.atestado_id)),
+          c
+        ),
+      };
+    }
+    return responder(c);
+  };
+}
+
+test("ler_acervo: a chamada sem argumentos num acervo de 50 atestados × 15 quantitativos cabe em 99 mil caracteres", async () => {
+  const { deps } = montar(acervoGrande(50, 15));
+  const r = await ferramenta("ler_acervo").executar({}, deps);
+  assert.equal(r.resultado.isError, false);
+  const s = sc(r);
+  assert.equal(s.total_atestados, 50);
+  assert.equal(s.por_pagina, 10);
+  assert.equal((s.atestados as unknown[]).length, 10);
+  const texto = r.resultado.content[0].text;
+  assert.ok(texto.length < 99_000, `o texto da resposta tem ${texto.length} caracteres`);
+  const props = (FERRAMENTAS_ACERVO[0].def.inputSchema.properties ?? {}) as Record<
+    string,
+    Record<string, unknown>
+  >;
+  assert.equal(props.por_pagina.maximum, 25);
+  assert.equal(props.por_pagina.description, "padrão 10");
+});
+
+test("ler_acervo: página que passa do teto vira saida_grande com o por_pagina que cabe", async () => {
+  const { deps } = montar(acervoGrande(30, 40));
+  const r = await ferramenta("ler_acervo").executar({ por_pagina: 25 }, deps);
+  assert.equal(r.resultado.isError, true);
+  const e = sc(r);
+  assert.equal(e.motivo, "saida_grande");
+  assert.equal(e.limite, 99_000);
+  assert.ok((e.tamanho as number) > 99_000);
+  const sugerido = e.por_pagina_sugerido as number;
+  assert.ok(sugerido >= 1 && sugerido < 25, `sugerido ${sugerido}`);
+  // com o sugerido a página volta inteira e dentro do teto
+  const ok = await ferramenta("ler_acervo").executar({ por_pagina: sugerido }, deps);
+  assert.equal(ok.resultado.isError, false);
+  assert.equal((sc(ok).atestados as unknown[]).length, sugerido);
+  assert.ok(ok.resultado.content[0].text.length <= 99_000);
+  // um atestado só (ou o detalhe por id) nunca é recusado
+  const um = await ferramenta("ler_acervo").executar({ por_pagina: 1 }, deps);
+  assert.equal(um.resultado.isError, false);
+  // recomeçar com outro por_pagina muda as páginas: a mensagem manda voltar à página 1
+  assert.ok(String(e.erro).includes("Recomece da página 1"), String(e.erro));
+});
+
+test("ler_acervo: proxima_pagina e total_paginas levam o Claude a ler o acervo inteiro", async () => {
+  const { deps } = montar(acervoGrande(7, 2));
+  const ler = async (args: Record<string, unknown>) =>
+    sc(await ferramenta("ler_acervo").executar(args, deps));
+  const idsDe = (s: Record<string, unknown>) => (s.atestados as { id: string }[]).map((a) => a.id);
+
+  // página 1 de 3: aponta a próxima
+  const p1 = await ler({ por_pagina: 3 });
+  assert.equal(p1.total_atestados, 7);
+  assert.equal(p1.total_paginas, 3);
+  assert.equal(p1.pagina, 1);
+  assert.equal(p1.proxima_pagina, 2);
+  assert.equal((p1.atestados as unknown[]).length, 3);
+
+  // seguindo proxima_pagina até null, o Claude lê os 7 atestados, cada um uma vez
+  const lidos: string[] = [];
+  let pagina: unknown = 1;
+  let voltas = 0;
+  while (pagina !== null && voltas++ < 10) {
+    const s = await ler({ por_pagina: 3, pagina });
+    lidos.push(...idsDe(s));
+    pagina = s.proxima_pagina;
+  }
+  assert.equal(voltas, 3);
+  assert.deepEqual(
+    lidos,
+    Array.from({ length: 7 }, (_, i) => idGrande(i))
+  );
+
+  // última página: sem próxima; além do fim: vazia e sem próxima
+  const p3 = await ler({ por_pagina: 3, pagina: 3 });
+  assert.equal(p3.proxima_pagina, null);
+  assert.equal(p3.total_paginas, 3);
+  assert.equal((p3.atestados as unknown[]).length, 1);
+  const alemDoFim = await ler({ por_pagina: 3, pagina: 4 });
+  assert.equal(alemDoFim.proxima_pagina, null);
+  assert.deepEqual(alemDoFim.atestados, []);
+
+  // acervo que cabe numa página: uma página só, sem próxima
+  const tudo = await ler({});
+  assert.equal(tudo.total_paginas, 1);
+  assert.equal(tudo.proxima_pagina, null);
+  // sem atestados lidos (só profissionais): nada a paginar
+  const profissionais = await ler({ tipo: "profissionais" });
+  assert.equal(profissionais.total_paginas, 0);
+  assert.equal(profissionais.proxima_pagina, null);
+
+  // a descrição da ferramenta e as instruções mandam ler todas as páginas antes do Atende?
+  const descricao = FERRAMENTAS_ACERVO[0].def.description;
+  for (const trecho of [
+    "total_atestados passar de por_pagina",
+    "leia TODAS as páginas",
+    "proxima_pagina ser null",
+    "antes de avaliar o Atende?",
+  ]) {
+    assert.ok(descricao.includes(trecho), `a descrição não cita "${trecho}"`);
+  }
+  const instrucoes = INSTRUCOES_ACERVO.join("\n");
+  for (const trecho of [
+    "total_atestados passar de por_pagina",
+    "leia todas as páginas",
+    "proxima_pagina",
+    "antes de avaliar o Atende?",
+  ]) {
+    assert.ok(instrucoes.includes(trecho), `as instruções não citam "${trecho}"`);
+  }
 });
 
 const CADASTRO = {
@@ -16482,8 +16780,9 @@ Expected: FAIL, com
  * Tudo pela CamadaEmpresa (empresa da chave). Puro (importável no Node).
  */
 import type { PromptDef } from "../_shared/mcp/protocolo.ts";
-import type { Consulta } from "../_shared/conector/camada-empresa.ts";
+import { dadosOuErro, type Consulta } from "../_shared/conector/camada-empresa.ts";
 import { inteiroNaFaixa, textoCurto, uuidOuNull } from "../_shared/conector/entrada.ts";
+import { LIMITE_BLOCO } from "../_shared/conector/envio-regras.ts";
 import {
   ATIVIDADES_ACERVO,
   CATEGORIAS_ACERVO,
@@ -16513,6 +16812,11 @@ const COLUNAS_PROFISSIONAL =
 const MAX_ATESTADOS_LIDOS = 2000;
 const TIPOS_LEITURA = ["tudo", "atestados", "profissionais"] as const;
 const VALOR_OCULTO = "[valor da empresa]";
+/** Cada atestado leva os quantitativos completos (~5 mil caracteres com 15 linhas): página curta. */
+const POR_PAGINA_PADRAO = 10;
+const POR_PAGINA_MAX = 25;
+/** Teto do texto da resposta, o mesmo do texto do edital: o cliente do Claude corta ou recusa mais. */
+const LIMITE_SAIDA = LIMITE_BLOCO;
 
 type Obj = Record<string, unknown>;
 interface AtestadoLido extends Obj {
@@ -16547,12 +16851,13 @@ function semValorEmReais<T>(t: T): T | string {
   return typeof t === "string" ? t.replace(/R\$\s*[\d.,]*\d/g, VALOR_OCULTO) : t;
 }
 
-function dados<T>(
-  r: { data: T | null; error: { message: string } | null },
-  onde: string
-): T | null {
-  if (r.error) throw new Error(`Falha ao ler ${onde}: ${r.error.message}`);
-  return r.data ?? null;
+/** Quantos atestados da página cabem no teto de texto (pelo menos 1), contando o resto da saída. */
+function quantosCabem(saida: Obj, atestados: Obj[]): number {
+  for (let n = atestados.length - 1; n > 1; n--) {
+    const texto = JSON.stringify({ ...saida, atestados: atestados.slice(0, n) }, null, 2);
+    if (texto.length <= LIMITE_SAIDA) return n;
+  }
+  return 1;
 }
 
 // a ordem sai do TypeScript (não depende da ordem em que a camada aplica os filtros)
@@ -16582,7 +16887,7 @@ const LER_ACERVO: Ferramenta = {
     name: "ler_acervo",
     title: "Ler o acervo técnico da empresa",
     description:
-      "Lê o acervo técnico da empresa no SIGO: perfil (registro no CREA, porte, cadastros e alertas), CATs e atestados (com id, quantitativos por categoria e a síntese de cada obra) e os profissionais. Paginado; filtra por atestado, categoria ou texto (nº, contratante, objeto, cidade). Não traz valores econômicos (capital, patrimônio, índices, faturamento) nem o valor dos contratos.",
+      "Lê o acervo técnico da empresa no SIGO: perfil (registro no CREA, porte, cadastros e alertas), CATs e atestados (com id, quantitativos por categoria e a síntese de cada obra) e os profissionais. Paginado (10 atestados por página, no máximo 25): se total_atestados passar de por_pagina, leia TODAS as páginas (pagina 2, 3… com o mesmo por_pagina, até proxima_pagina ser null) antes de avaliar o Atende? ou concluir que um atestado não existe. Filtra por atestado, categoria ou texto (nº, contratante, objeto, cidade). Não traz valores econômicos (capital, patrimônio, índices, faturamento) nem o valor dos contratos.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -16604,7 +16909,12 @@ const LER_ACERVO: Ferramenta = {
           description: "palavras no nº, contratante, objeto ou cidade (sem acento)",
         },
         pagina: { type: "integer", minimum: 1, description: "padrão 1" },
-        por_pagina: { type: "integer", minimum: 1, maximum: 100, description: "padrão 50" },
+        por_pagina: {
+          type: "integer",
+          minimum: 1,
+          maximum: POR_PAGINA_MAX,
+          description: `padrão ${POR_PAGINA_PADRAO}`,
+        },
       },
       required: [],
     },
@@ -16618,8 +16928,10 @@ const LER_ACERVO: Ferramenta = {
     }
     const pagina = vazio(args.pagina) ? 1 : inteiroNaFaixa(args.pagina, 1, 1_000_000);
     if (pagina === null) erros.push("pagina: inteiro a partir de 1");
-    const porPagina = vazio(args.por_pagina) ? 50 : inteiroNaFaixa(args.por_pagina, 1, 100);
-    if (porPagina === null) erros.push("por_pagina: inteiro de 1 a 100");
+    const porPagina = vazio(args.por_pagina)
+      ? POR_PAGINA_PADRAO
+      : inteiroNaFaixa(args.por_pagina, 1, POR_PAGINA_MAX);
+    if (porPagina === null) erros.push(`por_pagina: inteiro de 1 a ${POR_PAGINA_MAX}`);
     const categoria = vazio(args.categoria) ? null : categoriaValida(args.categoria);
     if (categoria === "outro" && normalizar(args.categoria) !== "outro") {
       erros.push(`categoria: "${String(args.categoria)}" fora da lista (veja categorias)`);
@@ -16636,13 +16948,12 @@ const LER_ACERVO: Ferramenta = {
 
     let perfil: Obj | null = null;
     if (tipo === "tudo") {
-      const p = dados<Obj>(
+      const p = dadosOuErro<Obj>(
         await db
           .ler("acervo_perfil", COLUNAS_PERFIL_CONECTOR)
           .order("updated_at", { ascending: false })
           .limit(1)
-          .maybeSingle(),
-        "o perfil do acervo"
+          .maybeSingle()
       );
       perfil = p && {
         registro_crea_pj: p.registro_crea_pj ?? null,
@@ -16753,18 +17064,33 @@ const LER_ACERVO: Ferramenta = {
               ativo: p.ativo ?? null,
             }));
 
-    return sucesso(
-      {
-        perfil,
-        atestados,
-        profissionais,
-        total_atestados: total,
-        pagina,
-        por_pagina: porPagina,
-        categorias: CATEGORIAS_ACERVO,
-      },
-      { alvo: atestadoId }
-    );
+    // o Atende? depende do acervo inteiro: a saída diz quantas páginas há e qual é a próxima
+    const totalPaginas = Math.ceil(total / porPagina);
+    const saida = {
+      perfil,
+      atestados,
+      profissionais,
+      total_atestados: total,
+      pagina,
+      por_pagina: porPagina,
+      total_paginas: totalPaginas,
+      proxima_pagina: pagina < totalPaginas ? pagina + 1 : null,
+      categorias: CATEGORIAS_ACERVO,
+    };
+    // acervo com muitos quantitativos por obra: recusa a página grande em vez de deixar o cliente cortar
+    const tamanho = JSON.stringify(saida, null, 2).length;
+    if (tamanho > LIMITE_SAIDA && atestados.length > 1) {
+      return falha(
+        `A página do acervo passou do limite de ${LIMITE_SAIDA} caracteres. Recomece da página 1 com um por_pagina menor (o mesmo em todas as páginas) ou peça um atestado_id.`,
+        "saida_grande",
+        {
+          tamanho,
+          limite: LIMITE_SAIDA,
+          por_pagina_sugerido: quantosCabem(saida, atestados),
+        }
+      );
+    }
+    return sucesso(saida, { alvo: atestadoId });
   },
 };
 
@@ -16912,6 +17238,7 @@ export const FERRAMENTAS_ACERVO: Ferramenta[] = [LER_ACERVO, CADASTRAR_ATESTADO]
 
 export const INSTRUCOES_ACERVO: string[] = [
   "Acervo: ler_acervo traz atestados (com id), quantitativos e profissionais, sem valores econômicos; a parte econômica é do servidor.",
+  "ler_acervo é paginado: se total_atestados passar de por_pagina, leia todas as páginas (proxima_pagina até null, mesmo por_pagina) antes de avaliar o Atende?; acervo pela metade dá resultado errado.",
   "Para cadastrar CAT/atestado, extraia contratante, obra, período, profissional, ART e quantitativos com a categoria (ids de ler_acervo.categorias; fora delas, outro) e UMA síntese por categoria: o total da obra.",
   "Mostre a conferência em tabela e só chame cadastrar_atestado com confirmado_pelo_usuario: true depois do OK; criado: false = a CAT já existe.",
   "Depois anexe o PDF: gerar_link_envio com alvo atestado e o atestado_id.",
@@ -16956,7 +17283,7 @@ export const PROMPTS_ACERVO: PromptDef[] = [
 
 Run: `cd /c/Users/javer/sigoobras-wt-conector2 && node --test supabase/functions/mcp/ferramentas-acervo.test.ts supabase/functions/mcp/ferramentas.test.ts 2>&1 | grep -E '^ℹ (pass|fail)'`
 
-Expected: `ℹ fail 0`, com os 13 testes do acervo passando. O `ferramentas.test.ts` da T2 também passa: nomes únicos,
+Expected: `ℹ fail 0`, com os 16 testes do acervo passando. O `ferramentas.test.ts` da T2 também passa: nomes únicos,
 `title`, anotações, `inputSchema` fechado em todos os objetos (inclusive `profissional` e os itens de `quantitativos`),
 `INSTRUCOES` ≤ 4000 e nomes de prompt únicos.
 
@@ -16971,7 +17298,7 @@ npx prettier --check supabase/functions/mcp/ferramentas-acervo.ts supabase/funct
 (cd apps/web && npx vitest run 2>&1 | grep -E 'Test Files|Tests ')
 ```
 
-Expected: `ℹ tests 1445`, `ℹ pass 1445` e `ℹ fail 0` (1432 + 13); Prettier `All matched files use Prettier code
+Expected: `ℹ tests 1449`, `ℹ pass 1449` e `ℹ fail 0` (1433 + 16); Prettier `All matched files use Prettier code
 style!`; Vitest igual ao da T10 (125 arquivos e 2393 testes).
 
 - [ ] **Step 6: Commit**
