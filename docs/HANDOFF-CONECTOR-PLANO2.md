@@ -8,6 +8,11 @@
 - **Quem publica:** o Javerson, depois do merge, na ordem abaixo (Task 18 do plano), com o OK dele a cada passo. O
   código desta branch foi escrito e testado sem rodar nada contra produção.
 
+- **Situação em 09/10/2026: tudo publicado.** Migrações 0148 a 0153 aplicadas, com os smokes OK. Funções `mcp-oauth`,
+  `mcp` e `ia-processar` publicadas. Front no ar (push `740eae5` e seguintes) e `LIMITE_ANEXO_OPORTUNIDADE` em
+  50 MB, como o bucket. Falta só o aceite do Javerson com o Claude real (passos de aceite da Task 18) e o
+  `isolamento-conector.mjs` no terminal dele.
+
 ## O que entra
 
 | Parte | O que muda                                                                                                                                                                            |

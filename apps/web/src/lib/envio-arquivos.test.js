@@ -18,7 +18,7 @@ const ARQ = "00000000-0000-4000-8000-000000000040";
 
 describe("constantes", () => {
   it("limites, teto da página e categorias com texto", () => {
-    expect(LIMITE_ANEXO_OPORTUNIDADE).toBe(26214400);
+    expect(LIMITE_ANEXO_OPORTUNIDADE).toBe(52428800);
     expect(LIMITE_ANEXO_ATESTADO).toBe(26214400);
     expect(MAX_CARACTERES_PAGINA).toBe(100000);
     expect(CATEGORIAS_COM_TEXTO).toEqual(["edital", "termo_referencia", "anexo_edital", "errata"]);

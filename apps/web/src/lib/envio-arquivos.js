@@ -8,10 +8,10 @@
  */
 
 /**
- * 25 MB: o limite do bucket hoje (migração 0015). Passa a 50 MB junto com a 0150 (P3), que também
- * libera o .xlsx; sem ela o Storage recusa acima de 25 MB.
+ * 50 MB: o limite do bucket anexos-oportunidade desde a 0150 (aplicada em 09/10/2026), que também
+ * libera o .xlsx. Antes dela o bucket aceitava só 25 MB (migração 0015).
  */
-export const LIMITE_ANEXO_OPORTUNIDADE = 25 * 1024 * 1024;
+export const LIMITE_ANEXO_OPORTUNIDADE = 50 * 1024 * 1024;
 export const LIMITE_ANEXO_ATESTADO = 25 * 1024 * 1024;
 export const MAX_CARACTERES_PAGINA = 100000;
 /** Teto de caracteres por lote do bulkCreate (além das 200 linhas), para o corpo da requisição. */
