@@ -12,7 +12,11 @@ import { INSTRUCOES_ARQUIVOS } from "./ferramentas-arquivos.ts";
 import { INSTRUCOES_EDITAL } from "./ferramentas-edital.ts";
 import { INSTRUCOES_ACERVO } from "./ferramentas-acervo.ts";
 import { INSTRUCOES_ORCAMENTO } from "./ferramentas-orcamento.ts";
-import { exigenciaDaFerramenta, NEGAR } from "../_shared/conector/permissoes-ferramentas.ts";
+import {
+  exigenciaDaFerramenta,
+  NEGAR,
+  NOMES_FERRAMENTAS,
+} from "../_shared/conector/permissoes-ferramentas.ts";
 import { camadaDaEmpresa } from "../_shared/conector/camada-empresa.ts";
 import { criarFakeAdmin } from "../_shared/conector/testes/fake-admin.ts";
 import type { ContextoMcp } from "./contexto.ts";
@@ -143,4 +147,51 @@ test("permissoesEfetivas: editar_orcamento exige Lista/editar e Orçamento/edita
   assert.equal(p.editar_orcamento, true);
   assert.equal(p.editar_oportunidade, true);
   assert.equal(permissoesEfetivas(ctx({ perfil: "Admin" })).editar_orcamento, true);
+});
+
+/** §5 do contrato do Plano 2: [leitura, idempotentHint, obrigatórios]. */
+const DO_CONTRATO: Record<string, [boolean, boolean, string[]]> = {
+  empresa_atual: [true, true, []],
+  gerar_link_envio: [false, false, ["alvo", "arquivos"]],
+  status_envio: [true, true, ["link_id"]],
+  registrar_arquivos: [false, false, ["link_id"]],
+  ler_edital_anexado: [true, true, ["oportunidade_id", "arquivo_id"]],
+  buscar_oportunidades: [true, true, []],
+  obter_oportunidade: [true, true, ["oportunidade_id"]],
+  criar_ou_atualizar_oportunidade: [false, false, ["edital"]],
+  registrar_atende: [false, true, ["oportunidade_id", "itens"]],
+  adicionar_nota: [false, false, ["oportunidade_id", "texto"]],
+  ler_acervo: [true, true, []],
+  cadastrar_atestado: [
+    false,
+    false,
+    ["confirmado_pelo_usuario", "tipo", "objeto", "quantitativos"],
+  ],
+  importar_orcamento: [false, false, ["oportunidade_id", "linhas"]],
+  aplicar_desconto: [false, true, ["oportunidade_id", "desconto_pct"]],
+  importar_cronograma: [false, true, ["oportunidade_id", "meses", "linhas"]],
+  registrar_proposta: [false, false, ["oportunidade_id"]],
+  ler_orcamento: [true, true, ["oportunidade_id"]],
+};
+
+test("Plano 2 completo: as 17 ferramentas na ordem de NOMES_FERRAMENTAS, como no §5, e os 3 prompts", () => {
+  assert.deepEqual(
+    FERRAMENTAS.map((f) => f.def.name),
+    [...NOMES_FERRAMENTAS]
+  );
+  assert.deepEqual(Object.keys(DO_CONTRATO), [...NOMES_FERRAMENTAS]);
+  for (const { def } of FERRAMENTAS) {
+    const [leitura, idempotente, obrigatorios] = DO_CONTRATO[def.name];
+    assert.equal(def.annotations.readOnlyHint, leitura, `${def.name}: readOnlyHint`);
+    assert.equal(def.annotations.idempotentHint, idempotente, `${def.name}: idempotentHint`);
+    assert.deepEqual(
+      [...(def.inputSchema.required as string[])].sort(),
+      [...obrigatorios].sort(),
+      `${def.name}: obrigatórios`
+    );
+  }
+  assert.deepEqual(
+    PROMPTS.map((p) => p.name),
+    ["analisar_edital", "cadastrar_acervo", "orcamento_cronograma_licitacao"]
+  );
 });

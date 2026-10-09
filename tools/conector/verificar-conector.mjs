@@ -1,4 +1,4 @@
-// Verificação ponta a ponta do conector do Claude (Plano 1).
+// Verificação ponta a ponta do conector do Claude (Planos 1 e 2).
 // Uso:  node tools/conector/verificar-conector.mjs
 //       SIGO_CHAVE=sigo_pk_... node tools/conector/verificar-conector.mjs   (+ checagens com a chave manual)
 //       + SIGO_ANON=<anon key pública do SIGO> → confere também que a chave é recusada na API REST
@@ -15,7 +15,32 @@ const conferir = (nome, cond, detalhe = "") => {
   if (!cond) falhas++;
 };
 // Checagem que não dá para fazer nesta rodada: avisa e NÃO conta como OK.
-const pular = (nome, motivo) => console.log(`PULEI ${nome} ${motivo}`);
+let puladas = 0;
+const pular = (nome, motivo) => {
+  console.log(`PULEI ${nome} ${motivo}`);
+  puladas++;
+};
+// As 17 ferramentas e os 3 roteiros do Plano 2, na ordem do registro
+const FERRAMENTAS_ESPERADAS = [
+  "empresa_atual",
+  "gerar_link_envio",
+  "status_envio",
+  "registrar_arquivos",
+  "ler_edital_anexado",
+  "buscar_oportunidades",
+  "obter_oportunidade",
+  "criar_ou_atualizar_oportunidade",
+  "registrar_atende",
+  "adicionar_nota",
+  "ler_acervo",
+  "cadastrar_atestado",
+  "importar_orcamento",
+  "aplicar_desconto",
+  "importar_cronograma",
+  "registrar_proposta",
+  "ler_orcamento",
+];
+const PROMPTS_ESPERADOS = ["analisar_edital", "cadastrar_acervo", "orcamento_cronograma_licitacao"];
 const rpc = (method, params = {}, id = 1) => JSON.stringify({ jsonrpc: "2.0", id, method, params });
 const post = (url, body, headers = {}) =>
   fetch(url, {
@@ -149,9 +174,20 @@ async function verificar() {
     const lista = await json(
       await post(MCP, rpc("tools/list"), { ...h, "mcp-protocol-version": "2025-11-25" })
     );
+    const nomes = (lista?.result?.tools ?? []).map((t) => t.name);
     conferir(
-      "tools/list tem empresa_atual",
-      !!lista?.result?.tools?.some((t) => t.name === "empresa_atual")
+      "tools/list: as 17 ferramentas do Plano 2, na ordem",
+      JSON.stringify(nomes) === JSON.stringify(FERRAMENTAS_ESPERADAS),
+      nomes.join(", ")
+    );
+    const prompts = await json(
+      await post(MCP, rpc("prompts/list"), { ...h, "mcp-protocol-version": "2025-11-25" })
+    );
+    const nomesPrompts = (prompts?.result?.prompts ?? []).map((p) => p.name);
+    conferir(
+      "prompts/list: os 3 roteiros",
+      JSON.stringify(nomesPrompts) === JSON.stringify(PROMPTS_ESPERADOS),
+      nomesPrompts.join(", ")
     );
     const emp = await json(
       await post(MCP, rpc("tools/call", { name: "empresa_atual", arguments: {} }), {
@@ -191,18 +227,24 @@ async function verificar() {
       `status ${tela.status}`
     );
   } else {
-    console.log("(sem SIGO_CHAVE: pulei as checagens com a chave manual)");
+    pular("checagens com a chave manual", "(defina SIGO_CHAVE)");
   }
 }
+
+// Sem rede/DNS/TLS o fetch do Node lança TypeError "fetch failed", com a causa em e.cause. Só isso
+// é "FALHA de rede"; qualquer outro erro é defeito do script e sai com a pilha.
+const ehErroDeRede = (e) => e instanceof TypeError && /fetch failed/i.test(e?.message ?? "");
 
 try {
   await verificar();
 } catch (e) {
-  // sem rede/DNS/TLS o fetch lança "fetch failed" — a causa real vem em e.cause
+  if (!ehErroDeRede(e)) throw e;
   const causa = e?.cause?.message ?? e?.cause?.code;
-  console.log(`FALHA de rede: ${e?.message ?? e}${causa ? ` (${causa})` : ""}`);
+  console.log(`FALHA de rede: ${e.message}${causa ? ` (${causa})` : ""}`);
   process.exit(1);
 }
 
-console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTudo certo.");
+if (falhas) console.log(`\n${falhas} FALHA(S)`);
+else if (puladas) console.log(`\nConcluído com ${puladas} checagens puladas`);
+else console.log("\nTudo certo.");
 process.exit(falhas ? 1 : 0);
