@@ -5,25 +5,25 @@
  * (_shared/mcp/protocolo.ts). Autorização por chave OPACA do mcp-oauth (não é
  * JWT do Supabase) → contexto.ts; sem chave → 401 + WWW-Authenticate com
  * resource_metadata (o Claude descobre o login por aqui). Dados SEMPRE da
- * empresa da chave (service role + filtro explícito). Deploy: --no-verify-jwt.
+ * empresa da chave: as ferramentas só recebem a CamadaEmpresa (filtro explícito
+ * por empresa_id, sem exclusão). Cada chamada passa pelo despacho (despacho.ts):
+ * permissão → limite → campos → execução → auditoria. Deploy: --no-verify-jwt.
  */
 import { createAdminClient } from "../_shared/supabase-admin.ts";
-import {
-  consumirTentativa,
-  ipDaRequisicao,
-  MSG_MUITAS_TENTATIVAS,
-} from "../_shared/limite-tentativas.ts";
-import { recursoCanonico } from "../_shared/conector/redirect.ts";
+import { consumirTentativa, ipDaRequisicao } from "../_shared/limite-tentativas.ts";
+import { recursoDoConector } from "../_shared/conector/recurso.ts";
+import { camadaDaEmpresa } from "../_shared/conector/camada-empresa.ts";
 import { MENSAGEM_NEGACAO } from "../_shared/conector/acesso.ts";
 import { ISSUER } from "../_shared/conector/oauth-regras.ts";
 import { tratarPostMcp, type ServidorMcp } from "../_shared/mcp/protocolo.ts";
 import { resolverChave } from "./contexto.ts";
-import { executarFerramenta, FERRAMENTAS, INSTRUCOES, resultadoJson } from "./ferramentas.ts";
+import { despachar, LIMITE_GRAVACAO_HORA, LIMITE_LEITURA_HORA } from "./despacho.ts";
+import { FERRAMENTAS, INSTRUCOES, PROMPTS } from "./ferramentas.ts";
 
 // deno-lint-ignore no-explicit-any
 type Admin = any;
 
-const RECURSO = recursoCanonico(`${Deno.env.get("SUPABASE_URL") ?? ""}/functions/v1/mcp`) as string;
+const RECURSO = recursoDoConector(Deno.env.get("SUPABASE_URL"));
 const URL_PRM = `${RECURSO}/.well-known/oauth-protected-resource`;
 const INFO = { name: "sigo-obras", title: "SIGO Obras", version: "1.0.0" };
 
@@ -31,7 +31,7 @@ const INFO = { name: "sigo-obras", title: "SIGO Obras", version: "1.0.0" };
 const ORIGENS = [
   /^https:\/\/(www\.)?sigoobras\.com\.br$/,
   /^https:\/\/claude\.(ai|com)$/,
-  /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,
+  /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/,
 ];
 const origemOk = (o: string | null) => !o || ORIGENS.some((r) => r.test(o));
 
@@ -41,7 +41,7 @@ function cors(req: Request): Record<string, string> {
     "access-control-allow-headers":
       "authorization, content-type, accept, mcp-protocol-version, mcp-method, mcp-name, mcp-session-id",
     "access-control-allow-methods": "POST, GET, OPTIONS",
-    "access-control-expose-headers": "www-authenticate",
+    "access-control-expose-headers": "www-authenticate, retry-after",
     "access-control-max-age": "86400",
     vary: "Origin",
   };
@@ -172,39 +172,34 @@ async function atender(req: Request): Promise<Response> {
   const servidor: ServidorMcp = {
     info: INFO,
     instructions: INSTRUCOES,
-    tools: FERRAMENTAS,
-    prompts: [],
-    chamarTool: async (nome, args) => {
-      const leitura = FERRAMENTAS.find((t) => t.name === nome)?.annotations.readOnlyHint === true;
-      const lim = await consumirTentativa(
-        admin,
-        `mcp:${nome}`,
-        3600,
-        [{ tipo: "conta", valor: ctx.usuario.id, max: leitura ? 300 : 60 }],
-        { falharFechado: true }
-      );
-      if (lim.indisponivel) {
-        // Limitador fora do ar: não é excesso de uso — nada de "muitas
-        // tentativas" nem linha de auditoria com motivo falso.
-        return resultadoJson({ erro: "SIGO indisponível no momento. Tente de novo." }, true);
-      }
-      if (!lim.permitido) {
-        await auditar(admin, { ...base, ferramenta: nome, resultado: "negado", motivo: "limite" });
-        return resultadoJson({ erro: MSG_MUITAS_TENTATIVAS }, true);
-      }
-      try {
-        const res = await executarFerramenta(nome, args, ctx);
-        await auditar(admin, { ...base, ferramenta: nome, resultado: res.isError ? "erro" : "ok" });
-        return res;
-      } catch (e) {
-        console.error("[mcp] ferramenta", nome, (e as Error)?.message);
-        await auditar(admin, { ...base, ferramenta: nome, resultado: "erro", motivo: "excecao" });
-        return resultadoJson(
-          { erro: "Erro interno ao executar a ferramenta. Tente de novo." },
-          true
-        );
-      }
-    },
+    tools: FERRAMENTAS.map((f) => f.def),
+    prompts: PROMPTS,
+    chamarTool: (nome, args) =>
+      despachar(nome, args, {
+        ferramentas: FERRAMENTAS,
+        deps: {
+          ctx,
+          db: camadaDaEmpresa(admin, ctx.empresa.id),
+          storage: admin.storage,
+          fetchFn: fetch,
+          agora: new Date(),
+        },
+        consumirLimite: (n, leitura) =>
+          consumirTentativa(
+            admin,
+            `mcp:${n}`,
+            3600,
+            [
+              {
+                tipo: "conta",
+                valor: ctx.usuario.id,
+                max: leitura ? LIMITE_LEITURA_HORA : LIMITE_GRAVACAO_HORA,
+              },
+            ],
+            { falharFechado: true }
+          ),
+        auditar: (linha) => auditar(admin, { ...base, ...linha }),
+      }),
   };
   const res = await tratarPostMcp(req.headers, await req.text(), servidor);
   return new Response(res.body, { status: res.status, headers: { ...cors(req), ...res.headers } });

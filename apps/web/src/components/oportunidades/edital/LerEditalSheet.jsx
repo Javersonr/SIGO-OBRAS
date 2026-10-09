@@ -11,6 +11,7 @@ import {
   camposOportunidadeDoEdital,
   categoriaPeloNome,
   dataDoEdital,
+  extrairPaginasPdf,
   horaDoEdital,
   lerEdital,
   numeroDoEdital,
@@ -47,6 +48,7 @@ import {
   XCircle,
 } from "lucide-react";
 import AtendeEdital from "./AtendeEdital";
+import { gravarTextoPaginas, LIMITE_ANEXO_OPORTUNIDADE } from "@/lib/envio-arquivos";
 
 /**
  * Lê o edital (PDFs) com IA e cria/atualiza a oportunidade:
@@ -63,7 +65,8 @@ import AtendeEdital from "./AtendeEdital";
  */
 
 const BUCKET = "anexos-oportunidade";
-const LIMITE_UPLOAD = 25 * 1024 * 1024; // file_size_limit do bucket
+const LIMITE_UPLOAD = LIMITE_ANEXO_OPORTUNIDADE; // file_size_limit do bucket (50 MB com a 0150)
+const MB_UPLOAD = Math.round(LIMITE_UPLOAD / 1024 / 1024);
 const CATEGORIAS_EDITAL = new Set(CATEGORIAS_ARQUIVO_EDITAL.map((c) => c.valor));
 
 const PASSOS = [
@@ -468,6 +471,8 @@ export default function LerEditalSheet({
   const abortRef = useRef(null);
   // arquivo (chave) → registro já gravado: nova tentativa de salvar não reenvia
   const salvosRef = useRef(new Map());
+  // arquivos (chave) cujo texto já foi gravado para o Claude nesta abertura
+  const textoGravadoRef = useRef(new Set());
   // muda a cada abertura: resposta atrasada do "Atende?" não vaza p/ outra sessão
   const sessaoRef = useRef(0);
   // últimas props lidas por callbacks/efeitos que NÃO devem reiniciar por elas
@@ -507,6 +512,7 @@ export default function LerEditalSheet({
     setAtendeStatus("idle");
     setAtendeErro("");
     salvosRef.current = new Map();
+    textoGravadoRef.current = new Set();
   }, [open, oportunidade?.id]);
 
   // PDFs já anexados à oportunidade: oferece reaproveitar (edital/TR marcados).
@@ -671,7 +677,9 @@ export default function LerEditalSheet({
           }
         } else {
           if (a.tamanho > LIMITE_UPLOAD) {
-            toast.warning(`"${a.nome}" tem mais de 25 MB: foi lido, mas não foi anexado.`);
+            toast.warning(
+              `"${a.nome}" tem mais de ${MB_UPLOAD} MB: foi lido, mas não foi anexado.`
+            );
             continue;
           }
           setEtapaSalvar(`Anexando "${a.nome}" (${i} de ${selecionados.length})…`);
@@ -703,6 +711,35 @@ export default function LerEditalSheet({
       }
     }
     return registros;
+  };
+
+  // Texto de cada página dos PDFs locais anexados agora, para o conector do Claude
+  // (ler_edital_anexado). Falha só avisa: o arquivo já está anexado e o usuário pode
+  // usar "Preparar para o Claude" na aba Arquivos depois.
+  const gravarTextoDosAnexos = async () => {
+    for (const a of selecionados) {
+      if (a.origem !== "local" || textoGravadoRef.current.has(a.chave)) continue;
+      const reg = salvosRef.current.get(a.chave);
+      if (!reg?.arquivo_oportunidade_id) continue;
+      try {
+        setEtapaSalvar(`Preparando o texto de "${a.nome}" para o Claude…`);
+        const { paginas } = await extrairPaginasPdf(a.file, null, {
+          renderizar: false,
+          maxEscaneadas: Infinity,
+        });
+        await gravarTextoPaginas(sigo.entities.ArquivoTextoPagina, {
+          empresaId: empresa.id,
+          arquivoId: reg.arquivo_oportunidade_id,
+          paginas,
+        });
+        textoGravadoRef.current.add(a.chave);
+      } catch (e) {
+        console.warn("[LerEdital] texto para o Claude:", e);
+        toast.warning(
+          `"${a.nome}" foi anexado, mas o texto para o Claude não foi gravado. Use "Preparar para o Claude" na aba Arquivos.`
+        );
+      }
+    }
   };
 
   // Grava o resultado mesmo se o Sheet fechar no meio; a tela só é atualizada
@@ -810,6 +847,7 @@ export default function LerEditalSheet({
       }
 
       const registros = await gravarArquivos(id);
+      await gravarTextoDosAnexos();
 
       setEtapaSalvar("Gravando a análise…");
       const agora = new Date().toISOString();
@@ -995,7 +1033,10 @@ export default function LerEditalSheet({
                     )}
                     {a.tamanho ? ` · ${tamanhoLegivel(a.tamanho)}` : ""}
                     {a.origem === "local" && a.tamanho > LIMITE_UPLOAD && (
-                      <span className="text-amber-700"> · acima de 25 MB: lê, mas não anexa</span>
+                      <span className="text-amber-700">
+                        {" "}
+                        · acima de {MB_UPLOAD} MB: lê, mas não anexa
+                      </span>
                     )}
                   </p>
                 </div>

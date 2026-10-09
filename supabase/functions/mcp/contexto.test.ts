@@ -1,7 +1,22 @@
 // node --test supabase/functions/mcp/contexto.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolverChave } from "./contexto.ts";
+import {
+  deveGravarUltimoUso,
+  resolverChave as resolverChaveComLog,
+  ufDaEmpresa,
+} from "./contexto.ts";
+
+/** resolverChave sem o console.error de "indisponivel" sujando a saída dos testes. */
+async function resolverChave(...args: Parameters<typeof resolverChaveComLog>) {
+  const original = console.error;
+  console.error = () => {};
+  try {
+    return await resolverChaveComLog(...args);
+  } finally {
+    console.error = original;
+  }
+}
 
 type Resposta = { data?: unknown; error?: { message: string } | null };
 
@@ -109,6 +124,7 @@ function respostasFeliz(overrides: Record<string, Resposta> = {}): Record<string
         nome: "Empresa Nome",
         nome_fantasia: null,
         cnpj: "123",
+        estado: "mg",
         ativo: true,
         deleted_at: null,
         conector_claude: true,
@@ -224,4 +240,82 @@ test("usuário desativado → { ok:false, motivo:'usuario_inativo' }", async () 
   assert.equal(r.ok, false);
   if (r.ok) throw new Error("esperava ok:false");
   assert.equal(r.motivo, "usuario_inativo");
+});
+
+test("erro ao ler conector_autorizacao → indisponivel", async () => {
+  const admin = fakeAdmin(
+    respostasFeliz({ conector_autorizacao: { error: { message: "pooler" } } })
+  );
+  assert.deepEqual(await resolverChave(admin, "sigo_at_x"), { ok: false, motivo: "indisponivel" });
+});
+
+test("erro ao ler plano → indisponivel", async () => {
+  const admin = fakeAdmin(respostasFeliz({ plano: { error: { message: "timeout" } } }));
+  assert.deepEqual(await resolverChave(admin, "sigo_at_x"), { ok: false, motivo: "indisponivel" });
+});
+
+test("erro ao ler conector_cliente → indisponivel", async () => {
+  const felizes = respostasFeliz();
+  const admin = fakeAdmin(
+    respostasFeliz({
+      conector_autorizacao: {
+        data: { ...(felizes.conector_autorizacao.data as object), cliente_id: "c1" },
+      },
+      conector_cliente: { error: { message: "conexão perdida" } },
+    })
+  );
+  assert.deepEqual(await resolverChave(admin, "sigo_at_x"), { ok: false, motivo: "indisponivel" });
+});
+
+test("ctx: vinculoId do usuario_empresa, uf da empresa e nome que cai para o e-mail", async () => {
+  const felizes = respostasFeliz();
+  const admin = fakeAdmin(
+    respostasFeliz({
+      usuario_custom: {
+        data: { ...(felizes.usuario_custom.data as object), nome_completo: null },
+      },
+    })
+  );
+  const r = await resolverChave(admin, "sigo_at_x");
+  if (!r.ok) throw new Error("esperava ok:true");
+  assert.equal(r.ctx.vinculoId, "v1");
+  assert.equal(r.ctx.empresa.uf, "MG");
+  assert.equal(r.ctx.usuario.nome, "user@x.com");
+});
+
+test("ufDaEmpresa: uma das 27 UFs em maiúsculas ou null", () => {
+  assert.equal(ufDaEmpresa(" sp "), "SP");
+  assert.equal(ufDaEmpresa(null), null);
+  assert.equal(ufDaEmpresa(""), null);
+  assert.equal(ufDaEmpresa("1"), null);
+  assert.equal(ufDaEmpresa("XX"), null);
+  // por extenso não vira outra UF: cortar em 2 letras daria MA, PA, MI, RO, AM
+  assert.equal(ufDaEmpresa("Mato Grosso"), null);
+  assert.equal(ufDaEmpresa("Paraná"), null);
+  assert.equal(ufDaEmpresa("Minas Gerais"), null);
+  assert.equal(ufDaEmpresa("Roraima"), null);
+  assert.equal(ufDaEmpresa("Amapá"), null);
+});
+
+test("ultimo_uso: só regrava se nulo ou com mais de 5 min", async () => {
+  const agora = new Date("2026-10-08T12:00:00Z");
+  assert.equal(deveGravarUltimoUso(null, agora), true);
+  assert.equal(deveGravarUltimoUso("2026-10-08T11:56:00Z", agora), false);
+  assert.equal(deveGravarUltimoUso("2026-10-08T11:54:59Z", agora), true);
+  const felizes = respostasFeliz();
+  const recente = fakeAdmin(
+    respostasFeliz({
+      conector_autorizacao: {
+        data: {
+          ...(felizes.conector_autorizacao.data as object),
+          ultimo_uso: new Date(Date.now() - 60_000).toISOString(),
+        },
+      },
+    })
+  );
+  await resolverChave(recente, "sigo_at_x");
+  assert.equal(recente.chamadas.filter((t) => t === "conector_autorizacao").length, 1);
+  const nunca = fakeAdmin(respostasFeliz());
+  await resolverChave(nunca, "sigo_at_x");
+  assert.equal(nunca.chamadas.filter((t) => t === "conector_autorizacao").length, 2);
 });

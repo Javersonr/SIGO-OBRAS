@@ -7,10 +7,15 @@ import {
   erroOAuth,
   ISSUER,
   lerFormUnico,
+  mimeEssencia,
   montarRedirectErro,
   montarRedirectSucesso,
   nomeDoApp,
+  registroAberto,
   respostaRegistro,
+  revogacaoPermitida,
+  stateValido,
+  TETO_CLIENTES_SEM_USO_24H,
   validarPedidoAutorizacao,
   validarRegistro,
 } from "./oauth-regras.ts";
@@ -198,4 +203,40 @@ test("nomeDoApp: claude é sempre 'Claude' (o client_name do DCR nunca aparece)"
   // cliente apagado (cliente_id → null) ou tipo desconhecido
   assert.equal(nomeDoApp("oauth", null), "Claude");
   assert.equal(nomeDoApp("oauth", undefined), "Claude");
+});
+
+test("mimeEssencia: tira parâmetros, espaços e maiúsculas", () => {
+  assert.equal(mimeEssencia("Application/JSON; charset=utf-8"), "application/json");
+  assert.equal(mimeEssencia("application/json"), "application/json");
+  assert.equal(mimeEssencia("text/plain;application/json"), "text/plain");
+  assert.equal(mimeEssencia(" application/json+evil ; x=1"), "application/json+evil");
+  assert.equal(mimeEssencia(null), "");
+  assert.equal(mimeEssencia(undefined), "");
+});
+
+test("registroAberto: teto global de 2000 clientes sem uso em 24 h", () => {
+  assert.equal(TETO_CLIENTES_SEM_USO_24H, 2000);
+  assert.equal(registroAberto(0), true);
+  assert.equal(registroAberto(1999), true);
+  assert.equal(registroAberto(2000), false);
+  assert.equal(registroAberto(Number.NaN), false);
+});
+
+test("stateValido: ausente, vazio ou até 1000 caracteres", () => {
+  assert.equal(stateValido(undefined), true);
+  assert.equal(stateValido(null), true);
+  assert.equal(stateValido(""), true);
+  assert.equal(stateValido("x".repeat(1000)), true);
+  assert.equal(stateValido("x".repeat(1001)), false);
+  assert.equal(stateValido(42), false);
+  assert.equal(stateValido({ a: 1 }), false);
+});
+
+test("revogacaoPermitida: client_id ausente aceita; presente tem de bater", () => {
+  assert.equal(revogacaoPermitida(undefined, "sigo_c_a"), true);
+  assert.equal(revogacaoPermitida(undefined, null), true);
+  assert.equal(revogacaoPermitida("sigo_c_a", "sigo_c_a"), true);
+  assert.equal(revogacaoPermitida("sigo_c_b", "sigo_c_a"), false);
+  assert.equal(revogacaoPermitida("sigo_c_a", null), false);
+  assert.equal(revogacaoPermitida("", "sigo_c_a"), false);
 });

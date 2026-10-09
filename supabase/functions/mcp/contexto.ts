@@ -25,9 +25,61 @@ type Admin = any;
 export interface ContextoMcp {
   autorizacaoId: string;
   cliente: string;
-  usuario: { id: string; email: string; nome: string };
-  empresa: { id: string; nome: string; cnpj: string | null };
+  usuario: { id: string; email: string; nome: string }; // nome = nome_completo ?? email (nunca null)
+  empresa: { id: string; nome: string; cnpj: string | null; uf: string | null }; // uf de empresa.estado (2 letras, maiúsculas) ou null
   vinculo: Vinculo;
+  vinculoId: string; // usuario_empresa.id (vai em responsaveis_ids)
+}
+
+/** `ultimo_uso` da autorização só é regravado depois deste intervalo (menos escrita por chamada). */
+export const INTERVALO_ULTIMO_USO_MS = 5 * 60_000;
+
+const UFS = new Set([
+  "AC",
+  "AL",
+  "AP",
+  "AM",
+  "BA",
+  "CE",
+  "DF",
+  "ES",
+  "GO",
+  "MA",
+  "MT",
+  "MS",
+  "MG",
+  "PA",
+  "PB",
+  "PR",
+  "PE",
+  "PI",
+  "RJ",
+  "RN",
+  "RS",
+  "RO",
+  "RR",
+  "SC",
+  "SP",
+  "SE",
+  "TO",
+]);
+
+/**
+ * UF da empresa (coluna estado): uma das 27 UFs, em maiúsculas, ou null. Estado gravado por extenso
+ * (cadastro antigo) vira null: cortar para 2 letras daria outra UF ("Mato Grosso" viraria "MA").
+ */
+export function ufDaEmpresa(estado: unknown): string | null {
+  const uf = String(estado ?? "")
+    .trim()
+    .toUpperCase();
+  return UFS.has(uf) ? uf : null;
+}
+
+/** Regrava o ultimo_uso? Sim se nunca foi gravado ou se passou do intervalo. */
+export function deveGravarUltimoUso(ultimoUso: string | null | undefined, agora: Date): boolean {
+  if (!ultimoUso) return true;
+  const t = new Date(ultimoUso).getTime();
+  return !Number.isFinite(t) || agora.getTime() - t > INTERVALO_ULTIMO_USO_MS;
 }
 
 export type Resolucao =
@@ -55,7 +107,7 @@ export async function resolverChave(admin: Admin, bearer: string): Promise<Resol
   const { data: aut, error: erroAut } = await admin
     .from("conector_autorizacao")
     .select(
-      "id, empresa_id, usuario_custom_id, usuario_email, cliente_id, tipo, criado_em, revogado_em"
+      "id, empresa_id, usuario_custom_id, usuario_email, cliente_id, tipo, criado_em, revogado_em, ultimo_uso"
     )
     .eq("id", chave.autorizacao_id)
     .maybeSingle();
@@ -86,7 +138,7 @@ export async function resolverChave(admin: Admin, bearer: string): Promise<Resol
       .maybeSingle(),
     admin
       .from("empresa")
-      .select("id, nome, nome_fantasia, cnpj, ativo, deleted_at, conector_claude")
+      .select("id, nome, nome_fantasia, cnpj, estado, ativo, deleted_at, conector_claude")
       .eq("id", aut.empresa_id)
       .maybeSingle(),
     admin
@@ -130,15 +182,20 @@ export async function resolverChave(admin: Admin, bearer: string): Promise<Resol
       autorizacaoId: aut.id,
     };
 
-  // último uso: não bloqueia a resposta
-  admin
-    .from("conector_autorizacao")
-    .update({ ultimo_uso: new Date().toISOString() })
-    .eq("id", aut.id)
-    .then(
-      () => {},
-      () => {}
-    );
+  // último uso: no máximo uma gravação a cada 5 min, sem bloquear a resposta
+  const agora = new Date();
+  if (deveGravarUltimoUso(aut.ultimo_uso, agora)) {
+    admin
+      .from("conector_autorizacao")
+      .update({ ultimo_uso: agora.toISOString() })
+      .eq("id", aut.id)
+      .then(
+        (r: { error?: { message: string } | null }) => {
+          if (r?.error) console.error("[mcp] ultimo_uso:", r.error.message);
+        },
+        (e: unknown) => console.error("[mcp] ultimo_uso:", (e as Error)?.message ?? String(e))
+      );
+  }
   const nomeCliente = nomeDoApp(aut.tipo, cli?.tipo);
   return {
     ok: true,
@@ -148,14 +205,16 @@ export async function resolverChave(admin: Admin, bearer: string): Promise<Resol
       usuario: {
         id: usuario.id,
         email: String(usuario.email).toLowerCase(),
-        nome: usuario.nome_completo,
+        nome: String(usuario.nome_completo ?? "").trim() || String(usuario.email).toLowerCase(),
       },
       empresa: {
         id: empresa.id,
         nome: empresa.nome_fantasia || empresa.nome,
         cnpj: empresa.cnpj ?? null,
+        uf: ufDaEmpresa(empresa.estado),
       },
       vinculo,
+      vinculoId: vinculo.id,
     },
   };
 }
