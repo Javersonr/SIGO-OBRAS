@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { sigo, supabase } from "@/api/sigoClient";
 import AnexoViewer from "@/components/shared/AnexoViewer";
 import { normalizarTexto } from "@/lib/busca";
@@ -9,6 +9,13 @@ import {
   itemPorNome,
   classificarPorNomeArquivo,
 } from "@/lib/documentos-contratacao";
+import {
+  listaDeAnexos,
+  juntarAnexos,
+  reconciliarAnexos,
+  semAnexo,
+  comAnexoTrocado,
+} from "@/lib/contratacao-anexos";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -217,9 +224,25 @@ export default function ContratacaoTab({ empresaAtiva, user, onRegistrado }) {
     setSel(nova);
   };
 
+  // Uma operação por vez (envio, leitura da IA, reclassificar, remover): duas juntas gravavam a
+  // lista inteira uma por cima da outra e a IA renomeia arquivos no Storage ("Object not found").
+  const emAndamento = useRef(false);
+  const ocuparOuAvisar = () => {
+    if (emAndamento.current) {
+      toast.info("Aguarde terminar a operação em andamento");
+      return false;
+    }
+    emAndamento.current = true;
+    return true;
+  };
+  // lista como está no banco agora (outra aba ou um envio anterior pode ter mudado)
+  const anexosAtuais = async (id, campo) =>
+    listaDeAnexos((await sigo.entities.Contratacao.get(id))?.[campo]);
+
   // ------------------------------------------------------------------ upload
   const subirArquivos = async (files, campo) => {
     if (!files?.length || !sel) return;
+    if (!ocuparOuAvisar()) return;
     setOcupado("upload");
     try {
       const novos = [];
@@ -233,38 +256,47 @@ export default function ContratacaoTab({ empresaAtiva, user, onRegistrado }) {
           por_ia: false,
         });
       }
-      const lista = [...(sel[campo] || []), ...novos];
+      const lista = juntarAnexos(await anexosAtuais(sel.id, campo), novos);
       await salvar(sel.id, { [campo]: lista });
       toast.success(`${novos.length} arquivo(s) anexado(s)`);
       // Leitura AUTOMÁTICA: anexou → a IA já lê (sem precisar de botão).
       const atualizado = { ...sel, [campo]: lista };
       if (campo === "anexos") {
-        await lerComIA(atualizado);
+        await lerComIA(atualizado, true);
       } else if (campo === "exames_anexos" && empresa?.pcmso_ref) {
-        await validarExames(atualizado);
+        await validarExames(atualizado, true);
       }
     } catch (e) {
       console.error(e);
       toast.error("Erro ao anexar: " + (e?.message || e));
     } finally {
+      emAndamento.current = false;
       setOcupado("");
     }
   };
 
-  const removerAnexo = async (campo, idx) => {
-    const lista = [...(sel[campo] || [])];
-    lista.splice(idx, 1);
-    await salvar(sel.id, { [campo]: lista });
+  const removerAnexo = async (campo, anexo) => {
+    if (!ocuparOuAvisar()) return;
+    try {
+      await salvar(sel.id, { [campo]: semAnexo(await anexosAtuais(sel.id, campo), anexo?.ref) });
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao remover: " + (e?.message || e));
+    } finally {
+      emAndamento.current = false;
+    }
   };
 
   // ------------------------------------------------------------------ IA
-  // `alvo` permite chamar logo após o upload (o estado `sel` ainda é o antigo)
-  const lerComIA = async (alvo) => {
+  // `alvo` permite chamar logo após o upload (o estado `sel` ainda é o antigo);
+  // `interno` = chamada de dentro de outra operação, que já segura o `emAndamento`
+  const lerComIA = async (alvo, interno = false) => {
     const c = alvo?.id ? alvo : sel;
     if (!c?.anexos?.length) {
       toast.error("Anexe os documentos pessoais primeiro");
       return;
     }
+    if (!interno && !ocuparOuAvisar()) return;
     setOcupado("ia");
     try {
       const { data } = await sigo.functions.invoke("iaProcessar", {
@@ -324,6 +356,12 @@ export default function ContratacaoTab({ empresaAtiva, user, onRegistrado }) {
         patch.nome_completo || c.nome_completo,
         patch.anexos
       );
+      // aplica o resultado sobre a lista ATUAL do banco: o que entrou durante a leitura continua
+      patch.anexos = reconciliarAnexos(
+        await anexosAtuais(c.id, "anexos"),
+        c.anexos || [],
+        patch.anexos
+      );
       if (c.etapa === "documentos") patch.etapa = "conferencia";
       await salvar(c.id, patch);
       toast.success("✅ Documentos lidos — confira os dados preenchidos");
@@ -332,11 +370,12 @@ export default function ContratacaoTab({ empresaAtiva, user, onRegistrado }) {
       console.error(e);
       toast.error("IA: " + (e?.message || e));
     } finally {
+      if (!interno) emAndamento.current = false;
       setOcupado("");
     }
   };
 
-  const validarExames = async (alvo) => {
+  const validarExames = async (alvo, interno = false) => {
     const c = alvo?.id ? alvo : sel;
     if (!empresa?.pcmso_ref) {
       toast.error("Anexe o PCMSO da empresa primeiro (topo do painel)");
@@ -346,6 +385,7 @@ export default function ContratacaoTab({ empresaAtiva, user, onRegistrado }) {
       toast.error("Anexe os exames devolvidos pela clínica");
       return;
     }
+    if (!interno && !ocuparOuAvisar()) return;
     setOcupado("ia");
     try {
       const { data } = await sigo.functions.invoke("iaProcessar", {
@@ -370,6 +410,7 @@ export default function ContratacaoTab({ empresaAtiva, user, onRegistrado }) {
       console.error(e);
       toast.error("IA: " + (e?.message || e));
     } finally {
+      if (!interno) emAndamento.current = false;
       setOcupado("");
     }
   };
@@ -730,6 +771,7 @@ export default function ContratacaoTab({ empresaAtiva, user, onRegistrado }) {
                           multiple
                           accept=".pdf,.png,.jpg,.jpeg"
                           className="hidden"
+                          disabled={!!ocupado}
                           onChange={(e) => subirArquivos([...(e.target.files || [])], "anexos")}
                         />
                       </label>
@@ -763,11 +805,26 @@ export default function ContratacaoTab({ empresaAtiva, user, onRegistrado }) {
                       </button>
                       <Select
                         value={a.item || "none"}
+                        disabled={!!ocupado}
                         onValueChange={async (v) => {
-                          let anexos = [...sel.anexos];
-                          anexos[i] = { ...a, item: v === "none" ? null : v, por_ia: false };
-                          anexos = await renomearConformeChecklist(sel.nome_completo, anexos);
-                          await salvar(sel.id, { anexos });
+                          if (!ocuparOuAvisar()) return;
+                          try {
+                            const antes = comAnexoTrocado(
+                              await anexosAtuais(sel.id, "anexos"),
+                              a.ref,
+                              { ...a, item: v === "none" ? null : v, por_ia: false }
+                            );
+                            const anexos = await renomearConformeChecklist(
+                              sel.nome_completo,
+                              antes
+                            );
+                            await salvar(sel.id, { anexos });
+                          } catch (e) {
+                            console.error(e);
+                            toast.error("Erro ao classificar: " + (e?.message || e));
+                          } finally {
+                            emAndamento.current = false;
+                          }
                         }}
                       >
                         <SelectTrigger className="w-56 h-8 text-xs">
@@ -783,7 +840,11 @@ export default function ContratacaoTab({ empresaAtiva, user, onRegistrado }) {
                           ))}
                         </SelectContent>
                       </Select>
-                      <button onClick={() => removerAnexo("anexos", i)} title="Remover">
+                      <button
+                        onClick={() => removerAnexo("anexos", a)}
+                        title="Remover"
+                        disabled={!!ocupado}
+                      >
                         <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
                       </button>
                     </div>
@@ -972,6 +1033,7 @@ export default function ContratacaoTab({ empresaAtiva, user, onRegistrado }) {
                           multiple
                           accept=".pdf,.png,.jpg,.jpeg"
                           className="hidden"
+                          disabled={!!ocupado}
                           onChange={(e) =>
                             subirArquivos([...(e.target.files || [])], "exames_anexos")
                           }
@@ -1005,7 +1067,11 @@ export default function ContratacaoTab({ empresaAtiva, user, onRegistrado }) {
                       >
                         {a.nome}
                       </button>
-                      <button onClick={() => removerAnexo("exames_anexos", i)} title="Remover">
+                      <button
+                        onClick={() => removerAnexo("exames_anexos", a)}
+                        title="Remover"
+                        disabled={!!ocupado}
+                      >
                         <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
                       </button>
                     </div>
