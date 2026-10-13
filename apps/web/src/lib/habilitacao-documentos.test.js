@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  GRUPOS_DOCUMENTO,
+  TIPOS_DOCUMENTO,
+  mensagemDeErroAoSalvar,
   pacoteDoMes,
   rotuloDoTipo,
   situacaoDaValidade,
@@ -155,6 +158,64 @@ describe("validarDocumento", () => {
       "Informe o nome do documento",
       "Anexe o arquivo (PDF ou imagem)",
     ]);
+  });
+});
+
+describe("GRUPOS_DOCUMENTO", () => {
+  it("lista os três blocos na ordem da tela e cobre o grupo de todo tipo", () => {
+    expect(GRUPOS_DOCUMENTO).toEqual([
+      { id: "certidao", titulo: "Certidões" },
+      { id: "documento", titulo: "Documentos da empresa" },
+      { id: "outro", titulo: "Outros" },
+    ]);
+    const ids = GRUPOS_DOCUMENTO.map((g) => g.id);
+    for (const t of TIPOS_DOCUMENTO) expect(ids).toContain(t.grupo);
+  });
+});
+
+describe("mensagemDeErroAoSalvar (recusas do banco, 0154)", () => {
+  const erro = (message) => ({ message });
+  it("segunda versão viva do mesmo documento (23505)", () => {
+    expect(
+      mensagemDeErroAoSalvar(
+        erro(
+          'duplicate key value violates unique constraint "acervo_documento_substitui_uidx" (code 23505)'
+        )
+      )
+    ).toBe("Este documento já tem uma versão nova. Atualize a página e confira a lista.");
+  });
+  it("documento substituído fora de vigor (23514)", () => {
+    expect(
+      mensagemDeErroAoSalvar(
+        erro("O documento substituído não está em vigor (já foi substituído ou excluído)")
+      )
+    ).toBe("O documento escolhido para substituir não está mais em vigor. Atualize a página.");
+  });
+  it("versão nova de outro tipo (23514)", () => {
+    expect(
+      mensagemDeErroAoSalvar(
+        erro("A versão nova tem de ser do mesmo tipo do documento substituído")
+      )
+    ).toBe("A versão nova tem de ser do mesmo tipo do documento substituído.");
+  });
+  it("permissão: RLS ou permission denied", () => {
+    const esperado =
+      "Você não tem permissão para gravar na biblioteca (Oportunidades → Lista → editar).";
+    expect(
+      mensagemDeErroAoSalvar(
+        erro('new row violates row-level security policy for table "acervo_documento"')
+      )
+    ).toBe(esperado);
+    expect(mensagemDeErroAoSalvar(erro("permission denied for table acervo_documento"))).toBe(
+      esperado
+    );
+  });
+  it("qualquer outra: 'Erro ao salvar' com a mensagem quando houver", () => {
+    expect(mensagemDeErroAoSalvar(erro("falha de rede"))).toBe("Erro ao salvar: falha de rede");
+    expect(mensagemDeErroAoSalvar(new Error("boom"))).toBe("Erro ao salvar: boom");
+    expect(mensagemDeErroAoSalvar({})).toBe("Erro ao salvar");
+    expect(mensagemDeErroAoSalvar(null)).toBe("Erro ao salvar");
+    expect(mensagemDeErroAoSalvar(undefined)).toBe("Erro ao salvar");
   });
 });
 

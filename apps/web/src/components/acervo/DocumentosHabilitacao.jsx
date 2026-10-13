@@ -3,6 +3,7 @@ import { sigo } from "@/api/sigoClient";
 import { matchBusca } from "@/lib/busca";
 import { hojeEmBrasilia } from "@/lib/ead-vencimentos";
 import {
+  GRUPOS_DOCUMENTO,
   IDS_TIPO_DOCUMENTO,
   pacoteDoMes,
   rotuloDoTipo,
@@ -14,17 +15,20 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { CheckCircle2, Clock, Eye, FolderOpen, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  Eye,
+  FolderOpen,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { fmtData } from "./acervo-utils";
-import { Aviso } from "./AcervoUi";
-import DocumentoHabilitacaoSheet, { SeloValidade } from "./DocumentoHabilitacaoSheet";
-
-// blocos da lista, pelo `grupo` do tipo (certidao | documento | outro)
-const GRUPOS = [
-  { id: "certidao", titulo: "Certidões" },
-  { id: "documento", titulo: "Documentos da empresa" },
-  { id: "outro", titulo: "Outros" },
-];
+import { Aviso, SeloValidade } from "./AcervoUi";
+import DocumentoHabilitacaoSheet from "./DocumentoHabilitacaoSheet";
 
 const ordemDoTipo = (tipo) => {
   const i = IDS_TIPO_DOCUMENTO.indexOf(tipo);
@@ -215,12 +219,15 @@ function LinhaDocumento({
  * acervo_documento, 0154). O SIGO anexa estes arquivos às licitações; cada documento novo pode
  * substituir um anterior, que vai para o histórico.
  * podeEditar=false (padrão) → só leitura: sem cadastrar, editar, excluir nem versão nova.
+ * erroCarga=true → a leitura da biblioteca falhou: a lista vazia NÃO quer dizer "sem documentos",
+ * então a aba mostra o aviso de falha no lugar do vazio e esconde o cadastro e a busca.
  */
 export default function DocumentosHabilitacao({
   documentos = [],
   empresaId,
   onRecarregar,
   podeEditar = false,
+  erroCarga = false,
 }) {
   const [busca, setBusca] = useState("");
   const [mostrarVersoes, setMostrarVersoes] = useState(false);
@@ -239,7 +246,7 @@ export default function DocumentosHabilitacao({
         (a, b) =>
           ordemDoTipo(a.tipo) - ordemDoTipo(b.tipo) || nomeDe(a).localeCompare(nomeDe(b), "pt-BR")
       );
-    return GRUPOS.map((g) => ({
+    return GRUPOS_DOCUMENTO.map((g) => ({
       ...g,
       docs: visiveis.filter((d) => (tipoDocumento(d.tipo)?.grupo ?? "outro") === g.id),
     })).filter((b) => b.docs.length > 0);
@@ -249,16 +256,17 @@ export default function DocumentosHabilitacao({
 
   const excluir = async (doc) => {
     if (!podeEditar) return;
-    if (
-      !window.confirm(
-        "Excluir este documento da biblioteca? O arquivo sai da lista, e as licitações já montadas não mudam."
-      )
-    ) {
-      return;
-    }
+    // excluir a versão em vigor faz a anterior voltar a valer (o banco cuida disso, 0154)
+    const anterior = doc.substitui_id
+      ? documentos.find((d) => d?.id === doc.substitui_id)
+      : undefined;
+    const textoConfirmacao = anterior
+      ? `Excluir esta versão? A versão anterior ("${nomeDe(anterior)}") volta a valer. As licitações já montadas não mudam.`
+      : "Excluir este documento da biblioteca? O arquivo sai da lista, e as licitações já montadas não mudam.";
+    if (!window.confirm(textoConfirmacao)) return;
     try {
       await sigo.entities.AcervoDocumento.delete(doc.id);
-      toast.success("Documento excluído");
+      toast.success(anterior ? "Versão excluída: a anterior voltou a valer" : "Documento excluído");
       onRecarregar?.();
     } catch (e) {
       console.error("[Habilitação] excluir:", e);
@@ -268,38 +276,46 @@ export default function DocumentosHabilitacao({
 
   return (
     <div className="space-y-4">
-      <PacoteDoMes
-        pacote={pacote}
-        haDocumentos={ativos.length > 0}
-        podeEditar={podeEditar}
-        onNovaVersao={(doc) => setGaveta({ substituir: doc })}
-      />
+      {!erroCarga && (
+        <PacoteDoMes
+          pacote={pacote}
+          haDocumentos={ativos.length > 0}
+          podeEditar={podeEditar}
+          onNovaVersao={(doc) => setGaveta({ substituir: doc })}
+        />
+      )}
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative min-w-[14rem] flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <Input
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar por nome, número ou órgão emissor…"
-            className="pl-9"
-          />
+      {!erroCarga && (
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative min-w-[14rem] flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar por nome, número ou órgão emissor…"
+              className="pl-9"
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <Checkbox
+              checked={mostrarVersoes}
+              onCheckedChange={(v) => setMostrarVersoes(v === true)}
+            />
+            Mostrar versões anteriores
+          </label>
+          {podeEditar && (
+            <Button className="bg-amber-500 hover:bg-amber-600" onClick={() => setGaveta({})}>
+              <Plus className="mr-1.5 h-4 w-4" /> Novo documento
+            </Button>
+          )}
         </div>
-        <label className="flex items-center gap-2 text-sm text-slate-700">
-          <Checkbox
-            checked={mostrarVersoes}
-            onCheckedChange={(v) => setMostrarVersoes(v === true)}
-          />
-          Mostrar versões anteriores
-        </label>
-        {podeEditar && (
-          <Button className="bg-amber-500 hover:bg-amber-600" onClick={() => setGaveta({})}>
-            <Plus className="mr-1.5 h-4 w-4" /> Novo documento
-          </Button>
-        )}
-      </div>
+      )}
 
-      {ativos.length === 0 ? (
+      {erroCarga ? (
+        <Aviso cor="red" icon={AlertCircle} titulo="Não foi possível carregar os documentos">
+          Use o botão Atualizar no topo da página. Se continuar, avise o suporte.
+        </Aviso>
+      ) : ativos.length === 0 ? (
         <div className="rounded-xl bg-slate-50 px-4 py-12 text-center">
           <FolderOpen className="mx-auto mb-3 h-10 w-10 text-slate-300" />
           <p className="mx-auto max-w-xl font-medium text-slate-500">

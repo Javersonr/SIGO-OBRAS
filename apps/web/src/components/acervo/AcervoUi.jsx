@@ -1,6 +1,7 @@
 import React from "react";
 import { cn } from "@/lib/utils";
-import { labelTipoDoc } from "./acervo-utils";
+import { situacaoDaValidade } from "@/lib/habilitacao-documentos";
+import { fmtData, labelTipoDoc } from "./acervo-utils";
 
 // Peças visuais pequenas repetidas nas abas do Acervo técnico.
 
@@ -46,6 +47,17 @@ export function Selo({ cor = "slate", icon: Icon, children, className, title }) 
       {children}
     </span>
   );
+}
+
+/** Selo da situação da validade de um documento de habilitação. `hoje` = hojeEmBrasilia(). */
+export function SeloValidade({ validade, hoje }) {
+  const { situacao, dias } = situacaoDaValidade(validade, hoje);
+  if (situacao === "vencido") return <Selo cor="red">vencido há {-dias} dia(s)</Selo>;
+  if (situacao === "vence_logo") {
+    return <Selo cor="amber">{dias === 0 ? "vence hoje" : `vence em ${dias} dia(s)`}</Selo>;
+  }
+  if (situacao === "valido") return <Selo cor="green">válido até {fmtData(validade)}</Selo>;
+  return <Selo cor="slate">sem validade</Selo>;
 }
 
 /** Rótulo + valor num grid de dados (some quando vazio, salvo `sempre`). */

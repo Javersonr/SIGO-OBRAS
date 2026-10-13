@@ -3,8 +3,9 @@ import { sigo } from "@/api/sigoClient";
 import { refDoUpload, nomeDoArquivo } from "@/lib/anexo-ref";
 import { hojeEmBrasilia } from "@/lib/ead-vencimentos";
 import {
+  GRUPOS_DOCUMENTO,
   TIPOS_DOCUMENTO,
-  situacaoDaValidade,
+  mensagemDeErroAoSalvar,
   substituidoPadrao,
   tipoDocumento,
   validarDocumento,
@@ -27,20 +28,13 @@ import {
 import { toast } from "sonner";
 import { FileText, Loader2, Upload } from "lucide-react";
 import { fmtData } from "./acervo-utils";
-import { Selo } from "./AcervoUi";
+import { SeloValidade } from "./AcervoUi";
 
 export const BUCKET_HABILITACAO = "habilitacao";
 export const LIMITE_HABILITACAO = 50 * 1024 * 1024; // limite do bucket "habilitacao" (0154)
 
 const TIPOS_ACEITOS = ["application/pdf", "image/jpeg", "image/png"];
 const SEM_SUBSTITUICAO = "__nenhum";
-
-// grupos do Select de tipo (o `grupo` vem de TIPOS_DOCUMENTO)
-const GRUPOS_TIPO = [
-  { id: "certidao", titulo: "Certidões" },
-  { id: "documento", titulo: "Documentos da empresa" },
-  { id: "outro", titulo: "Outros" },
-];
 
 const VAZIO = {
   tipo: "",
@@ -81,17 +75,6 @@ function paraForm(documento, substituir) {
     };
   }
   return { ...VAZIO };
-}
-
-/** Selo da situação da validade (a lista e a gaveta usam o mesmo). `hoje` = hojeEmBrasilia(). */
-export function SeloValidade({ validade, hoje }) {
-  const { situacao, dias } = situacaoDaValidade(validade, hoje);
-  if (situacao === "vencido") return <Selo cor="red">vencido há {-dias} dia(s)</Selo>;
-  if (situacao === "vence_logo") {
-    return <Selo cor="amber">{dias === 0 ? "vence hoje" : `vence em ${dias} dia(s)`}</Selo>;
-  }
-  if (situacao === "valido") return <Selo cor="green">válido até {fmtData(validade)}</Selo>;
-  return <Selo cor="slate">sem validade</Selo>;
 }
 
 /**
@@ -197,7 +180,7 @@ export default function DocumentoHabilitacaoSheet({
       onOpenChange(false);
     } catch (e) {
       console.error("[Habilitação] salvar:", e);
-      toast.error("Erro ao salvar" + (e?.message ? `: ${e.message}` : ""));
+      toast.error(mensagemDeErroAoSalvar(e));
     } finally {
       setSalvando(false);
     }
@@ -210,7 +193,8 @@ export default function DocumentoHabilitacaoSheet({
       : "Novo documento";
 
   return (
-    <Sheet open={open} onOpenChange={(v) => !salvando && onOpenChange(v)}>
+    // sem fechar durante o envio nem a gravação: o resultado de um envio antigo cairia num formulário novo
+    <Sheet open={open} onOpenChange={(v) => !salvando && !enviando && onOpenChange(v)}>
       <SheetContent className="flex flex-col gap-0 p-0">
         <SheetHeader className="flex-shrink-0 border-b px-6 py-4">
           <SheetTitle>{titulo}</SheetTitle>
@@ -225,7 +209,7 @@ export default function DocumentoHabilitacaoSheet({
                   <SelectValue placeholder="Escolha o tipo" />
                 </SelectTrigger>
                 <SelectContent className="z-[9999]">
-                  {GRUPOS_TIPO.map((g) => (
+                  {GRUPOS_DOCUMENTO.map((g) => (
                     <SelectGroup key={g.id}>
                       <SelectLabel className="text-xs text-slate-500">{g.titulo}</SelectLabel>
                       {TIPOS_DOCUMENTO.filter((t) => t.grupo === g.id).map((t) => (
@@ -237,7 +221,7 @@ export default function DocumentoHabilitacaoSheet({
                   ))}
                 </SelectContent>
               </Select>
-              {!escolhaLivre && form.substitui_id && (
+              {!editando && !escolhaLivre && form.substitui_id && (
                 <p className="text-xs text-slate-600">
                   {`Substitui "${anterior?.nome ?? "o documento anterior"}" (ele vai para o histórico).`}{" "}
                   {novo && (
@@ -363,7 +347,11 @@ export default function DocumentoHabilitacaoSheet({
         </div>
 
         <div className="flex flex-shrink-0 justify-end gap-3 border-t px-6 py-4">
-          <Button variant="outline" disabled={salvando} onClick={() => onOpenChange(false)}>
+          <Button
+            variant="outline"
+            disabled={salvando || enviando}
+            onClick={() => onOpenChange(false)}
+          >
             Cancelar
           </Button>
           <Button

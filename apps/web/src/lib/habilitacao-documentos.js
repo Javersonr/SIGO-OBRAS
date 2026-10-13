@@ -29,6 +29,13 @@ export const TIPOS_DOCUMENTO = [
   t("outro", "Outro", "outro", false, false),
 ];
 
+/** Os blocos da lista e do seletor de tipo, pelo `grupo` do tipo (só a tela usa). */
+export const GRUPOS_DOCUMENTO = [
+  { id: "certidao", titulo: "Certidões" },
+  { id: "documento", titulo: "Documentos da empresa" },
+  { id: "outro", titulo: "Outros" },
+];
+
 export const IDS_TIPO_DOCUMENTO = TIPOS_DOCUMENTO.map((x) => x.id);
 export const TIPOS_ESSENCIAIS = TIPOS_DOCUMENTO.filter((x) => x.essencial).map((x) => x.id);
 export const JANELA_VENCE_LOGO_DIAS = 30;
@@ -133,6 +140,28 @@ export function versoesAnteriores(doc, docs) {
     atual = porId.get(atual.substitui_id);
   }
   return cadeia;
+}
+
+/**
+ * Mensagem para a pessoa quando gravar na biblioteca falha. As recusas da cadeia de versões vêm do
+ * banco (0154: 23505 do índice acervo_documento_substitui_uidx e 23514 do trigger); o resto cai em
+ * "Erro ao salvar" com o texto original, quando houver.
+ */
+export function mensagemDeErroAoSalvar(erro) {
+  const msg = String(erro?.message ?? "");
+  if (msg.includes("acervo_documento_substitui_uidx")) {
+    return "Este documento já tem uma versão nova. Atualize a página e confira a lista.";
+  }
+  if (msg.includes("não está em vigor")) {
+    return "O documento escolhido para substituir não está mais em vigor. Atualize a página.";
+  }
+  if (msg.includes("mesmo tipo")) {
+    return "A versão nova tem de ser do mesmo tipo do documento substituído.";
+  }
+  if (msg.includes("row-level security") || msg.includes("permission denied")) {
+    return "Você não tem permissão para gravar na biblioteca (Oportunidades → Lista → editar).";
+  }
+  return "Erro ao salvar" + (msg ? `: ${msg}` : "");
 }
 
 const aparar = (v) => String(v ?? "").trim();
