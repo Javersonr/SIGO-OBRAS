@@ -221,5 +221,5 @@ test("sem exclusão: a camada não tem método de apagar e o código não chama 
   ]);
   const fonte = readFileSync(new URL("./camada-empresa.ts", import.meta.url), "utf8");
   assert.equal(/\.delete\(|\.remove\(/.test(fonte), false);
-  assert.equal(TABELAS_DA_EMPRESA.length, 12);
+  assert.equal(TABELAS_DA_EMPRESA.length, 13);
 });

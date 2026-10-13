@@ -14,6 +14,10 @@ import {
   type AcervoQuantitativo,
 } from "./edital-regras.ts";
 import type { EditalConsolidado } from "./edital-schemas.ts";
+import {
+  certidoesDaBiblioteca,
+  type DocumentoBiblioteca,
+} from "../habilitacao/documentos-regras.ts";
 
 // deno-lint-ignore no-explicit-any
 type Admin = any;
@@ -25,7 +29,8 @@ export type TabelaAcervo =
   | "acervo_perfil"
   | "acervo_profissional"
   | "acervo_atestado"
-  | "acervo_quantitativo";
+  | "acervo_quantitativo"
+  | "acervo_documento";
 
 /** select(colunas) já filtrado pela empresa e por deleted_at is null. */
 export interface FonteAcervo {
@@ -45,6 +50,7 @@ const COLUNAS_ATESTADO =
   "id, tipo, numero, conselho, art_numero, contratante, valor, data_inicio, data_fim, objeto, cidade, uf, codigos_crea, atividades, com_execucao, situacao, profissional_nome, empresa_executora, cobre_arts, riscos, ordem";
 const COLUNAS_QUANTITATIVO =
   "atestado_id, categoria, descricao, quantidade, unidade, especificacao, na_atividade_tecnica, observacao, ordem";
+const COLUNAS_DOCUMENTO = "id, tipo, nome, numero, validade, ativo";
 
 type Pagina = (
   de: number,
@@ -63,8 +69,30 @@ async function buscarTodos(consulta: Pagina): Promise<Obj[]> {
   return out;
 }
 
+/**
+ * Documentos ativos da biblioteca de habilitação, no formato das certidões. A leitura não pode
+ * derrubar o "Atende?": se falhar (a 0154 ainda não aplicada, por exemplo), vai ao log e a regra
+ * cai nas certidões do perfil.
+ */
+async function documentosDaBiblioteca(fonte: FonteAcervo): Promise<Acervo["documentos"]> {
+  try {
+    const docs = await buscarTodos((de, ate) =>
+      fonte
+        .ler("acervo_documento", COLUNAS_DOCUMENTO)
+        .eq("ativo", true)
+        .order("tipo")
+        .order("id")
+        .range(de, ate)
+    );
+    return certidoesDaBiblioteca(docs as unknown as DocumentoBiblioteca[]);
+  } catch (e) {
+    console.error("[acervo] biblioteca de habilitação:", (e as Error)?.message ?? String(e));
+    return [];
+  }
+}
+
 export async function carregarAcervo(fonte: FonteAcervo): Promise<Acervo> {
-  const [perfilR, profissionais, atestados, quantitativos] = await Promise.all([
+  const [perfilR, profissionais, atestados, quantitativos, documentos] = await Promise.all([
     fonte.ler("acervo_perfil", "*").order("updated_at", { ascending: false }).limit(1),
     buscarTodos((de, ate) =>
       fonte
@@ -88,6 +116,7 @@ export async function carregarAcervo(fonte: FonteAcervo): Promise<Acervo> {
         .order("id")
         .range(de, ate)
     ),
+    documentosDaBiblioteca(fonte),
   ]);
   if (perfilR.error) throw new Error(`Falha ao ler o acervo: ${perfilR.error.message}`);
   const atestadosDaEmpresa = atestados as unknown as AcervoAtestado[];
@@ -100,6 +129,7 @@ export async function carregarAcervo(fonte: FonteAcervo): Promise<Acervo> {
     quantitativos: (quantitativos as unknown as AcervoQuantitativo[]).filter((q) =>
       ids.has(q.atestado_id)
     ),
+    documentos,
   };
 }
 

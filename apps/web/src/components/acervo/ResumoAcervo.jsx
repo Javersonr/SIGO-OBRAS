@@ -24,6 +24,7 @@ import {
   TIPOS_DOC,
 } from "./acervo-utils";
 import { Aviso, TipoDocBadge } from "./AcervoUi";
+import { rotuloDoTipo } from "@/lib/habilitacao-documentos";
 
 /** Link para o documento do teto (abre a aba Documentos já expandida nele). */
 function DocTeto({ teto, onAbrir }) {
@@ -50,6 +51,7 @@ export default function ResumoAcervo({
   quantitativos,
   perfil,
   profissionais,
+  documentos = [],
   onIrPara,
   onAbrirDocumento,
 }) {
@@ -76,10 +78,26 @@ export default function ResumoAcervo({
 
   const alertas = Array.isArray(perfil?.alertas) ? perfil.alertas.filter(Boolean) : [];
 
+  // Documentos ativos da biblioteca (aba "Documentos e certidões") com validade: quando há algum,
+  // eles valem no lugar das certidões em texto do perfil (a mesma regra do "Atende?" no servidor).
+  const daBiblioteca = useMemo(
+    () => (documentos || []).filter((d) => d.ativo !== false && d.validade),
+    [documentos]
+  );
+  const usaBiblioteca = daBiblioteca.length > 0;
+
   // certidões / cadastros vencidos ou vencendo em até 30 dias
   const validades = useMemo(() => {
     const out = [];
-    for (const c of Array.isArray(perfil?.certidoes) ? perfil.certidoes : []) {
+    const certidoes = usaBiblioteca
+      ? daBiblioteca.map((d) => ({
+          tipo: `${rotuloDoTipo(d.tipo)} — ${d.nome}`,
+          validade: d.validade,
+        }))
+      : Array.isArray(perfil?.certidoes)
+        ? perfil.certidoes
+        : [];
+    for (const c of certidoes) {
       const s = statusValidade(c?.validade);
       if (s && s.status !== "ok") out.push({ nome: c.tipo || c.numero || "Certidão", ...s });
     }
@@ -94,7 +112,7 @@ export default function ResumoAcervo({
       }
     }
     return out.sort((a, b) => a.dias - b.dias);
-  }, [perfil]);
+  }, [perfil, daBiblioteca, usaBiblioteca]);
 
   const rtsAtivos = profissionais.filter((p) => p.ativo !== false).length;
 
@@ -140,6 +158,15 @@ export default function ResumoAcervo({
               </li>
             ))}
           </ul>
+          {usaBiblioteca && (
+            <button
+              type="button"
+              className="mt-2 font-medium underline"
+              onClick={() => onIrPara?.("habilitacao")}
+            >
+              Abrir documentos e certidões
+            </button>
+          )}
         </Aviso>
       )}
 

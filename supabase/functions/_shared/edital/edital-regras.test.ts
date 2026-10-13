@@ -6,11 +6,13 @@ import {
   apelidarAtestados,
   avaliarEconomica,
   categoriaDaExigencia,
+  certidoesDoAcervo,
   chaveApelido,
   editalPorLote,
   montarAtende,
   motivosFraca,
   parcialFraca,
+  pendenciasAutomaticas,
   sanearEdital,
   semSumario,
   normalizar,
@@ -469,4 +471,53 @@ test("categoriaDaExigencia: palavras da categoria, mais específica, unidade só
   assert.equal(categoriaDaExigencia("rede de distribuição", "m", ["rede_subterranea"]), null);
   assert.equal(categoriaDaExigencia("subestação", "kVA", ["potencia_kva"]), "potencia_kva");
   assert.equal(categoriaDaExigencia("braços", "un", ["poste"]), null);
+});
+
+// ─── certidões: biblioteca de habilitação × perfil ──────────────────────────
+
+test("pendenciasAutomaticas: usa a biblioteca; sem ela, cai nas certidões do perfil", () => {
+  const ed = sanearEdital({});
+  ed.datas.sessao.data = "2026-11-05";
+  const base = { profissionais: [], atestados: [], quantitativos: [] };
+  const comBiblioteca = pendenciasAutomaticas(
+    ed,
+    {
+      ...base,
+      perfil: { certidoes: [{ tipo: "Certidão antiga do perfil", validade: "2026-01-01" }] },
+      documentos: [
+        { tipo: "CRF do FGTS", numero: "77", validade: "2026-10-28" },
+        { tipo: "CNDT (Trabalhista)", numero: null, validade: "2027-03-01" },
+      ],
+    },
+    "MG",
+    "2026-10-13"
+  );
+  assert.deepEqual(
+    comBiblioteca.filter((p) => p.startsWith("Renovar")),
+    ["Renovar CRF do FGTS nº 77: validade 28/10/2026 (vence antes da sessão)."]
+  );
+  const semBiblioteca = pendenciasAutomaticas(
+    ed,
+    {
+      ...base,
+      perfil: { certidoes: [{ tipo: "CND Federal", validade: "2026-01-01" }] },
+      documentos: [],
+    },
+    "MG",
+    "2026-10-13"
+  );
+  assert.deepEqual(
+    semBiblioteca.filter((p) => p.startsWith("Renovar")),
+    ["Renovar CND Federal: validade 01/01/2026 (vence antes da sessão)."]
+  );
+});
+
+test("certidoesDoAcervo: biblioteca tem prioridade; perfil nulo com biblioteca vale", () => {
+  const docs = [{ tipo: "CRF do FGTS", numero: null, validade: "2026-10-28" }];
+  const base = { profissionais: [], atestados: [], quantitativos: [] };
+  assert.deepEqual(certidoesDoAcervo({ ...base, perfil: null, documentos: docs }), docs);
+  assert.deepEqual(certidoesDoAcervo({ ...base, perfil: { certidoes: [{ tipo: "X" }] } }), [
+    { tipo: "X" },
+  ]);
+  assert.deepEqual(certidoesDoAcervo({ ...base, perfil: null }), []);
 });

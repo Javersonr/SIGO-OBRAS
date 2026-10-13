@@ -28,6 +28,7 @@ export const TABELAS_DA_EMPRESA = [
   "acervo_profissional",
   "acervo_atestado",
   "acervo_quantitativo",
+  "acervo_documento",
   "orcamento_item",
   "proposta_oportunidade",
   "mcp_link_envio",
