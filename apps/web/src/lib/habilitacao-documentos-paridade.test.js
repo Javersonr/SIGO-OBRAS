@@ -8,6 +8,12 @@ import * as tela from "./habilitacao-documentos";
 import * as servidor from "../../../../supabase/functions/_shared/habilitacao/documentos-regras.ts";
 
 describe("paridade tela × servidor", () => {
+  it("a tela exporta todo nome que o servidor exporta em tempo de execução", () => {
+    const nomes = Object.keys(servidor);
+    expect(nomes.length).toBeGreaterThan(0);
+    for (const k of nomes) expect(tela, k).toHaveProperty(k);
+  });
+
   it("mesmos tipos, na mesma ordem, com os mesmos campos", () => {
     expect(tela.TIPOS_DOCUMENTO).toEqual(servidor.TIPOS_DOCUMENTO);
     expect(tela.IDS_TIPO_DOCUMENTO).toEqual(servidor.IDS_TIPO_DOCUMENTO);
@@ -15,13 +21,14 @@ describe("paridade tela × servidor", () => {
     expect(tela.JANELA_VENCE_LOGO_DIAS).toBe(servidor.JANELA_VENCE_LOGO_DIAS);
   });
 
-  it("diasAte, situacaoDaValidade, rotuloDoTipo e certidoesDaBiblioteca dão o mesmo", () => {
+  it("diasAte, situacaoDaValidade, tipoDocumento, rotuloDoTipo e certidoesDaBiblioteca dão o mesmo", () => {
     const hoje = "2026-10-13";
     const datas = [
       null,
       "",
       "2026-10-12",
       "2026-10-13",
+      "2026-10-23T12:00:00Z",
       "2026-11-12",
       "2026-11-13",
       "2026-02-30",
@@ -32,9 +39,13 @@ describe("paridade tela × servidor", () => {
       expect(tela.situacaoDaValidade(d, hoje), String(d)).toEqual(
         servidor.situacaoDaValidade(d, hoje)
       );
+      expect(tela.situacaoDaValidade(d, hoje, 5), `${d} (janela 5)`).toEqual(
+        servidor.situacaoDaValidade(d, hoje, 5)
+      );
     }
     for (const id of [...servidor.IDS_TIPO_DOCUMENTO, "inventado", null]) {
-      expect(tela.rotuloDoTipo(id)).toBe(servidor.rotuloDoTipo(id));
+      expect(tela.tipoDocumento(id), String(id)).toEqual(servidor.tipoDocumento(id));
+      expect(tela.rotuloDoTipo(id), String(id)).toBe(servidor.rotuloDoTipo(id));
     }
     const docs = servidor.IDS_TIPO_DOCUMENTO.flatMap((tipo, i) => [
       {
@@ -47,6 +58,8 @@ describe("paridade tela × servidor", () => {
       },
       { id: `b${i}`, tipo, nome: `Sem validade ${i}`, ativo: true },
       { id: `c${i}`, tipo, nome: `Inativo ${i}`, validade: "2026-12-01", ativo: false },
+      { id: `d${i}`, tipo, nome: `Ativo nulo ${i}`, validade: "2026-12-01", ativo: null },
+      { id: `e${i}`, tipo, nome: `Sem a chave ativo ${i}`, validade: "2026-12-01" },
     ]);
     expect(tela.certidoesDaBiblioteca(docs)).toEqual(servidor.certidoesDaBiblioteca(docs));
   });

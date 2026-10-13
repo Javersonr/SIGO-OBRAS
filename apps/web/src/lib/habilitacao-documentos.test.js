@@ -57,6 +57,15 @@ describe("versoesAnteriores", () => {
     const y = doc("y", "outro", { substitui_id: "x" });
     expect(versoesAnteriores(x, [x, y]).map((d) => d.id)).toEqual(["y"]);
   });
+  it("ignora entradas vazias na lista", () => {
+    const v1 = doc("v1", "crf_fgts", { ativo: false });
+    const v2 = doc("v2", "crf_fgts", { ativo: false, substitui_id: "v1" });
+    const v3 = doc("v3", "crf_fgts", { substitui_id: "v2" });
+    expect(versoesAnteriores(v3, [null, v1, undefined, v2, v3]).map((d) => d.id)).toEqual([
+      "v2",
+      "v1",
+    ]);
+  });
 });
 
 describe("validarDocumento", () => {
@@ -109,6 +118,42 @@ describe("validarDocumento", () => {
     ]);
     expect(validarDocumento({ ...base, emissao: "2026-02-30" }).erros).toEqual([
       "Emissão: use uma data válida",
+    ]);
+  });
+  // diasAte aceita timestamp e sufixo; o formulário só aceita a data inteira AAAA-MM-DD
+  it("validade em timestamp é recusada", () => {
+    expect(validarDocumento({ ...base, validade: "2026-10-27T12:00:00Z" }).erros).toEqual([
+      "Validade: use uma data válida",
+    ]);
+  });
+  it("emissão em timestamp é recusada", () => {
+    expect(validarDocumento({ ...base, emissao: "2026-09-28T00:00:00Z" }).erros).toEqual([
+      "Emissão: use uma data válida",
+    ]);
+  });
+  it("validade com sufixo depois da data é recusada", () => {
+    expect(validarDocumento({ ...base, validade: "2026-10-27x" }).erros).toEqual([
+      "Validade: use uma data válida",
+    ]);
+  });
+  it("nome: 200 caracteres passa, 201 não", () => {
+    expect(validarDocumento({ ...base, nome: "n".repeat(200) }).ok).toBe(true);
+    const r = validarDocumento({ ...base, nome: "n".repeat(201) });
+    expect(r.ok).toBe(false);
+    expect(r.erros).toEqual(["Nome: use até 200 caracteres"]);
+  });
+  it("validade igual à emissão é aceita", () => {
+    const r = validarDocumento({ ...base, emissao: "2026-10-27", validade: "2026-10-27" });
+    expect(r.ok).toBe(true);
+    expect(r.erros).toEqual([]);
+  });
+  it("sem formulário (null) devolve os três erros obrigatórios, sem lançar", () => {
+    const r = validarDocumento(null);
+    expect(r.ok).toBe(false);
+    expect(r.erros).toEqual([
+      "Escolha o tipo do documento",
+      "Informe o nome do documento",
+      "Anexe o arquivo (PDF ou imagem)",
     ]);
   });
 });

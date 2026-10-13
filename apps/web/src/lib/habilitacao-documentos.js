@@ -123,7 +123,7 @@ export function substituidoPadrao(tipo, docs) {
 
 /** Versões anteriores de `doc` (segue substitui_id), da mais nova para a mais antiga; para em ciclo. */
 export function versoesAnteriores(doc, docs) {
-  const porId = new Map((docs || []).map((d) => [d.id, d]));
+  const porId = new Map((docs || []).filter(Boolean).map((d) => [d.id, d]));
   const vistos = new Set([doc?.id]);
   const cadeia = [];
   let atual = porId.get(doc?.substitui_id);
