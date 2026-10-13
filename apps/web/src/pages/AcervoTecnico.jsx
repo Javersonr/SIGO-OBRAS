@@ -12,6 +12,7 @@ import ResumoAcervo from "@/components/acervo/ResumoAcervo";
 import DocumentosAcervo from "@/components/acervo/DocumentosAcervo";
 import QuadroTecnico from "@/components/acervo/QuadroTecnico";
 import PerfilEconomico from "@/components/acervo/PerfilEconomico";
+import DocumentosHabilitacao from "@/components/acervo/DocumentosHabilitacao";
 
 /**
  * Acervo técnico da EMPRESA LOGADA (tabelas acervo_* da 0109, RLS por empresa):
@@ -27,6 +28,13 @@ import PerfilEconomico from "@/components/acervo/PerfilEconomico";
 // abas ficam montadas (forceMount) para não perder filtros nem edição não salva
 const CLASSE_ABA = "mt-4 data-[state=inactive]:hidden";
 
+// aba aberta pelo link (?aba=habilitacao), p. ex. o aviso de vencimento que leva à biblioteca
+const ABAS = ["resumo", "documentos", "quadro", "perfil", "habilitacao"];
+const abaDaUrl = () => {
+  const a = new URLSearchParams(window.location.search).get("aba");
+  return ABAS.includes(a) ? a : "resumo";
+};
+
 export default function AcervoTecnico() {
   const { empresaAtiva } = useEmpresa();
   const { can } = usePermission();
@@ -35,7 +43,7 @@ export default function AcervoTecnico() {
   const empresaId = empresaAtiva?.id;
   const nomeEmpresa = empresaAtiva?.nome || empresaAtiva?.nome_fantasia || "";
 
-  const [aba, setAba] = useState("resumo");
+  const [aba, setAba] = useState(abaDaUrl);
   const [carregando, setCarregando] = useState(true);
   const [carregado, setCarregado] = useState(false);
   const [erro, setErro] = useState(null);
@@ -43,6 +51,7 @@ export default function AcervoTecnico() {
   const [profissionais, setProfissionais] = useState([]);
   const [atestados, setAtestados] = useState([]);
   const [quantitativos, setQuantitativos] = useState([]);
+  const [documentos, setDocumentos] = useState([]);
   const [docFoco, setDocFoco] = useState(null);
   const pedido = useRef(0);
 
@@ -53,11 +62,18 @@ export default function AcervoTecnico() {
     setErro(null);
     try {
       const filtro = { empresa_id: empresaId };
-      const [perfis, profs, docs, quants] = await Promise.all([
+      const [perfis, profs, docs, quants, habilitacao] = await Promise.all([
         sigo.entities.AcervoPerfil.filter(filtro, { sort_by: "-updated_at", limit: 1 }),
         sigo.entities.AcervoProfissional.filter(filtro, { sort_by: "nome" }),
         sigo.entities.AcervoAtestado.filter(filtro, { sort_by: "ordem,data_inicio" }),
         sigo.entities.AcervoQuantitativo.filter(filtro, { sort_by: "ordem" }),
+        // a tabela só existe depois da migração 0154: a falha aqui não pode derrubar o resto da página
+        sigo.entities.AcervoDocumento.filter(filtro, { sort_by: "tipo,nome", limit: 2000 }).catch(
+          (e) => {
+            console.error("[Acervo] documentos de habilitação:", e);
+            return [];
+          }
+        ),
       ]);
       if (meu !== pedido.current) return;
       const novo = perfis?.[0] || null;
@@ -68,6 +84,7 @@ export default function AcervoTecnico() {
       setProfissionais(profs || []);
       setAtestados(docs || []);
       setQuantitativos(quants || []);
+      setDocumentos(habilitacao || []);
       setCarregado(true);
     } catch (e) {
       if (meu !== pedido.current) return;
@@ -86,6 +103,7 @@ export default function AcervoTecnico() {
     setProfissionais([]);
     setAtestados([]);
     setQuantitativos([]);
+    setDocumentos([]);
     carregar();
   }, [carregar]);
 
@@ -176,6 +194,9 @@ export default function AcervoTecnico() {
             <TabsTrigger value="documentos">Documentos ({atestados.length})</TabsTrigger>
             <TabsTrigger value="quadro">Quadro técnico ({profissionais.length})</TabsTrigger>
             <TabsTrigger value="perfil">Econômico-financeiro e registros</TabsTrigger>
+            <TabsTrigger value="habilitacao">
+              Documentos e certidões ({documentos.filter((d) => d.ativo !== false).length})
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="resumo" forceMount className={CLASSE_ABA}>
@@ -184,6 +205,7 @@ export default function AcervoTecnico() {
               quantitativos={quantitativos}
               perfil={perfil}
               profissionais={profissionais}
+              documentos={documentos}
               onIrPara={setAba}
               onAbrirDocumento={abrirDocumento}
             />
@@ -212,6 +234,14 @@ export default function AcervoTecnico() {
           <TabsContent value="perfil" forceMount className={CLASSE_ABA}>
             <PerfilEconomico
               perfil={perfil}
+              empresaId={empresaId}
+              onRecarregar={carregar}
+              podeEditar={podeEditar}
+            />
+          </TabsContent>
+          <TabsContent value="habilitacao" forceMount className={CLASSE_ABA}>
+            <DocumentosHabilitacao
+              documentos={documentos}
               empresaId={empresaId}
               onRecarregar={carregar}
               podeEditar={podeEditar}
