@@ -27,6 +27,7 @@ const ARQUIVOS = [
   "../../lib/portal-ciencias.js",
   "../../lib/validacao-certificado.js",
   "../../lib/certificado-ead.js",
+  "../../lib/portal-leitura.js",
 ];
 
 const comEmoji = (caminho) =>

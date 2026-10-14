@@ -48,7 +48,7 @@ describe("aviso de 409/429 que some no próximo envio certo (T31, M2)", () => {
   it("o erro do envio de progresso e do evento guarda o texto passageiro, e o sucesso o tira", () => {
     const sincronizar = trecho(
       "const sincronizar = async",
-      "// leitura (PDF/texto) pode contar agora?"
+      "// tempo de tela das aulas sem player"
     );
     expect(sincronizar).toMatch(/envioDeuCerto\(\);\s*\/\/ o servidor é quem manda/);
     expect(sincronizar).toContain("tratarErroDeEnvio(e)");
@@ -67,5 +67,40 @@ describe("aviso de 409/429 que some no próximo envio certo (T31, M2)", () => {
     expect(sucesso).toContain("setErro((atual) => erroAposEnvioCerto(atual, aviso))");
     const erroDeEnvio = trecho("const tratarErroDeEnvio = (e) => {", "const envioDeuCerto");
     expect(erroDeEnvio).toContain("textoDoAvisoPassageiro(e)");
+  });
+});
+
+describe("leitura até o fim, sem relógio (A5)", () => {
+  it("o botão de concluir a leitura vem de botaoDeLeitura e só acende com o fim alcançado", () => {
+    expect(fonte).toContain("botaoDeLeitura({");
+    expect(fonte).toContain("chegouAoFim: fimAlcancado[aula.id] === true");
+    expect(fonte).toMatch(/disabled=\{!botaoLeitura\.habilitado\}/);
+  });
+
+  it("não sobrou contagem regressiva nem o 409 de tempo de leitura", () => {
+    expect(fonte).not.toMatch(/faltam \$\{fmtTempo/);
+    expect(fonte).not.toContain("segundosTela < minimo");
+    expect(fonte).not.toContain("TEMPO_LEITURA");
+  });
+
+  it("texto e tarefa têm o marcador de fim; a apostila avisa o fim pelo onFim", () => {
+    expect(fonte).toMatch(/<MarcadorDeFim[\s\S]*?onVisivel=\{\(\) => marcarFim\(aula\.id\)\}/);
+    expect(fonte).toMatch(/onFim=\{\(\) => marcarFim\(aula\.id\)\}/);
+  });
+});
+
+describe("ApostilaPdf: o pdf.js desenha a apostila em todas as telas (A5)", () => {
+  const apostila = readFileSync(fileURLToPath(new URL("ApostilaPdf.jsx", import.meta.url)), "utf8");
+
+  it("não usa mais o iframe do navegador nem a consulta de mídia do celular", () => {
+    expect(apostila).not.toContain("<iframe");
+    expect(apostila).not.toContain("apostilaNaPagina");
+  });
+
+  it("o fim só vale com o documento aberto e medido, e é avisado uma vez só", () => {
+    expect(apostila).toContain("fimDaApostilaAlcancado({");
+    expect(apostila).toMatch(
+      /if \(fimAvisadoRef\.current\) return;\s*fimAvisadoRef\.current = true;/
+    );
   });
 });

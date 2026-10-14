@@ -3,44 +3,53 @@ import { AlertTriangle, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { carregarPdfjs } from "@/lib/pdfjs";
 import {
-  MEDIA_APOSTILA_NA_PAGINA,
-  apostilaNaPagina,
+  fimDaApostilaAlcancado,
   medidasDaPagina,
   mensagemFalhaPdf,
   urlApostilaValida,
 } from "@/lib/apostila-pdf";
 
 /**
- * Apostila em PDF do curso (a 1ª aula, que libera as demais).
+ * Apostila em PDF de uma aula.
  *
- * - Computador: <iframe> do próprio navegador.
- * - Celular, tablet ou janela estreita (`MEDIA_APOSTILA_NA_PAGINA`): o navegador costuma não
- *   mostrar PDF em iframe, então as páginas são desenhadas aqui com o pdf.js, uma a uma, numa
- *   área com rolagem. O PDF é baixado uma vez só, direto pelo pdf.js (sem passar por blob).
- * - Nos dois casos há "Abrir em outra aba" (o tempo de leitura fica parado enquanto o aluno
- *   estiver fora do portal).
+ * - As páginas são desenhadas aqui com o pdf.js, uma a uma, numa área com rolagem, em TODAS as telas (A5).
+ *   No computador era o iframe do navegador, de onde o portal não sabe até onde o aluno rolou; a leitura
+ *   agora conclui ao chegar ao fim. O PDF é baixado uma vez só, direto pelo pdf.js (sem passar por blob).
+ *   Consequência aceita: no computador some a barra do visualizador do navegador (zoom, busca).
+ * - `onFim()` é chamado UMA vez, quando o fim da última página aparece na área de leitura (o marcador logo
+ *   depois dela): é o que acende o "Marcar como lida".
+ * - "Abrir em outra aba" continua (o tempo de tela fica parado enquanto o aluno estiver fora do portal, e o
+ *   fim só conta rolando aqui).
  * - Sem URL válida: "Apostila indisponível — avise o RH".
  *
- * `onEstado("carregando" | "pronto" | "erro")` diz ao CursoPortal quando a apostila está de fato
- * na tela; só então o contador de leitura corre (regra em lib/apostila-pdf.js).
+ * `onEstado("carregando" | "pronto" | "erro")` diz ao CursoPortal quando a apostila está de fato na tela;
+ * só então o tempo de tela corre (regra em lib/apostila-pdf.js).
  * `obterUrlNova()` devolve uma URL assinada nova (a de 3 h pode vencer) para "Tentar de novo".
  */
-export default function ApostilaPdf({ url, titulo, onEstado, obterUrlNova }) {
-  const naPagina = useApostilaNaPagina();
+export default function ApostilaPdf({ url, titulo, onEstado, obterUrlNova, onFim }) {
   const [total, setTotal] = useState(null);
 
-  // os callbacks do pai mudam a cada render (o contador de leitura re-renderiza a cada segundo):
+  // os callbacks do pai mudam a cada render (o contador de tempo re-renderiza a cada segundo):
   // guardados em ref para o leitor não recarregar nem re-renderizar por causa deles
   const onEstadoRef = useRef(onEstado);
   onEstadoRef.current = onEstado;
   const obterUrlNovaRef = useRef(obterUrlNova);
   obterUrlNovaRef.current = obterUrlNova;
+  const onFimRef = useRef(onFim);
+  onFimRef.current = onFim;
+  const fimAvisadoRef = useRef(false);
   const avisar = useCallback((estado) => onEstadoRef.current?.(estado), []);
   const pedirUrlNova = useCallback(() => obterUrlNovaRef.current?.(), []);
+  // o fim vale uma vez por apostila aberta (o CursoPortal monta uma ApostilaPdf por aula)
+  const avisarFim = useCallback(() => {
+    if (fimAvisadoRef.current) return;
+    fimAvisadoRef.current = true;
+    onFimRef.current?.();
+  }, []);
 
   // A URL assinada muda a cada recarga dos dados do portal (concluir aula, dúvida...). A que
-  // abriu a apostila fica travada: trocar o src do iframe ou recarregar o PDF no meio da
-  // leitura baixaria o arquivo de novo e voltaria a rolagem ao topo.
+  // abriu a apostila fica travada: recarregar o PDF no meio da leitura baixaria o arquivo de
+  // novo e voltaria a rolagem ao topo.
   const atual = urlApostilaValida(url) ? url.trim() : null;
   const travadaRef = useRef(null);
   if (atual && !travadaRef.current) travadaRef.current = atual;
@@ -68,7 +77,7 @@ export default function ApostilaPdf({ url, titulo, onEstado, obterUrlNova }) {
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs text-slate-500">
-          {naPagina && total
+          {total
             ? `Apostila em PDF · ${total} ${total === 1 ? "página" : "páginas"}`
             : "Apostila em PDF"}
         </span>
@@ -78,55 +87,32 @@ export default function ApostilaPdf({ url, titulo, onEstado, obterUrlNova }) {
           </a>
         </Button>
       </div>
-      {naPagina ? (
-        <PdfNaPagina
-          url={urlLeitura}
-          titulo={titulo}
-          avisar={avisar}
-          pedirUrlNova={pedirUrlNova}
-          aoSaberTotal={setTotal}
-        />
-      ) : (
-        <PdfIframe url={urlLeitura} titulo={titulo} avisar={avisar} />
-      )}
-      <p className="text-[11px] text-slate-500">Em outra aba, o tempo de leitura fica parado.</p>
+      <PdfNaPagina
+        url={urlLeitura}
+        titulo={titulo}
+        avisar={avisar}
+        pedirUrlNova={pedirUrlNova}
+        aoSaberTotal={setTotal}
+        aoChegarAoFim={avisarFim}
+      />
+      <p className="text-[11px] text-slate-500">
+        Role até o fim da última página para liberar o botão. Em outra aba, o tempo de tela fica
+        parado.
+      </p>
     </div>
   );
 }
 
-const perguntarMedia = () =>
-  typeof window !== "undefined" && typeof window.matchMedia === "function"
-    ? (consulta) => window.matchMedia(consulta)
-    : undefined;
-
-/** true = celular/toque/janela estreita; acompanha girar a tela e redimensionar a janela. */
-function useApostilaNaPagina() {
-  const [naPagina, setNaPagina] = useState(() => apostilaNaPagina(perguntarMedia()));
-  useEffect(() => {
-    const mq = perguntarMedia()?.(MEDIA_APOSTILA_NA_PAGINA);
-    if (!mq) return undefined;
-    const aoMudar = () => setNaPagina(!!mq.matches);
-    aoMudar();
-    if (mq.addEventListener) mq.addEventListener("change", aoMudar);
-    else mq.addListener?.(aoMudar); // Safari antigo
-    return () => {
-      if (mq.removeEventListener) mq.removeEventListener("change", aoMudar);
-      else mq.removeListener?.(aoMudar);
-    };
-  }, []);
-  return naPagina;
-}
-
-function PdfIframe({ url, titulo, avisar }) {
-  // o navegador não avisa se o PDF abriu: vale como aberto desde que a URL é válida
-  useEffect(() => {
-    avisar("pronto");
-  }, [avisar]);
-  return <iframe title={titulo} src={url} className="w-full h-[70vh] rounded-lg border bg-white" />;
-}
-
-const PdfNaPagina = memo(function PdfNaPagina({ url, titulo, avisar, pedirUrlNova, aoSaberTotal }) {
+const PdfNaPagina = memo(function PdfNaPagina({
+  url,
+  titulo,
+  avisar,
+  pedirUrlNova,
+  aoSaberTotal,
+  aoChegarAoFim,
+}) {
   const rolagemRef = useRef(null);
+  const fimRef = useRef(null);
   const urlDaTentativaRef = useRef(url);
   const prontoRef = useRef(false);
   const [largura, setLargura] = useState(0);
@@ -182,7 +168,31 @@ const PdfNaPagina = memo(function PdfNaPagina({ url, titulo, avisar, pedirUrlNov
     };
   }, [tentativa, avisar, aoSaberTotal]);
 
-  // a apostila só vale como lida com a 1ª página na tela
+  // fim da leitura (A5): o marcador logo depois da última página entra na área de leitura. Só vale com o
+  // documento aberto, a largura medida (fimDaApostilaAlcancado) e nenhuma falha na tela: antes disso as
+  // páginas não têm altura e o marcador ficaria à vista de cara. Sem IntersectionObserver (navegador
+  // antigo) o fim não pode ser medido, e o aluno não pode ficar preso: vale como alcançado.
+  useEffect(() => {
+    const marcador = fimRef.current;
+    if (!doc || falha || !marcador) return undefined;
+    if (typeof IntersectionObserver !== "function") {
+      if (fimDaApostilaAlcancado({ total: doc.total, largura, visivel: true })) aoChegarAoFim();
+      return undefined;
+    }
+    const observador = new IntersectionObserver(
+      (entradas) => {
+        const visivel = entradas.some((e) => e.isIntersecting);
+        if (!fimDaApostilaAlcancado({ total: doc.total, largura, visivel })) return;
+        observador.disconnect();
+        aoChegarAoFim();
+      },
+      { root: rolagemRef.current }
+    );
+    observador.observe(marcador);
+    return () => observador.disconnect();
+  }, [doc, falha, largura, aoChegarAoFim]);
+
+  // o tempo de tela da apostila só corre com a 1ª página na tela
   const aoDesenharPagina = useCallback(() => {
     if (prontoRef.current) return;
     prontoRef.current = true;
@@ -235,6 +245,8 @@ const PdfNaPagina = memo(function PdfNaPagina({ url, titulo, avisar, pedirUrlNov
             aoFalhar={aoFalharPagina}
           />
         ))}
+        {/* marcador do fim da leitura: só existe com o documento aberto */}
+        {doc && <div ref={fimRef} aria-hidden="true" className="h-px" />}
       </div>
       {!doc && !falha && (
         <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-slate-600 pointer-events-none">

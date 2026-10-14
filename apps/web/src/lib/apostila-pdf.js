@@ -1,28 +1,11 @@
 /**
- * Apostila em PDF no Portal do Funcionário (T11) — regras puras, sem DOM.
+ * Apostila em PDF no Portal do Funcionário (T11, A5) — regras puras, sem DOM.
  *
- * A apostila é a 1ª aula dos cursos e bloqueia as demais. No computador ela
- * aparece num <iframe>; no celular o navegador costuma não mostrar PDF em
- * iframe (Chrome Android, WebView e Safari mostram só a 1ª página ou nada),
- * então o portal desenha as páginas com o pdf.js, dentro da própria tela.
+ * O portal desenha as páginas com o pdf.js, dentro da própria tela, em TODOS os aparelhos: no computador a
+ * apostila era um iframe do navegador, de onde o portal não sabe até onde o aluno rolou, e a leitura passou
+ * a concluir quando o aluno chega ao fim (A5). No celular o iframe nem mostrava o PDF direito.
  * Quem usa: components/portal-funcionario/ApostilaPdf.jsx e CursoPortal.jsx.
  */
-
-/**
- * Mesma consulta que o SIGO usa em components/shared/AnexoViewer.jsx
- * (`pdfSemIframe`): tela estreita OU toque como ponteiro principal.
- */
-export const MEDIA_APOSTILA_NA_PAGINA = "(max-width: 640px), (pointer: coarse)";
-
-/** true = desenhar o PDF na página (pdf.js); false = manter o iframe. */
-export function apostilaNaPagina(matchMedia) {
-  if (typeof matchMedia !== "function") return false;
-  try {
-    return !!matchMedia(MEDIA_APOSTILA_NA_PAGINA)?.matches;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * A URL da apostila é assinada pelo servidor e sempre absoluta (http/https).
@@ -41,12 +24,15 @@ export function urlApostilaValida(url) {
   }
 }
 
+/** Aulas sem player cujo conteúdo está na própria página: o tempo de tela conta enquanto estão abertas. */
+const CONTA_COM_A_TELA_ABERTA = ["texto", "tarefa", "questionario", "caso"];
+
 /**
- * O tempo de leitura só corre com o conteúdo de fato na tela:
- * - texto: sempre (está na própria página);
+ * O tempo de tela das aulas sem player só corre com o conteúdo de fato na tela. Ele não libera nada (A5:
+ * a leitura conclui ao chegar ao fim); vai para a trilha.
+ * - texto, tarefa, questionário e caso: sempre (estão na própria página);
  * - PDF: com URL válida E a apostila já aberta (`estadoPdf === "pronto"`);
- *   com a URL nula ou com o quadro em branco/carregando/falha, o contador fica
- *   parado (antes ele corria com o iframe em about:blank);
+ *   com a URL nula ou com o quadro em branco/carregando/falha, o contador fica parado;
  * - vídeo: quem conta é o player (play/pausa), não esta regra.
  *
  * @param {{tipo?: string, arquivo_url?: string|null}|null} aula
@@ -54,9 +40,26 @@ export function urlApostilaValida(url) {
  */
 export function leituraPodeContar(aula, estadoPdf) {
   if (!aula) return false;
-  if (aula.tipo === "texto") return true;
+  if (CONTA_COM_A_TELA_ABERTA.includes(aula.tipo)) return true;
   if (aula.tipo === "pdf") return urlApostilaValida(aula.arquivo_url) && estadoPdf === "pronto";
   return false;
+}
+
+/**
+ * O aluno chegou ao fim da apostila: o marcador logo depois da última página apareceu na área de leitura.
+ * Só vale com o documento aberto (`total` de páginas) e a largura da área medida: antes disso as páginas
+ * ainda não têm altura, o marcador fica à vista de cara e liberaria a leitura sem rolar nada.
+ *
+ * @param {{ total?: number|null, largura?: number, visivel?: boolean }} [p]
+ */
+export function fimDaApostilaAlcancado({ total, largura, visivel } = {}) {
+  return (
+    Number.isInteger(total) &&
+    total > 0 &&
+    Number.isFinite(largura) &&
+    largura > 0 &&
+    visivel === true
+  );
 }
 
 // densidade de pixels: 2x já deixa o texto nítido e 3x só gasta memória
