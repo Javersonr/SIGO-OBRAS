@@ -26,10 +26,12 @@ import AvaliacaoPortal from "./AvaliacaoPortal";
 import CertificadoPortal from "./CertificadoPortal";
 import DuvidasPortal from "./DuvidasPortal";
 import ApostilaPdf from "./ApostilaPdf";
+import QuestionarioPortal from "./QuestionarioPortal";
 import PrazoDoCurso from "./PrazoDoCurso";
 import { leituraPodeContar, urlApostilaValida } from "@/lib/apostila-pdf";
 import {
   MSG_PREVIA_CONCLUSAO,
+  avisoDeAulaConcluida,
   botaoDeLeitura,
   chaveDoPainelDaAula,
   rotuloDoTipoNaLista,
@@ -803,6 +805,32 @@ export default function CursoPortal({
     await pararContagem(false);
     sincronizar({ concluir: true });
   };
+
+  // Questionário aprovado ou caso concluído: quem concluiu a aula foi a ação própria, no servidor (o
+  // `progresso` nunca conclui essas aulas). O tempo de tela que ainda não tinha ido segue para a trilha, sem
+  // pedir conclusão, e a lista é buscada de novo para liberar a próxima aula. Prévia: só o aviso.
+  const aoConcluirAtividade = async (resposta) => {
+    if (previa) {
+      setAviso(MSG_PREVIA_CONCLUSAO);
+      return;
+    }
+    const a = aulaRef.current;
+    pararContagem(false);
+    if (a) {
+      const segundos = Math.floor(assistidoRef.current);
+      fila(() =>
+        chamarPortal(
+          "progresso",
+          { matricula_id: mat.id, aula_id: a.id, segundos_assistidos: segundos },
+          token
+        )
+      )
+        .then(() => envioDeuCerto())
+        .catch(tratarErroDeEnvio);
+    }
+    const novos = await atualizarAulas();
+    setAviso(avisoDeAulaConcluida({ resposta, dados: novos, matriculaId: mat.id }));
+  };
   // vídeo: de onde vem (arquivo, YouTube ou nada), com a URL travada na que abriu a aula
   const midias = (aula && midiasDaAula[aula.id]) || {
     video_url: aula?.video_url,
@@ -859,7 +887,8 @@ export default function CursoPortal({
             <Eye className="w-4 h-4 shrink-0" />
             <span className="flex-1 min-w-[12rem]">
               <strong>Prévia como aluno.</strong> Nada é gravado: sem matrícula, tempo, tentativa,
-              certificado nem trilha. Todas as aulas estão liberadas e a prova mostra o gabarito.
+              certificado nem trilha. Todas as aulas estão liberadas e a prova e os questionários
+              mostram o gabarito.
             </span>
             <Button type="button" size="sm" variant="outline" className="bg-white" onClick={voltar}>
               Sair da prévia
@@ -1073,6 +1102,18 @@ export default function CursoPortal({
             {aula.tipo === "tarefa" && <TarefaDeEstudo aula={aula} />}
             {(aula.tipo === "texto" || aula.tipo === "tarefa") && (
               <MarcadorDeFim key={aula.id} onVisivel={() => marcarFim(aula.id)} />
+            )}
+            {aula.tipo === "questionario" && (
+              <QuestionarioPortal
+                key={aula.id}
+                api={api}
+                item={item}
+                aula={aula}
+                token={token}
+                fila={fila}
+                tratarErro={tratarErro}
+                onConcluida={aoConcluirAtividade}
+              />
             )}
             <div className="text-sm text-slate-600 flex flex-wrap items-center gap-2">
               <span className="font-medium text-slate-800">{aula.titulo}</span>

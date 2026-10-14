@@ -137,3 +137,16 @@ describe("ApostilaPdf: o pdf.js desenha a apostila em todas as telas (A5)", () =
     );
   });
 });
+
+describe("questionário do módulo (A2)", () => {
+  it("o CursoPortal abre o QuestionarioPortal com a API injetada; a conclusão vem da ação própria", () => {
+    expect(fonte).toMatch(
+      /aula\.tipo === "questionario" && \(\s*<QuestionarioPortal[\s\S]*?api=\{api\}[\s\S]*?onConcluida=\{aoConcluirAtividade\}/
+    );
+    const conclusao = trecho("const aoConcluirAtividade = async", "\n  };");
+    expect(conclusao).toMatch(/if \(previa\) \{\s*setAviso\(MSG_PREVIA_CONCLUSAO\);\s*return;/);
+    // o progresso que vai junto só leva o tempo de tela: quem conclui é a ação do questionário/caso
+    expect(conclusao).not.toContain("concluir:");
+    expect(conclusao).toContain("avisoDeAulaConcluida({");
+  });
+});

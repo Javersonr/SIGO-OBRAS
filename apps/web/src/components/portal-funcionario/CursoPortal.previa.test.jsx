@@ -326,6 +326,7 @@ describe("a prévia só pode falar com o servidor pela API injetada", () => {
     "AvaliacaoPortal.jsx",
     "DuvidasPortal.jsx",
     "CertificadoPortal.jsx",
+    "QuestionarioPortal.jsx",
   ]) {
     it(`${arquivo} importa só \`apiPortal\` de ./api, nunca \`chamarPortal\``, () => {
       const fonte = readFileSync(fileURLToPath(new URL(arquivo, import.meta.url)), "utf8");
