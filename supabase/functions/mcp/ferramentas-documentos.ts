@@ -11,6 +11,7 @@
 import {
   baixarObjeto,
   caminhoDaEmpresa,
+  ErroArquivo,
   gravarNaOportunidade,
   nomeParaExibir,
   PASTA_CREDENCIAMENTO,
@@ -34,7 +35,7 @@ import {
 } from "../_shared/documentos/dados-proposta.ts";
 import { gerarDocxDeclaracao } from "../_shared/documentos/declaracao-docx.ts";
 import type { LogoDocumento } from "../_shared/documentos/declaracao-comum.ts";
-import { gerarPdfDeclaracao } from "../_shared/documentos/declaracao-pdf.ts";
+import { gerarPdfDeclaracao, sondarLogoNoPdf } from "../_shared/documentos/declaracao-pdf.ts";
 import {
   chaveDoItem,
   MAX_ITENS_DECLARACAO,
@@ -49,7 +50,7 @@ import {
   type ModeloDeclaracao,
 } from "../_shared/documentos/declaracoes.ts";
 import { dataPorExtenso } from "../_shared/documentos/formatos.ts";
-import { lerImagem } from "../_shared/documentos/imagem.ts";
+import { conferirImagem, lerImagem } from "../_shared/documentos/imagem.ts";
 import {
   bytesDaPlanilha,
   bytesDoPdf,
@@ -87,33 +88,48 @@ export const LEMBRETE_ASSINATURA =
 
 /**
  * Linhas do orçamento (etapas e itens: cada uma é uma linha da tabela do PDF e do Excel) que o conector gera.
- * Edge Function tem limite de CPU por chamada. Medido em 14/10/2026 no PC de desenvolvimento (i3 de 2 núcleos,
- * mais lento que o servidor; 3 rodadas), PDF + Excel da proposta: 500 linhas ≈ 0,43 a 0,65 s; 1000 ≈ 0,75 a
- * 1,15 s; 2000 ≈ 1,5 a 2,7 s; 3000 ≈ 2,5 a 2,9 s. O limite é o maior número que fica em torno de 1 s aqui.
+ * Edge Function tem limite de CPU por chamada (~2 s). Medido em 14/10/2026 no PC de desenvolvimento (i3 de 2
+ * núcleos, mais lento que o servidor; 3 rodadas), PDF + Excel da proposta sozinhos: 500 linhas ≈ 0,43 a
+ * 0,65 s; 1000 ≈ 0,75 a 1,15 s; 2000 ≈ 1,5 a 2,7 s; 3000 ≈ 2,5 a 2,9 s. O limite sai do pior caso SOMADO de
+ * uma chamada (proposta e cronograma do mesmo orçamento): 800 linhas com 2400 células de cronograma ≈ 1,1 a
+ * 1,4 s aqui (1000 linhas com 3000 células chegava a 1,9 s, perto demais do limite).
  */
-export const MAX_ITENS_DOCUMENTO = 1000;
+export const MAX_ITENS_DOCUMENTO = 800;
 /**
- * Etapas × meses do cronograma (cada célula é R$ e % no PDF). Medido no mesmo PC, PDF + Excel: 2400 células
- * (24 meses × 100 etapas) ≈ 0,5 a 0,8 s; 3000 (60 × 50) ≈ 0,6 a 0,9 s; 7200 (24 × 300) ≈ 1,5 a 2,4 s. Acima do
- * limite o cronograma não é gerado pelo conector: a proposta sai, e o aviso manda usar a tela.
+ * Etapas × meses do cronograma (cada célula é R$ e % no PDF). Medido no mesmo PC, PDF + Excel do cronograma
+ * sozinho: 2400 células (24 meses × 100 etapas) ≈ 0,5 a 0,8 s; 3000 (60 × 50) ≈ 0,6 a 0,9 s; 7200 (24 × 300) ≈
+ * 1,5 a 2,7 s. Acima do limite o cronograma não é gerado pelo conector: a proposta sai, e o aviso manda usar a
+ * tela.
  */
-export const MAX_CELULAS_CRONOGRAMA = 3000;
+export const MAX_CELULAS_CRONOGRAMA = 2400;
 
 /**
- * Logo do papel timbrado: tamanho do arquivo e lado máximo. O jsPDF decodifica o PNG inteiro e o JPEG vai como
- * veio. Medido no PC de desenvolvimento, por PDF: PNG de 2000 × 2000 com transparência ≈ 0,4 a 0,6 s (e o PDF
- * sai com ~15 MB); sem transparência ≈ 0,02 a 0,3 s; 1000 × 1000 com transparência ≈ 0,18 s; 500 × 500 ≈ 0,04 s.
+ * Logo do papel timbrado. O jsPDF decodifica o PNG inteiro em CADA PDF (e a ferramenta gera até 12
+ * declarações), então o PNG é limitado por pixels; o JPEG vai como veio e só tem limite de lado. Medido em
+ * 14/10/2026 no PC de desenvolvimento, 12 declarações em PDF com PNG RGBA de 800 × 800: logo plano (70 KB) ~0,6 s
+ * e 29 MB de PDF sem compressão, ~1,2 s e 0,7 MB com a compressão "FAST" (`compressaoDoLogo`); PNG que não é
+ * compacto (mais de meio byte por pixel) fica sem compressão: 0,7 a 1,4 s. A conferência do arquivo e a sonda
+ * do jsPDF somam ~0,15 s, uma vez por chamada.
  */
 export const LOGO_BYTES_MAXIMOS = 2 * 1024 * 1024;
+export const LOGO_PNG_PIXELS_MAXIMOS = 700_000;
 const LOGO_PNG_LADO_MAXIMO = 2000;
 const LOGO_JPEG_LADO_MAXIMO = 4000;
-const AVISO_LOGO = "O logo da empresa não foi incluído (use PNG ou JPG de até 2 MB).";
+/** O logo é cadastrado em Configurações → aba Empresa ("Logo da Empresa", EmpresaTab.jsx). */
+const AVISO_LOGO =
+  "O logo da empresa não foi incluído: use um PNG de até 800×800 pixels (ou 700 mil pixels no total) ou um JPG de até 2 MB, em Configurações → Empresa.";
+const AVISO_REPRESENTANTE_INCOMPLETO =
+  "O representante legal está sem cargo ou CPF no cadastro: o bloco de assinatura saiu sem essa informação.";
+const SUFIXO_CRONOGRAMA_ANTIGO = " Os arquivos de cronograma gerados antes continuam na pasta.";
 
-const COLUNAS_OPORTUNIDADE =
-  "id, nome, orgao, licitacao_numero, licitacao_processo, desconto_proposta_pct, orcamento_info, cronograma_ff";
-const COLUNAS_EMPRESA =
+/** Colunas de `oportunidade` que as duas ferramentas usam (cabeçalho do edital e cronograma). */
+export const COLUNAS_OPORTUNIDADE =
+  "id, nome, orgao, licitacao_numero, licitacao_processo, orcamento_info, cronograma_ff";
+/** Colunas de `empresa` dos documentos: papel timbrado, logo e representante legal. */
+export const COLUNAS_EMPRESA =
   "id, nome, razao_social, nome_fantasia, cnpj, endereco, numero, complemento, bairro, cidade, estado, cep, telefone, email, logo_url, representante_nome, representante_cargo, representante_cpf";
-const COLUNAS_ORCAMENTO =
+/** Colunas de `orcamento_item`: as chaves do `ItemOrcamento` que os módulos da Parte B leem (mais o `id`). */
+export const COLUNAS_ORCAMENTO =
   "id, numero, etapa, descricao, codigo, fonte, unidade, quantidade, valor_unitario_ref, valor_unitario, valor_total, ordem";
 const PASTAS_DECLARACAO = [PASTA_HABILITACAO, PASTA_CREDENCIAMENTO, PASTA_PROPOSTA] as const;
 
@@ -134,21 +150,71 @@ const GRAVACAO = {
 
 const nomeDoUsuario = (deps: DepsFerramenta) => `${deps.ctx.usuario.nome} (via Claude)`;
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
-/** "a", "a e b", "a, b e c". */
-const listaComE = (itens: string[]): string =>
-  itens.length <= 1
-    ? (itens[0] ?? "")
-    : `${itens.slice(0, -1).join(", ")} e ${itens[itens.length - 1]}`;
 
-/** A mensagem do erro sem nada que pareça URL, ref ou caminho do Storage. */
+/**
+ * A mensagem do erro sem nada que pareça URL, ref ou caminho do Storage, e sem número longo (CPF, CNPJ: uma
+ * biblioteca pode repetir um texto do documento na mensagem de erro).
+ */
 const mensagemSemCaminho = (e: unknown): string =>
-  (e instanceof Error ? e.message : String(e)).replace(/\S*\/\S*/g, "[caminho]").slice(0, 300);
+  (e instanceof Error ? e.message : String(e))
+    .replace(/\S*\/\S*/g, "[caminho]")
+    .replace(/\d(?:[.\-\s]?\d){9,}/g, "[numero]")
+    .slice(0, 300);
 
 /** Log de um erro inesperado: nome do erro e mensagem sem caminho. Nunca dado do documento. */
 function logarErro(ferramenta: string, onde: string, e: unknown): void {
   const nome = e instanceof Error ? e.name : typeof e;
   console.error(`[conector] ${ferramenta}: ${onde}: ${nome}: ${mensagemSemCaminho(e)}`);
 }
+
+/** Por que um arquivo não foi gerado ou gravado (o `motivo` de cada entrada de `falhas`). */
+export type MotivoDaFalhaDeDocumento = ErroArquivo["codigo"] | "erro_interno";
+
+/**
+ * Texto curto, em português, de cada motivo: vai em `falhas[].mensagem` para o Claude explicar ao usuário. É o
+ * mapa ÚNICO das duas ferramentas; o tipo `Record` obriga a ter uma frase para cada código de `ErroArquivo`.
+ */
+export const MENSAGEM_DA_FALHA_DOCUMENTO: Record<MotivoDaFalhaDeDocumento, string> = {
+  nao_encontrado: "O arquivo não foi encontrado no armazenamento.",
+  tipo_nao_aceito: "O tipo do arquivo não é aceito.",
+  grande_demais: "O arquivo gerado passa do limite de 50 MB.",
+  vazio: "O arquivo gerado saiu vazio.",
+  storage: "O armazenamento não respondeu ao gravar o arquivo. Tente de novo.",
+  erro_interno: "Erro inesperado ao gerar este arquivo. Tente de novo.",
+};
+
+/**
+ * Uma entrada de `falhas`: a identificação do arquivo (documento, ou chave/título/formato) e o motivo. Falha de
+ * UM arquivo não derruba a chamada: quem chama segue com os demais. Erro conhecido (`ErroArquivo`) vira o
+ * próprio código; o resto vira `erro_interno`, com o erro no log. O log nunca leva ref, caminho nem CPF.
+ */
+function falhaDoArquivo(
+  ferramenta: string,
+  identificacao: Record<string, unknown>,
+  e: unknown
+): Record<string, unknown> {
+  let motivo: MotivoDaFalhaDeDocumento;
+  if (e instanceof ErroArquivo) {
+    motivo = e.codigo;
+    console.error(`[conector] ${ferramenta}: arquivo não gerado (${motivo})`);
+  } else {
+    motivo = "erro_interno";
+    logarErro(ferramenta, "erro inesperado ao gerar um arquivo", e);
+  }
+  return { ...identificacao, motivo, mensagem: MENSAGEM_DA_FALHA_DOCUMENTO[motivo] };
+}
+
+/** "N arquivo(s) não puderam ser gerados: veja falhas." (singular: "1 arquivo não pôde ser gerado: ..."). */
+const avisoDasFalhas = (n: number): string =>
+  `${n === 1 ? "1 arquivo não pôde ser gerado" : `${n} arquivos não puderam ser gerados`}: veja falhas.`;
+
+/** Valor em reais como o PDF e a tela da proposta mostram: "R$ 1.234,56". */
+const moedaBR = (v: number): string =>
+  `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Representante sem cargo ou sem CPF no cadastro: o bloco de assinatura sai sem essa linha. */
+const representanteIncompleto = (r: { cargo: unknown; cpf: unknown }): boolean =>
+  !String(r.cargo ?? "").trim() || !String(r.cpf ?? "").trim();
 
 // ─── partes comuns ──────────────────────────────────────────────────────────────────────────
 
@@ -171,7 +237,6 @@ interface OportunidadeLida {
   orgao: string | null;
   licitacao_numero: string | null;
   licitacao_processo: string | null;
-  desconto_proposta_pct: unknown;
   orcamento_info: unknown;
   cronograma_ff: unknown;
 }
@@ -291,12 +356,19 @@ async function carregarLibsOuFalha(
   }
 }
 
-/** Nome (para exibir) dos arquivos JÁ assinados da oportunidade, por origem; só as origens pedidas. */
-async function assinadosPorOrigem(
+/** Arquivo vivo da oportunidade, só com o que as ferramentas conferem. */
+interface ArquivoExistente {
+  nome: string;
+  origem: string;
+  assinatura: string | null;
+}
+
+/** Os arquivos vivos da oportunidade que têm uma das `origens` (nome, origem e se estão assinados). */
+async function arquivosPorOrigem(
   deps: DepsFerramenta,
   id: string,
   origens: string[]
-): Promise<Map<string, { nome: string }>> {
+): Promise<ArquivoExistente[]> {
   const linhas = await deps.db.lerTodos<{
     id: string;
     nome: string | null;
@@ -305,11 +377,20 @@ async function assinadosPorOrigem(
   }>("arquivo_oportunidade", "id, nome, origem, assinatura", (q) =>
     q.eq("oportunidade_id", id).in("origem", origens)
   );
+  return linhas
+    .filter((l) => typeof l.origem === "string" && origens.includes(l.origem))
+    .map((l) => ({
+      nome: nomeParaExibir(String(l.nome ?? "")),
+      origem: l.origem as string,
+      assinatura: l.assinatura,
+    }));
+}
+
+/** O nome (para exibir) do primeiro arquivo JÁ assinado de cada origem. */
+function assinadosDe(arquivos: ArquivoExistente[]): Map<string, { nome: string }> {
   const mapa = new Map<string, { nome: string }>();
-  for (const l of linhas) {
-    if (l.assinatura !== "assinado" || typeof l.origem !== "string") continue;
-    if (!origens.includes(l.origem) || mapa.has(l.origem)) continue;
-    mapa.set(l.origem, { nome: nomeParaExibir(String(l.nome ?? "")) });
+  for (const a of arquivos) {
+    if (a.assinatura === "assinado" && !mapa.has(a.origem)) mapa.set(a.origem, { nome: a.nome });
   }
   return mapa;
 }
@@ -353,12 +434,25 @@ interface ArquivoDaProposta {
   bytes: () => Uint8Array;
 }
 
+/** A proposta ou o cronograma: o PDF (assinável) e o Excel dele, nesta ordem. O PDF assinado segura os dois. */
+interface DocumentoDaProposta {
+  arquivos: ArquivoDaProposta[];
+}
+
+/** As origens dos quatro arquivos que a ferramenta grava (contrato §3). */
+const ORIGENS_DA_PROPOSTA = [
+  "gerado:proposta:pdf",
+  "gerado:proposta:xlsx",
+  "gerado:cronograma:pdf",
+  "gerado:cronograma:xlsx",
+];
+
 const GERAR_DOCUMENTOS_PROPOSTA: Ferramenta = {
   def: {
     name: "gerar_documentos_proposta",
     title: "Gerar a proposta de preços e o cronograma da oportunidade",
     description:
-      'Gera no SIGO a proposta de preços e o cronograma físico-financeiro, em PDF e em Excel, a partir do orçamento e do cronograma gravados na oportunidade, com o cabeçalho da empresa e o bloco de assinatura do representante legal, e grava na pasta "Envelope 01 – Proposta". Chame depois de importar_orcamento, aplicar_desconto e importar_cronograma. Repetir troca os arquivos no lugar; o que já foi assinado é mantido.',
+      'Gera no SIGO a proposta de preços e o cronograma físico-financeiro, em PDF e em Excel, a partir do orçamento e do cronograma gravados na oportunidade, com o cabeçalho da empresa e o bloco de assinatura do representante legal, e grava na pasta "Envelope 01 – Proposta". Chame depois de importar_orcamento, aplicar_desconto e importar_cronograma. Repetir troca os arquivos no lugar; se o PDF da proposta (ou do cronograma) já foi assinado, o documento inteiro (PDF e Excel) é mantido. Um arquivo que falha não impede os outros: leia sempre avisos e falhas e repasse ao usuário.',
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -404,7 +498,7 @@ const GERAR_DOCUMENTOS_PROPOSTA: Ferramenta = {
     }
     if (itens.length > MAX_ITENS_DOCUMENTO) {
       return falha(
-        `O orçamento tem ${itens.length} itens; o SIGO gera pelo conector até ${MAX_ITENS_DOCUMENTO} itens. Gere a proposta pela tela do Orçamento (botão "Exportar proposta").`,
+        `O orçamento tem ${itens.length} linhas (itens e etapas); o SIGO gera pelo conector até ${MAX_ITENS_DOCUMENTO} linhas. Gere a proposta pela tela do Orçamento (botão "Exportar proposta").`,
         "orcamento_grande_demais",
         { itens: itens.length, limite: MAX_ITENS_DOCUMENTO },
         id
@@ -428,43 +522,57 @@ const GERAR_DOCUMENTOS_PROPOSTA: Ferramenta = {
     });
 
     const avisos: string[] = [];
-    const plano: ArquivoDaProposta[] = [
+    if (representanteIncompleto(representante)) avisos.push(AVISO_REPRESENTANTE_INCOMPLETO);
+
+    // o que a oportunidade já tem destas ferramentas: o PDF assinado de um documento segura o documento inteiro,
+    // e qualquer arquivo de cronograma que já exista continua na pasta mesmo quando este não é gerado agora
+    const existentes = await arquivosPorOrigem(deps, id, ORIGENS_DA_PROPOSTA);
+    const assinados = assinadosDe(existentes);
+    const cronogramaJaGravado = existentes.some((a) => a.origem.startsWith("gerado:cronograma:"));
+    const semCronograma = (aviso: string) =>
+      avisos.push(cronogramaJaGravado ? `${aviso}${SUFIXO_CRONOGRAMA_ANTIGO}` : aviso);
+
+    const documentos: DocumentoDaProposta[] = [
       {
-        documento: "proposta_pdf",
-        origem: "gerado:proposta:pdf",
-        nome: nomeParaExibir(nomeArquivoProposta(op.nome, data, "pdf")),
-        tipo: "pdf",
-        assinatura: "pendente",
-        bytes: () => bytesDoPdf(gerarPdfProposta(dados, libs)),
-      },
-      {
-        documento: "proposta_xlsx",
-        origem: "gerado:proposta:xlsx",
-        nome: nomeParaExibir(nomeArquivoProposta(op.nome, data, "xlsx")),
-        tipo: "xlsx",
-        assinatura: null,
-        bytes: () => bytesDaPlanilha(montarPlanilhaProposta(dados, libs.XLSX), libs.XLSX),
+        arquivos: [
+          {
+            documento: "proposta_pdf",
+            origem: "gerado:proposta:pdf",
+            nome: nomeParaExibir(nomeArquivoProposta(op.nome, data, "pdf")),
+            tipo: "pdf",
+            assinatura: "pendente",
+            bytes: () => bytesDoPdf(gerarPdfProposta(dados, libs)),
+          },
+          {
+            documento: "proposta_xlsx",
+            origem: "gerado:proposta:xlsx",
+            nome: nomeParaExibir(nomeArquivoProposta(op.nome, data, "xlsx")),
+            tipo: "xlsx",
+            assinatura: null,
+            bytes: () => bytesDaPlanilha(montarPlanilhaProposta(dados, libs.XLSX), libs.XLSX),
+          },
+        ],
       },
     ];
 
     // cronograma: só sai quando existe, cabe no limite e todas as etapas fecham 100,00% (como a tela)
     const cron = normalizarCronograma(objetoDoJson(op.cronograma_ff));
     if (cron.meses === 0) {
-      avisos.push(
+      semCronograma(
         "A oportunidade não tem cronograma: só a proposta foi gerada. Grave com importar_cronograma e chame de novo."
       );
     } else {
       const etapas = etapasDoOrcamento(itens);
       if (etapas.length === 0) {
-        avisos.push(
+        semCronograma(
           "O orçamento não tem etapas de nível 1: o cronograma não foi gerado. Cadastre as etapas e chame de novo."
         );
       } else if (etapas.length * cron.meses > MAX_CELULAS_CRONOGRAMA) {
-        avisos.push(
+        semCronograma(
           `O cronograma tem ${etapas.length} etapas x ${cron.meses} meses; o SIGO gera pelo conector até ${MAX_CELULAS_CRONOGRAMA} células (etapas x meses). Gere o cronograma pela tela (botão "Exportar" do cronograma físico-financeiro).`
         );
       } else if (!resumoCronograma(etapas, cron).todasFecham) {
-        avisos.push(
+        semCronograma(
           "O cronograma tem etapa que não fecha 100,00%: os arquivos do cronograma não foram gerados. Corrija com importar_cronograma."
         );
       } else {
@@ -477,73 +585,88 @@ const GERAR_DOCUMENTOS_PROPOSTA: Ferramenta = {
           representante,
           opcoes,
         });
-        plano.push(
-          {
-            documento: "cronograma_pdf",
-            origem: "gerado:cronograma:pdf",
-            nome: nomeParaExibir(nomeArquivoCronograma(op.nome, data, "pdf")),
-            tipo: "pdf",
-            assinatura: "pendente",
-            bytes: () => bytesDoPdf(gerarPdfCronograma(dadosCron, libs)),
-          },
-          {
-            documento: "cronograma_xlsx",
-            origem: "gerado:cronograma:xlsx",
-            nome: nomeParaExibir(nomeArquivoCronograma(op.nome, data, "xlsx")),
-            tipo: "xlsx",
-            assinatura: null,
-            bytes: () => bytesDaPlanilha(montarPlanilhaCronograma(dadosCron, libs.XLSX), libs.XLSX),
-          }
-        );
+        documentos.push({
+          arquivos: [
+            {
+              documento: "cronograma_pdf",
+              origem: "gerado:cronograma:pdf",
+              nome: nomeParaExibir(nomeArquivoCronograma(op.nome, data, "pdf")),
+              tipo: "pdf",
+              assinatura: "pendente",
+              bytes: () => bytesDoPdf(gerarPdfCronograma(dadosCron, libs)),
+            },
+            {
+              documento: "cronograma_xlsx",
+              origem: "gerado:cronograma:xlsx",
+              nome: nomeParaExibir(nomeArquivoCronograma(op.nome, data, "xlsx")),
+              tipo: "xlsx",
+              assinatura: null,
+              bytes: () =>
+                bytesDaPlanilha(montarPlanilhaCronograma(dadosCron, libs.XLSX), libs.XLSX),
+            },
+          ],
+        });
       }
     }
 
-    const assinados = await assinadosPorOrigem(
-      deps,
-      id,
-      plano.map((a) => a.origem)
-    );
     const gerados: Record<string, unknown>[] = [];
     const mantidos: { documento: string; nome: string }[] = [];
+    const falhas: Record<string, unknown>[] = [];
     try {
-      for (const a of plano) {
-        const assinado = assinados.get(a.origem);
+      for (const doc of documentos) {
+        // o PDF assinado manda no documento: o Excel dele também fica (senão o Excel traria os valores de
+        // hoje e o PDF assinado, os antigos, sem aviso nenhum)
+        const pdf = doc.arquivos[0];
+        const assinado = assinados.get(pdf.origem);
         if (assinado) {
-          mantidos.push({ documento: a.documento, nome: assinado.nome });
+          mantidos.push({ documento: pdf.documento, nome: assinado.nome });
           continue;
         }
-        const g = await gravarNaOportunidade(
-          { db: deps.db, storage: deps.storage, agora: deps.agora },
-          {
-            oportunidadeId: id,
-            origem: a.origem,
-            nome: a.nome,
-            bytes: a.bytes(),
-            tipo: a.tipo,
-            pasta: PASTA_PROPOSTA,
-            categoria: null,
-            assinatura: a.assinatura,
-            usuarioNome: nomeDoUsuario(deps),
+        for (const a of doc.arquivos) {
+          try {
+            const g = await gravarNaOportunidade(
+              { db: deps.db, storage: deps.storage, agora: deps.agora },
+              {
+                oportunidadeId: id,
+                origem: a.origem,
+                nome: a.nome,
+                bytes: a.bytes(),
+                tipo: a.tipo,
+                pasta: PASTA_PROPOSTA,
+                categoria: null,
+                assinatura: a.assinatura,
+                usuarioNome: nomeDoUsuario(deps),
+              }
+            );
+            // só "a oportunidade sumiu" interrompe tudo; erro de UM arquivo vira falha e a chamada segue
+            if (!g) return naoEncontrado("oportunidade", id);
+            if (g.mantido_assinado) {
+              // o assinado chegou entre a leitura e a gravação: nada foi trocado, a saída não diz que gerou,
+              // e o Excel do mesmo documento também não é gerado
+              const nome = await nomeDoMantido(
+                deps,
+                "gerar_documentos_proposta",
+                g.arquivo_id,
+                a.nome
+              );
+              mantidos.push({ documento: a.documento, nome });
+              break;
+            }
+            gerados.push({
+              documento: a.documento,
+              nome: g.nome,
+              arquivo_id: g.arquivo_id,
+              tamanho: g.tamanho,
+              assinatura: a.assinatura,
+              substituiu: g.substituiu,
+            });
+          } catch (e) {
+            falhas.push(falhaDoArquivo("gerar_documentos_proposta", { documento: a.documento }, e));
           }
-        );
-        if (!g) return naoEncontrado("oportunidade", id);
-        if (g.mantido_assinado) {
-          // o assinado chegou entre a leitura e a gravação: nada foi trocado, e a saída não diz que gerou
-          const nome = await nomeDoMantido(deps, "gerar_documentos_proposta", g.arquivo_id, a.nome);
-          mantidos.push({ documento: a.documento, nome });
-          continue;
         }
-        gerados.push({
-          documento: a.documento,
-          nome: g.nome,
-          arquivo_id: g.arquivo_id,
-          tamanho: g.tamanho,
-          assinatura: a.assinatura,
-          substituiu: g.substituiu,
-        });
       }
     } finally {
-      // o que já foi gravado fica no histórico mesmo que um arquivo seguinte dê erro
+      // só o que foi gravado entra no histórico, mesmo que um arquivo dê erro ou a oportunidade suma no meio
       if (gerados.length > 0) {
         await registrarNoHistorico(
           deps.db,
@@ -554,18 +677,31 @@ const GERAR_DOCUMENTOS_PROPOSTA: Ferramenta = {
       }
     }
 
-    if (mantidos.length > 0) {
-      const quais = listaComE(mantidos.map((m) => ROTULO_DOCUMENTO[m.documento] ?? m.documento));
-      avisos.push(
-        `${quais[0].toUpperCase()}${quais.slice(1)} ${mantidos.length === 1 ? "já está assinado e foi mantido" : "já estão assinados e foram mantidos"}, sem troca.`
-      );
+    for (const m of mantidos) {
+      if (m.documento === "proposta_pdf") {
+        avisos.push(
+          `A proposta já está assinada e foi mantida (PDF e Excel). O total atual do orçamento é ${moedaBR(dados.totalGeral)}; se mudou, exclua o PDF assinado na aba Arquivos e gere de novo.`
+        );
+      } else if (m.documento === "cronograma_pdf") {
+        avisos.push(
+          "O cronograma já está assinado e foi mantido (PDF e Excel). Se o cronograma mudou, exclua o PDF assinado na aba Arquivos e gere de novo."
+        );
+      } else {
+        // um Excel marcado como assinado (não é o fluxo normal: só o PDF nasce "pendente")
+        const rotulo = ROTULO_DOCUMENTO[m.documento] ?? m.documento;
+        avisos.push(
+          `${rotulo[0].toUpperCase()}${rotulo.slice(1)} já está assinado e foi mantido, sem troca.`
+        );
+      }
     }
+    if (falhas.length > 0) avisos.push(avisoDasFalhas(falhas.length));
     return sucesso(
       {
         oportunidade_id: id,
         pasta: PASTA_PROPOSTA,
         gerados,
         mantidos_assinados: mantidos,
+        falhas,
         total_proposta: dados.totalGeral,
         validade_dias: validadeDias,
         local_data: dados.localData,
@@ -580,10 +716,17 @@ const GERAR_DOCUMENTOS_PROPOSTA: Ferramenta = {
 
 // ─── gerar_declaracoes ──────────────────────────────────────────────────────────────────────
 
-/** Logo do papel timbrado (melhor esforço, nunca derruba a ferramenta): PNG ou JPEG da pasta da empresa. */
+/**
+ * Logo do papel timbrado (melhor esforço, nunca derruba a ferramenta): PNG ou JPEG da pasta da empresa, ou
+ * `null` com o aviso. O mesmo `logo` vai para o PDF e para o .docx: se QUALQUER conferência falha, os dois
+ * saem sem logo (nunca um com e o outro sem). A ordem vai do barato ao caro: o cabeçalho e os limites, o
+ * arquivo inteiro (`conferirImagem`: CRC, dados que descompactam, EOI do JPEG) e, por fim, a sonda (o jsPDF
+ * embute a imagem num PDF descartável, uma vez por chamada).
+ */
 async function lerLogo(
   deps: DepsFerramenta,
-  empresa: EmpresaLida
+  empresa: EmpresaLida,
+  libs: LibsDocumentos
 ): Promise<{ logo: LogoDocumento | null; aviso: string | null }> {
   const ref = empresa.logo_url;
   if (ref === null || ref === undefined || (typeof ref === "string" && !ref.trim())) {
@@ -595,11 +738,21 @@ async function lerLogo(
     const bytes = await baixarObjeto(deps.storage, "logos-empresa", caminho, LOGO_BYTES_MAXIMOS);
     const img = lerImagem(bytes);
     if (!img) throw new Error("o logo não é PNG nem JPEG");
-    const lado = img.formato === "PNG" ? LOGO_PNG_LADO_MAXIMO : LOGO_JPEG_LADO_MAXIMO;
-    if (img.largura > lado || img.altura > lado) {
-      throw new Error(`o logo passa de ${lado} x ${lado} px`);
+    if (img.formato === "PNG") {
+      if (img.largura > LOGO_PNG_LADO_MAXIMO || img.altura > LOGO_PNG_LADO_MAXIMO) {
+        throw new Error(`o logo PNG passa de ${LOGO_PNG_LADO_MAXIMO} px de lado`);
+      }
+      if (img.largura * img.altura > LOGO_PNG_PIXELS_MAXIMOS) {
+        throw new Error(`o logo PNG passa de ${LOGO_PNG_PIXELS_MAXIMOS} pixels`);
+      }
+    } else if (img.largura > LOGO_JPEG_LADO_MAXIMO || img.altura > LOGO_JPEG_LADO_MAXIMO) {
+      throw new Error(`o logo JPEG passa de ${LOGO_JPEG_LADO_MAXIMO} px de lado`);
     }
-    return { logo: { ...img, bytes }, aviso: null };
+    const conferido = await conferirImagem(bytes, img);
+    if (!conferido.ok) throw new Error(`logo com defeito: ${conferido.motivo}`);
+    const logo: LogoDocumento = { ...img, bytes };
+    sondarLogoNoPdf(libs, logo);
+    return { logo, aviso: null };
   } catch (e) {
     logarErro("gerar_declaracoes", "logo da empresa fora do documento", e);
     return { logo: null, aviso: AVISO_LOGO };
@@ -722,7 +875,8 @@ const GERAR_DECLARACOES: Ferramenta = {
     const vars = variaveisDaDeclaracao(cab, localFinal, data);
 
     const avisos: string[] = [];
-    const { logo, aviso: avisoLogo } = await lerLogo(deps, empresa);
+    if (representanteIncompleto(representante)) avisos.push(AVISO_REPRESENTANTE_INCOMPLETO);
+    const { logo, aviso: avisoLogo } = await lerLogo(deps, empresa, libs);
     if (avisoLogo) avisos.push(avisoLogo);
 
     // o que foi pedido, já com título, texto e chave (modelo da empresa ou texto do edital)
@@ -735,77 +889,91 @@ const GERAR_DECLARACOES: Ferramenta = {
         texto: item.tipo === "modelo" ? String(m?.texto ?? "") : item.texto,
       };
     });
-    const assinados = await assinadosPorOrigem(
-      deps,
-      id,
-      declaracoes.map((d) => `declaracao:${d.chave}:pdf`)
+    const assinados = assinadosDe(
+      await arquivosPorOrigem(
+        deps,
+        id,
+        declaracoes.map((d) => `declaracao:${d.chave}:pdf`)
+      )
     );
 
     const geradas: Record<string, unknown>[] = [];
     const mantidas: { chave: string; titulo: string }[] = [];
+    const falhas: Record<string, unknown>[] = [];
     try {
       for (const d of declaracoes) {
         if (assinados.has(`declaracao:${d.chave}:pdf`)) {
           mantidas.push({ chave: d.chave, titulo: d.titulo });
           continue;
         }
-        const p = preencherModelo(d.texto, vars);
-        // sempre por montarDadosDeclaracao: ele tira os parágrafos vazios, de que os geradores dependem
-        const dados = montarDadosDeclaracao({ titulo: d.titulo, texto: p.texto, cabecalho: cab });
-        const formatos: {
+        const identificacao = { chave: d.chave, titulo: d.titulo };
+        let p: ReturnType<typeof preencherModelo>;
+        let formatos: {
           formato: "pdf" | "docx";
           assinatura: "pendente" | null;
           bytes: () => Uint8Array;
-        }[] = [
-          {
-            formato: "pdf",
-            assinatura: "pendente",
-            bytes: () => bytesDoPdf(gerarPdfDeclaracao(dados, libs, logo)),
-          },
-          { formato: "docx", assinatura: null, bytes: () => gerarDocxDeclaracao(dados, logo) },
-        ];
+        }[];
+        try {
+          p = preencherModelo(d.texto, vars);
+          // sempre por montarDadosDeclaracao: ele tira os parágrafos vazios, de que os geradores dependem
+          const dados = montarDadosDeclaracao({ titulo: d.titulo, texto: p.texto, cabecalho: cab });
+          formatos = [
+            {
+              formato: "pdf",
+              assinatura: "pendente",
+              bytes: () => bytesDoPdf(gerarPdfDeclaracao(dados, libs, logo)),
+            },
+            { formato: "docx", assinatura: null, bytes: () => gerarDocxDeclaracao(dados, logo) },
+          ];
+        } catch (e) {
+          falhas.push(falhaDoArquivo("gerar_declaracoes", identificacao, e));
+          continue;
+        }
         const arquivos: Record<string, unknown>[] = [];
         let mantida = false;
         for (const f of formatos) {
-          const nome = nomeParaExibir(nomeArquivoDeclaracao(d.titulo, f.formato));
-          const g = await gravarNaOportunidade(
-            { db: deps.db, storage: deps.storage, agora: deps.agora },
-            {
-              oportunidadeId: id,
-              origem: `declaracao:${d.chave}:${f.formato}`,
-              nome,
-              bytes: f.bytes(),
-              tipo: f.formato,
-              pasta,
-              categoria: null,
-              assinatura: f.assinatura,
-              usuarioNome: nomeDoUsuario(deps),
+          try {
+            const nome = nomeParaExibir(nomeArquivoDeclaracao(d.titulo, f.formato));
+            const g = await gravarNaOportunidade(
+              { db: deps.db, storage: deps.storage, agora: deps.agora },
+              {
+                oportunidadeId: id,
+                origem: `declaracao:${d.chave}:${f.formato}`,
+                nome,
+                bytes: f.bytes(),
+                tipo: f.formato,
+                pasta,
+                categoria: null,
+                assinatura: f.assinatura,
+                usuarioNome: nomeDoUsuario(deps),
+              }
+            );
+            // só "a oportunidade sumiu" interrompe tudo; erro de UM arquivo vira falha e a chamada segue
+            if (!g) return naoEncontrado("oportunidade", id);
+            if (g.mantido_assinado) {
+              // o assinado chegou entre a leitura e a gravação: o que falta desta declaração não é gerado
+              mantida = true;
+              break;
             }
-          );
-          if (!g) return naoEncontrado("oportunidade", id);
-          if (g.mantido_assinado) {
-            // o assinado chegou entre a leitura e a gravação: o que falta desta declaração não é gerado
-            mantida = true;
-            break;
+            arquivos.push({
+              formato: f.formato,
+              nome: g.nome,
+              arquivo_id: g.arquivo_id,
+              assinatura: f.assinatura,
+              substituiu: g.substituiu,
+            });
+          } catch (e) {
+            falhas.push(
+              falhaDoArquivo("gerar_declaracoes", { ...identificacao, formato: f.formato }, e)
+            );
           }
-          arquivos.push({
-            formato: f.formato,
-            nome: g.nome,
-            arquivo_id: g.arquivo_id,
-            assinatura: f.assinatura,
-            substituiu: g.substituiu,
-          });
         }
-        if (arquivos.length === 0 && mantida) {
-          mantidas.push({ chave: d.chave, titulo: d.titulo });
+        if (arquivos.length === 0) {
+          // nada foi gravado: ou o assinado chegou agora, ou os dois formatos falharam (já estão em `falhas`)
+          if (mantida) mantidas.push({ chave: d.chave, titulo: d.titulo });
           continue;
         }
-        geradas.push({
-          chave: d.chave,
-          titulo: d.titulo,
-          arquivos,
-          variaveis_sem_valor: p.sem_valor,
-        });
+        geradas.push({ ...identificacao, arquivos, variaveis_sem_valor: p.sem_valor });
         if (p.sem_valor.length > 0) {
           avisos.push(
             `"${d.titulo}": sem valor para ${p.sem_valor.join(", ")}; ficou um espaço em branco para preencher.`
@@ -821,6 +989,7 @@ const GERAR_DECLARACOES: Ferramenta = {
         }
       }
     } finally {
+      // só as declarações com ao menos um arquivo gravado entram no histórico
       if (geradas.length > 0) {
         await registrarNoHistorico(
           deps.db,
@@ -836,12 +1005,14 @@ const GERAR_DECLARACOES: Ferramenta = {
         `${plural(mantidas.length, "declaração já tem o PDF assinado e foi mantida", "declarações já têm o PDF assinado e foram mantidas")}, sem troca (veja mantidas_assinadas).`
       );
     }
+    if (falhas.length > 0) avisos.push(avisoDasFalhas(falhas.length));
     return sucesso(
       {
         oportunidade_id: id,
         pasta,
         geradas,
         mantidas_assinadas: mantidas,
+        falhas,
         avisos,
         lembrete: LEMBRETE_ASSINATURA,
         link: linkOportunidade(id),

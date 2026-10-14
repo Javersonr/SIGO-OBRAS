@@ -1,8 +1,16 @@
 // node --test supabase/functions/_shared/documentos/imagem.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lerImagem } from "./imagem.ts";
+import zlib from "node:zlib";
+import { conferirImagem, lerImagem } from "./imagem.ts";
 import { PNG_1X1 } from "./testes/amostras.ts";
+import {
+  blocoPng,
+  construirPng,
+  jpegSintetico,
+  pixelsSinteticos,
+  type OpcoesPng,
+} from "./testes/imagens.ts";
 
 /** JPEG mínimo só com os cabeçalhos: SOI, APP0 e SOF0 (altura 30, largura 120). */
 const JPEG_CABECALHO = new Uint8Array([
@@ -132,4 +140,288 @@ test("lerImagem: JPEG sem SOF, truncado ou com segmento de tamanho menor que 2 �
     largura: 120,
     altura: 30,
   });
+});
+
+// ─── conferirImagem: o arquivo inteiro, não só o cabeçalho ───────────────────────────────────────
+
+/** `conferirImagem` com as dimensões lidas de uma imagem de referência (para conferir também arquivos cortados). */
+async function conferir(bytes: Uint8Array, referencia: Uint8Array = bytes) {
+  const img = lerImagem(referencia);
+  assert.ok(img, "a imagem de referência do teste tem de passar por lerImagem");
+  return conferirImagem(bytes, img);
+}
+
+async function assertRecusa(
+  bytes: Uint8Array,
+  trecho: RegExp,
+  nome: string,
+  referencia?: Uint8Array
+) {
+  const r = await conferir(bytes, referencia);
+  assert.equal(r.ok, false, `${nome}: devia recusar`);
+  if (!r.ok) assert.match(r.motivo, trecho, nome);
+}
+
+const PNGS_BONS: [string, OpcoesPng][] = [
+  ["RGB 8 bits", { largura: 13, altura: 7 }],
+  ["RGBA 8 bits", { largura: 13, altura: 7, tipoCor: 6 }],
+  ["RGB 16 bits", { largura: 13, altura: 7, tipoCor: 2, profundidade: 16 }],
+  ["RGBA 16 bits", { largura: 13, altura: 7, tipoCor: 6, profundidade: 16 }],
+  ["cinza 1 bit", { largura: 13, altura: 7, tipoCor: 0, profundidade: 1 }],
+  ["cinza 8 bits", { largura: 13, altura: 7, tipoCor: 0, profundidade: 8 }],
+  ["cinza 16 bits", { largura: 13, altura: 7, tipoCor: 0, profundidade: 16 }],
+  ["cinza com alfa 8 bits", { largura: 13, altura: 7, tipoCor: 4, profundidade: 8 }],
+  ["cinza com alfa 16 bits", { largura: 13, altura: 7, tipoCor: 4, profundidade: 16 }],
+  ["paleta 1 bit", { largura: 13, altura: 7, tipoCor: 3, profundidade: 1 }],
+  ["paleta 2 bits", { largura: 13, altura: 7, tipoCor: 3, profundidade: 2 }],
+  ["paleta 4 bits", { largura: 13, altura: 7, tipoCor: 3, profundidade: 4 }],
+  ["paleta 8 bits", { largura: 13, altura: 7, tipoCor: 3, profundidade: 8 }],
+  [
+    "paleta 8 bits com transparência parcial",
+    { largura: 13, altura: 7, tipoCor: 3, profundidade: 8, trns: [0, 128, 200, 255] },
+  ],
+  [
+    "paleta 4 bits com uma cor transparente",
+    { largura: 13, altura: 7, tipoCor: 3, profundidade: 4, trns: [0] },
+  ],
+  [
+    "paleta 4 bits com tRNS todo opaco",
+    { largura: 13, altura: 7, tipoCor: 3, profundidade: 4, trns: [255, 255] },
+  ],
+  ["IDAT em três blocos seguidos", { largura: 40, altura: 40, idatEmPartes: 3 }],
+  [
+    "bloco auxiliar (tEXt) antes dos dados",
+    {
+      largura: 13,
+      altura: 7,
+      blocoExtra: { tipo: "tEXt", dados: Buffer.from("Software\0teste") },
+    },
+  ],
+];
+
+test("conferirImagem: PNG íntegro passa em todos os tipos de cor e profundidades (o jsPDF 2.5.2 decodifica todos)", async () => {
+  for (const [nome, opcoes] of PNGS_BONS) {
+    const r = await conferir(construirPng(opcoes));
+    assert.deepEqual(r, { ok: true }, nome);
+  }
+  // o PNG de 1 x 1 de amostra, de verdade (gerado por outra ferramenta)
+  assert.deepEqual(await conferir(PNG_1X1), { ok: true });
+});
+
+test("conferirImagem: PNG cortado em qualquer ponto (no meio de bloco, sem IEND) é recusado", async () => {
+  const inteiro = construirPng({ largura: 30, altura: 20 });
+  const cortes = [
+    24,
+    25,
+    29,
+    33,
+    40,
+    inteiro.length - 40,
+    inteiro.length - 13,
+    inteiro.length - 12,
+    inteiro.length - 1,
+  ];
+  for (const corte of cortes) {
+    await assertRecusa(inteiro.slice(0, corte), /cortado|IEND/, `cortado em ${corte}`, inteiro);
+  }
+  // sem o IEND, mas com o resto íntegro
+  await assertRecusa(construirPng({ largura: 30, altura: 20, semIend: true }), /IEND/, "sem IEND");
+});
+
+test("conferirImagem: CRC errado em qualquer bloco é recusado", async () => {
+  for (const bloco of ["IHDR", "IDAT", "IEND"] as const) {
+    await assertRecusa(
+      construirPng({ largura: 13, altura: 7, crcErradoEm: bloco }),
+      new RegExp(`${bloco}.*CRC|CRC.*${bloco}`),
+      `CRC errado em ${bloco}`
+    );
+  }
+  await assertRecusa(
+    construirPng({ largura: 13, altura: 7, tipoCor: 3, profundidade: 4, crcErradoEm: "PLTE" }),
+    /PLTE.*CRC|CRC.*PLTE/,
+    "CRC errado em PLTE"
+  );
+  // um bit trocado no meio dos dados comprimidos, com o CRC do arquivo original
+  const bom = construirPng({ largura: 30, altura: 20 });
+  const adulterado = bom.slice();
+  adulterado[adulterado.length - 30] ^= 0x10;
+  await assertRecusa(adulterado, /CRC/, "bit trocado no IDAT");
+});
+
+test("conferirImagem: sem IDAT, ou com bytes depois do IEND, é recusado", async () => {
+  await assertRecusa(construirPng({ largura: 13, altura: 7, semIdat: true }), /IDAT/, "sem IDAT");
+  for (const depois of [[0], [0, 0, 0, 0], [1, 2, 3]]) {
+    await assertRecusa(
+      construirPng({ largura: 13, altura: 7, depoisDoIend: Uint8Array.from(depois) }),
+      /depois do .*IEND/,
+      `${depois.length} byte(s) depois do IEND`
+    );
+  }
+});
+
+test("conferirImagem: IDAT lixo com CRC certo (o jsPDF embute sem decodificar e o PDF fica com a imagem quebrada)", async () => {
+  const lixo = Buffer.from("isto nao e um fluxo zlib, mas o CRC do bloco confere 0123456789");
+  for (const tipoCor of [0, 2, 3, 4, 6] as const) {
+    await assertRecusa(
+      construirPng({ largura: 16, altura: 16, tipoCor, profundidade: 8, idat: lixo }),
+      /zlib|dados da imagem/,
+      `IDAT lixo, tipo ${tipoCor}`
+    );
+  }
+});
+
+test("conferirImagem: dados da imagem com tamanho diferente do que o cabeçalho promete são recusados", async () => {
+  const pixels = pixelsSinteticos(16, 16, 2, 8);
+  // faltam linhas
+  await assertRecusa(
+    construirPng({ largura: 16, altura: 16, dadosBrutos: pixels.subarray(0, pixels.length / 2) }),
+    /menos|incompleto|tamanho/,
+    "metade das linhas"
+  );
+  // sobram bytes
+  await assertRecusa(
+    construirPng({
+      largura: 16,
+      altura: 16,
+      dadosBrutos: Buffer.concat([pixels, Buffer.alloc(30)]),
+    }),
+    /mais|tamanho/,
+    "bytes a mais"
+  );
+  // o cabeçalho diz 16 bits, mas os dados têm o tamanho de 8 bits (as linhas não caem onde o cabeçalho
+  // espera: ou falta dado ou o "byte de filtro" esperado é um pixel qualquer)
+  await assertRecusa(
+    construirPng({ largura: 16, altura: 16, tipoCor: 2, profundidade: 16, dadosBrutos: pixels }),
+    /menos|incompleto|tamanho|filtro/,
+    "16 bits declarados com dados de 8 bits"
+  );
+  // byte de filtro que não existe (o PNG só tem os filtros 0 a 4)
+  const filtroInvalido = Buffer.from(pixels);
+  filtroInvalido[(1 + 16 * 3) * 5] = 9;
+  await assertRecusa(
+    construirPng({ largura: 16, altura: 16, dadosBrutos: filtroInvalido }),
+    /filtro/,
+    "filtro 9"
+  );
+});
+
+test("conferirImagem: bomba de descompressão (poucos KB que viram dezenas de MB) é recusada sem alocar o resultado", async () => {
+  const bomba = zlib.deflateSync(Buffer.alloc(40 * 1024 * 1024));
+  assert.ok(bomba.length < 100 * 1024);
+  const t0 = performance.now();
+  await assertRecusa(
+    construirPng({ largura: 10, altura: 10, idat: bomba }),
+    /mais|tamanho/,
+    "bomba"
+  );
+  assert.ok(performance.now() - t0 < 5000);
+});
+
+test("conferirImagem: combinação de tipo de cor e profundidade que o PNG não define, ou método desconhecido", async () => {
+  for (const [tipoCor, profundidade] of [
+    [2, 4],
+    [2, 1],
+    [3, 16],
+    [4, 4],
+    [6, 2],
+    [6, 1],
+  ] as const) {
+    await assertRecusa(
+      construirPng({ largura: 8, altura: 8, tipoCor, profundidade }),
+      /IHDR/,
+      `tipo ${tipoCor} com ${profundidade} bits`
+    );
+  }
+  await assertRecusa(
+    construirPng({ largura: 8, altura: 8, metodoCompressao: 1 }),
+    /IHDR/,
+    "compressão 1"
+  );
+  await assertRecusa(construirPng({ largura: 8, altura: 8, metodoFiltro: 1 }), /IHDR/, "filtro 1");
+});
+
+test("conferirImagem: o que o jsPDF 2.5.2 não decodifica direito: entrelaçado, animado, paleta sem PLTE ou com alfa em poucos bits", async () => {
+  for (const tipoCor of [0, 2, 3, 4, 6] as const) {
+    await assertRecusa(
+      construirPng({ largura: 13, altura: 7, tipoCor, profundidade: 8, entrelacado: true }),
+      /entrelaç/,
+      `entrelaçado, tipo ${tipoCor}`
+    );
+  }
+  await assertRecusa(
+    construirPng({
+      largura: 13,
+      altura: 7,
+      blocoExtra: { tipo: "acTL", dados: new Uint8Array(8) },
+    }),
+    /animad/,
+    "APNG"
+  );
+  await assertRecusa(
+    construirPng({ largura: 13, altura: 7, tipoCor: 3, profundidade: 8, semPaleta: true }),
+    /paleta|PLTE/,
+    "paleta sem PLTE"
+  );
+  // paleta de 1 a 4 bits com transparência parcial: o jsPDF calcula o alfa como se cada pixel fosse 1 byte
+  for (const profundidade of [1, 2, 4] as const) {
+    await assertRecusa(
+      construirPng({ largura: 13, altura: 7, tipoCor: 3, profundidade, trns: [0, 128] }),
+      /transparência|alfa/,
+      `paleta ${profundidade} bits com alfa parcial`
+    );
+  }
+  // mais entradas de transparência do que cores na paleta (o jsPDF lança)
+  await assertRecusa(
+    construirPng({ largura: 13, altura: 7, tipoCor: 3, profundidade: 1, trns: [0, 128, 255] }),
+    /tRNS|transparência/,
+    "tRNS maior que a paleta"
+  );
+  // PLTE com tamanho que não é múltiplo de 3 (logo depois do IHDR, antes do IDAT)
+  const b = construirPng({ largura: 13, altura: 7, tipoCor: 3, profundidade: 4, semPaleta: true });
+  const comPaletaTorta = Buffer.concat([
+    Buffer.from(b.subarray(0, 33)),
+    blocoPng("PLTE", new Uint8Array(10)),
+    Buffer.from(b.subarray(33)),
+  ]);
+  await assertRecusa(new Uint8Array(comPaletaTorta), /PLTE|paleta/, "PLTE de 10 bytes");
+});
+
+test("conferirImagem: imagem grande demais para conferir não é lida (nem aloca): 20000 x 20000", async () => {
+  await assertRecusa(
+    construirPng({ largura: 20000, altura: 20000, idat: new Uint8Array(20) }),
+    /grande demais/,
+    "20000 x 20000"
+  );
+});
+
+test("conferirImagem: JPEG termina com o marcador EOI (FF D9); só zeros de preenchimento depois dele", async () => {
+  assert.deepEqual(await conferir(jpegSintetico(120, 30)), { ok: true });
+  for (const zeros of [1, 2, 16]) {
+    assert.deepEqual(
+      await conferir(jpegSintetico(120, 30, { depois: new Array(zeros).fill(0) })),
+      { ok: true },
+      `${zeros} zero(s) de preenchimento depois do EOI`
+    );
+  }
+  await assertRecusa(jpegSintetico(120, 30, { semEoi: true }), /EOI|final/, "sem EOI");
+  await assertRecusa(
+    jpegSintetico(120, 30, { semEoi: true, depois: [0, 0, 0] }),
+    /EOI|final/,
+    "sem EOI, só zeros no fim"
+  );
+  await assertRecusa(
+    jpegSintetico(120, 30, { depois: [1, 2, 3] }),
+    /EOI|final/,
+    "lixo depois do EOI"
+  );
+  await assertRecusa(
+    jpegSintetico(120, 30, { depois: [0xff, 0xd8] }),
+    /EOI|final/,
+    "outro SOI depois do EOI"
+  );
+  // cortado no meio da varredura
+  const inteiro = jpegSintetico(120, 30);
+  for (const corte of [inteiro.length - 3, inteiro.length - 1, 45]) {
+    await assertRecusa(inteiro.slice(0, corte), /EOI|final/, `JPEG cortado em ${corte}`, inteiro);
+  }
 });

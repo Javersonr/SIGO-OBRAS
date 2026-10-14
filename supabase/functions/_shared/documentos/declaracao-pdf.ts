@@ -34,6 +34,56 @@ const LINHAS_DO_TEXTO_COM_A_ASSINATURA = 2;
 /** Largura (mm) do rodapé que fica para "Página X de Y"; o nome da empresa usa o resto da linha. */
 const LARGURA_DA_PAGINA_NO_RODAPE = 35;
 
+/**
+ * Compressão da imagem do logo dentro do PDF (só da imagem: o documento continua sem compressão, e os testes
+ * leem o conteúdo da página). Sem compressão o jsPDF grava o PNG com transparência em bruto: um PNG 800 x 800
+ * vira 2,5 MB por PDF (29 MB em 12 declarações). Com "FAST" (zlib nível 1) um logo plano cai para ~56 KB por
+ * PDF, ao custo de ~+50 ms por PDF (12 PDFs de 800 x 800: ~0,6 s → ~1,2 s, 29,4 → 0,7 MB, medido em 14/10/2026).
+ * Mas o custo da compressão cresce com o "ruído" da imagem, e o ganho cai: PNG de textura ou foto (mais de meio
+ * byte por pixel no arquivo) levou 2,5 a 4,9 s para 12 PDFs, contra 0,9 a 1,7 s sem compressão. Por isso só o
+ * PNG compacto é comprimido; o resto vai como sempre foi. O JPEG vai como veio e ignora o parâmetro.
+ */
+export function compressaoDoLogo(logo: LogoDocumento): "FAST" | "NONE" {
+  if (logo.formato !== "PNG") return "NONE";
+  return logo.bytes.length < (logo.largura * logo.altura) / 2 ? "FAST" : "NONE";
+}
+
+/** Põe o logo no PDF (x, y em mm, dentro da caixa do papel timbrado) e devolve a altura que ele ocupa. */
+// deno-lint-ignore no-explicit-any
+function embutirLogo(doc: any, logo: LogoDocumento, x: number, y: number): number {
+  const { larguraMm, alturaMm } = caixaDoLogo(logo);
+  doc.addImage(
+    logo.bytes,
+    logo.formato,
+    x,
+    y,
+    larguraMm,
+    alturaMm,
+    undefined,
+    compressaoDoLogo(logo)
+  );
+  return alturaMm;
+}
+
+/**
+ * Sonda: embute o logo num PDF descartável, do mesmo jeito que `gerarPdfDeclaracao` (mesmos argumentos), e
+ * confere que o jsPDF mediu a imagem como o cabeçalho dela diz. LANÇA se ele não consegue (PNG com alfa de
+ * dados ruins, entrelaçado com alfa, JPEG cujo cabeçalho ele não lê...). Sem a sonda, o PDF sai sem o logo e o
+ * .docx sai com ele. Não pega o que o jsPDF copia sem decodificar (PNG sem alfa com dados ruins): isso é da
+ * `conferirImagem`. A medida só se confere no JPEG: o jsPDF acha o tamanho dele com um leitor próprio e simples
+ * (e o `getImageProperties` custa barato nele); no PNG o tamanho vem do IHDR, que ele lê igual a nós, e o
+ * `getImageProperties` decodificaria a imagem de novo (mais caro que o próprio `addImage`: ~0,3 s em 800 x 800).
+ */
+export function sondarLogoNoPdf(libs: Pick<LibsDocumentos, "jsPDF">, logo: LogoDocumento): void {
+  const doc = new libs.jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  embutirLogo(doc, logo, 0, 0);
+  if (logo.formato !== "JPEG") return;
+  const lida = doc.getImageProperties(logo.bytes) as { width: number; height: number };
+  if (lida.width !== logo.largura || lida.height !== logo.altura) {
+    throw new Error("o jsPDF mediu o logo com outro tamanho");
+  }
+}
+
 export function gerarPdfDeclaracao(
   dados: DadosDeclaracao,
   libs: Pick<LibsDocumentos, "jsPDF">,
@@ -122,12 +172,10 @@ export function gerarPdfDeclaracao(
 
   // papel timbrado
   if (logo) {
-    const { larguraMm: w, alturaMm: h } = caixaDoLogo(logo);
     try {
-      doc.addImage(logo.bytes, logo.formato, MARGEM_ESQUERDA, y - 6, w, h);
-      y += h;
+      y += embutirLogo(doc, logo, MARGEM_ESQUERDA, y - 6);
     } catch (_e) {
-      // logo ilegível: o documento sai sem ele
+      // logo ilegível: o documento sai sem ele (quem chama pela ferramenta já passou pela sonda)
     }
   }
   linhasDaEmpresa(dados).forEach((t, i) =>

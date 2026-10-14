@@ -6,6 +6,7 @@
  * Import DINÂMICO: jsPDF, jspdf-autotable e SheetJS só são carregados na primeira ferramenta que
  * gera arquivo; as outras ferramentas não pagam esse custo.
  */
+import { combinarConsultasDns, type ConsultaDns } from "../_shared/conector/dns-combinar.ts";
 import { resolverAutoTable, type LibsDocumentos } from "../_shared/documentos/proposta-export.ts";
 
 let carregando: Promise<LibsDocumentos> | null = null;
@@ -54,16 +55,25 @@ async function resolverPorHttps(host: string, tipo: "A" | "AAAA"): Promise<strin
   return (corpo.Answer ?? []).filter((a) => a.type === codigo).map((a) => a.data);
 }
 
-/** Endereços A e AAAA de um nome. Lista vazia = não resolveu (quem chama recusa). */
+/** Uma consulta (A ou AAAA): o runtime primeiro; erro que não é "não existe" cai na reserva por HTTPS. */
+async function consultar(host: string, tipo: "A" | "AAAA"): Promise<ConsultaDns> {
+  try {
+    return { situacao: "ok", enderecos: await Deno.resolveDns(host, tipo) };
+  } catch (e) {
+    if (e instanceof Deno.errors.NotFound) return { situacao: "nao_existe" };
+  }
+  try {
+    return { situacao: "ok", enderecos: await resolverPorHttps(host, tipo) };
+  } catch {
+    return { situacao: "falhou" };
+  }
+}
+
+/**
+ * Endereços A e AAAA de um nome. Lista vazia = não resolveu, ou uma das duas consultas falhou e deixou um
+ * lado sem conferir (quem chama recusa; a regra está em `combinarConsultasDns`).
+ */
 export async function resolverDns(host: string): Promise<string[]> {
-  const tentar = async (tipo: "A" | "AAAA"): Promise<string[]> => {
-    try {
-      return await Deno.resolveDns(host, tipo);
-    } catch (e) {
-      if (e instanceof Deno.errors.NotFound) return [];
-      return await resolverPorHttps(host, tipo).catch(() => []);
-    }
-  };
-  const [a, aaaa] = await Promise.all([tentar("A"), tentar("AAAA")]);
-  return [...a, ...aaaa];
+  const [a, aaaa] = await Promise.all([consultar(host, "A"), consultar(host, "AAAA")]);
+  return combinarConsultasDns(a, aaaa);
 }

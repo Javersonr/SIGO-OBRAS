@@ -1,11 +1,13 @@
 // node --test supabase/functions/_shared/documentos/declaracao-pdf.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { jsPDF } from "jspdf";
-import { gerarPdfDeclaracao } from "./declaracao-pdf.ts";
+import { compressaoDoLogo, gerarPdfDeclaracao, sondarLogoNoPdf } from "./declaracao-pdf.ts";
 import type { DadosDeclaracao } from "./declaracoes.ts";
 import { bytesDoPdf } from "./proposta-export.ts";
 import { DADOS, PNG_1X1 } from "./testes/amostras.ts";
+import { construirPng, jpegSintetico } from "./testes/imagens.ts";
 
 // deno-lint-ignore no-explicit-any
 const paginas = (doc: unknown) => (doc as any).getNumberOfPages();
@@ -42,6 +44,124 @@ test("PDF da declaração: logo ilegível não derruba o documento", () => {
     { formato: "PNG", largura: 10, altura: 10, bytes: new Uint8Array([1, 2, 3]) }
   );
   assert.equal(paginas(doc), 1);
+});
+
+// ------------------------------------------------------------------ logo: compressão e sonda
+
+const latin1 = (bytes: Uint8Array) => new TextDecoder("latin1").decode(bytes);
+
+test("PDF da declaração: o logo PNG vai comprimido (sem isso o jsPDF grava a imagem em bruto)", () => {
+  const png = construirPng({ largura: 200, altura: 200, tipoCor: 6 }); // RGBA: o pior caso do jsPDF
+  const semLogo = bytesDoPdf(gerarPdfDeclaracao(DADOS, { jsPDF }, null));
+  const comLogo = bytesDoPdf(
+    gerarPdfDeclaracao(DADOS, { jsPDF }, { formato: "PNG", largura: 200, altura: 200, bytes: png })
+  );
+  // em bruto a imagem sozinha somaria 200 x 200 x 4 = 160000 bytes
+  assert.ok(comLogo.length - semLogo.length < 80000, `cresceu ${comLogo.length - semLogo.length}`);
+  assert.ok(latin1(comLogo).includes("/FlateDecode"));
+  assert.ok(!latin1(semLogo).includes("/FlateDecode"));
+  // o documento inteiro NÃO é comprimido: o texto da página continua legível no conteúdo
+  assert.ok(latin1(comLogo).includes(DADOS.representante.nome));
+});
+
+test("compressaoDoLogo: PNG compacto (menos de meio byte por pixel) vai com FAST; o pesado e o JPEG, sem compressão", () => {
+  const png = (largura: number, altura: number, tamanhoDoArquivo: number) => ({
+    formato: "PNG" as const,
+    largura,
+    altura,
+    bytes: new Uint8Array(tamanhoDoArquivo),
+  });
+  assert.equal(compressaoDoLogo(png(800, 800, 70 * 1024)), "FAST"); // logo plano: 0,11 byte por pixel
+  assert.equal(compressaoDoLogo(png(100, 100, 4999)), "FAST");
+  assert.equal(compressaoDoLogo(png(100, 100, 5000)), "NONE"); // exatamente meio byte por pixel
+  assert.equal(compressaoDoLogo(png(800, 800, 400 * 1024)), "NONE"); // 0,64: parece ruído
+  assert.equal(
+    compressaoDoLogo({ formato: "JPEG", largura: 800, altura: 800, bytes: new Uint8Array(100) }),
+    "NONE"
+  ); // o JPEG vai como veio, a compressão nem é lida
+});
+
+test("PDF da declaração: PNG que já é pesado (parece ruído) não é comprimido de novo: custaria CPU e quase não reduziria", () => {
+  const largura = 100;
+  const altura = 100;
+  const bruto = randomBytes((1 + largura * 4) * altura);
+  for (let y = 0; y < altura; y++) bruto[y * (1 + largura * 4)] = 0; // filtro 0 em toda linha
+  const png = construirPng({ largura, altura, tipoCor: 6, dadosBrutos: bruto });
+  assert.ok(png.length >= (largura * altura) / 2, "o PNG de teste tem de ser pesado");
+  const logo = { formato: "PNG" as const, largura, altura, bytes: png };
+  const semLogo = bytesDoPdf(gerarPdfDeclaracao(DADOS, { jsPDF }, null));
+  const comLogo = bytesDoPdf(gerarPdfDeclaracao(DADOS, { jsPDF }, logo));
+  assert.ok(!latin1(comLogo).includes("/FlateDecode"));
+  assert.ok(comLogo.length - semLogo.length >= largura * altura * 4);
+  // e a imagem entra mesmo assim (a sonda aceita)
+  assert.doesNotThrow(() => sondarLogoNoPdf({ jsPDF }, logo));
+});
+
+test("PDF da declaração: o JPEG do logo entra como veio (DCTDecode)", () => {
+  const jpeg = jpegSintetico(120, 30);
+  const comLogo = bytesDoPdf(
+    gerarPdfDeclaracao(DADOS, { jsPDF }, { formato: "JPEG", largura: 120, altura: 30, bytes: jpeg })
+  );
+  assert.ok(latin1(comLogo).includes("/DCTDecode"));
+});
+
+const PNGS_QUE_O_JSPDF_DECODIFICA: [string, Parameters<typeof construirPng>[0]][] = [
+  ["RGB 8 bits", { largura: 9, altura: 5 }],
+  ["RGBA 8 bits", { largura: 9, altura: 5, tipoCor: 6 }],
+  ["RGB 16 bits", { largura: 9, altura: 5, tipoCor: 2, profundidade: 16 }],
+  ["RGBA 16 bits", { largura: 9, altura: 5, tipoCor: 6, profundidade: 16 }],
+  ["cinza 16 bits", { largura: 9, altura: 5, tipoCor: 0, profundidade: 16 }],
+  ["cinza com alfa 16 bits", { largura: 9, altura: 5, tipoCor: 4, profundidade: 16 }],
+  ["cinza 1 bit", { largura: 9, altura: 5, tipoCor: 0, profundidade: 1 }],
+  ["paleta 4 bits", { largura: 9, altura: 5, tipoCor: 3, profundidade: 4 }],
+  [
+    "paleta 8 bits com alfa parcial",
+    { largura: 9, altura: 5, tipoCor: 3, profundidade: 8, trns: [0, 128, 255] },
+  ],
+];
+
+test("sondarLogoNoPdf: PNG de todo tipo de cor e profundidade, inclusive 16 bits, e JPEG passam", () => {
+  for (const [nome, opcoes] of PNGS_QUE_O_JSPDF_DECODIFICA) {
+    const logo = {
+      formato: "PNG" as const,
+      largura: opcoes.largura,
+      altura: opcoes.altura,
+      bytes: construirPng(opcoes),
+    };
+    assert.doesNotThrow(() => sondarLogoNoPdf({ jsPDF }, logo), nome);
+  }
+  assert.doesNotThrow(() =>
+    sondarLogoNoPdf(
+      { jsPDF },
+      { formato: "JPEG", largura: 120, altura: 30, bytes: jpegSintetico(120, 30) }
+    )
+  );
+});
+
+test("sondarLogoNoPdf: o que o jsPDF não consegue embutir lança (IDAT lixo com alfa, entrelaçado com alfa, JPEG que ele não mede)", () => {
+  const lixo = Buffer.from("isto nao e um fluxo zlib, mas o CRC do bloco confere");
+  const rgbaLixo = construirPng({ largura: 16, altura: 16, tipoCor: 6, idat: lixo });
+  assert.throws(() =>
+    sondarLogoNoPdf({ jsPDF }, { formato: "PNG", largura: 16, altura: 16, bytes: rgbaLixo })
+  );
+  const entrelacado = construirPng({ largura: 16, altura: 16, tipoCor: 6, entrelacado: true });
+  assert.throws(() =>
+    sondarLogoNoPdf({ jsPDF }, { formato: "PNG", largura: 16, altura: 16, bytes: entrelacado })
+  );
+  // JPEG aritmético (SOF9): o leitor de cabeçalho do jsPDF não o reconhece e o tamanho sai 0 x 0
+  const aritmetico = jpegSintetico(120, 30, { sof: 0xc9 });
+  assert.throws(
+    () =>
+      sondarLogoNoPdf({ jsPDF }, { formato: "JPEG", largura: 120, altura: 30, bytes: aritmetico }),
+    /tamanho/
+  );
+  // bytes que nem são imagem
+  assert.throws(() =>
+    sondarLogoNoPdf(
+      { jsPDF },
+      { formato: "PNG", largura: 10, altura: 10, bytes: new Uint8Array([1, 2, 3]) }
+    )
+  );
 });
 
 // ------------------------------------------------------------------ jsPDF espião
