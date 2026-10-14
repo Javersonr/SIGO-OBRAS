@@ -96,3 +96,8 @@ verify_jwt = false
 
 [functions.validar-certificado]
 verify_jwt = true
+
+# Lembretes de habilitação por WhatsApp: chamada pelo pg_cron (pg_net), sem JWT. A função não aceita
+# entrada: só esvazia a fila que o banco gravou. Deploy com --no-verify-jwt.
+[functions.habilitacao-lembretes]
+verify_jwt = false
