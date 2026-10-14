@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { jsPDF } from "jspdf";
 import { gerarPdfDeclaracao } from "./declaracao-pdf.ts";
+import type { DadosDeclaracao } from "./declaracoes.ts";
 import { bytesDoPdf } from "./proposta-export.ts";
 import { DADOS, PNG_1X1 } from "./testes/amostras.ts";
 
@@ -45,10 +46,16 @@ test("PDF da declaração: logo ilegível não derruba o documento", () => {
 
 // ------------------------------------------------------------------ jsPDF espião
 
-/** Rodapé em 288 mm; o corpo do texto termina antes de 277 mm. */
-const Y_DO_RODAPE = 280;
+/** Linha de base do rodapé (297 - 9 mm). */
+const Y_DO_RODAPE = 288;
+/** Limite inferior do corpo (297 - 20 mm): é a constante que `cabe` usa; nenhuma linha do corpo passa dele. */
+const LIMITE_DO_CORPO = 277;
 /** Largura útil da página A4 com as margens da declaração (210 - 25 - 20 mm). */
 const LARGURA_UTIL = 165;
+/** Altura (mm) de uma linha do texto em 11 pt: 11 x 1,4 x 0,3528. */
+const ALTURA_DA_LINHA_DO_TEXTO = 11 * 1.4 * 0.3528;
+/** Espaço (mm) que o PDF deixa depois de cada parágrafo. */
+const ESPACO_ENTRE_PARAGRAFOS = 3;
 
 interface Chamada {
   texto: string;
@@ -57,6 +64,8 @@ interface Chamada {
   y: number;
   /** Largura (mm) do texto com a fonte e o tamanho vigentes na hora do desenho. */
   largura: number;
+  /** Alinhamento pedido ao jsPDF ("justify" nas linhas esticadas). */
+  alinhar?: string;
 }
 
 /**
@@ -81,6 +90,7 @@ function comEspiao() {
         x,
         y,
         largura: doc.getTextWidth(primeira),
+        alinhar: (opcoes as { align?: string } | undefined)?.align,
       });
       return texto(t, x, y, opcoes);
     };
@@ -93,7 +103,9 @@ function comEspiao() {
   return { libs: { jsPDF: JsPdfEspiao }, chamadas, tracos };
 }
 
-const corpoDoTexto = (chamadas: Chamada[]) => chamadas.filter((c) => c.y < Y_DO_RODAPE);
+const noRodape = (c: Chamada) => Math.abs(c.y - Y_DO_RODAPE) < 0.01;
+/** Tudo o que não é rodapé: o corpo não é escolhido pela posição, para uma linha fora do limite aparecer. */
+const corpoDoTexto = (chamadas: Chamada[]) => chamadas.filter((c) => !noRodape(c));
 
 // ------------------------------------------------------------------ bloco de assinatura
 
@@ -122,21 +134,53 @@ const REPRESENTANTES = [
       localData: LOCAL_DATA_LONGO,
     },
   },
+  // sem local e data não há a palavra "Cidade" para achar o bloco: ele se acha pelo fim do texto e pelo traço
+  { nome: "sem local e data", rep: DADOS.representante, extra: { localData: "" } },
 ];
+
+/** Linha do texto de teste: uma palavra de 23 "W" (ocupa a linha inteira) ou o parágrafo curto "Fim.". */
+const ehLinhaDoTexto = (c: Chamada) => c.texto.startsWith("WWWW") || c.texto === "Fim.";
+
+/**
+ * Gera a declaração com o espião e separa o que ela desenhou: as linhas do texto de teste, o bloco (tudo o que
+ * vem depois da última linha do texto: local e data e as linhas da assinatura) e o traço da assinatura.
+ */
+function desenhar(dados: DadosDeclaracao) {
+  const { libs, chamadas, tracos } = comEspiao();
+  const doc = gerarPdfDeclaracao(dados, libs);
+  const corpo = corpoDoTexto(chamadas);
+  const texto = corpo.filter(ehLinhaDoTexto);
+  const bloco = texto.length > 0 ? corpo.slice(corpo.lastIndexOf(texto[texto.length - 1]) + 1) : [];
+  return { doc, corpo, texto, bloco, traco: tracos[tracos.length - 1] };
+}
+
+/** Páginas do documento que não têm nenhuma linha do corpo (texto ou bloco). */
+function paginasEmBranco(doc: unknown, corpo: Chamada[]): number[] {
+  const vazias: number[] = [];
+  for (let p = 1; p <= paginas(doc); p++) if (!corpo.some((c) => c.pagina === p)) vazias.push(p);
+  return vazias;
+}
 
 /**
  * Parágrafos curtos a mais depois do texto: cada um soma 3 mm de espaço, e com isso a última linha do
- * texto cai em fases diferentes de uma linha (5,4 mm). Com 0, 1 e 3 a reserva de espaço antiga
- * (menor que o bloco) deixava o bloco partir mesmo com assinatura de uma linha só.
+ * texto cai em fases diferentes de uma linha (5,4 mm). Com 0 o último parágrafo é o longo (duas linhas vão
+ * com o bloco); com 1 e 3 o último parágrafo é "Fim." (uma linha só).
  */
 const FASES = [0, 1, 3];
 
-test("PDF da declaração: local e data, traço e assinatura ficam na mesma página em todo ponto de quebra", () => {
+test("PDF da declaração: a assinatura nunca fica sozinha na página, em todo ponto de quebra", () => {
   const falhas: string[] = [];
+  const casosComFalha = new Set<string>();
+  const falhar = (onde: string, motivo: string) => {
+    falhas.push(`${onde}: ${motivo}`);
+    casosComFalha.add(onde);
+  };
+  const semEmpurrao: string[] = [];
   let casos = 0;
   for (const variante of REPRESENTANTES) {
     for (const extras of FASES) {
-      let blocoNaPaginaSeguinte = 0;
+      // quantos casos desta combinação tiveram o fim do texto empurrado para a página do bloco só por causa dele
+      let empurrados = 0;
       // de 14 a 90 linhas de texto: a quebra de página passa por todas as posições, na 1ª e na 2ª páginas
       for (let linhas = 14; linhas <= 90; linhas++) {
         const dados = {
@@ -148,64 +192,79 @@ test("PDF da declaração: local e data, traço e assinatura ficam na mesma pág
           ],
           representante: variante.rep,
         };
-        const { libs, chamadas, tracos } = comEspiao();
-        gerarPdfDeclaracao(dados, libs);
+        const { doc, corpo, texto, bloco, traco } = desenhar(dados);
         casos++;
         const onde = `${variante.nome}, ${extras} parágrafos a mais, ${linhas} linhas`;
-        const corpo = corpoDoTexto(chamadas);
-        const inicio = corpo.findIndex((c) => c.texto.startsWith("Cidade"));
-        if (inicio < 1) {
-          falhas.push(`${onde}: bloco não encontrado`);
+        if (bloco.length < 2 || !traco) {
+          falhar(onde, `bloco não encontrado`);
+          continue;
+        }
+        // nada do texto se perdeu
+        if (texto.length !== linhas + extras) {
+          falhar(onde, `${texto.length} linhas de texto em vez de ${linhas + extras}`);
           continue;
         }
         // local e data (1 ou 2 linhas), o traço e as linhas da assinatura (nome, cargo, CPF, empresa)
-        const bloco = corpo.slice(inicio);
-        const paginasDoBloco = new Set([
-          ...bloco.map((c) => c.pagina),
-          tracos[tracos.length - 1].pagina,
-        ]);
-        if (paginasDoBloco.size !== 1)
-          falhas.push(`${onde}: bloco em ${[...paginasDoBloco].join(" e ")}`);
-        if (bloco[0].pagina > corpo[inicio - 1].pagina) blocoNaPaginaSeguinte++;
+        const paginasDoBloco = new Set([...bloco.map((c) => c.pagina), traco.pagina]);
+        if (paginasDoBloco.size !== 1) {
+          falhar(onde, `bloco em ${[...paginasDoBloco].join(" e ")}`);
+          continue;
+        }
+        const paginaDoBloco = bloco[0].pagina;
+        // a assinatura leva junto as duas últimas linhas do texto (uma, se o último parágrafo só tem uma)
+        const n = Math.min(2, extras > 0 ? 1 : linhas);
+        const ultimas = texto.slice(-n);
+        const noBloco = texto.filter((c) => c.pagina === paginaDoBloco).length;
+        if (noBloco < n)
+          falhar(onde, `só ${noBloco} linha(s) do texto na página da assinatura (pede ${n})`);
+        if (ultimas.some((c) => c.pagina !== paginaDoBloco))
+          falhar(onde, `as ${n} últimas linhas do texto não estão na página da assinatura`);
+        // nenhuma linha do corpo passa do limite inferior e nenhuma página fica em branco
+        if (corpo.some((c) => c.y > LIMITE_DO_CORPO))
+          falhar(onde, `linha abaixo de ${LIMITE_DO_CORPO} mm`);
+        const vazias = paginasEmBranco(doc, corpo);
+        if (vazias.length > 0) falhar(onde, `página(s) em branco: ${vazias.join(", ")}`);
+        // o texto foi empurrado por causa do bloco: havia lugar para as n linhas, mas não para elas e o bloco
+        const anterior = texto[texto.length - n - 1];
+        const espaco = extras > 0 ? ESPACO_ENTRE_PARAGRAFOS : 0;
+        if (
+          anterior.pagina < ultimas[0].pagina &&
+          anterior.y + (n + 1) * ALTURA_DA_LINHA_DO_TEXTO + espaco <= LIMITE_DO_CORPO
+        )
+          empurrados++;
       }
-      // sem isso o teste não provaria nada: em cada combinação o bloco foi empurrado inteiro para a página seguinte
-      assert.ok(
-        blocoNaPaginaSeguinte > 0,
-        `${variante.nome}, ${extras} parágrafos a mais: o bloco nunca passou para a página seguinte`
-      );
+      // sem isso o teste não provaria nada: em cada combinação a regra empurrou o fim do texto de uma página para a seguinte
+      if (empurrados === 0) semEmpurrao.push(`${variante.nome}, ${extras} parágrafos a mais`);
     }
   }
   assert.ok(casos >= 400, `${casos} casos`);
   assert.equal(
-    falhas.length,
+    casosComFalha.size,
     0,
-    `${falhas.length} de ${casos} casos partem o bloco de assinatura: ${falhas.slice(0, 6).join("; ")}`
+    `${casosComFalha.size} de ${casos} casos deixam a assinatura sem o fim do texto: ${falhas.slice(0, 4).join("; ")}`
   );
+  assert.deepEqual(semEmpurrao, [], "combinações em que o fim do texto nunca foi empurrado");
 });
 
-test("PDF da declaração: texto que termina junto ao fim da página leva o bloco inteiro para a seguinte", () => {
+test("PDF da declaração: texto que termina junto ao fim da página leva as duas últimas linhas com o bloco", () => {
   const representantes = [
     DADOS.representante,
     { nome: NOME_LONGO, cargo: CARGO_LONGO, cpf: DADOS.representante.cpf },
   ];
   for (const representante of representantes) {
     const situacao = (linhas: number) => {
-      const { libs, chamadas, tracos } = comEspiao();
-      const doc = gerarPdfDeclaracao(
-        {
-          ...DADOS,
-          paragrafos: [Array(linhas).fill(PALAVRA_DE_UMA_LINHA).join(" ")],
-          representante,
-        },
-        libs
-      );
-      const corpo = corpoDoTexto(chamadas);
-      const inicio = corpo.findIndex((c) => c.texto.startsWith("Cidade"));
+      const { doc, corpo, texto, bloco, traco } = desenhar({
+        ...DADOS,
+        paragrafos: [Array(linhas).fill(PALAVRA_DE_UMA_LINHA).join(" ")],
+        representante,
+      });
       return {
         paginas: paginas(doc),
-        ultimaLinhaDoTextoEm: corpo[inicio - 1].pagina,
-        localEDataEm: corpo[inicio].pagina,
-        tracoEm: tracos[tracos.length - 1].pagina,
+        terceiraUltimaLinhaDoTextoEm: texto[texto.length - 3]?.pagina,
+        penultimaLinhaDoTextoEm: texto[texto.length - 2]?.pagina,
+        ultimaLinhaDoTextoEm: texto[texto.length - 1]?.pagina,
+        localEDataEm: bloco[0].pagina,
+        tracoEm: traco.pagina,
         ultimaLinhaDaAssinaturaEm: corpo[corpo.length - 1].pagina,
       };
     };
@@ -215,15 +274,19 @@ test("PDF da declaração: texto que termina junto ao fim da página leva o bloc
     assert.ok(ultimaQueCabe > 20, `ultimaQueCabe = ${ultimaQueCabe}`);
     assert.deepEqual(situacao(ultimaQueCabe), {
       paginas: 1,
+      terceiraUltimaLinhaDoTextoEm: 1,
+      penultimaLinhaDoTextoEm: 1,
       ultimaLinhaDoTextoEm: 1,
       localEDataEm: 1,
       tracoEm: 1,
       ultimaLinhaDaAssinaturaEm: 1,
     });
-    // uma linha a mais: o texto continua na página 1 e o bloco inteiro (com o traço) vai para a 2
+    // uma linha a mais: só as duas últimas linhas do texto passam para a página 2, junto com o bloco inteiro
     assert.deepEqual(situacao(ultimaQueCabe + 1), {
       paginas: 2,
-      ultimaLinhaDoTextoEm: 1,
+      terceiraUltimaLinhaDoTextoEm: 1,
+      penultimaLinhaDoTextoEm: 2,
+      ultimaLinhaDoTextoEm: 2,
       localEDataEm: 2,
       tracoEm: 2,
       ultimaLinhaDaAssinaturaEm: 2,
@@ -231,10 +294,147 @@ test("PDF da declaração: texto que termina junto ao fim da página leva o bloc
   }
 });
 
+test("PDF da declaração: último parágrafo de uma linha só vai com o bloco; de duas linhas, vai inteiro", () => {
+  const longo = (linhas: number) => Array(linhas).fill(PALAVRA_DE_UMA_LINHA).join(" ");
+  const variantes = [
+    { nome: "uma linha", ultimo: "Fim.", linhasDoUltimo: 1 },
+    { nome: "duas linhas", ultimo: longo(2), linhasDoUltimo: 2 },
+  ];
+  const falhas: string[] = [];
+  let casos = 0;
+  for (const { nome, ultimo, linhasDoUltimo } of variantes) {
+    let empurrados = 0;
+    for (let linhas = 14; linhas <= 60; linhas++) {
+      const { doc, corpo, texto, bloco, traco } = desenhar({
+        ...DADOS,
+        paragrafos: [longo(linhas), ultimo],
+      });
+      casos++;
+      const onde = `${nome}, ${linhas} linhas antes`;
+      assert.equal(texto.length, linhas + linhasDoUltimo, onde);
+      const paginaDoBloco = bloco[0].pagina;
+      assert.equal(traco.pagina, paginaDoBloco, onde);
+      // todas as linhas do último parágrafo estão na página do bloco
+      if (texto.slice(-linhasDoUltimo).some((c) => c.pagina !== paginaDoBloco)) falhas.push(onde);
+      assert.deepEqual(paginasEmBranco(doc, corpo), [], onde);
+      if (texto[texto.length - linhasDoUltimo - 1].pagina < paginaDoBloco) empurrados++;
+    }
+    assert.ok(
+      empurrados > 0,
+      `${nome}: o último parágrafo nunca foi empurrado para a página da assinatura`
+    );
+  }
+  assert.deepEqual(
+    falhas,
+    [],
+    `${falhas.length} de ${casos} casos deixam o último parágrafo fora da página da assinatura`
+  );
+});
+
+test("PDF da declaração: texto curto de um parágrafo só continua em uma página, com a assinatura", () => {
+  const { doc, texto, bloco, traco } = desenhar({
+    ...DADOS,
+    paragrafos: ["Fim."],
+  });
+  assert.equal(paginas(doc), 1);
+  assert.equal(texto.length, 1);
+  assert.equal(bloco[0].pagina, 1);
+  assert.equal(traco.pagina, 1);
+  // sem texto nenhum (a lista de parágrafos vazia): só o bloco, em uma página
+  const semTexto = comEspiao();
+  const docSemTexto = gerarPdfDeclaracao({ ...DADOS, paragrafos: [] }, semTexto.libs);
+  assert.equal(paginas(docSemTexto), 1);
+  assert.deepEqual(paginasEmBranco(docSemTexto, corpoDoTexto(semTexto.chamadas)), []);
+});
+
+test("PDF da declaração: assinatura gigante (não cabe nem numa página vazia) termina e não perde texto", () => {
+  const nome = Array(1500).fill("Fulano").join(" ");
+  const cargo = Array(900).fill("Representante").join(" ");
+  const dados = {
+    ...DADOS,
+    paragrafos: [Array(30).fill(PALAVRA_DE_UMA_LINHA).join(" "), "Fim."],
+    representante: { nome, cargo, cpf: DADOS.representante.cpf },
+  };
+  const { libs, chamadas, tracos } = comEspiao();
+  const doc = gerarPdfDeclaracao(dados, libs);
+  const corpo = corpoDoTexto(chamadas);
+  const texto = corpo.filter(ehLinhaDoTexto);
+  // o bloco ocupa mais de uma página: o documento tem de ter várias, mas um número finito e pequeno
+  assert.ok(paginas(doc) >= 3 && paginas(doc) <= 8, `${paginas(doc)} páginas`);
+  assert.equal(texto.length, 31);
+  assert.equal(tracos.length >= 1, true);
+  assert.deepEqual(paginasEmBranco(doc, corpo), []);
+  // nenhum texto se perde: o nome e o cargo saem inteiros, na ordem (a quebra de linha come os espaços)
+  const depois = corpo.slice(corpo.lastIndexOf(texto[texto.length - 1]) + 1);
+  const saida = depois
+    .map((c) => c.texto)
+    .join("")
+    .replace(/ /g, "");
+  assert.ok(saida.includes("Fulano".repeat(1500)), "o nome inteiro está na saída");
+  assert.ok(saida.includes("Representante".repeat(900)), "o cargo inteiro está na saída");
+});
+
 // ------------------------------------------------------------------ parágrafo justificado, linha a linha
 
 const FRASE =
   "A empresa declara, sob as penas da lei, que cumpre o exigido no edital e nos seus anexos. ";
+
+test("PDF da declaração: a linha antes da quebra do último parágrafo continua justificada; a última, à esquerda", () => {
+  let comQuebra = 0;
+  // de 20 a 60 repetições da frase: o último parágrafo atravessa a quebra de página em várias posições
+  for (let k = 20; k <= 60; k++) {
+    const { libs, chamadas } = comEspiao();
+    const doc = gerarPdfDeclaracao({ ...DADOS, paragrafos: [FRASE.repeat(k)] }, libs);
+    const corpo = corpoDoTexto(chamadas);
+    const inicio = corpo.findIndex((c) => c.texto.startsWith("A empresa"));
+    const fim = corpo.findIndex((c) => c.texto.startsWith("Cidade"));
+    const linhas = corpo.slice(inicio, fim);
+    const onde = `${k} frases`;
+    // todas justificadas, menos a última (que fica à esquerda), com a quebra de página onde estiver
+    linhas
+      .slice(0, -1)
+      .forEach((c, i) => assert.equal(c.alinhar, "justify", `${onde}, linha ${i + 1}`));
+    assert.notEqual(linhas[linhas.length - 1].alinhar, "justify", onde);
+    // as duas últimas linhas do texto estão na página da assinatura (a do bloco)
+    const bloco = corpo[fim];
+    assert.deepEqual(
+      linhas.slice(-2).map((c) => c.pagina),
+      [bloco.pagina, bloco.pagina],
+      onde
+    );
+    assert.deepEqual(paginasEmBranco(doc, corpo), [], onde);
+    // a linha antes da quebra, na página anterior, é uma linha justificada (não a última do parágrafo)
+    const quebra = linhas.findIndex((c, i) => i > 0 && c.pagina > linhas[i - 1].pagina);
+    if (quebra > 0 && quebra >= linhas.length - 2 && linhas[quebra - 1].pagina < bloco.pagina) {
+      comQuebra++;
+      assert.equal(linhas[quebra - 1].alinhar, "justify", onde);
+    }
+  }
+  assert.ok(comQuebra > 0, "nenhum caso empurrou o fim do parágrafo para a página da assinatura");
+});
+
+test("PDF da declaração: espaço no fim do parágrafo não vira linha em branco nem estica a última linha", () => {
+  const marca = (chamadas: Chamada[]) =>
+    corpoDoTexto(chamadas).map(
+      (c) => `${c.pagina}|${c.y.toFixed(3)}|${c.alinhar ?? "-"}|${c.texto.trimEnd()}`
+    );
+  for (let k = 20; k <= 60; k += 3) {
+    const aparado = comEspiao();
+    gerarPdfDeclaracao({ ...DADOS, paragrafos: [FRASE.repeat(k).trimEnd()] }, aparado.libs);
+    for (const sobra of [" ", "   "]) {
+      const comEspaco = comEspiao();
+      gerarPdfDeclaracao(
+        { ...DADOS, paragrafos: [FRASE.repeat(k).trimEnd() + sobra] },
+        comEspaco.libs
+      );
+      assert.deepEqual(
+        marca(comEspaco.chamadas),
+        marca(aparado.chamadas),
+        `${k} frases, sobra de ${sobra.length}`
+      );
+    }
+  }
+});
 
 test("PDF da declaração: palavra de 250 caracteres sem espaço não sobrepõe a linha seguinte", () => {
   const paragrafo = `Texto antes ${"x".repeat(250)} e texto depois da palavra longa, para fechar o parágrafo.`;
@@ -243,6 +443,8 @@ test("PDF da declaração: palavra de 250 caracteres sem espaço não sobrepõe 
   const doc = gerarPdfDeclaracao({ ...DADOS, paragrafos }, libs);
   assert.ok(paginas(doc) >= 2);
   const corpo = corpoDoTexto(chamadas);
+  // nenhuma linha do corpo passa do limite inferior do corpo (a constante que o gerador usa em `cabe`)
+  for (const c of corpo) assert.ok(c.y <= LIMITE_DO_CORPO, `y = ${c.y} na página ${c.pagina}`);
   // cada doc.text desenha UMA linha, que cabe na largura útil: nenhum bloco que o jsPDF quebre de novo
   for (const c of corpo) {
     assert.ok(
@@ -294,6 +496,13 @@ test("PDF da declaração: linhas do parágrafo justificadas (menos a última), 
     const esperadas = linhas.slice(0, -1).filter((c) => c.texto.trim().includes(" "));
     assert.ok(esperadas.length > 0);
     assert.equal(justificadas.length, esperadas.length);
+    // todo Tw positivo é desfeito (0 Tw) antes do próximo ET: o espaçamento não vaza para o texto seguinte
+    for (const bt of bruto.split(/^ET$/m)) {
+      const tw = [...bt.matchAll(/^(\d+(?:\.\d+)?) Tw$/gm)].map((m) => Number(m[1]));
+      tw.forEach((valor, i) => {
+        if (valor > 0) assert.equal(tw[i + 1], 0, `Tw ${valor} sem 0 Tw depois, antes do ET`);
+      });
+    }
   }
 });
 
@@ -308,7 +517,7 @@ test("PDF da declaração: nome de empresa muito longo é cortado no rodapé e n
       libs
     );
     assert.ok(paginas(doc) >= 2);
-    const rodape = chamadas.filter((c) => c.y >= Y_DO_RODAPE);
+    const rodape = chamadas.filter(noRodape);
     const nomes = rodape.filter((c) => !c.texto.startsWith("Página "));
     const numeros = rodape.filter((c) => c.texto.startsWith("Página "));
     assert.equal(nomes.length, paginas(doc));
@@ -327,5 +536,5 @@ test("PDF da declaração: nome de empresa muito longo é cortado no rodapé e n
   // nome curto: sai inteiro
   const { libs, chamadas } = comEspiao();
   gerarPdfDeclaracao(DADOS, libs);
-  assert.ok(chamadas.some((c) => c.y >= Y_DO_RODAPE && c.texto === DADOS.empresa.nome));
+  assert.ok(chamadas.some((c) => noRodape(c) && c.texto === DADOS.empresa.nome));
 });

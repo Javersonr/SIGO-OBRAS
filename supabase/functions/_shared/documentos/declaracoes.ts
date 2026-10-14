@@ -215,7 +215,7 @@ function hashFnv1a(texto: string): string {
 function chaveDoTitulo(titulo: string): string {
   const normalizado = String(titulo ?? "")
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
@@ -298,7 +298,10 @@ export function nomeArquivoDeclaracao(titulo: string, ext: "pdf" | "docx"): stri
     .slice(0, 150)
     .join("")
     .trim();
-  const semAcento = limpo.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const semAcento = limpo
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
   let nome = "Declaração";
   if (limpo) nome = semAcento.startsWith("declaracao") ? limpo : `Declaração - ${limpo}`;
   return `${nome}.${ext}`;

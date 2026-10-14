@@ -21,7 +21,7 @@ const EMU_POR_MM = 36000;
  */
 const xml = (s: unknown) =>
   String(s ?? "")
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f￾￿]/g, "")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\uFFFE\uFFFF]/g, "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -35,12 +35,15 @@ interface Estilo {
   depois?: number;
   recuo?: boolean; // 1,25 cm na primeira linha
   borda?: boolean; // traço embaixo (fecha o papel timbrado)
+  manter?: boolean; // keepNext: fica na mesma página que o parágrafo seguinte
 }
 
 function paragrafo(texto: string, e: Estilo = {}): string {
   const meiosPontos = Math.round((e.tamanho ?? 11) * 2);
   const ppr =
     `<w:pPr>` +
+    // a ordem dos filhos de pPr é a do esquema: keepNext, pBdr, spacing, ind, jc
+    (e.manter ? `<w:keepNext/>` : "") +
     (e.borda
       ? `<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="4" w:color="808080"/></w:pBdr>`
       : "") +
@@ -102,12 +105,35 @@ export function gerarDocxDeclaracao(
   );
   if (d.destinatario) corpo.push(paragrafo(d.destinatario, { negrito: true, depois: 60 }));
   if (d.referencia) corpo.push(paragrafo(d.referencia, { depois: 240 }));
-  for (const p of d.paragrafos)
-    corpo.push(paragrafo(p, { alinhar: "both", depois: 160, recuo: true }));
-  if (d.localData) corpo.push(paragrafo(`${d.localData}.`, { antes: 360, depois: 720 }));
-  corpo.push(paragrafo("________________________________________", { alinhar: "center" }));
-  linhasDaAssinatura(d).forEach((t, i) =>
-    corpo.push(paragrafo(t, { alinhar: "center", negrito: i === 0, tamanho: i === 0 ? 11 : 10 }))
+  // A assinatura nunca fica sozinha numa página: o último parágrafo do texto, local e data, o traço e
+  // todas as linhas da assinatura, menos a última, levam "manter com o próximo" (keepNext). Sem keepLines
+  // no texto: um parágrafo longo não salta inteiro de página; o controle de viúva e órfã, que o Word liga
+  // por padrão, deixa pelo menos duas linhas do fim do texto junto da data e da assinatura.
+  d.paragrafos.forEach((p, i) =>
+    corpo.push(
+      paragrafo(p, {
+        alinhar: "both",
+        depois: 160,
+        recuo: true,
+        manter: i === d.paragrafos.length - 1,
+      })
+    )
+  );
+  if (d.localData)
+    corpo.push(paragrafo(`${d.localData}.`, { antes: 360, depois: 720, manter: true }));
+  corpo.push(
+    paragrafo("________________________________________", { alinhar: "center", manter: true })
+  );
+  const assinatura = linhasDaAssinatura(d);
+  assinatura.forEach((t, i) =>
+    corpo.push(
+      paragrafo(t, {
+        alinhar: "center",
+        negrito: i === 0,
+        tamanho: i === 0 ? 11 : 10,
+        manter: i < assinatura.length - 1,
+      })
+    )
   );
 
   const documento =
