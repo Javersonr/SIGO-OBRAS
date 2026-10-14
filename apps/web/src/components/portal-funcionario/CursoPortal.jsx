@@ -27,6 +27,7 @@ import CertificadoPortal from "./CertificadoPortal";
 import DuvidasPortal from "./DuvidasPortal";
 import ApostilaPdf from "./ApostilaPdf";
 import QuestionarioPortal from "./QuestionarioPortal";
+import CasoPortal from "./CasoPortal";
 import PrazoDoCurso from "./PrazoDoCurso";
 import { leituraPodeContar, urlApostilaValida } from "@/lib/apostila-pdf";
 import {
@@ -1105,6 +1106,18 @@ export default function CursoPortal({
             )}
             {aula.tipo === "questionario" && (
               <QuestionarioPortal
+                key={aula.id}
+                api={api}
+                item={item}
+                aula={aula}
+                token={token}
+                fila={fila}
+                tratarErro={tratarErro}
+                onConcluida={aoConcluirAtividade}
+              />
+            )}
+            {aula.tipo === "caso" && (
+              <CasoPortal
                 key={aula.id}
                 api={api}
                 item={item}

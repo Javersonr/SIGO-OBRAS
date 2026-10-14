@@ -150,3 +150,11 @@ describe("questionário do módulo (A2)", () => {
     expect(conclusao).toContain("avisoDeAulaConcluida({");
   });
 });
+
+describe("caso com decisões (A3)", () => {
+  it("o CursoPortal abre o CasoPortal com a API injetada e conclui pela mesma rotina do questionário", () => {
+    expect(fonte).toMatch(
+      /aula\.tipo === "caso" && \(\s*<CasoPortal[\s\S]*?api=\{api\}[\s\S]*?onConcluida=\{aoConcluirAtividade\}/
+    );
+  });
+});
