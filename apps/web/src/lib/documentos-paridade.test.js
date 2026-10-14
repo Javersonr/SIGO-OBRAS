@@ -1,10 +1,17 @@
 /**
  * Paridade dos documentos da licitação: os dados da proposta e do cronograma montados no servidor
  * (supabase/functions/_shared/documentos/) são iguais aos da tela (proposta-orcamento.js e
- * cronograma-export.js). Spec 2026-10-09 §3 e §6. A Task B2 acrescenta aqui as planilhas e os PDFs.
+ * cronograma-export.js), e as planilhas e os PDFs que o servidor gera (proposta-export.ts e
+ * cronograma-export.ts) são iguais aos da tela: as mesmas células e o mesmo PDF, byte a byte.
+ * Spec 2026-10-09 §3 e §6.
  */
 import { describe, it, expect } from "vitest";
+import * as XLSX from "xlsx";
+import { jsPDF } from "jspdf";
+import * as modAutoTable from "jspdf-autotable";
 import * as telaProposta from "./proposta-orcamento";
+import * as telaExport from "./proposta-export";
+import * as telaCronExport from "./cronograma-export";
 import { formatarCpf, validarCpf } from "./cpf";
 import { formatarCpfCnpj } from "./ler-documento";
 import { formatarTelefone } from "./telefone";
@@ -14,6 +21,8 @@ import { montarRegistrosImportacao } from "./orcamento-registros";
 import * as formatos from "../../../../supabase/functions/_shared/documentos/formatos.ts";
 import * as srvProposta from "../../../../supabase/functions/_shared/documentos/dados-proposta.ts";
 import * as srvCronograma from "../../../../supabase/functions/_shared/documentos/dados-cronograma.ts";
+import * as srvExport from "../../../../supabase/functions/_shared/documentos/proposta-export.ts";
+import * as srvCronExport from "../../../../supabase/functions/_shared/documentos/cronograma-export.ts";
 import { orcamentoSintetico } from "../../../../supabase/functions/_shared/orcamento/testes/sintetico.ts";
 
 const E = "00000000-0000-4000-8000-000000000001";
@@ -187,4 +196,60 @@ describe("dados da proposta e do cronograma: tela × servidor", () => {
       );
     }
   });
+});
+
+const autoTable = srvExport.resolverAutoTable(modAutoTable);
+/** Data e id fixos: o jsPDF grava os dois no arquivo, e sem isto dois PDFs iguais sairiam diferentes. */
+const pdfFixo = (doc) => {
+  doc.setCreationDate(new Date(Date.UTC(2026, 9, 13, 12, 0, 0)));
+  doc.setFileId("0".repeat(32));
+  return doc.output();
+};
+
+describe("arquivos da proposta e do cronograma: tela × servidor", () => {
+  for (const n of [3, 60, 400]) {
+    it(`proposta com ${n} linhas: mesma planilha e mesmo PDF`, () => {
+      const itens = itensDoOrcamento(n);
+      const dados = telaProposta.montarDadosProposta({
+        itens,
+        info: INFO,
+        oportunidade: OPORTUNIDADE,
+        empresa: EMPRESA,
+        representante: REPRESENTANTE,
+        opcoes: OPCOES,
+      });
+      expect(srvExport.montarPlanilhaProposta(dados, XLSX)).toEqual(
+        telaExport.montarPlanilhaProposta(dados)
+      );
+      expect(pdfFixo(srvExport.gerarPdfProposta(dados, { jsPDF, autoTable }))).toBe(
+        pdfFixo(telaExport.gerarPdfProposta(dados, { jsPDF, autoTable }))
+      );
+    });
+  }
+  for (const meses of [1, 4, 12, 13, 24]) {
+    it(`cronograma de ${meses} meses: mesma planilha e mesmo PDF`, () => {
+      const etapas = etapasDoOrcamento(itensDoOrcamento(400));
+      const linha = Array.from({ length: meses }, (_, j) =>
+        j === meses - 1
+          ? Number((100 - (Math.floor(10000 / meses) * (meses - 1)) / 100).toFixed(2))
+          : Math.floor(10000 / meses) / 100
+      );
+      const cronograma = { meses, pct: Object.fromEntries(etapas.map((e) => [e.numero, linha])) };
+      const dados = montarDadosCronograma({
+        etapas,
+        cronograma,
+        info: INFO,
+        oportunidade: OPORTUNIDADE,
+        empresa: EMPRESA,
+        representante: REPRESENTANTE,
+        opcoes: OPCOES,
+      });
+      expect(srvCronExport.montarPlanilhaCronograma(dados, XLSX)).toEqual(
+        telaCronExport.montarPlanilhaCronograma(dados)
+      );
+      expect(pdfFixo(srvCronExport.gerarPdfCronograma(dados, { jsPDF, autoTable }))).toBe(
+        pdfFixo(telaCronExport.gerarPdfCronograma(dados, { jsPDF, autoTable }))
+      );
+    });
+  }
 });
