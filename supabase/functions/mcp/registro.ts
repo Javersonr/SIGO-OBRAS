@@ -9,6 +9,7 @@
 import type { PromptDef, ResultadoTool, ToolDef } from "../_shared/mcp/protocolo.ts";
 import type { CamadaEmpresa, StorageConector } from "../_shared/conector/camada-empresa.ts";
 import { uuidOuNull } from "../_shared/conector/entrada.ts";
+import type { LibsDocumentos } from "../_shared/documentos/proposta-export.ts";
 import type { ContextoMcp } from "./contexto.ts";
 
 export type { PromptDef };
@@ -19,6 +20,10 @@ export interface DepsFerramenta {
   storage: StorageConector;
   fetchFn: typeof fetch;
   agora: Date; // um instante por chamada
+  /** jsPDF, jspdf-autotable e SheetJS (import dinâmico no gerador.ts; reais do node_modules nos testes). */
+  libs?: () => Promise<LibsDocumentos>;
+  /** Endereços IP de um nome (anexar_edital_por_url confere antes de baixar). */
+  resolverDns?: (host: string) => Promise<string[]>;
 }
 
 export interface ResultadoFerramenta {
@@ -61,13 +66,14 @@ export function falha(
   return { resultado: resultadoJson({ erro: mensagem, motivo, ...detalhes }, true), alvo, motivo };
 }
 
-export type Coisa = "oportunidade" | "atestado" | "arquivo" | "link";
+export type Coisa = "oportunidade" | "atestado" | "arquivo" | "link" | "documento";
 
 const NAO_ENCONTRADO: Record<Coisa, string> = {
   oportunidade: "Oportunidade não encontrada nesta empresa.",
   atestado: "Atestado não encontrado nesta empresa.",
   arquivo: "Arquivo não encontrado nesta oportunidade.",
   link: "Link de envio não encontrado nesta empresa.",
+  documento: "Documento não encontrado nesta empresa.",
 };
 
 /** O mesmo texto para inexistente e para outra empresa (não revela o que existe fora dela). */

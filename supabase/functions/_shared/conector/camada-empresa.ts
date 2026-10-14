@@ -8,7 +8,11 @@
  *   `deleted_at is null`, quando a tabela tem exclusão lógica).
  * - Todo INSERT grava `empresa_id = <empresa da chave>`; um `empresa_id` diferente na linha lança.
  * - Toda RPC recebe `p_empresa_id = <empresa da chave>`, injetado aqui.
- * - Não existe método de exclusão.
+ * - Não existe método de exclusão de linhas. O Storage ganhou leitura (`download`) e gravação
+ *   (`upload`) de objeto, para as cópias e os arquivos gerados pelo próprio servidor; quem usa
+ *   confere antes que o caminho é da pasta da empresa (arquivo-servidor.ts).
+ * - `empresa()` lê só a linha da própria empresa da chave em public.empresa (a tabela não está na
+ *   lista: nenhum outro método a alcança).
  *
  * Puro (banco injetado): roda no Deno e no Node (node --test).
  */
@@ -32,6 +36,7 @@ export const TABELAS_DA_EMPRESA = [
   "orcamento_item",
   "proposta_oportunidade",
   "mcp_link_envio",
+  "modelo_declaracao",
 ] as const;
 export type TabelaDaEmpresa = (typeof TABELAS_DA_EMPRESA)[number];
 
@@ -48,6 +53,7 @@ export const RPCS_DA_EMPRESA = [
   "conector_cadastrar_atestado",
   "conector_substituir_orcamento",
   "conector_aplicar_desconto",
+  "conector_gravar_arquivo",
 ] as const;
 export type RpcDaEmpresa = (typeof RPCS_DA_EMPRESA)[number];
 
@@ -69,6 +75,8 @@ export class ErroCamada extends Error {
 
 export interface CamadaEmpresa {
   readonly empresaId: string;
+  /** A linha da própria empresa da chave em public.empresa (null se ela sumiu). Só leitura. */
+  empresa<T = Record<string, unknown>>(colunas: string): Promise<T | null>;
   /** select(colunas) já com .eq("empresa_id", empresaId) e, se a tabela tiver, .is("deleted_at", null). */
   ler(tabela: TabelaDaEmpresa, colunas: string, opcoes?: { incluirExcluidos?: boolean }): Consulta;
   /** Todas as linhas, paginando de 1000 em 1000 (.order("id").range); `filtrar` acrescenta filtros. Lança ErroCamada("banco") se passar de `limite`. */
@@ -128,6 +136,12 @@ export interface StorageConector {
       error: { message: string } | null;
     }>;
     remove(caminhos: string[]): Promise<{ data: unknown; error: { message: string } | null }>;
+    download(caminho: string): Promise<{ data: Blob | null; error: { message: string } | null }>;
+    upload(
+      caminho: string,
+      corpo: Blob | Uint8Array,
+      opcoes: { contentType: string; upsert: boolean }
+    ): Promise<{ data: unknown; error: { message: string } | null }>;
   };
 }
 
@@ -172,6 +186,17 @@ export function camadaDaEmpresa(admin: Admin, empresaId: string): CamadaEmpresa 
   return {
     empresaId: empresa,
     ler,
+
+    async empresa<T = Record<string, unknown>>(colunas: string): Promise<T | null> {
+      return dadosOuErro<T>(
+        await admin
+          .from("empresa")
+          .select(colunas)
+          .eq("id", empresa)
+          .is("deleted_at", null)
+          .maybeSingle()
+      );
+    },
 
     async lerTodos<T = Record<string, unknown>>(
       tabela: TabelaDaEmpresa,

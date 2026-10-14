@@ -212,6 +212,7 @@ test("sem exclusão: a camada não tem método de apagar e o código não chama 
   const db = camadaDaEmpresa(admin, E);
   assert.deepEqual(Object.keys(db).sort(), [
     "atualizar",
+    "empresa",
     "empresaId",
     "inserir",
     "ler",
@@ -221,5 +222,90 @@ test("sem exclusão: a camada não tem método de apagar e o código não chama 
   ]);
   const fonte = readFileSync(new URL("./camada-empresa.ts", import.meta.url), "utf8");
   assert.equal(/\.delete\(|\.remove\(/.test(fonte), false);
-  assert.equal(TABELAS_DA_EMPRESA.length, 13);
+  assert.equal(TABELAS_DA_EMPRESA.length, 14);
+});
+
+test("empresa(): lê só a linha da própria empresa da chave", async () => {
+  const fake = criarFakeAdmin((c) =>
+    c.tabela === "empresa"
+      ? { data: { id: E, nome: "Empresa Teste", cnpj: "11222333000181", segredo: "x" } }
+      : undefined
+  );
+  const db = camadaDaEmpresa(fake.admin, E);
+  assert.deepEqual(await db.empresa("id, nome"), { id: E, nome: "Empresa Teste" });
+  const c = fake.chamadas[0];
+  assert.equal(c.tabela, "empresa");
+  assert.equal(c.terminal, "maybeSingle");
+  assert.deepEqual(
+    c.filtros.map((f) => [f.metodo, f.args[0], f.args[1]]),
+    [
+      ["eq", "id", E],
+      ["is", "deleted_at", null],
+    ]
+  );
+});
+
+test("empresa(): a empresa sumiu → null; erro do banco → ErroCamada('banco'); só leitura", async () => {
+  const sumiu = criarFakeAdmin();
+  assert.equal(await camadaDaEmpresa(sumiu.admin, E).empresa("id"), null);
+  assert.equal(sumiu.chamadas.length, 1);
+  assert.equal(sumiu.chamadas[0].op, "select");
+
+  const falha = criarFakeAdmin(() => ({ error: { message: "timeout no pooler" } }));
+  await assert.rejects(() => camadaDaEmpresa(falha.admin, E).empresa("id"), erroCom("banco"));
+
+  // a tabela empresa não entrou na lista: continua sem ler, inserir nem atualizar pelos métodos genéricos
+  const db = camadaDaEmpresa(criarFakeAdmin().admin, E);
+  // deno-lint-ignore no-explicit-any
+  const t = "empresa" as any;
+  assert.throws(() => db.ler(t, "id"), /Tabela fora da camada/);
+  assert.equal(TABELAS_DA_EMPRESA.includes(t), false);
+});
+
+test("lista fechada: modelo_declaracao e conector_gravar_arquivo entram; o resto continua fora", async () => {
+  const fake = criarFakeAdmin(() => undefined);
+  const db = camadaDaEmpresa(fake.admin, E);
+  await db.lerTodos("modelo_declaracao", "chave");
+  await db.rpc("conector_gravar_arquivo", { p_oportunidade_id: E });
+  assert.equal(fake.chamadas.at(-1)?.tabela, "conector_gravar_arquivo");
+  assert.deepEqual((fake.chamadas.at(-1)?.payload as Record<string, unknown>).p_empresa_id, E);
+  // deno-lint-ignore no-explicit-any
+  assert.throws(() => db.ler("empresa" as any, "id"), /Tabela fora da camada/);
+  assert.ok(TABELAS_DA_EMPRESA.includes("modelo_declaracao"));
+  assert.ok(RPCS_DA_EMPRESA.includes("conector_gravar_arquivo"));
+});
+
+test("conector_gravar_arquivo: o p_empresa_id é o da chave; o do chamador nunca chega ao banco", async () => {
+  const fake = criarFakeAdmin((c) => (c.op === "rpc" ? { data: { ok: true } } : undefined));
+  const db = camadaDaEmpresa(fake.admin, E);
+  const params = { p_oportunidade_id: OP, p_origem: "gerado:proposta:pdf" };
+  assert.deepEqual(await db.rpc("conector_gravar_arquivo", params), { ok: true });
+  assert.deepEqual(fake.chamadas[0].payload, { ...params, p_empresa_id: E });
+  // o chamador tenta passar a empresa de outro (maiúscula ou não): recusado antes do banco
+  for (const alheia of [OUTRA, OUTRA.toUpperCase(), E.toUpperCase(), null]) {
+    await assert.rejects(
+      () => db.rpc("conector_gravar_arquivo", { ...params, p_empresa_id: alheia }),
+      erroCom("campo_proibido")
+    );
+  }
+  assert.equal(fake.chamadas.length, 1);
+});
+
+test("modelo_declaracao: leitura e escrita presas à empresa da chave", async () => {
+  const fake = criarFakeAdmin((c) => (c.op === "insert" ? { data: [{ id: "m1" }] } : undefined));
+  const db = camadaDaEmpresa(fake.admin, E);
+  await db.lerTodos("modelo_declaracao", "chave, titulo");
+  assert.deepEqual(
+    fake.chamadas[0].filtros.slice(0, 2).map((f) => [f.metodo, f.args[0], f.args[1]]),
+    [
+      ["eq", "empresa_id", E],
+      ["is", "deleted_at", null],
+    ]
+  );
+  await db.inserir("modelo_declaracao", [{ chave: "minha", titulo: "T", texto: "x" }]);
+  assert.equal((fake.chamadas[1].payload as { empresa_id: string }[])[0].empresa_id, E);
+  await assert.rejects(
+    () => db.inserir("modelo_declaracao", [{ chave: "minha", empresa_id: OUTRA }]),
+    erroCom("campo_proibido")
+  );
 });

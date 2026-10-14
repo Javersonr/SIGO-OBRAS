@@ -9,6 +9,11 @@
  * - O resultado é projetado nas colunas do select (como o PostgREST): um campo que o código esquece
  *   de selecionar chega ausente, e o teste pega.
  * - Não existe delete: código que chamar .delete() quebra no teste.
+ * - O Storage guarda os objetos em memória (`objetos`, chave "<bucket>/<caminho>"): `upload`
+ *   grava, `download` lê, `remove` apaga. `responderStorage` decide primeiro e pode devolver erro.
+ * - `imitarGravarArquivo(banco)` imita a RPC conector_gravar_arquivo (0156) sobre um banco em
+ *   memória (`criarBancoArquivosFake`), para os testes provarem troca no lugar, arquivo assinado
+ *   mantido, chave de busca com a empresa e exclusão do texto por página do arquivo trocado.
  */
 import type { StorageConector } from "../camada-empresa.ts";
 
@@ -28,7 +33,7 @@ export interface RespostaFake {
 }
 export interface ChamadaStorageFake {
   bucket: string;
-  metodo: "createSignedUploadUrl" | "createSignedUrl" | "list" | "remove";
+  metodo: "createSignedUploadUrl" | "createSignedUrl" | "list" | "remove" | "download" | "upload";
   args: unknown[];
 }
 
@@ -77,9 +82,11 @@ export function criarFakeAdmin(
   chamadas: ChamadaFake[];
   storage: StorageConector;
   chamadasStorage: ChamadaStorageFake[];
+  objetos: Map<string, Uint8Array>;
 } {
   const chamadas: ChamadaFake[] = [];
   const chamadasStorage: ChamadaStorageFake[] = [];
+  const objetos = new Map<string, Uint8Array>();
 
   function consulta(tabela: string, op: OpFake, payload: unknown) {
     const c: ChamadaFake = { tabela, op, colunas: null, filtros: [], payload, terminal: "lista" };
@@ -172,7 +179,43 @@ export function criarFakeAdmin(
           chamar("createSignedUrl", [caminho, segundos]),
         list: (pasta: string, opcoes: { search: string; limit: number }) =>
           chamar("list", [pasta, opcoes]),
-        remove: (caminhos: string[]) => chamar("remove", [caminhos]),
+        remove: async (caminhos: string[]) => {
+          const r = await chamar("remove", [caminhos]);
+          if (!r.error) for (const p of caminhos) objetos.delete(`${bucket}/${p}`);
+          return r;
+        },
+        download: async (caminho: string) => {
+          const c: ChamadaStorageFake = { bucket, metodo: "download", args: [caminho] };
+          chamadasStorage.push(c);
+          const r = responderStorage?.(c);
+          if (r) return { data: (r.data ?? null) as Blob | null, error: r.error ?? null };
+          const bytes = objetos.get(`${bucket}/${caminho}`);
+          return bytes
+            ? { data: new Blob([bytes as BlobPart]), error: null }
+            : { data: null, error: { message: "Object not found" } };
+        },
+        upload: async (
+          caminho: string,
+          corpo: Blob | Uint8Array,
+          opcoes: { contentType: string; upsert: boolean }
+        ) => {
+          const c: ChamadaStorageFake = {
+            bucket,
+            metodo: "upload",
+            args: [caminho, corpo, opcoes],
+          };
+          chamadasStorage.push(c);
+          const r = responderStorage?.(c);
+          if (r?.error) return { data: null, error: r.error };
+          // como o Storage de verdade: sem upsert, objeto que já existe é recusado
+          if (!opcoes.upsert && objetos.has(`${bucket}/${caminho}`)) {
+            return { data: null, error: { message: "The resource already exists" } };
+          }
+          const bytes =
+            corpo instanceof Uint8Array ? corpo : new Uint8Array(await corpo.arrayBuffer());
+          objetos.set(`${bucket}/${caminho}`, bytes);
+          return { data: { path: caminho }, error: null };
+        },
       };
     },
   };
@@ -183,5 +226,171 @@ export function criarFakeAdmin(
     storage,
   };
 
-  return { admin, chamadas, storage, chamadasStorage };
+  return { admin, chamadas, storage, chamadasStorage, objetos };
+}
+
+// ─── conector_gravar_arquivo (0156) em memória ──────────────────────────────────────────
+
+/** Só as colunas de arquivo_oportunidade que a RPC lê ou grava. */
+export interface ArquivoOportunidadeFake {
+  id: string;
+  empresa_id: string;
+  oportunidade_id: string;
+  nome: string;
+  url: string;
+  tipo: string | null;
+  tamanho: number | null;
+  pasta: string | null;
+  categoria: string | null;
+  origem: string | null;
+  assinatura: string | null;
+  usuario_nome: string | null;
+  deleted_at: string | null;
+}
+/** arquivo_texto_pagina (0149): o texto por página que o ler_edital_anexado devolve. */
+export interface PaginaTextoFake {
+  id: string;
+  empresa_id: string;
+  arquivo_id: string;
+  deleted_at: string | null;
+}
+export interface OportunidadeFake {
+  id: string;
+  empresa_id: string;
+  deleted_at: string | null;
+}
+export interface BancoArquivosFake {
+  oportunidades: OportunidadeFake[];
+  arquivos: ArquivoOportunidadeFake[];
+  paginasTexto: PaginaTextoFake[];
+}
+
+export function criarBancoArquivosFake(
+  parcial: Partial<BancoArquivosFake> = {}
+): BancoArquivosFake {
+  return {
+    oportunidades: parcial.oportunidades ?? [],
+    arquivos: parcial.arquivos ?? [],
+    paginasTexto: parcial.paginasTexto ?? [],
+  };
+}
+
+/**
+ * Responder para o criarFakeAdmin que imita a RPC conector_gravar_arquivo (migração 0156) sobre `banco`:
+ *  - recusa (erro 22023) empresa/oportunidade nulas, origem ou nome sem caractere visível, origem acima de
+ *    200, url fora de "anexos-oportunidade/<empresa>/<algo>" ou com SEGMENTO "." ou ".." ("Ltda..pdf" passa)
+ *    e assinatura diferente de nulo/"pendente";
+ *  - oportunidade de outra empresa, excluída ou inexistente → { ok: false, motivo: "nao_encontrada" };
+ *  - procura o arquivo por (empresa, oportunidade, origem) entre as linhas vivas;
+ *  - assinado → mantido (nada muda, o texto fica); senão troca no lugar (mesmo id, ref_anterior = a url
+ *    de antes) e exclui (deleted_at) as páginas de texto vivas do arquivo, na mesma empresa;
+ *  - sem arquivo → linha nova com id novo.
+ * Devolve undefined para qualquer outra chamada: componha com `?? responderDoTeste(c)`.
+ */
+export function imitarGravarArquivo(
+  banco: BancoArquivosFake,
+  agora: () => string = () => new Date().toISOString()
+): (c: ChamadaFake) => RespostaFake | undefined {
+  let n = 0;
+  const recusa = (message: string): RespostaFake => ({ error: { message, code: "22023" } });
+  const visivel = (v: unknown) => typeof v === "string" && /\S/.test(v);
+  const igual = (a: unknown, b: unknown) => String(a).toLowerCase() === String(b).toLowerCase();
+
+  return (c) => {
+    if (c.op !== "rpc" || c.tabela !== "conector_gravar_arquivo") return undefined;
+    const p = c.payload as Record<string, unknown>;
+    const empresa = p.p_empresa_id;
+    const oportunidade = p.p_oportunidade_id;
+    if (empresa == null || oportunidade == null)
+      return recusa("empresa e oportunidade são obrigatórias");
+    if (!visivel(p.p_origem) || String(p.p_origem).length > 200) return recusa("origem inválida");
+    if (!visivel(p.p_nome)) return recusa("nome inválido");
+    const url = p.p_url;
+    const prefixo = `anexos-oportunidade/${String(empresa).toLowerCase()}/`;
+    if (
+      typeof url !== "string" ||
+      !url.startsWith(prefixo) ||
+      url.length <= prefixo.length ||
+      /(^|\/)\.{1,2}(\/|$)/.test(url)
+    ) {
+      return recusa("arquivo fora da pasta da empresa");
+    }
+    if (p.p_assinatura != null && p.p_assinatura !== "pendente")
+      return recusa("assinatura inválida");
+
+    const achou = banco.oportunidades.some(
+      (o) => igual(o.id, oportunidade) && igual(o.empresa_id, empresa) && o.deleted_at == null
+    );
+    if (!achou) return { data: { ok: false, motivo: "nao_encontrada" } };
+
+    const atual = banco.arquivos.find(
+      (a) =>
+        igual(a.empresa_id, empresa) &&
+        igual(a.oportunidade_id, oportunidade) &&
+        a.origem === p.p_origem &&
+        a.deleted_at == null
+    );
+    if (atual) {
+      if (atual.assinatura === "assinado") {
+        return {
+          data: {
+            ok: true,
+            arquivo_id: atual.id,
+            substituiu: false,
+            mantido_assinado: true,
+            ref_anterior: null,
+          },
+        };
+      }
+      const refAnterior = atual.url;
+      atual.nome = String(p.p_nome);
+      atual.url = url;
+      atual.tipo = (p.p_tipo as string | null) ?? null;
+      atual.tamanho = (p.p_tamanho as number | null) ?? null;
+      atual.pasta = (p.p_pasta as string | null) ?? null;
+      atual.categoria = (p.p_categoria as string | null) ?? null;
+      atual.assinatura = (p.p_assinatura as string | null) ?? null;
+      atual.usuario_nome = (p.p_usuario_nome as string | null) ?? null;
+      for (const pg of banco.paginasTexto) {
+        if (igual(pg.empresa_id, empresa) && pg.arquivo_id === atual.id && pg.deleted_at == null) {
+          pg.deleted_at = agora();
+        }
+      }
+      return {
+        data: {
+          ok: true,
+          arquivo_id: atual.id,
+          substituiu: true,
+          mantido_assinado: false,
+          ref_anterior: refAnterior,
+        },
+      };
+    }
+
+    const id = `00000000-0000-4000-9000-${String(++n).padStart(12, "0")}`;
+    banco.arquivos.push({
+      id,
+      empresa_id: String(empresa).toLowerCase(),
+      oportunidade_id: String(oportunidade).toLowerCase(),
+      nome: String(p.p_nome),
+      url,
+      tipo: (p.p_tipo as string | null) ?? null,
+      tamanho: (p.p_tamanho as number | null) ?? null,
+      pasta: (p.p_pasta as string | null) ?? null,
+      categoria: (p.p_categoria as string | null) ?? null,
+      origem: String(p.p_origem),
+      assinatura: (p.p_assinatura as string | null) ?? null,
+      usuario_nome: (p.p_usuario_nome as string | null) ?? null,
+      deleted_at: null,
+    });
+    return {
+      data: {
+        ok: true,
+        arquivo_id: id,
+        substituiu: false,
+        mantido_assinado: false,
+        ref_anterior: null,
+      },
+    };
+  };
 }
