@@ -22,6 +22,24 @@ describe("paridade tela × servidor", () => {
       expect(tela.preencherModelo(m.texto, vars)).toEqual(servidor.preencherModelo(m.texto, vars));
     }
   });
+  it("modelosDaEmpresa dá o mesmo com linhas incompletas, sem ordem e com título repetido", () => {
+    const casos = {
+      "padrão ativo com titulo null e texto undefined": [
+        { chave: "me_epp", titulo: null, texto: undefined, ativo: true },
+      ],
+      "padrão ativo sem titulo e com ordem null": [
+        { chave: "fato_impeditivo", texto: "T {empresa}", ativo: true, ordem: null },
+      ],
+      "modelo próprio sem ordem": [{ chave: "propria", titulo: "Z", texto: "t", ativo: true }],
+      "dois modelos com o mesmo título (desempate)": [
+        { chave: "propria_b", titulo: "Mesmo título", texto: "b", ativo: true },
+        { chave: "propria_a", titulo: "Mesmo título", texto: "a", ativo: true },
+      ],
+    };
+    for (const [nome, linhas] of Object.entries(casos)) {
+      expect(tela.modelosDaEmpresa(linhas), nome).toEqual(servidor.modelosDaEmpresa(linhas));
+    }
+  });
   it("preencherModelo com $&, $1, $$ e {variavel} no valor dá o mesmo", () => {
     const vars = { empresa: "A$&B $1 $$ {cnpj} $` $'", cnpj: "9", cpf: "  " };
     const texto = "{empresa} {cnpj} {cpf} {x}";

@@ -19,6 +19,9 @@ import {
 import { CATEGORIAS_EDITAL } from "../_shared/conector/envio-regras.ts";
 import { linkOportunidade } from "../_shared/conector/recurso.ts";
 import { sanearEdital } from "../_shared/edital/edital-regras.ts";
+import { METODO_LEITURA_EDITAL, REGRAS_ATENDE } from "../_shared/edital/metodo.ts";
+import { REGRAS_GERAIS_EDITAL } from "./ferramentas-edital.ts";
+import { ROTEIRO_ORCAMENTO } from "./ferramentas-orcamento.ts";
 import { origemDaUrl } from "../_shared/conector/url-segura.ts";
 import {
   criarBancoArquivosFake,
@@ -180,6 +183,116 @@ test("anexar_habilitacao: tipos filtra, e 'faltam' passa a ser dos tipos pedidos
   );
   assert.deepEqual(s.faltam, [{ tipo: "alvara", rotulo: "Alvará de funcionamento" }]);
   assert.deepEqual(s.vencidos, []);
+});
+
+const AVISO_AINDA_FALTAM = (n: number) =>
+  `Ainda faltam ${n} documento(s): chame anexar_habilitacao de novo para continuar (o que já foi copiado não é duplicado).`;
+
+/** Um relógio falso: cada consulta devolve o instante atual e avança `passoMs`. */
+const relogioFalso = (passoMs: number) => {
+  let agora = 0;
+  return () => {
+    const t = agora;
+    agora += passoMs;
+    return t;
+  };
+};
+
+test("anexar_habilitacao: passados 45 s não INICIA mais cópias e devolve nao_processados com o aviso de chamar de novo", async () => {
+  const { deps, fake, gravados } = cenario();
+  // cada consulta ao relógio avança 25 s. O relógio é lido no começo da chamada (0 s) e antes de cada documento,
+  // menos o primeiro (a chamada sempre avança): o 2º documento começa em 25 s, o 3º em 50 s (> 45 s)
+  deps.relogio = relogioFalso(25_000);
+  const r = await ferramenta("anexar_habilitacao").executar({ oportunidade_id: OP }, deps);
+  assert.equal(r.resultado.isError, false);
+  const s = sc(r);
+  // d1 e d3 foram copiados; d4 (o 3º) ficou para a próxima chamada
+  assert.deepEqual(
+    gravados.map((g) => g.p_origem),
+    ["biblioteca:d1", "biblioteca:d3"]
+  );
+  assert.deepEqual(
+    (s.anexados as { documento_id: string }[]).map((a) => a.documento_id),
+    ["d1", "d3"]
+  );
+  assert.deepEqual(s.nao_processados, [
+    { documento_id: "d4", tipo: "balanco_dre", rotulo: "Balanço patrimonial e DRE" },
+  ]);
+  assert.equal((s.avisos as string[])[0], AVISO_AINDA_FALTAM(1));
+  // não é falha e não vira "falta": o documento existe, só não foi copiado agora
+  assert.deepEqual(s.falhas, []);
+  assert.ok(!(s.faltam as { tipo: string }[]).some((f) => f.tipo === "balanco_dre"));
+  assert.ok(
+    !fake.chamadasStorage.some(
+      (c) => c.metodo === "download" && String(c.args[0]).includes("d4.pdf")
+    ),
+    "o que ficou para depois nem foi baixado"
+  );
+  // o histórico conta só o que foi copiado
+  const historico = fake.chamadas.filter((c) => c.tabela === "oportunidade_atualizacao");
+  assert.equal(historico.length, 1);
+  assert.match(JSON.stringify(historico[0].payload), /2 documento\(s\) da biblioteca/);
+});
+
+test("anexar_habilitacao: com o relógio já estourado ainda copia UM documento (a chamada sempre avança) e deixa o resto", async () => {
+  const { deps, gravados } = cenario();
+  deps.relogio = relogioFalso(50_000);
+  const s = sc(await ferramenta("anexar_habilitacao").executar({ oportunidade_id: OP }, deps));
+  assert.deepEqual(
+    gravados.map((g) => g.p_origem),
+    ["biblioteca:d1"]
+  );
+  assert.deepEqual(
+    (s.nao_processados as { documento_id: string }[]).map((n) => n.documento_id),
+    ["d3", "d4"]
+  );
+  assert.equal((s.avisos as string[])[0], AVISO_AINDA_FALTAM(2));
+});
+
+test("anexar_habilitacao: dentro dos 45 s copia tudo e nao_processados nem aparece; 45 s redondos ainda valem", async () => {
+  const sem = cenario();
+  sem.deps.relogio = relogioFalso(1_000);
+  const completo = sc(
+    await ferramenta("anexar_habilitacao").executar({ oportunidade_id: OP }, sem.deps)
+  );
+  assert.equal((completo.anexados as unknown[]).length, 3);
+  assert.ok(!("nao_processados" in completo));
+  assert.ok(!(completo.avisos as string[]).some((a) => a.startsWith("Ainda faltam")));
+  // o 2º documento começa em exatamente 45 s e ainda é copiado: "depois de 45 s" é estrito
+  const limite = cenario();
+  limite.deps.relogio = relogioFalso(45_000);
+  const noLimite = sc(
+    await ferramenta("anexar_habilitacao").executar({ oportunidade_id: OP }, limite.deps)
+  );
+  assert.equal((noLimite.anexados as unknown[]).length, 2);
+  assert.deepEqual(
+    (noLimite.nao_processados as { documento_id: string }[]).map((n) => n.documento_id),
+    ["d4"]
+  );
+  // sem relógio injetado vale o Date.now de verdade: tudo rápido, nada fica para trás
+  const padrao = cenario();
+  const rapido = sc(
+    await ferramenta("anexar_habilitacao").executar({ oportunidade_id: OP }, padrao.deps)
+  );
+  assert.ok(!("nao_processados" in rapido));
+});
+
+test("anexar_habilitacao: chamar de novo (sem o relógio estourado) copia tudo e não deixa nada para trás, com as mesmas origens", async () => {
+  const m = cenario();
+  m.deps.relogio = relogioFalso(50_000);
+  const primeira = sc(
+    await ferramenta("anexar_habilitacao").executar({ oportunidade_id: OP }, m.deps)
+  );
+  assert.equal((primeira.nao_processados as unknown[]).length, 2);
+  m.deps.relogio = undefined;
+  const segunda = sc(
+    await ferramenta("anexar_habilitacao").executar({ oportunidade_id: OP }, m.deps)
+  );
+  assert.ok(!("nao_processados" in segunda));
+  assert.equal((segunda.anexados as unknown[]).length, 3);
+  // a origem é a do documento (biblioteca:<id>): a RPC troca no lugar o que a 1ª chamada já tinha gravado
+  const origens = m.gravados.map((g) => g.p_origem);
+  assert.deepEqual(origens, ["biblioteca:d1", "biblioteca:d1", "biblioteca:d3", "biblioteca:d4"]);
 });
 
 test("anexar_habilitacao: tipo fora da lista → validacao, nada lido", async () => {
@@ -3493,7 +3606,7 @@ test("checklist_habilitacao: veredito nao_atende trava o pronto (atende_negativo
   );
   assert.ok(
     (negativo.proximos_passos as string[]).includes(
-      "O Atende? concluiu que a empresa NÃO atende à qualificação técnica do edital: revise com o usuário antes de seguir."
+      "O Atende? concluiu que a empresa NÃO atende a uma exigência do edital (técnica, de registro ou econômico-financeira): revise com o usuário antes de seguir; se o acervo mudou, grave de novo com registrar_atende."
     )
   );
   assert.ok(avisosDe(negativo).includes(AVISO_ATENDE_NAO_CONCLUI));
@@ -3806,6 +3919,56 @@ test("prompt 'Montar a licitação completa': um passo por linha, em ordem, sem 
   assert.ok(texto.includes("Credenciamento"));
 });
 
+test("prompt 'Montar a licitação completa': leva o método do edital, as regras do Atende? e o roteiro do orçamento nos passos certos", () => {
+  const texto = PROMPTS_HABILITACAO[0].montar({});
+  // o modelo não consegue abrir outro prompt do conector: nada de mandar seguir o roteiro de outro prompt
+  assert.doesNotMatch(texto, /siga o roteiro do prompt/i);
+  assert.doesNotMatch(texto, /roteiro do prompt/i);
+  // as constantes são importadas (não copiadas): cada linha delas está no texto, sem mudança
+  const blocos: [string, readonly string[]][] = [
+    ["METODO_LEITURA_EDITAL", METODO_LEITURA_EDITAL],
+    ["REGRAS_GERAIS_EDITAL", REGRAS_GERAIS_EDITAL],
+    ["REGRAS_ATENDE", REGRAS_ATENDE],
+    ["ROTEIRO_ORCAMENTO", ROTEIRO_ORCAMENTO],
+  ];
+  for (const [nome, linhas] of blocos) {
+    assert.ok(linhas.length >= 4, nome);
+    for (const linha of linhas) assert.ok(texto.includes(linha), `${nome}: ${linha}`);
+  }
+  // cada bloco fica no passo dele: o método antes do passo 2, as regras do Atende? depois do 3 e o roteiro depois do 4
+  const noPasso = (n: number) => texto.indexOf(`\n${n}. `);
+  const antes = (a: number, b: number) => a > 0 && a < b;
+  assert.ok(antes(noPasso(1), texto.indexOf(METODO_LEITURA_EDITAL[0])), "método depois do passo 1");
+  assert.ok(antes(texto.indexOf(METODO_LEITURA_EDITAL[0]), noPasso(2)), "método antes do passo 2");
+  assert.ok(antes(noPasso(3), texto.indexOf(REGRAS_ATENDE[0])), "regras depois do passo 3");
+  assert.ok(antes(texto.indexOf(REGRAS_ATENDE[0]), noPasso(4)), "regras antes do passo 4");
+  assert.ok(antes(noPasso(4), texto.indexOf(ROTEIRO_ORCAMENTO[0])), "orçamento depois do passo 4");
+  assert.ok(antes(texto.indexOf(ROTEIRO_ORCAMENTO[0]), noPasso(5)), "orçamento antes do passo 5");
+  // o texto não repete os blocos nem os numera como passos: os passos 1 a 10 continuam um por linha
+  for (const linha of [METODO_LEITURA_EDITAL[0], REGRAS_ATENDE[0], ROTEIRO_ORCAMENTO[0]]) {
+    assert.equal(texto.split(linha).length - 1, 1, linha);
+  }
+  // o registrar_proposta do roteiro do orçamento fica para o passo 5
+  const passo4 = texto.split("\n").find((l) => l.startsWith("4. ")) ?? "";
+  assert.match(passo4, /registrar_proposta/);
+  assert.match(passo4, /passo 5/);
+});
+
+test("prompt 'Montar a licitação completa': registrar_proposta só se ainda não há versão (cada chamada cria uma nova)", () => {
+  const passo5 =
+    PROMPTS_HABILITACAO[0]
+      .montar({})
+      .split("\n")
+      .find((l) => l.startsWith("5. ")) ?? "";
+  assert.match(passo5, /registrar_proposta só se ainda não há versão registrada desta proposta/);
+  assert.match(passo5, /cada chamada cria uma versão nova/);
+  assert.ok(passo5.indexOf("registrar_proposta") < passo5.indexOf("gerar_documentos_proposta"));
+  // os nomes citados existem
+  for (const nome of ["registrar_proposta", "gerar_documentos_proposta"]) {
+    assert.ok(NOMES_FERRAMENTAS.includes(nome), nome);
+  }
+});
+
 test("prompt 'Montar a licitação completa': cada saída nova das ferramentas é explicada no passo certo", () => {
   const linhas = PROMPTS_HABILITACAO[0].montar({}).split("\n");
   const passo = (n: number) => linhas.find((l) => l.startsWith(`${n}. `)) ?? "";
@@ -3827,6 +3990,7 @@ test("prompt 'Montar a licitação completa': cada saída nova das ferramentas �
   ]);
   // 6: habilitação (o conector nunca apaga arquivo)
   precisa(6, [
+    "nao_processados",
     "vencidos",
     "faltam",
     "copias_desatualizadas",

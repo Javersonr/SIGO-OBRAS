@@ -60,10 +60,16 @@ async function resolverPorHttps(host: string, tipo: "A" | "AAAA"): Promise<unkno
   return await r.json();
 }
 
-/** Uma consulta (A ou AAAA): o runtime primeiro; erro que não é "não existe" cai na reserva por HTTPS. */
+/**
+ * Uma consulta (A ou AAAA): o runtime primeiro, com o mesmo tempo-limite da reserva (o `signal` é a opção da
+ * `Deno.ResolveDnsOptions`); erro que não é "não existe" (inclusive o tempo esgotado) cai na reserva por HTTPS.
+ */
 async function consultar(host: string, tipo: "A" | "AAAA"): Promise<ConsultaDns> {
   try {
-    return { situacao: "ok", enderecos: await Deno.resolveDns(host, tipo) };
+    const enderecos = await Deno.resolveDns(host, tipo, {
+      signal: AbortSignal.timeout(TEMPO_DNS_MS),
+    });
+    return { situacao: "ok", enderecos };
   } catch (e) {
     if (e instanceof Deno.errors.NotFound) return { situacao: "nao_existe" };
   }

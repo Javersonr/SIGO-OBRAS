@@ -3,7 +3,10 @@
  * (alertar_documentos_habilitacao, migração 0155). Acionada pelo pg_cron via pg_net, sem
  * credencial, pelo alerta diário e pelo job de reenvio (a cada 30 minutos, enquanto houver mensagem
  * pendente). A função NÃO recebe nada (ignora o corpo) e só esvazia a fila: chamar de fora não envia
- * nada além do que o banco já decidiu. A resposta só traz contagens.
+ * nada além do que o banco já decidiu. A resposta é só { success: true } (ou o erro genérico): como a
+ * função é pública, ela não devolve contagens da fila de todas as empresas (ficam só no log). Chamadas
+ * repetidas de fora durante uma queda do WhatsApp podem esgotar as tentativas das mensagens pendentes
+ * (aceito: no pior caso a mensagem fica na fila com o erro, sem sair).
  * Cada mensagem sai uma vez: quem vai enviar reserva o item (reivindicado_em) por 10 minutos, e
  * outra execução que chegue nesse meio-tempo não o pega. A reserva é solta quando o envio termina
  * (com sucesso ou com erro); se a execução morrer no meio, ela vence sozinha.
@@ -89,7 +92,12 @@ Deno.serve(async (req) => {
       },
       canalForaDoAr: (e) => e instanceof CanalNaoConfiguradoError,
     });
-    return json(200, { success: true, ...r });
+    // Função pública (sem JWT): a resposta não leva as contagens, que são da fila de todas as empresas. Elas
+    // ficam só no log da função.
+    console.log(
+      `[habilitacao-lembretes] lidos=${r.lidos} enviados=${r.enviados} falhas=${r.falhas} parou=${r.parou}`
+    );
+    return json(200, { success: true });
   } catch (e) {
     console.error("[habilitacao-lembretes]", (e as Error)?.message ?? String(e));
     return json(500, { success: false, error: "Erro interno" });

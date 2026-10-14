@@ -12,6 +12,7 @@ import {
   type RespostaFake,
 } from "../_shared/conector/testes/fake-admin.ts";
 import { brl, fmtNum, renumerarIds, sanearEdital } from "../_shared/edital/edital-regras.ts";
+import { CATEGORIAS_EDITAL } from "../_shared/conector/envio-regras.ts";
 import { METODO_LEITURA_EDITAL, REGRAS_ATENDE } from "../_shared/edital/metodo.ts";
 
 const E = "00000000-0000-4000-8000-000000000001"; // empresa da chave
@@ -447,6 +448,32 @@ test("criar: com confirmar_nova grava na empresa da camada, com responsável, st
     empresa_id: E,
   });
   assert.equal((dados_novos as Record<string, unknown>).alertar_prazos, true);
+});
+
+test("os três textos do edital mandam anexar por anexar_edital_por_url e deixam gerar_link_envio para o que só existe no chat", async () => {
+  const { deps } = montar(responderCriar([]));
+  const r = await ferramenta("criar_ou_atualizar_oportunidade").executar({ edital: EDITAL }, deps);
+  const proximoPasso = String(estrutura(r).proximo_passo);
+  const passo8 =
+    PROMPTS_EDITAL[0]
+      .montar({})
+      .split("\n")
+      .find((l) => l.startsWith("8. ")) ?? "";
+  const instrucoes = INSTRUCOES_EDITAL.join("\n");
+  const textos: [string, string][] = [
+    ["proximo_passo", proximoPasso],
+    ["passo 8 do analisar_edital", passo8],
+    ["INSTRUCOES_EDITAL", instrucoes],
+  ];
+  for (const [nome, texto] of textos) {
+    assert.ok(texto.includes("anexar_edital_por_url"), `${nome} não cita anexar_edital_por_url`);
+    assert.match(texto, /prefira anexar_edital_por_url \(link público https do arquivo\)/, nome);
+    assert.match(texto, /gerar_link_envio só (se|quando) o arquivo existe apenas no chat/, nome);
+    // o texto antigo mandava gerar_link_envio para todo PDF do edital
+    assert.doesNotMatch(texto, /(use|com) gerar_link_envio(\.| \()/, nome);
+  }
+  assert.ok(passo8.includes(CATEGORIAS_EDITAL.join(", ")), "o passo 8 perdeu as categorias");
+  assert.ok(instrucoes.length <= 800, `INSTRUCOES_EDITAL com ${instrucoes.length}`);
 });
 
 test("criar: falha no histórico não desfaz a gravação", async () => {

@@ -43,6 +43,21 @@ const semAcento = (v: unknown) =>
     .replace(/[\u0300-\u036f]/g, "");
 
 /**
+ * O arquivo está na pasta "Edital" pela regra da tela (apps/web/src/lib/pastas-arquivo.js, `pastaDoArquivo`): vale a
+ * pasta gravada, comparada sem maiúsculas, acento nem espaço sobrando (`normalizarTexto` da tela). O upload manual
+ * grava só a pasta "Edital", sem categoria. A tela, sem pasta gravada, manda a categoria do edital para essa mesma
+ * pasta: isso o checklist já cobre pela categoria.
+ */
+const chaveDaPasta = (v: unknown) =>
+  semAcento(
+    String(v ?? "")
+      .trim()
+      .replace(/\s+/g, " ")
+  );
+const CHAVE_PASTA_EDITAL = chaveDaPasta("Edital");
+const estaNaPastaEdital = (a: { pasta?: unknown }) => chaveDaPasta(a.pasta) === CHAVE_PASTA_EDITAL;
+
+/**
  * Inscrição estadual e municipal: cada uma casa de forma INDEPENDENTE da outra, porque o edital as junta
  * ("inscrição estadual e municipal", "estadual ou municipal", "estadual e/ou municipal"). Depois de "inscrição" (ou
  * "cadastro de contribuintes") só passam palavras de ligação, para "inscrição no CNPJ ... débitos municipais" não virar
@@ -131,12 +146,16 @@ export function temRegistroForaDoCrea(extraido: unknown): boolean {
 }
 
 /**
- * O Atende? é parte da conta quando o edital exige qualificação técnica OU registro que nenhum documento cobre
- * (`registrar_atende` trata os `registros` como técnica). Com técnica exige veredito e CAT citada; só com registro
- * exige o veredito.
+ * O Atende? é parte da conta quando o edital exige qualificação técnica, registro que nenhum documento cobre
+ * (`registrar_atende` trata os `registros` como técnica) OU qualificação econômico-financeira (o Atende? confere os
+ * índices e o patrimônio líquido com o balanço da empresa). Com técnica exige veredito e CAT citada; só com registro ou
+ * só com a parte econômica exige o veredito (nenhuma CAT).
  */
 export function exigeAtende(extraido: unknown): boolean {
-  return exigeQualificacaoTecnica(extraido) || temRegistroForaDoCrea(extraido);
+  const h = obj(obj(extraido).habilitacao);
+  return (
+    exigeQualificacaoTecnica(extraido) || temRegistroForaDoCrea(extraido) || temItem(h.economica)
+  );
 }
 
 export type SituacaoDaAnalise = "ausente" | "sem_exigencias" | "com_exigencias";
@@ -145,8 +164,9 @@ export type SituacaoDaAnalise = "ausente" | "sem_exigencias" | "com_exigencias";
  * O que a análise gravada do edital diz:
  *  - `ausente`: não há análise (ausente, vazia `{}` ou que não é objeto);
  *  - `sem_exigencias`: há análise, mas NENHUMA exigência de habilitação (`outros_documentos` com texto, as técnicas, a
- *    econômica e os registros vazios, e o edital não é exclusivo para ME/EPP): o edital pode ter a habilitação noutro
- *    anexo, e o `sanearEdital` devolve sempre todas as chaves, então `{}` não basta para reconhecer a análise vazia;
+ *    econômica e os registros vazios): o edital pode ter a habilitação noutro anexo, e o `sanearEdital` devolve sempre
+ *    todas as chaves, então `{}` não basta para reconhecer a análise vazia. `exclusiva_me_epp` sozinho NÃO é exigência de
+ *    habilitação (é a modalidade da licitação; a declaração ME/EPP continua exigida por `declExigidas`);
  *  - `com_exigencias`: o checklist tem o que conferir.
  */
 export function situacaoDaAnalise(extraido: unknown): SituacaoDaAnalise {
@@ -157,8 +177,7 @@ export function situacaoDaAnalise(extraido: unknown): SituacaoDaAnalise {
     lista(h.outros_documentos).some((item) => descricaoDaLinha(item) !== null) ||
     ["tecnica_operacional", "tecnica_profissional", "economica", "registros"].some((k) =>
       temItem(h[k])
-    ) ||
-    e.exclusiva_me_epp === true;
+    );
   return temExigencia ? "com_exigencias" : "sem_exigencias";
 }
 
@@ -444,9 +463,9 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
   }
   if (extraido.exclusiva_me_epp === true) declExigidas.add("me_epp");
 
-  // ── edital ──
+  // ── edital: a categoria do edital (arquivo do conector) ou a pasta "Edital" (upload da tela, sem categoria) ──
   const doEdital = arquivos.filter(
-    (a) => a.categoria !== null && CATEGORIAS_DO_EDITAL.has(a.categoria)
+    (a) => (a.categoria !== null && CATEGORIAS_DO_EDITAL.has(a.categoria)) || estaNaPastaEdital(a)
   );
   const edital: Checklist["edital"] = {
     situacao: doEdital.length > 0 ? "ok" : "falta",
@@ -584,15 +603,37 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
       .filter((m): m is EntradaChecklist["modelos"][number] => !!m && typeof m === "object")
       .map((m) => [m.chave, m.titulo])
   );
+  const nomeSemExtensao = (a: ArquivoChecklist) =>
+    String(a.nome ?? "")
+      .replace(/\.[A-Za-z0-9]{1,5}$/, "")
+      .trim();
+  // A declaração gerada com o texto do edital (`declaracao:edital_<título>:pdf`) tem a chave do TÍTULO, não a do
+  // modelo. Se o título é uma declaração que o SIGO reconhece (a mesma classificação das exigências do edital), o PDF
+  // cobre essa chave também, com o estado de assinatura dele; sem isso o edital exigiria "nao_emprega_menor", o PDF
+  // "edital_declaracao_de_que_nao_emprega_menor" estaria na pasta, e o checklist mandaria gerar a declaração de novo.
+  const coberturaDoEdital = new Map<string, ArquivoChecklist>();
+  for (const [chavePdf, pdf] of pdfsDeDeclaracao) {
+    if (!chavePdf.startsWith("edital_")) continue;
+    // O título é o nome do arquivo; o servidor só acrescenta o prefixo "Declaração - " quando o título NÃO começa com
+    // "Declaração" (nomeArquivoDeclaracao), e a chave mostra qual foi o caso: "edital_declaracao…" = título puro.
+    let titulo = semAcento(nomeSemExtensao(pdf));
+    if (!chavePdf.startsWith("edital_declaracao")) {
+      titulo = titulo.replace(/^declaracao\s*-\s*/, "");
+    }
+    for (const chave of classificarExigencia(titulo).declaracoes) {
+      const atual = coberturaDoEdital.get(chave);
+      // com dois PDFs do edital para a mesma chave, o que já está assinado resolve
+      if (!atual || (atual.assinatura === "pendente" && pdf.assinatura !== "pendente")) {
+        coberturaDoEdital.set(chave, pdf);
+      }
+    }
+  }
   const declaracoes: Checklist["declaracoes"] = [
     ...new Set([...declExigidas, ...pdfsDeDeclaracao.keys()]),
   ].map((chave) => {
-    const pdf = pdfsDeDeclaracao.get(chave);
-    const doNome = pdf
-      ? String(pdf.nome ?? "")
-          .replace(/\.[A-Za-z0-9]{1,5}$/, "")
-          .trim()
-      : "";
+    // o PDF da própria chave vale antes; sem ele, o PDF do texto do edital que cobre a chave
+    const pdf = pdfsDeDeclaracao.get(chave) ?? coberturaDoEdital.get(chave);
+    const doNome = pdfsDeDeclaracao.has(chave) ? nomeSemExtensao(pdfsDeDeclaracao.get(chave)!) : "";
     return {
       chave,
       titulo: modelosPorChave.get(chave) || doNome || chave,
@@ -729,7 +770,7 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
   }
   if (atendeNegativo) {
     passos.push(
-      "O Atende? concluiu que a empresa NÃO atende à qualificação técnica do edital: revise com o usuário antes de seguir."
+      "O Atende? concluiu que a empresa NÃO atende a uma exigência do edital (técnica, de registro ou econômico-financeira): revise com o usuário antes de seguir; se o acervo mudou, grave de novo com registrar_atende."
     );
   }
   if (acervo.some((a) => a.situacao === "nao_anexado")) {

@@ -24,6 +24,8 @@ export interface DepsFerramenta {
   libs?: () => Promise<LibsDocumentos>;
   /** Endereços IP de um nome (anexar_edital_por_url confere antes de baixar). */
   resolverDns?: (host: string) => Promise<string[]>;
+  /** Relógio em milissegundos (anexar_habilitacao mede o tempo da chamada). Padrão: `Date.now`; só os testes injetam. */
+  relogio?: () => number;
 }
 
 export interface ResultadoFerramenta {
@@ -66,14 +68,13 @@ export function falha(
   return { resultado: resultadoJson({ erro: mensagem, motivo, ...detalhes }, true), alvo, motivo };
 }
 
-export type Coisa = "oportunidade" | "atestado" | "arquivo" | "link" | "documento";
+export type Coisa = "oportunidade" | "atestado" | "arquivo" | "link";
 
 const NAO_ENCONTRADO: Record<Coisa, string> = {
   oportunidade: "Oportunidade não encontrada nesta empresa.",
   atestado: "Atestado não encontrado nesta empresa.",
   arquivo: "Arquivo não encontrado nesta oportunidade.",
   link: "Link de envio não encontrado nesta empresa.",
-  documento: "Documento não encontrado nesta empresa.",
 };
 
 /** O mesmo texto para inexistente e para outra empresa (não revela o que existe fora dela). */

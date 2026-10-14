@@ -21,7 +21,12 @@
 --   habilitacao_lembretes_acionar()    só servidor: se há mensagem pendente na fila, chama a função
 --                               habilitacao-lembretes (pg_net).
 --   alertar_documentos_habilitacao()   só servidor: cria o aviso no sino, enfileira o WhatsApp e
---                               aciona o envio. O erro de uma empresa não derruba o aviso das outras.
+--                               aciona o envio. O erro de uma empresa não derruba o aviso das outras
+--                               (cada empresa tem o seu bloco; o erro vira raise warning). Se TODAS
+--                               as empresas a avisar falharem, a função falha de propósito no fim
+--                               (o job aparece como falho em cron.job_run_details, com a contagem e a
+--                               última mensagem; sem isso o erro ficaria engolido e o job "daria certo");
+--                               se só algumas falharem, vai um aviso com a contagem e o job segue.
 --   cron alertar_documentos_habilitacao  11:45 UTC (08:45 de Brasília), depois dos outros alertas
 --                               da manhã.
 --   cron habilitacao_lembretes_reenvio   a cada 30 minutos: só aciona o envio quando sobrou
@@ -30,9 +35,12 @@
 --
 -- O WhatsApp sai pela função habilitacao-lembretes, que só esvazia a fila: quem decide o
 -- que enviar é a função do banco. Chamar a Edge Function de fora não envia nada além do que já
--- está na fila, e cada mensagem sai uma vez (dedup_key; até 3 tentativas em 36 horas). O texto
--- começa com "SIGO Obras — <nome da empresa>": quem trabalha em mais de uma empresa sabe de qual
--- é o aviso.
+-- está na fila, e cada mensagem sai uma vez (dedup_key). Se o envio falha, a mensagem continua na
+-- fila e é tentada de novo: o job de reenvio roda a cada 30 minutos e cada execução da função faz
+-- UMA tentativa por mensagem pendente (não enviada, com menos de 3 tentativas e criada nas últimas
+-- 36 horas). Ou seja, até 3 tentativas ao todo; esgotadas, ou passadas as 36 horas, a mensagem fica
+-- na fila com o erro e não sai mais. O texto começa com "SIGO Obras — <nome da empresa>": quem
+-- trabalha em mais de uma empresa sabe de qual é o aviso.
 --
 -- Só cria. Idempotente. Roda numa transação só (begin … commit): se qualquer comando falhar,
 -- nada fica pela metade (nem o cron sem a função). lock_timeout: a chave estrangeira para
@@ -248,6 +256,9 @@ declare
   v_id uuid;
   v_criados int;
   v_total int := 0;
+  v_empresas int := 0;     -- empresas com aviso a processar nesta execução
+  v_falhas int := 0;       -- quantas delas falharam
+  v_ultimo_erro text;      -- a mensagem do último erro (sem dado da empresa)
 begin
   if not public.chamador_eh_servidor() then
     raise exception 'Acesso negado' using errcode = '42501';
@@ -281,6 +292,9 @@ begin
      where m.dias in (m.n, 3, 0)          -- os marcos do aviso: N dias antes, 3 dias antes e no dia
      group by m.empresa_id
   loop
+    -- A conta fica FORA do bloco: o plpgsql desfaz o que o bloco grava no banco quando ele falha, mas
+    -- não devolve o valor das variáveis, e a empresa conta como processada tendo dado certo ou não.
+    v_empresas := v_empresas + 1;
     -- uma empresa por bloco: se o aviso dela falhar, só o dela é desfeito, e as outras recebem
     begin
       v_criados := 0;
@@ -365,9 +379,26 @@ begin
       -- só soma depois que a empresa terminou: o que um erro desfaz não entra na conta
       v_total := v_total + v_criados;
     exception when others then
+      v_falhas := v_falhas + 1;
+      v_ultimo_erro := sqlerrm;
       raise warning 'alertar_documentos_habilitacao: empresa % falhou (%)', rec.empresa_id, sqlerrm;
     end;
   end loop;
+
+  -- Falha em TODAS as empresas não pode terminar como sucesso: o raise warning acima só vai ao log, e o
+  -- cron.job_run_details mostraria o job como "succeeded" com o erro engolido. Com ao menos uma empresa a
+  -- processar e todas falhas, a função falha de propósito (o job aparece como falho; a mensagem leva a
+  -- contagem e o último erro, nunca dado de empresa) e o job de amanhã tenta de novo. Como a função termina
+  -- aqui, o acionamento do WhatsApp logo abaixo não acontece; o job de reenvio, a cada 30 minutos, cuida do
+  -- que já estava pendente na fila. Se só ALGUMAS falharam, o job segue como sucesso e fica o aviso com a
+  -- contagem.
+  if v_empresas > 0 and v_falhas = v_empresas then
+    raise exception 'alertar_documentos_habilitacao: as % empresa(s) a avisar falharam; última mensagem: %',
+      v_empresas, v_ultimo_erro;
+  elsif v_falhas > 0 then
+    raise warning 'alertar_documentos_habilitacao: % de % empresa(s) falharam; última mensagem: %',
+      v_falhas, v_empresas, v_ultimo_erro;
+  end if;
 
   -- acorda a função que envia o WhatsApp (se há pendente); falha aqui não desfaz os avisos do sino
   begin
@@ -381,7 +412,7 @@ end;
 $$;
 
 comment on function public.alertar_documentos_habilitacao() is
-  'Aviso diário dos documentos de habilitação que vencem em N dias (config, padrão 10), em 3 dias ou hoje: sino para os usuários escolhidos (ou donos e Admins) e, se ligado, WhatsApp pela fila. 1 aviso por pessoa por dia. Devolve quantos avisos de sino foram criados.';
+  'Aviso diário dos documentos de habilitação que vencem em N dias (config, padrão 10), em 3 dias ou hoje: sino para os usuários escolhidos (ou donos e Admins) e, se ligado, WhatsApp pela fila. 1 aviso por pessoa por dia. Devolve quantos avisos de sino foram criados. O erro de uma empresa só desfaz o aviso dela (raise warning); se TODAS as empresas a avisar falharem, a função falha (o job aparece como falho no cron).';
 
 revoke all on function public.alertar_documentos_habilitacao() from public, anon, authenticated;
 grant execute on function public.alertar_documentos_habilitacao() to service_role;

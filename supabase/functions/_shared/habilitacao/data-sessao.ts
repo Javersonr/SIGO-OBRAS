@@ -11,6 +11,7 @@
  *
  * Puro: sem Deno e sem import de URL.
  */
+import { jsonbComoObjeto } from "../conector/jsonb-objeto.ts";
 import { diasAte } from "./documentos-regras.ts";
 
 export type OrigemDaSessao = "oportunidade" | "edital";
@@ -30,19 +31,6 @@ function dataReal(v: unknown): string | null {
     : null;
 }
 
-/** edital_analise vem como objeto (ou jsonb-string, do legado). */
-function objetoDe(v: unknown): Record<string, unknown> | null {
-  let x = v;
-  if (typeof x === "string") {
-    try {
-      x = JSON.parse(x);
-    } catch {
-      return null;
-    }
-  }
-  return x && typeof x === "object" && !Array.isArray(x) ? (x as Record<string, unknown>) : null;
-}
-
 /** A oportunidade como lida do banco: só `licitacao_data` e `edital_analise` interessam. */
 export function dataDaSessao(
   oportunidade: { licitacao_data?: unknown; edital_analise?: unknown } | null | undefined,
@@ -51,7 +39,7 @@ export function dataDaSessao(
   const daColuna = dataReal(oportunidade?.licitacao_data);
   // deno-lint-ignore no-explicit-any
   const doEdital = dataReal(
-    (objetoDe(oportunidade?.edital_analise) as any)?.extraido?.datas?.sessao?.data
+    (jsonbComoObjeto(oportunidade?.edital_analise) as any)?.extraido?.datas?.sessao?.data
   );
   const data = daColuna ?? doEdital;
   const origem: OrigemDaSessao | null = daColuna ? "oportunidade" : doEdital ? "edital" : null;

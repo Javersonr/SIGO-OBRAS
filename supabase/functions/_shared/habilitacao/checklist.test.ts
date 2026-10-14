@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { chaveDoItem, nomeArquivoDeclaracao } from "../documentos/declaracoes.ts";
 import { sanearEdital } from "../edital/edital-regras.ts";
 import {
   classificarExigencia,
@@ -137,7 +138,7 @@ const EXTRAIDO = {
 test("montarChecklist: oportunidade vazia — tudo o que falta e os próximos passos", () => {
   const c = montarChecklist({
     extraido: EXTRAIDO,
-    atende: { cats_anexar: [{ id: AT1 }, { id: AT2 }] },
+    atende: { veredito: "atende", cats_anexar: [{ id: AT1 }, { id: AT2 }] },
     arquivos: [],
     documentos: [],
     atestados: [
@@ -254,7 +255,7 @@ test("montarChecklist: tudo anexado e assinado → pronto", () => {
         outros_documentos: [EXTRAIDO.habilitacao.outros_documentos[0]],
       },
     },
-    atende: { cats_anexar: [{ id: AT1 }] },
+    atende: { veredito: "atende", cats_anexar: [{ id: AT1 }] },
     arquivos,
     documentos,
     atestados: [{ id: AT1, numero: "1/2025", arquivo_ref: "certificados/x" }],
@@ -1338,7 +1339,7 @@ const PASSO_ANALISE =
   "Grave a análise do edital (ler_edital_anexado e criar_ou_atualizar_oportunidade) para o SIGO conferir as exigências.";
 const PASSO_ATENDE = "Confira o acervo técnico contra o edital e grave com registrar_atende.";
 const PASSO_ATENDE_NEGATIVO =
-  "O Atende? concluiu que a empresa NÃO atende à qualificação técnica do edital: revise com o usuário antes de seguir.";
+  "O Atende? concluiu que a empresa NÃO atende a uma exigência do edital (técnica, de registro ou econômico-financeira): revise com o usuário antes de seguir; se o acervo mudou, grave de novo com registrar_atende.";
 
 test("montarChecklist: sem a análise do edital soma 1 a faltam, nunca está pronto e manda gravar a análise", () => {
   for (const extraido of [null, undefined, {}, [], "texto", 42]) {
@@ -1724,6 +1725,8 @@ test("situacaoDaAnalise: ausente, sem nenhuma exigência de habilitação, ou co
     { habilitacao: { economica: [null], registros: [undefined] } },
     { habilitacao: { tecnica_operacional: "x", outros_documentos: "y" } },
     { exclusiva_me_epp: "true" },
+    // onda final (I-4): ser exclusivo para ME/EPP sozinho não é exigência de habilitação
+    sanearEdital({ exclusiva_me_epp: true }),
   ];
   for (const x of semExigencia) {
     assert.equal(situacaoDaAnalise(x), "sem_exigencias", JSON.stringify(x));
@@ -1736,7 +1739,6 @@ test("situacaoDaAnalise: ausente, sem nenhuma exigência de habilitação, ou co
     edital({ tecnica_profissional: [{ id: "pr1", descricao: "Engenheiro eletricista" }] }),
     edital({ economica: [{ id: "ec1", tipo: "patrimonio_liquido" }] }),
     edital({ registros: [{ id: "rg1", tipo: "cadastro_concessionaria" }] }),
-    sanearEdital({ exclusiva_me_epp: true }),
   ];
   for (const x of comExigencia) {
     assert.equal(situacaoDaAnalise(x), "com_exigencias", JSON.stringify(x));
@@ -1765,7 +1767,7 @@ test("montarChecklist: análise gravada porém vazia (sanearEdital({})) conta co
   assert.equal(ausente.resumo.sem_analise, 1);
 });
 
-test("montarChecklist: qualquer exigência de habilitação (ou edital exclusivo para ME/EPP) faz a análise valer", () => {
+test("montarChecklist: qualquer exigência de habilitação faz a análise valer", () => {
   const comExigencia = [
     edital({
       outros_documentos: [{ descricao: "Certidão Negativa de Débitos Trabalhistas (CNDT)" }],
@@ -1774,7 +1776,6 @@ test("montarChecklist: qualquer exigência de habilitação (ou edital exclusivo
     edital({ tecnica_profissional: [{ id: "pr1", descricao: "Engenheiro eletricista" }] }),
     edital({ economica: [{ id: "ec1", tipo: "patrimonio_liquido" }] }),
     edital({ registros: [{ id: "rg1", tipo: "crea" }] }),
-    sanearEdital({ exclusiva_me_epp: true }),
   ];
   for (const extraido of comExigencia) {
     const c = montarChecklist(montagemCompleta({ extraido }));
@@ -2092,4 +2093,337 @@ test("classificarExigencia: novas formas de exigência condicional (quando houve
   }
   // o texto sem a condicional continua reconhecido
   assert.deepEqual(c("Alvará de funcionamento"), { tipos: ["alvara"], declaracoes: [] });
+});
+
+// ═══ Onda final da revisão geral (14/10/2026) ═══════════════════════════════════════════════════
+
+// ─── I-1: o edital enviado pela tela só tem a pasta "Edital" (sem categoria) ─────────────────────
+
+test("montarChecklist: o edital enviado pela tela (pasta Edital, sem categoria) conta; outra pasta sem categoria, não", () => {
+  const edital1 = (...arquivos: ArquivoChecklist[]) => montarChecklist(vazio({ arquivos })).edital;
+  assert.deepEqual(edital1(arq("e1", null, { pasta: "Edital" })), { situacao: "ok", arquivos: 1 });
+  // a mesma comparação da tela (pastas-arquivo.js): sem maiúsculas, sem acento e sem espaço sobrando
+  for (const pasta of [" edital ", "EDITAL", "Édital", "Edital   "]) {
+    assert.deepEqual(edital1(arq("e1", null, { pasta })), { situacao: "ok", arquivos: 1 }, pasta);
+  }
+  // a pasta gravada decide mesmo com uma categoria que não é do edital (a tela mostra o arquivo em Edital)
+  assert.deepEqual(edital1(arq("e1", null, { pasta: "Edital", categoria: "outro" })), {
+    situacao: "ok",
+    arquivos: 1,
+  });
+  // a categoria continua valendo (arquivo do conector, sem pasta) e cada arquivo conta uma vez
+  assert.deepEqual(
+    edital1(
+      arq("e1", null, { categoria: "edital" }),
+      arq("e2", null, { pasta: "Edital" }),
+      arq("e3", null, { pasta: "Edital", categoria: "errata" }),
+      arq("o1", null, { pasta: "Outros" })
+    ),
+    { situacao: "ok", arquivos: 3 }
+  );
+  // outra pasta, ou nenhuma, sem categoria do edital: não é o edital
+  for (const pasta of [
+    null,
+    "",
+    "  ",
+    "Outros",
+    "Credenciamento",
+    "Envelope 01 – Proposta",
+    "Envelope 02 – Habilitação",
+    "Editais",
+    "Edital extra",
+    "Pré-edital",
+  ]) {
+    assert.deepEqual(
+      edital1(arq("o1", null, { pasta })),
+      { situacao: "falta", arquivos: 0 },
+      String(pasta)
+    );
+  }
+  // sem o edital o checklist não está pronto; com o upload da tela, a oportunidade antiga fica pronta
+  const base = montagemCompleta({ extraido: ANALISE_MINIMA });
+  const semEdital = base.arquivos.filter((a) => a.categoria !== "edital");
+  const antes = montarChecklist({ ...base, arquivos: semEdital });
+  assert.equal(antes.resumo.pronto, false);
+  const depois = montarChecklist({
+    ...base,
+    arquivos: [...semEdital, arq("e1", null, { pasta: "Edital" })],
+  });
+  assert.equal(depois.resumo.pronto, true);
+  assert.deepEqual(depois.proximos_passos, []);
+});
+
+// ─── I-2: a declaração gerada com o texto do edital cobre a declaração exigida ──────────────────
+
+const MENOR_NO_EDITAL = {
+  habilitacao: {
+    outros_documentos: [{ descricao: "Declaração de que não emprega menor (Anexo V)", pagina: 12 }],
+  },
+};
+
+/** O PDF de uma declaração do texto do edital, com o nome e a chave que a gerar_declaracoes de verdade grava. */
+const pdfDoTextoDoEdital = (titulo: string, assinatura: string | null) => {
+  const chave = chaveDoItem({ tipo: "texto", titulo, texto: "x" });
+  return arq(`dc-${chave}`, `declaracao:${chave}:pdf`, {
+    nome: nomeArquivoDeclaracao(titulo, "pdf"),
+    assinatura,
+  });
+};
+const linhasDeDeclaracao = (c: ReturnType<typeof montarChecklist>) =>
+  c.declaracoes.map((d) => [d.chave, d.exigida_no_edital, d.situacao]);
+const PASSO_ASSINAR = 'Assine no gov.br e use "Enviar assinado" na aba Arquivos: 1 arquivo(s).';
+
+test("montarChecklist: PDF assinado do texto do edital cobre a declaração exigida (nenhum passo de gerar)", () => {
+  // as duas formas do nome: o título já começa com "Declaração" (o nome é o título) ou não (o servidor põe o prefixo)
+  for (const titulo of [
+    "Declaração de que não emprega menor",
+    "Declaração de que não emprega menor (Anexo V)", // título longo: a chave leva o hash
+    "Anexo V - Declaração de que não emprega menor",
+    "ANEXO V – DECLARAÇÃO DE QUE NÃO EMPREGA MENOR",
+    "Anexo V - Não emprega menor de 18 anos (declaração)",
+  ]) {
+    const pdf = pdfDoTextoDoEdital(titulo, "assinado");
+    const c = montarChecklist(
+      montagemCompleta({
+        extraido: MENOR_NO_EDITAL,
+        arquivos: [...montagemCompleta().arquivos, pdf],
+        modelos: [{ chave: "nao_emprega_menor", titulo: "Declaração de que não emprega menor" }],
+      })
+    );
+    // a linha da chave exigida vale pelo PDF do edital; a linha do próprio PDF continua aparecendo
+    assert.deepEqual(
+      linhasDeDeclaracao(c),
+      [
+        ["nao_emprega_menor", true, "ok"],
+        [String(pdf.origem).split(":")[1], false, "ok"],
+      ],
+      titulo
+    );
+    assert.deepEqual(c.proximos_passos, [], titulo);
+    assert.equal(c.resumo.faltam, 0, titulo);
+    assert.equal(c.resumo.pronto, true, titulo);
+  }
+});
+
+test("montarChecklist: o mesmo PDF do texto do edital pendente deixa a declaração em falta_assinar (e não manda gerar de novo)", () => {
+  const pdf = pdfDoTextoDoEdital("Declaração de que não emprega menor", "pendente");
+  const c = montarChecklist(
+    montagemCompleta({
+      extraido: MENOR_NO_EDITAL,
+      arquivos: [...montagemCompleta().arquivos, pdf],
+    })
+  );
+  assert.deepEqual(linhasDeDeclaracao(c), [
+    ["nao_emprega_menor", true, "falta_assinar"],
+    ["edital_declaracao_de_que_nao_emprega_menor", false, "falta_assinar"],
+  ]);
+  assert.equal(c.resumo.faltam, 0);
+  assert.equal(c.resumo.falta_assinar, 1);
+  assert.equal(c.resumo.pronto, false);
+  assert.deepEqual(c.proximos_passos, [PASSO_ASSINAR]);
+  assert.ok(!c.proximos_passos.some((p) => p.includes("gerar_declaracoes")));
+});
+
+test("montarChecklist: PDF do texto do edital cujo título não classifica não cobre nada", () => {
+  for (const titulo of [
+    "Anexo V",
+    "Declaração do Anexo V",
+    "Declaração de vistoria do local da obra",
+    "Anexo V - Alvará de funcionamento", // documento, não declaração
+    // duas declarações no título e só uma reconhecida: sobrou uma sem modelo
+    "Declaração de que não emprega menor e declaração de vistoria",
+  ]) {
+    const pdf = pdfDoTextoDoEdital(titulo, "assinado");
+    const c = montarChecklist(
+      montagemCompleta({
+        extraido: MENOR_NO_EDITAL,
+        arquivos: [...montagemCompleta().arquivos, pdf],
+      })
+    );
+    assert.deepEqual(
+      linhasDeDeclaracao(c),
+      [
+        ["nao_emprega_menor", true, "falta"],
+        [String(pdf.origem).split(":")[1], false, "ok"],
+      ],
+      titulo
+    );
+    assert.deepEqual(
+      c.proximos_passos,
+      ["Gere as declarações: gerar_declaracoes (nao_emprega_menor)."],
+      titulo
+    );
+    assert.equal(c.resumo.faltam, 1, titulo);
+  }
+  // PDF sem nome (o título não existe): só a chave dele, sem cobrir nada
+  const semNome = montarChecklist(
+    montagemCompleta({
+      extraido: MENOR_NO_EDITAL,
+      arquivos: [
+        ...montagemCompleta().arquivos,
+        arq("dx", "declaracao:edital_anexo_v:pdf", { nome: "", assinatura: "assinado" }),
+      ],
+    })
+  );
+  assert.equal(linhasDeDeclaracao(semNome)[0][2], "falta");
+});
+
+test("montarChecklist: a declaração do edital só cobre o que o título diz, só vale o PDF e o PDF da própria chave vem primeiro", () => {
+  const pdf = pdfDoTextoDoEdital("Declaração de que não emprega menor", "assinado");
+  const docx = arq("dx", "declaracao:edital_declaracao_de_fatos_impeditivos:docx", {
+    nome: "Declaração de fatos impeditivos.docx",
+  });
+  const extraido = {
+    habilitacao: {
+      outros_documentos: [
+        { descricao: "Declaração de que não emprega menor" },
+        { descricao: "Declaração de inexistência de fatos impeditivos" },
+      ],
+    },
+  };
+  const c = montarChecklist(
+    montagemCompleta({ extraido, arquivos: [...montagemCompleta().arquivos, pdf, docx] })
+  );
+  // só o menor está coberto; o .docx não vale, e fatos impeditivos continua em falta
+  assert.deepEqual(linhasDeDeclaracao(c), [
+    ["nao_emprega_menor", true, "ok"],
+    ["fato_impeditivo", true, "falta"],
+    ["edital_declaracao_de_que_nao_emprega_menor", false, "ok"],
+  ]);
+  // uma declaração que o edital não exige não ganha linha só porque o PDF dele a cobriria
+  const naoExigida = montarChecklist(
+    montagemCompleta({
+      extraido: ANALISE_MINIMA,
+      arquivos: [...montagemCompleta().arquivos, pdf],
+    })
+  );
+  assert.deepEqual(linhasDeDeclaracao(naoExigida), [
+    ["edital_declaracao_de_que_nao_emprega_menor", false, "ok"],
+  ]);
+  // o PDF da própria chave (modelo) vale antes do PDF do texto do edital
+  const proprio = montarChecklist(
+    montagemCompleta({
+      extraido: MENOR_NO_EDITAL,
+      arquivos: [
+        ...montagemCompleta().arquivos,
+        pdf,
+        arq("dm", "declaracao:nao_emprega_menor:pdf", {
+          nome: "Declaração - menor.pdf",
+          assinatura: "pendente",
+        }),
+      ],
+    })
+  );
+  assert.equal(linhasDeDeclaracao(proprio)[0][2], "falta_assinar");
+  // com dois PDFs do edital que cobrem a mesma chave, o que já está assinado resolve
+  const dois = montarChecklist(
+    montagemCompleta({
+      extraido: MENOR_NO_EDITAL,
+      arquivos: [
+        ...montagemCompleta().arquivos,
+        pdfDoTextoDoEdital("Anexo V - Declaração de que não emprega menor", "pendente"),
+        pdf,
+      ],
+    })
+  );
+  assert.equal(linhasDeDeclaracao(dois)[0][2], "ok");
+});
+
+// ─── I-4: exclusiva_me_epp sozinho não é exigência de habilitação; edital só econômico exige o Atende? ──
+
+test("situacaoDaAnalise: exclusiva_me_epp sozinho não é exigência de habilitação (a declaração ME/EPP segue exigida)", () => {
+  assert.equal(situacaoDaAnalise(sanearEdital({ exclusiva_me_epp: true })), "sem_exigencias");
+  assert.equal(situacaoDaAnalise({ exclusiva_me_epp: true }), "sem_exigencias");
+  // com qualquer exigência de habilitação a análise vale, exclusivo ou não
+  assert.equal(
+    situacaoDaAnalise(
+      edital({ outros_documentos: [{ descricao: "Alvará" }] }, { exclusiva_me_epp: true })
+    ),
+    "com_exigencias"
+  );
+});
+
+test("montarChecklist: edital exclusivo para ME/EPP e sem nenhuma exigência de habilitação continua sem análise válida, mas exige a declaração ME/EPP", () => {
+  const extraido = sanearEdital({ exclusiva_me_epp: true });
+  const c = montarChecklist(montagemCompleta({ extraido }));
+  assert.equal(c.resumo.sem_analise, 1);
+  assert.equal(c.resumo.pronto, false);
+  assert.deepEqual(linhasDeDeclaracao(c), [["me_epp", true, "falta"]]);
+  // os dois passos: reler a habilitação e gerar a declaração ME/EPP
+  assert.deepEqual(c.proximos_passos, [
+    PASSO_ANALISE_VAZIA,
+    "Gere as declarações: gerar_declaracoes (me_epp).",
+  ]);
+  assert.equal(c.resumo.faltam, 2);
+  // mesmo com a declaração ME/EPP assinada, sem exigência de habilitação gravada não está pronto
+  const comDeclaracao = montarChecklist(
+    montagemCompleta({
+      extraido,
+      arquivos: [
+        ...montagemCompleta().arquivos,
+        arq("dm", "declaracao:me_epp:pdf", { nome: "Declaração ME.pdf", assinatura: "assinado" }),
+      ],
+    })
+  );
+  assert.equal(comDeclaracao.resumo.sem_analise, 1);
+  assert.equal(comDeclaracao.resumo.pronto, false);
+  assert.deepEqual(comDeclaracao.proximos_passos, [PASSO_ANALISE_VAZIA]);
+});
+
+test("exigeAtende: a qualificação econômico-financeira com item também pede o Atende?", () => {
+  assert.equal(
+    exigeAtende(edital({ economica: [{ id: "ec1", tipo: "patrimonio_liquido" }] })),
+    true
+  );
+  assert.equal(exigeAtende({ habilitacao: { economica: [{ tipo: "ccl" }] } }), true);
+  // lista vazia, item nulo e formatos estranhos não pedem
+  for (const ruim of [
+    edital({ economica: [] }),
+    { habilitacao: { economica: [null] } },
+    { habilitacao: { economica: "x" } },
+    { habilitacao: { economica: {} } },
+  ]) {
+    assert.equal(exigeAtende(ruim), false, JSON.stringify(ruim));
+  }
+});
+
+test("montarChecklist: edital só econômico exige o veredito do Atende? (sem CAT) e fica pronto quando ele existe", () => {
+  const ECONOMICO = edital({ economica: [{ id: "ec1", tipo: "patrimonio_liquido" }] });
+  const balanco = { id: "dbal", tipo: "balanco_dre", nome: "Balanço", validade: null, ativo: true };
+  const base = montagemCompleta({ extraido: ECONOMICO });
+  const comBalanco = {
+    ...base,
+    documentos: [...base.documentos, balanco],
+    arquivos: [...base.arquivos, arq("b-dbal", "biblioteca:dbal")],
+  };
+  // balanço anexado e sem o Atende?: o SIGO não sabe se os índices e o patrimônio líquido bastam
+  const sem = montarChecklist(comBalanco);
+  assert.equal(sem.resumo.sem_atende, 1);
+  assert.equal(sem.resumo.faltam, 1);
+  assert.equal(sem.resumo.pronto, false);
+  assert.deepEqual(sem.proximos_passos, [PASSO_ATENDE]);
+  // o veredito basta: nenhuma CAT é exigida num edital só econômico
+  for (const veredito of ["atende", "atende_parcialmente"]) {
+    const c = montarChecklist({ ...comBalanco, atende: { veredito, cats_anexar: [] } });
+    assert.equal(c.resumo.sem_atende, 0, veredito);
+    assert.equal(c.resumo.pronto, true, veredito);
+    assert.deepEqual(c.proximos_passos, [], veredito);
+  }
+  // "não atende" trava o pronto, sem virar falta
+  const negativo = montarChecklist({ ...comBalanco, atende: { veredito: "nao_atende" } });
+  assert.deepEqual([negativo.resumo.sem_atende, negativo.resumo.atende_negativo], [0, 1]);
+  assert.equal(negativo.resumo.pronto, false);
+});
+
+test("montarChecklist: o passo do 'não atende' fala de qualquer exigência do Atende? e manda gravar de novo se o acervo mudou", () => {
+  const c = montarChecklist(
+    montagemCompleta({
+      extraido: edital({ economica: [{ id: "ec1", tipo: "patrimonio_liquido" }] }),
+      atende: { veredito: "nao_atende" },
+    })
+  );
+  const passo = c.proximos_passos.find((p) => p.includes("NÃO atende"));
+  assert.equal(passo, PASSO_ATENDE_NEGATIVO);
+  assert.ok(passo!.includes("registrar_atende"));
+  assert.ok(!passo!.includes("qualificação técnica do edital"));
 });

@@ -57,22 +57,27 @@ Tudo abaixo é leitura ou conferência. Os comandos que falam com produção só
    empresa (também em Configurações → Empresa) é opcional: PNG de até 500×500 pixels ou JPG de até 2 MB; fora disso a
    declaração sai sem logo e com aviso.
 4. **Consultas de conferência antes das migrações** (só leitura; cada uma só com o OK do Javerson, no SQL do painel ou
-   com `supabase db query --linked`):
+   com a CLI na versão fixada):
 
-   ```sql
-   -- triggers criados fora das migrações nas tabelas que as migrações e os smokes tocam
-   select tgrelid::regclass as tabela, tgname from pg_trigger where not tgisinternal and tgrelid in ('public.empresa'::regclass, 'public.oportunidade'::regclass, 'public.usuario_empresa'::regclass, 'public.arquivo_oportunidade'::regclass, 'public.arquivo_texto_pagina'::regclass) order by 1, 2;
-   -- versão do Postgres
-   show server_version;
+   ```bash
+   # SÓ COM O OK DO JAVERSON — triggers das tabelas que as migrações e os smokes tocam
+   npx supabase@2.118.0 db query --linked "select tgrelid::regclass as tabela, tgname from pg_trigger where not tgisinternal and tgrelid in ('public.empresa'::regclass, 'public.oportunidade'::regclass, 'public.usuario_empresa'::regclass, 'public.arquivo_oportunidade'::regclass, 'public.arquivo_texto_pagina'::regclass) order by 1, 2;"
+   # SÓ COM O OK DO JAVERSON — versão do Postgres
+   npx supabase@2.118.0 db query --linked "show server_version;"
    ```
 
-   O esperado na primeira consulta é só `set_updated_at`, `referencias_da_empresa` e os triggers já conhecidos das
-   tabelas. Se aparecer algo diferente: **parar e avisar** antes de aplicar qualquer migração. A versão do Postgres
-   precisa ser 13 ou mais nova.
+   O esperado na primeira consulta: o trigger **`set_updated_at`** (é o que `attach_updated_at_trigger` cria, nas tabelas
+   que têm `updated_at`), o **`referencias_da_empresa`** nas tabelas que o têm (por exemplo `arquivo_texto_pagina`, da 0149) e os triggers já conhecidos das tabelas antigas. As tabelas novas das migrações 0154 a 0156 (`acervo_documento`
+   com `acervo_documento_versao`, `habilitacao_config` e `modelo_declaracao`) ainda não existem e não entram nesta
+   consulta. Se aparecer um trigger com **outro nome**, **cole o resultado no chat e pare** antes de aplicar qualquer
+   migração. A versão do Postgres precisa ser 13 ou mais nova.
 
 5. **Os smokes não deixam nada gravado.** Os três terminam em `rollback`. O da 0155 usa empresas sintéticas e roda a
    função de alerta (a mesma varredura do cron): **não rodar perto das 08:45 de Brasília**, que é o horário do job
-   `alertar_documentos_habilitacao` (`45 11 * * *`, em UTC).
+   `alertar_documentos_habilitacao` (`45 11 * * *`, em UTC). O passo 11 desse smoke, o último, prova que a função falha
+   quando TODAS as empresas falham: para isso apaga (só dentro da transação) os avisos de habilitação de hoje e cria um
+   gatilho de teste em `notificacao`, o que pede uma trava na tabela até o `rollback` (quem grava aviso espera alguns
+   instantes). Se a trava não vier em 3 s o smoke desiste com erro de `lock_timeout`: é só rodar de novo.
 6. **Árvore limpa.** O deploy de função leva a árvore de trabalho inteira de `_shared/`. Antes de publicar qualquer
    função:
 
@@ -108,7 +113,8 @@ git log --oneline origin/master..master        # conferir o que vai subir
 git push origin master
 gh run list --limit 2                          # acompanhar o "Deploy frontend to Hostgator"
 
-# SÓ COM O OK DO JAVERSON — Carga inicial da biblioteca (com a pasta dos documentos no PC; Node 23.6 ou mais novo)
+# SÓ COM O OK DO JAVERSON — Carga inicial da biblioteca (LOGO depois da 0154 e do front, antes de usar as ferramentas;
+# com a pasta dos documentos no PC; Node 23.6 ou mais novo)
 # o script só ESCREVE enviar.sh e carga.sql na pasta de saída: confira os dois arquivos antes de rodar
 node tools/habilitacao/carga-inicial.mjs --csv <inventario.csv> --pasta <pasta dos documentos> --empresa <uuid da empresa> --saida <pasta de saída fora do repositório>
 bash <pasta de saída>/enviar.sh
@@ -123,10 +129,15 @@ Por que esta ordem, e o que fica de fora:
 - **0154 antes do `mcp` e do `ia-processar`:** eles leem `acervo_documento`. **0156 antes do `mcp`:** ele grava pela
   função `conector_gravar_arquivo`. Antes da 0154, cada "Atende?" registra um erro no log e usa só o perfil da empresa
   (sem a biblioteca); o erro some depois da 0154.
-- **O front funciona antes e depois das migrações:** sem as tabelas e colunas novas, as telas novas simplesmente não
-  aparecem nem gravam, mas a ordem acima é a recomendada.
-- **A carga inicial** (a biblioteca começa vazia) vem por último, com a 0154 aplicada. Os nomes dos arquivos têm dado
-  pessoal: o script recusa uma pasta de saída dentro do repositório, e a saída nunca é versionada.
+- **O front não quebra antes das migrações, mas a ordem acima é a recomendada.** Antes da 0154, a aba "Documentos e
+  certidões" **aparece**, só com o aviso vermelho "Não foi possível carregar os documentos" (sem a lista, sem o botão
+  "Novo documento" e sem os cartões de lembretes e de modelos); o resto do Acervo Técnico continua funcionando. As
+  telas e gravações que dependem das colunas e tabelas da 0155 e da 0156 também só funcionam depois delas.
+- **A carga inicial** (a biblioteca começa vazia) vem **logo depois da 0154 e do front**, não por último e não "quando der".
+  Com a biblioteca parcial (basta UM documento ativo com validade), o "Atende?" e o Resumo do Acervo passam a ler a
+  biblioteca **no lugar das certidões do perfil da empresa** (o perfil só vale com a biblioteca vazia): o que ainda não
+  foi carregado aparece como faltando. Os nomes dos arquivos têm dado pessoal: o script recusa uma pasta de saída dentro do repositório, e a
+  saída nunca é versionada.
 
 ## Conferências depois de publicar
 
@@ -136,7 +147,8 @@ Só leitura (cada uma só com o OK do Javerson):
 -- os dois crons novos
 select jobname, schedule, active from cron.job
  where jobname in ('alertar_documentos_habilitacao', 'habilitacao_lembretes_reenvio') order by jobname;
--- a última execução de cada um
+-- a última execução de cada um (status 'failed' no alerta = TODAS as empresas falharam; se só algumas falharam o job
+-- aparece como 'succeeded' e o aviso fica no log do banco)
 select j.jobname, d.status, d.start_time, left(d.return_message, 120) as retorno
   from cron.job_run_details d join cron.job j using (jobid)
  where j.jobname in ('alertar_documentos_habilitacao', 'habilitacao_lembretes_reenvio')
@@ -184,14 +196,15 @@ Numa oportunidade **TESTE** (nunca numa licitação real), com o Claude conectad
 6. `gerar_declaracoes` com **12 declarações de uma vez** e o logo da empresa (confere o limite de processamento da
    função: o pior caso é apertado, ver "Limitações").
 7. `anexar_habilitacao`: as certidões válidas vão para o Envelope 02; as vencidas voltam no chat e **não são
-   anexadas**.
+   anexadas**. Se a chamada parar por tempo (depois de 45 s), volta `nao_processados` e o aviso para chamar de novo.
 8. **Renovar uma certidão** na biblioteca (versão nova) e chamar `anexar_habilitacao` e `checklist_habilitacao` de novo:
    a cópia antiga aparece como desatualizada (o SIGO não apaga: quem exclui da pasta é você).
 9. `anexar_acervo`: os PDFs das CATs do "Atende?" vão para o Envelope 02.
 10. Assinar um PDF no gov.br e usar **"Enviar assinado"**: o selo vira "assinado" e gerar de novo não troca o assinado.
     Repetir com **dois ou três PDFs seguidos**, um depois do outro.
 11. `checklist_habilitacao`: o que falta, o que venceu e o que falta assinar. Só aparece "pronto" quando não sobra
-    nada.
+    nada. O edital enviado pela tela (pasta Edital) conta como edital anexado, e a declaração gerada com o texto do
+    edital cobre a declaração que o edital exige (o checklist não manda gerar de novo).
 12. Repetir uma ferramenta: os arquivos são trocados no lugar, sem duplicar.
 
 ## Decisões tomadas na execução
@@ -231,7 +244,9 @@ Escolhas que apareceram durante a execução e não estavam no plano. O Javerson
 1. **Portal do Cliente.** A função `portal-cliente-dados` mostra TODOS os arquivos da oportunidade ou do projeto ao
    cliente que tem acesso ao portal. As cópias da biblioteca (balanço, contrato social, certidões, CATs) passam a
    aparecer lá quando o portal estiver liberado. Recomendação: esconder do portal os arquivos com `origem` começando por
-   `biblioteca:` ou `acervo:` (mudança pequena, mais a publicação de `portal-cliente-dados`).
+   `biblioteca:` ou `acervo:` (mudança pequena, mais a publicação de `portal-cliente-dados`). **Esta decisão (esconder
+   ou não) tem de vir ANTES de usar `anexar_habilitacao` e `anexar_acervo` numa oportunidade com o portal liberado:** o
+   arquivo copiado já é visto pelo cliente na hora.
 2. **Página de envio por link.** `mcp-oauth/envio-tela.ts` ainda usa o Storage sem o confinamento novo. Não é explorável
    hoje; embrulhar é uma linha, mais a publicação de `mcp-oauth`.
 
@@ -243,7 +258,17 @@ Escolhas que apareceram durante a execução e não estavam no plano. O Javerson
 - **Folga de processamento estreita no pior caso:** 12 declarações longas com o logo no limite levam uns 1,6 s num PC
   i3, para um limite de uns 2 s da função. Por isso o passo 6 do roteiro.
 - Antes da 0154, cada "Atende?" registra um erro no log e usa só o perfil (sem a biblioteca): some depois da 0154.
-- Arquivo anexado à mão (sem `origem`) não conta no checklist como documento da biblioteca.
+- **Arquivo anexado à mão (sem `origem`) não conta no checklist** como documento da biblioteca, **nem como proposta,
+  cronograma ou declaração**: o checklist só reconhece o que o SIGO gerou ou copiou (a `origem` do arquivo), e diz que
+  falta o que foi enviado pela tela. Exceção: o edital enviado pela tela conta (arquivo na pasta "Edital").
+- **`anexar_habilitacao` para depois de 45 s.** São até 60 cópias em sequência, e o Claude tem um tempo-limite por
+  chamada. Depois de 45 s a ferramenta não inicia mais cópia e devolve o que ficou em `nao_processados`, com o aviso
+  "Ainda faltam N documento(s): chame anexar_habilitacao de novo para continuar". Chamar de novo é seguro (o que já foi
+  copiado não é duplicado). A `anexar_acervo` (até 40 CATs) não tem essa trava.
+- **A função pública `habilitacao-lembretes` responde só `{ success: true }`** (as contagens da fila ficam no log da
+  função). Quem chamar a função de fora, várias vezes, durante uma queda do WhatsApp pode esgotar as 3 tentativas das
+  mensagens pendentes: elas ficam na fila com o erro e não saem mais. Risco aceito: a função só envia o que o banco já
+  decidiu, e o aviso do sino continua valendo.
 - **Risco residual aceito no download por link:** troca de IP entre a consulta ao DNS e a conexão. A defesa é https,
   porta 443 e certificado válido: nunca relaxar para http nem para certificado inválido.
 - O `tools/conector/isolamento-conector.mjs` não foi estendido às seis ferramentas novas: o isolamento entre empresas
@@ -251,8 +276,10 @@ Escolhas que apareceram durante a execução e não estavam no plano. O Javerson
 
 ## Se algo der errado
 
-- **As migrações só criam** (tabelas, colunas nulas, funções, bucket e cron): o código antigo continua funcionando sem
-  usá-las. Para parar os lembretes:
+- **As migrações são aditivas e inofensivas para o código antigo:** criam tabelas, funções, bucket e cron, e a 0156
+  também (1) acrescenta os tipos .docx, .doc, .xls e .zip aos aceitos do bucket `anexos-oportunidade` e (2) acrescenta
+  duas colunas nulas (`origem` e `assinatura`) e um índice único parcial em `arquivo_oportunidade`. Nada disso muda o que
+  o código antigo faz, e não é preciso desfazer. Para parar os lembretes:
 
   ```sql
   select cron.unschedule('alertar_documentos_habilitacao');
@@ -262,13 +289,23 @@ Escolhas que apareceram durante a execução e não estavam no plano. O Javerson
 - **Função com problema:** publicar de novo a versão anterior (`git checkout <commit anterior> -- supabase/functions`
   num worktree limpo e o mesmo `functions deploy`).
 - **`gerador_indisponivel`** (as bibliotecas `npm:` não carregaram no Edge Runtime; só `gerar_documentos_proposta` e
-  `gerar_declaracoes` voltam isso): trocar os três imports de `supabase/functions/mcp/gerador.ts` por
-  `https://esm.sh/<pacote>@<versão>` e publicar o `mcp` de novo. As outras 21 ferramentas não são afetadas.
+  `gerar_declaracoes` voltam isso). Duas saídas, na ordem:
+  - **Plano B:** trocar os três imports de `supabase/functions/mcp/gerador.ts` por `https://esm.sh/<pacote>@<versão>`,
+    continuando com import dinâmico (`import("https://esm.sh/jspdf@2.5.2")`,
+    `import("https://esm.sh/jspdf-autotable@3.8.4")` e `import("https://esm.sh/xlsx@0.18.5")`: as mesmas versões da tela)
+    e publicar o `mcp` de novo. As outras 21 ferramentas não são afetadas.
+  - **Plano C**, se o plano B também não carregar: import **estático** no topo de `gerador.ts` (no lugar dos três
+    `import(...)` dentro de `carregarLibs`). Aviso: com import estático o `mcp` carrega as três bibliotecas em toda
+    partida a frio da função, e portanto em qualquer chamada, mesmo nas ferramentas que não geram arquivo (mais lento e
+    com mais memória). Só vale a pena se o dinâmico não funcionar de jeito nenhum.
 - **`anexar_edital_por_url` recusando todo link** com `destino_bloqueado`: o DNS do Edge não respondeu (nem pelo
   `Deno.resolveDns`, nem pela consulta de reserva por HTTPS). A recusa é de propósito. Até corrigir, use
   `gerar_link_envio` e peça ao usuário para soltar o arquivo do edital na página de envio.
-- **Front com problema:** reverter o merge num commit novo (`git revert -m 1 <commit do merge>`) e fazer push. As
-  migrações ficam como estão (são só tabelas e colunas novas).
+- **Front com problema:** reverter num commit novo e fazer push. O `git revert -m 1 <commit do merge>` só vale se o merge
+  criou um commit de merge (`--no-ff`). Com **fast-forward** não existe commit de merge: reverta os commits da branch,
+  do mais novo para o mais antigo, com `git revert --no-edit 7b91500..<último commit da branch>` (`7b91500` é o
+  `master` de onde a branch saiu; `git log --oneline 7b91500..HEAD` lista os commits que serão revertidos). As migrações
+  ficam como estão (são só tabelas e colunas novas).
 - **Arquivo gerado errado numa oportunidade:** excluir pela aba Arquivos e rodar a ferramenta de novo (o conector nunca
   apaga).
 - **Tirar o conector de uma empresa na hora:** SaaS Admin → "Conector Claude" desligado (`empresa.conector_claude`).
@@ -322,4 +359,6 @@ Parte C — ferramentas do conector:
 - `fb87bc9` feat(conector): checklist_habilitacao cruza o edital com os arquivos e a biblioteca
 - `b2996dd` fix(documentos): logo PNG até 300 mil pixels e descompressão em fatias para caber no limite da Edge
 - `180712a` fix(conector): checklist não dá "pronto" sem análise do edital e não confunde declaração com certidão
-- C6: (este commit)
+- `2ff61d6` feat(conector): registra as seis ferramentas de habilitação e o roteiro Montar a licitação completa
+- `d980b65` fix(conector): checklist trava o pronto com análise vazia, registro sem Atende? e Atende? negativo
+- Onda final da revisão geral: (este commit)

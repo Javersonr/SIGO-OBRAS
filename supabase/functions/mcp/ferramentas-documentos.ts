@@ -21,6 +21,7 @@ import {
 } from "../_shared/conector/arquivo-servidor.ts";
 import { uuidOuNull } from "../_shared/conector/entrada.ts";
 import { PASTA_PROPOSTA } from "../_shared/conector/envio-regras.ts";
+import { jsonbComoObjeto } from "../_shared/conector/jsonb-objeto.ts";
 import { linkOportunidade } from "../_shared/conector/recurso.ts";
 import {
   montarDadosCronograma,
@@ -71,6 +72,13 @@ import {
   resumoCronograma,
 } from "../_shared/orcamento/cronograma.ts";
 import { resumoOrcamento, type ItemOrcamento } from "../_shared/orcamento/desconto.ts";
+import {
+  GRAVACAO,
+  ID_OPORTUNIDADE,
+  logarErro,
+  nomeDoUsuario,
+  plural,
+} from "./ferramentas-comum.ts";
 import {
   falha,
   naoEncontrado,
@@ -143,7 +151,6 @@ export const COLUNAS_ORCAMENTO =
   "id, numero, etapa, descricao, codigo, fonte, unidade, quantidade, valor_unitario_ref, valor_unitario, valor_total, ordem";
 const PASTAS_DECLARACAO = [PASTA_HABILITACAO, PASTA_CREDENCIAMENTO, PASTA_PROPOSTA] as const;
 
-const ID_OPORTUNIDADE = { type: "string", description: "UUID da oportunidade" };
 const DATA = { type: "string", description: "AAAA-MM-DD; padrão hoje" };
 const LOCAL = {
   type: "string",
@@ -151,32 +158,6 @@ const LOCAL = {
   description:
     'cidade/UF que sai acima da assinatura, ex.: "Cidade/UF"; padrão: cidade e UF da empresa',
 };
-const GRAVACAO = {
-  readOnlyHint: false,
-  destructiveHint: false,
-  idempotentHint: true,
-  openWorldHint: false,
-};
-
-const nomeDoUsuario = (deps: DepsFerramenta) => `${deps.ctx.usuario.nome} (via Claude)`;
-const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
-
-/**
- * A mensagem do erro sem nada que pareça URL, ref ou caminho do Storage, e sem número longo (CPF, CNPJ: uma
- * biblioteca pode repetir um texto do documento na mensagem de erro).
- */
-const mensagemSemCaminho = (e: unknown): string =>
-  (e instanceof Error ? e.message : String(e))
-    .replace(/\S*\/\S*/g, "[caminho]")
-    .replace(/\d(?:[.\-\s]?\d){9,}/g, "[numero]")
-    .slice(0, 300);
-
-/** Log de um erro inesperado: nome do erro e mensagem sem caminho. Nunca dado do documento. */
-function logarErro(ferramenta: string, onde: string, e: unknown): void {
-  const nome = e instanceof Error ? e.name : typeof e;
-  console.error(`[conector] ${ferramenta}: ${onde}: ${nome}: ${mensagemSemCaminho(e)}`);
-}
-
 /** Por que um arquivo não foi gerado ou gravado (o `motivo` de cada entrada de `falhas`). */
 export type MotivoDaFalhaDeDocumento = ErroArquivo["codigo"] | "erro_interno";
 
@@ -223,19 +204,6 @@ const representanteIncompleto = (r: { cargo: unknown; cpf: unknown }): boolean =
   !String(r.cargo ?? "").trim() || !String(r.cpf ?? "").trim();
 
 // ─── partes comuns ──────────────────────────────────────────────────────────────────────────
-
-/** jsonb que o legado gravou como texto: objeto de verdade; o que não for objeto (ou JSON inválido) vira {}. */
-function objetoDoJson(v: unknown): Record<string, unknown> {
-  let x = v;
-  if (typeof x === "string") {
-    try {
-      x = JSON.parse(x);
-    } catch {
-      return {};
-    }
-  }
-  return x && typeof x === "object" && !Array.isArray(x) ? (x as Record<string, unknown>) : {};
-}
 
 interface OportunidadeLida {
   id: string;
@@ -523,7 +491,7 @@ const GERAR_DOCUMENTOS_PROPOSTA: Ferramenta = {
 
     const { data, validadeDias } = pedido;
     const opcoes = { validadeDias, local: pedido.local ?? localDaEmpresa(empresa), dataISO: data };
-    const info = objetoDoJson(op.orcamento_info);
+    const info = jsonbComoObjeto(op.orcamento_info) ?? {};
     const dados = montarDadosProposta({
       itens,
       info,
@@ -569,7 +537,7 @@ const GERAR_DOCUMENTOS_PROPOSTA: Ferramenta = {
     ];
 
     // cronograma: só sai quando existe, cabe no limite e todas as etapas fecham 100,00% (como a tela)
-    const cron = normalizarCronograma(objetoDoJson(op.cronograma_ff));
+    const cron = normalizarCronograma(jsonbComoObjeto(op.cronograma_ff) ?? {});
     if (cron.meses === 0) {
       semCronograma(
         "A oportunidade não tem cronograma: só a proposta foi gerada. Grave com importar_cronograma e chame de novo."
@@ -889,7 +857,7 @@ const GERAR_DECLARACOES: Ferramenta = {
     const { data } = pedido;
     const localFinal = pedido.local ?? localDaEmpresa(empresa);
     const cab = montarCabecalhoLicitacao({
-      info: objetoDoJson(op.orcamento_info),
+      info: jsonbComoObjeto(op.orcamento_info) ?? {},
       oportunidade: op,
       empresa,
       representante,
