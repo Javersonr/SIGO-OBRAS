@@ -136,14 +136,53 @@ export type SituacaoDoCaso =
       reiniciar: { rodada: number; motivo: string } | null;
     };
 
+/** `detalhe` do evento como objeto (objeto, ou texto JSON de um jsonb gravado como texto); null se não for. */
+function detalheDoEvento(detalhe: unknown): Record<string, unknown> | null {
+  let valor = detalhe;
+  if (typeof valor === "string") {
+    try {
+      valor = JSON.parse(valor);
+    } catch {
+      return null;
+    }
+  }
+  return valor && typeof valor === "object" && !Array.isArray(valor)
+    ? (valor as Record<string, unknown>)
+    : null;
+}
+
 /**
- * Onde o aluno está no caso, refeito das escolhas da rodada atual sobre o roteiro de hoje. Roteiro inválido: recusa
- * `CASO_INVALIDO`. Caminho gravado que não confere (o RH mudou o roteiro): a rodada seguinte começa da primeira etapa,
- * e `reiniciar` diz o que gravar na trilha.
+ * Tira da trilha os `caso_escolha` repetidos (duplo clique, duas abas, repetição do pedido): dois eventos com a mesma
+ * chave (`detalhe.rodada`, `detalhe.etapa`, `detalhe.passagem`) são o MESMO clique gravado duas vezes (as duas
+ * requisições leram o mesmo estado), e vale o primeiro, na ordem de gravação (o `id` da trilha). Sem o descarte, o
+ * segundo evento não confere com o caminho refeito e o caso recomeçaria como `caso_alterado` (falso), inclusive no
+ * clique final. A chave é exata: `passagem` sobe a cada visita à etapa, então duas escolhas legítimas da mesma
+ * rodada nunca repetem (etapa, passagem), nem num laço de opções inseguras. Evento sem chave completa (rodada
+ * inteira, etapa em texto, passagem inteira) fica como está, para `escolhasDaRodada` decidir; os outros eventos
+ * (`caso_reiniciado`) passam direto.
+ */
+function semEscolhasRepetidas(eventos: EventoDoCaso[]): EventoDoCaso[] {
+  const vistas = new Set<string>();
+  return eventos.filter((e) => {
+    if (e?.evento !== EVENTO_CASO_ESCOLHA) return true;
+    const d = detalheDoEvento(e.detalhe);
+    if (!d || !Number.isInteger(d.rodada) || typeof d.etapa !== "string") return true;
+    if (!Number.isInteger(d.passagem)) return true;
+    const chave = JSON.stringify([d.rodada, d.etapa, d.passagem]);
+    if (vistas.has(chave)) return false;
+    vistas.add(chave);
+    return true;
+  });
+}
+
+/**
+ * Onde o aluno está no caso, refeito das escolhas da rodada atual sobre o roteiro de hoje (sem os cliques repetidos:
+ * `semEscolhasRepetidas`). Roteiro inválido: recusa `CASO_INVALIDO`. Caminho gravado que não confere (o RH mudou o
+ * roteiro): a rodada seguinte começa da primeira etapa, e `reiniciar` diz o que gravar na trilha.
  */
 export function situacaoDoCaso(conteudo: unknown, eventos: EventoDoCaso[]): SituacaoDoCaso {
   if (validarCaso(conteudo).length > 0) return { recusa: recusaDoCaso("CASO_INVALIDO") };
-  const { rodada, escolhas } = escolhasDaRodada(eventos);
+  const { rodada, escolhas } = escolhasDaRodada(semEscolhasRepetidas(eventos));
   const estado = estadoDoCaso(conteudo, escolhas);
   if (estado.valido) return { recusa: null, rodada, escolhas, estado, reiniciar: null };
   if (estado.motivo !== "CAMINHO_DIVERGENTE") return { recusa: recusaDoCaso("CASO_INVALIDO") };

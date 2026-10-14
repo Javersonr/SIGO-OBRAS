@@ -148,9 +148,9 @@ const ROTEIRO_NOVO = {
 };
 
 const primeiro = () => 0;
-const escolhaGravada = (rodada: number, etapa: string, opcao: number): Evento => ({
+const escolhaGravada = (rodada: number, etapa: string, opcao: number, passagem = 1): Evento => ({
   evento: EVENTO_CASO_ESCOLHA,
-  detalhe: { rodada, etapa, opcao, segura: true, proxima: null, passagem: 1 },
+  detalhe: { rodada, etapa, opcao, segura: true, proxima: null, passagem },
 });
 
 const AULAS = ok([
@@ -324,6 +324,77 @@ test("situacaoDoCaso: roteiro alterado depois das escolhas recomeça a rodada (c
   assert.deepEqual(depois.escolhas, [{ etapa: "n1", opcao: 1 }]);
   assert.equal(depois.estado.etapaAtual, "n1");
   assert.equal(depois.estado.passagens.n1, 2);
+});
+
+// ------------------------------------------------------------------------------ duplo clique (revisão da Task 9)
+
+test("situacaoDoCaso: a mesma escolha gravada duas vezes (duplo clique) vale uma só: sem reinício falso, na etapa a que a 1ª levou", () => {
+  const s = situacao(ROTEIRO, [escolhaGravada(1, "e1", 0, 1), escolhaGravada(1, "e1", 0, 1)]);
+  assert.equal(s.reiniciar, null);
+  assert.equal(s.rodada, 1);
+  assert.deepEqual(s.escolhas, [{ etapa: "e1", opcao: 0 }]);
+  assert.equal(s.estado.etapaAtual, "e2");
+  assert.equal(s.estado.passagens.e2, 1);
+});
+
+test("situacaoDoCaso: a escolha FINAL duplicada não reinicia a rodada: concluir passa e conta um clique para ela", () => {
+  const s = situacao(ROTEIRO, [
+    escolhaGravada(1, "e1", 0, 1),
+    escolhaGravada(1, "e2", 0, 1),
+    escolhaGravada(1, "e2", 0, 1),
+  ]);
+  assert.equal(s.reiniciar, null);
+  assert.equal(s.estado.fim, true);
+  const conclusao = conclusaoDoCaso(s);
+  if (conclusao.recusa) return assert.fail(conclusao.recusa.mensagem);
+  assert.deepEqual(conclusao.eventoExtra, {
+    evento: "caso_concluido",
+    detalhe: { rodada: 1, escolhas: 2 },
+  });
+});
+
+test("situacaoDoCaso: duas opções DIFERENTES na mesma (rodada, etapa, passagem): vale a primeira gravada", () => {
+  // e1 opção 1 (insegura) leva a r1; a opção 0 (segura), gravada depois por outra aba, é descartada
+  const s = situacao(ROTEIRO, [escolhaGravada(1, "e1", 1, 1), escolhaGravada(1, "e1", 0, 1)]);
+  assert.equal(s.reiniciar, null);
+  assert.deepEqual(s.escolhas, [{ etapa: "e1", opcao: 1 }]);
+  assert.equal(s.estado.etapaAtual, "r1");
+  assert.deepEqual(s.estado.ultimo, { comentario: "Errado 1", segura: false });
+});
+
+test("situacaoDoCaso: o laço legítimo (a mesma opção insegura duas vezes seguidas, passagens 1 e 2) conta as duas", () => {
+  const s = situacao(ROTEIRO, [
+    escolhaGravada(1, "e1", 1, 1),
+    escolhaGravada(1, "r1", 1, 1),
+    escolhaGravada(1, "r1", 1, 2),
+  ]);
+  assert.equal(s.reiniciar, null);
+  assert.deepEqual(s.escolhas, [
+    { etapa: "e1", opcao: 1 },
+    { etapa: "r1", opcao: 1 },
+    { etapa: "r1", opcao: 1 },
+  ]);
+  assert.equal(s.estado.etapaAtual, "r1");
+  assert.equal(s.estado.passagens.r1, 3);
+});
+
+test("situacaoDoCaso: o duplicado também é descartado com o detalhe em texto JSON; rodadas diferentes não se confundem", () => {
+  const comoTexto = (e: Evento): Evento => ({ ...e, detalhe: JSON.stringify(e.detalhe) });
+  const s = situacao(ROTEIRO, [
+    comoTexto(escolhaGravada(1, "e1", 0, 1)),
+    escolhaGravada(1, "e1", 0, 1),
+  ]);
+  assert.equal(s.reiniciar, null);
+  assert.equal(s.estado.etapaAtual, "e2");
+  // a mesma (etapa, passagem) em outra rodada é outra escolha: o reinício marca a rodada 2 e as da 2 valem
+  const depois = situacao(ROTEIRO_NOVO, [
+    escolhaGravada(1, "n1", 1, 1),
+    { evento: EVENTO_CASO_REINICIADO, detalhe: { rodada: 2, motivo: "caso_alterado" } },
+    escolhaGravada(2, "n1", 1, 1),
+  ]);
+  assert.equal(depois.rodada, 2);
+  assert.equal(depois.reiniciar, null);
+  assert.deepEqual(depois.escolhas, [{ etapa: "n1", opcao: 1 }]);
 });
 
 // ------------------------------------------------------------------------------ respostas ao aluno
