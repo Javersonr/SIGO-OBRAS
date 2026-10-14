@@ -10,6 +10,7 @@ import {
   motivoSemCertificado,
   pendenciasParaEmitir,
   pendenciasParaPublicar,
+  questaoValida,
   requisitosDoCurso,
   TEXTO_PDF_DO_PROJETO_DESATUALIZADO,
 } from "./requisitos.ts";
@@ -22,6 +23,7 @@ import {
   motivoSemCertificado as motivoFront,
   pendenciasParaEmitir as emitirFront,
   pendenciasParaPublicar as publicarFront,
+  questaoValida as questaoValidaFront,
   requisitosDoCurso as requisitosFront,
   TEXTO_PDF_DO_PROJETO_DESATUALIZADO as textoPdfDesatualizadoFront,
 } from "../../../apps/web/src/lib/ead-requisitos.js";
@@ -432,4 +434,165 @@ test("requisito PROJETO (T25): só avisa, e só some com o PDF do projeto E a va
     const caso = { curso: { ...curso, ...valores }, aulas, questoes };
     assert.deepEqual(requisitosDoCurso(caso), requisitosFront(caso), JSON.stringify(valores));
   }
+});
+
+// --------------------------------------------- atividades interativas (spec 2026-10-14 §8), nas duas cópias
+const ROTEIRO_VALIDO = {
+  contexto: "Contexto sintético.",
+  etapas: [
+    {
+      id: "e1",
+      pergunta: "Decisão sintética?",
+      opcoes: [
+        { texto: "Segura", comentario: "Comentário da segura", segura: true, proxima: null },
+        { texto: "Insegura", comentario: "Comentário da insegura", segura: false, proxima: "e1" },
+      ],
+    },
+  ],
+  reflexao: "Reflexão sintética.",
+};
+const AULA_Q = "00000000-0000-4000-8000-000000000001";
+const AULA_C = "00000000-0000-4000-8000-000000000002";
+const AULA_T = "00000000-0000-4000-8000-000000000003";
+const ATIVIDADES = [
+  { id: AULA_Q, tipo: "questionario", duracao_seg: 900 },
+  { id: AULA_C, tipo: "caso", duracao_seg: 600 },
+  { id: AULA_T, tipo: "tarefa", conteudo_texto: "Instruções sintéticas", duracao_seg: 1200 },
+];
+const QUESTAO_DO_Q = {
+  aula_id: AULA_Q,
+  pergunta: "Pergunta sintética?",
+  opcoes: ["Alternativa A", "Alternativa B", "Alternativa C"],
+  correta: 1,
+};
+const PROVA_FINAL = Array.from({ length: 5 }, () => ({ aula_id: null }));
+const CASOS_OK = [{ aula_id: AULA_C, conteudo: ROTEIRO_VALIDO }];
+const COMPLETO = {
+  curso,
+  aulas: [...aulas, ...ATIVIDADES],
+  questoes: [...PROVA_FINAL, QUESTAO_DO_Q],
+  casos: CASOS_OK,
+};
+const trocarAtividade = (indice: number, mudanca: Record<string, unknown>) =>
+  ATIVIDADES.map((a, i) => (i === indice ? { ...a, ...mudanca } : a));
+const CASOS_DAS_ATIVIDADES: [string, Parameters<typeof requisitosDoCurso>[0], string[]][] = [
+  ["completo", COMPLETO, []],
+  [
+    "tarefa sem texto",
+    { ...COMPLETO, aulas: [...aulas, ...trocarAtividade(2, { conteudo_texto: "" })] },
+    ["CONTEUDO"],
+  ],
+  [
+    "tarefa só com espaços",
+    { ...COMPLETO, aulas: [...aulas, ...trocarAtividade(2, { conteudo_texto: "   " })] },
+    ["CONTEUDO"],
+  ],
+  ["questionário sem questões", { ...COMPLETO, questoes: PROVA_FINAL }, ["CONTEUDO"]],
+  [
+    "questionário só com questão inválida",
+    {
+      ...COMPLETO,
+      questoes: [...PROVA_FINAL, { ...QUESTAO_DO_Q, opcoes: ["Só uma"], correta: 0 }],
+    },
+    ["CONTEUDO"],
+  ],
+  [
+    "questão do questionário apagada",
+    {
+      ...COMPLETO,
+      questoes: [...PROVA_FINAL, { ...QUESTAO_DO_Q, deleted_at: "2026-10-14T00:00:00Z" }],
+    },
+    ["CONTEUDO"],
+  ],
+  [
+    "questão de outra aula",
+    { ...COMPLETO, questoes: [...PROVA_FINAL, { ...QUESTAO_DO_Q, aula_id: AULA_T }] },
+    ["CONTEUDO"],
+  ],
+  [
+    "caso sem roteiro (chamador antigo, sem casos)",
+    { ...COMPLETO, casos: undefined },
+    ["CONTEUDO"],
+  ],
+  [
+    "caso com roteiro inválido",
+    { ...COMPLETO, casos: [{ aula_id: AULA_C, conteudo: { etapas: [] } }] },
+    ["CONTEUDO"],
+  ],
+  [
+    "roteiro apagado",
+    { ...COMPLETO, casos: [{ ...CASOS_OK[0], deleted_at: "2026-10-14T00:00:00Z" }] },
+    ["CONTEUDO"],
+  ],
+  [
+    "atividade sem tempo previsto",
+    { ...COMPLETO, aulas: [...aulas, ...trocarAtividade(0, { duracao_seg: 0 })] },
+    ["CONTEUDO"],
+  ],
+  [
+    "aula sem id não casa com questão sem aula",
+    {
+      ...COMPLETO,
+      aulas: [...aulas, { tipo: "questionario", duracao_seg: 900 }],
+      questoes: PROVA_FINAL,
+    },
+    ["CONTEUDO"],
+  ],
+  [
+    "questões dos questionários não contam para a prova final",
+    {
+      ...COMPLETO,
+      questoes: [
+        ...PROVA_FINAL.slice(1),
+        ...Array.from({ length: 5 }, (_, i) => ({ ...QUESTAO_DO_Q, pergunta: `Pergunta ${i}?` })),
+      ],
+    },
+    ["QUESTOES"],
+  ],
+  [
+    "LASTRO soma o tempo das atividades (2 h de carga, 1 h de aula + 45 min de atividades)",
+    { ...COMPLETO, curso: { ...curso, carga_horaria_horas: 2 } },
+    ["LASTRO"],
+  ],
+  [
+    "LASTRO coberto com as atividades (2 h de carga, 1 h de aula + 1 h de atividades)",
+    {
+      ...COMPLETO,
+      curso: { ...curso, carga_horaria_horas: 2 },
+      aulas: [...aulas, ...trocarAtividade(2, { duracao_seg: 2100 })],
+    },
+    [],
+  ],
+  ["chamador antigo sem atividades e sem casos", { curso, aulas, questoes }, []],
+];
+
+test("atividades (spec §8): CONTEUDO por tipo, QUESTOES só da prova final e LASTRO com as atividades", () => {
+  for (const [nome, dados, esperado] of CASOS_DAS_ATIVIDADES) {
+    assert.deepEqual(pendencias(dados), esperado, nome);
+    assert.deepEqual(requisitosDoCurso(dados), requisitosFront(dados), nome);
+  }
+});
+
+test("questaoValida: pergunta, 2+ alternativas preenchidas e a correta entre elas (igual no front)", () => {
+  const ok = { pergunta: "Pergunta?", opcoes: ["A", "B"], correta: 0 };
+  assert.equal(questaoValida(ok), true);
+  assert.equal(questaoValida({ ...ok, opcoes: ["A", "B", "C", "D"], correta: 3 }), true);
+  const ruins: unknown[] = [
+    null,
+    {},
+    "texto",
+    { ...ok, pergunta: "  " },
+    { ...ok, pergunta: 3 },
+    { ...ok, opcoes: ["A"] },
+    { ...ok, opcoes: ["A", " "] },
+    { ...ok, opcoes: '["A","B"]' },
+    { ...ok, opcoes: [1, 2] },
+    { ...ok, correta: 2 },
+    { ...ok, correta: -1 },
+    { ...ok, correta: "1" },
+    { ...ok, correta: 0.5 },
+  ];
+  for (const q of ruins) assert.equal(questaoValida(q), false, JSON.stringify(q));
+  for (const q of [ok, ...ruins])
+    assert.equal(questaoValida(q), questaoValidaFront(q), JSON.stringify(q));
 });
