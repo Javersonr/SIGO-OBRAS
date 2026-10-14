@@ -43,10 +43,15 @@ const semAcento = (v: unknown) =>
     .replace(/[\u0300-\u036f]/g, "");
 
 /**
- * O arquivo está na pasta "Edital" pela regra da tela (apps/web/src/lib/pastas-arquivo.js, `pastaDoArquivo`): vale a
- * pasta gravada, comparada sem maiúsculas, acento nem espaço sobrando (`normalizarTexto` da tela). O upload manual
- * grava só a pasta "Edital", sem categoria. A tela, sem pasta gravada, manda a categoria do edital para essa mesma
- * pasta: isso o checklist já cobre pela categoria.
+ * A pasta "Edital" é comparada como a tela faz (apps/web/src/lib/pastas-arquivo.js, `pastaDoArquivo`): vale a pasta
+ * gravada, sem maiúsculas, acento nem espaço sobrando (`normalizarTexto` da tela). O upload manual grava só a pasta
+ * "Edital", sem categoria. A tela, sem pasta gravada, manda a categoria do edital para essa mesma pasta: isso o
+ * checklist já cobre pela categoria.
+ *
+ * O servidor, porém, conta o edital por categoria OU por pasta, e a tela decide por uma regra só: um arquivo com
+ * categoria de edital que foi movido para outra pasta conta aqui, e a tela o mostra na outra pasta. A diferença é de
+ * propósito: o arquivo existe nos Arquivos da oportunidade, então contá-lo é inofensivo (o contrário mandaria anexar
+ * de novo um edital que já está lá).
  */
 const chaveDaPasta = (v: unknown) =>
   semAcento(
@@ -671,10 +676,11 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
   // gravada sem NENHUMA exigência de habilitação (a habilitação pode estar noutro anexo que ninguém leu).
   const situacaoDaAnaliseGravada = situacaoDaAnalise(p.extraido);
   const semAnalise = situacaoDaAnaliseGravada === "com_exigencias" ? 0 : 1;
-  // O Atende? entra na conta quando o edital exige técnica ou registro que nenhum documento cobre. Com técnica ele
-  // precisa de veredito E de ao menos uma CAT citada; só com registro basta o veredito. Veredito que não é "atende"
-  // não é falta: "atende_parcialmente" é aviso da ferramenta e "nao_atende" é o `atende_negativo` abaixo (o veredito
-  // existe; pedir para gravar de novo não resolveria).
+  // O Atende? entra na conta quando o edital exige técnica, registro que nenhum documento cobre ou qualificação
+  // econômico-financeira (`exigeAtende`). Com técnica ele precisa de veredito E de ao menos uma CAT citada; só com
+  // registro ou só com a parte econômica basta o veredito. Veredito que não é "atende" não é falta:
+  // "atende_parcialmente" é aviso da ferramenta e "nao_atende" é o `atende_negativo` abaixo (o veredito existe; pedir
+  // para gravar de novo não resolveria).
   const veredito = vereditoDoAtende(atende);
   const semAtende =
     exigeAtende(extraido) &&
@@ -766,7 +772,9 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
     );
   }
   if (semAtende) {
-    passos.push("Confira o acervo técnico contra o edital e grave com registrar_atende.");
+    passos.push(
+      "Confira o acervo técnico contra o edital e grave com registrar_atende (num edital só com qualificação econômica, a chamada vai com itens: [])."
+    );
   }
   if (atendeNegativo) {
     passos.push(

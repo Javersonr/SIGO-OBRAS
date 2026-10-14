@@ -66,18 +66,27 @@ Tudo abaixo é leitura ou conferência. Os comandos que falam com produção só
    npx supabase@2.118.0 db query --linked "show server_version;"
    ```
 
-   O esperado na primeira consulta: o trigger **`set_updated_at`** (é o que `attach_updated_at_trigger` cria, nas tabelas
-   que têm `updated_at`), o **`referencias_da_empresa`** nas tabelas que o têm (por exemplo `arquivo_texto_pagina`, da 0149) e os triggers já conhecidos das tabelas antigas. As tabelas novas das migrações 0154 a 0156 (`acervo_documento`
-   com `acervo_documento_versao`, `habilitacao_config` e `modelo_declaracao`) ainda não existem e não entram nesta
-   consulta. Se aparecer um trigger com **outro nome**, **cole o resultado no chat e pare** antes de aplicar qualquer
-   migração. A versão do Postgres precisa ser 13 ou mais nova.
+   Os nomes esperados na primeira consulta, por tabela (conferidos nas migrações; `set_updated_at` é o que
+   `attach_updated_at_trigger` cria):
+
+   | Tabela                 | Triggers esperados                                          |
+   | ---------------------- | ----------------------------------------------------------- |
+   | `empresa`              | `set_updated_at`                                            |
+   | `oportunidade`         | `set_updated_at`                                            |
+   | `usuario_empresa`      | `set_updated_at` e `usuario_empresa_protege_vinculo` (0115) |
+   | `arquivo_oportunidade` | `set_updated_at`                                            |
+   | `arquivo_texto_pagina` | `referencias_da_empresa` e `set_updated_at` (0149)          |
+
+   O `trg_oportunidade_sincroniza_projetos` (criado na 0040) **não** é esperado: a 0085 o removeu. As tabelas novas das
+   migrações 0154 a 0156 (`acervo_documento` com `acervo_documento_versao`, `habilitacao_config` e `modelo_declaracao`)
+   ainda não existem e não entram nesta consulta. Se aparecer **outro nome**, **pare e cole o resultado no chat** antes
+   de aplicar qualquer migração. A versão do Postgres precisa ser 13 ou mais nova.
 
 5. **Os smokes não deixam nada gravado.** Os três terminam em `rollback`. O da 0155 usa empresas sintéticas e roda a
    função de alerta (a mesma varredura do cron): **não rodar perto das 08:45 de Brasília**, que é o horário do job
-   `alertar_documentos_habilitacao` (`45 11 * * *`, em UTC). O passo 11 desse smoke, o último, prova que a função falha
-   quando TODAS as empresas falham: para isso apaga (só dentro da transação) os avisos de habilitação de hoje e cria um
-   gatilho de teste em `notificacao`, o que pede uma trava na tabela até o `rollback` (quem grava aviso espera alguns
-   instantes). Se a trava não vier em 3 s o smoke desiste com erro de `lock_timeout`: é só rodar de novo.
+   `alertar_documentos_habilitacao` (`45 11 * * *`, em UTC). O passo 11, o último, só confere, pelo texto da função
+   aplicada, que ela falha quando TODAS as empresas falham: provocar a falha exigiria um gatilho na tabela `notificacao`
+   (a de todas as empresas), e o smoke não faz isso em produção.
 6. **Árvore limpa.** O deploy de função leva a árvore de trabalho inteira de `_shared/`. Antes de publicar qualquer
    função:
 
@@ -263,8 +272,11 @@ Escolhas que apareceram durante a execução e não estavam no plano. O Javerson
   falta o que foi enviado pela tela. Exceção: o edital enviado pela tela conta (arquivo na pasta "Edital").
 - **`anexar_habilitacao` para depois de 45 s.** São até 60 cópias em sequência, e o Claude tem um tempo-limite por
   chamada. Depois de 45 s a ferramenta não inicia mais cópia e devolve o que ficou em `nao_processados`, com o aviso
-  "Ainda faltam N documento(s): chame anexar_habilitacao de novo para continuar". Chamar de novo é seguro (o que já foi
-  copiado não é duplicado). A `anexar_acervo` (até 40 CATs) não tem essa trava.
+  "Ainda faltam N documento(s): chame anexar_habilitacao de novo com tipos = <os tipos de nao_processados> para
+  continuar". Repetir a chamada igual recomeçaria do mesmo ponto (ela percorre sempre na mesma ordem), por isso o aviso
+  manda passar em `tipos` os tipos que ficaram para trás: a chamada seguinte só olha o que faltou. É seguro (o que já foi
+  copiado não é duplicado; se um tipo foi cortado no meio, os documentos dele já copiados são copiados de novo, no lugar).
+  A `anexar_acervo` (até 40 CATs) não tem essa trava.
 - **A função pública `habilitacao-lembretes` responde só `{ success: true }`** (as contagens da fila ficam no log da
   função). Quem chamar a função de fora, várias vezes, durante uma queda do WhatsApp pode esgotar as 3 tentativas das
   mensagens pendentes: elas ficam na fila com o erro e não saem mais. Risco aceito: a função só envia o que o banco já
@@ -361,4 +373,5 @@ Parte C — ferramentas do conector:
 - `180712a` fix(conector): checklist não dá "pronto" sem análise do edital e não confunde declaração com certidão
 - `2ff61d6` feat(conector): registra as seis ferramentas de habilitação e o roteiro Montar a licitação completa
 - `d980b65` fix(conector): checklist trava o pronto com análise vazia, registro sem Atende? e Atende? negativo
-- Onda final da revisão geral: (este commit)
+- `333fff8` fix(habilitacao): onda final da revisão — checklist reconhece edital e declaração, prompt autossuficiente e ajustes
+- Correção da re-revisão: smoke da 0155 sem trava em `notificacao` e `anexar_habilitacao` que continua de onde parou (este commit)

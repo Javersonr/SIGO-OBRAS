@@ -474,6 +474,11 @@ test("os três textos do edital mandam anexar por anexar_edital_por_url e deixam
   }
   assert.ok(passo8.includes(CATEGORIAS_EDITAL.join(", ")), "o passo 8 perdeu as categorias");
   assert.ok(instrucoes.length <= 800, `INSTRUCOES_EDITAL com ${instrucoes.length}`);
+  // a frase que aponta para o método completo (o prompt analisar_edital) continua nas instruções
+  assert.ok(
+    instrucoes.endsWith("O prompt analisar_edital traz o método completo."),
+    "as instruções do edital perderam a frase que aponta para o prompt analisar_edital"
+  );
 });
 
 test("criar: falha no histórico não desfaz a gravação", async () => {
@@ -658,6 +663,37 @@ test("registrar_atende: grava o atende pela RPC e devolve sem os valores da empr
   const json = r.resultado.content[0].text;
   assert.equal(json.includes(brl(PL)), false);
   assert.equal(json.includes(fmtNum(PL)), false);
+});
+
+test("registrar_atende: edital só com qualificação econômica aceita itens: [] e o SIGO calcula a parte econômica", async () => {
+  // é o que o passo do checklist manda ("a chamada vai com itens: []"): sem exigência técnica ou de registro não há o que avaliar
+  const soEconomica = structuredClone(EXTRAIDO_GRAVADO);
+  soEconomica.habilitacao.tecnica_operacional = [];
+  soEconomica.habilitacao.tecnica_profissional = [];
+  soEconomica.habilitacao.registros = [];
+  assert.ok(soEconomica.habilitacao.economica.length > 0);
+  const { fake, deps } = montar((c) =>
+    c.tabela === "oportunidade" && c.op === "select"
+      ? {
+          data: {
+            id: OP_A,
+            edital_analise: { versao: 1, extraido: soEconomica, atende: null, arquivos: [] },
+          },
+        }
+      : responderAtende(c)
+  );
+  const r = await ferramenta("registrar_atende").executar(
+    { oportunidade_id: OP_A, itens: [] },
+    deps
+  );
+  assert.equal(r.resultado.isError, false);
+  const mescla = fake.chamadas.find((c) => c.tabela === "edital_analise_mesclar")!;
+  const gravado = (
+    mescla.payload as { p_patch: { atende: { itens: { exigencia_id: string; status: string }[] } } }
+  ).p_patch.atende;
+  assert.ok(gravado.itens.length > 0);
+  assert.ok(gravado.itens.every((i) => i.exigencia_id.startsWith("ec")));
+  assert.equal(gravado.itens.find((i) => i.exigencia_id === "ec1")?.status, "atende");
 });
 
 test("registrar_atende: inválido dá validacao e não grava; sem análise dá sem_analise", async () => {

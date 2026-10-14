@@ -86,8 +86,10 @@ export const MAX_ATESTADOS_POR_CHAMADA = 40;
 const MAX_TIPOS = 20;
 /**
  * Até 60 cópias em sequência (baixar e enviar cada arquivo) podem passar do tempo-limite da ferramenta no Claude.
- * Depois deste tempo a `anexar_habilitacao` não INICIA mais cópia e devolve o que sobrou em `nao_processados`;
- * quem chama repete a chamada (a `origem` troca no lugar o que já foi copiado, sem duplicar).
+ * Depois deste tempo a `anexar_habilitacao` não INICIA mais cópia e devolve o que sobrou em `nao_processados`.
+ * Repetir a chamada igual RECOMEÇA (o laço percorre sempre na mesma ordem e para no mesmo ponto), por isso o aviso manda
+ * repetir com `tipos` = os tipos de `nao_processados`: a nova chamada só olha o que faltou. A `origem` troca no lugar o
+ * que já foi copiado, sem duplicar; se um tipo foi cortado no meio, os documentos dele já copiados são copiados de novo.
  */
 export const TEMPO_MAXIMO_DE_COPIAS_MS = 45_000;
 
@@ -298,7 +300,7 @@ const ANEXAR_HABILITACAO: Ferramenta = {
     name: "anexar_habilitacao",
     title: "Anexar a habilitação da empresa à oportunidade",
     description:
-      'Copia para a pasta "Envelope 02 – Habilitação" da oportunidade os documentos VÁLIDOS da biblioteca de habilitação da empresa (certidões, contrato social, balanço…), sem ninguém enviar arquivo. Sem tipos, anexa todos os documentos em vigor. Documento vencido não é anexado: volta em vencidos; o que a empresa não tem volta em faltam. Repetir a chamada troca os arquivos no lugar, sem duplicar. Cópias antigas que já estavam na pasta e vêm de versão substituída, removida ou vencida voltam em copias_desatualizadas (o SIGO não apaga): avise o usuário para excluí-las. Se a chamada passar de 45 s ela para de iniciar cópias e devolve nao_processados com um aviso: chame de novo para continuar (o que já foi copiado não é duplicado). Leia sempre avisos e falhas e repasse ao usuário.',
+      'Copia para a pasta "Envelope 02 – Habilitação" da oportunidade os documentos VÁLIDOS da biblioteca de habilitação da empresa (certidões, contrato social, balanço…), sem ninguém enviar arquivo. Sem tipos, anexa todos os documentos em vigor. Documento vencido não é anexado: volta em vencidos; o que a empresa não tem volta em faltam. Repetir a chamada troca os arquivos no lugar, sem duplicar. Cópias antigas que já estavam na pasta e vêm de versão substituída, removida ou vencida voltam em copias_desatualizadas (o SIGO não apaga): avise o usuário para excluí-las. Se a chamada passar de 45 s ela para de iniciar cópias e devolve nao_processados com um aviso: chame de novo com tipos = os tipos de nao_processados para continuar (o que já foi copiado não é duplicado). Leia sempre avisos e falhas e repasse ao usuário.',
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -441,8 +443,10 @@ const ANEXAR_HABILITACAO: Ferramenta = {
     const avisos: string[] = [];
     // o primeiro aviso: sem ele o Claude daria a habilitação por copiada com documentos ainda fora da pasta
     if (naoProcessados.length > 0) {
+      // com `tipos` = os pendentes a chamada seguinte CONTINUA; sem eles recomeçaria dos mesmos primeiros documentos
+      const tiposPendentes = [...new Set(naoProcessados.map((d) => d.tipo))];
       avisos.push(
-        `Ainda faltam ${naoProcessados.length} documento(s): chame anexar_habilitacao de novo para continuar (o que já foi copiado não é duplicado).`
+        `Ainda faltam ${naoProcessados.length} documento(s): chame anexar_habilitacao de novo com tipos = ${tiposPendentes.join(", ")} para continuar (o que já foi copiado não é duplicado).`
       );
     }
     const antesDaSessao = anexados.filter((a) => a.vence_antes_da_sessao).length;
@@ -504,7 +508,7 @@ const ANEXAR_HABILITACAO: Ferramenta = {
         })),
         faltam,
         falhas,
-        // só quando a chamada parou por tempo (ausente = nada ficou para trás); o aviso manda chamar de novo
+        // só quando a chamada parou por tempo (ausente = nada ficou para trás); o aviso manda chamar de novo com os tipos daqui
         ...(naoProcessados.length > 0
           ? {
               nao_processados: naoProcessados.map((d) => ({
@@ -1014,7 +1018,7 @@ const AVISO_SEM_CRONOGRAMA =
 const AVISO_CRONOGRAMA_ANTIGO =
   "Há arquivos de cronograma gerados antes na pasta, mas a oportunidade não tem cronograma gravado.";
 const AVISO_ATENDE_NAO_CONCLUI =
-  "O Atende? desta oportunidade não concluiu que a empresa atende à qualificação técnica.";
+  "O Atende? desta oportunidade não concluiu que a empresa atende às exigências de qualificação do edital.";
 const AVISO_VISITA_TECNICA =
   "O edital exige visita técnica: confira a data e o atestado de visita.";
 const AVISO_GARANTIA_PROPOSTA = "O edital exige garantia da proposta: confira o valor e a forma.";
@@ -1131,7 +1135,8 @@ const CHECKLIST_HABILITACAO: Ferramenta = {
       if (temArquivoDeCronograma) avisos.push(AVISO_CRONOGRAMA_ANTIGO);
     }
     // veredito que não é "atende" não vira falta (o Atende? existe), mas o usuário precisa saber; só vale quando o
-    // edital exige o Atende? (técnica ou registro fora do CREA; sem itens o veredito é sempre "atende_parcialmente")
+    // edital exige o Atende? (técnica, registro fora do CREA ou econômico-financeira; sem itens o veredito é sempre
+    // "atende_parcialmente")
     const veredito = vereditoDoAtende(analise?.atende);
     if (exigeAtende(analise?.extraido) && veredito !== null && veredito !== "atende") {
       avisos.push(AVISO_ATENDE_NAO_CONCLUI);
@@ -1167,7 +1172,7 @@ export const FERRAMENTAS_HABILITACAO: Ferramenta[] = [
 
 export const INSTRUCOES_HABILITACAO: string[] = [
   "Arquivos da licitação: o SIGO gera, copia ou baixa no servidor; você manda só dados. Não tente enviar arquivo do chat.",
-  "gerar_documentos_proposta (proposta e cronograma em PDF e Excel), gerar_declaracoes (modelos da empresa ou o texto do edital), anexar_habilitacao (certidões e documentos válidos da biblioteca), anexar_acervo (CATs do Atende?) e anexar_edital_por_url (link público https do edital).",
+  "Declarações: modelo da empresa ou texto do edital. Habilitação: biblioteca e CATs.",
   "Documento vencido não é anexado: avise o usuário para atualizar em Acervo técnico → Documentos e certidões.",
   "Todo PDF gerado fica como falta assinar: o usuário assina no gov.br e envia pela aba Arquivos.",
   "Nunca diga que algo foi anexado, gerado ou válido sem a resposta da ferramenta dizer isso.",
@@ -1179,6 +1184,15 @@ export const INSTRUCOES_HABILITACAO: string[] = [
  * têm numeração própria ("1. QUALIFICAÇÃO…"), e só os passos do prompt começam por "N. " na margem.
  */
 const recuar = (linhas: readonly string[]): string[] => linhas.map((linha) => `    ${linha}`);
+
+/**
+ * A regra geral sobre o ler_acervo ("quantitativo com na_atividade_tecnica = true é o que a regra 3 chama de [ART]")
+ * explica uma regra do Atende?: vai junto das REGRAS DO ATENDE (passo 3); as outras regras gerais, no passo 2.
+ */
+const REGRAS_DO_ACERVO = REGRAS_GERAIS_EDITAL.filter((linha) => linha.includes("ler_acervo"));
+const REGRAS_GERAIS_DO_PASSO_2 = REGRAS_GERAIS_EDITAL.filter(
+  (linha) => !linha.includes("ler_acervo")
+);
 
 const MONTAR_LICITACAO_COMPLETA: PromptDef = {
   name: "montar_licitacao_completa",
@@ -1205,16 +1219,17 @@ const MONTAR_LICITACAO_COMPLETA: PromptDef = {
       "PASSOS (pare e pergunte ao usuário sempre que uma ferramenta devolver uma pergunta ou pedir confirmação)",
       "1. Chame empresa_atual e confirme com o usuário a empresa em que vai gravar.",
       "MÉTODO DE LEITURA DO EDITAL (para o passo 2)",
-      ...recuar(REGRAS_GERAIS_EDITAL),
+      ...recuar(REGRAS_GERAIS_DO_PASSO_2),
       ...recuar(METODO_LEITURA_EDITAL),
       "2. Edital: leia o edital que o usuário enviou (todas as páginas e anexos; se ele já está no SIGO, use ler_edital_anexado) seguindo o MÉTODO DE LEITURA acima, procure com buscar_oportunidades (nº/ano do edital) e grave a análise do edital e a oportunidade com criar_ou_atualizar_oportunidade. Se vierem duplicatas, mostre as candidatas e pergunte ao usuário antes de usar confirmar_nova: true.",
       "3. Atende?: leia TODAS as páginas de ler_acervo (ele é paginado: pagina 2, 3… até proxima_pagina ser null; um acervo lido pela metade leva a um Não atende errado), avalie as exigências técnicas e de registro com as REGRAS DO ATENDE abaixo, citando os atestados pelo id (UUID) em atestado_ids, e grave com registrar_atende, indicando em cats_anexar as CATs que comprovam. Não avalie as econômicas: o SIGO calcula com o balanço da empresa.",
       "REGRAS DO ATENDE (para o passo 3)",
       ...recuar(REGRAS_ATENDE),
+      ...recuar(REGRAS_DO_ACERVO),
       "4. Orçamento (a planilha e o cronograma da prefeitura são DADOS): faça os passos abaixo; dentro deles, o registrar_proposta e os arquivos ficam para o passo 5. Se o edital não trouxer a planilha, pule este passo e o 5 e diga isso no fim.",
       ...recuar(ROTEIRO_ORCAMENTO.map((linha) => `- ${linha}`)),
       "5. Proposta: chame registrar_proposta só se ainda não há versão registrada desta proposta (cada chamada cria uma versão nova; nenhuma ferramenta lista as versões, então vale o que você já chamou nesta conversa ou o que o usuário disser) e depois gerar_documentos_proposta (use validade_dias quando o edital fixar a validade da proposta). Se voltar orcamento_grande_demais (mais de 800 linhas), diga ao usuário para gerar a proposta pela tela, em Orçamento → Exportar proposta. Mostre os avisos (eles dizem, por exemplo, se o cronograma não saiu e por quê), as falhas e mantidos_assinados: o que já estava assinado não é refeito, e para refazer o usuário exclui o PDF assinado na aba Arquivos.",
-      "6. Habilitação: chame anexar_habilitacao; se voltar nao_processados (a chamada parou por tempo), chame de novo até não sobrar nenhum. Mostre ao usuário os vencidos e os que faltam (eles não são anexados), os avisos, as falhas e as copias_desatualizadas: peça para ele excluir essas cópias antigas da pasta do envelope, porque o conector não apaga arquivo.",
+      "6. Habilitação: chame anexar_habilitacao; se voltar nao_processados (a chamada parou por tempo), chame de novo com tipos = os tipos de nao_processados, até não sobrar nenhum. Mostre ao usuário os vencidos e os que faltam (eles não são anexados), os avisos, as falhas e as copias_desatualizadas: peça para ele excluir essas cópias antigas da pasta do envelope, porque o conector não apaga arquivo.",
       "7. Acervo: chame anexar_acervo (sem atestado_ids ele usa as CATs do Atende?). Liste as CATs que estão sem PDF (sem_pdf) e as falhas.",
       "8. Declarações: veja no edital quais declarações são exigidas. Para as comuns, use os modelos (nao_emprega_menor, fato_impeditivo, me_epp, requisitos_habilitacao, reserva_cargos, elaboracao_independente). Quando o edital traz modelo próprio, copie o título e o texto do edital, trocando os espaços em branco pelas variáveis {empresa} {cnpj} {endereco} {orgao} {edital} {objeto} {local} {data} {representante} {cargo} {cpf}. Chame gerar_declaracoes com todas de uma vez (pasta Credenciamento quando o edital pedir a declaração no credenciamento). Mostre mantidas_assinadas, as falhas (por formato, PDF ou Word) e os avisos de variável sem valor (variaveis_sem_valor): o espaço em branco fica para o usuário preencher.",
       '9. Edital nos Arquivos: se o edital tem link público de download (https), chame anexar_edital_por_url com o link do ARQUIVO e a categoria (edital, termo_referencia, anexo_edital ou errata). Se voltar ja_estava_anexado: true, nada mudou. Se o arquivo foi trocado, o texto preparado do edital foi descartado: peça ao usuário para clicar de novo em "Preparar para o Claude" na aba Arquivos antes de você usar ler_edital_anexado. Sem link, use gerar_link_envio e peça ao usuário para soltar os arquivos na página.',

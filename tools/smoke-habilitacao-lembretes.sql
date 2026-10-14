@@ -55,17 +55,11 @@
 --  10. os DOIS jobs existem (o alerta às 11:45 UTC e o reenvio a cada 30 minutos), as três
 --      policies restritivas da configuração existem, cada uma no seu comando, a fila tem a coluna
 --      da reserva e o anon não executa a RPC;
---  11. falha de empresa (por último; ver a trava abaixo). Um gatilho de teste em notificacao, que só
---      existe dentro da transação, faz a criação do aviso falhar: (a) só na empresa A: o aviso dela é
---      desfeito, a B recebe e a função NÃO falha; (b) em TODAS as empresas: a função falha, com a
---      contagem e a última mensagem, sem o id de empresa, e não deixa aviso para trás. É o que faz o
---      job do cron aparecer como falho (e não como sucesso com o erro engolido).
+--  11. a versão aplicada de alertar_documentos_habilitacao() é a corrigida: o texto da função (lido de
+--      pg_get_functiondef, sem trava em nenhuma tabela) traz a contagem de empresas e de falhas e a
+--      falha de propósito quando TODAS as empresas falham, que é o que faz o job do cron aparecer como
+--      falho (e não como sucesso com o erro engolido). Uma versão anterior da função não passa aqui.
 -- Nenhum UUID fixo: as empresas são criadas em tempo de execução.
---
--- O passo 11 apaga (só dentro da transação) os avisos de habilitação DE HOJE de todas as empresas, para a
--- função precisar criá-los de novo, e cria um gatilho em public.notificacao: o CREATE TRIGGER pede a trava
--- SHARE ROW EXCLUSIVE na tabela até o ROLLBACK (quem grava aviso espera alguns instantes). O smoke desiste
--- em 3 s (lock_timeout) se não conseguir a trava: é só rodar de novo.
 --
 -- O WhatsApp NÃO sai daqui. O acionamento chama net.http_post quando há mensagem pendente, mas
 -- (a) o pg_net só grava o pedido numa tabela de fila e o worker dele só enxerga pedido de
@@ -79,7 +73,7 @@
 -- número de avisos antes e depois de cada chamada.
 --
 -- Como rodar (com a 0154 e a 0155 já aplicadas; quem roda é o Javerson):
---   supabase db query --linked -f tools/smoke-habilitacao-lembretes.sql
+--   npx supabase@2.118.0 db query --linked -f tools/smoke-habilitacao-lembretes.sql
 -- Deve terminar imprimindo "SMOKE TEST OK".
 -- ============================================================================
 
@@ -142,23 +136,6 @@ as $f$
   select count(*) from public.notificacao n where n.dados_extra ->> 'dedup_key' like 'habilitacao:%';
 $f$;
 
--- função do gatilho de teste do passo 11: falha a criação de um aviso quando o parâmetro de sessão
--- smoke.lemb_falha pede ('todas' = qualquer empresa; um uuid = só aquela empresa). O gatilho só existe dentro
--- do passo 11; some no ROLLBACK
-create or replace function public.smoke_lemb_falhar()
-returns trigger
-language plpgsql
-as $f$
-declare
-  v_modo text := coalesce(current_setting('smoke.lemb_falha', true), '');
-begin
-  if v_modo = 'todas' or v_modo = new.empresa_id::text then
-    raise exception 'smoke: falha injetada na criação do aviso';
-  end if;
-  return new;
-end;
-$f$;
-
 do $$
 declare
   v_a uuid;       -- empresa A
@@ -189,9 +166,7 @@ declare
   v_pendente_real boolean;
   v_ordem text[];
   v_ordem_esperada text[];
-  v_levantou boolean;
-  v_estado text;
-  v_sem_ninguem boolean;
+  v_def text;
   r record;
 begin
   if to_regclass('public.acervo_documento') is null then
@@ -842,98 +817,27 @@ begin
   end if;
   raise notice '[10] jobs agendados, policies restritivas, reserva da fila e privilégios da RPC ok';
 
-  -- 11. falha de empresa: o aviso dela é desfeito, e a função só falha quando TODAS falham -----------------------
-  -- Fica por último de propósito: o gatilho de teste é criado em public.notificacao, e CREATE TRIGGER pede a
-  -- trava SHARE ROW EXCLUSIVE nela, que vale até o ROLLBACK e faz quem grava aviso esperar (alguns instantes).
-  -- Com lock_timeout o smoke desiste em 3 s em vez de ficar na fila de trava; se isso acontecer, rode de novo.
-  -- O gatilho falha a CRIAÇÃO do aviso: é o ponto de falha que dá para provocar sem mexer na função. Com o
-  -- parâmetro smoke.lemb_falha = <uuid de uma empresa> falha só aquela; com 'todas', toda empresa. Os avisos de
-  -- hoje são apagados antes (só dentro desta transação): a função não cria o aviso que já existe, e sem
-  -- tentar criar não há onde falhar.
-  set local lock_timeout = '3s';
-  update public.notificacao set deleted_at = now()
-   where deleted_at is null and dados_extra ->> 'dedup_key' like 'habilitacao:%:' || v_hoje::text || '|%';
-  set constraints all immediate;   -- sem evento de gatilho pendente para atrapalhar o CREATE TRIGGER
-  create trigger smoke_lemb_falha before insert on public.notificacao
-    for each row execute function public.smoke_lemb_falhar();
-
-  -- 11.1 só a empresa A falha: a B recebe, e a função NÃO falha (o job segue como sucesso, com um raise warning)
-  perform set_config('smoke.lemb_falha', v_a::text, true);
-  v_levantou := false;
-  begin
-    v_ret := public.alertar_documentos_habilitacao();
-  exception when others then
-    v_levantou := true;
-    v_estado := sqlstate;
-    v_msg := sqlerrm;
-  end;
-  if v_levantou then
-    raise exception 'FALHOU: com a falha só na empresa A a função não deveria falhar, e falhou com % (%)', v_estado, v_msg;
+  -- 11. a versão aplicada da função é a corrigida (conferência por leitura, sem trava em nenhuma tabela) ---------
+  -- O comportamento "todas as empresas falham => a função falha" não se prova aqui sem derrubar a criação de
+  -- avisos de TODAS as empresas, o que exigiria um gatilho em public.notificacao (a tabela de avisos do sistema
+  -- inteiro) e a trava que ele pede: não se faz num teste rodado em produção. Então o smoke confere que o texto
+  -- da função aplicada traz os trechos que só existem na versão corrigida (0155): a contagem das empresas e das
+  -- falhas, a comparação entre as duas e a mensagem da exceção. Se a base ainda tem uma versão anterior da
+  -- função, aplique de novo a 0155 e rode este smoke outra vez.
+  v_def := pg_get_functiondef('public.alertar_documentos_habilitacao()'::regprocedure);
+  if strpos(v_def, 'v_empresas := v_empresas + 1;') = 0 then
+    raise exception 'FALHOU: a função aplicada não conta as empresas processadas (falta "v_empresas := v_empresas + 1;"): é uma versão anterior da 0155';
   end if;
-  if public.smoke_lemb_avisos(v_a) <> 0 then
-    raise exception 'FALHOU: o aviso da empresa A, que falhou, deveria ter sido desfeito (% aviso(s) vivo(s))',
-      public.smoke_lemb_avisos(v_a);
+  if strpos(v_def, 'v_falhas := v_falhas + 1;') = 0 or strpos(v_def, 'v_ultimo_erro := sqlerrm;') = 0 then
+    raise exception 'FALHOU: a função aplicada não conta as falhas por empresa nem guarda o último erro: é uma versão anterior da 0155';
   end if;
-  if public.smoke_lemb_avisos(v_b) <> 1 or public.smoke_lemb_avisos(v_b, v_dono_b) <> 1 then
-    raise exception 'FALHOU: a empresa B deveria receber o aviso apesar da falha da A (% aviso(s), % do dono dela)',
-      public.smoke_lemb_avisos(v_b), public.smoke_lemb_avisos(v_b, v_dono_b);
+  if strpos(v_def, 'if v_empresas > 0 and v_falhas = v_empresas then') = 0 then
+    raise exception 'FALHOU: a função aplicada não compara as falhas com o total de empresas (falta "if v_empresas > 0 and v_falhas = v_empresas then"): com todas as empresas falhando o job apareceria como sucesso';
   end if;
-
-  -- 11.2 TODAS as empresas falham: a função falha, com a contagem e a última mensagem (sem dado de empresa).
-  -- Os avisos que o 11.1 acabou de criar são apagados de novo, pelo mesmo motivo.
-  update public.notificacao set deleted_at = now()
-   where deleted_at is null and dados_extra ->> 'dedup_key' like 'habilitacao:%:' || v_hoje::text || '|%';
-  perform set_config('smoke.lemb_falha', 'todas', true);
-  v_levantou := false;
-  begin
-    perform public.alertar_documentos_habilitacao();
-  exception when others then
-    v_levantou := true;
-    v_estado := sqlstate;
-    v_msg := sqlerrm;
-  end;
-  if not v_levantou then
-    -- Uma empresa real com documento no marco e SEM nenhum usuário ativo não tem para quem avisar: o bloco dela
-    -- não chega a criar aviso e termina bem, então "todas falham" não dá para provocar aqui. Qualquer outro
-    -- caso é defeito (as empresas A e B do smoke sempre tentam criar o aviso e falham).
-    select exists (
-      select 1
-        from public.acervo_documento d
-        join public.empresa e on e.id = d.empresa_id and e.deleted_at is null and coalesce(e.ativo, true)
-        left join public.habilitacao_config c on c.empresa_id = d.empresa_id and c.deleted_at is null
-       where d.deleted_at is null and d.ativo and d.validade is not null
-         and (d.validade - v_hoje) in (coalesce(c.dias_antecedencia, 10), 3, 0)
-         and not exists (
-           select 1 from public.usuario_empresa u
-            where u.empresa_id = d.empresa_id and u.ativo = true and u.deleted_at is null
-         )
-    ) into v_sem_ninguem;
-    if v_sem_ninguem then
-      raise notice '[11] PULADO: há empresa real com documento no marco e sem usuário ativo; "todas falham" não foi provocado aqui';
-    else
-      raise exception 'FALHOU: com todas as empresas falhando a função deveria falhar, e terminou sem erro (o erro estaria engolido)';
-    end if;
-  else
-    if v_estado <> 'P0001'
-       or v_msg not like 'alertar_documentos_habilitacao: as % empresa(s) a avisar falharam; última mensagem: smoke: falha injetada na criação do aviso' then
-      raise exception 'FALHOU: a falha de todas as empresas veio com o estado % e a mensagem "%"', v_estado, v_msg;
-    end if;
-    -- a contagem é a das empresas processadas: pelo menos a A e a B
-    if substring(v_msg from 'as ([0-9]+) empresa')::int < 2 then
-      raise exception 'FALHOU: a mensagem deveria contar ao menos 2 empresas (A e B): %', v_msg;
-    end if;
-    if strpos(v_msg, v_a::text) > 0 or strpos(v_msg, v_b::text) > 0 then
-      raise exception 'FALHOU: a mensagem da falha traz o id de uma empresa: %', v_msg;
-    end if;
-    if public.smoke_lemb_avisos(v_a) <> 0 or public.smoke_lemb_avisos(v_b) <> 0 then
-      raise exception 'FALHOU: a função que falhou deixou aviso para trás (A: %, B: %)',
-        public.smoke_lemb_avisos(v_a), public.smoke_lemb_avisos(v_b);
-    end if;
+  if strpos(v_def, 'alertar_documentos_habilitacao: as % empresa(s) a avisar falharam; última mensagem: %') = 0 then
+    raise exception 'FALHOU: a função aplicada não tem a exceção "as N empresa(s) a avisar falharam; última mensagem: …": é uma versão anterior da 0155';
   end if;
-
-  perform set_config('smoke.lemb_falha', '', true);
-  drop trigger smoke_lemb_falha on public.notificacao;
-  raise notice '[11] falha de uma empresa: só o aviso dela é desfeito e a função segue; falha de todas: a função falha (o job aparece como falho)';
+  raise notice '[11] a função aplicada falha de propósito quando todas as empresas falham (versão corrigida da 0155)';
 
   raise notice 'SMOKE TEST OK';
 end;

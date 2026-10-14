@@ -1337,7 +1337,8 @@ function montagemCompleta(extra: Partial<EntradaChecklist> = {}) {
 
 const PASSO_ANALISE =
   "Grave a análise do edital (ler_edital_anexado e criar_ou_atualizar_oportunidade) para o SIGO conferir as exigências.";
-const PASSO_ATENDE = "Confira o acervo técnico contra o edital e grave com registrar_atende.";
+const PASSO_ATENDE =
+  "Confira o acervo técnico contra o edital e grave com registrar_atende (num edital só com qualificação econômica, a chamada vai com itens: []).";
 const PASSO_ATENDE_NEGATIVO =
   "O Atende? concluiu que a empresa NÃO atende a uma exigência do edital (técnica, de registro ou econômico-financeira): revise com o usuário antes de seguir; se o acervo mudou, grave de novo com registrar_atende.";
 
@@ -2111,6 +2112,17 @@ test("montarChecklist: o edital enviado pela tela (pasta Edital, sem categoria) 
     situacao: "ok",
     arquivos: 1,
   });
+  // DIFERENÇA DE PROPÓSITO em relação à tela: o servidor conta o edital por categoria OU por pasta. Um arquivo com
+  // categoria de edital que foi movido para outra pasta conta aqui, e a tela o mostra na outra pasta. O arquivo
+  // existe, então contar é inofensivo (o contrário, não contar o que está nos Arquivos, mandaria anexar de novo)
+  assert.deepEqual(edital1(arq("e1", null, { pasta: "Credenciamento", categoria: "edital" })), {
+    situacao: "ok",
+    arquivos: 1,
+  });
+  assert.deepEqual(edital1(arq("e1", null, { pasta: "Outros", categoria: "termo_referencia" })), {
+    situacao: "ok",
+    arquivos: 1,
+  });
   // a categoria continua valendo (arquivo do conector, sem pasta) e cada arquivo conta uma vez
   assert.deepEqual(
     edital1(
@@ -2222,6 +2234,58 @@ test("montarChecklist: o mesmo PDF do texto do edital pendente deixa a declaraç
   assert.equal(c.resumo.pronto, false);
   assert.deepEqual(c.proximos_passos, [PASSO_ASSINAR]);
   assert.ok(!c.proximos_passos.some((p) => p.includes("gerar_declaracoes")));
+});
+
+test("montarChecklist: PDF do texto do edital cujo título classifica em DUAS declarações exigidas cobre as duas", () => {
+  // um só documento do edital que reúne duas declarações (1 "declaração" no título para 2 reconhecidas: vale)
+  const titulo = "Declaração de que não emprega menor e de inexistência de fatos impeditivos";
+  const extraido = {
+    habilitacao: {
+      outros_documentos: [
+        { descricao: "Declaração de que não emprega menor" },
+        { descricao: "Declaração de inexistência de fatos impeditivos" },
+      ],
+    },
+  };
+  const chave = String(pdfDoTextoDoEdital(titulo, "assinado").origem).split(":")[1];
+  const com = (assinatura: string | null) =>
+    montarChecklist(
+      montagemCompleta({
+        extraido,
+        arquivos: [...montagemCompleta().arquivos, pdfDoTextoDoEdital(titulo, assinatura)],
+      })
+    );
+  // assinado: as duas linhas exigidas ficam ok pelo mesmo PDF, e nada manda gerar
+  const assinado = com("assinado");
+  assert.deepEqual(linhasDeDeclaracao(assinado), [
+    ["nao_emprega_menor", true, "ok"],
+    ["fato_impeditivo", true, "ok"],
+    [chave, false, "ok"],
+  ]);
+  assert.deepEqual(assinado.proximos_passos, []);
+  assert.equal(assinado.resumo.faltam, 0);
+  assert.equal(assinado.resumo.pronto, true);
+  // pendente: as duas ficam em falta_assinar (e nenhuma em falta); o passo manda assinar o arquivo UMA vez
+  const pendente = com("pendente");
+  assert.deepEqual(linhasDeDeclaracao(pendente), [
+    ["nao_emprega_menor", true, "falta_assinar"],
+    ["fato_impeditivo", true, "falta_assinar"],
+    [chave, false, "falta_assinar"],
+  ]);
+  assert.equal(pendente.resumo.faltam, 0);
+  assert.equal(pendente.resumo.falta_assinar, 1);
+  assert.deepEqual(pendente.proximos_passos, [PASSO_ASSINAR]);
+  // só uma das duas exigida: cobre essa e a outra não ganha linha
+  const soUma = montarChecklist(
+    montagemCompleta({
+      extraido: MENOR_NO_EDITAL,
+      arquivos: [...montagemCompleta().arquivos, pdfDoTextoDoEdital(titulo, "assinado")],
+    })
+  );
+  assert.deepEqual(linhasDeDeclaracao(soUma), [
+    ["nao_emprega_menor", true, "ok"],
+    [chave, false, "ok"],
+  ]);
 });
 
 test("montarChecklist: PDF do texto do edital cujo título não classifica não cobre nada", () => {

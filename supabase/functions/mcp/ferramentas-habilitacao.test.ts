@@ -9,6 +9,7 @@ import {
   MENSAGEM_DA_FALHA,
   PROMPTS_HABILITACAO,
 } from "./ferramentas-habilitacao.ts";
+import { INSTRUCOES_ARQUIVOS } from "./ferramentas-arquivos.ts";
 import { NOMES_FERRAMENTAS } from "../_shared/conector/permissoes-ferramentas.ts";
 import { CHAVES_MODELO_PADRAO, VARIAVEIS_DECLARACAO } from "../_shared/documentos/declaracoes.ts";
 import {
@@ -185,8 +186,9 @@ test("anexar_habilitacao: tipos filtra, e 'faltam' passa a ser dos tipos pedidos
   assert.deepEqual(s.vencidos, []);
 });
 
-const AVISO_AINDA_FALTAM = (n: number) =>
-  `Ainda faltam ${n} documento(s): chame anexar_habilitacao de novo para continuar (o que já foi copiado não é duplicado).`;
+/** O aviso de quem parou por tempo: manda repetir com `tipos` = os tipos de nao_processados (senão recomeçaria). */
+const AVISO_AINDA_FALTAM = (n: number, tipos: string[]) =>
+  `Ainda faltam ${n} documento(s): chame anexar_habilitacao de novo com tipos = ${tipos.join(", ")} para continuar (o que já foi copiado não é duplicado).`;
 
 /** Um relógio falso: cada consulta devolve o instante atual e avança `passoMs`. */
 const relogioFalso = (passoMs: number) => {
@@ -218,7 +220,7 @@ test("anexar_habilitacao: passados 45 s não INICIA mais cópias e devolve nao_p
   assert.deepEqual(s.nao_processados, [
     { documento_id: "d4", tipo: "balanco_dre", rotulo: "Balanço patrimonial e DRE" },
   ]);
-  assert.equal((s.avisos as string[])[0], AVISO_AINDA_FALTAM(1));
+  assert.equal((s.avisos as string[])[0], AVISO_AINDA_FALTAM(1, ["balanco_dre"]));
   // não é falha e não vira "falta": o documento existe, só não foi copiado agora
   assert.deepEqual(s.falhas, []);
   assert.ok(!(s.faltam as { tipo: string }[]).some((f) => f.tipo === "balanco_dre"));
@@ -246,7 +248,32 @@ test("anexar_habilitacao: com o relógio já estourado ainda copia UM documento 
     (s.nao_processados as { documento_id: string }[]).map((n) => n.documento_id),
     ["d3", "d4"]
   );
-  assert.equal((s.avisos as string[])[0], AVISO_AINDA_FALTAM(2));
+  assert.equal(
+    (s.avisos as string[])[0],
+    AVISO_AINDA_FALTAM(2, ["contrato_social", "balanco_dre"])
+  );
+});
+
+test("anexar_habilitacao: o aviso lista os tipos de nao_processados UMA vez cada, na ordem em que seriam copiados", async () => {
+  // dois documentos do mesmo tipo (balanco_dre) ficam para trás: o tipo aparece uma só vez no aviso
+  const { deps } = cenario([...BIBLIOTECA, doc("d7", "balanco_dre", { nome: "Balanço 2024" })]);
+  deps.relogio = relogioFalso(50_000);
+  const s = sc(await ferramenta("anexar_habilitacao").executar({ oportunidade_id: OP }, deps));
+  assert.deepEqual(
+    (s.nao_processados as { documento_id: string; tipo: string }[]).map((n) => [
+      n.documento_id,
+      n.tipo,
+    ]),
+    [
+      ["d3", "contrato_social"],
+      ["d7", "balanco_dre"],
+      ["d4", "balanco_dre"],
+    ]
+  );
+  assert.equal(
+    (s.avisos as string[])[0],
+    AVISO_AINDA_FALTAM(3, ["contrato_social", "balanco_dre"])
+  );
 });
 
 test("anexar_habilitacao: dentro dos 45 s copia tudo e nao_processados nem aparece; 45 s redondos ainda valem", async () => {
@@ -277,22 +304,82 @@ test("anexar_habilitacao: dentro dos 45 s copia tudo e nao_processados nem apare
   assert.ok(!("nao_processados" in rapido));
 });
 
-test("anexar_habilitacao: chamar de novo (sem o relógio estourado) copia tudo e não deixa nada para trás, com as mesmas origens", async () => {
+const idsDe = (lista: unknown) => (lista as { documento_id: string }[]).map((n) => n.documento_id);
+/** Os tipos de nao_processados, sem repetir, na ordem (é o que o aviso manda passar em `tipos`). */
+const tiposPendentesDe = (s: Record<string, unknown>) => [
+  ...new Set((s.nao_processados as { tipo: string }[]).map((n) => n.tipo)),
+];
+
+test("anexar_habilitacao: repetir com tipos = os de nao_processados CONTINUA de onde parou, com o MESMO relógio lento, e termina", async () => {
   const m = cenario();
-  m.deps.relogio = relogioFalso(50_000);
+  // o MESMO relógio lento nas duas chamadas (25 s por consulta): cada chamada copia 2 documentos e deixa o resto
+  m.deps.relogio = relogioFalso(25_000);
   const primeira = sc(
     await ferramenta("anexar_habilitacao").executar({ oportunidade_id: OP }, m.deps)
   );
-  assert.equal((primeira.nao_processados as unknown[]).length, 2);
-  m.deps.relogio = undefined;
+  assert.deepEqual(idsDe(primeira.anexados), ["d1", "d3"]);
+  assert.deepEqual(idsDe(primeira.nao_processados), ["d4"]);
+  // a 2ª chamada, com tipos = os pendentes e o mesmo relógio, processa o que faltava e não deixa nada para trás
   const segunda = sc(
-    await ferramenta("anexar_habilitacao").executar({ oportunidade_id: OP }, m.deps)
+    await ferramenta("anexar_habilitacao").executar(
+      { oportunidade_id: OP, tipos: tiposPendentesDe(primeira) },
+      m.deps
+    )
   );
+  assert.deepEqual(idsDe(segunda.anexados), ["d4"]);
   assert.ok(!("nao_processados" in segunda));
-  assert.equal((segunda.anexados as unknown[]).length, 3);
-  // a origem é a do documento (biblioteca:<id>): a RPC troca no lugar o que a 1ª chamada já tinha gravado
-  const origens = m.gravados.map((g) => g.p_origem);
-  assert.deepEqual(origens, ["biblioteca:d1", "biblioteca:d1", "biblioteca:d3", "biblioteca:d4"]);
+  assert.ok(!(segunda.avisos as string[]).some((a) => a.startsWith("Ainda faltam")));
+  // cada documento foi copiado UMA vez: a 2ª chamada não refez d1 nem d3
+  assert.deepEqual(
+    m.gravados.map((g) => g.p_origem),
+    ["biblioteca:d1", "biblioteca:d3", "biblioteca:d4"]
+  );
+});
+
+test("anexar_habilitacao: repetir SEM tipos recomeça do mesmo ponto (é por isso que o aviso manda passar os tipos)", async () => {
+  const m = cenario();
+  m.deps.relogio = relogioFalso(25_000);
+  const executar = () =>
+    ferramenta("anexar_habilitacao").executar({ oportunidade_id: OP }, m.deps).then(sc);
+  const primeira = await executar();
+  const segunda = await executar();
+  // a mesma ordem, o mesmo corte: d4 nunca sai de nao_processados
+  assert.deepEqual(idsDe(primeira.nao_processados), ["d4"]);
+  assert.deepEqual(idsDe(segunda.nao_processados), ["d4"]);
+  assert.deepEqual(
+    m.gravados.map((g) => g.p_origem),
+    ["biblioteca:d1", "biblioteca:d3", "biblioteca:d1", "biblioteca:d3"]
+  );
+});
+
+test("anexar_habilitacao: seguindo o aviso (tipos = os pendentes) a repetição sempre avança e termina, mesmo com um documento por chamada", async () => {
+  const m = cenario();
+  m.deps.relogio = relogioFalso(50_000);
+  let tipos: string[] | undefined;
+  let chamadas = 0;
+  let s: Record<string, unknown>;
+  do {
+    s = sc(
+      await ferramenta("anexar_habilitacao").executar(
+        { oportunidade_id: OP, ...(tipos ? { tipos } : {}) },
+        m.deps
+      )
+    );
+    chamadas++;
+    tipos = "nao_processados" in s ? tiposPendentesDe(s) : undefined;
+  } while (tipos && chamadas < 6);
+  assert.equal(chamadas, 3, "d1; depois d3; depois d4");
+  assert.ok(!("nao_processados" in s));
+  assert.deepEqual(
+    m.gravados.map((g) => g.p_origem),
+    ["biblioteca:d1", "biblioteca:d3", "biblioteca:d4"]
+  );
+});
+
+test("anexar_habilitacao: a descrição manda repetir com tipos = os tipos de nao_processados", () => {
+  const { description } = ferramenta("anexar_habilitacao").def;
+  assert.match(description, /passar de 45 s/);
+  assert.match(description, /chame de novo com tipos = os tipos de nao_processados/);
 });
 
 test("anexar_habilitacao: tipo fora da lista → validacao, nada lido", async () => {
@@ -3300,7 +3387,7 @@ test("checklist_habilitacao: a saída nunca traz ref de Storage, caminho nem URL
 const AVISO_SEM_CRONOGRAMA =
   "A oportunidade não tem cronograma gravado: confira se o edital pede o cronograma físico-financeiro.";
 const AVISO_ATENDE_NAO_CONCLUI =
-  "O Atende? desta oportunidade não concluiu que a empresa atende à qualificação técnica.";
+  "O Atende? desta oportunidade não concluiu que a empresa atende às exigências de qualificação do edital.";
 const PASSO_CRONOGRAMA =
   "Se o edital pede cronograma físico-financeiro, grave com importar_cronograma e chame gerar_documentos_proposta de novo.";
 const propostaDe = (s: Record<string, unknown>) =>
@@ -3543,7 +3630,7 @@ test("checklist_habilitacao: edital com qualificação técnica e sem Atende? �
   assert.equal((s.resumo as { sem_atende: number }).sem_atende, 1);
   assert.ok(
     (s.proximos_passos as string[]).includes(
-      "Confira o acervo técnico contra o edital e grave com registrar_atende."
+      "Confira o acervo técnico contra o edital e grave com registrar_atende (num edital só com qualificação econômica, a chamada vai com itens: [])."
     )
   );
   // não há veredito para reclamar: o aviso do veredito não sai
@@ -3643,7 +3730,7 @@ test("checklist_habilitacao: registro fora do CREA exige o veredito do Atende? (
   assert.equal(resumo(sem).sem_atende, 1);
   assert.ok(
     (sem.proximos_passos as string[]).includes(
-      "Confira o acervo técnico contra o edital e grave com registrar_atende."
+      "Confira o acervo técnico contra o edital e grave com registrar_atende (num edital só com qualificação econômica, a chamada vai com itens: [])."
     )
   );
   // só o veredito basta (nenhuma CAT é exigida)
@@ -3864,19 +3951,25 @@ test("instruções e prompt 'Montar a licitação completa'", () => {
   assert.ok(comId.includes(OP));
 });
 
-test("INSTRUCOES_HABILITACAO: cita as cinco ferramentas, o vencido, o falta assinar e o checklist", () => {
+test("INSTRUCOES_HABILITACAO: as ferramentas de arquivo estão nas instruções, e o vencido, o falta assinar e o checklist", () => {
   const texto = INSTRUCOES_HABILITACAO.join("\n");
+  // a lista das cinco ferramentas fica em INSTRUCOES_ARQUIVOS (a linha da habilitação não a repete mais); o checklist,
+  // na linha final da habilitação
+  const dosArquivos = [...INSTRUCOES_ARQUIVOS, ...INSTRUCOES_HABILITACAO].join("\n");
   for (const nome of [
     "gerar_documentos_proposta",
     "gerar_declaracoes",
     "anexar_habilitacao",
     "anexar_acervo",
     "anexar_edital_por_url",
-    "checklist_habilitacao",
   ]) {
-    assert.ok(texto.includes(nome), nome);
+    assert.ok(dosArquivos.includes(nome), nome);
     assert.ok(NOMES_FERRAMENTAS.includes(nome), `${nome} não está em NOMES_FERRAMENTAS`);
   }
+  assert.ok(texto.includes("checklist_habilitacao"));
+  assert.ok(NOMES_FERRAMENTAS.includes("checklist_habilitacao"));
+  // a segunda linha é curta (era a que repetia a lista das ferramentas): o espaço é do total das instruções
+  assert.ok(INSTRUCOES_HABILITACAO[1].length <= 120, INSTRUCOES_HABILITACAO[1]);
   assert.match(texto, /vencido não é anexado/);
   assert.match(texto, /falta assinar/);
   assert.match(texto, /gov\.br/);
@@ -3948,6 +4041,21 @@ test("prompt 'Montar a licitação completa': leva o método do edital, as regra
   for (const linha of [METODO_LEITURA_EDITAL[0], REGRAS_ATENDE[0], ROTEIRO_ORCAMENTO[0]]) {
     assert.equal(texto.split(linha).length - 1, 1, linha);
   }
+  // a regra geral do ler_acervo (a que explica o [ART] da regra 3 do Atende?) vai com as regras do Atende?, no bloco
+  // do passo 3, e não no do passo 2; as outras regras gerais ficam no bloco do passo 2
+  const regraDoAcervo = REGRAS_GERAIS_EDITAL.filter((l) => l.includes("ler_acervo"));
+  assert.equal(regraDoAcervo.length, 1);
+  assert.match(regraDoAcervo[0], /regra 3 chama de \[ART\]/);
+  assert.equal(texto.split(regraDoAcervo[0]).length - 1, 1);
+  assert.ok(
+    antes(noPasso(3), texto.indexOf(regraDoAcervo[0])),
+    "regra do acervo depois do passo 3"
+  );
+  assert.ok(antes(texto.indexOf(regraDoAcervo[0]), noPasso(4)), "regra do acervo antes do passo 4");
+  for (const linha of REGRAS_GERAIS_EDITAL.filter((l) => l !== regraDoAcervo[0])) {
+    assert.ok(antes(noPasso(1), texto.indexOf(linha)), `regra geral depois do passo 1: ${linha}`);
+    assert.ok(antes(texto.indexOf(linha), noPasso(2)), `regra geral antes do passo 2: ${linha}`);
+  }
   // o registrar_proposta do roteiro do orçamento fica para o passo 5
   const passo4 = texto.split("\n").find((l) => l.startsWith("4. ")) ?? "";
   assert.match(passo4, /registrar_proposta/);
@@ -3991,6 +4099,8 @@ test("prompt 'Montar a licitação completa': cada saída nova das ferramentas �
   // 6: habilitação (o conector nunca apaga arquivo)
   precisa(6, [
     "nao_processados",
+    // repetir CONTINUA de onde parou: sem tipos a chamada refaria os mesmos primeiros documentos
+    /chame de novo com tipos = os tipos de nao_processados/,
     "vencidos",
     "faltam",
     "copias_desatualizadas",

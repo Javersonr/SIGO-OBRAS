@@ -577,7 +577,7 @@ export const INSTRUCOES_EDITAL: string[] = [
   "Edital: antes de criar, procure com buscar_oportunidades (nº/ano ou palavras) e leia com obter_oportunidade; grave com criar_ou_atualizar_oportunidade.",
   "Se ela devolver duplicatas, mostre as candidatas e pergunte: atualizar uma (oportunidade_id) ou criar outra (confirmar_nova: true).",
   "Depois chame ler_acervo e leia TODAS as páginas (proxima_pagina até null) antes de avaliar; avalie só as exigências técnicas e de registro e grave com registrar_atende, citando os atestados pelo id (UUID); a parte econômico-financeira é calculada pelo SIGO: não avalie nem peça valores.",
-  "Anexar o edital: prefira anexar_edital_por_url (link público https do arquivo); gerar_link_envio só se o arquivo existe apenas no chat.",
+  "Anexar o edital: prefira anexar_edital_por_url (link público https do arquivo); gerar_link_envio só se o arquivo existe apenas no chat. O prompt analisar_edital traz o método completo.",
 ];
 
 /** As regras gerais do prompt analisar_edital (também usadas pelo prompt "Montar a licitação completa"). */

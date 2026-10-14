@@ -94,6 +94,11 @@ test("INSTRUCOES: base com as 8 linhas, ≤ 4400 caracteres; cada parte ≤ 800"
   // o teto era 4000 com as quatro partes do Plano 2; a parte da habilitação (≤ 800) e o texto novo das
   // instruções de arquivos e de orçamento somaram uns 1000 caracteres
   assert.ok(INSTRUCOES.length <= 4400, `INSTRUCOES com ${INSTRUCOES.length} caracteres`);
+  // folga de ao menos 150 caracteres sob o teto: a próxima frase que alguém precisar acrescentar não estoura o limite
+  assert.ok(
+    INSTRUCOES.length <= 4400 - 150,
+    `INSTRUCOES com ${INSTRUCOES.length} caracteres: faltou a folga de 150 sob o teto de 4400`
+  );
   assert.ok(INSTRUCOES.endsWith(INSTRUCOES_HABILITACAO[INSTRUCOES_HABILITACAO.length - 1]));
   for (const [parte, linhas] of Object.entries({
     INSTRUCOES_ARQUIVOS,
