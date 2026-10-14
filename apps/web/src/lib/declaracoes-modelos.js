@@ -36,9 +36,11 @@ const TEXTO_ELABORACAO_INDEPENDENTE = [
   "f) está plenamente ciente do teor e da extensão desta declaração e detém plenos poderes e informações para firmá-la.",
 ].join("\n\n");
 
-const m = (chave, titulo, texto, ordem) => ({ chave, titulo, texto, ativo: true, ordem });
+const m = (chave, titulo, texto, ordem) =>
+  Object.freeze({ chave, titulo, texto, ativo: true, ordem });
 
-export const MODELOS_PADRAO = [
+/** Congelado (a lista e cada modelo): quem quiser alterar um modelo trabalha numa cópia de `modelosDaEmpresa`. */
+export const MODELOS_PADRAO = Object.freeze([
   m(
     "nao_emprega_menor",
     "Declaração de que não emprega menor",
@@ -80,7 +82,7 @@ export const MODELOS_PADRAO = [
     TEXTO_ELABORACAO_INDEPENDENTE,
     6
   ),
-];
+]);
 
 /** Ordem do modelo; nula ou ausente vai por último. */
 function ordemDe(modelo) {
@@ -134,23 +136,47 @@ export function preencherModelo(texto, vars) {
   return { texto: preenchido, sem_valor: semValor, desconhecidas };
 }
 
-/** Chave de um modelo próprio a partir do título: sem acento, minúsculas, [^a-z0-9] → "_", até 40. */
+/** FNV-1a de 32 bits (offset 0x811c9dc5, primo 0x01000193) sobre os códigos dos caracteres; 8 dígitos hexadecimais. */
+function hashFnv1a(texto) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < texto.length; i++) {
+    h ^= texto.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+/**
+ * Chave de um modelo próprio a partir do título: sem acento, minúsculas, [^a-z0-9]+ → "_", sem "_"
+ * nas pontas. Até 40 caracteres é ela mesma; passando disso, os 31 primeiros (sem "_" no fim) + "_" +
+ * o hash FNV-1a do normalizado INTEIRO, para dois títulos longos que só diferem no fim não colidirem.
+ * Mesma regra de chaveDoTitulo em supabase/functions/_shared/documentos/declaracoes.ts.
+ */
 export function chaveDoTitulo(titulo) {
-  return String(titulo ?? "")
+  const normalizado = String(titulo ?? "")
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 40);
+    .replace(/^_+|_+$/g, "");
+  if (normalizado.length <= 40) return normalizado;
+  return `${normalizado.slice(0, 31).replace(/_+$/, "")}_${hashFnv1a(normalizado)}`;
 }
 
 /** Mesma regra do CHECK de modelo_declaracao.chave (migração 0156) e da chave aceita pelo conector. */
 const CHAVE_VALIDA = /^[a-z][a-z0-9_]{1,59}$/;
 
+/** Chaves dos seis modelos padrão: um modelo NOVO não pode nascer com uma delas. */
+const CHAVES_PADRAO = MODELOS_PADRAO.map((p) => p.chave);
+
+/** Prefixo da chave dos textos que vêm do edital (declaracoes.ts → chaveDoItem): reservado. */
+const PREFIXO_EDITAL = "edital_";
+
 /**
  * Valida o formulário de um modelo: { ok, erros, dados }.
  * `chavesEmUso`: chaves dos OUTROS modelos próprios da empresa.
+ * `form.chave` vazia = modelo NOVO (a chave sai do título); preenchida = edição de um modelo que já
+ * existe (inclusive de um dos seis padrão).
  */
 export function validarModelo(form, chavesEmUso) {
   const erros = [];
@@ -162,7 +188,8 @@ export function validarModelo(form, chavesEmUso) {
   else if (texto.length > LIMITE_TEXTO_DECLARACAO) erros.push("Texto: use até 20.000 caracteres");
 
   let chave = String(form?.chave ?? "").trim();
-  if (!chave) {
+  const novo = !chave;
+  if (novo) {
     chave = chaveDoTitulo(titulo);
     if (titulo && !chave) erros.push("Use letras no título");
   }
@@ -170,6 +197,11 @@ export function validarModelo(form, chavesEmUso) {
     erros.push("O título deve começar com uma letra e ter ao menos 2 caracteres");
   } else if (chave && (chavesEmUso ?? []).includes(chave)) {
     erros.push("Já existe um modelo com este título");
+  } else if (novo && CHAVES_PADRAO.includes(chave)) {
+    // "ME/EPP" → me_epp: gravaria por cima do padrão sem a pessoa perceber
+    erros.push("Já existe um modelo com este título");
+  } else if (novo && chave.startsWith(PREFIXO_EDITAL)) {
+    erros.push('O título não pode começar com "edital"');
   }
 
   const desconhecidas = preencherModelo(texto, {}).desconhecidas;

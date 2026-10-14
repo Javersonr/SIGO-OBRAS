@@ -59,15 +59,11 @@ const TEXTO_ELABORACAO_INDEPENDENTE = [
   "f) está plenamente ciente do teor e da extensão desta declaração e detém plenos poderes e informações para firmá-la.",
 ].join("\n\n");
 
-const m = (chave: string, titulo: string, texto: string, ordem: number): ModeloDeclaracao => ({
-  chave,
-  titulo,
-  texto,
-  ativo: true,
-  ordem,
-});
+const m = (chave: string, titulo: string, texto: string, ordem: number): ModeloDeclaracao =>
+  Object.freeze({ chave, titulo, texto, ativo: true, ordem });
 
-export const MODELOS_PADRAO: readonly ModeloDeclaracao[] = [
+/** Congelado (a lista e cada modelo): quem quiser alterar um modelo trabalha numa cópia de `modelosDaEmpresa`. */
+export const MODELOS_PADRAO: readonly ModeloDeclaracao[] = Object.freeze([
   m(
     "nao_emprega_menor",
     "Declaração de que não emprega menor",
@@ -109,7 +105,7 @@ export const MODELOS_PADRAO: readonly ModeloDeclaracao[] = [
     TEXTO_ELABORACAO_INDEPENDENTE,
     6
   ),
-];
+]);
 
 /** Ordem do modelo; nula ou ausente vai por último. */
 function ordemDe(modelo: ModeloDeclaracao): number {
@@ -149,18 +145,24 @@ export function variaveisDaDeclaracao(
   local: string,
   dataISO: string
 ): Record<string, string> {
+  // Quebra de linha dentro de um valor (um {objeto} com linha em branco, por exemplo) partiria o
+  // parágrafo do modelo em dois: cada valor vira uma linha só, com espaços simples.
+  const limpa = (valor: unknown): string =>
+    String(valor ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
   return {
-    empresa: cab.empresa.nome,
-    cnpj: cab.empresa.cnpj,
-    endereco: cab.empresa.endereco,
-    orgao: cab.orgao ?? "",
-    edital: cab.edital ?? "",
-    objeto: cab.objeto ?? "",
-    local,
-    data: dataPorExtenso(dataISO),
-    representante: cab.representante.nome,
-    cargo: cab.representante.cargo,
-    cpf: cab.representante.cpf,
+    empresa: limpa(cab.empresa.nome),
+    cnpj: limpa(cab.empresa.cnpj),
+    endereco: limpa(cab.empresa.endereco),
+    orgao: limpa(cab.orgao),
+    edital: limpa(cab.edital),
+    objeto: limpa(cab.objeto),
+    local: limpa(local),
+    data: limpa(dataPorExtenso(dataISO)),
+    representante: limpa(cab.representante.nome),
+    cargo: limpa(cab.representante.cargo),
+    cpf: limpa(cab.representante.cpf),
   };
 }
 
@@ -194,18 +196,34 @@ export type ItemDeclaracao =
 
 const CHAVE_MODELO = /^[a-z][a-z0-9_]{1,59}$/;
 
-/** Título sem acento, em minúsculas, [^a-z0-9]+ → "_", sem "_" nas pontas, até 40 caracteres. */
+/** FNV-1a de 32 bits (offset 0x811c9dc5, primo 0x01000193) sobre os códigos dos caracteres; 8 dígitos hexadecimais. */
+function hashFnv1a(texto: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < texto.length; i++) {
+    h ^= texto.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+/**
+ * Título sem acento, em minúsculas, [^a-z0-9]+ → "_", sem "_" nas pontas. Até 40 caracteres é ele
+ * mesmo; passando disso, os 31 primeiros (sem "_" no fim) + "_" + o hash FNV-1a do normalizado
+ * INTEIRO, para dois títulos longos que só diferem no fim (Lote 1 × Lote 2) não darem a mesma chave.
+ * Mesma regra de chaveDoTitulo em apps/web/src/lib/declaracoes-modelos.js (paridade no Vitest).
+ */
 function chaveDoTitulo(titulo: string): string {
-  return String(titulo ?? "")
+  const normalizado = String(titulo ?? "")
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 40);
+    .replace(/^_+|_+$/g, "");
+  if (normalizado.length <= 40) return normalizado;
+  return `${normalizado.slice(0, 31).replace(/_+$/, "")}_${hashFnv1a(normalizado)}`;
 }
 
-/** modelo → a chave; texto → "edital_" + título sem acento, em minúsculas, [^a-z0-9] → "_", até 40 caracteres. */
+/** modelo → a chave; texto → "edital_" + chaveDoTitulo (até 40 caracteres, com hash se o título é longo). */
 export function chaveDoItem(item: ItemDeclaracao): string {
   if (item.tipo === "modelo") return item.chave;
   return `edital_${chaveDoTitulo(item.titulo) || "declaracao"}`;
@@ -264,13 +282,21 @@ export function validarItensDeclaracao(
   return erros.length > 0 ? { ok: false, erros } : { ok: true, itens: validos };
 }
 
-/** "Declaração - <título>.<ext>"; o prefixo some quando o título já começa com "Declaração". */
+/**
+ * "Declaração - <título>.<ext>"; o prefixo some quando o título já começa com "Declaração".
+ * Caracteres proibidos em nome de arquivo, de controle (Cc) e de formato Unicode (Cf, como o U+202E
+ * que inverte o sentido do texto) viram "-"; o título é cortado em 150 pontos de código (não em
+ * unidades UTF-16, para não deixar meio emoji).
+ */
 export function nomeArquivoDeclaracao(titulo: string, ext: "pdf" | "docx"): string {
-  const limpo = String(titulo ?? "")
-    .replace(/[\\/:*?"<>|\p{Cc}]/gu, "-")
-    .replace(/\s+/g, " ")
-    .trim()
+  const limpo = Array.from(
+    String(titulo ?? "")
+      .replace(/[\\/:*?"<>|\p{Cc}\p{Cf}]/gu, "-")
+      .replace(/\s+/g, " ")
+      .trim()
+  )
     .slice(0, 150)
+    .join("")
     .trim();
   const semAcento = limpo.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   let nome = "Declaração";

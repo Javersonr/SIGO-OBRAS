@@ -71,6 +71,23 @@ test("MODELOS_PADRAO: os seis da spec, na ordem, só com variáveis conhecidas",
   assert.equal(MODELOS_PADRAO[5].texto.split("\n\n").length, 7);
 });
 
+test("MODELOS_PADRAO é imutável e modelosDaEmpresa devolve cópias novas", () => {
+  assert.ok(Object.isFrozen(MODELOS_PADRAO));
+  for (const padrao of MODELOS_PADRAO) assert.ok(Object.isFrozen(padrao), padrao.chave);
+  assert.throws(() => {
+    (MODELOS_PADRAO as unknown as { chave: string }[])[0].chave = "alterada";
+  }, TypeError);
+  const copias = modelosDaEmpresa([]);
+  assert.equal(copias.length, 6);
+  copias.forEach((copia, i) => {
+    assert.notEqual(copia, MODELOS_PADRAO[i]);
+    assert.deepEqual(copia, MODELOS_PADRAO[i]);
+  });
+  copias[0].texto = "mexido por quem chamou";
+  assert.notEqual(MODELOS_PADRAO[0].texto, "mexido por quem chamou");
+  assert.notEqual(modelosDaEmpresa([])[0].texto, "mexido por quem chamou");
+});
+
 test("modelosDaEmpresa: a linha da empresa troca o padrão; inativo sai; próprio entra", () => {
   const r = modelosDaEmpresa([
     {
@@ -134,6 +151,48 @@ test("variaveisDaDeclaracao e preencherModelo", () => {
   );
 });
 
+test("variaveisDaDeclaracao: valor com quebra de linha ou espaços repetidos vira uma linha só", () => {
+  const vars = variaveisDaDeclaracao(
+    {
+      ...CAB,
+      objeto: "Iluminação\n\npública  LED",
+      orgao: "  Prefeitura\r\n de Exemplo\t",
+    },
+    " Cidade/MG\n",
+    "2026-10-13"
+  );
+  assert.equal(vars.objeto, "Iluminação pública LED");
+  assert.equal(vars.orgao, "Prefeitura de Exemplo");
+  assert.equal(vars.local, "Cidade/MG");
+  const r = preencherModelo("Objeto: {objeto}.\n\nFim.", vars);
+  assert.equal(r.texto, "Objeto: Iluminação pública LED.\n\nFim.");
+  assert.equal(r.texto.split("\n\n").length, 2);
+});
+
+test("variaveisDaDeclaracao: data inválida deixa {data} vazia e o modelo põe o campo em branco", () => {
+  for (const ruim of ["", "13/10/2026", "2026-13-01", "2026-00-10", "texto"]) {
+    const vars = variaveisDaDeclaracao(CAB, "Cidade/MG", ruim);
+    assert.equal(vars.data, "", ruim);
+    assert.deepEqual(preencherModelo("{local}, {data}.", vars), {
+      texto: "Cidade/MG, ________.",
+      sem_valor: ["data"],
+      desconhecidas: [],
+    });
+  }
+});
+
+test("preencherModelo: o valor entra literal ($&, $1, $$ e {variavel} dentro dele não são reprocessados)", () => {
+  const vars = {
+    ...variaveisDaDeclaracao(CAB, "Cidade/MG", "2026-10-13"),
+    empresa: "A$&B $1 $$ {cnpj} $` $'",
+  };
+  assert.deepEqual(preencherModelo("{empresa}, CNPJ {cnpj}.", vars), {
+    texto: "A$&B $1 $$ {cnpj} $` $', CNPJ 11.222.333/0001-81.",
+    sem_valor: [],
+    desconhecidas: [],
+  });
+});
+
 test("validarItensDeclaracao: modelo OU título e texto; limites; sem repetir", () => {
   assert.deepEqual(
     validarItensDeclaracao([{ modelo: "me_epp" }, { titulo: " Anexo V ", texto: " Texto " }]),
@@ -187,6 +246,84 @@ test("chaveDoItem e nomeArquivoDeclaracao", () => {
     nomeArquivoDeclaracao("Anexo V: visita/técnica", "docx"),
     "Declaração - Anexo V- visita-técnica.docx"
   );
+});
+
+const TITULO_LOTE_1 = "Declaração do Anexo V - Visita Técnica ao local da obra - Lote 1";
+const TITULO_LOTE_2 = "Declaração do Anexo V - Visita Técnica ao local da obra - Lote 2";
+const chaveDeTitulo = (titulo: string) => chaveDoItem({ tipo: "texto", titulo, texto: "x" });
+
+test("chaveDoItem: títulos longos que só diferem no fim (Lote 1 × Lote 2) não colidem", () => {
+  const c1 = chaveDeTitulo(TITULO_LOTE_1);
+  const c2 = chaveDeTitulo(TITULO_LOTE_2);
+  assert.notEqual(c1, c2);
+  for (const c of [c1, c2]) {
+    assert.ok(c.length <= 47, c);
+    assert.match(c, /^edital_[a-z0-9_]+$/);
+    assert.doesNotMatch(c, /__/);
+    assert.doesNotMatch(c, /_$/);
+  }
+  // fixa o algoritmo (31 primeiros + "_" + FNV-1a de 32 bits do normalizado inteiro): a chave vira a
+  // `origem` do arquivo gravado, então mudar a regra depois orfanaria o que já foi anexado
+  assert.equal(c1, "edital_declaracao_do_anexo_v_visita_te_9a27f3e9");
+  assert.equal(c2, "edital_declaracao_do_anexo_v_visita_te_9727ef30");
+  assert.equal(chaveDeTitulo("a".repeat(100)), `edital_${"a".repeat(31)}_0a0bb1d9`);
+  // mesmo título, mesma chave
+  assert.equal(chaveDeTitulo(TITULO_LOTE_1), c1);
+  assert.equal(chaveDeTitulo(`  ${TITULO_LOTE_1.toUpperCase()}!! `), c1);
+});
+
+test("chaveDoItem: até 40 caracteres normalizados a chave é o próprio título; o corte em '_' não duplica", () => {
+  assert.equal(
+    chaveDeTitulo("Declaração do Anexo V — Visita Técnica"),
+    "edital_declaracao_do_anexo_v_visita_tecnica"
+  );
+  assert.equal(chaveDeTitulo("x".repeat(40)), `edital_${"x".repeat(40)}`);
+  assert.equal(chaveDeTitulo("x".repeat(41)), `edital_${"x".repeat(31)}_fb64f7a7`);
+  // o 31º caractere é um "_": tira o "_" do fim do corte antes de juntar o hash
+  const cortaNoUnderscore = chaveDeTitulo(`${"a".repeat(30)} ${"b".repeat(20)}`);
+  assert.equal(cortaNoUnderscore, `edital_${"a".repeat(30)}_712a2dec`);
+  assert.doesNotMatch(cortaNoUnderscore, /__/);
+  assert.equal(chaveDeTitulo("!!!"), "edital_declaracao");
+  assert.equal(chaveDeTitulo(""), "edital_declaracao");
+});
+
+test("validarItensDeclaracao: Lote 1 e Lote 2 passam; o mesmo título duas vezes é repetido", () => {
+  const itens = [
+    { titulo: TITULO_LOTE_1, texto: "Texto 1" },
+    { titulo: TITULO_LOTE_2, texto: "Texto 2" },
+  ];
+  const ok = validarItensDeclaracao(itens);
+  assert.equal(ok.ok, true);
+  const repetido = validarItensDeclaracao([...itens, { titulo: TITULO_LOTE_1, texto: "Outro" }]);
+  assert.deepEqual(repetido, {
+    ok: false,
+    erros: [`itens[2]: declaração repetida (${chaveDeTitulo(TITULO_LOTE_1)})`],
+  });
+});
+
+test("nomeArquivoDeclaracao: caractere de formato Unicode vira '-' e o corte não deixa meio emoji", () => {
+  const nome = nomeArquivoDeclaracao("Anexo ‮fdp", "pdf");
+  assert.ok(!nome.includes("‮"));
+  assert.equal(nome, "Declaração - Anexo -fdp.pdf");
+  assert.equal(nomeArquivoDeclaracao("A​b­c", "docx"), "Declaração - A-b-c.docx");
+  // comportamento de hoje: o corte em 150 vale para o título; o prefixo e a extensão vêm depois
+  assert.equal(
+    nomeArquivoDeclaracao("x".repeat(300), "pdf"),
+    `Declaração - ${"x".repeat(150)}.pdf`
+  );
+  assert.equal(
+    nomeArquivoDeclaracao(`Declaração ${"y".repeat(300)}`, "docx"),
+    `${`Declaração ${"y".repeat(300)}`.slice(0, 150)}.docx`
+  );
+  // o 150º ponto de código é um emoji de 2 unidades UTF-16: fica inteiro, sem surrogate solto
+  const comEmoji = nomeArquivoDeclaracao(`${"x".repeat(149)}😀zzz`, "pdf");
+  assert.equal(comEmoji, `Declaração - ${"x".repeat(149)}😀.pdf`);
+  assert.ok(comEmoji.isWellFormed());
+  assert.equal(Array.from(comEmoji.slice("Declaração - ".length, -".pdf".length)).length, 150);
+  // cortado em 150 pontos de código mesmo com emojis em todo o título
+  const soEmojis = nomeArquivoDeclaracao("😀".repeat(300), "pdf");
+  assert.ok(soEmojis.isWellFormed());
+  assert.equal(soEmojis, `Declaração - ${"😀".repeat(150)}.pdf`);
 });
 
 test("montarDadosDeclaracao: parágrafos por linha em branco, destinatário e referência", () => {
