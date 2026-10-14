@@ -29,6 +29,7 @@ import {
 import { fmtData } from "./acervo-utils";
 import { Aviso, SeloValidade } from "./AcervoUi";
 import DocumentoHabilitacaoSheet from "./DocumentoHabilitacaoSheet";
+import LembretesHabilitacao from "./LembretesHabilitacao";
 
 const ordemDoTipo = (tipo) => {
   const i = IDS_TIPO_DOCUMENTO.indexOf(tipo);
@@ -354,8 +355,10 @@ export default function DocumentosHabilitacao({
         </div>
       )}
 
-      {/* Os blocos seguintes da aba (lembretes de vencimento e modelos de declaração) entram aqui,
-          depois da lista e antes da gaveta. */}
+      {/* Com a leitura da biblioteca em falha a aba mostra só o aviso de erro: sem o cartão de lembretes. */}
+      {!erroCarga && <LembretesHabilitacao empresaId={empresaId} podeEditar={podeEditar} />}
+
+      {/* O próximo bloco da aba (modelos de declaração) entra aqui, depois dos lembretes e antes da gaveta. */}
 
       <DocumentoHabilitacaoSheet
         open={podeEditar && !!gaveta}
