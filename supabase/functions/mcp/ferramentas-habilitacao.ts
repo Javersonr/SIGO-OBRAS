@@ -42,7 +42,17 @@ import {
   origemDaUrl,
   validarUrlPublica,
 } from "../_shared/conector/url-segura.ts";
+import { modelosDaEmpresa, type ModeloDeclaracao } from "../_shared/documentos/declaracoes.ts";
 import { hojeBR } from "../_shared/edital/acervo.ts";
+import {
+  conferirCopiasComOsAtivos,
+  copiasDaBiblioteca,
+  documentoVencido,
+  montarChecklist,
+  PREFIXO_BIBLIOTECA,
+  type ArquivoChecklist,
+  type CopiaDaBiblioteca,
+} from "../_shared/habilitacao/checklist.ts";
 import { dataDaSessao } from "../_shared/habilitacao/data-sessao.ts";
 import {
   diasAte,
@@ -226,7 +236,6 @@ const AVISO_SEM_SESSAO =
 const AVISO_COPIAS_NAO_CONFERIDAS =
   "Não consegui conferir se há arquivos antigos da biblioteca na pasta do envelope: confira à mão.";
 
-const PREFIXO_BIBLIOTECA = "biblioteca:";
 /** Ids por consulta `in`: 100 UUIDs cabem folgados no limite da URL do PostgREST. */
 const LOTE_DE_IDS = 100;
 
@@ -257,27 +266,17 @@ async function copiasDesatualizadas(
     "id, nome, origem",
     (q) => q.eq("oportunidade_id", oportunidadeId).like("origem", `${PREFIXO_BIBLIOTECA}%`)
   );
-  // o filtro like já fez isto no banco; conferir aqui garante que acervo:, gerado:, declaracao:, url: e
-  // linha sem origem nunca entrem, mesmo que o filtro um dia deixe de valer
-  const copias = linhas
-    .filter((l) => typeof l.origem === "string" && l.origem.startsWith(PREFIXO_BIBLIOTECA))
-    .map((l) => ({
-      arquivoId: l.id,
-      nome: String(l.nome ?? ""),
-      documentoId: String(l.origem).slice(PREFIXO_BIBLIOTECA.length),
-    }));
-  const vencido = (validade: unknown) => situacaoDaValidade(validade, hoje).situacao === "vencido";
+  // o filtro like já fez isto no banco; o núcleo confere de novo (o mesmo do checklist_habilitacao): acervo:,
+  // gerado:, declaracao:, url: e linha sem origem nunca entram, mesmo que o filtro um dia deixe de valer
+  const copias = copiasDaBiblioteca(linhas);
+  const vencido = (validade: unknown) => documentoVencido(validade, hoje);
 
   const achados: CopiaDesatualizada[] = [];
-  const registrar = (c: (typeof copias)[number], motivo: CopiaDesatualizada["motivo"]) =>
+  const registrar = (c: CopiaDaBiblioteca, motivo: CopiaDesatualizada["motivo"]) =>
     achados.push({ arquivo_id: c.arquivoId, nome: c.nome, motivo });
 
-  const foraDosAtivos: typeof copias = [];
-  for (const c of copias) {
-    const d = ativos.get(c.documentoId);
-    if (!d) foraDosAtivos.push(c);
-    else if (vencido(d.validade)) registrar(c, "vencido");
-  }
+  const { vencidas, foraDosAtivos } = conferirCopiasComOsAtivos(copias, ativos, hoje);
+  for (const c of vencidas) registrar(c, "vencido");
 
   // id que não é UUID não existe na biblioteca (e faria o banco recusar a consulta inteira): fica de fora do `in`
   const ids = [
@@ -987,10 +986,111 @@ const ANEXAR_EDITAL_POR_URL: Ferramenta = {
   },
 };
 
+// ─── checklist_habilitacao ──────────────────────────────────────────────────────────────────
+
+const AVISO_SEM_ANALISE =
+  "A oportunidade ainda não tem a análise do edital: o checklist cobre só os documentos essenciais. Grave o edital com criar_ou_atualizar_oportunidade.";
+
+const CHECKLIST_HABILITACAO: Ferramenta = {
+  def: {
+    name: "checklist_habilitacao",
+    title: "Conferir a habilitação da licitação",
+    description:
+      "Confere a habilitação da licitação: cruza o que o edital exige com os Arquivos da oportunidade e a biblioteca de documentos da empresa, e devolve o que falta, o que está vencido (ou vence antes da sessão), as CATs e declarações que faltam e o que falta assinar, com os próximos passos. Arquivos da biblioteca que ficaram na pasta do envelope e vêm de documento renovado, removido ou vencido voltam em copias_desatualizadas (o SIGO não apaga: avise o usuário). Só lê. Chame no fim da montagem e mostre o resultado ao usuário.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { oportunidade_id: ID_OPORTUNIDADE },
+      required: ["oportunidade_id"],
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  },
+  async executar(args, deps) {
+    const id = uuidOuNull(args.oportunidade_id);
+    // licitacao_data é a "Sessão" que a tela mostra e o usuário edita; o edital é o plano B (dataDaSessao)
+    const op = id
+      ? await deps.db.porId<{ id: string; edital_analise: unknown; licitacao_data: unknown }>(
+          "oportunidade",
+          id,
+          "id, edital_analise, licitacao_data"
+        )
+      : null;
+    if (!id || !op) return naoEncontrado("oportunidade", id);
+    const analise = analiseDe(op.edital_analise);
+
+    // uma oportunidade pode ter centenas de arquivos: lerTodos pagina (1000 por consulta); nada por arquivo
+    const arquivos = await deps.db.lerTodos<ArquivoChecklist>(
+      "arquivo_oportunidade",
+      "id, nome, pasta, categoria, origem, assinatura",
+      (q) => q.eq("oportunidade_id", id)
+    );
+    // só documentos em vigor: a consulta filtra ativo = true e o código descarta de novo (como a anexar_habilitacao)
+    const documentos = (
+      await deps.db.lerTodos<DocumentoBiblioteca>(
+        "acervo_documento",
+        "id, tipo, nome, validade, ativo",
+        (q) => q.eq("ativo", true)
+      )
+    ).filter((d) => d.ativo !== false);
+
+    // os atestados citados no Atende? (só ids que são UUID, sem repetir), em lotes
+    const idsCats: string[] = [];
+    // deno-lint-ignore no-explicit-any
+    const cats = (analise as any)?.atende?.cats_anexar;
+    for (const c of Array.isArray(cats) ? cats : []) {
+      const uuid = uuidOuNull(c?.id);
+      if (uuid && !idsCats.includes(uuid)) idsCats.push(uuid);
+    }
+    const atestados: { id: string; numero: string | null; arquivo_ref: string | null }[] = [];
+    for (let i = 0; i < idsCats.length; i += LOTE_DE_IDS) {
+      const lote = idsCats.slice(i, i + LOTE_DE_IDS);
+      atestados.push(
+        ...(await deps.db.lerTodos<{
+          id: string;
+          numero: string | null;
+          arquivo_ref: string | null;
+        }>("acervo_atestado", "id, numero, arquivo_ref", (q) => q.in("id", lote)))
+      );
+    }
+    const modelos = modelosDaEmpresa(
+      await deps.db.lerTodos<ModeloDeclaracao>(
+        "modelo_declaracao",
+        "chave, titulo, texto, ativo, ordem"
+      )
+    );
+
+    const hoje = hojeBR(deps.agora);
+    const c = montarChecklist({
+      extraido: analise?.extraido ?? null,
+      atende: analise?.atende ?? null,
+      licitacaoData: op.licitacao_data,
+      arquivos,
+      documentos,
+      atestados,
+      modelos,
+      hojeISO: hoje,
+    });
+
+    const avisos: string[] = [];
+    if (!analise?.extraido) avisos.push(AVISO_SEM_ANALISE);
+    // sem data de sessão futura não há como saber se algo vence antes dela: nunca calar sobre isso (como a
+    // anexar_habilitacao). Só importa se algum documento anexado tem validade.
+    const semSessaoFutura = c.sessao === null || c.sessao <= hoje;
+    if (
+      semSessaoFutura &&
+      c.certidoes.some((x) => x.situacao === "anexado" && x.validade !== null)
+    ) {
+      avisos.push(AVISO_SEM_SESSAO);
+    }
+    return sucesso({ oportunidade_id: id, ...c, avisos, link: linkOportunidade(id) }, { alvo: id });
+  },
+};
+
 export const FERRAMENTAS_HABILITACAO: Ferramenta[] = [
   ANEXAR_HABILITACAO,
   ANEXAR_ACERVO,
   ANEXAR_EDITAL_POR_URL,
+  CHECKLIST_HABILITACAO,
 ];
 export const INSTRUCOES_HABILITACAO: string[] = [];
 export const PROMPTS_HABILITACAO: PromptDef[] = [];

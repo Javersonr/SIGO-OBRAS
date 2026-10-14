@@ -2610,3 +2610,552 @@ test("anexar_edital_por_url: a saída nunca traz ref de Storage, caminho, URL pe
     assert.ok(!/\/20\d\d\/\d\d\//.test(json), json);
   }
 });
+
+// ─── checklist_habilitacao (Task C5) ──────────────────────────────────────────────────────────
+
+test("checklist_habilitacao: lê edital, arquivos, biblioteca e acervo e devolve o que falta", async () => {
+  const { deps, fake } = montarDeps((c: ChamadaFake) => {
+    if (c.tabela === "oportunidade" && c.op === "select") {
+      return {
+        data: {
+          id: OP,
+          edital_analise: {
+            extraido: {
+              datas: { sessao: { data: "2026-11-05" } },
+              habilitacao: {
+                outros_documentos: [
+                  { descricao: "Declaração de que não emprega menor", pagina: 3 },
+                ],
+              },
+            },
+            atende: { cats_anexar: [{ id: AT1 }] },
+          },
+        },
+      };
+    }
+    if (c.tabela === "arquivo_oportunidade") {
+      return {
+        data: [
+          {
+            id: "f1",
+            nome: "Proposta.pdf",
+            pasta: "Envelope 01 – Proposta",
+            categoria: null,
+            origem: "gerado:proposta:pdf",
+            assinatura: "pendente",
+          },
+        ],
+      };
+    }
+    if (c.tabela === "acervo_documento")
+      return { data: [doc("d1", "crf_fgts", { validade: "2026-12-31" })] };
+    if (c.tabela === "acervo_atestado")
+      return { data: [{ id: AT1, numero: "1/2025", arquivo_ref: null }] };
+    if (c.tabela === "modelo_declaracao") return { data: [] };
+    return undefined;
+  });
+  const def = ferramenta("checklist_habilitacao").def;
+  assert.deepEqual(
+    [def.inputSchema.required, def.annotations.readOnlyHint, def.annotations.idempotentHint],
+    [["oportunidade_id"], true, true]
+  );
+  const r = await ferramenta("checklist_habilitacao").executar({ oportunidade_id: OP }, deps);
+  assert.equal(r.resultado.isError, false);
+  const s = sc(r);
+  assert.equal(s.oportunidade_id, OP);
+  assert.equal(s.sessao, "2026-11-05");
+  assert.deepEqual((s.proposta as { situacao: string }[])[0].situacao, "falta_assinar");
+  assert.deepEqual(
+    (s.certidoes as { tipo: string; situacao: string }[]).find((x) => x.tipo === "crf_fgts")
+      ?.situacao,
+    "nao_anexado"
+  );
+  assert.deepEqual(s.acervo, [{ atestado_id: AT1, numero: "1/2025", situacao: "sem_pdf" }]);
+  assert.deepEqual((s.declaracoes as { chave: string; situacao: string }[])[0], {
+    chave: "nao_emprega_menor",
+    titulo: "Declaração de que não emprega menor",
+    exigida_no_edital: true,
+    situacao: "falta",
+  });
+  assert.equal((s.resumo as { pronto: boolean }).pronto, false);
+  assert.ok(String(s.link).endsWith(`openId=${OP}`));
+  // só leitura: nenhuma gravação e nenhum acesso ao Storage
+  assert.ok(fake.chamadas.every((c) => c.op === "select"));
+  assert.equal(fake.chamadasStorage.length, 0);
+});
+
+test("checklist_habilitacao: sem a análise do edital avisa e cobre os essenciais; outra empresa → nao_encontrado", async () => {
+  const sem = montarDeps((c: ChamadaFake) =>
+    c.tabela === "oportunidade" ? { data: { id: OP, edital_analise: null } } : undefined
+  );
+  const s = sc(
+    await ferramenta("checklist_habilitacao").executar({ oportunidade_id: OP }, sem.deps)
+  );
+  assert.equal((s.certidoes as unknown[]).length, 8);
+  assert.match(String((s.avisos as string[])[0]), /análise do edital/);
+  const fora = montarDeps(() => ({ data: null }));
+  assert.equal(
+    sc(await ferramenta("checklist_habilitacao").executar({ oportunidade_id: OP }, fora.deps))
+      .motivo,
+    "nao_encontrado"
+  );
+});
+
+const linhaArquivo = (id: string, origem: string | null, extra: Record<string, unknown> = {}) => ({
+  id,
+  nome: `Arquivo ${id}`,
+  pasta: null,
+  categoria: null,
+  origem,
+  assinatura: null,
+  ...extra,
+});
+
+/** Responde a uma leitura paginada (order + range) aplicando também os filtros. */
+function paginada(linhas: readonly object[], c: ChamadaFake): { data: object[] } {
+  const { data } = filtrar(linhas, c);
+  const faixa = c.filtros.find((f) => f.metodo === "range");
+  return { data: faixa ? data.slice(Number(faixa.args[0]), Number(faixa.args[1]) + 1) : data };
+}
+
+/**
+ * A biblioteca é devolvida SEM aplicar o filtro `ativo` (como o fake de sempre), para provar que o código também
+ * descarta o inativo; arquivos e atestados respondem com os filtros e a paginação do banco.
+ */
+function cenarioChecklist(p: {
+  analise?: unknown;
+  licitacaoData?: unknown;
+  docs?: Record<string, unknown>[];
+  arquivos?: Record<string, unknown>[];
+  atestados?: Record<string, unknown>[];
+  modelos?: Record<string, unknown>[];
+}) {
+  const analise = "analise" in p ? p.analise : SESSAO_EDITAL;
+  const arquivos = (p.arquivos ?? []).map((a) => ({
+    empresa_id: E,
+    oportunidade_id: OP,
+    deleted_at: null,
+    ...a,
+  }));
+  const atestados = (p.atestados ?? []).map((a) => ({ empresa_id: E, deleted_at: null, ...a }));
+  return montarDeps((c: ChamadaFake) => {
+    if (c.tabela === "oportunidade" && c.op === "select")
+      return { data: { id: OP, edital_analise: analise, licitacao_data: p.licitacaoData ?? null } };
+    if (c.tabela === "arquivo_oportunidade") return paginada(arquivos, c);
+    if (c.tabela === "acervo_documento") return { data: p.docs ?? [] };
+    if (c.tabela === "acervo_atestado") return filtrar(atestados, c);
+    if (c.tabela === "modelo_declaracao") return { data: p.modelos ?? [] };
+    return undefined;
+  });
+}
+const checklist = (deps: DepsFerramenta, id: unknown = OP) =>
+  ferramenta("checklist_habilitacao").executar({ oportunidade_id: id }, deps);
+
+test("checklist_habilitacao: defs — quarta da lista, só leitura, schema fechado e só o id da oportunidade", () => {
+  assert.deepEqual(
+    FERRAMENTAS_HABILITACAO.map((f) => f.def.name),
+    ["anexar_habilitacao", "anexar_acervo", "anexar_edital_por_url", "checklist_habilitacao"]
+  );
+  const def = ferramenta("checklist_habilitacao").def;
+  assert.equal(FERRAMENTAS_HABILITACAO[3], ferramenta("checklist_habilitacao"));
+  assert.deepEqual(def.annotations, {
+    readOnlyHint: true,
+    idempotentHint: true,
+    openWorldHint: false,
+  });
+  assert.deepEqual(Object.keys(def.inputSchema.properties as object), ["oportunidade_id"]);
+  assert.equal(def.inputSchema.additionalProperties, false);
+  assert.deepEqual(def.inputSchema.required, ["oportunidade_id"]);
+  assert.match(def.description, /Só lê/);
+});
+
+test("checklist_habilitacao: as consultas filtram pela empresa, sem excluídos, só a oportunidade, só documentos ativos e só as CATs do Atende?", async () => {
+  const { deps, fake } = cenarioChecklist({
+    analise: { ...SESSAO_EDITAL, atende: { cats_anexar: [{ id: AT1 }] } },
+    atestados: [atestado(AT1)],
+  });
+  const r = await checklist(deps);
+  assert.equal(r.resultado.isError, false);
+  const consultas = (t: string) => fake.chamadas.filter((c) => c.tabela === t);
+  for (const t of [
+    "oportunidade",
+    "arquivo_oportunidade",
+    "acervo_documento",
+    "acervo_atestado",
+    "modelo_declaracao",
+  ]) {
+    assert.equal(consultas(t).length, 1, t);
+  }
+  const base = [
+    ["eq", "empresa_id", E],
+    ["is", "deleted_at", null],
+  ];
+  assert.deepEqual(filtrosDe(consultas("oportunidade")[0]), [...base, ["eq", "id", OP]]);
+  assert.deepEqual(filtrosDe(consultas("arquivo_oportunidade")[0]), [
+    ...base,
+    ["eq", "oportunidade_id", OP],
+  ]);
+  assert.deepEqual(filtrosDe(consultas("acervo_documento")[0]), [...base, ["eq", "ativo", true]]);
+  assert.deepEqual(filtrosDe(consultas("acervo_atestado")[0]), [...base, ["in", "id", [AT1]]]);
+  assert.deepEqual(filtrosDe(consultas("modelo_declaracao")[0]), base);
+  // só as colunas de que o checklist precisa: nenhuma ref de arquivo da oportunidade nem da biblioteca
+  assert.equal(consultas("oportunidade")[0].colunas, "id, edital_analise, licitacao_data");
+  assert.equal(
+    consultas("arquivo_oportunidade")[0].colunas,
+    "id, nome, pasta, categoria, origem, assinatura"
+  );
+  assert.equal(consultas("acervo_documento")[0].colunas, "id, tipo, nome, validade, ativo");
+  assert.equal(consultas("acervo_atestado")[0].colunas, "id, numero, arquivo_ref");
+  // tudo leitura
+  assert.ok(fake.chamadas.every((c) => c.op === "select"));
+});
+
+test("checklist_habilitacao: sem CATs no Atende? o acervo nem é consultado; ids que não são UUID não vão ao banco", async () => {
+  const sem = cenarioChecklist({});
+  assert.deepEqual(sc(await checklist(sem.deps)).acervo, []);
+  assert.equal(sem.fake.chamadas.filter((c) => c.tabela === "acervo_atestado").length, 0);
+
+  const ruins = cenarioChecklist({
+    analise: {
+      atende: { cats_anexar: [{ id: "isto-nao-e-uuid" }, { id: AT1.toUpperCase() }, { id: AT1 }] },
+    },
+    atestados: [atestado(AT1)],
+  });
+  const s = sc(await checklist(ruins.deps));
+  const leitura = ruins.fake.chamadas.filter((c) => c.tabela === "acervo_atestado");
+  assert.equal(leitura.length, 1);
+  assert.deepEqual(leitura[0].filtros.find((f) => f.metodo === "in")?.args, ["id", [AT1]]);
+  assert.deepEqual(s.acervo, [
+    { atestado_id: "isto-nao-e-uuid", numero: null, situacao: "nao_encontrado" },
+    { atestado_id: AT1, numero: "51/2025", situacao: "nao_anexado" },
+  ]);
+  // só com ids que não são UUID também não consulta
+  const so = cenarioChecklist({ analise: { atende: { cats_anexar: [{ id: "x" }] } } });
+  await checklist(so.deps);
+  assert.equal(so.fake.chamadas.filter((c) => c.tabela === "acervo_atestado").length, 0);
+});
+
+test("checklist_habilitacao: mais de 100 CATs no Atende? são lidas em lotes de até 100 ids", async () => {
+  const ids = Array.from(
+    { length: 150 },
+    (_, i) => `00000000-0000-4000-8000-${String(100000000000 + i)}`
+  );
+  const { deps, fake } = cenarioChecklist({
+    analise: { atende: { cats_anexar: ids.map((id) => ({ id })) } },
+    atestados: ids.map((id) => atestado(id)),
+  });
+  const s = sc(await checklist(deps));
+  const leituras = fake.chamadas.filter((c) => c.tabela === "acervo_atestado");
+  assert.deepEqual(
+    leituras.map((c) => (c.filtros.find((f) => f.metodo === "in")!.args[1] as string[]).length),
+    [100, 50]
+  );
+  assert.equal((s.acervo as unknown[]).length, 150);
+  assert.ok((s.acervo as { situacao: string }[]).every((a) => a.situacao === "nao_anexado"));
+});
+
+test("checklist_habilitacao: uma oportunidade com muitos arquivos é lida por páginas, sem consulta por arquivo e sem Storage", async () => {
+  const arquivos = Array.from({ length: 2300 }, (_, i) =>
+    linhaArquivo(
+      `00000000-0000-4000-9000-${String(100000000000 + i)}`,
+      i % 4 === 0 ? `biblioteca:ant-${i}` : `url:${i}`,
+      {
+        assinatura: i % 2 === 0 ? "pendente" : null,
+        nome: `Arquivo ${String(i).padStart(4, "0")}.pdf`,
+      }
+    )
+  );
+  const { deps, fake } = cenarioChecklist({ arquivos });
+  const r = await checklist(deps);
+  assert.equal(r.resultado.isError, false);
+  const s = sc(r);
+  const paginas = fake.chamadas.filter((c) => c.tabela === "arquivo_oportunidade");
+  assert.deepEqual(
+    paginas.map((c) => c.filtros.find((f) => f.metodo === "range")?.args),
+    [
+      [0, 999],
+      [1000, 1999],
+      [2000, 2999],
+    ]
+  );
+  // 1 oportunidade + 3 páginas + biblioteca + modelos: nada por arquivo
+  assert.equal(fake.chamadas.length, 6);
+  assert.equal(fake.chamadasStorage.length, 0);
+  assert.ok(fake.chamadas.every((c) => c.op === "select"));
+  // todos os arquivos foram vistos
+  assert.equal((s.resumo as { falta_assinar: number }).falta_assinar, 1150);
+  assert.equal((s.falta_assinar as unknown[]).length, 1150);
+  assert.equal((s.copias_desatualizadas as unknown[]).length, 575);
+});
+
+test("checklist_habilitacao: documento inativo que o banco devolva não conta; a cópia dele na pasta é cópia desatualizada", async () => {
+  const docs = [
+    doc("d1", "crf_fgts", { nome: "CRF novo", validade: "2026-12-31" }),
+    doc("d2", "crf_fgts", { nome: "CRF velho", validade: "2026-09-30", ativo: false }),
+    doc("d3", "cnd_federal", { nome: "CND", validade: "2026-10-01" }),
+    doc("d4", "cartao_cnpj", { nome: "Cartão" }),
+  ];
+  const { deps } = cenarioChecklist({
+    docs,
+    arquivos: [
+      linhaArquivo("a1", "biblioteca:d1", { nome: "CRF do FGTS - CRF novo.pdf" }),
+      linhaArquivo("a2", "biblioteca:d2", { nome: "CRF do FGTS - CRF velho.pdf" }),
+      linhaArquivo("a3", "biblioteca:d3", { nome: "CND Federal - CND.pdf" }),
+      linhaArquivo("a4", "biblioteca:d4", { nome: "Cartão CNPJ - Cartão.pdf" }),
+      linhaArquivo("a5", `acervo:${AT1}`, { nome: "CAT 1.pdf" }),
+      linhaArquivo("a6", "gerado:proposta:pdf", { nome: "Proposta.pdf" }),
+    ],
+  });
+  const s = sc(await checklist(deps));
+  const cert = (tipo: string) =>
+    (
+      s.certidoes as {
+        tipo: string;
+        situacao: string;
+        documentos: number;
+        validade: string | null;
+      }[]
+    ).find((x) => x.tipo === tipo)!;
+  // o CRF velho (inativo) nem é contado: sobra o novo, anexado
+  assert.deepEqual(
+    [cert("crf_fgts").situacao, cert("crf_fgts").documentos, cert("crf_fgts").validade],
+    ["anexado", 1, "2026-12-31"]
+  );
+  assert.equal(cert("cnd_federal").situacao, "vencido");
+  assert.equal(cert("cartao_cnpj").situacao, "anexado");
+  assert.deepEqual(s.copias_desatualizadas, [
+    { arquivo_id: "a3", nome: "CND Federal - CND.pdf", motivo: "vencido" },
+    { arquivo_id: "a2", nome: "CRF do FGTS - CRF velho.pdf", motivo: "substituido_ou_removido" },
+  ]);
+  assert.equal((s.resumo as { desatualizadas: number }).desatualizadas, 2);
+  assert.equal((s.resumo as { pronto: boolean }).pronto, false);
+  assert.ok(
+    (s.proximos_passos as string[]).includes(
+      "Exclua da pasta do envelope as cópias desatualizadas: CND Federal - CND.pdf; CRF do FGTS - CRF velho.pdf."
+    )
+  );
+});
+
+test("checklist_habilitacao: a data da sessão é a mesma da anexar_habilitacao (a coluna vale mais que o edital)", async () => {
+  const docs = [doc("d1", "crf_fgts", { nome: "CRF", validade: "2026-11-02" })];
+  const arquivos = [linhaArquivo("a1", "biblioteca:d1")];
+  const crfDe = (s: Record<string, unknown>) =>
+    (s.certidoes as { tipo: string; situacao: string }[]).find((x) => x.tipo === "crf_fgts")
+      ?.situacao;
+  const avisosDe = (s: Record<string, unknown>) => s.avisos as string[];
+  const AVISO =
+    "A oportunidade não tem data de sessão futura: não conferi se algum documento vence antes dela.";
+  const SEM_DATA = { extraido: { habilitacao: {} } };
+
+  // sem a coluna: o edital (05/11) é depois do vencimento (02/11): vence antes
+  const soEdital = sc(await checklist(cenarioChecklist({ docs, arquivos }).deps));
+  assert.deepEqual([soEdital.sessao, crfDe(soEdital)], ["2026-11-05", "vence_antes_da_sessao"]);
+  assert.deepEqual(avisosDe(soEdital), []);
+  // a sessão foi antecipada na tela para 30/10: o documento vale nela, mesmo com o edital dizendo 05/11
+  const antecipada = sc(
+    await checklist(cenarioChecklist({ docs, arquivos, licitacaoData: "2026-10-30" }).deps)
+  );
+  assert.deepEqual([antecipada.sessao, crfDe(antecipada)], ["2026-10-30", "anexado"]);
+  assert.deepEqual(avisosDe(antecipada), []);
+  // coluna sem valor usável (inválida) cai no edital
+  const invalida = sc(
+    await checklist(cenarioChecklist({ docs, arquivos, licitacaoData: "2026-02-30" }).deps)
+  );
+  assert.deepEqual([invalida.sessao, crfDe(invalida)], ["2026-11-05", "vence_antes_da_sessao"]);
+  // a coluna no passado manda, mesmo com o edital no futuro: não há sessão futura; o aviso diz que não conferiu
+  const passada = sc(
+    await checklist(cenarioChecklist({ docs, arquivos, licitacaoData: "2026-10-01" }).deps)
+  );
+  assert.deepEqual([passada.sessao, crfDe(passada)], ["2026-10-01", "anexado"]);
+  assert.deepEqual(avisosDe(passada), [AVISO]);
+  // sem nenhuma data, idem (e a sessão sai null)
+  const nenhuma = sc(await checklist(cenarioChecklist({ docs, arquivos, analise: SEM_DATA }).deps));
+  assert.deepEqual([nenhuma.sessao, crfDe(nenhuma)], [null, "anexado"]);
+  assert.deepEqual(avisosDe(nenhuma), [AVISO]);
+  // nada anexado com validade: não há o que conferir, sem aviso
+  const semAnexo = sc(await checklist(cenarioChecklist({ docs, analise: SEM_DATA }).deps));
+  assert.deepEqual(avisosDe(semAnexo), []);
+});
+
+test("checklist_habilitacao: o aviso da análise vem antes do da sessão; o edital pode vir como texto (jsonb legado)", async () => {
+  const docs = [doc("d1", "crf_fgts", { validade: "2026-12-31" })];
+  const arquivos = [linhaArquivo("a1", "biblioteca:d1")];
+  // sem análise e sem sessão: o aviso da análise é o primeiro, e o da sessão vem depois
+  const sem = sc(await checklist(cenarioChecklist({ docs, arquivos, analise: null }).deps));
+  assert.equal((sem.avisos as string[]).length, 2);
+  assert.equal(
+    (sem.avisos as string[])[0],
+    "A oportunidade ainda não tem a análise do edital: o checklist cobre só os documentos essenciais. Grave o edital com criar_ou_atualizar_oportunidade."
+  );
+  assert.match((sem.avisos as string[])[1], /data de sessão futura/);
+  // com a coluna futura (sem análise), só o aviso da análise
+  const comColuna = sc(
+    await checklist(
+      cenarioChecklist({ docs, arquivos, analise: null, licitacaoData: "2026-11-20" }).deps
+    )
+  );
+  assert.equal(comColuna.sessao, "2026-11-20");
+  assert.equal((comColuna.avisos as string[]).length, 1);
+  // análise gravada como texto
+  const texto = sc(
+    await checklist(
+      cenarioChecklist({
+        analise: JSON.stringify({
+          extraido: {
+            datas: { sessao: { data: "2026-11-05" } },
+            habilitacao: {
+              outros_documentos: [{ descricao: "Alvará de funcionamento", pagina: 2 }],
+            },
+          },
+        }),
+      }).deps
+    )
+  );
+  assert.equal(texto.sessao, "2026-11-05");
+  assert.deepEqual(texto.avisos, []);
+  assert.ok((texto.certidoes as { tipo: string }[]).some((x) => x.tipo === "alvara"));
+});
+
+test("checklist_habilitacao: modelos da empresa dão o título; modelo desativado cai no título da chave", async () => {
+  const analise = {
+    extraido: {
+      habilitacao: {
+        outros_documentos: [
+          { descricao: "Declaração de que não emprega menor", pagina: 1 },
+          { descricao: "Declaração de enquadramento como ME/EPP", pagina: 2 },
+        ],
+      },
+    },
+  };
+  const { deps } = cenarioChecklist({
+    analise,
+    modelos: [
+      {
+        chave: "nao_emprega_menor",
+        titulo: "Declaração (modelo da empresa)",
+        texto: "x",
+        ativo: true,
+        ordem: 1,
+      },
+      { chave: "me_epp", titulo: "ME/EPP desativado", texto: "x", ativo: false, ordem: 3 },
+    ],
+  });
+  const s = sc(await checklist(deps));
+  assert.deepEqual(
+    (s.declaracoes as { chave: string; titulo: string }[]).map((d) => [d.chave, d.titulo]),
+    [
+      ["nao_emprega_menor", "Declaração (modelo da empresa)"],
+      ["me_epp", "me_epp"],
+    ]
+  );
+});
+
+test("checklist_habilitacao: id da oportunidade que não é UUID ou de outra empresa → nao_encontrado, nada mais é lido", async () => {
+  const lixo = cenarioChecklist({});
+  const r1 = await checklist(lixo.deps, "isto-nao-e-uuid");
+  assert.equal(r1.resultado.isError, true);
+  assert.equal(sc(r1).motivo, "nao_encontrado");
+  assert.equal(sc(await checklist(lixo.deps, null)).motivo, "nao_encontrado");
+  const semId = await ferramenta("checklist_habilitacao").executar({}, lixo.deps);
+  assert.equal(sc(semId).motivo, "nao_encontrado");
+  assert.equal(lixo.fake.chamadas.length, 0);
+  // oportunidade de outra empresa: a camada devolve null e mais nada é lido
+  const fora = montarDeps(() => ({ data: null }));
+  const r2 = await checklist(fora.deps);
+  assert.equal(sc(r2).motivo, "nao_encontrado");
+  assert.deepEqual(
+    fora.fake.chamadas.map((c) => c.tabela),
+    ["oportunidade"]
+  );
+  assert.equal(fora.fake.chamadasStorage.length, 0);
+});
+
+test("checklist_habilitacao: a saída nunca traz ref de Storage, caminho nem URL (só ids, nomes, rótulos, situações, datas e textos)", async () => {
+  const docs = [
+    doc("d1", "crf_fgts", {
+      validade: "2026-12-31",
+      arquivo_ref: `habilitacao/${E}/2026/10/crf.pdf`,
+    }),
+    doc("d2", "cndt_trabalhista", { arquivo_ref: `habilitacao/${OUTRA}/x.pdf`, numero: "123" }),
+    doc("d3", "cartao_cnpj", { validade: "2026-01-01" }),
+  ];
+  const { deps } = cenarioChecklist({
+    analise: {
+      extraido: {
+        datas: { sessao: { data: "2026-11-05" } },
+        habilitacao: { outros_documentos: [{ descricao: "Alvará de funcionamento", pagina: 4 }] },
+      },
+      atende: { cats_anexar: [{ id: AT1 }, { id: AT2 }] },
+    },
+    docs,
+    atestados: [
+      atestado(AT1, { arquivo_ref: `certificados/${E}/2025/01/cat1.pdf` }),
+      atestado(AT2, { arquivo_ref: `certificados/${OUTRA}/2025/01/cat2.pdf` }),
+    ],
+    arquivos: [
+      // se a consulta um dia trouxer mais colunas, a saída não pode repassá-las
+      linhaArquivo("a1", "biblioteca:d1", {
+        url: `anexos-oportunidade/${E}/2026/10/u1-CRF.pdf`,
+        tamanho: 10,
+      }),
+      linhaArquivo("a2", "gerado:proposta:pdf", {
+        assinatura: "pendente",
+        url: `anexos-oportunidade/${E}/2026/10/u2-Proposta.pdf`,
+      }),
+      linhaArquivo("a3", `acervo:${AT1}`, { url: `anexos-oportunidade/${E}/2026/10/u3-CAT.pdf` }),
+      linhaArquivo("a4", "biblioteca:d-antigo", {
+        url: `anexos-oportunidade/${OUTRA}/2026/10/u4.pdf`,
+      }),
+    ],
+  });
+  const r = await checklist(deps);
+  assert.equal(r.resultado.isError, false);
+  const { link, ...resto } = sc(r);
+  assert.equal(link, linkOportunidade(OP));
+  assert.deepEqual(JSON.parse(r.resultado.content[0].text as string), sc(r));
+  const json = JSON.stringify(resto);
+  for (const proibido of [
+    "anexos-oportunidade/",
+    "habilitacao/",
+    "certificados/",
+    "http",
+    "u1-",
+    "u2-",
+    "u4",
+    E,
+    OUTRA,
+  ]) {
+    assert.ok(!json.includes(proibido), `${proibido} em ${json}`);
+  }
+  assert.ok(!/\/20\d\d\/\d\d\//.test(json), json);
+  // e as chaves são só as do checklist
+  assert.deepEqual(Object.keys(resto).sort(), [
+    "acervo",
+    "avisos",
+    "certidoes",
+    "copias_desatualizadas",
+    "declaracoes",
+    "edital",
+    "falta_assinar",
+    "oportunidade_id",
+    "outros_documentos",
+    "proposta",
+    "proximos_passos",
+    "resumo",
+    "sessao",
+  ]);
+});
+
+test("checklist_habilitacao: não grava nada — nem arquivo, nem histórico, nem RPC (idempotente)", async () => {
+  const { deps, fake } = cenarioChecklist({
+    docs: [doc("d1", "crf_fgts")],
+    arquivos: [linhaArquivo("a1", "biblioteca:d1")],
+  });
+  const a = sc(await checklist(deps));
+  const b = sc(await checklist(deps));
+  assert.deepEqual(a, b);
+  assert.ok(fake.chamadas.every((c) => c.op === "select"));
+  assert.ok(!fake.chamadas.some((c) => c.tabela === "oportunidade_atualizacao"));
+  assert.ok(!fake.chamadas.some((c) => c.tabela === "conector_gravar_arquivo"));
+  assert.equal(fake.chamadasStorage.length, 0);
+});
