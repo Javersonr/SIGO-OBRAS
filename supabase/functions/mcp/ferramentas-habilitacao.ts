@@ -6,8 +6,13 @@
  *
  * Tudo pela CamadaEmpresa (empresa da chave). Origem e destino das cópias ficam na pasta da
  * empresa; nenhuma ref vem da entrada. A saída traz nome, tipo, validade e situação, nunca o conteúdo.
+ *
+ * Certidão errada numa licitação é o pior erro possível, então a ferramenta não se cala: documento
+ * vencido, versão substituída, cópia antiga que ficou na pasta, sessão sem data e item que falhou
+ * saem na resposta (nunca como se estivesse tudo certo). Ela só copia: apagar é do usuário.
  */
 import type { PromptDef } from "../_shared/mcp/protocolo.ts";
+import { dadosOuErro } from "../_shared/conector/camada-empresa.ts";
 import {
   baixarObjeto,
   BUCKET_ACERVO,
@@ -24,7 +29,9 @@ import {
 import { uuidOuNull } from "../_shared/conector/entrada.ts";
 import { linkOportunidade } from "../_shared/conector/recurso.ts";
 import { hojeBR } from "../_shared/edital/acervo.ts";
+import { dataDaSessao } from "../_shared/habilitacao/data-sessao.ts";
 import {
+  diasAte,
   IDS_TIPO_DOCUMENTO,
   rotuloDoTipo,
   situacaoDaValidade,
@@ -65,34 +72,62 @@ function analiseDe(v: unknown): Record<string, unknown> | null {
   return x && typeof x === "object" && !Array.isArray(x) ? (x as Record<string, unknown>) : null;
 }
 
-/** Data da sessão do edital gravado, se ainda não passou ("AAAA-MM-DD" ou null). */
-export function sessaoFutura(
-  analise: Record<string, unknown> | null,
-  hojeISO: string
-): string | null {
-  // deno-lint-ignore no-explicit-any
-  const data = (analise as any)?.extraido?.datas?.sessao?.data;
-  return typeof data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(data) && data > hojeISO
-    ? data
-    : null;
+/** Por que um item não foi copiado (o `motivo` de cada entrada de `falhas`). */
+type MotivoDaFalha =
+  | ErroArquivo["codigo"]
+  | "arquivo_fora_da_empresa"
+  | "mantido_assinado"
+  | "erro_interno";
+
+/** Texto curto, em português, de cada motivo: vai em `falhas[].mensagem` para o Claude explicar ao usuário. */
+export const MENSAGEM_DA_FALHA: Record<MotivoDaFalha, string> = {
+  arquivo_fora_da_empresa: "O arquivo deste documento não está na pasta da empresa.",
+  nao_encontrado: "O arquivo deste documento não foi encontrado no armazenamento.",
+  tipo_nao_aceito: "O arquivo não é PDF, JPG ou PNG.",
+  grande_demais: "O arquivo passa do limite de 50 MB.",
+  vazio: "O arquivo está vazio.",
+  storage: "O armazenamento não respondeu ao ler ou gravar o arquivo. Tente de novo.",
+  mantido_assinado:
+    "Já existe uma versão assinada deste documento na oportunidade; ela foi mantida, sem troca.",
+  erro_interno: "Erro inesperado ao copiar este documento. Tente de novo.",
+};
+
+const falhaDoItem = (identificacao: Record<string, unknown>, motivo: MotivoDaFalha) => ({
+  ...identificacao,
+  motivo,
+  mensagem: MENSAGEM_DA_FALHA[motivo],
+});
+
+/** A mensagem do erro sem nada que pareça URL, ref ou caminho do Storage (o erro de rede do Deno traz a URL do arquivo). */
+const mensagemSemCaminho = (e: unknown): string =>
+  (e instanceof Error ? e.message : String(e)).replace(/\S*\/\S*/g, "[caminho]").slice(0, 300);
+
+/** Log de um erro inesperado: nome do erro e mensagem sem caminho. Nunca a ref do arquivo. */
+function logarErro(ferramenta: string, onde: string, e: unknown): void {
+  const nome = e instanceof Error ? e.name : typeof e;
+  console.error(`[conector] ${ferramenta}: ${onde}: ${nome}: ${mensagemSemCaminho(e)}`);
 }
 
 type CopiaFeita =
   | { situacao: "copiado"; arquivoId: string; nome: string; substituiu: boolean }
   | { situacao: "mantido_assinado" }
-  | { situacao: "falha"; motivo: string }
+  | { situacao: "falha"; motivo: MotivoDaFalha }
   | { situacao: "sem_oportunidade" };
 
 /**
  * Copia um arquivo do Storage da empresa (biblioteca ou acervo) para a pasta do envelope da oportunidade.
  * A ref vem do banco, nunca da entrada do Claude: mesmo assim confere bucket e pasta da empresa antes de
- * baixar. Falha DO ARQUIVO (fora da empresa, sumiu, vazio, grande demais, tipo) vira `falha` e quem chama
- * segue com o próximo; qualquer outro erro (banco, Storage fora do ar) sobe e a chamada inteira falha (repetir
- * é seguro: a `origem` troca o arquivo no lugar).
+ * baixar. Qualquer falha DO ITEM (fora da empresa, sumiu, vazio, grande demais, tipo, e também erro de banco,
+ * da RPC, resposta estranha ou rede que cai) vira `falha` e quem chama segue com o próximo: os já copiados
+ * não ficam sem histórico. Só a oportunidade que sumiu interrompe (`sem_oportunidade`). Repetir é seguro: a
+ * `origem` troca o arquivo no lugar.
  */
 async function copiarParaEnvelope(
   deps: DepsFerramenta,
   p: {
+    ferramenta: string;
+    /** Id do documento ou do atestado (só para o log). */
+    itemId: string;
     oportunidadeId: string;
     bucket: string;
     ref: unknown;
@@ -101,9 +136,9 @@ async function copiarParaEnvelope(
     nomeCom: (extensao: string) => string;
   }
 ): Promise<CopiaFeita> {
-  const caminho = caminhoDaEmpresa(p.ref, p.bucket, deps.db.empresaId);
-  if (!caminho) return { situacao: "falha", motivo: "arquivo_fora_da_empresa" };
   try {
+    const caminho = caminhoDaEmpresa(p.ref, p.bucket, deps.db.empresaId);
+    if (!caminho) return { situacao: "falha", motivo: "arquivo_fora_da_empresa" };
     const bytes = await baixarObjeto(deps.storage, p.bucket, caminho);
     const tipo = tipoPelosBytesServidor(bytes.subarray(0, 8), caminho, TIPOS_DOCUMENTO_BIBLIOTECA);
     if (!tipo) return { situacao: "falha", motivo: "tipo_nao_aceito" };
@@ -129,7 +164,8 @@ async function copiarParaEnvelope(
     return { situacao: "copiado", arquivoId: g.arquivo_id, nome, substituiu: g.substituiu };
   } catch (e) {
     if (e instanceof ErroArquivo) return { situacao: "falha", motivo: e.codigo };
-    throw e;
+    logarErro(p.ferramenta, `erro inesperado no item ${p.itemId}`, e);
+    return { situacao: "falha", motivo: "erro_interno" };
   }
 }
 
@@ -171,12 +207,96 @@ function nomeBaseDoDocumento(d: DocumentoBiblioteca): string {
   return tipoDocumento(d.tipo)?.id === "outro" ? d.nome : `${rotulo} - ${d.nome}`;
 }
 
+const AVISO_SEM_SESSAO =
+  "A oportunidade não tem data de sessão futura: não conferi se algum documento vence antes dela.";
+const AVISO_COPIAS_NAO_CONFERIDAS =
+  "Não consegui conferir se há arquivos antigos da biblioteca na pasta do envelope: confira à mão.";
+
+const PREFIXO_BIBLIOTECA = "biblioteca:";
+/** Ids por consulta `in`: 100 UUIDs cabem folgados no limite da URL do PostgREST. */
+const LOTE_DE_IDS = 100;
+
+interface CopiaDesatualizada {
+  arquivo_id: string;
+  nome: string;
+  motivo: "substituido" | "removido" | "vencido";
+}
+
+/**
+ * Os arquivos da biblioteca que JÁ estavam na oportunidade (origem `biblioteca:<documento_id>`) e hoje
+ * não valem: o documento foi substituído (ativo = false, por exemplo ao renovar a certidão pela tela), foi
+ * removido da biblioteca ou venceu. A cópia da versão antiga não é trocada pela nova (origens diferentes) e
+ * ficaria na pasta do envelope ao lado da nova: quem monta o envelope tem de saber. Não apaga nada.
+ *
+ * `ativos` = os documentos ativos da biblioteca que a chamada já leu; só os que não estão entre eles
+ * (substituídos ou removidos) são lidos por id, numa consulta (em lotes de 100). Documento válido que o usuário
+ * não pediu agora fica de fora: só entra quem não vale mais.
+ */
+async function copiasDesatualizadas(
+  deps: DepsFerramenta,
+  oportunidadeId: string,
+  hoje: string,
+  ativos: ReadonlyMap<string, DocumentoBiblioteca>
+): Promise<CopiaDesatualizada[]> {
+  const linhas = await deps.db.lerTodos<{ id: string; nome: string | null; origem: string | null }>(
+    "arquivo_oportunidade",
+    "id, nome, origem",
+    (q) => q.eq("oportunidade_id", oportunidadeId).like("origem", `${PREFIXO_BIBLIOTECA}%`)
+  );
+  // o filtro like já fez isto no banco; conferir aqui garante que acervo:, gerado:, declaracao:, url: e
+  // linha sem origem nunca entrem, mesmo que o filtro um dia deixe de valer
+  const copias = linhas
+    .filter((l) => typeof l.origem === "string" && l.origem.startsWith(PREFIXO_BIBLIOTECA))
+    .map((l) => ({
+      arquivoId: l.id,
+      nome: String(l.nome ?? ""),
+      documentoId: String(l.origem).slice(PREFIXO_BIBLIOTECA.length),
+    }));
+  const vencido = (validade: unknown) => situacaoDaValidade(validade, hoje).situacao === "vencido";
+
+  const achados: CopiaDesatualizada[] = [];
+  const registrar = (c: (typeof copias)[number], motivo: CopiaDesatualizada["motivo"]) =>
+    achados.push({ arquivo_id: c.arquivoId, nome: c.nome, motivo });
+
+  const foraDosAtivos: typeof copias = [];
+  for (const c of copias) {
+    const d = ativos.get(c.documentoId);
+    if (!d) foraDosAtivos.push(c);
+    else if (vencido(d.validade)) registrar(c, "vencido");
+  }
+
+  // id que não é UUID não existe na biblioteca (e faria o banco recusar a consulta inteira): fica de fora do `in`
+  const ids = [
+    ...new Set(foraDosAtivos.map((c) => uuidOuNull(c.documentoId)).filter((x): x is string => !!x)),
+  ];
+  const lidos = new Map<string, { ativo?: boolean | null; validade?: string | null }>();
+  for (let i = 0; i < ids.length; i += LOTE_DE_IDS) {
+    const lote = ids.slice(i, i + LOTE_DE_IDS);
+    const rows =
+      dadosOuErro<{ id: string; ativo?: boolean | null; validade?: string | null }[]>(
+        await deps.db.ler("acervo_documento", "id, ativo, validade").in("id", lote)
+      ) ?? [];
+    for (const r of rows) lidos.set(String(r.id).toLowerCase(), r);
+  }
+  for (const c of foraDosAtivos) {
+    const r = lidos.get(uuidOuNull(c.documentoId) ?? "");
+    if (!r) registrar(c, "removido");
+    else if (r.ativo === false) registrar(c, "substituido");
+    else if (vencido(r.validade)) registrar(c, "vencido");
+  }
+  return achados.sort(
+    (a, b) =>
+      a.nome.localeCompare(b.nome, "pt-BR", { numeric: true }) ||
+      a.arquivo_id.localeCompare(b.arquivo_id)
+  );
+}
+
 const ANEXAR_HABILITACAO: Ferramenta = {
   def: {
     name: "anexar_habilitacao",
     title: "Anexar a habilitação da empresa à oportunidade",
     description:
-      'Copia para a pasta "Envelope 02 – Habilitação" da oportunidade os documentos VÁLIDOS da biblioteca de habilitação da empresa (certidões, contrato social, balanço…), sem ninguém enviar arquivo. Sem tipos, anexa todos os documentos em vigor. Documento vencido não é anexado: volta em vencidos; o que a empresa não tem volta em faltam. Repetir a chamada troca os arquivos no lugar, sem duplicar.',
+      'Copia para a pasta "Envelope 02 – Habilitação" da oportunidade os documentos VÁLIDOS da biblioteca de habilitação da empresa (certidões, contrato social, balanço…), sem ninguém enviar arquivo. Sem tipos, anexa todos os documentos em vigor. Documento vencido não é anexado: volta em vencidos; o que a empresa não tem volta em faltam. Repetir a chamada troca os arquivos no lugar, sem duplicar. Cópias antigas que já estavam na pasta e vêm de versão substituída, removida ou vencida voltam em copias_desatualizadas (o SIGO não apaga): avise o usuário para excluí-las. Leia sempre avisos e falhas e repasse ao usuário.',
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -206,20 +326,25 @@ const ANEXAR_HABILITACAO: Ferramenta = {
       );
     }
     const tipos = pedido.tipos;
+    // licitacao_data é a "Sessão" que a tela mostra e o usuário edita; o edital é o plano B
     const op = id
-      ? await deps.db.porId<{ id: string; edital_analise: unknown }>(
+      ? await deps.db.porId<{ id: string; edital_analise: unknown; licitacao_data: unknown }>(
           "oportunidade",
           id,
-          "id, edital_analise"
+          "id, edital_analise, licitacao_data"
         )
       : null;
     if (!id || !op) return naoEncontrado("oportunidade", id);
 
-    const todos = await deps.db.lerTodos<DocumentoBiblioteca>(
-      "acervo_documento",
-      "id, tipo, nome, arquivo_ref, numero, validade, ativo",
-      (q) => q.eq("ativo", true)
-    );
+    // só documentos em vigor: a consulta já filtra ativo = true, e aqui se descarta de novo (como o
+    // certidoesDaBiblioteca) uma versão substituída que escape, para nunca copiar a certidão errada
+    const todos = (
+      await deps.db.lerTodos<DocumentoBiblioteca>(
+        "acervo_documento",
+        "id, tipo, nome, arquivo_ref, numero, validade, ativo",
+        (q) => q.eq("ativo", true)
+      )
+    ).filter((d) => d.ativo !== false);
     const docs = todos
       .filter((d) => !tipos || tipos.includes(d.tipo))
       .sort(
@@ -230,7 +355,7 @@ const ANEXAR_HABILITACAO: Ferramenta = {
       );
 
     const hoje = hojeBR(deps.agora);
-    const sessao = sessaoFutura(analiseDe(op.edital_analise), hoje);
+    const sessao = dataDaSessao(op, hoje).futura;
     const vencidos: DocumentoBiblioteca[] = [];
     const validos: DocumentoBiblioteca[] = [];
     for (const d of docs) {
@@ -250,18 +375,20 @@ const ANEXAR_HABILITACAO: Ferramenta = {
     let mantidosAssinados = 0;
     for (const d of validos) {
       const r = await copiarParaEnvelope(deps, {
+        ferramenta: "anexar_habilitacao",
+        itemId: d.id,
         oportunidadeId: id,
         bucket: BUCKET_HABILITACAO,
         ref: d.arquivo_ref,
-        origem: `biblioteca:${d.id}`,
+        origem: `${PREFIXO_BIBLIOTECA}${d.id}`,
         nomeCom: (ext) => `${nomeBaseDoDocumento(d)}.${ext}`,
       });
       if (r.situacao === "sem_oportunidade") return naoEncontrado("oportunidade", id);
       if (r.situacao === "falha") {
-        falhas.push({ documento_id: d.id, nome: d.nome, motivo: r.motivo });
+        falhas.push(falhaDoItem({ documento_id: d.id, nome: d.nome }, r.motivo));
       } else if (r.situacao === "mantido_assinado") {
         mantidosAssinados++;
-        falhas.push({ documento_id: d.id, nome: d.nome, motivo: "mantido_assinado" });
+        falhas.push(falhaDoItem({ documento_id: d.id, nome: d.nome }, "mantido_assinado"));
       } else {
         anexados.push({
           documento_id: d.id,
@@ -271,7 +398,8 @@ const ANEXAR_HABILITACAO: Ferramenta = {
           validade: d.validade ?? null,
           arquivo_id: r.arquivoId,
           substituiu: r.substituiu,
-          vence_antes_da_sessao: !!sessao && !!d.validade && d.validade < sessao,
+          // estritamente antes: validade igual ao dia da sessão ainda vale nela
+          vence_antes_da_sessao: !!sessao && (diasAte(d.validade, sessao) ?? 0) < 0,
         });
       }
     }
@@ -282,12 +410,32 @@ const ANEXAR_HABILITACAO: Ferramenta = {
       .filter((t) => !comDocumento.has(t))
       .map((t) => ({ tipo: t, rotulo: rotuloDoTipo(t) }));
 
+    // arquivos da biblioteca que já estavam na pasta e hoje não valem (versão substituída, removida ou vencida):
+    // a cópia nova não os troca (outra origem). Falha ao conferir não derruba a ferramenta, mas também não
+    // se cala: sem a lista e com aviso (uma lista vazia diria que está tudo certo)
+    let copiasAntigas: CopiaDesatualizada[] | null = null;
+    try {
+      copiasAntigas = await copiasDesatualizadas(
+        deps,
+        id,
+        hoje,
+        new Map(todos.map((d) => [d.id, d]))
+      );
+    } catch (e) {
+      logarErro("anexar_habilitacao", "conferir as cópias antigas da pasta", e);
+    }
+
     const avisos: string[] = [];
     const antesDaSessao = anexados.filter((a) => a.vence_antes_da_sessao).length;
-    if (antesDaSessao && sessao) {
-      avisos.push(
-        `${plural(antesDaSessao, "documento vence", "documentos vencem")} antes da sessão (${fmtDataBR(sessao)}): renove e anexe de novo.`
-      );
+    if (sessao) {
+      if (antesDaSessao) {
+        avisos.push(
+          `${plural(antesDaSessao, "documento vence", "documentos vencem")} antes da sessão (${fmtDataBR(sessao)}): renove e anexe de novo.`
+        );
+      }
+    } else if (anexados.length > 0) {
+      // sem data de sessão futura não há como saber se algo vence antes dela: nunca calar sobre isso
+      avisos.push(AVISO_SEM_SESSAO);
     }
     if (vencidos.length) {
       avisos.push(
@@ -297,6 +445,21 @@ const ANEXAR_HABILITACAO: Ferramenta = {
     if (mantidosAssinados) {
       avisos.push(
         `${mantidosAssinados === 1 ? "1 documento já tem uma versão assinada na oportunidade e foi mantido" : `${mantidosAssinados} documentos já têm uma versão assinada na oportunidade e foram mantidos`}, sem troca.`
+      );
+    }
+    // o já assinado tem aviso próprio acima; aqui entram os que de fato não puderam ser copiados
+    const naoCopiados = falhas.length - mantidosAssinados;
+    if (naoCopiados > 0) {
+      avisos.push(
+        `${naoCopiados === 1 ? "1 documento não pôde ser copiado" : `${naoCopiados} documentos não puderam ser copiados`}: veja falhas.`
+      );
+    }
+    if (copiasAntigas === null) {
+      avisos.push(AVISO_COPIAS_NAO_CONFERIDAS);
+    } else if (copiasAntigas.length) {
+      const n = copiasAntigas.length;
+      avisos.push(
+        `${n === 1 ? "1 arquivo da biblioteca nesta oportunidade vem" : `${n} arquivos da biblioteca nesta oportunidade vêm`} de versão substituída, removida ou vencida: exclua-${n === 1 ? "o" : "os"} da pasta do envelope.`
       );
     }
 
@@ -322,6 +485,8 @@ const ANEXAR_HABILITACAO: Ferramenta = {
         })),
         faltam,
         falhas,
+        // ausente (e não vazia) quando a conferência falhou: há um aviso dizendo isso
+        ...(copiasAntigas ? { copias_desatualizadas: copiasAntigas } : {}),
         avisos,
         link: linkOportunidade(id),
       },
@@ -457,11 +622,19 @@ const ANEXAR_ACERVO: Ferramenta = {
     const naoEncontrados: string[] = [];
     const falhas: Record<string, unknown>[] = [];
     for (const idAtestado of ids) {
-      const a = await deps.db.porId<AtestadoLido>(
-        "acervo_atestado",
-        idAtestado,
-        "id, tipo, numero, contratante, arquivo_ref"
-      );
+      let a: AtestadoLido | null;
+      try {
+        a = await deps.db.porId<AtestadoLido>(
+          "acervo_atestado",
+          idAtestado,
+          "id, tipo, numero, contratante, arquivo_ref"
+        );
+      } catch (e) {
+        // erro de banco ao ler UM atestado: ele vira falha e os outros seguem
+        logarErro("anexar_acervo", `erro inesperado no item ${idAtestado}`, e);
+        falhas.push(falhaDoItem({ atestado_id: idAtestado }, "erro_interno"));
+        continue;
+      }
       if (!a) {
         naoEncontrados.push(idAtestado);
         continue;
@@ -471,6 +644,8 @@ const ANEXAR_ACERVO: Ferramenta = {
         continue;
       }
       const r = await copiarParaEnvelope(deps, {
+        ferramenta: "anexar_acervo",
+        itemId: a.id,
         oportunidadeId: id,
         bucket: BUCKET_ACERVO,
         ref: a.arquivo_ref,
@@ -480,9 +655,9 @@ const ANEXAR_ACERVO: Ferramenta = {
       });
       if (r.situacao === "sem_oportunidade") return naoEncontrado("oportunidade", id);
       if (r.situacao === "falha") {
-        falhas.push({ atestado_id: a.id, motivo: r.motivo });
+        falhas.push(falhaDoItem({ atestado_id: a.id }, r.motivo));
       } else if (r.situacao === "mantido_assinado") {
-        falhas.push({ atestado_id: a.id, motivo: "mantido_assinado" });
+        falhas.push(falhaDoItem({ atestado_id: a.id }, "mantido_assinado"));
       } else {
         anexados.push({
           atestado_id: a.id,
