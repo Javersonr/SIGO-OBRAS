@@ -2,13 +2,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { sanearEdital } from "../edital/edital-regras.ts";
 import {
   classificarExigencia,
   conferirCopiasComOsAtivos,
   copiasDaBiblioteca,
   documentoVencido,
+  exigeAtende,
   exigeQualificacaoTecnica,
   montarChecklist,
+  situacaoDaAnalise,
+  temRegistroForaDoCrea,
   vereditoDoAtende,
   PREFIXO_BIBLIOTECA,
   type ArquivoChecklist,
@@ -211,6 +215,9 @@ test("montarChecklist: oportunidade vazia — tudo o que falta e os próximos pa
     desatualizadas: 0,
     sem_analise: 0,
     sem_atende: 0,
+    atende_negativo: 0,
+    conferir_a_mao: 1,
+    sem_pendencia_do_sigo: false,
     pronto: false,
   });
   assert.ok(c.proximos_passos.some((p) => p.includes("anexar_edital_por_url")));
@@ -276,6 +283,9 @@ test("montarChecklist: tudo anexado e assinado → pronto", () => {
     desatualizadas: 0,
     sem_analise: 0,
     sem_atende: 0,
+    atende_negativo: 0,
+    conferir_a_mao: 0,
+    sem_pendencia_do_sigo: true,
     pronto: true,
   });
   assert.deepEqual(c.proximos_passos, []);
@@ -661,8 +671,17 @@ test("montarChecklist: documentos inativos, com validade ruim ou nulos não derr
 
 // ─── edital, proposta, acervo e declarações ───────────────────────────────────────────────────
 
-/** Uma análise do edital já gravada, sem exigência nenhuma (não é "sem análise"). */
-const ANALISE_MINIMA = { habilitacao: {} };
+/**
+ * Uma análise do edital já gravada, com UMA exigência de habilitação que os documentos essenciais já cobrem (uma análise
+ * sem nenhuma exigência conta como "sem análise": correção da revisão 2).
+ */
+const ANALISE_MINIMA = {
+  habilitacao: {
+    outros_documentos: [
+      { descricao: "Certidão Negativa de Débitos Trabalhistas (CNDT)", pagina: 9 },
+    ],
+  },
+};
 
 const vazio = (extra: Partial<EntradaChecklist> = {}): EntradaChecklist => ({
   extraido: null,
@@ -950,9 +969,12 @@ test("montarChecklist: só uma cópia antiga na pasta já basta para não estar 
     desatualizadas: 0,
     sem_analise: 1,
     sem_atende: 0,
+    atende_negativo: 0,
+    conferir_a_mao: 0,
+    sem_pendencia_do_sigo: false,
     pronto: false,
   });
-  // com a análise gravada (sem exigência nenhuma), tudo certo: pronto
+  // com a análise gravada (com ao menos uma exigência de habilitação), tudo certo: pronto
   const pronto = montarChecklist(vazio({ extraido: ANALISE_MINIMA, arquivos: base, documentos }));
   assert.deepEqual(pronto.resumo, {
     faltam: 0,
@@ -962,6 +984,9 @@ test("montarChecklist: só uma cópia antiga na pasta já basta para não estar 
     desatualizadas: 0,
     sem_analise: 0,
     sem_atende: 0,
+    atende_negativo: 0,
+    conferir_a_mao: 0,
+    sem_pendencia_do_sigo: true,
     pronto: true,
   });
   const comAntiga = montarChecklist(
@@ -982,6 +1007,9 @@ test("montarChecklist: só uma cópia antiga na pasta já basta para não estar 
     desatualizadas: 1,
     sem_analise: 0,
     sem_atende: 0,
+    atende_negativo: 0,
+    conferir_a_mao: 0,
+    sem_pendencia_do_sigo: false,
     pronto: false,
   });
   assert.deepEqual(comAntiga.proximos_passos, [
@@ -1217,6 +1245,27 @@ const REDACOES: Redacao[] = [
     ["certidao_falencia"],
     ["fato_impeditivo"],
   ],
+  // ── revisão 2 ──
+  // "reabilitada" da idoneidade NÃO é a reserva de cargos (só "reabilitado da Previdência" é): sem modelo, verificar
+  [
+    "Declaração de idoneidade: de que não foi declarada inidônea, ou, se o foi, que está reabilitada",
+    [],
+    [],
+  ],
+  // duas declarações e só uma reconhecida: o que sobra não pode ficar "coberto" por engano
+  ["Declaração de que não emprega menor e declaração de normas de segurança do trabalho", [], []],
+  // as duas reconhecidas: valem as duas
+  [
+    "Declaração de que não emprega menor e declaração de inexistência de fatos impeditivos",
+    [],
+    ["nao_emprega_menor", "fato_impeditivo"],
+  ],
+  // outras formas de exigência condicional
+  ["Procuração, quando houver", [], []],
+  ["Certidão simplificada da Junta Comercial, se couber", [], []],
+  ["Alvará de funcionamento, quando aplicável", [], []],
+  ["Alvara de funcionamento, quando aplicavel", [], []],
+  ["Procuração do representante legal, se existir", [], []],
 ];
 
 test("classificarExigencia: tabela de redações reais de editais (jurídica, fiscal, trabalhista, econômica, técnica e declarações)", () => {
@@ -1288,6 +1337,8 @@ function montagemCompleta(extra: Partial<EntradaChecklist> = {}) {
 const PASSO_ANALISE =
   "Grave a análise do edital (ler_edital_anexado e criar_ou_atualizar_oportunidade) para o SIGO conferir as exigências.";
 const PASSO_ATENDE = "Confira o acervo técnico contra o edital e grave com registrar_atende.";
+const PASSO_ATENDE_NEGATIVO =
+  "O Atende? concluiu que a empresa NÃO atende à qualificação técnica do edital: revise com o usuário antes de seguir.";
 
 test("montarChecklist: sem a análise do edital soma 1 a faltam, nunca está pronto e manda gravar a análise", () => {
   for (const extraido of [null, undefined, {}, [], "texto", 42]) {
@@ -1353,36 +1404,55 @@ test("montarChecklist: edital com qualificação técnica e sem Atende? soma 1 a
   const ATESTADOS = [{ id: AT1, numero: "1/2025", arquivo_ref: "certificados/x" }];
   const pasta = [arq("a1", `acervo:${AT1}`)];
   // técnica operacional OU profissional pedem o Atende?; cada caso isolado, com a CAT já anexada quando há
-  const casos: [string, unknown, unknown, number][] = [
-    ["sem atende", TECNICA_OPERACIONAL, null, 1],
-    ["atende vazio", TECNICA_OPERACIONAL, {}, 1],
-    ["profissional sem atende", TECNICA_PROFISSIONAL, null, 1],
-    ["veredito sem nenhuma CAT", TECNICA_OPERACIONAL, { veredito: "atende", cats_anexar: [] }, 1],
-    ["veredito sem cats_anexar", TECNICA_OPERACIONAL, { veredito: "atende" }, 1],
-    ["CATs sem veredito", TECNICA_OPERACIONAL, { cats_anexar: CATS }, 1],
-    ["veredito em branco", TECNICA_OPERACIONAL, { veredito: " ", cats_anexar: CATS }, 1],
-    ["atende completo", TECNICA_OPERACIONAL, { veredito: "atende", cats_anexar: CATS }, 0],
+  // [nome, extraido, atende, sem_atende esperado, atende_negativo esperado]
+  const casos: [string, unknown, unknown, number, number][] = [
+    ["sem atende", TECNICA_OPERACIONAL, null, 1, 0],
+    ["atende vazio", TECNICA_OPERACIONAL, {}, 1, 0],
+    ["profissional sem atende", TECNICA_PROFISSIONAL, null, 1, 0],
     [
-      "só parcialmente: é aviso (na ferramenta), não falta",
+      "veredito sem nenhuma CAT",
+      TECNICA_OPERACIONAL,
+      { veredito: "atende", cats_anexar: [] },
+      1,
+      0,
+    ],
+    ["veredito sem cats_anexar", TECNICA_OPERACIONAL, { veredito: "atende" }, 1, 0],
+    ["CATs sem veredito", TECNICA_OPERACIONAL, { cats_anexar: CATS }, 1, 0],
+    ["veredito em branco", TECNICA_OPERACIONAL, { veredito: " ", cats_anexar: CATS }, 1, 0],
+    ["atende completo", TECNICA_OPERACIONAL, { veredito: "atende", cats_anexar: CATS }, 0, 0],
+    [
+      "só parcialmente: é aviso (na ferramenta), não falta nem trava",
       TECNICA_OPERACIONAL,
       { veredito: "atende_parcialmente", cats_anexar: CATS },
       0,
+      0,
     ],
     [
-      "não atende com CAT citada: também só aviso",
+      // revisão 2: resposta clara de "não atende" trava o pronto (contador próprio, não entra em faltam)
+      "não atende com CAT citada: não é falta, mas trava o pronto",
       TECNICA_PROFISSIONAL,
       { veredito: "nao_atende", cats_anexar: CATS },
       0,
+      1,
     ],
-    ["edital sem técnica não precisa de Atende?", ANALISE_MINIMA, null, 0],
+    [
+      // o "não atende" não tem CAT para citar: é um veredito completo, e pedir para gravar de novo não resolveria
+      "não atende sem nenhuma CAT: só atende_negativo, sem sem_atende",
+      TECNICA_OPERACIONAL,
+      { veredito: "nao_atende", cats_anexar: [] },
+      0,
+      1,
+    ],
+    ["edital sem técnica não precisa de Atende?", ANALISE_MINIMA, null, 0, 0],
     [
       "listas de técnica vazias não pedem Atende?",
-      { habilitacao: { tecnica_operacional: [] } },
+      { habilitacao: { ...ANALISE_MINIMA.habilitacao, tecnica_operacional: [] } },
       null,
+      0,
       0,
     ],
   ];
-  for (const [nome, extraido, atende, esperado] of casos) {
+  for (const [nome, extraido, atende, esperado, negativo] of casos) {
     const c = montarChecklist(
       montagemCompleta({
         extraido,
@@ -1392,9 +1462,14 @@ test("montarChecklist: edital com qualificação técnica e sem Atende? soma 1 a
       })
     );
     assert.equal(c.resumo.sem_atende, esperado, nome);
+    assert.equal(c.resumo.atende_negativo, negativo, nome);
     assert.equal(c.resumo.faltam, esperado, nome);
-    assert.equal(c.resumo.pronto, esperado === 0, nome);
-    assert.deepEqual(c.proximos_passos, esperado ? [PASSO_ATENDE] : [], nome);
+    assert.equal(c.resumo.pronto, esperado === 0 && negativo === 0, nome);
+    assert.deepEqual(
+      c.proximos_passos,
+      esperado ? [PASSO_ATENDE] : negativo ? [PASSO_ATENDE_NEGATIVO] : [],
+      nome
+    );
   }
 });
 
@@ -1611,4 +1686,410 @@ test("montarChecklist: a exclusão das cópias desatualizadas lista no máximo 1
   // 10 exatas: sem "e mais"
   const dez = montarChecklist(vazio({ extraido: ANALISE_MINIMA, arquivos: copias.slice(0, 10) }));
   assert.ok(!dez.proximos_passos.find((p) => p.startsWith("Exclua"))!.includes("e mais"));
+});
+
+// ═══ Correção da revisão 2 da C5 ═══════════════════════════════════════════════════════════════
+
+const PASSO_ANALISE_VAZIA =
+  "Releia a parte de habilitação do edital (ler_edital_anexado, roteiro analisar_edital) e grave com criar_ou_atualizar_oportunidade passando o oportunidade_id desta oportunidade: a análise gravada não tem nenhuma exigência de habilitação.";
+
+/** Uma lista só com o que o `sanearEdital` produziria para a habilitação. */
+const edital = (habilitacao: Record<string, unknown>, resto: Record<string, unknown> = {}) =>
+  sanearEdital({ ...resto, habilitacao });
+
+// ─── análise gravada, porém vazia ───────────────────────────────────────────────────────────────
+
+test("situacaoDaAnalise: ausente, sem nenhuma exigência de habilitação, ou com exigência", () => {
+  for (const ausente of [null, undefined, {}, [], "texto", 42]) {
+    assert.equal(situacaoDaAnalise(ausente), "ausente", JSON.stringify(ausente));
+  }
+  const semExigencia: unknown[] = [
+    sanearEdital({}), // a forma REAL: todas as chaves, listas vazias
+    sanearEdital({ objeto: "Iluminação pública", datas: { sessao: { data: "2026-11-05" } } }),
+    sanearEdital({ exclusiva_me_epp: false }),
+    { habilitacao: {} },
+    { habilitacao: "x" },
+    { datas: { sessao: { data: "2026-11-05" } } },
+    {
+      habilitacao: {
+        outros_documentos: [],
+        tecnica_operacional: [],
+        tecnica_profissional: [],
+        economica: [],
+        registros: [],
+      },
+    },
+    // linhas sem texto não são exigência; itens nulos também não
+    { habilitacao: { outros_documentos: [{ descricao: "   " }, { pagina: 2 }, null, 7, ""] } },
+    { habilitacao: { economica: [null], registros: [undefined] } },
+    { habilitacao: { tecnica_operacional: "x", outros_documentos: "y" } },
+    { exclusiva_me_epp: "true" },
+  ];
+  for (const x of semExigencia) {
+    assert.equal(situacaoDaAnalise(x), "sem_exigencias", JSON.stringify(x));
+  }
+  const comExigencia: unknown[] = [
+    ANALISE_MINIMA,
+    edital({ outros_documentos: [{ descricao: "Alvará de funcionamento" }] }),
+    { habilitacao: { outros_documentos: ["Alvará de funcionamento"] } }, // texto solto (o sanearEdital o descartaria)
+    edital({ tecnica_operacional: [{ id: "op1", descricao: "Iluminação pública LED" }] }),
+    edital({ tecnica_profissional: [{ id: "pr1", descricao: "Engenheiro eletricista" }] }),
+    edital({ economica: [{ id: "ec1", tipo: "patrimonio_liquido" }] }),
+    edital({ registros: [{ id: "rg1", tipo: "cadastro_concessionaria" }] }),
+    sanearEdital({ exclusiva_me_epp: true }),
+  ];
+  for (const x of comExigencia) {
+    assert.equal(situacaoDaAnalise(x), "com_exigencias", JSON.stringify(x));
+  }
+});
+
+test("montarChecklist: análise gravada porém vazia (sanearEdital({})) conta como sem_analise, trava o pronto e manda reler a habilitação", () => {
+  // o Claude leu um edital cuja habilitação está noutro anexo e gravou tudo vazio: com os essenciais anexados o
+  // checklist dava pronto: true (a revisão 1 só olhava Object.keys, e sanearEdital devolve sempre todas as chaves)
+  for (const extraido of [
+    sanearEdital({}),
+    sanearEdital({ objeto: "Iluminação pública", datas: { sessao: { data: "2026-11-05" } } }),
+    { habilitacao: {} },
+    { datas: { sessao: { data: "2026-11-05" } } },
+  ]) {
+    const c = montarChecklist(montagemCompleta({ extraido }));
+    assert.equal(c.resumo.sem_analise, 1, JSON.stringify(extraido));
+    assert.equal(c.resumo.faltam, 1, JSON.stringify(extraido));
+    assert.equal(c.resumo.pronto, false, JSON.stringify(extraido));
+    assert.equal(c.resumo.sem_pendencia_do_sigo, false, JSON.stringify(extraido));
+    assert.deepEqual(c.proximos_passos, [PASSO_ANALISE_VAZIA], JSON.stringify(extraido));
+  }
+  // a análise AUSENTE continua com o texto de antes
+  const ausente = montarChecklist(montagemCompleta({ extraido: {} }));
+  assert.deepEqual(ausente.proximos_passos, [PASSO_ANALISE]);
+  assert.equal(ausente.resumo.sem_analise, 1);
+});
+
+test("montarChecklist: qualquer exigência de habilitação (ou edital exclusivo para ME/EPP) faz a análise valer", () => {
+  const comExigencia = [
+    edital({
+      outros_documentos: [{ descricao: "Certidão Negativa de Débitos Trabalhistas (CNDT)" }],
+    }),
+    edital({ tecnica_operacional: [{ id: "op1", descricao: "Iluminação pública LED" }] }),
+    edital({ tecnica_profissional: [{ id: "pr1", descricao: "Engenheiro eletricista" }] }),
+    edital({ economica: [{ id: "ec1", tipo: "patrimonio_liquido" }] }),
+    edital({ registros: [{ id: "rg1", tipo: "crea" }] }),
+    sanearEdital({ exclusiva_me_epp: true }),
+  ];
+  for (const extraido of comExigencia) {
+    const c = montarChecklist(montagemCompleta({ extraido }));
+    assert.equal(c.resumo.sem_analise, 0, JSON.stringify(extraido));
+    assert.ok(!c.proximos_passos.includes(PASSO_ANALISE_VAZIA));
+    assert.ok(!c.proximos_passos.includes(PASSO_ANALISE));
+  }
+  // controle positivo: análise com a exigência já coberta e tudo anexado e assinado → pronto de verdade
+  const pronto = montarChecklist(
+    montagemCompleta({
+      extraido: edital({
+        outros_documentos: [{ descricao: "Certidão Negativa de Débitos Trabalhistas (CNDT)" }],
+      }),
+    })
+  );
+  assert.deepEqual(pronto.resumo, {
+    faltam: 0,
+    vencidos: 0,
+    falta_assinar: 0,
+    verificar: 0,
+    desatualizadas: 0,
+    sem_analise: 0,
+    sem_atende: 0,
+    atende_negativo: 0,
+    conferir_a_mao: 0,
+    sem_pendencia_do_sigo: true,
+    pronto: true,
+  });
+  assert.deepEqual(pronto.proximos_passos, []);
+});
+
+// ─── registros fora do CREA entram na regra do Atende? ──────────────────────────────────────────
+
+test("temRegistroForaDoCrea e exigeAtende: leitura defensiva", () => {
+  assert.equal(
+    temRegistroForaDoCrea(edital({ registros: [{ tipo: "cadastro_concessionaria" }] })),
+    true
+  );
+  assert.equal(temRegistroForaDoCrea(edital({ registros: [{ tipo: "outro" }] })), true);
+  assert.equal(
+    temRegistroForaDoCrea(edital({ registros: [{ tipo: "crea" }, { tipo: "outro" }] })),
+    true
+  );
+  // tipo que o sanearEdital transformaria em "outro", item sem tipo e texto solto: vale como registro fora do CREA
+  assert.equal(temRegistroForaDoCrea({ habilitacao: { registros: [{ tipo: "xpto" }] } }), true);
+  assert.equal(temRegistroForaDoCrea({ habilitacao: { registros: [{ id: "rg1" }] } }), true);
+  assert.equal(
+    temRegistroForaDoCrea({ habilitacao: { registros: ["Cadastro na concessionária"] } }),
+    true
+  );
+  // só CREA (a certidão do CREA é o que se confere), lista vazia, item nulo e formatos estranhos: não
+  assert.equal(
+    temRegistroForaDoCrea(edital({ registros: [{ tipo: "crea" }, { tipo: "visto_crea" }] })),
+    false
+  );
+  assert.equal(temRegistroForaDoCrea(edital({ registros: [] })), false);
+  for (const ruim of [
+    null,
+    undefined,
+    "x",
+    3,
+    [],
+    {},
+    { habilitacao: "x" },
+    { habilitacao: { registros: "x" } },
+    { habilitacao: { registros: [null] } },
+  ]) {
+    assert.equal(temRegistroForaDoCrea(ruim), false, JSON.stringify(ruim));
+  }
+  // exigeAtende = técnica OU registro fora do CREA
+  assert.equal(exigeAtende(TECNICA_OPERACIONAL), true);
+  assert.equal(exigeAtende(TECNICA_PROFISSIONAL), true);
+  assert.equal(exigeAtende(edital({ registros: [{ tipo: "outro" }] })), true);
+  assert.equal(exigeAtende(edital({ registros: [{ tipo: "crea" }] })), false);
+  assert.equal(exigeAtende(ANALISE_MINIMA), false);
+  assert.equal(exigeAtende(null), false);
+});
+
+test("montarChecklist: registro fora do CREA (concessionária, outro) exige o veredito do Atende? gravado, mas não exige CAT", () => {
+  const casos: [string, string[], unknown, number, number][] = [
+    // [nome, tipos dos registros, atende, sem_atende, atende_negativo]
+    ["cadastro_concessionaria sem Atende?", ["cadastro_concessionaria"], null, 1, 0],
+    ["outro com Atende? vazio", ["outro"], {}, 1, 0],
+    ["outro com cats_anexar vazio e sem veredito", ["outro"], { cats_anexar: [] }, 1, 0],
+    [
+      "CREA junto de outro registro pede o Atende?",
+      ["crea", "cadastro_concessionaria"],
+      null,
+      1,
+      0,
+    ],
+    // só o veredito: nenhuma CAT é exigida
+    ["outro com veredito atende e sem CAT", ["outro"], { veredito: "atende" }, 0, 0],
+    [
+      "concessionária com veredito atende e cats vazio",
+      ["cadastro_concessionaria"],
+      { veredito: "atende", cats_anexar: [] },
+      0,
+      0,
+    ],
+    [
+      "atende_parcialmente é só aviso (na ferramenta)",
+      ["outro"],
+      { veredito: "atende_parcialmente" },
+      0,
+      0,
+    ],
+    ["nao_atende trava o pronto, mas não é falta", ["outro"], { veredito: "nao_atende" }, 0, 1],
+    // só CREA: o que se confere é a certidão (não pede o Atende?)
+    ["só crea", ["crea"], null, 0, 0],
+    ["só visto_crea", ["visto_crea"], null, 0, 0],
+  ];
+  for (const [nome, tipos, atende, semAtende, negativo] of casos) {
+    const extraido = edital({
+      registros: tipos.map((tipo) => ({ tipo, descricao: `Registro ${tipo}` })),
+    });
+    const c = montarChecklist(montagemCompleta({ extraido, atende }));
+    assert.equal(c.resumo.sem_atende, semAtende, nome);
+    assert.equal(c.resumo.atende_negativo, negativo, nome);
+    assert.equal(c.proximos_passos.includes(PASSO_ATENDE), semAtende === 1, nome);
+    assert.equal(c.proximos_passos.includes(PASSO_ATENDE_NEGATIVO), negativo === 1, nome);
+    if (!tipos.some((t) => t.includes("crea"))) {
+      // sem CREA não há certidão a mais: o Atende? é a única pendência
+      assert.equal(c.resumo.faltam, semAtende, nome);
+      assert.equal(c.resumo.pronto, semAtende === 0 && negativo === 0, nome);
+    }
+  }
+});
+
+// ─── "não atende" trava o pronto ────────────────────────────────────────────────────────────────
+
+test("montarChecklist: veredito nao_atende trava o pronto (atende_negativo) com qualquer edital; parcialmente continua só aviso", () => {
+  const CATS = [{ id: AT1 }];
+  const arquivos = [...montagemCompleta().arquivos, arq("a1", `acervo:${AT1}`)];
+  const atestados = [{ id: AT1, numero: "1/2025", arquivo_ref: "certificados/x" }];
+  const montar = (extraido: unknown, veredito: string) =>
+    montarChecklist(
+      montagemCompleta({ extraido, atende: { veredito, cats_anexar: CATS }, arquivos, atestados })
+    );
+  // técnica exigida
+  const tecnica = montar(TECNICA_OPERACIONAL, "nao_atende");
+  assert.equal(tecnica.resumo.atende_negativo, 1);
+  assert.equal(tecnica.resumo.sem_atende, 0);
+  assert.equal(tecnica.resumo.faltam, 0);
+  assert.equal(tecnica.resumo.pronto, false);
+  assert.equal(tecnica.resumo.sem_pendencia_do_sigo, false);
+  assert.deepEqual(tecnica.proximos_passos, [PASSO_ATENDE_NEGATIVO]);
+  // edital só econômico: o Atende? também calcula a parte econômica, e "não atende" é "não atende"
+  const economico = montar(
+    edital({ economica: [{ id: "ec1", tipo: "patrimonio_liquido" }] }),
+    "nao_atende"
+  );
+  assert.equal(economico.resumo.atende_negativo, 1);
+  assert.equal(economico.resumo.pronto, false);
+  // veredito com espaços e outros vereditos
+  const comEspaco = montarChecklist(
+    montagemCompleta({
+      extraido: TECNICA_OPERACIONAL,
+      atende: { veredito: " nao_atende ", cats_anexar: CATS },
+      arquivos,
+      atestados,
+    })
+  );
+  assert.equal(comEspaco.resumo.atende_negativo, 1);
+  for (const veredito of ["atende", "atende_parcialmente"]) {
+    const c = montar(TECNICA_OPERACIONAL, veredito);
+    assert.equal(c.resumo.atende_negativo, 0, veredito);
+    assert.equal(c.resumo.pronto, true, veredito);
+  }
+  // sem Atende? gravado: não há veredito negativo
+  assert.equal(
+    montarChecklist(montagemCompleta({ extraido: ANALISE_MINIMA })).resumo.atende_negativo,
+    0
+  );
+});
+
+test("montarChecklist: o passo do 'não atende' vem logo depois do passo do Atende? e antes das CATs", () => {
+  const c = montarChecklist(
+    vazio({
+      extraido: TECNICA_OPERACIONAL,
+      atende: { veredito: "nao_atende", cats_anexar: [{ id: AT1 }] },
+      atestados: [{ id: AT1, numero: "1/2025", arquivo_ref: "certificados/x" }],
+    })
+  );
+  const passos = c.proximos_passos;
+  const i = passos.indexOf(PASSO_ATENDE_NEGATIVO);
+  assert.ok(i > passos.findIndex((p) => p.startsWith("Atualize em Acervo técnico")));
+  assert.ok(i < passos.indexOf("Anexe as CATs do Atende?: anexar_acervo."));
+});
+
+// ─── conferir_a_mao e sem_pendencia_do_sigo ─────────────────────────────────────────────────────
+
+test("montarChecklist: conferir_a_mao e sem_pendencia_do_sigo — só as linhas em verificar não contam como pendência do SIGO", () => {
+  const SO_VERIFICAR = {
+    habilitacao: {
+      outros_documentos: [
+        { descricao: "Plano de trabalho detalhado" },
+        { descricao: "Atestado de visita técnica" },
+        { descricao: "Certidão Negativa de Débitos Trabalhistas (CNDT)" },
+      ],
+    },
+  };
+  const base = montagemCompleta({ extraido: SO_VERIFICAR });
+  const c = montarChecklist(base);
+  // o pronto continua estrito: 2 linhas a conferir à mão ainda o impedem
+  assert.equal(c.resumo.verificar, 2);
+  assert.equal(c.resumo.conferir_a_mao, 2);
+  assert.equal(c.resumo.faltam, 0);
+  assert.equal(c.resumo.pronto, false);
+  assert.equal(c.resumo.sem_pendencia_do_sigo, true);
+  // cada contador do SIGO derruba o sem_pendencia_do_sigo
+  const sem = (nome: string, extra: Partial<EntradaChecklist>, conferir = 2) => {
+    const r = montarChecklist({ ...base, ...extra }).resumo;
+    assert.equal(r.sem_pendencia_do_sigo, false, nome);
+    assert.equal(r.pronto, false, nome);
+    assert.equal(r.conferir_a_mao, conferir, nome);
+  };
+  sem("falta o edital", { arquivos: base.arquivos.filter((a) => a.categoria !== "edital") });
+  sem("falta assinar", {
+    arquivos: base.arquivos.map((a) =>
+      a.origem === "gerado:proposta:pdf" ? { ...a, assinatura: "pendente" } : a
+    ),
+  });
+  sem("cópia desatualizada", { arquivos: [...base.arquivos, arq("velha", "biblioteca:sumiu")] });
+  sem("documento vencido", {
+    documentos: base.documentos.map((d) =>
+      d.tipo === "crf_fgts" ? { ...d, validade: "2026-10-01" } : d
+    ),
+  });
+  sem("sem análise", { extraido: null }, 0); // sem análise não há linha em "verificar"
+  sem("sem Atende?", {
+    extraido: { habilitacao: { ...SO_VERIFICAR.habilitacao, ...TECNICA_OPERACIONAL.habilitacao } },
+  });
+  sem("Atende? negativo", {
+    extraido: { habilitacao: { ...SO_VERIFICAR.habilitacao, ...TECNICA_OPERACIONAL.habilitacao } },
+    atende: { veredito: "nao_atende", cats_anexar: [{ id: AT1 }] },
+    arquivos: [...base.arquivos, arq("a1", `acervo:${AT1}`)],
+  });
+  // sem nada em verificar, conferir_a_mao é 0 e o pronto vale
+  const limpo = montarChecklist(montagemCompleta({ extraido: ANALISE_MINIMA })).resumo;
+  assert.deepEqual(
+    [limpo.conferir_a_mao, limpo.sem_pendencia_do_sigo, limpo.pronto],
+    [0, true, true]
+  );
+});
+
+// ─── classificarExigencia: ajustes da revisão 2 ─────────────────────────────────────────────────
+
+test("classificarExigencia: 'reabilitado' só liga a reserva de cargos quando é o reabilitado da Previdência", () => {
+  const c = (t: string) => classificarExigencia(t);
+  for (const texto of [
+    "Declaração de reserva de cargos para pessoa com deficiência ou reabilitado da Previdência Social",
+    "Declaração de que cumpre a reserva de cargos para beneficiários reabilitados pela Previdência Social",
+    "Declaração de contratação de pessoas reabilitadas da Previdência",
+  ]) {
+    assert.deepEqual(c(texto), { tipos: [], declaracoes: ["reserva_cargos"] }, texto);
+  }
+  // reabilitação da idoneidade: não é reserva de cargos, e sem modelo cai em "verificar"
+  for (const texto of [
+    "Declaração de idoneidade: de que não foi declarada inidônea, ou, se o foi, que está reabilitada",
+    "Declaração de que a empresa está reabilitada perante a Administração Pública",
+  ]) {
+    assert.deepEqual(c(texto), { tipos: [], declaracoes: [] }, texto);
+  }
+});
+
+test("classificarExigencia: mais 'declaração' no texto do que declarações reconhecidas → nada reconhecido (verificar)", () => {
+  const c = (t: string) => classificarExigencia(t);
+  assert.deepEqual(
+    c("Declaração de que não emprega menor e declaração de normas de segurança do trabalho"),
+    { tipos: [], declaracoes: [] }
+  );
+  // sem acento e com quebra de linha no meio
+  assert.deepEqual(
+    c("Declaracao de que nao emprega menor;\ndeclaracao de cumprimento das normas trabalhistas"),
+    { tipos: [], declaracoes: [] }
+  );
+  // o documento que a mesma linha pede também não vale quando uma declaração ficou sem modelo
+  assert.deepEqual(
+    c("Alvará de funcionamento, declaração de que não emprega menor e declaração de vistoria"),
+    {
+      tipos: [],
+      declaracoes: [],
+    }
+  );
+  // uma declaração que casa com dois modelos continua valendo (1 'declaração' para 2 reconhecidas)
+  assert.deepEqual(
+    c("Declaração de que não emprega menor e de inexistência de fatos impeditivos"),
+    {
+      tipos: [],
+      declaracoes: ["nao_emprega_menor", "fato_impeditivo"],
+    }
+  );
+  // duas declarações, duas reconhecidas
+  assert.deepEqual(
+    c(
+      "Declaração de elaboração independente de proposta e declaração de inexistência de fatos impeditivos"
+    ),
+    { tipos: [], declaracoes: ["fato_impeditivo", "elaboracao_independente"] }
+  );
+});
+
+test("classificarExigencia: novas formas de exigência condicional (quando houver, se couber, quando aplicável, se existir)", () => {
+  const c = (t: string) => classificarExigencia(t);
+  for (const texto of [
+    "Procuração, quando houver",
+    "Certidão simplificada da Junta Comercial, se couber",
+    "Alvará de funcionamento, quando aplicável",
+    "Alvará de funcionamento, QUANDO APLICÁVEL",
+    "Alvara de funcionamento, quando aplicavel",
+    "Procuração do representante legal, se existir",
+    "Declaração de microempresa, quando houver enquadramento",
+  ]) {
+    assert.deepEqual(c(texto), { tipos: [], declaracoes: [] }, texto);
+  }
+  // o texto sem a condicional continua reconhecido
+  assert.deepEqual(c("Alvará de funcionamento"), { tipos: ["alvara"], declaracoes: [] });
 });

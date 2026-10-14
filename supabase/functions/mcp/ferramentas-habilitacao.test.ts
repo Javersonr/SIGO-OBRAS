@@ -18,6 +18,7 @@ import {
 } from "../_shared/conector/arquivo-servidor.ts";
 import { CATEGORIAS_EDITAL } from "../_shared/conector/envio-regras.ts";
 import { linkOportunidade } from "../_shared/conector/recurso.ts";
+import { sanearEdital } from "../_shared/edital/edital-regras.ts";
 import { origemDaUrl } from "../_shared/conector/url-segura.ts";
 import {
   criarBancoArquivosFake,
@@ -2707,6 +2708,21 @@ test("checklist_habilitacao: sem a análise do edital avisa e cobre os essenciai
 
 const CRONOGRAMA_GRAVADO = { meses: 3, pct: { "1": [50, 30, 20] } };
 
+/**
+ * A análise que o checklist lê por padrão: a sessão e UMA exigência de habilitação que os documentos essenciais já
+ * cobrem (a análise gravada sem nenhuma exigência conta como "sem análise": correção da revisão 2).
+ */
+const ANALISE_DO_CHECKLIST = {
+  extraido: {
+    datas: { sessao: { data: "2026-11-05" } },
+    habilitacao: {
+      outros_documentos: [
+        { descricao: "Certidão Negativa de Débitos Trabalhistas (CNDT)", pagina: 9 },
+      ],
+    },
+  },
+};
+
 const linhaArquivo = (id: string, origem: string | null, extra: Record<string, unknown> = {}) => ({
   id,
   nome: `Arquivo ${id}`,
@@ -2738,7 +2754,7 @@ function cenarioChecklist(p: {
   atestados?: Record<string, unknown>[];
   modelos?: Record<string, unknown>[];
 }) {
-  const analise = "analise" in p ? p.analise : SESSAO_EDITAL;
+  const analise = "analise" in p ? p.analise : ANALISE_DO_CHECKLIST;
   const cronograma = "cronograma" in p ? p.cronograma : CRONOGRAMA_GRAVADO;
   const arquivos = (p.arquivos ?? []).map((a) => ({
     empresa_id: E,
@@ -2964,7 +2980,8 @@ test("checklist_habilitacao: a data da sessão é a mesma da anexar_habilitacao 
   const avisosDe = (s: Record<string, unknown>) => s.avisos as string[];
   const AVISO =
     "A oportunidade não tem data de sessão futura: não conferi se algum documento vence antes dela.";
-  const SEM_DATA = { extraido: { habilitacao: {} } };
+  // sem data de sessão, mas com uma exigência (sem exigência nenhuma a análise contaria como ausente)
+  const SEM_DATA = { extraido: { habilitacao: ANALISE_DO_CHECKLIST.extraido.habilitacao } };
 
   // sem a coluna: o edital (05/11) é depois do vencimento (02/11): vence antes
   const soEdital = sc(await checklist(cenarioChecklist({ docs, arquivos }).deps));
@@ -3240,8 +3257,33 @@ test("checklist_habilitacao: o cronograma gravado vem de cronograma_ff (objeto o
   }
 });
 
-test("checklist_habilitacao: arquivo de cronograma gerado conta como cronograma, mesmo sem cronograma_ff", async () => {
-  const s = sc(
+const AVISO_CRONOGRAMA_ANTIGO =
+  "Há arquivos de cronograma gerados antes na pasta, mas a oportunidade não tem cronograma gravado.";
+
+test("checklist_habilitacao: arquivo de cronograma gerado antes NÃO conta como cronograma gravado (só cronograma_ff conta), mas avisa", async () => {
+  const faltam = (s: Record<string, unknown>) => (s.resumo as { faltam: number }).faltam;
+  // só o Excel antigo, com cronograma_ff vazio: sem cronograma gravado; o arquivo mostra a situação real
+  const soXlsx = sc(
+    await checklist(
+      cenarioChecklist({
+        cronograma: {},
+        arquivos: [linhaArquivo("c2", "gerado:cronograma:xlsx")],
+      }).deps
+    )
+  );
+  assert.deepEqual(avisosDe(soXlsx), [AVISO_SEM_CRONOGRAMA, AVISO_CRONOGRAMA_ANTIGO]);
+  assert.deepEqual(propostaDe(soXlsx), [
+    ["proposta_pdf", "falta"],
+    ["proposta_xlsx", "falta"],
+    ["cronograma_pdf", "sem_cronograma"],
+    ["cronograma_xlsx", "ok"],
+  ]);
+  assert.ok((soXlsx.proximos_passos as string[]).includes(PASSO_CRONOGRAMA));
+  // edital, proposta_pdf e 8 essenciais; o cronograma_pdf que não existe não conta
+  assert.equal(faltam(soXlsx), 1 + 1 + 8);
+
+  // o PDF antigo (pendente de assinatura) também: o arquivo continua valendo como arquivo, o cronograma não
+  const pdf = sc(
     await checklist(
       cenarioChecklist({
         cronograma: null,
@@ -3254,25 +3296,17 @@ test("checklist_habilitacao: arquivo de cronograma gerado conta como cronograma,
       }).deps
     )
   );
-  assert.deepEqual(avisosDe(s), []);
-  assert.deepEqual(propostaDe(s), [
+  assert.deepEqual(avisosDe(pdf), [AVISO_SEM_CRONOGRAMA, AVISO_CRONOGRAMA_ANTIGO]);
+  assert.deepEqual(propostaDe(pdf), [
     ["proposta_pdf", "falta"],
     ["proposta_xlsx", "falta"],
     ["cronograma_pdf", "falta_assinar"],
-    ["cronograma_xlsx", "falta"],
+    ["cronograma_xlsx", "sem_cronograma"],
   ]);
-  assert.ok(!(s.proximos_passos as string[]).includes(PASSO_CRONOGRAMA));
-  // só o Excel do cronograma também vale (a origem é gerado:cronograma:*)
-  const soXlsx = sc(
-    await checklist(
-      cenarioChecklist({
-        cronograma: null,
-        arquivos: [linhaArquivo("c2", "gerado:cronograma:xlsx")],
-      }).deps
-    )
-  );
-  assert.deepEqual(avisosDe(soXlsx), []);
-  // origem parecida que não é a do cronograma gerado não vale
+  assert.equal((pdf.resumo as { falta_assinar: number }).falta_assinar, 1);
+  assert.ok((pdf.proximos_passos as string[]).includes(PASSO_CRONOGRAMA));
+
+  // origem parecida que não é a do cronograma gerado: só o aviso de sem cronograma
   const outra = sc(
     await checklist(
       cenarioChecklist({
@@ -3282,6 +3316,17 @@ test("checklist_habilitacao: arquivo de cronograma gerado conta como cronograma,
     )
   );
   assert.deepEqual(avisosDe(outra), [AVISO_SEM_CRONOGRAMA]);
+
+  // com cronograma gravado, o arquivo gerado é o de sempre: sem nenhum dos dois avisos
+  const gravado = sc(
+    await checklist(
+      cenarioChecklist({
+        arquivos: [linhaArquivo("c5", "gerado:cronograma:pdf", { assinatura: "assinado" })],
+      }).deps
+    )
+  );
+  assert.deepEqual(avisosDe(gravado), []);
+  assert.deepEqual(propostaDe(gravado)[2], ["cronograma_pdf", "ok"]);
 });
 
 const EDITAL_TECNICO = {
@@ -3304,6 +3349,80 @@ test("checklist_habilitacao: sem a análise do edital soma 1 a faltam e manda gr
   const vazia = sc(await checklist(cenarioChecklist({ analise: { extraido: {} } }).deps));
   assert.equal((vazia.resumo as { sem_analise: number }).sem_analise, 1);
   assert.match(avisosDe(vazia)[0], /ainda não tem a análise do edital/);
+});
+
+const AVISO_ANALISE_VAZIA =
+  "A análise do edital gravada na oportunidade não tem nenhuma exigência de habilitação: o checklist cobre só os documentos essenciais. Releia a habilitação do edital (ler_edital_anexado) e grave de novo com criar_ou_atualizar_oportunidade.";
+const PASSO_ANALISE_VAZIA =
+  "Releia a parte de habilitação do edital (ler_edital_anexado, roteiro analisar_edital) e grave com criar_ou_atualizar_oportunidade passando o oportunidade_id desta oportunidade: a análise gravada não tem nenhuma exigência de habilitação.";
+
+test("checklist_habilitacao: análise gravada porém vazia (forma real do sanearEdital) conta como sem_analise, com aviso e passo próprios", async () => {
+  // o Claude leu um edital cuja habilitação está noutro anexo e gravou tudo vazio: antes dava pronto: true
+  const docs = [
+    "cnd_federal",
+    "cnd_estadual",
+    "cnd_municipal",
+    "crf_fgts",
+    "cndt_trabalhista",
+    "certidao_falencia",
+    "contrato_social",
+    "cartao_cnpj",
+  ].map((tipo, i) => doc(`d${i}`, tipo, { validade: "2027-12-31" }));
+  const tudoAnexado = [
+    linhaArquivo("e1", null, { categoria: "edital" }),
+    linhaArquivo("p1", "gerado:proposta:pdf", { assinatura: "assinado" }),
+    linhaArquivo("p3", "gerado:cronograma:pdf", { assinatura: "assinado" }),
+    ...docs.map((d) => linhaArquivo(`b-${d.id}`, `biblioteca:${d.id}`)),
+  ];
+  const montar = (extraido: unknown) =>
+    checklist(cenarioChecklist({ analise: { extraido }, docs, arquivos: tudoAnexado }).deps);
+  type Resumo = {
+    sem_analise: number;
+    faltam: number;
+    pronto: boolean;
+    sem_pendencia_do_sigo: boolean;
+  };
+  for (const extraido of [
+    sanearEdital({}),
+    sanearEdital({ objeto: "Iluminação pública", datas: { sessao: { data: "2026-11-05" } } }),
+  ]) {
+    const s = sc(await montar(extraido));
+    const resumo = s.resumo as Resumo;
+    assert.deepEqual(
+      [resumo.sem_analise, resumo.faltam, resumo.pronto, resumo.sem_pendencia_do_sigo],
+      [1, 1, false, false]
+    );
+    assert.equal(avisosDe(s)[0], AVISO_ANALISE_VAZIA);
+    assert.deepEqual(s.proximos_passos, [PASSO_ANALISE_VAZIA]);
+    // não é o texto de "ainda não tem a análise"
+    assert.ok(!avisosDe(s).some((a) => /ainda não tem a análise/.test(a)));
+  }
+  // controle positivo: com uma exigência de habilitação (a mesma montagem) o checklist fica pronto de verdade
+  const ok = sc(
+    await montar(
+      sanearEdital({
+        datas: { sessao: { data: "2026-11-05" } },
+        habilitacao: {
+          outros_documentos: [{ descricao: "Certidão Negativa de Débitos Trabalhistas (CNDT)" }],
+        },
+      })
+    )
+  );
+  assert.deepEqual(ok.resumo, {
+    faltam: 0,
+    vencidos: 0,
+    falta_assinar: 0,
+    verificar: 0,
+    desatualizadas: 0,
+    sem_analise: 0,
+    sem_atende: 0,
+    atende_negativo: 0,
+    conferir_a_mao: 0,
+    sem_pendencia_do_sigo: true,
+    pronto: true,
+  });
+  assert.deepEqual(avisosDe(ok), []);
+  assert.deepEqual(ok.proximos_passos, []);
 });
 
 test("checklist_habilitacao: edital com qualificação técnica e sem Atende? → sem_atende, passo com registrar_atende, nunca pronto", async () => {
@@ -3349,6 +3468,154 @@ test("checklist_habilitacao: veredito do Atende? diferente de 'atende' é só av
   // edital sem exigência técnica: o veredito do Atende? ("atende_parcialmente" quando não há itens) não é problema
   const semTecnica = sc(await comVeredito("atende_parcialmente", { habilitacao: {} }));
   assert.ok(!avisosDe(semTecnica).includes(AVISO_ATENDE_NAO_CONCLUI));
+});
+
+test("checklist_habilitacao: veredito nao_atende trava o pronto (atende_negativo) e manda revisar com o usuário; parcialmente só avisa", async () => {
+  const comVeredito = async (veredito: string) =>
+    sc(
+      await checklist(
+        cenarioChecklist({
+          analise: {
+            extraido: EDITAL_TECNICO.extraido,
+            atende: { veredito, cats_anexar: [{ id: AT1 }] },
+          },
+          atestados: [atestado(AT1)],
+          arquivos: [linhaArquivo("a1", `acervo:${AT1}`)],
+        }).deps
+      )
+    );
+  const resumo = (s: Record<string, unknown>) =>
+    s.resumo as { atende_negativo: number; sem_atende: number; faltam: number; pronto: boolean };
+  const negativo = await comVeredito("nao_atende");
+  assert.deepEqual(
+    [resumo(negativo).atende_negativo, resumo(negativo).sem_atende, resumo(negativo).pronto],
+    [1, 0, false]
+  );
+  assert.ok(
+    (negativo.proximos_passos as string[]).includes(
+      "O Atende? concluiu que a empresa NÃO atende à qualificação técnica do edital: revise com o usuário antes de seguir."
+    )
+  );
+  assert.ok(avisosDe(negativo).includes(AVISO_ATENDE_NAO_CONCLUI));
+  // atende_parcialmente continua só aviso: não trava e não gera o passo
+  const parcial = await comVeredito("atende_parcialmente");
+  assert.equal(resumo(parcial).atende_negativo, 0);
+  assert.ok(avisosDe(parcial).includes(AVISO_ATENDE_NAO_CONCLUI));
+  assert.ok(!(parcial.proximos_passos as string[]).some((p) => p.includes("NÃO atende")));
+  assert.equal(resumo(await comVeredito("atende")).atende_negativo, 0);
+});
+
+test("checklist_habilitacao: registro fora do CREA exige o veredito do Atende? (sem exigir CAT); o aviso do veredito vale também para ele", async () => {
+  const comRegistro = (atende: unknown, tipos = ["cadastro_concessionaria"]) =>
+    checklist(
+      cenarioChecklist({
+        analise: {
+          extraido: sanearEdital({
+            datas: { sessao: { data: "2026-11-05" } },
+            habilitacao: {
+              outros_documentos: [
+                { descricao: "Certidão Negativa de Débitos Trabalhistas (CNDT)" },
+              ],
+              registros: tipos.map((tipo) => ({ tipo, descricao: "Cadastro na concessionária" })),
+            },
+          }),
+          atende,
+        },
+      }).deps
+    );
+  const resumo = (s: Record<string, unknown>) =>
+    s.resumo as { sem_atende: number; atende_negativo: number };
+  // sem Atende? gravado: sem_atende, e o passo manda gravar com registrar_atende
+  const sem = sc(await comRegistro(null));
+  assert.equal(resumo(sem).sem_atende, 1);
+  assert.ok(
+    (sem.proximos_passos as string[]).includes(
+      "Confira o acervo técnico contra o edital e grave com registrar_atende."
+    )
+  );
+  // só o veredito basta (nenhuma CAT é exigida)
+  const atende = sc(await comRegistro({ veredito: "atende" }));
+  assert.equal(resumo(atende).sem_atende, 0);
+  assert.ok(!avisosDe(atende).includes(AVISO_ATENDE_NAO_CONCLUI));
+  // veredito que não é "atende": o mesmo aviso de sempre
+  const parcial = sc(await comRegistro({ veredito: "atende_parcialmente" }));
+  assert.equal(resumo(parcial).sem_atende, 0);
+  assert.ok(avisosDe(parcial).includes(AVISO_ATENDE_NAO_CONCLUI));
+  assert.equal(resumo(sc(await comRegistro({ veredito: "nao_atende" }))).atende_negativo, 1);
+  // só CREA: o que se confere é a certidão, o Atende? não é exigido
+  const crea = sc(await comRegistro(null, ["crea"]));
+  assert.equal(resumo(crea).sem_atende, 0);
+});
+
+test("checklist_habilitacao: avisos de visita técnica obrigatória e de garantia da proposta (só quando o edital diz que é exigida)", async () => {
+  const AVISO_VISITA = "O edital exige visita técnica: confira a data e o atestado de visita.";
+  const AVISO_GARANTIA = "O edital exige garantia da proposta: confira o valor e a forma.";
+  const avisos = async (extra: Record<string, unknown>) =>
+    avisosDe(
+      sc(
+        await checklist(
+          cenarioChecklist({
+            analise: {
+              extraido: sanearEdital({
+                datas: { sessao: { data: "2026-11-05" } },
+                habilitacao: ANALISE_DO_CHECKLIST.extraido.habilitacao,
+                ...extra,
+              }),
+            },
+          }).deps
+        )
+      )
+    );
+  // visita obrigatória: o aviso; garantia exigida: o aviso (nesta ordem, depois dos demais)
+  assert.deepEqual(
+    await avisos({
+      datas: { sessao: { data: "2026-11-05" }, visita_tecnica: { obrigatoria: true } },
+    }),
+    [AVISO_VISITA]
+  );
+  assert.deepEqual(await avisos({ garantia_proposta: { exigida: true, percentual: 1 } }), [
+    AVISO_GARANTIA,
+  ]);
+  assert.deepEqual(
+    await avisos({
+      datas: { sessao: { data: "2026-11-05" }, visita_tecnica: { obrigatoria: true } },
+      garantia_proposta: { exigida: true },
+    }),
+    [AVISO_VISITA, AVISO_GARANTIA]
+  );
+  // não exigida, desconhecida ou texto: nada
+  assert.deepEqual(
+    await avisos({
+      datas: { sessao: { data: "2026-11-05" }, visita_tecnica: { obrigatoria: false } },
+      garantia_proposta: { exigida: false },
+    }),
+    []
+  );
+  assert.deepEqual(await avisos({}), []);
+  // a análise bruta (sem passar pelo sanearEdital) com texto no lugar do booleano também não avisa
+  const bruta = sc(
+    await checklist(
+      cenarioChecklist({
+        analise: {
+          extraido: {
+            ...ANALISE_DO_CHECKLIST.extraido,
+            datas: { sessao: { data: "2026-11-05" }, visita_tecnica: { obrigatoria: "sim" } },
+            garantia_proposta: "exigida",
+          },
+        },
+      }).deps
+    )
+  );
+  assert.deepEqual(avisosDe(bruta), []);
+});
+
+test("checklist_habilitacao: a descrição manda repassar os avisos e não ler o pronto isolado", () => {
+  const d = ferramenta("checklist_habilitacao").def.description;
+  assert.match(d, /Repasse os avisos/);
+  assert.match(d, /não leia (o )?pronto isolado|pronto sozinho não basta/i);
+  assert.match(d, /conferir_a_mao/);
+  assert.match(d, /sem_pendencia_do_sigo/);
+  assert.match(d, /Só lê/);
 });
 
 test("checklist_habilitacao: certidão anexada sem validade cadastrada avisa (só as certidões, só as anexadas)", async () => {
@@ -3501,6 +3768,12 @@ test("INSTRUCOES_HABILITACAO: cita as cinco ferramentas, o vencido, o falta assi
   assert.match(texto, /falta assinar/);
   assert.match(texto, /gov\.br/);
   assert.match(texto, /não tente enviar arquivo do chat/i);
+  // revisão 2: o fim da instrução manda repassar os avisos e usar os dois campos do resumo
+  const fim = INSTRUCOES_HABILITACAO[INSTRUCOES_HABILITACAO.length - 1];
+  assert.match(fim, /checklist_habilitacao/);
+  assert.match(fim, /avisos/);
+  assert.match(fim, /sem_pendencia_do_sigo/);
+  assert.match(fim, /conferir_a_mao/);
 });
 
 test("prompt 'Montar a licitação completa': um passo por linha, em ordem, sem ferramenta inexistente", () => {
@@ -3581,7 +3854,16 @@ test("prompt 'Montar a licitação completa': cada saída nova das ferramentas �
     "verificar",
     "copias_desatualizadas",
     "falta_assinar",
+    // revisão 2: o que o Claude diz quando só restam linhas a conferir à mão, e o que trava o pronto
+    "sem_pendencia_do_sigo",
+    "conferir_a_mao",
+    "atende_negativo",
+    "avisos",
+    "proximos_passos",
   ]);
+  // o pronto continua sendo o único jeito de dizer "pronta"; sem_pendencia_do_sigo só autoriza dizer o que sobra
+  assert.match(passo(10), /Só diga que a habilitação está pronta se resumo\.pronto for true/);
+  assert.match(passo(10), /sem_pendencia_do_sigo for true/);
   const texto = linhas.join("\n");
   assert.match(texto, /nunca afirme que um documento está anexado, gerado ou válido sem/i);
   assert.match(texto, /Não informe nome nem CPF de representante/);

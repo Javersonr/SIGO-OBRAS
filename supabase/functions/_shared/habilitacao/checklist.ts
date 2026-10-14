@@ -28,6 +28,13 @@ export const PREFIXO_BIBLIOTECA = "biblioteca:";
 const obj = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 const lista = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+/** A lista tem ao menos um item (nulo não é item). */
+const temItem = (v: unknown): boolean => lista(v).some((x) => x !== null && x !== undefined);
+/** O texto de uma linha de `outros_documentos` (texto solto ou `{ descricao }`), sem as pontas em branco; null se vazio. */
+const descricaoDaLinha = (item: unknown): string | null => {
+  const d = typeof item === "string" ? item : obj(item).descricao;
+  return typeof d === "string" && d.trim() ? d : null;
+};
 
 const semAcento = (v: unknown) =>
   String(v ?? "")
@@ -76,8 +83,12 @@ const REGRAS_TIPO: [RegExp, string, RegExp?][] = [
   [/\b(crea|cau)\b/g, "certidao_crea_pj", SO_DO_ACERVO],
 ];
 
-/** Exigência condicional ("quando for o caso"): o SIGO não sabe se vale para esta empresa, então não classifica. */
-const CONDICIONAL = /quando for o caso|se for o caso|se houver|caso exista/;
+/**
+ * Exigência condicional ("quando for o caso"): o SIGO não sabe se vale para esta empresa, então não classifica.
+ * O texto já chegou sem acento e em minúsculas ("quando aplicável" e "quando aplicavel" viram a mesma coisa).
+ */
+const CONDICIONAL =
+  /quando for o caso|se for o caso|se houver|caso exista|quando houver|se couber|quando aplicavel|se existir/;
 
 /** Só valem em texto com "declaração": sem ela, "ME/EPP" é o prazo de regularização e "menor" é outra coisa. */
 const REGRAS_DECLARACAO: [RegExp, string][] = [
@@ -88,7 +99,11 @@ const REGRAS_DECLARACAO: [RegExp, string][] = [
   [/fatos? impeditivos?|superveniente/, "fato_impeditivo"],
   [/microempresa|pequeno porte|me\/epp|lei complementar (n\S* ?)?123|\blc 123/, "me_epp"],
   [/requisitos de habilitacao/, "requisitos_habilitacao"],
-  [/reserva de cargos|pessoas? com deficiencia|reabilitad/, "reserva_cargos"],
+  // "reabilitada" sozinho é outra coisa (a reabilitação da idoneidade): só o reabilitado da Previdência vale
+  [
+    /reserva de cargos|pessoas? com deficiencia|reabilitad[oa]s? (?:d|pel)a previdencia/,
+    "reserva_cargos",
+  ],
   [/elaboracao independente/, "elaboracao_independente"],
 ];
 
@@ -98,7 +113,53 @@ const REGRAS_DECLARACAO: [RegExp, string][] = [
  */
 export function exigeQualificacaoTecnica(extraido: unknown): boolean {
   const h = obj(obj(extraido).habilitacao);
-  return lista(h.tecnica_operacional).length > 0 || lista(h.tecnica_profissional).length > 0;
+  return temItem(h.tecnica_operacional) || temItem(h.tecnica_profissional);
+}
+
+/** Registros do CREA: a certidão de registro da empresa (certidao_crea_pj) é o documento que os cobre. */
+const TIPOS_REGISTRO_CREA = ["crea", "visto_crea"];
+
+/**
+ * Registro que NENHUM documento da biblioteca cobre (cadastro em concessionária, "outro" e qualquer tipo que não seja
+ * o do CREA): não gera linha de documento nem de "verificar", então só o Atende? o confere. Item nulo não conta;
+ * tipo ilegível conta (o `sanearEdital` o transformaria em "outro").
+ */
+export function temRegistroForaDoCrea(extraido: unknown): boolean {
+  return lista(obj(obj(extraido).habilitacao).registros).some(
+    (r) => r !== null && r !== undefined && !TIPOS_REGISTRO_CREA.includes(String(obj(r).tipo))
+  );
+}
+
+/**
+ * O Atende? é parte da conta quando o edital exige qualificação técnica OU registro que nenhum documento cobre
+ * (`registrar_atende` trata os `registros` como técnica). Com técnica exige veredito e CAT citada; só com registro
+ * exige o veredito.
+ */
+export function exigeAtende(extraido: unknown): boolean {
+  return exigeQualificacaoTecnica(extraido) || temRegistroForaDoCrea(extraido);
+}
+
+export type SituacaoDaAnalise = "ausente" | "sem_exigencias" | "com_exigencias";
+
+/**
+ * O que a análise gravada do edital diz:
+ *  - `ausente`: não há análise (ausente, vazia `{}` ou que não é objeto);
+ *  - `sem_exigencias`: há análise, mas NENHUMA exigência de habilitação (`outros_documentos` com texto, as técnicas, a
+ *    econômica e os registros vazios, e o edital não é exclusivo para ME/EPP): o edital pode ter a habilitação noutro
+ *    anexo, e o `sanearEdital` devolve sempre todas as chaves, então `{}` não basta para reconhecer a análise vazia;
+ *  - `com_exigencias`: o checklist tem o que conferir.
+ */
+export function situacaoDaAnalise(extraido: unknown): SituacaoDaAnalise {
+  const e = obj(extraido);
+  if (Object.keys(e).length === 0) return "ausente";
+  const h = obj(e.habilitacao);
+  const temExigencia =
+    lista(h.outros_documentos).some((item) => descricaoDaLinha(item) !== null) ||
+    ["tecnica_operacional", "tecnica_profissional", "economica", "registros"].some((k) =>
+      temItem(h[k])
+    ) ||
+    e.exclusiva_me_epp === true;
+  return temExigencia ? "com_exigencias" : "sem_exigencias";
 }
 
 /** O veredito gravado no Atende? ("atende", "atende_parcialmente" ou "nao_atende"); null se não há texto. */
@@ -121,7 +182,9 @@ const naOrdemDosTipos = (tipos: Iterable<string>) => {
  *  - texto sem "declaração": só documentos (as regras de declaração não valem);
  *  - texto com "declaração": se algum modelo é reconhecido, vale a declaração E os documentos que a mesma linha
  *    também pede ("alvará e declaração de que não emprega menor"); se nenhum modelo é reconhecido, é uma declaração
- *    que o SIGO não tem, e palavras soltas ("trabalhistas", "CREA") NÃO viram documento.
+ *    que o SIGO não tem, e palavras soltas ("trabalhistas", "CREA") NÃO viram documento;
+ *  - mais ocorrências de "declaração" do que modelos reconhecidos ("não emprega menor e declaração de normas de
+ *    segurança do trabalho"): sobrou uma declaração sem modelo e a linha não pode ficar "coberta" → nada reconhecido.
  */
 export function classificarExigencia(descricao: unknown): {
   tipos: string[];
@@ -133,7 +196,10 @@ export function classificarExigencia(descricao: unknown): {
   const declaracoes = comDeclaracao
     ? REGRAS_DECLARACAO.filter(([re]) => re.test(original)).map(([, chave]) => chave)
     : [];
-  if (comDeclaracao && declaracoes.length === 0) return { tipos: [], declaracoes: [] };
+  const ocorrenciasDeDeclaracao = original.split("declarac").length - 1;
+  if (comDeclaracao && (declaracoes.length === 0 || ocorrenciasDeDeclaracao > declaracoes.length)) {
+    return { tipos: [], declaracoes: [] };
+  }
   let t = original;
   const tipos: string[] = [];
   // as duas inscrições são lidas no texto inteiro (uma não pode consumir a outra) e só depois somem dele
@@ -305,6 +371,15 @@ export interface Checklist {
     sem_analise: number;
     /** 1 quando o edital exige qualificação técnica e o Atende? não foi gravado, ou não citou CAT (conta em `faltam`). */
     sem_atende: number;
+    /** 1 quando o veredito gravado do Atende? é "nao_atende" (trava o `pronto`; não conta em `faltam`), senão 0. */
+    atende_negativo: number;
+    /** Quantas exigências do edital o SIGO não reconheceu e o usuário confere à mão (= `verificar`). */
+    conferir_a_mao: number;
+    /**
+     * Todos os contadores do SIGO em zero, EXCETO `verificar`: o SIGO não achou pendência; só restam as exigências a
+     * conferir à mão (`conferir_a_mao`). `pronto` continua estrito: exige também `verificar` = 0.
+     */
+    sem_pendencia_do_sigo: boolean;
     pronto: boolean;
   };
   proximos_passos: string[];
@@ -349,8 +424,8 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
   const declExigidas = new Set<string>();
   const outros: Checklist["outros_documentos"] = [];
   for (const item of lista(habilitacao.outros_documentos)) {
-    const descricao = typeof item === "string" ? item : obj(item).descricao;
-    if (typeof descricao !== "string" || !descricao.trim()) continue;
+    const descricao = descricaoDaLinha(item);
+    if (descricao === null) continue;
     const c = classificarExigencia(descricao);
     c.tipos.forEach((t) => exigidos.add(t));
     c.declaracoes.forEach((d) => declExigidas.add(d));
@@ -364,9 +439,7 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
     });
   }
   if (lista(habilitacao.economica).length > 0) exigidos.add("balanco_dre");
-  if (
-    lista(habilitacao.registros).some((r) => ["crea", "visto_crea"].includes(String(obj(r).tipo)))
-  ) {
+  if (lista(habilitacao.registros).some((r) => TIPOS_REGISTRO_CREA.includes(String(obj(r).tipo)))) {
     exigidos.add("certidao_crea_pj");
   }
   if (extraido.exclusiva_me_epp === true) declExigidas.add("me_epp");
@@ -553,14 +626,23 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
   const pdfEmFalta = proposta.filter(
     (x) => x.documento.endsWith("_pdf") && x.situacao === "falta"
   ).length;
-  // Sem a análise do edital o SIGO não sabe o que ele exige: nunca "pronto" (extraido ausente ou vazio)
-  const semAnalise = Object.keys(extraido).length === 0 ? 1 : 0;
-  // Edital com qualificação técnica exige o Atende? gravado, com veredito e ao menos uma CAT citada. Veredito que não
-  // é "atende" não entra aqui: é aviso da ferramenta, não falta.
+  // Sem a análise do edital o SIGO não sabe o que ele exige: nunca "pronto". Vale para a análise ausente e para a
+  // gravada sem NENHUMA exigência de habilitação (a habilitação pode estar noutro anexo que ninguém leu).
+  const situacaoDaAnaliseGravada = situacaoDaAnalise(p.extraido);
+  const semAnalise = situacaoDaAnaliseGravada === "com_exigencias" ? 0 : 1;
+  // O Atende? entra na conta quando o edital exige técnica ou registro que nenhum documento cobre. Com técnica ele
+  // precisa de veredito E de ao menos uma CAT citada; só com registro basta o veredito. Veredito que não é "atende"
+  // não é falta: "atende_parcialmente" é aviso da ferramenta e "nao_atende" é o `atende_negativo` abaixo (o veredito
+  // existe; pedir para gravar de novo não resolveria).
+  const veredito = vereditoDoAtende(atende);
   const semAtende =
-    exigeQualificacaoTecnica(extraido) && (vereditoDoAtende(atende) === null || acervo.length === 0)
+    exigeAtende(extraido) &&
+    (veredito === null ||
+      (veredito !== "nao_atende" && exigeQualificacaoTecnica(extraido) && acervo.length === 0))
       ? 1
       : 0;
+  // Resposta clara de "a empresa NÃO atende": o checklist nunca fica pronto, qualquer que seja o edital.
+  const atendeNegativo = veredito === "nao_atende" ? 1 : 0;
   const faltam =
     (edital.situacao === "falta" ? 1 : 0) +
     pdfEmFalta +
@@ -572,6 +654,15 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
     semAtende;
   const vencidos = doc("vencido") + doc("vence_antes_da_sessao");
   const verificar = outros.filter((o) => o.situacao === "verificar").length;
+  // o que é pendência do SIGO (tudo, menos as exigências em "verificar", que só o usuário confere)
+  const semPendenciaDoSigo =
+    faltam === 0 &&
+    vencidos === 0 &&
+    faltaAssinar.length === 0 &&
+    desatualizadas.length === 0 &&
+    semAnalise === 0 &&
+    semAtende === 0 &&
+    atendeNegativo === 0;
   const resumo: Checklist["resumo"] = {
     faltam,
     vencidos,
@@ -580,14 +671,10 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
     desatualizadas: desatualizadas.length,
     sem_analise: semAnalise,
     sem_atende: semAtende,
-    pronto:
-      faltam === 0 &&
-      vencidos === 0 &&
-      faltaAssinar.length === 0 &&
-      verificar === 0 &&
-      desatualizadas.length === 0 &&
-      semAnalise === 0 &&
-      semAtende === 0,
+    atende_negativo: atendeNegativo,
+    conferir_a_mao: verificar,
+    sem_pendencia_do_sigo: semPendenciaDoSigo,
+    pronto: semPendenciaDoSigo && verificar === 0,
   };
 
   // ── próximos passos (só os que se aplicam, nesta ordem) ──
@@ -599,7 +686,9 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
   }
   if (semAnalise) {
     passos.push(
-      "Grave a análise do edital (ler_edital_anexado e criar_ou_atualizar_oportunidade) para o SIGO conferir as exigências."
+      situacaoDaAnaliseGravada === "ausente"
+        ? "Grave a análise do edital (ler_edital_anexado e criar_ou_atualizar_oportunidade) para o SIGO conferir as exigências."
+        : "Releia a parte de habilitação do edital (ler_edital_anexado, roteiro analisar_edital) e grave com criar_ou_atualizar_oportunidade passando o oportunidade_id desta oportunidade: a análise gravada não tem nenhuma exigência de habilitação."
     );
   }
   if (pdfEmFalta > 0) {
@@ -637,6 +726,11 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
   }
   if (semAtende) {
     passos.push("Confira o acervo técnico contra o edital e grave com registrar_atende.");
+  }
+  if (atendeNegativo) {
+    passos.push(
+      "O Atende? concluiu que a empresa NÃO atende à qualificação técnica do edital: revise com o usuário antes de seguir."
+    );
   }
   if (acervo.some((a) => a.situacao === "nao_anexado")) {
     passos.push("Anexe as CATs do Atende?: anexar_acervo.");

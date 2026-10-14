@@ -48,9 +48,10 @@ import {
   conferirCopiasComOsAtivos,
   copiasDaBiblioteca,
   documentoVencido,
-  exigeQualificacaoTecnica,
+  exigeAtende,
   montarChecklist,
   PREFIXO_BIBLIOTECA,
+  situacaoDaAnalise,
   vereditoDoAtende,
   type ArquivoChecklist,
   type CopiaDaBiblioteca,
@@ -994,17 +995,24 @@ const ANEXAR_EDITAL_POR_URL: Ferramenta = {
 const AVISO_SEM_ANALISE =
   "A oportunidade ainda não tem a análise do edital: o checklist cobre só os documentos essenciais. Grave o edital com criar_ou_atualizar_oportunidade.";
 
+const AVISO_ANALISE_VAZIA =
+  "A análise do edital gravada na oportunidade não tem nenhuma exigência de habilitação: o checklist cobre só os documentos essenciais. Releia a habilitação do edital (ler_edital_anexado) e grave de novo com criar_ou_atualizar_oportunidade.";
 const AVISO_SEM_CRONOGRAMA =
   "A oportunidade não tem cronograma gravado: confira se o edital pede o cronograma físico-financeiro.";
+const AVISO_CRONOGRAMA_ANTIGO =
+  "Há arquivos de cronograma gerados antes na pasta, mas a oportunidade não tem cronograma gravado.";
 const AVISO_ATENDE_NAO_CONCLUI =
   "O Atende? desta oportunidade não concluiu que a empresa atende à qualificação técnica.";
+const AVISO_VISITA_TECNICA =
+  "O edital exige visita técnica: confira a data e o atestado de visita.";
+const AVISO_GARANTIA_PROPOSTA = "O edital exige garantia da proposta: confira o valor e a forma.";
 
 const CHECKLIST_HABILITACAO: Ferramenta = {
   def: {
     name: "checklist_habilitacao",
     title: "Conferir a habilitação da licitação",
     description:
-      "Confere a habilitação da licitação: cruza o que o edital exige com os Arquivos da oportunidade e a biblioteca de documentos da empresa, e devolve o que falta, o que está vencido (ou vence antes da sessão), as CATs e declarações que faltam e o que falta assinar, com os próximos passos. Arquivos da biblioteca que ficaram na pasta do envelope e vêm de documento renovado, removido ou vencido voltam em copias_desatualizadas (o SIGO não apaga: avise o usuário). Só lê. Chame no fim da montagem e mostre o resultado ao usuário.",
+      "Confere a habilitação da licitação: cruza o que o edital exige com os Arquivos da oportunidade e a biblioteca de documentos da empresa, e devolve o que falta, o que está vencido (ou vence antes da sessão), as CATs e declarações que faltam e o que falta assinar, com os próximos passos. Arquivos da biblioteca que ficaram na pasta do envelope e vêm de documento renovado, removido ou vencido voltam em copias_desatualizadas (o SIGO não apaga: avise o usuário). Só lê. Chame no fim da montagem e mostre o resultado ao usuário. Repasse os avisos e os proximos_passos: o resumo.pronto sozinho não basta (pronto true ainda pode vir com o passo do cronograma e com avisos). Com sem_pendencia_do_sigo true e pronto false, o SIGO não achou pendência: diga quantas exigências restam em conferir_a_mao.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1069,13 +1077,13 @@ const CHECKLIST_HABILITACAO: Ferramenta = {
       )
     );
 
-    // "tem cronograma" = cronograma gravado (com meses; cronograma_ff pode vir do legado como texto JSON, e texto
-    // inválido é "sem cronograma", como na gerar_documentos_proposta) OU arquivo de cronograma já gerado na pasta
-    const temCronograma =
-      normalizarCronograma(analiseDe(op.cronograma_ff)).meses > 0 ||
-      arquivos.some(
-        (a) => typeof a.origem === "string" && a.origem.startsWith("gerado:cronograma:")
-      );
+    // "tem cronograma" = cronograma gravado na oportunidade (cronograma_ff com meses > 0; ele pode vir do legado como
+    // texto JSON, e texto inválido é "sem cronograma", como na gerar_documentos_proposta). Arquivo de cronograma
+    // gerado antes NÃO conta: o cronograma pode ter sido trocado ou apagado depois, e o arquivo ficou velho.
+    const temCronograma = normalizarCronograma(analiseDe(op.cronograma_ff)).meses > 0;
+    const temArquivoDeCronograma = arquivos.some(
+      (a) => typeof a.origem === "string" && a.origem.startsWith("gerado:cronograma:")
+    );
 
     const hoje = hojeBR(deps.agora);
     const c = montarChecklist({
@@ -1091,7 +1099,12 @@ const CHECKLIST_HABILITACAO: Ferramenta = {
     });
 
     const avisos: string[] = [];
-    if (c.resumo.sem_analise > 0) avisos.push(AVISO_SEM_ANALISE);
+    // a análise ausente e a gravada sem nenhuma exigência de habilitação têm avisos diferentes
+    if (c.resumo.sem_analise > 0) {
+      avisos.push(
+        situacaoDaAnalise(analise?.extraido) === "ausente" ? AVISO_SEM_ANALISE : AVISO_ANALISE_VAZIA
+      );
+    }
     // sem data de sessão futura não há como saber se algo vence antes dela: nunca calar sobre isso (como a
     // anexar_habilitacao). Só importa se algum documento anexado tem validade.
     const semSessaoFutura = c.sessao === null || c.sessao <= hoje;
@@ -1101,11 +1114,14 @@ const CHECKLIST_HABILITACAO: Ferramenta = {
     ) {
       avisos.push(AVISO_SEM_SESSAO);
     }
-    if (!temCronograma) avisos.push(AVISO_SEM_CRONOGRAMA);
+    if (!temCronograma) {
+      avisos.push(AVISO_SEM_CRONOGRAMA);
+      if (temArquivoDeCronograma) avisos.push(AVISO_CRONOGRAMA_ANTIGO);
+    }
     // veredito que não é "atende" não vira falta (o Atende? existe), mas o usuário precisa saber; só vale quando o
-    // edital exige qualificação técnica (sem itens técnicos o veredito é sempre "atende_parcialmente")
+    // edital exige o Atende? (técnica ou registro fora do CREA; sem itens o veredito é sempre "atende_parcialmente")
     const veredito = vereditoDoAtende(analise?.atende);
-    if (exigeQualificacaoTecnica(analise?.extraido) && veredito !== null && veredito !== "atende") {
+    if (exigeAtende(analise?.extraido) && veredito !== null && veredito !== "atende") {
       avisos.push(AVISO_ATENDE_NAO_CONCLUI);
     }
     // certidão anexada sem validade: não dá para saber se vale; a situação não muda, mas o usuário confere as datas
@@ -1120,6 +1136,11 @@ const CHECKLIST_HABILITACAO: Ferramenta = {
         `Certidão(ões) sem validade cadastrada na biblioteca: ${certidoesSemValidade.map((x) => x.rotulo).join("; ")}. Confira as datas.`
       );
     }
+    // exigências do edital que o checklist não confere sozinho: só avisa (os campos são os do sanearEdital)
+    // deno-lint-ignore no-explicit-any
+    const extraido = analise?.extraido as any;
+    if (extraido?.datas?.visita_tecnica?.obrigatoria === true) avisos.push(AVISO_VISITA_TECNICA);
+    if (extraido?.garantia_proposta?.exigida === true) avisos.push(AVISO_GARANTIA_PROPOSTA);
     return sucesso({ oportunidade_id: id, ...c, avisos, link: linkOportunidade(id) }, { alvo: id });
   },
 };
@@ -1138,7 +1159,7 @@ export const INSTRUCOES_HABILITACAO: string[] = [
   "Documento vencido não é anexado: avise o usuário para atualizar em Acervo técnico → Documentos e certidões.",
   "Todo PDF gerado fica como falta assinar: o usuário assina no gov.br e envia pela aba Arquivos.",
   "Nunca diga que algo foi anexado, gerado ou válido sem a resposta da ferramenta dizer isso.",
-  "No fim, chame checklist_habilitacao e mostre o que falta, o que está vencido e o que falta assinar.",
+  "No fim, chame checklist_habilitacao e repasse avisos; se sem_pendencia_do_sigo, diga quantos conferir_a_mao.",
 ];
 
 const MONTAR_LICITACAO_COMPLETA: PromptDef = {
@@ -1173,7 +1194,7 @@ const MONTAR_LICITACAO_COMPLETA: PromptDef = {
       "7. Acervo: chame anexar_acervo (sem atestado_ids ele usa as CATs do Atende?). Liste as CATs que estão sem PDF (sem_pdf) e as falhas.",
       "8. Declarações: veja no edital quais declarações são exigidas. Para as comuns, use os modelos (nao_emprega_menor, fato_impeditivo, me_epp, requisitos_habilitacao, reserva_cargos, elaboracao_independente). Quando o edital traz modelo próprio, copie o título e o texto do edital, trocando os espaços em branco pelas variáveis {empresa} {cnpj} {endereco} {orgao} {edital} {objeto} {local} {data} {representante} {cargo} {cpf}. Chame gerar_declaracoes com todas de uma vez (pasta Credenciamento quando o edital pedir a declaração no credenciamento). Mostre mantidas_assinadas, as falhas (por formato, PDF ou Word) e os avisos de variável sem valor (variaveis_sem_valor): o espaço em branco fica para o usuário preencher.",
       '9. Edital nos Arquivos: se o edital tem link público de download (https), chame anexar_edital_por_url com o link do ARQUIVO e a categoria (edital, termo_referencia, anexo_edital ou errata). Se voltar ja_estava_anexado: true, nada mudou. Se o arquivo foi trocado, o texto preparado do edital foi descartado: peça ao usuário para clicar de novo em "Preparar para o Claude" na aba Arquivos antes de você usar ler_edital_anexado. Sem link, use gerar_link_envio e peça ao usuário para soltar os arquivos na página.',
-      "10. Chame checklist_habilitacao e mostre ao usuário, em linguagem simples: o que ficou pronto, o que falta, o que está vencido ou vence antes da sessão, o que falta assinar (falta_assinar) e o que ele precisa conferir à mão. Só diga que a habilitação está pronta se resumo.pronto for true. Explique sem_analise e sem_atende (falta gravar a análise do edital ou o Atende?), as linhas sem_cronograma (confirme no edital se o cronograma é exigido), as exigências em verificar (o SIGO não as reconheceu: o usuário confere à mão, e por isso elas impedem o pronto) e as copias_desatualizadas. Mande o link da oportunidade.",
+      "10. Chame checklist_habilitacao e mostre ao usuário, em linguagem simples: o que ficou pronto, o que falta, o que está vencido ou vence antes da sessão, o que falta assinar (falta_assinar) e o que ele precisa conferir à mão. Repasse TODOS os avisos e os proximos_passos, mesmo com pronto true (eles podem trazer o passo do cronograma). Só diga que a habilitação está pronta se resumo.pronto for true; se pronto for false mas sem_pendencia_do_sigo for true, diga que o SIGO não achou pendência e que restam conferir_a_mao itens para conferir à mão. Explique sem_analise (falta gravar a análise do edital, ou ela veio sem nenhuma exigência de habilitação: releia o edital) e sem_atende (falta gravar o Atende?), atende_negativo (o Atende? concluiu que a empresa NÃO atende: revise com o usuário), as linhas sem_cronograma (confirme no edital se o cronograma é exigido), as exigências em verificar (o SIGO não as reconheceu: o usuário confere à mão, e por isso elas impedem o pronto) e as copias_desatualizadas. Mande o link da oportunidade.",
       "",
       "REGRAS",
       "- Nenhum arquivo sai do chat para o SIGO: os arquivos são gerados, copiados ou baixados pelo servidor.",
