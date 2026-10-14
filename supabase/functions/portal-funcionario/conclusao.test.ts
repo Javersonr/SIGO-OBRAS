@@ -178,6 +178,14 @@ test("situacaoReal: tudo lido e completo conclui, com o marco da aprovação", a
   assert.ok(tem(de("treinamento_tentativa")[0], ["eq", "aprovada", true]));
 });
 
+test("situacaoReal: 'o curso tem prova' conta só as questões da prova final (aula_id vazio)", async () => {
+  // com questão só de questionário de módulo, o curso não "tem avaliação": sem o filtro, nunca concluiria
+  const { db, de } = bancoDeTeste(cenario());
+  await situacaoReal(db, MAT, EMPRESA);
+  assert.ok(tem(de("treinamento_questao")[0], ["is", "aula_id", null]));
+  assert.ok(tem(de("treinamento_questao")[0], ["is", "deleted_at", null]));
+});
+
 test("situacaoReal: questões ilegíveis NÃO viram 'curso sem prova' (o achado: conclusão sem aprovação)", async () => {
   // sem a aprovação, a conta antiga dava temAvaliacao false e concluido true
   const { db } = bancoDeTeste(

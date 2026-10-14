@@ -82,6 +82,7 @@ export const EVENTOS_FORA_DA_JANELA = [
 export const EVENTOS_DE_ESTUDO = [
   "progresso_ajustado",
   "apostila_lida",
+  "tarefa_confirmada",
   "aula_concluida",
   "curso_concluido",
   "avaliacao_iniciada",

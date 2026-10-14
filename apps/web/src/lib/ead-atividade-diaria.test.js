@@ -127,6 +127,11 @@ describe("quais eventos contam para a janela do aluno", () => {
       .join("\n");
     const gravados = new Set();
     for (const m of index.matchAll(/\bevento:\s*"([a-z_]+)"/g)) gravados.add(m[1]);
+    // evento escolhido por condição: `evento: cond ? "a" : "b"` (progresso: tarefa_confirmada ou apostila_lida)
+    for (const m of index.matchAll(/\bevento:\s*[^,\n]*?\?\s*"([a-z_]+)"\s*:\s*"([a-z_]+)"/g)) {
+      gravados.add(m[1]);
+      gravados.add(m[2]);
+    }
     // os que o portal grava por constante (EVENTO_PROVA_INICIADA, EVENTO_DECLARACAO_AMBIENTE, ...)
     for (const m of index.matchAll(/\bevento:\s*(EVENTO_[A-Z_]+)\b/g)) {
       const valor = new RegExp(`export const ${m[1]} = "([a-z_]+)"`).exec(constantes)?.[1];

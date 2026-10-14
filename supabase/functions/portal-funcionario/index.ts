@@ -22,7 +22,9 @@
  *   trocar_senha { senha_atual, nova_senha } (vale em todas as empresas)   logout
  *   empresas → as OUTRAS empresas liberadas      trocar_empresa { funcionario_id } → o token da outra (vence junto)
  *   dados (leva `outras_empresas`)              evento { evento, matricula_id?, aula_id?, detalhe? }
- *   progresso { matricula_id, aula_id, segundos_assistidos }  (a duração vem do cadastro da aula)
+ *   progresso { matricula_id, aula_id, segundos_assistidos, concluir? }  (a duração vem do cadastro da aula; o vídeo
+ *     conclui aos 90%; leitura e tarefa concluem com `concluir`, sem tempo mínimo (A5); questionário e caso só
+ *     creditam o tempo de tela e concluem pelas ações próprias)
  *   iniciar_avaliacao { matricula_id }          → sorteia a prova NO SERVIDOR (sem gabarito)
  *   avaliacao { matricula_id, respostas:[{questao_id,resposta}] }  (exige iniciar_avaliacao antes; quem
  *     reprova na ÚLTIMA tentativa avisa o RH no sino via `notificar_gestores`, T24: ver avisos.ts)
@@ -201,6 +203,7 @@ import {
   type AcaoComVolume,
   type MotivoDaConclusaoAdiada,
   acaoDeVolumeDoEvento,
+  atividadesDoCertificado,
   aulaLiberada,
   aulasParaAluno,
   bloqueioDaTrilhaNoCertificado,
@@ -1084,6 +1087,72 @@ Deno.serve(
       return curso ? data : null;
     };
 
+    /**
+     * Conclui UMA aula agora (C5): grava o progresso concluído, a trilha (`eventoExtra`, se houver, e
+     * `aula_concluida`), confere a conclusão do curso (`concluirSeCompleto`, com a marca adiada), fecha a marca e
+     * acerta o status da matrícula. Quem chama já conferiu a matrícula, a aula (do curso, liberada, do tipo certo) e
+     * que ela ainda não estava concluída. `segundos` = o tempo de tela creditado à aula (vai ao progresso e à trilha).
+     * Serve ao `progresso` (vídeo, leitura e tarefa) e às ações do questionário e do caso. Devolve o que a resposta
+     * leva, ou null se o progresso não foi gravado (nada mais foi gravado; quem chama responde o erro).
+     */
+    const concluirAula = async (
+      // deno-lint-ignore no-explicit-any
+      mat: any,
+      // deno-lint-ignore no-explicit-any
+      aula: any,
+      segundos: number,
+      eventoExtra: { evento: string; detalhe: Record<string, unknown> } | null
+    ) => {
+      const { error: upErr } = await supabase.from("treinamento_progresso").upsert(
+        {
+          empresa_id: empresaId,
+          matricula_id: mat.id,
+          aula_id: aula.id,
+          segundos_assistidos: segundos,
+          concluida: true,
+          concluida_em: agoraIso(),
+        },
+        { onConflict: "matricula_id,aula_id" }
+      );
+      if (upErr) {
+        console.error("[portal-funcionario] conclusão da aula:", upErr);
+        return null;
+      }
+      if (eventoExtra) {
+        await ev({
+          ...eventoExtra,
+          matricula_id: mat.id,
+          curso_id: mat.curso_id,
+          aula_id: aula.id,
+        });
+      }
+      await ev({
+        evento: "aula_concluida",
+        matricula_id: mat.id,
+        curso_id: mat.curso_id,
+        aula_id: aula.id,
+        detalhe: { segundos, duracao: duracaoParaProgresso(aula, TEMPO_MINIMO_PADRAO) },
+      });
+      const resultado = await concluirSeCompleto(supabase, mat, empresaId, adiarConclusao(mat));
+      if (resultado.concluiu) {
+        await ev({ evento: "curso_concluido", matricula_id: mat.id, curso_id: mat.curso_id });
+        await fecharAdiada(mat, resultado.data_conclusao, "aula");
+      }
+      if (resultado.status !== mat.status && resultado.status !== "concluido") {
+        await supabase
+          .from("treinamento_matricula")
+          .update({ status: resultado.status })
+          .eq("id", mat.id)
+          .eq("empresa_id", empresaId);
+      }
+      return {
+        aula_concluida: true,
+        curso_concluido: resultado.concluiu,
+        precisa_avaliacao: resultado.precisaAvaliacao && !mat.avaliacao_aprovada,
+        status: resultado.status,
+      };
+    };
+
     // ---------------------------------------------------------------- dados
     if (body.acao === "dados") {
       const [{ data: func }, { data: emp }, { data: mats }] = await Promise.all([
@@ -1121,6 +1190,8 @@ Deno.serve(
         { data: certificados },
         { data: duvidas },
         { data: liberacoes },
+        { data: questoesDosQuestionarios, error: erroQuestionarios },
+        { data: roteiros, error: erroRoteiros },
       ] = await Promise.all([
         cursoIds.length
           ? supabase
@@ -1142,14 +1213,16 @@ Deno.serve(
           ? supabase.from("treinamento_progresso").select("*").in("matricula_id", matIds)
           : vazio,
         // só para contar (tem_avaliacao e total_questoes): o texto e as alternativas saem apenas em
-        // iniciar_avaliacao, já sorteados, e o gabarito nunca sai antes da aprovação (T16)
+        // iniciar_avaliacao, já sorteados, e o gabarito nunca sai antes da aprovação (T16). Só as da PROVA
+        // FINAL (`aula_id` vazio): questão de questionário de módulo não faz o curso "ter avaliação"
         cursoIds.length
           ? supabase
               .from("treinamento_questao")
-              .select("id, curso_id")
+              .select("id, curso_id, aula_id")
               .in("curso_id", cursoIds)
               .eq("empresa_id", empresaId)
               .is("deleted_at", null)
+              .is("aula_id", null)
           : vazio,
         matIds.length
           ? supabase
@@ -1185,6 +1258,25 @@ Deno.serve(
               .eq("evento", EVENTO_TENTATIVA_LIBERADA)
               .in("matricula_id", matIds)
           : vazio,
+        // As questões dos questionários dos módulos e os roteiros dos casos só servem aos requisitos do
+        // certificado (`pendencias_certificado`): nunca vão ao navegador (saem pelas ações próprias, sem gabarito)
+        cursoIds.length
+          ? supabase
+              .from("treinamento_questao")
+              .select("id, curso_id, aula_id, pergunta, opcoes, correta")
+              .in("curso_id", cursoIds)
+              .eq("empresa_id", empresaId)
+              .is("deleted_at", null)
+              .not("aula_id", "is", null)
+          : vazio,
+        cursoIds.length
+          ? supabase
+              .from("treinamento_caso")
+              .select("curso_id, aula_id, conteudo")
+              .in("curso_id", cursoIds)
+              .eq("empresa_id", empresaId)
+              .is("deleted_at", null)
+          : vazio,
       ]);
       // Questões e tentativas decidem o que o aluno vê da prova e as duas travas da retomada da conclusão (a trilha
       // completa e "fez a prova e não passou"). Lidas com erro, viravam "curso sem prova" e "nunca fez a prova":
@@ -1197,6 +1289,18 @@ Deno.serve(
         if (erroTentativas) {
           console.error("[portal-funcionario] dados: tentativas:", erroTentativas.message);
         }
+        return fail(
+          "Não foi possível carregar seus cursos agora. Tente de novo em instantes.",
+          503
+        );
+      }
+      // Questões dos questionários e roteiros dos casos (A2, A3): lidos com erro, o curso pareceria sem conteúdo e o
+      // portal esconderia o "Emitir certificado" com uma pendência falsa. 503, como as questões e as tentativas.
+      if (erroQuestionarios || erroRoteiros) {
+        if (erroQuestionarios) {
+          console.error("[portal-funcionario] dados: questionários:", erroQuestionarios.message);
+        }
+        if (erroRoteiros) console.error("[portal-funcionario] dados: casos:", erroRoteiros.message);
         return fail(
           "Não foi possível carregar seus cursos agora. Tente de novo em instantes.",
           503
@@ -1376,12 +1480,19 @@ Deno.serve(
         });
         // deno-lint-ignore no-explicit-any
         const cert: any = (certificados ?? []).find((c: any) => c.matricula_id === m.id) || null;
-        // o que impede EMITIR (D3: o curso de apoio publica e matricula, mas nunca emite)
+        // o que impede EMITIR (D3: o curso de apoio publica e matricula, mas nunca emite). Os requisitos contam a
+        // prova pelas questões sem aula e conferem cada questionário (questões) e cada caso (roteiro), C4
         const pendencias = pendenciasParaEmitir(
           requisitosDoCurso({
             curso: curso || {},
             aulas: (aulas ?? []).filter((a: { curso_id: string }) => a.curso_id === m.curso_id),
-            questoes: questoesCurso,
+            questoes: [
+              ...questoesCurso,
+              // deno-lint-ignore no-explicit-any
+              ...(questoesDosQuestionarios ?? []).filter((q: any) => q.curso_id === m.curso_id),
+            ],
+            // deno-lint-ignore no-explicit-any
+            casos: (roteiros ?? []).filter((c: any) => c.curso_id === m.curso_id),
           })
         );
         const concluidoReal = concluidoNaTrilha(m);
@@ -1686,31 +1797,38 @@ Deno.serve(
         });
       }
 
-      // vídeo conclui sozinho aos 90% assistidos; apostila (pdf/texto) exige o
-      // tempo de leitura COMPLETO e o clique explícito em "Marcar como lida"
-      const { ehVideo, concluirCedo, faltamSeg, concluiu, podeConcluir } = conclusaoDaAula({
+      // Vídeo conclui sozinho aos 90% assistidos. Leitura (pdf/texto) e tarefa concluem com o clique ("Marcar como
+      // lida" / "Fiz a atividade", `concluir: true`), sem tempo mínimo: o botão acende quando o aluno chega ao fim
+      // (A5). Questionário e caso só creditam o tempo de tela aqui: `conclusaoDaAula` nunca os conclui pelo
+      // `progresso` (concluem por questionario_enviar e caso_concluir).
+      const { ehVideo, concluiu, podeConcluir } = conclusaoDaAula({
         tipo: aula.tipo,
         duracao,
         segundos: novoSeg,
         jaConcluida: atual?.concluida,
         pediuConcluir: body.concluir,
       });
-      if (concluirCedo) {
-        const faltam = Math.ceil(faltamSeg / 60);
-        return fail(`Continue lendo: ainda faltam ${faltam} min do tempo mínimo de leitura.`, 409, {
-          codigo: "TEMPO_LEITURA",
-          segundos_assistidos: novoSeg,
-          faltam_seg: faltamSeg,
-        });
+      if (concluiu && !atual?.concluida) {
+        // a trilha diz como a aula terminou: a leitura chegou ao fim ou a tarefa foi confirmada (vídeo: só a aula)
+        const extra = ehVideo
+          ? null
+          : {
+              evento: aula.tipo === "tarefa" ? "tarefa_confirmada" : "apostila_lida",
+              detalhe: { segundos: novoSeg },
+            };
+        const fim = await concluirAula(mat, aula, novoSeg, extra);
+        if (!fim) return fail("Erro ao salvar progresso", 500);
+        return ok({ segundos_assistidos: novoSeg, pode_concluir: false, ...fim });
       }
+
+      // Só tempo: o upsert não regrava `concluida` nem `concluida_em`, então a conclusão gravada ao mesmo tempo por
+      // outra ação (questionário aprovado, caso concluído) não volta atrás com um sinal que já estava a caminho.
       const { error: upErr } = await supabase.from("treinamento_progresso").upsert(
         {
           empresa_id: empresaId,
           matricula_id: mat.id,
           aula_id: aula.id,
           segundos_assistidos: novoSeg,
-          concluida: concluiu,
-          concluida_em: concluiu && !atual?.concluida ? agoraIso() : (atual?.concluida_em ?? null),
         },
         { onConflict: "matricula_id,aula_id" }
       );
@@ -1719,49 +1837,13 @@ Deno.serve(
         return fail("Erro ao salvar progresso", 500);
       }
 
-      let resultado = {
-        status: mat.status,
-        concluiu: false,
-        precisaAvaliacao: false,
-        data_conclusao: null as string | null,
-      };
-      if (concluiu && !atual?.concluida) {
-        if (!ehVideo) {
-          await ev({
-            evento: "apostila_lida",
-            matricula_id: mat.id,
-            curso_id: mat.curso_id,
-            aula_id: aula.id,
-            detalhe: { segundos: novoSeg, minimo: duracao },
-          });
-        }
-        await ev({
-          evento: "aula_concluida",
-          matricula_id: mat.id,
-          curso_id: mat.curso_id,
-          aula_id: aula.id,
-          detalhe: { segundos: novoSeg, duracao },
-        });
-        resultado = await concluirSeCompleto(supabase, mat, empresaId, adiarConclusao(mat));
-        if (resultado.concluiu) {
-          await ev({ evento: "curso_concluido", matricula_id: mat.id, curso_id: mat.curso_id });
-          await fecharAdiada(mat, resultado.data_conclusao, "aula");
-        }
-      }
-      if (resultado.status !== mat.status && resultado.status !== "concluido") {
-        await supabase
-          .from("treinamento_matricula")
-          .update({ status: resultado.status })
-          .eq("id", mat.id);
-      }
-
       return ok({
         segundos_assistidos: novoSeg,
         pode_concluir: podeConcluir,
         aula_concluida: concluiu,
-        curso_concluido: resultado.concluiu,
-        precisa_avaliacao: resultado.precisaAvaliacao && !mat.avaliacao_aprovada,
-        status: resultado.status,
+        curso_concluido: false,
+        precisa_avaliacao: false,
+        status: mat.status,
       });
     }
 
@@ -2117,7 +2199,7 @@ Deno.serve(
         supabase
           .from("treinamento_aula")
           .select(
-            "ordem, modulo, titulo, tipo, fonte, video_ref, youtube_id, arquivo_ref, conteudo_texto, duracao_seg"
+            "id, ordem, modulo, titulo, tipo, fonte, video_ref, youtube_id, arquivo_ref, conteudo_texto, duracao_seg"
           )
           .eq("curso_id", mat.curso_id)
           .eq("empresa_id", empresaId)
@@ -2125,18 +2207,43 @@ Deno.serve(
           .order("ordem", { ascending: true }),
       ]);
       if (!func) return fail("Funcionário não encontrado", 404);
-      const { count: nQuestoes, error: erroQuestoes } = await supabase
-        .from("treinamento_questao")
-        .select("id", { count: "exact", head: true })
-        .eq("curso_id", mat.curso_id)
-        .eq("empresa_id", empresaId)
-        .is("deleted_at", null);
-      if (erroQuestoes) return fail("Não foi possível validar os requisitos do curso", 503);
+      // Requisitos (C5): a prova final pelas questões sem aula, cada questionário pelas questões dele e cada caso
+      // pelo roteiro. Três leituras da empresa da sessão; qualquer uma com erro é 503 (nunca decide sem ler).
+      const [
+        { data: questoesDaProva, error: erroQuestoes },
+        { data: questoesDosQuestionarios, error: erroQuestionarios },
+        { data: roteiros, error: erroRoteiros },
+      ] = await Promise.all([
+        supabase
+          .from("treinamento_questao")
+          .select("id, aula_id")
+          .eq("curso_id", mat.curso_id)
+          .eq("empresa_id", empresaId)
+          .is("deleted_at", null)
+          .is("aula_id", null),
+        supabase
+          .from("treinamento_questao")
+          .select("id, aula_id, pergunta, opcoes, correta")
+          .eq("curso_id", mat.curso_id)
+          .eq("empresa_id", empresaId)
+          .is("deleted_at", null)
+          .not("aula_id", "is", null),
+        supabase
+          .from("treinamento_caso")
+          .select("aula_id, conteudo")
+          .eq("curso_id", mat.curso_id)
+          .eq("empresa_id", empresaId)
+          .is("deleted_at", null),
+      ]);
+      if (erroQuestoes || erroQuestionarios || erroRoteiros) {
+        return fail("Não foi possível validar os requisitos do curso", 503);
+      }
       const pendencias = pendenciasParaEmitir(
         requisitosDoCurso({
           curso: curso || {},
           aulas: aulas || [],
-          questoes: Array.from({ length: nQuestoes || 0 }, () => ({})),
+          questoes: [...(questoesDaProva ?? []), ...(questoesDosQuestionarios ?? [])],
+          casos: roteiros ?? [],
         })
       );
       if (pendencias.length)
@@ -2158,6 +2265,9 @@ Deno.serve(
           })
         : null;
 
+      // atividades dos módulos (A9): quantas aulas de cada tipo e a nota mínima dos questionários, congeladas no
+      // certificado (entram no hash). null = curso sem atividade: a chave nem entra e ele emite como antes.
+      const atividades = atividadesDoCertificado(aulas ?? [], curso);
       const dados = {
         aluno: { nome: func?.nome_completo, cpf: func?.cpf, funcao: func?.funcao_nome ?? null },
         empresa: { nome: emp?.razao_social || emp?.nome, cnpj: emp?.cnpj ?? null },
@@ -2194,6 +2304,7 @@ Deno.serve(
         avaliacao: sit.aprovacao
           ? { nota: sit.aprovacao.nota, tentativa: sit.aprovacao.numero }
           : null,
+        ...(atividades ? { atividades } : {}),
         // nome, qualificação/registro e, quando o RH anexou, a referência da imagem da assinatura (T29).
         // Tudo congelado aqui: entra no hash, e trocar a imagem do curso depois não muda este certificado
         instrutor: instrutorDoCertificado(curso, empresaId),

@@ -72,6 +72,11 @@ function eventosGravadosPeloServidor() {
   const nomes = new Set();
   const portal = lerFuncao("portal-funcionario/index.ts");
   for (const m of portal.matchAll(/\bevento:\s*"([a-z_]+)"/g)) nomes.add(m[1]);
+  // evento escolhido por condição: `evento: cond ? "a" : "b"` (progresso: tarefa_confirmada ou apostila_lida)
+  for (const m of portal.matchAll(/\bevento:\s*[^,\n]*?\?\s*"([a-z_]+)"\s*:\s*"([a-z_]+)"/g)) {
+    nomes.add(m[1]);
+    nomes.add(m[2]);
+  }
   const clientes = portal.slice(
     portal.indexOf("const EVENTOS_CLIENTE = new Set(["),
     portal.indexOf("]);", portal.indexOf("const EVENTOS_CLIENTE"))
