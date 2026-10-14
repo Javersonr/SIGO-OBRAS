@@ -14,6 +14,7 @@ import {
   ehBaixavel,
   patchDoAssinado,
   podeEnviarAssinado,
+  podeIniciarEnvio,
   seloDaAssinatura,
   validarArquivoAssinado,
 } from "@/lib/arquivo-assinatura";
@@ -275,8 +276,10 @@ export default function OportunidadeDetalhe({
   // "Enviar assinado": troca o PDF gerado pela versão assinada no gov.br (mesma linha, mesma pasta)
   const [assinandoId, setAssinandoId] = useState(null);
   const inputAssinadoRef = useRef(null);
+  // a linha escolhida para assinar; é regravada a cada abertura do seletor (nunca zerada depois)
   const arquivoParaAssinarRef = useRef(null);
-  const podeAnexar = isAdmin || can("Oportunidades", "Arquivos", "criar");
+  // "Enviar assinado" troca o arquivo da linha: mesma permissão de quem anexa arquivos
+  const podeAnexar = podePrepararParaClaude;
 
   const handleBaixarArquivo = async (arq) => {
     try {
@@ -289,36 +292,53 @@ export default function OportunidadeDetalhe({
   };
 
   const escolherAssinado = (arq) => {
+    if (!podeIniciarEnvio(assinandoId)) return; // um envio por vez
     arquivoParaAssinarRef.current = arq;
     inputAssinadoRef.current?.click();
   };
 
   const handleEnviarAssinado = async (e) => {
     const file = e.target.files?.[0];
+    // guarda a linha escolhida agora: a referência só é regravada na próxima abertura do seletor
     const arq = arquivoParaAssinarRef.current;
     e.target.value = "";
-    if (!arq) return;
+    if (!arq) {
+      toast.error("Escolha de novo a linha do arquivo");
+      return;
+    }
     const v = validarArquivoAssinado(file, LIMITE_ANEXO_OPORTUNIDADE);
     if (!v.ok) {
-      arquivoParaAssinarRef.current = null;
       toast.error(v.erro);
       return;
     }
     setAssinandoId(arq.id);
     try {
-      const ref = refDoUpload(
-        await sigo.integrations.Core.UploadFile({ file, bucket: "anexos-oportunidade" })
-      );
-      if (!ref) throw new Error("o envio não devolveu a referência do arquivo");
-      await sigo.entities.ArquivoOportunidade.update(arq.id, patchDoAssinado(ref, file));
+      try {
+        const ref = refDoUpload(
+          await sigo.integrations.Core.UploadFile({
+            file,
+            bucket: "anexos-oportunidade",
+            mimeType: "application/pdf", // o bucket recusa application/octet-stream e application/x-pdf
+          })
+        );
+        if (!ref) throw new Error("o envio não devolveu a referência do arquivo");
+        await sigo.entities.ArquivoOportunidade.update(arq.id, patchDoAssinado(ref, file));
+      } catch (err) {
+        console.error("Erro ao enviar o arquivo assinado:", err);
+        toast.error("Erro ao enviar o arquivo assinado" + (err?.message ? `: ${err.message}` : ""));
+        return;
+      }
       toast.success("Versão assinada gravada");
-      onReloadArquivos?.();
-    } catch (err) {
-      console.error("Erro ao enviar o arquivo assinado:", err);
-      toast.error("Erro ao enviar o arquivo assinado" + (err?.message ? `: ${err.message}` : ""));
+      // o arquivo já foi gravado: falha ao recarregar a lista não é falha do envio
+      try {
+        await onReloadArquivos?.();
+      } catch (err) {
+        console.error("Erro ao recarregar os arquivos depois do envio assinado:", err);
+        toast.error("Arquivo gravado, mas a lista não atualizou. Atualize a página.");
+      }
     } finally {
+      // só depois da recarga: a linha não reaparece como "falta assinar" com o botão ativo
       setAssinandoId(null);
-      arquivoParaAssinarRef.current = null;
     }
   };
 
@@ -1847,7 +1867,7 @@ export default function OportunidadeDetalhe({
                                   size="sm"
                                   variant="outline"
                                   className="gap-1 border-amber-300 text-amber-800"
-                                  disabled={assinandoId === arq.id}
+                                  disabled={!podeIniciarEnvio(assinandoId)}
                                   title="Assine o PDF no gov.br e envie aqui a versão assinada"
                                   onClick={() => escolherAssinado(arq)}
                                 >

@@ -19,6 +19,24 @@ export const VARIAVEIS_DECLARACAO = [
   "cpf",
 ];
 
+/**
+ * Valores FICTÍCIOS que preenchem a prévia do editor de modelos (um valor para cada variável de
+ * VARIAVEIS_DECLARACAO). Nenhum dado real: documentos de zeros, "Fulano de Tal", "Cidade Exemplo".
+ */
+export const EXEMPLO_DECLARACAO = Object.freeze({
+  empresa: "Empresa Exemplo Ltda",
+  cnpj: "00.000.000/0001-00",
+  endereco: "Rua Exemplo, 100, Centro, Cidade Exemplo/UF",
+  orgao: "Prefeitura Municipal de Cidade Exemplo",
+  edital: "Pregão Eletrônico nº 00/2026",
+  objeto: "contratação de empresa para execução de serviços de exemplo",
+  local: "Cidade Exemplo/UF",
+  data: "01 de janeiro de 2026",
+  representante: "Fulano de Tal",
+  cargo: "Sócio-administrador",
+  cpf: "000.000.000-00",
+});
+
 export const LIMITE_TEXTO_DECLARACAO = 20000;
 export const LIMITE_TITULO_DECLARACAO = 200;
 
@@ -91,28 +109,38 @@ function ordemDe(modelo) {
     : Number.POSITIVE_INFINITY;
 }
 
+/** Por ordem (nula ou ausente por último) e, em empate, por título. Vale para a tela e para o servidor. */
+function compararModelos(a, b) {
+  const oa = ordemDe(a);
+  const ob = ordemDe(b);
+  if (oa !== ob) return oa < ob ? -1 : 1;
+  return a.titulo.localeCompare(b.titulo, "pt-BR");
+}
+
+/**
+ * Os campos de um modelo: o padrão (`padrao`; ausente num modelo próprio) sobreposto pela linha da
+ * empresa (`linha`; ausente num padrão ainda não editado). Título ou texto que não sejam texto na linha
+ * voltam ao do padrão; `ordem` nula também; sem linha, o modelo está ativo. A regra única da tela
+ * (modelosParaEditor) e do servidor (modelosDaEmpresa): mexeu aqui, mexeu nas duas.
+ */
+function camposDoModelo(padrao, linha) {
+  return {
+    chave: linha?.chave ?? padrao?.chave,
+    titulo: typeof linha?.titulo === "string" ? linha.titulo : (padrao?.titulo ?? ""),
+    texto: typeof linha?.texto === "string" ? linha.texto : (padrao?.texto ?? ""),
+    ativo: linha ? linha.ativo !== false : true,
+    ordem: linha?.ordem ?? padrao?.ordem ?? null,
+  };
+}
+
 /** Padrão sobreposto pelas linhas da empresa (mesma chave) + modelos próprios; só os ativos; por ordem e título. */
 export function modelosDaEmpresa(linhas) {
   const porChave = new Map(MODELOS_PADRAO.map((p) => [p.chave, { ...p }]));
   for (const linha of Array.isArray(linhas) ? linhas : []) {
     if (!linha || typeof linha.chave !== "string" || !linha.chave) continue;
-    const padrao = porChave.get(linha.chave);
-    porChave.set(linha.chave, {
-      chave: linha.chave,
-      titulo: typeof linha.titulo === "string" ? linha.titulo : (padrao?.titulo ?? ""),
-      texto: typeof linha.texto === "string" ? linha.texto : (padrao?.texto ?? ""),
-      ativo: linha.ativo !== false,
-      ordem: linha.ordem ?? padrao?.ordem ?? null,
-    });
+    porChave.set(linha.chave, camposDoModelo(porChave.get(linha.chave), linha));
   }
-  return [...porChave.values()]
-    .filter((x) => x.ativo !== false)
-    .sort((a, b) => {
-      const oa = ordemDe(a);
-      const ob = ordemDe(b);
-      if (oa !== ob) return oa < ob ? -1 : 1;
-      return a.titulo.localeCompare(b.titulo, "pt-BR");
-    });
+  return [...porChave.values()].filter((x) => x.ativo !== false).sort(compararModelos);
 }
 
 /**
@@ -129,16 +157,12 @@ export function modelosParaEditor(linhas) {
     (l) => l && typeof l.chave === "string" && l.chave
   );
   const doItem = (padrao, linha) => {
-    const ativo = linha ? linha.ativo !== false : true;
+    const campos = camposDoModelo(padrao, linha);
     return {
-      chave: linha?.chave ?? padrao.chave,
-      titulo: typeof linha?.titulo === "string" ? linha.titulo : (padrao?.titulo ?? ""),
-      texto: typeof linha?.texto === "string" ? linha.texto : (padrao?.texto ?? ""),
-      ativo,
-      ordem: linha?.ordem ?? padrao?.ordem ?? null,
+      ...campos,
       padrao: !!padrao,
       id: linha?.id ?? null,
-      situacao: !ativo ? "desativado" : !linha ? "padrao" : padrao ? "editado" : "proprio",
+      situacao: !campos.ativo ? "desativado" : !linha ? "padrao" : padrao ? "editado" : "proprio",
     };
   };
   const padroes = MODELOS_PADRAO.map((p) =>
@@ -150,12 +174,7 @@ export function modelosParaEditor(linhas) {
   const proprios = lista
     .filter((l) => !CHAVES_PADRAO.includes(l.chave))
     .map((l) => doItem(null, l))
-    .sort((a, b) => {
-      const oa = ordemDe(a);
-      const ob = ordemDe(b);
-      if (oa !== ob) return oa < ob ? -1 : 1;
-      return a.titulo.localeCompare(b.titulo, "pt-BR");
-    });
+    .sort(compararModelos);
   return [...padroes, ...proprios];
 }
 
@@ -268,7 +287,8 @@ export function validarModelo(form, chavesEmUso) {
 export function mensagemDeErroAoSalvarModelo(erro) {
   const msg = String(erro?.message ?? "");
   if (msg.includes("modelo_declaracao_chave_uidx")) {
-    return "Já existe um modelo com este título (talvez criado agora por outra pessoa). Atualize a página e confira a lista.";
+    // vale para título repetido e para a chave de um padrão já editado (duas abas abertas): texto neutro
+    return "Já existe um modelo gravado para esta declaração. Atualize a página e edite o que já existe.";
   }
   if (msg.includes("modelo_declaracao_chave_reservada_chk")) {
     return 'O título não pode começar com "edital"';
@@ -277,7 +297,7 @@ export function mensagemDeErroAoSalvarModelo(erro) {
     return "O título deve começar com uma letra e ter ao menos 2 caracteres";
   }
   if (msg.includes("modelo_declaracao_titulo_check")) {
-    return "Título: informe de 1 a 200 caracteres, com ao menos uma letra ou número";
+    return "Título: informe de 1 a 200 caracteres; o título não pode ficar em branco";
   }
   if (msg.includes("modelo_declaracao_texto_check")) {
     return "Texto: informe de 1 a 20.000 caracteres, sem deixar a declaração em branco";

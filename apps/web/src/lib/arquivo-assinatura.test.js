@@ -3,6 +3,7 @@ import {
   ehBaixavel,
   patchDoAssinado,
   podeEnviarAssinado,
+  podeIniciarEnvio,
   seloDaAssinatura,
   validarArquivoAssinado,
 } from "./arquivo-assinatura";
@@ -36,6 +37,14 @@ describe("assinatura dos arquivos da oportunidade", () => {
     expect(podeEnviarAssinado({ assinatura: "pendente", tipo: "link" })).toBe(false);
     expect(podeEnviarAssinado({ tipo: "application/pdf" })).toBe(false);
     expect(podeEnviarAssinado(null)).toBe(false);
+  });
+  it("podeIniciarEnvio: só quando nenhum envio está em andamento (assinandoId nulo)", () => {
+    expect(podeIniciarEnvio(null)).toBe(true);
+    expect(podeIniciarEnvio(undefined)).toBe(true);
+    // um envio em andamento (de qualquer linha) trava o início de outro
+    expect(podeIniciarEnvio("00000000-0000-4000-8000-000000000001")).toBe(false);
+    expect(podeIniciarEnvio(7)).toBe(false);
+    expect(podeIniciarEnvio("")).toBe(false);
   });
   it("validarArquivoAssinado: PDF, não vazio, até o limite", () => {
     expect(

@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { sigo } from "@/api/sigoClient";
 import {
+  EXEMPLO_DECLARACAO,
   mensagemDeErroAoSalvarModelo,
   modelosParaEditor,
   preencherModelo,
@@ -23,21 +24,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { FileText, Loader2, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { Selo } from "./AcervoUi";
-
-/** Valores fictícios da prévia do editor (nenhum dado real). */
-const EXEMPLO = {
-  empresa: "Empresa Exemplo Ltda",
-  cnpj: "00.000.000/0001-00",
-  endereco: "Rua Exemplo, 100, Centro, Cidade Exemplo/UF",
-  orgao: "Prefeitura Municipal de Cidade Exemplo",
-  edital: "Pregão Eletrônico nº 00/2026",
-  objeto: "contratação de empresa para execução de serviços de exemplo",
-  local: "Cidade Exemplo/UF",
-  data: "01 de janeiro de 2026",
-  representante: "Fulano de Tal",
-  cargo: "Sócio-administrador",
-  cpf: "000.000.000-00",
-};
 
 const SELO_DA_SITUACAO = {
   padrao: { cor: "slate", texto: "padrão" },
@@ -77,23 +63,26 @@ export default function ModelosDeclaracao({ empresaId, podeEditar = false }) {
   const [edicao, setEdicao] = useState({ aberto: false, item: null, form: FORM_VAZIO });
   const [salvando, setSalvando] = useState(false);
   const [trabalhando, setTrabalhando] = useState(false); // restaurar ou excluir em andamento
+  // Contador de pedidos de leitura (padrão do AcervoTecnico): só a resposta do pedido mais recente vale,
+  // então uma resposta atrasada de outra empresa (carga ou recarga pós-gravação) é descartada.
+  const pedido = useRef(0);
 
   useEffect(() => {
     if (!empresaId) return undefined;
-    let ativo = true;
+    const meu = ++pedido.current;
     setEstado("carregando");
     lerLinhas(empresaId)
       .then((lista) => {
-        if (!ativo) return;
+        if (meu !== pedido.current) return;
         setLinhas(Array.isArray(lista) ? lista : []);
         setEstado("pronto");
       })
       .catch((e) => {
         console.error("[Habilitação] modelos de declaração:", e);
-        if (ativo) setEstado("indisponivel");
+        if (meu === pedido.current) setEstado("indisponivel");
       });
     return () => {
-      ativo = false;
+      pedido.current += 1; // troca de empresa ou desmontagem: invalida o que ainda está no ar
     };
   }, [empresaId]);
 
@@ -102,12 +91,15 @@ export default function ModelosDeclaracao({ empresaId, podeEditar = false }) {
   if (estado !== "pronto") return null;
 
   const recarregar = async () => {
+    const meu = ++pedido.current;
     try {
       const atual = await lerLinhas(empresaId);
+      if (meu !== pedido.current) return;
       setLinhas(Array.isArray(atual) ? atual : []);
     } catch (e) {
       console.error("[Habilitação] recarregar modelos:", e);
-      toast.error("Não foi possível atualizar a lista. Use o botão Atualizar no topo da página.");
+      if (meu !== pedido.current) return;
+      toast.error("Não foi possível atualizar a lista. Atualize a página do navegador.");
     }
   };
 
@@ -198,7 +190,7 @@ export default function ModelosDeclaracao({ empresaId, podeEditar = false }) {
       erro: "Erro ao excluir",
     });
 
-  const previa = preencherModelo(edicao.form.texto, EXEMPLO);
+  const previa = preencherModelo(edicao.form.texto, EXEMPLO_DECLARACAO);
 
   return (
     <Card>

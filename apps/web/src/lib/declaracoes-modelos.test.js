@@ -1,12 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
   chaveDoTitulo,
+  EXEMPLO_DECLARACAO,
   mensagemDeErroAoSalvarModelo,
   MODELOS_PADRAO,
   modelosDaEmpresa,
   modelosParaEditor,
   preencherModelo,
   validarModelo,
+  VARIAVEIS_DECLARACAO,
 } from "./declaracoes-modelos";
 
 const TITULO_LOTE_1 = "Declaração do Anexo V - Visita Técnica ao local da obra - Lote 1";
@@ -145,7 +147,7 @@ describe("mensagemDeErroAoSalvarModelo (recusas do banco, 0156)", () => {
         )
       )
     ).toBe(
-      "Já existe um modelo com este título (talvez criado agora por outra pessoa). Atualize a página e confira a lista."
+      "Já existe um modelo gravado para esta declaração. Atualize a página e edite o que já existe."
     );
   });
   it("CHECK da chave e chave reservada (edital_)", () => {
@@ -171,7 +173,7 @@ describe("mensagemDeErroAoSalvarModelo (recusas do banco, 0156)", () => {
           'new row for relation "modelo_declaracao" violates check constraint "modelo_declaracao_titulo_check"'
         )
       )
-    ).toBe("Título: informe de 1 a 200 caracteres, com ao menos uma letra ou número");
+    ).toBe("Título: informe de 1 a 200 caracteres; o título não pode ficar em branco");
     expect(
       mensagemDeErroAoSalvarModelo(
         erro(
@@ -325,5 +327,105 @@ describe("modelosParaEditor (lista do cartão Modelos de declaração)", () => {
     lista[0].texto = "mexido por quem chamou";
     expect(MODELOS_PADRAO[0].texto).not.toBe("mexido por quem chamou");
     expect(modelosParaEditor([])[0].texto).not.toBe("mexido por quem chamou");
+  });
+});
+
+// A tela (cartão do Acervo) e o conector/servidor (modelosDaEmpresa) têm de enxergar os MESMOS modelos
+// ativos: o que a pessoa vê no editor é o que o Claude usa ao gerar as declarações.
+describe("modelosParaEditor x modelosDaEmpresa: os modelos ativos são os mesmos", () => {
+  const ID = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  const CONJUNTOS = {
+    "sem linhas": [],
+    "um padrão editado": [
+      {
+        id: ID(1),
+        chave: "me_epp",
+        titulo: "ME/EPP da casa",
+        texto: "Texto {empresa}",
+        ativo: true,
+        ordem: 3,
+      },
+    ],
+    "padrão editado só no texto (título e ordem nulos voltam ao padrão)": [
+      {
+        id: ID(2),
+        chave: "fato_impeditivo",
+        titulo: null,
+        texto: "Outro",
+        ativo: true,
+        ordem: null,
+      },
+    ],
+    "um padrão desativado": [
+      { id: ID(3), chave: "reserva_cargos", titulo: "T", texto: "X", ativo: false, ordem: 5 },
+    ],
+    "um modelo próprio ativo e outro inativo": [
+      {
+        id: ID(4),
+        chave: "visita_tecnica",
+        titulo: "Visita técnica",
+        texto: "A",
+        ativo: true,
+        ordem: 7,
+      },
+      { id: ID(5), chave: "antigo", titulo: "Antigo", texto: "B", ativo: false, ordem: 8 },
+    ],
+    "ordem nula ou ausente": [
+      { id: ID(6), chave: "zeta", titulo: "Zeta", texto: "C", ativo: true, ordem: null },
+      { id: ID(7), chave: "alfa", titulo: "Alfa", texto: "D", ativo: true },
+      { id: ID(8), chave: "me_epp", titulo: "ME/EPP", texto: "E", ativo: true, ordem: null },
+    ],
+    "mistura, com linhas inválidas": [
+      null,
+      { id: ID(9), chave: "", titulo: "Sem chave", texto: "x", ativo: true },
+      { id: ID(10), chave: "nao_emprega_menor", titulo: "Menor", texto: "F", ativo: false },
+      { id: ID(11), chave: "elaboracao_independente", titulo: "Elab.", texto: "G", ordem: 1 },
+      { id: ID(12), chave: "proprio_a", titulo: "Próprio A", texto: "H", ativo: true, ordem: 2 },
+      { id: ID(13), chave: "proprio_b", titulo: "Próprio B", texto: "I", ativo: false, ordem: 3 },
+    ],
+  };
+  const resumo = (lista) =>
+    lista
+      .map((m) => ({ chave: m.chave, titulo: m.titulo, texto: m.texto, ordem: m.ordem }))
+      .sort((a, b) => a.chave.localeCompare(b.chave));
+
+  for (const [nome, linhas] of Object.entries(CONJUNTOS)) {
+    it(nome, () => {
+      const naTela = resumo(modelosParaEditor(linhas).filter((m) => m.ativo));
+      const noServidor = resumo(modelosDaEmpresa(linhas));
+      expect(naTela).toEqual(noServidor);
+    });
+  }
+});
+
+describe("EXEMPLO_DECLARACAO (valores fictícios da prévia do editor)", () => {
+  it("tem valor não vazio para TODAS as variáveis, e só para elas", () => {
+    expect(Object.keys(EXEMPLO_DECLARACAO).sort()).toEqual([...VARIAVEIS_DECLARACAO].sort());
+    for (const nome of VARIAVEIS_DECLARACAO) {
+      expect(typeof EXEMPLO_DECLARACAO[nome]).toBe("string");
+      expect(EXEMPLO_DECLARACAO[nome].trim()).not.toBe("");
+    }
+  });
+  it("preencherModelo com ele não deixa lacuna em nenhuma variável", () => {
+    const todas = VARIAVEIS_DECLARACAO.map((nome) => `{${nome}}`).join(" | ");
+    const r = preencherModelo(todas, EXEMPLO_DECLARACAO);
+    expect(r.sem_valor).toEqual([]);
+    expect(r.desconhecidas).toEqual([]);
+    expect(r.texto).not.toContain("________");
+    expect(r.texto).not.toContain("{");
+    // os seis modelos padrão também saem completos
+    for (const padrao of MODELOS_PADRAO) {
+      const p = preencherModelo(padrao.texto, EXEMPLO_DECLARACAO);
+      expect(p.sem_valor).toEqual([]);
+      expect(p.desconhecidas).toEqual([]);
+      expect(p.texto).not.toContain("________");
+    }
+  });
+  it("só dados inventados (documentos de zeros, nomes de exemplo) e imutável", () => {
+    expect(EXEMPLO_DECLARACAO.cnpj).toBe("00.000.000/0001-00");
+    expect(EXEMPLO_DECLARACAO.cpf).toBe("000.000.000-00");
+    expect(EXEMPLO_DECLARACAO.representante).toBe("Fulano de Tal");
+    expect(EXEMPLO_DECLARACAO.local).toContain("Cidade Exemplo");
+    expect(Object.isFrozen(EXEMPLO_DECLARACAO)).toBe(true);
   });
 });

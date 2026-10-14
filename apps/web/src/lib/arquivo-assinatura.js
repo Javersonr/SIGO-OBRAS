@@ -34,6 +34,14 @@ export function podeEnviarAssinado(arq) {
   return arq?.assinatura === "pendente" && arq?.tipo !== "link";
 }
 
+/**
+ * Só um "Enviar assinado" por vez: com um envio em andamento (`assinandoId` = a linha em envio), nenhum
+ * outro pode começar. Sem isso, o fim do envio da linha A zerava o estado da linha B, que estava subindo.
+ */
+export function podeIniciarEnvio(assinandoId) {
+  return assinandoId === null || assinandoId === undefined;
+}
+
 const TIPO_PDF = /^application\/(x-)?pdf\s*(;|$)/;
 
 /** PDF pelo tipo, ou, se o tipo vier vazio, pela extensão do nome. */
