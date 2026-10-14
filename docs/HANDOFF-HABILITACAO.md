@@ -205,7 +205,7 @@ Numa oportunidade **TESTE** (nunca numa licitação real), com o Claude conectad
 6. `gerar_declaracoes` com **12 declarações de uma vez** e o logo da empresa (confere o limite de processamento da
    função: o pior caso é apertado, ver "Limitações").
 7. `anexar_habilitacao`: as certidões válidas vão para o Envelope 02; as vencidas voltam no chat e **não são
-   anexadas**. Se a chamada parar por tempo (depois de 45 s), volta `nao_processados` e o aviso para chamar de novo.
+   anexadas**. Se a chamada parar por tempo (depois de 45 s), volta `nao_processados` e o aviso para chamar de novo com `tipos` = os tipos de `nao_processados`.
 8. **Renovar uma certidão** na biblioteca (versão nova) e chamar `anexar_habilitacao` e `checklist_habilitacao` de novo:
    a cópia antiga aparece como desatualizada (o SIGO não apaga: quem exclui da pasta é você).
 9. `anexar_acervo`: os PDFs das CATs do "Atende?" vão para o Envelope 02.
@@ -374,4 +374,5 @@ Parte C — ferramentas do conector:
 - `2ff61d6` feat(conector): registra as seis ferramentas de habilitação e o roteiro Montar a licitação completa
 - `d980b65` fix(conector): checklist trava o pronto com análise vazia, registro sem Atende? e Atende? negativo
 - `333fff8` fix(habilitacao): onda final da revisão — checklist reconhece edital e declaração, prompt autossuficiente e ajustes
-- Correção da re-revisão: smoke da 0155 sem trava em `notificacao` e `anexar_habilitacao` que continua de onde parou (este commit)
+- `39cd112` fix(habilitacao): smoke da 0155 sem trava em notificacao e anexar_habilitacao continua de onde parou
+- Ajustes finais de texto (limite de repetições no roteiro, versão da CLI no smoke, ordem de busca do teste de versões) (este commit)

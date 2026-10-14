@@ -36,7 +36,7 @@
 -- Nenhum UUID fixo: as empresas são escolhidas em tempo de execução.
 --
 -- Como rodar (com a 0154 já aplicada; quem roda é o Javerson):
---   supabase db query --linked -f tools/smoke-habilitacao-documentos.sql
+--   npx supabase@2.118.0 db query --linked -f tools/smoke-habilitacao-documentos.sql
 -- Deve terminar imprimindo "SMOKE TEST OK".
 -- ============================================================================
 

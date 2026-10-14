@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 const fonte = readFileSync(new URL("./gerador.ts", import.meta.url), "utf8");
 
 /** Onde o npm pode ter instalado o pacote: na raiz (o normal, workspaces) ou, se ele foi para dentro do app, em apps/web. */
-const PASTAS_DE_PACOTES = ["../../../node_modules", "../../../apps/web/node_modules"];
+const PASTAS_DE_PACOTES = ["../../../apps/web/node_modules", "../../../node_modules"];
 
 /** A versão que está em node_modules: a que a tela e os testes de paridade usam. */
 const versaoInstalada = (pacote: string): string => {
