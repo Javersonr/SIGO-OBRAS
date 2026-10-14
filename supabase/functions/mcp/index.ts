@@ -12,7 +12,7 @@
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { consumirTentativa, ipDaRequisicao } from "../_shared/limite-tentativas.ts";
 import { recursoDoConector } from "../_shared/conector/recurso.ts";
-import { camadaDaEmpresa } from "../_shared/conector/camada-empresa.ts";
+import { camadaDaEmpresa, storageDaEmpresa } from "../_shared/conector/camada-empresa.ts";
 import { MENSAGEM_NEGACAO } from "../_shared/conector/acesso.ts";
 import { ISSUER } from "../_shared/conector/oauth-regras.ts";
 import { tratarPostMcp, type ServidorMcp } from "../_shared/mcp/protocolo.ts";
@@ -180,7 +180,7 @@ async function atender(req: Request): Promise<Response> {
         deps: {
           ctx,
           db: camadaDaEmpresa(admin, ctx.empresa.id),
-          storage: admin.storage,
+          storage: storageDaEmpresa(admin.storage, ctx.empresa.id),
           fetchFn: fetch,
           agora: new Date(),
         },

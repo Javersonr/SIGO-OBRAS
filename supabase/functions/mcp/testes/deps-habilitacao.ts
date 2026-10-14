@@ -1,9 +1,11 @@
 /** Dependências de teste das ferramentas de habilitação e documentos: fake do banco e Storage em memória. */
 import type { Vinculo } from "../../_shared/conector/acesso.ts";
-import { camadaDaEmpresa } from "../../_shared/conector/camada-empresa.ts";
+import { camadaDaEmpresa, storageDaEmpresa } from "../../_shared/conector/camada-empresa.ts";
 import {
   criarFakeAdmin,
+  recusaGravarArquivo,
   type ChamadaFake,
+  type ChamadaStorageFake,
   type RespostaFake,
 } from "../../_shared/conector/testes/fake-admin.ts";
 import type { DepsFerramenta } from "../registro.ts";
@@ -48,12 +50,22 @@ export const sc = (r: { resultado: { structuredContent?: unknown } }) =>
 
 /**
  * `responder` decide as leituras; a RPC conector_gravar_arquivo, quando o teste não responde, devolve um
- * arquivo novo ("arq-1", "arq-2"…). `gravados` guarda os parâmetros de cada chamada da RPC (o teste que
- * responde sozinho à RPC, por exemplo com `imitarGravarArquivo(banco)`, também os vê aqui).
+ * arquivo novo ("arq-1", "arq-2"…) — mas só depois de aplicar as validações do banco (os 11 parâmetros,
+ * `p_url` na pasta da empresa, `p_origem` e `p_nome` visíveis, `p_assinatura` nula ou "pendente"): uma
+ * chamada que o banco recusaria também é recusada aqui, e o teste não passa por engano. `gravados` guarda
+ * os parâmetros de cada chamada da RPC (o teste que responde sozinho à RPC, por exemplo com
+ * `imitarGravarArquivo(banco)`, também os vê aqui).
+ *
+ * O `storage` das ferramentas vem confinado à pasta da empresa (`storageDaEmpresa`), como no mcp/index.ts;
+ * `fake.chamadasStorage` e `fake.objetos` enxergam o Storage de verdade por baixo do embrulho.
+ * `responderStorage` (opcional) decide as respostas do Storage, como no segundo parâmetro de criarFakeAdmin.
  */
 export function montarDeps(
   responder: (c: ChamadaFake) => RespostaFake | undefined = () => undefined,
-  extra: Partial<DepsFerramenta> = {}
+  extra: Partial<DepsFerramenta> = {},
+  responderStorage?: (
+    c: ChamadaStorageFake
+  ) => { data?: unknown; error?: { message: string } | null } | undefined
 ) {
   const gravados: Record<string, unknown>[] = [];
   const fake = criarFakeAdmin((c) => {
@@ -61,6 +73,8 @@ export function montarDeps(
     const r = responder(c);
     if (r !== undefined) return r;
     if (c.tabela === "conector_gravar_arquivo") {
+      const recusa = recusaGravarArquivo(c);
+      if (recusa) return recusa;
       return {
         data: {
           ok: true,
@@ -72,7 +86,7 @@ export function montarDeps(
       };
     }
     return undefined;
-  });
+  }, responderStorage);
   let n = 0;
   const deps: DepsFerramenta = {
     ctx: {
@@ -88,7 +102,7 @@ export function montarDeps(
       vinculoId: "00000000-0000-4000-8000-0000000000c1",
     },
     db: camadaDaEmpresa(fake.admin, E),
-    storage: fake.storage,
+    storage: storageDaEmpresa(fake.storage, E),
     fetchFn: (async () => new Response(null, { status: 404 })) as typeof fetch,
     agora: AGORA,
     ...extra,

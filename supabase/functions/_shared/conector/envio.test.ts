@@ -1,7 +1,7 @@
 // node --test supabase/functions/_shared/conector/envio.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { camadaDaEmpresa } from "./camada-empresa.ts";
+import { camadaDaEmpresa, ErroCamada, storageDaEmpresa } from "./camada-empresa.ts";
 import { criarFakeAdmin, type ChamadaFake } from "./testes/fake-admin.ts";
 import { criarLinkEnvio, ErroEnvio, lerLinkPorId, lerObjeto, registrarEnvio } from "./envio.ts";
 import type { ArquivoDoLink } from "./envio-regras.ts";
@@ -547,4 +547,132 @@ test("registrarEnvio: arquivo vazio vira 'está vazio' (não erro de leitura) e 
   );
   assert.equal(amb.chamadas.filter((c) => c.op === "update" || c.op === "insert").length, 0);
   assert.equal(amb.chamadasStorage.filter((c) => c.metodo === "remove").length, 0);
+});
+
+// ─── As mesmas rotinas com o Storage CONFINADO à pasta da empresa (o que o mcp/index.ts entrega) ──────
+
+const confinado = (amb: ReturnType<typeof ambiente>) => ({
+  ...amb,
+  storage: storageDaEmpresa(amb.storage, E),
+});
+
+test("confinado: criarLinkEnvio (oportunidade e atestado) faz as mesmas chamadas ao Storage", async () => {
+  for (const alvo of ["oportunidade", "atestado"] as const) {
+    const amb = confinado(ambiente());
+    let n = 0;
+    const r = await criarLinkEnvio(amb.db, amb.storage, {
+      autorizacaoId: AUT,
+      usuarioCustomId: UC,
+      alvo,
+      alvoId: alvo === "oportunidade" ? OP : AT,
+      arquivos: [
+        { nome: "Edital Nº 12.pdf", categoria: null, pasta: null, tipo: "pdf" },
+        { nome: "Proposta (v2) 100%.xlsx", categoria: null, pasta: null, tipo: "xlsx" },
+      ],
+      agora: AGORA,
+      novoUuid: () => `00000000-0000-4000-8000-00000000000${++n}`,
+    });
+    const bucket = alvo === "oportunidade" ? BUCKET : "certificados";
+    const caminhos = [
+      `${E}/2026/10/00000000-0000-4000-8000-000000000001-Edital_N_12.pdf`,
+      `${E}/2026/10/00000000-0000-4000-8000-000000000002-Proposta_v2_100_.xlsx`,
+    ];
+    assert.deepEqual(
+      amb.chamadasStorage.map((c) => [c.bucket, c.metodo, c.args[0]]),
+      caminhos.map((c) => [bucket, "createSignedUploadUrl", c])
+    );
+    assert.deepEqual(
+      r.arquivos.map((a) => a.caminho),
+      caminhos
+    );
+    assert.match(r.arquivos[0].upload_url, /^https:\/\/storage\.test\/object\/upload\/sign\//);
+  }
+});
+
+test("confinado: registrarEnvio (oportunidade) confere os objetos, apaga o de tipo errado e registra os certos", async () => {
+  const a1 = arq(1, "Edital.pdf", { categoria: "edital" });
+  const a2 = arq(2, "Proposta.xlsx", { pasta: "Envelope 01 – Proposta" });
+  const a3 = arq(3, "Falso.pdf");
+  const amb = confinado(
+    ambiente({
+      link: linkDaOportunidade([a1, a2, a3]),
+      objetos: { [a1.caminho]: PDF, [a2.caminho]: XLSX, [a3.caminho]: HTML },
+    })
+  );
+  const r = await registrar(amb, { aceitarParcial: true });
+  assert.deepEqual(
+    r.registrados.map((x) => [x.indice, x.arquivo_id, x.ref]),
+    [
+      [1, "arq-1", `${BUCKET}/${a1.caminho}`],
+      [2, "arq-2", `${BUCKET}/${a2.caminho}`],
+    ]
+  );
+  assert.deepEqual(r.recusados, [{ indice: 3, nome: "Falso.pdf", motivo: "tipo_errado" }]);
+  // list + createSignedUrl de cada arquivo (as pastas e os caminhos passaram pelo embrulho) e o remove do falso
+  assert.deepEqual(
+    amb.chamadasStorage.map((c) => [c.metodo, c.args[0]]),
+    [
+      ["list", `${E}/2026/10`],
+      ["createSignedUrl", a1.caminho],
+      ["list", `${E}/2026/10`],
+      ["createSignedUrl", a2.caminho],
+      ["list", `${E}/2026/10`],
+      ["createSignedUrl", a3.caminho],
+      ["remove", [a3.caminho]],
+    ]
+  );
+  assert.ok(amb.chamadasStorage.every((c) => c.bucket === BUCKET));
+});
+
+test("confinado: registrarEnvio (atestado, bucket certificados) e lerObjeto continuam funcionando", async () => {
+  const a1: ArquivoDoLink = { ...arq(1, "CAT.pdf"), caminho: `${E}/2026/10/u-CAT.pdf` };
+  const amb = confinado(
+    ambiente({
+      link: {
+        ...linkDaOportunidade([a1]),
+        alvo: "atestado",
+        oportunidade_id: null,
+        atestado_id: AT,
+        bucket: "certificados",
+      },
+      objetos: { [a1.caminho]: PDF },
+    })
+  );
+  const r = await registrar(amb, { origem: "pagina", autorizacaoId: null });
+  assert.equal(r.registrados[0].ref, `certificados/${a1.caminho}`);
+  assert.deepEqual(
+    amb.chamadasStorage.map((c) => [c.bucket, c.metodo]),
+    [
+      ["certificados", "list"],
+      ["certificados", "createSignedUrl"],
+    ]
+  );
+
+  const lido = confinado(ambiente({ objetos: { [a1.caminho]: PDF } }));
+  const o = await lerObjeto(lido.storage, lido.fetchFn, BUCKET, a1.caminho);
+  assert.equal(o.existe, true);
+  assert.equal(o.tamanho, 10);
+  assert.deepEqual(
+    (await lerObjeto(lido.storage, lido.fetchFn, BUCKET, `${E}/2026/10/ausente.pdf`)).existe,
+    false
+  );
+});
+
+test("confinado: caminho de outra empresa no link (linha adulterada) lança campo_proibido, sem tocar o Storage nem consumir o link", async () => {
+  const alheio = arq(1, "Edital.pdf", {
+    caminho: `00000000-0000-4000-8000-000000000002/2026/10/u-Edital.pdf`,
+  });
+  const amb = confinado(
+    ambiente({ link: linkDaOportunidade([alheio]), objetos: { [alheio.caminho]: PDF } })
+  );
+  await assert.rejects(
+    () => registrar(amb),
+    (e: unknown) => {
+      assert.ok(e instanceof ErroCamada && e.codigo === "campo_proibido");
+      assert.equal(e.message.includes("00000000-0000-4000-8000-000000000002"), false);
+      return true;
+    }
+  );
+  assert.equal(amb.chamadasStorage.length, 0);
+  assert.equal(amb.chamadas.filter((c) => c.op === "update" || c.op === "insert").length, 0);
 });

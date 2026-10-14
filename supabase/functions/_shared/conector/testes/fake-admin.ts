@@ -276,7 +276,77 @@ export function criarBancoArquivosFake(
 }
 
 /**
+ * Os 11 parâmetros da função SQL public.conector_gravar_arquivo (0156), na ordem dela. O PostgREST acha a
+ * função pelo CONJUNTO de nomes: um a mais, a menos ou errado dá PGRST202. Um teste lê a 0156 e confere
+ * que esta lista continua igual à assinatura do SQL.
+ */
+export const PARAMETROS_GRAVAR_ARQUIVO: readonly string[] = Object.freeze([
+  "p_empresa_id",
+  "p_oportunidade_id",
+  "p_origem",
+  "p_nome",
+  "p_url",
+  "p_tipo",
+  "p_tamanho",
+  "p_pasta",
+  "p_categoria",
+  "p_assinatura",
+  "p_usuario_nome",
+]);
+
+/**
+ * As validações que o banco faz antes de gravar, para a chamada da RPC conector_gravar_arquivo `c`:
+ * null se o banco aceitaria; senão a RespostaFake de erro que ele daria. Usada por imitarGravarArquivo e
+ * pela resposta padrão de montarDeps (mcp/testes), para um teste verde não esconder chamada que o banco
+ * recusaria.
+ *  - conjunto de parâmetros diferente dos 11 → PGRST202 ("Could not find the function …");
+ *  - 22023: empresa/oportunidade nulas; origem sem caractere visível ou acima de 200; nome sem caractere
+ *    visível; url fora de "anexos-oportunidade/<empresa>/<algo>" ou com SEGMENTO "." ou ".." ("Ltda..pdf"
+ *    passa); assinatura diferente de nulo/"pendente".
+ */
+export function recusaGravarArquivo(c: ChamadaFake): RespostaFake | null {
+  const p = (c.payload ?? {}) as Record<string, unknown>;
+  // parâmetro `undefined` não vai no JSON do supabase-js: para o PostgREST é como se não existisse
+  const recebidos = Object.keys(p)
+    .filter((nome) => p[nome] !== undefined)
+    .sort();
+  const esperados = [...PARAMETROS_GRAVAR_ARQUIVO].sort();
+  if (recebidos.length !== esperados.length || recebidos.some((nome, i) => nome !== esperados[i])) {
+    return {
+      error: {
+        message: `Could not find the function public.conector_gravar_arquivo(${recebidos.join(", ")}) in the schema cache`,
+        code: "PGRST202",
+      },
+    };
+  }
+  const recusa = (message: string): RespostaFake => ({ error: { message, code: "22023" } });
+  const visivel = (v: unknown) => typeof v === "string" && /\S/.test(v);
+  const empresa = p.p_empresa_id;
+  if (empresa == null || p.p_oportunidade_id == null) {
+    return recusa("empresa e oportunidade são obrigatórias");
+  }
+  if (!visivel(p.p_origem) || String(p.p_origem).length > 200) return recusa("origem inválida");
+  if (!visivel(p.p_nome)) return recusa("nome inválido");
+  const url = p.p_url;
+  const prefixo = `anexos-oportunidade/${String(empresa).toLowerCase()}/`;
+  if (
+    typeof url !== "string" ||
+    !url.startsWith(prefixo) ||
+    url.length <= prefixo.length ||
+    /(^|\/)\.{1,2}(\/|$)/.test(url)
+  ) {
+    return recusa("arquivo fora da pasta da empresa");
+  }
+  if (p.p_assinatura != null && p.p_assinatura !== "pendente") {
+    return recusa("assinatura inválida");
+  }
+  return null;
+}
+
+/**
  * Responder para o criarFakeAdmin que imita a RPC conector_gravar_arquivo (migração 0156) sobre `banco`:
+ *  - confere o CONJUNTO de parâmetros (exatamente os 11 da função SQL): nome a mais, a menos ou errado →
+ *    erro PGRST202, como o PostgREST responderia em produção (recusaGravarArquivo);
  *  - recusa (erro 22023) empresa/oportunidade nulas, origem ou nome sem caractere visível, origem acima de
  *    200, url fora de "anexos-oportunidade/<empresa>/<algo>" ou com SEGMENTO "." ou ".." ("Ltda..pdf" passa)
  *    e assinatura diferente de nulo/"pendente";
@@ -292,31 +362,16 @@ export function imitarGravarArquivo(
   agora: () => string = () => new Date().toISOString()
 ): (c: ChamadaFake) => RespostaFake | undefined {
   let n = 0;
-  const recusa = (message: string): RespostaFake => ({ error: { message, code: "22023" } });
-  const visivel = (v: unknown) => typeof v === "string" && /\S/.test(v);
   const igual = (a: unknown, b: unknown) => String(a).toLowerCase() === String(b).toLowerCase();
 
   return (c) => {
     if (c.op !== "rpc" || c.tabela !== "conector_gravar_arquivo") return undefined;
+    const recusada = recusaGravarArquivo(c);
+    if (recusada) return recusada;
     const p = c.payload as Record<string, unknown>;
     const empresa = p.p_empresa_id;
     const oportunidade = p.p_oportunidade_id;
-    if (empresa == null || oportunidade == null)
-      return recusa("empresa e oportunidade são obrigatórias");
-    if (!visivel(p.p_origem) || String(p.p_origem).length > 200) return recusa("origem inválida");
-    if (!visivel(p.p_nome)) return recusa("nome inválido");
-    const url = p.p_url;
-    const prefixo = `anexos-oportunidade/${String(empresa).toLowerCase()}/`;
-    if (
-      typeof url !== "string" ||
-      !url.startsWith(prefixo) ||
-      url.length <= prefixo.length ||
-      /(^|\/)\.{1,2}(\/|$)/.test(url)
-    ) {
-      return recusa("arquivo fora da pasta da empresa");
-    }
-    if (p.p_assinatura != null && p.p_assinatura !== "pendente")
-      return recusa("assinatura inválida");
+    const url = p.p_url as string;
 
     const achou = banco.oportunidades.some(
       (o) => igual(o.id, oportunidade) && igual(o.empresa_id, empresa) && o.deleted_at == null
