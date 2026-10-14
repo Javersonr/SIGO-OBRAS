@@ -805,7 +805,7 @@ export interface InicioDaProva {
 }
 
 /** `opcoes` é jsonb: lista, texto JSON (legado) ou quebrado (vira lista vazia). */
-function opcoesDaQuestao(opcoes: unknown): string[] {
+export function opcoesDaQuestao(opcoes: unknown): string[] {
   let lista = opcoes;
   if (typeof lista === "string") {
     try {
