@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { sigo } from "@/api/sigoClient";
-import { lerConfig, validarConfig } from "@/lib/habilitacao-lembretes";
+import { sigo, supabase } from "@/api/sigoClient";
+import {
+  candidatosDeLembrete,
+  ehConfigDuplicada,
+  lerConfig,
+  validarConfig,
+} from "@/lib/habilitacao-lembretes";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -9,12 +14,34 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Bell, Loader2 } from "lucide-react";
 
+/** A linha viva de habilitacao_config da empresa, ou null (nada gravado ainda). */
+async function lerLinha(empresaId) {
+  const linhas = await sigo.entities.HabilitacaoConfig.filter(
+    { empresa_id: empresaId },
+    { limit: 1 }
+  );
+  return linhas?.[0] || null;
+}
+
+/**
+ * Os usuários ativos da empresa do token (e-mail, nome e se têm telefone), pela RPC
+ * habilitacao_usuarios_da_empresa (0155). Não dá para ler usuario_empresa direto: a RLS só deixa o
+ * usuário comum ver os próprios vínculos. A RPC exige Oportunidades → Lista → editar.
+ */
+async function listarUsuarios() {
+  if (!supabase) throw new Error("Sem conexão com o servidor");
+  const { data, error } = await supabase.rpc("habilitacao_usuarios_da_empresa");
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
 /**
  * Cartão "Lembretes de vencimento" da aba Documentos e certidões: quantos dias antes o SIGO avisa
  * (sino e, se ligado, WhatsApp), quem recebe e se o WhatsApp está ligado. Grava em habilitacao_config
  * (migração 0155, uma linha por empresa); quem avisa é o cron diário do banco.
- * podeEditar=false (padrão) → só leitura: sem alterar nem salvar.
- * Se a leitura falha (a tabela só existe depois da 0155), o cartão não aparece.
+ * podeEditar=false (padrão) → só leitura: sem alterar nem salvar, e sem a lista de usuários (a RPC é
+ * de quem edita): aparecem só os e-mails já escolhidos.
+ * Se a leitura falha (a tabela e a RPC só existem depois da 0155), o cartão não aparece.
  */
 export default function LembretesHabilitacao({ empresaId, podeEditar = false }) {
   const [estado, setEstado] = useState("carregando"); // carregando | indisponivel | pronto
@@ -29,17 +56,13 @@ export default function LembretesHabilitacao({ empresaId, podeEditar = false }) 
     setEstado("carregando");
     (async () => {
       try {
-        const [linhas, vinculos] = await Promise.all([
-          sigo.entities.HabilitacaoConfig.filter({ empresa_id: empresaId }, { limit: 1 }),
-          sigo.entities.UsuarioEmpresa.filter(
-            { empresa_id: empresaId, ativo: true },
-            { sort_by: "nome_completo" }
-          ),
+        const [atual, lista] = await Promise.all([
+          lerLinha(empresaId),
+          podeEditar ? listarUsuarios() : [],
         ]);
         if (!ativo) return;
-        const atual = linhas?.[0] || null;
         setLinha(atual);
-        setUsuarios(vinculos || []);
+        setUsuarios(lista);
         setForm(lerConfig(atual));
         setEstado("pronto");
       } catch (e) {
@@ -50,30 +73,17 @@ export default function LembretesHabilitacao({ empresaId, podeEditar = false }) 
     return () => {
       ativo = false;
     };
-  }, [empresaId]);
+  }, [empresaId, podeEditar]);
 
-  // Os usuários ativos da empresa, mais os e-mails já gravados que a lista não traz (usuário desligado,
-  // ou que quem está na tela não enxerga): ficam marcados em vez de sumirem sem querer no próximo salvar.
-  const candidatos = useMemo(() => {
-    const porEmail = new Map();
-    for (const u of usuarios) {
-      const email = String(u?.usuario_email ?? "")
-        .trim()
-        .toLowerCase();
-      if (!email || porEmail.has(email)) continue;
-      porEmail.set(email, {
-        email,
-        nome: u.nome_completo || u.usuario_email,
-        aviso: String(u.telefone ?? "").trim() ? null : "sem telefone para o WhatsApp",
-      });
-    }
-    for (const email of lerConfig(linha).destinatarios) {
-      if (!porEmail.has(email)) {
-        porEmail.set(email, { email, nome: email, aviso: "não aparece entre os usuários ativos" });
-      }
-    }
-    return [...porEmail.values()];
-  }, [usuarios, linha]);
+  // Os usuários ativos da empresa, mais os e-mails já gravados que a lista não traz (ficam marcados em
+  // vez de sumirem sem querer no próximo salvar). Quem só lê não tem a lista: vê só os gravados.
+  const candidatos = useMemo(
+    () =>
+      candidatosDeLembrete(usuarios, lerConfig(linha).destinatarios, {
+        listaCarregada: podeEditar,
+      }),
+    [usuarios, linha, podeEditar]
+  );
 
   if (estado !== "pronto") return null;
 
@@ -89,6 +99,20 @@ export default function LembretesHabilitacao({ empresaId, podeEditar = false }) 
   const conferido = validarConfig(form, []);
   const dias = conferido.ok ? conferido.dados.dias_antecedencia : null;
 
+  const gravar = async (dados) => {
+    if (linha?.id) return sigo.entities.HabilitacaoConfig.update(linha.id, dados);
+    try {
+      return await sigo.entities.HabilitacaoConfig.create({ ...dados, empresa_id: empresaId });
+    } catch (e) {
+      // outra pessoa criou a configuração da empresa neste meio-tempo (uma linha viva por empresa):
+      // recarrega a linha dela e grava por cima
+      if (!ehConfigDuplicada(e)) throw e;
+      const atual = await lerLinha(empresaId);
+      if (!atual?.id) throw e;
+      return sigo.entities.HabilitacaoConfig.update(atual.id, dados);
+    }
+  };
+
   const salvar = async () => {
     if (!podeEditar || salvando) return;
     const { ok, erros, dados } = validarConfig(
@@ -101,9 +125,7 @@ export default function LembretesHabilitacao({ empresaId, podeEditar = false }) 
     }
     setSalvando(true);
     try {
-      const gravada = linha?.id
-        ? await sigo.entities.HabilitacaoConfig.update(linha.id, dados)
-        : await sigo.entities.HabilitacaoConfig.create({ ...dados, empresa_id: empresaId });
+      const gravada = await gravar(dados);
       setLinha(gravada);
       setForm(lerConfig(gravada));
       toast.success("Lembretes salvos");
@@ -164,11 +186,11 @@ export default function LembretesHabilitacao({ empresaId, podeEditar = false }) 
               ))}
             </ul>
           )}
-          {form.destinatarios.length === 0 && (
-            <p className="text-xs text-slate-500">
-              Ninguém escolhido: recebem os donos e os Admins.
-            </p>
-          )}
+          <p className="text-xs text-slate-500">
+            {form.destinatarios.length > 0
+              ? "Só os marcados recebem."
+              : "Ninguém escolhido: recebem os donos e os Admins."}
+          </p>
         </div>
 
         <label className="flex items-center gap-2 text-sm text-slate-700">

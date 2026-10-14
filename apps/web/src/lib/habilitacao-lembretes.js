@@ -2,6 +2,7 @@
  * Lembretes de vencimento dos documentos de habilitação (cartão "Lembretes" da aba Documentos e
  * certidões). Módulo PURO (sem React, sem banco). A linha é a da tabela habilitacao_config
  * (migração 0155): dias de antecedência (1 a 90), e-mails de quem recebe e WhatsApp ligado ou não.
+ * Os usuários que podem ser escolhidos vêm da RPC habilitacao_usuarios_da_empresa (0155).
  */
 import { safeParseJSON } from "@/lib/json-utils";
 
@@ -47,9 +48,52 @@ export function lerConfig(linha) {
   };
 }
 
+export const AVISO_SEM_TELEFONE = "sem telefone para o WhatsApp";
+export const AVISO_FORA_DA_LISTA = "não está mais entre os usuários ativos";
+
+const emailLimpo = (valor) =>
+  String(valor ?? "")
+    .trim()
+    .toLowerCase();
+
 /**
- * Valida o formulário: { ok, erros[], dados }. `usuarios` = os usuários ativos da empresa (linhas de
- * usuario_empresa): só os e-mails deles ficam em `dados.destinatarios`.
+ * Quem aparece em "Quem recebe": [{ email, nome, aviso }]. `usuarios` = as linhas da RPC
+ * habilitacao_usuarios_da_empresa (usuario_email, nome e tem_telefone; o telefone não vem), na ordem em
+ * que chegaram e sem repetir e-mail. Depois entram os e-mails já gravados (`gravados`) que a lista não
+ * traz: continuam na tela, marcados, em vez de sumirem no próximo salvar.
+ * `listaCarregada: false` = quem está na tela não pode listar os usuários (só leitura): não dá para dizer
+ * que o gravado saiu da empresa, então ele aparece sem nota.
+ */
+export function candidatosDeLembrete(usuarios, gravados, { listaCarregada = true } = {}) {
+  const porEmail = new Map();
+  for (const u of Array.isArray(usuarios) ? usuarios : []) {
+    const email = emailLimpo(u?.usuario_email);
+    if (!email || porEmail.has(email)) continue;
+    porEmail.set(email, {
+      email,
+      nome: String(u.nome ?? "").trim() || email,
+      aviso: u.tem_telefone === true ? null : AVISO_SEM_TELEFONE,
+    });
+  }
+  for (const email of listaDeEmails(gravados)) {
+    if (porEmail.has(email)) continue;
+    porEmail.set(email, { email, nome: email, aviso: listaCarregada ? AVISO_FORA_DA_LISTA : null });
+  }
+  return [...porEmail.values()];
+}
+
+/**
+ * A criação esbarrou na configuração que outra pessoa acabou de gravar? (índice único de uma linha viva
+ * por empresa, migração 0155). Quem chama recarrega a linha e grava por cima.
+ */
+export function ehConfigDuplicada(erro) {
+  return String(erro?.message ?? "").includes("habilitacao_config_empresa_uidx");
+}
+
+/**
+ * Valida o formulário: { ok, erros[], dados }. `usuarios` = quem pode ser escolhido (objetos com
+ * `usuario_email`: as linhas da RPC ou os candidatos da tela): só os e-mails deles ficam em
+ * `dados.destinatarios`.
  */
 export function validarConfig(form, usuarios) {
   const f = form || {};
@@ -60,11 +104,7 @@ export function validarConfig(form, usuarios) {
   }
   const ativos = new Set(
     (Array.isArray(usuarios) ? usuarios : [])
-      .map((u) =>
-        String(u?.usuario_email ?? "")
-          .trim()
-          .toLowerCase()
-      )
+      .map((u) => emailLimpo(u?.usuario_email))
       .filter(Boolean)
   );
   return {

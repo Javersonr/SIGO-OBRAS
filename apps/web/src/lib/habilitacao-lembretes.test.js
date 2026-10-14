@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { configPadrao, lerConfig, validarConfig } from "./habilitacao-lembretes";
+import {
+  candidatosDeLembrete,
+  configPadrao,
+  ehConfigDuplicada,
+  lerConfig,
+  validarConfig,
+} from "./habilitacao-lembretes";
 
 describe("lembretes de habilitação", () => {
   it("configPadrao: 10 dias, ninguém escolhido, WhatsApp desligado", () => {
@@ -57,5 +63,64 @@ describe("lembretes de habilitação", () => {
     expect(lerConfig({ destinatarios: "isto não é JSON" }).destinatarios).toEqual([]);
     expect(lerConfig({ dias_antecedencia: 0, destinatarios: [] }).dias_antecedencia).toBe(10);
     expect(validarConfig(null, null).ok).toBe(false);
+  });
+  it("candidatosDeLembrete: os usuários da RPC (nome e telefone) e os e-mails gravados que a lista não traz", () => {
+    // as linhas de habilitacao_usuarios_da_empresa: usuario_email, nome e tem_telefone (nunca o telefone)
+    const usuarios = [
+      { usuario_email: "Ana@x.test", nome: "Ana Souza", tem_telefone: true },
+      { usuario_email: "bia@x.test", nome: "  ", tem_telefone: false },
+      { usuario_email: " ANA@x.test ", nome: "Ana repetida", tem_telefone: false },
+      { usuario_email: "  ", nome: "Sem e-mail", tem_telefone: true },
+      null,
+    ];
+    expect(candidatosDeLembrete(usuarios, ["bia@x.test", "Saiu@x.test", "saiu@x.test"])).toEqual([
+      { email: "ana@x.test", nome: "Ana Souza", aviso: null },
+      { email: "bia@x.test", nome: "bia@x.test", aviso: "sem telefone para o WhatsApp" },
+      {
+        email: "saiu@x.test",
+        nome: "saiu@x.test",
+        aviso: "não está mais entre os usuários ativos",
+      },
+    ]);
+    // tem_telefone que não é true (nulo, texto) conta como sem telefone
+    expect(
+      candidatosDeLembrete([{ usuario_email: "c@x.test", nome: "Caio", tem_telefone: "sim" }], [])
+    ).toEqual([{ email: "c@x.test", nome: "Caio", aviso: "sem telefone para o WhatsApp" }]);
+    expect(candidatosDeLembrete(null, null)).toEqual([]);
+  });
+  it("candidatosDeLembrete: sem a lista de usuários (só leitura), os gravados aparecem sem nota", () => {
+    expect(candidatosDeLembrete([], ["a@x.test"], { listaCarregada: false })).toEqual([
+      { email: "a@x.test", nome: "a@x.test", aviso: null },
+    ]);
+    // o que candidatosDeLembrete devolve serve de `usuarios` para o validarConfig: o gravado não se perde
+    const candidatos = candidatosDeLembrete(
+      [{ usuario_email: "a@x.test", nome: "A", tem_telefone: true }],
+      ["saiu@x.test"]
+    );
+    expect(
+      validarConfig(
+        { dias_antecedencia: 10, destinatarios: ["saiu@x.test", "a@x.test", "outro@x.test"] },
+        candidatos.map((c) => ({ usuario_email: c.email }))
+      ).dados.destinatarios
+    ).toEqual(["saiu@x.test", "a@x.test"]);
+  });
+  it("ehConfigDuplicada: só a recusa do índice único da configuração da empresa", () => {
+    expect(
+      ehConfigDuplicada({
+        code: "23505",
+        message: 'duplicate key value violates unique constraint "habilitacao_config_empresa_uidx"',
+      })
+    ).toBe(true);
+    expect(
+      ehConfigDuplicada(new Error("new row violates row-level security policy for table"))
+    ).toBe(false);
+    expect(
+      ehConfigDuplicada({
+        code: "23505",
+        message: 'duplicate key value violates unique constraint "outra_tabela_uidx"',
+      })
+    ).toBe(false);
+    expect(ehConfigDuplicada(null)).toBe(false);
+    expect(ehConfigDuplicada(undefined)).toBe(false);
   });
 });
