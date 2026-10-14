@@ -9,15 +9,19 @@ import {
 } from "./ferramentas-habilitacao.ts";
 import {
   LIMITE_ARQUIVO_SERVIDOR,
+  MIME_ARQUIVO,
   PASTA_HABILITACAO,
 } from "../_shared/conector/arquivo-servidor.ts";
+import { CATEGORIAS_EDITAL } from "../_shared/conector/envio-regras.ts";
 import { linkOportunidade } from "../_shared/conector/recurso.ts";
+import { origemDaUrl } from "../_shared/conector/url-segura.ts";
 import {
   criarBancoArquivosFake,
   imitarGravarArquivo,
   type ArquivoOportunidadeFake,
   type ChamadaFake,
   type ChamadaStorageFake,
+  type PaginaTextoFake,
   type RespostaFake,
 } from "../_shared/conector/testes/fake-admin.ts";
 import { E, montarDeps, OP, OUTRA, PDF, sc } from "./testes/deps-habilitacao.ts";
@@ -1725,4 +1729,884 @@ test("anexar_acervo: cada falha traz a mensagem do motivo", async () => {
       mensagem: "O arquivo não é PDF, JPG ou PNG.",
     },
   ]);
+});
+
+// ─── anexar_edital_por_url (Task C4) ──────────────────────────────────────────────────────────
+
+const URL_EDITAL = "https://portal.exemplo.gov.br/editais/009.pdf";
+const OLE = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00, 0x00]);
+const dnsPublico = async () => ["200.160.2.3"];
+const ARGS_URL = { oportunidade_id: OP, url: URL_EDITAL, nome: "Edital.pdf", categoria: "edital" };
+const anexarUrl = (deps: DepsFerramenta, args: Record<string, unknown> = {}) =>
+  ferramenta("anexar_edital_por_url").executar({ ...ARGS_URL, ...args }, deps);
+
+const AVISO_JA_ANEXADO = "O edital deste link já estava anexado e não mudou.";
+const AVISO_TROCADO_PDF =
+  'O edital mudou e foi trocado no lugar: clique de novo em "Preparar para o Claude" nesse arquivo antes de ler.';
+const PROXIMO_PASSO_PDF =
+  'Para o Claude ler este PDF depois pelo SIGO, o usuário clica em "Preparar para o Claude" na aba Arquivos.';
+
+/** fetch de mentira por endereço (o módulo pede o endereço normalizado); registra o que foi pedido. */
+function fetchDe(rotas: Record<string, () => Response>) {
+  const pedidos: string[] = [];
+  const fetchFn = (async (u: string | URL | Request) => {
+    pedidos.push(String(u));
+    return (rotas[String(u)] ?? (() => new Response("x", { status: 404 })))();
+  }) as typeof fetch;
+  return { fetchFn, pedidos };
+}
+
+function cenarioUrl(
+  rotas: Record<string, () => Response>,
+  dns: (h: string) => Promise<string[]> = dnsPublico
+) {
+  const f = fetchDe(rotas);
+  const m = montarDeps(
+    (c: ChamadaFake) => {
+      if (c.tabela === "oportunidade" && c.op === "select") return { data: { id: OP } };
+      if (c.tabela === "edital_analise_anexar_arquivos") return { data: 1 };
+      return undefined;
+    },
+    { fetchFn: f.fetchFn, resolverDns: dns }
+  );
+  return { ...m, pedidos: f.pedidos };
+}
+
+/** Banco de arquivos em memória: a RPC troca no lugar (e apaga o texto por página), o assinado fica. */
+function cenarioUrlComBanco(
+  rotas: Record<string, () => Response>,
+  opcoes: {
+    arquivos?: ArquivoOportunidadeFake[];
+    paginas?: PaginaTextoFake[];
+    extra?: (c: ChamadaFake) => RespostaFake | undefined;
+    responderStorage?: ResponderStorage;
+  } = {}
+) {
+  const banco = criarBancoArquivosFake({
+    oportunidades: [{ id: OP, empresa_id: E, deleted_at: null }],
+    arquivos: opcoes.arquivos ?? [],
+    paginasTexto: opcoes.paginas ?? [],
+  });
+  const imitar = imitarGravarArquivo(banco);
+  const f = fetchDe(rotas);
+  const m = montarDeps(
+    (c: ChamadaFake) => {
+      const x = opcoes.extra?.(c);
+      if (x !== undefined) return x;
+      const r = imitar(c);
+      if (r !== undefined) return r;
+      if (c.tabela === "oportunidade" && c.op === "select") return { data: { id: OP } };
+      if (c.tabela === "arquivo_oportunidade" && c.op === "select")
+        return filtrar(banco.arquivos, c);
+      if (c.tabela === "edital_analise_anexar_arquivos") return { data: 1 };
+      return undefined;
+    },
+    { fetchFn: f.fetchFn, resolverDns: dnsPublico },
+    opcoes.responderStorage
+  );
+  return { ...m, banco, pedidos: f.pedidos };
+}
+
+const historicoDe = (fake: { chamadas: ChamadaFake[] }) =>
+  fake.chamadas.filter((c) => c.tabela === "oportunidade_atualizacao" && c.op === "insert");
+const ligacoesDe = (fake: { chamadas: ChamadaFake[] }) =>
+  fake.chamadas.filter((c) => c.tabela === "edital_analise_anexar_arquivos");
+const downloadsDaOportunidade = (fake: { chamadasStorage: ChamadaStorageFake[] }) =>
+  fake.chamadasStorage.filter((c) => c.metodo === "download" && c.bucket === "anexos-oportunidade");
+const avisosDaUrl = (s: Record<string, unknown>) => s.avisos as string[];
+
+/** Uma linha de arquivo_oportunidade do edital baixado por este link, já com o objeto no Storage. */
+async function arquivoDoEdital(
+  fake: { objetos: Map<string, Uint8Array> },
+  bytes: Uint8Array,
+  extra: Partial<ArquivoOportunidadeFake> = {}
+): Promise<ArquivoOportunidadeFake> {
+  const url = `anexos-oportunidade/${E}/2026/09/u1-Edital.pdf`;
+  fake.objetos.set(url, bytes);
+  return {
+    id: "00000000-0000-4000-9000-0000000000e1",
+    empresa_id: E,
+    oportunidade_id: OP,
+    nome: "Edital.pdf",
+    url,
+    tipo: "application/pdf",
+    tamanho: bytes.length,
+    pasta: null,
+    categoria: "edital",
+    origem: await origemDaUrl(URL_EDITAL),
+    assinatura: null,
+    usuario_nome: null,
+    deleted_at: null,
+    ...extra,
+  };
+}
+
+test("anexar_edital_por_url: def com openWorldHint true, terceira ferramenta da lista", () => {
+  assert.equal(FERRAMENTAS_HABILITACAO[2], ferramenta("anexar_edital_por_url"));
+  const def = ferramenta("anexar_edital_por_url").def;
+  assert.deepEqual(def.inputSchema.required, ["oportunidade_id", "url", "nome", "categoria"]);
+  assert.deepEqual(
+    [
+      def.annotations.readOnlyHint,
+      def.annotations.destructiveHint,
+      def.annotations.idempotentHint,
+      def.annotations.openWorldHint,
+    ],
+    [false, false, true, true]
+  );
+});
+
+test("anexar_edital_por_url: schema fechado, limites de url e nome e categorias do edital", () => {
+  // deno-lint-ignore no-explicit-any
+  const s = ferramenta("anexar_edital_por_url").def.inputSchema as any;
+  assert.equal(s.additionalProperties, false);
+  assert.deepEqual(Object.keys(s.properties).sort(), [
+    "categoria",
+    "nome",
+    "oportunidade_id",
+    "url",
+  ]);
+  assert.equal(s.properties.url.type, "string");
+  assert.equal(s.properties.url.maxLength, 2000);
+  assert.equal(s.properties.nome.type, "string");
+  assert.equal(s.properties.nome.maxLength, 200);
+  assert.deepEqual(s.properties.categoria.enum, [...CATEGORIAS_EDITAL]);
+  assert.match(String(ferramenta("anexar_edital_por_url").def.description), /50 MB/);
+});
+
+test("anexar_edital_por_url: baixa o PDF, grava em Edital e liga à análise", async () => {
+  const { deps, fake, gravados } = cenarioUrl({
+    "https://portal.exemplo.gov.br/baixar?id=9": () =>
+      new Response(null, { status: 302, headers: { location: "/editais/009.pdf" } }),
+    [URL_EDITAL]: () =>
+      new Response(PDF, { headers: { "content-type": "application/octet-stream" } }),
+  });
+  const r = await ferramenta("anexar_edital_por_url").executar(
+    {
+      oportunidade_id: OP,
+      url: "https://portal.exemplo.gov.br/baixar?id=9",
+      nome: "Edital CE 009.pdf",
+      categoria: "edital",
+    },
+    deps
+  );
+  assert.equal(r.resultado.isError, false);
+  const s = sc(r);
+  assert.deepEqual(
+    [
+      s.arquivo_id,
+      s.nome,
+      s.tipo,
+      s.tamanho,
+      s.categoria,
+      s.substituiu,
+      s.baixado_de,
+      s.redirecionamentos,
+    ],
+    ["arq-1", "Edital CE 009.pdf", "pdf", PDF.length, "edital", false, "portal.exemplo.gov.br", 1]
+  );
+  assert.equal(s.ja_estava_anexado, false);
+  assert.deepEqual(s.avisos, []);
+  assert.equal(s.proximo_passo, PROXIMO_PASSO_PDF);
+  assert.equal(s.link, linkOportunidade(OP));
+  assert.equal(r.alvo, OP);
+  assert.equal(gravados.length, 1);
+  assert.match(String(gravados[0].p_origem), /^url:[0-9a-f]{16}$/);
+  assert.deepEqual(
+    [gravados[0].p_pasta, gravados[0].p_categoria, gravados[0].p_assinatura, gravados[0].p_tipo],
+    [null, "edital", null, "application/pdf"]
+  );
+  const anexou = fake.chamadas.find((c) => c.tabela === "edital_analise_anexar_arquivos")!;
+  assert.deepEqual(anexou.payload, {
+    p_oportunidade_id: OP,
+    p_arquivos: [
+      { arquivo_oportunidade_id: "arq-1", nome: "Edital CE 009.pdf", categoria: "edital" },
+    ],
+    p_empresa_id: E,
+  });
+  // histórico: uma linha, com o nome do arquivo
+  const historico = historicoDe(fake);
+  assert.equal(historico.length, 1);
+  assert.deepEqual(
+    (historico[0].payload as Record<string, unknown>[]).map((l) => [
+      l.tipo,
+      l.descricao,
+      l.usuario_nome,
+    ]),
+    [
+      [
+        "Arquivo",
+        "Edital baixado pelo link pelo Claude: Edital CE 009.pdf",
+        "Usuário Teste (via Claude)",
+      ],
+    ]
+  );
+});
+
+test("anexar_edital_por_url: página HTML no lugar do PDF e extensão que não bate → tipo_nao_aceito", async () => {
+  const html = cenarioUrl({
+    [URL_EDITAL]: () =>
+      new Response("<html>Faça login</html>", { headers: { "content-type": "text/html" } }),
+  });
+  const r1 = await ferramenta("anexar_edital_por_url").executar(
+    { oportunidade_id: OP, url: URL_EDITAL, nome: "Edital.pdf", categoria: "edital" },
+    html.deps
+  );
+  assert.equal(sc(r1).motivo, "tipo_nao_aceito");
+  assert.equal(html.gravados.length, 0);
+  assert.equal(html.fake.objetos.size, 0);
+  const zip = cenarioUrl({ [URL_EDITAL]: () => new Response(ZIP) });
+  const r2 = await ferramenta("anexar_edital_por_url").executar(
+    { oportunidade_id: OP, url: URL_EDITAL, nome: "Edital.pdf", categoria: "edital" },
+    zip.deps
+  );
+  assert.equal(sc(r2).motivo, "tipo_nao_aceito");
+  const ok = cenarioUrl({ [URL_EDITAL]: () => new Response(ZIP) });
+  const r3 = await ferramenta("anexar_edital_por_url").executar(
+    { oportunidade_id: OP, url: URL_EDITAL, nome: "Anexos.zip", categoria: "anexo_edital" },
+    ok.deps
+  );
+  assert.equal(sc(r3).tipo, "zip");
+  assert.equal(ok.gravados[0].p_tipo, "application/zip");
+});
+
+test("anexar_edital_por_url: validação da entrada e travas da URL", async () => {
+  const rotas = { [URL_EDITAL]: () => new Response(PDF) };
+  const motivo = async (args: Record<string, unknown>, dns?: (h: string) => Promise<string[]>) =>
+    sc(
+      await ferramenta("anexar_edital_por_url").executar(
+        { oportunidade_id: OP, url: URL_EDITAL, nome: "Edital.pdf", categoria: "edital", ...args },
+        cenarioUrl(rotas, dns).deps
+      )
+    ).motivo;
+  assert.equal(await motivo({ nome: "virus.exe" }), "validacao");
+  assert.equal(await motivo({ nome: "" }), "validacao");
+  assert.equal(await motivo({ categoria: "proposta" }), "validacao");
+  assert.equal(await motivo({ url: "http://portal.exemplo.gov.br/x.pdf" }), "url_invalida");
+  assert.equal(await motivo({ url: "https://127.0.0.1/x.pdf" }), "url_invalida");
+  assert.equal(await motivo({}, async () => ["10.0.0.3"]), "destino_bloqueado");
+  assert.equal(await motivo({ url: "https://portal.exemplo.gov.br/outro.pdf" }), "http");
+});
+
+test("anexar_edital_por_url: sem resolvedor de DNS a ferramenta não baixa", async () => {
+  const { deps } = montarDeps((c: ChamadaFake) =>
+    c.tabela === "oportunidade" ? { data: { id: OP } } : undefined
+  );
+  const r = await ferramenta("anexar_edital_por_url").executar(
+    { oportunidade_id: OP, url: URL_EDITAL, nome: "Edital.pdf", categoria: "edital" },
+    deps
+  );
+  assert.equal(sc(r).motivo, "indisponivel");
+});
+
+test("anexar_edital_por_url: URL, nome e categoria ruins nunca chegam ao fetch; endereço interno em todas as formas", async () => {
+  const m = cenarioUrl({ [URL_EDITAL]: () => new Response(PDF) });
+  const motivo = async (args: Record<string, unknown>) => sc(await anexarUrl(m.deps, args)).motivo;
+  for (const url of [
+    "https://2130706433/x.pdf",
+    "https://0x7f.1/x.pdf",
+    "https://127.1/x.pdf",
+    "https://0177.0.0.1/x.pdf",
+    "https://[::1]/x.pdf",
+    "https://[::ffff:127.0.0.1]/x.pdf",
+    "https://localhost/x.pdf",
+    "https://169.254.169.254/latest/meta-data",
+    "https://user:senha@portal.exemplo.gov.br/x.pdf",
+    "https://portal.exemplo.gov.br:8443/x.pdf",
+    "ftp://portal.exemplo.gov.br/x.pdf",
+    "file:///etc/passwd",
+    "nao e url",
+    `https://portal.exemplo.gov.br/${"a".repeat(2000)}`,
+    "",
+    123,
+    null,
+  ]) {
+    assert.equal(await motivo({ url }), "url_invalida", String(url).slice(0, 50));
+  }
+  for (const nome of [
+    "Edital",
+    "Edital.exe",
+    "Edital.pdf.exe",
+    "Edital.html",
+    "x.png",
+    "​",
+    7,
+    null,
+  ]) {
+    assert.equal(await motivo({ nome }), "validacao", String(nome));
+  }
+  for (const categoria of ["proposta", "Edital", "", null, 3, ["edital"]]) {
+    assert.equal(await motivo({ categoria }), "validacao", String(categoria));
+  }
+  assert.deepEqual(m.pedidos, [], "nada disso chegou ao fetch");
+  assert.equal(m.gravados.length, 0);
+  // a validação aponta o erro e a oportunidade (alvo da auditoria)
+  const r = await anexarUrl(m.deps, { nome: "Edital.exe" });
+  assert.equal(r.alvo, OP);
+  assert.match(String(sc(r).erro), /\.pdf, \.zip, \.doc, \.docx, \.xls ou \.xlsx/);
+});
+
+test("anexar_edital_por_url: oportunidade de outra empresa, inexistente ou id que não é UUID → nao_encontrado, sem baixar", async () => {
+  const f = fetchDe({ [URL_EDITAL]: () => new Response(PDF) });
+  const { deps, gravados } = montarDeps(
+    (c: ChamadaFake) => (c.tabela === "oportunidade" ? { data: null } : undefined),
+    { fetchFn: f.fetchFn, resolverDns: dnsPublico }
+  );
+  const r1 = await anexarUrl(deps);
+  assert.equal(r1.resultado.isError, true);
+  assert.deepEqual(sc(r1), {
+    erro: "Oportunidade não encontrada nesta empresa.",
+    motivo: "nao_encontrado",
+  });
+  const r2 = await anexarUrl(deps, { oportunidade_id: "nao-e-uuid" });
+  assert.equal(sc(r2).motivo, "nao_encontrado");
+  assert.deepEqual(f.pedidos, []);
+  assert.equal(gravados.length, 0);
+});
+
+test("anexar_edital_por_url: cada categoria do edital vai para a RPC, sem pasta (cai em Edital)", async () => {
+  for (const categoria of CATEGORIAS_EDITAL) {
+    const { deps, gravados } = cenarioUrl({ [URL_EDITAL]: () => new Response(PDF) });
+    const s = sc(await anexarUrl(deps, { categoria }));
+    assert.equal(s.categoria, categoria);
+    assert.deepEqual([gravados[0].p_categoria, gravados[0].p_pasta], [categoria, null]);
+  }
+});
+
+test("anexar_edital_por_url: PDF, ZIP, Word e Excel aceitos pelos bytes; o próximo passo só existe para PDF", async () => {
+  const casos: [string, Uint8Array, string][] = [
+    ["Edital.pdf", PDF, "pdf"],
+    ["Anexos.zip", ZIP, "zip"],
+    ["Edital.docx", ZIP, "docx"],
+    ["Planilha.xlsx", ZIP, "xlsx"],
+    ["Edital antigo.doc", OLE, "doc"],
+    ["Planilha antiga.xls", OLE, "xls"],
+    ["EDITAL.PDF", PDF, "pdf"],
+  ];
+  for (const [nome, bytes, tipo] of casos) {
+    const { deps, gravados } = cenarioUrl({ [URL_EDITAL]: () => new Response(bytes as BodyInit) });
+    const r = await anexarUrl(deps, { nome });
+    assert.equal(r.resultado.isError, false, nome);
+    const s = sc(r);
+    assert.equal(s.tipo, tipo, nome);
+    assert.equal(s.nome, nome);
+    assert.equal(gravados[0].p_tipo, MIME_ARQUIVO[tipo as keyof typeof MIME_ARQUIVO], nome);
+    assert.equal(s.proximo_passo, tipo === "pdf" ? PROXIMO_PASSO_PDF : null, nome);
+  }
+  // o que os bytes dizem manda, não o nome
+  const recusas: [string, Uint8Array][] = [
+    ["Edital.pdf", ZIP],
+    ["Edital.pdf", OLE],
+    ["Edital.pdf", new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46])],
+    ["Edital.pdf", new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+    ["Edital.zip", PDF],
+    ["Planilha.xlsx", OLE],
+    ["Planilha.xls", ZIP],
+    ["Edital.doc", ZIP],
+    ["Edital.docx", PDF],
+    ["Edital.pdf", new TextEncoder().encode("MZ executável")],
+  ];
+  for (const [nome, bytes] of recusas) {
+    const { deps, gravados, fake } = cenarioUrl({
+      [URL_EDITAL]: () => new Response(bytes as BodyInit),
+    });
+    const r = await anexarUrl(deps, { nome });
+    assert.equal(sc(r).motivo, "tipo_nao_aceito", `${nome}`);
+    assert.equal(gravados.length, 0);
+    assert.equal(fake.objetos.size, 0);
+  }
+});
+
+test("anexar_edital_por_url: nome que ficaria sem base usa edital.<tipo>", async () => {
+  for (const nome of [".pdf", "...pdf", "---.pdf", " .pdf", "​.pdf"]) {
+    const { deps, gravados } = cenarioUrl({ [URL_EDITAL]: () => new Response(PDF) });
+    const r = await anexarUrl(deps, { nome });
+    assert.equal(r.resultado.isError, false, JSON.stringify(nome));
+    assert.equal(sc(r).nome, "edital.pdf", JSON.stringify(nome));
+    assert.equal(gravados[0].p_nome, "edital.pdf");
+  }
+  // nome com letra ou número na base fica como veio (saneado como todo nome de arquivo)
+  const { deps, gravados } = cenarioUrl({ [URL_EDITAL]: () => new Response(PDF) });
+  const s = sc(await anexarUrl(deps, { nome: "  (1)/Edital: CE 009?.pdf " }));
+  assert.equal(s.nome, "(1)-Edital- CE 009-.pdf");
+  assert.equal(gravados[0].p_nome, "(1)-Edital- CE 009-.pdf");
+});
+
+test("anexar_edital_por_url: o mesmo link com o mesmo arquivo não troca nada e o texto preparado continua valendo", async () => {
+  const m = cenarioUrlComBanco({ [URL_EDITAL]: () => new Response(PDF) });
+  const primeira = sc(await anexarUrl(m.deps));
+  assert.equal(primeira.substituiu, false);
+  assert.equal(primeira.ja_estava_anexado, false);
+  const arquivoId = String(primeira.arquivo_id);
+  m.banco.paginasTexto.push({ id: "p1", empresa_id: E, arquivo_id: arquivoId, deleted_at: null });
+  const refAntes = m.banco.arquivos[0].url;
+  const rpcsAntes = m.gravados.length;
+  const uploadsAntes = m.fake.chamadasStorage.filter((c) => c.metodo === "upload").length;
+
+  const r = await anexarUrl(m.deps);
+  assert.equal(r.resultado.isError, false);
+  const s = sc(r);
+  assert.equal(s.arquivo_id, arquivoId);
+  assert.equal(s.substituiu, false);
+  assert.equal(s.ja_estava_anexado, true);
+  assert.deepEqual(avisosDaUrl(s), [AVISO_JA_ANEXADO]);
+  assert.deepEqual(
+    [s.nome, s.tipo, s.tamanho, s.categoria, s.baixado_de, s.redirecionamentos],
+    ["Edital.pdf", "pdf", PDF.length, "edital", "portal.exemplo.gov.br", 0]
+  );
+  assert.equal(s.link, linkOportunidade(OP));
+  assert.equal(r.alvo, OP);
+  // nada foi gravado: nem RPC, nem objeto novo, nem histórico, nem ligação à análise; o texto ficou
+  assert.equal(m.gravados.length, rpcsAntes);
+  assert.equal(m.fake.chamadasStorage.filter((c) => c.metodo === "upload").length, uploadsAntes);
+  assert.equal(m.banco.arquivos.length, 1);
+  assert.equal(m.banco.arquivos[0].url, refAntes);
+  assert.deepEqual(objetosDaOportunidade(m.fake), [refAntes]);
+  assert.equal(m.banco.paginasTexto[0].deleted_at, null);
+  assert.equal(historicoDe(m.fake).length, 1);
+  assert.equal(ligacoesDe(m.fake).length, 1);
+  // o objeto atual foi lido uma vez, para comparar
+  assert.equal(downloadsDaOportunidade(m.fake).length, 1);
+});
+
+test("anexar_edital_por_url: tamanho igual e bytes diferentes → troca no lugar, avisa e o texto antigo some", async () => {
+  const velho = new TextEncoder().encode("%PDF-1.7 edital A");
+  const novo = new TextEncoder().encode("%PDF-1.7 edital B");
+  assert.equal(velho.length, novo.length);
+  let atual = velho;
+  const m = cenarioUrlComBanco({ [URL_EDITAL]: () => new Response(atual) });
+  const primeira = sc(await anexarUrl(m.deps));
+  const arquivoId = String(primeira.arquivo_id);
+  m.banco.paginasTexto.push({ id: "p1", empresa_id: E, arquivo_id: arquivoId, deleted_at: null });
+  const refAntes = m.banco.arquivos[0].url;
+  atual = novo;
+
+  const r = await anexarUrl(m.deps);
+  assert.equal(r.resultado.isError, false);
+  const s = sc(r);
+  assert.equal(s.arquivo_id, arquivoId);
+  assert.equal(s.substituiu, true);
+  assert.equal(s.ja_estava_anexado, false);
+  assert.deepEqual(avisosDaUrl(s), [AVISO_TROCADO_PDF]);
+  assert.equal(s.proximo_passo, PROXIMO_PASSO_PDF);
+  assert.equal(m.banco.arquivos.length, 1);
+  assert.notEqual(m.banco.arquivos[0].url, refAntes);
+  // um objeto só no Storage, com os bytes novos; o antigo foi removido
+  const objetos = objetosDaOportunidade(m.fake);
+  assert.deepEqual(objetos, [m.banco.arquivos[0].url]);
+  assert.deepEqual(m.fake.objetos.get(objetos[0]), novo);
+  // o texto por página do arquivo antigo foi excluído pelo banco: precisa preparar de novo
+  assert.notEqual(m.banco.paginasTexto[0].deleted_at, null);
+  // mudou de verdade: vai para o histórico; arquivo trocado não é ligado de novo à análise
+  assert.equal(historicoDe(m.fake).length, 2);
+  assert.equal(ligacoesDe(m.fake).length, 1);
+});
+
+test("anexar_edital_por_url: tamanho diferente → troca, sem baixar o objeto atual para comparar", async () => {
+  let atual = PDF;
+  const m = cenarioUrlComBanco({ [URL_EDITAL]: () => new Response(atual) });
+  await anexarUrl(m.deps);
+  assert.equal(downloadsDaOportunidade(m.fake).length, 0);
+  atual = new TextEncoder().encode("%PDF-1.7 edital com um texto bem maior que o primeiro");
+  const s = sc(await anexarUrl(m.deps));
+  assert.equal(s.substituiu, true);
+  assert.deepEqual(avisosDaUrl(s), [AVISO_TROCADO_PDF]);
+  assert.equal(downloadsDaOportunidade(m.fake).length, 0, "tamanho já diferente: nem lê o atual");
+  assert.equal(m.banco.arquivos.length, 1);
+});
+
+test("anexar_edital_por_url: trocado e não PDF → aviso curto, sem mandar clicar num botão que não existe", async () => {
+  const velho = new Uint8Array([...ZIP, 1]);
+  const novo = new Uint8Array([...ZIP, 2]);
+  let atual = velho;
+  const m = cenarioUrlComBanco({ [URL_EDITAL]: () => new Response(atual) });
+  await anexarUrl(m.deps, { nome: "Anexos.zip" });
+  atual = novo;
+  const s = sc(await anexarUrl(m.deps, { nome: "Anexos.zip" }));
+  assert.equal(s.substituiu, true);
+  assert.equal(s.proximo_passo, null);
+  assert.deepEqual(avisosDaUrl(s), ["O edital mudou e foi trocado no lugar."]);
+});
+
+test("anexar_edital_por_url: a conferência filtra pela empresa, só linhas vivas, a oportunidade e a origem do link", async () => {
+  const m = cenarioUrlComBanco({ [URL_EDITAL]: () => new Response(PDF) });
+  await anexarUrl(m.deps);
+  const leituras = m.fake.chamadas.filter(
+    (c) => c.tabela === "arquivo_oportunidade" && c.op === "select"
+  );
+  assert.equal(leituras.length, 1);
+  assert.deepEqual(filtrosDe(leituras[0]), [
+    ["eq", "empresa_id", E],
+    ["is", "deleted_at", null],
+    ["eq", "oportunidade_id", OP],
+    ["eq", "origem", await origemDaUrl(URL_EDITAL)],
+  ]);
+  // o link com espaços em volta é o mesmo link (mesma origem)
+  const outra = cenarioUrlComBanco({ [URL_EDITAL]: () => new Response(PDF) });
+  await anexarUrl(outra.deps);
+  const s = sc(await anexarUrl(outra.deps, { url: `  ${URL_EDITAL}  ` }));
+  assert.equal(s.ja_estava_anexado, true);
+  assert.equal(outra.banco.arquivos.length, 1);
+});
+
+test("anexar_edital_por_url: outro nome ou categoria para o mesmo arquivo idêntico: nada muda e o aviso diz o que está gravado", async () => {
+  const m = cenarioUrlComBanco({ [URL_EDITAL]: () => new Response(PDF) });
+  await anexarUrl(m.deps, { nome: "Edital 009.pdf", categoria: "edital" });
+  const s = sc(await anexarUrl(m.deps, { nome: "Termo.pdf", categoria: "termo_referencia" }));
+  assert.equal(s.ja_estava_anexado, true);
+  assert.deepEqual([s.nome, s.categoria], ["Edital 009.pdf", "edital"]);
+  assert.deepEqual(avisosDaUrl(s), [
+    AVISO_JA_ANEXADO,
+    'Nome e categoria não foram alterados: o arquivo já estava anexado como "Edital 009.pdf" (categoria edital).',
+  ]);
+  assert.equal(m.banco.arquivos[0].nome, "Edital 009.pdf");
+  assert.equal(m.banco.arquivos[0].categoria, "edital");
+});
+
+test("anexar_edital_por_url: falha ao conferir o arquivo que já estava lá → segue e grava (log sem ref nem URL)", async () => {
+  const origem = await origemDaUrl(URL_EDITAL);
+  const log = mock.method(console, "error", () => {});
+  try {
+    // 1) o Storage não devolve o objeto atual
+    const a = cenarioUrlComBanco(
+      { [URL_EDITAL]: () => new Response(PDF) },
+      {
+        responderStorage: (c) =>
+          c.metodo === "download" ? { error: { message: "storage timeout" } } : undefined,
+      }
+    );
+    await anexarUrl(a.deps);
+    const sa = sc(await anexarUrl(a.deps));
+    assert.equal(sa.substituiu, true);
+    assert.equal(sa.ja_estava_anexado, false);
+    assert.equal(a.banco.arquivos.length, 1);
+    assert.equal(objetosDaOportunidade(a.fake).length, 1);
+
+    // 2) a ref gravada na linha é de OUTRA empresa: nem tenta ler
+    const b = cenarioUrlComBanco({ [URL_EDITAL]: () => new Response(PDF) });
+    b.banco.arquivos.push(
+      await arquivoDoEdital(b.fake, PDF, {
+        url: `anexos-oportunidade/${OUTRA}/2026/09/u1-Edital.pdf`,
+      })
+    );
+    const logsAntes = log.mock.calls.length;
+    const sb = sc(await anexarUrl(b.deps));
+    assert.equal(sb.substituiu, true);
+    assert.equal(downloadsDaOportunidade(b.fake).length, 0);
+    // recusada na origem (caminhoDaEmpresa), sem nem tentar o Storage: nem erro para o log
+    assert.equal(log.mock.calls.length, logsAntes, "ref de outra empresa é recusada em silêncio");
+
+    // 3) a linha existe mas o objeto sumiu do Storage
+    const c = cenarioUrlComBanco({ [URL_EDITAL]: () => new Response(PDF) });
+    const semObjeto = await arquivoDoEdital(c.fake, PDF);
+    c.fake.objetos.delete(semObjeto.url);
+    c.banco.arquivos.push(semObjeto);
+    const s3 = sc(await anexarUrl(c.deps));
+    assert.equal(s3.substituiu, true);
+    assert.equal(s3.ja_estava_anexado, false);
+    assert.deepEqual(objetosDaOportunidade(c.fake), [c.banco.arquivos[0].url]);
+
+    // 4) a leitura da tabela falha: grava como arquivo novo
+    const d = cenarioUrlComBanco(
+      { [URL_EDITAL]: () => new Response(PDF) },
+      {
+        extra: (q) =>
+          q.tabela === "arquivo_oportunidade" && q.op === "select"
+            ? { error: { message: "canceling statement due to statement timeout" } }
+            : undefined,
+      }
+    );
+    const sd = sc(await anexarUrl(d.deps));
+    assert.equal(sd.substituiu, false);
+    assert.equal(sd.ja_estava_anexado, false);
+    assert.equal(d.banco.arquivos.length, 1);
+
+    // nenhum log traz ref, caminho de Storage ou a URL pedida
+    const logs = log.mock.calls.map((x) => x.arguments.join(" "));
+    // um log por cenário que falhou na conferência (1, 3 e 4); o 2 não gera nenhum
+    assert.equal(logs.length, 3, logs.join("\n"));
+    for (const l of logs) {
+      assert.match(l, /anexar_edital_por_url/);
+      for (const proibido of [
+        "anexos-oportunidade/",
+        E,
+        OUTRA,
+        URL_EDITAL,
+        "editais/009",
+        origem,
+      ]) {
+        assert.ok(!l.includes(proibido), `${proibido} em ${l}`);
+      }
+    }
+  } finally {
+    log.mock.restore();
+  }
+});
+
+test("anexar_edital_por_url: arquivo já assinado — idêntico vale como já anexado; diferente é mantido, sem troca", async () => {
+  // idêntico
+  const a = cenarioUrlComBanco({ [URL_EDITAL]: () => new Response(PDF) });
+  a.banco.arquivos.push(await arquivoDoEdital(a.fake, PDF, { assinatura: "assinado" }));
+  const sa = sc(await anexarUrl(a.deps));
+  assert.equal(sa.ja_estava_anexado, true);
+  assert.equal(sa.arquivo_id, "00000000-0000-4000-9000-0000000000e1");
+  assert.equal(a.gravados.length, 0);
+
+  // diferente (mesmo tamanho): o banco mantém o assinado e o objeto novo não fica órfão
+  const outro = new TextEncoder().encode("%PDF-1.7 documento de TESTE");
+  assert.equal(outro.length, PDF.length);
+  const b = cenarioUrlComBanco({ [URL_EDITAL]: () => new Response(outro) });
+  const assinado = await arquivoDoEdital(b.fake, PDF, { assinatura: "assinado" });
+  b.banco.arquivos.push(assinado);
+  const refAntes = assinado.url;
+  const rb = await anexarUrl(b.deps);
+  assert.equal(rb.resultado.isError, false);
+  const sb = sc(rb);
+  assert.equal(sb.mantido_assinado, true);
+  assert.equal(sb.substituiu, false);
+  assert.equal(sb.ja_estava_anexado, false);
+  assert.equal(sb.arquivo_id, assinado.id);
+  assert.deepEqual(avisosDaUrl(sb), [
+    "Já existe uma versão assinada deste edital na oportunidade; ela foi mantida, sem troca.",
+  ]);
+  assert.equal(assinado.url, refAntes);
+  assert.deepEqual(objetosDaOportunidade(b.fake), [refAntes]);
+  assert.equal(historicoDe(b.fake).length, 0);
+  assert.equal(ligacoesDe(b.fake).length, 0);
+});
+
+test("anexar_edital_por_url: erros do download vão para o motivo certo e nada é gravado", async () => {
+  const dns = async (h: string) =>
+    h === "interno.exemplo.gov.br" ? ["10.0.0.9"] : ["200.160.2.3"];
+  const base = "https://portal.exemplo.gov.br";
+  const redir = (para: string) => () =>
+    new Response(null, { status: 302, headers: { location: para } });
+  const casos: [string, string, Record<string, () => Response>, string?][] = [
+    ["http", "404", {}],
+    ["http", "500", { [`${base}/x.pdf`]: () => new Response("erro", { status: 500 }) }],
+    ["vazio", "vazio", { [`${base}/x.pdf`]: () => new Response(new Uint8Array(0)) }],
+    [
+      "grande_demais",
+      "declarado",
+      {
+        [`${base}/x.pdf`]: () => new Response(PDF, { headers: { "content-length": "52428801" } }),
+      },
+    ],
+    [
+      "muitos_redirecionamentos",
+      "4 saltos",
+      {
+        [`${base}/x.pdf`]: redir("/1"),
+        [`${base}/1`]: redir("/2"),
+        [`${base}/2`]: redir("/3"),
+        [`${base}/3`]: redir("/4"),
+        [`${base}/4`]: () => new Response(PDF),
+      },
+    ],
+    [
+      "destino_bloqueado",
+      "salto para a rede interna",
+      { [`${base}/x.pdf`]: redir("https://interno.exemplo.gov.br/segredo") },
+    ],
+    [
+      "destino_bloqueado",
+      "salto para http",
+      { [`${base}/x.pdf`]: redir("http://portal.exemplo.gov.br/y") },
+    ],
+    [
+      "destino_bloqueado",
+      "salto para metadados",
+      { [`${base}/x.pdf`]: redir("https://169.254.169.254/latest/meta-data") },
+    ],
+    ["destino_bloqueado", "nome interno", {}, "https://interno.exemplo.gov.br/x.pdf"],
+  ];
+  for (const [motivo, rotulo, rotas, url] of casos) {
+    const m = cenarioUrl(rotas, dns);
+    const r = await anexarUrl(m.deps, { url: url ?? `${base}/x.pdf` });
+    assert.equal(r.resultado.isError, true, rotulo);
+    const s = sc(r);
+    assert.equal(s.motivo, motivo, rotulo);
+    assert.equal(typeof s.erro, "string", rotulo);
+    assert.equal(r.alvo, OP, rotulo);
+    assert.equal(m.gravados.length, 0, rotulo);
+    assert.equal(m.fake.objetos.size, 0, rotulo);
+    assert.equal(historicoDe(m.fake).length, 0, rotulo);
+    assert.equal(ligacoesDe(m.fake).length, 0, rotulo);
+  }
+  // o destino recusado nem chegou a ser pedido
+  const m = cenarioUrl({ [`${base}/x.pdf`]: redir("https://interno.exemplo.gov.br/segredo") }, dns);
+  await anexarUrl(m.deps, { url: `${base}/x.pdf` });
+  assert.deepEqual(m.pedidos, [`${base}/x.pdf`]);
+});
+
+test("anexar_edital_por_url: servidor que não responde → tempo_esgotado depois de 30 s", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const { deps, gravados } = montarDeps(
+      (c: ChamadaFake) => (c.tabela === "oportunidade" ? { data: { id: OP } } : undefined),
+      { fetchFn: (() => new Promise<Response>(() => {})) as typeof fetch, resolverDns: dnsPublico }
+    );
+    const pendente = anexarUrl(deps);
+    for (let i = 0; i < 30; i++) await new Promise((ok) => setImmediate(ok));
+    mock.timers.tick(30_000);
+    const r = await pendente;
+    assert.equal(r.resultado.isError, true);
+    assert.equal(sc(r).motivo, "tempo_esgotado");
+    assert.equal(gravados.length, 0);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("anexar_edital_por_url: o limite de 50 MB vale no fluxo (sem content-length)", async () => {
+  const pedaco = 1024 * 1024;
+  const fluxo = (total: number) => {
+    let enviados = 0;
+    return new ReadableStream<Uint8Array>({
+      pull(c) {
+        if (enviados >= total) return c.close();
+        const n = Math.min(pedaco, total - enviados);
+        enviados += n;
+        c.enqueue(new Uint8Array(n).fill(0x25));
+      },
+    });
+  };
+  const m = cenarioUrl({ [URL_EDITAL]: () => new Response(fluxo(LIMITE_ARQUIVO_SERVIDOR + 1)) });
+  const r = await anexarUrl(m.deps);
+  assert.equal(sc(r).motivo, "grande_demais");
+  assert.equal(m.gravados.length, 0);
+});
+
+test("anexar_edital_por_url: a ligação à análise que falha não derruba a ferramenta e o log não traz ref nem URL", async () => {
+  const log = mock.method(console, "error", () => {});
+  try {
+    const f = fetchDe({ [URL_EDITAL]: () => new Response(PDF) });
+    const { deps, gravados } = montarDeps(
+      (c: ChamadaFake) => {
+        if (c.tabela === "oportunidade" && c.op === "select") return { data: { id: OP } };
+        if (c.tabela === "edital_analise_anexar_arquivos")
+          return { error: { message: `falha em ${URL_EDITAL} anexos-oportunidade/${E}/x.pdf` } };
+        return undefined;
+      },
+      { fetchFn: f.fetchFn, resolverDns: dnsPublico }
+    );
+    const r = await anexarUrl(deps);
+    assert.equal(r.resultado.isError, false);
+    assert.equal(sc(r).arquivo_id, "arq-1");
+    assert.deepEqual(avisosDaUrl(sc(r)), [
+      "O arquivo foi anexado, mas não consegui ligá-lo à análise do edital desta oportunidade.",
+    ]);
+    assert.equal(gravados.length, 1);
+    const logs = log.mock.calls.map((x) => x.arguments.join(" "));
+    assert.equal(logs.length, 1);
+    assert.match(logs[0], /anexar_edital_por_url/);
+    for (const proibido of ["anexos-oportunidade/", E, "https://", "editais/009"]) {
+      assert.ok(!logs[0].includes(proibido), `${proibido} em ${logs[0]}`);
+    }
+  } finally {
+    log.mock.restore();
+  }
+});
+
+test("anexar_edital_por_url: os logs só têm o host e o motivo, nunca a URL (token na query) nem o erro de rede", async () => {
+  const segredo = "https://portal.exemplo.gov.br/baixar/arquivo-secreto.pdf?token=SEGREDO123&id=9";
+  const metodos = ["log", "info", "warn", "error", "debug"] as const;
+  const espioes = metodos.map((nome) => mock.method(console, nome, () => {}));
+  try {
+    const rotas = { [segredo]: () => new Response("proibido", { status: 403 }) };
+    const lancaErro = (async () => {
+      throw new TypeError(`error sending request for url (${segredo}): connection refused`);
+    }) as typeof fetch;
+    const casos = [
+      cenarioUrl(rotas).deps,
+      cenarioUrl({}).deps,
+      montarDeps(
+        (c: ChamadaFake) => (c.tabela === "oportunidade" ? { data: { id: OP } } : undefined),
+        { fetchFn: lancaErro, resolverDns: dnsPublico }
+      ).deps,
+      cenarioUrl(rotas, async () => ["10.0.0.1"]).deps,
+    ];
+    const saidas: string[] = [];
+    for (const deps of casos) {
+      const r = await anexarUrl(deps, { url: segredo });
+      assert.equal(r.resultado.isError, true);
+      saidas.push(JSON.stringify(sc(r)), JSON.stringify(r));
+    }
+    const logs = espioes.flatMap((e) => e.mock.calls.map((x) => x.arguments.join(" ")));
+    assert.ok(logs.length >= 3, "o motivo da recusa fica no log");
+    for (const l of [...logs, ...saidas]) {
+      for (const proibido of [
+        "SEGREDO123",
+        "token",
+        "arquivo-secreto",
+        "/baixar",
+        "https://",
+        "refused",
+      ]) {
+        assert.ok(!l.includes(proibido), `${proibido} em ${l}`);
+      }
+    }
+    // o que fica no log: o host e o motivo
+    for (const motivo of ["http", "destino_bloqueado"]) {
+      const esperado = `[conector] anexar_edital_por_url: download recusado (host portal.exemplo.gov.br, motivo ${motivo})`;
+      assert.ok(logs.includes(esperado), `${esperado}\n${logs.join("\n")}`);
+    }
+  } finally {
+    for (const e of espioes) e.mock.restore();
+  }
+});
+
+test("anexar_edital_por_url: a saída nunca traz ref de Storage, caminho, URL pedida nem o UUID da empresa", async () => {
+  const pedida = "https://portal.exemplo.gov.br/editais/009.pdf?token=SEGREDO123";
+  const velho = new TextEncoder().encode("%PDF-1.7 edital A");
+  const novo = new TextEncoder().encode("%PDF-1.7 edital B");
+  let atual = velho;
+  const m = cenarioUrlComBanco({ [pedida]: () => new Response(atual) });
+  const saidas = [];
+  saidas.push(await anexarUrl(m.deps, { url: pedida })); // novo
+  saidas.push(await anexarUrl(m.deps, { url: pedida })); // já estava
+  atual = novo;
+  saidas.push(await anexarUrl(m.deps, { url: pedida })); // trocado
+  const erro = cenarioUrl({ [pedida]: () => new Response("x", { status: 500 }) });
+  saidas.push(await anexarUrl(erro.deps, { url: pedida }));
+  const semTipo = cenarioUrl({ [pedida]: () => new Response("<html>login</html>") });
+  saidas.push(await anexarUrl(semTipo.deps, { url: pedida }));
+  const assinado = cenarioUrlComBanco({ [pedida]: () => new Response(novo) });
+  assinado.banco.arquivos.push({
+    ...(await arquivoDoEdital(assinado.fake, velho, { assinatura: "assinado" })),
+    origem: await origemDaUrl(pedida),
+  });
+  saidas.push(await anexarUrl(assinado.deps, { url: pedida }));
+  assert.deepEqual(
+    saidas.map((r) => [r.resultado.isError, sc(r).substituiu ?? sc(r).motivo]),
+    [
+      [false, false],
+      [false, false],
+      [false, true],
+      [true, "http"],
+      [true, "tipo_nao_aceito"],
+      [false, false],
+    ]
+  );
+  for (const r of saidas) {
+    const { link, ...resto } = sc(r);
+    if (link !== undefined) assert.equal(link, linkOportunidade(OP));
+    assert.deepEqual(JSON.parse(r.resultado.content[0].text as string), sc(r));
+    const json = JSON.stringify(resto);
+    for (const proibido of [
+      "anexos-oportunidade/",
+      "habilitacao/",
+      "certificados/",
+      "https://", // (o motivo "http" é um valor válido; o que não pode sair é um endereço)
+      "http://",
+      "token",
+      "SEGREDO123",
+      "editais/009",
+      E,
+      OUTRA,
+    ]) {
+      assert.ok(!json.includes(proibido), `${proibido} em ${json}`);
+    }
+    assert.ok(!/\/20\d\d\/\d\d\//.test(json), json);
+  }
 });

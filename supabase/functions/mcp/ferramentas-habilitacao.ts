@@ -10,6 +10,10 @@
  * Certidão errada numa licitação é o pior erro possível, então a ferramenta não se cala: documento
  * vencido, versão substituída, cópia antiga que ficou na pasta, sessão sem data e item que falhou
  * saem na resposta (nunca como se estivesse tudo certo). Ela só copia: apagar é do usuário.
+ *
+ * `anexar_edital_por_url` é a única que sai para a internet: o SERVIDOR baixa o edital de um link
+ * público (travas de SSRF em _shared/conector/url-segura.ts) e grava na oportunidade. Nenhuma saída
+ * nem log traz a URL pedida (pode ter token na query): só o host e o motivo.
  */
 import type { PromptDef } from "../_shared/mcp/protocolo.ts";
 import { dadosOuErro } from "../_shared/conector/camada-empresa.ts";
@@ -17,17 +21,27 @@ import {
   baixarObjeto,
   BUCKET_ACERVO,
   BUCKET_HABILITACAO,
+  BUCKET_OPORTUNIDADE,
   caminhoDaEmpresa,
   ErroArquivo,
+  extensaoDoNome,
   gravarNaOportunidade,
   nomeParaExibir,
   PASTA_HABILITACAO,
   registrarNoHistorico,
   TIPOS_DOCUMENTO_BIBLIOTECA,
+  TIPOS_EDITAL,
   tipoPelosBytesServidor,
 } from "../_shared/conector/arquivo-servidor.ts";
 import { uuidOuNull } from "../_shared/conector/entrada.ts";
+import { CATEGORIAS_EDITAL, pastaParaGravarServidor } from "../_shared/conector/envio-regras.ts";
 import { linkOportunidade } from "../_shared/conector/recurso.ts";
+import {
+  baixarUrlPublica,
+  ErroDownload,
+  origemDaUrl,
+  validarUrlPublica,
+} from "../_shared/conector/url-segura.ts";
 import { hojeBR } from "../_shared/edital/acervo.ts";
 import { dataDaSessao } from "../_shared/habilitacao/data-sessao.ts";
 import {
@@ -692,6 +706,291 @@ const ANEXAR_ACERVO: Ferramenta = {
   },
 };
 
-export const FERRAMENTAS_HABILITACAO: Ferramenta[] = [ANEXAR_HABILITACAO, ANEXAR_ACERVO];
+// ─── anexar_edital_por_url ──────────────────────────────────────────────────────────────────
+
+const EXTENSOES_EDITAL = ["pdf", "zip", "doc", "docx", "xls", "xlsx"];
+const MENSAGEM_NOME_EDITAL =
+  "nome: informe o nome com a extensão .pdf, .zip, .doc, .docx, .xls ou .xlsx.";
+const PROXIMO_PASSO_PDF =
+  'Para o Claude ler este PDF depois pelo SIGO, o usuário clica em "Preparar para o Claude" na aba Arquivos.';
+const AVISO_JA_ANEXADO = "O edital deste link já estava anexado e não mudou.";
+const AVISO_TROCADO_PDF =
+  'O edital mudou e foi trocado no lugar: clique de novo em "Preparar para o Claude" nesse arquivo antes de ler.';
+const AVISO_TROCADO = "O edital mudou e foi trocado no lugar.";
+const AVISO_ASSINADO_MANTIDO =
+  "Já existe uma versão assinada deste edital na oportunidade; ela foi mantida, sem troca.";
+const AVISO_SEM_LIGACAO =
+  "O arquivo foi anexado, mas não consegui ligá-lo à análise do edital desta oportunidade.";
+
+function bytesIguais(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** "edital.<ext>" quando o nome pedido não tem letra nem número antes da extensão (".pdf", "---.pdf"). */
+function nomeDoEdital(pedido: unknown, limpo: string, extensao: string): string {
+  const base = String(pedido ?? "").replace(/\.[A-Za-z0-9]{1,8}\s*$/, "");
+  return /[\p{L}\p{N}]/u.test(base) ? limpo : `edital.${extensao}`;
+}
+
+interface ArquivoDoLink {
+  id: string;
+  nome: string;
+  categoria: string | null;
+}
+
+/**
+ * O arquivo desta oportunidade que veio DESTE link (mesma `origem`) e é idêntico ao que acabou de ser baixado.
+ * Trocar no lugar apaga o texto preparado ("Preparar para o Claude"), então o arquivo idêntico não é trocado.
+ * Só confere o conteúdo quando o tamanho bate. Qualquer falha na conferência (banco, ref que não é da pasta da
+ * empresa, Storage) vai ao log, sem ref, e devolve null: aí a ferramenta segue e grava normalmente.
+ */
+async function arquivoIdenticoDoLink(
+  deps: DepsFerramenta,
+  oportunidadeId: string,
+  origem: string,
+  bytes: Uint8Array
+): Promise<ArquivoDoLink | null> {
+  try {
+    const linhas =
+      dadosOuErro<
+        {
+          id: string;
+          nome: string | null;
+          url: string | null;
+          tamanho: unknown;
+          categoria: string | null;
+        }[]
+      >(
+        await deps.db
+          .ler("arquivo_oportunidade", "id, nome, url, tamanho, categoria")
+          .eq("oportunidade_id", oportunidadeId)
+          .eq("origem", origem)
+          .limit(1)
+      ) ?? [];
+    const linha = linhas[0];
+    if (!linha || Number(linha.tamanho) !== bytes.length) return null;
+    const caminho = caminhoDaEmpresa(linha.url, BUCKET_OPORTUNIDADE, deps.db.empresaId);
+    if (!caminho) return null;
+    const atual = await baixarObjeto(deps.storage, BUCKET_OPORTUNIDADE, caminho);
+    if (!bytesIguais(atual, bytes)) return null;
+    return { id: linha.id, nome: String(linha.nome ?? ""), categoria: linha.categoria ?? null };
+  } catch (e) {
+    logarErro("anexar_edital_por_url", "conferir se o edital já estava anexado", e);
+    return null;
+  }
+}
+
+const ANEXAR_EDITAL_POR_URL: Ferramenta = {
+  def: {
+    name: "anexar_edital_por_url",
+    title: "Baixar o edital pelo link e anexar à oportunidade",
+    description:
+      "Baixa pelo SERVIDOR do SIGO um arquivo do edital a partir do link público (portal de compras, site da prefeitura) e grava nos Arquivos da oportunidade, na pasta Edital. Use quando o edital tem link de download: ninguém precisa enviar o arquivo. Só https; até 50 MB; PDF, ZIP, Word ou Excel. O link tem de ser o do arquivo, não o da página. Repetir com o mesmo link troca o arquivo no lugar; se o arquivo não mudou, nada é trocado (ja_estava_anexado). Leia os avisos e repasse ao usuário: quando o edital muda, o texto preparado do PDF some e é preciso preparar de novo.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        oportunidade_id: ID_OPORTUNIDADE,
+        url: { type: "string", maxLength: 2000, description: "link público https do arquivo" },
+        nome: {
+          type: "string",
+          maxLength: 200,
+          description: "nome do arquivo, com a extensão: .pdf, .zip, .doc, .docx, .xls ou .xlsx",
+        },
+        categoria: {
+          type: "string",
+          enum: [...CATEGORIAS_EDITAL],
+          description: "o que é este arquivo no edital",
+        },
+      },
+      required: ["oportunidade_id", "url", "nome", "categoria"],
+    },
+    annotations: { ...GRAVACAO, openWorldHint: true },
+  },
+  async executar(args, deps) {
+    const id = uuidOuNull(args.oportunidade_id);
+    const nomeLimpo = nomeParaExibir(typeof args.nome === "string" ? args.nome : "");
+    const extensao = extensaoDoNome(nomeLimpo);
+    if (!EXTENSOES_EDITAL.includes(extensao)) {
+      return falha(MENSAGEM_NOME_EDITAL, "validacao", {}, id);
+    }
+    const categoria = args.categoria;
+    if (
+      typeof categoria !== "string" ||
+      !(CATEGORIAS_EDITAL as readonly string[]).includes(categoria)
+    ) {
+      return falha(
+        `categoria: use ${CATEGORIAS_EDITAL.join(", ")}.`,
+        "validacao",
+        { categorias_validas: [...CATEGORIAS_EDITAL] },
+        id
+      );
+    }
+    const op = id ? await deps.db.porId<{ id: string }>("oportunidade", id, "id") : null;
+    if (!id || !op) return naoEncontrado("oportunidade", id);
+
+    const v = validarUrlPublica(args.url);
+    if (!v.ok) return falha(v.mensagem, "url_invalida", {}, id);
+    if (!deps.resolverDns) {
+      return falha(
+        "O SIGO não consegue baixar por link agora. Tente de novo.",
+        "indisponivel",
+        {},
+        id
+      );
+    }
+
+    let baixado: Awaited<ReturnType<typeof baixarUrlPublica>>;
+    try {
+      baixado = await baixarUrlPublica(v.url.href, {
+        fetchFn: deps.fetchFn,
+        resolverDns: deps.resolverDns,
+      });
+    } catch (e) {
+      if (!(e instanceof ErroDownload)) throw e;
+      // só o host e o motivo: a URL pode trazer token na query
+      console.error(
+        `[conector] anexar_edital_por_url: download recusado (host ${v.url.hostname}, motivo ${e.codigo})`
+      );
+      return falha(e.message, e.codigo, {}, id);
+    }
+
+    // o tipo vem dos bytes e tem de ser o da extensão do nome (página de login ou de erro não é o edital)
+    const tipo = tipoPelosBytesServidor(baixado.bytes.subarray(0, 8), nomeLimpo, TIPOS_EDITAL);
+    if (tipo === null || tipo !== extensao) {
+      return falha(
+        `O arquivo baixado não é um .${extensao} de verdade (o link pode ser de uma página de login ou de erro, e não do arquivo).`,
+        "tipo_nao_aceito",
+        {},
+        id
+      );
+    }
+    const nome = nomeDoEdital(args.nome, nomeLimpo, tipo);
+    const baixadoDe = new URL(baixado.urlFinal).hostname;
+    const origem = await origemDaUrl(String(args.url));
+    const link = linkOportunidade(id);
+
+    // o mesmo link com o mesmo arquivo: não troca nada (a troca no lugar apaga o texto preparado do PDF)
+    const igual = await arquivoIdenticoDoLink(deps, id, origem, baixado.bytes);
+    if (igual) {
+      const avisos = [AVISO_JA_ANEXADO];
+      const nomeGravado = igual.nome || nome;
+      if (nomeGravado !== nome || igual.categoria !== categoria) {
+        avisos.push(
+          `Nome e categoria não foram alterados: o arquivo já estava anexado como "${nomeGravado}" (categoria ${igual.categoria ?? "sem categoria"}).`
+        );
+      }
+      return sucesso(
+        {
+          oportunidade_id: id,
+          arquivo_id: igual.id,
+          nome: nomeGravado,
+          tipo,
+          tamanho: baixado.bytes.length,
+          categoria: igual.categoria,
+          substituiu: false,
+          ja_estava_anexado: true,
+          baixado_de: baixadoDe,
+          redirecionamentos: baixado.saltos,
+          proximo_passo: tipo === "pdf" ? PROXIMO_PASSO_PDF : null,
+          avisos,
+          link,
+        },
+        { alvo: id }
+      );
+    }
+
+    let g: Awaited<ReturnType<typeof gravarNaOportunidade>>;
+    try {
+      g = await gravarNaOportunidade(
+        { db: deps.db, storage: deps.storage, agora: deps.agora },
+        {
+          oportunidadeId: id,
+          origem,
+          nome,
+          bytes: baixado.bytes,
+          tipo,
+          pasta: pastaParaGravarServidor(null, categoria),
+          categoria,
+          assinatura: null,
+          usuarioNome: nomeDoUsuario(deps),
+        }
+      );
+    } catch (e) {
+      if (e instanceof ErroArquivo) return falha(mensagemSemCaminho(e), e.codigo, {}, id);
+      throw e;
+    }
+    if (!g) return naoEncontrado("oportunidade", id);
+    if (g.mantido_assinado) {
+      // já existe uma versão ASSINADA deste link: nada mudou (nem o texto preparado). Nada é dito do arquivo
+      // gravado (nome, tamanho): o que está lá não é o que foi baixado agora.
+      return sucesso(
+        {
+          oportunidade_id: id,
+          arquivo_id: g.arquivo_id,
+          tipo,
+          substituiu: false,
+          ja_estava_anexado: false,
+          mantido_assinado: true,
+          baixado_de: baixadoDe,
+          redirecionamentos: baixado.saltos,
+          proximo_passo: null,
+          avisos: [AVISO_ASSINADO_MANTIDO],
+          link,
+        },
+        { alvo: id }
+      );
+    }
+
+    const avisos: string[] = [];
+    if (g.substituiu) {
+      avisos.push(tipo === "pdf" ? AVISO_TROCADO_PDF : AVISO_TROCADO);
+    } else {
+      // arquivo novo: entra na lista de arquivos da análise do edital (se ela já existe). Falhar aqui não
+      // desfaz o anexo: vai ao log (sem ref) e ao aviso
+      try {
+        await deps.db.rpc("edital_analise_anexar_arquivos", {
+          p_oportunidade_id: id,
+          p_arquivos: [{ arquivo_oportunidade_id: g.arquivo_id, nome, categoria }],
+        });
+      } catch (e) {
+        logarErro("anexar_edital_por_url", "ligar o edital à análise", e);
+        avisos.push(AVISO_SEM_LIGACAO);
+      }
+    }
+    await registrarNoHistorico(
+      deps.db,
+      id,
+      nomeDoUsuario(deps),
+      `Edital baixado pelo link pelo Claude: ${nome}`
+    );
+    return sucesso(
+      {
+        oportunidade_id: id,
+        arquivo_id: g.arquivo_id,
+        nome,
+        tipo,
+        tamanho: g.tamanho,
+        categoria,
+        substituiu: g.substituiu,
+        ja_estava_anexado: false,
+        baixado_de: baixadoDe,
+        redirecionamentos: baixado.saltos,
+        proximo_passo: tipo === "pdf" ? PROXIMO_PASSO_PDF : null,
+        avisos,
+        link,
+      },
+      { alvo: id }
+    );
+  },
+};
+
+export const FERRAMENTAS_HABILITACAO: Ferramenta[] = [
+  ANEXAR_HABILITACAO,
+  ANEXAR_ACERVO,
+  ANEXAR_EDITAL_POR_URL,
+];
 export const INSTRUCOES_HABILITACAO: string[] = [];
 export const PROMPTS_HABILITACAO: PromptDef[] = [];
