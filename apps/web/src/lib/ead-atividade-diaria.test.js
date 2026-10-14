@@ -121,6 +121,8 @@ describe("quais eventos contam para a janela do aluno", () => {
     const constantes = [
       "portal-funcionario/regras.ts",
       "portal-funcionario/declaracao-ambiente.ts",
+      // atividades interativas (Task 6): os eventos do questionário moram em constantes EVENTO_* deste módulo
+      "portal-funcionario/questionario.ts",
       "_shared/portal-funcionario.ts",
     ]
       .map(ler)
@@ -144,6 +146,9 @@ describe("quais eventos contam para a janela do aluno", () => {
     expect(gravados).toContain("avaliacao_iniciada");
     expect(gravados).toContain("certificado_assinado");
     expect(gravados).toContain("declaracao_ambiente");
+    // o questionário do módulo (Task 8): o início vem de uma constante, o envio também
+    expect(gravados).toContain("questionario_iniciado");
+    expect(gravados).toContain("questionario_envio");
 
     // o que o portal grava e NÃO é estudar: entrada e saída, declaração, certificado e dúvida
     const naoSaoEstudo = [
@@ -379,14 +384,17 @@ describe("janelasPorAlunoEDia", () => {
     expect(resumirAtividade(linhas).semDeclaracao).toBe(0);
   });
 
-  it("estudo é só aula, apostila, prova e conclusão: declaração, certificado e dúvida não contam", () => {
+  it("estudo é só aula, apostila, tarefa, questionário, prova e conclusão: declaração, certificado e dúvida não contam", () => {
     for (const nome of [
       "progresso_ajustado",
       "apostila_lida",
+      "tarefa_confirmada",
       "aula_concluida",
       "curso_concluido",
       "avaliacao_iniciada",
       "avaliacao_envio",
+      "questionario_iniciado",
+      "questionario_envio",
     ]) {
       const [linha] = janelasPorAlunoEDia([
         ev(nome, "2026-10-07T12:00:00Z", { matricula_id: "m1" }),

@@ -3326,6 +3326,33 @@ test("VOLUME_POR_ACAO: o teto deixa folga sobre o ritmo do portal (sinal a cada 
   assert.ok(MSG_MUITAS_ACOES.length > 0);
 });
 
+test("VOLUME_POR_ACAO.atividade: questionário e caso têm teto próprio (portal-atividade, 180 em 10 min)", async () => {
+  assert.deepEqual(VOLUME_POR_ACAO.atividade, {
+    escopo: "portal-atividade",
+    janelaSeg: 600,
+    max: 180,
+  });
+  // nenhum evento do navegador cai nele: o teto é só das ações das atividades
+  for (const nome of [
+    "abrir_aula",
+    "play",
+    "abrir_curso",
+    "atividade",
+    "questionario_abrir",
+    undefined,
+  ]) {
+    assert.notEqual(acaoDeVolumeDoEvento(nome), "atividade", String(nome));
+  }
+  // estourar o das atividades não trava o progresso nem a troca de aula
+  const admin = limitadorFalso();
+  for (let i = 0; i < VOLUME_POR_ACAO.atividade.max; i++) {
+    assert.equal(await volumeComLimitador(admin, "atividade", "func-1"), true);
+  }
+  assert.equal(await volumeComLimitador(admin, "atividade", "func-1"), false);
+  assert.equal(await volumeComLimitador(admin, "progresso", "func-1"), true);
+  assert.equal(await volumeComLimitador(admin, "abrir_aula", "func-1"), true);
+});
+
 // --------------------------------- trava otimista em ultimo_sinal_em (T31)
 type Filtro = [string, string, unknown];
 

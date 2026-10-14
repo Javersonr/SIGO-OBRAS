@@ -211,3 +211,139 @@ test("certificado: requisitos com as aulas, todas as questões e os roteiros; at
   assert.ok(congela > c.indexOf("const dados = {"), "dentro do `dados` do certificado");
   assert.ok(congela < c.indexOf("hashDoCertificado("), "antes do hash");
 });
+
+// ---------------------------------------------------------------------- Task 8: questionário do módulo
+
+test("leituras de apoio: o último questionario_iniciado e o tempo da aula, só desta matrícula, aula e empresa", () => {
+  const inicio = codigo.indexOf("const ultimoInicioDoQuestionario = ");
+  assert.ok(inicio > 0, "ultimoInicioDoQuestionario não encontrada");
+  const ultimo = codigo.slice(inicio, codigo.indexOf(".maybeSingle()", inicio));
+  assert.match(ultimo, /\.from\("treinamento_evento"\)/);
+  assert.match(ultimo, /\.eq\("matricula_id", mat\.id\)/);
+  assert.match(ultimo, /\.eq\("aula_id", aulaId\)/);
+  assert.match(ultimo, /\.eq\("empresa_id", empresaId\)/);
+  assert.match(ultimo, /\.eq\("evento", EVENTO_QUESTIONARIO_INICIADO\)/);
+  assert.match(ultimo, /\.order\("id", \{ ascending: false \}\)\s*\.limit\(1\)/);
+  const tempo = definicao("tempoDaAula");
+  assert.match(tempo, /\.from\("treinamento_progresso"\)\s*\.select\("segundos_assistidos"\)/);
+  assert.match(tempo, /\.eq\("matricula_id", mat\.id\)/);
+  assert.match(tempo, /\.eq\("aula_id", aulaId\)/);
+  assert.match(tempo, /\.eq\("empresa_id", empresaId\)/);
+  assert.match(tempo, /if \(error\) \{[\s\S]*?return null;/);
+});
+
+test("questionario_abrir: teto de atividade, preparo sem gabarito e a mesma tentativa reabre com o mesmo sorteio", () => {
+  const a = trechoDaAcao("questionario_abrir");
+  const limite = a.indexOf('if (!(await dentroDoLimite("atividade"))) return muitasAcoes();');
+  assert.ok(limite >= 0, "sem o teto de atividade");
+  assert.ok(limite < a.indexOf("minhaMatricula(body.matricula_id)"));
+  assert.match(
+    a,
+    /const preparo = await prepararQuestionario\(supabase, mat, body\.aula_id, empresaId, false\);\s*if \(preparo\.falha\) return recusaDaProva\(preparo\.falha\);/
+  );
+  // concluída: a melhor nota e as tentativas, sem sorteio novo
+  const concluida = a.indexOf("if (preparo.concluida)");
+  assert.ok(concluida > 0 && concluida < a.indexOf("sortearProva("));
+  assert.match(
+    a.slice(concluida, concluida + 300),
+    /concluida: true,[\s\S]*melhor_nota: preparo\.melhorNota,[\s\S]*tentativas: preparo\.usadas/
+  );
+  assert.match(a, /const numero = preparo\.usadas \+ 1;/);
+  assert.match(
+    a,
+    /inicio && inicio\.tentativa === numero \? provaDaOrdem\(questoes, inicio\.ordem\) : null/
+  );
+  assert.match(a, /sortearProva\(questoes, inteiroAleatorioSeguro\)/);
+  // o início vai à trilha com a aula, no formato do avaliacao_iniciada, sem tempo mínimo; sem a linha, não abre
+  const evento = a.indexOf("evento: EVENTO_QUESTIONARIO_INICIADO");
+  assert.ok(evento > a.indexOf("sortearProva("));
+  const gravacao = a.slice(evento, evento + 400);
+  assert.match(gravacao, /aula_id: aula\.id/);
+  assert.match(gravacao, /detalheDaProvaIniciada\(\{[\s\S]*tempoMinimoPorQuestaoSeg: 0/);
+  assert.match(a, /if \(!gravou\) return fail\([^)]*503\)/);
+  // o aluno recebe só o texto: nada de gabarito no trecho
+  assert.doesNotMatch(a, /correta|comentario/);
+  assert.match(a, /questoes: prova\.map\(\(\{ id, pergunta, opcoes, ordem_opcoes \}\) => \(\{/);
+});
+
+test("questionario_enviar: valida contra o sorteio, corrige com a nota do módulo, grava a tentativa e só o aprovado conclui", () => {
+  const e = trechoDaAcao("questionario_enviar");
+  const pos = (alvo: string | RegExp) =>
+    typeof alvo === "string" ? e.indexOf(alvo) : e.search(alvo);
+  assert.ok(pos('if (!(await dentroDoLimite("atividade"))) return muitasAcoes();') >= 0);
+  assert.ok(pos("dentroDoLimite(") < pos("minhaMatricula("));
+  assert.match(
+    e,
+    /const preparo = await prepararQuestionario\(supabase, mat, body\.aula_id, empresaId, true\);\s*if \(preparo\.falha\) return recusaDaProva\(preparo\.falha\);/
+  );
+  assert.match(
+    e,
+    /if \(preparo\.concluida\) \{?\s*return fail\([^)]*409,\s*\{\s*codigo: "QUESTIONARIO_CONCLUIDO"/
+  );
+  // o início desta tentativa é lido antes de qualquer gravação; erro de leitura = 503
+  assert.match(e, /ultimoInicioDoQuestionario\(mat, aula\.id\)/);
+  assert.match(e, /if \(erroLeitura\) \{?\s*return fail\([\s\S]{0,120}?503\)/);
+  // a regra da prova, sem tempo mínimo, com a mensagem do questionário
+  assert.match(e, /validarEnvio\(\{[\s\S]*?tempoMinimoPorQuestaoSeg: 0,?\s*\}\)/);
+  assert.match(e, /fail\(mensagemDoEnvio\(envio\.codigo, envio\.mensagem\), envio\.status/);
+  assert.match(e, /const notaMinima = notaMinimaDoModulo\(curso\);/);
+  assert.match(e, /corrigirProva\(\{[\s\S]*?notaMinima,?\s*\}\)/);
+  // a tentativa é imutável e numerada por matrícula e aula: o envio duplo é 409
+  const insert = pos(/\.from\("treinamento_questionario_tentativa"\)\s*\.insert\(\{/);
+  assert.ok(insert > pos("corrigirProva("));
+  const linha = e.slice(insert, e.indexOf("});", insert));
+  for (const campo of [
+    "empresa_id: empresaId",
+    "matricula_id: mat.id",
+    "curso_id: mat.curso_id",
+    "aula_id: aula.id",
+    "funcionario_id: funcionarioId",
+    "numero,",
+    "acertos,",
+    "aprovada,",
+    "...origemDaRequisicao(req)",
+  ]) {
+    assert.ok(linha.includes(campo), campo);
+  }
+  assert.match(e, /tErr\.code === "23505"[\s\S]{0,200}409/);
+  // trilha e conclusão depois da tentativa gravada; só o aprovado conclui a aula
+  const envio = pos("evento: EVENTO_QUESTIONARIO_ENVIO");
+  assert.ok(envio > insert);
+  assert.match(e.slice(envio, envio + 200), /detalhe: \{ tentativa: numero, nota, aprovada \}/);
+  assert.equal((e.match(/concluirAula\(/g) ?? []).length, 1);
+  assert.ok(pos("concluirAula(") > envio);
+  // o tempo de tela é lido o mais perto possível da conclusão: logo antes de concluirAula, dentro do aprovado e
+  // depois da tentativa gravada (um sinal de progresso no meio do caminho não pode fazer o tempo voltar atrás)
+  assert.equal((e.match(/tempoDaAula\(/g) ?? []).length, 1);
+  assert.match(
+    e,
+    /if \(aprovada\) \{\s*const segundos = await tempoDaAula\(mat, aula\.id\);\s*const fim = segundos === null \? null : await concluirAula\(mat, aula, segundos, null\);/
+  );
+  assert.ok(pos("tempoDaAula(") > envio);
+  // leitura do tempo com erro: a tentativa já está gravada, então a resposta é a da conclusão que não saiu
+  assert.match(
+    e,
+    /if \(!fim\) \{\s*return fail\(\s*"Sua tentativa foi registrada[^"]*",\s*500\s*\);/
+  );
+  // a resposta é a da regra, com a correção comentada aprovado ou não (A2)
+  assert.match(
+    e,
+    /respostaDoQuestionario\(\{[\s\S]*?revisao: revisaoDoQuestionario\(questoes, acertou\)/
+  );
+});
+
+test("o navegador não grava os eventos do questionário, da tarefa e da leitura (fora de EVENTOS_CLIENTE)", () => {
+  const original = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+  const inicio = original.indexOf("const EVENTOS_CLIENTE = new Set([");
+  const lista = original.slice(inicio, original.indexOf("]);", inicio));
+  assert.ok(lista.length > 50, "a lista de eventos do navegador não foi lida");
+  for (const evento of [
+    "questionario_iniciado",
+    "questionario_envio",
+    "tarefa_confirmada",
+    "apostila_lida",
+    "aula_concluida",
+  ]) {
+    assert.equal(lista.includes(evento), false, evento);
+  }
+});

@@ -28,6 +28,9 @@
  *   iniciar_avaliacao { matricula_id }          → sorteia a prova NO SERVIDOR (sem gabarito)
  *   avaliacao { matricula_id, respostas:[{questao_id,resposta}] }  (exige iniciar_avaliacao antes; quem
  *     reprova na ÚLTIMA tentativa avisa o RH no sino via `notificar_gestores`, T24: ver avisos.ts)
+ *   questionario_abrir { matricula_id, aula_id } → sorteia (ou retoma) a tentativa do questionário do módulo
+ *   questionario_enviar { matricula_id, aula_id, respostas } → corrige com a nota mínima do módulo, grava a tentativa
+ *     e devolve a correção comentada aprovado ou não; aprovado conclui a aula (questionario.ts)
  *   certificado { matricula_id, senha }          ciencia { ciencia_id }
  *   declarar_ambiente { matricula_id, versao, local_adequado, horario_reservado, sem_outra_atividade } → T35: na 1ª
  *     abertura do curso em cada dia (Brasília) o aluno confirma a orientação do RT e os três itens (local adequado,
@@ -243,6 +246,15 @@ import {
 } from "./regras.ts";
 import { concluirSeCompleto, situacaoReal, trilhaDoCurso } from "./conclusao.ts";
 import { prepararProva, type RecusaDaProva } from "./prova.ts";
+import {
+  EVENTO_QUESTIONARIO_ENVIO,
+  EVENTO_QUESTIONARIO_INICIADO,
+  mensagemDoEnvio,
+  notaMinimaDoModulo,
+  prepararQuestionario,
+  respostaDoQuestionario,
+  revisaoDoQuestionario,
+} from "./questionario.ts";
 import {
   consumirTentativa,
   ipDaRequisicao,
@@ -1151,6 +1163,27 @@ Deno.serve(
         precisa_avaliacao: resultado.precisaAvaliacao && !mat.avaliacao_aprovada,
         status: resultado.status,
       };
+    };
+
+    /**
+     * O tempo de tela já creditado à aula nesta matrícula (quem credita é o `progresso`; o questionário e o caso
+     * concluem pelas ações próprias e levam esse tempo ao progresso concluído e à trilha). null = leitura com erro:
+     * quem chama não conclui a aula com um tempo que não leu.
+     */
+    // deno-lint-ignore no-explicit-any
+    const tempoDaAula = async (mat: any, aulaId: string): Promise<number | null> => {
+      const { data, error } = await supabase
+        .from("treinamento_progresso")
+        .select("segundos_assistidos")
+        .eq("matricula_id", mat.id)
+        .eq("aula_id", aulaId)
+        .eq("empresa_id", empresaId)
+        .maybeSingle();
+      if (error) {
+        console.error("[portal-funcionario] tempo da aula:", error.message);
+        return null;
+      }
+      return Math.max(0, Math.floor(Number(data?.segundos_assistidos) || 0));
     };
 
     // ---------------------------------------------------------------- dados
@@ -2565,6 +2598,209 @@ Deno.serve(
         }
       }
       return ok({ duvida, tutor_avisado: tutorAvisado });
+    }
+
+    // ------------------------------------------------------ questionário do módulo
+    // A2: estudo guiado. `questionario_abrir` confere a aula (do curso, do tipo, liberada), sorteia questões e
+    // alternativas no servidor (o mesmo sorteio da prova) e grava o início na trilha (`questionario_iniciado`); reabrir
+    // a mesma tentativa mantém o sorteio. `questionario_enviar` valida contra esse sorteio (sem tempo mínimo), corrige
+    // com a nota mínima dos módulos, grava a tentativa (imutável) e devolve a correção comentada aprovado ou não;
+    // aprovado conclui a aula por `concluirAula`. Tentativas livres, sem limite e sem intervalo.
+
+    /** O último início do questionário desta aula nesta matrícula (a linha da trilha), ou erro de leitura. */
+    // deno-lint-ignore no-explicit-any
+    const ultimoInicioDoQuestionario = (mat: any, aulaId: string) =>
+      supabase
+        .from("treinamento_evento")
+        .select("created_at, detalhe")
+        .eq("matricula_id", mat.id)
+        .eq("aula_id", aulaId)
+        .eq("empresa_id", empresaId)
+        .eq("evento", EVENTO_QUESTIONARIO_INICIADO)
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (body.acao === "questionario_abrir") {
+      if (!(await dentroDoLimite("atividade"))) return muitasAcoes();
+      const mat = await minhaMatricula(body.matricula_id);
+      if (!mat || !body.aula_id) return fail("Matrícula não encontrada", 404);
+      const preparo = await prepararQuestionario(supabase, mat, body.aula_id, empresaId, false);
+      if (preparo.falha) return recusaDaProva(preparo.falha);
+      const notaMinima = notaMinimaDoModulo(preparo.curso);
+      // aula concluída: o aluno vê a melhor nota e quantas tentativas fez; não há tentativa nova
+      if (preparo.concluida) {
+        return ok({
+          concluida: true,
+          nota_minima: notaMinima,
+          melhor_nota: preparo.melhorNota,
+          tentativas: preparo.usadas,
+        });
+      }
+      const { questoes, aula } = preparo;
+      const numero = preparo.usadas + 1;
+
+      // Questionário já aberto nesta tentativa (recarregou a página): mesmo sorteio e mesma hora, sem outro evento.
+      // Se o RH mexeu nas questões nesse meio tempo, a ordem gravada não confere e o sorteio é refeito.
+      const { data: gravado, error: erroLeitura } = await ultimoInicioDoQuestionario(mat, aula.id);
+      if (erroLeitura) return fail("Não foi possível abrir o questionário. Tente de novo.", 503);
+      const inicio = inicioDaProva(gravado);
+      let prova =
+        inicio && inicio.tentativa === numero ? provaDaOrdem(questoes, inicio.ordem) : null;
+      if (!prova) {
+        prova = sortearProva(questoes, inteiroAleatorioSeguro);
+        const gravou = await ev({
+          evento: EVENTO_QUESTIONARIO_INICIADO,
+          matricula_id: mat.id,
+          curso_id: mat.curso_id,
+          aula_id: aula.id,
+          detalhe: detalheDaProvaIniciada({
+            tentativa: numero,
+            agora: Date.now(),
+            prova,
+            tempoMinimoPorQuestaoSeg: 0,
+          }),
+        });
+        // sem o início na trilha o envio seria recusado: melhor nem abrir
+        if (!gravou) return fail("Não foi possível abrir o questionário. Tente de novo.", 503);
+      }
+
+      return ok({
+        concluida: false,
+        tentativa: numero,
+        nota_minima: notaMinima,
+        // só o que o aluno vê: o gabarito só vai na correção desta tentativa
+        questoes: prova.map(({ id, pergunta, opcoes, ordem_opcoes }) => ({
+          id,
+          pergunta,
+          opcoes,
+          ordem_opcoes,
+        })),
+      });
+    }
+
+    if (body.acao === "questionario_enviar") {
+      if (!(await dentroDoLimite("atividade"))) return muitasAcoes();
+      const mat = await minhaMatricula(body.matricula_id);
+      if (!mat || !body.aula_id) return fail("Matrícula não encontrada", 404);
+      const preparo = await prepararQuestionario(supabase, mat, body.aula_id, empresaId, true);
+      if (preparo.falha) return recusaDaProva(preparo.falha);
+      if (preparo.concluida) {
+        return fail("Este questionário já foi concluído", 409, {
+          codigo: "QUESTIONARIO_CONCLUIDO",
+        });
+      }
+      const { questoes, curso, aula } = preparo;
+      const numero = preparo.usadas + 1;
+
+      // o início desta tentativa é lido ANTES de gravar (o tempo de tela, só na hora de concluir a aula)
+      const { data: gravado, error: erroLeitura } = await ultimoInicioDoQuestionario(mat, aula.id);
+      if (erroLeitura) {
+        return fail("Não foi possível conferir o questionário. Tente de novo.", 503);
+      }
+      const envio = validarEnvio({
+        questoes,
+        respostas: body.respostas,
+        inicio: inicioDaProva(gravado),
+        numero,
+        agora: Date.now(),
+        tempoMinimoPorQuestaoSeg: 0,
+      });
+      if (!envio.ok) {
+        return fail(mensagemDoEnvio(envio.codigo, envio.mensagem), envio.status, {
+          codigo: envio.codigo,
+          ...envio.extra,
+        });
+      }
+
+      // a ordem exibida é a que o SERVIDOR sorteou (não a que o navegador diz ter mostrado)
+      const exibicao = new Map(
+        envio.prova.map((q, i) => [q.id, { posicao: i + 1, ordem_opcoes: q.ordem_opcoes }])
+      );
+      const notaMinima = notaMinimaDoModulo(curso);
+      const { marcada, acertou, acertos, nota, aprovada } = corrigirProva({
+        questoes,
+        respostas: envio.respostas,
+        notaMinima,
+      });
+
+      // o mesmo formato de `treinamento_tentativa` (prova e respostas), mais a aula do questionário
+      const { error: tErr } = await supabase.from("treinamento_questionario_tentativa").insert({
+        empresa_id: empresaId,
+        matricula_id: mat.id,
+        curso_id: mat.curso_id,
+        aula_id: aula.id,
+        funcionario_id: funcionarioId,
+        numero,
+        // deno-lint-ignore no-explicit-any
+        prova: questoes.map((q: any) => ({
+          questao_id: q.id,
+          ordem: q.ordem,
+          pergunta: q.pergunta,
+          opcoes: q.opcoes,
+          correta: q.correta,
+        })),
+        // deno-lint-ignore no-explicit-any
+        respostas: questoes.map((q: any) => ({
+          questao_id: q.id,
+          resposta: marcada.get(q.id) ?? null,
+          acertou: acertou(q),
+          posicao_exibida: exibicao.get(q.id)?.posicao ?? null,
+          ordem_opcoes_exibida: exibicao.get(q.id)?.ordem_opcoes ?? null,
+        })),
+        acertos,
+        total: questoes.length,
+        nota,
+        aprovada,
+        ...origemDaRequisicao(req),
+      });
+      if (tErr) {
+        // unique(matricula_id, aula_id, numero): envio duplo simultâneo (outra aba já gravou esta tentativa)
+        if (tErr.code === "23505") {
+          return fail("Esta tentativa já foi registrada — recarregue a página", 409, {
+            codigo: "TENTATIVA_REPETIDA",
+          });
+        }
+        console.error("[portal-funcionario] tentativa do questionário:", tErr);
+        return fail("Não foi possível registrar o questionário. Tente de novo.", 500);
+      }
+      await ev({
+        evento: EVENTO_QUESTIONARIO_ENVIO,
+        matricula_id: mat.id,
+        curso_id: mat.curso_id,
+        aula_id: aula.id,
+        detalhe: { tentativa: numero, nota, aprovada },
+      });
+
+      let cursoConcluido = false;
+      if (aprovada) {
+        // O tempo de tela vai ao progresso concluído (`concluirAula` grava o valor que recebe): lido AGORA, colado na
+        // conclusão, para um sinal do `progresso` no meio do caminho não fazer o tempo da aula voltar atrás.
+        const segundos = await tempoDaAula(mat, aula.id);
+        const fim = segundos === null ? null : await concluirAula(mat, aula, segundos, null);
+        // a tentativa aprovada já está gravada (imutável): sem a conclusão, o aluno abre de novo e refaz
+        if (!fim) {
+          return fail(
+            "Sua tentativa foi registrada, mas a aula não foi concluída agora. Abra o questionário de novo.",
+            500
+          );
+        }
+        cursoConcluido = fim.curso_concluido;
+      }
+
+      // A2: a correção comentada vai aprovado ou não (é estudo; a cobrança é a prova final)
+      return ok(
+        respostaDoQuestionario({
+          aprovada,
+          nota,
+          acertos,
+          total: questoes.length,
+          notaMinima,
+          tentativa: numero,
+          cursoConcluido,
+          revisao: revisaoDoQuestionario(questoes, acertou),
+        })
+      );
     }
 
     return fail("Ação desconhecida", 400);

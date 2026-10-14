@@ -17,6 +17,8 @@ const TABELAS_DA_TRILHA = [
   "treinamento_evento",
   "treinamento_tentativa",
   "treinamento_certificado",
+  // tentativas dos questionários dos módulos (0170): imutáveis como as da prova (trilha_imutavel)
+  "treinamento_questionario_tentativa",
 ];
 // o supabase-js escreve com insert/update/upsert/delete; só o insert é permitido na trilha
 const ESCRITAS_PROIBIDAS = new Set(["update", "upsert", "delete"]);

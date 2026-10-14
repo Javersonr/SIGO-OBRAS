@@ -1350,12 +1350,17 @@ export async function reconfirmarSenha(p: {
  *    dezenas em 10 min já é uso intenso.
  * Somados, o pior caso por funcionário é 570 em 10 min (abrir_aula 120 + player 300 + evento 150), pouco
  * mais de três vezes o teto único antigo.
+ *
+ * `atividade` (questionário e caso dos módulos: abrir, enviar, escolher e concluir) tem escopo próprio: cada
+ * clique no caso grava uma linha na trilha, e um caso longo com recuperação dá dezenas de cliques em poucos
+ * minutos. 180 em 10 min é o teto do progresso; estourar não trava o vídeo, a troca de aula nem o progresso.
  */
 export const VOLUME_POR_ACAO = {
   evento: { escopo: "portal-evento", janelaSeg: 10 * 60, max: 150 },
   abrir_aula: { escopo: "portal-abrir-aula", janelaSeg: 10 * 60, max: 120 },
   player: { escopo: "portal-player", janelaSeg: 10 * 60, max: 300 },
   progresso: { escopo: "portal-progresso", janelaSeg: 10 * 60, max: 180 },
+  atividade: { escopo: "portal-atividade", janelaSeg: 10 * 60, max: 180 },
 } as const;
 
 export type AcaoComVolume = keyof typeof VOLUME_POR_ACAO;
@@ -1365,7 +1370,9 @@ export type AcaoComVolume = keyof typeof VOLUME_POR_ACAO;
  * têm o seu; o resto, e qualquer nome desconhecido ou que nem é texto, cai no teto geral (`evento`).
  * Vem ANTES de validar o nome: um nome inventado também gasta o teto geral.
  */
-export function acaoDeVolumeDoEvento(nome: unknown): Exclude<AcaoComVolume, "progresso"> {
+export function acaoDeVolumeDoEvento(
+  nome: unknown
+): Exclude<AcaoComVolume, "progresso" | "atividade"> {
   if (nome === "abrir_aula") return "abrir_aula";
   if (nome === "play" || nome === "pausa") return "player";
   return "evento";
