@@ -115,6 +115,50 @@ export function modelosDaEmpresa(linhas) {
     });
 }
 
+/**
+ * Lista do editor (Acervo Técnico → Modelos de declaração): os seis padrão, SEMPRE e na ordem do
+ * código (inclusive o desativado, para dar para reativar), e depois os modelos próprios da empresa
+ * (ativos ou não), por ordem (nula por último) e título. Cada item: { chave, titulo, texto, ativo,
+ * ordem, padrao, id, situacao }, com `id` = a linha de modelo_declaracao (null = padrão sem linha) e
+ * `situacao` = "padrao" (sem linha), "editado" (linha com a chave do padrão), "desativado" (linha com
+ * ativo = false, de padrão ou de modelo próprio) ou "proprio" (modelo próprio ativo). `linhas` são as
+ * linhas vivas da empresa; objetos novos, nada é alterado no lugar.
+ */
+export function modelosParaEditor(linhas) {
+  const lista = (Array.isArray(linhas) ? linhas : []).filter(
+    (l) => l && typeof l.chave === "string" && l.chave
+  );
+  const doItem = (padrao, linha) => {
+    const ativo = linha ? linha.ativo !== false : true;
+    return {
+      chave: linha?.chave ?? padrao.chave,
+      titulo: typeof linha?.titulo === "string" ? linha.titulo : (padrao?.titulo ?? ""),
+      texto: typeof linha?.texto === "string" ? linha.texto : (padrao?.texto ?? ""),
+      ativo,
+      ordem: linha?.ordem ?? padrao?.ordem ?? null,
+      padrao: !!padrao,
+      id: linha?.id ?? null,
+      situacao: !ativo ? "desativado" : !linha ? "padrao" : padrao ? "editado" : "proprio",
+    };
+  };
+  const padroes = MODELOS_PADRAO.map((p) =>
+    doItem(
+      p,
+      lista.find((l) => l.chave === p.chave)
+    )
+  );
+  const proprios = lista
+    .filter((l) => !CHAVES_PADRAO.includes(l.chave))
+    .map((l) => doItem(null, l))
+    .sort((a, b) => {
+      const oa = ordemDe(a);
+      const ob = ordemDe(b);
+      if (oa !== ob) return oa < ob ? -1 : 1;
+      return a.titulo.localeCompare(b.titulo, "pt-BR");
+    });
+  return [...padroes, ...proprios];
+}
+
 const CAMPO_VAZIO = "________";
 
 /** Troca {variavel}; `sem_valor` = variáveis conhecidas que ficaram vazias; `desconhecidas` = {x} fora da lista. */
@@ -212,4 +256,37 @@ export function validarModelo(form, chavesEmUso) {
     erros,
     dados: { chave, titulo, texto, ativo: form?.ativo !== false },
   };
+}
+
+/**
+ * Mensagem para a pessoa quando gravar um modelo falha. As recusas vêm do banco (0156: índice único
+ * modelo_declaracao_chave_uidx e os CHECKs da tabela, mais a RLS da permissão); o resto cai em
+ * "Erro ao salvar" com o texto original, quando houver. O texto das validações da tela
+ * (validarModelo) é o mesmo dos CHECKs de chave, para a pessoa ler a mesma coisa nos dois casos.
+ * `update` que não acha a linha (outra pessoa a excluiu, ou a RLS a esconde) chega como PGRST116.
+ */
+export function mensagemDeErroAoSalvarModelo(erro) {
+  const msg = String(erro?.message ?? "");
+  if (msg.includes("modelo_declaracao_chave_uidx")) {
+    return "Já existe um modelo com este título (talvez criado agora por outra pessoa). Atualize a página e confira a lista.";
+  }
+  if (msg.includes("modelo_declaracao_chave_reservada_chk")) {
+    return 'O título não pode começar com "edital"';
+  }
+  if (msg.includes("modelo_declaracao_chave_check")) {
+    return "O título deve começar com uma letra e ter ao menos 2 caracteres";
+  }
+  if (msg.includes("modelo_declaracao_titulo_check")) {
+    return "Título: informe de 1 a 200 caracteres, com ao menos uma letra ou número";
+  }
+  if (msg.includes("modelo_declaracao_texto_check")) {
+    return "Texto: informe de 1 a 20.000 caracteres, sem deixar a declaração em branco";
+  }
+  if (msg.includes("row-level security") || msg.includes("permission denied")) {
+    return "Você não tem permissão para gravar os modelos (Oportunidades → Lista → editar).";
+  }
+  if (erro?.code === "PGRST116" || msg.includes("Cannot coerce the result")) {
+    return "Este modelo não existe mais, ou você não pode alterá-lo. Atualize a página e confira a lista.";
+  }
+  return "Erro ao salvar" + (msg ? `: ${msg}` : "");
 }

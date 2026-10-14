@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   chaveDoTitulo,
+  mensagemDeErroAoSalvarModelo,
   MODELOS_PADRAO,
   modelosDaEmpresa,
+  modelosParaEditor,
   preencherModelo,
   validarModelo,
 } from "./declaracoes-modelos";
@@ -129,5 +131,199 @@ describe("modelos de declaração (tela)", () => {
       sem_valor: [],
       desconhecidas: [],
     });
+  });
+});
+
+describe("mensagemDeErroAoSalvarModelo (recusas do banco, 0156)", () => {
+  const erro = (message, code) => ({ message, code });
+  it("chave repetida entre os modelos vivos da empresa (23505)", () => {
+    expect(
+      mensagemDeErroAoSalvarModelo(
+        erro(
+          'duplicate key value violates unique constraint "modelo_declaracao_chave_uidx"',
+          "23505"
+        )
+      )
+    ).toBe(
+      "Já existe um modelo com este título (talvez criado agora por outra pessoa). Atualize a página e confira a lista."
+    );
+  });
+  it("CHECK da chave e chave reservada (edital_)", () => {
+    expect(
+      mensagemDeErroAoSalvarModelo(
+        erro(
+          'new row for relation "modelo_declaracao" violates check constraint "modelo_declaracao_chave_check"'
+        )
+      )
+    ).toBe("O título deve começar com uma letra e ter ao menos 2 caracteres");
+    expect(
+      mensagemDeErroAoSalvarModelo(
+        erro(
+          'new row for relation "modelo_declaracao" violates check constraint "modelo_declaracao_chave_reservada_chk"'
+        )
+      )
+    ).toBe('O título não pode começar com "edital"');
+  });
+  it("CHECK do título e do texto (tamanho e texto em branco)", () => {
+    expect(
+      mensagemDeErroAoSalvarModelo(
+        erro(
+          'new row for relation "modelo_declaracao" violates check constraint "modelo_declaracao_titulo_check"'
+        )
+      )
+    ).toBe("Título: informe de 1 a 200 caracteres, com ao menos uma letra ou número");
+    expect(
+      mensagemDeErroAoSalvarModelo(
+        erro(
+          'new row for relation "modelo_declaracao" violates check constraint "modelo_declaracao_texto_check"'
+        )
+      )
+    ).toBe("Texto: informe de 1 a 20.000 caracteres, sem deixar a declaração em branco");
+  });
+  it("permissão: RLS ou permission denied", () => {
+    const esperado =
+      "Você não tem permissão para gravar os modelos (Oportunidades → Lista → editar).";
+    expect(
+      mensagemDeErroAoSalvarModelo(
+        erro('new row violates row-level security policy for table "modelo_declaracao"', "42501")
+      )
+    ).toBe(esperado);
+    expect(
+      mensagemDeErroAoSalvarModelo(erro("permission denied for table modelo_declaracao", "42501"))
+    ).toBe(esperado);
+  });
+  it("alterar uma linha que sumiu ou que a RLS esconde (PGRST116)", () => {
+    const esperado =
+      "Este modelo não existe mais, ou você não pode alterá-lo. Atualize a página e confira a lista.";
+    expect(
+      mensagemDeErroAoSalvarModelo(
+        erro("JSON object requested, multiple (or no) rows returned", "PGRST116")
+      )
+    ).toBe(esperado);
+    expect(
+      mensagemDeErroAoSalvarModelo(erro("Cannot coerce the result to a single JSON object"))
+    ).toBe(esperado);
+  });
+  it("qualquer outra: 'Erro ao salvar' com a mensagem quando houver", () => {
+    expect(mensagemDeErroAoSalvarModelo(erro("falha de rede"))).toBe(
+      "Erro ao salvar: falha de rede"
+    );
+    expect(mensagemDeErroAoSalvarModelo(new Error("boom"))).toBe("Erro ao salvar: boom");
+    expect(mensagemDeErroAoSalvarModelo({})).toBe("Erro ao salvar");
+    expect(mensagemDeErroAoSalvarModelo(null)).toBe("Erro ao salvar");
+    expect(mensagemDeErroAoSalvarModelo(undefined)).toBe("Erro ao salvar");
+  });
+});
+
+describe("modelosParaEditor (lista do cartão Modelos de declaração)", () => {
+  const ID_1 = "00000000-0000-4000-8000-000000000001";
+  const ID_2 = "00000000-0000-4000-8000-000000000002";
+  const ID_3 = "00000000-0000-4000-8000-000000000003";
+  const ID_4 = "00000000-0000-4000-8000-000000000004";
+
+  it("sem linhas: os seis padrão, na ordem do código, sem id e com a situação 'padrao'", () => {
+    const lista = modelosParaEditor([]);
+    expect(lista.map((m) => m.chave)).toEqual(MODELOS_PADRAO.map((m) => m.chave));
+    for (const [i, item] of lista.entries()) {
+      expect(item).toEqual({
+        chave: MODELOS_PADRAO[i].chave,
+        titulo: MODELOS_PADRAO[i].titulo,
+        texto: MODELOS_PADRAO[i].texto,
+        ativo: true,
+        ordem: MODELOS_PADRAO[i].ordem,
+        padrao: true,
+        id: null,
+        situacao: "padrao",
+      });
+    }
+    // aceita entrada que não é lista
+    expect(modelosParaEditor(undefined)).toHaveLength(6);
+    expect(modelosParaEditor(null)).toHaveLength(6);
+  });
+  it("linha com a chave de um padrão: 'editado', com o título e o texto da linha", () => {
+    const lista = modelosParaEditor([
+      {
+        id: ID_1,
+        chave: "me_epp",
+        titulo: "ME/EPP da casa",
+        texto: "Texto {empresa}",
+        ativo: true,
+        ordem: 3,
+      },
+    ]);
+    expect(lista).toHaveLength(6);
+    const item = lista.find((m) => m.chave === "me_epp");
+    expect(item).toEqual({
+      chave: "me_epp",
+      titulo: "ME/EPP da casa",
+      texto: "Texto {empresa}",
+      ativo: true,
+      ordem: 3,
+      padrao: true,
+      id: ID_1,
+      situacao: "editado",
+    });
+    // a posição continua a do padrão
+    expect(lista.map((m) => m.chave)).toEqual(MODELOS_PADRAO.map((m) => m.chave));
+    // os outros cinco seguem 'padrao'
+    expect(lista.filter((m) => m.situacao === "padrao")).toHaveLength(5);
+  });
+  it("linha de padrão com ativo = false: 'desativado' (continua na lista, e ordem nula cai na do padrão)", () => {
+    const lista = modelosParaEditor([
+      { id: ID_2, chave: "reserva_cargos", titulo: "T", texto: "X", ativo: false, ordem: null },
+    ]);
+    const item = lista.find((m) => m.chave === "reserva_cargos");
+    expect(item.situacao).toBe("desativado");
+    expect(item.ativo).toBe(false);
+    expect(item.padrao).toBe(true);
+    expect(item.id).toBe(ID_2);
+    expect(item.ordem).toBe(5);
+  });
+  it("modelos próprios vêm depois dos padrão, por ordem (nula por último) e título", () => {
+    const lista = modelosParaEditor([
+      {
+        id: ID_1,
+        chave: "visita_tecnica",
+        titulo: "Visita técnica",
+        texto: "A",
+        ativo: true,
+        ordem: null,
+      },
+      { id: ID_2, chave: "anexo_v", titulo: "Anexo V", texto: "B", ativo: true, ordem: null },
+      { id: ID_3, chave: "primeiro", titulo: "Zeta", texto: "C", ativo: true, ordem: 10 },
+      { id: ID_4, chave: "inativo", titulo: "Antigo", texto: "D", ativo: false, ordem: 11 },
+    ]);
+    expect(lista.slice(0, 6).every((m) => m.padrao)).toBe(true);
+    const proprios = lista.slice(6);
+    expect(proprios.map((m) => m.chave)).toEqual([
+      "primeiro",
+      "inativo",
+      "anexo_v",
+      "visita_tecnica",
+    ]);
+    expect(proprios.map((m) => m.situacao)).toEqual([
+      "proprio",
+      "desativado",
+      "proprio",
+      "proprio",
+    ]);
+    for (const m of proprios) expect(m.padrao).toBe(false);
+    expect(proprios[0].id).toBe(ID_3);
+  });
+  it("ignora linha sem chave e não mexe em MODELOS_PADRAO nem na lista recebida", () => {
+    const linhas = [
+      null,
+      undefined,
+      { id: ID_1, chave: "", titulo: "Sem chave", texto: "x", ativo: true },
+      { id: ID_2, titulo: "Sem chave", texto: "x", ativo: true },
+      { id: ID_3, chave: "me_epp", titulo: "Editado", texto: "y", ativo: true, ordem: 3 },
+    ];
+    const copia = JSON.stringify(linhas);
+    const lista = modelosParaEditor(linhas);
+    expect(lista).toHaveLength(6);
+    expect(JSON.stringify(linhas)).toBe(copia);
+    lista[0].texto = "mexido por quem chamou";
+    expect(MODELOS_PADRAO[0].texto).not.toBe("mexido por quem chamou");
+    expect(modelosParaEditor([])[0].texto).not.toBe("mexido por quem chamou");
   });
 });
