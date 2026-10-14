@@ -301,8 +301,10 @@ export const PARAMETROS_GRAVAR_ARQUIVO: readonly string[] = Object.freeze([
  * recusaria.
  *  - conjunto de parâmetros diferente dos 11 → PGRST202 ("Could not find the function …");
  *  - 22023: empresa/oportunidade nulas; origem sem caractere visível ou acima de 200; nome sem caractere
- *    visível; url fora de "anexos-oportunidade/<empresa>/<algo>" ou com SEGMENTO "." ou ".." ("Ltda..pdf"
- *    passa); assinatura diferente de nulo/"pendente".
+ *    visível; url fora de "anexos-oportunidade/<empresa>/<algo>", com SEGMENTO "." ou ".." ("Ltda..pdf"
+ *    passa) ou com qualquer caractere fora da LISTA BRANCA [A-Za-z0-9._/-] (tab, LF, CR, barra invertida,
+ *    "%", espaço, acento…: o parser de URL do storage-js apaga tab/LF/CR e ".<tab>." viraria "..");
+ *    assinatura diferente de nulo/"pendente".
  */
 export function recusaGravarArquivo(c: ChamadaFake): RespostaFake | null {
   const p = (c.payload ?? {}) as Record<string, unknown>;
@@ -333,7 +335,8 @@ export function recusaGravarArquivo(c: ChamadaFake): RespostaFake | null {
     typeof url !== "string" ||
     !url.startsWith(prefixo) ||
     url.length <= prefixo.length ||
-    /(^|\/)\.{1,2}(\/|$)/.test(url)
+    /(^|\/)\.{1,2}(\/|$)/.test(url) ||
+    !/^[A-Za-z0-9._/-]+$/.test(url)
   ) {
     return recusa("arquivo fora da pasta da empresa");
   }
@@ -348,8 +351,8 @@ export function recusaGravarArquivo(c: ChamadaFake): RespostaFake | null {
  *  - confere o CONJUNTO de parâmetros (exatamente os 11 da função SQL): nome a mais, a menos ou errado →
  *    erro PGRST202, como o PostgREST responderia em produção (recusaGravarArquivo);
  *  - recusa (erro 22023) empresa/oportunidade nulas, origem ou nome sem caractere visível, origem acima de
- *    200, url fora de "anexos-oportunidade/<empresa>/<algo>" ou com SEGMENTO "." ou ".." ("Ltda..pdf" passa)
- *    e assinatura diferente de nulo/"pendente";
+ *    200, url fora de "anexos-oportunidade/<empresa>/<algo>", com SEGMENTO "." ou ".." ("Ltda..pdf" passa)
+ *    ou com caractere fora da lista branca [A-Za-z0-9._/-], e assinatura diferente de nulo/"pendente";
  *  - oportunidade de outra empresa, excluída ou inexistente → { ok: false, motivo: "nao_encontrada" };
  *  - procura o arquivo por (empresa, oportunidade, origem) entre as linhas vivas;
  *  - assinado → mantido (nada muda, o texto fica); senão troca no lugar (mesmo id, ref_anterior = a url

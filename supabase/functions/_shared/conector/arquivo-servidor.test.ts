@@ -21,12 +21,20 @@ import {
   TIPOS_EDITAL,
   tipoPelosBytesServidor,
 } from "./arquivo-servidor.ts";
-import { camadaDaEmpresa, ErroCamada, storageDaEmpresa } from "./camada-empresa.ts";
+import { caminhoDoEnvio } from "./envio-regras.ts";
+import {
+  camadaDaEmpresa,
+  caminhoSeguroDaEmpresa,
+  ErroCamada,
+  storageDaEmpresa,
+  type StorageConector,
+} from "./camada-empresa.ts";
 import {
   criarBancoArquivosFake,
   criarFakeAdmin,
   imitarGravarArquivo,
   PARAMETROS_GRAVAR_ARQUIVO,
+  recusaGravarArquivo,
   type ArquivoOportunidadeFake,
   type ChamadaFake,
   type ChamadaStorageFake,
@@ -137,6 +145,63 @@ test("caminhoDaEmpresa: recusa segmento '.' e '..', mas aceita '..' dentro de um
   assert.equal(caminhoDaEmpresa(undefined, "certificados", E), null);
   assert.equal(caminhoDaEmpresa(42, "certificados", E), null);
   assert.equal(caminhoDaEmpresa(`certificados/${E}`, "certificados", E), null);
+});
+
+/**
+ * Caminhos que o parser de URL (que o storage-js usa para montar o pedido) mexe: ele REMOVE tab, LF e CR
+ * de qualquer ponto e tira espaço e controle do fim da URL, então ".\t." vira ".." e sai da pasta da
+ * empresa. Mais os caracteres de controle em geral. Todos têm de ser recusados pelas duas camadas.
+ */
+const caminhosHostis = (e: string, outra: string): [string, string][] => [
+  ["TAB entre pontos (vira ..)", `${e}/.\t./${outra}/a.pdf`],
+  ["LF entre pontos", `${e}/.\n./${outra}/a.pdf`],
+  ["CR entre pontos", `${e}/.\r./${outra}/a.pdf`],
+  ["TAB depois de ..", `${e}/..\t/${outra}/a.pdf`],
+  ["TAB antes de ..", `${e}/\t../${outra}/a.pdf`],
+  ["LF no ponto único", `${e}/.\n/a.pdf`],
+  ["termina em .. com espaço", `${e}/.. `],
+  ["termina em .. depois de um segmento, com espaço", `${e}/a/.. `],
+  ["termina em .. com TAB", `${e}/a/..\t`],
+  ["termina em . com LF", `${e}/a/.\n`],
+  ["NUL no nome", `${e}/a\u0000b.pdf`],
+  ["DEL no nome", `${e}/a\u007fb.pdf`],
+  ["NEL (U+0085) no nome", `${e}/a\u0085b.pdf`],
+  ["controle C1 (U+009F) no nome", `${e}/a\u009fb.pdf`],
+  ["TAB no meio de um nome comum", `${e}/a\tb.pdf`],
+  ["LF no meio de um nome", `${e}/a\nb.pdf`],
+  ["CR no meio de um nome", `${e}/a\rb.pdf`],
+  ["TAB no fim", `${e}/a.pdf\t`],
+  ["LF no fim", `${e}/a.pdf\n`],
+  ["espaço no fim", `${e}/a.pdf `],
+  ["TAB no começo", `\t${e}/a.pdf`],
+  ["espaço no começo", ` ${e}/a.pdf`],
+  ["LF no começo", `\n${e}/a.pdf`],
+  ["TAB no meio da empresa", `${e.slice(0, 8)}\t${e.slice(8)}/a.pdf`],
+  ["TAB depois da empresa", `${e}\t/a.pdf`],
+];
+
+test("caminhoDaEmpresa: recusa TAB, LF, CR e controle (o parser de URL apagaria e '.\\t.' viraria '..')", () => {
+  for (const [rotulo, caminho] of caminhosHostis(E, OUTRA)) {
+    assert.equal(
+      caminhoDaEmpresa(`anexos-oportunidade/${caminho}`, "anexos-oportunidade", E),
+      null,
+      rotulo
+    );
+  }
+  // o mesmo TAB/LF/CR antes da barra do bucket ou na ref inteira
+  for (const ref of [
+    `anexos-oportunidade/${E}/.\t./${OUTRA}/x.pdf`,
+    `anexos-oportunidade\t/${E}/x.pdf`,
+    `anexos-oportunidade/${E}/x.pdf\n`,
+    ` anexos-oportunidade/${E}/x.pdf`,
+  ]) {
+    assert.equal(caminhoDaEmpresa(ref, "anexos-oportunidade", E), null, JSON.stringify(ref));
+  }
+  // acento e espaço no MEIO de um nome continuam valendo (refs antigas da tela): só controle é barrado
+  assert.equal(
+    caminhoDaEmpresa(`certificados/${E}/Certidão Negativa.pdf`, "certificados", E),
+    `${E}/Certidão Negativa.pdf`
+  );
 });
 
 test("baixarObjeto: bytes do objeto; ausente, vazio e grande demais lançam ErroArquivo", async () => {
@@ -764,6 +829,35 @@ test("RPC imitada: recusa o que a função do banco recusa (22023) e o objeto en
     ],
     ["url com segmento .", { p_url: `anexos-oportunidade/${E}/./a.pdf` }, /fora da pasta/],
     ["url terminando em ..", { p_url: `anexos-oportunidade/${E}/a/..` }, /fora da pasta/],
+    // lista branca [A-Za-z0-9._/-] (0156): o parser de URL do storage-js apaga tab, LF e CR
+    [
+      "url com TAB entre pontos",
+      { p_url: `anexos-oportunidade/${E}/.\t./${OUTRA}/a.pdf` },
+      /fora da pasta/,
+    ],
+    [
+      "url com LF entre pontos",
+      { p_url: `anexos-oportunidade/${E}/.\n./${OUTRA}/a.pdf` },
+      /fora da pasta/,
+    ],
+    [
+      "url com CR entre pontos",
+      { p_url: `anexos-oportunidade/${E}/.\r./${OUTRA}/a.pdf` },
+      /fora da pasta/,
+    ],
+    ["url com TAB num nome comum", { p_url: `anexos-oportunidade/${E}/a\tb.pdf` }, /fora da pasta/],
+    ["url com LF no fim", { p_url: `anexos-oportunidade/${E}/a.pdf\n` }, /fora da pasta/],
+    ["url com barra invertida", { p_url: `anexos-oportunidade/${E}/a\\b.pdf` }, /fora da pasta/],
+    ["url com %2e%2e", { p_url: `anexos-oportunidade/${E}/%2e%2e/a.pdf` }, /fora da pasta/],
+    ["url com % no nome", { p_url: `anexos-oportunidade/${E}/a%20b.pdf` }, /fora da pasta/],
+    ["url com espaço no meio", { p_url: `anexos-oportunidade/${E}/a b.pdf` }, /fora da pasta/],
+    ["url com espaço no fim", { p_url: `anexos-oportunidade/${E}/a.pdf ` }, /fora da pasta/],
+    ["url com .. e espaço no fim", { p_url: `anexos-oportunidade/${E}/.. ` }, /fora da pasta/],
+    ["url com acento", { p_url: `anexos-oportunidade/${E}/Declaração.pdf` }, /fora da pasta/],
+    ["url com emoji", { p_url: `anexos-oportunidade/${E}/\u{1F600}.pdf` }, /fora da pasta/],
+    ["url com ?", { p_url: `anexos-oportunidade/${E}/a.pdf?x=1` }, /fora da pasta/],
+    ["url com #", { p_url: `anexos-oportunidade/${E}/a#1.pdf` }, /fora da pasta/],
+    ["url com NUL", { p_url: `anexos-oportunidade/${E}/a\u0000b.pdf` }, /fora da pasta/],
     ["assinatura assinado", { p_assinatura: "assinado" }, /assinatura inválida/],
     ["assinatura qualquer", { p_assinatura: "ok" }, /assinatura inválida/],
   ];
@@ -796,6 +890,44 @@ test("RPC imitada: recusa o que a função do banco recusa (22023) e o objeto en
   assert.equal(fim.banco.arquivos.length, 0);
   assert.equal(fim.fake.objetos.size, 0);
   assert.equal(removeu(fim.fake).length, 1);
+});
+
+test("a lista branca da RPC não barra o que o servidor grava: caminhoDoEnvio só produz [A-Za-z0-9._/-], mesmo com nome hostil", async () => {
+  const LISTA_BRANCA = /^[A-Za-z0-9._/-]+$/;
+  const nomes = [
+    "Proposta.pdf",
+    "Declaração de Idoneidade (2ª via).pdf",
+    "a b\tc\nd\re.pdf",
+    "..",
+    ".\t.",
+    ".\n./../x.pdf",
+    "\u{1F600}.pdf",
+    "x/y\\z%2e%2e?#.pdf",
+    "\u0000\u007f\u0085.pdf",
+    "．．/∕.pdf",
+    "Empresa Ltda..pdf",
+    "",
+    "   ",
+    "é".repeat(500) + ".pdf",
+  ];
+  for (const nome of nomes) {
+    const ref = `anexos-oportunidade/${caminhoDoEnvio(E, nome, AGORA, "00000000-0000-4000-8000-0000000000aa")}`;
+    assert.match(ref, LISTA_BRANCA, JSON.stringify(nome));
+    // e a imitação da RPC (a mesma lista branca do 0156) aceita a ref feita pelo servidor
+    const recusa = recusaGravarArquivo({
+      tabela: "conector_gravar_arquivo",
+      payload: { ...PARAMS_COMPLETOS, p_url: ref },
+    } as ChamadaFake);
+    assert.equal(recusa, null, JSON.stringify(nome));
+  }
+  // de ponta a ponta, com nome hostil: grava, e a ref gravada cumpre a lista branca
+  for (const nome of ["a b\tc.pdf", ".\t.", "Declaração.pdf"]) {
+    const { banco, deps, pedido } = montarComBanco();
+    const r = await gravarNaOportunidade(deps, { ...pedido, nome });
+    assert.ok(r, JSON.stringify(nome));
+    assert.match(banco.arquivos[0].url, LISTA_BRANCA, JSON.stringify(nome));
+    assert.equal(r.ref, banco.arquivos[0].url);
+  }
 });
 
 // ═══ Correção da revisão 1 ═══════════════════════════════════════════════════════════════
@@ -973,6 +1105,9 @@ test("caminhoDaEmpresa e storageDaEmpresa concordam sobre o que é da pasta da e
     EA,
     `/${EA}/a.pdf`,
     "",
+    // TAB, LF, CR, controle e espaço nas pontas: as duas camadas recusam
+    ...caminhosHostis(EA, OUTRA).map(([, c]) => c),
+    `${EA}/Certidão Negativa.pdf`,
   ];
   for (const c of casos) {
     const pelaRef = caminhoDaEmpresa(`b/${c}`, "b", EA) !== null;
@@ -990,6 +1125,281 @@ test("caminhoDaEmpresa e storageDaEmpresa concordam sobre o que é da pasta da e
     `${EA.toUpperCase()}/a.pdf`
   );
   assert.equal(caminhoDaEmpresa(`b/${EA}/a.pdf`, "b", EA.toUpperCase()), `${EA}/a.pdf`);
+  // e os hostis (TAB/LF/CR/controle/espaço nas pontas) NÃO passam em nenhum dos dois
+  for (const [rotulo, c] of caminhosHostis(EA, OUTRA)) {
+    assert.equal(caminhoDaEmpresa(`b/${c}`, "b", EA), null, rotulo);
+    await assert.rejects(() => s.download(c), `storage / ${rotulo}`);
+  }
+});
+
+// ─── propriedade: o que a regra aceita não sai da pasta da empresa na URL do storage-js ─────
+
+const BASE_URL_STORAGE = "https://h/storage/v1/object/b/";
+
+/**
+ * O storage-js monta `${url}/object/${bucket}/${caminho}` com o caminho CRU e o fetch o passa ao parser de
+ * URL. Devolve o defeito, ou null se o pedido ficaria dentro da pasta `empresa` e com o caminho intacto.
+ */
+function defeitoNaUrl(caminho: string, empresa: string): string | null {
+  const u = new URL(BASE_URL_STORAGE + caminho);
+  const p = u.pathname;
+  if (u.host !== "h" || u.search !== "" || u.hash !== "") return "mudou host, query ou hash";
+  if (!p.toLowerCase().startsWith(`/storage/v1/object/b/${empresa.toLowerCase()}/`)) {
+    return "saiu da pasta da empresa";
+  }
+  if (p.includes("/../") || p.endsWith("/..")) return "ficou com segmento ..";
+  if (decodeURIComponent(p) !== `/storage/v1/object/b/${caminho}`) {
+    return "o parser alterou o caminho";
+  }
+  return null;
+}
+
+/** "defeito: caminho" → "N saiu da pasta da empresa, M o parser alterou o caminho…" (para a mensagem). */
+function porDefeito(defeitos: string[]): string {
+  const n = new Map<string, number>();
+  for (const d of defeitos) {
+    const k = d.slice(0, d.indexOf(":"));
+    n.set(k, (n.get(k) ?? 0) + 1);
+  }
+  return [...n].map(([k, v]) => `${v} ${k}`).join(", ");
+}
+
+/** Átomos que o parser de URL trata de um jeito especial ou que parecem "." e "/" (sem Math.random). */
+const ATOMOS_URL = [
+  ".",
+  "\t",
+  "\n",
+  "\r",
+  " ",
+  "/",
+  "%2e",
+  "\\",
+  "．", // ponto de largura total
+  "∕", // barra de divisão
+  "á",
+  "\u{1F600}",
+  "a",
+  "\u0085",
+  "\u007F",
+  "\u0000",
+];
+
+/** Todas as sequências de 1 a `max` átomos, em ordem fixa. */
+function sequenciasDeAtomos(max: number): string[] {
+  let nivel = [""];
+  const todas: string[] = [];
+  for (let n = 1; n <= max; n++) {
+    const prox: string[] = [];
+    for (const base of nivel) for (const a of ATOMOS_URL) prox.push(base + a);
+    todas.push(...prox);
+    nivel = prox;
+  }
+  return todas;
+}
+
+/** Sequências mais longas, de um gerador congruencial com semente fixa: o mesmo conjunto em toda execução. */
+function sequenciasSorteadas(quantas: number, minimo: number, maximo: number): string[] {
+  let semente = 20261014;
+  const proximo = () => {
+    semente = (Math.imul(semente, 1664525) + 1013904223) >>> 0;
+    return semente;
+  };
+  const saida: string[] = [];
+  for (let i = 0; i < quantas; i++) {
+    const tamanho = minimo + (proximo() % (maximo - minimo + 1));
+    let s = "";
+    for (let j = 0; j < tamanho; j++) s += ATOMOS_URL[proximo() % ATOMOS_URL.length];
+    saida.push(s);
+  }
+  return saida;
+}
+
+test("o oráculo da propriedade enxerga o defeito: '.\\t.' monta uma URL fora da pasta", () => {
+  const EA = "0000000a-0000-4000-8000-00000000000b";
+  assert.equal(defeitoNaUrl(`${EA}/a.pdf`, EA), null);
+  assert.equal(defeitoNaUrl(`${EA}/Certidão Negativa.pdf`, EA), null);
+  assert.equal(defeitoNaUrl(`${EA}/.\t./${OUTRA}/x.pdf`, EA), "saiu da pasta da empresa");
+  assert.equal(defeitoNaUrl(`${EA}/.\n./${OUTRA}/x.pdf`, EA), "saiu da pasta da empresa");
+  assert.equal(defeitoNaUrl(`${EA}/.. `, EA), "saiu da pasta da empresa");
+  assert.equal(defeitoNaUrl(`${EA}/a\tb.pdf`, EA), "o parser alterou o caminho");
+  assert.equal(defeitoNaUrl(`${EA}/a.pdf `, EA), "o parser alterou o caminho");
+  assert.equal(defeitoNaUrl(`${EA}/%2e%2e/x.pdf`, EA), "saiu da pasta da empresa");
+  assert.equal(defeitoNaUrl(`${EA}/a.pdf?x=1`, EA), "mudou host, query ou hash");
+});
+
+test("PROPRIEDADE: tudo que caminhoDaEmpresa aceita fica dentro da pasta da empresa na URL do storage-js", () => {
+  const EA = "0000000a-0000-4000-8000-00000000000b";
+  const caudas = [...sequenciasDeAtomos(4), ...sequenciasSorteadas(40000, 5, 9)];
+  const cabecas = [
+    `${EA}/`,
+    `${EA.toUpperCase()}/`,
+    `${EA}/2026/10/`,
+    `${EA}/ok/`,
+    `\t${EA}/`,
+    ` ${EA}/`,
+    `${EA}\t/`,
+    `${EA} /`,
+    `\n${EA}/`,
+    `${EA}/\t`,
+  ];
+  let aceitos = 0;
+  let total = 0;
+  const defeitos: string[] = [];
+  for (const cabeca of cabecas) {
+    for (const cauda of caudas) {
+      total++;
+      const caminho = cabeca + cauda;
+      if (caminhoDaEmpresa(`b/${caminho}`, "b", EA) === null) continue;
+      aceitos++;
+      const d = defeitoNaUrl(caminho, EA);
+      if (d) defeitos.push(`${d}: ${JSON.stringify(caminho)}`);
+    }
+  }
+  assert.ok(total > 800000, `o conjunto tem de ser grande (veio ${total})`);
+  // a propriedade não pode ser vácua: a regra aceita um bom pedaço e recusa a maior parte
+  assert.ok(aceitos > 5000 && aceitos < total / 2, `aceitos ${aceitos} de ${total}`);
+  assert.equal(
+    defeitos.length,
+    0,
+    `${defeitos.length} caminho(s) aceito(s) saem da pasta ou mudam na URL (de ${aceitos} aceitos / ${total}; ${porDefeito(defeitos)}); ex.: ${defeitos.slice(0, 3).join(" | ")}`
+  );
+});
+
+test("PROPRIEDADE: tudo que storageDaEmpresa deixa chegar ao Storage fica dentro da pasta da empresa na URL", async () => {
+  const EA = "0000000a-0000-4000-8000-00000000000b";
+  const chegaram: string[] = [];
+  const balde = {
+    async createSignedUploadUrl(c: string) {
+      chegaram.push(c);
+      return { data: null, error: null };
+    },
+    async createSignedUrl(c: string) {
+      chegaram.push(c);
+      return { data: null, error: null };
+    },
+    async list() {
+      return { data: [], error: null };
+    },
+    async remove(cs: string[]) {
+      chegaram.push(...cs);
+      return { data: [], error: null };
+    },
+    async download(c: string) {
+      chegaram.push(c);
+      return { data: null, error: null };
+    },
+    async upload(c: string) {
+      chegaram.push(c);
+      return { data: null, error: null };
+    },
+  } as unknown as ReturnType<StorageConector["from"]>;
+  const s = storageDaEmpresa({ from: () => balde } as StorageConector, EA).from("b");
+  const caudas = sequenciasDeAtomos(3); // 4368 caudas
+  const cabecas = [
+    `${EA}/`,
+    `${EA.toUpperCase()}/`,
+    `${EA}/2026/`,
+    `\t${EA}/`,
+    ` ${EA}/`,
+    `${EA}/\t`,
+  ];
+  const opcoes = { contentType: "application/pdf", upsert: false };
+  let total = 0;
+  for (const cabeca of cabecas) {
+    for (const cauda of caudas) {
+      const caminho = cabeca + cauda;
+      total++;
+      const antes = chegaram.length;
+      // cada método, em rodízio, para cobrir os seis sem multiplicar o tempo
+      const metodo = total % 5;
+      try {
+        if (metodo === 0) await s.download(caminho);
+        else if (metodo === 1) await s.upload(caminho, new Uint8Array([1]), opcoes);
+        else if (metodo === 2) await s.createSignedUrl(caminho, 60);
+        else if (metodo === 3) await s.createSignedUploadUrl(caminho);
+        else await s.remove([caminho]);
+      } catch {
+        assert.equal(chegaram.length, antes, "recusado não chega ao Storage");
+      }
+    }
+  }
+  const defeitos = chegaram
+    .map((c) => [defeitoNaUrl(c, EA), c] as const)
+    .filter(([d]) => d !== null)
+    .map(([d, c]) => `${d}: ${JSON.stringify(c)}`);
+  assert.ok(total > 20000 && chegaram.length > 500, `chegaram ${chegaram.length} de ${total}`);
+  assert.equal(
+    defeitos.length,
+    0,
+    `${defeitos.length} caminho(s) chegaram ao Storage e saem da pasta ou mudam na URL (de ${chegaram.length} / ${total}; ${porDefeito(defeitos)}); ex.: ${defeitos.slice(0, 3).join(" | ")}`
+  );
+});
+
+test("PROPRIEDADE: caminhoSeguroDaEmpresa, direto, também no modo pasta (o do list)", () => {
+  const EA = "0000000a-0000-4000-8000-00000000000b";
+  const caudas = [...sequenciasDeAtomos(4), ...sequenciasSorteadas(40000, 5, 9)];
+  const cabecas = [
+    `${EA}/`,
+    `${EA.toUpperCase()}/`,
+    `${EA}/2026/10/`,
+    `\t${EA}/`,
+    ` ${EA}/`,
+    `${EA}\t/`,
+  ];
+  let aceitos = 0;
+  const defeitos: string[] = [];
+  for (const cabeca of cabecas) {
+    for (const cauda of caudas) {
+      const caminho = cabeca + cauda;
+      if (!caminhoSeguroDaEmpresa(caminho, EA)) continue;
+      aceitos++;
+      const d = defeitoNaUrl(caminho, EA);
+      if (d) defeitos.push(`${d}: ${JSON.stringify(caminho)}`);
+      // quem passa como arquivo passa como pasta (a pasta é mais frouxa só no mínimo de segmentos)
+      assert.equal(caminhoSeguroDaEmpresa(caminho, EA, true), true, JSON.stringify(caminho));
+    }
+  }
+  assert.ok(aceitos > 5000, `aceitos ${aceitos}`);
+  assert.equal(
+    defeitos.length,
+    0,
+    `${defeitos.length} defeito(s); ex.: ${defeitos.slice(0, 3).join(" | ")}`
+  );
+
+  // modo pasta: a pasta é a empresa, ou a empresa e subpastas; o resto da regra é igual
+  const pastas = sequenciasDeAtomos(3).map((c) => `${EA}/${c}`);
+  let pastasAceitas = 0;
+  for (const pasta of [EA, EA.toUpperCase(), ...pastas]) {
+    if (!caminhoSeguroDaEmpresa(pasta, EA, true)) continue;
+    pastasAceitas++;
+    const d = pasta === EA || pasta === EA.toUpperCase() ? null : defeitoNaUrl(pasta, EA);
+    assert.equal(d, null, JSON.stringify(pasta));
+  }
+  assert.ok(pastasAceitas > 100, `pastas aceitas ${pastasAceitas}`);
+});
+
+test("a regra do caminho seguro existe UMA vez: camada-empresa a define e arquivo-servidor a usa", () => {
+  const camada = readFileSync(new URL("./camada-empresa.ts", import.meta.url), "utf8");
+  const arquivo = readFileSync(new URL("./arquivo-servidor.ts", import.meta.url), "utf8");
+  // o único split por "/" e o único teste de controle estão na função única
+  const splits = camada.split('.split("/")').length - 1;
+  assert.equal(splits, 1);
+  const noFonte = camada.split("\\u0000-\\u001f\\u007f-\\u009f").length - 1;
+  assert.equal(noFonte, 1);
+  const iFuncao = camada.indexOf("export function caminhoSeguroDaEmpresa");
+  const iSplit = camada.indexOf('.split("/")');
+  assert.ok(
+    iFuncao >= 0 && iSplit > iFuncao && iSplit < camada.indexOf("export function storageDaEmpresa")
+  );
+  // o storage confere por ela, e caminhoDaEmpresa também; nenhum dos dois reescreve a regra
+  assert.ok(camada.includes("if (!caminhoSeguroDaEmpresa(caminho, empresa, pasta))"));
+  assert.ok(arquivo.includes("caminhoSeguroDaEmpresa(caminho, empresaId)"));
+  assert.equal(arquivo.includes('.split("/")'), false);
+  assert.equal(arquivo.includes("[?#%"), false);
+  // nenhum caractere de controle cru nos dois fontes (a regra é escrita com escapes \uXXXX)
+  for (const fonte of [camada, arquivo]) {
+    assert.equal(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(fonte), false);
+  }
 });
 
 // ─── gravarNaOportunidade: valida nome e origem ANTES de enviar ─────────────────────────
@@ -1367,6 +1777,18 @@ test("migração 0156: a função SQL ainda tem o que o fake da RPC imita", () =
   assert.match(f, /chamador_eh_servidor\(\)/);
   assert.ok(f.includes("anexos-oportunidade/"));
   assert.ok(f.includes("(^|/)\\.{1,2}(/|$)"), "regex de segmento . e ..");
+  // a lista branca da ref (a mesma do fake): tab/LF/CR, barra invertida, %, espaço e acento ficam de fora
+  assert.ok(f.includes("p_url !~ '^[A-Za-z0-9._/-]+$'"), "lista branca da ref");
+  assert.ok(
+    f.includes(
+      "if p_url is null or p_url not like 'anexos-oportunidade/' || p_empresa_id::text || '/_%' " +
+        "or p_url ~ '(^|/)\\.{1,2}(/|$)' or p_url !~ '^[A-Za-z0-9._/-]+$' " +
+        "then raise exception 'arquivo fora da pasta da empresa' using errcode = '22023'"
+    ),
+    "as quatro condições da ref, na mesma exceção"
+  );
+  // e a ref antiga volta para quem a remove do Storage (é ela que passa por caminhoDaEmpresa)
+  assert.ok(f.includes("'ref_anterior', v_atual.url"), "ref_anterior da troca");
   assert.ok(f.includes("p_origem !~ '\\S'") && f.includes("char_length(p_origem) > 200"));
   assert.ok(f.includes("p_nome !~ '\\S'"));
   assert.ok(f.includes("p_assinatura <> 'pendente'"));

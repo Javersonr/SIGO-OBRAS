@@ -30,9 +30,11 @@
 --   7. oportunidade (ou empresa) que não casa — empresa aleatória, oportunidade de outra empresa, excluída ou
 --      inexistente — devolve {"ok": false, "motivo": "nao_encontrada"} e nada é gravado;
 --   8. as recusas da RPC (22023, com a mensagem): ref fora da pasta da empresa (inclusive só a pasta, sem
---      arquivo, e segmento "." ou ".." no caminho), assinatura que não é 'pendente', origem e nome inválidos
---      (inclusive só tabulação e quebra de linha), empresa ou oportunidade nulas; nada é gravado. Nome de
---      arquivo com pontos seguidos ("Ltda..pdf") passa;
+--      arquivo, e segmento "." ou ".." no caminho) e ref com qualquer caractere fora de A-Z a-z 0-9 . _ / -
+--      (tabulação, LF e CR dentro de um segmento, como ".<tab>." que o parser de URL do storage-js
+--      transformaria em "..", barra invertida, "%2e%2e", espaço, acento, "?" e "#"), assinatura que não é
+--      'pendente', origem e nome inválidos (inclusive só tabulação e quebra de linha), empresa ou oportunidade
+--      nulas; nada é gravado. Nome de arquivo com pontos seguidos ("Ltda..pdf") passa;
 --   9. o índice único: segunda linha viva com a mesma (empresa_id, oportunidade_id, origem) é recusada
 --      (23505); origem nula repete, excluída não conta; duas linhas vivas com a mesma origem e SEM
 --      oportunidade (arquivo movido para o projeto) convivem; CHECKs de origem e de assinatura;
@@ -492,6 +494,26 @@ begin
         'anexos-oportunidade/' || v_a::text || '/../' || v_b::text || '/2026/10/x.pdf'),
       ('caminho que termina em ".."', v_a, v_op_a, v_pa || '..'),
       ('segmento "." no caminho', v_a, v_op_a, v_pa || './x.pdf'),
+      -- lista branca (A-Z a-z 0-9 . _ / -): tab, LF e CR o parser de URL do storage-js APAGA, então ".<tab>."
+      -- virava ".." e a ref saía da pasta da empresa
+      ('TAB entre pontos, para cair na pasta de outra empresa', v_a, v_op_a,
+        'anexos-oportunidade/' || v_a::text || '/.' || chr(9) || './' || v_b::text || '/2026/10/x.pdf'),
+      ('LF entre pontos', v_a, v_op_a,
+        'anexos-oportunidade/' || v_a::text || '/.' || chr(10) || './' || v_b::text || '/2026/10/x.pdf'),
+      ('CR entre pontos', v_a, v_op_a,
+        'anexos-oportunidade/' || v_a::text || '/.' || chr(13) || './' || v_b::text || '/2026/10/x.pdf'),
+      ('TAB dentro de um segmento comum', v_a, v_op_a, v_pa || 'a' || chr(9) || 'b.pdf'),
+      ('LF dentro de um segmento comum', v_a, v_op_a, v_pa || 'a' || chr(10) || 'b.pdf'),
+      ('TAB no fim da ref', v_a, v_op_a, v_pa || 'x.pdf' || chr(9)),
+      ('barra invertida', v_a, v_op_a, v_pa || 'a' || chr(92) || 'b.pdf'),
+      ('%2e%2e', v_a, v_op_a, v_pa || '%2e%2e/x.pdf'),
+      ('% dentro do nome', v_a, v_op_a, v_pa || 'a%20b.pdf'),
+      ('espaço no meio do nome', v_a, v_op_a, v_pa || 'a b.pdf'),
+      ('espaço no fim da ref', v_a, v_op_a, v_pa || 'x.pdf '),
+      ('".." com espaço no fim', v_a, v_op_a, 'anexos-oportunidade/' || v_a::text || '/.. '),
+      ('acento no nome', v_a, v_op_a, v_pa || 'Declaração.pdf'),
+      ('? no nome', v_a, v_op_a, v_pa || 'x.pdf?v=1'),
+      ('# no nome', v_a, v_op_a, v_pa || 'x#1.pdf'),
       ('ref vazia', v_a, v_op_a, ''),
       ('ref nula', v_a, v_op_a, null)
     ) as e(descricao, empresa, op, caminho)
@@ -546,7 +568,7 @@ begin
   end if;
   select count(*) into v_n from public.arquivo_oportunidade where origem = 'smoke:recusa';
   if v_n <> 0 then raise exception 'FALHOU: uma chamada recusada gravou % linha(s)', v_n; end if;
-  raise notice '[8] recusas da RPC: pasta da empresa (só a pasta, "." e ".."), assinatura, origem, nome e empresa/oportunidade nulas';
+  raise notice '[8] recusas da RPC: pasta da empresa (só a pasta, "." e ".."), lista branca da ref (tab/LF/CR, barra invertida, %, espaço, acento), assinatura, origem, nome e empresa/oportunidade nulas';
 
   -- 9. o índice único e os CHECKs de arquivo_oportunidade ----------------------------------------------------------------
   -- a chave é (empresa_id, oportunidade_id, origem), entre as linhas vivas com origem

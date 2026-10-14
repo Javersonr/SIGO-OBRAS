@@ -182,10 +182,14 @@ begin
   end if;
   -- a ref tem de ser um arquivo DENTRO da pasta da empresa, no bucket da oportunidade: ao menos um
   -- caractere depois da barra e nenhum segmento "." ou ".." no caminho (que sairia da pasta). Pontos
-  -- seguidos dentro do NOME do arquivo ("Empresa Ltda..pdf") não são segmento e passam.
+  -- seguidos dentro do NOME do arquivo ("Empresa Ltda..pdf") não são segmento e passam. Lista branca:
+  -- só A-Z a-z 0-9 . _ / - (o servidor só grava refs feitas por caminhoDoEnvio, que sanea o nome a esse
+  -- conjunto). Tab, quebra de linha, "\", "%", espaço, acento etc. ficam de fora: o parser de URL do
+  -- storage-js apaga tab/LF/CR, e ".<tab>." viraria ".." e sairia da pasta da empresa.
   if p_url is null
      or p_url not like 'anexos-oportunidade/' || p_empresa_id::text || '/_%'
-     or p_url ~ '(^|/)\.{1,2}(/|$)' then
+     or p_url ~ '(^|/)\.{1,2}(/|$)'
+     or p_url !~ '^[A-Za-z0-9._/-]+$' then
     raise exception 'arquivo fora da pasta da empresa' using errcode = '22023';
   end if;
   if p_assinatura is not null and p_assinatura <> 'pendente' then

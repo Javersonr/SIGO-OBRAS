@@ -284,12 +284,40 @@ export function camadaDaEmpresa(admin: Admin, empresaId: string): CamadaEmpresa 
 }
 
 /**
+ * A ÚNICA regra de "caminho seguro dentro da pasta da empresa" do conector (o `storageDaEmpresa` abaixo e o
+ * `caminhoDaEmpresa` de arquivo-servidor.ts usam esta função; nenhum dos dois repete a regra).
+ *
+ * Por que tantas regras: o storage-js monta a URL do pedido com o caminho CRU e o parser de URL mexe nele —
+ * REMOVE tab, LF e CR de qualquer ponto (".\t." vira ".." e o pedido sai da pasta da empresa), tira espaço e
+ * controle do fim da URL, trata "\" como "/" e "%2e" como ".". Em ordem, o caminho só vale se:
+ *  1. é texto, sem caractere de controle (U+0000–U+001F e U+007F–U+009F) e sem espaço no começo ou no fim;
+ *  2. não tem "\", "?", "#" nem "%";
+ *  3. dividido por "/", nenhum segmento é vazio, "." ou ".." (pontos DENTRO de um nome, "Ltda..pdf", passam);
+ *  4. o primeiro segmento é a empresa (sem diferenciar maiúsculas de minúsculas);
+ *  5. há ao menos um segmento depois da empresa (`comoPasta`: a pasta do `list` pode ser só a empresa).
+ * Sem lista branca de caracteres: acento, espaço no meio e emoji passam (a tela só grava [A-Za-z0-9._/-],
+ * mas refs antigas ou editadas à mão podem ter mais, e isso não sai da pasta).
+ */
+export function caminhoSeguroDaEmpresa(
+  caminho: unknown,
+  empresaId: string,
+  comoPasta = false
+): boolean {
+  if (typeof caminho !== "string" || typeof empresaId !== "string") return false;
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(caminho) || /^ | $/.test(caminho)) return false;
+  if (/[\\?#%]/.test(caminho)) return false;
+  const partes = caminho.split("/");
+  if (partes.some((p) => p === "" || p === "." || p === "..")) return false;
+  if (partes[0].toLowerCase() !== empresaId.toLowerCase()) return false;
+  return comoPasta || partes.length >= 2;
+}
+
+/**
  * O Storage das ferramentas, confinado à pasta da empresa da chave POR CONSTRUÇÃO (o conector usa a
  * chave de serviço: o Storage não confere nada sozinho). Todo método que recebe caminho confere,
- * antes de chamar o Storage de verdade, que ele:
- *  - começa pelo segmento `<empresaId>` (sem diferenciar maiúsculas de minúsculas) e tem ao menos mais
- *    um segmento depois (em `list`, a pasta pode ser só `<empresaId>`);
- *  - não tem segmento vazio, "." ou "..", nem "\", "?", "#" ou "%".
+ * antes de chamar o Storage de verdade, com `caminhoSeguroDaEmpresa` (começa pela empresa da chave, sem
+ * segmento vazio, "." ou "..", sem caractere de controle nem "\", "?", "#", "%"; em `list`, a pasta pode
+ * ser só `<empresaId>`).
  * Fora disso lança ErroCamada("campo_proibido") ANTES de qualquer chamada, com uma mensagem que traz só
  * o bucket (o caminho pode ser de outra empresa). A recusa é sempre promessa rejeitada.
  *
@@ -303,15 +331,8 @@ export function storageDaEmpresa(storage: StorageConector, empresaId: string): S
   }
   const empresa = empresaId.toLowerCase();
 
-  const dentro = (caminho: unknown, pasta: boolean): boolean => {
-    if (typeof caminho !== "string" || /[?#%\\]/.test(caminho)) return false;
-    const partes = caminho.split("/");
-    if (partes.some((p) => p === "" || p === "." || p === "..")) return false;
-    if (partes[0].toLowerCase() !== empresa) return false;
-    return pasta || partes.length >= 2;
-  };
   const exigir = (bucket: string, caminho: unknown, pasta = false): void => {
-    if (!dentro(caminho, pasta)) {
+    if (!caminhoSeguroDaEmpresa(caminho, empresa, pasta)) {
       throw new ErroCamada(
         "campo_proibido",
         `Caminho fora da pasta da empresa no bucket "${String(bucket)}"`

@@ -7,7 +7,11 @@
  * é atômica pela RPC conector_gravar_arquivo (0156): a mesma `origem` troca o arquivo no lugar, e
  * arquivo já assinado não é trocado. Banco e Storage injetados: roda no Node.
  */
-import type { CamadaEmpresa, StorageConector } from "./camada-empresa.ts";
+import {
+  caminhoSeguroDaEmpresa,
+  type CamadaEmpresa,
+  type StorageConector,
+} from "./camada-empresa.ts";
 import { caminhoDoEnvio } from "./envio-regras.ts";
 
 export const BUCKET_OPORTUNIDADE = "anexos-oportunidade";
@@ -129,17 +133,16 @@ export function tipoPelosBytesServidor(
 
 /**
  * "<bucket>/<empresaId>/…" → o caminho dentro do bucket; qualquer outra coisa → null.
- * Recusa "?", "#", "%" e "\" e todo SEGMENTO vazio, "." ou ".." (que sairia da pasta da empresa);
- * pontos seguidos DENTRO de um nome ("Empresa_Ltda..pdf") não são segmento e passam.
+ * A regra do caminho é a ÚNICA do conector, `caminhoSeguroDaEmpresa` (camada-empresa.ts): sem caractere de
+ * controle (TAB, LF e CR o parser de URL apaga, e ".\t." viraria ".."), sem espaço nas pontas, sem "?", "#",
+ * "%" e "\", sem segmento vazio, "." ou ".."; pontos seguidos DENTRO de um nome ("Empresa_Ltda..pdf") passam.
  */
 export function caminhoDaEmpresa(ref: unknown, bucket: string, empresaId: string): string | null {
   if (typeof ref !== "string") return null;
   const prefixo = `${bucket}/`;
-  if (!ref.startsWith(prefixo) || /[?#%\\]/.test(ref)) return null;
+  if (!ref.startsWith(prefixo)) return null;
   const caminho = ref.slice(prefixo.length);
-  const partes = caminho.split("/");
-  if (partes.length < 2 || partes.some((p) => p === "" || p === "." || p === "..")) return null;
-  return partes[0].toLowerCase() === empresaId.toLowerCase() ? caminho : null;
+  return caminhoSeguroDaEmpresa(caminho, empresaId) ? caminho : null;
 }
 
 export async function baixarObjeto(

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   camadaDaEmpresa,
+  caminhoSeguroDaEmpresa,
   dadosOuErro,
   ErroCamada,
   RPCS_DA_EMPRESA,
@@ -361,6 +362,31 @@ const CAMINHOS_RUINS: [string, unknown][] = [
   ["undefined", undefined],
   ["número", 42],
   ["objeto", { toString: () => BOM }],
+  // o parser de URL do storage-js REMOVE tab, LF e CR (".\t." vira ".."), e tira espaço do fim
+  ["TAB entre pontos (vira ..)", `${E}/.\t./${OUTRA}/a.pdf`],
+  ["LF entre pontos", `${E}/.\n./${OUTRA}/a.pdf`],
+  ["CR entre pontos", `${E}/.\r./${OUTRA}/a.pdf`],
+  ["TAB depois de ..", `${E}/..\t/${OUTRA}/a.pdf`],
+  ["TAB antes de ..", `${E}/\t../${OUTRA}/a.pdf`],
+  ["termina em .. com espaço", `${E}/.. `],
+  ["termina em .. depois de um segmento, com espaço", `${E}/a/.. `],
+  ["termina em .. com TAB", `${E}/a/..\t`],
+  ["termina em . com LF", `${E}/a/.\n`],
+  ["NUL no nome", `${E}/a\u0000b.pdf`],
+  ["DEL no nome", `${E}/a\u007fb.pdf`],
+  ["NEL (U+0085) no nome", `${E}/a\u0085b.pdf`],
+  ["controle C1 (U+009F) no nome", `${E}/a\u009fb.pdf`],
+  ["TAB no meio de um nome comum", `${E}/a\tb.pdf`],
+  ["LF no meio de um nome", `${E}/a\nb.pdf`],
+  ["CR no meio de um nome", `${E}/a\rb.pdf`],
+  ["TAB no fim", `${BOM}\t`],
+  ["LF no fim", `${BOM}\n`],
+  ["espaço no fim", `${BOM} `],
+  ["TAB no começo", `\t${BOM}`],
+  ["espaço no começo", ` ${BOM}`],
+  ["LF no começo", `\n${BOM}`],
+  ["TAB no meio da empresa", `${E.slice(0, 8)}\t${E.slice(8)}/a.pdf`],
+  ["TAB depois da empresa", `${E}\t/a.pdf`],
 ];
 
 test("storageDaEmpresa: caminho da empresa chega ao Storage original com os mesmos argumentos", async () => {
@@ -488,6 +514,22 @@ test("storageDaEmpresa: list aceita a pasta da empresa (só ela ou uma subpasta)
     `${E}#x`,
     `/${E}`,
     `x/${E}`,
+    `${E}/.\t.`,
+    `${E}/.\n./${OUTRA}`,
+    `${E}/.\r.`,
+    `${E}/.. `,
+    `${E}/2026/10 `,
+    `${E}/2026\t`,
+    `${E}/2026\n`,
+    ` ${E}/2026`,
+    `\t${E}`,
+    `\n${E}`,
+    `${E}\t`,
+    `${E} `,
+    `${E}/a\tb`,
+    `${E}/a\u0000b`,
+    `${E}/a\u007fb`,
+    `${E}/a\u0085b`,
     null,
     undefined,
     7,
@@ -508,6 +550,15 @@ test("storageDaEmpresa: remove com um item bom e um ruim lança sem remover nenh
   await assert.rejects(() => s.remove([BOM, alheio]), proibido);
   await assert.rejects(() => s.remove([alheio, BOM]), proibido);
   await assert.rejects(() => s.remove([BOM, BOM, `${E}/../${OUTRA}/x.pdf`]), proibido);
+  // TAB, LF e CR dentro de um segmento: o parser de URL os apaga e o ".\t." viraria ".."
+  await assert.rejects(() => s.remove([BOM, `${E}/.\t./${OUTRA}/x.pdf`]), proibido);
+  await assert.rejects(() => s.remove([`${E}/.\n./${OUTRA}/x.pdf`, BOM]), proibido);
+  await assert.rejects(() => s.remove([BOM, `${E}/.\r./${OUTRA}/x.pdf`]), proibido);
+  await assert.rejects(() => s.remove([BOM, `${E}/a\tb.pdf`]), proibido);
+  await assert.rejects(() => s.remove([BOM, `${E}/a.pdf `]), proibido);
+  await assert.rejects(() => s.remove([`\t${BOM}`]), proibido);
+  await assert.rejects(() => s.remove([` ${BOM}`]), proibido);
+  await assert.rejects(() => s.remove([`${BOM}\n`]), proibido);
   assert.deepEqual(fake.chamadasStorage, []);
   assert.equal(fake.objetos.size, 2);
 
@@ -546,6 +597,92 @@ test("storageDaEmpresa: a empresa é comparada sem diferenciar maiúsculas, nos 
     assert.equal(fake.chamadasStorage.length, COM_CAMINHO.length + 1);
     // a empresa do outro lado continua barrada
     await assert.rejects(() => s.download(`${OUTRA}/a.pdf`), proibido);
+  }
+});
+
+// ─── caminhoSeguroDaEmpresa: a regra única, direto ─────────────────────────────────────────
+
+test("caminhoSeguroDaEmpresa: aceita arquivo dentro da pasta da empresa (com acento, espaço e pontos no nome)", () => {
+  for (const c of [
+    `${E}/a.pdf`,
+    `${E}/2026/10/u1-CND.pdf`,
+    `${E.toUpperCase()}/a.pdf`,
+    `${E}/Empresa_Ltda..pdf`,
+    `${E}/...`,
+    `${E}/Certidão Negativa (2ª via).pdf`,
+    `${E}/😀.pdf`,
+    `${E}/.oculto`,
+    `${E}/a b/c d.pdf`,
+    `${E}/a\uFF0Eb.pdf`, // ponto de largura total: não é "."
+    `${E}/a\u2215b.pdf`, // barra de divisão: não é "/"
+  ]) {
+    assert.equal(caminhoSeguroDaEmpresa(c, E), true, JSON.stringify(c));
+  }
+});
+
+test("caminhoSeguroDaEmpresa: recusa controle, espaço nas pontas, barra invertida, ? # %, segmento ruim, outra empresa", () => {
+  const ruins: [string, unknown][] = [
+    ["TAB entre pontos", `${E}/.\t./${OUTRA}/x.pdf`],
+    ["LF entre pontos", `${E}/.\n./${OUTRA}/x.pdf`],
+    ["CR entre pontos", `${E}/.\r./${OUTRA}/x.pdf`],
+    ["NUL", `${E}/a\u0000b`],
+    ["U+001F", `${E}/a\u001fb`],
+    ["DEL", `${E}/a\u007fb`],
+    ["U+0080", `${E}/a\u0080b`],
+    ["NEL", `${E}/a\u0085b`],
+    ["U+009F", `${E}/a\u009fb`],
+    ["TAB no meio de um nome", `${E}/a\tb.pdf`],
+    ["espaço no fim", `${E}/a.pdf `],
+    ["espaço depois de ..", `${E}/.. `],
+    ["TAB no fim", `${E}/a.pdf\t`],
+    ["LF no fim", `${E}/a.pdf\n`],
+    ["espaço no começo", ` ${E}/a.pdf`],
+    ["TAB no começo", `\t${E}/a.pdf`],
+    ["barra invertida", `${E}\\a.pdf`],
+    ["?", `${E}/a?x`],
+    ["#", `${E}/a#x`],
+    ["%", `${E}/a%2e`],
+    ["segmento vazio", `${E}//a`],
+    ["segmento .", `${E}/./a`],
+    ["segmento ..", `${E}/../a`],
+    ["termina em ..", `${E}/a/..`],
+    ["termina em barra", `${E}/a/`],
+    ["outra empresa", `${OUTRA}/a.pdf`],
+    ["empresa com um caractere a mais", `${E}0/a.pdf`],
+    ["só a empresa (como arquivo)", E],
+    ["vazio", ""],
+    ["null", null],
+    ["undefined", undefined],
+    ["número", 1],
+    ["objeto", { toString: () => `${E}/a.pdf` }],
+  ];
+  for (const [rotulo, c] of ruins) {
+    assert.equal(caminhoSeguroDaEmpresa(c, E), false, rotulo);
+  }
+  // empresa que não é texto: nada passa
+  assert.equal(caminhoSeguroDaEmpresa(`${E}/a.pdf`, undefined as unknown as string), false);
+  assert.equal(caminhoSeguroDaEmpresa(`${E}/a.pdf`, ""), false);
+});
+
+test("caminhoSeguroDaEmpresa: no modo pasta a empresa sozinha passa; o resto da regra é a mesma", () => {
+  for (const pasta of [E, E.toUpperCase(), `${E}/2026`, `${E}/2026/10`]) {
+    assert.equal(caminhoSeguroDaEmpresa(pasta, E, true), true, pasta);
+  }
+  for (const pasta of [
+    "",
+    `${E}/`,
+    `${OUTRA}`,
+    `${E}\t`,
+    `${E} `,
+    `\t${E}`,
+    `${E}/.\t.`,
+    `${E}/2026 `,
+    `${E}/..`,
+    `${E}/a%2e`,
+    `${E}\\x`,
+    null,
+  ]) {
+    assert.equal(caminhoSeguroDaEmpresa(pasta, E, true), false, String(pasta));
   }
 });
 
