@@ -1,12 +1,15 @@
 // node --test supabase/functions/_shared/habilitacao/checklist.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   classificarExigencia,
   conferirCopiasComOsAtivos,
   copiasDaBiblioteca,
   documentoVencido,
+  exigeQualificacaoTecnica,
   montarChecklist,
+  vereditoDoAtende,
   PREFIXO_BIBLIOTECA,
   type ArquivoChecklist,
   type EntradaChecklist,
@@ -206,6 +209,8 @@ test("montarChecklist: oportunidade vazia — tudo o que falta e os próximos pa
     falta_assinar: 0,
     verificar: 1,
     desatualizadas: 0,
+    sem_analise: 0,
+    sem_atende: 0,
     pronto: false,
   });
   assert.ok(c.proximos_passos.some((p) => p.includes("anexar_edital_por_url")));
@@ -269,6 +274,8 @@ test("montarChecklist: tudo anexado e assinado → pronto", () => {
     falta_assinar: 0,
     verificar: 0,
     desatualizadas: 0,
+    sem_analise: 0,
+    sem_atende: 0,
     pronto: true,
   });
   assert.deepEqual(c.proximos_passos, []);
@@ -624,9 +631,9 @@ test("montarChecklist: vários documentos por tipo — o que vale é o anexado; 
   );
   assert.ok(!c.certidoes.some((y) => y.tipo === "outro"));
   assert.equal(c.resumo.vencidos, 1);
-  // faltam: o edital, os dois PDFs e cinco certidões/documentos (cnd_federal, cnd_municipal, certidao_falencia,
-  // contrato_social e cartao_cnpj); cndt está vencida (conta em `vencidos`, não em `faltam`)
-  assert.equal(c.resumo.faltam, 1 + 2 + 5);
+  // faltam: o edital, os dois PDFs, a análise do edital (extraido null) e cinco certidões/documentos (cnd_federal,
+  // cnd_municipal, certidao_falencia, contrato_social e cartao_cnpj); cndt está vencida (conta em `vencidos`)
+  assert.equal(c.resumo.faltam, 1 + 2 + 1 + 5);
 });
 
 test("montarChecklist: documentos inativos, com validade ruim ou nulos não derrubam o checklist", () => {
@@ -653,6 +660,9 @@ test("montarChecklist: documentos inativos, com validade ruim ou nulos não derr
 });
 
 // ─── edital, proposta, acervo e declarações ───────────────────────────────────────────────────
+
+/** Uma análise do edital já gravada, sem exigência nenhuma (não é "sem análise"). */
+const ANALISE_MINIMA = { habilitacao: {} };
 
 const vazio = (extra: Partial<EntradaChecklist> = {}): EntradaChecklist => ({
   extraido: null,
@@ -737,10 +747,11 @@ test("montarChecklist: acervo — anexado vale mesmo sem o atestado lido; ids re
     { atestado_id: AT3, numero: "do Atende", situacao: "sem_pdf" },
     { atestado_id: AT4, numero: "4/2025", situacao: "nao_encontrado" },
   ]);
-  assert.equal(c.resumo.faltam, 1 + 2 + 3 + 8); // edital, 2 PDFs, 3 CATs fora, 8 essenciais
+  // edital, 2 PDFs, a análise do edital (extraido null), 3 CATs fora e 8 essenciais
+  assert.equal(c.resumo.faltam, 1 + 2 + 1 + 3 + 8);
   const passos = c.proximos_passos;
   assert.ok(passos.includes("Anexe as CATs do Atende?: anexar_acervo."));
-  assert.ok(passos.includes("Envie no Acervo técnico o PDF destas CATs: do Atende."));
+  assert.ok(passos.includes("Envie o PDF destas CATs em Acervo técnico → Documentos: do Atende."));
 });
 
 test("montarChecklist: declarações — exigidas primeiro, depois as dos arquivos; título pelo modelo, pelo arquivo ou pela chave", () => {
@@ -928,17 +939,34 @@ test("montarChecklist: só uma cópia antiga na pasta já basta para não estar 
     arq("p3", "gerado:cronograma:pdf", { assinatura: "assinado" }),
     ...documentos.map((d) => arq(`b-${d.id}`, `biblioteca:${d.id}`)),
   ];
-  const pronto = montarChecklist(vazio({ arquivos: base, documentos }));
+  // sem a análise do edital (extraido null) NUNCA está pronto, mesmo com tudo anexado e assinado (correção da revisão 1:
+  // antes este caso dava pronto: true)
+  const semAnalise = montarChecklist(vazio({ arquivos: base, documentos }));
+  assert.deepEqual(semAnalise.resumo, {
+    faltam: 1,
+    vencidos: 0,
+    falta_assinar: 0,
+    verificar: 0,
+    desatualizadas: 0,
+    sem_analise: 1,
+    sem_atende: 0,
+    pronto: false,
+  });
+  // com a análise gravada (sem exigência nenhuma), tudo certo: pronto
+  const pronto = montarChecklist(vazio({ extraido: ANALISE_MINIMA, arquivos: base, documentos }));
   assert.deepEqual(pronto.resumo, {
     faltam: 0,
     vencidos: 0,
     falta_assinar: 0,
     verificar: 0,
     desatualizadas: 0,
+    sem_analise: 0,
+    sem_atende: 0,
     pronto: true,
   });
   const comAntiga = montarChecklist(
     vazio({
+      extraido: ANALISE_MINIMA,
       arquivos: [
         ...base,
         arq("velha", "biblioteca:d-que-foi-substituido", { nome: "CND de 2025.pdf" }),
@@ -952,6 +980,8 @@ test("montarChecklist: só uma cópia antiga na pasta já basta para não estar 
     falta_assinar: 0,
     verificar: 0,
     desatualizadas: 1,
+    sem_analise: 0,
+    sem_atende: 0,
     pronto: false,
   });
   assert.deepEqual(comAntiga.proximos_passos, [
@@ -998,7 +1028,7 @@ test("montarChecklist: a ordem dos próximos passos (1 a 9) com a exclusão das 
   assert.ok(p4.endsWith("Cartão CNPJ."));
   assert.equal(p5, "Exclua da pasta do envelope as cópias desatualizadas: Antiga.pdf.");
   assert.equal(p6, "Anexe as CATs do Atende?: anexar_acervo.");
-  assert.equal(p7, "Envie no Acervo técnico o PDF destas CATs: 2/2025.");
+  assert.equal(p7, "Envie o PDF destas CATs em Acervo técnico → Documentos: 2/2025.");
   assert.equal(p8, "Gere as declarações: gerar_declaracoes (nao_emprega_menor).");
   assert.equal(p9, 'Assine no gov.br e use "Enviar assinado" na aba Arquivos: 1 arquivo(s).');
   assert.equal(
@@ -1055,4 +1085,530 @@ test("conferirCopiasComOsAtivos: vencidas entre os ativos, o resto fora dos ativ
   assert.equal(documentoVencido(HOJE, HOJE), false);
   assert.equal(documentoVencido(null, HOJE), false);
   assert.equal(documentoVencido("lixo", HOJE), false);
+});
+
+// ═══ Correção da revisão 1 da C5 ═══════════════════════════════════════════════════════════════
+
+// ─── classificarExigencia: redações reais de editais de obra e iluminação pública ───────────────
+
+type Redacao = [texto: string, tipos: string[], declaracoes: string[]];
+
+/**
+ * Cada linha: a redação como vem no edital, os tipos de documento da biblioteca e as declarações esperados.
+ * `[]` e `[]` = o SIGO não reconhece e a linha cai em "verificar" (nunca "coberto" por engano).
+ */
+const REDACOES: Redacao[] = [
+  // ── habilitação jurídica ──
+  [
+    "Ato constitutivo, estatuto ou contrato social em vigor, devidamente registrado",
+    ["contrato_social"],
+    [],
+  ],
+  ["Contrato social consolidado, registrado na Junta Comercial", ["contrato_social"], []],
+  ["Certidão simplificada da Junta Comercial, emitida há menos de 90 dias", ["certidao_junta"], []],
+  ["Requerimento de empresário, no caso de empresa individual", ["contrato_social"], []],
+  ["Procuração por instrumento público ou particular, com firma reconhecida", ["procuracao"], []],
+  // exigência condicional: o SIGO não sabe se se aplica
+  ["Procuração, quando for o caso", [], []],
+  ["Se houver, procuração do representante legal", [], []],
+  ["Caso exista, certidão simplificada da Junta Comercial", [], []],
+  ["Declaração de microempresa ou empresa de pequeno porte, se for o caso", [], []],
+  ["Documento de identificação do representante legal", [], []],
+  ["Comprovante de inscrição e de situação cadastral no CNPJ", ["cartao_cnpj"], []],
+  ["Alvará de funcionamento ou licença de localização", ["alvara"], []],
+  ["CRC — Certificado de Registro Cadastral do SICAF", ["sicaf"], []],
+  // ── regularidade fiscal ──
+  ["Prova de inscrição estadual e municipal", ["inscricao_estadual", "inscricao_municipal"], []],
+  ["Prova de inscrição estadual ou municipal", ["inscricao_estadual", "inscricao_municipal"], []],
+  ["Inscrição Estadual e/ou Municipal", ["inscricao_estadual", "inscricao_municipal"], []],
+  [
+    "Prova de inscrição no Cadastro de Contribuintes Estadual ou Municipal, relativo ao domicílio ou sede do licitante",
+    ["inscricao_estadual", "inscricao_municipal"],
+    [],
+  ],
+  // a inscrição no CNPJ não é a municipal só porque "municipais" aparece mais adiante
+  [
+    "Prova de inscrição no CNPJ e certidão negativa de débitos municipais",
+    ["cnd_municipal", "cartao_cnpj"],
+    [],
+  ],
+  ["Certidão Negativa de Débitos Estaduais", ["cnd_estadual"], []],
+  ["Certidão de regularidade fiscal com a Fazenda Municipal", ["cnd_municipal"], []],
+  [
+    "Certidão conjunta negativa de débitos relativos a tributos federais e à dívida ativa da União",
+    ["cnd_federal"],
+    [],
+  ],
+  [
+    "Prova de regularidade para com a Fazenda Federal, Estadual e Municipal",
+    ["cnd_federal", "cnd_estadual", "cnd_municipal"],
+    [],
+  ],
+  // "ME/EPP" aqui é o prazo de regularização, NÃO a declaração de enquadramento
+  [
+    "Certidão de regularidade fiscal (para ME/EPP, o prazo de regularização será de cinco dias úteis)",
+    [],
+    [],
+  ],
+  ["CERTIDÃO DE REGULARIDADE DO FGTS - CRF", ["crf_fgts"], []],
+  // ── regularidade trabalhista ──
+  ["Certidão Negativa de Débitos Trabalhistas (CNDT)", ["cndt_trabalhista"], []],
+  // declaração que nenhum modelo cobre: não vira CNDT por causa da palavra "trabalhistas"
+  ["Declaração de cumprimento das normas trabalhistas", [], []],
+  ["Declaração de que a licitante cumpre as normas de segurança do trabalho", [], []],
+  [
+    "Declaração de que não emprega menor de 18 anos em trabalho noturno, perigoso ou insalubre, nem menor de 16 anos",
+    [],
+    ["nao_emprega_menor"],
+  ],
+  // ── qualificação econômico-financeira ──
+  ["Balanço patrimonial e demonstrações contábeis do último exercício social", ["balanco_dre"], []],
+  ["Balanço patrimonial assinado por contador com registro no CRC", ["balanco_dre"], []],
+  [
+    "Certidão negativa de falência ou recuperação judicial expedida pelo distribuidor da sede da licitante",
+    ["certidao_falencia"],
+    [],
+  ],
+  ["Comprovação de patrimônio líquido mínimo de 10% do valor estimado", [], []],
+  // ── qualificação técnica ──
+  ["Certidão de registro da empresa no CREA", ["certidao_crea_pj"], []],
+  [
+    "Certidão de registro e quitação da empresa e dos responsáveis técnicos no CREA ou CAU",
+    ["certidao_crea_pj"],
+    [],
+  ],
+  // atestado e CAT são do acervo técnico, não a certidão de registro da empresa
+  ["Atestado de capacidade técnica registrado no CREA", [], []],
+  ["CAT — Certidão de Acervo Técnico emitida pelo CREA", [], []],
+  [
+    "Declaração do responsável técnico, registrado no CREA, de que acompanhará a execução da obra",
+    [],
+    [],
+  ],
+  ["Atestado de visita técnica emitido pela Secretaria de Obras", [], []],
+  ["Declaração de vistoria ao local da obra", [], []],
+  // ── declarações com modelo ──
+  ["Declaração de inexistência de fatos impeditivos à habilitação", [], ["fato_impeditivo"]],
+  [
+    "Declaração, sob as penas da lei, de que não há fato superveniente impeditivo",
+    [],
+    ["fato_impeditivo"],
+  ],
+  ["Declaração de enquadramento como microempresa ou empresa de pequeno porte", [], ["me_epp"]],
+  [
+    "Declaração de que cumpre plenamente os requisitos de habilitação",
+    [],
+    ["requisitos_habilitacao"],
+  ],
+  [
+    "Declaração de reserva de cargos para pessoa com deficiência ou reabilitado da Previdência Social",
+    [],
+    ["reserva_cargos"],
+  ],
+  ["Declaração de elaboração independente de proposta", [], ["elaboracao_independente"]],
+  // ── declaração e documento na mesma linha: os dois valem ──
+  [
+    "Alvará de funcionamento e declaração de que não emprega menor",
+    ["alvara"],
+    ["nao_emprega_menor"],
+  ],
+  [
+    "Certidão negativa de falência e declaração de inexistência de fatos impeditivos",
+    ["certidao_falencia"],
+    ["fato_impeditivo"],
+  ],
+];
+
+test("classificarExigencia: tabela de redações reais de editais (jurídica, fiscal, trabalhista, econômica, técnica e declarações)", () => {
+  assert.ok(REDACOES.length >= 30, `só ${REDACOES.length} redações`);
+  for (const [texto, tipos, declaracoes] of REDACOES) {
+    assert.deepEqual(classificarExigencia(texto), { tipos, declaracoes }, texto);
+  }
+});
+
+test("classificarExigencia: cada chamada devolve listas novas (quem recebe pode alterá-las sem estragar a próxima)", () => {
+  const a = classificarExigencia("Procuração, quando for o caso");
+  a.tipos.push("x");
+  assert.deepEqual(classificarExigencia("Procuração, quando for o caso"), {
+    tipos: [],
+    declaracoes: [],
+  });
+});
+
+test("classificarExigencia: a palavra 'declaração' é o que liga as regras de declaração (sem ela, ME/EPP e menor não viram declaração)", () => {
+  const c = (t: string) => classificarExigencia(t);
+  assert.deepEqual(c("Empresa de pequeno porte: comprovar o enquadramento (LC 123)"), {
+    tipos: [],
+    declaracoes: [],
+  });
+  assert.deepEqual(c("DECLARAÇÃO DE ENQUADRAMENTO COMO ME/EPP"), {
+    tipos: [],
+    declaracoes: ["me_epp"],
+  });
+  assert.deepEqual(c("declaracao de que nao emprega menor"), {
+    tipos: [],
+    declaracoes: ["nao_emprega_menor"],
+  });
+  // espaços e quebras de linha no meio do texto lido do PDF
+  assert.deepEqual(c("Prova de   inscrição\n estadual\te municipal"), {
+    tipos: ["inscricao_estadual", "inscricao_municipal"],
+    declaracoes: [],
+  });
+});
+
+test("semAcento: o código-fonte usa o escape \\u0300-\\u036f, não os caracteres combinantes crus", () => {
+  const fonte = readFileSync(new URL("./checklist.ts", import.meta.url), "utf8");
+  assert.ok(fonte.includes("[\\u0300-\\u036f]"));
+  assert.ok(!/[\u0300-\u036f]/.test(fonte), "há caractere combinante cru em checklist.ts");
+});
+
+// ─── sem a análise do edital e sem o Atende? nunca está pronto ──────────────────────────────────
+
+/** Tudo anexado e assinado, para isolar o efeito da análise e do Atende?. */
+function montagemCompleta(extra: Partial<EntradaChecklist> = {}) {
+  const documentos = ESSENCIAIS.map((tipo, i) => ({
+    id: `d${i}`,
+    tipo,
+    nome: `Doc ${tipo}`,
+    validade: null,
+    ativo: true,
+  }));
+  return vazio({
+    arquivos: [
+      arq("e1", null, { categoria: "edital" }),
+      arq("p1", "gerado:proposta:pdf", { assinatura: "assinado" }),
+      arq("p3", "gerado:cronograma:pdf", { assinatura: "assinado" }),
+      ...documentos.map((d) => arq(`b-${d.id}`, `biblioteca:${d.id}`)),
+    ],
+    documentos,
+    ...extra,
+  });
+}
+
+const PASSO_ANALISE =
+  "Grave a análise do edital (ler_edital_anexado e criar_ou_atualizar_oportunidade) para o SIGO conferir as exigências.";
+const PASSO_ATENDE = "Confira o acervo técnico contra o edital e grave com registrar_atende.";
+
+test("montarChecklist: sem a análise do edital soma 1 a faltam, nunca está pronto e manda gravar a análise", () => {
+  for (const extraido of [null, undefined, {}, [], "texto", 42]) {
+    const c = montarChecklist(montagemCompleta({ extraido }));
+    assert.equal(c.resumo.sem_analise, 1, JSON.stringify(extraido));
+    assert.equal(c.resumo.faltam, 1, JSON.stringify(extraido));
+    assert.equal(c.resumo.pronto, false, JSON.stringify(extraido));
+    assert.deepEqual(c.proximos_passos, [PASSO_ANALISE], JSON.stringify(extraido));
+  }
+  // com qualquer análise gravada (mesmo sem exigência), não é "sem análise"
+  const ok = montarChecklist(montagemCompleta({ extraido: ANALISE_MINIMA }));
+  assert.equal(ok.resumo.sem_analise, 0);
+  assert.equal(ok.resumo.pronto, true);
+  assert.deepEqual(ok.proximos_passos, []);
+});
+
+test("montarChecklist: o passo da análise vem logo depois do edital e antes da proposta", () => {
+  const c = montarChecklist(vazio());
+  assert.equal(
+    c.proximos_passos[0],
+    "Anexe o edital: anexar_edital_por_url (link público do arquivo) ou gerar_link_envio."
+  );
+  assert.equal(c.proximos_passos[1], PASSO_ANALISE);
+  assert.equal(c.proximos_passos[2], "Gere a proposta e o cronograma: gerar_documentos_proposta.");
+  // vazio(): edital 1 + proposta_pdf e cronograma_pdf 2 + análise 1 + 8 essenciais
+  assert.equal(c.resumo.faltam, 1 + 2 + 1 + 8);
+});
+
+const TECNICA_OPERACIONAL = {
+  habilitacao: { tecnica_operacional: [{ id: "op1", descricao: "Iluminação pública LED" }] },
+};
+const TECNICA_PROFISSIONAL = {
+  habilitacao: { tecnica_profissional: [{ id: "pr1", descricao: "Engenheiro eletricista" }] },
+};
+
+test("exigeQualificacaoTecnica e vereditoDoAtende: leitura defensiva", () => {
+  assert.equal(exigeQualificacaoTecnica(TECNICA_OPERACIONAL), true);
+  assert.equal(exigeQualificacaoTecnica(TECNICA_PROFISSIONAL), true);
+  assert.equal(exigeQualificacaoTecnica({ habilitacao: { tecnica_operacional: [] } }), false);
+  assert.equal(exigeQualificacaoTecnica({ habilitacao: { tecnica_operacional: "x" } }), false);
+  assert.equal(exigeQualificacaoTecnica({ habilitacao: {} }), false);
+  for (const ruim of [null, undefined, "x", 3, [], {}]) {
+    assert.equal(exigeQualificacaoTecnica(ruim), false);
+  }
+  assert.equal(vereditoDoAtende({ veredito: "atende" }), "atende");
+  assert.equal(vereditoDoAtende({ veredito: " nao_atende " }), "nao_atende");
+  for (const ruim of [
+    null,
+    undefined,
+    "x",
+    [],
+    {},
+    { veredito: "" },
+    { veredito: "  " },
+    { veredito: 3 },
+  ]) {
+    assert.equal(vereditoDoAtende(ruim), null);
+  }
+});
+
+test("montarChecklist: edital com qualificação técnica e sem Atende? soma 1 a faltam e manda gravar com registrar_atende", () => {
+  const CATS = [{ id: AT1 }];
+  const ATESTADOS = [{ id: AT1, numero: "1/2025", arquivo_ref: "certificados/x" }];
+  const pasta = [arq("a1", `acervo:${AT1}`)];
+  // técnica operacional OU profissional pedem o Atende?; cada caso isolado, com a CAT já anexada quando há
+  const casos: [string, unknown, unknown, number][] = [
+    ["sem atende", TECNICA_OPERACIONAL, null, 1],
+    ["atende vazio", TECNICA_OPERACIONAL, {}, 1],
+    ["profissional sem atende", TECNICA_PROFISSIONAL, null, 1],
+    ["veredito sem nenhuma CAT", TECNICA_OPERACIONAL, { veredito: "atende", cats_anexar: [] }, 1],
+    ["veredito sem cats_anexar", TECNICA_OPERACIONAL, { veredito: "atende" }, 1],
+    ["CATs sem veredito", TECNICA_OPERACIONAL, { cats_anexar: CATS }, 1],
+    ["veredito em branco", TECNICA_OPERACIONAL, { veredito: " ", cats_anexar: CATS }, 1],
+    ["atende completo", TECNICA_OPERACIONAL, { veredito: "atende", cats_anexar: CATS }, 0],
+    [
+      "só parcialmente: é aviso (na ferramenta), não falta",
+      TECNICA_OPERACIONAL,
+      { veredito: "atende_parcialmente", cats_anexar: CATS },
+      0,
+    ],
+    [
+      "não atende com CAT citada: também só aviso",
+      TECNICA_PROFISSIONAL,
+      { veredito: "nao_atende", cats_anexar: CATS },
+      0,
+    ],
+    ["edital sem técnica não precisa de Atende?", ANALISE_MINIMA, null, 0],
+    [
+      "listas de técnica vazias não pedem Atende?",
+      { habilitacao: { tecnica_operacional: [] } },
+      null,
+      0,
+    ],
+  ];
+  for (const [nome, extraido, atende, esperado] of casos) {
+    const c = montarChecklist(
+      montagemCompleta({
+        extraido,
+        atende,
+        arquivos: [...montagemCompleta().arquivos, ...pasta],
+        atestados: ATESTADOS,
+      })
+    );
+    assert.equal(c.resumo.sem_atende, esperado, nome);
+    assert.equal(c.resumo.faltam, esperado, nome);
+    assert.equal(c.resumo.pronto, esperado === 0, nome);
+    assert.deepEqual(c.proximos_passos, esperado ? [PASSO_ATENDE] : [], nome);
+  }
+});
+
+test("montarChecklist: o passo do Atende? vem antes dos passos das CATs", () => {
+  const c = montarChecklist(
+    vazio({
+      extraido: TECNICA_OPERACIONAL,
+      atende: { veredito: "atende", cats_anexar: [] },
+    })
+  );
+  assert.equal(c.resumo.sem_atende, 1);
+  const i = c.proximos_passos.indexOf(PASSO_ATENDE);
+  assert.ok(i > c.proximos_passos.findIndex((p) => p.startsWith("Atualize em Acervo técnico")));
+  // sem CATs não há passo de CAT, mas com CATs o passo do Atende? precede "Anexe as CATs"
+  const comCats = montarChecklist(
+    vazio({
+      extraido: TECNICA_OPERACIONAL,
+      atende: { cats_anexar: [{ id: AT1 }] },
+      atestados: [{ id: AT1, numero: "1/2025", arquivo_ref: "certificados/x" }],
+    })
+  );
+  assert.ok(
+    comCats.proximos_passos.indexOf(PASSO_ATENDE) <
+      comCats.proximos_passos.indexOf("Anexe as CATs do Atende?: anexar_acervo.")
+  );
+});
+
+// ─── cronograma: sem cronograma gravado a linha não conta como falta ────────────────────────────
+
+const PASSO_CRONOGRAMA =
+  "Se o edital pede cronograma físico-financeiro, grave com importar_cronograma e chame gerar_documentos_proposta de novo.";
+
+test("montarChecklist: sem cronograma gravado, as linhas do cronograma ficam sem_cronograma e fora de faltam", () => {
+  const entrada = vazio({ extraido: ANALISE_MINIMA });
+  const com = montarChecklist(entrada); // padrão: temCronograma = true
+  const comExplicito = montarChecklist({ ...entrada, temCronograma: true });
+  const sem = montarChecklist({ ...entrada, temCronograma: false });
+  assert.deepEqual(comExplicito, com);
+  assert.deepEqual(
+    com.proposta.map((p) => p.situacao),
+    ["falta", "falta", "falta", "falta"]
+  );
+  assert.deepEqual(
+    sem.proposta.map((p) => [p.documento, p.situacao, p.nome]),
+    [
+      ["proposta_pdf", "falta", null],
+      ["proposta_xlsx", "falta", null],
+      ["cronograma_pdf", "sem_cronograma", null],
+      ["cronograma_xlsx", "sem_cronograma", null],
+    ]
+  );
+  // o cronograma_pdf deixa de contar em faltam
+  assert.equal(sem.resumo.faltam, com.resumo.faltam - 1);
+  // o passo 2 fala só da proposta; o texto antigo continua com cronograma gravado
+  assert.ok(
+    com.proximos_passos.includes("Gere a proposta e o cronograma: gerar_documentos_proposta.")
+  );
+  assert.ok(sem.proximos_passos.includes("Gere a proposta: gerar_documentos_proposta."));
+  assert.ok(!sem.proximos_passos.some((p) => p.includes("proposta e o cronograma")));
+  // e SEMPRE vem o passo que manda conferir se o edital pede o cronograma
+  assert.ok(sem.proximos_passos.includes(PASSO_CRONOGRAMA));
+  assert.ok(!com.proximos_passos.includes(PASSO_CRONOGRAMA));
+  // o passo vem logo depois do da proposta
+  const i = sem.proximos_passos.indexOf("Gere a proposta: gerar_documentos_proposta.");
+  assert.equal(sem.proximos_passos[i + 1], PASSO_CRONOGRAMA);
+});
+
+test("montarChecklist: sem cronograma e com o resto pronto, o único passo é conferir o cronograma", () => {
+  const base = montagemCompleta({ extraido: ANALISE_MINIMA });
+  // o cronograma_pdf que o helper assinou sai: a oportunidade não tem cronograma
+  const arquivos = base.arquivos.filter((a) => a.origem !== "gerado:cronograma:pdf");
+  const c = montarChecklist({ ...base, arquivos, temCronograma: false });
+  assert.equal(c.proposta[2].situacao, "sem_cronograma");
+  assert.equal(c.resumo.faltam, 0);
+  assert.deepEqual(c.proximos_passos, [PASSO_CRONOGRAMA]);
+  // com cronograma gravado, o mesmo arquivo que falta conta como antes
+  const gravado = montarChecklist({ ...base, arquivos, temCronograma: true });
+  assert.equal(gravado.resumo.faltam, 1);
+  assert.equal(gravado.resumo.pronto, false);
+});
+
+test("montarChecklist: arquivo de cronograma que existe mostra a situação real mesmo com temCronograma false", () => {
+  const c = montarChecklist(
+    vazio({
+      extraido: ANALISE_MINIMA,
+      temCronograma: false,
+      arquivos: [arq("c1", "gerado:cronograma:pdf", { assinatura: "pendente", nome: "Crono.pdf" })],
+    })
+  );
+  assert.deepEqual(
+    c.proposta.map((p) => p.situacao),
+    ["falta", "falta", "falta_assinar", "sem_cronograma"]
+  );
+  assert.equal(c.resumo.falta_assinar, 1);
+});
+
+// ─── CATs citadas no Atende? que não estão mais no acervo ───────────────────────────────────────
+
+test("montarChecklist: CAT que sumiu do acervo manda refazer o Atende?, depois do passo do PDF das CATs", () => {
+  const AT3 = "00000000-0000-4000-8000-000000000053";
+  const c = montarChecklist(
+    vazio({
+      extraido: ANALISE_MINIMA,
+      atende: {
+        veredito: "atende",
+        cats_anexar: [{ id: AT1, numero: "7/2024" }, { id: AT2 }, { id: AT3, numero: "3/2025" }],
+      },
+      atestados: [{ id: AT3, numero: "3/2025", arquivo_ref: null }],
+    })
+  );
+  assert.deepEqual(
+    c.acervo.map((a) => a.situacao),
+    ["nao_encontrado", "nao_encontrado", "sem_pdf"]
+  );
+  const passos = c.proximos_passos;
+  const iPdf = passos.indexOf("Envie o PDF destas CATs em Acervo técnico → Documentos: 3/2025.");
+  assert.ok(iPdf >= 0);
+  assert.equal(
+    passos[iPdf + 1],
+    `Refaça o Atende? desta oportunidade (ler_acervo e registrar_atende): 2 CAT(s) citada(s) não estão mais no acervo técnico: 7/2024; ${AT2}.`
+  );
+  // sem CAT desaparecida não há o passo
+  const sem = montarChecklist(
+    vazio({
+      extraido: ANALISE_MINIMA,
+      atende: { veredito: "atende", cats_anexar: [{ id: AT3 }] },
+      atestados: [{ id: AT3, numero: "3/2025", arquivo_ref: null }],
+    })
+  );
+  assert.ok(!sem.proximos_passos.some((p) => p.startsWith("Refaça o Atende?")));
+});
+
+// ─── vence_antes_da_sessao: o passo certo depende de haver outro documento válido ───────────────
+
+test("montarChecklist: vence antes da sessão com OUTRO documento válido na biblioteca manda anexar (passo 3), não atualizar (passo 4)", () => {
+  const velho = {
+    id: "velho",
+    tipo: "crf_fgts",
+    nome: "CRF velho",
+    validade: "2026-10-28",
+    ativo: true,
+  };
+  const montar = (outro: Record<string, unknown> | null, anexadoOutro = false) => {
+    const documentos = [
+      velho,
+      ...(outro ? [{ id: "novo", tipo: "crf_fgts", nome: "CRF novo", ativo: true, ...outro }] : []),
+    ];
+    const arquivos = [arq("b1", "biblioteca:velho")];
+    if (anexadoOutro) arquivos.push(arq("b2", "biblioteca:novo"));
+    return montarChecklist({
+      extraido: { datas: { sessao: { data: "2026-11-05" } } },
+      atende: null,
+      arquivos,
+      documentos,
+      atestados: [],
+      modelos: [],
+      hojeISO: HOJE,
+    });
+  };
+  const atualizar = (c: ReturnType<typeof montarChecklist>) =>
+    c.proximos_passos.find((p) => p.startsWith("Atualize em Acervo técnico")) ?? "";
+  const anexar = (c: ReturnType<typeof montarChecklist>) =>
+    c.proximos_passos.includes(
+      "Anexe a habilitação que já está na biblioteca: anexar_habilitacao."
+    );
+  const crf = (c: ReturnType<typeof montarChecklist>) =>
+    c.certidoes.find((x) => x.tipo === "crf_fgts")!;
+
+  // outro CRF em vigor na sessão, ainda fora da pasta: é só anexar
+  for (const validade of ["2027-01-01", "2026-11-05", null]) {
+    const c = montar({ validade });
+    assert.equal(crf(c).situacao, "vence_antes_da_sessao", String(validade));
+    assert.equal(c.resumo.vencidos, 1, String(validade));
+    assert.equal(c.resumo.pronto, false, String(validade));
+    assert.ok(anexar(c), `anexar com validade ${validade}`);
+    assert.ok(!atualizar(c).includes("CRF do FGTS"), `atualizar com validade ${validade}`);
+  }
+  // outro que também vence antes da sessão, ou que já venceu: só renovando na biblioteca
+  for (const validade of ["2026-11-03", "2026-10-01"]) {
+    const c = montar({ validade });
+    assert.equal(crf(c).situacao, "vence_antes_da_sessao", String(validade));
+    assert.ok(!anexar(c), `anexar com validade ${validade}`);
+    assert.ok(atualizar(c).includes("CRF do FGTS"), `atualizar com validade ${validade}`);
+  }
+  // nenhum outro documento do tipo
+  const so = montar(null);
+  assert.ok(!anexar(so));
+  assert.ok(atualizar(so).includes("CRF do FGTS"));
+  // o outro também já está na pasta e vale na sessão: o tipo está coberto
+  const coberto = montar({ validade: "2027-01-01" }, true);
+  assert.equal(crf(coberto).situacao, "anexado");
+  assert.equal(coberto.resumo.vencidos, 0);
+  // outro documento INATIVO não conta (o checklist só lê os ativos)
+  const inativo = montar({ validade: "2027-01-01", ativo: false });
+  assert.ok(!anexar(inativo));
+  assert.ok(atualizar(inativo).includes("CRF do FGTS"));
+});
+
+test("montarChecklist: a exclusão das cópias desatualizadas lista no máximo 10 nomes e conta o resto", () => {
+  const copias = Array.from({ length: 13 }, (_, i) =>
+    arq(`c${i}`, `biblioteca:antigo-${i}`, { nome: `Cópia ${String(i).padStart(2, "0")}.pdf` })
+  );
+  const c = montarChecklist(vazio({ extraido: ANALISE_MINIMA, arquivos: copias }));
+  const passo = c.proximos_passos.find((p) => p.startsWith("Exclua"))!;
+  assert.equal(
+    passo,
+    "Exclua da pasta do envelope as cópias desatualizadas: " +
+      Array.from({ length: 10 }, (_, i) => `Cópia ${String(i).padStart(2, "0")}.pdf`).join("; ") +
+      " e mais 3."
+  );
+  // o resumo conta todas
+  assert.equal(c.resumo.desatualizadas, 13);
+  assert.equal(c.copias_desatualizadas.length, 13);
+  // 10 exatas: sem "e mais"
+  const dez = montarChecklist(vazio({ extraido: ANALISE_MINIMA, arquivos: copias.slice(0, 10) }));
+  assert.ok(!dez.proximos_passos.find((p) => p.startsWith("Exclua"))!.includes("e mais"));
 });

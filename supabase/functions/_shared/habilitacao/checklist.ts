@@ -33,22 +33,36 @@ const semAcento = (v: unknown) =>
   String(v ?? "")
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "");
+    .replace(/[\u0300-\u036f]/g, "");
 
 /**
- * [padrão, tipo]: a ordem importa; o trecho casado some do texto antes da regra seguinte.
- * Dois cuidados contra falso positivo (que deixaria um documento a mais "faltando" para sempre):
+ * Inscrição estadual e municipal: cada uma casa de forma INDEPENDENTE da outra, porque o edital as junta
+ * ("inscrição estadual e municipal", "estadual ou municipal", "estadual e/ou municipal"). Depois de "inscrição" (ou
+ * "cadastro de contribuintes") só passam palavras de ligação, para "inscrição no CNPJ ... débitos municipais" não virar
+ * a inscrição municipal.
+ */
+const LIGACAO_INSCRICAO =
+  "(?: (?:no|na|nos|nas|do|da|dos|das|de|em|e|ou|e\\/ou|cadastro|contribuintes?|estadua(?:l|is)|municipa(?:l|is)|\\(i[em]\\))){0,8}";
+const RE_INSCRICAO_ESTADUAL = new RegExp(
+  `(?:inscri\\w*|cadastro de contribuintes?)${LIGACAO_INSCRICAO} estadua(?:l|is)`,
+  "g"
+);
+const RE_INSCRICAO_MUNICIPAL = new RegExp(
+  `(?:inscri\\w*|cadastro de contribuintes?)${LIGACAO_INSCRICAO} municipa(?:l|is)|cadastro mobiliario`,
+  "g"
+);
+
+/**
+ * [padrão, tipo, não vale se a linha casar com]: a ordem importa; o trecho casado some do texto antes da regra seguinte.
+ * Cuidados contra falso positivo (que deixaria um documento a mais "faltando" para sempre):
  *  - "CRC" sozinho não é o SICAF: é, quase sempre, o Conselho Regional de Contabilidade ("balanço assinado por
  *    contador, com registro no CRC"). O cadastro é reconhecido por "SICAF" ou "Certificado de Registro Cadastral";
  *  - "Junta Comercial" sozinha não pede a certidão simplificada ("contrato social registrado na Junta Comercial"):
- *    só quando a palavra "certidão" vem antes, na mesma frase.
+ *    só quando a palavra "certidão" vem antes, na mesma frase;
+ *  - "CREA" em linha de atestado, CAT ou acervo é o registro do atestado, não a certidão de registro da empresa.
  */
-const REGRAS_TIPO: [RegExp, string][] = [
-  [/inscricao estadual|cadastro de contribuintes? estadua(l|is)/g, "inscricao_estadual"],
-  [
-    /inscricao municipal|cadastro de contribuintes? municipa(l|is)|cadastro mobiliario/g,
-    "inscricao_municipal",
-  ],
+const SO_DO_ACERVO = /atestado|acervo|\bcat\b/;
+const REGRAS_TIPO: [RegExp, string, RegExp?][] = [
   [/fgts|fundo de garantia/g, "crf_fgts"],
   [/trabalhista|cndt/g, "cndt_trabalhista"],
   [/falencia|recuperacao judicial|concordata/g, "certidao_falencia"],
@@ -59,9 +73,13 @@ const REGRAS_TIPO: [RegExp, string][] = [
   [/balanco patrimonial|demonstracoes contabeis|demonstracao do resultado/g, "balanco_dre"],
   [/alvara/g, "alvara"],
   [/procuracao/g, "procuracao"],
-  [/\b(crea|cau)\b/g, "certidao_crea_pj"],
+  [/\b(crea|cau)\b/g, "certidao_crea_pj", SO_DO_ACERVO],
 ];
 
+/** Exigência condicional ("quando for o caso"): o SIGO não sabe se vale para esta empresa, então não classifica. */
+const CONDICIONAL = /quando for o caso|se for o caso|se houver|caso exista/;
+
+/** Só valem em texto com "declaração": sem ela, "ME/EPP" é o prazo de regularização e "menor" é outra coisa. */
 const REGRAS_DECLARACAO: [RegExp, string][] = [
   [
     /emprega\w* menor|trabalho (do|de) menor|menor(es)? de (18|dezoito|16|dezesseis)|xxxiii/,
@@ -74,27 +92,57 @@ const REGRAS_DECLARACAO: [RegExp, string][] = [
   [/elaboracao independente/, "elaboracao_independente"],
 ];
 
+/**
+ * O edital exige qualificação técnica (operacional ou profissional) quando alguma das duas listas tem item. É o que
+ * faz o "Atende?" (e as CATs) entrarem na conta.
+ */
+export function exigeQualificacaoTecnica(extraido: unknown): boolean {
+  const h = obj(obj(extraido).habilitacao);
+  return lista(h.tecnica_operacional).length > 0 || lista(h.tecnica_profissional).length > 0;
+}
+
+/** O veredito gravado no Atende? ("atende", "atende_parcialmente" ou "nao_atende"); null se não há texto. */
+export function vereditoDoAtende(atende: unknown): string | null {
+  const v = obj(atende).veredito;
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
 /** Na ordem de IDS_TIPO_DOCUMENTO, sem repetir. */
 const naOrdemDosTipos = (tipos: Iterable<string>) => {
   const conjunto = new Set(tipos);
   return IDS_TIPO_DOCUMENTO.filter((t) => conjunto.has(t));
 };
 
+/**
+ * O que uma linha de exigência do edital pede: tipos de documento da biblioteca e/ou declarações com modelo.
+ * Errar para "não reconheci" é seguro (a linha cai em "verificar" e o checklist não fica pronto); errar para
+ * "reconheci" não é. Por isso:
+ *  - exigência condicional ("quando for o caso", "se houver") → nada reconhecido;
+ *  - texto sem "declaração": só documentos (as regras de declaração não valem);
+ *  - texto com "declaração": se algum modelo é reconhecido, vale a declaração E os documentos que a mesma linha
+ *    também pede ("alvará e declaração de que não emprega menor"); se nenhum modelo é reconhecido, é uma declaração
+ *    que o SIGO não tem, e palavras soltas ("trabalhistas", "CREA") NÃO viram documento.
+ */
 export function classificarExigencia(descricao: unknown): {
   tipos: string[];
   declaracoes: string[];
 } {
-  let t = semAcento(descricao);
-  if (!t.trim()) return { tipos: [], declaracoes: [] };
-  const declaracoes = REGRAS_DECLARACAO.filter(([re]) => re.test(t)).map(([, chave]) => chave);
-  // uma declaração não é uma certidão: "declaração de ME/EPP" não pede documento da biblioteca
-  if (/declarac/.test(t) && declaracoes.length) return { tipos: [], declaracoes };
+  const original = semAcento(descricao).replace(/\s+/g, " ").trim();
+  if (!original || CONDICIONAL.test(original)) return { tipos: [], declaracoes: [] };
+  const comDeclaracao = original.includes("declarac");
+  const declaracoes = comDeclaracao
+    ? REGRAS_DECLARACAO.filter(([re]) => re.test(original)).map(([, chave]) => chave)
+    : [];
+  if (comDeclaracao && declaracoes.length === 0) return { tipos: [], declaracoes: [] };
+  let t = original;
   const tipos: string[] = [];
-  for (const [re, tipo] of REGRAS_TIPO) {
-    re.lastIndex = 0;
-    if (re.test(t)) {
+  // as duas inscrições são lidas no texto inteiro (uma não pode consumir a outra) e só depois somem dele
+  if (t.search(RE_INSCRICAO_ESTADUAL) >= 0) tipos.push("inscricao_estadual");
+  if (t.search(RE_INSCRICAO_MUNICIPAL) >= 0) tipos.push("inscricao_municipal");
+  t = t.replace(RE_INSCRICAO_MUNICIPAL, " ").replace(RE_INSCRICAO_ESTADUAL, " ");
+  for (const [re, tipo, exceto] of REGRAS_TIPO) {
+    if (t.search(re) >= 0 && !exceto?.test(original)) {
       tipos.push(tipo);
-      re.lastIndex = 0;
       t = t.replace(re, " ");
     }
   }
@@ -112,7 +160,7 @@ export function classificarExigencia(descricao: unknown): {
     if (/estadua(l|is)/.test(semLugar)) tipos.push("cnd_estadual");
     if (/municipa(l|is)/.test(semLugar)) tipos.push("cnd_municipal");
   }
-  return { tipos: naOrdemDosTipos(tipos), declaracoes: tipos.length ? [] : declaracoes };
+  return { tipos: naOrdemDosTipos(tipos), declaracoes };
 }
 
 // ─── cópias da biblioteca que ficaram na pasta do envelope ─────────────────────────────────────
@@ -182,6 +230,11 @@ export interface EntradaChecklist {
   atende: unknown; // edital_analise.atende (ou null)
   /** A coluna oportunidade.licitacao_data (a "Sessão" da tela): vale mais que a data do edital. */
   licitacaoData?: unknown;
+  /**
+   * A oportunidade tem cronograma físico-financeiro gravado (ou já tem arquivo de cronograma gerado). Padrão `true`.
+   * Com `false`, o cronograma que ainda não existe não conta como falta (`sem_cronograma`): nem todo edital o pede.
+   */
+  temCronograma?: boolean;
   arquivos: ArquivoChecklist[];
   documentos: DocumentoBiblioteca[]; // os ativos da biblioteca
   atestados: { id: string; numero: string | null; arquivo_ref: string | null }[]; // os de cats_anexar que existem
@@ -211,7 +264,8 @@ export interface Checklist {
   edital: { situacao: "ok" | "falta"; arquivos: number };
   proposta: {
     documento: string;
-    situacao: "ok" | "falta" | "falta_assinar";
+    /** `sem_cronograma`: só nas linhas do cronograma, quando a oportunidade não tem cronograma gravado. */
+    situacao: "ok" | "falta" | "falta_assinar" | "sem_cronograma";
     nome: string | null;
   }[];
   certidoes: {
@@ -247,6 +301,10 @@ export interface Checklist {
     falta_assinar: number;
     verificar: number;
     desatualizadas: number;
+    /** 1 quando a oportunidade não tem a análise do edital gravada (conta em `faltam`), senão 0. */
+    sem_analise: number;
+    /** 1 quando o edital exige qualificação técnica e o Atende? não foi gravado, ou não citou CAT (conta em `faltam`). */
+    sem_atende: number;
     pronto: boolean;
   };
   proximos_passos: string[];
@@ -260,6 +318,8 @@ const DOCUMENTOS_DA_PROPOSTA: [string, string][] = [
 ];
 
 const LIMITE_DESCRICAO = 300;
+/** Quantos nomes de arquivo o passo de exclusão lista; o resto vira "e mais N". */
+const MAX_NOMES_NO_PASSO = 10;
 const ordemDosNomes = (
   a: { nome: string; arquivo_id: string },
   b: { nome: string; arquivo_id: string }
@@ -321,9 +381,15 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
   };
 
   // ── proposta e cronograma (o PDF é o que se assina) ──
+  // Sem cronograma gravado, o cronograma que não existe não é falta: nem todo edital o pede (o arquivo que já existe
+  // mostra a situação real)
+  const temCronograma = p.temCronograma !== false;
   const proposta: Checklist["proposta"] = DOCUMENTOS_DA_PROPOSTA.map(([documento, origem]) => {
     const a = arquivos.find((x) => x.origem === origem);
-    if (!a) return { documento, situacao: "falta", nome: null };
+    if (!a) {
+      const semCronograma = !temCronograma && documento.startsWith("cronograma_");
+      return { documento, situacao: semCronograma ? "sem_cronograma" : "falta", nome: null };
+    }
     return {
       documento,
       situacao: a.assinatura === "pendente" ? "falta_assinar" : "ok",
@@ -348,6 +414,11 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
       .map(validadeDe)
       .filter((v): v is string => v !== null)
       .sort();
+  /**
+   * Tipos que vencem antes da sessão mas já têm OUTRO documento ativo, válido até a sessão, só não anexado: o
+   * remédio é anexar (passo 3), não atualizar a biblioteca (passo 4).
+   */
+  const resolveAnexando = new Set<string>();
   const certidoes: Checklist["certidoes"] = naOrdemDosTipos([...TIPOS_ESSENCIAIS, ...exigidos]).map(
     (tipo) => {
       const docs = ativos.filter((d) => d.tipo === tipo);
@@ -364,6 +435,15 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
             const v = validadeDe(d);
             return v !== null && (diasAte(v, sessaoFutura) ?? 0) < 0;
           });
+        if (venceAntes && sessaoFutura) {
+          const serve = validos.some((d) => {
+            const v = validadeDe(d);
+            return (
+              !idsAnexados.has(String(d.id)) && (v === null || (diasAte(v, sessaoFutura) ?? 0) >= 0)
+            );
+          });
+          if (serve) resolveAnexando.add(tipo);
+        }
         return {
           ...cabeca,
           situacao: venceAntes ? "vence_antes_da_sessao" : "anexado",
@@ -473,13 +553,23 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
   const pdfEmFalta = proposta.filter(
     (x) => x.documento.endsWith("_pdf") && x.situacao === "falta"
   ).length;
+  // Sem a análise do edital o SIGO não sabe o que ele exige: nunca "pronto" (extraido ausente ou vazio)
+  const semAnalise = Object.keys(extraido).length === 0 ? 1 : 0;
+  // Edital com qualificação técnica exige o Atende? gravado, com veredito e ao menos uma CAT citada. Veredito que não
+  // é "atende" não entra aqui: é aviso da ferramenta, não falta.
+  const semAtende =
+    exigeQualificacaoTecnica(extraido) && (vereditoDoAtende(atende) === null || acervo.length === 0)
+      ? 1
+      : 0;
   const faltam =
     (edital.situacao === "falta" ? 1 : 0) +
     pdfEmFalta +
     doc("falta") +
     doc("nao_anexado") +
     acervo.filter((a) => a.situacao !== "anexado").length +
-    declaracoes.filter((d) => d.situacao === "falta").length;
+    declaracoes.filter((d) => d.situacao === "falta").length +
+    semAnalise +
+    semAtende;
   const vencidos = doc("vencido") + doc("vence_antes_da_sessao");
   const verificar = outros.filter((o) => o.situacao === "verificar").length;
   const resumo: Checklist["resumo"] = {
@@ -488,12 +578,16 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
     falta_assinar: faltaAssinar.length,
     verificar,
     desatualizadas: desatualizadas.length,
+    sem_analise: semAnalise,
+    sem_atende: semAtende,
     pronto:
       faltam === 0 &&
       vencidos === 0 &&
       faltaAssinar.length === 0 &&
       verificar === 0 &&
-      desatualizadas.length === 0,
+      desatualizadas.length === 0 &&
+      semAnalise === 0 &&
+      semAtende === 0,
   };
 
   // ── próximos passos (só os que se aplicam, nesta ordem) ──
@@ -503,12 +597,31 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
       "Anexe o edital: anexar_edital_por_url (link público do arquivo) ou gerar_link_envio."
     );
   }
-  if (pdfEmFalta > 0) passos.push("Gere a proposta e o cronograma: gerar_documentos_proposta.");
-  if (doc("nao_anexado") > 0) {
+  if (semAnalise) {
+    passos.push(
+      "Grave a análise do edital (ler_edital_anexado e criar_ou_atualizar_oportunidade) para o SIGO conferir as exigências."
+    );
+  }
+  if (pdfEmFalta > 0) {
+    passos.push(
+      temCronograma
+        ? "Gere a proposta e o cronograma: gerar_documentos_proposta."
+        : "Gere a proposta: gerar_documentos_proposta."
+    );
+  }
+  if (!temCronograma) {
+    passos.push(
+      "Se o edital pede cronograma físico-financeiro, grave com importar_cronograma e chame gerar_documentos_proposta de novo."
+    );
+  }
+  if (doc("nao_anexado") > 0 || resolveAnexando.size > 0) {
     passos.push("Anexe a habilitação que já está na biblioteca: anexar_habilitacao.");
   }
-  const aAtualizar = certidoes.filter((c) =>
-    ["falta", "vencido", "vence_antes_da_sessao"].includes(c.situacao)
+  // o tipo que vence antes da sessão mas tem outro documento válido na biblioteca se resolve anexando (passo acima)
+  const aAtualizar = certidoes.filter(
+    (c) =>
+      ["falta", "vencido"].includes(c.situacao) ||
+      (c.situacao === "vence_antes_da_sessao" && !resolveAnexando.has(c.tipo))
   );
   if (aAtualizar.length > 0) {
     passos.push(
@@ -516,17 +629,29 @@ export function montarChecklist(p: EntradaChecklist): Checklist {
     );
   }
   if (desatualizadas.length > 0) {
+    const nomes = desatualizadas.slice(0, MAX_NOMES_NO_PASSO).map((c) => c.nome);
+    const resto = desatualizadas.length - nomes.length;
     passos.push(
-      `Exclua da pasta do envelope as cópias desatualizadas: ${desatualizadas.map((c) => c.nome).join("; ")}.`
+      `Exclua da pasta do envelope as cópias desatualizadas: ${nomes.join("; ")}${resto > 0 ? ` e mais ${resto}` : ""}.`
     );
+  }
+  if (semAtende) {
+    passos.push("Confira o acervo técnico contra o edital e grave com registrar_atende.");
   }
   if (acervo.some((a) => a.situacao === "nao_anexado")) {
     passos.push("Anexe as CATs do Atende?: anexar_acervo.");
   }
   const semPdf = acervo.filter((a) => a.situacao === "sem_pdf");
   if (semPdf.length > 0) {
+    // o PDF da CAT é enviado na aba "Documentos (n)" do Acervo técnico (a aba das CATs e atestados)
     passos.push(
-      `Envie no Acervo técnico o PDF destas CATs: ${semPdf.map((a) => a.numero ?? a.atestado_id).join("; ")}.`
+      `Envie o PDF destas CATs em Acervo técnico → Documentos: ${semPdf.map((a) => a.numero ?? a.atestado_id).join("; ")}.`
+    );
+  }
+  const sumidas = acervo.filter((a) => a.situacao === "nao_encontrado");
+  if (sumidas.length > 0) {
+    passos.push(
+      `Refaça o Atende? desta oportunidade (ler_acervo e registrar_atende): ${sumidas.length} CAT(s) citada(s) não estão mais no acervo técnico: ${sumidas.map((a) => a.numero ?? a.atestado_id).join("; ")}.`
     );
   }
   const declaracoesEmFalta = declaracoes.filter((d) => d.situacao === "falta");

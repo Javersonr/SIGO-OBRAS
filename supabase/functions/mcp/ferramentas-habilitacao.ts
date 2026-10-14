@@ -48,8 +48,10 @@ import {
   conferirCopiasComOsAtivos,
   copiasDaBiblioteca,
   documentoVencido,
+  exigeQualificacaoTecnica,
   montarChecklist,
   PREFIXO_BIBLIOTECA,
+  vereditoDoAtende,
   type ArquivoChecklist,
   type CopiaDaBiblioteca,
 } from "../_shared/habilitacao/checklist.ts";
@@ -63,6 +65,7 @@ import {
   tipoDocumento,
   type DocumentoBiblioteca,
 } from "../_shared/habilitacao/documentos-regras.ts";
+import { normalizarCronograma } from "../_shared/orcamento/cronograma.ts";
 import { falha, naoEncontrado, sucesso, type DepsFerramenta, type Ferramenta } from "./registro.ts";
 
 export const MAX_DOCUMENTOS_POR_CHAMADA = 60;
@@ -991,6 +994,11 @@ const ANEXAR_EDITAL_POR_URL: Ferramenta = {
 const AVISO_SEM_ANALISE =
   "A oportunidade ainda não tem a análise do edital: o checklist cobre só os documentos essenciais. Grave o edital com criar_ou_atualizar_oportunidade.";
 
+const AVISO_SEM_CRONOGRAMA =
+  "A oportunidade não tem cronograma gravado: confira se o edital pede o cronograma físico-financeiro.";
+const AVISO_ATENDE_NAO_CONCLUI =
+  "O Atende? desta oportunidade não concluiu que a empresa atende à qualificação técnica.";
+
 const CHECKLIST_HABILITACAO: Ferramenta = {
   def: {
     name: "checklist_habilitacao",
@@ -1007,13 +1015,15 @@ const CHECKLIST_HABILITACAO: Ferramenta = {
   },
   async executar(args, deps) {
     const id = uuidOuNull(args.oportunidade_id);
-    // licitacao_data é a "Sessão" que a tela mostra e o usuário edita; o edital é o plano B (dataDaSessao)
+    // licitacao_data é a "Sessão" que a tela mostra e o usuário edita; o edital é o plano B (dataDaSessao).
+    // cronograma_ff diz se a oportunidade tem cronograma gravado.
     const op = id
-      ? await deps.db.porId<{ id: string; edital_analise: unknown; licitacao_data: unknown }>(
-          "oportunidade",
-          id,
-          "id, edital_analise, licitacao_data"
-        )
+      ? await deps.db.porId<{
+          id: string;
+          edital_analise: unknown;
+          licitacao_data: unknown;
+          cronograma_ff: unknown;
+        }>("oportunidade", id, "id, edital_analise, licitacao_data, cronograma_ff")
       : null;
     if (!id || !op) return naoEncontrado("oportunidade", id);
     const analise = analiseDe(op.edital_analise);
@@ -1059,11 +1069,20 @@ const CHECKLIST_HABILITACAO: Ferramenta = {
       )
     );
 
+    // "tem cronograma" = cronograma gravado (com meses; cronograma_ff pode vir do legado como texto JSON, e texto
+    // inválido é "sem cronograma", como na gerar_documentos_proposta) OU arquivo de cronograma já gerado na pasta
+    const temCronograma =
+      normalizarCronograma(analiseDe(op.cronograma_ff)).meses > 0 ||
+      arquivos.some(
+        (a) => typeof a.origem === "string" && a.origem.startsWith("gerado:cronograma:")
+      );
+
     const hoje = hojeBR(deps.agora);
     const c = montarChecklist({
       extraido: analise?.extraido ?? null,
       atende: analise?.atende ?? null,
       licitacaoData: op.licitacao_data,
+      temCronograma,
       arquivos,
       documentos,
       atestados,
@@ -1072,7 +1091,7 @@ const CHECKLIST_HABILITACAO: Ferramenta = {
     });
 
     const avisos: string[] = [];
-    if (!analise?.extraido) avisos.push(AVISO_SEM_ANALISE);
+    if (c.resumo.sem_analise > 0) avisos.push(AVISO_SEM_ANALISE);
     // sem data de sessão futura não há como saber se algo vence antes dela: nunca calar sobre isso (como a
     // anexar_habilitacao). Só importa se algum documento anexado tem validade.
     const semSessaoFutura = c.sessao === null || c.sessao <= hoje;
@@ -1081,6 +1100,25 @@ const CHECKLIST_HABILITACAO: Ferramenta = {
       c.certidoes.some((x) => x.situacao === "anexado" && x.validade !== null)
     ) {
       avisos.push(AVISO_SEM_SESSAO);
+    }
+    if (!temCronograma) avisos.push(AVISO_SEM_CRONOGRAMA);
+    // veredito que não é "atende" não vira falta (o Atende? existe), mas o usuário precisa saber; só vale quando o
+    // edital exige qualificação técnica (sem itens técnicos o veredito é sempre "atende_parcialmente")
+    const veredito = vereditoDoAtende(analise?.atende);
+    if (exigeQualificacaoTecnica(analise?.extraido) && veredito !== null && veredito !== "atende") {
+      avisos.push(AVISO_ATENDE_NAO_CONCLUI);
+    }
+    // certidão anexada sem validade: não dá para saber se vale; a situação não muda, mas o usuário confere as datas
+    const certidoesSemValidade = c.certidoes.filter(
+      (x) =>
+        x.situacao === "anexado" &&
+        x.validade === null &&
+        tipoDocumento(x.tipo)?.grupo === "certidao"
+    );
+    if (certidoesSemValidade.length > 0) {
+      avisos.push(
+        `Certidão(ões) sem validade cadastrada na biblioteca: ${certidoesSemValidade.map((x) => x.rotulo).join("; ")}. Confira as datas.`
+      );
     }
     return sucesso({ oportunidade_id: id, ...c, avisos, link: linkOportunidade(id) }, { alvo: id });
   },

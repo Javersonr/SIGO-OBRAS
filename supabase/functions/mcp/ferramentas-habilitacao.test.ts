@@ -2701,6 +2701,8 @@ test("checklist_habilitacao: sem a análise do edital avisa e cobre os essenciai
   );
 });
 
+const CRONOGRAMA_GRAVADO = { meses: 3, pct: { "1": [50, 30, 20] } };
+
 const linhaArquivo = (id: string, origem: string | null, extra: Record<string, unknown> = {}) => ({
   id,
   nome: `Arquivo ${id}`,
@@ -2725,12 +2727,15 @@ function paginada(linhas: readonly object[], c: ChamadaFake): { data: object[] }
 function cenarioChecklist(p: {
   analise?: unknown;
   licitacaoData?: unknown;
+  /** oportunidade.cronograma_ff; sem a chave, a oportunidade tem um cronograma gravado (3 meses). */
+  cronograma?: unknown;
   docs?: Record<string, unknown>[];
   arquivos?: Record<string, unknown>[];
   atestados?: Record<string, unknown>[];
   modelos?: Record<string, unknown>[];
 }) {
   const analise = "analise" in p ? p.analise : SESSAO_EDITAL;
+  const cronograma = "cronograma" in p ? p.cronograma : CRONOGRAMA_GRAVADO;
   const arquivos = (p.arquivos ?? []).map((a) => ({
     empresa_id: E,
     oportunidade_id: OP,
@@ -2740,7 +2745,14 @@ function cenarioChecklist(p: {
   const atestados = (p.atestados ?? []).map((a) => ({ empresa_id: E, deleted_at: null, ...a }));
   return montarDeps((c: ChamadaFake) => {
     if (c.tabela === "oportunidade" && c.op === "select")
-      return { data: { id: OP, edital_analise: analise, licitacao_data: p.licitacaoData ?? null } };
+      return {
+        data: {
+          id: OP,
+          edital_analise: analise,
+          licitacao_data: p.licitacaoData ?? null,
+          cronograma_ff: cronograma,
+        },
+      };
     if (c.tabela === "arquivo_oportunidade") return paginada(arquivos, c);
     if (c.tabela === "acervo_documento") return { data: p.docs ?? [] };
     if (c.tabela === "acervo_atestado") return filtrar(atestados, c);
@@ -2799,7 +2811,10 @@ test("checklist_habilitacao: as consultas filtram pela empresa, sem excluídos, 
   assert.deepEqual(filtrosDe(consultas("acervo_atestado")[0]), [...base, ["in", "id", [AT1]]]);
   assert.deepEqual(filtrosDe(consultas("modelo_declaracao")[0]), base);
   // só as colunas de que o checklist precisa: nenhuma ref de arquivo da oportunidade nem da biblioteca
-  assert.equal(consultas("oportunidade")[0].colunas, "id, edital_analise, licitacao_data");
+  assert.equal(
+    consultas("oportunidade")[0].colunas,
+    "id, edital_analise, licitacao_data, cronograma_ff"
+  );
   assert.equal(
     consultas("arquivo_oportunidade")[0].colunas,
     "id, nome, pasta, categoria, origem, assinatura"
@@ -3144,6 +3159,276 @@ test("checklist_habilitacao: a saída nunca traz ref de Storage, caminho nem URL
     "resumo",
     "sessao",
   ]);
+});
+
+// ─── checklist_habilitacao: correção da revisão 1 ─────────────────────────────────────────────
+
+const AVISO_SEM_CRONOGRAMA =
+  "A oportunidade não tem cronograma gravado: confira se o edital pede o cronograma físico-financeiro.";
+const AVISO_ATENDE_NAO_CONCLUI =
+  "O Atende? desta oportunidade não concluiu que a empresa atende à qualificação técnica.";
+const PASSO_CRONOGRAMA =
+  "Se o edital pede cronograma físico-financeiro, grave com importar_cronograma e chame gerar_documentos_proposta de novo.";
+const propostaDe = (s: Record<string, unknown>) =>
+  (s.proposta as { documento: string; situacao: string }[]).map((p) => [p.documento, p.situacao]);
+
+test("checklist_habilitacao: sem cronograma gravado as linhas do cronograma ficam sem_cronograma, com aviso e passo", async () => {
+  const sem = sc(await checklist(cenarioChecklist({ cronograma: null }).deps));
+  assert.deepEqual(propostaDe(sem), [
+    ["proposta_pdf", "falta"],
+    ["proposta_xlsx", "falta"],
+    ["cronograma_pdf", "sem_cronograma"],
+    ["cronograma_xlsx", "sem_cronograma"],
+  ]);
+  assert.deepEqual(avisosDe(sem), [AVISO_SEM_CRONOGRAMA]);
+  const passos = sem.proximos_passos as string[];
+  assert.ok(passos.includes("Gere a proposta: gerar_documentos_proposta."));
+  assert.ok(passos.includes(PASSO_CRONOGRAMA));
+  // o cronograma_pdf fora de faltam: edital, proposta_pdf, 8 essenciais (análise tem sessão, então não falta)
+  assert.equal((sem.resumo as { faltam: number }).faltam, 1 + 1 + 8);
+
+  // com cronograma gravado: conta em faltam como sempre, sem aviso e sem o passo
+  const com = sc(await checklist(cenarioChecklist({}).deps));
+  assert.deepEqual(propostaDe(com), [
+    ["proposta_pdf", "falta"],
+    ["proposta_xlsx", "falta"],
+    ["cronograma_pdf", "falta"],
+    ["cronograma_xlsx", "falta"],
+  ]);
+  assert.deepEqual(avisosDe(com), []);
+  assert.ok(!(com.proximos_passos as string[]).includes(PASSO_CRONOGRAMA));
+  assert.ok(
+    (com.proximos_passos as string[]).includes(
+      "Gere a proposta e o cronograma: gerar_documentos_proposta."
+    )
+  );
+  assert.equal((com.resumo as { faltam: number }).faltam, 1 + 2 + 8);
+});
+
+test("checklist_habilitacao: o cronograma gravado vem de cronograma_ff (objeto ou texto do legado); texto inválido, vazio ou meses 0 = sem cronograma", async () => {
+  const tem = async (cronograma: unknown) =>
+    !avisosDe(sc(await checklist(cenarioChecklist({ cronograma }).deps))).includes(
+      AVISO_SEM_CRONOGRAMA
+    );
+  // com cronograma
+  assert.equal(await tem({ meses: 3, pct: {} }), true);
+  assert.equal(await tem({ meses: 1 }), true);
+  assert.equal(await tem(JSON.stringify({ meses: 6, pct: { "1": [100, 0, 0, 0, 0, 0] } })), true);
+  assert.equal(await tem({ meses: "4" }), true); // normalizarCronograma aceita número em texto
+  // sem cronograma (a mesma leitura da gerar_documentos_proposta)
+  for (const ruim of [
+    null,
+    undefined,
+    {},
+    [],
+    "",
+    "isto não é JSON",
+    "null",
+    "[]",
+    "42",
+    { meses: 0 },
+    { meses: -2 },
+    { meses: "x" },
+    { pct: { "1": [100] } },
+    JSON.stringify({ meses: 0 }),
+  ]) {
+    assert.equal(await tem(ruim), false, JSON.stringify(ruim));
+  }
+});
+
+test("checklist_habilitacao: arquivo de cronograma gerado conta como cronograma, mesmo sem cronograma_ff", async () => {
+  const s = sc(
+    await checklist(
+      cenarioChecklist({
+        cronograma: null,
+        arquivos: [
+          linhaArquivo("c1", "gerado:cronograma:pdf", {
+            assinatura: "pendente",
+            nome: "Cronograma.pdf",
+          }),
+        ],
+      }).deps
+    )
+  );
+  assert.deepEqual(avisosDe(s), []);
+  assert.deepEqual(propostaDe(s), [
+    ["proposta_pdf", "falta"],
+    ["proposta_xlsx", "falta"],
+    ["cronograma_pdf", "falta_assinar"],
+    ["cronograma_xlsx", "falta"],
+  ]);
+  assert.ok(!(s.proximos_passos as string[]).includes(PASSO_CRONOGRAMA));
+  // só o Excel do cronograma também vale (a origem é gerado:cronograma:*)
+  const soXlsx = sc(
+    await checklist(
+      cenarioChecklist({
+        cronograma: null,
+        arquivos: [linhaArquivo("c2", "gerado:cronograma:xlsx")],
+      }).deps
+    )
+  );
+  assert.deepEqual(avisosDe(soXlsx), []);
+  // origem parecida que não é a do cronograma gerado não vale
+  const outra = sc(
+    await checklist(
+      cenarioChecklist({
+        cronograma: null,
+        arquivos: [linhaArquivo("c3", "gerado:proposta:pdf"), linhaArquivo("c4", "url:cronograma")],
+      }).deps
+    )
+  );
+  assert.deepEqual(avisosDe(outra), [AVISO_SEM_CRONOGRAMA]);
+});
+
+const EDITAL_TECNICO = {
+  extraido: {
+    datas: { sessao: { data: "2026-11-05" } },
+    habilitacao: { tecnica_operacional: [{ id: "op1", descricao: "Iluminação pública" }] },
+  },
+};
+
+test("checklist_habilitacao: sem a análise do edital soma 1 a faltam e manda gravar a análise (nunca pronto)", async () => {
+  const s = sc(await checklist(cenarioChecklist({ analise: null }).deps));
+  const resumo = s.resumo as { sem_analise: number; sem_atende: number; pronto: boolean };
+  assert.deepEqual([resumo.sem_analise, resumo.sem_atende, resumo.pronto], [1, 0, false]);
+  assert.ok(
+    (s.proximos_passos as string[]).includes(
+      "Grave a análise do edital (ler_edital_anexado e criar_ou_atualizar_oportunidade) para o SIGO conferir as exigências."
+    )
+  );
+  // o aviso é o mesmo de antes; a análise `{}` conta como ausente (mesma regra do checklist)
+  const vazia = sc(await checklist(cenarioChecklist({ analise: { extraido: {} } }).deps));
+  assert.equal((vazia.resumo as { sem_analise: number }).sem_analise, 1);
+  assert.match(avisosDe(vazia)[0], /ainda não tem a análise do edital/);
+});
+
+test("checklist_habilitacao: edital com qualificação técnica e sem Atende? → sem_atende, passo com registrar_atende, nunca pronto", async () => {
+  const s = sc(await checklist(cenarioChecklist({ analise: EDITAL_TECNICO }).deps));
+  assert.equal((s.resumo as { sem_atende: number }).sem_atende, 1);
+  assert.ok(
+    (s.proximos_passos as string[]).includes(
+      "Confira o acervo técnico contra o edital e grave com registrar_atende."
+    )
+  );
+  // não há veredito para reclamar: o aviso do veredito não sai
+  assert.ok(!avisosDe(s).includes(AVISO_ATENDE_NAO_CONCLUI));
+  // Atende? gravado com veredito, mas sem nenhuma CAT: continua faltando
+  const semCat = sc(
+    await checklist(
+      cenarioChecklist({
+        analise: { ...EDITAL_TECNICO, atende: { veredito: "atende", cats_anexar: [] } },
+      }).deps
+    )
+  );
+  assert.equal((semCat.resumo as { sem_atende: number }).sem_atende, 1);
+});
+
+test("checklist_habilitacao: veredito do Atende? diferente de 'atende' é só aviso (não conta em faltam)", async () => {
+  const comVeredito = (veredito: string, extraido: unknown = EDITAL_TECNICO.extraido) =>
+    checklist(
+      cenarioChecklist({
+        analise: { extraido, atende: { veredito, cats_anexar: [{ id: AT1 }] } },
+        atestados: [atestado(AT1)],
+        arquivos: [linhaArquivo("a1", `acervo:${AT1}`)],
+      }).deps
+    );
+  for (const veredito of ["atende_parcialmente", "nao_atende"]) {
+    const s = sc(await comVeredito(veredito));
+    const resumo = s.resumo as { sem_atende: number; faltam: number };
+    assert.equal(resumo.sem_atende, 0, veredito);
+    assert.ok(avisosDe(s).includes(AVISO_ATENDE_NAO_CONCLUI), veredito);
+    // a CAT está anexada: o que falta é só o resto (edital, proposta_pdf, cronograma_pdf, 8 essenciais)
+    assert.equal(resumo.faltam, 1 + 2 + 8, veredito);
+  }
+  // "atende": nenhum aviso do veredito
+  assert.ok(!avisosDe(sc(await comVeredito("atende"))).includes(AVISO_ATENDE_NAO_CONCLUI));
+  // edital sem exigência técnica: o veredito do Atende? ("atende_parcialmente" quando não há itens) não é problema
+  const semTecnica = sc(await comVeredito("atende_parcialmente", { habilitacao: {} }));
+  assert.ok(!avisosDe(semTecnica).includes(AVISO_ATENDE_NAO_CONCLUI));
+});
+
+test("checklist_habilitacao: certidão anexada sem validade cadastrada avisa (só as certidões, só as anexadas)", async () => {
+  const docs = [
+    doc("d1", "crf_fgts", { validade: null }), // certidão anexada sem validade: avisa
+    doc("d2", "cnd_federal", { validade: "2026-12-31" }), // com validade: não avisa
+    doc("d3", "cartao_cnpj", { validade: null }), // documento (não certidão): não avisa
+    doc("d4", "cndt_trabalhista", { validade: null }), // certidão que nem foi anexada: não avisa
+    doc("d5", "cnd_estadual", { validade: null }), // anexada sem validade: avisa (na ordem da lista)
+  ];
+  const arquivos = ["d1", "d2", "d3", "d5"].map((d) => linhaArquivo(`a-${d}`, `biblioteca:${d}`));
+  const s = sc(await checklist(cenarioChecklist({ docs, arquivos }).deps));
+  assert.deepEqual(avisosDe(s), [
+    "Certidão(ões) sem validade cadastrada na biblioteca: CND Estadual; CRF do FGTS. Confira as datas.",
+  ]);
+  // o documento fica anexado (o aviso não muda a situação)
+  const cert = (tipo: string) =>
+    (s.certidoes as { tipo: string; situacao: string; validade: string | null }[]).find(
+      (x) => x.tipo === tipo
+    )!;
+  assert.deepEqual([cert("crf_fgts").situacao, cert("crf_fgts").validade], ["anexado", null]);
+  // sem nenhuma anexada sem validade, sem o aviso
+  const nada = sc(
+    await checklist(
+      cenarioChecklist({
+        docs: [doc("d2", "cnd_federal", { validade: "2026-12-31" })],
+        arquivos: [linhaArquivo("a2", "biblioteca:d2")],
+      }).deps
+    )
+  );
+  assert.deepEqual(avisosDe(nada), []);
+});
+
+test("checklist_habilitacao: ordem dos avisos — análise, sessão, cronograma, Atende?, certidão sem validade", async () => {
+  // sem data de sessão, com um documento anexado que tem validade (por isso o aviso da sessão) e uma certidão sem
+  const docs = [
+    doc("d1", "crf_fgts", { validade: null }),
+    doc("d2", "cnd_federal", { validade: "2026-12-31" }),
+  ];
+  const s = sc(
+    await checklist(
+      cenarioChecklist({
+        analise: {
+          extraido: { habilitacao: { tecnica_operacional: [{ id: "op1" }] } },
+          atende: { veredito: "nao_atende", cats_anexar: [{ id: AT1 }] },
+        },
+        cronograma: null,
+        docs,
+        arquivos: [linhaArquivo("a1", "biblioteca:d1"), linhaArquivo("a2", "biblioteca:d2")],
+        atestados: [atestado(AT1)],
+      }).deps
+    )
+  );
+  assert.deepEqual(avisosDe(s), [
+    "A oportunidade não tem data de sessão futura: não conferi se algum documento vence antes dela.",
+    AVISO_SEM_CRONOGRAMA,
+    AVISO_ATENDE_NAO_CONCLUI,
+    "Certidão(ões) sem validade cadastrada na biblioteca: CRF do FGTS. Confira as datas.",
+  ]);
+  const sem = sc(await checklist(cenarioChecklist({ analise: null, cronograma: null }).deps));
+  assert.deepEqual(avisosDe(sem).length, 2);
+  assert.match(avisosDe(sem)[0], /ainda não tem a análise do edital/);
+  assert.equal(avisosDe(sem)[1], AVISO_SEM_CRONOGRAMA);
+});
+
+test("checklist_habilitacao: CAT sumida do acervo manda refazer o Atende?, e a aba das CATs tem o nome real", async () => {
+  const s = sc(
+    await checklist(
+      cenarioChecklist({
+        analise: {
+          ...SESSAO_EDITAL,
+          atende: { veredito: "atende", cats_anexar: [{ id: AT1 }, { id: AT2 }] },
+        },
+        atestados: [atestado(AT2, { arquivo_ref: null })],
+      }).deps
+    )
+  );
+  const passos = s.proximos_passos as string[];
+  assert.ok(passos.includes("Envie o PDF destas CATs em Acervo técnico → Documentos: 52/2025."));
+  assert.ok(
+    passos.includes(
+      `Refaça o Atende? desta oportunidade (ler_acervo e registrar_atende): 1 CAT(s) citada(s) não estão mais no acervo técnico: ${AT1}.`
+    )
+  );
 });
 
 test("checklist_habilitacao: não grava nada — nem arquivo, nem histórico, nem RPC (idempotente)", async () => {
