@@ -12,6 +12,7 @@ import { INSTRUCOES_ARQUIVOS } from "./ferramentas-arquivos.ts";
 import { INSTRUCOES_EDITAL } from "./ferramentas-edital.ts";
 import { INSTRUCOES_ACERVO } from "./ferramentas-acervo.ts";
 import { INSTRUCOES_ORCAMENTO } from "./ferramentas-orcamento.ts";
+import { INSTRUCOES_HABILITACAO } from "./ferramentas-habilitacao.ts";
 import {
   exigenciaDaFerramenta,
   NEGAR,
@@ -22,6 +23,13 @@ import { criarFakeAdmin } from "../_shared/conector/testes/fake-admin.ts";
 import type { ContextoMcp } from "./contexto.ts";
 
 const E = "00000000-0000-4000-8000-000000000001";
+const NOMES_QUE_GRAVAM_ARQUIVO = [
+  "anexar_habilitacao",
+  "anexar_acervo",
+  "gerar_documentos_proposta",
+  "gerar_declaracoes",
+  "anexar_edital_por_url",
+];
 
 function ctx(vinculo: ContextoMcp["vinculo"]): ContextoMcp {
   return {
@@ -62,7 +70,8 @@ test("todo def: title, anotações certas e inputSchema fechado em todos os obje
   for (const { def } of FERRAMENTAS) {
     assert.ok(def.title, `${def.name}: sem title`);
     assert.ok(def.description, `${def.name}: sem description`);
-    assert.equal(def.annotations.openWorldHint, false, def.name);
+    // só anexar_edital_por_url sai para a internet (baixa o edital de um link público)
+    assert.equal(def.annotations.openWorldHint, def.name === "anexar_edital_por_url", def.name);
     assert.equal(typeof def.annotations.idempotentHint, "boolean", def.name);
     assert.equal(typeof def.annotations.readOnlyHint, "boolean", def.name);
     if (!def.annotations.readOnlyHint)
@@ -79,15 +88,19 @@ test("toda ferramenta registrada tem exigência diferente de NEGAR", () => {
   }
 });
 
-test("INSTRUCOES: base com as 8 linhas, ≤ 4000 caracteres; cada parte ≤ 800", () => {
+test("INSTRUCOES: base com as 8 linhas, ≤ 4400 caracteres; cada parte ≤ 800", () => {
   assert.equal(INSTRUCOES_BASE.length, 8);
   assert.ok(INSTRUCOES.startsWith(INSTRUCOES_BASE[0]));
-  assert.ok(INSTRUCOES.length <= 4000, `INSTRUCOES com ${INSTRUCOES.length} caracteres`);
+  // o teto era 4000 com as quatro partes do Plano 2; a parte da habilitação (≤ 800) e o texto novo das
+  // instruções de arquivos e de orçamento somaram uns 1000 caracteres
+  assert.ok(INSTRUCOES.length <= 4400, `INSTRUCOES com ${INSTRUCOES.length} caracteres`);
+  assert.ok(INSTRUCOES.endsWith(INSTRUCOES_HABILITACAO[INSTRUCOES_HABILITACAO.length - 1]));
   for (const [parte, linhas] of Object.entries({
     INSTRUCOES_ARQUIVOS,
     INSTRUCOES_EDITAL,
     INSTRUCOES_ACERVO,
     INSTRUCOES_ORCAMENTO,
+    INSTRUCOES_HABILITACAO,
   })) {
     const total = linhas.reduce((s, l) => s + l.length, 0);
     assert.ok(total <= 800, `${parte} com ${total} caracteres`);
@@ -134,6 +147,31 @@ test("empresa_atual: usuário, empresa com UF, permissões e ferramentas liberad
     FERRAMENTAS.map((x) => x.def.name)
   );
   assert.equal(ferramentas.empresa_atual, true);
+  // quem só vê a Lista confere a habilitação, mas não grava arquivo pelo servidor
+  assert.equal(ferramentas.checklist_habilitacao, true);
+  for (const nome of NOMES_QUE_GRAVAM_ARQUIVO) assert.equal(ferramentas[nome], false, nome);
+});
+
+test("empresa_atual: com Lista e Arquivos → criar, as seis ferramentas da habilitação ficam liberadas", async () => {
+  const { admin, storage } = criarFakeAdmin();
+  const quemAnexa = ctx({
+    perfil: "Usuario",
+    ativo: true,
+    permissoes: { Oportunidades: { Lista: { visualizar: true }, Arquivos: { criar: true } } },
+  });
+  const f = FERRAMENTAS.find((x) => x.def.name === "empresa_atual")!;
+  const r = await f.executar(
+    {},
+    { ctx: quemAnexa, db: camadaDaEmpresa(admin, E), storage, fetchFn: fetch, agora: new Date() }
+  );
+  const ferramentas = (r.resultado.structuredContent as Record<string, unknown>)
+    .ferramentas as Record<string, boolean>;
+  for (const nome of [...NOMES_QUE_GRAVAM_ARQUIVO, "checklist_habilitacao"]) {
+    assert.equal(ferramentas[nome], true, nome);
+  }
+  // sem editar a oportunidade nem o orçamento, o resto continua fechado
+  assert.equal(ferramentas.registrar_atende, false);
+  assert.equal(ferramentas.importar_orcamento, false);
 });
 
 test("permissoesEfetivas: editar_orcamento exige Lista/editar e Orçamento/editar", () => {
@@ -172,9 +210,16 @@ const DO_CONTRATO: Record<string, [boolean, boolean, string[]]> = {
   importar_cronograma: [false, true, ["oportunidade_id", "meses", "linhas"]],
   registrar_proposta: [false, false, ["oportunidade_id"]],
   ler_orcamento: [true, true, ["oportunidade_id"]],
+  // §5 do plano da habilitação (09/10/2026)
+  anexar_habilitacao: [false, true, ["oportunidade_id"]],
+  anexar_acervo: [false, true, ["oportunidade_id"]],
+  gerar_documentos_proposta: [false, true, ["oportunidade_id"]],
+  gerar_declaracoes: [false, true, ["oportunidade_id", "itens"]],
+  anexar_edital_por_url: [false, true, ["oportunidade_id", "url", "nome", "categoria"]],
+  checklist_habilitacao: [true, true, ["oportunidade_id"]],
 };
 
-test("Plano 2 completo: as 17 ferramentas na ordem de NOMES_FERRAMENTAS, como no §5, e os 3 prompts", () => {
+test("Plano 2 + habilitação: as 23 ferramentas na ordem de NOMES_FERRAMENTAS, como no §5, e os 4 prompts", () => {
   assert.deepEqual(
     FERRAMENTAS.map((f) => f.def.name),
     [...NOMES_FERRAMENTAS]
@@ -192,6 +237,13 @@ test("Plano 2 completo: as 17 ferramentas na ordem de NOMES_FERRAMENTAS, como no
   }
   assert.deepEqual(
     PROMPTS.map((p) => p.name),
-    ["analisar_edital", "cadastrar_acervo", "orcamento_cronograma_licitacao"]
+    [
+      "analisar_edital",
+      "cadastrar_acervo",
+      "orcamento_cronograma_licitacao",
+      "montar_licitacao_completa",
+    ]
   );
+  assert.equal(FERRAMENTAS.length, 23);
+  assert.equal(PROMPTS.length, 4);
 });

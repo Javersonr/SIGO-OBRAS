@@ -1,6 +1,6 @@
 /**
- * Permissão de cada ferramenta do conector do Claude (spec 25/09 §4.5 e spec 08/10 §2), com os
- * mesmos nomes das telas. Puro.
+ * Permissão de cada ferramenta do conector do Claude (spec 25/09 §4.5, spec 08/10 §2 e spec 09/10
+ * §4), com os mesmos nomes das telas. Puro.
  *
  * Uma Exigencia é uma lista de grupos: TODOS os grupos precisam passar (E), e dentro de um grupo
  * basta UMA permissão (OU). [] = só as checagens de acesso; [[]] = nega sempre.
@@ -25,6 +25,14 @@ export const EDITAR_ORCAMENTO: Exigencia = [
     ["Oportunidades", "Orcamento", "editar"],
   ],
 ];
+/**
+ * Spec 09/10: as ferramentas que gravam arquivo pelo servidor leem acervo, orçamento e biblioteca
+ * e anexam: precisam ver a Lista de oportunidades E criar nos Arquivos.
+ */
+export const ANEXAR_E_LER: Exigencia = [
+  [["Oportunidades", "Lista", null]],
+  [["Oportunidades", "Arquivos", "criar"]],
+];
 export const NEGAR: Exigencia = [[]];
 
 export const NOMES_FERRAMENTAS: readonly string[] = [
@@ -45,6 +53,12 @@ export const NOMES_FERRAMENTAS: readonly string[] = [
   "importar_cronograma",
   "registrar_proposta",
   "ler_orcamento",
+  "anexar_habilitacao",
+  "anexar_acervo",
+  "gerar_documentos_proposta",
+  "gerar_declaracoes",
+  "anexar_edital_por_url",
+  "checklist_habilitacao",
 ];
 
 const DE_LEITURA = new Set([
@@ -54,6 +68,7 @@ const DE_LEITURA = new Set([
   "ler_edital_anexado",
   "status_envio",
   "ler_orcamento",
+  "checklist_habilitacao",
 ]);
 const DE_EDICAO = new Set([
   "registrar_atende",
@@ -62,6 +77,14 @@ const DE_EDICAO = new Set([
   "registrar_proposta",
 ]);
 const DO_ORCAMENTO = new Set(["importar_orcamento", "aplicar_desconto", "importar_cronograma"]);
+/** Copiam, geram ou baixam um arquivo no servidor e gravam nos Arquivos da oportunidade. */
+const DE_ARQUIVO_PELO_SERVIDOR = new Set([
+  "anexar_habilitacao",
+  "anexar_acervo",
+  "gerar_documentos_proposta",
+  "gerar_declaracoes",
+  "anexar_edital_por_url",
+]);
 
 export function atendeExigencia(v: Vinculo, e: Exigencia): boolean {
   return e.every((grupo) =>
@@ -95,6 +118,7 @@ export function exigenciaDaFerramenta(nome: string, args: Record<string, unknown
     ];
   }
   if (DO_ORCAMENTO.has(nome)) return EDITAR_ORCAMENTO;
+  if (DE_ARQUIVO_PELO_SERVIDOR.has(nome)) return ANEXAR_E_LER;
   return NEGAR;
 }
 

@@ -1,9 +1,9 @@
 /**
  * Ferramentas, instruções e prompts do conector do SIGO para o Claude.
  *
- * Junta as partes do Plano 2 (cada uma no próprio arquivo) e guarda o empresa_atual. Toda
- * ferramenta roda pelo despacho (despacho.ts): permissão → limite → campos → execução → auditoria,
- * sempre presa à empresa da chave (CamadaEmpresa).
+ * Junta as partes do Plano 2 e as da habilitação (cada uma no próprio arquivo) e guarda o
+ * empresa_atual. Toda ferramenta roda pelo despacho (despacho.ts): permissão → limite → campos →
+ * execução → auditoria, sempre presa à empresa da chave (CamadaEmpresa).
  */
 import type { PromptDef } from "../_shared/mcp/protocolo.ts";
 import { temPermissaoServidor } from "../_shared/conector/acesso.ts";
@@ -26,6 +26,12 @@ import {
   INSTRUCOES_ORCAMENTO,
   PROMPTS_ORCAMENTO,
 } from "./ferramentas-orcamento.ts";
+import {
+  FERRAMENTAS_HABILITACAO,
+  INSTRUCOES_HABILITACAO,
+  PROMPTS_HABILITACAO,
+} from "./ferramentas-habilitacao.ts";
+import { FERRAMENTAS_DOCUMENTOS } from "./ferramentas-documentos.ts";
 
 export { resultadoJson } from "./registro.ts";
 
@@ -91,12 +97,27 @@ const EMPRESA_ATUAL: Ferramenta = {
   },
 };
 
+// As seis da habilitação ficam na ordem de NOMES_FERRAMENTAS (há teste), não na ordem dos arquivos:
+// quatro vêm de ferramentas-habilitacao.ts e duas de ferramentas-documentos.ts, e elas se misturam.
+const POR_NOME = new Map(
+  [...FERRAMENTAS_HABILITACAO, ...FERRAMENTAS_DOCUMENTOS].map((f) => [f.def.name, f])
+);
+const DA_HABILITACAO: Ferramenta[] = [
+  "anexar_habilitacao",
+  "anexar_acervo",
+  "gerar_documentos_proposta",
+  "gerar_declaracoes",
+  "anexar_edital_por_url",
+  "checklist_habilitacao",
+].map((nome) => POR_NOME.get(nome) as Ferramenta);
+
 export const FERRAMENTAS: Ferramenta[] = [
   EMPRESA_ATUAL,
   ...FERRAMENTAS_ARQUIVOS,
   ...FERRAMENTAS_EDITAL,
   ...FERRAMENTAS_ACERVO,
   ...FERRAMENTAS_ORCAMENTO,
+  ...DA_HABILITACAO,
 ];
 
 export const INSTRUCOES: string = [
@@ -105,6 +126,7 @@ export const INSTRUCOES: string = [
   ...INSTRUCOES_EDITAL,
   ...INSTRUCOES_ACERVO,
   ...INSTRUCOES_ORCAMENTO,
+  ...INSTRUCOES_HABILITACAO,
 ].join("\n");
 
 export const PROMPTS: PromptDef[] = [
@@ -112,4 +134,5 @@ export const PROMPTS: PromptDef[] = [
   ...PROMPTS_EDITAL,
   ...PROMPTS_ACERVO,
   ...PROMPTS_ORCAMENTO,
+  ...PROMPTS_HABILITACAO,
 ];

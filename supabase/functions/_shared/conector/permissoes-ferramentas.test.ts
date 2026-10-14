@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  ANEXAR_E_LER,
   ANEXAR_OPORTUNIDADE,
   atendeExigencia,
   CRIAR_OPORTUNIDADE,
@@ -25,14 +26,22 @@ const vinc = (permissoes: unknown, extra: Partial<Vinculo> = {}): Vinculo => ({
   ...extra,
 });
 
-test("NOMES_FERRAMENTAS: as 17 do §5, nesta ordem, sem repetir", () => {
-  assert.equal(NOMES_FERRAMENTAS.length, 17);
-  assert.equal(new Set(NOMES_FERRAMENTAS).size, 17);
+test("NOMES_FERRAMENTAS: as 23 (17 do Plano 2 + 6 da habilitação), nesta ordem, sem repetir", () => {
+  assert.equal(NOMES_FERRAMENTAS.length, 23);
+  assert.equal(new Set(NOMES_FERRAMENTAS).size, 23);
   assert.equal(NOMES_FERRAMENTAS[0], "empresa_atual");
   assert.equal(NOMES_FERRAMENTAS[16], "ler_orcamento");
+  assert.deepEqual(NOMES_FERRAMENTAS.slice(17), [
+    "anexar_habilitacao",
+    "anexar_acervo",
+    "gerar_documentos_proposta",
+    "gerar_declaracoes",
+    "anexar_edital_por_url",
+    "checklist_habilitacao",
+  ]);
 });
 
-test("exigenciaDaFerramenta: o mapa do §4.5 (17 ferramentas + desconhecida)", () => {
+test("exigenciaDaFerramenta: o mapa do §4.5 (23 ferramentas + desconhecida)", () => {
   const esperado: Record<string, unknown> = {
     empresa_atual: [],
     gerar_link_envio: ANEXAR_OPORTUNIDADE,
@@ -56,6 +65,12 @@ test("exigenciaDaFerramenta: o mapa do §4.5 (17 ferramentas + desconhecida)", (
     importar_cronograma: EDITAR_ORCAMENTO,
     registrar_proposta: EDITAR_OPORTUNIDADE,
     ler_orcamento: LER,
+    anexar_habilitacao: ANEXAR_E_LER,
+    anexar_acervo: ANEXAR_E_LER,
+    gerar_documentos_proposta: ANEXAR_E_LER,
+    gerar_declaracoes: ANEXAR_E_LER,
+    anexar_edital_por_url: ANEXAR_E_LER,
+    checklist_habilitacao: LER,
   };
   assert.deepEqual(Object.keys(esperado), [...NOMES_FERRAMENTAS]);
   for (const nome of NOMES_FERRAMENTAS) {
@@ -63,6 +78,47 @@ test("exigenciaDaFerramenta: o mapa do §4.5 (17 ferramentas + desconhecida)", (
   }
   assert.deepEqual(exigenciaDaFerramenta("apagar_oportunidade", {}), NEGAR);
   assert.deepEqual(exigenciaDaFerramenta("", {}), NEGAR);
+});
+
+test("as cinco ferramentas que gravam arquivo pelo servidor exigem Lista e Arquivos → criar; o checklist só lê", () => {
+  // o valor escrito por extenso: quem muda a regra tem de mudar o teste de propósito
+  const ANEXAR_E_LER_ESPERADO = [
+    [["Oportunidades", "Lista", null]],
+    [["Oportunidades", "Arquivos", "criar"]],
+  ];
+  assert.deepEqual(ANEXAR_E_LER, ANEXAR_E_LER_ESPERADO);
+  for (const nome of [
+    "anexar_habilitacao",
+    "anexar_acervo",
+    "gerar_documentos_proposta",
+    "gerar_declaracoes",
+    "anexar_edital_por_url",
+  ]) {
+    assert.deepEqual(exigenciaDaFerramenta(nome, {}), ANEXAR_E_LER_ESPERADO, nome);
+    // os argumentos não mudam a exigência
+    assert.deepEqual(
+      exigenciaDaFerramenta(nome, { oportunidade_id: "x", alvo: "atestado" }),
+      ANEXAR_E_LER_ESPERADO,
+      nome
+    );
+  }
+  assert.deepEqual(exigenciaDaFerramenta("checklist_habilitacao", {}), LER);
+  // quem só lê não anexa; quem só anexa (sem ver a Lista) também não; quem tem as duas faz tudo
+  const soLer = vinc({ Oportunidades: { Lista: { visualizar: true } } });
+  const soAnexar = vinc({ Oportunidades: { Arquivos: { criar: true } } });
+  const lerEAnexar = vinc({
+    Oportunidades: { Lista: { visualizar: true }, Arquivos: { criar: true } },
+  });
+  for (const nome of NOMES_FERRAMENTAS.slice(17, 22)) {
+    const e = exigenciaDaFerramenta(nome, {});
+    assert.equal(atendeExigencia(soLer, e), false, `${nome}: só ler`);
+    assert.equal(atendeExigencia(soAnexar, e), false, `${nome}: só anexar`);
+    assert.equal(atendeExigencia(lerEAnexar, e), true, `${nome}: ler e anexar`);
+  }
+  const checklist = exigenciaDaFerramenta("checklist_habilitacao", {});
+  assert.equal(atendeExigencia(soLer, checklist), true);
+  assert.equal(atendeExigencia(lerEAnexar, checklist), true);
+  assert.equal(atendeExigencia(soAnexar, checklist), false);
 });
 
 test("exigência que depende dos argumentos: editar com oportunidade_id, atestado no link", () => {
@@ -127,6 +183,10 @@ test("rotuloExigencia: texto exato da mensagem de negação", () => {
   );
   assert.equal(rotuloExigencia(LER), "Oportunidades → Lista");
   assert.equal(rotuloExigencia(ANEXAR_OPORTUNIDADE), "Oportunidades → Arquivos → criar");
+  assert.equal(
+    rotuloExigencia(ANEXAR_E_LER),
+    "Oportunidades → Lista e Oportunidades → Arquivos → criar"
+  );
   assert.equal(
     rotuloExigencia(exigenciaDaFerramenta("registrar_arquivos", {})),
     "Oportunidades → Arquivos → criar ou Oportunidades → Lista → editar"

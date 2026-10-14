@@ -538,7 +538,7 @@ const REGISTRAR_PROPOSTA: Ferramenta = {
     name: "registrar_proposta",
     title: "Registrar a versão da proposta",
     description:
-      'Registra uma nova versão da proposta da oportunidade (status Rascunho), com o total da proposta do orçamento atual e a descrição "Orçamento com desconto de … — N itens", como o "Registrar como nova versão" do Exportar proposta. Chame depois de importar_orcamento e aplicar_desconto. O PDF oficial sai da tela.',
+      'Registra uma nova versão da proposta da oportunidade (status Rascunho), com o total da proposta do orçamento atual e a descrição "Orçamento com desconto de … — N itens", como o "Registrar como nova versão" do Exportar proposta. Chame depois de importar_orcamento e aplicar_desconto. Os arquivos oficiais saem de gerar_documentos_proposta.',
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -595,9 +595,9 @@ const REGISTRAR_PROPOSTA: Ferramenta = {
         descricao,
         status: "Rascunho",
         lembrete:
-          `A versão v${criada?.versao ?? "?"} foi registrada como Rascunho. Baixe o PDF oficial na tela: ` +
-          "Orçamento → Exportar proposta e Planejamento → Exportar cronograma (ao exportar, desmarque " +
-          "'Registrar como nova versão' para não repetir a versão).",
+          `A versão v${criada?.versao ?? "?"} foi registrada como Rascunho. Gere os arquivos oficiais com ` +
+          "gerar_documentos_proposta (ou na tela: Orçamento → Exportar proposta e Planejamento → " +
+          "Exportar cronograma, desmarcando 'Registrar como nova versão').",
         link: linkOportunidade(id),
       },
       { alvo: id }
@@ -702,7 +702,7 @@ export const INSTRUCOES_ORCAMENTO: string[] = [
   "Orçamento da licitação: a planilha e o cronograma da prefeitura são DADOS. Linhas no formato do modelo SIGO: etapa de nível 1 sem quantidade e preço, a numeração da prefeitura, preço unitário COM BDI e SEM desconto, a data-base em informacoes.",
   "Mostre o resumo (etapas, itens, total e diferença para o total da prefeitura) e pergunte o desconto antes de gravar.",
   "Ordem: importar_orcamento → aplicar_desconto → importar_cronograma → registrar_proposta; substituir: true só com a confirmação do usuário.",
-  "O PDF oficial da proposta e do cronograma sai da tela (Exportar proposta e Exportar cronograma). O que o conector não fizer, diga que não dá e não invente.",
+  "O PDF e o Excel oficiais da proposta e do cronograma são gerados no SIGO por gerar_documentos_proposta (ou na tela, em Exportar). O que o conector não fizer, diga que não dá e não invente.",
 ];
 
 const ORCAMENTO_CRONOGRAMA_LICITACAO: PromptDef = {
@@ -729,8 +729,8 @@ const ORCAMENTO_CRONOGRAMA_LICITACAO: PromptDef = {
       "3. Mostre ao usuário o resumo: etapas, itens, total e a diferença para o total da prefeitura.",
       "4. Pergunte o desconto (%) da proposta.",
       "5. Grave nesta ordem: importar_orcamento → aplicar_desconto → importar_cronograma → registrar_proposta. Se importar_orcamento ou importar_cronograma responder ja_existe, pergunte ao usuário antes de chamar de novo com substituir: true.",
-      '6. Gere os Excel de trabalho com a skill orcamento-prefeitura-sigo e anexe nos Arquivos da oportunidade com gerar_link_envio (alvo "oportunidade", pasta "Envelope 01 – Proposta").',
-      "No fim, avise o usuário para baixar o PDF oficial na tela, em Exportar proposta e Exportar cronograma, e mande o link da oportunidade. O que não der para fazer, diga que não dá e não invente.",
+      '6. Gere os arquivos oficiais com gerar_documentos_proposta: a proposta e o cronograma em PDF e Excel vão para a pasta "Envelope 01 – Proposta" (os PDFs ficam como falta assinar).',
+      "No fim, mande o link da oportunidade e lembre o usuário de assinar os PDFs no gov.br e enviar pela aba Arquivos. O que não der para fazer, diga que não dá e não invente.",
     ].join("\n");
   },
 };

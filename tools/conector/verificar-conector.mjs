@@ -20,7 +20,7 @@ const pular = (nome, motivo) => {
   console.log(`PULEI ${nome} ${motivo}`);
   puladas++;
 };
-// As 17 ferramentas e os 3 roteiros do Plano 2, na ordem do registro
+// As 23 ferramentas e os 4 roteiros (Plano 2 + habilitação), na ordem do registro
 const FERRAMENTAS_ESPERADAS = [
   "empresa_atual",
   "gerar_link_envio",
@@ -39,8 +39,19 @@ const FERRAMENTAS_ESPERADAS = [
   "importar_cronograma",
   "registrar_proposta",
   "ler_orcamento",
+  "anexar_habilitacao",
+  "anexar_acervo",
+  "gerar_documentos_proposta",
+  "gerar_declaracoes",
+  "anexar_edital_por_url",
+  "checklist_habilitacao",
 ];
-const PROMPTS_ESPERADOS = ["analisar_edital", "cadastrar_acervo", "orcamento_cronograma_licitacao"];
+const PROMPTS_ESPERADOS = [
+  "analisar_edital",
+  "cadastrar_acervo",
+  "orcamento_cronograma_licitacao",
+  "montar_licitacao_completa",
+];
 const rpc = (method, params = {}, id = 1) => JSON.stringify({ jsonrpc: "2.0", id, method, params });
 const post = (url, body, headers = {}) =>
   fetch(url, {
@@ -176,7 +187,7 @@ async function verificar() {
     );
     const nomes = (lista?.result?.tools ?? []).map((t) => t.name);
     conferir(
-      "tools/list: as 17 ferramentas do Plano 2, na ordem",
+      "tools/list: as 23 ferramentas, na ordem",
       JSON.stringify(nomes) === JSON.stringify(FERRAMENTAS_ESPERADAS),
       nomes.join(", ")
     );
@@ -185,7 +196,7 @@ async function verificar() {
     );
     const nomesPrompts = (prompts?.result?.prompts ?? []).map((p) => p.name);
     conferir(
-      "prompts/list: os 3 roteiros",
+      "prompts/list: os 4 roteiros",
       JSON.stringify(nomesPrompts) === JSON.stringify(PROMPTS_ESPERADOS),
       nomesPrompts.join(", ")
     );

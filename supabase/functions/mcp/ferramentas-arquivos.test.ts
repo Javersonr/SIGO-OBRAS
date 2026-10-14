@@ -99,6 +99,14 @@ test("defs: nomes, obrigatórios e anotações do §5 (linhas 2 a 5)", () => {
   assert.ok(total <= 800, `INSTRUCOES_ARQUIVOS com ${total}`);
 });
 
+test("INSTRUCOES_ARQUIVOS: prefere o que o SIGO faz no servidor; o link de envio fica para o que só existe no chat", () => {
+  assert.equal(
+    INSTRUCOES_ARQUIVOS[0],
+    "Não há como passar ao conector um arquivo do chat. Prefira o que o SIGO faz no servidor (gerar_documentos_proposta, gerar_declaracoes, anexar_habilitacao, anexar_acervo, anexar_edital_por_url); gerar_link_envio fica para o que só existe no chat."
+  );
+  assert.ok(!INSTRUCOES_ARQUIVOS.join("\n").includes("Para anexar PDF ou Excel ao SIGO"));
+});
+
 test("gerar_link_envio: pedido inválido → validacao com a lista de erros", async () => {
   const { deps, chamadas } = montar(() => undefined);
   const r = await ferramenta("gerar_link_envio").executar(

@@ -3,10 +3,14 @@ import { mock, test } from "node:test";
 import assert from "node:assert/strict";
 import {
   FERRAMENTAS_HABILITACAO,
+  INSTRUCOES_HABILITACAO,
   MAX_ATESTADOS_POR_CHAMADA,
   MAX_DOCUMENTOS_POR_CHAMADA,
   MENSAGEM_DA_FALHA,
+  PROMPTS_HABILITACAO,
 } from "./ferramentas-habilitacao.ts";
+import { NOMES_FERRAMENTAS } from "../_shared/conector/permissoes-ferramentas.ts";
+import { CHAVES_MODELO_PADRAO, VARIAVEIS_DECLARACAO } from "../_shared/documentos/declaracoes.ts";
 import {
   LIMITE_ARQUIVO_SERVIDOR,
   MIME_ARQUIVO,
@@ -3443,4 +3447,143 @@ test("checklist_habilitacao: não grava nada — nem arquivo, nem histórico, ne
   assert.ok(!fake.chamadas.some((c) => c.tabela === "oportunidade_atualizacao"));
   assert.ok(!fake.chamadas.some((c) => c.tabela === "conector_gravar_arquivo"));
   assert.equal(fake.chamadasStorage.length, 0);
+});
+
+// ─── instruções e prompt "Montar a licitação completa" (Task C6) ─────────────────────────────
+
+test("instruções e prompt 'Montar a licitação completa'", () => {
+  const total = INSTRUCOES_HABILITACAO.reduce((s, l) => s + l.length, 0);
+  assert.ok(total <= 800, `INSTRUCOES_HABILITACAO com ${total}`);
+  assert.deepEqual(
+    PROMPTS_HABILITACAO.map((p) => [p.name, p.title]),
+    [["montar_licitacao_completa", "Montar a licitação completa"]]
+  );
+  const texto = PROMPTS_HABILITACAO[0].montar({});
+  const ordem = [
+    "empresa_atual",
+    "criar_ou_atualizar_oportunidade",
+    "registrar_atende",
+    "importar_orcamento",
+    "aplicar_desconto",
+    "importar_cronograma",
+    "gerar_documentos_proposta",
+    "anexar_habilitacao",
+    "anexar_acervo",
+    "gerar_declaracoes",
+    "anexar_edital_por_url",
+    "checklist_habilitacao",
+  ];
+  let pos = -1;
+  for (const nome of ordem) {
+    const i = texto.indexOf(nome, pos + 1);
+    assert.ok(i > pos, `${nome} fora de ordem`);
+    pos = i;
+  }
+  assert.ok(texto.includes("DADOS"));
+  const comId = PROMPTS_HABILITACAO[0].montar({ oportunidade_id: OP });
+  assert.ok(comId.includes(OP));
+});
+
+test("INSTRUCOES_HABILITACAO: cita as cinco ferramentas, o vencido, o falta assinar e o checklist", () => {
+  const texto = INSTRUCOES_HABILITACAO.join("\n");
+  for (const nome of [
+    "gerar_documentos_proposta",
+    "gerar_declaracoes",
+    "anexar_habilitacao",
+    "anexar_acervo",
+    "anexar_edital_por_url",
+    "checklist_habilitacao",
+  ]) {
+    assert.ok(texto.includes(nome), nome);
+    assert.ok(NOMES_FERRAMENTAS.includes(nome), `${nome} não está em NOMES_FERRAMENTAS`);
+  }
+  assert.match(texto, /vencido não é anexado/);
+  assert.match(texto, /falta assinar/);
+  assert.match(texto, /gov\.br/);
+  assert.match(texto, /não tente enviar arquivo do chat/i);
+});
+
+test("prompt 'Montar a licitação completa': um passo por linha, em ordem, sem ferramenta inexistente", () => {
+  const texto = PROMPTS_HABILITACAO[0].montar({});
+  const linhas = texto.split("\n");
+  // os passos 1 a 10, cada um numa linha só, na ordem
+  const posicoes = Array.from({ length: 10 }, (_, k) => {
+    const achadas = linhas.filter((l) => l.startsWith(`${k + 1}. `));
+    assert.equal(achadas.length, 1, `passo ${k + 1}`);
+    return linhas.indexOf(achadas[0]);
+  });
+  assert.deepEqual(
+    [...posicoes].sort((a, b) => a - b),
+    posicoes
+  );
+  // a análise do edital é gravada por criar_ou_atualizar_oportunidade (não existe registrar_edital)
+  assert.ok(!texto.includes("registrar_edital"));
+  // toda palavra com cara de ferramenta (verbo_substantivo) é uma ferramenta que existe de verdade
+  const COM_CARA_DE_FERRAMENTA =
+    /^(registrar|criar|importar|aplicar|gerar|anexar|checklist|ler|buscar|obter|empresa|adicionar|cadastrar|status)_/;
+  for (const nome of texto.match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []) {
+    if (COM_CARA_DE_FERRAMENTA.test(nome)) {
+      assert.ok(NOMES_FERRAMENTAS.includes(nome), `${nome} não é ferramenta do conector`);
+    }
+  }
+  // as variáveis, os modelos padrão e as categorias do edital vêm das listas reais (nada desatualizado)
+  for (const v of VARIAVEIS_DECLARACAO) assert.ok(texto.includes(`{${v}}`), `variável {${v}}`);
+  for (const m of CHAVES_MODELO_PADRAO) assert.ok(texto.includes(m), `modelo ${m}`);
+  for (const c of CATEGORIAS_EDITAL) assert.ok(texto.includes(c), `categoria ${c}`);
+  assert.ok(texto.includes("Credenciamento"));
+});
+
+test("prompt 'Montar a licitação completa': cada saída nova das ferramentas é explicada no passo certo", () => {
+  const linhas = PROMPTS_HABILITACAO[0].montar({}).split("\n");
+  const passo = (n: number) => linhas.find((l) => l.startsWith(`${n}. `)) ?? "";
+  const precisa = (n: number, trechos: (string | RegExp)[]) => {
+    for (const t of trechos) {
+      const ok = typeof t === "string" ? passo(n).includes(t) : t.test(passo(n));
+      assert.ok(ok, `passo ${n} sem ${t}`);
+    }
+  };
+  // 5: proposta e cronograma
+  precisa(5, [
+    "orcamento_grande_demais",
+    "800",
+    "Exportar proposta",
+    "mantidos_assinados",
+    "exclui o PDF assinado",
+    "falhas",
+    "validade_dias",
+  ]);
+  // 6: habilitação (o conector nunca apaga arquivo)
+  precisa(6, [
+    "vencidos",
+    "faltam",
+    "copias_desatualizadas",
+    "falhas",
+    /exclu\w+ essas cópias/,
+    "não apaga",
+  ]);
+  // 7: CATs
+  precisa(7, ["sem_pdf", "atestado_ids"]);
+  // 8: declarações
+  precisa(8, ["mantidas_assinadas", "falhas", "variaveis_sem_valor", "gerar_declaracoes"]);
+  // 9: edital pelo link
+  precisa(9, [
+    "ja_estava_anexado",
+    "Preparar para o Claude",
+    "ler_edital_anexado",
+    "gerar_link_envio",
+  ]);
+  // 10: checklist (só "pronto" quando a ferramenta diz)
+  precisa(10, [
+    "resumo.pronto",
+    "sem_analise",
+    "sem_atende",
+    "sem_cronograma",
+    "verificar",
+    "copias_desatualizadas",
+    "falta_assinar",
+  ]);
+  const texto = linhas.join("\n");
+  assert.match(texto, /nunca afirme que um documento está anexado, gerado ou válido sem/i);
+  assert.match(texto, /Não informe nome nem CPF de representante/);
+  assert.match(texto, /Configurações → Empresa/);
 });

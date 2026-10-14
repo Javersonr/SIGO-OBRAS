@@ -8,6 +8,11 @@
  * empresa da chave: as ferramentas só recebem a CamadaEmpresa (filtro explícito
  * por empresa_id, sem exclusão). Cada chamada passa pelo despacho (despacho.ts):
  * permissão → limite → campos → execução → auditoria. Deploy: --no-verify-jwt.
+ *
+ * O Storage (confinado à pasta da empresa, storageDaEmpresa) serve também às cópias e aos arquivos
+ * gerados pelo servidor (habilitação, acervo, proposta, declarações e edital baixado por link).
+ * As bibliotecas de PDF e Excel (carregarLibs) e o DNS (resolverDns) são do gerador.ts, só Deno:
+ * carregam sob demanda, na primeira ferramenta que precisa delas.
  */
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { consumirTentativa, ipDaRequisicao } from "../_shared/limite-tentativas.ts";
@@ -19,6 +24,7 @@ import { tratarPostMcp, type ServidorMcp } from "../_shared/mcp/protocolo.ts";
 import { resolverChave } from "./contexto.ts";
 import { despachar, LIMITE_GRAVACAO_HORA, LIMITE_LEITURA_HORA } from "./despacho.ts";
 import { FERRAMENTAS, INSTRUCOES, PROMPTS } from "./ferramentas.ts";
+import { carregarLibs, resolverDns } from "./gerador.ts";
 
 // deno-lint-ignore no-explicit-any
 type Admin = any;
@@ -183,6 +189,8 @@ async function atender(req: Request): Promise<Response> {
           storage: storageDaEmpresa(admin.storage, ctx.empresa.id),
           fetchFn: fetch,
           agora: new Date(),
+          libs: carregarLibs,
+          resolverDns,
         },
         consumirLimite: (n, leitura) =>
           consumirTentativa(
