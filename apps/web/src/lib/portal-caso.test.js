@@ -1,10 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   MSG_CASO_ATUALIZADO,
   MSG_CASO_ENCERRADO,
   MSG_CASO_RESPOSTA_INVALIDA,
   MSG_OPCAO_INVALIDA,
+  alvoDeFocoDaTela,
+  avisoParaATela,
   casoParaTela,
+  focarNoAlvoDoCaso,
   reacaoAoErroDaAberturaDoCaso,
   reacaoAoErroDoCaso,
   telaConcluida,
@@ -192,6 +195,36 @@ describe("telaDepoisDaEscolha", () => {
     });
   });
 
+  it("mesma etapa: a passagem vem do servidor (a dele + 1), não da soma feita na tela", () => {
+    // a tela achava que era a 1ª passagem (ficou velha: outra aba andou), o servidor diz que foi a 3ª
+    const tela = telaDepoisDaEscolha(
+      etapa,
+      {
+        comentario: "Arriscado.",
+        segura: false,
+        fim: false,
+        passagem: 3,
+        etapa: abertoNaEtapa.etapa,
+        reflexao: null,
+      },
+      1
+    );
+    expect(tela.seguinte.passagem).toBe(4);
+  });
+
+  it("sem passagem na resposta, soma a da tela; em etapa diferente, a passagem fica desconhecida", () => {
+    const resposta = { comentario: "x", segura: false, fim: false, reflexao: null };
+    const naSegunda = { ...etapa, passagem: 2 };
+    expect(
+      telaDepoisDaEscolha(naSegunda, { ...resposta, etapa: abertoNaEtapa.etapa }, 1).seguinte
+        .passagem
+    ).toBe(3);
+    expect(
+      telaDepoisDaEscolha(naSegunda, { ...resposta, passagem: 2, etapa: etapaSeguinte }, 0).seguinte
+        .passagem
+    ).toBeNull();
+  });
+
   it("resposta incompleta ou tela que não é etapa: null", () => {
     expect(
       telaDepoisDaEscolha(etapa, { segura: true, fim: false, etapa: etapaSeguinte }, 0)
@@ -214,6 +247,61 @@ describe("telaConcluida", () => {
       reflexao: "R",
     });
     expect(telaConcluida({})).toEqual({ fase: "concluido", contexto: "", reflexao: "" });
+  });
+});
+
+describe("avisoParaATela", () => {
+  const concluida = telaConcluida({ contexto: "C", reflexao: "R" });
+
+  it("caso concluído: nenhum aviso de reabertura (a tela diz só 'Caso concluído.')", () => {
+    for (const aviso of [
+      MSG_CASO_ENCERRADO,
+      MSG_CASO_ATUALIZADO,
+      MSG_OPCAO_INVALIDA,
+      "Chegue ao fim do caso para concluir",
+    ]) {
+      expect(avisoParaATela(concluida, aviso)).toBe("");
+    }
+  });
+
+  it("etapa e fim: o aviso fica; sem aviso ou sem tela, texto vazio", () => {
+    expect(avisoParaATela(casoParaTela(abertoNaEtapa), MSG_CASO_ATUALIZADO)).toBe(
+      MSG_CASO_ATUALIZADO
+    );
+    expect(
+      avisoParaATela(
+        { fase: "fim", contexto: "C", reflexao: "R", ultimo: null },
+        MSG_CASO_ENCERRADO
+      )
+    ).toBe(MSG_CASO_ENCERRADO);
+    expect(avisoParaATela(casoParaTela(abertoNaEtapa))).toBe("");
+    expect(avisoParaATela(null, MSG_CASO_ENCERRADO)).toBe("");
+  });
+});
+
+describe("foco (teclado e leitor de tela)", () => {
+  it("cada fase com conteúdo novo tem o seu alvo; as outras não pedem foco", () => {
+    expect(alvoDeFocoDaTela({ fase: "etapa" })).toBe("enunciado");
+    expect(alvoDeFocoDaTela({ fase: "comentario" })).toBe("comentario");
+    expect(alvoDeFocoDaTela({ fase: "fim" })).toBe("reflexao");
+    expect(alvoDeFocoDaTela({ fase: "concluido" })).toBe("concluido");
+    expect(alvoDeFocoDaTela({ fase: "carregando" })).toBeNull();
+    expect(alvoDeFocoDaTela({ fase: "erro" })).toBeNull();
+    expect(alvoDeFocoDaTela(null)).toBeNull();
+  });
+
+  it("leva o foco ao elemento marcado com o alvo, dentro da raiz do caso", () => {
+    const elemento = { focus: vi.fn() };
+    const raiz = { querySelector: vi.fn(() => elemento) };
+    expect(focarNoAlvoDoCaso(raiz, "comentario")).toBe(true);
+    expect(raiz.querySelector).toHaveBeenCalledWith('[data-caso-foco="comentario"]');
+    expect(elemento.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it("sem raiz, sem alvo ou sem o elemento na tela: não faz nada e não lança", () => {
+    expect(focarNoAlvoDoCaso(null, "comentario")).toBe(false);
+    expect(focarNoAlvoDoCaso({ querySelector: vi.fn() }, null)).toBe(false);
+    expect(focarNoAlvoDoCaso({ querySelector: () => null }, "enunciado")).toBe(false);
   });
 });
 

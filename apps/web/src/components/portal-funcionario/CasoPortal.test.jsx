@@ -92,6 +92,47 @@ describe("CasoPortal", () => {
     expect(html).not.toMatch(/segura|insegura/i);
   });
 
+  it("acessibilidade: opções agrupadas e ligadas à pergunta; alvos de foco só onde o foco vai", () => {
+    const html = desenhar(etapa);
+    const grupo = html.match(/role="group"[^>]*aria-labelledby="([^"]+)"/);
+    expect(grupo).not.toBeNull();
+    const pergunta = html.match(new RegExp(`<p[^>]*id="${grupo[1]}"[^>]*>([^<]*)</p>`));
+    expect(pergunta?.[1]).toBe("Qual a decisão?");
+    expect(pergunta[0]).toContain('tabindex="-1"');
+    expect(pergunta[0]).toContain('data-caso-foco="enunciado"');
+
+    // o comentário da última escolha, na etapa, NÃO é o alvo do foco (o enunciado é)
+    const comUltimo = desenhar(
+      casoParaTela({ ...aberto, ultimo: { comentario: "Volte e reveja.", segura: false } })
+    );
+    expect(comUltimo).not.toContain('data-caso-foco="comentario"');
+
+    const comentario = desenhar(
+      telaDepoisDaEscolha(
+        etapa,
+        {
+          comentario: "Isso.",
+          segura: true,
+          fim: false,
+          passagem: 1,
+          etapa: proxima,
+          reflexao: null,
+        },
+        0
+      )
+    );
+    expect(comentario).toMatch(
+      /<div[^>]*data-caso-foco="comentario"[^>]*tabindex="-1"|<div[^>]*tabindex="-1"[^>]*data-caso-foco="comentario"/
+    );
+
+    const fim = desenhar(
+      casoParaTela({ situacao: "fim", contexto: "C", reflexao: "R", ultimo: null })
+    );
+    expect(fim).toMatch(/<p[^>]*data-caso-foco="reflexao"[^>]*>/);
+    const concluido = desenhar(telaConcluida({ contexto: "C", reflexao: "R" }));
+    expect(concluido).toMatch(/<p[^>]*data-caso-foco="concluido"[^>]*>/);
+  });
+
   it("clique único: com uma chamada em andamento, nenhuma opção aceita outro clique", () => {
     const livres = desenhar(etapa);
     expect((livres.match(/disabled=""/g) || []).length).toBe(0);
@@ -172,8 +213,36 @@ describe("CasoPortal", () => {
     expect(html).toContain("Concluir caso");
     expect((html.match(/<button/g) || []).length).toBe(1);
     expect(html).not.toContain('disabled=""');
+    expect(html).not.toContain("Escolha segura"); // o comentário já foi lido antes do "Continuar"
     // clique único: enquanto a conclusão está em andamento o botão não aceita outro clique
     expect(desenhar(fim, { enviando: true })).toMatch(/<button[^>]*disabled=""/);
+  });
+
+  it("fim com o último comentário (recarregou a página ou chegou por CASO_FORA_DE_ORDEM): em destaque, antes da reflexão", () => {
+    const html = desenhar(
+      casoParaTela({
+        situacao: "fim",
+        contexto: "Contexto sintético do caso",
+        reflexao: "Reflexão sintética",
+        ultimo: { comentario: "Fim seguro, com cuidado.", segura: true },
+      })
+    );
+    expect(html).toContain("Escolha segura");
+    expect(html).toContain("border-emerald-200");
+    expect(html).toContain("Fim seguro, com cuidado.");
+    expect(html.indexOf("Fim seguro, com cuidado.")).toBeLessThan(html.indexOf("Para refletir"));
+    expect(html.indexOf("Para refletir")).toBeLessThan(html.indexOf("Reflexão sintética"));
+    expect((html.match(/<button/g) || []).length).toBe(1);
+    const insegura = desenhar(
+      casoParaTela({
+        situacao: "fim",
+        contexto: "C",
+        reflexao: "R",
+        ultimo: { comentario: "Terminou, mas arriscado.", segura: false },
+      })
+    );
+    expect(insegura).toContain("Escolha insegura");
+    expect(insegura).toContain("border-amber-200");
   });
 
   it("concluído: a reflexão para rever, sem botão nenhum", () => {

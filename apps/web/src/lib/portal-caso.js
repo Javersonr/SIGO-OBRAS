@@ -82,7 +82,8 @@ export function casoParaTela(resposta) {
 /**
  * Depois de `caso_escolher`: a tela do comentário (a pergunta respondida, a opção escolhida e o comentário,
  * em destaque) e, em `seguinte`, o que vem com o "Continuar" (a próxima etapa ou "Para refletir"). Voltar à
- * mesma etapa soma uma passagem; numa etapa nova a passagem fica desconhecida (null). null se a resposta não
+ * mesma etapa soma uma passagem (a do servidor + 1); numa etapa nova a passagem fica desconhecida (null, limite
+ * do contrato). null se a resposta não
  * tem a forma esperada ou se a tela não estava numa etapa.
  */
 export function telaDepoisDaEscolha(tela, resposta, indice) {
@@ -103,12 +104,16 @@ export function telaDepoisDaEscolha(tela, resposta, indice) {
   } else {
     const etapa = etapaDaTela(r.etapa);
     if (!etapa) return null;
+    // Voltar à mesma etapa é a visita seguinte à que o SERVIDOR acabou de contar (`r.passagem`, a da etapa
+    // respondida); a conta da tela só vale sem esse número (resposta antiga) e fica velha se outra aba andou.
     const mesma = etapa.id === tela.etapa.id;
+    const visitaAtual =
+      Number.isInteger(r.passagem) && r.passagem >= 1 ? r.passagem : (tela.passagem ?? 1);
     seguinte = {
       fase: "etapa",
       contexto,
       etapa,
-      passagem: mesma ? (tela.passagem ?? 1) + 1 : null,
+      passagem: mesma ? visitaAtual + 1 : null,
       ultimo: null,
     };
   }
@@ -127,6 +132,44 @@ export function telaDepoisDaEscolha(tela, resposta, indice) {
 /** Depois de `caso_concluir`: o caso concluído, com o contexto e a reflexão para rever. */
 export function telaConcluida(tela) {
   return { fase: "concluido", contexto: texto(tela?.contexto), reflexao: texto(tela?.reflexao) };
+}
+
+/**
+ * O aviso que acompanha uma tela redesenhada por recusa do servidor ou por reabertura. Os avisos falam do que o
+ * aluno ainda pode fazer (escolher, concluir); o caso concluído mostra só "Caso concluído." e a reflexão, sem
+ * aviso (ex.: "leia a reflexão e conclua" sobre um caso que já foi concluído seria contraditório).
+ */
+export function avisoParaATela(tela, aviso = "") {
+  if (!tela || tela.fase === "concluido") return "";
+  return texto(aviso);
+}
+
+/** Onde o foco do teclado e do leitor de tela deve ir quando a fase muda por ação do aluno; null = em lugar nenhum. */
+export function alvoDeFocoDaTela(tela) {
+  switch (tela?.fase) {
+    case "etapa":
+      return "enunciado";
+    case "comentario":
+      return "comentario";
+    case "fim":
+      return "reflexao";
+    case "concluido":
+      return "concluido";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Leva o foco ao elemento do caso marcado com `data-caso-foco="<alvo>"` dentro de `raiz` (o elemento raiz da
+ * tela). Sem raiz, sem alvo ou sem o elemento: não faz nada. true se o foco foi movido.
+ */
+export function focarNoAlvoDoCaso(raiz, alvo) {
+  if (!raiz || !alvo) return false;
+  const elemento = raiz.querySelector?.(`[data-caso-foco="${alvo}"]`);
+  if (!elemento || typeof elemento.focus !== "function") return false;
+  elemento.focus();
+  return true;
 }
 
 /** Falha ao abrir o caso: a sessão vai ao portal; o resto vira mensagem, com ou sem "Tentar de novo". */
