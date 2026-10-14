@@ -449,6 +449,9 @@ const fmt = (v: unknown, min: number, max: number): string =>
     ? ""
     : Number(v).toLocaleString("pt-BR", { minimumFractionDigits: min, maximumFractionDigits: max });
 
+/** Valor em reais como o PDF da proposta o mostra ("R$ 1.234,56"); a ferramenta do conector usa o mesmo nos avisos. */
+export const moedaBR = (v: unknown): string => `R$ ${fmt(v, 2, 2)}`;
+
 /**
  * PDF da proposta (A4 paisagem). `jsPDF` e `autoTable` vêm de fora (import
  * dinâmico no servidor e na tela; import normal no teste).
@@ -507,7 +510,7 @@ export function gerarPdfProposta(
     doc.addPage();
     pdf.y = 20;
   }
-  escrever(`Valor global da proposta: R$ ${fmt(dados.totalGeral, 2, 2)}`, {
+  escrever(`Valor global da proposta: ${moedaBR(dados.totalGeral)}`, {
     tamanho: 10,
     negrito: true,
     entre: 5,

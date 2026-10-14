@@ -6,7 +6,11 @@
  * Import DINÂMICO: jsPDF, jspdf-autotable e SheetJS só são carregados na primeira ferramenta que
  * gera arquivo; as outras ferramentas não pagam esse custo.
  */
-import { combinarConsultasDns, type ConsultaDns } from "../_shared/conector/dns-combinar.ts";
+import {
+  combinarConsultasDns,
+  interpretarRespostaDoh,
+  type ConsultaDns,
+} from "../_shared/conector/dns-combinar.ts";
 import { resolverAutoTable, type LibsDocumentos } from "../_shared/documentos/proposta-export.ts";
 
 let carregando: Promise<LibsDocumentos> | null = null;
@@ -40,8 +44,11 @@ export function carregarLibs(): Promise<LibsDocumentos> {
 
 const TEMPO_DNS_MS = 5000;
 
-/** DNS-over-HTTPS (reserva, quando o runtime não deixa usar Deno.resolveDns). */
-async function resolverPorHttps(host: string, tipo: "A" | "AAAA"): Promise<string[]> {
+/**
+ * DNS-over-HTTPS (reserva, quando o runtime não deixa usar Deno.resolveDns): o JSON da resposta, que quem chama
+ * lê com `interpretarRespostaDoh` (o campo Status separa "o nome não existe" de erro do servidor).
+ */
+async function resolverPorHttps(host: string, tipo: "A" | "AAAA"): Promise<unknown> {
   const r = await fetch(
     `https://dns.google/resolve?name=${encodeURIComponent(host)}&type=${tipo}`,
     {
@@ -50,9 +57,7 @@ async function resolverPorHttps(host: string, tipo: "A" | "AAAA"): Promise<strin
     }
   );
   if (!r.ok) throw new Error(`DNS ${r.status}`);
-  const corpo = (await r.json()) as { Answer?: { type: number; data: string }[] };
-  const codigo = tipo === "A" ? 1 : 28;
-  return (corpo.Answer ?? []).filter((a) => a.type === codigo).map((a) => a.data);
+  return await r.json();
 }
 
 /** Uma consulta (A ou AAAA): o runtime primeiro; erro que não é "não existe" cai na reserva por HTTPS. */
@@ -63,7 +68,7 @@ async function consultar(host: string, tipo: "A" | "AAAA"): Promise<ConsultaDns>
     if (e instanceof Deno.errors.NotFound) return { situacao: "nao_existe" };
   }
   try {
-    return { situacao: "ok", enderecos: await resolverPorHttps(host, tipo) };
+    return interpretarRespostaDoh(await resolverPorHttps(host, tipo), tipo);
   } catch {
     return { situacao: "falhou" };
   }

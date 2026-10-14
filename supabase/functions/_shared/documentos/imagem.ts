@@ -76,6 +76,27 @@ const PROFUNDIDADES_PNG: Record<number, number[]> = {
 };
 /** Acima disso nem se confere: descompactar a imagem seria trabalho demais para um logo (4000 x 4000). */
 const PIXELS_MAXIMOS_CONFERIDOS = 16_000_000;
+/** Blocos de um PNG de logo (IHDR, IDAT, IEND, auxiliares): um arquivo de 2 MB com milhares de blocos de 12 bytes é lixo. */
+const BLOCOS_MAXIMOS = 10_000;
+/**
+ * Tamanho de cada pedaço de entrada que vai ao descompressor. A saída de UM pedaço de entrada pode vir inteira de
+ * uma vez (no Deno ela vem; no Node vem em pedaços de 16 KB), e o deflate expande no máximo ~1000 vezes: com
+ * fatias de 16 KB a pior saída de uma única vez é ~16 MB, em vez de ~2 GB para o IDAT inteiro (até 2 MB) de uma só vez.
+ */
+const FATIA_DE_ENTRADA = 16 * 1024;
+
+/** O par de fluxos de um descompressor (o `DecompressionStream` do runtime tem esta forma). */
+export interface DescompressorDeFluxo {
+  readable: ReadableStream<Uint8Array>;
+  // o tipo do que entra varia entre o DOM do TypeScript (BufferSource) e o Deno (Uint8Array)
+  // deno-lint-ignore no-explicit-any
+  writable: WritableStream<any>;
+}
+
+export interface OpcoesConferenciaImagem {
+  /** Para o teste: o descompressor que a conferência usa (padrão: `new DecompressionStream("deflate")`). */
+  criarDescompressor?: () => DescompressorDeFluxo;
+}
 
 const ehLetra = (b: number) => (b >= 0x41 && b <= 0x5a) || (b >= 0x61 && b <= 0x7a);
 
@@ -88,24 +109,43 @@ const ehLetra = (b: number) => (b >= 0x41 && b <= 0x5a) || (b >= 0x61 && b <= 0x
 async function conferirFluxoPng(
   fluxo: Uint8Array,
   bytesPorLinhaComFiltro: number,
-  linhas: number
+  linhas: number,
+  criarDescompressor: () => DescompressorDeFluxo
 ): Promise<string | null> {
   const esperado = bytesPorLinhaComFiltro * linhas;
   let n = 0;
+  // `parar` fecha a entrada no próximo pedido do descompressor, mesmo que o runtime não propague o cancelamento
+  // da leitura até a escrita: nenhuma fatia nova entra depois da recusa
+  let parar = false;
   try {
-    const entrada = new ReadableStream({
-      start(c) {
-        c.enqueue(fluxo);
-        c.close();
+    // a entrada vai em fatias, só quando o descompressor pede (HWM 0: nada fica enfileirado à frente), e a
+    // primeira saída que passar do esperado cancela a leitura, o que interrompe também a entrada
+    let posicao = 0;
+    const entrada = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          if (parar || posicao >= fluxo.length) {
+            c.close();
+            return;
+          }
+          c.enqueue(fluxo.subarray(posicao, posicao + FATIA_DE_ENTRADA));
+          posicao += FATIA_DE_ENTRADA;
+        },
       },
-    });
-    const leitor = entrada.pipeThrough(new DecompressionStream("deflate")).getReader();
+      { highWaterMark: 0 }
+    );
+    const leitor = entrada.pipeThrough(criarDescompressor()).getReader();
+    /** Recusa: nenhuma fatia nova entra e a leitura é cancelada. */
+    const recusar = async (motivo: string) => {
+      parar = true;
+      await leitor.cancel().catch(() => {});
+      return motivo;
+    };
     for (;;) {
       const { done, value } = await leitor.read();
       if (done) break;
       if (value.length > esperado - n) {
-        await leitor.cancel().catch(() => {});
-        return "PNG com mais dados de imagem do que o cabeçalho promete";
+        return await recusar("PNG com mais dados de imagem do que o cabeçalho promete");
       }
       // posições (no fluxo descompactado) dos bytes de filtro que caem neste pedaço
       for (
@@ -113,22 +153,25 @@ async function conferirFluxoPng(
         i < value.length;
         i += bytesPorLinhaComFiltro
       ) {
-        if (value[i] > 4) {
-          await leitor.cancel().catch(() => {});
-          return "PNG com byte de filtro inválido numa linha";
-        }
+        if (value[i] > 4) return await recusar("PNG com byte de filtro inválido numa linha");
       }
       n += value.length;
     }
   } catch {
     return "PNG com os dados da imagem corrompidos (fluxo zlib inválido)";
+  } finally {
+    parar = true;
   }
   return n === esperado
     ? null
     : "PNG com dados de imagem incompletos (menos bytes do que o cabeçalho promete)";
 }
 
-async function conferirPng(bytes: Uint8Array, img: ImagemLida): Promise<ConferenciaImagem> {
+async function conferirPng(
+  bytes: Uint8Array,
+  img: ImagemLida,
+  criarDescompressor: () => DescompressorDeFluxo
+): Promise<ConferenciaImagem> {
   if (img.largura * img.altura > PIXELS_MAXIMOS_CONFERIDOS) {
     return recusa("PNG grande demais para conferir");
   }
@@ -140,8 +183,10 @@ async function conferirPng(bytes: Uint8Array, img: ImagemLida): Promise<Conferen
   const idat: Uint8Array[] = [];
   let tamanhoIdat = 0;
   let fimDoIend = false;
+  let blocos = 0;
   while (pos < bytes.length) {
     if (fimDoIend) return recusa("PNG com dados depois do bloco IEND");
+    if (++blocos > BLOCOS_MAXIMOS) return recusa("PNG com blocos demais (mais de 10000)");
     if (pos + 12 > bytes.length) return recusa("PNG cortado no meio de um bloco");
     const tamanho = v.getUint32(pos);
     const proximo = pos + 12 + tamanho;
@@ -246,7 +291,12 @@ async function conferirPng(bytes: Uint8Array, img: ImagemLida): Promise<Conferen
   const bytesPorLinha = Math.ceil(
     (ihdr.largura * ihdr.profundidade * CANAIS_PNG[ihdr.tipoCor]) / 8
   );
-  const problema = await conferirFluxoPng(fluxo, 1 + bytesPorLinha, ihdr.altura);
+  const problema = await conferirFluxoPng(
+    fluxo,
+    1 + bytesPorLinha,
+    ihdr.altura,
+    criarDescompressor
+  );
   return problema ? recusa(problema) : { ok: true };
 }
 
@@ -270,11 +320,17 @@ function conferirJpeg(bytes: Uint8Array): ConferenciaImagem {
  * descompactam em exatamente o tamanho que o cabeçalho promete (cada linha com um filtro válido), e fora o
  * que o jsPDF 2.5.2 não decodifica direito (entrelaçado, animado, paleta sem PLTE ou com alfa parcial em 1 a
  * 4 bits). Os 16 bits (cinza, RGB e com alfa) o jsPDF decodifica: passam. JPEG: ver `conferirJpeg`.
- * Assíncrona porque a descompactação usa o `DecompressionStream` do runtime (Deno e Node).
+ * Assíncrona porque a descompactação usa o `DecompressionStream` do runtime (Deno e Node), alimentado em fatias
+ * de 16 KB (ver `FATIA_DE_ENTRADA`). Mais de 10000 blocos no PNG também é recusado.
  */
 export async function conferirImagem(
   bytes: Uint8Array,
-  img: ImagemLida
+  img: ImagemLida,
+  opcoes: OpcoesConferenciaImagem = {}
 ): Promise<ConferenciaImagem> {
-  return img.formato === "PNG" ? await conferirPng(bytes, img) : conferirJpeg(bytes);
+  const criarDescompressor =
+    opcoes.criarDescompressor ?? (() => new DecompressionStream("deflate"));
+  return img.formato === "PNG"
+    ? await conferirPng(bytes, img, criarDescompressor)
+    : conferirJpeg(bytes);
 }

@@ -13,6 +13,7 @@ import {
   FERRAMENTAS_DOCUMENTOS,
   LEMBRETE_ASSINATURA,
   LOGO_BYTES_MAXIMOS,
+  LOGO_PNG_LADO_MAXIMO,
   LOGO_PNG_PIXELS_MAXIMOS,
   MAX_CELULAS_CRONOGRAMA,
   MAX_ITENS_DOCUMENTO,
@@ -50,7 +51,7 @@ const LEMBRETE =
 const CPF_SINTETICO = "52998224725";
 const CPF_FORMATADO = "529.982.247-25";
 const AVISO_LOGO =
-  "O logo da empresa não foi incluído: use um PNG de até 800×800 pixels (ou 700 mil pixels no total) ou um JPG de até 2 MB, em Configurações → Empresa.";
+  "O logo da empresa não foi incluído: use um PNG de até 500×500 pixels (300 mil pixels no total) ou um JPG de até 2 MB, salvo de novo como imagem comum, em Configurações → Empresa.";
 const AVISO_REPRESENTANTE =
   "O representante legal está sem cargo ou CPF no cadastro: o bloco de assinatura saiu sem essa informação.";
 
@@ -286,7 +287,8 @@ test("constantes: mensagens fixas do contrato e limites medidos", () => {
   assert.equal(MAX_ITENS_DOCUMENTO, 800);
   assert.equal(MAX_CELULAS_CRONOGRAMA, 2400);
   assert.equal(LOGO_BYTES_MAXIMOS, 2 * 1024 * 1024);
-  assert.equal(LOGO_PNG_PIXELS_MAXIMOS, 700_000);
+  assert.equal(LOGO_PNG_PIXELS_MAXIMOS, 300_000);
+  assert.equal(LOGO_PNG_LADO_MAXIMO, 1000);
 });
 
 // ─── gerar_documentos_proposta ───────────────────────────────────────────────────────────────
@@ -435,10 +437,15 @@ test("gerar_documentos_proposta: cronograma sem nenhuma etapa de nível 1 avisa 
   assert.match((s.avisos as string[])[0], /não tem etapas/);
 });
 
-const AVISO_PROPOSTA_MANTIDA =
-  "A proposta já está assinada e foi mantida (PDF e Excel). O total atual do orçamento é R$ 3.629,50; se mudou, exclua o PDF assinado na aba Arquivos e gere de novo.";
-const AVISO_CRONOGRAMA_MANTIDO =
-  "O cronograma já está assinado e foi mantido (PDF e Excel). Se o cronograma mudou, exclua o PDF assinado na aba Arquivos e gere de novo.";
+// "(PDF e Excel)" só quando o Excel do documento existe na oportunidade; senão "(PDF)"
+const avisoProposta = (partes: string) =>
+  `A proposta já está assinada e foi mantida (${partes}). O total atual do orçamento é R$ 3.629,50; se mudou, exclua o PDF assinado na aba Arquivos e gere de novo.`;
+const avisoCronograma = (partes: string) =>
+  `O cronograma já está assinado e foi mantido (${partes}). Se o cronograma mudou, exclua o PDF assinado na aba Arquivos e gere de novo.`;
+const AVISO_PROPOSTA_MANTIDA = avisoProposta("PDF e Excel");
+const AVISO_CRONOGRAMA_MANTIDO = avisoCronograma("PDF e Excel");
+const AVISO_PROPOSTA_MANTIDA_SO_PDF = avisoProposta("PDF");
+const AVISO_CRONOGRAMA_MANTIDO_SO_PDF = avisoCronograma("PDF");
 
 test("gerar_documentos_proposta: proposta assinada mantém o PDF E o Excel dela; o cronograma sai", async () => {
   const { deps, gravados } = cenario({
@@ -448,6 +455,12 @@ test("gerar_documentos_proposta: proposta assinada mantém o PDF E o Excel dela;
         nome: "Proposta - antiga.pdf",
         origem: "gerado:proposta:pdf",
         assinatura: "assinado",
+      },
+      {
+        id: "a2",
+        nome: "Proposta - antiga.xlsx",
+        origem: "gerado:proposta:xlsx",
+        assinatura: null,
       },
     ],
   });
@@ -475,6 +488,12 @@ test("gerar_documentos_proposta: cronograma assinado mantém o PDF E o Excel del
         origem: "gerado:cronograma:pdf",
         assinatura: "assinado",
       },
+      {
+        id: "a2",
+        nome: "Cronograma antigo.xlsx",
+        origem: "gerado:cronograma:xlsx",
+        assinatura: null,
+      },
     ],
   });
   const s = sc(await executar("gerar_documentos_proposta", {}, deps));
@@ -487,6 +506,84 @@ test("gerar_documentos_proposta: cronograma assinado mantém o PDF E o Excel del
     ["proposta_pdf", "proposta_xlsx"]
   );
   assert.deepEqual(s.avisos, [AVISO_CRONOGRAMA_MANTIDO]);
+});
+
+test("gerar_documentos_proposta: o aviso do documento mantido só cita o Excel quando ele existe na pasta (senão, só o PDF)", async () => {
+  // só os PDFs assinados, sem nenhum Excel gravado
+  const soPdf = cenario({
+    existentes: [
+      { id: "a1", nome: "Proposta.pdf", origem: "gerado:proposta:pdf", assinatura: "assinado" },
+      { id: "a3", nome: "Cronograma.pdf", origem: "gerado:cronograma:pdf", assinatura: "assinado" },
+    ],
+  });
+  const a = sc(await executar("gerar_documentos_proposta", {}, soPdf.deps));
+  assert.deepEqual(a.avisos, [AVISO_PROPOSTA_MANTIDA_SO_PDF, AVISO_CRONOGRAMA_MANTIDO_SO_PDF]);
+  assert.equal(soPdf.gravados.length, 0);
+
+  // o Excel só de um dos dois documentos: cada aviso olha o do próprio documento
+  const soDaProposta = cenario({
+    existentes: [
+      { id: "a1", nome: "Proposta.pdf", origem: "gerado:proposta:pdf", assinatura: "assinado" },
+      { id: "a2", nome: "Proposta.xlsx", origem: "gerado:proposta:xlsx", assinatura: null },
+      { id: "a3", nome: "Cronograma.pdf", origem: "gerado:cronograma:pdf", assinatura: "assinado" },
+    ],
+  });
+  const b = sc(await executar("gerar_documentos_proposta", {}, soDaProposta.deps));
+  assert.deepEqual(b.avisos, [AVISO_PROPOSTA_MANTIDA, AVISO_CRONOGRAMA_MANTIDO_SO_PDF]);
+
+  const soDoCronograma = cenario({
+    existentes: [
+      { id: "a1", nome: "Proposta.pdf", origem: "gerado:proposta:pdf", assinatura: "assinado" },
+      { id: "a3", nome: "Cronograma.pdf", origem: "gerado:cronograma:pdf", assinatura: "assinado" },
+      { id: "a4", nome: "Cronograma.xlsx", origem: "gerado:cronograma:xlsx", assinatura: null },
+    ],
+  });
+  const c = sc(await executar("gerar_documentos_proposta", {}, soDoCronograma.deps));
+  assert.deepEqual(c.avisos, [AVISO_PROPOSTA_MANTIDA_SO_PDF, AVISO_CRONOGRAMA_MANTIDO]);
+});
+
+test("gerar_documentos_proposta: Excel marcado como assinado à mão: o Excel fica, o PDF é trocado e o aviso é do Excel", async () => {
+  // não é o fluxo normal (só o PDF nasce "pendente"), mas a RPC mantém qualquer linha assinada da mesma origem
+  const { deps, fake, banco } = cenarioComBanco();
+  const args = { data: "2026-10-13" };
+  await executar("gerar_documentos_proposta", args, deps);
+  const excel = banco.arquivos.find((a) => a.origem === "gerado:proposta:xlsx")!;
+  excel.assinatura = "assinado";
+  const urlDoExcel = excel.url;
+
+  const s = sc(await executar("gerar_documentos_proposta", args, deps));
+  assert.deepEqual(s.mantidos_assinados, [
+    { documento: "proposta_xlsx", nome: "Proposta - CE 009 Exemplo - 2026-10-13.xlsx" },
+  ]);
+  // o PDF da proposta (pendente) e o cronograma inteiro foram trocados; o Excel assinado não
+  assert.deepEqual(
+    (s.gerados as { documento: string; substituiu: boolean }[]).map((g) => [
+      g.documento,
+      g.substituiu,
+    ]),
+    [
+      ["proposta_pdf", true],
+      ["cronograma_pdf", true],
+      ["cronograma_xlsx", true],
+    ]
+  );
+  assert.deepEqual(s.avisos, ["O Excel da proposta já está assinado e foi mantido, sem troca."]);
+  assert.equal(banco.arquivos.find((a) => a.origem === "gerado:proposta:xlsx")!.url, urlDoExcel);
+  assert.ok(fake.objetos.has(urlDoExcel));
+  // nenhum objeto sobrou à toa: um por origem
+  assert.equal(fake.objetos.size, 4);
+  assert.equal(banco.arquivos.length, 4);
+
+  // o mesmo no Excel do cronograma
+  const outro = cenarioComBanco();
+  await executar("gerar_documentos_proposta", args, outro.deps);
+  outro.banco.arquivos.find((a) => a.origem === "gerado:cronograma:xlsx")!.assinatura = "assinado";
+  const s2 = sc(await executar("gerar_documentos_proposta", args, outro.deps));
+  assert.deepEqual(
+    (s2.mantidos_assinados as { documento: string }[]).map((m) => m.documento),
+    ["cronograma_xlsx"]
+  );
+  assert.deepEqual(s2.avisos, ["O Excel do cronograma já está assinado e foi mantido, sem troca."]);
 });
 
 test("gerar_documentos_proposta: proposta e cronograma assinados: nada é gerado, cada documento entra uma vez", async () => {
@@ -630,7 +727,8 @@ test("gerar_documentos_proposta: assinado que aparece entre a leitura e a grava�
     gravados.map((g) => g.p_origem),
     ["gerado:proposta:pdf", "gerado:cronograma:pdf", "gerado:cronograma:xlsx"]
   );
-  assert.equal((s.avisos as string[])[0], AVISO_PROPOSTA_MANTIDA);
+  // a leitura das origens não achou Excel nenhum: o aviso fala só do PDF
+  assert.equal((s.avisos as string[])[0], AVISO_PROPOSTA_MANTIDA_SO_PDF);
   // o objeto enviado para nada foi apagado do Storage
   assert.equal(fake.objetos.size, 2);
 });
@@ -1302,13 +1400,13 @@ test("logo: JPEG inteiro (com EOI), mesmo de 4000 x 4000, entra no .docx e no PD
   );
 });
 
-test("logo: PNG de 800 x 800 com transparência entra nos dois formatos e o PDF não incha", async () => {
+test("logo: PNG de 500 x 500 com transparência entra nos dois formatos e o PDF não incha", async () => {
   const { pdf } = await assertComLogo(
-    "PNG RGBA 800 x 800",
-    construirPng({ largura: 800, altura: 800, tipoCor: 6 })
+    "PNG RGBA 500 x 500",
+    construirPng({ largura: 500, altura: 500, tipoCor: 6 })
   );
-  // em bruto a imagem sozinha somaria 800 x 800 x 4 = 2,5 MB: comprimida, é uma fração disso
-  assert.ok(pdf.length < 500 * 1024, `PDF com ${pdf.length} bytes`);
+  // em bruto a imagem sozinha somaria 500 x 500 x 4 = 1 MB: comprimida, é uma fração disso
+  assert.ok(pdf.length < 300 * 1024, `PDF com ${pdf.length} bytes`);
 });
 
 test("logo: PNG de 16 bits (RGB, RGBA, cinza) é decodificado pelo jsPDF e entra nos dois formatos", async () => {
@@ -1320,14 +1418,29 @@ test("logo: PNG de 16 bits (RGB, RGBA, cinza) é decodificado pelo jsPDF e entra
   }
 });
 
-test("logo: PNG até 700 mil pixels e 2000 de lado entra; um pixel a mais, ou lado de 2001, não", async () => {
-  // 2000 x 350 = 700000 pixels, lado exato de 2000
-  await assertComLogo("PNG 2000 x 350", construirPng({ largura: 2000, altura: 350 }));
-  assert.equal(LOGO_PNG_PIXELS_MAXIMOS, 2000 * 350);
+test("logo: PNG até 300 mil pixels e 1000 de lado entra; um pixel a mais, ou lado de 1001, não", async () => {
+  // 1000 x 300 = 300000 pixels, lado exato de 1000
+  await assertComLogo("PNG 1000 x 300", construirPng({ largura: 1000, altura: 300 }));
+  assert.equal(LOGO_PNG_PIXELS_MAXIMOS, 1000 * 300);
+  assert.equal(LOGO_PNG_LADO_MAXIMO, 1000);
+  // o logo cadastrado de 500 x 500 (o do aviso) e um de 600 x 500 (exatamente 300 mil) entram
+  await assertComLogo("PNG 600 x 500", construirPng({ largura: 600, altura: 500 }));
   await assertSemLogo(
-    "PNG 2000 x 351 (700200 pixels)",
+    "PNG 1000 x 301 (301000 pixels)",
     `logos-empresa/${E}/larga.png`,
-    construirPng({ largura: 2000, altura: 351 }),
+    construirPng({ largura: 1000, altura: 301 }),
+    /pixels/
+  );
+  await assertSemLogo(
+    "PNG 548 x 548 (300304 pixels)",
+    `logos-empresa/${E}/quase.png`,
+    construirPng({ largura: 548, altura: 548 }),
+    /pixels/
+  );
+  await assertSemLogo(
+    "PNG 800 x 800 (o limite antigo)",
+    `logos-empresa/${E}/antiga.png`,
+    construirPng({ largura: 800, altura: 800 }),
     /pixels/
   );
   await assertSemLogo(
@@ -1337,15 +1450,15 @@ test("logo: PNG até 700 mil pixels e 2000 de lado entra; um pixel a mais, ou la
     /pixels/
   );
   await assertSemLogo(
-    "PNG 2001 x 1 (lado)",
+    "PNG 1001 x 1 (lado)",
     `logos-empresa/${E}/fina.png`,
-    construirPng({ largura: 2001, altura: 1 }),
+    construirPng({ largura: 1001, altura: 1 }),
     /de lado/
   );
   await assertSemLogo(
-    "PNG 1 x 2001 (lado)",
+    "PNG 1 x 1001 (lado)",
     `logos-empresa/${E}/alta.png`,
-    construirPng({ largura: 1, altura: 2001 }),
+    construirPng({ largura: 1, altura: 1001 }),
     /de lado/
   );
 });
@@ -1951,6 +2064,132 @@ test("gerar_declaracoes: falha só no .docx (Storage): o PDF fica gravado e list
     gravados.map((p) => p.p_origem),
     ["declaracao:me_epp:pdf"]
   );
+});
+
+// ─── PDF novo que falha com um PDF de antes na pasta ─────────────────────────────────────────
+
+const avisoPdfAntigo = (titulo: string) =>
+  `${titulo}: o PDF novo não foi gravado; o da geração anterior continua na pasta.`;
+const AVISO_UM_ARQUIVO = "1 arquivo não pôde ser gerado: veja falhas.";
+
+test("gerar_documentos_proposta: PDF que falha com um PDF pendente de antes na pasta avisa que o antigo continua; sem o antigo, não", async () => {
+  const pdfAntigoDaProposta = {
+    id: "p1",
+    nome: "Proposta antiga.pdf",
+    origem: "gerado:proposta:pdf",
+    assinatura: "pendente",
+  };
+  const pdfAntigoDoCronograma = {
+    id: "c1",
+    nome: "Cronograma antigo.pdf",
+    origem: "gerado:cronograma:pdf",
+    assinatura: "pendente",
+  };
+  // o PDF da proposta é o 1º documento criado no jsPDF; o do cronograma, o 2º
+  for (const [nome, quebraNa, existentes, esperado] of [
+    ["proposta, com o antigo", 1, [pdfAntigoDaProposta], [avisoPdfAntigo("Proposta de preços")]],
+    ["proposta, sem o antigo", 1, [], []],
+    [
+      "proposta, só o Excel de antes",
+      1,
+      [{ id: "x", nome: "x.xlsx", origem: "gerado:proposta:xlsx", assinatura: null }],
+      [],
+    ],
+    [
+      "cronograma, com o antigo",
+      2,
+      [pdfAntigoDoCronograma],
+      [avisoPdfAntigo("Cronograma físico-financeiro")],
+    ],
+    ["cronograma, sem o antigo", 2, [], []],
+    ["cronograma, com o antigo da proposta apenas", 2, [pdfAntigoDaProposta], []],
+  ] as [string, number, unknown[], string[]][]) {
+    const { deps } = cenario({ existentes }, { libs: libsQueQuebramNaCriacao(quebraNa) });
+    const { s } = await comLog("gerar_documentos_proposta", { data: "2026-10-13" }, deps);
+    // o aviso do PDF antigo vem antes do resumo das falhas, que continua por último
+    assert.deepEqual(s.avisos, [...esperado, AVISO_UM_ARQUIVO], nome);
+    assert.equal((s.falhas as unknown[]).length, 1, nome);
+  }
+
+  // o PDF que falha ao gravar (Storage) conta do mesmo jeito; o Excel que falha, não
+  const noStorage = cenario(
+    { existentes: [pdfAntigoDaProposta] },
+    {
+      responderStorage: (c) =>
+        c.metodo === "upload" ? { error: { message: "fora do ar" } } : undefined,
+    }
+  );
+  const a = (await comLog("gerar_documentos_proposta", {}, noStorage.deps)).s;
+  assert.deepEqual(a.avisos, [
+    avisoPdfAntigo("Proposta de preços"),
+    "4 arquivos não puderam ser gerados: veja falhas.",
+  ]);
+  let uploads = 0;
+  const soExcel = cenario(
+    { existentes: [pdfAntigoDaProposta] },
+    {
+      responderStorage: (c) =>
+        c.metodo === "upload" && ++uploads === 2 ? { error: { message: "fora do ar" } } : undefined,
+    }
+  );
+  const b = (await comLog("gerar_documentos_proposta", {}, soExcel.deps)).s;
+  assert.deepEqual(
+    (b.falhas as { documento: string }[]).map((f) => f.documento),
+    ["proposta_xlsx"]
+  );
+  assert.deepEqual(b.avisos, [AVISO_UM_ARQUIVO]);
+});
+
+test("gerar_declaracoes: PDF que falha com um PDF pendente de antes na pasta avisa que o antigo continua; .docx que falha, não", async () => {
+  const pdfAntigo = (chave: string) => ({
+    id: `a-${chave}`,
+    nome: "Declaração antiga.pdf",
+    origem: `declaracao:${chave}:pdf`,
+    assinatura: "pendente",
+  });
+  // o jsPDF quebra no 2º PDF (fato_impeditivo): o antigo dele continua na pasta
+  const com = cenario(
+    { existentes: [pdfAntigo("fato_impeditivo")] },
+    { libs: libsQueQuebramNaCriacao(2) }
+  );
+  const a = (await comLog("gerar_declaracoes", { itens: TRES_DECLARACOES }, com.deps)).s;
+  assert.deepEqual(a.avisos, [avisoPdfAntigo(TITULO_FATO), AVISO_UM_ARQUIVO]);
+
+  // sem PDF antigo daquela declaração (só de outra): nenhum aviso desse tipo
+  const sem = cenario({ existentes: [pdfAntigo("me_epp")] }, { libs: libsQueQuebramNaCriacao(2) });
+  const b = (await comLog("gerar_declaracoes", { itens: TRES_DECLARACOES }, sem.deps)).s;
+  assert.deepEqual(b.avisos, [AVISO_UM_ARQUIVO]);
+
+  // Storage que falha nos DOIS formatos da 2ª declaração: um só aviso (o do PDF) e o resumo de 2 arquivos
+  let uploads = 0;
+  const nosDois = cenario(
+    { existentes: [pdfAntigo("fato_impeditivo")] },
+    {
+      responderStorage: (c) =>
+        c.metodo === "upload" && (++uploads === 3 || uploads === 4)
+          ? { error: { message: "fora do ar" } }
+          : undefined,
+    }
+  );
+  const c = (await comLog("gerar_declaracoes", { itens: TRES_DECLARACOES }, nosDois.deps)).s;
+  assert.deepEqual(c.avisos, [
+    avisoPdfAntigo(TITULO_FATO),
+    "2 arquivos não puderam ser gerados: veja falhas.",
+  ]);
+
+  // falha só no .docx: o PDF novo foi gravado (trocou o antigo), então não há o que avisar
+  uploads = 0;
+  const soDocx = cenario(
+    { existentes: [pdfAntigo("me_epp")] },
+    {
+      responderStorage: (c2) =>
+        c2.metodo === "upload" && ++uploads === 2
+          ? { error: { message: "fora do ar" } }
+          : undefined,
+    }
+  );
+  const d = (await comLog("gerar_declaracoes", { itens: [{ modelo: "me_epp" }] }, soDocx.deps)).s;
+  assert.deepEqual(d.avisos, [AVISO_UM_ARQUIVO]);
 });
 
 test("gerar_declaracoes: a oportunidade que some no meio interrompe tudo; o que já foi gravado fica no histórico", async () => {

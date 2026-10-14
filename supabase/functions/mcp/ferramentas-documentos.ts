@@ -55,6 +55,7 @@ import {
   bytesDaPlanilha,
   bytesDoPdf,
   gerarPdfProposta,
+  moedaBR,
   montarPlanilhaProposta,
   type LibsDocumentos,
 } from "../_shared/documentos/proposta-export.ts";
@@ -104,20 +105,29 @@ export const MAX_ITENS_DOCUMENTO = 800;
 export const MAX_CELULAS_CRONOGRAMA = 2400;
 
 /**
- * Logo do papel timbrado. O jsPDF decodifica o PNG inteiro em CADA PDF (e a ferramenta gera até 12
- * declarações), então o PNG é limitado por pixels; o JPEG vai como veio e só tem limite de lado. Medido em
- * 14/10/2026 no PC de desenvolvimento, 12 declarações em PDF com PNG RGBA de 800 × 800: logo plano (70 KB) ~0,6 s
- * e 29 MB de PDF sem compressão, ~1,2 s e 0,7 MB com a compressão "FAST" (`compressaoDoLogo`); PNG que não é
- * compacto (mais de meio byte por pixel) fica sem compressão: 0,7 a 1,4 s. A conferência do arquivo e a sonda
- * do jsPDF somam ~0,15 s, uma vez por chamada.
+ * Logo do papel timbrado. O jsPDF decodifica o PNG com transparência inteiro em CADA PDF (e a ferramenta gera até
+ * 12 declarações), então o PNG é limitado por pixels; o JPEG vai como veio e só tem limite de lado. O logo é
+ * impresso numa caixa de 50 × 18 mm (a 300 dpi são 591 × 213 px, ~126 mil pixels): 300 mil pixels não perdem
+ * qualidade nenhuma no papel.
+ *
+ * Medido em 14/10/2026 no PC de desenvolvimento (i3 de 2 núcleos, mais lento que o servidor), a CHAMADA INTEIRA de
+ * `gerar_declaracoes` com 12 declarações: conferência do arquivo, sonda, 12 PDFs e 12 .docx, logo PNG RGBA, quente
+ * e fria (processo novo; a carga das bibliotecas, ~0,2 s, entra na primeira chamada de uma instância nova):
+ *   - antes, no limite de 700 mil pixels (836 × 837, plano): quente 1,6 a 1,9 s, fria ~2,0 s (+ 0,2 s de carga);
+ *   - agora, no limite de 300 mil pixels (548 × 547), logo plano (com a compressão "FAST" de `compressaoDoLogo`):
+ *     quente 0,65 a 0,86 s, fria 1,0 a 1,15 s (+ 0,2 s de carga = 1,2 a 1,4 s);
+ *   - agora, PNG de ruído puro no limite (1 MB, mais de meio byte por pixel: sem compressão): quente 0,9 a 1,3 s,
+ *     fria 1,1 a 1,3 s (+ 0,2 s de carga = 1,3 a 1,5 s);
+ *   - 1000 × 300 (o lado no limite): plano 0,6 a 0,8 s quente, 1,0 s fria; ruído 0,9 a 1,0 s quente, 1,2 s fria.
+ * Com 300 mil pixels a pior chamada medida fica em ~1,5 s, com folga para os ~2 s de CPU da Edge Function.
  */
 export const LOGO_BYTES_MAXIMOS = 2 * 1024 * 1024;
-export const LOGO_PNG_PIXELS_MAXIMOS = 700_000;
-const LOGO_PNG_LADO_MAXIMO = 2000;
+export const LOGO_PNG_PIXELS_MAXIMOS = 300_000;
+export const LOGO_PNG_LADO_MAXIMO = 1000;
 const LOGO_JPEG_LADO_MAXIMO = 4000;
 /** O logo é cadastrado em Configurações → aba Empresa ("Logo da Empresa", EmpresaTab.jsx). */
 const AVISO_LOGO =
-  "O logo da empresa não foi incluído: use um PNG de até 800×800 pixels (ou 700 mil pixels no total) ou um JPG de até 2 MB, em Configurações → Empresa.";
+  "O logo da empresa não foi incluído: use um PNG de até 500×500 pixels (300 mil pixels no total) ou um JPG de até 2 MB, salvo de novo como imagem comum, em Configurações → Empresa.";
 const AVISO_REPRESENTANTE_INCOMPLETO =
   "O representante legal está sem cargo ou CPF no cadastro: o bloco de assinatura saiu sem essa informação.";
 const SUFIXO_CRONOGRAMA_ANTIGO = " Os arquivos de cronograma gerados antes continuam na pasta.";
@@ -207,10 +217,6 @@ function falhaDoArquivo(
 /** "N arquivo(s) não puderam ser gerados: veja falhas." (singular: "1 arquivo não pôde ser gerado: ..."). */
 const avisoDasFalhas = (n: number): string =>
   `${n === 1 ? "1 arquivo não pôde ser gerado" : `${n} arquivos não puderam ser gerados`}: veja falhas.`;
-
-/** Valor em reais como o PDF e a tela da proposta mostram: "R$ 1.234,56". */
-const moedaBR = (v: number): string =>
-  `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** Representante sem cargo ou sem CPF no cadastro: o bloco de assinatura sai sem essa linha. */
 const representanteIncompleto = (r: { cargo: unknown; cpf: unknown }): boolean =>
@@ -436,8 +442,14 @@ interface ArquivoDaProposta {
 
 /** A proposta ou o cronograma: o PDF (assinável) e o Excel dele, nesta ordem. O PDF assinado segura os dois. */
 interface DocumentoDaProposta {
+  /** O título que o próprio PDF leva ("Proposta de preços"), para o aviso do PDF de antes que continua na pasta. */
+  titulo: string;
   arquivos: ArquivoDaProposta[];
 }
+
+/** Um PDF novo que falhou não troca o de antes: o aviso diz que o da geração anterior (com os dados antigos) continua. */
+const avisoPdfAntigoNaPasta = (titulo: string): string =>
+  `${titulo}: o PDF novo não foi gravado; o da geração anterior continua na pasta.`;
 
 /** As origens dos quatro arquivos que a ferramenta grava (contrato §3). */
 const ORIGENS_DA_PROPOSTA = [
@@ -534,6 +546,7 @@ const GERAR_DOCUMENTOS_PROPOSTA: Ferramenta = {
 
     const documentos: DocumentoDaProposta[] = [
       {
+        titulo: dados.titulo,
         arquivos: [
           {
             documento: "proposta_pdf",
@@ -586,6 +599,7 @@ const GERAR_DOCUMENTOS_PROPOSTA: Ferramenta = {
           opcoes,
         });
         documentos.push({
+          titulo: dadosCron.titulo,
           arquivos: [
             {
               documento: "cronograma_pdf",
@@ -612,6 +626,7 @@ const GERAR_DOCUMENTOS_PROPOSTA: Ferramenta = {
     const gerados: Record<string, unknown>[] = [];
     const mantidos: { documento: string; nome: string }[] = [];
     const falhas: Record<string, unknown>[] = [];
+    const pdfsAntigosNaPasta: string[] = [];
     try {
       for (const doc of documentos) {
         // o PDF assinado manda no documento: o Excel dele também fica (senão o Excel traria os valores de
@@ -662,6 +677,10 @@ const GERAR_DOCUMENTOS_PROPOSTA: Ferramenta = {
             });
           } catch (e) {
             falhas.push(falhaDoArquivo("gerar_documentos_proposta", { documento: a.documento }, e));
+            // o PDF de antes (pendente: o assinado nem chega aqui) segue na pasta, com os dados antigos
+            if (a.tipo === "pdf" && existentes.some((x) => x.origem === a.origem)) {
+              pdfsAntigosNaPasta.push(doc.titulo);
+            }
           }
         }
       }
@@ -677,14 +696,17 @@ const GERAR_DOCUMENTOS_PROPOSTA: Ferramenta = {
       }
     }
 
+    // o aviso do documento mantido só cita o Excel se ele existe na pasta (senão só o PDF assinado foi mantido)
+    const mantidoComExcel = (excel: string) =>
+      existentes.some((a) => a.origem === excel) ? "PDF e Excel" : "PDF";
     for (const m of mantidos) {
       if (m.documento === "proposta_pdf") {
         avisos.push(
-          `A proposta já está assinada e foi mantida (PDF e Excel). O total atual do orçamento é ${moedaBR(dados.totalGeral)}; se mudou, exclua o PDF assinado na aba Arquivos e gere de novo.`
+          `A proposta já está assinada e foi mantida (${mantidoComExcel("gerado:proposta:xlsx")}). O total atual do orçamento é ${moedaBR(dados.totalGeral)}; se mudou, exclua o PDF assinado na aba Arquivos e gere de novo.`
         );
       } else if (m.documento === "cronograma_pdf") {
         avisos.push(
-          "O cronograma já está assinado e foi mantido (PDF e Excel). Se o cronograma mudou, exclua o PDF assinado na aba Arquivos e gere de novo."
+          `O cronograma já está assinado e foi mantido (${mantidoComExcel("gerado:cronograma:xlsx")}). Se o cronograma mudou, exclua o PDF assinado na aba Arquivos e gere de novo.`
         );
       } else {
         // um Excel marcado como assinado (não é o fluxo normal: só o PDF nasce "pendente")
@@ -694,6 +716,7 @@ const GERAR_DOCUMENTOS_PROPOSTA: Ferramenta = {
         );
       }
     }
+    avisos.push(...pdfsAntigosNaPasta.map(avisoPdfAntigoNaPasta));
     if (falhas.length > 0) avisos.push(avisoDasFalhas(falhas.length));
     return sucesso(
       {
@@ -889,17 +912,20 @@ const GERAR_DECLARACOES: Ferramenta = {
         texto: item.tipo === "modelo" ? String(m?.texto ?? "") : item.texto,
       };
     });
-    const assinados = assinadosDe(
-      await arquivosPorOrigem(
-        deps,
-        id,
-        declaracoes.map((d) => `declaracao:${d.chave}:pdf`)
-      )
+    const pdfsDeAntes = await arquivosPorOrigem(
+      deps,
+      id,
+      declaracoes.map((d) => `declaracao:${d.chave}:pdf`)
     );
+    const assinados = assinadosDe(pdfsDeAntes);
+    // o PDF de uma geração anterior (pendente: o assinado nem chega ao laço) que continua na pasta se o novo falhar
+    const temPdfDeAntes = (chave: string) =>
+      pdfsDeAntes.some((a) => a.origem === `declaracao:${chave}:pdf`);
 
     const geradas: Record<string, unknown>[] = [];
     const mantidas: { chave: string; titulo: string }[] = [];
     const falhas: Record<string, unknown>[] = [];
+    const pdfsAntigosNaPasta: string[] = [];
     try {
       for (const d of declaracoes) {
         if (assinados.has(`declaracao:${d.chave}:pdf`)) {
@@ -926,7 +952,9 @@ const GERAR_DECLARACOES: Ferramenta = {
             { formato: "docx", assinatura: null, bytes: () => gerarDocxDeclaracao(dados, logo) },
           ];
         } catch (e) {
+          // nem o PDF nem o .docx foram gerados
           falhas.push(falhaDoArquivo("gerar_declaracoes", identificacao, e));
+          if (temPdfDeAntes(d.chave)) pdfsAntigosNaPasta.push(d.titulo);
           continue;
         }
         const arquivos: Record<string, unknown>[] = [];
@@ -966,6 +994,7 @@ const GERAR_DECLARACOES: Ferramenta = {
             falhas.push(
               falhaDoArquivo("gerar_declaracoes", { ...identificacao, formato: f.formato }, e)
             );
+            if (f.formato === "pdf" && temPdfDeAntes(d.chave)) pdfsAntigosNaPasta.push(d.titulo);
           }
         }
         if (arquivos.length === 0) {
@@ -1005,6 +1034,7 @@ const GERAR_DECLARACOES: Ferramenta = {
         `${plural(mantidas.length, "declaração já tem o PDF assinado e foi mantida", "declarações já têm o PDF assinado e foram mantidas")}, sem troca (veja mantidas_assinadas).`
       );
     }
+    avisos.push(...pdfsAntigosNaPasta.map(avisoPdfAntigoNaPasta));
     if (falhas.length > 0) avisos.push(avisoDasFalhas(falhas.length));
     return sucesso(
       {

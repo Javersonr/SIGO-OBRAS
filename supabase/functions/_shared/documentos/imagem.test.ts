@@ -1,6 +1,7 @@
 // node --test supabase/functions/_shared/documentos/imagem.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import zlib from "node:zlib";
 import { conferirImagem, lerImagem } from "./imagem.ts";
 import { PNG_1X1 } from "./testes/amostras.ts";
@@ -315,6 +316,118 @@ test("conferirImagem: bomba de descompressão (poucos KB que viram dezenas de MB
     "bomba"
   );
   assert.ok(performance.now() - t0 < 5000);
+});
+
+/**
+ * Descompressor de mentira que se comporta como o do Deno: entrega a saída INTEIRA de cada pedaço de entrada de
+ * uma vez (`saidaPorEntrada` bytes), sem fatiar em 16 KB como o do Node, e conta o que recebeu e se foi cancelado.
+ */
+function descompressorQueDevolveTudoDeUmaVez(saidaPorEntrada: number) {
+  const contagem = { entrada: 0, fatias: 0, maiorFatia: 0, cancelado: false };
+  const transformador: Transformer<Uint8Array, Uint8Array> & { cancel?: () => void } = {
+    transform(pedaco, controle) {
+      contagem.entrada += pedaco.length;
+      contagem.fatias++;
+      contagem.maiorFatia = Math.max(contagem.maiorFatia, pedaco.length);
+      controle.enqueue(new Uint8Array(saidaPorEntrada));
+    },
+    cancel() {
+      contagem.cancelado = true;
+    },
+  };
+  const ts = new TransformStream<Uint8Array, Uint8Array>(transformador);
+  return { contagem, criarDescompressor: () => ts };
+}
+
+const FATIA = 16 * 1024;
+
+test("conferirImagem: o fluxo entra no descompressor em fatias de 16 KB e a bomba para na primeira saída grande (no Deno a saída de um pedaço vem inteira)", async () => {
+  // IDAT de 200 KB que o descompressor de mentira "expande" em 2 MB a cada pedaço recebido; o PNG de 10 x 10
+  // espera 310 bytes: a recusa tem de vir logo, depois de no máximo uma fatia a mais do que o necessário
+  const png = construirPng({ largura: 10, altura: 10, idat: new Uint8Array(200 * 1024) });
+  const falso = descompressorQueDevolveTudoDeUmaVez(2 * 1024 * 1024);
+  const img = lerImagem(png)!;
+  const r = await conferirImagem(png, img, { criarDescompressor: falso.criarDescompressor });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.match(r.motivo, /mais dados/);
+  assert.ok(falso.contagem.maiorFatia <= FATIA, `entrou um pedaço de ${falso.contagem.maiorFatia}`);
+  // o necessário para chegar à recusa é uma fatia; o canal pode já ter a seguinte na fila
+  assert.ok(falso.contagem.entrada <= 2 * FATIA, `entraram ${falso.contagem.entrada} bytes`);
+  assert.ok(falso.contagem.cancelado, "a leitura devia ter sido cancelada");
+});
+
+test("conferirImagem: se o runtime não leva o cancelamento da leitura até a escrita, nenhuma fatia nova entra depois da recusa", async () => {
+  // o par de fluxos não está ligado: cancelar o lado da leitura não fecha o da escrita (o pior caso de um runtime
+  // que não propaga o cancelamento); só o `parar` da conferência impede que o resto do IDAT continue entrando
+  const contagem = { entrada: 0 };
+  let saida!: ReadableStreamDefaultController<Uint8Array>;
+  const readable = new ReadableStream<Uint8Array>({
+    start(c) {
+      saida = c;
+    },
+  });
+  const writable = new WritableStream<Uint8Array>({
+    write(pedaco) {
+      contagem.entrada += pedaco.length;
+      try {
+        saida.enqueue(new Uint8Array(2 * 1024 * 1024));
+      } catch {
+        // a leitura já foi cancelada
+      }
+    },
+  });
+  const png = construirPng({ largura: 10, altura: 10, idat: new Uint8Array(400 * 1024) });
+  const r = await conferirImagem(png, lerImagem(png)!, {
+    criarDescompressor: () => ({ readable, writable }),
+  });
+  assert.equal(r.ok, false);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(contagem.entrada <= 2 * FATIA, `entraram ${contagem.entrada} bytes`);
+});
+
+test("conferirImagem: um IDAT de várias fatias de 16 KB (ruído, quase incompressível) passa íntegro e conta certo", async () => {
+  const largura = 160;
+  const altura = 120;
+  const bytesPorLinha = 1 + largura * 4;
+  const bruto = Buffer.alloc(bytesPorLinha * altura);
+  const ruido = crypto.randomBytes(bruto.length);
+  for (let y = 0; y < altura; y++) {
+    bruto[y * bytesPorLinha] = y % 5; // um filtro válido por linha
+    ruido.copy(bruto, y * bytesPorLinha + 1, y * bytesPorLinha + 1, (y + 1) * bytesPorLinha);
+  }
+  const png = construirPng({ largura, altura, tipoCor: 6, dadosBrutos: bruto });
+  assert.ok(
+    png.length > 3 * FATIA,
+    `o PNG de teste tem ${png.length} bytes: precisa de várias fatias`
+  );
+  assert.deepEqual(await conferir(png), { ok: true });
+  // e a falta de uma linha inteira ainda é pega, também com várias fatias
+  const incompleto = construirPng({
+    largura,
+    altura,
+    tipoCor: 6,
+    dadosBrutos: bruto.subarray(0, bruto.length - bytesPorLinha),
+  });
+  await assertRecusa(incompleto, /menos|incompleto/, "falta uma linha");
+});
+
+test("conferirImagem: mais de 10000 blocos no PNG é recusado (10000 ainda passa)", async () => {
+  // IHDR + n IDAT + IEND: 9998 IDAT = 10000 blocos; 9999 IDAT = 10001
+  await assertRecusa(
+    construirPng({ largura: 40, altura: 40, idatEmPartes: 9999 }),
+    /blocos/,
+    "10001 blocos"
+  );
+  await assertRecusa(
+    construirPng({ largura: 40, altura: 40, idatEmPartes: 20000 }),
+    /blocos/,
+    "20002 blocos"
+  );
+  assert.deepEqual(
+    await conferir(construirPng({ largura: 40, altura: 40, idatEmPartes: 9998 })),
+    { ok: true },
+    "10000 blocos"
+  );
 });
 
 test("conferirImagem: combinação de tipo de cor e profundidade que o PNG não define, ou método desconhecido", async () => {

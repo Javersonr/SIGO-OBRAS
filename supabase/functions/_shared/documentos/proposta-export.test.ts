@@ -9,6 +9,7 @@ import {
   bytesDaPlanilha,
   bytesDoPdf,
   gerarPdfProposta,
+  moedaBR,
   montarPlanilhaProposta,
   resolverAutoTable,
   textoPdf,
@@ -92,4 +93,29 @@ test("textoPdf: troca o que a helvetica não tem", () => {
   assert.equal(textoPdf("linha\nquebrada"), "linha quebrada");
   assert.equal(textoPdf("日本"), "??");
   assert.equal(textoPdf(null), "");
+});
+
+// ─── moedaBR: o "R$ 1.234,56" da proposta, que a ferramenta do conector reaproveita ───────────────
+
+/** A fórmula que a ferramenta do conector (gerar_documentos_proposta) trazia copiada, antes de reusar a daqui. */
+const moedaCopiadaDaFerramenta = (v: number): string =>
+  `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+test("moedaBR: mesmo texto da fórmula antiga da ferramenta para 0, 1234,5, 1e9, negativo e centavos", () => {
+  for (const v of [0, 1234.5, 1e9, -5.5, -1234567.891, 0.005, 3629.5, 1237197.39]) {
+    assert.equal(moedaBR(v), moedaCopiadaDaFerramenta(v), String(v));
+  }
+  assert.equal(moedaBR(1234.5), "R$ 1.234,50");
+  assert.equal(moedaBR(1e9), "R$ 1.000.000.000,00");
+  assert.equal(moedaBR(0), "R$ 0,00");
+  assert.equal(moedaBR(-5.5), "R$ -5,50");
+});
+
+test("moedaBR é a mesma do PDF da proposta: 'Valor global da proposta: <moedaBR(total)>' nos bytes", () => {
+  const d = dados();
+  const pdf = new TextDecoder("latin1").decode(
+    bytesDoPdf(gerarPdfProposta(d, { jsPDF, autoTable }))
+  );
+  assert.ok(pdf.includes(`Valor global da proposta: ${moedaBR(d.totalGeral)}`));
+  assert.ok(pdf.includes("Valor global da proposta: R$ 3.629,50"));
 });
