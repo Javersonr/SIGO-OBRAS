@@ -14,13 +14,16 @@ import {
   MSG_MUITAS_ACOES,
   MSG_SINAL_CONCORRENTE,
   MSG_TRILHA_INDISPONIVEL,
+  NOTA_MINIMA_MODULO_PADRAO,
   PCT_CONCLUSAO,
   REPROVADO_VE_NOTA,
   TEMPO_MINIMO_PROVA_POR_QUESTAO_SEG,
+  TIPOS_COM_ACAO_PROPRIA,
   TOLERANCIA_SEG,
   VOLUME_POR_ACAO,
   type AcaoComVolume,
   acaoDeVolumeDoEvento,
+  atividadesDoCertificado,
   aulaLiberada,
   aulasParaAluno,
   bloqueioDaTrilhaNoCertificado,
@@ -45,6 +48,7 @@ import {
   matriculaParaAluno,
   matriculasAbertasComTrilhaCompleta,
   matriculasComConclusaoPorRegistrar,
+  notaMinimaDoModulo,
   ordemDaProva,
   periodoDoCertificado,
   proximaTentativaEm,
@@ -315,31 +319,55 @@ test("conclusaoDaAula: vídeo ignora o pedido de concluir e nunca vira 'pode con
   assert.equal(pronto.podeConcluir, false);
 });
 
-test("conclusaoDaAula: apostila exige o tempo completo, não 90%", () => {
-  for (const tipo of ["pdf", "texto"]) {
-    const quase = conclusaoDaAula({ tipo, duracao: 120, segundos: 119, pediuConcluir: true });
-    assert.equal(quase.minimoSeg, 120);
-    assert.equal(quase.atingiuTempo, false);
-    assert.equal(quase.concluiu, false);
-    assert.equal(quase.faltamSeg, 1);
-    assert.equal(quase.concluirCedo, true);
+test("conclusaoDaAula: leitura (pdf, texto) e tarefa concluem com o clique, sem tempo mínimo (A5)", () => {
+  for (const tipo of ["pdf", "texto", "tarefa"]) {
+    for (const segundos of [0, 1, 119, 120, 5000]) {
+      const c = conclusaoDaAula({ tipo, duracao: 120, segundos, pediuConcluir: true });
+      assert.equal(c.ehVideo, false, `${tipo}/${segundos}`);
+      assert.equal(c.concluiu, true, `${tipo}/${segundos}`);
+      assert.equal(c.concluirCedo, false, `${tipo}/${segundos}`); // o 409 TEMPO_LEITURA deixa de existir
+      assert.equal(c.podeConcluir, false, `${tipo}/${segundos}`);
+      assert.equal(c.minimoSeg, 0, `${tipo}/${segundos}`);
+      assert.equal(c.faltamSeg, 0, `${tipo}/${segundos}`);
+      assert.equal(c.atingiuTempo, true, `${tipo}/${segundos}`);
+    }
   }
 });
 
-test("conclusaoDaAula: apostila com o tempo completo mas sem clique fica aguardando o clique", () => {
-  const c = conclusaoDaAula({ tipo: "pdf", duracao: 120, segundos: 120 });
-  assert.equal(c.atingiuTempo, true);
-  assert.equal(c.concluiu, false);
-  assert.equal(c.podeConcluir, true);
-  assert.equal(c.concluirCedo, false);
+test("conclusaoDaAula: leitura e tarefa sem o clique ficam aguardando o clique, com qualquer tempo", () => {
+  for (const tipo of ["pdf", "texto", "tarefa"]) {
+    for (const segundos of [0, 120, 999]) {
+      const c = conclusaoDaAula({ tipo, duracao: 120, segundos });
+      assert.equal(c.concluiu, false, `${tipo}/${segundos}`);
+      assert.equal(c.podeConcluir, true, `${tipo}/${segundos}`);
+      assert.equal(c.concluirCedo, false, `${tipo}/${segundos}`);
+    }
+  }
 });
 
-test("conclusaoDaAula: apostila com o tempo completo e o clique conclui", () => {
-  const c = conclusaoDaAula({ tipo: "texto", duracao: 120, segundos: 130, pediuConcluir: true });
-  assert.equal(c.concluiu, true);
+test("conclusaoDaAula: questionário e caso NUNCA concluem pelo progresso (só pelas ações próprias)", () => {
+  assert.deepEqual([...TIPOS_COM_ACAO_PROPRIA], ["questionario", "caso"]);
+  for (const tipo of TIPOS_COM_ACAO_PROPRIA) {
+    for (const pediuConcluir of [true, undefined]) {
+      const c = conclusaoDaAula({ tipo, duracao: 600, segundos: 600, pediuConcluir });
+      assert.equal(c.ehVideo, false, tipo);
+      assert.equal(c.concluiu, false, tipo);
+      assert.equal(c.podeConcluir, false, tipo);
+      assert.equal(c.concluirCedo, false, tipo);
+      assert.equal(c.atingiuTempo, false, tipo);
+    }
+    // a conclusão gravada pela ação própria continua valendo quando o progresso volta a chegar
+    const feita = conclusaoDaAula({ tipo, duracao: 600, segundos: 0, jaConcluida: true });
+    assert.equal(feita.concluiu, true, tipo);
+    assert.equal(feita.podeConcluir, false, tipo);
+  }
+});
+
+test("conclusaoDaAula: tipo desconhecido não conclui pelo progresso (fecha na dúvida)", () => {
+  const c = conclusaoDaAula({ tipo: "inventado", duracao: 60, segundos: 60, pediuConcluir: true });
+  assert.equal(c.concluiu, false);
   assert.equal(c.podeConcluir, false);
   assert.equal(c.concluirCedo, false);
-  assert.equal(c.faltamSeg, -10);
 });
 
 test("conclusaoDaAula: só o clique literal (true) vale", () => {
@@ -363,12 +391,13 @@ test("conclusaoDaAula: a aula já concluída continua concluída", () => {
   );
 });
 
-test("conclusaoDaAula: aula sem duração (0) nunca atinge o tempo", () => {
-  for (const tipo of ["video", "pdf"]) {
-    const c = conclusaoDaAula({ tipo, duracao: 0, segundos: 0, pediuConcluir: true });
-    assert.equal(c.atingiuTempo, false, tipo);
-    assert.equal(c.concluiu, false, tipo);
-  }
+test("conclusaoDaAula: vídeo sem duração (0) nunca atinge o tempo; a leitura conclui com o clique", () => {
+  const video = conclusaoDaAula({ tipo: "video", duracao: 0, segundos: 0, pediuConcluir: true });
+  assert.equal(video.atingiuTempo, false);
+  assert.equal(video.concluiu, false);
+  // A5: a leitura não depende do tempo cadastrado (o requisito CONTEUDO é que cobra a duração do RH)
+  const pdf = conclusaoDaAula({ tipo: "pdf", duracao: 0, segundos: 0, pediuConcluir: true });
+  assert.equal(pdf.concluiu, true);
 });
 
 // ------------------------------------------------------------- corrigirProva
@@ -2678,6 +2707,149 @@ test("aulasParaAluno: aula sem tipo (legado) aparece como vídeo, sem URL de ví
   assert.equal(a.video_url, null); // como hoje: só tipo "video" com fonte "upload" assina o vídeo
   assert.equal(a.duracao_seg, 60); // como hoje: sem tipo explícito não é "vídeo sem duração"
   assert.equal(a.liberada, true);
+});
+
+// ------------------------------------------------ atividades interativas (spec 2026-10-14)
+const ATIVIDADES = [
+  {
+    ...aulaBase,
+    id: "t1",
+    ordem: 1,
+    tipo: "tarefa",
+    titulo: "T1",
+    conteudo_texto: "Texto da tarefa T1",
+  },
+  {
+    ...aulaBase,
+    id: "q1",
+    ordem: 2,
+    tipo: "questionario",
+    titulo: "Q1",
+    // nada disto vai ao aluno: o questionário vem de questionario_abrir
+    conteudo_texto: "Texto reservado Q1",
+    youtube_id: "ID_YT_Q1",
+    legenda_ref: "treinamentos/e/q1.vtt",
+    duracao_seg: 900,
+  },
+  {
+    ...aulaBase,
+    id: "c1",
+    ordem: 3,
+    tipo: "caso",
+    titulo: "C1",
+    conteudo_texto: "Texto reservado C1",
+    arquivo_ref: "treinamentos/e/c1.pdf",
+    duracao_seg: 600,
+  },
+  {
+    ...aulaBase,
+    id: "t2",
+    ordem: 4,
+    tipo: "tarefa",
+    titulo: "T2",
+    conteudo_texto: "Texto da tarefa T2",
+  },
+];
+
+test("aulasParaAluno: a tarefa liberada leva o texto (instruções); a bloqueada, não", () => {
+  const [t1, , , t2] = aulasParaAluno({
+    aulas: ATIVIDADES,
+    progresso: progDe([]),
+    urlDe: assinadaEm,
+    tempoMinimoPadrao: 60,
+  });
+  assert.equal(t1.tipo, "tarefa");
+  assert.equal(t1.liberada, true);
+  assert.equal(t1.conteudo_texto, "Texto da tarefa T1");
+  assert.equal(t1.duracao_seg, 60); // sem tempo cadastrado: o padrão, como as leituras
+  assert.equal(t2.liberada, false);
+  assert.equal(t2.conteudo_texto, null);
+});
+
+test("aulasParaAluno: questionário e caso nunca levam conteúdo, nem liberados (vem das ações próprias)", () => {
+  const pedidos: (string | null | undefined)[] = [];
+  const urlDe = (ref?: string | null) => {
+    pedidos.push(ref);
+    return assinadaEm(ref);
+  };
+  const todas = aulasParaAluno({
+    aulas: ATIVIDADES,
+    progresso: progDe(["t1", "q1", "c1"]),
+    urlDe,
+    tempoMinimoPadrao: 60,
+  });
+  for (const a of todas.filter((x) => x.tipo === "questionario" || x.tipo === "caso")) {
+    assert.equal(a.liberada, true, a.id);
+    assert.equal(a.conteudo_texto, null, a.id);
+    assert.equal(a.youtube_id, null, a.id);
+    assert.equal(a.video_url, null, a.id);
+    assert.equal(a.legenda_url, null, a.id);
+    assert.equal(a.arquivo_url, null, a.id);
+  }
+  // a lista continua completa para o aluno: título, tipo, duração e conclusão
+  assert.deepEqual(
+    todas.map((a) => [a.id, a.tipo, a.duracao_seg, a.concluida]),
+    [
+      ["t1", "tarefa", 60, true],
+      ["q1", "questionario", 900, true],
+      ["c1", "caso", 600, true],
+      ["t2", "tarefa", 60, false],
+    ]
+  );
+  const texto = JSON.stringify(todas);
+  for (const reservado of ["Texto reservado", "ID_YT_Q1", "q1.vtt", "c1.pdf"]) {
+    assert.equal(texto.includes(reservado), false, reservado);
+  }
+  // nenhuma referência delas chega ao assinador, e o `dados` não as assina
+  assert.deepEqual(pedidos.filter(Boolean), []);
+  assert.deepEqual(refsDasAulasLiberadas(ATIVIDADES, progDe(["t1", "q1", "c1"])), []);
+});
+
+test("notaMinimaDoModulo: 0 a 100 inteiro; ausente ou inválido vale 80", () => {
+  assert.equal(NOTA_MINIMA_MODULO_PADRAO, 80);
+  assert.equal(notaMinimaDoModulo({ nota_minima_modulo: 70 }), 70);
+  assert.equal(notaMinimaDoModulo({ nota_minima_modulo: 0 }), 0);
+  assert.equal(notaMinimaDoModulo({ nota_minima_modulo: 100 }), 100);
+  assert.equal(notaMinimaDoModulo({ nota_minima_modulo: "90" }), 90);
+  for (const ruim of [undefined, null, "", "  ", "abc", 101, -1, 79.5, true, {}]) {
+    assert.equal(notaMinimaDoModulo({ nota_minima_modulo: ruim }), 80, String(ruim));
+  }
+  assert.equal(notaMinimaDoModulo(null), 80);
+  assert.equal(notaMinimaDoModulo(undefined), 80);
+});
+
+test("atividadesDoCertificado: quantas de cada tipo (sem as apagadas) e a nota mínima; null sem atividades", () => {
+  const aulas = [
+    { tipo: "video" },
+    { tipo: "pdf" },
+    { tipo: "questionario" },
+    { tipo: "questionario" },
+    { tipo: "questionario", deleted_at: "2026-10-14T00:00:00Z" },
+    { tipo: "caso" },
+    { tipo: "caso" },
+    { tipo: "caso" },
+    { tipo: "tarefa" },
+  ];
+  assert.deepEqual(atividadesDoCertificado(aulas, { nota_minima_modulo: 75 }), {
+    questionarios: 2,
+    casos: 3,
+    tarefas: 1,
+    nota_minima_modulo: 75,
+  });
+  assert.deepEqual(atividadesDoCertificado([{ tipo: "tarefa" }], null), {
+    questionarios: 0,
+    casos: 0,
+    tarefas: 1,
+    nota_minima_modulo: 80,
+  });
+  // curso sem atividades (ou só com atividades apagadas): o certificado sai como hoje
+  assert.equal(atividadesDoCertificado([{ tipo: "video" }, { tipo: "texto" }], {}), null);
+  assert.equal(
+    atividadesDoCertificado([{ tipo: "caso", deleted_at: "2026-10-14T00:00:00Z" }], {}),
+    null
+  );
+  assert.equal(atividadesDoCertificado([], {}), null);
+  assert.equal(atividadesDoCertificado(null, null), null);
 });
 
 test("o evento da prova iniciada tem um nome só do servidor", () => {
