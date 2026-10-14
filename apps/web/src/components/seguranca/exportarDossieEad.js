@@ -54,18 +54,25 @@ export async function lerDadosDoDossie({ empresaId, cursoId }) {
   const tabela = (nome, colunas = "*") =>
     supabase.from(nome).select(colunas).eq("empresa_id", empresaId);
 
-  const [cursoLido, matriculas, aulas, tentativas, certificados] = await Promise.all([
-    tabela("treinamento_curso").eq("id", cursoId).maybeSingle(),
-    lerEmPaginas(() => tabela("treinamento_matricula").eq("curso_id", cursoId).order("id")),
-    lerEmPaginas(() =>
-      tabela("treinamento_aula", COLUNAS_DA_AULA).eq("curso_id", cursoId).order("id")
-    ),
-    lerEmPaginas(
-      () => tabela("treinamento_tentativa").eq("curso_id", cursoId).order("id"),
-      OPCOES_DAS_TENTATIVAS
-    ),
-    lerEmPaginas(() => tabela("treinamento_certificado").eq("curso_id", cursoId).order("id")),
-  ]);
+  const [cursoLido, matriculas, aulas, tentativas, certificados, tentativasQuestionario] =
+    await Promise.all([
+      tabela("treinamento_curso").eq("id", cursoId).maybeSingle(),
+      lerEmPaginas(() => tabela("treinamento_matricula").eq("curso_id", cursoId).order("id")),
+      lerEmPaginas(() =>
+        tabela("treinamento_aula", COLUNAS_DA_AULA).eq("curso_id", cursoId).order("id")
+      ),
+      lerEmPaginas(
+        () => tabela("treinamento_tentativa").eq("curso_id", cursoId).order("id"),
+        OPCOES_DAS_TENTATIVAS
+      ),
+      lerEmPaginas(() => tabela("treinamento_certificado").eq("curso_id", cursoId).order("id")),
+      // tentativas dos questionários dos módulos (atividades interativas): a prova inteira em jsonb, como as da
+      // avaliação
+      lerEmPaginas(
+        () => tabela("treinamento_questionario_tentativa").eq("curso_id", cursoId).order("id"),
+        OPCOES_DAS_TENTATIVAS
+      ),
+    ]);
   if (cursoLido.error) throw cursoLido.error;
   if (!cursoLido.data) throw new Error("Curso não encontrado.");
 
@@ -99,6 +106,7 @@ export async function lerDadosDoDossie({ empresaId, cursoId }) {
   const leituraIncompleta = [];
   if (matriculas.truncado) leituraIncompleta.push("matriculas");
   if (tentativas.truncado) leituraIncompleta.push("tentativas");
+  if (tentativasQuestionario.truncado) leituraIncompleta.push("questionarios");
   if (funcionarios.truncado) leituraIncompleta.push("funcionarios");
   if (progresso.truncado) leituraIncompleta.push("progresso");
   if (eventosDasMatriculas.truncado || acessosAoPortal.truncado) leituraIncompleta.push("trilha");
@@ -111,6 +119,7 @@ export async function lerDadosDoDossie({ empresaId, cursoId }) {
     progresso: progresso.linhas,
     eventos: [...eventosDasMatriculas.linhas, ...acessosAoPortal.linhas],
     tentativas: tentativas.linhas,
+    tentativasQuestionario: tentativasQuestionario.linhas,
     certificados: certificados.linhas,
     leituraIncompleta,
   };

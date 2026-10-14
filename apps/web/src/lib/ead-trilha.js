@@ -50,7 +50,8 @@ export const ROTULO_EVENTO = {
   aba_oculta: "Saiu da tela (tempo parado)",
   aba_visivel: "Voltou à tela",
   progresso_ajustado: "Tempo informado acima do real — ajustado pelo servidor",
-  apostila_lida: "Leu a apostila (tempo mínimo cumprido)",
+  // A5 (atividades interativas): texto, PDF e tarefa concluem ao chegar ao fim, sem tempo mínimo
+  apostila_lida: "Leu até o fim",
   aula_concluida: "Concluiu a aula",
   avaliacao_inicio: "Abriu a avaliação",
   avaliacao_iniciada: "Prova aberta (ordem sorteada pelo servidor)",
@@ -67,6 +68,13 @@ export const ROTULO_EVENTO = {
   duvida_resposta_editada: "Resposta de dúvida editada pelo RH",
   declaracao_ambiente: "Declarou o ambiente e o horário de estudo",
   ciencia: "Deu ciência de entrega",
+  // atividades interativas (spec 2026-10-14, contrato C2)
+  questionario_iniciado: "Questionário do módulo aberto (ordem sorteada pelo servidor)",
+  questionario_envio: "Enviou o questionário do módulo",
+  caso_escolha: "Escolha no caso",
+  caso_reiniciado: "Caso recomeçado (o roteiro mudou)",
+  caso_concluido: "Concluiu o caso",
+  tarefa_confirmada: "Confirmou a atividade de estudo",
 };
 
 /** Rótulo do evento; evento que ainda não tem rótulo aparece pelo nome, nunca em branco. */
@@ -81,7 +89,9 @@ export function tomDoEvento(nome) {
   if (
     nome === "progresso_ajustado" ||
     nome === "login_falha" ||
-    nome === "acesso_aguardando_provisoria"
+    nome === "acesso_aguardando_provisoria" ||
+    // o RH mudou o roteiro e o aluno recomeçou o caso: vale olhar
+    nome === "caso_reiniciado"
   ) {
     return "atencao";
   }
@@ -180,6 +190,41 @@ export function descreverDetalhe(evento) {
         : d.motivo === "suporte"
           ? "a senha foi redefinida pelo suporte do SIGO"
           : "";
+    case "questionario_iniciado":
+      return Number.isInteger(d.tentativa) ? `tentativa ${d.tentativa}` : "";
+    case "questionario_envio":
+      // A2: é estudo guiado; "aprovado" fica para a prova final
+      return juntar(
+        Number.isInteger(d.tentativa) && `tentativa ${d.tentativa}`,
+        typeof d.nota === "number" && Number.isFinite(d.nota) && `nota ${d.nota}%`,
+        typeof d.aprovada === "boolean" &&
+          (d.aprovada ? "atingiu a nota mínima" : "abaixo da nota mínima")
+      );
+    case "caso_escolha":
+      // `opcao` é o índice ORIGINAL (a ordem do cadastro, que o RH vê no editor do caso); o aluno viu embaralhado
+      return juntar(
+        Number.isInteger(d.rodada) && d.rodada > 1 && `rodada ${d.rodada}`,
+        typeof d.etapa === "string" &&
+          d.etapa &&
+          `etapa ${d.etapa}${Number.isInteger(d.passagem) && d.passagem > 1 ? ` (${d.passagem}ª vez)` : ""}`,
+        Number.isInteger(d.opcao) && `opção ${d.opcao + 1} do cadastro`,
+        typeof d.segura === "boolean" && (d.segura ? "escolha segura" : "escolha insegura"),
+        d.proxima === null
+          ? "encerrou o caso"
+          : typeof d.proxima === "string" && d.proxima && `seguiu para ${d.proxima}`
+      );
+    case "caso_reiniciado":
+      return juntar(
+        Number.isInteger(d.rodada) && `rodada ${d.rodada}`,
+        d.motivo === "caso_alterado" && "o RH mudou o roteiro e o caminho feito deixou de existir"
+      );
+    case "caso_concluido":
+      return juntar(
+        Number.isInteger(d.rodada) && d.rodada > 1 && `rodada ${d.rodada}`,
+        Number.isInteger(d.escolhas) && plural(d.escolhas, "escolha", "escolhas")
+      );
+    case "tarefa_confirmada":
+      return `${formatarTempo(d.segundos)} de tela`;
     default:
       return d.por ? `por ${d.por}` : "";
   }
@@ -198,4 +243,49 @@ export function abertaEmDaTentativa(eventos, numero) {
       primeira = e.created_at;
   }
   return primeira;
+}
+
+/**
+ * Hora (do servidor) em que o questionário do módulo `aulaId` foi aberto pela 1ª vez na tentativa `numero`: o
+ * evento `questionario_iniciado` daquela aula e tentativa (atividades interativas). Sem o evento: null.
+ */
+export function abertaEmDoQuestionario(eventos, aulaId, numero) {
+  let primeira = null;
+  for (const e of eventos || []) {
+    if (e?.evento !== "questionario_iniciado" || e.aula_id !== aulaId) continue;
+    if (e.detalhe?.tentativa !== numero) continue;
+    const t = Date.parse(e.created_at);
+    if (Number.isFinite(t) && (primeira === null || t < Date.parse(primeira)))
+      primeira = e.created_at;
+  }
+  return primeira;
+}
+
+/**
+ * As tentativas dos questionários dos módulos de UMA matrícula, para a seção "Questionários dos módulos" dos
+ * Detalhes: em ordem de aula (a do curso, `aulas` já em ordem) e, na aula, de número. `aula` é o rótulo
+ * "3. Título" (a numeração que o aluno vê) ou "Questionário removido" quando a aula já não está na lista; essas
+ * vão para o fim.
+ */
+export function tentativasDosQuestionarios({ tentativas, aulas } = {}) {
+  const vivas = (Array.isArray(aulas) ? aulas : []).filter((a) => a && !a.deleted_at);
+  const posicao = new Map(
+    vivas.map((a, i) => [a.id, { numero: i + 1, titulo: a.titulo || "(sem título)" }])
+  );
+  return (Array.isArray(tentativas) ? tentativas : [])
+    .filter(Boolean)
+    .map((t) => {
+      const p = posicao.get(t.aula_id);
+      return {
+        tentativa: t,
+        aula: p ? `${p.numero}. ${p.titulo}` : "Questionário removido",
+        ordem: p ? p.numero : Number.POSITIVE_INFINITY,
+      };
+    })
+    .sort(
+      (a, b) =>
+        (a.ordem === b.ordem ? 0 : a.ordem - b.ordem) ||
+        (Number(a.tentativa.numero) || 0) - (Number(b.tentativa.numero) || 0) ||
+        String(a.tentativa.created_at ?? "").localeCompare(String(b.tentativa.created_at ?? ""))
+    );
 }

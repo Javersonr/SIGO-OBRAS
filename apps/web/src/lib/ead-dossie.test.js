@@ -9,6 +9,7 @@ import {
   csvDasMatriculas,
   csvDaTrilha,
   csvDasTentativas,
+  csvDosQuestionarios,
   certificadosDoDossie,
   nomeDoCertificadoNoZip,
   textoLeiaMe,
@@ -1120,5 +1121,167 @@ describe("textoDoAndamento: o que o botão diz enquanto exporta", () => {
   it("etapa desconhecida ou vazia não deixa o botão sem texto", () => {
     expect(textoDoAndamento({ etapa: "?" })).toBe("Exportando...");
     expect(textoDoAndamento(undefined)).toBe("Exportando...");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Atividades interativas: tentativas dos questionários dos módulos (spec 2026-10-14, §5.3)
+
+const AULAS_Q = [
+  ...AULAS,
+  {
+    id: "aq",
+    curso_id: "c1",
+    ordem: 4,
+    titulo: "Questionário do módulo",
+    tipo: "questionario",
+    duracao_seg: 900,
+  },
+];
+const TQ = [
+  {
+    id: "tq2",
+    matricula_id: "m1",
+    funcionario_id: "f1",
+    curso_id: "c1",
+    aula_id: "aq",
+    numero: 2,
+    nota: 100,
+    acertos: 2,
+    total: 2,
+    aprovada: true,
+    ip: "203.0.113.8",
+    dispositivo: "Navegador de Teste",
+    created_at: "2026-09-09T10:00:00Z",
+    prova: TENT[0].prova,
+    respostas: [
+      {
+        questao_id: "q1",
+        resposta: 2,
+        acertou: true,
+        posicao_exibida: 1,
+        ordem_opcoes_exibida: [2, 0, 1],
+      },
+      {
+        questao_id: "q2",
+        resposta: 0,
+        acertou: true,
+        posicao_exibida: 2,
+        ordem_opcoes_exibida: [0, 1],
+      },
+    ],
+  },
+  {
+    id: "tq1",
+    matricula_id: "m1",
+    funcionario_id: "f1",
+    curso_id: "c1",
+    aula_id: "aq",
+    numero: 1,
+    nota: 50,
+    acertos: 1,
+    total: 2,
+    aprovada: false,
+    created_at: "2026-09-08T10:00:00Z",
+    prova: null,
+    respostas: null,
+  },
+  // de uma matrícula de outro curso: não entra no dossiê deste
+  {
+    id: "tq9",
+    matricula_id: "m9",
+    funcionario_id: "f1",
+    curso_id: "c9",
+    aula_id: "ax",
+    numero: 1,
+    nota: 100,
+    acertos: 1,
+    total: 1,
+    aprovada: true,
+    created_at: "2026-09-08T10:00:00Z",
+  },
+];
+
+describe("csvDosQuestionarios", () => {
+  const csv = csvDosQuestionarios({
+    tentativas: TQ.slice(0, 2),
+    matriculas: MATS,
+    funcionarios: FUNCS,
+    aulas: AULAS_Q,
+  });
+  const linhas = linhasDe(csv).map(celulas);
+  const cab = linhas[0];
+  const col = (linha, titulo) => linha[cab.indexOf(titulo)];
+
+  it("uma linha por questão de cada tentativa; a tentativa sem prova gravada sai numa linha só", () => {
+    expect(linhas).toHaveLength(1 + 1 + 2);
+    expect(linhas.slice(1).map((l) => col(l, "Tentativa"))).toEqual(["1", "2", "2"]);
+    expect(col(linhas[1], "Resultado da questão")).toBe("Questionário não gravado nesta tentativa");
+  });
+
+  it("diz qual questionário (a aula numerada como o aluno vê) e se atingiu a nota mínima", () => {
+    expect(col(linhas[1], "Questionário (aula)")).toBe("3. Questionário do módulo");
+    expect(col(linhas[1], "Resultado")).toBe("Abaixo da nota mínima");
+    expect(col(linhas[2], "Resultado")).toBe("Atingiu a nota mínima");
+    expect(col(linhas[2], "IP")).toBe("203.0.113.8");
+    expect(col(linhas[2], "Data e hora (UTC)")).toBe("2026-09-09T10:00:00.000Z");
+  });
+
+  it("questões na ordem em que o aluno viu, com a marcada e a correta pela letra exibida", () => {
+    const [primeira, segunda] = linhas.slice(2);
+    expect(col(primeira, "Posição no questionário")).toBe("1");
+    expect(col(primeira, "Pergunta")).toBe("Primeira?");
+    expect(col(primeira, "Alternativa marcada")).toBe("A) a3");
+    expect(col(primeira, "Alternativa correta")).toBe("A) a3");
+    expect(col(segunda, "Pergunta")).toBe("Segunda?");
+    expect(col(segunda, "Resultado da questão")).toBe("Acertou");
+  });
+
+  it("sem tentativas sai só o cabeçalho", () => {
+    expect(linhasDe(csvDosQuestionarios({ tentativas: [], aulas: AULAS_Q }))).toHaveLength(1);
+  });
+});
+
+describe("montarDossie com os questionários dos módulos", () => {
+  const raiz = "dossie_ead_NRT_2026-10-06";
+
+  it("curso sem questionário (e sem tentativas): o ZIP sai como antes, sem questionarios.csv", async () => {
+    const r = await montarDossie(entrada(), deps());
+    const zip = await abrir(r.conteudo);
+    expect(nomes(zip)).not.toContain(`${raiz}/questionarios.csv`);
+    expect(r.resumo.tentativasQuestionario).toBe(0);
+  });
+
+  it("com questionário: a planilha entra só com as matrículas do curso, e o LEIA-ME a descreve", async () => {
+    const r = await montarDossie(entrada({ aulas: AULAS_Q, tentativasQuestionario: TQ }), deps());
+    const zip = await abrir(r.conteudo);
+    expect(nomes(zip)).toContain(`${raiz}/questionarios.csv`);
+    const planilha = await zip.file(`${raiz}/questionarios.csv`).async("string");
+    expect(planilha).toBe(
+      BOM +
+        csvDosQuestionarios({
+          tentativas: TQ.slice(0, 2),
+          matriculas: MATS,
+          funcionarios: FUNCS,
+          aulas: AULAS_Q,
+        })
+    );
+    expect(r.resumo.tentativasQuestionario).toBe(2);
+    const leiame = await zip.file(`${raiz}/LEIA-ME.txt`).async("string");
+    expect(leiame).toContain("questionarios.csv");
+    expect(leiame).toContain("Nota mínima nos questionários dos módulos: 80%");
+    expect(leiame).toContain("questionário do módulo");
+  });
+
+  it("curso com questionário que ninguém fez ainda: a planilha entra só com o cabeçalho", async () => {
+    const r = await montarDossie(entrada({ aulas: AULAS_Q }), deps());
+    const zip = await abrir(r.conteudo);
+    const planilha = await zip.file(`${raiz}/questionarios.csv`).async("string");
+    expect(linhasDe(planilha.slice(BOM.length))).toHaveLength(1);
+  });
+
+  it("leitura incompleta dos questionários vira aviso, nunca silêncio", async () => {
+    const r = await montarDossie(entrada({ leituraIncompleta: ["questionarios"] }), deps());
+    expect(r.resumo.avisos.join(" ")).toMatch(/questionários dos módulos/);
   });
 });

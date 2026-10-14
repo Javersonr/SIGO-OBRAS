@@ -306,6 +306,49 @@ describe("lerDadosDoDossie: só o que é desta empresa e deste curso", () => {
   });
 });
 
+describe("lerDadosDoDossie: tentativas dos questionários dos módulos", () => {
+  it("lê as do curso, da empresa da sessão, e deixa as de outro curso e de outra empresa de fora", async () => {
+    h.estado.tabelas.treinamento_questionario_tentativa = [
+      {
+        id: "q1",
+        empresa_id: EMPRESA,
+        curso_id: CURSO,
+        matricula_id: "m1",
+        aula_id: "a1",
+        numero: 1,
+      },
+      {
+        id: "q9",
+        empresa_id: EMPRESA,
+        curso_id: "c-outro",
+        matricula_id: "m9",
+        aula_id: "a9",
+        numero: 1,
+      },
+      {
+        id: "qx",
+        empresa_id: OUTRA_EMPRESA,
+        curso_id: CURSO,
+        matricula_id: "mx",
+        aula_id: "a1",
+        numero: 1,
+      },
+    ];
+    const d = await lerDadosDoDossie({ empresaId: EMPRESA, cursoId: CURSO });
+    expect(d.tentativasQuestionario.map((t) => t.id)).toEqual(["q1"]);
+    const consulta = h.estado.consultas.find(
+      (c) => c.tabela === "treinamento_questionario_tentativa"
+    );
+    expect(consulta.filtros).toContainEqual({ op: "eq", col: "curso_id", valor: CURSO });
+    expect(d.leituraIncompleta).toEqual([]);
+  });
+
+  it("curso sem questionário: a lista vem vazia", async () => {
+    const d = await lerDadosDoDossie({ empresaId: EMPRESA, cursoId: CURSO });
+    expect(d.tentativasQuestionario).toEqual([]);
+  });
+});
+
 describe("exportarDossieDoCurso: lê, monta o ZIP e entrega ao navegador", () => {
   let ancora;
   let blobs;

@@ -27,11 +27,13 @@ import { textoDoTipoDaMatricula } from "@/lib/ead-tipo-matricula";
 import {
   ROTULO_ORIGEM_NAVEGADOR,
   abertaEmDaTentativa,
+  abertaEmDoQuestionario,
   descreverDetalhe,
   eventoInformadoPeloNavegador,
   formatarTempo,
   origemDoEvento,
   rotuloDoEvento,
+  tentativasDosQuestionarios,
   tomDoEvento,
 } from "@/lib/ead-trilha";
 import {
@@ -80,6 +82,8 @@ export default function MatriculaAuditoriaSheet({
   const [carregando, setCarregando] = useState(true);
   const [progresso, setProgresso] = useState([]);
   const [tentativas, setTentativas] = useState([]);
+  // tentativas dos questionários dos módulos (atividades interativas): todas gravadas, tentativas livres
+  const [tentativasQuestionario, setTentativasQuestionario] = useState([]);
   const [eventos, setEventos] = useState([]);
   const [certificado, setCertificado] = useState(null);
   // Baixar o PDF leva até alguns segundos (QR + logo): enquanto roda, o botão fica desabilitado, e
@@ -101,7 +105,7 @@ export default function MatriculaAuditoriaSheet({
   const carregar = async ({ silencioso = false } = {}) => {
     if (!silencioso) setCarregando(true);
     try {
-      const [ps, ts, evs, certs] = await Promise.all([
+      const [ps, ts, evs, certs, tqs] = await Promise.all([
         sigo.entities.TreinamentoProgresso.filter({ matricula_id: matricula.id }, SEM_SOFT_DELETE),
         sigo.entities.TreinamentoTentativa.filter({ matricula_id: matricula.id }, SEM_SOFT_DELETE),
         sigo.entities.TreinamentoEvento.filter(
@@ -109,6 +113,11 @@ export default function MatriculaAuditoriaSheet({
           SEM_SOFT_DELETE
         ),
         sigo.entities.TreinamentoCertificado.filter(
+          { matricula_id: matricula.id },
+          SEM_SOFT_DELETE
+        ),
+        // tabela só de inclusão, como a das tentativas da prova
+        sigo.entities.TreinamentoQuestionarioTentativa.filter(
           { matricula_id: matricula.id },
           SEM_SOFT_DELETE
         ),
@@ -122,6 +131,7 @@ export default function MatriculaAuditoriaSheet({
           .sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
       );
       setCertificado(certs[0] || null);
+      setTentativasQuestionario(tqs);
     } catch (e) {
       console.error(e);
       toast.error("Erro ao carregar a trilha de auditoria");
@@ -148,6 +158,10 @@ export default function MatriculaAuditoriaSheet({
   const tituloAula = new Map(aulasNumeradas.map((a) => [a.id, `${a.numero}. ${a.titulo}`]));
   const progPorAula = new Map(progresso.map((p) => [p.aula_id, p]));
   const totalAssistido = progresso.reduce((s, p) => s + (p.segundos_assistidos || 0), 0);
+  // questionários dos módulos: a seção só aparece em curso que os tem (ou com tentativa gravada)
+  const questionarios = tentativasDosQuestionarios({ tentativas: tentativasQuestionario, aulas });
+  const temQuestionarios =
+    questionarios.length > 0 || (aulas || []).some((a) => a.tipo === "questionario");
 
   const exportarCsv = () => {
     const linhas = [
@@ -446,6 +460,98 @@ export default function MatriculaAuditoriaSheet({
                 </table>
               )}
             </section>
+
+            {temQuestionarios && (
+              <section>
+                <h3 className="font-semibold text-slate-800 mb-2">
+                  Questionários dos módulos ({questionarios.length}{" "}
+                  {questionarios.length === 1 ? "tentativa" : "tentativas"})
+                </h3>
+                <p className="text-xs text-slate-500 mb-2">
+                  Estudo guiado: tentativas livres, todas registradas, com a correção comentada
+                  depois de cada envio. A aula conclui na primeira tentativa que atinge a nota
+                  mínima dos questionários
+                  {curso?.nota_minima_modulo != null ? ` (${curso.nota_minima_modulo}%)` : ""}.
+                </p>
+                {questionarios.length === 0 ? (
+                  <p className="text-slate-400">Nenhuma tentativa ainda.</p>
+                ) : (
+                  <table className="w-full">
+                    <thead>
+                      <tr className="text-left text-xs text-slate-500 border-b">
+                        <th className="py-1 pr-2 font-medium">Questionário</th>
+                        <th className="py-1 pr-2 font-medium">Nº</th>
+                        <th className="py-1 pr-2 font-medium">Data/hora</th>
+                        <th className="py-1 pr-2 font-medium">Acertos</th>
+                        <th className="py-1 pr-2 font-medium">Nota</th>
+                        <th className="py-1 font-medium">IP</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {questionarios.map(({ tentativa: t, aula }) => {
+                        // chave própria: o conjunto das linhas abertas é o mesmo da prova
+                        const chave = `questionario-${t.id}`;
+                        const aberta = abertas.has(chave);
+                        return (
+                          <React.Fragment key={chave}>
+                            <tr className="border-b last:border-0">
+                              <td className="py-1.5 pr-2">{aula}</td>
+                              <td className="py-1.5 pr-2">
+                                <button
+                                  type="button"
+                                  onClick={() => alternarProva(chave)}
+                                  aria-expanded={aberta}
+                                  aria-controls={chave}
+                                  aria-label={`${aberta ? "Esconder" : "Ver"} o questionário da tentativa ${t.numero} de ${aula}`}
+                                  title={aberta ? "Esconder o questionário" : "Ver o questionário"}
+                                  className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-slate-700 hover:bg-slate-100"
+                                >
+                                  {aberta ? (
+                                    <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                                  ) : (
+                                    <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                                  )}
+                                  {t.numero}
+                                </button>
+                              </td>
+                              <td className="py-1.5 pr-2">{fmtDataHora(t.created_at)}</td>
+                              <td className="py-1.5 pr-2">
+                                {t.acertos}/{t.total}
+                              </td>
+                              <td className="py-1.5 pr-2">
+                                <Badge
+                                  variant="outline"
+                                  className={
+                                    t.aprovada
+                                      ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                                      : "bg-amber-50 text-amber-800 border-amber-200"
+                                  }
+                                >
+                                  {t.nota}% · {t.aprovada ? "atingiu a nota" : "abaixo da nota"}
+                                </Badge>
+                              </td>
+                              <td className="py-1.5 text-slate-500">{t.ip || "—"}</td>
+                            </tr>
+                            {aberta && (
+                              <tr id={chave} className="border-b last:border-0">
+                                <td colSpan={6} className="pb-3">
+                                  <ProvaDaTentativa
+                                    tentativa={t}
+                                    abertaEm={abertaEmDoQuestionario(eventos, t.aula_id, t.numero)}
+                                    formatarDataHora={fmtDataHora}
+                                    rotuloAberta="Questionário aberto em"
+                                  />
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </section>
+            )}
 
             <section>
               <h3 className="font-semibold text-slate-800 mb-2">Certificado</h3>

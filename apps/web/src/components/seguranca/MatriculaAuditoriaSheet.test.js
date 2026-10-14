@@ -110,3 +110,19 @@ describe("TreinamentosEadTab: nova aula depois de um envio lento (A2)", () => {
     expect(aba).toMatch(/cursoSelRef\.current = cursoSel;/);
   });
 });
+
+describe("MatriculaAuditoriaSheet: questionários dos módulos (atividades interativas)", () => {
+  it("lê as tentativas da matrícula (tabela só de inclusão: includeDeleted) e monta a seção pela lib", () => {
+    expect(sheet).toMatch(
+      /TreinamentoQuestionarioTentativa\.filter\(\s*\{ matricula_id: matricula\.id \},\s*SEM_SOFT_DELETE\s*\)/
+    );
+    expect(sheet).toContain("tentativasDosQuestionarios({");
+    expect(sheet).toContain("Questionários dos módulos");
+  });
+
+  it("cada tentativa abre o questionário como o aluno viu, como a prova", () => {
+    expect(sheet.match(/<ProvaDaTentativa/g)).toHaveLength(2);
+    expect(sheet).toContain("abertaEmDoQuestionario(eventos, t.aula_id, t.numero)");
+    expect(sheet).toContain('rotuloAberta="Questionário aberto em"');
+  });
+});
