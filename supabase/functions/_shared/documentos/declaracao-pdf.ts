@@ -4,8 +4,13 @@
  * o bloco de assinatura do representante legal (o espaço onde entra a assinatura do gov.br).
  * jsPDF injetado, a mesma versão da tela. Puro.
  */
+import {
+  caixaDoLogo,
+  linhasDaAssinatura,
+  linhasDaEmpresa,
+  type LogoDocumento,
+} from "./declaracao-comum.ts";
 import type { DadosDeclaracao } from "./declaracoes.ts";
-import { LOGO_ALTURA_MM, LOGO_LARGURA_MM, type LogoDocumento } from "./declaracao-docx.ts";
 import { textoPdf, type LibsDocumentos } from "./proposta-export.ts";
 
 const MARGEM_ESQUERDA = 25;
@@ -15,6 +20,15 @@ const RODAPE = 20;
 /** mm por ponto. */
 const MM_POR_PT = 0.3528;
 const ENTRELINHA = 1.4;
+
+/** Bloco de assinatura (mm): espaço antes de local e data, espaço para assinar (gov.br ou à mão) e respiro do traço. */
+const ESPACO_ANTES_DO_LOCAL = 8;
+const ESPACO_PARA_ASSINAR = 22;
+const ESPACO_APOS_TRACO = 5;
+/** Folga (mm) na conta do bloco, contra o erro de arredondamento da soma de alturas. */
+const FOLGA = 0.01;
+/** Largura (mm) do rodapé que fica para "Página X de Y"; o nome da empresa usa o resto da linha. */
+const LARGURA_DA_PAGINA_NO_RODAPE = 35;
 
 export function gerarPdfDeclaracao(
   dados: DadosDeclaracao,
@@ -35,15 +49,20 @@ export function gerarPdfDeclaracao(
   };
   const cabe = (mm: number) => y + mm <= alt - RODAPE;
 
+  /** Linhas do texto na largura útil, com a fonte e o tamanho com que serão desenhadas (a medida depende deles). */
+  const quebrar = (texto: string, tamanho: number, negrito = false): string[] => {
+    doc.setFont("helvetica", negrito ? "bold" : "normal");
+    doc.setFontSize(tamanho);
+    return doc.splitTextToSize(textoPdf(texto), util) as string[];
+  };
+
   /** Texto simples, linha a linha, com quebra de página. */
   const escrever = (
     texto: string,
     o: { tamanho?: number; negrito?: boolean; alinhar?: "left" | "center" } = {}
   ) => {
     const tamanho = o.tamanho ?? 11;
-    doc.setFont("helvetica", o.negrito ? "bold" : "normal");
-    doc.setFontSize(tamanho);
-    for (const linha of doc.splitTextToSize(textoPdf(texto), util) as string[]) {
+    for (const linha of quebrar(texto, tamanho, o.negrito)) {
       if (!cabe(alturaDaLinha(tamanho))) novaPagina();
       doc.text(linha, o.alinhar === "center" ? centro : MARGEM_ESQUERDA, y, {
         align: o.alinhar ?? "left",
@@ -52,34 +71,32 @@ export function gerarPdfDeclaracao(
     }
   };
 
-  /** Parágrafo justificado; o que não cabe na página segue na próxima. */
+  /**
+   * Parágrafo justificado, desenhado linha a linha (cada linha na sua posição, com quebra de página
+   * entre elas): o jsPDF não quebra de novo o que já coube na largura nem sobrepõe a linha seguinte.
+   */
   const justificado = (texto: string) => {
     const tamanho = 11;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(tamanho);
-    let linhas = doc.splitTextToSize(textoPdf(texto), util) as string[];
-    while (linhas.length) {
-      let cabem = Math.floor((alt - RODAPE - y) / alturaDaLinha(tamanho));
-      if (cabem < 1) {
-        novaPagina();
-        cabem = Math.floor((alt - RODAPE - y) / alturaDaLinha(tamanho));
-      }
-      const agora = linhas.slice(0, cabem);
-      doc.text(agora.join(" "), MARGEM_ESQUERDA, y, {
-        maxWidth: util,
-        align: "justify",
-        lineHeightFactor: ENTRELINHA,
-      });
-      y += agora.length * alturaDaLinha(tamanho);
-      linhas = linhas.slice(cabem);
-    }
+    const linhas = quebrar(texto, tamanho);
+    linhas.forEach((linha, i) => {
+      if (!cabe(alturaDaLinha(tamanho))) novaPagina();
+      // O jsPDF só estica as linhas de uma lista, menos a última: [linha, ""] faz a linha valer como
+      // não final (e o "" zera o espaçamento depois). Fica à esquerda, sem esticar: a última linha do
+      // parágrafo; a linha de uma palavra só (não há espaço para esticar: a divisão por zero grava
+      // "Infinity Tw" no PDF); e a linha que o jsPDF dividiria de novo em duas.
+      const estica =
+        i < linhas.length - 1 &&
+        linha.trim().includes(" ") &&
+        (doc.splitTextToSize(linha, util) as string[]).length === 1;
+      if (estica) doc.text([linha, ""], MARGEM_ESQUERDA, y, { align: "justify", maxWidth: util });
+      else doc.text(linha, MARGEM_ESQUERDA, y);
+      y += alturaDaLinha(tamanho);
+    });
   };
 
   // papel timbrado
   if (logo) {
-    const escala = Math.min(LOGO_LARGURA_MM / logo.largura, LOGO_ALTURA_MM / logo.altura);
-    const w = logo.largura * escala;
-    const h = logo.altura * escala;
+    const { larguraMm: w, alturaMm: h } = caixaDoLogo(logo);
     try {
       doc.addImage(logo.bytes, logo.formato, MARGEM_ESQUERDA, y - 6, w, h);
       y += h;
@@ -87,13 +104,7 @@ export function gerarPdfDeclaracao(
       // logo ilegível: o documento sai sem ele
     }
   }
-  const linhasEmpresa = [
-    dados.empresa.nome,
-    dados.empresa.cnpj ? `CNPJ: ${dados.empresa.cnpj}` : "",
-    dados.empresa.endereco,
-    dados.empresa.contato,
-  ].filter(Boolean);
-  linhasEmpresa.forEach((t, i) =>
+  linhasDaEmpresa(dados).forEach((t, i) =>
     escrever(t, i === 0 ? { tamanho: 12, negrito: true } : { tamanho: 8.5 })
   );
   doc.setDrawColor(128);
@@ -112,34 +123,47 @@ export function gerarPdfDeclaracao(
     y += 3;
   }
 
-  // local e data + assinatura: o bloco não se parte
-  const linhasAssinatura = [
-    dados.representante.nome,
-    dados.representante.cargo,
-    dados.representante.cpf ? `CPF: ${dados.representante.cpf}` : "",
-    dados.empresa.nome,
-  ].filter(Boolean);
-  const alturaDoBloco = 10 + 6 + 22 + linhasAssinatura.length * alturaDaLinha(10);
-  if (!cabe(alturaDoBloco)) novaPagina();
-  y += 8;
-  if (dados.localData) escrever(`${dados.localData}.`);
-  y += 22; // espaço para assinar (gov.br ou à mão)
+  // Local e data + assinatura: o bloco inteiro (local e data, traço e linhas do representante) fica na
+  // mesma página. A altura é a que ele vai gastar de verdade: as linhas que quebram em duas contam.
+  const textoLocalData = dados.localData ? `${dados.localData}.` : "";
+  const linhasAssinatura = linhasDaAssinatura(dados);
+  const alturaDoBloco =
+    ESPACO_ANTES_DO_LOCAL +
+    (textoLocalData ? quebrar(textoLocalData, 11).length : 0) * alturaDaLinha(11) +
+    ESPACO_PARA_ASSINAR +
+    ESPACO_APOS_TRACO +
+    linhasAssinatura.reduce((soma, t, i) => soma + quebrar(t, 10, i === 0).length, 0) *
+      alturaDaLinha(10);
+  // Se nem uma página em branco comporta o bloco (texto absurdo), ele só quebra entre linhas.
+  if (!cabe(alturaDoBloco + FOLGA)) novaPagina();
+  y += ESPACO_ANTES_DO_LOCAL;
+  if (textoLocalData) escrever(textoLocalData);
+  y += ESPACO_PARA_ASSINAR;
   doc.setDrawColor(60);
   doc.setLineWidth(0.3);
   doc.line(centro - 45, y, centro + 45, y);
-  y += 5;
+  y += ESPACO_APOS_TRACO;
   linhasAssinatura.forEach((t, i) =>
     escrever(t, { tamanho: 10, negrito: i === 0, alinhar: "center" })
   );
 
-  // rodapé: empresa e "Página X de Y"
+  // rodapé: empresa (cortada para caber ao lado de "Página X de Y") e o número da página
   const total = doc.getNumberOfPages();
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  const nomeNoRodape =
+    (
+      doc.splitTextToSize(
+        textoPdf(dados.empresa.nome || ""),
+        util - LARGURA_DA_PAGINA_NO_RODAPE
+      ) as string[]
+    )[0] ?? "";
   for (let p = 1; p <= total; p++) {
     doc.setPage(p);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(100);
-    doc.text(textoPdf(dados.empresa.nome || ""), MARGEM_ESQUERDA, alt - 9);
+    doc.text(nomeNoRodape, MARGEM_ESQUERDA, alt - 9);
     doc.text(`Página ${p} de ${total}`, MARGEM_ESQUERDA + util, alt - 9, { align: "right" });
     doc.setTextColor(0);
   }

@@ -302,10 +302,10 @@ test("validarItensDeclaracao: Lote 1 e Lote 2 passam; o mesmo título duas vezes
 });
 
 test("nomeArquivoDeclaracao: caractere de formato Unicode vira '-' e o corte não deixa meio emoji", () => {
-  const nome = nomeArquivoDeclaracao("Anexo ‮fdp", "pdf");
-  assert.ok(!nome.includes("‮"));
+  const nome = nomeArquivoDeclaracao("Anexo \u202efdp", "pdf");
+  assert.ok(!nome.includes("\u202e"));
   assert.equal(nome, "Declaração - Anexo -fdp.pdf");
-  assert.equal(nomeArquivoDeclaracao("A​b­c", "docx"), "Declaração - A-b-c.docx");
+  assert.equal(nomeArquivoDeclaracao("A\u200bb\u00adc", "docx"), "Declaração - A-b-c.docx");
   // comportamento de hoje: o corte em 150 vale para o título; o prefixo e a extensão vêm depois
   assert.equal(
     nomeArquivoDeclaracao("x".repeat(300), "pdf"),
@@ -324,6 +324,21 @@ test("nomeArquivoDeclaracao: caractere de formato Unicode vira '-' e o corte nã
   const soEmojis = nomeArquivoDeclaracao("😀".repeat(300), "pdf");
   assert.ok(soEmojis.isWellFormed());
   assert.equal(soEmojis, `Declaração - ${"😀".repeat(150)}.pdf`);
+});
+
+test("nomeArquivoDeclaracao: surrogate solto vira '-' e o par válido (emoji) fica inteiro", () => {
+  const nome = nomeArquivoDeclaracao("ab\ud800cd", "pdf");
+  assert.equal(nome, "Declaração - ab-cd.pdf");
+  assert.ok(nome.isWellFormed());
+  for (const solto of ["\ud800", "\udbff", "\udc00", "\udfff"]) {
+    const n = nomeArquivoDeclaracao(`x${solto}y`, "docx");
+    assert.ok(n.isWellFormed(), `U+${solto.charCodeAt(0).toString(16)}`);
+    assert.equal(n, "Declaração - x-y.docx");
+  }
+  // dois surrogates soltos em ordem trocada (baixo e depois alto) não formam par
+  assert.equal(nomeArquivoDeclaracao("x\udc00\ud800y", "pdf"), "Declaração - x--y.pdf");
+  // alto e baixo juntos formam um emoji: continua inteiro
+  assert.equal(nomeArquivoDeclaracao("a😀b", "pdf"), "Declaração - a\u{1f600}b.pdf");
 });
 
 test("montarDadosDeclaracao: parágrafos por linha em branco, destinatário e referência", () => {

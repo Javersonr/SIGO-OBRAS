@@ -284,14 +284,14 @@ export function validarItensDeclaracao(
 
 /**
  * "Declaração - <título>.<ext>"; o prefixo some quando o título já começa com "Declaração".
- * Caracteres proibidos em nome de arquivo, de controle (Cc) e de formato Unicode (Cf, como o U+202E
- * que inverte o sentido do texto) viram "-"; o título é cortado em 150 pontos de código (não em
- * unidades UTF-16, para não deixar meio emoji).
+ * Caracteres proibidos em nome de arquivo, de controle (Cc), de formato Unicode (Cf, como o U+202E
+ * que inverte o sentido do texto) e surrogates soltos (Cs, que o UTF-8 não codifica) viram "-"; o
+ * título é cortado em 150 pontos de código (não em unidades UTF-16, para não deixar meio emoji).
  */
 export function nomeArquivoDeclaracao(titulo: string, ext: "pdf" | "docx"): string {
   const limpo = Array.from(
     String(titulo ?? "")
-      .replace(/[\\/:*?"<>|\p{Cc}\p{Cf}]/gu, "-")
+      .replace(/[\\/:*?"<>|\p{Cc}\p{Cf}\p{Cs}]/gu, "-")
       .replace(/\s+/g, " ")
       .trim()
   )

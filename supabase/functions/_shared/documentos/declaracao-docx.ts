@@ -4,22 +4,24 @@
  * de assinatura do representante legal. Sem biblioteca: um .docx é um ZIP com XML (zip-store.ts).
  * Puro.
  */
+import { caixaDoLogo, linhasDaAssinatura, linhasDaEmpresa } from "./declaracao-comum.ts";
+import type { LogoDocumento } from "./declaracao-comum.ts";
 import type { DadosDeclaracao } from "./declaracoes.ts";
-import type { ImagemLida } from "./imagem.ts";
 import { zipSemCompressao } from "./zip-store.ts";
 
-export interface LogoDocumento extends ImagemLida {
-  bytes: Uint8Array;
-}
+// O contrato das próximas tasks importa o logo e a caixa daqui.
+export { LOGO_ALTURA_MM, LOGO_LARGURA_MM } from "./declaracao-comum.ts";
+export type { LogoDocumento } from "./declaracao-comum.ts";
 
-/** Caixa do logo (mm): cabe em 50 × 18 sem deformar. */
-export const LOGO_LARGURA_MM = 50;
-export const LOGO_ALTURA_MM = 18;
 const EMU_POR_MM = 36000;
 
+/**
+ * Texto para dentro de um elemento XML. Tira os caracteres que o XML 1.0 não admite (controles C0,
+ * menos tab, LF e CR, e U+FFFE e U+FFFF): com eles o Word recusa o arquivo.
+ */
 const xml = (s: unknown) =>
   String(s ?? "")
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f￾￿]/g, "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -52,9 +54,9 @@ function paragrafo(texto: string, e: Estilo = {}): string {
 }
 
 function imagem(logo: LogoDocumento): string {
-  const escala = Math.min(LOGO_LARGURA_MM / logo.largura, LOGO_ALTURA_MM / logo.altura);
-  const cx = Math.round(logo.largura * escala * EMU_POR_MM);
-  const cy = Math.round(logo.altura * escala * EMU_POR_MM);
+  const { larguraMm, alturaMm } = caixaDoLogo(logo);
+  const cx = Math.round(larguraMm * EMU_POR_MM);
+  const cy = Math.round(alturaMm * EMU_POR_MM);
   return (
     `<w:p><w:pPr><w:spacing w:before="0" w:after="80"/></w:pPr><w:r><w:drawing>` +
     `<wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="1" name="Logo"/>` +
@@ -79,12 +81,7 @@ export function gerarDocxDeclaracao(
   const ext = logo?.formato === "JPEG" ? "jpeg" : "png";
   const corpo: string[] = [];
   if (logo) corpo.push(imagem(logo));
-  const linhasEmpresa = [
-    d.empresa.nome,
-    d.empresa.cnpj ? `CNPJ: ${d.empresa.cnpj}` : "",
-    d.empresa.endereco,
-    d.empresa.contato,
-  ].filter(Boolean);
+  const linhasEmpresa = linhasDaEmpresa(d);
   linhasEmpresa.forEach((t, i) =>
     corpo.push(
       paragrafo(t, {
@@ -109,16 +106,9 @@ export function gerarDocxDeclaracao(
     corpo.push(paragrafo(p, { alinhar: "both", depois: 160, recuo: true }));
   if (d.localData) corpo.push(paragrafo(`${d.localData}.`, { antes: 360, depois: 720 }));
   corpo.push(paragrafo("________________________________________", { alinhar: "center" }));
-  [
-    d.representante.nome,
-    d.representante.cargo,
-    d.representante.cpf ? `CPF: ${d.representante.cpf}` : "",
-    d.empresa.nome,
-  ]
-    .filter(Boolean)
-    .forEach((t, i) =>
-      corpo.push(paragrafo(t, { alinhar: "center", negrito: i === 0, tamanho: i === 0 ? 11 : 10 }))
-    );
+  linhasDaAssinatura(d).forEach((t, i) =>
+    corpo.push(paragrafo(t, { alinhar: "center", negrito: i === 0, tamanho: i === 0 ? 11 : 10 }))
+  );
 
   const documento =
     CABECALHO_XML +
