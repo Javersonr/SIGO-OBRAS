@@ -258,6 +258,58 @@ describe("validarCaso", () => {
       longo: 4000,
     });
   });
+
+  it("FORMATO de uma etapa com id vazio vem com etapa null (como o resto do módulo)", () => {
+    for (const vazio of ["", "  "]) {
+      const semLista = copia(CASO_LINEAR);
+      semLista.etapas[1].id = vazio;
+      semLista.etapas[1].opcoes = "a, b";
+      expect(validarCaso(semLista), JSON.stringify(vazio)).toEqual([
+        { codigo: "FORMATO", texto: "As opções da etapa nº 2 precisam ser uma lista", etapa: null },
+      ]);
+      const perguntaNumero = copia(CASO_LINEAR);
+      perguntaNumero.etapas[0].id = vazio;
+      perguntaNumero.etapas[0].pergunta = 7;
+      perguntaNumero.etapas[0].opcoes[0].segura = "sim";
+      expect(
+        validarCaso(perguntaNumero).map((p) => [p.codigo, p.etapa]),
+        JSON.stringify(vazio)
+      ).toEqual([
+        ["FORMATO", null],
+        ["FORMATO", null],
+      ]);
+    }
+  });
+
+  it("roteiro grande demais ou com opções demais: devolve só o que achou, sem conferir o caminho", () => {
+    // o banco não limita o tamanho do roteiro e o servidor valida a cada clique: nada de varrer milhares de etapas
+    const cadeia = (n) =>
+      Array.from({ length: n }, (_, i) => ({
+        id: `e${i + 1}`,
+        pergunta: `Pergunta ${i + 1}?`,
+        opcoes: [
+          opc(`Volta ${i + 1}`, false, `e${i + 1}`),
+          opc(`Segue ${i + 1}`, true, i + 2 > n ? null : `e${i + 2}`),
+        ],
+      }));
+    // com o caminho quebrado de propósito (etapa solta, que daria INALCANCAVEL, e etapa sem saída)
+    const quebrado = { etapas: cadeia(LIMITES_CASO.etapas + 1) };
+    quebrado.etapas.push({
+      id: "solta",
+      pergunta: "Solta?",
+      opcoes: [opc("Volta", false, "solta"), opc("Fica", true, "solta")],
+    });
+    expect(codigos(quebrado)).toEqual(["MUITAS_ETAPAS"]);
+    const opcoesDemais = copia(CASO_RAMIFICADO);
+    opcoesDemais.etapas[1].opcoes = [opc("Só uma", false, "r1")]; // sem segura e sem saída
+    expect(codigos(opcoesDemais)).toEqual(["OPCOES_QTD", "SEM_SEGURA"]);
+    // milhares de etapas em cadeia: termina na hora, só com MUITAS_ETAPAS
+    const enorme = { etapas: cadeia(LIMITES_CASO.etapas * 50) };
+    const inicio = Date.now();
+    expect(codigos(enorme)).toEqual(["MUITAS_ETAPAS"]);
+    expect(Date.now() - inicio).toBeLessThan(1000);
+    expect(estadoDoCaso(enorme, []).motivo).toBe("CASO_INVALIDO");
+  });
 });
 
 describe("estadoDoCaso", () => {
@@ -450,6 +502,95 @@ describe("resultadoDaEscolha", () => {
         0
       )
     ).toEqual({ ok: false, codigo: "CASO_INVALIDO" });
+  });
+});
+
+describe("ids de etapa que também são nomes de propriedade de objeto", () => {
+  // "__proto__", "toString" e "constructor" valem como qualquer id: nada pode depender de objeto comum como mapa
+  const CASO_ESPECIAL = {
+    etapas: [
+      {
+        id: "e1",
+        pergunta: "Primeira?",
+        opcoes: [opc("Volta", false, "e1"), opc("Segue", true, "__proto__")],
+      },
+      {
+        id: "__proto__",
+        pergunta: "Segunda?",
+        opcoes: [opc("Volta", false, "__proto__"), opc("Segue", true, "toString")],
+      },
+      {
+        id: "toString",
+        pergunta: "Terceira?",
+        opcoes: [opc("Volta", false, "toString"), opc("Segue", true, "constructor")],
+      },
+      {
+        id: "constructor",
+        pergunta: "Quarta?",
+        opcoes: [opc("Volta", false, "constructor"), opc("Encerra", true, null)],
+      },
+    ],
+  };
+  const tem = (objeto, chave) => Object.prototype.hasOwnProperty.call(objeto, chave);
+
+  it("o roteiro é válido e o caminho conta as passagens como chaves próprias", () => {
+    expect(validarCaso(CASO_ESPECIAL)).toEqual([]);
+    const estado = estadoDoCaso(CASO_ESPECIAL, [
+      { etapa: "e1", opcao: 1 },
+      { etapa: "__proto__", opcao: 0 },
+      { etapa: "__proto__", opcao: 1 },
+      { etapa: "toString", opcao: 1 },
+    ]);
+    expect(estado.valido).toBe(true);
+    expect(estado.etapaAtual).toBe("constructor");
+    for (const id of ["__proto__", "toString", "constructor"]) {
+      expect(tem(estado.passagens, id), id).toBe(true);
+    }
+    expect(Object.keys(estado.passagens)).toEqual(["e1", "__proto__", "toString", "constructor"]);
+    expect(estado.passagens["e1"]).toBe(1);
+    expect(estado.passagens["__proto__"]).toBe(2);
+    expect(estado.passagens["toString"]).toBe(1);
+    expect(estado.passagens["constructor"]).toBe(1);
+  });
+
+  it("resultadoDaEscolha devolve a passagem certa de cada uma", () => {
+    // na 2ª visita a "__proto__", a segura leva a "toString" e a passagem é a 2ª
+    const naSegunda = estadoDoCaso(CASO_ESPECIAL, [
+      { etapa: "e1", opcao: 1 },
+      { etapa: "__proto__", opcao: 0 },
+    ]);
+    expect(resultadoDaEscolha(CASO_ESPECIAL, naSegunda, "__proto__", 1)).toEqual({
+      ok: true,
+      comentario: "Comentário: Segue",
+      segura: true,
+      proxima: "toString",
+      fim: false,
+      passagem: 2,
+    });
+    const naUltima = estadoDoCaso(CASO_ESPECIAL, [
+      { etapa: "e1", opcao: 1 },
+      { etapa: "__proto__", opcao: 1 },
+      { etapa: "toString", opcao: 0 },
+      { etapa: "toString", opcao: 1 },
+      { etapa: "constructor", opcao: 0 },
+    ]);
+    expect(naUltima.passagens["toString"]).toBe(2);
+    expect(naUltima.passagens["constructor"]).toBe(2);
+    expect(resultadoDaEscolha(CASO_ESPECIAL, naUltima, "constructor", 1)).toMatchObject({
+      ok: true,
+      fim: true,
+      passagem: 2,
+    });
+    // um id que o roteiro não tem nunca herda uma propriedade do objeto
+    expect(resultadoDaEscolha(CASO_ESPECIAL, naUltima, "hasOwnProperty", 0)).toEqual({
+      ok: false,
+      codigo: "CASO_FORA_DE_ORDEM",
+    });
+  });
+
+  it("etapaParaAluno acha a etapa pelo id", () => {
+    expect(etapaParaAluno(CASO_ESPECIAL, "__proto__", () => 0).id).toBe("__proto__");
+    expect(etapaParaAluno(CASO_ESPECIAL, "constructor", () => 0).pergunta).toBe("Quarta?");
   });
 });
 

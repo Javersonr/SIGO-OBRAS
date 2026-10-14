@@ -27,7 +27,7 @@ function problemasDeFormato(conteudo) {
     }
   }
   conteudo.etapas.forEach((etapa, i) => {
-    const nome = ehObjeto(etapa) && typeof etapa.id === "string" ? etapa.id : null;
+    const nome = ehObjeto(etapa) && preenchido(etapa.id) ? etapa.id : null;
     if (!ehObjeto(etapa)) {
       problemas.push(formato(`A etapa nº ${i + 1} não está no formato esperado`));
       return;
@@ -168,18 +168,22 @@ export function validarCaso(conteudo) {
     }
   });
 
-  // o caminho só é conferido com identificadores confiáveis (sem vazio nem repetido)
-  if (!idsConfiaveis) return problemas;
+  // o caminho só é conferido com identificadores confiáveis (sem vazio nem repetido) e com o roteiro dentro dos
+  // limites de etapas e de opções: o banco não limita o tamanho do roteiro e o servidor valida a cada clique,
+  // então um roteiro enorme devolve só o que já foi achado, sem varrer o caminho
+  const foraDosLimites = problemas.some(
+    (p) => p.codigo === "MUITAS_ETAPAS" || p.codigo === "OPCOES_QTD"
+  );
+  if (!idsConfiaveis || foraDosLimites) return problemas;
   const porId = new Map(etapas.map((e) => [e.id, e]));
-  const destinos = (etapa, soSeguras) =>
-    etapa.opcoes.filter((o) => !soSeguras || o.segura === true).map((o) => o.proxima);
+  const destinos = (etapa) => etapa.opcoes.map((o) => o.proxima);
 
   // alcançáveis a partir da primeira etapa (por qualquer opção)
   const alcancadas = new Set([etapas[0].id]);
   const fila = [etapas[0].id];
   while (fila.length) {
     const etapa = porId.get(fila.shift());
-    for (const destino of destinos(etapa, false)) {
+    for (const destino of destinos(etapa)) {
       if (destino !== null && porId.has(destino) && !alcancadas.has(destino)) {
         alcancadas.add(destino);
         fila.push(destino);
