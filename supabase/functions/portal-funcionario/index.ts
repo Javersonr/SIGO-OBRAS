@@ -31,6 +31,8 @@
  *   questionario_abrir { matricula_id, aula_id } → sorteia (ou retoma) a tentativa do questionário do módulo
  *   questionario_enviar { matricula_id, aula_id, respostas } → corrige com a nota mínima do módulo, grava a tentativa
  *     e devolve a correção comentada aprovado ou não; aprovado conclui a aula (questionario.ts)
+ *   caso_abrir { matricula_id, aula_id }, caso_escolher { matricula_id, aula_id, etapa_id, opcao } e caso_concluir
+ *     { matricula_id, aula_id } → o caso com decisões, com o estado refeito da trilha (caso.ts, caso-aluno.ts)
  *   certificado { matricula_id, senha }          ciencia { ciencia_id }
  *   declarar_ambiente { matricula_id, versao, local_adequado, horario_reservado, sem_outra_atividade } → T35: na 1ª
  *     abertura do curso em cada dia (Brasília) o aluno confirma a orientação do RT e os três itens (local adequado,
@@ -256,6 +258,18 @@ import {
   revisaoDoQuestionario,
 } from "./questionario.ts";
 import {
+  conclusaoDoCaso,
+  escolhaNoCaso,
+  EVENTO_CASO_ESCOLHA,
+  EVENTO_CASO_REINICIADO,
+  MSG_CASO_INDISPONIVEL,
+  prepararCaso,
+  recusaDoCaso,
+  respostaDaAbertura,
+  respostaDoCasoConcluido,
+  situacaoDoCaso,
+} from "./caso-aluno.ts";
+import {
   consumirTentativa,
   ipDaRequisicao,
   liberarTentativas,
@@ -316,6 +330,9 @@ interface Body {
   segundos_assistidos?: number;
   concluir?: boolean;
   respostas?: unknown;
+  // caso_escolher: a etapa em que o aluno está e o índice ORIGINAL da opção clicada
+  etapa_id?: string;
+  opcao?: unknown;
   ciencia_id?: string;
   pergunta?: string;
   // declarar_ambiente (T35)
@@ -2801,6 +2818,108 @@ Deno.serve(
           revisao: revisaoDoQuestionario(questoes, acertou),
         })
       );
+    }
+
+    // ------------------------------------------------------------- caso com decisões
+    // A3: só por clique. O estado é refeito a cada pedido a partir das escolhas da trilha (caso-aluno.ts, caso.ts); o
+    // navegador recebe a pergunta e as opções só com o texto, embaralhadas, e só vê o comentário e se foi segura
+    // depois do clique. Roteiro inválido: 409 sem gravar nada. Caminho que não confere com o roteiro de hoje: rodada
+    // nova (`caso_reiniciado`), gravada ANTES da resposta. Concluir só com o caso no fim, por `concluirAula`.
+    if (body.acao === "caso_abrir") {
+      if (!(await dentroDoLimite("atividade"))) return muitasAcoes();
+      const mat = await minhaMatricula(body.matricula_id);
+      if (!mat || !body.aula_id) return fail("Matrícula não encontrada", 404);
+      const preparo = await prepararCaso(supabase, mat, body.aula_id, empresaId);
+      if (preparo.falha) return recusaDaProva(preparo.falha);
+      const { aula, conteudo } = preparo;
+      // aula concluída não abre rodada nova: o aluno revê o contexto e a reflexão
+      if (preparo.concluida) return ok(respostaDoCasoConcluido(conteudo));
+      const situacao = situacaoDoCaso(conteudo, preparo.eventos);
+      if (situacao.recusa) return recusaDaProva(situacao.recusa);
+      if (situacao.reiniciar) {
+        const reiniciou = await ev({
+          evento: EVENTO_CASO_REINICIADO,
+          matricula_id: mat.id,
+          curso_id: mat.curso_id,
+          aula_id: aula.id,
+          detalhe: situacao.reiniciar,
+        });
+        // sem a marca na trilha, o próximo pedido refaria o caminho velho
+        if (!reiniciou) return fail(MSG_CASO_INDISPONIVEL, 503);
+      }
+      return ok(respostaDaAbertura(conteudo, situacao.estado, inteiroAleatorioSeguro));
+    }
+
+    if (body.acao === "caso_escolher") {
+      if (!(await dentroDoLimite("atividade"))) return muitasAcoes();
+      const mat = await minhaMatricula(body.matricula_id);
+      if (!mat || !body.aula_id) return fail("Matrícula não encontrada", 404);
+      if (typeof body.etapa_id !== "string" || !body.etapa_id) {
+        return fail("Informe a etapa do caso", 400);
+      }
+      const preparo = await prepararCaso(supabase, mat, body.aula_id, empresaId);
+      if (preparo.falha) return recusaDaProva(preparo.falha);
+      const { aula, conteudo } = preparo;
+      if (preparo.concluida) return recusaDaProva(recusaDoCaso("CASO_ENCERRADO"));
+      const situacao = situacaoDoCaso(conteudo, preparo.eventos);
+      if (situacao.recusa) return recusaDaProva(situacao.recusa);
+      if (situacao.reiniciar) {
+        const reiniciou = await ev({
+          evento: EVENTO_CASO_REINICIADO,
+          matricula_id: mat.id,
+          curso_id: mat.curso_id,
+          aula_id: aula.id,
+          detalhe: situacao.reiniciar,
+        });
+        if (!reiniciou) return fail(MSG_CASO_INDISPONIVEL, 503);
+      }
+      const escolha = escolhaNoCaso(
+        conteudo,
+        situacao,
+        body.etapa_id,
+        body.opcao,
+        inteiroAleatorioSeguro
+      );
+      if (escolha.recusa) return recusaDaProva(escolha.recusa);
+      const gravou = await ev({
+        evento: EVENTO_CASO_ESCOLHA,
+        matricula_id: mat.id,
+        curso_id: mat.curso_id,
+        aula_id: aula.id,
+        detalhe: escolha.detalhe,
+      });
+      // a escolha que não ficou na trilha não aconteceu: o próximo pedido refaria o caso sem ela
+      if (!gravou) return fail("Não foi possível registrar sua escolha. Tente de novo.", 503);
+      return ok(escolha.resposta);
+    }
+
+    if (body.acao === "caso_concluir") {
+      if (!(await dentroDoLimite("atividade"))) return muitasAcoes();
+      const mat = await minhaMatricula(body.matricula_id);
+      if (!mat || !body.aula_id) return fail("Matrícula não encontrada", 404);
+      const preparo = await prepararCaso(supabase, mat, body.aula_id, empresaId);
+      if (preparo.falha) return recusaDaProva(preparo.falha);
+      const { aula, conteudo } = preparo;
+      // idempotente: concluir de novo (resposta perdida, duas abas) não grava nada
+      if (preparo.concluida) {
+        return ok({
+          aula_concluida: true,
+          curso_concluido: mat.status === "concluido",
+          precisa_avaliacao: false,
+          status: mat.status,
+        });
+      }
+      const situacao = situacaoDoCaso(conteudo, preparo.eventos);
+      if (situacao.recusa) return recusaDaProva(situacao.recusa);
+      const conclusao = conclusaoDoCaso(situacao);
+      if (conclusao.recusa) return recusaDaProva(conclusao.recusa);
+      // O tempo de tela vai ao progresso concluído (`concluirAula` grava o valor que recebe): lido AGORA, colado na
+      // conclusão, para um sinal do `progresso` no meio do caminho não fazer o tempo da aula voltar atrás.
+      const segundos = await tempoDaAula(mat, aula.id);
+      if (segundos === null) return fail(MSG_CASO_INDISPONIVEL, 503);
+      const fim = await concluirAula(mat, aula, segundos, conclusao.eventoExtra);
+      if (!fim) return fail("Não foi possível concluir o caso agora. Tente de novo.", 500);
+      return ok(fim);
     }
 
     return fail("Ação desconhecida", 400);

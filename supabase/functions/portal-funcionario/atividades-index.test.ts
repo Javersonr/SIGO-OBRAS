@@ -347,3 +347,109 @@ test("o navegador não grava os eventos do questionário, da tarefa e da leitura
     assert.equal(lista.includes(evento), false, evento);
   }
 });
+
+// ---------------------------------------------------------------------- Task 9: caso com decisões
+
+const ACOES_DO_CASO = ["caso_abrir", "caso_escolher", "caso_concluir"];
+
+test("ações do caso: teto de atividade antes de ler, matrícula da sessão e preparo do caso; nada cru ao navegador", () => {
+  for (const nome of ACOES_DO_CASO) {
+    const t = trechoDaAcao(nome);
+    const limite = t.indexOf('if (!(await dentroDoLimite("atividade"))) return muitasAcoes();');
+    assert.ok(limite >= 0, `${nome}: sem o teto de atividade`);
+    assert.ok(limite < t.indexOf("minhaMatricula(body.matricula_id)"), nome);
+    assert.match(
+      t,
+      /const preparo = await prepararCaso\(supabase, mat, body\.aula_id, empresaId\);\s*if \(preparo\.falha\) return recusaDaProva\(preparo\.falha\);/,
+      nome
+    );
+    // o roteiro e a trilha nunca vão crus: só as respostas montadas pela regra
+    for (const [, chamada] of t.matchAll(/\bok\(\s*([A-Za-z_.{]+)/g)) {
+      assert.ok(
+        ["respostaDoCasoConcluido", "respostaDaAbertura", "escolha.resposta", "{", "fim"].includes(
+          chamada
+        ),
+        `${nome}: ok(${chamada}`
+      );
+    }
+  }
+});
+
+test("caso_abrir: concluído só revê; roteiro inválido é 409 sem gravar; caminho que não confere grava a rodada nova antes de responder", () => {
+  const t = trechoDaAcao("caso_abrir");
+  const concluido = t.indexOf(
+    "if (preparo.concluida) return ok(respostaDoCasoConcluido(conteudo));"
+  );
+  assert.ok(concluido > 0, "aula concluída não abre rodada nova");
+  const situacao = t.indexOf("const situacao = situacaoDoCaso(conteudo, preparo.eventos);");
+  assert.ok(situacao > concluido);
+  assert.match(t, /if \(situacao\.recusa\) return recusaDaProva\(situacao\.recusa\);/);
+  const reinicio = t.indexOf("evento: EVENTO_CASO_REINICIADO");
+  assert.ok(reinicio > situacao);
+  assert.match(
+    t.slice(reinicio, reinicio + 300),
+    /aula_id: aula\.id,\s*detalhe: situacao\.reiniciar/
+  );
+  assert.match(t, /if \(!reiniciou\) return fail\(MSG_CASO_INDISPONIVEL, 503\)/);
+  assert.ok(reinicio < t.indexOf("respostaDaAbertura("));
+  assert.match(t, /ok\(respostaDaAbertura\(conteudo, situacao\.estado, inteiroAleatorioSeguro\)\)/);
+  // a única gravação é o reinício (abrir não escolhe nem conclui)
+  assert.equal((t.match(/\bev\(\{/g) ?? []).length, 1);
+  assert.doesNotMatch(t, /concluirAula\(/);
+});
+
+test("caso_escolher: confere a etapa atual pela regra, grava a escolha na trilha e só então responde", () => {
+  const t = trechoDaAcao("caso_escolher");
+  assert.match(t, /typeof body\.etapa_id !== "string"[\s\S]{0,160}400/);
+  assert.ok(t.indexOf('typeof body.etapa_id !== "string"') < t.indexOf("prepararCaso("));
+  assert.match(
+    t,
+    /if \(preparo\.concluida\) return recusaDaProva\(recusaDoCaso\("CASO_ENCERRADO"\)\);/
+  );
+  assert.match(t, /if \(situacao\.recusa\) return recusaDaProva\(situacao\.recusa\);/);
+  // o reinício (roteiro mudado) também é gravado aqui, antes de conferir a escolha
+  const reinicio = t.indexOf("evento: EVENTO_CASO_REINICIADO");
+  const escolha = t.indexOf("escolhaNoCaso(");
+  assert.ok(reinicio > 0 && reinicio < escolha);
+  assert.match(
+    t,
+    /escolhaNoCaso\(\s*conteudo,\s*situacao,\s*body\.etapa_id,\s*body\.opcao,\s*inteiroAleatorioSeguro\s*\)/
+  );
+  assert.match(t, /if \(escolha\.recusa\) return recusaDaProva\(escolha\.recusa\);/);
+  const gravacao = t.indexOf("evento: EVENTO_CASO_ESCOLHA");
+  assert.ok(gravacao > escolha);
+  assert.match(t.slice(gravacao, gravacao + 300), /aula_id: aula\.id,\s*detalhe: escolha\.detalhe/);
+  assert.match(t, /if \(!gravou\) return fail\([^)]*503\)/);
+  assert.ok(t.indexOf("ok(escolha.resposta)") > gravacao);
+  assert.doesNotMatch(t, /concluirAula\(/);
+});
+
+test("caso_concluir: idempotente, só com o caso no fim e pela mesma conclusão de aula (caso_concluido + aula_concluida)", () => {
+  const t = trechoDaAcao("caso_concluir");
+  const repetido = t.indexOf("if (preparo.concluida)");
+  assert.ok(repetido > 0, "concluir de novo tem de responder sem gravar");
+  const bloco = t.slice(repetido, t.indexOf("}", repetido) + 1);
+  assert.match(bloco, /aula_concluida: true/);
+  assert.doesNotMatch(bloco, /ev\(|concluirAula\(/);
+  assert.match(
+    t,
+    /const conclusao = conclusaoDoCaso\(situacao\);\s*if \(conclusao\.recusa\) return recusaDaProva\(conclusao\.recusa\);/
+  );
+  assert.match(t, /tempoDaAula\(mat, aula\.id\)/);
+  assert.match(t, /const fim = await concluirAula\(mat, aula, segundos, conclusao\.eventoExtra\);/);
+  assert.ok(t.indexOf("conclusaoDoCaso(") < t.indexOf("concluirAula("));
+  assert.match(t, /if \(!fim\) return fail\([^)]*500\)/);
+  // concluir não grava reinício nem escolha (só a conclusão, dentro de concluirAula)
+  assert.doesNotMatch(t, /EVENTO_CASO_REINICIADO|EVENTO_CASO_ESCOLHA/);
+  assert.equal((t.match(/\bev\(\{/g) ?? []).length, 0);
+});
+
+test("o navegador não grava os eventos do caso (fora de EVENTOS_CLIENTE)", () => {
+  const original = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+  const inicio = original.indexOf("const EVENTOS_CLIENTE = new Set([");
+  const lista = original.slice(inicio, original.indexOf("]);", inicio));
+  assert.ok(lista.length > 50, "a lista de eventos do navegador não foi lida");
+  for (const evento of ["caso_escolha", "caso_reiniciado", "caso_concluido"]) {
+    assert.equal(lista.includes(evento), false, evento);
+  }
+});

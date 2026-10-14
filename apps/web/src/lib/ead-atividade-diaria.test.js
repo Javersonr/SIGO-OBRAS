@@ -117,12 +117,20 @@ describe("quais eventos contam para a janela do aluno", () => {
     const ler = (caminho) =>
       readFileSync(new URL(`../../../../supabase/functions/${caminho}`, import.meta.url), "utf8");
     // T38: os eventos da trilha do login e da ativação saem da regra pura (_shared/portal-credencial.ts)
-    const index = ler("portal-funcionario/index.ts") + "\n" + ler("_shared/portal-credencial.ts");
+    // atividades interativas (Task 9): o `caso_concluido` não sai do index.ts, é o `eventoExtra` que o `caso-aluno.ts`
+    // monta e o `concluirAula` grava; por isso o módulo também entra na leitura dos eventos gravados
+    const index =
+      ler("portal-funcionario/index.ts") +
+      "\n" +
+      ler("_shared/portal-credencial.ts") +
+      "\n" +
+      ler("portal-funcionario/caso-aluno.ts");
     const constantes = [
       "portal-funcionario/regras.ts",
       "portal-funcionario/declaracao-ambiente.ts",
-      // atividades interativas (Task 6): os eventos do questionário moram em constantes EVENTO_* deste módulo
+      // atividades interativas (Tasks 6 e 9): os eventos do questionário e do caso moram em constantes EVENTO_* destes módulos
       "portal-funcionario/questionario.ts",
+      "portal-funcionario/caso-aluno.ts",
       "_shared/portal-funcionario.ts",
     ]
       .map(ler)
@@ -149,6 +157,10 @@ describe("quais eventos contam para a janela do aluno", () => {
     // o questionário do módulo (Task 8): o início vem de uma constante, o envio também
     expect(gravados).toContain("questionario_iniciado");
     expect(gravados).toContain("questionario_envio");
+    // o caso com decisões (Task 9): a escolha e o reinício saem do index.ts, a conclusão do caso-aluno.ts
+    expect(gravados).toContain("caso_escolha");
+    expect(gravados).toContain("caso_reiniciado");
+    expect(gravados).toContain("caso_concluido");
 
     // o que o portal grava e NÃO é estudar: entrada e saída, declaração, certificado e dúvida
     const naoSaoEstudo = [
@@ -164,6 +176,8 @@ describe("quais eventos contam para a janela do aluno", () => {
       // a conclusão que o sistema adiou e registrou depois (A6): não é o aluno estudando
       "conclusao_adiada",
       "conclusao_registrada",
+      // o caso que recomeça sozinho porque o RH mudou o roteiro (Task 9): ajuste do sistema, não o aluno estudando
+      "caso_reiniciado",
       // T38: a provisória liberou o acesso (é o aluno, mas não é estudo) e a senha mudou fora da empresa
       "acesso_liberado",
       "acesso_aguardando_provisoria",
@@ -384,7 +398,7 @@ describe("janelasPorAlunoEDia", () => {
     expect(resumirAtividade(linhas).semDeclaracao).toBe(0);
   });
 
-  it("estudo é só aula, apostila, tarefa, questionário, prova e conclusão: declaração, certificado e dúvida não contam", () => {
+  it("estudo é só aula, apostila, tarefa, questionário, caso, prova e conclusão: declaração, certificado, dúvida e o caso recomeçado pelo sistema não contam", () => {
     for (const nome of [
       "progresso_ajustado",
       "apostila_lida",
@@ -395,6 +409,8 @@ describe("janelasPorAlunoEDia", () => {
       "avaliacao_envio",
       "questionario_iniciado",
       "questionario_envio",
+      "caso_escolha",
+      "caso_concluido",
     ]) {
       const [linha] = janelasPorAlunoEDia([
         ev(nome, "2026-10-07T12:00:00Z", { matricula_id: "m1" }),
@@ -402,7 +418,12 @@ describe("janelasPorAlunoEDia", () => {
       expect(linha, nome).toMatchObject({ estudou: true, semDeclaracao: 1 });
     }
     // (o certificado revogado nem entra na janela: é ação do RH ou do sistema, ver EVENTOS_DO_RH)
-    for (const nome of ["declaracao_ambiente", "certificado_assinado", "duvida_enviada"]) {
+    for (const nome of [
+      "declaracao_ambiente",
+      "certificado_assinado",
+      "duvida_enviada",
+      "caso_reiniciado",
+    ]) {
       const [linha] = janelasPorAlunoEDia([
         ev(nome, "2026-10-07T12:00:00Z", { matricula_id: "m1" }),
       ]);

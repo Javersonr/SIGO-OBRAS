@@ -12,7 +12,7 @@
  *
  * Junto da janela vai a situação da declaração de ambiente e horário (`declaracao_ambiente`, gravada pelo servidor
  * na 1ª abertura de cada curso no dia): "estudou" é ter, no dia, um evento de ESTUDO (`EVENTOS_DE_ESTUDO`: aula,
- * apostila, tarefa, questionário, prova, conclusão) ligado a uma matrícula, e o curso que teve estudo mas nenhuma declaração no dia é
+ * apostila, tarefa, questionário, caso, prova, conclusão) ligado a uma matrícula, e o curso que teve estudo mas nenhuma declaração no dia é
  * contado em `semDeclaracao`. Assinar o certificado e mandar dúvida também ficam ligados a uma matrícula, mas não
  * são estudo e o portal não pede a declaração para eles (curso concluído só abre para o certificado): no
  * semipresencial o certificado sai depois da prática, sempre num dia diferente do da conclusão, e não pode virar
@@ -73,10 +73,12 @@ export const EVENTOS_FORA_DA_JANELA = [
 
 /**
  * Eventos de servidor que são ESTUDAR um curso (cada um ligado a uma matrícula): o progresso que o servidor creditou
- * ou ajustou, a apostila lida, a tarefa confirmada, o questionário do módulo aberto ou enviado, a aula e o curso
- * concluídos, e a prova aberta ou enviada. Só estes fazem o dia contar como "estudou" e exigir a declaração. Ficam de
- * fora, de propósito: `declaracao_ambiente` (é a própria declaração), `certificado_assinado`/`certificado_revogado` e
- * `duvida_enviada` (acontecem depois da conclusão, em outro dia, e o portal não pede a declaração em curso concluído).
+ * ou ajustou, a apostila lida, a tarefa confirmada, o questionário do módulo aberto ou enviado, o caso com decisões
+ * escolhido (`caso_escolha`) ou concluído (`caso_concluido`), a aula e o curso concluídos, e a prova aberta ou enviada.
+ * Só estes fazem o dia contar como "estudou" e exigir a declaração. Ficam de fora, de propósito:
+ * `declaracao_ambiente` (é a própria declaração), `certificado_assinado`/`certificado_revogado` e `duvida_enviada`
+ * (acontecem depois da conclusão, em outro dia, e o portal não pede a declaração em curso concluído) e
+ * `caso_reiniciado` (o sistema recomeça o caso porque o RH mudou o roteiro: não é o aluno estudando).
  * A lista é fechada: um evento novo do portal só vira estudo se entrar aqui, e `ead-atividade-diaria.test.js` lê o
  * `portal-funcionario` e acusa o evento que ninguém classificou.
  */
@@ -90,6 +92,8 @@ export const EVENTOS_DE_ESTUDO = [
   "avaliacao_envio",
   "questionario_iniciado",
   "questionario_envio",
+  "caso_escolha",
+  "caso_concluido",
 ];
 
 /** O evento é de estudo? (Só o nome importa; a origem e o aluno são conferidos em `ehAtividadeDoAluno`.) */

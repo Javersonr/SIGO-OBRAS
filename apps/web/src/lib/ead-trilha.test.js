@@ -90,8 +90,9 @@ function eventosGravadosPeloServidor() {
     "_shared/portal-funcionario.ts",
     "portal-funcionario/regras.ts",
     "portal-funcionario/declaracao-ambiente.ts",
-    // atividades interativas (Tasks 3 e 6): se o nome do evento morar numa constante EVENTO_*, ele entra aqui
+    // atividades interativas (Tasks 3, 6 e 9): se o nome do evento morar numa constante EVENTO_*, ele entra aqui
     "portal-funcionario/caso.ts",
+    "portal-funcionario/caso-aluno.ts",
     "portal-funcionario/questionario.ts",
   ]) {
     for (const m of lerFuncao(arquivo).matchAll(/export const EVENTO_[A-Z_]+ = "([a-z_]+)"/g)) {
@@ -114,6 +115,10 @@ describe("rótulos da trilha (T18)", () => {
       "tentativa_liberada",
       "certificado_revogado",
       "declaracao_ambiente",
+      // o caso com decisões (Task 9): as três constantes EVENTO_CASO_* do caso-aluno.ts
+      "caso_escolha",
+      "caso_reiniciado",
+      "caso_concluido",
     ]) {
       expect(nomes, esperado).toContain(esperado);
     }
