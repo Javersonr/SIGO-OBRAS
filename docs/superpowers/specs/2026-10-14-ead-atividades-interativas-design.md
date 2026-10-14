@@ -1,7 +1,8 @@
 # Atividades interativas no Portal de Treinamento (EAD): questionário do módulo, caso com decisões e tarefa de estudo
 
 - **Data:** 14/10/2026. **Status:** desenho aprovado pelo Javerson na conversa de 13–14/10/2026, por partes (decisões
-  A1 a A10 abaixo); este texto aguarda a revisão dele antes do plano.
+  A1 a A10 abaixo); texto aprovado por ele em 14/10/2026. Plano:
+  `docs/superpowers/plans/2026-10-14-ead-atividades-interativas.md`.
 - **Base:** `master` em `7b91500`. Branch `feat/ead-atividades-interativas` (worktree
   `C:\Users\javer\sigoobras-wt-ead-interativas`). Os números de linha citados são desse commit.
 - **Migração:** `0170_ead_atividades_interativas.sql` (número confirmado pelo Javerson; a habilitação automática usa
@@ -46,6 +47,11 @@ carga (§12).
 | A8  | **Tempos padrão na importação:** 15 min por questionário e 10 min por caso (as tarefas trazem o próprio tempo); editáveis um a um                                                                                                                                                                           |
 | A9  | **Certificado:** nos cursos com atividades, uma frase de resumo na frente (quantidades congeladas no certificado); o verso não muda                                                                                                                                                                         |
 | A10 | Migração `0170`; produção na ordem do §12, cada passo com OK explícito                                                                                                                                                                                                                                      |
+
+**A11** (14/10/2026, depois da aprovação do texto): os 122 exercícios pós-vídeo de pergunta aberta (zip
+`Cursos_Sinergia_Conteudo_Plataforma_RECUPERADO_2026-10-02.zip`) entram como **questionário de clique logo depois de
+cada vídeo**: a resposta esperada vira a alternativa certa; as erradas e o comentário são redigidos e revisados pelo
+Javerson como RT antes da carga (§5.1 e §12).
 
 Decisões que **substituem** respostas anteriores da mesma conversa: A3 substitui "reflexão escrita no fim do caso";
 A4 substitui "entrega escrita com parecer do tutor antes do certificado"; A5 vale também para as leituras (o tempo
@@ -198,6 +204,18 @@ tempoEstimadoMin }`. É o formato dos rascunhos; o do pacote final (`data/*.json
 Conversão: `feedback` → `comentario`; `explicacao` → `comentario` da questão; `enunciado` → `pergunta`; o `id` da
 etapa é mantido. O módulo gravado é o texto do módulo do curso (ex.: "M3 · Análise de situações…").
 
+**Exercícios pós-vídeo (A11), 2º formato de arquivo.** Os 122 exercícios abertos do zip
+`Cursos_Sinergia_Conteudo_Plataforma_RECUPERADO_2026-10-02.zip` (92 em `exercicios_por_video.json`, 2 por vídeo, para
+NR-10 SEP e Reciclagem, NR-35 e Reciclagem, NR-6 e NR-1; 30 em `exercicios_modulos.json`, B01–B15, para o NR-10 Básico
+Reciclagem) são convertidos em múltipla escolha **fora do repositório** (a resposta esperada vira a alternativa certa;
+3 alternativas erradas e o comentário são redigidos e revisados pelo Javerson como RT antes da carga). O arquivo
+convertido tem a forma `{ "tipo": "questionarios_por_video", "itens": [{ "video": "S02A", "questoes": [{ pergunta,
+opcoes, correta, comentario }] }] }`. O diálogo reconhece esse formato e cria, para cada item, **uma** aula
+`tipo = questionario` logo **depois da aula de vídeo** daquele código (achada pelo código no nome do arquivo do
+`video_ref`: `(^|/|_|-)S02A(_|.)`, sem diferenciar maiúsculas; o hífen cobre os uploads da tela, `<uuid>-<nome>`), com o módulo dela, título "Exercícios do vídeo: <título
+da aula de vídeo>", código de origem `PV-S02A` e tempo padrão de 5 min (editável). Vídeo não achado no curso é
+problema que bloqueia aquele item.
+
 ### 5.2 Criar e editar na tela
 
 - **Nova aula** ganha os três tipos. Questionário: nasce vazio e as questões são cadastradas nele. Caso: abre o editor
@@ -260,7 +278,9 @@ null` com check `jsonb_typeof = 'object'`, `created_at`, `updated_at`, `deleted_
 7. **RPC `importar_atividades_ead(p_curso_id uuid, p_atividades jsonb) returns jsonb`:** `security definer`,
    `set search_path = public`, `exigir_empresa_do_chamador` com a empresa do curso, `tem_permissao(...,'editar')`
    (senão `42501`). Para cada atividade da lista (já convertida e validada pela tela): pula se o `codigo_origem` já
-   existe no curso; abre espaço na `ordem` (as aulas depois do fim do módulo sobem); insere a aula; insere as questões
+   existe no curso; abre espaço na `ordem` (as aulas depois do fim do módulo, ou depois da aula indicada em
+   `depois_da_aula_id`, sobem; com `depois_da_aula_id` o item herda o módulo dessa aula, que tem de ser do mesmo curso);
+   insere a aula; insere as questões
    (questionário) ou o roteiro (caso). Tudo numa transação. Devolve `{ criadas, puladas, questoes }`. `revoke all ...
 from public, anon, authenticated; grant execute ... to authenticated, service_role` (modelo `0110`). Os triggers
    das tabelas (inclusive `zz_permissao_ead`, que lê o JWT do chamador) continuam valendo dentro da RPC.
@@ -373,6 +393,10 @@ Cada passo só com OK explícito do Javerson.
 7. Conferência: consulta só de leitura (contagem de aulas por tipo e módulo, questões por questionário, roteiros
    válidos, `LASTRO`) para o Javerson rodar e me devolver.
 8. Roteiro de teste com uma matrícula de teste (cadastrar um questionário e um caso, fazer como aluno, ver a trilha).
+9. **Exercícios pós-vídeo (A11):** converter as 122 perguntas abertas em múltipla escolha fora do repositório, com um
+   relatório de revisão por curso para o Javerson aprovar como RT; ele importa pela tela em cada curso das duas
+   empresas (NR-10 SEP e Reciclagem, NR-35 e Reciclagem, NR-6, NR-1, NR-10 Básico Reciclagem); conferência só de
+   leitura. Os exercícios cujo vídeo não existe mais (os `B02A…` e o piloto) ficam de fora.
 
 ## 13. Fora do escopo e avisos
 
