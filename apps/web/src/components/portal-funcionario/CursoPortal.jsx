@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -31,6 +31,7 @@ import { leituraPodeContar, urlApostilaValida } from "@/lib/apostila-pdf";
 import {
   MSG_PREVIA_CONCLUSAO,
   botaoDeLeitura,
+  chaveDoPainelDaAula,
   rotuloDoTipoNaLista,
   tempoPrevisto,
 } from "@/lib/portal-leitura";
@@ -243,9 +244,31 @@ export default function CursoPortal({
   const avisoDeEnvioRef = useRef("");
   // estado da apostila (PDF) da aula aberta: o tempo de leitura só corre com ela na tela
   const estadoPdfRef = useRef({ aulaId: null, estado: "carregando" });
+  // painel da aula aberta (conteúdo, botão de concluir e "Próxima aula"); a lista de aulas fica abaixo dele
+  const painelAulaRef = useRef(null);
 
   const aula = aulas.find((a) => a.id === aulaId) || null;
   aulaRef.current = aula;
+
+  // A aula aberta começa no topo da janela (A5). O painel e a lista de aulas ficam empilhados na mesma
+  // página: sem esta rolagem, ao abrir uma aula (ou clicar "Próxima aula") a página continua rolada para
+  // baixo e o marcador do fim da aula nova, que observa a janela, já nasce à vista e acende o botão sem
+  // leitura. É um efeito de LAYOUT: roda no mesmo commit em que o painel e o marcador entram, antes de
+  // qualquer efeito comum (o MarcadorDeFim começa a observar num `useEffect`), e a primeira medição do
+  // IntersectionObserver só acontece no quadro seguinte, já com a página rolada. Sem animação: o
+  // `scroll-behavior` smooth deixaria o marcador ser medido no meio da rolagem. Texto curto, que cabe na
+  // tela, continua liberando na hora: o marcador fica à vista mesmo com o painel no topo.
+  const chavePainel = chaveDoPainelDaAula({ aulaId, modo });
+  useLayoutEffect(() => {
+    if (!chavePainel) return;
+    const painel = painelAulaRef.current;
+    if (!painel?.scrollIntoView) return;
+    try {
+      painel.scrollIntoView({ block: "start", behavior: "instant" });
+    } catch {
+      painel.scrollIntoView(true); // navegador antigo, sem o valor "instant"
+    }
+  }, [chavePainel]);
 
   const tratarErro = (e) => {
     if (e?.codigo === "SESSAO" || e?.codigo === "TROCAR_SENHA") onErroSessao(e);
@@ -951,7 +974,7 @@ export default function CursoPortal({
             }}
           />
         ) : aula ? (
-          <div className="space-y-2">
+          <div ref={painelAulaRef} className="space-y-2">
             {aula.tipo === "video" &&
               (fonteVideo === "indisponivel" ? (
                 <AvisoVideo mensagem={mensagemVideoIndisponivel(aula)} />

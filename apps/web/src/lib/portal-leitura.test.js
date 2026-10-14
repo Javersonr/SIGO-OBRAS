@@ -6,6 +6,7 @@ import {
   TIPOS_DE_LEITURA,
   avisoDeAulaConcluida,
   botaoDeLeitura,
+  chaveDoPainelDaAula,
   ehLeitura,
   rotuloDoTipoNaLista,
   tempoPrevisto,
@@ -193,5 +194,34 @@ describe("avisoDeAulaConcluida (atividade concluída pela ação própria)", () 
         matriculaId: "m1",
       })
     ).toBe("Aula concluída.");
+  });
+});
+
+describe("chaveDoPainelDaAula (a aula aberta começa no topo da janela)", () => {
+  it("é o id da aula aberta, só no modo das aulas", () => {
+    expect(chaveDoPainelDaAula({ aulaId: "a1", modo: "aulas" })).toBe("a1");
+    expect(chaveDoPainelDaAula({ aulaId: "a2", modo: "aulas" })).toBe("a2");
+  });
+
+  it("trocar de aula muda a chave; a mesma aula (dados refeitos) mantém a chave e não rola de novo", () => {
+    const a = chaveDoPainelDaAula({ aulaId: "a1", modo: "aulas" });
+    expect(chaveDoPainelDaAula({ aulaId: "a1", modo: "aulas" })).toBe(a);
+    expect(chaveDoPainelDaAula({ aulaId: "a2", modo: "aulas" })).not.toBe(a);
+  });
+
+  it("voltar da prova às aulas muda a chave (null -> id): o painel remonta e começa no topo", () => {
+    expect(chaveDoPainelDaAula({ aulaId: "a1", modo: "avaliacao" })).toBeNull();
+    expect(chaveDoPainelDaAula({ aulaId: "a1", modo: "aulas" })).toBe("a1");
+  });
+
+  it("sem aula aberta ou sem dados: null (nada para rolar)", () => {
+    for (const p of [
+      { aulaId: null, modo: "aulas" },
+      { aulaId: "", modo: "aulas" },
+      {},
+      undefined,
+    ]) {
+      expect(chaveDoPainelDaAula(p)).toBeNull();
+    }
   });
 });

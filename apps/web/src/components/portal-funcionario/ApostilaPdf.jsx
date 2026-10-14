@@ -68,7 +68,7 @@ export default function ApostilaPdf({ url, titulo, onEstado, obterUrlNova, onFim
         <p className="font-semibold flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0" /> Apostila indisponível — avise o RH
         </p>
-        <p>O tempo de leitura não está sendo contado.</p>
+        <p>A aula só pode ser concluída depois que o RH liberar o arquivo da apostila.</p>
       </div>
     );
   }

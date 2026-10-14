@@ -89,12 +89,45 @@ describe("leitura até o fim, sem relógio (A5)", () => {
   });
 });
 
+describe("a aula aberta começa no topo, antes de o marcador do fim ser observado (A5)", () => {
+  // O painel da aula e a lista de aulas ficam empilhados: sem levar o painel ao topo, o marcador do fim da
+  // aula nova (raiz = janela) pode já estar à vista na montagem e acenderia o botão sem leitura.
+  // O fim do trecho é o array de dependências: só a chave da aula aberta (dados refeitos no meio da
+  // leitura não rolam a página de novo), e a regra da chave tem teste em lib/portal-leitura.test.js.
+  const rolagem = () => trecho("useLayoutEffect(() => {", "}, [chavePainel]);");
+
+  it("o painel da aula sobe ao topo da janela quando a aula aberta muda, sem animação", () => {
+    const efeito = rolagem();
+    expect(fonte).toContain("const chavePainel = chaveDoPainelDaAula({ aulaId, modo });");
+    expect(efeito).toContain("if (!chavePainel) return;");
+    expect(efeito).toContain("painelAulaRef.current");
+    expect(efeito).toContain("scrollIntoView(");
+    expect(efeito).toContain('block: "start"');
+    // "smooth" (ou o scroll-behavior do CSS) deixaria o marcador ser medido antes de a rolagem acabar
+    expect(efeito).toContain('behavior: "instant"');
+    expect(efeito).not.toContain("smooth");
+    expect(fonte).toMatch(/<div ref=\{painelAulaRef\} className="space-y-2">/);
+  });
+
+  it("a rolagem é um efeito de layout; o marcador observa num efeito comum, que roda depois de todos os de layout", () => {
+    expect(fonte).toMatch(/import React, \{[^}]*useLayoutEffect[^}]*\} from "react";/);
+    const marcador = trecho("function MarcadorDeFim(", "/** Tarefa de estudo");
+    expect(marcador).toContain("useEffect(() => {");
+    expect(marcador).not.toContain("useLayoutEffect");
+  });
+});
+
 describe("ApostilaPdf: o pdf.js desenha a apostila em todas as telas (A5)", () => {
   const apostila = readFileSync(fileURLToPath(new URL("ApostilaPdf.jsx", import.meta.url)), "utf8");
 
   it("não usa mais o iframe do navegador nem a consulta de mídia do celular", () => {
     expect(apostila).not.toContain("<iframe");
     expect(apostila).not.toContain("apostilaNaPagina");
+  });
+
+  it("a apostila indisponível não fala de tempo de leitura (não há mais relógio)", () => {
+    expect(apostila).not.toContain("tempo de leitura");
+    expect(apostila).toContain("Apostila indisponível — avise o RH");
   });
 
   it("o fim só vale com o documento aberto e medido, e é avisado uma vez só", () => {

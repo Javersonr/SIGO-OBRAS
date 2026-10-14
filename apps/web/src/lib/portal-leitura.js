@@ -55,6 +55,22 @@ export function botaoDeLeitura({
   };
 }
 
+/**
+ * Chave do painel da aula aberta: o id da aula, só no modo das aulas (null com a prova aberta ou sem aula).
+ * O painel da aula e a lista de aulas ficam empilhados na mesma página; quando a chave muda (o aluno abriu
+ * OUTRA aula, ou voltou da prova para as aulas) o CursoPortal leva o topo do painel ao topo da janela. Sem
+ * isso a página continua rolada para baixo e o marcador do fim da aula nova (raiz = janela) já nasce à
+ * vista, acendendo o botão sem leitura (A5). A mesma aula com os dados refeitos mantém a chave: a página
+ * não rola no meio da leitura.
+ *
+ * @param {{ aulaId?: string|number|null, modo?: string }} [p]
+ * @returns {string | null}
+ */
+export function chaveDoPainelDaAula({ aulaId, modo } = {}) {
+  if (modo !== "aulas" || aulaId === null || aulaId === undefined || aulaId === "") return null;
+  return String(aulaId);
+}
+
 const ROTULO_NA_LISTA = {
   questionario: "questionário",
   caso: "estudo de caso",
