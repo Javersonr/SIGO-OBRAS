@@ -2,60 +2,24 @@ import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileDown, FileSpreadsheet } from "lucide-react";
-import { isReceita, isDespesa, isStatusPago } from "@/lib/financeiro-utils";
+import { calcularDRE } from "@/lib/relatorios-financeiros";
 
-export default function DRERelatorio({
-  transacoes,
-  versao = "real",
-  dataInicio,
-  dataFim,
-  categorias = [],
-}) {
-  const transacoesFiltradas =
-    versao === "contabil" ? transacoes.filter((t) => t.numero_documento) : transacoes;
-
-  // Agrupar por categoria
-  const receitasPorCategoria = {};
-  const despesasPorCategoria = {};
-
-  // Helpers normalizados — antes os filtros eram case-sensitive ("Receita",
-  // "Despesa", "Pago") e perdiam registros gravados em minúsculas / "Realizado".
-  transacoesFiltradas.forEach((t) => {
-    if (!isStatusPago(t.status)) return;
-
-    const catNome = categorias.find((c) => c.id === t.categoria_id)?.nome || "Sem Categoria";
-
-    if (isReceita(t)) {
-      receitasPorCategoria[catNome] = (receitasPorCategoria[catNome] || 0) + (t.valor || 0);
-    } else if (isDespesa(t)) {
-      despesasPorCategoria[catNome] = (despesasPorCategoria[catNome] || 0) + (t.valor || 0);
-    }
-  });
-
-  const receitasBrutas = transacoesFiltradas
-    .filter((t) => isReceita(t) && isStatusPago(t.status))
-    .reduce((sum, t) => sum + (t.valor || 0), 0);
-
-  const deducoes = 0; // Impostos sobre vendas (pode ser calculado depois)
-  const receitasLiquidas = receitasBrutas - deducoes;
-
-  const custosVariaveis = transacoesFiltradas
-    .filter((t) => isDespesa(t) && isStatusPago(t.status) && t.tipo_despesa === "material")
-    .reduce((sum, t) => sum + (t.valor || 0), 0);
-
-  const despesasOperacionais = transacoesFiltradas
-    .filter((t) => isDespesa(t) && isStatusPago(t.status) && t.tipo_despesa !== "material")
-    .reduce((sum, t) => sum + (t.valor || 0), 0);
-
-  // Calcular resultados
-  const lucroBruto = receitasLiquidas - custosVariaveis;
-  const margemBruta = receitasLiquidas > 0 ? (lucroBruto / receitasLiquidas) * 100 : 0;
-
-  const lucroOperacional = lucroBruto - despesasOperacionais;
-  const margemOperacional = receitasLiquidas > 0 ? (lucroOperacional / receitasLiquidas) * 100 : 0;
-
-  const lucroLiquido = lucroOperacional;
-  const margemLiquida = receitasLiquidas > 0 ? (lucroLiquido / receitasLiquidas) * 100 : 0;
+export default function DRERelatorio({ transacoes, versao = "real", dataInicio, dataFim }) {
+  // antes: custos = despesas com tipo_despesa "material" (coluna inexistente →
+  // sempre 0), deduções fixas em 0 e "Lucro Líquido" = Lucro Operacional; agora
+  // custos diretos = despesas pagas com projeto, deduções = ISS/INSS retidos na
+  // medição e o resultado final é "antes de IR/CSLL" (não há IR/CSLL no sistema).
+  const {
+    receitaBruta: receitasBrutas,
+    deducoes,
+    receitaLiquida: receitasLiquidas,
+    custosDiretos,
+    lucroBruto,
+    margemBruta,
+    despesasOperacionais,
+    resultadoAntesIR,
+    margemAntesIR,
+  } = calcularDRE(transacoes, versao);
 
   const formatCurrency = (value) => {
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
@@ -67,13 +31,12 @@ export default function DRERelatorio({
     const dados = [
       ["Item", "Valor"],
       ["Receita Bruta", receitasBrutas],
-      ["Deduções", deducoes],
+      ["Deduções (ISS/INSS retidos)", deducoes],
       ["Receita Líquida", receitasLiquidas],
-      ["Custos Variáveis", custosVariaveis],
+      ["Custos diretos de obra", custosDiretos],
       [`Lucro Bruto (${margemBruta.toFixed(1)}%)`, lucroBruto],
       ["Despesas Operacionais", despesasOperacionais],
-      [`Lucro Operacional (${margemOperacional.toFixed(1)}%)`, lucroOperacional],
-      [`Lucro Líquido (${margemLiquida.toFixed(1)}%)`, lucroLiquido],
+      [`Resultado antes de IR/CSLL (${margemAntesIR.toFixed(1)}%)`, resultadoAntesIR],
     ];
 
     const csv = dados.map((row) => row.join(";")).join("\n");
@@ -99,23 +62,24 @@ export default function DRERelatorio({
 
     const items = [
       { label: "Receita Bruta", valor: receitasBrutas, negrito: true },
-      { label: "Deduções", valor: -deducoes },
+      { label: "Deduções (ISS/INSS retidos)", valor: -deducoes },
       { label: "Receita Líquida", valor: receitasLiquidas, negrito: true },
-      { label: "Custos Variáveis", valor: -custosVariaveis },
+      { label: "Custos diretos de obra", valor: -custosDiretos },
       { label: `Lucro Bruto (${margemBruta.toFixed(1)}%)`, valor: lucroBruto, negrito: true },
       { label: "Despesas Operacionais", valor: -despesasOperacionais },
       {
-        label: `Lucro Operacional (${margemOperacional.toFixed(1)}%)`,
-        valor: lucroOperacional,
+        label: `Resultado antes de IR/CSLL (${margemAntesIR.toFixed(1)}%)`,
+        valor: resultadoAntesIR,
         negrito: true,
       },
-      { label: `Lucro Líquido (${margemLiquida.toFixed(1)}%)`, valor: lucroLiquido, negrito: true },
     ];
 
     items.forEach((item) => {
       if (item.negrito) doc.setFont(undefined, "bold");
       doc.text(item.label, 14, y);
-      doc.text(formatCurrency(Math.abs(item.valor)), 150, y);
+      // antes: Math.abs escondia o sinal de resultado negativo (prejuízo saía
+      // igual a lucro); agora só as linhas de dedução/custo, que já são "(-)".
+      doc.text(formatCurrency(item.negrito ? item.valor : Math.abs(item.valor)), 150, y);
       if (item.negrito) doc.setFont(undefined, "normal");
       y += 8;
     });
@@ -163,14 +127,10 @@ export default function DRERelatorio({
       </CardHeader>
       <CardContent className="space-y-1">
         <LinhaRelatorio label="(+) Receita Bruta" valor={receitasBrutas} negrito />
-        <LinhaRelatorio label="(-) Deduções" valor={-deducoes} identacao={1} />
+        <LinhaRelatorio label="(-) Deduções (ISS/INSS retidos)" valor={-deducoes} identacao={1} />
         <LinhaRelatorio label="(=) Receita Líquida" valor={receitasLiquidas} negrito destaque />
 
-        <LinhaRelatorio
-          label="(-) Custos Variáveis (Materiais)"
-          valor={-custosVariaveis}
-          identacao={1}
-        />
+        <LinhaRelatorio label="(-) Custos diretos de obra" valor={-custosDiretos} identacao={1} />
         <LinhaRelatorio
           label={`(=) Lucro Bruto (${margemBruta.toFixed(1)}%)`}
           valor={lucroBruto}
@@ -184,35 +144,29 @@ export default function DRERelatorio({
           identacao={1}
         />
         <LinhaRelatorio
-          label={`(=) Lucro Operacional (${margemOperacional.toFixed(1)}%)`}
-          valor={lucroOperacional}
+          label={`(=) Resultado antes de IR/CSLL (${margemAntesIR.toFixed(1)}%)`}
+          valor={resultadoAntesIR}
           negrito
           destaque
         />
 
-        <LinhaRelatorio
-          label={`(=) Lucro Líquido (${margemLiquida.toFixed(1)}%)`}
-          valor={lucroLiquido}
-          negrito
-          destaque
-        />
+        <p className="pt-2 text-xs text-slate-500">
+          Regime de caixa (lançamentos pagos). Custos diretos = despesas vinculadas a uma obra;
+          despesas operacionais = sem obra. IR/CSLL não são apurados no sistema.
+        </p>
 
         <div className="mt-6 p-4 bg-slate-50 rounded-lg">
-          <div className="grid grid-cols-3 gap-4 text-center">
+          <div className="grid grid-cols-2 gap-4 text-center">
             <div>
               <p className="text-xs text-slate-500 mb-1">Margem Bruta</p>
               <p className="text-lg font-bold text-slate-800">{margemBruta.toFixed(1)}%</p>
             </div>
             <div>
-              <p className="text-xs text-slate-500 mb-1">Margem Operacional</p>
-              <p className="text-lg font-bold text-slate-800">{margemOperacional.toFixed(1)}%</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-500 mb-1">Margem Líquida</p>
+              <p className="text-xs text-slate-500 mb-1">Margem antes de IR/CSLL</p>
               <p
-                className={`text-lg font-bold ${lucroLiquido >= 0 ? "text-green-600" : "text-red-600"}`}
+                className={`text-lg font-bold ${resultadoAntesIR >= 0 ? "text-green-600" : "text-red-600"}`}
               >
-                {margemLiquida.toFixed(1)}%
+                {margemAntesIR.toFixed(1)}%
               </p>
             </div>
           </div>

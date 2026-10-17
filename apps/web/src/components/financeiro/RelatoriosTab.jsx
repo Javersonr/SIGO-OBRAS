@@ -1,5 +1,10 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { sigo } from "@/api/sigoClient";
+import {
+  dataReferencia,
+  expandirParcelas,
+  tipoRelatorioValido,
+} from "@/lib/relatorios-financeiros";
 import { useEmpresa } from "../../Layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,6 +20,10 @@ import RelatoriosCustomizados from "./RelatoriosCustomizados";
 import AssistenteIA from "./AssistenteIA";
 import InsightsIA from "./InsightsIA";
 import SugestoesVisualizacao from "./SugestoesVisualizacao";
+
+// Filtro de seleção ("all" ou vazio = não filtra — template antigo sem a chave
+// não pode zerar o relatório).
+const ativo = (v) => v && v !== "all";
 
 export default function RelatoriosTab({ transacoes, contas, categorias }) {
   const { empresaAtiva, user } = useEmpresa();
@@ -47,8 +56,11 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
   }, [empresaAtiva?.id]);
 
   const handleAplicarFiltrosIA = (novosFiltros, tipo) => {
-    setFiltros({ ...filtros, ...novosFiltros });
-    setTipoRelatorio(tipo);
+    setFiltros((atual) => ({ ...atual, ...novosFiltros }));
+    // Tabs agora é controlado: um tipo que não é aba ("comparacao", "lista")
+    // deixaria a tela sem conteúdo — nesse caso mantém a aba atual.
+    const tipoValido = tipoRelatorioValido(tipo);
+    if (tipoValido) setTipoRelatorio(tipoValido);
   };
 
   const handleAplicarSugestao = (sugestao) => {
@@ -87,18 +99,51 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
   // que relatórios JAMAIS mostrem dados de outra empresa. RLS no Supabase já
   // protege contra leak via API, mas dados em memória podem vir contaminados
   // por bug no caller.
-  const transacoesFiltradas = transacoes.filter((t) => {
-    if (empresaAtiva?.id && t.empresa_id && t.empresa_id !== empresaAtiva.id) return false;
-    const data = t.data_vencimento || t.created_date;
-    if (filtros.dataInicio && data < filtros.dataInicio) return false;
-    if (filtros.dataFim && data > filtros.dataFim) return false;
-    if (filtros.categoriaId !== "all" && t.categoria_id !== filtros.categoriaId) return false;
-    if (filtros.centroCustoId !== "all" && t.centro_custo_id !== filtros.centroCustoId)
-      return false;
-    if (filtros.contaId !== "all" && t.conta_id !== filtros.contaId) return false;
-    if (filtros.projetoId !== "all" && t.projeto_id !== filtros.projetoId) return false;
-    return true;
-  });
+  //
+  // Memoizado: antes o filter rodava a cada render e gerava um array novo, que
+  // disparava de novo os efeitos que chamam a IA (InsightsIA/Sugestões).
+  const empresaId = empresaAtiva?.id;
+  const { dataInicio, dataFim, categoriaId, centroCustoId, contaId, projetoId } = filtros;
+
+  // Todas as transações da empresa, com as parceladas abertas em uma linha por
+  // parcela (valor, vencimento e pagamento de cada uma, como no extrato). É
+  // também a base do saldo das contas numa data passada (Balanço/Índices).
+  const transacoesEmpresa = useMemo(
+    () =>
+      expandirParcelas(
+        (transacoes || []).filter((t) => !(empresaId && t.empresa_id && t.empresa_id !== empresaId))
+      ),
+    [transacoes, empresaId]
+  );
+
+  // Todos os filtros MENOS o de data: base do comparativo "período anterior"
+  // (antes recebia só o período atual e o "Anterior" saía sempre zerado).
+  const transacoesSemPeriodo = useMemo(
+    () =>
+      transacoesEmpresa.filter((t) => {
+        if (ativo(categoriaId) && t.categoria_id !== categoriaId) return false;
+        if (ativo(centroCustoId) && t.centro_custo_id !== centroCustoId) return false;
+        if (ativo(contaId) && t.conta_id !== contaId) return false;
+        if (ativo(projetoId) && t.projeto_id !== projetoId) return false;
+        return true;
+      }),
+    [transacoesEmpresa, categoriaId, centroCustoId, contaId, projetoId]
+  );
+
+  const transacoesFiltradas = useMemo(
+    () =>
+      transacoesSemPeriodo.filter((t) => {
+        const data = dataReferencia(t);
+        if (dataInicio && data < dataInicio) return false;
+        if (dataFim && data > dataFim) return false;
+        return true;
+      }),
+    [transacoesSemPeriodo, dataInicio, dataFim]
+  );
+
+  // Balanço/liquidez são POSIÇÃO na data fim e recebem as transações sem o
+  // corte de período: o que estava em aberto naquela data (inclusive com
+  // vencimento depois dela) é decidido em calcularBalanco/calcularIndices.
 
   return (
     <div className="space-y-6">
@@ -115,7 +160,6 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
 
       {/* Assistente IA */}
       <AssistenteIA
-        transacoes={transacoesFiltradas}
         onAplicarFiltros={handleAplicarFiltrosIA}
         categorias={categorias}
         centrosCusto={centrosCusto}
@@ -130,7 +174,7 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
       />
 
       {/* Insights IA */}
-      <InsightsIA transacoes={transacoesFiltradas} categorias={categorias} tipo={tipoRelatorio} />
+      <InsightsIA transacoes={transacoesFiltradas} categorias={categorias} />
 
       {/* Sugestões de Visualização */}
       <SugestoesVisualizacao
@@ -141,13 +185,15 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
 
       {/* Gráficos Comparativos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <GraficosComparativos transacoes={transacoesFiltradas} filtros={filtros} tipo="dre" />
+        {/* "dre" compara atual × anterior: precisa das transações sem o corte de data */}
+        <GraficosComparativos transacoes={transacoesSemPeriodo} filtros={filtros} tipo="dre" />
         <GraficosComparativos transacoes={transacoesFiltradas} filtros={filtros} tipo="fluxo" />
       </div>
 
       <GraficosComparativos transacoes={transacoesFiltradas} filtros={filtros} tipo="margens" />
 
-      <Tabs defaultValue="dre" className="w-full" onValueChange={setTipoRelatorio}>
+      {/* Controlado: antes era defaultValue e o tipo escolhido pela IA não trocava a aba */}
+      <Tabs value={tipoRelatorio} className="w-full" onValueChange={setTipoRelatorio}>
         <TabsList className="grid w-full grid-cols-6 bg-slate-100">
           <TabsTrigger value="dre">DRE</TabsTrigger>
           <TabsTrigger value="balanco">Balanço</TabsTrigger>
@@ -163,16 +209,15 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
             versao={filtros.versao}
             dataInicio={filtros.dataInicio}
             dataFim={filtros.dataFim}
-            categorias={categorias}
           />
         </TabsContent>
 
         <TabsContent value="balanco" className="space-y-4">
           <BalancoPatrimonial
-            transacoes={transacoesFiltradas}
+            transacoes={transacoesSemPeriodo}
+            transacoesCaixa={transacoesEmpresa}
             contas={contas}
             versao={filtros.versao}
-            dataInicio={filtros.dataInicio}
             dataFim={filtros.dataFim}
           />
         </TabsContent>
@@ -190,8 +235,12 @@ export default function RelatoriosTab({ transacoes, contas, categorias }) {
         <TabsContent value="indices" className="space-y-4">
           <IndicesFinanceiros
             transacoes={transacoesFiltradas}
+            transacoesPosicao={transacoesSemPeriodo}
+            transacoesCaixa={transacoesEmpresa}
             contas={contas}
             versao={filtros.versao}
+            dataInicio={filtros.dataInicio}
+            dataFim={filtros.dataFim}
           />
         </TabsContent>
 

@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { sigo, resolveStorageUrl } from "@/api/sigoClient";
 import { ehBase44, extensaoDoArquivo, nomeDoArquivo } from "@/lib/anexo-ref";
+import { normalizeTipo } from "@/lib/financeiro-utils";
 import * as XLSX from "xlsx";
 import JSZip from "jszip";
 import BarraProgressoImportacao from "./BarraProgressoImportacao";
@@ -289,7 +290,7 @@ export default function PreLancamentosTab({
         Cliente: "Nome do Cliente (opcional)",
         Categoria: "Nome da Categoria",
         Conta: "Nome da Conta",
-        Projeto: "Título do Projeto (opcional)",
+        Projeto: "Nome do Projeto (opcional)",
         "Centro de Custo": "Nome do Centro de Custo (opcional)",
         Valor: 1000.0,
         Observações: "Observações adicionais",
@@ -311,14 +312,26 @@ export default function PreLancamentosTab({
         const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
         setImportacao({ ativo: true, total: data.length, processados: 0, erros: 0 });
 
-        const [todosFornecedores, todosClientes, todosProjetos, todasCategorias, todasContas] =
-          await Promise.all([
-            sigo.entities.Fornecedor.filter({ empresa_id: empresaAtiva.id }),
-            sigo.entities.Cliente.filter({ empresa_id: empresaAtiva.id }),
-            sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
-            sigo.entities.CategoriaFinanceira.filter({ empresa_id: empresaAtiva.id }),
-            sigo.entities.ContaFinanceira.filter({ empresa_id: empresaAtiva.id }),
-          ]);
+        const [
+          todosFornecedores,
+          todosClientes,
+          todosProjetos,
+          todasCategorias,
+          todasContas,
+          todosCentros,
+        ] = await Promise.all([
+          sigo.entities.Fornecedor.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.Cliente.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.Projeto.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.CategoriaFinanceira.filter({ empresa_id: empresaAtiva.id }),
+          sigo.entities.ContaFinanceira.filter({ empresa_id: empresaAtiva.id }),
+          // centro de custo é opcional na planilha: se a busca falhar, importa
+          // só com o nome (como antes) em vez de abortar a importação toda.
+          sigo.entities.CentroCusto.filter({ empresa_id: empresaAtiva.id }).catch((err) => {
+            console.warn("[PreLancamentosTab] falha carregando centros de custo:", err);
+            return [];
+          }),
+        ]);
 
         let importadas = 0,
           erros = 0;
@@ -331,10 +344,27 @@ export default function PreLancamentosTab({
               setImportacao((prev) => ({ ...prev, processados: i + 1, erros: prev.erros + 1 }));
               continue;
             }
+            // Projeto: coluna canônica é `nome` (antes só casava por `titulo`,
+            // legado). Sem nome na linha não procura — `p.titulo === undefined`
+            // casava com qualquer projeto sem título.
+            const projeto = row.Projeto
+              ? todosProjetos.find((p) => p.nome === row.Projeto) ||
+                todosProjetos.find((p) => p.titulo === row.Projeto)
+              : null;
+            const nomeCentro = row["Centro de Custo"] || null;
+            const centro = nomeCentro
+              ? todosCentros.find(
+                  (c) =>
+                    c.nome === nomeCentro || (c.codigo && `${c.codigo} - ${c.nome}` === nomeCentro)
+                )
+              : null;
+            // antes: tipo minúsculo e status "pre_lancamento", que nenhuma lista,
+            // relatório ou rotina de vencimento entende (nunca virava "atrasado",
+            // mas disparava alerta de vencido). Agora igual ao DespesasTab.
             await sigo.entities.TransacaoFinanceira.create({
               empresa_id: empresaAtiva.id,
-              tipo: row["Tipo"]?.toLowerCase() === "receita" ? "receita" : "despesa",
-              status: "pre_lancamento",
+              tipo: normalizeTipo(row["Tipo"]) === "receita" ? "Receita" : "Despesa",
+              status: "em_aberto",
               descricao: row["Descrição"] || "",
               fornecedor_id:
                 todosFornecedores.find((f) => f.nome_razao === row.Fornecedor)?.id || null,
@@ -343,13 +373,14 @@ export default function PreLancamentosTab({
               cliente_id: todosClientes.find((c) => c.nome_razao === row.Cliente)?.id || null,
               cliente_nome:
                 todosClientes.find((c) => c.nome_razao === row.Cliente)?.nome_razao || null,
-              projeto_id: todosProjetos.find((p) => p.titulo === row.Projeto)?.id || null,
-              projeto_nome: todosProjetos.find((p) => p.titulo === row.Projeto)?.titulo || null,
+              projeto_id: projeto?.id || null,
+              projeto_nome: projeto?.nome || projeto?.titulo || null,
               categoria_id: todasCategorias.find((c) => c.nome === row.Categoria)?.id || null,
               categoria_nome: todasCategorias.find((c) => c.nome === row.Categoria)?.nome || null,
               conta_id: conta.id,
               conta_nome: conta.nome,
-              centro_custo_nome: row["Centro de Custo"] || null,
+              centro_custo_id: centro?.id || null,
+              centro_custo_nome: centro?.nome || nomeCentro,
               valor: parseFloat(row.Valor) || 0,
               data_vencimento: row["Data Vencimento"] || new Date().toISOString().split("T")[0],
               data: row["Data Competência"] || new Date().toISOString().split("T")[0],

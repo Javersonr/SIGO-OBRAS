@@ -5,8 +5,14 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { sigo } from "@/api/sigoClient";
 import { Sparkles, Send, Loader2, Lightbulb } from "lucide-react";
+import {
+  TIPOS_RELATORIO,
+  dataLocalISO,
+  traduzirFiltrosIA,
+  tipoRelatorioValido,
+} from "@/lib/relatorios-financeiros";
 
-export default function AssistenteIA({ transacoes, onAplicarFiltros, categorias, centrosCusto }) {
+export default function AssistenteIA({ onAplicarFiltros, categorias = [], centrosCusto = [] }) {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [resultado, setResultado] = useState(null);
@@ -24,19 +30,22 @@ export default function AssistenteIA({ transacoes, onAplicarFiltros, categorias,
 
     setLoading(true);
     try {
+      // Data de hoje no prompt: sem ela a IA não resolve "último trimestre",
+      // "mês atual" etc. em datas reais.
       const resultado = await sigo.integrations.Core.InvokeLLM({
         prompt: `Você é um assistente financeiro especializado. Analise a seguinte solicitação do usuário e retorne um JSON com:
-        1. tipo: tipo de relatório solicitado ('dre', 'balanco', 'fluxo', 'comparacao', 'lista', 'analise')
-        2. filtros: objeto com filtros a serem aplicados (dataInicio, dataFim, categoriaId, centroCustoId, etc)
+        1. tipo: tipo de relatório solicitado, um destes: ${TIPOS_RELATORIO.map((t) => `'${t}'`).join(", ")}
+        2. filtros: objeto só com as chaves que se aplicarem: dataInicio e dataFim (formato AAAA-MM-DD), categoriaId (o NOME exato de uma das categorias abaixo), centroCustoId (o NOME exato de um dos centros de custo abaixo), versao ('real' ou 'contabil')
         3. visualizacao: tipo de visualização sugerida ('tabela', 'grafico_barras', 'grafico_linha', 'grafico_pizza')
         4. explicacao: explicação resumida do que será mostrado
         5. metricas_sugeridas: array com métricas relevantes a exibir
-        
+
         Solicitação do usuário: "${prompt}"
-        
+
+        Data de hoje: ${dataLocalISO()}
         Período disponível: últimos 12 meses
-        Categorias disponíveis: ${categorias.map((c) => c.nome).join(", ")}
-        Centros de custo disponíveis: ${centrosCusto?.map((c) => c.nome).join(", ") || "Nenhum"}`,
+        Categorias disponíveis: ${categorias.map((c) => c.nome).join(", ") || "Nenhuma"}
+        Centros de custo disponíveis: ${centrosCusto.map((c) => c.nome).join(", ") || "Nenhum"}`,
         response_json_schema: {
           type: "object",
           properties: {
@@ -59,11 +68,15 @@ export default function AssistenteIA({ transacoes, onAplicarFiltros, categorias,
   };
 
   const handleAplicar = () => {
-    if (resultado?.filtros) {
-      onAplicarFiltros(resultado.filtros, resultado.tipo);
-      setResultado(null);
-      setPrompt("");
-    }
+    if (!resultado) return;
+    // antes: repassava o objeto da IA cru — categoria/centro vinham como NOME
+    // mas o filtro compara id (nada casava) e qualquer chave inventada ia pro
+    // estado. Agora traduz nome → id (desconhecido = "all") e só passa chaves
+    // conhecidas; o tipo só vale se for uma aba existente.
+    const filtros = traduzirFiltrosIA(resultado.filtros, { categorias, centrosCusto });
+    onAplicarFiltros(filtros, tipoRelatorioValido(resultado.tipo));
+    setResultado(null);
+    setPrompt("");
   };
 
   return (
