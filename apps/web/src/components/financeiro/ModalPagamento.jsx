@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { CheckCircle2, Upload, X } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
+import { camposDaBaixa } from "@/lib/baixa-financeira";
 import { DadosBancariosFornecedor } from "./DadosBancariosPagamento";
 import { hojeLocalISO } from "./utils";
 
@@ -61,13 +62,20 @@ export default function ModalPagamento({
       alert("Informe a data de pagamento.");
       return;
     }
+    // despesa parcelada inteira: o status dela não move o extrato (0155) — paga-se
+    // parcela a parcela (cada uma abre este modal com _parcelaIndex)
+    if (despesa?.parcelado === true && despesa?._parcelaIndex === undefined) {
+      alert("Despesa parcelada: registre o pagamento parcela a parcela.");
+      return;
+    }
     setSalvando(true);
     try {
       // Só atualiza no banco se for pagamento da despesa inteira (não de parcela individual)
+      // "pago" (antes "Realizado", que a lista mostrava como Em aberto). Só a
+      // transação: o banco (0155) lança o pagamento no extrato na mesma gravação.
       if (despesa?.id && despesa?._parcelaIndex === undefined) {
         await sigo.entities.TransacaoFinanceira.update(despesa.id, {
-          status: "Realizado",
-          data_pagamento: dataPagamento,
+          ...camposDaBaixa(true, dataPagamento),
           ...(formaPagamento ? { forma_pagamento: formaPagamento } : {}),
         });
       }
