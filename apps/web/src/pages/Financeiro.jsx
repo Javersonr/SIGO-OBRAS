@@ -277,6 +277,7 @@ export default function Financeiro() {
             fornecedores={fornecedores}
             clientes={clientes}
             projetos={projetos}
+            onReload={loadData}
           />
         </TabsContent>
 
