@@ -1,7 +1,9 @@
 import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect } from "react";
-import { sigo } from "@/api/sigoClient";
+import { toast } from "sonner";
+import { sigo, supabase } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { mensagemErroFechamento, valorDoPreLancamento } from "@/lib/fechamento-caixa";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,45 +59,26 @@ export default function AcrescentarPreLancamentoModal({
     setSelecionados((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
 
   const handleConfirmar = async () => {
-    if (selecionados.length === 0) return;
+    if (salvando || selecionados.length === 0) return;
     setSalvando(true);
     try {
-      const idsAtuais = safeParseJSON(fechamento.pre_lancamentos_ids, []);
-      const novosIds = [...idsAtuais, ...selecionados];
-
-      const plsSelecionados = pendentes.filter((p) => selecionados.includes(p.id));
-      const valorExtra = plsSelecionados.reduce((sum, pl) => {
-        const d = getDados(pl);
-        return sum + (parseFloat(d.valor) || 0);
-      }, 0);
-
-      await sigo.entities.FechamentoCaixa.update(fechamento.id, {
-        // JSONB: passar array cru. JSON.stringify gravava como texto literal e
-        // quebrava jsonb_array_elements no Supabase.
-        pre_lancamentos_ids: novosIds,
-        valor_total: (fechamento.valor_total || 0) + valorExtra,
+      // acrescentar_ao_fechamento (0158): o banco junta os novos ids à lista
+      // ATUAL do fechamento (não à cópia que esta tela carregou), soma o valor e
+      // marca os itens "Em Fechamento" numa transação só — antes a lista era
+      // regravada a partir de cópia velha e podia perder itens.
+      const { data, error } = await supabase.rpc("acrescentar_ao_fechamento", {
+        p_fechamento_id: fechamento.id,
+        p_pre_lancamento_ids: selecionados,
       });
-
-      // allSettled em vez de all: se 1 update falhar, queremos saber
-      // quantos NÃO foram marcados como "Em Fechamento" (caso contrário
-      // o fechamento sai com pré-lançamentos órfãos no status antigo).
-      const results = await Promise.allSettled(
-        selecionados.map((id) =>
-          sigo.entities.PreLancamento.update(id, { status: "Em Fechamento" })
-        )
+      if (error) throw error;
+      toast.success(
+        `${data?.acrescentados ?? selecionados.length} pré-lançamento(s) acrescentado(s) ao fechamento #${fechamento.numero || ""} (+ R$ ${(Number(data?.valor_acrescentado) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}).`
       );
-      const falhas = results.filter((r) => r.status === "rejected");
-      if (falhas.length > 0) {
-        console.error("Falhas atualizando pré-lançamentos:", falhas);
-        alert(
-          `Atenção: ${falhas.length} de ${selecionados.length} pré-lançamento(s) não foram marcados como "Em Fechamento". Verifique no histórico.`
-        );
-      }
 
       onSucesso();
       onOpenChange(false);
     } catch (err) {
-      alert("Erro ao acrescentar: " + err.message);
+      alert("Erro ao acrescentar: " + mensagemErroFechamento(err));
     } finally {
       setSalvando(false);
     }
@@ -162,7 +145,7 @@ export default function AcrescentarPreLancamentoModal({
               <tbody>
                 {filtrados.map((pl) => {
                   const d = getDados(pl);
-                  const valor = parseFloat(d.valor) || 0;
+                  const valor = valorDoPreLancamento(pl);
                   const checked = selecionados.includes(pl.id);
                   return (
                     <tr
@@ -203,10 +186,7 @@ export default function AcrescentarPreLancamentoModal({
                 Total: R${" "}
                 {pendentes
                   .filter((p) => selecionados.includes(p.id))
-                  .reduce((s, p) => {
-                    const d = getDados(p);
-                    return s + (parseFloat(d.valor) || 0);
-                  }, 0)
+                  .reduce((s, p) => s + valorDoPreLancamento(p), 0)
                   .toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
               </span>
             ) : (
