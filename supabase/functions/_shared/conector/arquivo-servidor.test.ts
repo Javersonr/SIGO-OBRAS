@@ -590,7 +590,7 @@ test("registrarNoHistorico: quando o banco responde, não loga nada", async () =
   }
 });
 
-// ─── A RPC conector_gravar_arquivo imitada pelo fake (0156) ─────────────────────────────
+// ─── A RPC conector_gravar_arquivo imitada pelo fake (0161) ─────────────────────────────
 
 function montarComBanco(parcial: Parameters<typeof criarBancoArquivosFake>[0] = {}) {
   const banco = criarBancoArquivosFake({
@@ -829,7 +829,7 @@ test("RPC imitada: recusa o que a função do banco recusa (22023) e o objeto en
     ],
     ["url com segmento .", { p_url: `anexos-oportunidade/${E}/./a.pdf` }, /fora da pasta/],
     ["url terminando em ..", { p_url: `anexos-oportunidade/${E}/a/..` }, /fora da pasta/],
-    // lista branca [A-Za-z0-9._/-] (0156): o parser de URL do storage-js apaga tab, LF e CR
+    // lista branca [A-Za-z0-9._/-] (0161): o parser de URL do storage-js apaga tab, LF e CR
     [
       "url com TAB entre pontos",
       { p_url: `anexos-oportunidade/${E}/.\t./${OUTRA}/a.pdf` },
@@ -913,7 +913,7 @@ test("a lista branca da RPC não barra o que o servidor grava: caminhoDoEnvio s�
   for (const nome of nomes) {
     const ref = `anexos-oportunidade/${caminhoDoEnvio(E, nome, AGORA, "00000000-0000-4000-8000-0000000000aa")}`;
     assert.match(ref, LISTA_BRANCA, JSON.stringify(nome));
-    // e a imitação da RPC (a mesma lista branca do 0156) aceita a ref feita pelo servidor
+    // e a imitação da RPC (a mesma lista branca do 0161) aceita a ref feita pelo servidor
     const recusa = recusaGravarArquivo({
       tabela: "conector_gravar_arquivo",
       payload: { ...PARAMS_COMPLETOS, p_url: ref },
@@ -1753,15 +1753,15 @@ test("RPC imitada: os 11 parâmetros da função SQL, exatamente; a mais, a meno
   assert.equal((await db.rpc<{ ok: boolean }>("conector_gravar_arquivo", dez)).ok, true);
 });
 
-// ─── A migração 0156 e o fake não derivam em silêncio ───────────────────────────────────
+// ─── A migração 0161 e o fake não derivam em silêncio ───────────────────────────────────
 
-test("migração 0156: a função SQL ainda tem o que o fake da RPC imita", () => {
+test("migração 0161: a função SQL ainda tem o que o fake da RPC imita", () => {
   const sql = readFileSync(
-    new URL("../../../migrations/0156_documentos_gerados.sql", import.meta.url),
+    new URL("../../../migrations/0161_documentos_gerados.sql", import.meta.url),
     "utf8"
   ).replaceAll("\r\n", "\n");
   const inicio = sql.indexOf("create or replace function public.conector_gravar_arquivo(");
-  assert.ok(inicio >= 0, "a função não está mais na 0156");
+  assert.ok(inicio >= 0, "a função não está mais na 0161");
   const fim = sql.indexOf("\n$$;", inicio);
   assert.ok(fim > inicio);
   const funcao = sql.slice(inicio, fim);

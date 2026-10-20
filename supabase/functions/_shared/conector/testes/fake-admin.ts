@@ -11,7 +11,7 @@
  * - Não existe delete: código que chamar .delete() quebra no teste.
  * - O Storage guarda os objetos em memória (`objetos`, chave "<bucket>/<caminho>"): `upload`
  *   grava, `download` lê, `remove` apaga. `responderStorage` decide primeiro e pode devolver erro.
- * - `imitarGravarArquivo(banco)` imita a RPC conector_gravar_arquivo (0156) sobre um banco em
+ * - `imitarGravarArquivo(banco)` imita a RPC conector_gravar_arquivo (0161) sobre um banco em
  *   memória (`criarBancoArquivosFake`), para os testes provarem troca no lugar, arquivo assinado
  *   mantido, chave de busca com a empresa e exclusão do texto por página do arquivo trocado.
  */
@@ -229,7 +229,7 @@ export function criarFakeAdmin(
   return { admin, chamadas, storage, chamadasStorage, objetos };
 }
 
-// ─── conector_gravar_arquivo (0156) em memória ──────────────────────────────────────────
+// ─── conector_gravar_arquivo (0161) em memória ──────────────────────────────────────────
 
 /** Só as colunas de arquivo_oportunidade que a RPC lê ou grava. */
 export interface ArquivoOportunidadeFake {
@@ -276,8 +276,8 @@ export function criarBancoArquivosFake(
 }
 
 /**
- * Os 11 parâmetros da função SQL public.conector_gravar_arquivo (0156), na ordem dela. O PostgREST acha a
- * função pelo CONJUNTO de nomes: um a mais, a menos ou errado dá PGRST202. Um teste lê a 0156 e confere
+ * Os 11 parâmetros da função SQL public.conector_gravar_arquivo (0161), na ordem dela. O PostgREST acha a
+ * função pelo CONJUNTO de nomes: um a mais, a menos ou errado dá PGRST202. Um teste lê a 0161 e confere
  * que esta lista continua igual à assinatura do SQL.
  */
 export const PARAMETROS_GRAVAR_ARQUIVO: readonly string[] = Object.freeze([
@@ -347,7 +347,7 @@ export function recusaGravarArquivo(c: ChamadaFake): RespostaFake | null {
 }
 
 /**
- * Responder para o criarFakeAdmin que imita a RPC conector_gravar_arquivo (migração 0156) sobre `banco`:
+ * Responder para o criarFakeAdmin que imita a RPC conector_gravar_arquivo (migração 0161) sobre `banco`:
  *  - confere o CONJUNTO de parâmetros (exatamente os 11 da função SQL): nome a mais, a menos ou errado →
  *    erro PGRST202, como o PostgREST responderia em produção (recusaGravarArquivo);
  *  - recusa (erro 22023) empresa/oportunidade nulas, origem ou nome sem caractere visível, origem acima de

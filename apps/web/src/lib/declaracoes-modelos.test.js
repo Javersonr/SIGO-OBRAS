@@ -136,7 +136,7 @@ describe("modelos de declaração (tela)", () => {
   });
 });
 
-describe("mensagemDeErroAoSalvarModelo (recusas do banco, 0156)", () => {
+describe("mensagemDeErroAoSalvarModelo (recusas do banco, 0161)", () => {
   const erro = (message, code) => ({ message, code });
   it("chave repetida entre os modelos vivos da empresa (23505)", () => {
     expect(

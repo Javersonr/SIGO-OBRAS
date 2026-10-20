@@ -23,7 +23,7 @@ describe("assinatura dos arquivos da oportunidade", () => {
     expect(seloDaAssinatura({ assinatura: null })).toBe(null);
     expect(seloDaAssinatura({})).toBe(null);
   });
-  it("seloDaAssinatura: sem a coluna (antes da 0156), valor estranho ou sem arquivo, não aparece nada", () => {
+  it("seloDaAssinatura: sem a coluna (antes da 0161), valor estranho ou sem arquivo, não aparece nada", () => {
     expect(seloDaAssinatura({ id: "a", nome: "x.pdf" })).toBe(null);
     expect(seloDaAssinatura({ assinatura: "" })).toBe(null);
     expect(seloDaAssinatura({ assinatura: "PENDENTE" })).toBe(null);

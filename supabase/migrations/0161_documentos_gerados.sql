@@ -1,7 +1,9 @@
 -- ============================================================================
--- 0156_documentos_gerados.sql — arquivos da oportunidade gravados pelo servidor,
+-- 0161_documentos_gerados.sql — arquivos da oportunidade gravados pelo servidor,
 -- assinatura pendente e modelos de declaração (13/10/2026)
 --   (spec docs/superpowers/specs/2026-10-09-habilitacao-documentos-automaticos-design.md §3 e §4)
+--   Renumerada em 20/10/2026 (era 0156): a auditoria financeira foi publicada em 17/10
+--   com 0154–0158. Nunca tinha sido aplicada com o número antigo.
 --
 -- Por quê: o Claude não consegue enviar arquivo ao SIGO (a rede do ambiente dele bloqueia o
 -- Storage). O servidor passa a gerar, copiar ou baixar os arquivos da licitação e a gravá-los
@@ -20,7 +22,7 @@
 --   modelo_declaracao                modelos de declaração editados ou criados pela empresa (os
 --                                    seis padrão ficam no código e valem sem linha aqui). Ler exige
 --                                    Oportunidades → Lista; gravar exige Oportunidades → Lista →
---                                    editar (como a biblioteca, 0154), conferido no banco. Chave
+--                                    editar (como a biblioteca, 0159), conferido no banco. Chave
 --                                    com o prefixo "edital_" é recusada: ele é das declarações
 --                                    pedidas pelo edital, que não viram modelo.
 --   conector_gravar_arquivo          grava ou troca o arquivo numa transação; arquivo já
@@ -121,7 +123,7 @@ revoke all on table public.modelo_declaracao from anon, authenticated;
 grant select, insert, update on table public.modelo_declaracao to authenticated;
 grant all on table public.modelo_declaracao to service_role;
 
--- Permissão da tela, conferida no banco (somada à policy da empresa), como na 0154 ---------------
+-- Permissão da tela, conferida no banco (somada à policy da empresa), como na 0159 ---------------
 drop policy if exists modelo_declaracao_ler_com_permissao on public.modelo_declaracao;
 create policy modelo_declaracao_ler_com_permissao on public.modelo_declaracao
   as restrictive for select to authenticated

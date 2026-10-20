@@ -1,7 +1,7 @@
 // node --test supabase/functions/_shared/habilitacao/listas-fechadas.test.ts
 // As listas fechadas do código e as regras das migrações não derivam em silêncio: o banco recusa o que o código
 // aceita (ou o contrário) e o erro só aparece em produção, na hora de gravar. Os testes leem o texto das migrações
-// (e do código da tela, que não é importável aqui), no padrão do teste da 0156 em arquivo-servidor.test.ts.
+// (e do código da tela, que não é importável aqui), no padrão do teste da 0161 em arquivo-servidor.test.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -10,10 +10,10 @@ import { IDS_TIPO_DOCUMENTO, TIPOS_DOCUMENTO } from "./documentos-regras.ts";
 const ler = (caminho: string) =>
   readFileSync(new URL(caminho, import.meta.url), "utf8").replaceAll("\r\n", "\n");
 
-test("0154: o CHECK de acervo_documento.tipo tem exatamente os ids de TIPOS_DOCUMENTO, na mesma ordem", () => {
-  const sql = ler("../../../migrations/0154_acervo_documento.sql");
+test("0159: o CHECK de acervo_documento.tipo tem exatamente os ids de TIPOS_DOCUMENTO, na mesma ordem", () => {
+  const sql = ler("../../../migrations/0159_acervo_documento.sql");
   const m = /constraint acervo_documento_tipo_check check \(tipo in \(([^)]*)\)\)/.exec(sql);
-  assert.ok(m, "o CHECK acervo_documento_tipo_check não está mais na 0154");
+  assert.ok(m, "o CHECK acervo_documento_tipo_check não está mais na 0159");
   const ids = [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
   assert.equal(ids.length, 18);
   assert.deepEqual(ids, [...IDS_TIPO_DOCUMENTO]);
@@ -24,10 +24,10 @@ test("0154: o CHECK de acervo_documento.tipo tem exatamente os ids de TIPOS_DOCU
   assert.equal(new Set(ids).size, ids.length, "id repetido no CHECK");
 });
 
-test("0156: a regex da chave do modelo é a de declaracoes.ts e a de declaracoes-modelos.js (a da tela), e o prefixo edital_ é reservado", () => {
-  const sql = ler("../../../migrations/0156_documentos_gerados.sql");
+test("0161: a regex da chave do modelo é a de declaracoes.ts e a de declaracoes-modelos.js (a da tela), e o prefixo edital_ é reservado", () => {
+  const sql = ler("../../../migrations/0161_documentos_gerados.sql");
   const doBanco = /constraint modelo_declaracao_chave_check check \(chave ~ '([^']+)'\)/.exec(sql);
-  assert.ok(doBanco, "o CHECK modelo_declaracao_chave_check não está mais na 0156");
+  assert.ok(doBanco, "o CHECK modelo_declaracao_chave_check não está mais na 0161");
   const doServidorTs = ler("../documentos/declaracoes.ts");
   const doServidor = /const CHAVE_MODELO = \/(.+)\/;/.exec(doServidorTs);
   assert.ok(doServidor, "CHAVE_MODELO não está mais em declaracoes.ts");

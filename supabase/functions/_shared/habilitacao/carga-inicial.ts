@@ -35,7 +35,7 @@ const CABECALHO = "subpasta;arquivo;tipo;emissao;validade";
 const BUCKET = "habilitacao";
 const MAX_NOME = 200;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** Os tipos que o bucket aceita (0154: PDF, JPEG e PNG). Map, para "constructor" não passar. */
+/** Os tipos que o bucket aceita (0159: PDF, JPEG e PNG). Map, para "constructor" não passar. */
 const MIME_POR_EXTENSAO = new Map<string, string>([
   ["pdf", "application/pdf"],
   ["jpg", "image/jpeg"],

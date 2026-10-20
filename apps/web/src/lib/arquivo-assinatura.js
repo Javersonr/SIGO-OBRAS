@@ -1,14 +1,14 @@
 /**
  * Assinatura dos arquivos da oportunidade (aba Arquivos). Módulo PURO (sem React, sem banco).
  *
- * `arquivo_oportunidade.assinatura` (migração 0156) tem três valores:
+ * `arquivo_oportunidade.assinatura` (migração 0161) tem três valores:
  *   - `pendente`: o PDF foi GERADO pelo SIGO (proposta, cronograma ou declaração) com o bloco de
  *     assinatura em branco e ainda não foi assinado. A tela mostra o selo "falta assinar" e o botão
  *     "Enviar assinado" (a pessoa assina o PDF no gov.br e sobe a versão assinada).
  *   - `assinado`: a versão assinada já foi enviada (ou o servidor manteve a que já estava assinada).
  *     O selo vira "assinado" e o botão some.
  *   - nulo: arquivo sem estado de assinatura. É o caso de tudo que não é PDF gerado (Excel, .docx,
- *     documentos da biblioteca, anexos comuns, links) e de TODA linha antiga, porque antes da 0156 a
+ *     documentos da biblioteca, anexos comuns, links) e de TODA linha antiga, porque antes da 0161 a
  *     coluna nem existe: `arq.assinatura` vem `undefined` e a tela não mostra selo nem botão.
  *
  * Regra do PDF no "Enviar assinado" (`validarArquivoAssinado`): o TIPO que o navegador informa manda

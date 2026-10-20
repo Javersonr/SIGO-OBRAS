@@ -1,5 +1,5 @@
 -- ============================================================================
--- smoke-documentos-gerados.sql — valida a 0156 (origem e assinatura dos arquivos da oportunidade,
+-- smoke-documentos-gerados.sql — valida a 0161 (origem e assinatura dos arquivos da oportunidade,
 -- modelos de declaração e a gravação atômica do conector)
 --
 -- Roda TUDO dentro de uma transação que termina em ROLLBACK. Cria DUAS EMPRESAS SINTÉTICAS
@@ -53,7 +53,7 @@
 -- Fora o passo 12, a RPC é chamada como o dono do banco: chamador_eh_servidor() aceita sessão sem token
 -- fora do papel authenticator (0110:27-35), e o smoke confere isso antes de começar.
 --
--- Como rodar (com a 0156 já aplicada; quem roda é o Javerson):
+-- Como rodar (com a 0161 já aplicada; quem roda é o Javerson):
 --   npx supabase@2.118.0 db query --linked -f tools/smoke-documentos-gerados.sql
 -- Deve terminar imprimindo "SMOKE TEST OK".
 -- ============================================================================
@@ -156,7 +156,7 @@ begin
      or (select count(*) from information_schema.columns
           where table_schema = 'public' and table_name = 'arquivo_oportunidade'
             and column_name in ('origem', 'assinatura')) <> 2 then
-    raise exception 'Falta a migração 0156 (origem, assinatura, modelo_declaracao e conector_gravar_arquivo): aplique antes de rodar este smoke.';
+    raise exception 'Falta a migração 0161 (origem, assinatura, modelo_declaracao e conector_gravar_arquivo): aplique antes de rodar este smoke.';
   end if;
   if to_regclass('public.arquivo_texto_pagina') is null then
     raise exception 'Falta a migração 0149 (arquivo_texto_pagina): a troca do arquivo exclui o texto por página dele.';
@@ -897,6 +897,6 @@ end;
 $$;
 
 -- só chega aqui se o bloco acima terminou sem erro
-select 'SMOKE TEST OK: documentos gerados (0156)' as res;
+select 'SMOKE TEST OK: documentos gerados (0161)' as res;
 
 rollback;

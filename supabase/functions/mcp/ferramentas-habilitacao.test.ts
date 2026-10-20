@@ -520,7 +520,7 @@ const ZIP = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 const JPG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
 
-/** Biblioteca + banco de arquivos em memória: a RPC troca no lugar e mantém o assinado, como a 0156. */
+/** Biblioteca + banco de arquivos em memória: a RPC troca no lugar e mantém o assinado, como a 0161. */
 function cenarioComBanco(docs: Record<string, unknown>[], analise: unknown = null, existe = true) {
   const banco = criarBancoArquivosFake({
     oportunidades: existe ? [{ id: OP, empresa_id: E, deleted_at: null }] : [],

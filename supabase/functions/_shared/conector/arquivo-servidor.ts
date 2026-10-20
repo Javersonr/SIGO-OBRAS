@@ -4,7 +4,7 @@
  * nunca manda bytes nem ref: aqui só entram ids já conferidos na empresa da chave.
  *
  * Origem e destino ficam sempre na pasta `<empresa_id>/` do bucket (caminhoDaEmpresa); a gravação
- * é atômica pela RPC conector_gravar_arquivo (0156): a mesma `origem` troca o arquivo no lugar, e
+ * é atômica pela RPC conector_gravar_arquivo (0161): a mesma `origem` troca o arquivo no lugar, e
  * arquivo já assinado não é trocado. Banco e Storage injetados: roda no Node.
  */
 import {

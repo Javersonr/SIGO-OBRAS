@@ -25,7 +25,7 @@ async function lerLinha(empresaId) {
 
 /**
  * Os usuários ativos da empresa do token (e-mail, nome e se têm telefone), pela RPC
- * habilitacao_usuarios_da_empresa (0155). Não dá para ler usuario_empresa direto: a RLS só deixa o
+ * habilitacao_usuarios_da_empresa (0160). Não dá para ler usuario_empresa direto: a RLS só deixa o
  * usuário comum ver os próprios vínculos. A RPC exige Oportunidades → Lista → editar.
  */
 async function listarUsuarios() {
@@ -38,10 +38,10 @@ async function listarUsuarios() {
 /**
  * Cartão "Lembretes de vencimento" da aba Documentos e certidões: quantos dias antes o SIGO avisa
  * (sino e, se ligado, WhatsApp), quem recebe e se o WhatsApp está ligado. Grava em habilitacao_config
- * (migração 0155, uma linha por empresa); quem avisa é o cron diário do banco.
+ * (migração 0160, uma linha por empresa); quem avisa é o cron diário do banco.
  * podeEditar=false (padrão) → só leitura: sem alterar nem salvar, e sem a lista de usuários (a RPC é
  * de quem edita): aparecem só os e-mails já escolhidos.
- * Se a leitura falha (a tabela e a RPC só existem depois da 0155), o cartão não aparece.
+ * Se a leitura falha (a tabela e a RPC só existem depois da 0160), o cartão não aparece.
  */
 export default function LembretesHabilitacao({ empresaId, podeEditar = false }) {
   const [estado, setEstado] = useState("carregando"); // carregando | indisponivel | pronto

@@ -1,8 +1,8 @@
 /**
  * Lembretes de vencimento dos documentos de habilitação (cartão "Lembretes" da aba Documentos e
  * certidões). Módulo PURO (sem React, sem banco). A linha é a da tabela habilitacao_config
- * (migração 0155): dias de antecedência (1 a 90), e-mails de quem recebe e WhatsApp ligado ou não.
- * Os usuários que podem ser escolhidos vêm da RPC habilitacao_usuarios_da_empresa (0155).
+ * (migração 0160): dias de antecedência (1 a 90), e-mails de quem recebe e WhatsApp ligado ou não.
+ * Os usuários que podem ser escolhidos vêm da RPC habilitacao_usuarios_da_empresa (0160).
  */
 import { safeParseJSON } from "@/lib/json-utils";
 
@@ -84,7 +84,7 @@ export function candidatosDeLembrete(usuarios, gravados, { listaCarregada = true
 
 /**
  * A criação esbarrou na configuração que outra pessoa acabou de gravar? (índice único de uma linha viva
- * por empresa, migração 0155). Quem chama recarrega a linha e grava por cima.
+ * por empresa, migração 0160). Quem chama recarrega a linha e grava por cima.
  */
 export function ehConfigDuplicada(erro) {
   return String(erro?.message ?? "").includes("habilitacao_config_empresa_uidx");

@@ -31,7 +31,7 @@ import { fmtData } from "./acervo-utils";
 import { SeloValidade } from "./AcervoUi";
 
 export const BUCKET_HABILITACAO = "habilitacao";
-export const LIMITE_HABILITACAO = 50 * 1024 * 1024; // limite do bucket "habilitacao" (0154)
+export const LIMITE_HABILITACAO = 50 * 1024 * 1024; // limite do bucket "habilitacao" (0159)
 
 const TIPOS_ACEITOS = ["application/pdf", "image/jpeg", "image/png"];
 const SEM_SUBSTITUICAO = "__nenhum";

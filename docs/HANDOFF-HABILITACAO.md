@@ -8,8 +8,13 @@
   `7b91500`. Sem push e sem PR: o merge é do Javerson.
 - **Quem publica:** o Javerson, depois do merge, na ordem abaixo e **com o OK dele a cada passo**. O código foi escrito
   e testado sem rodar nada contra produção: as migrações, os smokes e as funções nunca rodaram no banco nem no Deno.
-- **Situação em 14/10/2026:** nada desta branch está publicado. Falta tudo: migrações 0154 a 0156, funções, front e a
+- **Situação em 20/10/2026:** nada desta branch está publicado. Falta tudo: migrações 0159 a 0161, funções, front e a
   carga inicial da biblioteca.
+- **Renumeração (20/10/2026):** as migrações desta branch eram 0154, 0155 e 0156, mas a auditoria financeira foi
+  publicada em 17/10 com 0154 a 0158. A branch recebeu o `origin/master` (commit de merge) e as três passaram a ser
+  **0159** (biblioteca), **0160** (lembretes) e **0161** (documentos gerados). Nenhuma das três tinha sido aplicada. A
+  auditoria financeira não mexe em nenhuma tabela, função ou gatilho que estas usam, então a ordem 0159 → 0160 → 0161
+  vale depois da 0158. Nos títulos dos commits antigos (lista no fim), 0154/0155/0156 são os números antigos.
 
 ## O que entra
 
@@ -19,8 +24,8 @@ Arquivos da oportunidade.
 
 | Parte | O que muda                                                                                                                                                                                                                                       | Migração                                                                                                                                               | Funções                                                                       | Front                                                                                                                      |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| A     | Biblioteca de certidões e documentos da empresa (arquivo, tipo, validade, versões); o "Atende?" e o Resumo do Acervo leem a validade dela; lembretes de vencimento no sino e por WhatsApp; script da carga inicial                               | 0154 (`acervo_documento` e bucket `habilitacao`) e 0155 (configuração, fila do WhatsApp, função de alerta e dois crons)                                | `habilitacao-lembretes` (nova) e `ia-processar` (o "Atende?" lê a biblioteca) | Acervo Técnico → aba "Documentos e certidões" (pacote do mês, versões), cartão "Lembretes" e Resumo do Acervo              |
-| B     | Proposta e cronograma (PDF e Excel) e declarações (PDF e Word) gerados no servidor, com o mesmo resultado da tela; todo arquivo gerado grava `origem` (repetir troca no lugar) e todo PDF nasce "falta assinar"; modelos de declaração editáveis | 0156 (`origem` e `assinatura` em `arquivo_oportunidade`, tipos novos no bucket `anexos-oportunidade`, `modelo_declaracao` e `conector_gravar_arquivo`) | nenhuma nova (o `mcp` usa o que a 0156 cria)                                  | Aba Arquivos da oportunidade: selo "falta assinar", "Enviar assinado" e "Baixar"; cartão "Modelos de declaração" no Acervo |
+| A     | Biblioteca de certidões e documentos da empresa (arquivo, tipo, validade, versões); o "Atende?" e o Resumo do Acervo leem a validade dela; lembretes de vencimento no sino e por WhatsApp; script da carga inicial                               | 0159 (`acervo_documento` e bucket `habilitacao`) e 0160 (configuração, fila do WhatsApp, função de alerta e dois crons)                                | `habilitacao-lembretes` (nova) e `ia-processar` (o "Atende?" lê a biblioteca) | Acervo Técnico → aba "Documentos e certidões" (pacote do mês, versões), cartão "Lembretes" e Resumo do Acervo              |
+| B     | Proposta e cronograma (PDF e Excel) e declarações (PDF e Word) gerados no servidor, com o mesmo resultado da tela; todo arquivo gerado grava `origem` (repetir troca no lugar) e todo PDF nasce "falta assinar"; modelos de declaração editáveis | 0161 (`origem` e `assinatura` em `arquivo_oportunidade`, tipos novos no bucket `anexos-oportunidade`, `modelo_declaracao` e `conector_gravar_arquivo`) | nenhuma nova (o `mcp` usa o que a 0161 cria)                                  | Aba Arquivos da oportunidade: selo "falta assinar", "Enviar assinado" e "Baixar"; cartão "Modelos de declaração" no Acervo |
 | C     | Seis ferramentas novas do conector (23 no total) e o roteiro "Montar a licitação completa" (4 roteiros no total); o Storage do conector passa a ficar preso à pasta da empresa em TODAS as ferramentas                                           | nenhuma                                                                                                                                                | `mcp`                                                                         | nenhum                                                                                                                     |
 
 As seis ferramentas novas e quem pode usar cada uma (a permissão é conferida no servidor, antes de tudo):
@@ -41,12 +46,13 @@ Os quatro roteiros do conector: `analisar_edital`, `cadastrar_acervo`, `orcament
 
 Tudo abaixo é leitura ou conferência. Os comandos que falam com produção só rodam com o OK do Javerson.
 
-1. **Números das migrações.** Conferir que 0154, 0155 e 0156 continuam livres no `master` depois do merge (as `0125` a
-   `0129` seguem reservadas à outra branch, que será renumerada para `0160` a `0164`):
+1. **Números das migrações.** Conferir que 0159, 0160 e 0161 continuam livres no `origin/master` (sempre buscar antes:
+   o `master` local pode estar atrasado). Até 20/10: 0154–0158 são da auditoria financeira (já em produção) e 0170 está
+   reservada para as atividades interativas:
 
    ```bash
-   ls supabase/migrations | tail -5
-   git ls-tree -r --name-only master supabase/migrations | tail -3
+   git fetch origin
+   git ls-tree -r --name-only origin/master supabase/migrations | tail -8
    ```
 
 2. **Limite de upload.** Conferir no painel do Supabase (Storage → Settings) que o limite global de upload é de pelo
@@ -78,11 +84,11 @@ Tudo abaixo é leitura ou conferência. Os comandos que falam com produção só
    | `arquivo_texto_pagina` | `referencias_da_empresa` e `set_updated_at` (0149)          |
 
    O `trg_oportunidade_sincroniza_projetos` (criado na 0040) **não** é esperado: a 0085 o removeu. As tabelas novas das
-   migrações 0154 a 0156 (`acervo_documento` com `acervo_documento_versao`, `habilitacao_config` e `modelo_declaracao`)
+   migrações 0159 a 0161 (`acervo_documento` com `acervo_documento_versao`, `habilitacao_config` e `modelo_declaracao`)
    ainda não existem e não entram nesta consulta. Se aparecer **outro nome**, **pare e cole o resultado no chat** antes
    de aplicar qualquer migração. A versão do Postgres precisa ser 13 ou mais nova.
 
-5. **Os smokes não deixam nada gravado.** Os três terminam em `rollback`. O da 0155 usa empresas sintéticas e roda a
+5. **Os smokes não deixam nada gravado.** Os três terminam em `rollback`. O da 0160 usa empresas sintéticas e roda a
    função de alerta (a mesma varredura do cron): **não rodar perto das 08:45 de Brasília**, que é o horário do job
    `alertar_documentos_habilitacao` (`45 11 * * *`, em UTC). O passo 11, o último, só confere, pelo texto da função
    aplicada, que ela falha quando TODAS as empresas falham: provocar a falha exigiria um gatilho na tabela `notificacao`
@@ -100,16 +106,16 @@ Tudo abaixo é leitura ou conferência. Os comandos que falam com produção só
 
 ```bash
 # SÓ COM O OK DO JAVERSON — Parte A: a biblioteca de documentos
-npx supabase@2.118.0 db query --linked -f supabase/migrations/0154_acervo_documento.sql
+npx supabase@2.118.0 db query --linked -f supabase/migrations/0159_acervo_documento.sql
 npx supabase@2.118.0 db query --linked -f tools/smoke-habilitacao-documentos.sql      # tem de terminar em "SMOKE TEST OK"
 
 # SÓ COM O OK DO JAVERSON — Parte A: lembretes de vencimento
-npx supabase@2.118.0 db query --linked -f supabase/migrations/0155_habilitacao_lembretes.sql
+npx supabase@2.118.0 db query --linked -f supabase/migrations/0160_habilitacao_lembretes.sql
 npx supabase@2.118.0 db query --linked -f tools/smoke-habilitacao-lembretes.sql       # "SMOKE TEST OK" (longe das 08:45)
 npx supabase@2.118.0 functions deploy habilitacao-lembretes --project-ref fpyvdwpvxrubrkdwrqbs --no-verify-jwt --use-api
 
 # SÓ COM O OK DO JAVERSON — Parte B: arquivos gerados pelo servidor
-npx supabase@2.118.0 db query --linked -f supabase/migrations/0156_documentos_gerados.sql
+npx supabase@2.118.0 db query --linked -f supabase/migrations/0161_documentos_gerados.sql
 npx supabase@2.118.0 db query --linked -f tools/smoke-documentos-gerados.sql          # "SMOKE TEST OK"
 
 # SÓ COM O OK DO JAVERSON — Partes A (o "Atende?") e C (as ferramentas): as funções levam a árvore de _shared inteira
@@ -122,7 +128,7 @@ git log --oneline origin/master..master        # conferir o que vai subir
 git push origin master
 gh run list --limit 2                          # acompanhar o "Deploy frontend to Hostgator"
 
-# SÓ COM O OK DO JAVERSON — Carga inicial da biblioteca (LOGO depois da 0154 e do front, antes de usar as ferramentas;
+# SÓ COM O OK DO JAVERSON — Carga inicial da biblioteca (LOGO depois da 0159 e do front, antes de usar as ferramentas;
 # com a pasta dos documentos no PC; Node 23.6 ou mais novo)
 # o script só ESCREVE enviar.sh e carga.sql na pasta de saída: confira os dois arquivos antes de rodar
 node tools/habilitacao/carga-inicial.mjs --csv <inventario.csv> --pasta <pasta dos documentos> --empresa <uuid da empresa> --saida <pasta de saída fora do repositório>
@@ -135,14 +141,14 @@ Por que esta ordem, e o que fica de fora:
 - **Funções alteradas pela branch:** `habilitacao-lembretes` (nova; `--no-verify-jwt`), `mcp` (`--no-verify-jwt`) e
   `ia-processar` (**sem** `--no-verify-jwt`: o "Atende?" passou a ler a biblioteca). **`mcp-oauth` e
   `portal-cliente-dados` não mudaram nesta branch: não publicar.**
-- **0154 antes do `mcp` e do `ia-processar`:** eles leem `acervo_documento`. **0156 antes do `mcp`:** ele grava pela
-  função `conector_gravar_arquivo`. Antes da 0154, cada "Atende?" registra um erro no log e usa só o perfil da empresa
-  (sem a biblioteca); o erro some depois da 0154.
-- **O front não quebra antes das migrações, mas a ordem acima é a recomendada.** Antes da 0154, a aba "Documentos e
+- **0159 antes do `mcp` e do `ia-processar`:** eles leem `acervo_documento`. **0161 antes do `mcp`:** ele grava pela
+  função `conector_gravar_arquivo`. Antes da 0159, cada "Atende?" registra um erro no log e usa só o perfil da empresa
+  (sem a biblioteca); o erro some depois da 0159.
+- **O front não quebra antes das migrações, mas a ordem acima é a recomendada.** Antes da 0159, a aba "Documentos e
   certidões" **aparece**, só com o aviso vermelho "Não foi possível carregar os documentos" (sem a lista, sem o botão
   "Novo documento" e sem os cartões de lembretes e de modelos); o resto do Acervo Técnico continua funcionando. As
-  telas e gravações que dependem das colunas e tabelas da 0155 e da 0156 também só funcionam depois delas.
-- **A carga inicial** (a biblioteca começa vazia) vem **logo depois da 0154 e do front**, não por último e não "quando der".
+  telas e gravações que dependem das colunas e tabelas da 0160 e da 0161 também só funcionam depois delas.
+- **A carga inicial** (a biblioteca começa vazia) vem **logo depois da 0159 e do front**, não por último e não "quando der".
   Com a biblioteca parcial (basta UM documento ativo com validade), o "Atende?" e o Resumo do Acervo passam a ler a
   biblioteca **no lugar das certidões do perfil da empresa** (o perfil só vale com a biblioteca vazia): o que ainda não
   foi carregado aparece como faltando. Os nomes dos arquivos têm dado pessoal: o script recusa uma pasta de saída dentro do repositório, e a
@@ -266,7 +272,7 @@ Escolhas que apareceram durante a execução e não estavam no plano. O Javerson
   `gerador_indisponivel`, ver "Se algo der errado".
 - **Folga de processamento estreita no pior caso:** 12 declarações longas com o logo no limite levam uns 1,6 s num PC
   i3, para um limite de uns 2 s da função. Por isso o passo 6 do roteiro.
-- Antes da 0154, cada "Atende?" registra um erro no log e usa só o perfil (sem a biblioteca): some depois da 0154.
+- Antes da 0159, cada "Atende?" registra um erro no log e usa só o perfil (sem a biblioteca): some depois da 0159.
 - **Arquivo anexado à mão (sem `origem`) não conta no checklist** como documento da biblioteca, **nem como proposta,
   cronograma ou declaração**: o checklist só reconhece o que o SIGO gerou ou copiou (a `origem` do arquivo), e diz que
   falta o que foi enviado pela tela. Exceção: o edital enviado pela tela conta (arquivo na pasta "Edital").
@@ -288,7 +294,7 @@ Escolhas que apareceram durante a execução e não estavam no plano. O Javerson
 
 ## Se algo der errado
 
-- **As migrações são aditivas e inofensivas para o código antigo:** criam tabelas, funções, bucket e cron, e a 0156
+- **As migrações são aditivas e inofensivas para o código antigo:** criam tabelas, funções, bucket e cron, e a 0161
   também (1) acrescenta os tipos .docx, .doc, .xls e .zip aos aceitos do bucket `anexos-oportunidade` e (2) acrescenta
   duas colunas nulas (`origem` e `assinatura`) e um índice único parcial em `arquivo_oportunidade`. Nada disso muda o que
   o código antigo faz, e não é preciso desfazer. Para parar os lembretes:
@@ -322,7 +328,7 @@ Escolhas que apareceram durante a execução e não estavam no plano. O Javerson
   apaga).
 - **Tirar o conector de uma empresa na hora:** SaaS Admin → "Conector Claude" desligado (`empresa.conector_claude`).
 
-## Commits da branch (`git log --oneline 7b91500..HEAD`)
+## Commits da branch (`git log --oneline --first-parent 7b91500..HEAD`)
 
 Plano:
 
@@ -375,4 +381,7 @@ Parte C — ferramentas do conector:
 - `d980b65` fix(conector): checklist trava o pronto com análise vazia, registro sem Atende? e Atende? negativo
 - `333fff8` fix(habilitacao): onda final da revisão — checklist reconhece edital e declaração, prompt autossuficiente e ajustes
 - `39cd112` fix(habilitacao): smoke da 0155 sem trava em notificacao e anexar_habilitacao continua de onde parou
-- Ajustes finais de texto (limite de repetições no roteiro, versão da CLI no smoke, ordem de busca do teste de versões) (este commit)
+- `7a4ae58` docs(habilitacao): ajustes finais de texto do roteiro, do handoff e do teste de versões
+- `edd7c3c` chore(habilitacao): traz o origin/master com a auditoria financeira (0154–0158) para a branch
+- `8745536` chore(habilitacao): migrações da habilitação renumeradas para 0159, 0160 e 0161 (só os nomes dos arquivos)
+- Referências às migrações renumeradas no código, nos smokes, no plano e neste handoff (este commit)

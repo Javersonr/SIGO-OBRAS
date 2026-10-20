@@ -71,7 +71,7 @@ async function buscarTodos(consulta: Pagina): Promise<Obj[]> {
 
 /**
  * Documentos ativos da biblioteca de habilitação, no formato das certidões. A leitura não pode
- * derrubar o "Atende?": se falhar (a 0154 ainda não aplicada, por exemplo), vai ao log e a regra
+ * derrubar o "Atende?": se falhar (a 0159 ainda não aplicada, por exemplo), vai ao log e a regra
  * cai nas certidões do perfil.
  */
 async function documentosDaBiblioteca(fonte: FonteAcervo): Promise<Acervo["documentos"]> {

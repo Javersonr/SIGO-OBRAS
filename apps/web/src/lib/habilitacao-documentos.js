@@ -7,7 +7,7 @@
 
 const t = (id, rotulo, grupo, unico, essencial) => ({ id, rotulo, grupo, unico, essencial });
 
-/** A mesma lista (e ordem) do CHECK de acervo_documento.tipo (migração 0154). */
+/** A mesma lista (e ordem) do CHECK de acervo_documento.tipo (migração 0159). */
 export const TIPOS_DOCUMENTO = [
   t("cnd_federal", "CND Federal (Receita/PGFN)", "certidao", true, true),
   t("cnd_estadual", "CND Estadual", "certidao", false, true),
@@ -144,7 +144,7 @@ export function versoesAnteriores(doc, docs) {
 
 /**
  * Mensagem para a pessoa quando gravar na biblioteca falha. As recusas da cadeia de versões vêm do
- * banco (0154: 23505 do índice acervo_documento_substitui_uidx e 23514 do trigger); o resto cai em
+ * banco (0159: 23505 do índice acervo_documento_substitui_uidx e 23514 do trigger); o resto cai em
  * "Erro ao salvar" com o texto original, quando houver.
  */
 export function mensagemDeErroAoSalvar(erro) {

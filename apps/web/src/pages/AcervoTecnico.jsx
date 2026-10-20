@@ -78,7 +78,7 @@ export default function AcervoTecnico() {
         sigo.entities.AcervoProfissional.filter(filtro, { sort_by: "nome" }),
         sigo.entities.AcervoAtestado.filter(filtro, { sort_by: "ordem,data_inicio" }),
         sigo.entities.AcervoQuantitativo.filter(filtro, { sort_by: "ordem" }),
-        // a tabela só existe depois da migração 0154: a falha aqui não pode derrubar o resto da
+        // a tabela só existe depois da migração 0159: a falha aqui não pode derrubar o resto da
         // página, mas a aba precisa saber que a lista vazia é falha (falhaDocumentos), não "sem documentos"
         sigo.entities.AcervoDocumento.filter(filtro, { sort_by: "tipo,nome", limit: 2000 }).catch(
           (e) => {

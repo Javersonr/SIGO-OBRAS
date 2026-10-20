@@ -1,6 +1,6 @@
 /**
  * Lembretes de habilitação por WhatsApp: esvazia a fila gravada pelo banco
- * (alertar_documentos_habilitacao, migração 0155). Quem decide O QUE enviar é o banco; aqui só se
+ * (alertar_documentos_habilitacao, migração 0160). Quem decide O QUE enviar é o banco; aqui só se
  * envia o que está na fila, uma vez cada. Puro: a fila, o envio e o telefone entram injetados.
  *
  * Uma mensagem não sai duas vezes: quem vai enviar RESERVA o item antes (reivindicado_em), e outra

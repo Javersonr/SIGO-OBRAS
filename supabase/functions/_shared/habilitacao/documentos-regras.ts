@@ -23,7 +23,7 @@ const t = (
   essencial: boolean
 ): TipoDocumento => ({ id, rotulo, grupo, unico, essencial });
 
-/** A mesma lista (e ordem) do CHECK de acervo_documento.tipo (migração 0154). */
+/** A mesma lista (e ordem) do CHECK de acervo_documento.tipo (migração 0159). */
 export const TIPOS_DOCUMENTO: readonly TipoDocumento[] = [
   t("cnd_federal", "CND Federal (Receita/PGFN)", "certidao", true, true),
   t("cnd_estadual", "CND Estadual", "certidao", false, true),

@@ -1,8 +1,10 @@
 -- ============================================================================
--- 0155_habilitacao_lembretes.sql — lembretes de vencimento dos documentos de
+-- 0160_habilitacao_lembretes.sql — lembretes de vencimento dos documentos de
 -- habilitação (13/10/2026)
 --   (spec docs/superpowers/specs/2026-10-09-habilitacao-documentos-automaticos-design.md §2,
 --    "Rotina mensal"; decisão de 25/09: sino e WhatsApp para os usuários escolhidos)
+--   Renumerada em 20/10/2026 (era 0155): a auditoria financeira foi publicada em 17/10
+--   com 0154–0158. Nunca tinha sido aplicada com o número antigo.
 --
 -- Por quê: certidão vencida inabilita a empresa na licitação. Todo dia de manhã o banco
 -- confere a biblioteca (acervo_documento) e avisa quem a empresa escolheu, N dias antes do
@@ -10,7 +12,7 @@
 --
 --   habilitacao_config          por empresa: dias de antecedência, quem recebe (até 200 e-mails) e
 --                               se vai WhatsApp. Ler exige Oportunidades → Lista; gravar exige
---                               Oportunidades → Lista → editar (como a biblioteca, 0154).
+--                               Oportunidades → Lista → editar (como a biblioteca, 0159).
 --   habilitacao_lembrete_fila   mensagens de WhatsApp a enviar (só o servidor lê e grava), com a
 --                               reserva de quem está enviando (reivindicado_em).
 --   habilitacao_usuarios_da_empresa()  RPC da tela (cartão "Quem recebe"): os usuários ativos da
@@ -95,7 +97,7 @@ revoke all on table public.habilitacao_config from anon, authenticated;
 grant select, insert, update on table public.habilitacao_config to authenticated;
 grant all on table public.habilitacao_config to service_role;
 
--- Permissão da tela, conferida no banco (somada à policy da empresa), como na 0154: a lista de
+-- Permissão da tela, conferida no banco (somada à policy da empresa), como na 0159: a lista de
 -- quem recebe o lembrete só aparece para quem vê a tela.
 drop policy if exists habilitacao_config_ler_com_permissao on public.habilitacao_config;
 create policy habilitacao_config_ler_com_permissao on public.habilitacao_config

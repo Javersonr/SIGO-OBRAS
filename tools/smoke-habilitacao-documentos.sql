@@ -1,5 +1,5 @@
 -- ============================================================================
--- smoke-habilitacao-documentos.sql — valida a 0154 (biblioteca de habilitação)
+-- smoke-habilitacao-documentos.sql — valida a 0159 (biblioteca de habilitação)
 --
 -- Roda TUDO dentro de uma transação que termina em ROLLBACK: cria documentos
 -- sintéticos ("Smoke …") e dois vínculos de usuário sintéticos (e-mails
@@ -35,7 +35,7 @@
 --  13. um usuário sem vínculo na empresa não lê nem grava.
 -- Nenhum UUID fixo: as empresas são escolhidas em tempo de execução.
 --
--- Como rodar (com a 0154 já aplicada; quem roda é o Javerson):
+-- Como rodar (com a 0159 já aplicada; quem roda é o Javerson):
 --   npx supabase@2.118.0 db query --linked -f tools/smoke-habilitacao-documentos.sql
 -- Deve terminar imprimindo "SMOKE TEST OK".
 -- ============================================================================
@@ -96,7 +96,7 @@ declare
   r record;
 begin
   if to_regclass('public.acervo_documento') is null then
-    raise exception 'Falta a migração 0154 (public.acervo_documento): aplique antes de rodar este smoke.';
+    raise exception 'Falta a migração 0159 (public.acervo_documento): aplique antes de rodar este smoke.';
   end if;
 
   select e.id into v_empresa from public.empresa e where e.deleted_at is null order by e.created_at limit 1;
@@ -351,6 +351,6 @@ end;
 $$;
 
 -- só chega aqui se o bloco acima terminou sem erro
-select 'SMOKE TEST OK: biblioteca de habilitação (0154)' as res;
+select 'SMOKE TEST OK: biblioteca de habilitação (0159)' as res;
 
 rollback;

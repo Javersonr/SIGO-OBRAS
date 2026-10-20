@@ -1,6 +1,8 @@
 -- ============================================================================
--- 0154_acervo_documento.sql — biblioteca de documentos de habilitação (13/10/2026)
+-- 0159_acervo_documento.sql — biblioteca de documentos de habilitação (13/10/2026)
 --   (spec docs/superpowers/specs/2026-10-09-habilitacao-documentos-automaticos-design.md §2)
+--   Renumerada em 20/10/2026 (era 0154): a auditoria financeira foi publicada em 17/10
+--   com 0154–0158. Nunca tinha sido aplicada com o número antigo.
 --
 -- Por quê: as certidões e os documentos da empresa (CND, FGTS, CNDT, falência, contrato
 -- social, balanço, procurações…) viviam só no OneDrive, e o acervo guardava a validade em

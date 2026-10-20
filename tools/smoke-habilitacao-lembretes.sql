@@ -1,5 +1,5 @@
 -- ============================================================================
--- smoke-habilitacao-lembretes.sql — valida a 0155 (lembretes de vencimento da habilitação)
+-- smoke-habilitacao-lembretes.sql — valida a 0160 (lembretes de vencimento da habilitação)
 --
 -- Roda TUDO dentro de uma transação que termina em ROLLBACK. Cria TRÊS EMPRESAS SINTÉTICAS
 -- ("Smoke Lembretes A", "B" e "C"), vínculos de usuário sintéticos (e-mails @exemplo.test,
@@ -72,7 +72,7 @@
 -- começar. Não rode na hora do cron do alerta (08:45 de Brasília): os passos 2, 3 e 6 comparam o
 -- número de avisos antes e depois de cada chamada.
 --
--- Como rodar (com a 0154 e a 0155 já aplicadas; quem roda é o Javerson):
+-- Como rodar (com a 0159 e a 0160 já aplicadas; quem roda é o Javerson):
 --   npx supabase@2.118.0 db query --linked -f tools/smoke-habilitacao-lembretes.sql
 -- Deve terminar imprimindo "SMOKE TEST OK".
 -- ============================================================================
@@ -170,14 +170,14 @@ declare
   r record;
 begin
   if to_regclass('public.acervo_documento') is null then
-    raise exception 'Falta a migração 0154 (public.acervo_documento): aplique antes de rodar este smoke.';
+    raise exception 'Falta a migração 0159 (public.acervo_documento): aplique antes de rodar este smoke.';
   end if;
   if to_regclass('public.habilitacao_config') is null
      or to_regclass('public.habilitacao_lembrete_fila') is null
      or to_regprocedure('public.alertar_documentos_habilitacao()') is null
      or to_regprocedure('public.habilitacao_lembretes_acionar()') is null
      or to_regprocedure('public.habilitacao_usuarios_da_empresa()') is null then
-    raise exception 'Falta a migração 0155 (lembretes de habilitação), ou ela está numa versão anterior: aplique antes de rodar este smoke.';
+    raise exception 'Falta a migração 0160 (lembretes de habilitação), ou ela está numa versão anterior: aplique antes de rodar este smoke.';
   end if;
 
   -- as funções do alerta só aceitam o servidor: sem token e fora do papel authenticator (0110:27-35)
@@ -821,29 +821,29 @@ begin
   -- O comportamento "todas as empresas falham => a função falha" não se prova aqui sem derrubar a criação de
   -- avisos de TODAS as empresas, o que exigiria um gatilho em public.notificacao (a tabela de avisos do sistema
   -- inteiro) e a trava que ele pede: não se faz num teste rodado em produção. Então o smoke confere que o texto
-  -- da função aplicada traz os trechos que só existem na versão corrigida (0155): a contagem das empresas e das
+  -- da função aplicada traz os trechos que só existem na versão corrigida (0160): a contagem das empresas e das
   -- falhas, a comparação entre as duas e a mensagem da exceção. Se a base ainda tem uma versão anterior da
-  -- função, aplique de novo a 0155 e rode este smoke outra vez.
+  -- função, aplique de novo a 0160 e rode este smoke outra vez.
   v_def := pg_get_functiondef('public.alertar_documentos_habilitacao()'::regprocedure);
   if strpos(v_def, 'v_empresas := v_empresas + 1;') = 0 then
-    raise exception 'FALHOU: a função aplicada não conta as empresas processadas (falta "v_empresas := v_empresas + 1;"): é uma versão anterior da 0155';
+    raise exception 'FALHOU: a função aplicada não conta as empresas processadas (falta "v_empresas := v_empresas + 1;"): é uma versão anterior da 0160';
   end if;
   if strpos(v_def, 'v_falhas := v_falhas + 1;') = 0 or strpos(v_def, 'v_ultimo_erro := sqlerrm;') = 0 then
-    raise exception 'FALHOU: a função aplicada não conta as falhas por empresa nem guarda o último erro: é uma versão anterior da 0155';
+    raise exception 'FALHOU: a função aplicada não conta as falhas por empresa nem guarda o último erro: é uma versão anterior da 0160';
   end if;
   if strpos(v_def, 'if v_empresas > 0 and v_falhas = v_empresas then') = 0 then
     raise exception 'FALHOU: a função aplicada não compara as falhas com o total de empresas (falta "if v_empresas > 0 and v_falhas = v_empresas then"): com todas as empresas falhando o job apareceria como sucesso';
   end if;
   if strpos(v_def, 'alertar_documentos_habilitacao: as % empresa(s) a avisar falharam; última mensagem: %') = 0 then
-    raise exception 'FALHOU: a função aplicada não tem a exceção "as N empresa(s) a avisar falharam; última mensagem: …": é uma versão anterior da 0155';
+    raise exception 'FALHOU: a função aplicada não tem a exceção "as N empresa(s) a avisar falharam; última mensagem: …": é uma versão anterior da 0160';
   end if;
-  raise notice '[11] a função aplicada falha de propósito quando todas as empresas falham (versão corrigida da 0155)';
+  raise notice '[11] a função aplicada falha de propósito quando todas as empresas falham (versão corrigida da 0160)';
 
   raise notice 'SMOKE TEST OK';
 end;
 $$;
 
 -- só chega aqui se o bloco acima terminou sem erro
-select 'SMOKE TEST OK: lembretes de habilitação (0155)' as res;
+select 'SMOKE TEST OK: lembretes de habilitação (0160)' as res;
 
 rollback;

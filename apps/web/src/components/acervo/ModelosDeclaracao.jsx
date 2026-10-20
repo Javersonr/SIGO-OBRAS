@@ -50,10 +50,10 @@ function lerLinhas(empresaId) {
 /**
  * Cartão "Modelos de declaração" da aba Documentos e certidões: os seis modelos padrão do SIGO (que
  * valem para toda empresa sem gravar nada) e os modelos próprios. A linha em modelo_declaracao
- * (migração 0156) só nasce quando a empresa edita um padrão ou cria um modelo; "Restaurar o padrão"
+ * (migração 0161) só nasce quando a empresa edita um padrão ou cria um modelo; "Restaurar o padrão"
  * apaga essa linha. O Claude usa estes modelos ao gerar as declarações da licitação.
  * podeEditar=false (padrão) → só leitura: sem criar, editar, restaurar nem excluir.
- * Se a leitura falha (a tabela só existe depois da 0156), o cartão não aparece.
+ * Se a leitura falha (a tabela só existe depois da 0161), o cartão não aparece.
  */
 export default function ModelosDeclaracao({ empresaId, podeEditar = false }) {
   const [estado, setEstado] = useState("carregando"); // carregando | indisponivel | pronto

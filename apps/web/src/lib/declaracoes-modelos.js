@@ -226,7 +226,7 @@ export function chaveDoTitulo(titulo) {
   return `${normalizado.slice(0, 31).replace(/_+$/, "")}_${hashFnv1a(normalizado)}`;
 }
 
-/** Mesma regra do CHECK de modelo_declaracao.chave (migração 0156) e da chave aceita pelo conector. */
+/** Mesma regra do CHECK de modelo_declaracao.chave (migração 0161) e da chave aceita pelo conector. */
 const CHAVE_VALIDA = /^[a-z][a-z0-9_]{1,59}$/;
 
 /** Chaves dos seis modelos padrão: um modelo NOVO não pode nascer com uma delas. */
@@ -278,7 +278,7 @@ export function validarModelo(form, chavesEmUso) {
 }
 
 /**
- * Mensagem para a pessoa quando gravar um modelo falha. As recusas vêm do banco (0156: índice único
+ * Mensagem para a pessoa quando gravar um modelo falha. As recusas vêm do banco (0161: índice único
  * modelo_declaracao_chave_uidx e os CHECKs da tabela, mais a RLS da permissão); o resto cai em
  * "Erro ao salvar" com o texto original, quando houver. O texto das validações da tela
  * (validarModelo) é o mesmo dos CHECKs de chave, para a pessoa ler a mesma coisa nos dois casos.

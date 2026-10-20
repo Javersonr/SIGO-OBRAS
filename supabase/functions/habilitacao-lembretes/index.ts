@@ -1,6 +1,6 @@
 /**
  * habilitacao-lembretes — envia por WhatsApp os lembretes de vencimento que o banco enfileirou
- * (alertar_documentos_habilitacao, migração 0155). Acionada pelo pg_cron via pg_net, sem
+ * (alertar_documentos_habilitacao, migração 0160). Acionada pelo pg_cron via pg_net, sem
  * credencial, pelo alerta diário e pelo job de reenvio (a cada 30 minutos, enquanto houver mensagem
  * pendente). A função NÃO recebe nada (ignora o corpo) e só esvazia a fila: chamar de fora não envia
  * nada além do que o banco já decidiu. A resposta é só { success: true } (ou o erro genérico): como a

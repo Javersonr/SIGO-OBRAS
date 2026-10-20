@@ -83,9 +83,10 @@ Valem para todas as tasks. Os valores são exatos.
 
 **Migrações**
 
-- Usar **0154**, **0155** e **0156** (as próximas livres; `0125`–`0129` seguem reservadas a outra branch, que será
-  renumerada para `0160`–`0164`). Antes do commit de cada migração, conferir de novo `ls supabase/migrations` e
-  `git ls-tree -r --name-only master supabase/migrations | tail -3`.
+- Usar **0159**, **0160** e **0161**. (Nota de 20/10/2026: o plano foi escrito com 0154, 0155 e 0156; a auditoria
+  financeira foi publicada em 17/10 com 0154–0158, e as três desta frente foram renumeradas antes de qualquer
+  aplicação. 0170 está reservada para as atividades interativas.) Antes de aplicar, conferir com `git fetch origin` e
+  `git ls-tree -r --name-only origin/master supabase/migrations | tail -8`.
 - Arquivo novo, idempotente, cabeçalho em pt-BR com o porquê, terminando em `select 'ok' as res;`.
 - Tabela de negócio: `id uuid primary key default gen_random_uuid()`, `empresa_id uuid not null`, `created_at`,
   `updated_at` (`select attach_updated_at_trigger('<t>');`), `deleted_at`; RLS com `apply_tenant_rls` protegido por
@@ -194,16 +195,16 @@ Regras comuns de execução:
 | --------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | `supabase/functions/_shared/habilitacao/documentos-regras.ts` (+test) | Tipos de documento, situação da validade, certidões para o "Atende?"     |
 | `apps/web/src/lib/habilitacao-documentos.js` (+test, +paridade)       | Espelho da tela: tipos, situação, pacote do mês, substituição, histórico |
-| `supabase/migrations/0154_acervo_documento.sql`                       | Tabela, trigger de versão, bucket `habilitacao` e policies               |
-| `tools/smoke-habilitacao-documentos.sql`                              | Smoke da 0154                                                            |
+| `supabase/migrations/0159_acervo_documento.sql`                       | Tabela, trigger de versão, bucket `habilitacao` e policies               |
+| `tools/smoke-habilitacao-documentos.sql`                              | Smoke da 0159                                                            |
 | `apps/web/src/components/acervo/DocumentosHabilitacao.jsx`            | Aba "Documentos e certidões": pacote do mês, lista e histórico           |
 | `apps/web/src/components/acervo/DocumentoHabilitacaoSheet.jsx`        | Gaveta de cadastro, edição e nova versão, com o upload                   |
 | `apps/web/src/pages/AcervoTecnico.jsx` (modificar)                    | Aba nova, carga de `AcervoDocumento` e `?aba=`                           |
 | `supabase/functions/_shared/edital/acervo.ts` (modificar)             | `carregarAcervo` lê a biblioteca                                         |
 | `supabase/functions/_shared/edital/edital-regras.ts` (modificar)      | Pendência e bloco do prompt usam `acervo.documentos`                     |
 | `apps/web/src/components/acervo/ResumoAcervo.jsx` (modificar)         | "Validades a providenciar" inclui a biblioteca                           |
-| `supabase/migrations/0155_habilitacao_lembretes.sql`                  | Configuração, fila do WhatsApp, função do alerta e cron                  |
-| `tools/smoke-habilitacao-lembretes.sql`                               | Smoke da 0155                                                            |
+| `supabase/migrations/0160_habilitacao_lembretes.sql`                  | Configuração, fila do WhatsApp, função do alerta e cron                  |
+| `tools/smoke-habilitacao-lembretes.sql`                               | Smoke da 0160                                                            |
 | `apps/web/src/components/acervo/LembretesHabilitacao.jsx`             | Cartão "Lembretes" (dias, destinatários, WhatsApp)                       |
 | `supabase/functions/_shared/habilitacao/lembretes-nucleo.ts` (+test)  | Esvaziar a fila do WhatsApp (puro)                                       |
 | `supabase/functions/habilitacao-lembretes/index.ts`                   | Função chamada pelo cron: liga a fila ao envio                           |
@@ -226,8 +227,8 @@ Regras comuns de execução:
 | `supabase/functions/_shared/documentos/zip-store.ts` (+test)          | ZIP sem compressão (CRC32 e diretório central)                       |
 | `supabase/functions/_shared/documentos/declaracao-docx.ts` (+test)    | .docx da declaração                                                  |
 | `supabase/functions/_shared/documentos/declaracao-pdf.ts` (+test)     | PDF da declaração (retrato, papel timbrado, bloco de assinatura)     |
-| `supabase/migrations/0156_documentos_gerados.sql`                     | `origem`, `assinatura`, MIMEs do bucket, `modelo_declaracao` e a RPC |
-| `tools/smoke-documentos-gerados.sql`                                  | Smoke da 0156                                                        |
+| `supabase/migrations/0161_documentos_gerados.sql`                     | `origem`, `assinatura`, MIMEs do bucket, `modelo_declaracao` e a RPC |
+| `tools/smoke-documentos-gerados.sql`                                  | Smoke da 0161                                                        |
 | `apps/web/src/lib/arquivo-assinatura.js` (+test)                      | Regras de "falta assinar" e do arquivo assinado                      |
 | `apps/web/src/components/oportunidades/OportunidadeDetalhe.jsx` (mod) | Selo "falta assinar", "Enviar assinado" e "Baixar"                   |
 | `apps/web/src/components/acervo/ModelosDeclaracao.jsx`                | Editor dos modelos de declaração                                     |
@@ -286,7 +287,7 @@ Regras comuns de execução:
 
 Tabelas e funções novas (o SQL completo está nas Tasks A2, A5 e B5):
 
-- **0154** `public.acervo_documento`: `id`, `empresa_id`, `tipo` (CHECK com os 18 ids), `nome` (1 a 200),
+- **0159** `public.acervo_documento`: `id`, `empresa_id`, `tipo` (CHECK com os 18 ids), `nome` (1 a 200),
   `arquivo_ref` (`not null`, CHECK `arquivo_ref like 'habilitacao/' || empresa_id::text || '/%'`), `numero`,
   `orgao_emissor`, `emissao date`, `validade date`, `observacao`, `substitui_id` (FK na própria tabela), `ativo boolean
 not null default true`, `created_at`, `updated_at`, `deleted_at`. Trigger `referencias_da_empresa` em `substitui_id`;
@@ -294,12 +295,12 @@ not null default true`, `created_at`, `updated_at`, `deleted_at`. Trigger `refer
   `ativo = false` no substituído). Bucket `habilitacao` (privado, 50 MB, PDF/JPEG/PNG). Policies restritivas na tabela
   e no bucket: ler exige `tem_permissao('Oportunidades', 'Lista')`; gravar exige
   `tem_permissao('Oportunidades', 'Lista', 'editar')`.
-- **0155** `public.habilitacao_config` (uma linha viva por empresa: `dias_antecedencia int default 10` de 1 a 90,
+- **0160** `public.habilitacao_config` (uma linha viva por empresa: `dias_antecedencia int default 10` de 1 a 90,
   `destinatarios jsonb` lista de e-mails, `whatsapp boolean default false`); `public.habilitacao_lembrete_fila` (só
   servidor: `usuario_email`, `telefone`, `texto`, `dedup_key unique`, `criado_em`, `enviado_em`, `tentativas`, `erro`);
   `public.alertar_documentos_habilitacao() returns integer` (só servidor) e o job `alertar_documentos_habilitacao` às
   `45 11 * * *` (08:45 de Brasília).
-- **0156** `arquivo_oportunidade.origem text` (até 200), `arquivo_oportunidade.assinatura text` (`'pendente'` ou
+- **0161** `arquivo_oportunidade.origem text` (até 200), `arquivo_oportunidade.assinatura text` (`'pendente'` ou
   `'assinado'`), índice único parcial `(oportunidade_id, origem) where origem is not null and deleted_at is null`;
   bucket `anexos-oportunidade` aceita também .docx, .doc, .xls e .zip; `public.modelo_declaracao` (`chave`, `titulo`,
   `texto`, `ativo`, `ordem`; única por `(empresa_id, chave)` entre as vivas); RPC só do servidor
@@ -747,7 +748,7 @@ ficam como "falta assinar". Assine no gov.br e use "Enviar assinado" na aba Arqu
 ## Parte A — Biblioteca de documentos e certidões (Tasks A1–A7)
 
 Entrega sozinha: a aba "Documentos e certidões" do Acervo Técnico, com upload, versões, pacote do mês, lembretes e o
-"Atende?" lendo a validade dela. Produção da parte A: migrações 0154 e 0155 (com os smokes), deploy de `mcp`,
+"Atende?" lendo a validade dela. Produção da parte A: migrações 0159 e 0160 (com os smokes), deploy de `mcp`,
 `ia-processar` e `habilitacao-lembretes`, push do front e a carga inicial.
 
 ### Task A1: Regras da biblioteca (servidor e tela) com paridade
@@ -924,7 +925,7 @@ const t = (
   essencial: boolean
 ): TipoDocumento => ({ id, rotulo, grupo, unico, essencial });
 
-/** A mesma lista (e ordem) do CHECK de acervo_documento.tipo (migração 0154). */
+/** A mesma lista (e ordem) do CHECK de acervo_documento.tipo (migração 0159). */
 export const TIPOS_DOCUMENTO: readonly TipoDocumento[] = [
   t("cnd_federal", "CND Federal (Receita/PGFN)", "certidao", true, true),
   t("cnd_estadual", "CND Estadual", "certidao", false, true),
@@ -1319,11 +1320,11 @@ git commit -m "feat(habilitacao): regras da biblioteca de documentos, na tela e 
 
 ---
 
-### Task A2: Migração 0154 — `acervo_documento` e bucket `habilitacao`
+### Task A2: Migração 0159 — `acervo_documento` e bucket `habilitacao`
 
 **Files:**
 
-- Create: `supabase/migrations/0154_acervo_documento.sql`
+- Create: `supabase/migrations/0159_acervo_documento.sql`
 - Create: `tools/smoke-habilitacao-documentos.sql`
 
 **Interfaces:**
@@ -1335,15 +1336,15 @@ git commit -m "feat(habilitacao): regras da biblioteca de documentos, na tela e 
 - [ ] **Step 1: Conferir o número da migração**
 
 Run: `ls supabase/migrations | tail -3 && git ls-tree -r --name-only master supabase/migrations | tail -3`
-Expected: a última é `0153_conector_orcamento_atomico.sql`. Se já existir `0154`, pare e avise o controlador.
+Expected: a última é `0153_conector_orcamento_atomico.sql`. Se já existir `0159`, pare e avise o controlador.
 
 - [ ] **Step 2: Escrever a migração**
 
-`supabase/migrations/0154_acervo_documento.sql`:
+`supabase/migrations/0159_acervo_documento.sql`:
 
 ```sql
 -- ============================================================================
--- 0154_acervo_documento.sql — biblioteca de documentos de habilitação (13/10/2026)
+-- 0159_acervo_documento.sql — biblioteca de documentos de habilitação (13/10/2026)
 --   (spec docs/superpowers/specs/2026-10-09-habilitacao-documentos-automaticos-design.md §2)
 --
 -- Por quê: as certidões e os documentos da empresa (CND, FGTS, CNDT, falência, contrato
@@ -1548,7 +1549,7 @@ select 'ok' as res;
 
 ```sql
 -- ============================================================================
--- smoke-habilitacao-documentos.sql — valida a 0154 (biblioteca de habilitação)
+-- smoke-habilitacao-documentos.sql — valida a 0159 (biblioteca de habilitação)
 --
 -- Roda TUDO dentro de uma transação que termina em ROLLBACK: cria documentos
 -- sintéticos ("Smoke …") para a empresa mais antiga da base e confere:
@@ -1562,7 +1563,7 @@ select 'ok' as res;
 --   8. um usuário sem vínculo na empresa não lê nem grava.
 -- Nenhum UUID fixo: as empresas são escolhidas em tempo de execução. Nada é persistido.
 --
--- Como rodar (com a 0154 já aplicada; quem roda é o Javerson):
+-- Como rodar (com a 0159 já aplicada; quem roda é o Javerson):
 --   supabase db query --linked -f tools/smoke-habilitacao-documentos.sql
 -- Deve terminar imprimindo "SMOKE TEST OK".
 -- ============================================================================
@@ -1692,7 +1693,7 @@ end;
 $$;
 
 -- só chega aqui se o bloco acima terminou sem erro
-select 'SMOKE TEST OK: biblioteca de habilitação (0154)' as res;
+select 'SMOKE TEST OK: biblioteca de habilitação (0159)' as res;
 
 rollback;
 ```
@@ -1702,7 +1703,7 @@ rollback;
 Confira lendo, item a item:
 
 1. os 18 ids do CHECK são os mesmos de `IDS_TIPO_DOCUMENTO` (Task A1), na mesma grafia:
-   `grep -o "'[a-z_]*'" supabase/migrations/0154_acervo_documento.sql | sort -u` mostra os 18;
+   `grep -o "'[a-z_]*'" supabase/migrations/0159_acervo_documento.sql | sort -u` mostra os 18;
 2. todo `create` tem `if not exists` ou é precedido de `drop … if exists`;
 3. a migração termina em `select 'ok' as res;` e o smoke em `rollback;`;
 4. nenhum UUID, e-mail real ou nome próprio nos dois arquivos.
@@ -1710,12 +1711,12 @@ Confira lendo, item a item:
 - [ ] **Step 5: Formato e commit**
 
 ```bash
-npx prettier --check supabase/migrations/0154_acervo_documento.sql tools/smoke-habilitacao-documentos.sql || true   # .sql não é formatado pelo prettier: só confira que não acusa erro de parse
-git add supabase/migrations/0154_acervo_documento.sql tools/smoke-habilitacao-documentos.sql
-git commit -m "feat(habilitacao): tabela acervo_documento e bucket habilitacao (0154)" -m "Biblioteca de documentos de habilitação com versões (substitui_id) e permissão da tela conferida no banco.
+npx prettier --check supabase/migrations/0159_acervo_documento.sql tools/smoke-habilitacao-documentos.sql || true   # .sql não é formatado pelo prettier: só confira que não acusa erro de parse
+git add supabase/migrations/0159_acervo_documento.sql tools/smoke-habilitacao-documentos.sql
+git commit -m "feat(habilitacao): tabela acervo_documento e bucket habilitacao (0159)" -m "Biblioteca de documentos de habilitação com versões (substitui_id) e permissão da tela conferida no banco.
 
 Produção (só com o OK do Javerson), nesta ordem:
-  npx supabase@2.118.0 db query --linked -f supabase/migrations/0154_acervo_documento.sql
+  npx supabase@2.118.0 db query --linked -f supabase/migrations/0159_acervo_documento.sql
   npx supabase@2.118.0 db query --linked -f tools/smoke-habilitacao-documentos.sql   # SMOKE TEST OK
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -1752,7 +1753,7 @@ Em `apps/web/src/pages/AcervoTecnico.jsx`:
 1. Importar o componente: `import DocumentosHabilitacao from "@/components/acervo/DocumentosHabilitacao";`.
 2. Novo estado `const [documentos, setDocumentos] = useState([]);`.
 3. Na carga (o `Promise.all` da linha 56), acrescentar a quinta leitura e guardar o resultado. A leitura da biblioteca
-   não pode derrubar o resto da página (a tabela só existe depois da 0154): use `.catch`:
+   não pode derrubar o resto da página (a tabela só existe depois da 0159): use `.catch`:
 
 ```jsx
 const [perfis, profs, docs, quants, habilitacao] = await Promise.all([
@@ -1954,7 +1955,7 @@ Expected: `no-undef` sem erro, lint e build OK, Vitest verde (131 arquivos), pre
 
 ```bash
 git add apps/web/src/components/acervo/DocumentosHabilitacao.jsx apps/web/src/components/acervo/DocumentoHabilitacaoSheet.jsx apps/web/src/pages/AcervoTecnico.jsx
-git commit -m "feat(habilitacao): aba Documentos e certidões no Acervo Técnico" -m "Lista por grupo, pacote do mês (vencidos e a vencer em 30 dias), versões anteriores e a gaveta de cadastro com upload no bucket habilitacao. Depende da migração 0154.
+git commit -m "feat(habilitacao): aba Documentos e certidões no Acervo Técnico" -m "Lista por grupo, pacote do mês (vencidos e a vencer em 30 dias), versões anteriores e a gaveta de cadastro com upload no bucket habilitacao. Depende da migração 0159.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -2108,7 +2109,7 @@ export function certidoesDoAcervo(acervo: Acervo): unknown[] {
 ```ts
 /**
  * Documentos ativos da biblioteca de habilitação, no formato das certidões. A leitura não pode
- * derrubar o "Atende?": se falhar (a 0154 ainda não aplicada, por exemplo), vai ao log e a regra
+ * derrubar o "Atende?": se falhar (a 0159 ainda não aplicada, por exemplo), vai ao log e a regra
  * cai nas certidões do perfil.
  */
 async function documentosDaBiblioteca(fonte: FonteAcervo): Promise<Acervo["documentos"]> {
@@ -2164,7 +2165,7 @@ npx prettier --check supabase/functions/_shared/conector/camada-empresa.ts supab
 git add supabase/functions/_shared/conector/camada-empresa.ts supabase/functions/_shared/conector/camada-empresa.test.ts supabase/functions/_shared/edital/acervo.ts supabase/functions/_shared/edital/acervo.test.ts supabase/functions/_shared/edital/edital-regras.ts supabase/functions/_shared/edital/edital-regras.test.ts apps/web/src/components/acervo/ResumoAcervo.jsx
 git commit -m "feat(habilitacao): Atende? e Resumo leem a validade da biblioteca de documentos" -m "carregarAcervo passa a ler acervo_documento; a pendência de certidão vencida usa a biblioteca e cai em acervo_perfil.certidoes quando ela está vazia ou a leitura falha.
 
-Produção (só com o OK do Javerson, depois da 0154):
+Produção (só com o OK do Javerson, depois da 0159):
   npx supabase@2.118.0 functions deploy mcp --project-ref <ref> --no-verify-jwt --use-api
   npx supabase@2.118.0 functions deploy ia-processar --project-ref <ref> --use-api
 
@@ -2175,11 +2176,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
-### Task A5: Lembretes de vencimento — migração 0155 e o cartão "Lembretes"
+### Task A5: Lembretes de vencimento — migração 0160 e o cartão "Lembretes"
 
 **Files:**
 
-- Create: `supabase/migrations/0155_habilitacao_lembretes.sql`
+- Create: `supabase/migrations/0160_habilitacao_lembretes.sql`
 - Create: `tools/smoke-habilitacao-lembretes.sql`
 - Create: `apps/web/src/lib/habilitacao-lembretes.js`
 - Create: `apps/web/src/lib/habilitacao-lembretes.test.js`
@@ -2196,11 +2197,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Migração**
 
-`supabase/migrations/0155_habilitacao_lembretes.sql`:
+`supabase/migrations/0160_habilitacao_lembretes.sql`:
 
 ```sql
 -- ============================================================================
--- 0155_habilitacao_lembretes.sql — lembretes de vencimento dos documentos de
+-- 0160_habilitacao_lembretes.sql — lembretes de vencimento dos documentos de
 -- habilitação (13/10/2026)
 --   (spec docs/superpowers/specs/2026-10-09-habilitacao-documentos-automaticos-design.md §2,
 --    "Rotina mensal"; decisão de 25/09: sino e WhatsApp para os usuários escolhidos)
@@ -2452,7 +2453,7 @@ whatsapp = true)` (o e-mail é lido em tempo de execução de `usuario_empresa`)
 Para o passo 2 não disparar o `net.http_post` de verdade dentro do smoke, o smoke roda os passos 2 e 3 **sem**
 `whatsapp`; no passo 4, a chamada entra no bloco `exception` se o `pg_net` falhar, e, se não falhar, a requisição só é
 enviada no COMMIT da transação — que nunca acontece (ROLLBACK). Termina com
-`select 'SMOKE TEST OK: lembretes de habilitação (0155)' as res;` e `rollback;`.
+`select 'SMOKE TEST OK: lembretes de habilitação (0160)' as res;` e `rollback;`.
 
 - [ ] **Step 3: Lib da tela (TDD)**
 
@@ -2518,11 +2519,11 @@ depois da lista de documentos.
 cd apps/web && npx eslint --rule "no-undef: error" src/components/acervo/LembretesHabilitacao.jsx src/components/acervo/DocumentosHabilitacao.jsx && cd ../..
 npm run lint && npm run build && npm test --workspace=apps/web     # 132 arquivos
 npx prettier --check apps/web/src/lib/habilitacao-lembretes.js apps/web/src/lib/habilitacao-lembretes.test.js apps/web/src/components/acervo/LembretesHabilitacao.jsx apps/web/src/components/acervo/DocumentosHabilitacao.jsx
-git add supabase/migrations/0155_habilitacao_lembretes.sql tools/smoke-habilitacao-lembretes.sql apps/web/src/lib/habilitacao-lembretes.js apps/web/src/lib/habilitacao-lembretes.test.js apps/web/src/components/acervo/LembretesHabilitacao.jsx apps/web/src/components/acervo/DocumentosHabilitacao.jsx
-git commit -m "feat(habilitacao): lembretes de vencimento no sino, com configuração na aba (0155)" -m "Aviso diário N dias antes (padrão 10), 3 dias antes e no dia, para os usuários escolhidos ou, sem escolha, donos e Admins. O WhatsApp fica na fila para a função habilitacao-lembretes.
+git add supabase/migrations/0160_habilitacao_lembretes.sql tools/smoke-habilitacao-lembretes.sql apps/web/src/lib/habilitacao-lembretes.js apps/web/src/lib/habilitacao-lembretes.test.js apps/web/src/components/acervo/LembretesHabilitacao.jsx apps/web/src/components/acervo/DocumentosHabilitacao.jsx
+git commit -m "feat(habilitacao): lembretes de vencimento no sino, com configuração na aba (0160)" -m "Aviso diário N dias antes (padrão 10), 3 dias antes e no dia, para os usuários escolhidos ou, sem escolha, donos e Admins. O WhatsApp fica na fila para a função habilitacao-lembretes.
 
-Produção (só com o OK do Javerson, depois da 0154):
-  npx supabase@2.118.0 db query --linked -f supabase/migrations/0155_habilitacao_lembretes.sql
+Produção (só com o OK do Javerson, depois da 0159):
+  npx supabase@2.118.0 db query --linked -f supabase/migrations/0160_habilitacao_lembretes.sql
   npx supabase@2.118.0 db query --linked -f tools/smoke-habilitacao-lembretes.sql   # SMOKE TEST OK
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -2664,7 +2665,7 @@ Run: `node --test supabase/functions/_shared/habilitacao/lembretes-nucleo.test.t
 ```ts
 /**
  * Lembretes de habilitação por WhatsApp: esvazia a fila gravada pelo banco
- * (alertar_documentos_habilitacao, migração 0155). Quem decide O QUE enviar é o banco; aqui só se
+ * (alertar_documentos_habilitacao, migração 0160). Quem decide O QUE enviar é o banco; aqui só se
  * envia o que está na fila, uma vez cada. Puro: a fila, o envio e o telefone entram injetados.
  */
 export const MAX_POR_RODADA = 50;
@@ -2725,7 +2726,7 @@ Run: o mesmo comando → PASS, 6 testes.
 ```ts
 /**
  * habilitacao-lembretes — envia por WhatsApp os lembretes de vencimento que o banco enfileirou
- * (alertar_documentos_habilitacao, migração 0155). Chamada pelo pg_cron via pg_net, sem
+ * (alertar_documentos_habilitacao, migração 0160). Chamada pelo pg_cron via pg_net, sem
  * credencial: a função NÃO recebe nada (ignora o corpo) e só esvazia a fila, uma vez por mensagem.
  * Chamar de fora não envia nada além do que o banco já decidiu. A resposta só traz contagens.
  * Deploy: --no-verify-jwt.
@@ -2810,7 +2811,7 @@ npx prettier --check supabase/functions/_shared/habilitacao/lembretes-nucleo.ts 
 git add supabase/functions/_shared/habilitacao/lembretes-nucleo.ts supabase/functions/_shared/habilitacao/lembretes-nucleo.test.ts supabase/functions/habilitacao-lembretes/index.ts supabase/config.toml
 git commit -m "feat(habilitacao): lembrete de vencimento por WhatsApp pela fila do banco" -m "A função habilitacao-lembretes só esvazia a fila gravada pelo alerta diário: cada mensagem sai uma vez, com até 3 tentativas em 36 horas.
 
-Produção (só com o OK do Javerson, depois da 0155):
+Produção (só com o OK do Javerson, depois da 0160):
   npx supabase@2.118.0 functions deploy habilitacao-lembretes --project-ref <ref> --no-verify-jwt --use-api
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -3104,7 +3105,7 @@ npx prettier --check supabase/functions/_shared/habilitacao/carga-inicial.ts sup
 git add supabase/functions/_shared/habilitacao/carga-inicial.ts supabase/functions/_shared/habilitacao/carga-inicial.test.ts tools/habilitacao/carga-inicial.mjs
 git commit -m "feat(habilitacao): plano da carga inicial da biblioteca a partir do inventário" -m "O script só escreve os comandos de envio e o SQL com guardas numa pasta fora do repositório; não envia nem grava nada.
 
-Produção (só com o OK do Javerson, depois da 0154 e com a pasta dos documentos disponível no PC):
+Produção (só com o OK do Javerson, depois da 0159 e com a pasta dos documentos disponível no PC):
   node tools/habilitacao/carga-inicial.mjs --csv <inventário> --pasta <pasta> --empresa <uuid> --saida <pasta fora do repositório>
   bash <saida>/enviar.sh
   npx supabase@2.118.0 db query --linked -f <saida>/carga.sql
@@ -3118,7 +3119,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 Entrega sozinha: os módulos que geram proposta, cronograma e declarações no servidor (ainda sem ferramenta que os
 chame), os modelos de declaração editáveis, e, na aba Arquivos, "falta assinar", "Enviar assinado" e "Baixar".
-Produção da parte B: migração 0156 (com o smoke) e push do front.
+Produção da parte B: migração 0161 (com o smoke) e push do front.
 
 **Regra dos portes (B1 e B2):** o servidor tem de dar o mesmo resultado da tela. Se um valor esperado de um teste deste
 plano divergir do que a lib da tela devolve para a mesma entrada, **a tela vence**: corrija o esperado, deixe o teste
@@ -4933,11 +4934,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
-### Task B5: Migração 0156 — origem, assinatura, modelos e a gravação atômica
+### Task B5: Migração 0161 — origem, assinatura, modelos e a gravação atômica
 
 **Files:**
 
-- Create: `supabase/migrations/0156_documentos_gerados.sql`
+- Create: `supabase/migrations/0161_documentos_gerados.sql`
 - Create: `tools/smoke-documentos-gerados.sql`
 
 **Interfaces:**
@@ -4947,15 +4948,15 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Produces: `arquivo_oportunidade.origem`, `arquivo_oportunidade.assinatura`, índice `arquivo_oportunidade_origem_uidx`,
   tabela `modelo_declaracao`, RPC `conector_gravar_arquivo` (resposta no §2 do contrato).
 
-- [ ] **Step 1: Conferir o número** (`ls supabase/migrations | tail -3`: a última é a `0155`).
+- [ ] **Step 1: Conferir o número** (`ls supabase/migrations | tail -3`: a última é a `0160`).
 
 - [ ] **Step 2: Migração**
 
-`supabase/migrations/0156_documentos_gerados.sql`:
+`supabase/migrations/0161_documentos_gerados.sql`:
 
 ```sql
 -- ============================================================================
--- 0156_documentos_gerados.sql — arquivos da oportunidade gravados pelo servidor,
+-- 0161_documentos_gerados.sql — arquivos da oportunidade gravados pelo servidor,
 -- assinatura pendente e modelos de declaração (13/10/2026)
 --   (spec docs/superpowers/specs/2026-10-09-habilitacao-documentos-automaticos-design.md §3 e §4)
 --
@@ -5187,7 +5188,7 @@ Confere, nesta ordem:
    = 1;
 10. `authenticated` não executa a RPC (`permission denied for function conector_gravar_arquivo%`).
 
-Termina com `select 'SMOKE TEST OK: documentos gerados (0156)' as res;` e `rollback;`.
+Termina com `select 'SMOKE TEST OK: documentos gerados (0161)' as res;` e `rollback;`.
 
 - [ ] **Step 4: Conferência à mão e commit**
 
@@ -5195,9 +5196,9 @@ Confira: a lista de tipos de parâmetro é a mesma no `create function`, no `com
 parâmetros); nenhum UUID fixo; termina em `select 'ok' as res;`.
 
 ```bash
-git add supabase/migrations/0156_documentos_gerados.sql tools/smoke-documentos-gerados.sql
-git commit -m "feat(documentos): origem e assinatura dos arquivos, modelos de declaração e gravação atômica (0156)" -m "Produção (só com o OK do Javerson):
-  npx supabase@2.118.0 db query --linked -f supabase/migrations/0156_documentos_gerados.sql
+git add supabase/migrations/0161_documentos_gerados.sql tools/smoke-documentos-gerados.sql
+git commit -m "feat(documentos): origem e assinatura dos arquivos, modelos de declaração e gravação atômica (0161)" -m "Produção (só com o OK do Javerson):
+  npx supabase@2.118.0 db query --linked -f supabase/migrations/0161_documentos_gerados.sql
   npx supabase@2.118.0 db query --linked -f tools/smoke-documentos-gerados.sql   # SMOKE TEST OK
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -5434,7 +5435,7 @@ cd apps/web && npx eslint --rule "no-undef: error" src/components/oportunidades/
 npm run lint && npm run build && npm test --workspace=apps/web     # 136 arquivos
 npx prettier --check apps/web/src/lib/arquivo-assinatura.js apps/web/src/lib/arquivo-assinatura.test.js apps/web/src/components/oportunidades/OportunidadeDetalhe.jsx apps/web/src/components/acervo/ModelosDeclaracao.jsx apps/web/src/components/acervo/DocumentosHabilitacao.jsx
 git add apps/web/src/lib/arquivo-assinatura.js apps/web/src/lib/arquivo-assinatura.test.js apps/web/src/components/oportunidades/OportunidadeDetalhe.jsx apps/web/src/components/acervo/ModelosDeclaracao.jsx apps/web/src/components/acervo/DocumentosHabilitacao.jsx
-git commit -m "feat(oportunidades): falta assinar, enviar assinado e baixar nos Arquivos; modelos de declaração no Acervo" -m "Depende da migração 0156 (origem, assinatura e modelo_declaracao).
+git commit -m "feat(oportunidades): falta assinar, enviar assinado e baixar nos Arquivos; modelos de declaração no Acervo" -m "Depende da migração 0161 (origem, assinatura e modelo_declaracao).
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -5853,7 +5854,7 @@ acrescentar `documento: "Documento não encontrado nesta empresa."`.
  * nunca manda bytes nem ref: aqui só entram ids já conferidos na empresa da chave.
  *
  * Origem e destino ficam sempre na pasta `<empresa_id>/` do bucket (caminhoDaEmpresa); a gravação
- * é atômica pela RPC conector_gravar_arquivo (0156): a mesma `origem` troca o arquivo no lugar, e
+ * é atômica pela RPC conector_gravar_arquivo (0161): a mesma `origem` troca o arquivo no lugar, e
  * arquivo já assinado não é trocado. Banco e Storage injetados: roda no Node.
  */
 import type { CamadaEmpresa, StorageConector } from "./camada-empresa.ts";
@@ -6157,7 +6158,7 @@ export function montarDeps(
 node --test "supabase/functions/**/*.test.ts"     # 1583 + 13 = 1596, 0 falhas
 npx prettier --check supabase/functions/_shared/conector/camada-empresa.ts supabase/functions/_shared/conector/camada-empresa.test.ts supabase/functions/_shared/conector/testes/fake-admin.ts supabase/functions/mcp/registro.ts supabase/functions/_shared/conector/arquivo-servidor.ts supabase/functions/_shared/conector/arquivo-servidor.test.ts supabase/functions/mcp/testes/deps-habilitacao.ts
 git add supabase/functions/_shared/conector/camada-empresa.ts supabase/functions/_shared/conector/camada-empresa.test.ts supabase/functions/_shared/conector/testes/fake-admin.ts supabase/functions/mcp/registro.ts supabase/functions/_shared/conector/arquivo-servidor.ts supabase/functions/_shared/conector/arquivo-servidor.test.ts supabase/functions/mcp/testes/deps-habilitacao.ts
-git commit -m "feat(conector): servidor grava arquivos na oportunidade (cópia, geração e download)" -m "Storage do conector ganha download e upload; a camada lê a própria empresa; gravarNaOportunidade envia para a pasta da empresa e grava pela RPC atômica da 0156.
+git commit -m "feat(conector): servidor grava arquivos na oportunidade (cópia, geração e download)" -m "Storage do conector ganha download e upload; a camada lê a própria empresa; gravarNaOportunidade envia para a pasta da empresa e grava pela RPC atômica da 0161.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -8905,19 +8906,19 @@ Em `tools/conector/verificar-conector.mjs`: acrescentar os seis nomes ao fim de 
 Criar `docs/HANDOFF-HABILITACAO.md` com estas seções (o controlador completa os SHAs no fim):
 
 1. **O que entra**, em três partes (A, B e C), com uma tabela `Parte | O que muda | Migração | Funções | Front`.
-2. **Antes de publicar**: conferir que 0154–0156 seguem livres; conferir no painel que o limite global de upload é de
+2. **Antes de publicar**: conferir que 0159–0161 seguem livres; conferir no painel que o limite global de upload é de
    pelo menos 50 MB (já era em 09/10); ter o representante legal preenchido em Configurações → Empresa.
 3. **Ordem de publicação**, com os comandos exatos (cada um só com o OK do Javerson):
 
 ```bash
 # Parte A
-npx supabase@2.118.0 db query --linked -f supabase/migrations/0154_acervo_documento.sql
+npx supabase@2.118.0 db query --linked -f supabase/migrations/0159_acervo_documento.sql
 npx supabase@2.118.0 db query --linked -f tools/smoke-habilitacao-documentos.sql      # SMOKE TEST OK
-npx supabase@2.118.0 db query --linked -f supabase/migrations/0155_habilitacao_lembretes.sql
+npx supabase@2.118.0 db query --linked -f supabase/migrations/0160_habilitacao_lembretes.sql
 npx supabase@2.118.0 db query --linked -f tools/smoke-habilitacao-lembretes.sql       # SMOKE TEST OK
 npx supabase@2.118.0 functions deploy habilitacao-lembretes --project-ref <ref> --no-verify-jwt --use-api
 # Parte B
-npx supabase@2.118.0 db query --linked -f supabase/migrations/0156_documentos_gerados.sql
+npx supabase@2.118.0 db query --linked -f supabase/migrations/0161_documentos_gerados.sql
 npx supabase@2.118.0 db query --linked -f tools/smoke-documentos-gerados.sql          # SMOKE TEST OK
 # Partes A (Atende?) e C (ferramentas): as funções levam a árvore de _shared inteira
 git status --short supabase/                                                           # vazio
@@ -8966,7 +8967,7 @@ npx prettier --check supabase/functions/_shared/conector/permissoes-ferramentas.
 git add supabase/functions/_shared/conector/permissoes-ferramentas.ts supabase/functions/_shared/conector/permissoes-ferramentas.test.ts supabase/functions/mcp/ferramentas.ts supabase/functions/mcp/ferramentas.test.ts supabase/functions/mcp/ferramentas-habilitacao.ts supabase/functions/mcp/ferramentas-habilitacao.test.ts supabase/functions/mcp/ferramentas-arquivos.ts supabase/functions/mcp/ferramentas-arquivos.test.ts supabase/functions/mcp/ferramentas-orcamento.ts supabase/functions/mcp/ferramentas-orcamento.test.ts supabase/functions/mcp/index.ts tools/conector/verificar-conector.mjs docs/HANDOFF-HABILITACAO.md
 git commit -m "feat(conector): registra as seis ferramentas de habilitação e o roteiro Montar a licitação completa" -m "23 ferramentas e 4 prompts. As ferramentas que gravam arquivo exigem Oportunidades → Lista e Oportunidades → Arquivos → criar; o checklist só lê.
 
-Produção (só com o OK do Javerson, depois das migrações 0154 a 0156): ver docs/HANDOFF-HABILITACAO.md.
+Produção (só com o OK do Javerson, depois das migrações 0159 a 0161): ver docs/HANDOFF-HABILITACAO.md.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```

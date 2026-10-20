@@ -173,7 +173,7 @@ describe("GRUPOS_DOCUMENTO", () => {
   });
 });
 
-describe("mensagemDeErroAoSalvar (recusas do banco, 0154)", () => {
+describe("mensagemDeErroAoSalvar (recusas do banco, 0159)", () => {
   const erro = (message) => ({ message });
   it("segunda versão viva do mesmo documento (23505)", () => {
     expect(

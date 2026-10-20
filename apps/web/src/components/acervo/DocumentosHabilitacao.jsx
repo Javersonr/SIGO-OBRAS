@@ -218,7 +218,7 @@ function LinhaDocumento({
 
 /**
  * Aba "Documentos e certidões": a biblioteca de documentos de habilitação da empresa (tabela
- * acervo_documento, 0154). O SIGO anexa estes arquivos às licitações; cada documento novo pode
+ * acervo_documento, 0159). O SIGO anexa estes arquivos às licitações; cada documento novo pode
  * substituir um anterior, que vai para o histórico.
  * podeEditar=false (padrão) → só leitura: sem cadastrar, editar, excluir nem versão nova.
  * erroCarga=true → a leitura da biblioteca falhou: a lista vazia NÃO quer dizer "sem documentos",
@@ -258,7 +258,7 @@ export default function DocumentosHabilitacao({
 
   const excluir = async (doc) => {
     if (!podeEditar) return;
-    // excluir a versão em vigor faz a anterior voltar a valer (o banco cuida disso, 0154)
+    // excluir a versão em vigor faz a anterior voltar a valer (o banco cuida disso, 0159)
     const anterior = doc.substitui_id
       ? documentos.find((d) => d?.id === doc.substitui_id)
       : undefined;
@@ -359,7 +359,7 @@ export default function DocumentosHabilitacao({
       {/* Com a leitura da biblioteca em falha a aba mostra só o aviso de erro: sem o cartão de lembretes. */}
       {!erroCarga && <LembretesHabilitacao empresaId={empresaId} podeEditar={podeEditar} />}
 
-      {/* Modelos de declaração (0156): some sozinho se a tabela ainda não existe; também fora do aviso de falha. */}
+      {/* Modelos de declaração (0161): some sozinho se a tabela ainda não existe; também fora do aviso de falha. */}
       {!erroCarga && <ModelosDeclaracao empresaId={empresaId} podeEditar={podeEditar} />}
 
       <DocumentoHabilitacaoSheet
