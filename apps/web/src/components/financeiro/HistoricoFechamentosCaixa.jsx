@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from "react";
-import { sigo } from "@/api/sigoClient";
+import { toast } from "sonner";
+import { sigo, supabase } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import {
+  dataDoFechamento,
+  dataDoFechamentoParaInput,
+  ehReceitaReposicaoLegada,
+  mensagemErroFechamento,
+  valorDoPreLancamento,
+} from "@/lib/fechamento-caixa";
 import { ehBase44, nomeDoArquivo } from "@/lib/anexo-ref";
 import AnexoViewer from "@/components/shared/AnexoViewer";
 import { Card } from "@/components/ui/card";
@@ -55,6 +63,7 @@ export default function HistoricoFechamentosCaixa({
   const [aprovandoPagamentoFechamento, setAprovandoPagamentoFechamento] = useState(null); // { fechamento, pls }
   const [acrescentandoEmFechamento, setAcrescentandoEmFechamento] = useState(null); // fechamento
   const [anexoAberto, setAnexoAberto] = useState(null); // { url: ref, nome }
+  const [transferencias, setTransferencias] = useState({}); // reposição: transferencia_id → transferência
 
   useEffect(() => {
     carregar();
@@ -65,6 +74,22 @@ export default function HistoricoFechamentosCaixa({
     try {
       const data = await sigo.entities.FechamentoCaixa.filter({ empresa_id: empresaId });
       setFechamentos(data.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
+      // reposição do fundo fixo (0158): aprovar com conta pagadora grava a
+      // transferência conta pagadora → fundo em fechamento_caixa.transferencia_id
+      const idsTransf = [...new Set(data.map((f) => f.transferencia_id).filter(Boolean))];
+      if (idsTransf.length > 0) {
+        try {
+          const ts = await sigo.entities.TransacaoTransferencia.filter({
+            id: { $in: idsTransf },
+          });
+          setTransferencias(Object.fromEntries((ts || []).map((t) => [t.id, t])));
+        } catch (err) {
+          console.warn("[HistoricoFechamentos] falha carregando transferências de reposição:", err);
+          setTransferencias({});
+        }
+      } else {
+        setTransferencias({});
+      }
     } catch (err) {
       console.error("Erro:", err);
     } finally {
@@ -119,7 +144,7 @@ export default function HistoricoFechamentosCaixa({
               : d.data || "-",
             descricao: pl.descricao_caixa || d.fornecedor || d.descricao || "-",
             documento: d.tipo_documento || d.numero_documento || "",
-            valor: parseFloat(d.valor) || 0,
+            valor: valorDoPreLancamento(pl),
             comprovante_url: pl.comprovante_url || null,
           };
         }),
@@ -128,7 +153,7 @@ export default function HistoricoFechamentosCaixa({
           nomeResponsavel:
             fechamento.usuario_reposicao_nome || fechamento.usuario_reposicao_email || "",
           dataFormatada: fechamento.data_pagamento
-            ? new Date(fechamento.data_pagamento + "T12:00:00").toLocaleDateString("pt-BR")
+            ? dataDoFechamento(fechamento.data_pagamento)
             : "",
           empresa: "",
           saldoAnterior: 0,
@@ -164,14 +189,11 @@ export default function HistoricoFechamentosCaixa({
 
   const handleImprimirPlanilha = (fechamento, pls) => {
     const itens = pls.filter(isItemDoFechamento);
-    const total = itens.reduce((sum, pl) => {
-      const d = safeParseJSON(pl.dados_extraidos, {});
-      return sum + (parseFloat(d.valor) || 0);
-    }, 0);
+    const total = itens.reduce((sum, pl) => sum + valorDoPreLancamento(pl), 0);
     const saldoAnt = 0;
     const saldoAtu = saldoAnt - total;
     const dataFormatada = fechamento.data_fechamento
-      ? new Date(fechamento.data_fechamento + "T12:00:00").toLocaleDateString("pt-BR")
+      ? dataDoFechamento(fechamento.data_fechamento)
       : "";
     const nomeResponsavel =
       fechamento.usuario_reposicao_nome || fechamento.usuario_reposicao_email || "";
@@ -185,7 +207,7 @@ export default function HistoricoFechamentosCaixa({
           : d.data || "";
         const descricao = pl.descricao_caixa || d.descricao || d.fornecedor || "-";
         const documento = d.tipo_documento || d.numero_documento || "";
-        const valor = parseFloat(d.valor) || 0;
+        const valor = valorDoPreLancamento(pl);
         return `<tr>
         <td style="border:1px solid #999;padding:4px 8px;text-align:center;">${i + 1}</td>
         <td style="border:1px solid #999;padding:4px 8px;">${data}</td>
@@ -228,10 +250,7 @@ export default function HistoricoFechamentosCaixa({
 
   const handleImprimir = (fechamento, pls) => {
     const itens = pls.filter(isItemDoFechamento);
-    const total = itens.reduce((sum, pl) => {
-      const d = safeParseJSON(pl.dados_extraidos, {});
-      return sum + (parseFloat(d.valor) || 0);
-    }, 0);
+    const total = itens.reduce((sum, pl) => sum + valorDoPreLancamento(pl), 0);
 
     const linhas = itens
       .map((pl, i) => {
@@ -240,7 +259,7 @@ export default function HistoricoFechamentosCaixa({
           ? new Date(pl.data_competencia + "T12:00:00").toLocaleDateString("pt-BR")
           : "-";
         const descricao = pl.descricao_caixa || d.fornecedor || d.descricao || "-";
-        const valor = parseFloat(d.valor) || 0;
+        const valor = valorDoPreLancamento(pl);
         return `<tr>
         <td style="border:1px solid #ccc;padding:6px 10px;text-align:center;">${i + 1}</td>
         <td style="border:1px solid #ccc;padding:6px 10px;">${data}</td>
@@ -259,7 +278,7 @@ export default function HistoricoFechamentosCaixa({
     .total{text-align:right;font-weight:bold;font-size:14px;margin-top:12px;color:#c00;}
     </style></head><body>
     <p class="titulo">Pagamentos Conciliados – Fechamento #${fechamento.numero}</p>
-    <p class="sub">Pago em: ${fechamento.data_pagamento ? new Date(fechamento.data_pagamento + "T12:00:00").toLocaleDateString("pt-BR") : "-"} | Responsável: ${fechamento.usuario_reposicao_nome || "-"} | Aprovado por: ${fechamento.usuario_pagamento_nome || "-"}</p>
+    <p class="sub">Pago em: ${fechamento.data_pagamento ? dataDoFechamento(fechamento.data_pagamento) : "-"} | Responsável: ${fechamento.usuario_reposicao_nome || "-"} | Aprovado por: ${fechamento.usuario_pagamento_nome || "-"}</p>
     <table>
       <thead><tr><th>#</th><th>Data</th><th>Descrição</th><th>Projeto</th><th>Valor</th></tr></thead>
       <tbody>${linhas}</tbody>
@@ -273,17 +292,42 @@ export default function HistoricoFechamentosCaixa({
     setTimeout(() => w.print(), 600);
   };
 
-  const getValor = (pl) => {
-    const d = safeParseJSON(pl.dados_extraidos, {});
-    return parseFloat(d.valor) || 0;
-  };
+  // mesmo critério do banco (valor_total do fechamento): "1.234,56" não vira 1,234
+  const getValor = (pl) => valorDoPreLancamento(pl);
 
   const getDados = (pl) => safeParseJSON(pl.dados_extraidos, {});
 
-  const handleSalvarEdicaoFechamento = async (fechamentoId) => {
+  const handleSalvarEdicaoFechamento = async (fechamento) => {
+    // grava só o que mudou: data_fechamento é timestamptz e regravar o mesmo
+    // dia trocaria o instante do fechar_caixa pela meia-noite à toa
+    const patch = {};
+    const numero = String(editValues.numero ?? "").trim();
+    if (numero !== (fechamento.numero || "")) {
+      if (!numero) {
+        alert("Informe o número do fechamento.");
+        return;
+      }
+      // o trigger da 0158 só numera na criação; na edição, a tela evita repetir
+      if (fechamentos.some((o) => o.id !== fechamento.id && (o.numero || "") === numero)) {
+        alert(`Já existe o fechamento #${numero}. Escolha outro número.`);
+        return;
+      }
+      patch.numero = numero;
+    }
+    if (
+      editValues.data_fechamento &&
+      editValues.data_fechamento !== dataDoFechamentoParaInput(fechamento.data_fechamento)
+    ) {
+      patch.data_fechamento = editValues.data_fechamento;
+    }
+    if (Object.keys(patch).length === 0) {
+      setEditandoId(null);
+      setEditValues({});
+      return;
+    }
     setSalvandoEdicao(true);
     try {
-      await sigo.entities.FechamentoCaixa.update(fechamentoId, editValues);
+      await sigo.entities.FechamentoCaixa.update(fechamento.id, patch);
       setEditandoId(null);
       setEditValues({});
       carregar();
@@ -355,19 +399,17 @@ export default function HistoricoFechamentosCaixa({
                         <input
                           type="date"
                           className="border rounded px-1 py-0.5 text-xs"
-                          value={editValues.data_fechamento ?? f.data_fechamento ?? ""}
+                          value={
+                            editValues.data_fechamento ??
+                            dataDoFechamentoParaInput(f.data_fechamento)
+                          }
                           onChange={(e) =>
                             setEditValues((p) => ({ ...p, data_fechamento: e.target.value }))
                           }
                           onClick={(e) => e.stopPropagation()}
                         />
                       ) : (
-                        <span>
-                          em{" "}
-                          {f.data_fechamento
-                            ? new Date(f.data_fechamento + "T12:00:00").toLocaleDateString("pt-BR")
-                            : "-"}
-                        </span>
+                        <span>em {dataDoFechamento(f.data_fechamento)}</span>
                       )}
                     </div>
                   </div>
@@ -385,7 +427,10 @@ export default function HistoricoFechamentosCaixa({
                         onClick={(e) => {
                           e.stopPropagation();
                           setEditandoId(f.id);
-                          setEditValues({ numero: f.numero, data_fechamento: f.data_fechamento });
+                          setEditValues({
+                            numero: f.numero,
+                            data_fechamento: dataDoFechamentoParaInput(f.data_fechamento),
+                          });
                         }}
                       >
                         <Pencil className="w-3 h-3" /> Editar
@@ -395,7 +440,7 @@ export default function HistoricoFechamentosCaixa({
                       <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                         <button
                           className="text-xs text-green-600 hover:text-green-800 flex items-center gap-1"
-                          onClick={() => handleSalvarEdicaoFechamento(f.id)}
+                          onClick={() => handleSalvarEdicaoFechamento(f)}
                           disabled={salvandoEdicao}
                         >
                           {salvandoEdicao ? (
@@ -531,11 +576,35 @@ export default function HistoricoFechamentosCaixa({
                           Pagamento Realizado
                         </div>
                         <p className="text-xs text-green-600">
-                          Por {f.usuario_pagamento_nome} em{" "}
-                          {f.data_pagamento
-                            ? new Date(f.data_pagamento + "T12:00:00").toLocaleDateString("pt-BR")
-                            : "-"}
+                          Por {f.usuario_pagamento_nome || f.usuario_pagamento_email || "-"} em{" "}
+                          {dataDoFechamento(f.data_pagamento)}
                         </p>
+                        {/* reposição do fundo fixo (0158): transferência conta pagadora → fundo */}
+                        {f.transferencia_id ? (
+                          <p className="text-xs text-green-700">
+                            Reposição de R${" "}
+                            {Number(
+                              transferencias[f.transferencia_id]?.valor ?? f.valor_total ?? 0
+                            ).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}{" "}
+                            transferida
+                            {transferencias[f.transferencia_id]?.conta_origem_nome
+                              ? ` de ${transferencias[f.transferencia_id].conta_origem_nome}`
+                              : ""}{" "}
+                            para o fundo fixo{" "}
+                            {transferencias[f.transferencia_id]?.conta_destino_nome ||
+                              f.conta_financeira_nome ||
+                              "-"}
+                            .
+                          </p>
+                        ) : (
+                          <p className="text-xs text-green-700">
+                            Sem transferência de reposição registrada
+                            {f.conta_financeira_nome
+                              ? ` (fundo fixo: ${f.conta_financeira_nome})`
+                              : ""}
+                            .
+                          </p>
+                        )}
                         {f.observacoes_pagamento && (
                           <p className="text-xs text-green-600 italic">
                             "{f.observacoes_pagamento}"
@@ -563,8 +632,9 @@ export default function HistoricoFechamentosCaixa({
 
                     {/* Ações */}
                     <div className="flex gap-2 flex-wrap">
-                      {/* Acrescentar pré-lançamento: disponível em qualquer status exceto Pago */}
-                      {f.status !== "Pago" && (
+                      {/* Acrescentar pré-lançamento: só aguardando pagamento (regra do
+                          acrescentar_ao_fechamento, 0158) */}
+                      {f.status === "Aguardando Pagamento" && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -697,6 +767,7 @@ export default function HistoricoFechamentosCaixa({
       {desfazendoPagamentoId && (
         <ModalDesfazerPagamento
           fechamento={fechamentos.find((f) => f.id === desfazendoPagamentoId)}
+          transferencias={transferencias}
           onClose={() => setDesfazendoPagamentoId(null)}
           onSucesso={() => {
             setDesfazendoPagamentoId(null);
@@ -756,88 +827,53 @@ export default function HistoricoFechamentosCaixa({
 }
 
 // ===== MODAL DESFAZER PAGAMENTO (reverter Pago → Aguardando Pagamento) =====
-function ModalDesfazerPagamento({ fechamento, onClose, onSucesso }) {
+function ModalDesfazerPagamento({ fechamento, transferencias = {}, onClose, onSucesso }) {
   const [desfazendo, setDesfazendo] = useState(false);
+  const transf = fechamento.transferencia_id ? transferencias[fechamento.transferencia_id] : null;
 
   const handleDesfazer = async () => {
+    if (desfazendo) return;
     setDesfazendo(true);
     try {
-      // Buscar e deletar transações financeiras vinculadas aos pré-lançamentos deste fechamento
-      const ids = safeParseJSON(fechamento.pre_lancamentos_ids, []);
-      const pls = await Promise.all(
-        ids.map((id) =>
-          sigo.entities.PreLancamento.filter({ id })
-            .then((r) => r[0])
-            .catch(() => null)
-        )
-      );
-      const plsFiltrados = pls.filter(Boolean);
-
-      // Deletar transações e reverter pré-lançamentos para "Em Fechamento"
-      for (const pl of plsFiltrados) {
-        if (pl.transacao_id) {
-          try {
-            const anexos = await sigo.entities.TransacaoAnexo.filter({
-              transacao_id: pl.transacao_id,
-            });
-            // allSettled: anexo órfão é menos crítico do que travar o desfazer.
-            const delRes = await Promise.allSettled(
-              anexos.map((a) => sigo.entities.TransacaoAnexo.delete(a.id))
-            );
-            const delFails = delRes.filter((r) => r.status === "rejected").length;
-            if (delFails > 0) {
-              console.warn(
-                `[HistoricoFechamentos] ${delFails} anexo(s) não deletados pra transacao`,
-                pl.transacao_id
-              );
-            }
-          } catch (err) {
-            console.warn(
-              "[HistoricoFechamentos] falha apagando anexos da transacao",
-              pl.transacao_id,
-              err
-            );
-          }
-          try {
-            await sigo.entities.TransacaoFinanceira.delete(pl.transacao_id);
-          } catch (err) {
-            console.warn("[HistoricoFechamentos] falha apagando transacao", pl.transacao_id, err);
-          }
-        }
-        await sigo.entities.PreLancamento.update(pl.id, {
-          status: "Em Fechamento",
-          transacao_id: null,
-        });
-      }
-
-      // Deletar também a transação de reposição (Receita) gerada no pagamento
-      // Buscar pela descrição do fechamento
-      try {
-        const transacoesReposicao = await sigo.entities.TransacaoFinanceira.filter({
-          empresa_id: fechamento.empresa_id,
-          tipo: "Receita",
-        });
-        const reposicao = transacoesReposicao.find((t) =>
-          t.descricao?.includes(`Fechamento #${fechamento.numero}`)
-        );
-        if (reposicao) await sigo.entities.TransacaoFinanceira.delete(reposicao.id);
-      } catch (err) {
-        console.warn("[HistoricoFechamentos] falha buscando/apagando transacao de reposicao:", err);
-      }
-
-      // Reverter fechamento para "Aguardando Pagamento"
-      await sigo.entities.FechamentoCaixa.update(fechamento.id, {
-        status: "Aguardando Pagamento",
-        usuario_pagamento_email: null,
-        usuario_pagamento_nome: null,
-        data_pagamento: null,
-        observacoes_pagamento: null,
-        comprovante_pagamento_url: null,
+      // desfazer_pagamento_fechamento (0158), numa transação só: as despesas que
+      // a aprovação baixou voltam para em aberto (não são mais apagadas), os
+      // itens voltam para "Em Fechamento" com a despesa ligada, a transferência
+      // de reposição (e o extrato dela) é desfeita e o fechamento volta para
+      // "Aguardando Pagamento". Despesa ou linha de extrato já conciliada com o
+      // banco trava tudo, com a mensagem do banco.
+      const { data, error } = await supabase.rpc("desfazer_pagamento_fechamento", {
+        p_fechamento_id: fechamento.id,
       });
+      if (error) throw error;
+      const n = Number(data?.despesas_reabertas) || 0;
 
+      // Fechamento pago no sistema antigo (sem transferencia_id): a reposição era
+      // uma Receita "Fechamento #N", que a tela antiga apagava junto. A RPC só
+      // conhece a transferência da 0158 — então a receita legada sai aqui.
+      let receitaLegada = "";
+      if (!fechamento.transferencia_id && fechamento.numero) {
+        try {
+          const receitas = await sigo.entities.TransacaoFinanceira.filter({
+            empresa_id: fechamento.empresa_id,
+            tipo: "Receita",
+          });
+          const legada = receitas.find((t) => ehReceitaReposicaoLegada(t, fechamento.numero));
+          if (legada) {
+            await sigo.entities.TransacaoFinanceira.delete(legada.id);
+            receitaLegada = " e a receita de reposição antiga excluída";
+          }
+        } catch (err) {
+          console.warn("[HistoricoFechamentos] receita de reposição antiga:", err);
+          receitaLegada = `. Atenção: a receita de reposição antiga não foi excluída (${mensagemErroFechamento(err)})`;
+        }
+      }
+
+      toast.success(
+        `Pagamento do fechamento #${fechamento.numero || ""} desfeito: ${n} despesa(s) de volta para em aberto${fechamento.transferencia_id ? " e reposição estornada" : ""}${receitaLegada}.`
+      );
       onSucesso();
     } catch (err) {
-      alert("Erro ao desfazer pagamento: " + err.message);
+      alert("Erro ao desfazer pagamento: " + mensagemErroFechamento(err));
     } finally {
       setDesfazendo(false);
     }
@@ -854,13 +890,22 @@ function ModalDesfazerPagamento({ fechamento, onClose, onSucesso }) {
         </DialogHeader>
         <div className="space-y-4">
           <p className="text-sm text-slate-600">
-            Deseja desfazer o pagamento do fechamento #{fechamento.numero}? As transações
-            financeiras geradas serão removidas e os pré-lançamentos voltarão para{" "}
-            <strong>Em Fechamento</strong>.
+            Deseja desfazer o pagamento do fechamento #{fechamento.numero}? As despesas que a
+            aprovação baixou voltam para <strong>em aberto</strong> (continuam lançadas e ligadas
+            aos itens) e os pré-lançamentos voltam para <strong>Em Fechamento</strong>.
           </p>
+          {fechamento.transferencia_id && (
+            <p className="text-sm text-slate-600">
+              A transferência de reposição
+              {transf
+                ? ` (R$ ${Number(transf.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} de ${transf.conta_origem_nome || "-"} para ${transf.conta_destino_nome || "-"})`
+                : ""}{" "}
+              também será desfeita.
+            </p>
+          )}
           <div className="bg-orange-50 border border-orange-200 rounded p-3 text-sm text-orange-800">
-            ⚠️ Esta ação irá deletar todas as despesas e a receita de reposição geradas neste
-            pagamento.
+            ⚠️ Se alguma despesa ou a transferência já estiver conciliada com o extrato do banco,
+            nada é desfeito: desfaça a conciliação bancária antes.
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose} disabled={desfazendo} className="flex-1">
@@ -890,23 +935,22 @@ function ModalDesfazerFechamento({ fechamento, onClose, onSucesso }) {
   const [desfazendo, setDesfazendo] = useState(false);
 
   const handleDesfazer = async () => {
+    if (desfazendo) return;
     setDesfazendo(true);
     try {
-      // Voltar pré-lançamentos para "Pendente"
-      // allSettled: o .catch(()=>null) já transformava rejeição em null, mas
-      // isso mascarava o problema. Agora logamos e seguimos.
-      const ids = safeParseJSON(fechamento.pre_lancamentos_ids, []);
-      const results = await Promise.allSettled(
-        ids.map((id) => sigo.entities.PreLancamento.update(id, { status: "Pendente" }))
+      // desfazer_fechamento_caixa (0158), numa transação só: itens "Em
+      // Fechamento" voltam para Pendente (ou Conciliado, se já têm despesa) e o
+      // fechamento é apagado. O número não é reaproveitado pelo próximo.
+      const { data, error } = await supabase.rpc("desfazer_fechamento_caixa", {
+        p_fechamento_id: fechamento.id,
+      });
+      if (error) throw error;
+      toast.success(
+        `Fechamento #${fechamento.numero || ""} desfeito: ${Number(data?.itens) || 0} item(ns) liberado(s).`
       );
-      const falhas = results.filter((r) => r.status === "rejected");
-      if (falhas.length > 0) {
-        console.warn("[ModalDesfazerFechamento] falhas voltando pré-lançamentos:", falhas);
-      }
-      await sigo.entities.FechamentoCaixa.delete(fechamento.id);
       onSucesso();
     } catch (err) {
-      alert("Erro ao desfazer: " + err.message);
+      alert("Erro ao desfazer: " + mensagemErroFechamento(err));
     } finally {
       setDesfazendo(false);
     }
@@ -924,7 +968,8 @@ function ModalDesfazerFechamento({ fechamento, onClose, onSucesso }) {
         <div className="space-y-4">
           <p className="text-sm text-slate-600">
             Deseja desfazer o fechamento #{fechamento.numero}? Os pré-lançamentos voltarão para a
-            lista de pendentes.
+            lista de pendentes (os que já têm despesa vinculada voltam para Conciliados). O número #
+            {fechamento.numero} não será reaproveitado.
           </p>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose} disabled={desfazendo} className="flex-1">

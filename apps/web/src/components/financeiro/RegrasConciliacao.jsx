@@ -17,6 +17,13 @@ import { Plus, Edit, Trash2, Settings } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
 
+// regra_conciliacao.prioridade tem CHECK (prioridade between 1 and 10) (0011):
+// "regras.length + 1" passava de 10 a partir da 10ª regra e o salvar falhava.
+const PRIORIDADE_MIN = 1;
+const PRIORIDADE_MAX = 10;
+const prioridadeValida = (v) =>
+  Math.min(PRIORIDADE_MAX, Math.max(PRIORIDADE_MIN, parseInt(v, 10) || PRIORIDADE_MIN));
+
 export default function RegrasConciliacao({ empresaAtiva }) {
   const [regras, setRegras] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -49,7 +56,7 @@ export default function RegrasConciliacao({ empresaAtiva }) {
         nome: regra.nome || "",
         tipo_match: regra.tipo_match || "contem",
         tolerancia_valor: regra.tolerancia_valor || 0,
-        tolerancia_dias: regra.tolerancia_dias || 3,
+        tolerancia_dias: regra.tolerancia_dias ?? 3, // 0 dias é válido (|| virava 3)
         ignorar_descricao: regra.ignorar_descricao || false,
         palavras_chave: regra.palavras_chave
           ? safeParseJSON(regra.palavras_chave, []).join(", ")
@@ -66,7 +73,7 @@ export default function RegrasConciliacao({ empresaAtiva }) {
         tolerancia_dias: 3,
         ignorar_descricao: false,
         palavras_chave: "",
-        prioridade: regras.length + 1,
+        prioridade: prioridadeValida(regras.length + 1),
         ativo: true,
       });
       setSelectedRegra(null);
@@ -80,29 +87,35 @@ export default function RegrasConciliacao({ empresaAtiva }) {
       return;
     }
 
+    // Colunas de regra_conciliacao (0011 + 0156): tipo_match text,
+    // palavras_chave text (lista em JSON), ignorar_descricao boolean,
+    // tolerancia_valor numeric(14,2), tolerancia_dias integer, prioridade 1–10.
+    const palavras = String(form.palavras_chave || "")
+      .split(",")
+      .map((p) => p.trim())
+      .filter((p) => p);
     const data = {
       empresa_id: empresaAtiva.id,
       nome: form.nome,
       tipo_match: form.tipo_match,
-      tolerancia_valor: parseFloat(form.tolerancia_valor) || 0,
-      tolerancia_dias: parseInt(form.tolerancia_dias) || 0,
-      ignorar_descricao: form.ignorar_descricao,
-      palavras_chave: form.palavras_chave
-        ? JSON.stringify(
-            form.palavras_chave
-              .split(",")
-              .map((p) => p.trim())
-              .filter((p) => p)
-          )
-        : null,
-      prioridade: parseInt(form.prioridade) || 1,
-      ativo: form.ativo,
+      tolerancia_valor: Math.round(Math.abs(parseFloat(form.tolerancia_valor) || 0) * 100) / 100,
+      tolerancia_dias: Math.abs(parseInt(form.tolerancia_dias, 10) || 0),
+      ignorar_descricao: !!form.ignorar_descricao,
+      palavras_chave: palavras.length > 0 ? JSON.stringify(palavras) : null,
+      prioridade: prioridadeValida(form.prioridade),
+      ativo: !!form.ativo,
     };
 
-    if (selectedRegra) {
-      await sigo.entities.RegraConciliacao.update(selectedRegra.id, data);
-    } else {
-      await sigo.entities.RegraConciliacao.create(data);
+    try {
+      if (selectedRegra) {
+        await sigo.entities.RegraConciliacao.update(selectedRegra.id, data);
+      } else {
+        await sigo.entities.RegraConciliacao.create(data);
+      }
+    } catch (error) {
+      console.error("Erro ao salvar regra de conciliação:", error);
+      alert(`Erro ao salvar a regra: ${error?.message || error}`);
+      return;
     }
 
     setShowModal(false);
@@ -157,7 +170,7 @@ export default function RegrasConciliacao({ empresaAtiva }) {
                           ? "Contém"
                           : "Palavra-chave"}
                     </span>
-                    <span>Valor: ±R$ {regra.tolerancia_valor?.toFixed(2)}</span>
+                    <span>Valor: ±R$ {Number(regra.tolerancia_valor || 0).toFixed(2)}</span>
                     <span>Data: ±{regra.tolerancia_dias} dias</span>
                     {regra.palavras_chave && (
                       <span>Palavras: {safeParseJSON(regra.palavras_chave, []).join(", ")}</span>
@@ -273,10 +286,11 @@ export default function RegrasConciliacao({ empresaAtiva }) {
                 value={form.prioridade}
                 onChange={(e) => setForm({ ...form, prioridade: e.target.value })}
                 className="mt-1.5"
-                min="1"
+                min={PRIORIDADE_MIN}
+                max={PRIORIDADE_MAX}
               />
               <p className="text-xs text-slate-500 mt-1">
-                Regras com prioridade menor são executadas primeiro
+                De 1 a 10. Regras com prioridade menor são executadas primeiro
               </p>
             </div>
 

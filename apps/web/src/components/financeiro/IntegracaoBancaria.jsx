@@ -93,8 +93,9 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
         codigo_banco: banco?.codigo,
       });
 
+      // não existe integração real ainda: não prometer autorização/sincronização
       alert(
-        "Integração criada! Em produção, você seria redirecionado para autorizar o acesso via Open Finance."
+        "Conta marcada para integração. A conexão automática com o banco ainda não está disponível — por enquanto, importe o extrato OFX na Conciliação."
       );
       setShowModal(false);
       loadIntegracoes();
@@ -109,26 +110,32 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
     setSyncing({ ...syncing, [integracao.id]: true });
 
     try {
-      // Simular sincronização - em produção, chamaria API do banco
-      const resultado = await sigo.functions.invoke("sincronizarContaBancaria", {
+      // invoke não lança: função inexistente/erro volta em data.success === false.
+      // Antes o retorno era ignorado e a integração virava "Ativa" com
+      // "0 novas transações" mesmo sem sincronizar nada.
+      const { data } = await sigo.functions.invoke("sincronizarContaBancaria", {
         integracao_id: integracao.id,
       });
+      if (!data?.success) {
+        throw new Error(data?.error || "sincronização indisponível");
+      }
 
       await sigo.entities.IntegracaoBancaria.update(integracao.id, {
         status: "Ativa",
         ultima_sincronizacao: new Date().toISOString(),
         transacoes_importadas:
-          (integracao.transacoes_importadas || 0) + (resultado.novasTransacoes || 0),
+          (integracao.transacoes_importadas || 0) + (data.novasTransacoes || 0),
       });
 
-      alert(
-        `Sincronização concluída! ${resultado.novasTransacoes || 0} novas transações importadas.`
-      );
+      alert(`Sincronização concluída! ${data.novasTransacoes || 0} novas transações importadas.`);
       loadIntegracoes();
       onReload();
     } catch (error) {
       console.error("Erro ao sincronizar:", error);
-      alert("Erro ao sincronizar conta");
+      alert(
+        "Não foi possível sincronizar: a conexão automática com o banco ainda não está disponível. Importe o extrato OFX na Conciliação.\n\n" +
+          (error?.message || "")
+      );
     } finally {
       setSyncing({ ...syncing, [integracao.id]: false });
     }
@@ -174,6 +181,11 @@ export default function IntegracaoBancaria({ empresaAtiva, contas, onReload }) {
             Conecte suas contas via Open Finance para importação automática
           </p>
         </div>
+      </div>
+
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+        A conexão automática com o banco (Open Finance) ainda não está disponível no SIGO. Para
+        trazer o extrato, use <strong>Importar OFX</strong> na aba Conciliação.
       </div>
 
       {/* Integrações Ativas */}

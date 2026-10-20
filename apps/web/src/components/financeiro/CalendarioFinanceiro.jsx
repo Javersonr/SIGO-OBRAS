@@ -1,13 +1,20 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, supabase } from "@/api/sigoClient";
 import { useEmpresa } from "../../Layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, X, TrendingUp, TrendingDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isStatusPago } from "@/lib/financeiro-utils";
 import DetalheDespesaModal from "./DetalheDespesaModal";
 import DetalheReceitaModal from "./DetalheReceitaModal";
+import {
+  PERGUNTA_DESCONCILIAR,
+  camposDaBaixa,
+  desconciliarTransacao,
+  estornarLancamento,
+} from "@/lib/baixa-financeira";
 
 const formatCurrency = (v) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
@@ -64,13 +71,47 @@ export default function CalendarioFinanceiro() {
   }, [popoverDia]);
 
   // Carregar transações de todas as empresas do usuário
-  useEffect(() => {
+  const carregarTransacoes = () => {
     if (!empresas?.length) return;
     setLoading(true);
     Promise.all(empresas.map((e) => sigo.entities.TransacaoFinanceira.filter({ empresa_id: e.id })))
       .then((resultados) => setTransacoes(resultados.flat()))
       .finally(() => setLoading(false));
-  }, [empresas?.map((e) => e.id).join(",")]);
+  };
+  useEffect(carregarTransacoes, [empresas?.map((e) => e.id).join(",")]);
+
+  // Pagar / desfazer pelo detalhe aberto no calendário. Antes o desfazer só
+  // fechava a gaveta (não estornava nada) e a receita nem tinha os botões.
+  // Só a transação: o banco (0155) lança/retira o extrato; conciliada com o
+  // extrato do banco, desfaz a conciliação antes de estornar (0156).
+  const handleBaixar = async (item, opcoes = {}) => {
+    try {
+      if (!opcoes.somenteRecarregar) {
+        const gravar = (pagar) =>
+          sigo.entities.TransacaoFinanceira.update(
+            item.id,
+            camposDaBaixa(pagar, opcoes.dataPagamento)
+          );
+        if (opcoes.pagar) {
+          await gravar(true);
+        } else {
+          const estornou = await estornarLancamento({
+            conciliado: item.conciliado,
+            estornar: () => gravar(false),
+            desconciliar: () => desconciliarTransacao(supabase, item.id),
+            confirmar: () => confirm(PERGUNTA_DESCONCILIAR),
+          });
+          if (!estornou) return;
+        }
+      }
+      setShowDespesaDetalhe(false);
+      setShowReceitaDetalhe(false);
+    } catch (err) {
+      alert("Erro ao atualizar o pagamento: " + (err?.message || err));
+    } finally {
+      carregarTransacoes();
+    }
+  };
 
   // Fixa horário no meio-dia: evita que mudanças de DST (caso o Brasil
   // volte a ter horário de verão) ou setDate sobre uma data com horário 00:00
@@ -395,7 +436,7 @@ export default function CalendarioFinanceiro() {
                     <Badge
                       className={cn(
                         "text-xs py-0",
-                        t.status === "Realizado" || t.status === "pago"
+                        isStatusPago(t.status)
                           ? "bg-green-100 text-green-700"
                           : t.status === "Cancelado"
                             ? "bg-slate-100 text-slate-600"
@@ -420,9 +461,7 @@ export default function CalendarioFinanceiro() {
         anexos={anexosDetalhe}
         podeEditar={true}
         empresaAtiva={empresaDetalhe || empresaAtiva}
-        onBaixar={() => {
-          setShowDespesaDetalhe(false);
-        }}
+        onBaixar={handleBaixar}
       />
       <DetalheReceitaModal
         open={showReceitaDetalhe}
@@ -430,6 +469,7 @@ export default function CalendarioFinanceiro() {
         receita={transacaoDetalhe}
         podeEditar={true}
         empresaAtiva={empresaDetalhe || empresaAtiva}
+        onBaixar={handleBaixar}
       />
 
       {/* Legenda */}

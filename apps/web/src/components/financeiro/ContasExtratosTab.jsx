@@ -14,6 +14,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Wallet, CreditCard, Link2, FolderTree, TrendingUp, Trash2 } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
+import { toast } from "sonner";
 import ConciliacaoBancaria from "./ConciliacaoBancaria";
 import RegrasConciliacao from "./RegrasConciliacao";
 import IntegracaoBancaria from "./IntegracaoBancaria";
@@ -23,6 +24,7 @@ import FluxoContaDetalhado from "./FluxoContaDetalhado";
 export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
   const [showModal, setShowModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
+  const [saving, setSaving] = useState(false);
   const [usuarios, setUsuarios] = useState([]);
   const [form, setForm] = useState({
     nome: "",
@@ -76,23 +78,38 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
   };
 
   const handleSave = async () => {
-    if (!form.nome) return;
+    if (!form.nome || saving) return;
 
+    // saldo_atual NÃO vai no payload (antes ia saldo_atual = saldo_inicial,
+    // apagando as movimentações). Ele é derivado no banco: ao gravar
+    // saldo_inicial, o trigger tg_conta_saldo_atual_derivado (0155) recalcula
+    // saldo_atual = saldo_inicial + extrato da conta.
     const data = {
       empresa_id: empresaAtiva.id,
       ...form,
-      saldo_atual: form.saldo_inicial,
       ativo: true,
     };
 
-    if (selectedItem) {
-      await sigo.entities.ContaFinanceira.update(selectedItem.id, data);
-    } else {
-      await sigo.entities.ContaFinanceira.create(data);
-    }
+    setSaving(true);
+    try {
+      const salva = selectedItem
+        ? await sigo.entities.ContaFinanceira.update(selectedItem.id, data)
+        : await sigo.entities.ContaFinanceira.create(data);
 
-    setShowModal(false);
-    onReload();
+      // relê a conta: o saldo que vale é o que o banco recalculou
+      const relida = (await sigo.entities.ContaFinanceira.get(salva.id).catch(() => null)) || salva;
+
+      setShowModal(false);
+      await onReload?.();
+      toast.success(
+        `Conta salva. Saldo atual: ${formatCurrency(relida?.saldo_atual ?? data.saldo_inicial)}`
+      );
+    } catch (err) {
+      console.error("Erro ao salvar conta:", err);
+      toast.error(`Erro ao salvar conta: ${err?.message || err}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -173,7 +190,8 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
                   <h3 className="font-semibold text-slate-800 mb-1">{conta.nome}</h3>
                   <p className="text-sm text-slate-500 mb-3">{conta.banco || conta.tipo}</p>
                   <p className="text-2xl font-bold text-slate-800">
-                    {formatCurrency(conta.saldo_atual || conta.saldo_inicial || 0)}
+                    {/* saldo_atual é o derivado pelo banco: R$ 0,00 é saldo, não "vazio" */}
+                    {formatCurrency(conta.saldo_atual ?? conta.saldo_inicial ?? 0)}
                   </p>
                 </CardContent>
               </Card>
@@ -309,6 +327,12 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
                 }
                 className="mt-1.5"
               />
+              <p className="text-xs text-slate-500 mt-1">
+                O saldo atual é calculado pelo sistema (saldo inicial + movimentações do extrato) e
+                recalculado ao salvar.
+                {selectedItem &&
+                  ` Saldo atual hoje: ${formatCurrency(selectedItem.saldo_atual ?? selectedItem.saldo_inicial)}.`}
+              </p>
             </div>
           </div>
           <div className="flex justify-between gap-3">
@@ -322,8 +346,8 @@ export default function ContasExtratosTab({ empresaAtiva, contas, onReload }) {
               <Button variant="outline" onClick={() => setShowModal(false)}>
                 Cancelar
               </Button>
-              <Button onClick={handleSave} disabled={!form.nome}>
-                Salvar
+              <Button onClick={handleSave} disabled={!form.nome || saving}>
+                {saving ? "Salvando..." : "Salvar"}
               </Button>
             </div>
           </div>

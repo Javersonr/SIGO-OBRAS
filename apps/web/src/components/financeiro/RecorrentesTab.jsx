@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Plus, Edit, Trash2, Calendar, RefreshCw } from "lucide-react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, supabase } from "@/api/sigoClient";
 import { Switch } from "@/components/ui/switch";
+import { formatFullDate } from "@/lib/formatters";
 
 export default function RecorrentesTab({
   empresaAtiva,
@@ -24,11 +25,13 @@ export default function RecorrentesTab({
   clientes,
   projetos,
   oportunidades,
+  onReload,
 }) {
   const [recorrencias, setRecorrencias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
+  const [processando, setProcessando] = useState(false);
   const [form, setForm] = useState({
     tipo: "despesa",
     descricao: "",
@@ -152,24 +155,63 @@ export default function RecorrentesTab({
       frequencia: form.frequencia,
       data_inicio: form.data_inicio,
       data_fim: form.data_fim || null,
-      proxima_geracao: form.data_inicio,
       dia_vencimento: form.dia_vencimento ? parseInt(form.dia_vencimento) : null,
       forma_pagamento: form.forma_pagamento || null,
       observacoes: form.observacoes || null,
       ativo: form.ativo,
     };
 
-    if (selectedItem) {
-      const updated = await sigo.entities.TransacaoRecorrente.update(selectedItem.id, data);
-      setRecorrencias((prev) =>
-        prev.map((r) => (r.id === selectedItem.id ? { ...r, ...data, ...updated } : r))
-      );
-    } else {
-      const created = await sigo.entities.TransacaoRecorrente.create(data);
-      setRecorrencias((prev) => [...prev, created]);
-    }
+    try {
+      if (selectedItem) {
+        // Na edição, proxima_geracao NÃO vai no payload: quem a avança é o
+        // cron / "Processar Agora". Antes ia proxima_geracao = data_inicio em
+        // todo salvar e o cron recriava as ocorrências já geradas.
+        // Só quando a data de início muda é que pedimos para reposicionar,
+        // seguindo a regra do banco (trigger tg_recorrencia_proxima_nao_volta,
+        // 0157): sem ocorrência gerada (nem excluída), acompanha o novo
+        // início; já gerou, fica no maior entre a próxima atual e o novo
+        // início — nunca volta. O banco continua sendo quem decide; espelhar
+        // aqui só evita depender da ordem de publicação da migração.
+        const inicioMudou = form.data_inicio !== selectedItem.data_inicio;
+        if (inicioMudou) {
+          const jaGerou =
+            (await sigo.entities.TransacaoFinanceira.count({
+              referencia_id: selectedItem.id,
+              includeDeleted: true,
+            })) > 0;
+          const proximaAtual = selectedItem.proxima_geracao;
+          data.proxima_geracao =
+            jaGerou && proximaAtual && proximaAtual > form.data_inicio
+              ? proximaAtual
+              : form.data_inicio;
+        }
 
-    setShowModal(false);
+        const updated = await sigo.entities.TransacaoRecorrente.update(selectedItem.id, data);
+        setRecorrencias((prev) =>
+          prev.map((r) => (r.id === selectedItem.id ? { ...r, ...data, ...updated } : r))
+        );
+
+        // o que vale é a data devolvida pelo banco
+        const proximaGravada = updated?.proxima_geracao ?? data.proxima_geracao;
+        if (inicioMudou && proximaGravada && proximaGravada !== form.data_inicio) {
+          alert(
+            `Recorrência salva.\n\nComo ela já gerou lançamentos, a próxima geração não volta ` +
+              `para trás: continua em ${formatFullDate(proximaGravada)}.`
+          );
+        }
+      } else {
+        const created = await sigo.entities.TransacaoRecorrente.create({
+          ...data,
+          proxima_geracao: form.data_inicio,
+        });
+        setRecorrencias((prev) => [...prev, created]);
+      }
+
+      setShowModal(false);
+    } catch (err) {
+      console.error("Erro ao salvar recorrência:", err);
+      alert(`Erro ao salvar recorrência: ${err?.message || err}`);
+    }
   };
 
   const handleDelete = async (id) => {
@@ -185,10 +227,39 @@ export default function RecorrentesTab({
   };
 
   const handleProcessarAgora = async () => {
-    if (!confirm("Processar todas as recorrências agora?")) return;
-    await sigo.functions.invoke("processarRecorrencias", {});
-    alert("Recorrências processadas!");
-    loadRecorrencias();
+    if (processando) return; // guarda contra clique duplo
+    if (!confirm("Gerar agora os lançamentos vencidos das recorrências desta empresa?")) return;
+
+    setProcessando(true);
+    try {
+      // Antes chamava uma Edge Function que nunca foi migrada e dizia
+      // "Recorrências processadas!" mesmo sem gerar nada. A RPC (0157) gera só
+      // as ocorrências vencidas da empresa do usuário, sem duplicar (ocorrência
+      // já gerada — ou excluída — não é recriada), e devolve quantas gerou.
+      const { data, error } = await supabase.rpc("processar_recorrencias_empresa");
+
+      if (error) {
+        console.error("Erro ao processar recorrências:", error);
+        alert(`Erro ao processar recorrências: ${error.message}`);
+        return;
+      }
+
+      const geradas = Number(data) || 0;
+      alert(
+        geradas === 0
+          ? "Nada a gerar: não há lançamento vencido pendente nas recorrências."
+          : geradas === 1
+            ? "1 lançamento gerado."
+            : `${geradas} lançamentos gerados.`
+      );
+      await loadRecorrencias();
+      if (geradas > 0) onReload?.();
+    } catch (err) {
+      console.error("Falha inesperada ao processar recorrências:", err);
+      alert(`Falha inesperada: ${err?.message || err}`);
+    } finally {
+      setProcessando(false);
+    }
   };
 
   const getFrequenciaLabel = (freq) => {
@@ -220,9 +291,14 @@ export default function RecorrentesTab({
           Transações Recorrentes ({recorrencias.length})
         </h2>
         <div className="flex gap-2">
-          <Button onClick={handleProcessarAgora} variant="outline" className="gap-2">
-            <RefreshCw className="w-4 h-4" />
-            Processar Agora
+          <Button
+            onClick={handleProcessarAgora}
+            variant="outline"
+            className="gap-2"
+            disabled={processando}
+          >
+            <RefreshCw className={`w-4 h-4 ${processando ? "animate-spin" : ""}`} />
+            {processando ? "Processando..." : "Processar Agora"}
           </Button>
           <Button onClick={() => handleOpen()} className="gap-2 bg-amber-500 hover:bg-amber-600">
             <Plus className="w-4 h-4" />
@@ -280,21 +356,18 @@ export default function RecorrentesTab({
                 <Calendar className="w-4 h-4" />
                 <span>{getFrequenciaLabel(rec.frequencia)}</span>
               </div>
+              {/* datas "AAAA-MM-DD": new Date() as lia em UTC e mostrava o dia anterior */}
               <div>
-                <span className="font-medium">Início:</span>{" "}
-                {new Date(rec.data_inicio).toLocaleDateString("pt-BR")}
+                <span className="font-medium">Início:</span> {formatFullDate(rec.data_inicio)}
               </div>
               {rec.data_fim && (
                 <div>
-                  <span className="font-medium">Fim:</span>{" "}
-                  {new Date(rec.data_fim).toLocaleDateString("pt-BR")}
+                  <span className="font-medium">Fim:</span> {formatFullDate(rec.data_fim)}
                 </div>
               )}
               <div>
                 <span className="font-medium">Próxima:</span>{" "}
-                {rec.proxima_geracao
-                  ? new Date(rec.proxima_geracao).toLocaleDateString("pt-BR")
-                  : "-"}
+                {rec.proxima_geracao ? formatFullDate(rec.proxima_geracao) : "-"}
               </div>
               <div>
                 <span className="font-medium">Conta:</span> {rec.conta_nome}
@@ -510,6 +583,15 @@ export default function RecorrentesTab({
                 />
               </div>
             </div>
+            {selectedItem && (
+              <p className="text-xs text-slate-500">
+                {`Próxima geração: ${
+                  selectedItem.proxima_geracao ? formatFullDate(selectedItem.proxima_geracao) : "-"
+                }. `}
+                Mudar a data de início só reposiciona a próxima geração enquanto nada foi gerado;
+                depois disso, ela não volta para trás.
+              </p>
+            )}
 
             {form.frequencia === "mensal" && (
               <div>

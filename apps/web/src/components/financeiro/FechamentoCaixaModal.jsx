@@ -6,8 +6,22 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { sigo } from "@/api/sigoClient";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { toast } from "sonner";
+import { sigo, supabase } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import {
+  dataDoFechamento,
+  mensagemErroFechamento,
+  sugerirContaFundo,
+  valorDoPreLancamento,
+} from "@/lib/fechamento-caixa";
 import {
   Loader2,
   Package,
@@ -20,13 +34,17 @@ import {
   FileSpreadsheet,
   Eye,
   FileWarning,
+  ArrowRight,
 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 const parseDados = (pl) => safeParseJSON(pl.dados_extraidos, {});
 
-const getValor = (pl) => parseFloat(parseDados(pl).valor) || 0;
+// mesmo critério do banco (valor_total do fechamento): "1.234,56" não vira 1,234
+const getValor = (pl) => valorDoPreLancamento(pl);
+
+const SEM_CONTA = "__none__";
 
 const getDescricao = (pl) => {
   const d = parseDados(pl);
@@ -42,12 +60,14 @@ export default function FechamentoCaixaModal({
   fechamento, // objeto FechamentoCaixa já existente
   itens: itensProp, // pré-lançamentos carregados pelo pai
   empresaId,
-  usuarioEmail,
   usuarioNome,
   onSucesso,
 }) {
   const [itens, setItens] = useState([]);
   const [empresa, setEmpresa] = useState(null);
+  const [contas, setContas] = useState([]);
+  const [contaPagadoraId, setContaPagadoraId] = useState(""); // "" = só baixar as despesas
+  const [contaFundoId, setContaFundoId] = useState("");
   const [dataPagamento, setDataPagamento] = useState(new Date().toLocaleDateString("en-CA"));
   const [observacoes, setObservacoes] = useState("");
   const [comprovante, setComprovante] = useState(null);
@@ -57,7 +77,7 @@ export default function FechamentoCaixaModal({
   const [erro, setErro] = useState(null);
   const [anexoAberto, setAnexoAberto] = useState(null);
 
-  // Carregar empresa e itens ao abrir
+  // Carregar empresa, contas e itens ao abrir
   useEffect(() => {
     if (!open) {
       setAnexoAberto(null); // fecha o comprovante junto com o modal
@@ -65,20 +85,40 @@ export default function FechamentoCaixaModal({
     }
     setErro(null);
     setItens(itensProp || []);
+    setContaPagadoraId("");
     sigo.entities.Empresa.filter({ id: empresaId })
       .then((r) => setEmpresa(r[0] || null))
       .catch((err) => {
         console.warn("[FechamentoCaixa] falha carregando empresa:", err);
         setEmpresa(null);
       });
-  }, [open, itensProp, empresaId]);
+    // contas para a reposição do fundo fixo (conta pagadora → fundo)
+    sigo.entities.ContaFinanceira.filter({ empresa_id: empresaId, ativo: true })
+      .then((r) => {
+        const lista = (r || []).sort((a, b) => (a.nome || "").localeCompare(b.nome || "", "pt-BR"));
+        setContas(lista);
+        setContaFundoId(sugerirContaFundo(lista, itensProp, fechamento?.conta_financeira_id));
+      })
+      .catch((err) => {
+        console.warn("[FechamentoCaixa] falha carregando contas:", err);
+        setContas([]);
+        setContaFundoId("");
+      });
+  }, [open, itensProp, empresaId, fechamento?.conta_financeira_id]);
 
   const total = itens.reduce((s, pl) => s + getValor(pl), 0);
+  // valor do fechamento (a reposição é calculada no banco: o que saiu do fundo)
+  const valorReposicao = Number(fechamento?.valor_total) || 0;
+  const totalDifereDoFechamento = itens.length > 0 && Math.abs(total - valorReposicao) >= 0.005;
+  const itensSemDespesa = itens.filter((pl) => !pl.transacao_id).length;
+  const contaPagadora = contas.find((c) => c.id === contaPagadoraId) || null;
+  const contaFundo = contas.find((c) => c.id === contaFundoId) || null;
   const numeroCaixa = fechamento?.numero || "–";
   const nomeResponsavel =
     fechamento?.usuario_reposicao_nome || fechamento?.usuario_reposicao_email || "";
+  // data_fechamento é timestamptz (o fechar_caixa grava now())
   const dataFechamento = fechamento?.data_fechamento
-    ? new Date(fechamento.data_fechamento + "T12:00:00").toLocaleDateString("pt-BR")
+    ? dataDoFechamento(fechamento.data_fechamento)
     : "";
 
   // ── Planilha modelo (igual ao HistoricoFechamentosCaixa) ──────────────────
@@ -96,7 +136,7 @@ export default function FechamentoCaixaModal({
           : d.data || "";
         const descricao = pl.descricao_caixa || d.descricao || d.fornecedor || "-";
         const documento = d.tipo_documento || d.numero_documento || "";
-        const valor = parseFloat(d.valor) || 0;
+        const valor = getValor(pl);
         return `<tr>
         <td style="border:1px solid #999;padding:4px 8px;text-align:center;">${i + 1}</td>
         <td style="border:1px solid #999;padding:4px 8px;">${data}</td>
@@ -131,7 +171,7 @@ export default function FechamentoCaixaModal({
               : d.data || "-",
             descricao: pl.descricao_caixa || d.fornecedor || d.descricao || "-",
             documento: d.tipo_documento || d.numero_documento || "",
-            valor: parseFloat(d.valor) || 0,
+            valor: getValor(pl),
             comprovante_url: pl.comprovante_url || null,
           };
         }),
@@ -174,8 +214,17 @@ export default function FechamentoCaixaModal({
 
   // ── Confirmar pagamento ───────────────────────────────────────────────────
   const handleConfirmarPagamento = async () => {
+    if (salvando) return;
     if (!dataPagamento) {
       setErro("Selecione a data do pagamento.");
+      return;
+    }
+    if (contaPagadoraId && !contaFundoId) {
+      setErro("Escolha a conta do fundo fixo que recebe a reposição.");
+      return;
+    }
+    if (contaPagadoraId && contaPagadoraId === contaFundoId) {
+      setErro("A conta pagadora e a conta do fundo fixo precisam ser diferentes.");
       return;
     }
     setSalvando(true);
@@ -189,39 +238,46 @@ export default function FechamentoCaixaModal({
         if (!comprovante_url) throw new Error("o envio do comprovante não retornou o arquivo");
       }
 
-      // Atualizar fechamento para "Pago"
-      await sigo.entities.FechamentoCaixa.update(fechamento.id, {
-        status: "Pago",
-        usuario_pagamento_email: usuarioEmail,
-        usuario_pagamento_nome: usuarioNome,
-        data_pagamento: dataPagamento,
-        observacoes_pagamento: observacoes || null,
-        comprovante_pagamento_url: comprovante_url,
+      // aprovar_pagamento_fechamento (0158), numa transação só: itens →
+      // "Conciliado"; despesas dos itens → pagas (o extrato sai da conta de cada
+      // despesa pelo trigger da 0155); com conta pagadora, a reposição vira
+      // transferência conta pagadora → fundo fixo, no valor das despesas pagas
+      // PELA CONTA DO FUNDO (despesa lançada em outra conta já saiu dela: repor
+      // também a debitaria duas vezes).
+      const { data, error } = await supabase.rpc("aprovar_pagamento_fechamento", {
+        p_fechamento_id: fechamento.id,
+        p_data: dataPagamento,
+        p_observacoes: observacoes || null,
+        p_comprovante_url: comprovante_url,
+        p_usuario_nome: usuarioNome || null,
+        p_conta_pagadora_id: contaPagadoraId || null,
+        // o fundo só vai junto com a conta pagadora (sem ela o campo nem aparece,
+        // e o banco mantém a conta já gravada no fechamento)
+        p_conta_fundo_id: contaPagadoraId ? contaFundoId || null : null,
       });
+      if (error) throw error;
 
-      // Marcar todos os pré-lançamentos como "Conciliado". allSettled pra
-      // saber se alguma transação ficou pra trás — relatórios financeiros
-      // ficavam mostrando "em aberto" sem aviso quando 1 update falhava.
-      const results = await Promise.allSettled(
-        itens.map(async (pl) => {
-          await sigo.entities.PreLancamento.update(pl.id, { status: "Conciliado" });
-          if (pl.transacao_id) {
-            await sigo.entities.TransacaoFinanceira.update(pl.transacao_id, { status: "pago" });
-          }
-        })
-      );
-      const falhas = results.filter((r) => r.status === "rejected");
-      if (falhas.length > 0) {
-        console.error("Falhas ao conciliar fechamento:", falhas);
-        alert(
-          `Atenção: ${falhas.length} de ${itens.length} item(s) do fechamento não foram marcados como pagos. Verifique no histórico.`
+      const avisos = [];
+      if (Number(data?.despesas_fora_do_fundo) > 0) {
+        avisos.push(
+          `${data.despesas_fora_do_fundo} despesa(s) estão em outra conta e não entram na reposição`
         );
       }
-
+      if (Number(data?.parceladas_ignoradas) > 0) {
+        avisos.push(
+          `${data.parceladas_ignoradas} despesa(s) parcelada(s) não foram baixadas: pague parcela a parcela`
+        );
+      }
+      toast.success(
+        (data?.transferencia_id
+          ? `Pagamento do fechamento #${numeroCaixa} aprovado. Reposição de R$ ${fmtBRL(Number(data.valor_reposicao) || 0)} transferida de ${contaPagadora?.nome || "conta pagadora"} para ${contaFundo?.nome || "o fundo fixo"}.`
+          : `Pagamento do fechamento #${numeroCaixa} aprovado: despesas dos itens baixadas.`) +
+          (avisos.length ? ` Atenção: ${avisos.join("; ")}.` : "")
+      );
       onOpenChange(false);
       if (onSucesso) onSucesso();
     } catch (err) {
-      setErro("Erro ao confirmar pagamento: " + err.message);
+      setErro("Erro ao confirmar pagamento: " + mensagemErroFechamento(err));
     } finally {
       setSalvando(false);
     }
@@ -256,8 +312,13 @@ export default function FechamentoCaixaModal({
             </div>
             <div>
               <p className="text-xs text-slate-500 mb-1">Valor Total</p>
-              <p className="text-2xl font-bold text-red-600">R$ {fmtBRL(total)}</p>
+              <p className="text-2xl font-bold text-red-600">R$ {fmtBRL(valorReposicao)}</p>
             </div>
+            {totalDifereDoFechamento && (
+              <p className="col-span-2 text-xs text-amber-700">
+                A soma dos itens hoje é R$ {fmtBRL(total)} (algum item mudou depois do fechamento).
+              </p>
+            )}
           </div>
 
           {/* Lista de itens */}
@@ -362,6 +423,90 @@ export default function FechamentoCaixaModal({
               value={dataPagamento}
               onChange={(e) => setDataPagamento(e.target.value)}
             />
+            <p className="text-xs text-slate-500">
+              Data do pagamento do fechamento e da reposição. Cada despesa fica paga na data dela (a
+              do comprovante).
+            </p>
+          </div>
+
+          {/* Reposição do fundo fixo: conta pagadora (opcional) → fundo fixo */}
+          <div className="space-y-3 p-4 border rounded-lg bg-slate-50">
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">
+                Conta pagadora da reposição (opcional)
+              </Label>
+              <Select
+                value={contaPagadoraId || SEM_CONTA}
+                onValueChange={(v) => setContaPagadoraId(v === SEM_CONTA ? "" : v)}
+              >
+                <SelectTrigger className="bg-white">
+                  <SelectValue placeholder="Nenhuma: só baixar as despesas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SEM_CONTA}>Nenhuma: só baixar as despesas</SelectItem>
+                  {contas
+                    .filter((c) => c.id !== contaFundoId)
+                    .map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.nome}
+                        {c.tipo ? ` (${c.tipo})` : ""}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {contaPagadoraId && (
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">
+                  Conta do fundo fixo (recebe a reposição) *
+                </Label>
+                <Select value={contaFundoId} onValueChange={setContaFundoId}>
+                  <SelectTrigger className="bg-white">
+                    <SelectValue placeholder="Selecione o fundo fixo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[...contas]
+                      .filter((c) => c.id !== contaPagadoraId)
+                      // fundos fixos primeiro
+                      .sort((a, b) => (b.tipo === "Fundo Fixo") - (a.tipo === "Fundo Fixo"))
+                      .map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.nome}
+                          {c.tipo ? ` (${c.tipo})` : ""}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* efeito da aprovação, em palavras */}
+            {contaPagadoraId && contaFundo ? (
+              <p className="text-sm text-slate-700">
+                A reposição sai da conta <strong>{contaPagadora?.nome}</strong>{" "}
+                <ArrowRight className="inline w-3.5 h-3.5 text-slate-400 align-[-2px]" /> para o
+                fundo fixo <strong>{contaFundo.nome}</strong> (transferência na data do pagamento),
+                no valor das despesas deste fechamento pagas pela conta do fundo — despesa lançada
+                em outra conta já saiu dela e não é reposta.
+              </p>
+            ) : contaPagadoraId ? (
+              <p className="text-sm text-amber-700">
+                Escolha a conta do fundo fixo que recebe a reposição.
+              </p>
+            ) : (
+              <p className="text-sm text-slate-600">
+                Sem conta pagadora: só as despesas dos itens ficam pagas (a saída fica na conta de
+                cada despesa). Nenhuma reposição do fundo fixo é lançada.
+              </p>
+            )}
+            {itensSemDespesa > 0 && (
+              <p className="text-xs text-amber-700">
+                {itensSemDespesa} item(ns) sem despesa vinculada: ficam conciliados, mas não lançam
+                saída em conta nenhuma. Para lançar, use &quot;Conciliar&quot; no item antes de
+                aprovar.
+              </p>
+            )}
           </div>
 
           {/* Observações */}
