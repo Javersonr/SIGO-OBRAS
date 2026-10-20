@@ -568,7 +568,7 @@ begin
   end if;
   select count(*) into v_n from public.arquivo_oportunidade where origem = 'smoke:recusa';
   if v_n <> 0 then raise exception 'FALHOU: uma chamada recusada gravou % linha(s)', v_n; end if;
-  raise notice '[8] recusas da RPC: pasta da empresa (só a pasta, "." e ".."), lista branca da ref (tab/LF/CR, barra invertida, %, espaço, acento), assinatura, origem, nome e empresa/oportunidade nulas';
+  raise notice '[8] recusas da RPC: pasta da empresa (só a pasta, "." e ".."), lista branca da ref (tab/LF/CR, barra invertida, %%, espaço, acento), assinatura, origem, nome e empresa/oportunidade nulas';
 
   -- 9. o índice único e os CHECKs de arquivo_oportunidade ----------------------------------------------------------------
   -- a chave é (empresa_id, oportunidade_id, origem), entre as linhas vivas com origem
