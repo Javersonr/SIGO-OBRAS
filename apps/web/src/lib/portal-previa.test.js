@@ -458,6 +458,11 @@ describe("criarApiPrevia", () => {
       "progresso",
       "iniciar_avaliacao",
       "avaliacao",
+      "questionario_abrir",
+      "questionario_enviar",
+      "caso_abrir",
+      "caso_escolher",
+      "caso_concluir",
       "duvida",
       "certificado",
       "ciencia",
@@ -611,5 +616,311 @@ describe("paridade da prévia com o servidor (A6)", () => {
     expect(valorDe("export const REPROVADO_VE_NOTA = true;", "teste")).toBe(true);
     expect(valorDe("const REPROVADO_VE_NOTA = false;", "teste")).toBe(false);
     expect(valorDe("export const REPROVADO_VE_NOTA: boolean = true;", "teste")).toBe(true);
+  });
+});
+
+describe("atividades dos módulos na prévia (questionário, caso e tarefa)", () => {
+  // roteiro sintético (nenhum texto do material do curso): e1 -> e2 -> fim; a insegura de e1 vai à recuperação r1
+  const roteiro = {
+    contexto: "Situação sintética: um quadro de teste precisa de manutenção.",
+    etapas: [
+      {
+        id: "e1",
+        pergunta: "Primeira decisão?",
+        opcoes: [
+          {
+            texto: "Testar a ausência de tensão",
+            comentario: "Certo: teste antes.",
+            segura: true,
+            proxima: "e2",
+          },
+          {
+            texto: "Ligar sem testar",
+            comentario: "Arriscado: teste antes.",
+            segura: false,
+            proxima: "r1",
+          },
+        ],
+      },
+      {
+        id: "r1",
+        pergunta: "O que fazer agora?",
+        opcoes: [
+          {
+            texto: "Voltar e testar",
+            comentario: "Isso: volte e teste.",
+            segura: true,
+            proxima: "e1",
+          },
+          {
+            texto: "Seguir assim mesmo",
+            comentario: "Ainda arriscado.",
+            segura: false,
+            proxima: "r1",
+          },
+        ],
+      },
+      {
+        id: "e2",
+        pergunta: "Como liberar o quadro?",
+        opcoes: [
+          {
+            texto: "Liberar com tudo conferido",
+            comentario: "Fim seguro.",
+            segura: true,
+            proxima: null,
+          },
+          {
+            texto: "Liberar sem avisar a equipe",
+            comentario: "Avise sempre.",
+            segura: false,
+            proxima: "e2",
+          },
+        ],
+      },
+    ],
+    reflexao: "Reflexão sintética: o teste vem antes do toque.",
+  };
+  const aulasAtividades = [
+    {
+      id: "t1",
+      ordem: 1,
+      tipo: "tarefa",
+      titulo: "Tarefa",
+      conteudo_texto: "Instruções sintéticas",
+      duracao_seg: 2100,
+    },
+    {
+      id: "qz",
+      ordem: 2,
+      tipo: "questionario",
+      titulo: "Questionário do módulo",
+      conteudo_texto: "não vai",
+      duracao_seg: 900,
+    },
+    { id: "cs", ordem: 3, tipo: "caso", titulo: "Caso 1", duracao_seg: 600 },
+    { id: "cv", ordem: 4, tipo: "caso", titulo: "Caso com roteiro apagado", duracao_seg: 600 },
+    { id: "qv", ordem: 5, tipo: "questionario", titulo: "Questionário vazio", duracao_seg: 900 },
+  ];
+  const questoesDoModulo = Array.from({ length: 8 }, (_, i) => ({
+    id: `m${i + 1}`,
+    aula_id: "qz",
+    ordem: i + 1,
+    pergunta: `Questão sintética ${i + 1}?`,
+    opcoes: ["certa", "errada", "outra"],
+    correta: 0,
+    comentario: `Comentário ${i + 1}`,
+  }));
+  const montar = (extra = {}) =>
+    montarItemPrevia({
+      curso: { ...curso, ...extra },
+      aulas: aulasAtividades,
+      questoes: [
+        ...questoes,
+        ...questoesDoModulo,
+        { ...questoesDoModulo[0], id: "apagada", deleted_at: "2026-10-01T00:00:00Z" },
+      ],
+      casos: [
+        { aula_id: "cs", conteudo: roteiro },
+        { aula_id: "cv", conteudo: roteiro, deleted_at: "2026-10-01T00:00:00Z" },
+      ],
+      urls,
+    });
+  const respostasCom = (acertos) =>
+    questoesDoModulo.map((q, i) => ({ questao_id: q.id, resposta: i < acertos ? 0 : 1 }));
+  const indice = (etapa, texto) => etapa.opcoes.find((o) => o.texto === texto).indice;
+
+  it("a prova final usa só as questões sem aula; as dos questionários e os roteiros ficam à parte", () => {
+    const item = montar();
+    expect(item.questoes.map((q) => q.id)).toEqual(["q1", "q2"]);
+    expect(item.avaliacao.total_questoes).toBe(2);
+    expect(item.curso.tem_avaliacao).toBe(true);
+    expect(item.atividades_previa.questionarios.qz.map((q) => q.id)).toEqual(
+      questoesDoModulo.map((q) => q.id)
+    );
+    expect(JSON.stringify(item.atividades_previa)).not.toContain("apagada");
+    expect(Object.keys(item.atividades_previa.casos)).toEqual(["cs"]);
+  });
+
+  it("a tarefa leva o texto da aula; questionário e caso, não (vêm das ações próprias)", () => {
+    const item = montar();
+    expect(item.aulas.find((a) => a.id === "t1").conteudo_texto).toBe("Instruções sintéticas");
+    expect(item.aulas.find((a) => a.id === "qz").conteudo_texto).toBeNull();
+    expect(item.aulas.find((a) => a.id === "cs").conteudo_texto).toBeNull();
+  });
+
+  it("nota mínima dos questionários: a do curso (0 a 100), ou 80", () => {
+    expect(montar().atividades_previa.nota_minima_modulo).toBe(80);
+    expect(montar({ nota_minima_modulo: 70 }).atividades_previa.nota_minima_modulo).toBe(70);
+    expect(montar({ nota_minima_modulo: "90" }).atividades_previa.nota_minima_modulo).toBe(90);
+    expect(montar({ nota_minima_modulo: 0 }).atividades_previa.nota_minima_modulo).toBe(0);
+    for (const ruim of [150, -1, "", "abc", 7.5, true]) {
+      expect(montar({ nota_minima_modulo: ruim }).atividades_previa.nota_minima_modulo).toBe(80);
+    }
+  });
+
+  it("questionario_abrir sorteia as questões da aula, com gabarito só para o RT", async () => {
+    const api = criarApiPrevia({ item: montar() });
+    const r = await api.chamarPortal("questionario_abrir", { aula_id: "qz" });
+    expect(r).toMatchObject({ success: true, concluida: false, tentativa: 1, nota_minima: 80 });
+    expect(r.questoes.map((q) => q.id).sort()).toEqual(questoesDoModulo.map((q) => q.id).sort());
+    const prova = provaParaTela(r, { previa: true });
+    expect(prova).not.toBeNull();
+    const q = prova.questoes[0];
+    expect(q.exibicao.find((o) => o.indice === q.correta).texto).toBe("certa");
+  });
+
+  it("6 de 8 não aprova (75%) e 7 de 8 aprova (88%); a correção comentada vem nos dois (A2) e nada conclui", async () => {
+    const api = criarApiPrevia({ item: montar() });
+    await api.chamarPortal("questionario_abrir", { aula_id: "qz" });
+    const reprovado = await api.chamarPortal("questionario_enviar", {
+      aula_id: "qz",
+      respostas: respostasCom(6),
+    });
+    expect(reprovado).toMatchObject({
+      resultado: "insatisfatorio",
+      aprovada: false,
+      nota: 75,
+      acertos: 6,
+      total: 8,
+      nota_minima: 80,
+      tentativa: 1,
+      aula_concluida: false,
+    });
+    expect(reprovado.revisao).toHaveLength(8);
+    expect(reprovado.revisao[7]).toEqual({
+      questao_id: "m8",
+      acertou: false,
+      resposta_correta: "certa",
+      comentario: "Comentário 8",
+    });
+    await api.chamarPortal("questionario_abrir", { aula_id: "qz" });
+    const aprovado = await api.chamarPortal("questionario_enviar", {
+      aula_id: "qz",
+      respostas: respostasCom(7),
+    });
+    expect(aprovado).toMatchObject({
+      resultado: "satisfatorio",
+      aprovada: true,
+      nota: 88,
+      tentativa: 2,
+      aula_concluida: false,
+      curso_concluido: false,
+    });
+    expect(aprovado.revisao).toHaveLength(8);
+  });
+
+  it("tentativas livres: cada abertura depois de um envio é a tentativa seguinte", async () => {
+    const api = criarApiPrevia({ item: montar() });
+    expect((await api.chamarPortal("questionario_abrir", { aula_id: "qz" })).tentativa).toBe(1);
+    expect((await api.chamarPortal("questionario_abrir", { aula_id: "qz" })).tentativa).toBe(1);
+    await api.chamarPortal("questionario_enviar", { aula_id: "qz", respostas: respostasCom(0) });
+    expect((await api.chamarPortal("questionario_abrir", { aula_id: "qz" })).tentativa).toBe(2);
+  });
+
+  it("questionário sem questões: QUESTIONARIO_VAZIO; aula de outro tipo: recusa", async () => {
+    const api = criarApiPrevia({ item: montar() });
+    const vazio = await api.chamarPortal("questionario_abrir", { aula_id: "qv" }).catch((e) => e);
+    expect(vazio.codigo).toBe("QUESTIONARIO_VAZIO");
+    expect(vazio.message).toMatch(/avise o RH/);
+    const outro = await api.chamarPortal("questionario_abrir", { aula_id: "cs" }).catch((e) => e);
+    expect(outro).toBeInstanceOf(Error);
+    expect(outro.message).toMatch(/não é um questionário/);
+    const alheia = await api.chamarPortal("questionario_abrir", { aula_id: "x" }).catch((e) => e);
+    expect(alheia.message).toBe("Aula não pertence ao curso");
+  });
+
+  it("caso: etapa só com os textos; a insegura vai à recuperação e volta; a segura leva ao fim", async () => {
+    const api = criarApiPrevia({ item: montar() });
+    const abrir = () => api.chamarPortal("caso_abrir", { aula_id: "cs" });
+    const escolher = (etapa_id, opcao) =>
+      api.chamarPortal("caso_escolher", { aula_id: "cs", etapa_id, opcao });
+
+    const inicio = await abrir();
+    expect(inicio).toMatchObject({
+      situacao: "etapa",
+      contexto: roteiro.contexto,
+      passagem: 1,
+      ultimo: null,
+    });
+    expect(inicio.etapa.id).toBe("e1");
+    for (const op of inicio.etapa.opcoes)
+      expect(Object.keys(op).sort()).toEqual(["indice", "texto"]);
+
+    const insegura = await escolher("e1", indice(inicio.etapa, "Ligar sem testar"));
+    expect(insegura).toMatchObject({
+      comentario: "Arriscado: teste antes.",
+      segura: false,
+      fim: false,
+      passagem: 1,
+      reflexao: null,
+    });
+    expect(insegura.etapa.id).toBe("r1");
+
+    const volta = await escolher("r1", indice(insegura.etapa, "Voltar e testar"));
+    expect(volta.etapa.id).toBe("e1");
+    const retomado = await abrir();
+    expect(retomado).toMatchObject({
+      situacao: "etapa",
+      passagem: 2,
+      ultimo: { comentario: "Isso: volte e teste.", segura: true },
+    });
+
+    const segura = await escolher("e1", indice(retomado.etapa, "Testar a ausência de tensão"));
+    expect(segura).toMatchObject({ segura: true, fim: false, passagem: 2 });
+    const fim = await escolher("e2", indice(segura.etapa, "Liberar com tudo conferido"));
+    expect(fim).toMatchObject({ segura: true, fim: true, etapa: null, reflexao: roteiro.reflexao });
+    expect(await abrir()).toMatchObject({ situacao: "fim", reflexao: roteiro.reflexao });
+  });
+
+  it("escolha numa etapa que não é a atual: CASO_FORA_DE_ORDEM com o estado atual", async () => {
+    const api = criarApiPrevia({ item: montar() });
+    const inicio = await api.chamarPortal("caso_abrir", { aula_id: "cs" });
+    await api.chamarPortal("caso_escolher", {
+      aula_id: "cs",
+      etapa_id: "e1",
+      opcao: indice(inicio.etapa, "Ligar sem testar"),
+    });
+    const erro = await api
+      .chamarPortal("caso_escolher", { aula_id: "cs", etapa_id: "e1", opcao: 0 })
+      .catch((e) => e);
+    expect(erro.codigo).toBe("CASO_FORA_DE_ORDEM");
+    expect(erro.extra.estado).toMatchObject({ situacao: "etapa", contexto: roteiro.contexto });
+    expect(erro.extra.estado.etapa.id).toBe("r1");
+  });
+
+  it("concluir antes do fim: CASO_INCOMPLETO; no fim, nada é gravado e o caso recomeça", async () => {
+    const api = criarApiPrevia({ item: montar() });
+    const antes = await api.chamarPortal("caso_concluir", { aula_id: "cs" }).catch((e) => e);
+    expect(antes.codigo).toBe("CASO_INCOMPLETO");
+    const inicio = await api.chamarPortal("caso_abrir", { aula_id: "cs" });
+    const meio = await api.chamarPortal("caso_escolher", {
+      aula_id: "cs",
+      etapa_id: "e1",
+      opcao: indice(inicio.etapa, "Testar a ausência de tensão"),
+    });
+    await api.chamarPortal("caso_escolher", {
+      aula_id: "cs",
+      etapa_id: "e2",
+      opcao: indice(meio.etapa, "Liberar com tudo conferido"),
+    });
+    const encerrado = await api
+      .chamarPortal("caso_escolher", { aula_id: "cs", etapa_id: "e2", opcao: 0 })
+      .catch((e) => e);
+    expect(encerrado.codigo).toBe("CASO_ENCERRADO");
+    expect(await api.chamarPortal("caso_concluir", { aula_id: "cs" })).toMatchObject({
+      aula_concluida: false,
+      curso_concluido: false,
+    });
+    const deNovo = await api.chamarPortal("caso_abrir", { aula_id: "cs" });
+    expect(deNovo).toMatchObject({ situacao: "etapa", passagem: 1 });
+    expect(deNovo.etapa.id).toBe("e1");
+  });
+
+  it("caso sem roteiro (ou com o roteiro apagado): CASO_INVALIDO, como o servidor", async () => {
+    const api = criarApiPrevia({ item: montar() });
+    const erro = await api.chamarPortal("caso_abrir", { aula_id: "cv" }).catch((e) => e);
+    expect(erro.codigo).toBe("CASO_INVALIDO");
+    expect(erro.message).toBe("Este caso está com problema — avise o RH");
   });
 });

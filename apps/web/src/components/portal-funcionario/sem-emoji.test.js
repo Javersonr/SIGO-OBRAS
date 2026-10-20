@@ -30,6 +30,7 @@ const ARQUIVOS = [
   "../../lib/portal-leitura.js",
   "../../lib/portal-questionario.js",
   "../../lib/portal-caso.js",
+  "../../lib/portal-previa.js",
 ];
 
 const comEmoji = (caminho) =>
