@@ -92,6 +92,82 @@ export function textoDoLocalResumido(d) {
   );
 }
 
+// ------------------------------------------------------------- a frente: atividades dos módulos (A9)
+
+const quantidade = (v) => {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : 0;
+};
+const comPlural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+
+/**
+ * A lista das atividades dos módulos (A9, spec §9), a partir de `dados.atividades` congelado na emissão:
+ * "12 questionários (nota mínima de 80%), 36 estudos de caso e 55 atividades de estudo". Singular e plural;
+ * item com zero fica de fora; nota mínima fora de 0 a 100 sai sem o parêntese. "" sem atividades.
+ */
+export function listaDasAtividades(atividades) {
+  if (!atividades || typeof atividades !== "object") return "";
+  const itens = [];
+  const questionarios = quantidade(atividades.questionarios);
+  if (questionarios) {
+    const nota =
+      atividades.nota_minima_modulo === null || atividades.nota_minima_modulo === undefined
+        ? NaN
+        : Number(atividades.nota_minima_modulo);
+    const comNota = Number.isFinite(nota) && nota >= 0 && nota <= 100;
+    itens.push(
+      comPlural(questionarios, "questionário", "questionários") +
+        (comNota ? ` (nota mínima de ${nota}%)` : "")
+    );
+  }
+  const casos = quantidade(atividades.casos);
+  if (casos) itens.push(comPlural(casos, "estudo de caso", "estudos de caso"));
+  const tarefas = quantidade(atividades.tarefas);
+  if (tarefas) itens.push(comPlural(tarefas, "atividade de estudo", "atividades de estudo"));
+  if (!itens.length) return "";
+  if (itens.length === 1) return itens[0];
+  return `${itens.slice(0, -1).join(", ")} e ${itens[itens.length - 1]}`;
+}
+
+/** "e conclusão das atividades dos módulos: …" (contrato C6); "" quando o certificado não tem atividades. */
+export function textoDasAtividades(atividades) {
+  const lista = listaDasAtividades(atividades);
+  return lista ? `e conclusão das atividades dos módulos: ${lista}` : "";
+}
+
+/**
+ * O trecho das atividades no texto da frente: logo depois do aproveitamento ("..., com aproveitamento de 90%
+ * na avaliação e conclusão das atividades...") ou, no curso sem prova, logo depois do período (", com
+ * conclusão das atividades..."). "" sem atividades: o texto sai exatamente como antes.
+ */
+export function trechoDasAtividades(d) {
+  const lista = listaDasAtividades(d?.atividades);
+  if (!lista) return "";
+  return d?.avaliacao?.nota != null
+    ? ` ${textoDasAtividades(d.atividades)}`
+    : `, com conclusão das atividades dos módulos: ${lista}`;
+}
+
+/** Fontes do texto da frente, da inteira à menor; só o certificado com atividades reduz. */
+const TAMANHOS_DO_CORPO = [12.5, 11.5, 10.5, 9.5];
+/** Distância mínima (mm) da última linha do texto da frente até a primeira linha de detalhe. */
+const FOLGA_DO_CORPO = 5.5;
+
+/**
+ * As linhas do texto da frente na maior fonte da lista em que a última linha fica até `limite` (mm); sem
+ * nenhuma que caiba, a menor. Deixa a fonte escolhida ligada no `doc`.
+ */
+function linhasDoCorpoQueCabem(doc, corpo, { tamanhos, largura, yInicio, limite }) {
+  let linhas = [];
+  for (const tamanho of tamanhos) {
+    doc.setFontSize(tamanho);
+    linhas = doc.splitTextToSize(corpo, largura);
+    // altura da linha do jsPDF: fonte (pt) × 1,6 (lineHeightFactor) × 0,3528 mm por pt
+    if (yInicio + (linhas.length - 1) * tamanho * 1.6 * 0.3528 <= limite) break;
+  }
+  return linhas;
+}
+
 const fmtHoras = (h) => `${String(Math.round((Number(h) || 0) * 100) / 100).replace(".", ",")} h`;
 
 /** "05/10/2026, das 08:00 às 17:00 (8 h), em Local. Instrutor: Nome, qualificação." de uma sessão congelada. */
@@ -333,17 +409,17 @@ export async function baixarCertificadoPdf(cert, opcoes = {}) {
 
   doc.setTextColor(15, 23, 42);
   doc.setFontSize(12.5);
+  // atividades dos módulos (A9, spec §9): a frase vem logo depois do aproveitamento; sem atividades, "" e o
+  // texto sai exatamente como antes
+  const atividades = trechoDasAtividades(d);
   const corpo =
     `Certificamos que ${d.aluno?.nome || "—"}, CPF ${fmtCpf(d.aluno?.cpf)}, concluiu o treinamento ` +
     `"${d.curso?.nome || "—"}"${d.curso?.codigo ? ` (${d.curso.codigo})` : ""}, na modalidade ` +
     `${d.curso?.modalidade || "EAD"}, com carga horária de ${d.curso?.carga_horaria_horas || "—"} horas, ` +
     `no período de ${fmtData(d.periodo?.inicio)} a ${fmtData(d.periodo?.conclusao)}` +
     (d.avaliacao?.nota != null ? `, com aproveitamento de ${d.avaliacao.nota}% na avaliação` : "") +
+    atividades +
     `, promovido por ${d.empresa?.nome || "—"}${d.empresa?.cnpj ? `, CNPJ ${fmtCnpj(d.empresa.cnpj)}` : ""}.`;
-  doc.text(doc.splitTextToSize(corpo, W - 60), W / 2, 64, {
-    align: "center",
-    lineHeightFactor: 1.6,
-  });
   // linhas de rodapé do texto: tipo do treinamento (NR-1, 1.7.1.2; T23), validade e local de realização
   // (NR-1, 1.7.1.1). O certificado emitido antes da T8 não tem local e o de antes da T23 não tem tipo: saem sem a
   // linha. Tipo e validade dividem a primeira linha (o certificado não ganha altura); o motivo do eventual
@@ -351,6 +427,15 @@ export async function baixarCertificadoPdf(cert, opcoes = {}) {
   // imagens das assinaturas começam em y = 122,5 e nada do bloco pode chegar lá.
   const [linhaDoTipo, linhaDoMotivo] = linhasDoTipoNoCertificado(d);
   let yDetalhe = linhaDoMotivo ? 98 : 104;
+  // com a frase das atividades o texto cresce: a fonte diminui até a última linha ficar acima das linhas de
+  // detalhe. O certificado sem atividades sai como sempre saiu (12,5 pt).
+  const linhasDoCorpo = linhasDoCorpoQueCabem(doc, corpo, {
+    tamanhos: atividades ? TAMANHOS_DO_CORPO : [12.5],
+    largura: W - 60,
+    yInicio: 64,
+    limite: yDetalhe - FOLGA_DO_CORPO,
+  });
+  doc.text(linhasDoCorpo, W / 2, 64, { align: "center", lineHeightFactor: 1.6 });
   const tipoEValidade = [
     linhaDoTipo,
     d.periodo?.validade ? `Validade: até ${fmtData(d.periodo.validade)}` : null,

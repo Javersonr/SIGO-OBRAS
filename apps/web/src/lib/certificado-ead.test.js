@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { baixarCertificadoPdf, distribuirConteudo, textoDoLocalResumido } from "./certificado-ead";
+import {
+  baixarCertificadoPdf,
+  distribuirConteudo,
+  listaDasAtividades,
+  textoDasAtividades,
+  textoDoLocalResumido,
+  trechoDasAtividades,
+} from "./certificado-ead";
 import { ErroCertificado, MSG_QR_FALHOU } from "./certificado-ead-falhas";
 
 // Registro das chamadas a doc.text (texto e posição em mm), para conferir a geometria do certificado. O jsPDF
@@ -11,7 +18,13 @@ vi.mock("jspdf", async (importarOriginal) => {
     const doc = new real.jsPDF(...args);
     const desenhar = doc.text.bind(doc);
     doc.text = (texto, x, y, ...resto) => {
-      registro.textos.push({ texto, x, y, pagina: doc.internal.getCurrentPageInfo().pageNumber });
+      registro.textos.push({
+        texto,
+        x,
+        y,
+        pagina: doc.internal.getCurrentPageInfo().pageNumber,
+        tamanho: doc.getFontSize(),
+      });
       return desenhar(texto, x, y, ...resto);
     };
     return doc;
@@ -858,5 +871,134 @@ describe("distribuirConteudo: colunas, fonte e páginas do conteúdo programáti
     const r = distribuirConteudo(doc, [], CFG);
     expect(r.itens).toEqual([]);
     expect(r.paginas).toBe(1);
+  });
+});
+
+describe("textoDasAtividades (A9: a frase das atividades dos módulos na frente)", () => {
+  it("a frase da spec, com plural e a nota mínima dos módulos", () => {
+    expect(
+      textoDasAtividades({ questionarios: 12, casos: 36, tarefas: 55, nota_minima_modulo: 80 })
+    ).toBe(
+      "e conclusão das atividades dos módulos: 12 questionários (nota mínima de 80%), 36 estudos de caso e 55 atividades de estudo"
+    );
+  });
+
+  it("singular", () => {
+    expect(
+      textoDasAtividades({ questionarios: 1, casos: 1, tarefas: 1, nota_minima_modulo: 70 })
+    ).toBe(
+      "e conclusão das atividades dos módulos: 1 questionário (nota mínima de 70%), 1 estudo de caso e 1 atividade de estudo"
+    );
+  });
+
+  it("itens com zero ficam de fora e a lista se ajusta", () => {
+    expect(
+      textoDasAtividades({ questionarios: 0, casos: 3, tarefas: 5, nota_minima_modulo: 80 })
+    ).toBe("e conclusão das atividades dos módulos: 3 estudos de caso e 5 atividades de estudo");
+    expect(
+      textoDasAtividades({ questionarios: 2, casos: 0, tarefas: 0, nota_minima_modulo: 80 })
+    ).toBe("e conclusão das atividades dos módulos: 2 questionários (nota mínima de 80%)");
+    expect(listaDasAtividades({ tarefas: 4 })).toBe("4 atividades de estudo");
+  });
+
+  it("sem atividades: texto vazio (o certificado sai como hoje)", () => {
+    for (const v of [
+      undefined,
+      null,
+      {},
+      "x",
+      { questionarios: 0, casos: 0, tarefas: 0, nota_minima_modulo: 80 },
+    ]) {
+      expect(textoDasAtividades(v)).toBe("");
+    }
+  });
+
+  it("nota mínima ausente ou fora de 0 a 100: o questionário sai sem o parêntese", () => {
+    for (const nota of [undefined, null, "abc", 150, -5]) {
+      expect(textoDasAtividades({ questionarios: 2, nota_minima_modulo: nota })).toBe(
+        "e conclusão das atividades dos módulos: 2 questionários"
+      );
+    }
+    expect(textoDasAtividades({ questionarios: "3", nota_minima_modulo: "80" })).toBe(
+      "e conclusão das atividades dos módulos: 3 questionários (nota mínima de 80%)"
+    );
+  });
+
+  it("trechoDasAtividades: depois do aproveitamento ou, sem prova, com 'com'", () => {
+    const atividades = { questionarios: 0, casos: 2, tarefas: 0, nota_minima_modulo: 80 };
+    expect(trechoDasAtividades({ atividades, avaliacao: { nota: 90 } })).toBe(
+      " e conclusão das atividades dos módulos: 2 estudos de caso"
+    );
+    expect(trechoDasAtividades({ atividades })).toBe(
+      ", com conclusão das atividades dos módulos: 2 estudos de caso"
+    );
+    expect(trechoDasAtividades({ avaliacao: { nota: 90 } })).toBe("");
+    expect(trechoDasAtividades(null)).toBe("");
+  });
+});
+
+describe("baixarCertificadoPdf: atividades dos módulos (A9)", () => {
+  const ATIVIDADES = { questionarios: 12, casos: 36, tarefas: 55, nota_minima_modulo: 80 };
+  const comAtividades = (dadosExtra = {}) =>
+    certificado({ dados: { ...certificado().dados, atividades: ATIVIDADES, ...dadosExtra } });
+  const corpoDesenhado = () =>
+    registro.textos.find((c) => /Certificamos que/.test([c.texto].flat().join(" ")));
+  const gerar = (cert) =>
+    baixarCertificadoPdf(cert, { gerarQr: async () => PNG_1X1, salvar: () => {} });
+
+  it("a frase entra logo depois do aproveitamento, antes de 'promovido por'", async () => {
+    registro.textos.length = 0;
+    await gerar(comAtividades());
+    expect([corpoDesenhado().texto].flat().join(" ")).toContain(
+      "com aproveitamento de 100% na avaliação e conclusão das atividades dos módulos: 12 questionários (nota mínima de 80%), 36 estudos de caso e 55 atividades de estudo, promovido por"
+    );
+  });
+
+  it("sem prova, a frase entra com 'com', logo depois do período", async () => {
+    registro.textos.length = 0;
+    await gerar(comAtividades({ avaliacao: undefined }));
+    expect([corpoDesenhado().texto].flat().join(" ")).toContain(
+      "a 10/01/2026, com conclusão das atividades dos módulos: 12 questionários"
+    );
+  });
+
+  it("certificado sem atividades sai como sempre saiu: sem a frase e na fonte 12,5", async () => {
+    registro.textos.length = 0;
+    await gerar(certificado());
+    const corpo = corpoDesenhado();
+    expect([corpo.texto].flat().join(" ")).not.toContain("atividades dos módulos");
+    expect(corpo.tamanho).toBe(12.5);
+  });
+
+  it("nome, curso e empresa longos, com a frase e o motivo do eventual: o texto termina acima das linhas de detalhe", async () => {
+    registro.textos.length = 0;
+    await gerar(
+      comAtividades({
+        aluno: {
+          nome: "Nome Sintético Bem Comprido de Teste da Silva Pereira Santos Oliveira",
+          cpf: "00000000000",
+        },
+        curso: {
+          ...certificado().dados.curso,
+          nome: "Curso Sintético de Segurança em Instalações e Serviços em Eletricidade com Nome Bem Comprido — Básico",
+        },
+        empresa: {
+          nome: "Empresa Sintética de Engenharia, Construções, Montagens e Serviços Elétricos de Teste Ltda",
+          cnpj: "00000000000000",
+        },
+        tipo_treinamento: "eventual",
+        motivo_eventual: "palavra ".repeat(40).trim().slice(0, 200),
+      })
+    );
+    const corpo = corpoDesenhado();
+    const linhas = [corpo.texto].flat().length;
+    // altura da linha do jsPDF: fonte (pt) × 1,6 (lineHeightFactor) × 0,3528 mm por pt
+    const ultimaLinha = corpo.y + (linhas - 1) * corpo.tamanho * 1.6 * 0.3528;
+    const tipo = registro.textos.find((c) =>
+      /Tipo de treinamento/.test([c.texto].flat().join(" "))
+    );
+    expect(tipo).toBeTruthy();
+    expect(ultimaLinha).toBeLessThanOrEqual(tipo.y - 5.5);
+    expect(corpo.tamanho).toBeLessThan(12.5); // coube porque a fonte diminuiu
   });
 });
