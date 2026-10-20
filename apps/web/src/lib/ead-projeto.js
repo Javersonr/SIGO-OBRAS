@@ -290,7 +290,10 @@ export function montarProjeto({ curso, aulas, questoes } = {}) {
   const objetivos = new Map(
     objetivosDosModulos(c.modulos_objetivos).map((e) => [e.modulo, e.objetivo])
   );
-  const questoesVivas = (Array.isArray(questoes) ? questoes : []).filter(viva);
+  // a avaliação (item "o") é a prova final: as questões dos questionários dos módulos (com `aula_id`) não contam
+  const questoesVivas = (Array.isArray(questoes) ? questoes : []).filter(
+    (q) => viva(q) && !q.aula_id
+  );
 
   const doTexto = (campo, pendencia) => {
     const linhas = linhasDe(c[campo]);
@@ -395,6 +398,10 @@ export function montarProjeto({ curso, aulas, questoes } = {}) {
       const videos = vivas.filter((a) => (a.tipo || "video") === "video");
       const pdfs = vivas.filter((a) => a.tipo === "pdf");
       const textos = vivas.filter((a) => a.tipo === "texto");
+      // atividades interativas (spec 2026-10-14)
+      const questionarios = vivas.filter((a) => a.tipo === "questionario");
+      const casos = vivas.filter((a) => a.tipo === "caso");
+      const tarefas = vivas.filter((a) => a.tipo === "tarefa");
       const linhas = [];
       if (videos.length) {
         const legendas = videos.filter((a) => texto(a.legenda_ref)).length;
@@ -402,6 +409,9 @@ export function montarProjeto({ curso, aulas, questoes } = {}) {
       }
       if (pdfs.length) linhas.push(`Apostilas em PDF: ${pdfs.length}`);
       if (textos.length) linhas.push(`Aulas de texto: ${textos.length}`);
+      if (questionarios.length) linhas.push(`Questionários dos módulos: ${questionarios.length}`);
+      if (casos.length) linhas.push(`Estudos de caso: ${casos.length}`);
+      if (tarefas.length) linhas.push(`Atividades de estudo: ${tarefas.length}`);
       return {
         linhas,
         preenchido: linhas.length > 0,

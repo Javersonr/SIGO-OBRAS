@@ -287,6 +287,38 @@ describe("montarProjeto", () => {
     expect(item(apagadas, "o").preenchido).toBe(false);
   });
 
+  it("(m) e (o) com atividades interativas: o material lista as atividades e a prova conta só as questões sem aula", () => {
+    const comAtividades = [
+      ...aulas,
+      { id: "a4", ordem: 4, modulo: "Módulo 2", titulo: "Questionário", tipo: "questionario" },
+      { id: "a5", ordem: 5, modulo: "Módulo 2", titulo: "Caso", tipo: "caso" },
+      { id: "a6", ordem: 6, modulo: "Módulo 2", titulo: "Tarefa 1", tipo: "tarefa" },
+      { id: "a7", ordem: 7, modulo: "Módulo 2", titulo: "Tarefa 2", tipo: "tarefa" },
+    ];
+    const doQuestionario = Array.from({ length: 8 }, (_, i) => ({ id: `qq${i}`, aula_id: "a4" }));
+    const p = montarProjeto({
+      curso,
+      aulas: comAtividades,
+      questoes: [...questoes, ...doQuestionario],
+    });
+    expect(item(p, "m").linhas).toEqual([
+      "Vídeos: 1 (1 com legenda)",
+      "Apostilas em PDF: 1",
+      "Aulas de texto: 1",
+      "Questionários dos módulos: 1",
+      "Estudos de caso: 1",
+      "Atividades de estudo: 2",
+    ]);
+    expect(item(p, "o").linhas[0]).toBe("5 questões de múltipla escolha");
+    // só as questões dos questionários não fazem a avaliação final
+    const soDoQuestionario = montarProjeto({
+      curso,
+      aulas: comAtividades,
+      questoes: doQuestionario,
+    });
+    expect(item(soDoQuestionario, "o").preenchido).toBe(false);
+  });
+
   it("todo item pendente diz o que fazer", () => {
     for (const i of montarProjeto({}).itens) {
       expect(i.pendencia, i.letra).toMatch(/\S/);

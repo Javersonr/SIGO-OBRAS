@@ -66,6 +66,16 @@ export function mudouNotaMinima(antes, nova) {
   return Number(nova) !== (Number.isFinite(gravada) ? gravada : 70);
 }
 
+/**
+ * A nota mínima dos questionários dos módulos (atividades interativas) do formulário é diferente da gravada? Curso
+ * ainda sem cadastro não é mudança; nota gravada vazia vale 80, o padrão da coluna (migração 0170).
+ */
+export function mudouNotaMinimaDoModulo(antes, nova) {
+  if (!antes) return false;
+  const gravada = Number(antes.nota_minima_modulo ?? 80);
+  return Number(nova) !== (Number.isFinite(gravada) ? gravada : 80);
+}
+
 /** "1 matrícula em andamento" / "3 matrículas em andamento". */
 export function quantidadeDeMatriculas(n) {
   return n === 1 ? "1 matrícula em andamento" : `${n} matrículas em andamento`;
@@ -85,9 +95,14 @@ function fraseDeProgresso(comProgresso, concluiramAula) {
  * Aviso a mostrar antes de salvar a mudança, ou null quando ninguém é afetado. `tipo`:
  *
  * - "gabarito" e "nota_minima": com matrícula em andamento no curso (`emAndamento`).
+ * - "gabarito_questionario" e "nota_minima_modulo" (atividades interativas): o mesmo, para os questionários dos
+ *   módulos (estudo guiado, tentativas livres).
  * - "aula_nova": com matrícula em andamento no curso; a aula entra no fim da trilha.
- * - "aula_trocar" (arquivo ou link novo) e "aula_duracao" (tempo novo): quando alguém já tem
- *   progresso NESTA aula (`comProgresso`; `concluiramAula` dessas). `ehVideo` escolhe o texto.
+ * - "atividades_novas" (importação): com matrícula em andamento; entram depois da última aula de cada módulo.
+ * - "aula_trocar" (arquivo, link ou texto novo) e "aula_duracao" (tempo novo): quando alguém já tem progresso
+ *   NESTA aula (`comProgresso`; `concluiramAula` dessas). `ehVideo` escolhe o texto. Fora do vídeo, o tempo é só o
+ *   previsto (soma na carga) e não decide a conclusão (A5): "aula_duracao" não avisa.
+ * - "caso_alterar" (roteiro do caso com decisões): quando alguém já tem progresso nesta aula.
  *
  * Devolve `{ titulo, texto, rotuloConfirmar }` no formato de `useConfirmar` (a remoção da aula tem
  * texto próprio: textoConfirmarRemocaoAula).
@@ -107,12 +122,30 @@ export function avisoDeMudanca(
       rotuloConfirmar: "Salvar mesmo assim",
     };
   }
+  if (tipo === "gabarito_questionario" && emAndamento > 0) {
+    return {
+      titulo: "Mudar o gabarito do questionário com alunos em andamento?",
+      texto:
+        `${curso} A mudança vale para as próximas tentativas do questionário. Tentativas já ` +
+        "registradas e questionários já concluídos não mudam.",
+      rotuloConfirmar: "Salvar mesmo assim",
+    };
+  }
   if (tipo === "nota_minima" && emAndamento > 0) {
     return {
       titulo: "Mudar a nota mínima com alunos em andamento?",
       texto:
         `${curso} A nova nota mínima vale para as próximas tentativas da prova. Notas e ` +
         "aprovações já registradas não mudam.",
+      rotuloConfirmar: "Salvar mesmo assim",
+    };
+  }
+  if (tipo === "nota_minima_modulo" && emAndamento > 0) {
+    return {
+      titulo: "Mudar a nota mínima dos questionários com alunos em andamento?",
+      texto:
+        `${curso} A nova nota mínima vale para as próximas tentativas dos questionários dos ` +
+        "módulos. Questionários já concluídos não mudam.",
       rotuloConfirmar: "Salvar mesmo assim",
     };
   }
@@ -125,6 +158,28 @@ export function avisoDeMudanca(
       rotuloConfirmar: "Adicionar aula",
     };
   }
+  if (tipo === "atividades_novas" && emAndamento > 0) {
+    return {
+      titulo: "Importar atividades com alunos em andamento?",
+      texto:
+        `${curso} As atividades entram depois da última aula de cada módulo e passam a ser ` +
+        "exigidas de quem ainda não concluiu o curso, inclusive de quem já passou daquele módulo.",
+      rotuloConfirmar: "Continuar",
+    };
+  }
+  if (tipo === "caso_alterar" && comProgresso > 0) {
+    return {
+      titulo: "Mudar o roteiro do caso com alunos?",
+      texto:
+        `${fraseDeProgresso(comProgresso, concluiramAula)}. ` +
+        (concluiramAula > 0 ? "Quem já concluiu o caso continua com ele concluído. " : "") +
+        "Quem está no meio do caso recomeça da primeira etapa se o caminho que já fez deixar de " +
+        "existir no roteiro novo (a trilha registra o recomeço).",
+      rotuloConfirmar: "Salvar mesmo assim",
+    };
+  }
+  // A5: fora do vídeo, o tempo novo não muda nada para quem está fazendo a aula
+  if (tipo === "aula_duracao" && !ehVideo) return null;
   if ((tipo === "aula_trocar" || tipo === "aula_duracao") && comProgresso > 0) {
     const ficam =
       concluiramAula > 0
@@ -146,9 +201,7 @@ export function avisoDeMudanca(
       titulo: "Mudar o tempo da aula com progresso?",
       texto:
         `${fraseDeProgresso(comProgresso, concluiramAula)}. ` +
-        (ehVideo
-          ? "A duração nova muda o tempo exigido para concluir a aula (90% do vídeo) para todos: "
-          : "O tempo mínimo de leitura novo vale para todos: ") +
+        "A duração nova muda o tempo exigido para concluir a aula (90% do vídeo) para todos: " +
         `${ficam} mantém o tempo já registrado, agora contado contra o valor novo.`,
       rotuloConfirmar: "Salvar mesmo assim",
     };

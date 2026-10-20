@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { notaMinimaParaGravar, validarNumerosDoCurso } from "./ead-curso-numeros";
+import {
+  notaMinimaDoModuloParaGravar,
+  notaMinimaParaGravar,
+  validarNumerosDoCurso,
+} from "./ead-curso-numeros";
 
 // A6 (T32): os números do curso são conferidos antes de gravar, com a mensagem da tela. Sem isto, nota fora de
 // 0-100 ou carga/validade negativa voltavam como o texto cru do Postgres ("new row for relation ... violates
@@ -138,5 +142,29 @@ describe("a aba Treinamentos grava a nota mínima pela regra (A7)", () => {
     );
     expect(aba).toMatch(/nota_minima: notaMinimaParaGravar\(cursoSel\.nota_minima\),/);
     expect(aba).not.toMatch(/cursoSel\.nota_minima \? Number\(cursoSel\.nota_minima\) : 70/);
+  });
+});
+
+// Atividades interativas (spec 2026-10-14): a nota mínima dos questionários dos módulos é do curso, 0 a 100, padrão 80.
+describe("nota mínima dos questionários dos módulos", () => {
+  it("inteiro de 0 a 100; vazio vale (a tela grava o padrão)", () => {
+    for (const v of [0, 80, 100, "75", "", null]) {
+      expect(ok({ nota_minima_modulo: v }), String(v)).toEqual({ ok: true });
+    }
+  });
+
+  it("fora da faixa, decimal ou texto: erro com o nome do campo; vem depois da nota da prova", () => {
+    for (const v of [-1, 101, 7.5, "abc"]) {
+      const r = erro({ nota_minima_modulo: v });
+      expect(r.campo).toBe("nota_minima_modulo");
+      expect(r.erro).toMatch(/questionários dos módulos/);
+    }
+    expect(erro({ nota_minima: 200, nota_minima_modulo: 200 }).campo).toBe("nota_minima");
+  });
+
+  it("notaMinimaDoModuloParaGravar: 0 continua 0; vazio vale 80", () => {
+    expect(notaMinimaDoModuloParaGravar(0)).toBe(0);
+    expect(notaMinimaDoModuloParaGravar("85")).toBe(85);
+    for (const v of ["", "  ", null, undefined]) expect(notaMinimaDoModuloParaGravar(v)).toBe(80);
   });
 });

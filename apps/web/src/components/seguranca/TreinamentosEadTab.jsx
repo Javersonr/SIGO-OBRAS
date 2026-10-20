@@ -17,6 +17,17 @@ import {
   textoDaValidadeDoCurso,
 } from "@/lib/ead-modalidade";
 import { normalizarQuestao } from "@/lib/ead-questao";
+import {
+  TIPOS_DE_AULA,
+  camposDaEdicaoSemVideo,
+  montarAulaSemArquivo,
+  proximaOrdem,
+  rotuloDoTempo,
+  segundosDosMinutos,
+  separarQuestoes,
+  situacaoDaAtividade,
+} from "@/lib/ead-aula-nova";
+import { novoCasoVazio } from "@/lib/ead-caso";
 import { parseDuracao, formatDuracao, lerDuracaoVideo } from "@/lib/ead-duracao";
 import {
   formatarHoras,
@@ -41,6 +52,9 @@ import {
   erroDeMatricula,
 } from "@/lib/ead-gestao";
 import { notaMinimaParaGravar, validarNumerosDoCurso } from "@/lib/ead-curso-numeros";
+// atividades interativas: a nota mínima dos questionários dos módulos (import à parte: a linha acima é travada
+// pela guarda do acompanhamento A6/A7)
+import { notaMinimaDoModuloParaGravar } from "@/lib/ead-curso-numeros";
 import {
   validarArquivoAula,
   subirArquivoComProgresso,
@@ -52,6 +66,7 @@ import {
   resumirProgressoAula,
   mudouGabarito,
   mudouNotaMinima,
+  mudouNotaMinimaDoModulo,
   avisoDeMudanca,
   textoConfirmarRemocaoAula,
 } from "@/lib/ead-impacto";
@@ -100,6 +115,7 @@ import InputTelefone from "@/components/shared/InputTelefone";
 import MatriculaAuditoriaSheet from "@/components/seguranca/MatriculaAuditoriaSheet";
 import DuvidasTutorCard from "@/components/seguranca/DuvidasTutorCard";
 import AulaLinhaEad from "@/components/seguranca/AulaLinhaEad";
+import QuestoesEad from "@/components/seguranca/QuestoesEad";
 import PreRequisitoCursoCampo from "@/components/seguranca/PreRequisitoCursoCampo";
 import AssinaturaCursoCampo from "@/components/seguranca/AssinaturaCursoCampo";
 import ProjetoPedagogicoCurso from "@/components/seguranca/ProjetoPedagogicoCurso";
@@ -120,12 +136,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Plus,
   Loader2,
-  Trash2,
   GraduationCap,
   Video,
-  Pencil,
   FileText,
   ChevronDown,
   Eye,
@@ -276,6 +297,13 @@ export default function TreinamentosEadTab({
   const envioRef = useRef(null);
   const [questoes, setQuestoes] = useState([]);
   const [todasQuestoes, setTodasQuestoes] = useState([]);
+  // roteiros dos casos com decisões (treinamento_caso) da empresa: requisitos, "Ver como aluno" e o editor do caso
+  const [todosCasos, setTodosCasos] = useState([]);
+  // diálogo "Questões" de um questionário do módulo: a aula aberta (ou null)
+  const [questionarioAberto, setQuestionarioAberto] = useState(null);
+  // editor do caso com decisões: null, { modo: "novo", dados, conteudo, ... } ou { modo: "editar", id, aula, ... }.
+  // O diálogo é desenhado na Task 17; aqui nasce o estado e o `abrirCasoNovo` que a "Nova aula" chama.
+  const [casoEditando, setCasoEditando] = useState(null);
   const [novaQuestao, setNovaQuestao] = useState(null); // {pergunta, opcoes[4], correta}
   const [treinamentosConfig, setTreinamentosConfig] = useState([]);
   const [aulaEditando, setAulaEditando] = useState(null); // {id, titulo, modulo, tipo, minutos}
@@ -338,7 +366,7 @@ export default function TreinamentosEadTab({
     // (outra carga começou), o andamento desta nunca era pedido e a tabela ficava em "..." (A6).
     carregarAndamento(carga);
     try {
-      const [cs, as, ms, fs, certs, tcfg, qs] = await Promise.all([
+      const [cs, as, ms, fs, certs, tcfg, qs, casos] = await Promise.all([
         sigo.entities.TreinamentoCurso.filter(filtro),
         sigo.entities.TreinamentoAula.filter(filtro),
         sigo.entities.TreinamentoMatricula.filter(filtro),
@@ -347,6 +375,8 @@ export default function TreinamentosEadTab({
         sigo.entities.TreinamentoCertificado.filter(filtro, SEM_SOFT_DELETE),
         sigo.entities.Treinamento.filter(filtro),
         sigo.entities.TreinamentoQuestao.filter(filtro),
+        // atividades interativas: os roteiros dos casos (só quem tem a aba lê: policy restritiva da 0170)
+        sigo.entities.TreinamentoCaso.filter(filtro),
       ]);
       if (!cargas.vale(carga)) return;
       setCursos(cs);
@@ -357,6 +387,7 @@ export default function TreinamentosEadTab({
       setCertificados(certs);
       setTreinamentosConfig(tcfg);
       setTodasQuestoes(qs);
+      setTodosCasos(casos);
     } catch (e) {
       if (!cargas.vale(carga)) return;
       console.error(e);
@@ -366,9 +397,12 @@ export default function TreinamentosEadTab({
     }
   };
 
-  // fechou o editor (ou trocou de empresa): a prévia do curso não fica armada para o próximo
+  // fechou o editor (ou trocou de empresa): a prévia do curso não fica armada para o próximo, e os diálogos de
+  // questões do questionário e do caso eram do curso que estava aberto
   useEffect(() => {
     if (!cursoSel?.id) setPreviaAberta(false);
+    setQuestionarioAberto(null);
+    setCasoEditando(null);
   }, [cursoSel?.id]);
 
   useEffect(() => {
@@ -388,6 +422,8 @@ export default function TreinamentosEadTab({
     setAndamento({ carregado: false, erro: false, parcial: false });
     setNovaQuestao(null);
     setAulaEditando(null);
+    setQuestionarioAberto(null);
+    setCasoEditando(null);
     setNovaAula(NOVA_AULA);
     cancelarConfirmacao();
     recarregar();
@@ -540,11 +576,14 @@ export default function TreinamentosEadTab({
   };
 
   const aulasDoCurso = (cursoId) => aulas.filter((a) => a.curso_id === cursoId);
+  // `questoes` são TODAS as do curso (a prova final é a sem `aula_id`) e `casos` os roteiros: o requisito
+  // CONTEUDO confere questionário e caso (atividades interativas, Task 5)
   const requisitos = (curso) =>
     requisitosDoCurso({
       curso,
       aulas: aulasDoCurso(curso.id),
       questoes: todasQuestoes.filter((q) => q.curso_id === curso.id),
+      casos: todosCasos.filter((c) => c.curso_id === curso.id),
     });
   // A lista de requisitos do FORMULÁRIO lê o projeto como seria gravado (A6, T25): o formulário cru podia dizer
   // "PDF desatualizado" logo depois de gerar o PDF (a revisão sugerida de 2 anos só existe no que vai ao banco),
@@ -558,6 +597,10 @@ export default function TreinamentosEadTab({
     );
   // o que impede PUBLICAR e MATRICULAR (D3: o curso de apoio publica e matricula; só não emite)
   const pendenciasCurso = (curso) => pendenciasParaPublicar(requisitos(curso));
+  // questões do curso aberto: as da avaliação final (sem aula) e as de cada questionário do módulo (com a aula)
+  const questoesSeparadas = useMemo(() => separarQuestoes(questoes), [questoes]);
+  // o roteiro de cada aula de caso (o requisito, o selo "sem roteiro" e o editor do caso)
+  const casoPorAula = useMemo(() => new Map(todosCasos.map((c) => [c.aula_id, c])), [todosCasos]);
   const funcPorId = useMemo(() => new Map(funcionarios.map((f) => [f.id, f])), [funcionarios]);
   // com os ex-funcionários: a tabela e os detalhes da matrícula mostram o nome de quem já saiu
   const funcTodosPorId = useMemo(
@@ -575,11 +618,12 @@ export default function TreinamentosEadTab({
           curso,
           aulas: aulas.filter((a) => a.curso_id === curso.id),
           questoes: todasQuestoes.filter((q) => q.curso_id === curso.id),
+          casos: todosCasos.filter((c) => c.curso_id === curso.id),
         })
       );
       return pendencias.length ? "Curso com pendências para publicar" : null;
     },
-    [aulas, todasQuestoes]
+    [aulas, todasQuestoes, todosCasos]
   );
   // um certificado por matrícula, consultado por linha da tabela sem varrer a lista a cada vez
   const certPorMatricula = useMemo(() => certificadosPorMatricula(certificados), [certificados]);
@@ -689,6 +733,8 @@ export default function TreinamentosEadTab({
       ...cargasDoCursoParaGravar(cursoSel, gravado),
       // 0 continua 0 (campo vazio vale 70), como no servidor (A7)
       nota_minima: notaMinimaParaGravar(cursoSel.nota_minima),
+      // questionários dos módulos (atividades interativas): campo vazio vale 80, o padrão da coluna (0170)
+      nota_minima_modulo: notaMinimaDoModuloParaGravar(cursoSel.nota_minima_modulo),
       max_tentativas:
         cursoSel.max_tentativas === "" || cursoSel.max_tentativas == null
           ? 3
@@ -735,6 +781,14 @@ export default function TreinamentosEadTab({
     ) {
       return;
     }
+    // nota mínima dos questionários dos módulos: o mesmo aviso, para as próximas tentativas deles
+    if (
+      Object.hasOwn(paraGravar, "nota_minima_modulo") &&
+      mudouNotaMinimaDoModulo(gravado, paraGravar.nota_minima_modulo) &&
+      !(await confirmarImpacto("nota_minima_modulo", { cursoId: cursoSel.id }))
+    ) {
+      return;
+    }
     await gravar("curso", "Erro ao salvar o curso", async () => {
       // o curso como estava no banco ANTES deste salvar: a lista da tela só se atualiza depois da gravação, e um "Gerar
       // PDF" feito segundos antes ainda não aparece nela (A6, T25)
@@ -766,6 +820,13 @@ export default function TreinamentosEadTab({
     });
   };
 
+  // Caso com decisões: a aula só nasce junto com o roteiro, no "Salvar caso" do editor (Task 17). `dados` é a linha
+  // da aula como será gravada (empresa, curso, ordem, título, módulo, tipo e tempo previsto).
+  const abrirCasoNovo = (dados) =>
+    setCasoEditando(
+      novoRascunho({ modo: "novo", dados, conteudo: novoCasoVazio(), casoId: null, original: null })
+    );
+
   const adicionarAula = async () => {
     if (envioRef.current) return; // um envio por vez (o botão também fica desabilitado)
     if (!cursoSel?.id) {
@@ -787,26 +848,33 @@ export default function TreinamentosEadTab({
       modulo: novaAula.modulo.trim() || null,
       tipo: novaAula.tipo,
     };
-    // PDF/texto: o tempo mínimo com a aula aberta é o que conta para concluir
-    const tempoMinimo = Math.round(Number(novaAula.minutos || 0) * 60);
+    // texto, questionário, caso e tarefa não sobem arquivo: o tempo previsto e o texto são conferidos pela regra
+    // de lib/ead-aula-nova.js (atividades interativas)
+    const semArquivo =
+      novaAula.tipo === "video" || novaAula.tipo === "pdf" ? null : montarAulaSemArquivo(novaAula);
+    if (semArquivo && !semArquivo.ok) {
+      toast.error(semArquivo.erro);
+      return;
+    }
+    if (novaAula.tipo === "caso") {
+      abrirCasoNovo({ ...base, ...semArquivo.dados });
+      return;
+    }
+    // PDF: o tempo previsto de leitura soma na carga horária; a conclusão não depende dele (A5)
+    const tempoPrevisto = segundosDosMinutos(novaAula.minutos);
 
     // Tudo o que dá para conferir sem gravar nada vem antes de subir qualquer arquivo (T30)
     let youtube = null;
-    if (novaAula.tipo !== "video") {
-      if (!tempoMinimo) {
-        toast.error("Informe o tempo mínimo de leitura (minutos)");
+    if (novaAula.tipo === "pdf") {
+      if (!tempoPrevisto) {
+        toast.error("Informe o tempo previsto de leitura (minutos)");
         return;
       }
-      if (novaAula.tipo === "pdf") {
-        if (!novaAula.arquivo) {
-          toast.error("Anexe o PDF da aula");
-          return;
-        }
-      } else if (!novaAula.texto.trim()) {
-        toast.error("Escreva o texto da aula");
+      if (!novaAula.arquivo) {
+        toast.error("Anexe o PDF da aula");
         return;
       }
-    } else if (!novaAula.arquivo) {
+    } else if (novaAula.tipo === "video" && !novaAula.arquivo) {
       const ytId = extrairYouTubeId(novaAula.url);
       if (!ytId) {
         toast.error("Anexe o vídeo OU informe um link válido do YouTube");
@@ -819,7 +887,7 @@ export default function TreinamentosEadTab({
       }
       youtube = { ytId, duracao_seg };
     }
-    const arquivo = novaAula.tipo === "texto" ? null : novaAula.arquivo;
+    const arquivo = semArquivo ? null : novaAula.arquivo;
     if (arquivo) {
       const valido = validarArquivoAula(arquivo, novaAula.tipo === "pdf" ? "pdf" : "video");
       if (!valido.ok) {
@@ -833,7 +901,10 @@ export default function TreinamentosEadTab({
     const controle = iniciarEnvio("nova", arquivo);
     try {
       let dados;
-      if (novaAula.tipo === "pdf") {
+      if (semArquivo) {
+        // texto, questionário e tarefa: só a gravação (o questionário nasce vazio; as questões vêm depois)
+        dados = semArquivo.dados;
+      } else if (novaAula.tipo === "pdf") {
         const arquivo_ref = await subirArquivo(controle, arquivo);
         mudarFaseDoEnvio("gravando");
         dados = {
@@ -841,15 +912,7 @@ export default function TreinamentosEadTab({
           youtube_id: null,
           arquivo_ref,
           conteudo_texto: null,
-          duracao_seg: tempoMinimo,
-        };
-      } else if (novaAula.tipo === "texto") {
-        dados = {
-          fonte: "upload",
-          youtube_id: null,
-          arquivo_ref: null,
-          conteudo_texto: novaAula.texto.trim(),
-          duracao_seg: tempoMinimo,
+          duracao_seg: tempoPrevisto,
         };
       } else if (arquivo) {
         // HOSPEDAGEM PRÓPRIA: vídeo sobe pro bucket 'treinamentos' (até 1GB)
@@ -875,7 +938,11 @@ export default function TreinamentosEadTab({
       ) {
         setNovaAula({ ...NOVA_AULA, modulo: novaAula.modulo, tipo: novaAula.tipo });
       }
-      toast.success("Aula adicionada");
+      toast.success(
+        novaAula.tipo === "questionario"
+          ? "Questionário adicionado: cadastre as questões em “Questões”, no menu da aula"
+          : "Aula adicionada"
+      );
       recarregar();
     } catch (e) {
       if (e?.cancelado) toast.info("Envio cancelado. Nenhuma aula foi criada.");
@@ -1142,6 +1209,8 @@ export default function TreinamentosEadTab({
       link: a.fonte === "youtube" && a.youtube_id ? `https://youtu.be/${a.youtube_id}` : "",
       titulo: a.titulo || "",
       modulo: a.modulo || "",
+      // texto e tarefa: o texto da aula também é editado na tela (§5.2)
+      texto: a.conteudo_texto || "",
       minutos: a.duracao_seg ? Math.round(a.duracao_seg / 60) : "",
       duracao: a.duracao_seg ? formatDuracao(a.duracao_seg) : "",
     });
@@ -1156,12 +1225,14 @@ export default function TreinamentosEadTab({
     const ehVideo = aulaEditando.tipo === "video";
     const patch = { titulo, modulo: (aulaEditando.modulo || "").trim() || null };
     if (!ehVideo) {
-      const seg = Math.round(Number(aulaEditando.minutos || 0) * 60);
-      if (!seg) {
-        toast.error("Informe o tempo mínimo de leitura (minutos)");
+      // PDF, texto e atividades: o tempo previsto (soma na carga horária, A5); texto e tarefa levam também o
+      // texto, que antes só se corrigia por SQL (§5.2)
+      const campos = camposDaEdicaoSemVideo(aulaEditando);
+      if (!campos.ok) {
+        toast.error(campos.erro);
         return;
       }
-      patch.duracao_seg = seg;
+      Object.assign(patch, campos.patch);
     } else {
       const seg = parseDuracao(aulaEditando.duracao);
       if (!seg) {
@@ -1179,13 +1250,17 @@ export default function TreinamentosEadTab({
       }
       if (ytId !== original?.youtube_id) patch.youtube_id = ytId;
     }
-    // vídeo ou tempo novo com alunos no meio desta aula: o RH vê quantos antes de salvar (T30)
+    // vídeo, texto ou tempo novo com alunos no meio desta aula: o RH vê quantos antes de salvar (T30). Fora do
+    // vídeo, o tempo novo não afeta o aluno (A5) e não pede confirmação (lib/ead-impacto.js)
     const mudouVideo = !!patch.youtube_id;
+    const mudouTexto =
+      Object.hasOwn(patch, "conteudo_texto") &&
+      patch.conteudo_texto !== String(original?.conteudo_texto ?? "").trim();
     const mudouTempo = !!original && patch.duracao_seg !== (Number(original.duracao_seg) || 0);
     if (
       original &&
-      (mudouVideo || mudouTempo) &&
-      !(await confirmarImpacto(mudouVideo ? "aula_trocar" : "aula_duracao", {
+      (mudouVideo || mudouTexto || mudouTempo) &&
+      !(await confirmarImpacto(mudouVideo || mudouTexto ? "aula_trocar" : "aula_duracao", {
         cursoId: original.curso_id,
         aulaId: original.id,
         ehVideo,
@@ -1331,27 +1406,36 @@ export default function TreinamentosEadTab({
     }
     const dados = resultado.dados;
     const aberta = novaQuestao; // o formulário que o RH mandou salvar
+    // a questão é da avaliação final (sem aula) ou do questionário de um módulo (com a aula)
+    const aulaId = aberta.aula_id || null;
+    const doGrupo = aulaId
+      ? (questoesSeparadas.porAula.get(aulaId) ?? [])
+      : questoesSeparadas.prova;
     // gabarito diferente com alunos no meio do curso: o RH vê quantos antes de salvar (T30)
     if (
-      novaQuestao.id &&
+      aberta.id &&
       mudouGabarito(
-        questoes.find((q) => q.id === novaQuestao.id),
+        doGrupo.find((q) => q.id === aberta.id),
         dados
       ) &&
-      !(await confirmarImpacto("gabarito", { cursoId: cursoSel.id }))
+      !(await confirmarImpacto(aulaId ? "gabarito_questionario" : "gabarito", {
+        cursoId: cursoSel.id,
+      }))
     ) {
       return;
     }
     // falhou: o formulário continua aberto, com o que o RH digitou
     await gravar("questao", "Erro ao salvar a questão", async () => {
-      if (novaQuestao.id) {
-        await sigo.entities.TreinamentoQuestao.update(novaQuestao.id, dados);
+      if (aberta.id) {
+        await sigo.entities.TreinamentoQuestao.update(aberta.id, dados);
       } else {
         await sigo.entities.TreinamentoQuestao.create({
           ...dados,
           empresa_id: empresaAtiva.id,
           curso_id: cursoSel.id,
-          ordem: Math.max(0, ...questoes.map((q) => Number(q.ordem) || 0)) + 1,
+          // só a questão do questionário leva a aula; a da avaliação final fica sem (aula_id vazio = prova)
+          ...(aulaId ? { aula_id: aulaId } : {}),
+          ordem: proximaOrdem(doGrupo),
         });
       }
       // fecha só o formulário que foi gravado (outro, aberto durante a gravação, fica como está)
@@ -1361,11 +1445,12 @@ export default function TreinamentosEadTab({
   };
 
   const excluirQuestao = async (q) => {
+    const onde = q.aula_id ? "do questionário" : "da avaliação";
     const confirmado = await confirmar({
       titulo: "Excluir esta questão?",
       texto: q.pergunta
-        ? `Excluir da avaliação a questão "${resumoDaPergunta(q.pergunta)}"?`
-        : "Excluir esta questão da avaliação?",
+        ? `Excluir ${onde} a questão "${resumoDaPergunta(q.pergunta)}"?`
+        : `Excluir esta questão ${onde}?`,
       rotuloConfirmar: "Excluir questão",
       destrutivo: true,
     });
@@ -1375,6 +1460,17 @@ export default function TreinamentosEadTab({
       setNovaQuestao((atual) => (atual?.id === q.id ? null : atual));
       carregarQuestoes(cursoSel.id);
     });
+  };
+
+  // "Questões" de um questionário do módulo: a mesma lista e o mesmo editor da avaliação final, com as questões
+  // daquela aula. Um rascunho de OUTRO questionário fecha; o da avaliação final fica.
+  const abrirQuestionario = (aula) => {
+    setNovaQuestao((atual) => (atual?.aula_id && atual.aula_id !== aula.id ? null : atual));
+    setQuestionarioAberto(aula);
+  };
+  const fecharQuestionario = () => {
+    setQuestionarioAberto(null);
+    setNovaQuestao((atual) => (atual?.aula_id ? null : atual));
   };
 
   // -------------------------------------------------------------- matrículas
@@ -2046,6 +2142,27 @@ export default function TreinamentosEadTab({
                     />
                   </div>
                   <div className="col-span-2">
+                    <Label htmlFor="curso-nota-minima-modulo" className="text-xs">
+                      Nota mínima dos questionários dos módulos (%)
+                    </Label>
+                    <Input
+                      id="curso-nota-minima-modulo"
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={cursoSel.nota_minima_modulo ?? 80}
+                      onChange={(e) =>
+                        setCursoSel({ ...cursoSel, nota_minima_modulo: e.target.value })
+                      }
+                      className="mt-0.5 sm:max-w-[12rem]"
+                    />
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Vale para os questionários dos módulos (estudo guiado: tentativas livres, com
+                      a correção comentada). A avaliação final usa a nota mínima acima.
+                    </p>
+                  </div>
+                  <div className="col-span-2">
                     <Label className="text-xs">Descrição</Label>
                     <Input
                       value={cursoSel.descricao || ""}
@@ -2288,6 +2405,11 @@ export default function TreinamentosEadTab({
                     </h4>
                     {numerarAulas(aulasDoCurso(cursoSel.id)).map((a, i, lista) => {
                       const novoModulo = a.modulo && a.modulo !== lista[i - 1]?.modulo;
+                      // selos das atividades: quantas questões, ou o que falta para o aluno conseguir fazer
+                      const situacao = situacaoDaAtividade(a, {
+                        questoes: questoesSeparadas.porAula.get(a.id) ?? [],
+                        temRoteiro: casoPorAula.has(a.id),
+                      });
                       return (
                         <React.Fragment key={a.id}>
                           {novoModulo && (
@@ -2302,6 +2424,8 @@ export default function TreinamentosEadTab({
                             ordemOcupada={gravando.has("ordem")}
                             envioEmCurso={!!envio}
                             somenteLeitura={!pode.editar}
+                            resumo={situacao.resumo}
+                            pendencia={situacao.pendencia}
                             onSubir={() => moverAula(a, -1)}
                             onDescer={() => moverAula(a, 1)}
                             onEditar={() => abrirEdicaoAula(a)}
@@ -2309,6 +2433,7 @@ export default function TreinamentosEadTab({
                             onRemover={() => removerAula(a)}
                             onTrocarArquivo={(arquivo) => trocarArquivoDaAula(a, arquivo)}
                             onLegenda={(arquivo) => enviarLegenda(a, arquivo)}
+                            onQuestoes={() => abrirQuestionario(a)}
                           />
                           {envio?.alvo === a.id && (
                             <EnvioProgressoEad envio={envio} onCancelar={cancelarEnvio} />
@@ -2357,12 +2482,34 @@ export default function TreinamentosEadTab({
                                   <Input
                                     type="number"
                                     min={1}
-                                    placeholder="Tempo mín. de leitura (min)"
+                                    placeholder={rotuloDoTempo(aulaEditando.tipo)}
+                                    aria-label={rotuloDoTempo(aulaEditando.tipo)}
                                     value={aulaEditando.minutos}
                                     onChange={(e) =>
                                       setAulaEditando({ ...aulaEditando, minutos: e.target.value })
                                     }
                                     className="h-9"
+                                  />
+                                )}
+                                {(aulaEditando.tipo === "texto" ||
+                                  aulaEditando.tipo === "tarefa") && (
+                                  <Textarea
+                                    rows={6}
+                                    placeholder={
+                                      aulaEditando.tipo === "tarefa"
+                                        ? "Instruções da atividade e o que o aluno deve produzir"
+                                        : "Texto da aula"
+                                    }
+                                    aria-label={
+                                      aulaEditando.tipo === "tarefa"
+                                        ? "Instruções da atividade"
+                                        : "Texto da aula"
+                                    }
+                                    value={aulaEditando.texto}
+                                    onChange={(e) =>
+                                      setAulaEditando({ ...aulaEditando, texto: e.target.value })
+                                    }
+                                    className="col-span-2"
                                   />
                                 )}
                               </div>
@@ -2390,45 +2537,48 @@ export default function TreinamentosEadTab({
                     {pode.editar && (
                       <div className="space-y-2 rounded-lg border border-dashed p-3">
                         <p className="text-xs font-medium text-slate-600">Nova aula</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          <Input
-                            placeholder="Módulo (ex.: B04 · Medidas de controle)"
-                            value={novaAula.modulo}
-                            onChange={(e) => setNovaAula({ ...novaAula, modulo: e.target.value })}
-                            list="modulos-curso"
-                            className="h-9"
-                          />
-                          <datalist id="modulos-curso">
-                            {[
-                              ...new Set(
-                                aulasDoCurso(cursoSel.id)
-                                  .map((a) => a.modulo)
-                                  .filter(Boolean)
-                              ),
-                            ].map((m) => (
-                              <option key={m} value={m} />
-                            ))}
-                          </datalist>
-                          <div className="flex rounded-md border overflow-hidden text-sm">
-                            {[
-                              ["video", "Vídeo"],
-                              ["pdf", "PDF"],
-                              ["texto", "Texto"],
-                            ].map(([v, rot]) => (
-                              <button
-                                key={v}
-                                type="button"
-                                onClick={() => setNovaAula({ ...novaAula, tipo: v, arquivo: null })}
-                                className={`flex-1 py-1.5 ${
-                                  novaAula.tipo === v
-                                    ? "bg-slate-900 text-white"
-                                    : "bg-white text-slate-600 hover:bg-slate-50"
-                                }`}
-                              >
-                                {rot}
-                              </button>
-                            ))}
-                          </div>
+                        <Input
+                          placeholder="Módulo (ex.: B04 · Medidas de controle)"
+                          aria-label="Módulo da aula"
+                          value={novaAula.modulo}
+                          onChange={(e) => setNovaAula({ ...novaAula, modulo: e.target.value })}
+                          list="modulos-curso"
+                          className="h-9"
+                        />
+                        <datalist id="modulos-curso">
+                          {[
+                            ...new Set(
+                              aulasDoCurso(cursoSel.id)
+                                .map((a) => a.modulo)
+                                .filter(Boolean)
+                            ),
+                          ].map((m) => (
+                            <option key={m} value={m} />
+                          ))}
+                        </datalist>
+                        {/* vídeo, PDF e texto e as atividades interativas (questionário, caso e tarefa) */}
+                        <div
+                          role="group"
+                          aria-label="Tipo da aula"
+                          className="grid grid-cols-3 overflow-hidden rounded-md border text-sm sm:grid-cols-6"
+                        >
+                          {TIPOS_DE_AULA.map(({ valor, rotulo }) => (
+                            <button
+                              key={valor}
+                              type="button"
+                              aria-pressed={novaAula.tipo === valor}
+                              onClick={() =>
+                                setNovaAula({ ...novaAula, tipo: valor, arquivo: null })
+                              }
+                              className={`py-1.5 ${
+                                novaAula.tipo === valor
+                                  ? "bg-slate-900 text-white"
+                                  : "bg-white text-slate-600 hover:bg-slate-50"
+                              }`}
+                            >
+                              {rotulo}
+                            </button>
+                          ))}
                         </div>
                         <Input
                           placeholder="Título da aula"
@@ -2438,7 +2588,7 @@ export default function TreinamentosEadTab({
                         />
                         {novaAula.tipo !== "video" && (
                           <div className="space-y-2">
-                            {novaAula.tipo === "pdf" ? (
+                            {novaAula.tipo === "pdf" && (
                               <label className="h-9 flex items-center gap-2 px-3 rounded-md border border-slate-200 text-sm text-slate-600 cursor-pointer hover:border-slate-400 truncate">
                                 <FileText className="w-4 h-4 shrink-0" />
                                 <span className="truncate">
@@ -2458,21 +2608,45 @@ export default function TreinamentosEadTab({
                                   }
                                 />
                               </label>
-                            ) : (
+                            )}
+                            {(novaAula.tipo === "texto" || novaAula.tipo === "tarefa") && (
                               <Textarea
                                 rows={5}
-                                placeholder="Texto da aula"
+                                placeholder={
+                                  novaAula.tipo === "tarefa"
+                                    ? "Instruções da atividade e o que o aluno deve produzir"
+                                    : "Texto da aula"
+                                }
+                                aria-label={
+                                  novaAula.tipo === "tarefa"
+                                    ? "Instruções da atividade"
+                                    : "Texto da aula"
+                                }
                                 value={novaAula.texto}
                                 onChange={(e) =>
                                   setNovaAula({ ...novaAula, texto: e.target.value })
                                 }
                               />
                             )}
+                            {novaAula.tipo === "questionario" && (
+                              <p className="text-xs text-slate-500">
+                                O questionário nasce vazio: depois de adicionar, cadastre as
+                                questões em “Questões”, no menu da aula. O aluno conclui com a nota
+                                mínima dos questionários dos módulos (campo do curso).
+                              </p>
+                            )}
+                            {novaAula.tipo === "caso" && (
+                              <p className="text-xs text-slate-500">
+                                Informe o título e o tempo previsto e clique em + para escrever o
+                                caso: etapas, escolhas, comentários e a reflexão do fim.
+                              </p>
+                            )}
                             <div className="flex items-center gap-2">
                               <Input
                                 type="number"
                                 min={1}
-                                placeholder="Tempo mínimo de leitura (min)"
+                                placeholder={rotuloDoTempo(novaAula.tipo)}
+                                aria-label={rotuloDoTempo(novaAula.tipo)}
                                 value={novaAula.minutos}
                                 onChange={(e) =>
                                   setNovaAula({ ...novaAula, minutos: e.target.value })
@@ -2560,8 +2734,10 @@ export default function TreinamentosEadTab({
                     )}
                     <p className="text-xs text-slate-400">
                       Aulas abrem em ordem. Vídeo conclui com 90% do tempo assistido (a duração é
-                      cadastrada pelo RH); PDF e texto, com o tempo mínimo de leitura. O tempo só
-                      conta com a tela do aluno aberta.
+                      cadastrada pelo RH). PDF, texto e atividade de estudo concluem quando o aluno
+                      chega ao fim e confirma; o questionário, com a nota mínima dos questionários;
+                      o caso, ao chegar ao fim do roteiro. O tempo previsto de cada aula soma na
+                      carga horária, e o tempo de tela fica na trilha.
                     </p>
                     {/* T12: a lista de presença é da sessão prática presencial (semipresencial); a folha antiga
                         do EAD (10 h por dia, horário fixo) saiu */}
@@ -2588,11 +2764,11 @@ export default function TreinamentosEadTab({
                       </p>
                     )}
 
-                    {/* Avaliação final */}
+                    {/* Avaliação final: só as questões sem aula (as dos questionários ficam em cada um deles) */}
                     <div className="border-t pt-3 mt-3 space-y-2">
                       <div className="flex items-center justify-between">
                         <h4 className="font-semibold text-slate-800">
-                          Avaliação final ({questoes.length} questão(ões))
+                          Avaliação final ({questoesSeparadas.prova.length} questão(ões))
                         </h4>
                         {pode.editar && (
                           <Button
@@ -2608,155 +2784,22 @@ export default function TreinamentosEadTab({
                           </Button>
                         )}
                       </div>
-                      {questoes.map((q, qi) => (
-                        <div key={q.id} className="text-sm bg-slate-50 rounded p-2">
-                          <div className="flex items-start gap-2">
-                            <span className="flex-1 font-medium">
-                              {qi + 1}. {q.pergunta}
-                            </span>
-                            {pode.editar && (
-                              <>
-                                <button
-                                  type="button"
-                                  title="Editar questão"
-                                  aria-label={`Editar a questão ${qi + 1}`}
-                                  onClick={() =>
-                                    setNovaQuestao({
-                                      id: q.id,
-                                      pergunta: q.pergunta || "",
-                                      opcoes:
-                                        Array.isArray(q.opcoes) && q.opcoes.length >= 2
-                                          ? [...q.opcoes]
-                                          : ["", ""],
-                                      correta: q.correta ?? 0,
-                                      comentario: q.comentario || "",
-                                    })
-                                  }
-                                >
-                                  <Pencil className="w-4 h-4 text-slate-400 hover:text-slate-800" />
-                                </button>
-                                <button
-                                  type="button"
-                                  title="Excluir questão"
-                                  aria-label={`Excluir a questão ${qi + 1}`}
-                                  onClick={() => excluirQuestao(q)}
-                                >
-                                  <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-500" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                          <ul className="mt-1 ml-4 space-y-0.5">
-                            {(q.opcoes || []).map((o, i) => (
-                              <li
-                                key={i}
-                                className={
-                                  i === q.correta
-                                    ? "text-emerald-700 font-medium"
-                                    : "text-slate-600"
-                                }
-                              >
-                                {String.fromCharCode(65 + i)}) {o} {i === q.correta ? "✓" : ""}
-                              </li>
-                            ))}
-                          </ul>
-                          {q.comentario && (
-                            <p className="mt-1 ml-4 text-xs text-slate-500 italic">
-                              💬 {q.comentario}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                      {novaQuestao && (
-                        <div className="border rounded-lg p-3 space-y-2 bg-white">
-                          <Input
-                            placeholder="Pergunta"
-                            value={novaQuestao.pergunta}
-                            onChange={(e) =>
-                              setNovaQuestao({ ...novaQuestao, pergunta: e.target.value })
-                            }
-                            className="h-9"
-                          />
-                          {novaQuestao.opcoes.map((o, i) => (
-                            <div key={i} className="flex items-center gap-2">
-                              <input
-                                type="radio"
-                                name="correta"
-                                checked={novaQuestao.correta === i}
-                                onChange={() => setNovaQuestao({ ...novaQuestao, correta: i })}
-                                title="Marcar como correta"
-                                aria-label={`Marcar a opção ${String.fromCharCode(65 + i)} como correta`}
-                              />
-                              <Input
-                                placeholder={`Opção ${String.fromCharCode(65 + i)}`}
-                                value={o}
-                                onChange={(e) => {
-                                  const ops = [...novaQuestao.opcoes];
-                                  ops[i] = e.target.value;
-                                  setNovaQuestao({ ...novaQuestao, opcoes: ops });
-                                }}
-                                className="h-8"
-                              />
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                aria-label={`Remover opção ${String.fromCharCode(65 + i)}`}
-                                disabled={novaQuestao.opcoes.length <= 2}
-                                onClick={() =>
-                                  setNovaQuestao({
-                                    ...novaQuestao,
-                                    opcoes: novaQuestao.opcoes.filter((_, indice) => indice !== i),
-                                    correta:
-                                      novaQuestao.correta === i
-                                        ? -1
-                                        : novaQuestao.correta > i
-                                          ? novaQuestao.correta - 1
-                                          : novaQuestao.correta,
-                                  })
-                                }
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          ))}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={novaQuestao.opcoes.length >= 6}
-                            onClick={() =>
-                              setNovaQuestao({
-                                ...novaQuestao,
-                                opcoes: [...novaQuestao.opcoes, ""],
-                              })
-                            }
-                          >
-                            <Plus className="w-4 h-4 mr-1" /> Adicionar alternativa
-                          </Button>
-                          <Input
-                            placeholder="Comentário da resposta (aparece só depois da aprovação)"
-                            value={novaQuestao.comentario || ""}
-                            onChange={(e) =>
-                              setNovaQuestao({ ...novaQuestao, comentario: e.target.value })
-                            }
-                            className="h-9"
-                          />
-                          <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="sm" onClick={() => setNovaQuestao(null)}>
-                              Cancelar
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={salvarQuestao}
-                              disabled={gravando.has("questao")}
-                            >
-                              Salvar questão
-                            </Button>
-                          </div>
-                        </div>
-                      )}
+                      <QuestoesEad
+                        questoes={questoesSeparadas.prova}
+                        rascunho={novaQuestao && !novaQuestao.aula_id ? novaQuestao : null}
+                        onRascunho={setNovaQuestao}
+                        onSalvar={salvarQuestao}
+                        onExcluir={excluirQuestao}
+                        salvando={gravando.has("questao")}
+                        podeEditar={pode.editar}
+                        grupo="correta-prova"
+                        dicaDoComentario="Comentário da resposta (aparece só depois da aprovação)"
+                      />
                       <p className="text-xs text-slate-400">
-                        Com questões cadastradas, o funcionário só conclui o curso após assistir
-                        todas as aulas E ser aprovado na avaliação (nota mínima acima).
+                        Com questões cadastradas, o funcionário só conclui o curso depois de
+                        concluir todas as aulas (as atividades inclusive) E ser aprovado na
+                        avaliação final (nota mínima acima). As questões dos questionários dos
+                        módulos ficam em cada questionário e não entram nesta prova.
                       </p>
                     </div>
                   </div>
@@ -2767,6 +2810,7 @@ export default function TreinamentosEadTab({
                   curso={cursoSel}
                   aulas={aulasDoCurso(cursoSel.id)}
                   questoes={todasQuestoes.filter((q) => q.curso_id === cursoSel.id)}
+                  casos={todosCasos.filter((c) => c.curso_id === cursoSel.id)}
                   onFechar={() => setPreviaAberta(false)}
                 />
               )}
@@ -2793,6 +2837,60 @@ export default function TreinamentosEadTab({
 
       {/* senha provisória (uma única vez) ou mensagem que não saiu */}
       <AvisoAcessoDialog aviso={avisoAcesso} onFechar={() => setAvisoAcesso(null)} />
+
+      {/* "Questões" de um questionário do módulo (atividades interativas): a lista e o editor da avaliação final */}
+      <Dialog
+        open={!!questionarioAberto}
+        onOpenChange={(aberto) => !aberto && fecharQuestionario()}
+      >
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Questões do questionário</DialogTitle>
+            <DialogDescription>
+              {questionarioAberto?.titulo}. A cada tentativa o servidor sorteia a ordem das questões
+              e das alternativas; o aluno conclui com{" "}
+              {notaMinimaDoModuloParaGravar(cursoSel?.nota_minima_modulo)}% ou mais e vê a correção
+              comentada depois de cada envio.
+            </DialogDescription>
+          </DialogHeader>
+          {questionarioAberto && (
+            <div className="space-y-2">
+              {pode.editar && (
+                <div className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setNovaQuestao(
+                        novoRascunho({
+                          pergunta: "",
+                          opcoes: ["", "", "", ""],
+                          correta: 0,
+                          aula_id: questionarioAberto.id,
+                        })
+                      )
+                    }
+                  >
+                    <Plus className="w-4 h-4 mr-1" /> Questão
+                  </Button>
+                </div>
+              )}
+              <QuestoesEad
+                questoes={questoesSeparadas.porAula.get(questionarioAberto.id) ?? []}
+                rascunho={novaQuestao?.aula_id === questionarioAberto.id ? novaQuestao : null}
+                onRascunho={setNovaQuestao}
+                onSalvar={salvarQuestao}
+                onExcluir={excluirQuestao}
+                salvando={gravando.has("questao")}
+                podeEditar={pode.editar}
+                grupo={`correta-${questionarioAberto.id}`}
+                dicaDoComentario="Comentário da resposta (o aluno vê na correção, depois de cada envio)"
+                vazio="Nenhuma questão ainda. Sem questões o aluno não consegue fazer esta aula."
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {dialogoConfirmar}
     </div>
