@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { sigo } from "@/api/sigoClient";
+import { isStatusPago } from "@/lib/financeiro-utils";
 import { TrendingUp, TrendingDown, FileSpreadsheet } from "lucide-react";
 import {
   LineChart,
@@ -325,7 +326,7 @@ export default function FluxoContaDetalhado({ empresaAtiva, contas }) {
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <Badge variant="outline">
-                          {t.status === "pago" || t.status === "Pago" ? "Realizado" : "Pendente"}
+                          {isStatusPago(t.status) ? "Realizado" : "Pendente"}
                         </Badge>
                       </td>
                     </tr>

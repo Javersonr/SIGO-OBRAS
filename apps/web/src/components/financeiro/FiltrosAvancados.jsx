@@ -241,7 +241,8 @@ export default function FiltrosAvancados({
                 <SelectItem value="all">Todos</SelectItem>
                 {projetos.map((proj) => (
                   <SelectItem key={proj.id} value={proj.id}>
-                    {proj.titulo}
+                    {/* coluna canônica é `nome`; `titulo` só em registros antigos */}
+                    {proj.nome || proj.titulo || "(sem nome)"}
                   </SelectItem>
                 ))}
               </SelectContent>

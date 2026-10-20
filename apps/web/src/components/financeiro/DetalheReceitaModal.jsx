@@ -8,6 +8,7 @@ import { Edit, X, CheckCircle2, FileText, Eye } from "lucide-react";
 import AnexoViewer from "@/components/shared/AnexoViewer";
 import { nomeDoArquivo } from "@/lib/anexo-ref";
 import { safeParseJSON } from "@/lib/json-utils";
+import { isStatusPago } from "@/lib/financeiro-utils";
 import { DadosRecebimentoConta } from "./DadosBancariosPagamento";
 import { hojeLocalISO } from "./utils";
 
@@ -44,7 +45,8 @@ export default function DetalheReceitaModal({
   }, [receita?.id, open]);
 
   if (!receita) return null;
-  const recebida = receita.status === "pago" || receita.status === "Pago";
+  // pago/Pago/Realizado (legado)
+  const recebida = isStatusPago(receita.status);
   const venc = (receita.data_vencimento || "").toString().slice(0, 10);
   const anexos = anexosDaReceita(receita);
 
@@ -225,14 +227,10 @@ export default function DetalheReceitaModal({
                 <p className="mt-1">
                   <Badge
                     className={
-                      receita.status === "pago" || receita.status === "Pago"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-blue-100 text-blue-700"
+                      recebida ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
                     }
                   >
-                    {receita.status === "pago" || receita.status === "Pago"
-                      ? "Recebido"
-                      : "Em aberto"}
+                    {recebida ? "Recebido" : "Em aberto"}
                   </Badge>
                 </p>
               </div>
@@ -246,7 +244,8 @@ export default function DetalheReceitaModal({
               variant="outline"
               size="sm"
               onClick={() => {
-                if (confirm("Desfazer o recebimento desta receita?")) {
+                // conciliada: quem pergunta é o onBaixar ("desfazer a conciliação e estornar?")
+                if (receita.conciliado || confirm("Desfazer o recebimento desta receita?")) {
                   onBaixar(receita, { pagar: false });
                 }
               }}

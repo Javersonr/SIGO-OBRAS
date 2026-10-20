@@ -70,11 +70,15 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
       return;
     }
 
+    // saldo_inicial / saldo_atual NÃO vão no payload. O plano de contas usa a
+    // mesma tabela das contas bancárias (conta_financeira) e antes gravava
+    // saldo_inicial = 0 e saldo_atual = 0 em QUALQUER conta editada aqui,
+    // inclusive a bancária. saldo_atual é derivado no banco (trigger
+    // tg_conta_saldo_atual_derivado, 0155) e esta tela não pede saldo
+    // inicial: na criação fica o default do banco; na edição, o que já existe.
     const data = {
       empresa_id: empresaAtiva.id,
       ...form,
-      saldo_inicial: 0,
-      saldo_atual: 0,
       ativo: true,
     };
 
@@ -189,7 +193,8 @@ export default function PlanoContas({ empresaAtiva, contas, onReload }) {
             {!hasChildren && (
               <div className="text-right">
                 <p className="font-semibold text-slate-800">
-                  {formatCurrency(conta.saldo_atual || conta.saldo_inicial || 0)}
+                  {/* saldo_atual é o derivado pelo banco: R$ 0,00 é saldo, não "vazio" */}
+                  {formatCurrency(conta.saldo_atual ?? conta.saldo_inicial ?? 0)}
                 </p>
               </div>
             )}

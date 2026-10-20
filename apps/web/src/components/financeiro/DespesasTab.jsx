@@ -43,6 +43,18 @@ import { lerXmlFiscal, textoDoXml } from "@/lib/nfe-xml";
 import { acharPessoa } from "@/lib/documento-financeiro";
 import { cadastroDoXml, lancamentoDoXml } from "@/lib/importacao-xml";
 import { baixarReciboQuitado } from "@/lib/recibo-quitado";
+import { isStatusPago } from "@/lib/financeiro-utils";
+import {
+  PERGUNTA_DESCONCILIAR,
+  camposDaBaixa,
+  classificarBaixaEmLote,
+  desconciliarTransacao,
+  ehErroConciliacao,
+  estornarLancamento,
+  preservarPagamentosDasParcelas,
+  resumoBaixaEmLote,
+  statusDaParcelada,
+} from "@/lib/baixa-financeira";
 import { toast } from "sonner";
 
 import FiltroRapido from "./FiltroRapido";
@@ -305,7 +317,7 @@ export default function DespesasTab({
         t.projeto_nome || "",
         t.centro_custo || "",
         t.valor || 0,
-        t.status === "pago" ? "Pago" : t.status === "em_aberto" ? "Pendente" : "Atrasado",
+        isStatusPago(t.status) ? "Pago" : t.status === "em_aberto" ? "Pendente" : "Atrasado",
         t.forma_pagamento || "",
         t.observacoes || "",
       ];
@@ -750,10 +762,31 @@ export default function DespesasTab({
       return;
     }
 
-    for (const id of itensSelecionados) {
-      await sigo.entities.TransacaoFinanceira.update(id, { status: "pago" });
+    // Só a transação (status + data de hoje): o banco (0155) lança no extrato.
+    // Parcelada é paga parcela a parcela (o status dela não move o extrato) e a
+    // já paga fica como está — antes a baixa regravava as duas.
+    const selecionadas = transacoesIniciais.filter((t) => itensSelecionados.includes(t.id));
+    const { baixar, parceladas, jaPagas } = classificarBaixaEmLote(selecionadas);
+    const campos = camposDaBaixa(true, hojeLocalISO());
+    const falhas = [];
+    let baixadas = 0;
+    for (const t of baixar) {
+      try {
+        await sigo.entities.TransacaoFinanceira.update(t.id, campos);
+        baixadas++;
+      } catch (err) {
+        falhas.push(`${t.descricao || t.id}: ${err?.message || "erro desconhecido"}`);
+      }
     }
 
+    alert(
+      resumoBaixaEmLote({
+        baixadas,
+        parceladas: parceladas.length,
+        jaPagas: jaPagas.length,
+        falhas,
+      })
+    );
     setItensSelecionados([]);
     onReload();
   };
@@ -785,17 +818,24 @@ export default function DespesasTab({
     });
 
     let erros = 0;
+    // conciliada fora da página atual (a checagem acima só vê a página): o banco recusa (0155)
+    let recusadasConciliadas = 0;
     for (const id of itensSelecionados) {
       try {
         await sigo.entities.TransacaoFinanceira.delete(id);
-      } catch {
+      } catch (err) {
         erros++;
+        if (ehErroConciliacao(err)) recusadasConciliadas++;
       }
       setImportacao((prev) => ({ ...prev, processados: prev.processados + 1, erros }));
     }
 
     alert(
-      `${itensSelecionados.length - erros} despesas excluídas com sucesso.${erros > 0 ? `\n${erros} falharam.` : ""}`
+      `${itensSelecionados.length - erros} despesas excluídas com sucesso.${erros > 0 ? `\n${erros} falharam.` : ""}${
+        recusadasConciliadas > 0
+          ? `\n${recusadasConciliadas} está(ão) conciliada(s) com o extrato do banco: desfaça a conciliação antes de excluir.`
+          : ""
+      }`
     );
     setItensSelecionados([]);
     setImportacao({ ativo: false, total: 0, processados: 0, erros: 0 });
@@ -1019,6 +1059,9 @@ export default function DespesasTab({
       // Criar uma única despesa com as parcelas dentro
       const transacao = await sigo.entities.TransacaoFinanceira.create({
         ...dataBase,
+        // o extrato segue as parcelas (0155): o status acompanha — só fica
+        // "pago" se todas estiverem pagas
+        status: statusDaParcelada(parcelas, dataBase.status),
         parcelado: true,
         parcelas: JSON.stringify(parcelas),
       });
@@ -1035,40 +1078,33 @@ export default function DespesasTab({
         });
       }
 
-      // Criar um lançamento no extrato para cada parcela
-      for (const parcela of parcelas) {
-        await sigo.entities.ExtratoBancario.create({
-          empresa_id: empresaAtiva.id,
-          conta_id: form.conta_id,
-          data: parcela.data_vencimento,
-          descricao: `${form.descricao} - Parcela ${parcela.numero}/${parcelas.length}`,
-          valor: -Math.abs(parseFloat(parcela.valor) || 0),
-          tipo: "debito",
-          categoria: categoria?.nome || "Despesa",
-          conciliado: false,
-          transacao_id: transacao.id,
-          origem: "manual",
-        });
-      }
+      // Extrato: NÃO lançar aqui. O banco (0155) lança cada parcela quando ela
+      // é paga — antes as parcelas futuras saíam do saldo já na criação.
     }
     // CENÁRIO 2: Edição de despesa com parcelamento habilitado
-    //
-    // Aqui caem 2 subcasos:
-    //   2A — selectedItem já era parcelado (parcelado=true e tem parcelas
-    //        salvas no banco). Editar dados (descrição, fornecedor) NÃO deve
-    //        regravar o extrato: o usuário só tá ajustando metadados.
-    //   2B — selectedItem era despesa simples e o usuário acabou de habilitar
-    //        parcelamento agora. Aí confirma e reescreve o extrato.
-    //
-    // Antes não havia distinção: sempre confirmava "transformar em N parcelas"
-    // e recriava todos os lançamentos do extrato, inclusive em edição trivial.
-    // Resultado: se o delete falhasse no meio (network), ficavam linhas
-    // duplicadas. Agora detecta o caso 2A e atualiza in-place sem mexer no
-    // extrato, e o 2B usa allSettled pra registrar falhas em vez de mascarar.
+    //   2A — já era parcelada: só atualiza os dados.
+    //   2B — era despesa simples e o usuário habilitou o parcelamento: confirma.
+    // O extrato acompanha sozinho (0155): só as parcelas PAGAS entram no saldo.
     else if (temParcelamento && selectedItem) {
       const jaEraParcelada =
         selectedItem.parcelado === true &&
         Array.isArray(safeParseJSON(selectedItem.parcelas, null));
+
+      // pagamento das parcelas: o que está no BANCO agora (pode ter sido pago pelo
+      // detalhe ou por outra pessoa depois que o formulário abriu) — gravar o
+      // JSON do formulário "despagaria" essas parcelas e tiraria a linha do extrato
+      let parcelasParaGravar = parcelas;
+      if (jaEraParcelada) {
+        const atual = await sigo.entities.TransacaoFinanceira.get(selectedItem.id);
+        parcelasParaGravar = preservarPagamentosDasParcelas(
+          parcelas,
+          safeParseJSON(atual?.parcelas, [])
+        );
+      } else if (isStatusPago(selectedItem.status)) {
+        // as parcelas novas nascem em aberto: o pagamento sairia do extrato
+        alert("Esta despesa já está paga: desfaça o pagamento antes de parcelar.");
+        return;
+      }
 
       if (!jaEraParcelada) {
         // 2B — transformação real: pede confirmação
@@ -1084,113 +1120,21 @@ export default function DespesasTab({
       // Atualiza a despesa em si (sempre)
       await sigo.entities.TransacaoFinanceira.update(selectedItem.id, {
         ...dataBase,
+        status: statusDaParcelada(parcelasParaGravar, dataBase.status),
         parcelado: true,
-        parcelas: JSON.stringify(parcelas),
+        parcelas: JSON.stringify(parcelasParaGravar),
       });
       transacaoSalva = { ...selectedItem, ...dataBase, id: selectedItem.id };
-
-      // Carrega o extrato atual da transação
-      const lancamentosAntigos = await sigo.entities.ExtratoBancario.filter({
-        empresa_id: empresaAtiva.id,
-        transacao_id: selectedItem.id,
-      });
-
-      // Detecta se a estrutura de parcelas mudou (quantidade, valores ou datas).
-      // Se NÃO mudou, só atualizamos a descrição dos lançamentos existentes
-      // em paralelo e nem deletamos nada — evita janela de "0 extratos" no
-      // meio do save e zera o risco de duplicata.
-      const mesmaQtd = lancamentosAntigos.length === parcelas.length;
-      const estruturaInalterada =
-        jaEraParcelada &&
-        mesmaQtd &&
-        parcelas.every((p, idx) => {
-          const lanc = lancamentosAntigos[idx];
-          if (!lanc) return false;
-          const valorIgual =
-            Math.abs((lanc.valor || 0) + Math.abs(parseFloat(p.valor) || 0)) < 0.01;
-          return lanc.data === p.data_vencimento && valorIgual;
-        });
-
-      if (estruturaInalterada) {
-        // Só atualiza descrição/conta/categoria nos lançamentos existentes.
-        const results = await Promise.allSettled(
-          lancamentosAntigos.map((lanc, idx) =>
-            sigo.entities.ExtratoBancario.update(lanc.id, {
-              conta_id: form.conta_id,
-              descricao: `${form.descricao} - Parcela ${parcelas[idx].numero}/${parcelas.length}`,
-              categoria: categoria?.nome || "Despesa",
-            })
-          )
-        );
-        const falhas = results.filter((r) => r.status === "rejected");
-        if (falhas.length > 0) {
-          console.error("Falhas ao atualizar parcelas do extrato:", falhas);
-        }
-      } else {
-        // Estrutura mudou: precisa reescrever. Faz delete + create em
-        // allSettled pra não mascarar falhas e logar pra investigação.
-        const deletes = await Promise.allSettled(
-          lancamentosAntigos.map((lanc) => sigo.entities.ExtratoBancario.delete(lanc.id))
-        );
-        const deleteFails = deletes.filter((r) => r.status === "rejected");
-        if (deleteFails.length > 0) {
-          console.error("Falhas ao apagar extrato antigo:", deleteFails);
-        }
-
-        const creates = await Promise.allSettled(
-          parcelas.map((parcela) =>
-            sigo.entities.ExtratoBancario.create({
-              empresa_id: empresaAtiva.id,
-              conta_id: form.conta_id,
-              data: parcela.data_vencimento,
-              descricao: `${form.descricao} - Parcela ${parcela.numero}/${parcelas.length}`,
-              valor: -Math.abs(parseFloat(parcela.valor) || 0),
-              tipo: "debito",
-              categoria: categoria?.nome || "Despesa",
-              conciliado: false,
-              transacao_id: selectedItem.id,
-              origem: "manual",
-            })
-          )
-        );
-        const createFails = creates.filter((r) => r.status === "rejected");
-        if (createFails.length > 0) {
-          console.error("Falhas ao recriar extrato das parcelas:", createFails);
-          alert(
-            `Atenção: ${createFails.length} parcela(s) não foram lançadas no extrato. Verifique e ajuste manualmente.`
-          );
-        }
-      }
 
       // Anexos: os novos (ex.: o documento do "Ler documento") e os retirados, como no cenário 3
       await sincronizarAnexos(selectedItem.id);
     }
     // CENÁRIO 3: Edição simples (sem parcelamento)
+    // O extrato acompanha sozinho (0155): pago → lança; em aberto → retira;
+    // valor/conta/data alterados → a linha é ajustada na mesma gravação.
     else if (selectedItem) {
       await sigo.entities.TransacaoFinanceira.update(selectedItem.id, dataBase);
       transacaoSalva = { ...selectedItem, ...dataBase, id: selectedItem.id };
-
-      // Atualizar lançamento existente no extrato
-      const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
-        empresa_id: empresaAtiva.id,
-        transacao_id: selectedItem.id,
-      });
-
-      if (lancamentosExistentes.length > 0 && dataBase.status === "pago") {
-        await sigo.entities.ExtratoBancario.update(lancamentosExistentes[0].id, {
-          conta_id: form.conta_id,
-          data: form.data_pagamento || form.data_vencimento,
-          descricao: form.descricao,
-          valor: -Math.abs(parseFloat(form.valor) || 0),
-          categoria: categoria?.nome || "Despesa",
-          conciliado: false, // Re-set conciliado status
-        });
-      } else if (lancamentosExistentes.length > 0 && dataBase.status !== "pago") {
-        // If the expense is no longer paid, remove the bank record
-        for (const lanc of lancamentosExistentes) {
-          await sigo.entities.ExtratoBancario.delete(lanc.id);
-        }
-      }
 
       // Gerenciar anexos - remover os retirados e criar os novos
       await sincronizarAnexos(selectedItem.id);
@@ -1211,21 +1155,7 @@ export default function DespesasTab({
         });
       }
 
-      if (transacao.status === "pago") {
-        // Criar lançamento no extrato bancário apenas se já estiver paga
-        await sigo.entities.ExtratoBancario.create({
-          empresa_id: empresaAtiva.id,
-          conta_id: form.conta_id,
-          data: form.data_pagamento || form.data_vencimento,
-          descricao: form.descricao,
-          valor: -Math.abs(parseFloat(form.valor) || 0),
-          tipo: "debito",
-          categoria: categoria?.nome || "Despesa",
-          conciliado: false,
-          transacao_id: transacao.id,
-          origem: "manual",
-        });
-      }
+      // já paga: o banco (0155) lança no extrato na mesma gravação
     }
 
     // INTEGRAÇÃO NFe → ESTOQUE
@@ -1304,25 +1234,28 @@ export default function DespesasTab({
 
   const handleDelete = async (id) => {
     const despesa = despesas.find((d) => d.id === id);
+    const MSG_CONCILIADA =
+      "❌ Esta despesa está conciliada com o extrato do banco e não pode ser excluída.\n\nDesfaça a conciliação antes de excluir.";
     if (despesa?.conciliado) {
-      alert("❌ Esta despesa está conciliada e não pode ser excluída.");
+      alert(MSG_CONCILIADA);
       return;
     }
     if (!confirm("Tem certeza que deseja excluir esta despesa?")) return;
 
     try {
-      // Cascade: limpa extratos, anexos e pré-lançamentos vinculados antes de
-      // deletar a transação. Antes ficava tudo órfão afetando saldo da conta
-      // e referências quebradas em PreLancamento.transacao_id.
-      const [extratos, anexosT, prelancs] = await Promise.allSettled([
-        sigo.entities.ExtratoBancario.filter({ empresa_id: empresaAtiva.id, transacao_id: id }),
+      // Primeiro a transação: o banco (0155) retira a linha do extrato na mesma
+      // gravação — a tela não apaga mais extrato — e recusa se estiver
+      // conciliada. Só depois limpa anexos e pré-lançamentos (antes eram
+      // apagados primeiro e se perdiam quando a exclusão falhava).
+      await sigo.entities.TransacaoFinanceira.delete(id);
+
+      const [anexosT, prelancs] = await Promise.allSettled([
         sigo.entities.TransacaoAnexo.filter({ transacao_id: id }),
         sigo.entities.PreLancamento.filter({ empresa_id: empresaAtiva.id, transacao_id: id }),
       ]);
       const list = (r) => (r.status === "fulfilled" ? r.value || [] : []);
 
       await Promise.allSettled([
-        ...list(extratos).map((e) => sigo.entities.ExtratoBancario.delete(e.id)),
         ...list(anexosT).map((a) => sigo.entities.TransacaoAnexo.delete(a.id)),
         // Pré-lançamento volta pra "Pendente" em vez de ser apagado — preserva
         // dado do operador (foto do cupom etc).
@@ -1331,11 +1264,15 @@ export default function DespesasTab({
         ),
       ]);
 
-      await sigo.entities.TransacaoFinanceira.delete(id);
       alert("Despesa excluída com sucesso!");
       onReload();
     } catch (err) {
       console.error("[DespesasTab] erro ao excluir:", err);
+      if (ehErroConciliacao(err)) {
+        alert(MSG_CONCILIADA);
+        onReload(); // a lista estava desatualizada (conciliada em outra tela)
+        return;
+      }
       alert("❌ Erro ao excluir: " + (err?.message || "desconhecido"));
     }
   };
@@ -1346,62 +1283,62 @@ export default function DespesasTab({
    * alternava a partir do status de uma cópia DESATUALIZADA da despesa e
    * regravava a data de hoje por cima da data informada no pagamento.
    * `opcoes.somenteRecarregar` só atualiza a lista (ex.: mudança em parcela).
+   *
+   * Grava SÓ a transação: o banco (0155) lança/retira a linha do extrato na
+   * mesma gravação. Estorno de despesa conciliada com o extrato do banco: o
+   * banco recusa, então pergunta, desfaz a conciliação (0156) e só depois estorna.
    */
   const handleToggleStatus = async (item, opcoes = {}) => {
     if (opcoes.somenteRecarregar) {
       onReload();
+      // o detalhe aberto guarda a despesa como estava ao abrir: relê do banco,
+      // senão a próxima ação (ou o "Editar") partiria de uma cópia velha
+      if (item?.id && despesaAbertaRef.current === item.id) {
+        try {
+          const atual = await sigo.entities.TransacaoFinanceira.get(item.id);
+          if (atual && despesaAbertaRef.current === item.id) setDespesaDetalhes(atual);
+        } catch (err) {
+          console.warn("[DespesasTab] falha relendo a despesa aberta:", err);
+        }
+      }
+      return;
+    }
+    // Parcelada: quem move o extrato são as parcelas pagas (JSON), não o status
+    // da despesa — trocar o status aqui não pagaria nem estornaria nada.
+    if (item.parcelado === true) {
+      toast.info("Despesa parcelada: registre ou desfaça o pagamento parcela a parcela.");
+      handleVerDetalhes(item);
       return;
     }
     if (togglingIds.has(item.id)) return; // bloqueia clique duplo
     setTogglingIds((s) => new Set(s).add(item.id));
 
-    const statusAtual = String(item.status || "").toLowerCase();
-    const eraPago = statusAtual === "pago" || statusAtual === "realizado";
+    const eraPago = isStatusPago(item.status);
     const pagar = typeof opcoes.pagar === "boolean" ? opcoes.pagar : !eraPago;
-    const newStatus = pagar ? "pago" : "em_aberto";
-    const dataPagamento = opcoes.dataPagamento || hojeLocalISO();
+    const gravar = () =>
+      sigo.entities.TransacaoFinanceira.update(
+        item.id,
+        camposDaBaixa(pagar, opcoes.dataPagamento || hojeLocalISO())
+      );
 
     try {
-      await sigo.entities.TransacaoFinanceira.update(item.id, {
-        status: newStatus,
-        data_pagamento: newStatus === "pago" ? dataPagamento : null,
-      });
-
-      // Sincronizar com ExtratoBancario
-      if (newStatus === "pago") {
-        const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
-          empresa_id: empresaAtiva.id,
-          transacao_id: item.id,
-        });
-
-        if (lancamentosExistentes.length === 0) {
-          await sigo.entities.ExtratoBancario.create({
-            empresa_id: empresaAtiva.id,
-            conta_id: item.conta_id,
-            data: dataPagamento,
-            descricao: item.descricao,
-            valor: -Math.abs(item.valor),
-            tipo: "debito",
-            categoria: item.categoria_nome || "Despesa",
-            conciliado: false,
-            transacao_id: item.id,
-            origem: "manual",
-          });
-        }
+      if (pagar) {
+        await gravar();
       } else {
-        const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
-          empresa_id: empresaAtiva.id,
-          transacao_id: item.id,
+        const estornou = await estornarLancamento({
+          conciliado: item.conciliado,
+          estornar: gravar,
+          desconciliar: () => desconciliarTransacao(supabase, item.id),
+          confirmar: () => confirm(PERGUNTA_DESCONCILIAR),
         });
-        await Promise.allSettled(
-          lancamentosExistentes.map((l) => sigo.entities.ExtratoBancario.delete(l.id))
-        );
+        if (!estornou) return;
       }
 
       onReload();
     } catch (err) {
       console.error("[DespesasTab] erro toggle status:", err);
       alert("❌ Erro ao atualizar status: " + (err?.message || "desconhecido"));
+      onReload(); // a conciliação pode ter sido desfeita antes da falha
     } finally {
       setTogglingIds((s) => {
         const n = new Set(s);
@@ -1563,14 +1500,18 @@ export default function DespesasTab({
 
   const handleVerDetalhes = async (despesa) => {
     despesaAbertaRef.current = despesa.id;
-    // Carregar anexos
-    const anexosDb = await sigo.entities.TransacaoAnexo.filter({
-      empresa_id: empresaAtiva.id,
-      transacao_id: despesa.id,
-    });
+    // Carregar anexos e a despesa como está no banco (a linha da lista pode
+    // estar velha — as parcelas, por exemplo, mudam pelo próprio detalhe)
+    const [anexosDb, atual] = await Promise.all([
+      sigo.entities.TransacaoAnexo.filter({
+        empresa_id: empresaAtiva.id,
+        transacao_id: despesa.id,
+      }),
+      sigo.entities.TransacaoFinanceira.get(despesa.id).catch(() => null),
+    ]);
     if (despesaAbertaRef.current !== despesa.id) return; // clicou em outra no meio
     setAnexosDetalhes(anexosDb);
-    setDespesaDetalhes(despesa);
+    setDespesaDetalhes(atual || despesa);
     setShowDetalhes(true);
   };
 
@@ -1578,23 +1519,16 @@ export default function DespesasTab({
     if (!confirm("Desfazer a conciliação bancária desta despesa?")) return;
 
     try {
-      await sigo.entities.TransacaoFinanceira.update(despesa.id, { conciliado: false });
-
-      // Atualizar extrato bancário relacionado
-      const lancamentos = await sigo.entities.ExtratoBancario.filter({
-        empresa_id: empresaAtiva.id,
-        transacao_id: despesa.id,
-      });
-
-      for (const lanc of lancamentos) {
-        await sigo.entities.ExtratoBancario.update(lanc.id, { conciliado: false });
-      }
+      // RPC (0156): solta a linha do extrato do banco e a despesa numa gravação
+      // só. Antes eram gravações soltas e a linha do banco seguia ligada à
+      // despesa (transacao_id), travando o estorno e a exclusão.
+      await desconciliarTransacao(supabase, despesa.id);
 
       alert("Conciliação desfeita com sucesso!");
       onReload();
     } catch (error) {
       console.error("Erro ao desfazer conciliação:", error);
-      alert("Erro ao desfazer conciliação");
+      alert("Erro ao desfazer conciliação: " + (error?.message || "desconhecido"));
     }
   };
 
@@ -2006,7 +1940,7 @@ export default function DespesasTab({
                         <div className="flex items-center gap-2">
                           <Badge
                             className={
-                              d.status === "pago" || d.status === "Pago"
+                              isStatusPago(d.status)
                                 ? "bg-green-100 text-green-700 cursor-pointer"
                                 : "bg-blue-100 text-blue-700 cursor-pointer"
                             }
@@ -2015,7 +1949,9 @@ export default function DespesasTab({
                               handleToggleStatus(d);
                             }}
                           >
-                            {d.status === "pago" || d.status === "Pago" ? "Pago" : "Em aberto"}
+                            {/* "Realizado" (legado) também é pago: aparecia "Em aberto"
+                                e o clique, achando que pagava, estornava */}
+                            {isStatusPago(d.status) ? "Pago" : "Em aberto"}
                           </Badge>
                           {d.conciliado && (
                             <Badge

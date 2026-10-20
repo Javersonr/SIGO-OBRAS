@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { sigo } from "@/api/sigoClient";
+import { resumoParaInsights } from "@/lib/relatorios-financeiros";
 import {
   Brain,
   TrendingUp,
@@ -13,40 +14,34 @@ import {
   MessageSquare,
 } from "lucide-react";
 
-export default function InsightsIA({ transacoes, categorias, tipo = "dre" }) {
+export default function InsightsIA({ transacoes, categorias }) {
   const [insights, setInsights] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showResumo, setShowResumo] = useState(false);
 
+  // antes: comparava t.tipo === "Receita" && t.status === "Pago" (perdia
+  // "receita"/"pago"/"Realizado") e o efeito dependia do array `transacoes`,
+  // recriado a cada render do pai → a IA (paga por chamada) era chamada de
+  // novo sem parar. Agora os totais saem normalizados e a IA só é chamada
+  // quando a `chave` (qtde + totais) muda. A aba (tipo) não entra no prompt,
+  // então trocar de aba também não chama a IA de novo.
+  const resumo = useMemo(
+    () => resumoParaInsights(transacoes, categorias),
+    [transacoes, categorias]
+  );
+  const ultimaChave = useRef(null);
+
   useEffect(() => {
-    if (transacoes.length > 0) {
-      gerarInsights();
-    }
-  }, [transacoes, tipo]);
+    if (resumo.quantidade === 0 || ultimaChave.current === resumo.chave) return;
+    ultimaChave.current = resumo.chave;
+    gerarInsights();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumo.chave]);
 
   const gerarInsights = async () => {
     setLoading(true);
     try {
-      // Preparar dados para análise
-      const receitas = transacoes.filter((t) => t.tipo === "Receita" && t.status === "Pago");
-      const despesas = transacoes.filter((t) => t.tipo === "Despesa" && t.status === "Pago");
-
-      const totalReceitas = receitas.reduce((sum, t) => sum + (t.valor || 0), 0);
-      const totalDespesas = despesas.reduce((sum, t) => sum + (t.valor || 0), 0);
-      const margemLiquida =
-        totalReceitas > 0 ? ((totalReceitas - totalDespesas) / totalReceitas) * 100 : 0;
-
-      // Agrupar por categoria
-      const despesasPorCategoria = {};
-      despesas.forEach((d) => {
-        const cat = d.categoria_nome || "Sem Categoria";
-        despesasPorCategoria[cat] = (despesasPorCategoria[cat] || 0) + (d.valor || 0);
-      });
-
-      const categoriasMaiores = Object.entries(despesasPorCategoria)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 5)
-        .map(([cat, valor]) => `${cat}: R$ ${valor.toFixed(2)}`);
+      const { totalReceitas, totalDespesas, margemLiquida, categoriasMaiores } = resumo;
 
       // Chamar IA para análise
       const resultado = await sigo.integrations.Core.InvokeLLM({
@@ -110,13 +105,9 @@ export default function InsightsIA({ transacoes, categorias, tipo = "dre" }) {
   const gerarResumoExecutivo = async () => {
     setLoading(true);
     try {
-      const receitas = transacoes.filter((t) => t.tipo === "Receita" && t.status === "Pago");
-      const despesas = transacoes.filter((t) => t.tipo === "Despesa" && t.status === "Pago");
+      const { totalReceitas, totalDespesas } = resumo;
 
-      const totalReceitas = receitas.reduce((sum, t) => sum + (t.valor || 0), 0);
-      const totalDespesas = despesas.reduce((sum, t) => sum + (t.valor || 0), 0);
-
-      const resumo = await sigo.integrations.Core.InvokeLLM({
+      const resumoExecutivo = await sigo.integrations.Core.InvokeLLM({
         prompt: `Você é um CFO experiente. Crie um resumo executivo conciso (máximo 3 parágrafos) dos resultados financeiros:
         
         - Receitas: R$ ${totalReceitas.toFixed(2)}
@@ -129,7 +120,9 @@ export default function InsightsIA({ transacoes, categorias, tipo = "dre" }) {
         Use linguagem clara e objetiva, destacando os principais pontos de atenção e oportunidades.`,
       });
 
-      setInsights({ ...insights, resumo_executivo: resumo });
+      // atualização funcional: a chamada à IA demora e os insights podem ter sido
+      // regerados nesse meio-tempo (o objeto capturado no clique estaria velho)
+      setInsights((atual) => ({ ...atual, resumo_executivo: resumoExecutivo }));
       setShowResumo(true);
     } catch (error) {
       console.error("Erro ao gerar resumo:", error);

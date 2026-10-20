@@ -35,8 +35,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { sigo } from "@/api/sigoClient";
+import { sigo, supabase } from "@/api/sigoClient";
 import { refDoUpload } from "@/lib/anexo-ref";
+import { isStatusPago } from "@/lib/financeiro-utils";
+import {
+  PERGUNTA_DESCONCILIAR,
+  camposDaBaixa,
+  classificarBaixaEmLote,
+  desconciliarTransacao,
+  ehErroConciliacao,
+  estornarLancamento,
+  resumoBaixaEmLote,
+} from "@/lib/baixa-financeira";
 import { lerXmlFiscal, textoDoXml } from "@/lib/nfe-xml";
 import { acharPessoa, montarPreenchimento } from "@/lib/documento-financeiro";
 import { cadastroDoXml, lancamentoDoXml } from "@/lib/importacao-xml";
@@ -301,8 +311,11 @@ export default function ReceitasTab({
           Conta: t.conta_nome || "",
           Valor: t.valor || 0,
           "Data Vencimento": t.data_vencimento || "",
-          Status:
-            t.status === "pago" ? "Recebido" : t.status === "em_aberto" ? "Pendente" : "Atrasado",
+          Status: isStatusPago(t.status)
+            ? "Recebido"
+            : t.status === "em_aberto"
+              ? "Pendente"
+              : "Atrasado",
           "Data Pagamento": t.data_pagamento || "",
           Observações: t.observacoes || "",
         };
@@ -647,10 +660,28 @@ export default function ReceitasTab({
       return;
     }
 
-    for (const id of itensSelecionados) {
-      await sigo.entities.TransacaoFinanceira.update(id, { status: "pago" });
+    // Só a transação (status + data de hoje): o banco (0155) lança no extrato.
+    // Parcelada (JSON de parcelas) e já recebida ficam de fora.
+    const selecionadas = transacoesIniciais.filter((t) => itensSelecionados.includes(t.id));
+    const { baixar, parceladas, jaPagas } = classificarBaixaEmLote(selecionadas);
+    const campos = camposDaBaixa(true, hojeLocalISO());
+    const falhas = [];
+    let baixadas = 0;
+    for (const t of baixar) {
+      try {
+        await sigo.entities.TransacaoFinanceira.update(t.id, campos);
+        baixadas++;
+      } catch (err) {
+        falhas.push(`${t.descricao || t.id}: ${err?.message || "erro desconhecido"}`);
+      }
     }
 
+    alert(
+      resumoBaixaEmLote(
+        { baixadas, parceladas: parceladas.length, jaPagas: jaPagas.length, falhas },
+        { itens: "receita(s)", baixadasRotulo: "recebida(s)", pagasRotulo: "recebida(s)" }
+      )
+    );
     setItensSelecionados([]);
     onReload();
   };
@@ -667,6 +698,8 @@ export default function ReceitasTab({
 
     let excluidas = 0;
     let erros = 0;
+    // conciliada com o extrato do banco: o banco recusa (0155) — não adianta repetir
+    let recusadasConciliadas = 0;
 
     // Processar em lotes de 50
     const idsComErro = [];
@@ -685,6 +718,12 @@ export default function ReceitasTab({
             sucesso = true;
           } catch (error) {
             tentativas++;
+            if (ehErroConciliacao(error)) {
+              idsComErro.push(id);
+              erros++;
+              recusadasConciliadas++;
+              break;
+            }
             if (tentativas < 3) {
               await new Promise((resolve) => setTimeout(resolve, 1000));
             } else {
@@ -713,13 +752,18 @@ export default function ReceitasTab({
       setImportacao({ ativo: false, total: 0, processados: 0, erros: 0 });
       setItensSelecionados([]);
 
-      if (erros > 0) {
+      if (recusadasConciliadas > 0) {
+        alert(
+          `Exclusão concluída!\n${excluidas} receitas excluídas\n${erros} erros\n\n${recusadasConciliadas} está(ão) conciliada(s) com o extrato do banco: desfaça a conciliação antes de excluir.`
+        );
+      } else if (erros > 0) {
         alert(
           `Exclusão concluída!\n${excluidas} receitas excluídas\n${erros} erros\n\nDica: Tente excluir os itens restantes novamente.`
         );
       } else {
         alert(`Exclusão concluída!\n${excluidas} receitas excluídas com sucesso!`);
       }
+      onReload();
     }, 500);
   };
 
@@ -842,6 +886,11 @@ export default function ReceitasTab({
             valor: parcela.valor,
             data_vencimento: parcela.data_vencimento,
             status: parcela.status,
+            // parcela já recebida: a data DELA é a do extrato (0155); antes ia a
+            // data do formulário. Em aberto: sem data de recebimento.
+            data_pagamento: isStatusPago(parcela.status)
+              ? parcela.data_pagamento || dataBase.data_pagamento || hojeLocalISO()
+              : null,
             descricao: `${form.descricao} - Parcela ${parcela.numero}/${parcelas.length}`,
           });
         }
@@ -872,20 +921,18 @@ export default function ReceitasTab({
   const handleDelete = async (id) => {
     if (!confirm("Excluir esta receita?")) return;
     try {
-      // Cascade: remove lançamentos de extrato vinculados antes de excluir a transação
-      // (evita órfãos no ExtratoBancario que afetam o saldo da conta).
-      const extratos = await sigo.entities.ExtratoBancario.filter({
-        empresa_id: empresaAtiva.id,
-        transacao_id: id,
-      });
-      await Promise.allSettled(
-        (extratos || []).map((e) => sigo.entities.ExtratoBancario.delete(e.id))
-      );
-
+      // Só a transação: o banco (0155) retira a linha do extrato na mesma
+      // gravação (a tela não apaga mais extrato) e recusa se estiver conciliada.
       await sigo.entities.TransacaoFinanceira.delete(id);
       onReload();
     } catch (err) {
       console.error("[ReceitasTab] erro ao excluir:", err);
+      if (ehErroConciliacao(err)) {
+        alert(
+          "❌ Esta receita está conciliada com o extrato do banco e não pode ser excluída.\n\nDesfaça a conciliação (Conciliação Bancária) antes de excluir."
+        );
+        return;
+      }
       alert("❌ Erro ao excluir: " + (err?.message || "desconhecido"));
       // Não chama onReload se falhou — registro continua na lista
     }
@@ -896,54 +943,38 @@ export default function ReceitasTab({
   // entre cliques rápidos, usamos useRef através de um state-set.
   // `opcoes.pagar` explícito + `opcoes.dataPagamento` = data do recebimento
   // informada pelo usuário (antes era sempre "hoje").
+  // Grava SÓ a transação: o banco (0155) lança/retira a linha do extrato na
+  // mesma gravação. Estorno de receita conciliada com o extrato do banco: o
+  // banco recusa, então pergunta, desfaz a conciliação (0156) e só depois estorna.
   const handleToggleStatus = async (item, opcoes = {}) => {
     if (togglingIds.has(item.id)) return; // já está em processamento
     setTogglingIds((s) => new Set(s).add(item.id));
 
-    const isPagoAtual = String(item.status || "").toLowerCase();
-    const eraPago = isPagoAtual === "pago" || isPagoAtual === "realizado";
+    const eraPago = isStatusPago(item.status);
     const pagar = typeof opcoes.pagar === "boolean" ? opcoes.pagar : !eraPago;
-    const newStatus = pagar ? "pago" : "em_aberto";
-    const dataPagamento = opcoes.dataPagamento || hojeLocalISO();
+    const gravar = () =>
+      sigo.entities.TransacaoFinanceira.update(
+        item.id,
+        camposDaBaixa(pagar, opcoes.dataPagamento || hojeLocalISO())
+      );
 
     try {
-      await sigo.entities.TransacaoFinanceira.update(item.id, {
-        status: newStatus,
-        data_pagamento: newStatus === "pago" ? dataPagamento : null,
-      });
-
-      if (newStatus === "pago") {
-        const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
-          empresa_id: empresaAtiva.id,
-          transacao_id: item.id,
-        });
-        if (lancamentosExistentes.length === 0) {
-          await sigo.entities.ExtratoBancario.create({
-            empresa_id: empresaAtiva.id,
-            conta_id: item.conta_id,
-            data: dataPagamento,
-            descricao: item.descricao,
-            valor: Math.abs(item.valor),
-            tipo: "credito",
-            categoria: item.categoria_nome || "Receita",
-            conciliado: false,
-            transacao_id: item.id,
-            origem: "manual",
-          });
-        }
+      if (pagar) {
+        await gravar();
       } else {
-        const lancamentosExistentes = await sigo.entities.ExtratoBancario.filter({
-          empresa_id: empresaAtiva.id,
-          transacao_id: item.id,
+        const estornou = await estornarLancamento({
+          conciliado: item.conciliado,
+          estornar: gravar,
+          desconciliar: () => desconciliarTransacao(supabase, item.id),
+          confirmar: () => confirm(PERGUNTA_DESCONCILIAR),
         });
-        await Promise.allSettled(
-          lancamentosExistentes.map((l) => sigo.entities.ExtratoBancario.delete(l.id))
-        );
+        if (!estornou) return;
       }
       onReload();
     } catch (err) {
       console.error("[ReceitasTab] erro toggle status:", err);
       alert("❌ Erro ao atualizar status: " + (err?.message || "desconhecido"));
+      onReload(); // a conciliação pode ter sido desfeita antes da falha
     } finally {
       setTogglingIds((s) => {
         const n = new Set(s);
@@ -1212,7 +1243,7 @@ export default function ReceitasTab({
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <Badge
                       className={
-                        r.status === "pago" || r.status === "Pago"
+                        isStatusPago(r.status)
                           ? "bg-green-100 text-green-700 cursor-pointer"
                           : "bg-blue-100 text-blue-700 cursor-pointer"
                       }
@@ -1221,7 +1252,8 @@ export default function ReceitasTab({
                         handleToggleStatus(r);
                       }}
                     >
-                      {r.status === "pago" || r.status === "Pago" ? "Recebido" : "Em aberto"}
+                      {/* "Realizado" (legado) também é recebido */}
+                      {isStatusPago(r.status) ? "Recebido" : "Em aberto"}
                     </Badge>
                   </td>
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>

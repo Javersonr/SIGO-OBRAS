@@ -1,7 +1,9 @@
 import { normalizarTexto } from "@/lib/busca";
 import React, { useState, useEffect, useRef } from "react";
-import { sigo } from "@/api/sigoClient";
+import { toast } from "sonner";
+import { sigo, supabase } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { mensagemErroFechamento, valorDoPreLancamento } from "@/lib/fechamento-caixa";
 import { ehBase44, ehImagem, ehPdf, extensaoDoArquivo, nomeDoArquivo } from "@/lib/anexo-ref";
 import AnexoViewer from "@/components/shared/AnexoViewer";
 import ImgStorage from "@/components/ImgStorage";
@@ -260,10 +262,8 @@ export default function PreLancamentosAReconciliar({
   const itensSelecionadosFiltrados = listaFiltrada.filter((item) => selecionados.includes(item.id));
   const listaTotalizador =
     itensSelecionadosFiltrados.length > 0 ? itensSelecionadosFiltrados : listaFiltrada;
-  const totalFiltrado = listaTotalizador.reduce((sum, item) => {
-    const d = safeParseJSON(item.dados_extraidos, {});
-    return sum + (parseFloat(d.valor) || 0);
-  }, 0);
+  // mesmo critério do banco (valor_total do fechamento): "1.234,56" não vira 1,234
+  const totalFiltrado = listaTotalizador.reduce((sum, item) => sum + valorDoPreLancamento(item), 0);
 
   const todosSelecionados =
     listaFiltrada.length > 0 && listaFiltrada.every((item) => selecionados.includes(item.id));
@@ -395,47 +395,29 @@ export default function PreLancamentosAReconciliar({
   };
 
   const handleFecharCaixaDireto = async () => {
-    if (itensSelecionadosParaCaixa.length === 0) return;
+    if (fechandoCaixa || itensSelecionadosParaCaixa.length === 0) return;
     setFechandoCaixa(true);
     try {
-      const existentes = await sigo.entities.FechamentoCaixa.filter({ empresa_id: empresaId });
-      const numero = String(existentes.length + 1).padStart(4, "0");
-      const total = itensSelecionadosParaCaixa.reduce((sum, pl) => {
-        const d = safeParseJSON(pl.dados_extraidos, {});
-        return sum + (parseFloat(d.valor) || 0);
-      }, 0);
-      await sigo.entities.FechamentoCaixa.create({
-        empresa_id: empresaId,
-        numero,
-        status: "Aguardando Pagamento",
-        // pre_lancamentos_ids é JSONB no banco (default '[]'::jsonb). Salvar
-        // JSON.stringify(...) gravava como texto literal e quebrava queries
-        // jsonb_array_elements no Supabase. Passa o array cru — o supabase-js
-        // serializa pra JSON certo na request.
-        pre_lancamentos_ids: itensSelecionadosParaCaixa.map((p) => p.id),
-        valor_total: total,
-        usuario_fechamento_email: usuarioEmail,
-        usuario_fechamento_nome: usuarioNome,
-        data_fechamento: new Date().toLocaleDateString("en-CA"),
+      // fechar_caixa (0158): numa transação só cria o fechamento, trava os itens
+      // (nenhum entra em dois fechamentos) e marca "Em Fechamento". O número vem
+      // do trigger (maior já usado + 1) e o valor é somado no banco — o front não
+      // calcula mais nenhum dos dois (count+1 repetia número).
+      const { data, error } = await supabase.rpc("fechar_caixa", {
+        p_pre_lancamento_ids: itensSelecionadosParaCaixa.map((p) => p.id),
+        p_usuario_nome: usuarioNome || null,
+        p_observacoes: null,
       });
-      // allSettled: se 1 update falhar, ainda fechamos a UI mas avisamos.
-      const updateResults = await Promise.allSettled(
-        itensSelecionadosParaCaixa.map((pl) =>
-          sigo.entities.PreLancamento.update(pl.id, { status: "Em Fechamento" })
-        )
+      if (error) throw error;
+      toast.success(
+        `Fechamento #${data?.numero || "?"} criado: ${data?.itens ?? itensSelecionadosParaCaixa.length} item(ns), R$ ${(Number(data?.valor_total) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}.`
       );
-      const updateFails = updateResults.filter((r) => r.status === "rejected");
-      if (updateFails.length > 0) {
-        console.error("Falhas marcando pré-lançamentos como Em Fechamento:", updateFails);
-        alert(
-          `Atenção: ${updateFails.length} pré-lançamento(s) não foram atualizados. Verifique no histórico.`
-        );
-      }
       setSelecionados([]);
       await carregarPreLancamentos();
       if (onReload) onReload();
     } catch (err) {
-      alert("Erro ao fechar caixa: " + err.message);
+      alert("Erro ao fechar caixa: " + mensagemErroFechamento(err));
+      // a lista pode estar velha (item já foi para outro fechamento): relê
+      await carregarPreLancamentos();
     } finally {
       setFechandoCaixa(false);
     }
@@ -476,21 +458,25 @@ export default function PreLancamentosAReconciliar({
               Pré-Lançamentos
             </CardTitle>
             <div className="flex items-center gap-2 flex-wrap">
-              {(podeAprovar || verTodos) && selecionados.length > 0 && tabAtiva === "pendentes" && (
-                <Button
-                  size="sm"
-                  onClick={handleFecharCaixaDireto}
-                  disabled={fechandoCaixa}
-                  className="gap-1.5 text-xs h-7 bg-amber-600 hover:bg-amber-700 text-white"
-                >
-                  {fechandoCaixa ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Package className="w-3.5 h-3.5" />
-                  )}
-                  Fechar Caixa ({selecionados.length})
-                </Button>
-              )}
+              {(podeAprovar || verTodos) &&
+                itensSelecionadosParaCaixa.length > 0 &&
+                tabAtiva === "pendentes" && (
+                  <Button
+                    size="sm"
+                    onClick={handleFecharCaixaDireto}
+                    disabled={fechandoCaixa}
+                    className="gap-1.5 text-xs h-7 bg-amber-600 hover:bg-amber-700 text-white"
+                  >
+                    {fechandoCaixa ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Package className="w-3.5 h-3.5" />
+                    )}
+                    {/* só os pendentes selecionados entram (a seleção da aba
+                      Conciliados não vai para o fechamento) */}
+                    Fechar Caixa ({itensSelecionadosParaCaixa.length})
+                  </Button>
+                )}
               <Button
                 size="sm"
                 variant={tabAtiva === "pendentes" ? "default" : "outline"}
@@ -563,7 +549,7 @@ export default function PreLancamentosAReconciliar({
                 <tbody>
                   {listaFiltrada.map((item) => {
                     const dados = safeParseJSON(item.dados_extraidos, {});
-                    const valor = parseFloat(dados.valor) || 0;
+                    const valor = valorDoPreLancamento(item);
                     const podeAcionar = podeManiputar(item);
                     const isConciliado = tabAtiva === "conciliados";
                     const isChecked = selecionados.includes(item.id);

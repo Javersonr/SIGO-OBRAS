@@ -23,7 +23,10 @@ import { Shield, Upload, AlertTriangle, CheckCircle2, X, Trash2 } from "lucide-r
  *
  * SEGURANCA:
  *   - Arquivo vai pra bucket privado 'certificados'
- *   - Senha encriptada com pgp_sym_encrypt (chave do .env do backend)
+ *   - Senha: o app manda em senha_encriptada só no insert; o trigger
+ *     certificado_senha_para_vault (migração 0154) guarda no Vault do Supabase
+ *     e zera a coluna — nenhum usuário lê a senha pela API, só o servidor
+ *     (certificado_senha(id))
  *   - RLS impede leitura cross-empresa
  */
 export default function CertificadoTab({ empresaAtiva }) {
@@ -86,7 +89,10 @@ export default function CertificadoTab({ empresaAtiva }) {
     try {
       // 1) Upload do arquivo — grava a referência estável "bucket/path"
       // (a URL assinada expira em 1h; o worker baixa pelo Storage a partir da ref)
-      const ref = refDoUpload(await sigo.integrations.Core.UploadFile({ file: arquivo }));
+      // bucket explícito: pelo nome do arquivo ("empresa.pfx") o SDK caía em "templates"
+      const ref = refDoUpload(
+        await sigo.integrations.Core.UploadFile({ file: arquivo, bucket: "certificados" })
+      );
       if (!ref) throw new Error("Upload sem referência");
 
       // 2) Marcar certificados antigos como inativos
@@ -95,15 +101,13 @@ export default function CertificadoTab({ empresaAtiva }) {
       }
 
       // 3) Criar o novo
-      // NOTA: senha vai como TEXTO no campo senha_encriptada por enquanto.
-      // Quando o worker SEFAZ for criado, ele descriptografa via pgp_sym_decrypt
-      // usando uma chave guardada no env do worker. ATE LA, manter este registro
-      // em bucket privado + RLS empresa.
+      // A senha segue no insert e o trigger do banco (0154) a move para o Vault
+      // antes de gravar: a linha salva (e devolvida aqui) já vem sem ela.
       await sigo.entities.CertificadoEmpresa.create({
         empresa_id: empresaAtiva.id,
         nome_arquivo: arquivo.name,
         arquivo_url: ref,
-        senha_encriptada: senha, // TODO: criptografar via RPC pgp_sym_encrypt
+        senha_encriptada: senha,
         tipo: "A1",
         data_emissao: new Date().toISOString().slice(0, 10),
         data_validade: dataValidade,

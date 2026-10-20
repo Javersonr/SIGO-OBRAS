@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { isReceita, isDespesa, isStatusPago } from "@/lib/financeiro-utils";
+import { calcularComparativoPeriodos, variacaoPercentual } from "@/lib/relatorios-financeiros";
 
 export default function GraficosComparativos({
   transacoes,
@@ -28,51 +29,12 @@ export default function GraficosComparativos({
     );
   };
 
-  // Comparação DRE: Período Atual vs Anterior
-  const getDREComparativo = () => {
-    const { dataInicio, dataFim } = filtros;
-    if (!dataInicio || !dataFim) return [];
-
-    const inicio = new Date(dataInicio);
-    const fim = new Date(dataFim);
-    const diffDays = (fim - inicio) / (1000 * 60 * 60 * 24);
-
-    const inicioAnterior = new Date(inicio);
-    inicioAnterior.setDate(inicioAnterior.getDate() - diffDays);
-
-    const transacoesAtual = transacoes.filter((t) => {
-      const data = new Date(t.data_vencimento || t.created_date);
-      return data >= inicio && data <= fim && isStatusPago(t.status);
-    });
-
-    const transacoesAnterior = transacoes.filter((t) => {
-      const data = new Date(t.data_vencimento || t.created_date);
-      return data >= inicioAnterior && data < inicio && isStatusPago(t.status);
-    });
-
-    const calcularDRE = (trans) => ({
-      receitas: trans.filter((t) => isReceita(t)).reduce((s, t) => s + (t.valor || 0), 0),
-      despesas: trans.filter((t) => isDespesa(t)).reduce((s, t) => s + (t.valor || 0), 0),
-    });
-
-    const atual = calcularDRE(transacoesAtual);
-    const anterior = calcularDRE(transacoesAnterior);
-
-    return [
-      {
-        periodo: "Anterior",
-        receitas: anterior.receitas,
-        despesas: anterior.despesas,
-        lucro: anterior.receitas - anterior.despesas,
-      },
-      {
-        periodo: "Atual",
-        receitas: atual.receitas,
-        despesas: atual.despesas,
-        lucro: atual.receitas - atual.despesas,
-      },
-    ];
-  };
+  // Comparação DRE: Período Atual vs Anterior. Para tipo "dre" o RelatoriosTab
+  // manda as transações SEM o filtro de data (antes mandava já cortadas no
+  // período e o "Anterior" saía sempre zerado); o período anterior agora tem
+  // o mesmo nº de dias do atual (antes ficava 1 dia menor).
+  const getDREComparativo = () =>
+    calcularComparativoPeriodos(transacoes, filtros?.dataInicio, filtros?.dataFim);
 
   // Fluxo de Caixa: Projetado vs Realizado
   const getFluxoComparativo = () => {
@@ -167,31 +129,38 @@ export default function GraficosComparativos({
       );
     }
 
-    const variacao =
-      dados[1] && dados[0]
-        ? ((dados[1].lucro - dados[0].lucro) / Math.abs(dados[0].lucro || 1)) * 100
-        : 0;
+    // antes: base 0 virava divisor 1 ("+1234500%"); agora null → "n/d"
+    const variacao = variacaoPercentual(dados[1]?.lucro, dados[0]?.lucro);
 
     return (
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg">Comparativo: Período Atual vs Anterior</CardTitle>
-            <div
-              className={`flex items-center gap-2 px-3 py-1 rounded-lg ${variacao >= 0 ? "bg-green-100" : "bg-red-100"}`}
-            >
-              {variacao >= 0 ? (
-                <TrendingUp className="w-4 h-4 text-green-600" />
-              ) : (
-                <TrendingDown className="w-4 h-4 text-red-600" />
-              )}
-              <span
-                className={`text-sm font-bold ${variacao >= 0 ? "text-green-700" : "text-red-700"}`}
+            {variacao === null ? (
+              <div
+                className="px-3 py-1 rounded-lg bg-slate-100 text-sm font-bold text-slate-500"
+                title="Sem resultado no período anterior para comparar"
               >
-                {variacao >= 0 ? "+" : ""}
-                {variacao.toFixed(1)}%
-              </span>
-            </div>
+                n/d
+              </div>
+            ) : (
+              <div
+                className={`flex items-center gap-2 px-3 py-1 rounded-lg ${variacao >= 0 ? "bg-green-100" : "bg-red-100"}`}
+              >
+                {variacao >= 0 ? (
+                  <TrendingUp className="w-4 h-4 text-green-600" />
+                ) : (
+                  <TrendingDown className="w-4 h-4 text-red-600" />
+                )}
+                <span
+                  className={`text-sm font-bold ${variacao >= 0 ? "text-green-700" : "text-red-700"}`}
+                >
+                  {variacao >= 0 ? "+" : ""}
+                  {variacao.toFixed(1)}%
+                </span>
+              </div>
+            )}
           </div>
         </CardHeader>
         <CardContent>

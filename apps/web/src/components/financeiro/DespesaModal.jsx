@@ -25,7 +25,17 @@ import {
   X,
   FileWarning,
 } from "lucide-react";
-import { sigo } from "@/api/sigoClient";
+import { sigo, supabase } from "@/api/sigoClient";
+import { isStatusPago } from "@/lib/financeiro-utils";
+import {
+  PERGUNTA_DESCONCILIAR,
+  camposDaBaixa,
+  desconciliarTransacao,
+  estornarLancamento,
+  marcarParcela,
+  marcarParcelaNoBanco,
+  preservarPagamentosDasParcelas,
+} from "@/lib/baixa-financeira";
 import { safeParseJSON } from "@/lib/json-utils";
 import { ehBase44, ehImagem, ehPdf } from "@/lib/anexo-ref";
 import ImgStorage from "@/components/ImgStorage";
@@ -1072,7 +1082,7 @@ export default function DespesaModal({
                           <div className="flex items-center gap-4 text-xs">
                             <span className="flex items-center gap-1 text-green-600">
                               <CheckCircle2 className="w-3 h-3" />
-                              {parcelas.filter((p) => p.status === "pago").length} Pagas
+                              {parcelas.filter((p) => isStatusPago(p.status)).length} Pagas
                             </span>
                             <span className="flex items-center gap-1 text-orange-600">
                               <Clock className="w-3 h-3" />
@@ -1094,7 +1104,7 @@ export default function DespesaModal({
                             <div
                               key={index}
                               className={`grid grid-cols-12 gap-3 p-3 rounded-lg border-2 transition-all ${
-                                parcela.status === "pago"
+                                isStatusPago(parcela.status)
                                   ? "bg-green-50 border-green-200"
                                   : "bg-white border-slate-200 hover:border-slate-300"
                               }`}
@@ -1103,7 +1113,7 @@ export default function DespesaModal({
                                 <div className="flex flex-col">
                                   <Label className="text-xs text-slate-500 mb-1">Parcela</Label>
                                   <div className="flex items-center gap-2">
-                                    {parcela.status === "pago" ? (
+                                    {isStatusPago(parcela.status) ? (
                                       <CheckCircle2 className="w-4 h-4 text-green-600" />
                                     ) : (
                                       <Clock className="w-4 h-4 text-orange-500" />
@@ -1159,30 +1169,63 @@ export default function DespesaModal({
                                 <Button
                                   type="button"
                                   size="sm"
-                                  variant={parcela.status === "pago" ? "outline" : "default"}
+                                  variant={isStatusPago(parcela.status) ? "outline" : "default"}
                                   className={
-                                    parcela.status === "pago"
+                                    isStatusPago(parcela.status)
                                       ? "w-full"
                                       : "w-full bg-green-600 hover:bg-green-700"
                                   }
                                   onClick={async () => {
-                                    if (parcela.status === "pago") {
-                                      if (!confirm("Desfazer o pagamento desta parcela?")) return;
-                                      const novasParcelas = [...parcelas];
-                                      novasParcelas[index].status = "em_aberto";
-                                      novasParcelas[index].data_pagamento = null;
-                                      novasParcelas[index].comprovante_url = null;
-                                      setParcelas(novasParcelas);
+                                    if (isStatusPago(parcela.status)) {
+                                      const conciliada = !!selectedItem?.conciliado;
+                                      if (
+                                        !conciliada &&
+                                        !confirm("Desfazer o pagamento desta parcela?")
+                                      )
+                                        return;
+                                      // array NOVO: antes alterava o objeto da lista no lugar
+                                      const novasParcelas = marcarParcela(parcelas, index, {
+                                        pago: false,
+                                      });
 
-                                      // Se é edição, salvar direto
-                                      if (selectedItem?.id) {
-                                        await sigo.entities.TransacaoFinanceira.update(
-                                          selectedItem.id,
-                                          {
-                                            parcelas: JSON.stringify(novasParcelas),
-                                          }
+                                      // Despesa nova: só o formulário. Edição: só esta parcela, no
+                                      // banco (financeiro_marcar_parcela, 0155, que retira a linha
+                                      // do extrato), sem regravar o JSON desta cópia; conciliada com
+                                      // o extrato do banco, desfaz a conciliação antes (0156).
+                                      if (!selectedItem?.id) {
+                                        setParcelas(novasParcelas);
+                                        return;
+                                      }
+                                      try {
+                                        let gravadas = null;
+                                        const desfez = await estornarLancamento({
+                                          conciliado: conciliada,
+                                          estornar: async () => {
+                                            gravadas = await marcarParcelaNoBanco(
+                                              supabase,
+                                              selectedItem.id,
+                                              index,
+                                              { pago: false }
+                                            );
+                                          },
+                                          desconciliar: () =>
+                                            desconciliarTransacao(supabase, selectedItem.id),
+                                          confirmar: () => confirm(PERGUNTA_DESCONCILIAR),
+                                        });
+                                        if (!desfez) return;
+                                        // o pagamento vem do banco; o resto do formulário fica
+                                        setParcelas((atuais) =>
+                                          preservarPagamentosDasParcelas(
+                                            atuais,
+                                            safeParseJSON(gravadas, [])
+                                          )
                                         );
                                         onReload();
+                                      } catch (err) {
+                                        alert(
+                                          "Erro ao desfazer o pagamento da parcela: " +
+                                            (err?.message || err)
+                                        );
                                       }
                                     } else {
                                       // Abrir modal de pagamento para esta parcela
@@ -1196,7 +1239,7 @@ export default function DespesaModal({
                                     }
                                   }}
                                 >
-                                  {parcela.status === "pago" ? (
+                                  {isStatusPago(parcela.status) ? (
                                     <>
                                       <CheckCircle2 className="w-3 h-3 mr-1" />
                                       Pago
@@ -1275,29 +1318,55 @@ export default function DespesaModal({
               {selectedItem && (
                 <Button
                   onClick={async () => {
-                    const isPago = selectedItem.status === "pago";
+                    const isPago = isStatusPago(selectedItem.status);
 
                     if (isPago) {
-                      if (!confirm("Marcar esta despesa como pendente?")) return;
-                      await sigo.entities.TransacaoFinanceira.update(selectedItem.id, {
-                        status: "em_aberto",
-                        data_pagamento: null,
-                      });
-                      setShowModal(false);
-                      onReload();
+                      // parcelada: quem move o extrato são as parcelas (JSON), não o status
+                      if (selectedItem.parcelado === true) {
+                        alert("Despesa parcelada: desfaça o pagamento parcela a parcela, acima.");
+                        return;
+                      }
+                      const conciliada = !!selectedItem.conciliado;
+                      if (!conciliada && !confirm("Marcar esta despesa como pendente?")) return;
+                      try {
+                        // só a transação: o banco (0155) retira a linha do extrato; conciliada
+                        // com o extrato do banco, desfaz a conciliação antes (0156)
+                        const estornou = await estornarLancamento({
+                          conciliado: conciliada,
+                          estornar: () =>
+                            sigo.entities.TransacaoFinanceira.update(
+                              selectedItem.id,
+                              camposDaBaixa(false)
+                            ),
+                          desconciliar: () => desconciliarTransacao(supabase, selectedItem.id),
+                          confirmar: () => confirm(PERGUNTA_DESCONCILIAR),
+                        });
+                        if (!estornou) return;
+                        setShowModal(false);
+                        onReload();
+                      } catch (err) {
+                        alert("Erro ao marcar como pendente: " + (err?.message || err));
+                        onReload(); // a conciliação pode ter sido desfeita antes da falha
+                      }
                     } else {
+                      // parcelada: o status dela não move o extrato (0155) — "pago"
+                      // aqui ficaria pago sem sair dinheiro de conta nenhuma
+                      if (selectedItem.parcelado === true) {
+                        alert("Despesa parcelada: registre o pagamento parcela a parcela, acima.");
+                        return;
+                      }
                       setDespesaPagamento(selectedItem);
                       setShowModalPagamento(true);
                     }
                   }}
                   className={
-                    selectedItem.status === "pago"
+                    isStatusPago(selectedItem.status)
                       ? "bg-blue-600 hover:bg-blue-700 flex-1"
                       : "bg-green-600 hover:bg-green-700 flex-1"
                   }
                 >
                   <CheckCircle2 className="w-4 h-4 mr-2" />
-                  {selectedItem.status === "pago" ? "Marcar como Pendente" : "Marcar como Pago"}
+                  {isStatusPago(selectedItem.status) ? "Marcar como Pendente" : "Marcar como Pago"}
                 </Button>
               )}
               <Button
@@ -1587,21 +1656,38 @@ export default function DespesaModal({
           despesa={despesaPagamento}
           empresaAtiva={empresaAtiva}
           onConfirm={async (dataPagamento, comprovanteUrl) => {
-            // Se é pagamento de parcela individual
+            // Se é pagamento de parcela individual: só o JSON `parcelas` (status
+            // "pago" + data_pagamento da parcela) — o banco (0155) lança a parcela no
+            // extrato na mesma gravação. Array NOVO: antes alterava a lista no lugar.
             if (despesaPagamento?._parcelaIndex !== undefined) {
-              const novasParcelas = [...parcelas];
-              novasParcelas[despesaPagamento._parcelaIndex].status = "pago";
-              novasParcelas[despesaPagamento._parcelaIndex].data_pagamento = dataPagamento;
-              novasParcelas[despesaPagamento._parcelaIndex].comprovante_url = comprovanteUrl;
-              setParcelas(novasParcelas);
+              const novasParcelas = marcarParcela(parcelas, despesaPagamento._parcelaIndex, {
+                pago: true,
+                dataPagamento,
+                comprovanteUrl,
+              });
 
-              // Se está editando, salvar direto
+              // Se está editando, salvar direto: só esta parcela, no banco
+              // (financeiro_marcar_parcela), sem regravar o JSON desta cópia
               if (selectedItem?.id) {
-                await sigo.entities.TransacaoFinanceira.update(selectedItem.id, {
-                  parcelas: JSON.stringify(novasParcelas),
-                });
+                let gravadas;
+                try {
+                  gravadas = await marcarParcelaNoBanco(
+                    supabase,
+                    selectedItem.id,
+                    despesaPagamento._parcelaIndex,
+                    { pago: true, dataPagamento, comprovanteUrl }
+                  );
+                } catch (err) {
+                  alert("Erro ao registrar o pagamento da parcela: " + (err?.message || err));
+                  return;
+                }
+                setParcelas((atuais) =>
+                  preservarPagamentosDasParcelas(atuais, safeParseJSON(gravadas, []))
+                );
                 setShowModalPagamento(false);
                 onReload();
+              } else {
+                setParcelas(novasParcelas);
               }
             } else {
               // Pagamento normal da despesa inteira

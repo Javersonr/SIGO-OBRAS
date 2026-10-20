@@ -2,48 +2,34 @@ import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileDown, FileSpreadsheet } from "lucide-react";
-import { isReceita, isDespesa, isStatusPago, isStatusPendente } from "@/lib/financeiro-utils";
+import { calcularBalanco } from "@/lib/relatorios-financeiros";
 
 export default function BalancoPatrimonial({
   transacoes,
+  transacoesCaixa,
   contas,
   versao = "real",
-  dataInicio,
   dataFim,
 }) {
-  // Filtrar transações baseado na versão
-  const transacoesFiltradas =
-    versao === "contabil" ? transacoes.filter((t) => t.numero_documento) : transacoes;
+  // antes: PL = receitas − despesas pagas DO PERÍODO, então Ativo ≠ Passivo + PL;
+  // agora PL = Ativo − Passivo (fecha sempre), decomposto em capital/saldos
+  // iniciais das contas + resultado acumulado. Balanço gerencial, não contábil.
+  const {
+    saldoContas,
+    contasReceber,
+    ativoCirculante,
+    ativoTotal,
+    contasPagar,
+    passivoCirculante,
+    capital,
+    resultadoAcumulado,
+    patrimonioLiquido,
+    passivoTotal,
+  } = calcularBalanco(transacoes, contas, versao, dataFim, transacoesCaixa);
 
-  const saldoContas = contas.reduce((sum, c) => sum + (c.saldo_atual || 0), 0);
-
-  // Helpers normalizados — comparações case-sensitive deixavam de fora
-  // registros gravados como "pago"/"em_aberto" (minúsculas) ou "Realizado".
-  const contasReceber = transacoesFiltradas
-    .filter((t) => isReceita(t) && isStatusPendente(t.status))
-    .reduce((sum, t) => sum + (t.valor || 0), 0);
-
-  const ativoCirculante = saldoContas + contasReceber;
-  const ativoTotal = ativoCirculante;
-
-  const contasPagar = transacoesFiltradas
-    .filter((t) => isDespesa(t) && isStatusPendente(t.status))
-    .reduce((sum, t) => sum + (t.valor || 0), 0);
-
-  const passivoCirculante = contasPagar;
-
-  const receitasPagas = transacoesFiltradas
-    .filter((t) => isReceita(t) && isStatusPago(t.status))
-    .reduce((sum, t) => sum + (t.valor || 0), 0);
-
-  const despesasPagas = transacoesFiltradas
-    .filter((t) => isDespesa(t) && isStatusPago(t.status))
-    .reduce((sum, t) => sum + (t.valor || 0), 0);
-
-  const lucroAcumulado = receitasPagas - despesasPagas;
-  const patrimonioLiquido = lucroAcumulado;
-
-  const passivoTotal = passivoCirculante + patrimonioLiquido;
+  const dataBase = dataFim
+    ? new Date(`${dataFim}T12:00:00`).toLocaleDateString("pt-BR")
+    : new Date().toLocaleDateString("pt-BR");
 
   const formatCurrency = (value) => {
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
@@ -53,6 +39,7 @@ export default function BalancoPatrimonial({
 
   const handleExportarCSV = () => {
     const dados = [
+      ["BALANÇO PATRIMONIAL GERENCIAL", `Data-base: ${dataBase}`],
       ["ATIVO", ""],
       ["Ativo Circulante", ativoCirculante],
       ["  Caixa e Bancos", saldoContas],
@@ -63,7 +50,8 @@ export default function BalancoPatrimonial({
       ["Passivo Circulante", passivoCirculante],
       ["  Contas a Pagar", contasPagar],
       ["Patrimônio Líquido", patrimonioLiquido],
-      ["  Lucro/Prejuízo Acumulado", lucroAcumulado],
+      ["  Capital / saldos iniciais", capital],
+      ["  Resultado acumulado", resultadoAcumulado],
       ["TOTAL DO PASSIVO + PL", passivoTotal],
     ];
 
@@ -80,33 +68,44 @@ export default function BalancoPatrimonial({
     const doc = new jsPDF();
 
     doc.setFontSize(18);
-    doc.text("Balanço Patrimonial", 14, 20);
+    doc.text("Balanço Patrimonial (gerencial)", 14, 20);
     doc.setFontSize(10);
-    doc.text(`Data: ${new Date().toLocaleDateString("pt-BR")}`, 14, 28);
+    doc.text(`Data-base: ${dataBase}`, 14, 28);
 
+    // antes o PDF só tinha o ATIVO; agora sai também Passivo e PL.
     let y = 40;
-    doc.setFontSize(12);
-    doc.setFont(undefined, "bold");
-    doc.text("ATIVO", 14, y);
-    doc.setFont(undefined, "normal");
-    y += 8;
+    const secao = (titulo) => {
+      doc.setFontSize(12);
+      doc.setFont(undefined, "bold");
+      doc.text(titulo, 14, y);
+      doc.setFont(undefined, "normal");
+      y += 8;
+    };
+    const linha = (label, valor, { sub = false, negrito = false } = {}) => {
+      doc.setFontSize(sub ? 10 : 12);
+      if (negrito) doc.setFont(undefined, "bold");
+      doc.text(sub ? `  ${label}` : label, sub ? 20 : 14, y);
+      doc.text(formatCurrency(valor), 150, y);
+      if (negrito) doc.setFont(undefined, "normal");
+      y += sub ? 6 : 8;
+    };
 
-    doc.text("Ativo Circulante", 14, y);
-    doc.text(formatCurrency(ativoCirculante), 150, y);
+    secao("ATIVO");
+    linha("Ativo Circulante", ativoCirculante);
+    linha("Caixa e Bancos", saldoContas, { sub: true });
+    linha("Contas a Receber", contasReceber, { sub: true });
+    y += 2;
+    linha("TOTAL DO ATIVO", ativoTotal, { negrito: true });
     y += 6;
-    doc.setFontSize(10);
-    doc.text("  Caixa e Bancos", 20, y);
-    doc.text(formatCurrency(saldoContas), 150, y);
-    y += 6;
-    doc.text("  Contas a Receber", 20, y);
-    doc.text(formatCurrency(contasReceber), 150, y);
-    y += 10;
 
-    doc.setFontSize(12);
-    doc.setFont(undefined, "bold");
-    doc.text("TOTAL DO ATIVO", 14, y);
-    doc.text(formatCurrency(ativoTotal), 150, y);
-    doc.setFont(undefined, "normal");
+    secao("PASSIVO + PATRIMÔNIO LÍQUIDO");
+    linha("Passivo Circulante", passivoCirculante);
+    linha("Contas a Pagar", contasPagar, { sub: true });
+    linha("Patrimônio Líquido", patrimonioLiquido);
+    linha("Capital / saldos iniciais", capital, { sub: true });
+    linha("Resultado acumulado", resultadoAcumulado, { sub: true });
+    y += 2;
+    linha("TOTAL DO PASSIVO + PL", passivoTotal, { negrito: true });
 
     doc.save(`balanco_${new Date().toISOString().split("T")[0]}.pdf`);
   };
@@ -128,8 +127,12 @@ export default function BalancoPatrimonial({
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>Balanço Patrimonial</CardTitle>
-            <p className="text-sm text-slate-500 mt-1">Posição financeira e patrimonial</p>
+            <CardTitle>Balanço Patrimonial (gerencial)</CardTitle>
+            <p className="text-sm text-slate-500 mt-1">
+              Posição em {dataBase}: saldo das contas nessa data + contas a receber/pagar que
+              estavam em aberto nela (qualquer vencimento; parcelas uma a uma). PL = Ativo −
+              Passivo.
+            </p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={handleExportarCSV}>
@@ -171,7 +174,8 @@ export default function BalancoPatrimonial({
               <div className="my-4" />
 
               <LinhaBalanco label="Patrimônio Líquido" valor={patrimonioLiquido} negrito />
-              <LinhaBalanco label="Lucro/Prejuízo Acumulado" valor={lucroAcumulado} identacao={1} />
+              <LinhaBalanco label="Capital / saldos iniciais" valor={capital} identacao={1} />
+              <LinhaBalanco label="Resultado acumulado" valor={resultadoAcumulado} identacao={1} />
 
               <LinhaBalanco label="TOTAL DO PASSIVO + PL" valor={passivoTotal} negrito destaque />
             </div>
@@ -184,7 +188,7 @@ export default function BalancoPatrimonial({
             <div>
               <p className="text-xs text-slate-500 mb-1">Liquidez Corrente</p>
               <p className="text-lg font-bold text-slate-800">
-                {passivoCirculante > 0 ? (ativoCirculante / passivoCirculante).toFixed(2) : "∞"}
+                {passivoCirculante > 0 ? (ativoCirculante / passivoCirculante).toFixed(2) : "n/d"}
               </p>
             </div>
             <div>
@@ -198,13 +202,13 @@ export default function BalancoPatrimonial({
             <div>
               <p className="text-xs text-slate-500 mb-1">Endividamento</p>
               <p className="text-lg font-bold text-slate-800">
-                {ativoTotal > 0 ? ((passivoCirculante / ativoTotal) * 100).toFixed(1) : "0"}%
+                {ativoTotal > 0 ? `${((passivoCirculante / ativoTotal) * 100).toFixed(1)}%` : "n/d"}
               </p>
             </div>
             <div>
               <p className="text-xs text-slate-500 mb-1">Solvência</p>
               <p className="text-lg font-bold text-slate-800">
-                {passivoCirculante > 0 ? (ativoTotal / passivoCirculante).toFixed(2) : "∞"}
+                {passivoCirculante > 0 ? (ativoTotal / passivoCirculante).toFixed(2) : "n/d"}
               </p>
             </div>
           </div>
