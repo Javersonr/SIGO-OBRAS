@@ -254,16 +254,14 @@ Escolhas que apareceram durante a execução e não estavam no plano. O Javerson
 11. **Biblioteca × oportunidade:** cópia de certidão renovada ou vencida que ficou na pasta do envelope é apontada pelo
     `anexar_habilitacao` e pelo checklist. O conector nunca apaga arquivo.
 
-## Pontos para decidir (nada disso foi feito)
+## Pontos decididos (21/10/2026)
 
-1. **Portal do Cliente.** A função `portal-cliente-dados` mostra TODOS os arquivos da oportunidade ou do projeto ao
-   cliente que tem acesso ao portal. As cópias da biblioteca (balanço, contrato social, certidões, CATs) passam a
-   aparecer lá quando o portal estiver liberado. Recomendação: esconder do portal os arquivos com `origem` começando por
-   `biblioteca:` ou `acervo:` (mudança pequena, mais a publicação de `portal-cliente-dados`). **Esta decisão (esconder
-   ou não) tem de vir ANTES de usar `anexar_habilitacao` e `anexar_acervo` numa oportunidade com o portal liberado:** o
-   arquivo copiado já é visto pelo cliente na hora.
-2. **Página de envio por link.** `mcp-oauth/envio-tela.ts` ainda usa o Storage sem o confinamento novo. Não é explorável
-   hoje; embrulhar é uma linha, mais a publicação de `mcp-oauth`.
+1. **Portal do Cliente: esconder as cópias internas — SIM.** A função `portal-cliente-dados` passou a esconder do
+   cliente os arquivos com `origem` começando por `biblioteca:` (certidões, balanço, contrato social, procurações) ou
+   `acervo:` (CATs); a regra está em `supabase/functions/_shared/portal-cliente-arquivos.ts`, com teste. Os arquivos
+   enviados pela tela e os documentos gerados (proposta, declarações) continuam como antes. Publicado em 21/10.
+2. **Página de envio por link: NÃO embrulhar.** `mcp-oauth/envio-tela.ts` continua com o Storage sem o confinamento novo
+   (decisão do Javerson; não é explorável hoje, porque os caminhos vêm só do servidor).
 
 ## Limitações conhecidas
 

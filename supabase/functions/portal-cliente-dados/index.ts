@@ -34,6 +34,7 @@ import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { resolveClienteScope } from "../_shared/portal-cliente-scope.ts";
 import { assinarDaEmpresa, urlParaExibir } from "../_shared/storage-assinar.ts";
+import { arquivosVisiveisAoCliente } from "../_shared/portal-cliente-arquivos.ts";
 
 // Colunas que o ClientePortal.jsx (modo externo) exibe ou usa. projeto e
 // oportunidade têm as mesmas; valor_estimado só com a aba "orcamento".
@@ -44,7 +45,8 @@ const COLS_ORCAMENTO_ITEM = "id, codigo, descricao, unidade, quantidade, valor_t
 // RelatorioObra: sem responsável/prioridade
 const COLS_CRONOGRAMA =
   "id, etapa, descricao, status, data_inicio_planejada, data_fim_planejada, data_inicio_real, data_fim_real, percentual_conclusao, ordem";
-const COLS_ARQUIVO = "id, nome, url, usuario_nome, created_at";
+// `origem` só serve para esconder as cópias internas (biblioteca/acervo); sai antes da resposta
+const COLS_ARQUIVO = "id, nome, url, usuario_nome, created_at, origem";
 const COLS_NOTA = "id, descricao, usuario_nome, created_at";
 // sem problemas, responsável, contrato, contratante, horários
 const COLS_DIARIO = "id, data, clima, temperatura, atividades, observacoes, mao_de_obra, fotos";
@@ -156,23 +158,27 @@ Deno.serve(
     }
 
     // Aba fechada = nem consulta (nada sai do banco)
-    const [orcamentoItens, cronogramaEtapas, arquivos, anotacoes, diariosRes] = await Promise.all([
-      liberaOrcamento ? porProjetoOuOportunidade("orcamento_item", COLS_ORCAMENTO_ITEM) : [],
-      liberaObra ? porProjetoOuOportunidade("cronograma_etapa", COLS_CRONOGRAMA) : [],
-      porProjetoOuOportunidade("arquivo_oportunidade", COLS_ARQUIVO),
-      porProjetoOuOportunidade("oportunidade_atualizacao", COLS_NOTA, { tipo: "Nota" }),
-      liberaObra
-        ? supabase
-            .from("diario_obra")
-            .select(COLS_DIARIO)
-            .eq("empresa_id", empresa_id)
-            .eq("projeto_id", oportunidade_id)
-            .is("deleted_at", null)
-        : { data: [], error: null },
-    ]);
+    const [orcamentoItens, cronogramaEtapas, arquivosTodos, anotacoes, diariosRes] =
+      await Promise.all([
+        liberaOrcamento ? porProjetoOuOportunidade("orcamento_item", COLS_ORCAMENTO_ITEM) : [],
+        liberaObra ? porProjetoOuOportunidade("cronograma_etapa", COLS_CRONOGRAMA) : [],
+        porProjetoOuOportunidade("arquivo_oportunidade", COLS_ARQUIVO),
+        porProjetoOuOportunidade("oportunidade_atualizacao", COLS_NOTA, { tipo: "Nota" }),
+        liberaObra
+          ? supabase
+              .from("diario_obra")
+              .select(COLS_DIARIO)
+              .eq("empresa_id", empresa_id)
+              .eq("projeto_id", oportunidade_id)
+              .is("deleted_at", null)
+          : { data: [], error: null },
+      ]);
     if (diariosRes.error) {
       console.error("[portal-cliente-dados] diario_obra:", diariosRes.error.message);
     }
+
+    // Cópias da biblioteca de habilitação e do acervo técnico ficam só com a equipe
+    const arquivos = arquivosVisiveisAoCliente(arquivosTodos);
 
     // deno-lint-ignore no-explicit-any
     const sortByOrdem = (a: any, b: any) => (a.ordem ?? 0) - (b.ordem ?? 0);
