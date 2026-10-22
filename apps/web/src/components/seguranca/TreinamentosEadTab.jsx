@@ -118,6 +118,7 @@ import DuvidasTutorCard from "@/components/seguranca/DuvidasTutorCard";
 import AulaLinhaEad from "@/components/seguranca/AulaLinhaEad";
 import QuestoesEad from "@/components/seguranca/QuestoesEad";
 import CasoEditor from "@/components/seguranca/CasoEditor";
+import ImportarAtividadesDialog from "@/components/seguranca/ImportarAtividadesDialog";
 import PreRequisitoCursoCampo from "@/components/seguranca/PreRequisitoCursoCampo";
 import AssinaturaCursoCampo from "@/components/seguranca/AssinaturaCursoCampo";
 import ProjetoPedagogicoCurso from "@/components/seguranca/ProjetoPedagogicoCurso";
@@ -155,6 +156,7 @@ import {
   Eye,
   Info,
   Download,
+  FileUp,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -307,6 +309,8 @@ export default function TreinamentosEadTab({
   // editor do caso com decisões: null, { modo: "novo", dados, conteudo, ... } ou { modo: "editar", id, aula, ... }.
   // `abrirCasoNovo` (a "Nova aula") e `abrirCasoDaAula` (a linha da aula) o abrem; `salvarCaso` grava.
   const [casoEditando, setCasoEditando] = useState(null);
+  // diálogo "Importar atividades" (A7) do curso aberto
+  const [importandoAtividades, setImportandoAtividades] = useState(false);
   const [novaQuestao, setNovaQuestao] = useState(null); // {pergunta, opcoes[4], correta}
   const [treinamentosConfig, setTreinamentosConfig] = useState([]);
   const [aulaEditando, setAulaEditando] = useState(null); // {id, titulo, modulo, tipo, minutos}
@@ -401,11 +405,12 @@ export default function TreinamentosEadTab({
   };
 
   // fechou o editor (ou trocou de empresa): a prévia do curso não fica armada para o próximo, e os diálogos de
-  // questões do questionário e do caso eram do curso que estava aberto
+  // questões do questionário, do caso e da importação de atividades eram do curso que estava aberto
   useEffect(() => {
     if (!cursoSel?.id) setPreviaAberta(false);
     setQuestionarioAberto(null);
     setCasoEditando(null);
+    setImportandoAtividades(false);
   }, [cursoSel?.id]);
 
   useEffect(() => {
@@ -427,6 +432,7 @@ export default function TreinamentosEadTab({
     setAulaEditando(null);
     setQuestionarioAberto(null);
     setCasoEditando(null);
+    setImportandoAtividades(false);
     setNovaAula(NOVA_AULA);
     cancelarConfirmacao();
     recarregar();
@@ -823,6 +829,13 @@ export default function TreinamentosEadTab({
       if (avisoPdf) toast.warning(avisoPdf, { duration: 10000 });
       recarregar();
     });
+  };
+
+  // "Importar atividades" (A7): com alunos no meio do curso, o RH vê quantos e o que acontece antes de abrir
+  const abrirImportacao = async () => {
+    if (!cursoSel?.id) return;
+    if (!(await confirmarImpacto("atividades_novas", { cursoId: cursoSel.id }))) return;
+    setImportandoAtividades(true);
   };
 
   // Caso com decisões: a aula só nasce junto com o roteiro, no "Salvar caso" do editor (Task 17). `dados` é a linha
@@ -2527,9 +2540,23 @@ export default function TreinamentosEadTab({
 
                 {cursoSel.id && (
                   <div className="space-y-2 border-t pt-4">
-                    <h4 className="font-semibold text-slate-800 flex items-center gap-2">
-                      <Video className="w-4 h-4" /> Aulas
-                    </h4>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="font-semibold text-slate-800 flex items-center gap-2">
+                        <Video className="w-4 h-4" /> Aulas
+                      </h4>
+                      {pode.editar && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={abrirImportacao}
+                          disabled={!!envio}
+                          title="Casos, questionários e atividades de estudo do pacote do material, ou os exercícios pós-vídeo"
+                        >
+                          <FileUp className="w-4 h-4 mr-1" /> Importar atividades
+                        </Button>
+                      )}
+                    </div>
                     {numerarAulas(aulasDoCurso(cursoSel.id)).map((a, i, lista) => {
                       const novoModulo = a.modulo && a.modulo !== lista[i - 1]?.modulo;
                       // selos das atividades: quantas questões, ou o que falta para o aluno conseguir fazer
@@ -3070,6 +3097,18 @@ export default function TreinamentosEadTab({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* "Importar atividades" (A7): pacote do material ou exercícios pós-vídeo, prévia e gravação pela RPC */}
+      <ImportarAtividadesDialog
+        aberto={importandoAtividades && !!cursoSel?.id}
+        onFechar={() => setImportandoAtividades(false)}
+        curso={cursoSel}
+        aulas={cursoSel?.id ? aulasDoCurso(cursoSel.id) : []}
+        onImportado={() => {
+          recarregar();
+          if (cursoSel?.id) carregarQuestoes(cursoSel.id);
+        }}
+      />
 
       {dialogoConfirmar}
     </div>

@@ -31,6 +31,8 @@ export const TEMPO_PADRAO_POS_VIDEO_MIN = 5;
 export const MODULO_NOVO = "__novo__";
 /** O `tipo` do arquivo dos exercícios pós-vídeo. */
 export const FORMATO_POR_VIDEO = "questionarios_por_video";
+/** O máximo de atividades que a RPC `importar_atividades_ead` aceita por chamada (22023 acima disso). */
+export const MAX_ATIVIDADES_POR_IMPORTACAO = 300;
 
 const LIMITE_DE_MINUTOS = 600;
 const MAX_ALTERNATIVAS = 6;
@@ -516,9 +518,13 @@ export function payloadDaImportacao(itens, desmarcados) {
 
 /**
  * O rodapé do diálogo: quantas atividades entram (e quantas questões e minutos), quantas já existem (puladas) e
- * quais estão marcadas com problema. Só confirma com algo a importar e nenhuma marcada com problema.
+ * quais estão marcadas com problema. Só confirma com algo a importar, nenhuma marcada com problema, no máximo
+ * `MAX_ATIVIDADES_POR_IMPORTACAO` (a RPC recusa a lista inteira acima disso) e sem erros do leitor do arquivo.
+ * `opcoes.erros` (3º parâmetro) = o `erros` que `lerPacoteDeAtividades` ou `lerQuestionariosPorVideo` devolveu: o
+ * leitor descarta o módulo ou o vídeo repetido (ou sem código) e segue com o resto, e importar assim seria importar o
+ * arquivo pela metade.
  */
-export function situacaoDaImportacao(itens, desmarcados) {
+export function situacaoDaImportacao(itens, desmarcados, opcoes) {
   const fora = conjunto(desmarcados);
   let aImportar = 0;
   let questoes = 0;
@@ -539,14 +545,48 @@ export function situacaoDaImportacao(itens, desmarcados) {
     segundos += Number(i.duracao_seg) || 0;
     if (i.tipo === "questionario") questoes += lista(i.questoes).length;
   }
+  const acimaDoLimite = aImportar > MAX_ATIVIDADES_POR_IMPORTACAO;
+  const errosDoArquivo = lista(opcoes?.erros).length;
   return {
     aImportar,
     questoes,
     minutos: Math.round(segundos / 60),
     puladas,
     comProblema,
-    podeConfirmar: aImportar > 0 && comProblema.length === 0,
+    acimaDoLimite,
+    errosDoArquivo,
+    podeConfirmar: aImportar > 0 && comProblema.length === 0 && !acimaDoLimite && !errosDoArquivo,
   };
+}
+
+/** A frase do rodapé do diálogo (a `situacaoDaImportacao`): o que entra, o que é pulado e por que não confirma. */
+export function textoDaSituacaoDaImportacao(situacao) {
+  const s = situacao ?? {};
+  const aImportar = Number(s.aImportar) || 0;
+  const puladas = Number(s.puladas) || 0;
+  const comProblema = lista(s.comProblema).length;
+  let frase =
+    `${plural(aImportar, "atividade a importar", "atividades a importar")} ` +
+    `(${plural(Number(s.questoes) || 0, "questão", "questões")}, ${Number(s.minutos) || 0} min)`;
+  if (puladas)
+    frase += `; ${plural(puladas, "já existe e será pulada", "já existem e serão puladas")}`;
+  frase += ".";
+  if (s.errosDoArquivo) {
+    frase += " O arquivo tem erros (acima): corrija-o e escolha-o de novo para importar.";
+  }
+  if (comProblema) {
+    frase +=
+      comProblema === 1
+        ? " Desmarque a atividade com problema para confirmar."
+        : ` Desmarque as ${comProblema} atividades com problema para confirmar.`;
+  }
+  if (s.acimaDoLimite) {
+    frase +=
+      ` O banco aceita no máximo ${MAX_ATIVIDADES_POR_IMPORTACAO} atividades por importação, e esta tem ${aImportar}.` +
+      " Desmarque algumas ou divida o arquivo.";
+  }
+  if (!aImportar && !comProblema && !s.errosDoArquivo) frase += " Nada novo para importar.";
+  return frase;
 }
 
 /** O resumo da RPC ({ criadas, puladas, questoes }) em uma frase. */

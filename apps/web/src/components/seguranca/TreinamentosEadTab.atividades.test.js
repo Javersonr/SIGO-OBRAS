@@ -133,3 +133,42 @@ describe("aba Treinamentos: remover aula de atividade (Task 17)", () => {
     );
   });
 });
+
+describe("aba Treinamentos: Importar atividades (Task 19)", () => {
+  const dialogo = ler("./ImportarAtividadesDialog.jsx");
+
+  it("o botão só aparece com Editar e abre o diálogo depois do aviso de impacto", () => {
+    expect(aba).toMatch(/\{pode\.editar && \(\s*<Button[\s\S]{0,600}Importar atividades/);
+    expect(funcao(aba, "abrirImportacao")).toContain('confirmarImpacto("atividades_novas"');
+    expect(aba).toMatch(/<ImportarAtividadesDialog[\s\S]*?curso=\{cursoSel\}[\s\S]*?\/>/);
+    expect(aba).toMatch(/<ImportarAtividadesDialog[\s\S]*?onImportado=\{[\s\S]*?recarregar\(\)/);
+  });
+
+  it("o diálogo grava tudo de uma vez pela RPC do contrato e mostra o erro em português", () => {
+    expect(dialogo).toContain('supabase.rpc("importar_atividades_ead", {');
+    expect(dialogo).toMatch(/p_curso_id: curso\.id,\s*p_atividades: payload/);
+    expect(dialogo).toContain("toast.error(mensagemDoErroDaImportacao(");
+    expect(dialogo).not.toMatch(/sigo\.entities/);
+    expect(dialogo).toContain('<SelectContent className="z-[9999]">');
+  });
+
+  it("uma gravação por vez: o ref trava já no 2º clique e é solto no fim", () => {
+    const confirmar = funcao(dialogo, "confirmar");
+    expect(confirmar).toContain("if (importandoRef.current) return;");
+    expect(confirmar.slice(confirmar.indexOf("finally"))).toContain(
+      "importandoRef.current = false;"
+    );
+  });
+
+  it("o Confirmar usa a situação da lib: limite de 300 e erros do leitor bloqueiam, com o motivo na tela", () => {
+    expect(dialogo).toMatch(
+      /situacaoDaImportacao\(plano\.itens, desmarcados, \{\s*erros: lido\?\.erros/
+    );
+    expect(dialogo).toMatch(
+      /disabled=\{importando \|\| !temposValidos \|\| !situacao\?\.podeConfirmar\}/
+    );
+    expect(funcao(dialogo, "confirmar")).toContain("!situacao?.podeConfirmar");
+    expect(dialogo).toContain("textoDaSituacaoDaImportacao(situacao)");
+    expect(dialogo).toMatch(/<ErrosDoArquivo\s+erros=\{lido\.erros\}/);
+  });
+});

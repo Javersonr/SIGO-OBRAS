@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   FORMATO_POR_VIDEO,
+  MAX_ATIVIDADES_POR_IMPORTACAO,
   MODULO_NOVO,
   TEMPOS_PADRAO,
   TEMPO_PADRAO_POS_VIDEO_MIN,
@@ -17,6 +19,7 @@ import {
   planejarImportacao,
   planejarImportacaoPorVideo,
   situacaoDaImportacao,
+  textoDaSituacaoDaImportacao,
   textoDoResumoDaImportacao,
 } from "./ead-atividades-importar";
 
@@ -377,6 +380,8 @@ describe("payloadDaImportacao e situacaoDaImportacao", () => {
       minutos: 80,
       puladas: 0,
       comProblema: [],
+      acimaDoLimite: false,
+      errosDoArquivo: 0,
       podeConfirmar: true,
     });
     const jaFeito = itens.map((i) => ({ ...i, jaExiste: true }));
@@ -736,6 +741,182 @@ describe("exercício pós-vídeo com a aula de vídeo sem título", () => {
       modulo: null,
       titulo: "Exercícios do vídeo S01A",
       problemas: [],
+    });
+  });
+});
+
+describe("o que bloqueia o Confirmar: limite da RPC e erros do leitor", () => {
+  const tarefa = (n, extra = {}) => ({
+    codigo_origem: `M1-T${n}`,
+    tipo: "tarefa",
+    duracao_seg: 60,
+    problemas: [],
+    jaExiste: false,
+    ...extra,
+  });
+  const tarefas = (quantas) => Array.from({ length: quantas }, (_, i) => tarefa(i + 1));
+
+  it("a RPC aceita no máximo 300 atividades por chamada: 301 não confirma", () => {
+    expect(MAX_ATIVIDADES_POR_IMPORTACAO).toBe(300);
+    expect(situacaoDaImportacao(tarefas(300), [])).toMatchObject({
+      aImportar: 300,
+      acimaDoLimite: false,
+      podeConfirmar: true,
+    });
+    expect(situacaoDaImportacao(tarefas(301), [])).toMatchObject({
+      aImportar: 301,
+      acimaDoLimite: true,
+      podeConfirmar: false,
+    });
+    // desmarcar uma atividade volta ao limite
+    expect(situacaoDaImportacao(tarefas(301), ["M1-T301"])).toMatchObject({
+      aImportar: 300,
+      acimaDoLimite: false,
+      podeConfirmar: true,
+    });
+  });
+
+  it("o que já existe não vai na lista da RPC e não conta no limite", () => {
+    const itens = [
+      ...tarefas(300),
+      ...tarefas(50).map((t, i) => ({ ...t, codigo_origem: `M2-T${i}`, jaExiste: true })),
+    ];
+    expect(situacaoDaImportacao(itens, [])).toMatchObject({
+      aImportar: 300,
+      puladas: 50,
+      acimaDoLimite: false,
+      podeConfirmar: true,
+    });
+    expect(payloadDaImportacao(itens, [])).toHaveLength(300);
+  });
+
+  it("o limite é o mesmo da RPC da migração 0170", () => {
+    const migracao = readFileSync(
+      new URL(
+        "../../../../supabase/migrations/0170_ead_atividades_interativas.sql",
+        import.meta.url
+      ),
+      "utf8"
+    );
+    expect(migracao).toContain(
+      `jsonb_array_length(p_atividades) > ${MAX_ATIVIDADES_POR_IMPORTACAO}`
+    );
+  });
+
+  it("erros do leitor (módulo ou vídeo repetido descartado) bloqueiam mesmo com tudo a importar", () => {
+    const itens = tarefas(2);
+    expect(situacaoDaImportacao(itens, [])).toMatchObject({
+      errosDoArquivo: 0,
+      podeConfirmar: true,
+    });
+    expect(situacaoDaImportacao(itens, [], { erros: [] }).podeConfirmar).toBe(true);
+    expect(situacaoDaImportacao(itens, [], { erros: null }).podeConfirmar).toBe(true);
+    expect(
+      situacaoDaImportacao(itens, [], { erros: ["O módulo M2 aparece duas vezes."] })
+    ).toMatchObject({
+      aImportar: 2,
+      errosDoArquivo: 1,
+      podeConfirmar: false,
+    });
+    // desmarcar atividades não resolve: o arquivo é que está errado
+    expect(situacaoDaImportacao(itens, ["M1-T1"], { erros: ["x"] }).podeConfirmar).toBe(false);
+  });
+
+  it("com o leitor de verdade: módulo repetido deixa a prévia, mas não deixa confirmar", () => {
+    const modulo = { id: "M1", titulo: "Um", estudo: [TAREFAS[0]] };
+    const pacote = lerPacoteDeAtividades([modulo, modulo]);
+    expect(pacote.erros).toEqual(["O módulo M1 aparece mais de uma vez no arquivo."]);
+    const { itens } = planejarImportacao({
+      pacote,
+      modulosDoCurso: [],
+      codigosExistentes: [],
+      tempos: TEMPOS_PADRAO,
+      escolhaDeModulo: {},
+    });
+    expect(situacaoDaImportacao(itens, [], { erros: pacote.erros })).toMatchObject({
+      aImportar: 1,
+      podeConfirmar: false,
+    });
+
+    const porVideo = lerQuestionariosPorVideo({
+      tipo: FORMATO_POR_VIDEO,
+      itens: [
+        { video: "S01A", questoes: [] },
+        { video: "s01a", questoes: [] },
+      ],
+    });
+    expect(porVideo.erros).toEqual(["O vídeo S01A aparece mais de uma vez no arquivo."]);
+    expect(porVideo.itens).toHaveLength(1);
+  });
+
+  describe("textoDaSituacaoDaImportacao", () => {
+    const situacao = (extra = {}) => ({
+      aImportar: 4,
+      questoes: 8,
+      minutos: 80,
+      puladas: 0,
+      comProblema: [],
+      acimaDoLimite: false,
+      errosDoArquivo: 0,
+      podeConfirmar: true,
+      ...extra,
+    });
+
+    it("o que entra, o que é pulado e o que bloqueia, cada motivo na sua frase", () => {
+      expect(textoDaSituacaoDaImportacao(situacao())).toBe(
+        "4 atividades a importar (8 questões, 80 min)."
+      );
+      expect(textoDaSituacaoDaImportacao(situacao({ aImportar: 1, questoes: 1, puladas: 1 }))).toBe(
+        "1 atividade a importar (1 questão, 80 min); 1 já existe e será pulada."
+      );
+      expect(textoDaSituacaoDaImportacao(situacao({ puladas: 3 }))).toContain(
+        "; 3 já existem e serão puladas."
+      );
+      expect(
+        textoDaSituacaoDaImportacao(situacao({ comProblema: ["M1-Q"], podeConfirmar: false }))
+      ).toContain("Desmarque a atividade com problema para confirmar.");
+      expect(
+        textoDaSituacaoDaImportacao(
+          situacao({ comProblema: ["M1-Q", "M1-T1", "M1-T2"], podeConfirmar: false })
+        )
+      ).toContain("Desmarque as 3 atividades com problema para confirmar.");
+      expect(
+        textoDaSituacaoDaImportacao(
+          situacao({ aImportar: 0, questoes: 0, minutos: 0, puladas: 4, podeConfirmar: false })
+        )
+      ).toContain("Nada novo para importar.");
+    });
+
+    it("o limite de 300 e os erros do arquivo dizem o motivo e o que fazer", () => {
+      const acima = textoDaSituacaoDaImportacao(
+        situacao({ aImportar: 412, acimaDoLimite: true, podeConfirmar: false })
+      );
+      expect(acima).toContain("no máximo 300 atividades por importação");
+      expect(acima).toContain("esta tem 412");
+      expect(acima).toContain("Desmarque algumas ou divida o arquivo");
+      const erros = textoDaSituacaoDaImportacao(
+        situacao({ errosDoArquivo: 2, podeConfirmar: false })
+      );
+      expect(erros).toContain("O arquivo tem erros");
+      expect(erros).toContain("corrija-o e escolha-o de novo");
+      // os motivos se somam
+      const todos = textoDaSituacaoDaImportacao(
+        situacao({
+          comProblema: ["M1-Q"],
+          acimaDoLimite: true,
+          errosDoArquivo: 1,
+          podeConfirmar: false,
+        })
+      );
+      expect(todos).toContain("O arquivo tem erros");
+      expect(todos).toContain("com problema");
+      expect(todos).toContain("no máximo 300");
+      // "Nada novo" só aparece quando nada mais explica o bloqueio
+      expect(
+        textoDaSituacaoDaImportacao(
+          situacao({ aImportar: 0, errosDoArquivo: 1, podeConfirmar: false })
+        )
+      ).not.toContain("Nada novo");
     });
   });
 });
