@@ -1188,24 +1188,41 @@ padrão), no módulo do vídeo.
 
 ### 9.3 Produção (ordem obrigatória; cada passo só com o OK explícito do Javerson)
 
-Quem estiver ajudando o Javerson explica cada passo em linguagem simples (o que será aplicado e o que muda para o
-aluno e para o RH) e espera o "sim" dele no chat, para aquele passo. Nunca digitar senha nem colar chave. Os passos 1 a 3
-rodam na pasta do worktree (`C:\Users\javer\sigoobras-wt-ead-interativas`), que tem a branch e o arquivo da migração. O
-deploy leva a pasta `_shared/` inteira como está no disco: a pasta tem de estar na branch
-`feat/ead-atividades-interativas` e com `git status` vazio. Se o master andou depois de 21/10/2026, trazer o
-`origin/master` para a branch de novo e repetir a verificação (9.7) antes do passo 1.
+**Quem roda os comandos de produção é o Javerson, na máquina dele.** O agente que o estiver ajudando só explica cada
+passo em linguagem simples (o que será aplicado e o que muda para o aluno e para o RH) e espera o "sim" dele no chat,
+para aquele passo; nada com `--linked`, `--project-ref` ou `git push` é rodado por agente (regra 1 do `AGENTS.md`).
+Nunca digitar senha nem colar chave.
 
-```bash
+**Onde rodar cada passo.** O vínculo da CLI com o projeto (a pasta `supabase\.temp`) só existe no **checkout principal**
+(`C:\Users\javer\sigoobras-base`), porque o git a ignora: o worktree não tem. Por isso a migração e o smoke (`--linked`)
+rodam **a partir do checkout principal**, passando o caminho completo dos arquivos, que estão no worktree
+(`C:\Users\javer\sigoobras-wt-ead-interativas`), onde está a branch. O deploy da função (`--project-ref`) roda **no
+worktree**, para levar o código da branch: ele leva a pasta `_shared/` inteira como está no disco, então o worktree tem
+de estar na branch `feat/ead-atividades-interativas` e com `git status` vazio. O merge e o push (passo 4) rodam no
+checkout principal. Se o master andou depois de 21/10/2026, trazer o `origin/master` para a branch de novo e repetir a
+verificação (9.7) antes do passo 1.
+
+```powershell
 # 1. migração (estrutura, tabelas novas e a RPC importar_atividades_ead; nenhum dado existente muda). Esperado: ok
-npx supabase@2.118.0 db query --linked -f supabase/migrations/0170_ead_atividades_interativas.sql
+cd C:\Users\javer\sigoobras-base
+npx supabase@2.118.0 db query --linked -f C:\Users\javer\sigoobras-wt-ead-interativas\supabase\migrations\0170_ead_atividades_interativas.sql
 
-# 2. smoke (begin; ... rollback;: desfaz tudo no fim). Esperado: SMOKE TEST OK: atividades interativas (0170)
-npx supabase@2.118.0 db query --linked -f tools/smoke-ead-atividades.sql
+# 2. smoke (begin; ... rollback;: desfaz tudo no fim), ainda no checkout principal.
+#    Esperado: SMOKE TEST OK: atividades interativas (0170); sem essa linha mas sem erro nenhum, também vale como passou
+npx supabase@2.118.0 db query --linked -f C:\Users\javer\sigoobras-wt-ead-interativas\tools\smoke-ead-atividades.sql
 
-# 3. função do portal (questionário, caso, leitura sem relógio, certificado)
+# 3. função do portal (questionário, caso, leitura sem relógio, certificado), NO WORKTREE
+cd C:\Users\javer\sigoobras-wt-ead-interativas
 npx supabase@2.118.0 functions deploy portal-funcionario --project-ref fpyvdwpvxrubrkdwrqbs --no-verify-jwt --use-api
 
-# 4. front: merge da branch em master e push em master LOGO DEPOIS do passo 3 (o push publica o site)
+# 4. site: merge da branch em master e push LOGO DEPOIS do passo 3, no checkout principal (o push publica o site).
+#    Antes, o git status não pode mostrar alteração em arquivo do projeto. O --no-ff deixa um commit de merge só, fácil de reverter
+cd C:\Users\javer\sigoobras-base
+git status
+git switch master
+git pull
+git merge --no-ff feat/ead-atividades-interativas
+git push origin master
 ```
 
 **Por que nessa ordem**
@@ -1215,16 +1232,26 @@ npx supabase@2.118.0 functions deploy portal-funcionario --project-ref fpyvdwpvx
   possível carregar seus cursos agora"): nenhum aluno vê os cursos. No site novo, a aba Treinamentos do RH mostra "Erro
   ao carregar treinamentos" e os Detalhes da matrícula, "Erro ao carregar a trilha de auditoria". A 0170 só acrescenta
   (não muda dado existente) e o portal e o site de hoje continuam iguais depois dela: pode ser aplicada sozinha.
-- **Smoke logo depois da migração.** O Javerson roda o `tools/smoke-ead-atividades.sql`: ele cria e desfaz tudo na mesma
-  execução, com dados de mentira numa empresa que já existe (nada fica gravado). Qualquer `FALHOU` ou erro: parar e
-  mandar o texto inteiro para quem estiver ajudando.
-- **Função e push juntos, um logo depois do outro.** As leituras sem relógio mudam nos dois lados. Site novo com
-  função velha: a leitura trava no 409 `TEMPO_LEITURA` e as telas de questionário e caso chamam ações que a função
-  velha não conhece. Função nova com site velho: nada quebra (o site velho continua esperando o tempo mínimo de
-  leitura), mas também nada de novo aparece. Por isso o push sai logo depois do deploy, e o deploy só depois da 0170. O
-  merge e o push em `master` são do Javerson (regra 3 do `AGENTS.md`).
-- **Voltar atrás.** A 0170 pode ficar (só acrescenta). O que se desfaz é o código: reverter o merge no master (o push
-  republica o site antigo) e publicar de novo a função a partir do commit anterior, os dois juntos.
+- **Smoke logo depois da migração.** O `tools/smoke-ead-atividades.sql` cria e desfaz tudo na mesma execução, com dados
+  de mentira numa empresa que já existe (nada fica gravado).
+- **Função e push juntos, um logo depois do outro, e o push só depois do deploy.** As leituras sem relógio mudam nos
+  dois lados. Site novo com função velha: a leitura trava no 409 `TEMPO_LEITURA` e as telas de questionário e caso
+  chamam ações que a função velha não conhece. Função nova com site velho: nada quebra (o site velho continua esperando
+  o tempo mínimo de leitura), mas também nada de novo aparece. Por isso o push sai logo depois do deploy, e o deploy só
+  depois da 0170. O merge e o push em `master` são do Javerson (regra 3 do `AGENTS.md`).
+- **Voltar atrás.** A 0170 pode ficar (só acrescenta). O que se desfaz é o código: reverter o merge no master
+  (`git revert -m 1 <commit do merge>` e push, que republica o site antigo) e publicar de novo a função a partir do
+  commit anterior, os dois juntos.
+
+**Se aparecer erro**
+
+- **"Cannot find project ref"** (ou parecido) nos passos 1 e 2: o comando foi rodado numa pasta sem o vínculo com o
+  projeto (o worktree). Voltar para `C:\Users\javer\sigoobras-base` e rodar de lá, com o caminho completo do arquivo.
+- **Erro de tempo de bloqueio (`lock timeout`) na migração:** ela espera no máximo 10 segundos (`lock_timeout`) para
+  conseguir trancar as tabelas. Rodar de novo em outro horário, de preferência com pouca gente usando o sistema: a
+  migração pode ser repetida sem problema (ela confere o que já existe).
+- **Smoke com `FALHOU` ou qualquer erro:** parar e mandar o texto inteiro para quem estiver ajudando. Se a linha
+  `SMOKE TEST OK` não aparecer, mas também não houver erro nenhum, vale como passou.
 
 Depois do passo 4 (esperar o workflow `deploy-hostgator.yml` terminar), abrir a aba Treinamentos EAD e o portal do
 funcionário de teste: os cursos têm de abrir como antes. Em seguida, **primeiro o roteiro de teste (9.6)**, num curso
@@ -1358,9 +1385,11 @@ atividade com problema; então "Confirmar e importar" e anotar o resumo (aulas c
 mesmo arquivo de novo não duplica: tudo aparece como "já existe — será pulada". O banco aceita no máximo 300 atividades
 por importação (o pacote completo tem bem menos).
 
-**5. (Javerson roda, o agente lê o resultado)** Conferência, só leitura, no SQL do Supabase: colar **uma consulta por
-vez**, rodar e copiar o resultado de volta para o chat. As consultas escolhem o curso pelo nome e a empresa pelo nome (a
-1ª mostra quais cursos o filtro pegou: precisam ser os dois NR-10 Básico).
+**5. (Javerson roda, o agente lê o resultado)** Conferência, só leitura, no SQL do Supabase. O bloco abaixo tem 5
+consultas; cada uma começa num comentário `-- 1)`, `-- 2)`, ... e termina em `;`. Colar **uma consulta por vez** (do
+comentário até o `;`), rodar e copiar o resultado de volta para o chat: o editor do Supabase mostra só o resultado da
+última que rodou. As consultas escolhem o curso pelo nome e a empresa pelo nome (a 1ª mostra quais cursos o filtro
+pegou: precisam ser os dois NR-10 Básico).
 
 ```sql
 -- Conferência da carga das atividades do NR-10 Básico. SÓ LEITURA: nenhum insert, update ou delete.
@@ -1543,8 +1572,9 @@ importar"). Cada questionário entra logo depois da aula de vídeo, no módulo d
 prévia, campo "Tempo de cada questionário pós-vídeo (min)"). Com 2 questões e nota mínima de 80%, o aluno precisa
 acertar as 2 (tentativas livres, com a correção comentada).
 
-**5. (Javerson roda, o agente lê o resultado)** Conferência, só leitura, trocando o filtro do nome do curso
-(`ilike '%NR%35%'` etc.):
+**5. (Javerson roda, o agente lê o resultado)** Conferência, só leitura: é uma consulta só, do comentário até o `;`,
+para rodar uma vez por curso, trocando o filtro do nome do curso (`ilike '%NR%35%'` etc.) e copiando o resultado de
+volta para o chat:
 
 ```sql
 -- Exercícios pós-vídeo: cada questionário "PV-" logo depois do vídeo do mesmo código. SÓ LEITURA.
@@ -1578,12 +1608,14 @@ Esperado: `tipo_da_aula_anterior` = `video` em todas as linhas e 2 questões em 
 ### 9.6 Roteiro de teste (Javerson)
 
 Depois de 9.3, em `https://www.sigoobras.com.br`, no curso "TESTE EAD — apagar" e com o funcionário de teste da seção 7
-(se já foram apagados, criar de novo como lá: para o passo 11, o curso precisa estar publicado, com o painel de
-requisitos sem pendência, e o funcionário matriculado). Tudo o que for criado leva "TESTE" no nome e é apagado no fim
-(passo 23). **Só começar com o OK explícito do Javerson.** Reserve cerca de 2 horas (estimativa). Cada grupo de passos diz
-onde fazer: na tela do RH (computador) ou no portal do aluno (de preferência no celular). Se algo sair diferente do
-"deve acontecer", anotar o número do passo, tirar uma foto da tela e mandar para quem estiver ajudando; não consertar
-pelo banco.
+(se já foram apagados, criar de novo como lá). Para o aluno (passo 11 em diante), o curso precisa estar publicado, com o
+painel de requisitos sem pendência, e o funcionário matriculado **sem nenhuma aula feita**: se ele já fez o curso na
+seção 7, usar outro funcionário de teste ("TESTE EAD 2 — apagar"), com acesso e matrícula criados como lá. Tudo o que
+for criado leva "TESTE" no nome e é apagado no fim (passo 25). **Só começar com o OK explícito do Javerson.** Este
+roteiro é mais longo que o da seção 7 (1h30), porque monta e testa os seis tipos de aula: reserve cerca de 2 horas, fora
+o tempo de criar o curso e o funcionário de teste se ainda não existirem. Cada grupo de passos diz onde fazer: na tela
+do RH (computador) ou no portal do aluno (de preferência no celular). Se algo sair diferente do "deve acontecer",
+anotar o número do passo, tirar uma foto da tela e mandar para quem estiver ajudando; não consertar pelo banco.
 
 **Os dois arquivos de teste.** Salvar, fora do repositório (por exemplo em `C:\Users\javer\teste-ead\`), como UTF-8 (o
 padrão do Bloco de Notas), com o texto abaixo, que é de mentira. O primeiro é `teste-atividades.json` (formato do
@@ -1725,62 +1757,75 @@ O segundo é `teste-posvideo.json` (formato dos exercícios pós-vídeo, usado n
     entra logo depois da aula de vídeo, no módulo dela. Para ver o erro, trocar `V01` por `V99` numa cópia do arquivo: a
     prévia diz "vídeo V99 não encontrado neste curso" e o "Confirmar e importar" não acende.
 
-**Aluno de verdade (portal do funcionário, celular e computador)**
+**Aluno de verdade (portal do funcionário, de preferência no celular)**
 
-11. Entrar no portal com o funcionário de teste (acesso e senha provisória como no passo 5 da seção 7) e abrir o curso.
-12. **Leitura até o fim.** No celular, abrir a apostila (PDF de 3 páginas ou mais): o botão "Marcar como lida — li e
-    compreendi" fica apagado, com o aviso "Role a apostila até o fim da última página para liberar o botão". Rolar até
-    o fim da última página: o botão acende; tocar e a aula conclui. Não há contagem regressiva nem "faltam X min".
-    Repetir com a aula de texto longo (aviso "Role o texto até o fim para liberar o botão") e com a tarefa (botão "Fiz a
-    atividade"; aviso "Leia as instruções até o fim para liberar o botão"). Um texto curto, que cabe na tela, acende na
-    hora. No computador, a apostila aparece desenhada na própria página (sem a barra do visualizador do navegador) e
-    "Abrir em outra aba" continua funcionando.
-13. **"Próxima aula" começa no topo.** Rolar a página para baixo (até a lista de aulas), concluir uma aula e tocar em
-    "Próxima aula: ...". Deve acontecer: a aula seguinte abre com o começo dela no topo da tela, não no meio da página;
-    se for texto ou tarefa longos, o botão continua apagado até rolar.
-14. **Questionário.** Abrir `TESTE · Questionário`: responder todas, errando uma (3 questões = 67%), e "Enviar
+**As aulas abrem em sequência:** cada uma só abre quando todas as anteriores estão concluídas (regra do servidor).
+Por isso o aluno percorre o curso na ordem em que os passos 1 a 10 o montaram: 1ª apostila; 2ª vídeo; 3ª "Exercícios
+do vídeo: ..." (do passo 10; sem ele essa aula não existe e as seguintes sobem um número); 4ª texto;
+5ª `TESTE · Questionário`; 6ª `TESTE · Caso`; 7ª `TESTE · Tarefa`; 8ª `M1 · Caso 1: Caso importado`;
+9ª `M1 · Questionário do módulo` (importado); 10ª `M1 · Atividade de estudo 1: Tarefa importada`. Os passos abaixo
+seguem essa ordem e dizem qual aula é: não pular nenhuma.
+
+11. Entrar no portal com o funcionário de teste (acesso e senha provisória como no passo 5 da seção 7) e abrir o curso:
+    só a 1ª aula está aberta.
+12. **Apostila (1ª aula) e vídeo (2ª).** Primeiro no computador, abrir a apostila (PDF de 3 páginas ou mais) só para
+    olhar, sem concluir: ela aparece desenhada na própria página, sem a barra do visualizador do navegador, e "Abrir em
+    outra aba" funciona. Depois, no celular: o botão "Marcar como lida — li e compreendi" fica apagado, com o aviso "Role
+    a apostila até o fim da última página para liberar o botão". Rolar até o fim da última página: o botão acende;
+    tocar e a aula conclui. Não há contagem regressiva nem "faltam X min". A 2ª aula (vídeo) abre: assistir até o fim.
+13. **Exercícios do vídeo (3ª aula; só se o passo 10 foi feito).** São 2 questões e a nota mínima é 80%, então é
+    preciso acertar as 2. Errar uma e tocar "Enviar respostas": aparece a correção comentada e a aula não conclui.
+    "Tentar de novo" e acertar as 2: conclui.
+14. **Texto (4ª aula).** O texto longo do passo 6: o botão fica apagado, com o aviso "Role o texto até o fim para
+    liberar o botão". Rolar até o fim: acende; concluir. (Um texto curto, que cabe na tela, acende na hora.)
+15. **Questionário (5ª aula, `TESTE · Questionário`).** Responder todas, errando uma (3 questões = 67%), e "Enviar
     respostas": aparece a correção comentada, a aula não conclui e aparece "Tentar de novo". Tocar: as questões e as
     alternativas vêm em outra ordem. Acertar as 3: a aula conclui; ao reabrir, mostra a melhor nota e quantas
     tentativas foram.
-15. **Caso.** Abrir `TESTE · Caso`: escolher a opção insegura de `e1` (o comentário aparece em âmbar), "Continuar", ir
-    por `r1` de volta a `e1` e terminar pela escolha segura até o fim: aparece "Para refletir" e "Concluir caso". No
+16. **Caso (6ª aula, `TESTE · Caso`).** Escolher a opção insegura de `e1` (o comentário aparece em âmbar), "Continuar",
+    ir por `r1` de volta a `e1` e terminar pela escolha segura até o fim: aparece "Para refletir" e "Concluir caso". No
     meio do caminho, recarregar a página: o caso volta de onde parou.
-16. **Tarefa.** Abrir `TESTE · Tarefa`, rolar até o fim e tocar "Fiz a atividade": conclui.
-17. **Caso importado, toque duplo e parar no meio.** Abrir o caso importado ("Caso importado"). Na 1ª etapa, tocar duas
-    vezes bem rápido em "Escolha segura". Deve acontecer: a escolha vale uma vez só (aparece o comentário dela, sem
-    mensagem de erro e sem o caso recomeçar). "Continuar" leva a `e2`; escolher "Pular a etapa" (continua em `e2`),
+17. **"Próxima aula" começa no topo.** Com o caso concluído, rolar a página para baixo, até a lista de aulas, e tocar em
+    "Próxima aula" (a da `TESTE · Tarefa`). Deve acontecer: a tarefa abre com o começo dela no topo da tela, não no meio
+    da página, e o botão "Fiz a atividade" continua apagado (aviso "Leia as instruções até o fim para liberar o
+    botão") até rolar as instruções.
+18. **Tarefa (7ª aula, `TESTE · Tarefa`).** Rolar até o fim e tocar "Fiz a atividade": conclui.
+19. **Caso importado (8ª aula), toque duplo e parar no meio.** Abrir "M1 · Caso 1: Caso importado". Na 1ª etapa, tocar
+    duas vezes bem rápido em "Escolha segura". Deve acontecer: a escolha vale uma vez só (aparece o comentário dela,
+    sem mensagem de erro e sem o caso recomeçar). "Continuar" leva a `e2`; escolher "Pular a etapa" (continua em `e2`),
     "Continuar" e **parar aí**, sem concluir.
 
 **O RH muda o roteiro com o aluno no meio (computador, tela do RH)**
 
-18. "Editar caso" no caso importado: "Remover etapa" na etapa `e2` (a escolha segura de `e1` passa a encerrar o caso) e
-    "Salvar caso". Deve acontecer: antes de gravar, aparece o aviso "Mudar o roteiro do caso com alunos?" (só se o aluno
-    já tiver tempo registrado nessa aula); escolher "Salvar mesmo assim". Trocar só o texto de uma opção não faz o aluno
-    recomeçar: ele recomeça quando o caminho que já fez deixa de existir, como aqui.
+20. "Editar caso" no caso importado: "Remover etapa" na etapa `e2` (a escolha segura de `e1` passa a encerrar o caso) e
+    "Salvar caso". Deve acontecer: antes de gravar, aparece o aviso "Mudar o roteiro do caso com alunos?"; escolher
+    "Salvar mesmo assim". Se o aviso não aparecer, tudo bem, siga (ele só aparece quando o aluno já tem tempo registrado
+    nessa aula). Trocar só o texto de uma opção não faz o aluno recomeçar: ele recomeça quando o caminho que já fez
+    deixa de existir, como aqui.
 
 **Terminar o curso (portal do funcionário)**
 
-19. No caso importado, recarregar a página: ele recomeça da primeira etapa. Chegar ao fim e, em "Concluir caso", tocar
-    duas vezes bem rápido: conclui uma vez só, sem erro.
-20. Fazer as aulas que faltam: o questionário importado (2 questões: acertar as 2), o questionário pós-vídeo do passo
-    10 (acertar as 2), a tarefa importada e o resto do curso.
-21. **Prova e certificado.** Fazer a prova final (só tem as 5 questões de sempre: as dos questionários não entram nela)
-    e assinar o certificado com a senha, como na seção 7. A frente do PDF traz a frase "conclusão das atividades dos
-    módulos: 3 questionários (nota mínima de 80%), 2 estudos de caso e 2 atividades de estudo" (com os números do que o
-    curso de teste tiver: sem o passo 10, são 2 questionários). O verso não muda.
+21. **Caso importado, de novo (8ª aula).** Recarregar a página do caso: ele recomeça da primeira etapa. Chegar ao fim e,
+    em "Concluir caso", tocar duas vezes bem rápido: conclui uma vez só, sem erro.
+22. **Questionário importado (9ª aula) e tarefa importada (10ª).** No questionário "M1 · Questionário do módulo" (2
+    questões), acertar as 2. Na tarefa "M1 · Atividade de estudo 1: Tarefa importada", rolar e tocar "Fiz a atividade".
+23. **Prova e certificado.** Com todas as aulas concluídas, fazer a prova final (só tem as 5 questões de sempre: as dos
+    questionários não entram nela) e assinar o certificado com a senha, como na seção 7. A frente do PDF traz a frase
+    "conclusão das atividades dos módulos: 3 questionários (nota mínima de 80%), 2 estudos de caso e 2 atividades de
+    estudo" (com os números do que o curso de teste tiver: sem o passo 10, são 2 questionários). O verso não muda.
 
 **Conferir e limpar (computador, tela do RH)**
 
-22. **RH confere.** Detalhes da matrícula do funcionário de teste: a seção "Questionários dos módulos" lista as
+24. **RH confere.** Detalhes da matrícula do funcionário de teste: a seção "Questionários dos módulos" lista as
     tentativas (a abaixo da nota e a aprovada), cada uma abre com as questões na ordem que o aluno viu, a alternativa
     marcada e a certa. A trilha mostra "Escolha no caso", "Caso recomeçado (o roteiro mudou)", "Concluiu o caso", "Leu
-    até o fim" e "Confirmou a atividade de estudo"; o toque duplo dos passos 17 e 19 deixou uma só "Escolha no caso" por
+    até o fim" e "Confirmou a atividade de estudo"; o toque duplo dos passos 19 e 21 deixou uma só "Escolha no caso" por
     clique e uma só "Concluiu o caso". "Exportar CSV". Depois, no curso, "Exportar dossiê": abrir o ZIP e conferir que
     `questionarios.csv` está lá, com as tentativas.
-23. **Limpeza**, como na seção 7 (o `sigo.permitir_expurgo` dela vale também para as tentativas dos questionários).
+25. **Limpeza**, como na seção 7 (o `sigo.permitir_expurgo` dela vale também para as tentativas dos questionários).
     Apagar o curso leva as aulas, as questões e os roteiros dos casos; apagar o funcionário leva as matrículas e, com
-    elas, as tentativas dos questionários. Depois, apagar no Storage (bucket `treinamentos`) os arquivos enviados e
-    apagar os dois arquivos de teste do PC.
+    elas, as tentativas dos questionários (repetir para o "TESTE EAD 2", se foi criado). Depois, apagar no Storage
+    (bucket `treinamentos`) os arquivos enviados e apagar os dois arquivos de teste do PC.
 
 ### 9.7 Verificação da branch (feita antes de entregar)
 
