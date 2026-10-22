@@ -7,6 +7,17 @@ import { safeUrl } from "@/lib/safe-url";
 import { analisarAtende } from "@/lib/edital-ia";
 import { subtotaisEtapas, totalLinhaLegado } from "@/lib/orcamento-desconto";
 import { rotuloItem } from "@/lib/orcamento-registros";
+import { baixarAnexo } from "@/lib/baixar-anexo";
+import { refDoUpload } from "@/lib/anexo-ref";
+import { LIMITE_ANEXO_OPORTUNIDADE } from "@/lib/envio-arquivos";
+import {
+  ehBaixavel,
+  patchDoAssinado,
+  podeEnviarAssinado,
+  podeIniciarEnvio,
+  seloDaAssinatura,
+  validarArquivoAssinado,
+} from "@/lib/arquivo-assinatura";
 import { useEmpresa } from "@/Layout";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -45,6 +56,9 @@ import {
   Sparkles,
   Bell,
   Folder,
+  Download,
+  FileSignature,
+  Loader2,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -258,6 +272,76 @@ export default function OportunidadeDetalhe({
     can("Oportunidades", "Orcamento", "editar");
   // "Preparar para o Claude" grava o texto do PDF (arquivo_texto_pagina): quem anexa arquivos
   const podePrepararParaClaude = isAdmin || can("Oportunidades", "Arquivos", "criar");
+
+  // "Enviar assinado": troca o PDF gerado pela versão assinada no gov.br (mesma linha, mesma pasta)
+  const [assinandoId, setAssinandoId] = useState(null);
+  const inputAssinadoRef = useRef(null);
+  // a linha escolhida para assinar; é regravada a cada abertura do seletor (nunca zerada depois)
+  const arquivoParaAssinarRef = useRef(null);
+  // "Enviar assinado" troca o arquivo da linha: mesma permissão de quem anexa arquivos
+  const podeAnexar = podePrepararParaClaude;
+
+  const handleBaixarArquivo = async (arq) => {
+    try {
+      const ok = await baixarAnexo(arq.url, arq.nome);
+      if (!ok) toast.error("Arquivo não encontrado no armazenamento");
+    } catch (e) {
+      console.error("Erro ao baixar o arquivo:", e);
+      toast.error("Erro ao baixar o arquivo" + (e?.message ? `: ${e.message}` : ""));
+    }
+  };
+
+  const escolherAssinado = (arq) => {
+    if (!podeIniciarEnvio(assinandoId)) return; // um envio por vez
+    arquivoParaAssinarRef.current = arq;
+    inputAssinadoRef.current?.click();
+  };
+
+  const handleEnviarAssinado = async (e) => {
+    const file = e.target.files?.[0];
+    // guarda a linha escolhida agora: a referência só é regravada na próxima abertura do seletor
+    const arq = arquivoParaAssinarRef.current;
+    e.target.value = "";
+    if (!arq) {
+      toast.error("Escolha de novo a linha do arquivo");
+      return;
+    }
+    const v = validarArquivoAssinado(file, LIMITE_ANEXO_OPORTUNIDADE);
+    if (!v.ok) {
+      toast.error(v.erro);
+      return;
+    }
+    setAssinandoId(arq.id);
+    try {
+      try {
+        const ref = refDoUpload(
+          await sigo.integrations.Core.UploadFile({
+            file,
+            bucket: "anexos-oportunidade",
+            mimeType: "application/pdf", // o bucket recusa application/octet-stream e application/x-pdf
+          })
+        );
+        if (!ref) throw new Error("o envio não devolveu a referência do arquivo");
+        await sigo.entities.ArquivoOportunidade.update(arq.id, patchDoAssinado(ref, file));
+      } catch (err) {
+        console.error("Erro ao enviar o arquivo assinado:", err);
+        toast.error("Erro ao enviar o arquivo assinado" + (err?.message ? `: ${err.message}` : ""));
+        return;
+      }
+      toast.success("Versão assinada gravada");
+      // o arquivo já foi gravado: falha ao recarregar a lista não é falha do envio
+      try {
+        await onReloadArquivos?.();
+      } catch (err) {
+        console.error("Erro ao recarregar os arquivos depois do envio assinado:", err);
+        toast.error("Arquivo gravado, mas a lista não atualizou. Atualize a página.");
+      }
+    } finally {
+      // só depois da recarga: a linha não reaparece como "falta assinar" com o botão ativo
+      setAssinandoId(null);
+    }
+  };
+
   // detalhe fechado por fora (excluir/arquivar): não reabre a leitura depois
   useEffect(() => {
     if (!open) {
@@ -1568,6 +1652,13 @@ export default function OportunidadeDetalhe({
                           onChange={(e) => onUploadFile(e, pastaAtual)}
                           accept=".pdf,.png,.jpg,.jpeg,.gif,.doc,.docx,.xls,.xlsx"
                         />
+                        <input
+                          ref={inputAssinadoRef}
+                          type="file"
+                          className="hidden"
+                          onChange={handleEnviarAssinado}
+                          accept="application/pdf,.pdf"
+                        />
                         <Select value={pastaAtual} onValueChange={setPastaAtual}>
                           <SelectTrigger
                             className="h-9 w-[210px]"
@@ -1660,6 +1751,7 @@ export default function OportunidadeDetalhe({
                           (arq.tipo?.includes("image") ||
                             /\.(jpg|jpeg|png|gif|webp)$/i.test(arq.nome));
                         const canPreview = isPdf || isImage;
+                        const seloAssinatura = seloDaAssinatura(arq);
                         const isOneDrive =
                           isLink &&
                           (arq.url?.includes("onedrive") || arq.url?.includes("sharepoint"));
@@ -1705,6 +1797,18 @@ export default function OportunidadeDetalhe({
                                       {CATEGORIAS_ARQUIVO[arq.categoria]}
                                     </Badge>
                                   )}
+                                  {seloAssinatura && (
+                                    <Badge
+                                      variant="outline"
+                                      className={
+                                        seloAssinatura.cor === "green"
+                                          ? "border-green-300 bg-green-50 font-medium text-green-800"
+                                          : "border-amber-300 bg-amber-50 font-medium text-amber-800"
+                                      }
+                                    >
+                                      {seloAssinatura.texto}
+                                    </Badge>
+                                  )}
                                 </p>
                                 {isLink && (
                                   <p className="text-xs text-blue-500 truncate max-w-[200px]">
@@ -1717,7 +1821,7 @@ export default function OportunidadeDetalhe({
                                 </p>
                               </div>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap items-center justify-end gap-2">
                               {isLink && (
                                 <Button
                                   size="icon"
@@ -1747,6 +1851,33 @@ export default function OportunidadeDetalhe({
                               )}
                               {isPdf && podePrepararParaClaude && (
                                 <PrepararParaClaudeButton arquivo={arq} />
+                              )}
+                              {ehBaixavel(arq) && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title="Baixar"
+                                  onClick={() => handleBaixarArquivo(arq)}
+                                >
+                                  <Download className="w-4 h-4 text-slate-600" />
+                                </Button>
+                              )}
+                              {podeAnexar && podeEnviarAssinado(arq) && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="gap-1 border-amber-300 text-amber-800"
+                                  disabled={!podeIniciarEnvio(assinandoId)}
+                                  title="Assine o PDF no gov.br e envie aqui a versão assinada"
+                                  onClick={() => escolherAssinado(arq)}
+                                >
+                                  {assinandoId === arq.id ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <FileSignature className="w-3 h-3" />
+                                  )}
+                                  Enviar assinado
+                                </Button>
                               )}
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>

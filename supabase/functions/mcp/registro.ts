@@ -9,6 +9,7 @@
 import type { PromptDef, ResultadoTool, ToolDef } from "../_shared/mcp/protocolo.ts";
 import type { CamadaEmpresa, StorageConector } from "../_shared/conector/camada-empresa.ts";
 import { uuidOuNull } from "../_shared/conector/entrada.ts";
+import type { LibsDocumentos } from "../_shared/documentos/proposta-export.ts";
 import type { ContextoMcp } from "./contexto.ts";
 
 export type { PromptDef };
@@ -19,6 +20,12 @@ export interface DepsFerramenta {
   storage: StorageConector;
   fetchFn: typeof fetch;
   agora: Date; // um instante por chamada
+  /** jsPDF, jspdf-autotable e SheetJS (import dinâmico no gerador.ts; reais do node_modules nos testes). */
+  libs?: () => Promise<LibsDocumentos>;
+  /** Endereços IP de um nome (anexar_edital_por_url confere antes de baixar). */
+  resolverDns?: (host: string) => Promise<string[]>;
+  /** Relógio em milissegundos (anexar_habilitacao mede o tempo da chamada). Padrão: `Date.now`; só os testes injetam. */
+  relogio?: () => number;
 }
 
 export interface ResultadoFerramenta {

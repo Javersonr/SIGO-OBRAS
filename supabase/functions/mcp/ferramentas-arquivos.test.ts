@@ -1,7 +1,9 @@
 // node --test supabase/functions/mcp/ferramentas-arquivos.test.ts
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import assert from "node:assert/strict";
+import { despachar, type LinhaAuditoria } from "./despacho.ts";
 import { FERRAMENTAS_ARQUIVOS, INSTRUCOES_ARQUIVOS } from "./ferramentas-arquivos.ts";
+import { montarDeps } from "./testes/deps-habilitacao.ts";
 import type { DepsFerramenta } from "./registro.ts";
 import type { Vinculo } from "../_shared/conector/acesso.ts";
 import { camadaDaEmpresa } from "../_shared/conector/camada-empresa.ts";
@@ -95,6 +97,14 @@ test("defs: nomes, obrigatórios e anotações do §5 (linhas 2 a 5)", () => {
   );
   const total = INSTRUCOES_ARQUIVOS.reduce((s, l) => s + l.length, 0);
   assert.ok(total <= 800, `INSTRUCOES_ARQUIVOS com ${total}`);
+});
+
+test("INSTRUCOES_ARQUIVOS: prefere o que o SIGO faz no servidor; o link de envio fica para o que só existe no chat", () => {
+  assert.equal(
+    INSTRUCOES_ARQUIVOS[0],
+    "Não há como passar ao conector um arquivo do chat. Prefira o que o SIGO faz no servidor (gerar_documentos_proposta, gerar_declaracoes, anexar_habilitacao, anexar_acervo, anexar_edital_por_url); gerar_link_envio fica para o que só existe no chat."
+  );
+  assert.ok(!INSTRUCOES_ARQUIVOS.join("\n").includes("Para anexar PDF ou Excel ao SIGO"));
 });
 
 test("gerar_link_envio: pedido inválido → validacao com a lista de erros", async () => {
@@ -369,4 +379,124 @@ test("gerar_link_envio: nome com aspas, $ ou crase não escapa das aspas do curl
     linha.startsWith('curl -X PUT --data-binary @"x\\"; rm -rf ~; \\$(id) \\`id\\` \\\\.pdf" -H '),
     linha
   );
+});
+
+// ─── As mesmas ferramentas com o Storage CONFINADO à pasta da empresa (montarDeps = mcp/index.ts) ──────
+
+const OUTRA = "00000000-0000-4000-8000-000000000002";
+const PDF_BYTES = new TextEncoder().encode("%PDF-1.7 conteúdo");
+// o instante das ferramentas deste arquivo (o montarDeps usa outro): o link de teste vale até 13h
+const DEPS_ANTIGOS = { agora: AGORA };
+
+test("confinado: gerar_link_envio e registrar_arquivos seguem funcionando com o Storage da empresa", async () => {
+  const gerar = montarDeps((c) => {
+    if (c.tabela === "oportunidade") return { data: { id: OP } };
+    if (c.tabela === "mcp_link_envio" && c.op === "insert") return { data: [{ id: LINK }] };
+    return undefined;
+  }, DEPS_ANTIGOS);
+  const r1 = await ferramenta("gerar_link_envio").executar(
+    {
+      alvo: "oportunidade",
+      oportunidade_id: OP,
+      arquivos: [{ nome: "Edital.pdf", categoria: "edital" }, { nome: "Proposta.xlsx" }],
+    },
+    gerar.deps
+  );
+  assert.equal(r1.resultado.isError, false);
+  assert.deepEqual(
+    gerar.fake.chamadasStorage.map((c) => [c.bucket, c.metodo, String(c.args[0]).split("/")[0]]),
+    [
+      ["anexos-oportunidade", "createSignedUploadUrl", E],
+      ["anexos-oportunidade", "createSignedUploadUrl", E],
+    ]
+  );
+
+  const registrar = montarDeps(
+    (c) => {
+      if (c.tabela === "mcp_link_envio" && c.op === "select") return { data: link() };
+      if (c.tabela === "mcp_link_envio" && c.op === "update") return { data: { id: LINK } };
+      if (c.tabela === "arquivo_oportunidade" && c.op === "insert") {
+        return { data: (c.payload as { url: string }[]).map((l) => ({ id: ARQ, url: l.url })) };
+      }
+      return undefined;
+    },
+    {
+      ...DEPS_ANTIGOS,
+      fetchFn: (async () => new Response(PDF_BYTES, { status: 206 })) as typeof fetch,
+    },
+    (c) =>
+      c.metodo === "list"
+        ? { data: [{ name: "u1-Edital.pdf", metadata: { size: PDF_BYTES.length } }] }
+        : undefined
+  );
+  const r2 = await ferramenta("registrar_arquivos").executar({ link_id: LINK }, registrar.deps);
+  assert.equal(r2.resultado.isError, false);
+  assert.deepEqual(
+    (sc(r2).registrados as Record<string, unknown>[]).map((x) => [x.arquivo_id, x.ref]),
+    [[ARQ, `anexos-oportunidade/${E}/2026/10/u1-Edital.pdf`]]
+  );
+  assert.deepEqual(
+    registrar.fake.chamadasStorage.map((c) => [c.metodo, c.args[0]]),
+    [
+      ["list", `${E}/2026/10`],
+      ["createSignedUrl", `${E}/2026/10/u1-Edital.pdf`],
+    ]
+  );
+});
+
+test("confinado: linha do link adulterada (caminho de outra empresa) vira erro limpo no despacho, auditado, sem tocar o Storage", async () => {
+  const log = mock.method(console, "error", () => {});
+  try {
+    const adulterado = link({
+      arquivos: [
+        {
+          indice: 1,
+          nome: "Edital.pdf",
+          tipo: "pdf",
+          categoria: "edital",
+          pasta: null,
+          caminho: `${OUTRA}/2026/10/u1-segredo-Edital.pdf`,
+        },
+      ],
+    });
+    const { deps, fake } = montarDeps(
+      (c) => (c.tabela === "mcp_link_envio" ? { data: adulterado } : undefined),
+      DEPS_ANTIGOS
+    );
+    const auditoria: LinhaAuditoria[] = [];
+    const resposta = await despachar(
+      "registrar_arquivos",
+      { link_id: LINK },
+      {
+        ferramentas: FERRAMENTAS_ARQUIVOS,
+        deps,
+        consumirLimite: async () => ({ permitido: true, chaves: {} }),
+        auditar: async (linha) => {
+          auditoria.push(linha);
+        },
+      }
+    );
+    // o despacho NÃO lança: o Claude recebe a mensagem genérica de sempre, com o motivo
+    assert.equal(resposta.isError, true);
+    assert.deepEqual(resposta.structuredContent, {
+      erro: "Erro interno ao executar a ferramenta. Tente de novo.",
+      motivo: "campo_proibido",
+    });
+    // e a tentativa entra na auditoria
+    assert.deepEqual(auditoria, [
+      { ferramenta: "registrar_arquivos", resultado: "erro", motivo: "campo_proibido", alvo: LINK },
+    ]);
+    // nada foi ao Storage, o link não foi consumido e nada foi gravado
+    assert.equal(fake.chamadasStorage.length, 0);
+    assert.equal(fake.chamadas.filter((c) => c.op === "update" || c.op === "insert").length, 0);
+    // o log do servidor traz o bucket, nunca o caminho nem a empresa alheia
+    const texto = log.mock.calls.map((c) => c.arguments.join(" ")).join("\n");
+    assert.match(texto, /registrar_arquivos/);
+    assert.match(texto, /anexos-oportunidade/);
+    assert.equal(texto.includes(OUTRA), false);
+    assert.equal(texto.includes("segredo"), false);
+    assert.equal(JSON.stringify(resposta).includes(OUTRA), false);
+  } finally {
+    log.mock.restore();
+  }
 });

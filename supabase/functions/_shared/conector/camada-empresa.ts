@@ -8,7 +8,14 @@
  *   `deleted_at is null`, quando a tabela tem exclusão lógica).
  * - Todo INSERT grava `empresa_id = <empresa da chave>`; um `empresa_id` diferente na linha lança.
  * - Toda RPC recebe `p_empresa_id = <empresa da chave>`, injetado aqui.
- * - Não existe método de exclusão.
+ * - Não existe método de exclusão de linhas. O Storage ganhou leitura (`download`) e gravação
+ *   (`upload`) de objeto, para as cópias e os arquivos gerados pelo próprio servidor.
+ * - O Storage que as ferramentas recebem vem de `storageDaEmpresa`: todo método que recebe caminho
+ *   confere antes que ele é da pasta `<empresa_id>/` e, se não for, lança sem chamar o Storage. O
+ *   confinamento não depende de cada ferramenta lembrar; mesmo assim, toda ref vinda do banco passa
+ *   por `caminhoDaEmpresa` (arquivo-servidor.ts), que também confere o bucket.
+ * - `empresa()` lê só a linha da própria empresa da chave em public.empresa (a tabela não está na
+ *   lista: nenhum outro método a alcança).
  *
  * Puro (banco injetado): roda no Deno e no Node (node --test).
  */
@@ -28,9 +35,11 @@ export const TABELAS_DA_EMPRESA = [
   "acervo_profissional",
   "acervo_atestado",
   "acervo_quantitativo",
+  "acervo_documento",
   "orcamento_item",
   "proposta_oportunidade",
   "mcp_link_envio",
+  "modelo_declaracao",
 ] as const;
 export type TabelaDaEmpresa = (typeof TABELAS_DA_EMPRESA)[number];
 
@@ -47,6 +56,7 @@ export const RPCS_DA_EMPRESA = [
   "conector_cadastrar_atestado",
   "conector_substituir_orcamento",
   "conector_aplicar_desconto",
+  "conector_gravar_arquivo",
 ] as const;
 export type RpcDaEmpresa = (typeof RPCS_DA_EMPRESA)[number];
 
@@ -68,6 +78,8 @@ export class ErroCamada extends Error {
 
 export interface CamadaEmpresa {
   readonly empresaId: string;
+  /** A linha da própria empresa da chave em public.empresa (null se ela sumiu). Só leitura. */
+  empresa<T = Record<string, unknown>>(colunas: string): Promise<T | null>;
   /** select(colunas) já com .eq("empresa_id", empresaId) e, se a tabela tiver, .is("deleted_at", null). */
   ler(tabela: TabelaDaEmpresa, colunas: string, opcoes?: { incluirExcluidos?: boolean }): Consulta;
   /** Todas as linhas, paginando de 1000 em 1000 (.order("id").range); `filtrar` acrescenta filtros. Lança ErroCamada("banco") se passar de `limite`. */
@@ -127,6 +139,12 @@ export interface StorageConector {
       error: { message: string } | null;
     }>;
     remove(caminhos: string[]): Promise<{ data: unknown; error: { message: string } | null }>;
+    download(caminho: string): Promise<{ data: Blob | null; error: { message: string } | null }>;
+    upload(
+      caminho: string,
+      corpo: Blob | Uint8Array,
+      opcoes: { contentType: string; upsert: boolean }
+    ): Promise<{ data: unknown; error: { message: string } | null }>;
   };
 }
 
@@ -171,6 +189,17 @@ export function camadaDaEmpresa(admin: Admin, empresaId: string): CamadaEmpresa 
   return {
     empresaId: empresa,
     ler,
+
+    async empresa<T = Record<string, unknown>>(colunas: string): Promise<T | null> {
+      return dadosOuErro<T>(
+        await admin
+          .from("empresa")
+          .select(colunas)
+          .eq("id", empresa)
+          .is("deleted_at", null)
+          .maybeSingle()
+      );
+    },
 
     async lerTodos<T = Record<string, unknown>>(
       tabela: TabelaDaEmpresa,
@@ -250,6 +279,110 @@ export function camadaDaEmpresa(admin: Admin, empresaId: string): CamadaEmpresa 
       }
       const r = await admin.rpc(nome, { ...params, p_empresa_id: empresa });
       return dadosOuErro<T>(r) as T;
+    },
+  };
+}
+
+/**
+ * A ÚNICA regra de "caminho seguro dentro da pasta da empresa" do conector (o `storageDaEmpresa` abaixo e o
+ * `caminhoDaEmpresa` de arquivo-servidor.ts usam esta função; nenhum dos dois repete a regra).
+ *
+ * Por que tantas regras: o storage-js monta a URL do pedido com o caminho CRU e o parser de URL mexe nele —
+ * REMOVE tab, LF e CR de qualquer ponto (".\t." vira ".." e o pedido sai da pasta da empresa), tira espaço e
+ * controle do fim da URL, trata "\" como "/" e "%2e" como ".". Em ordem, o caminho só vale se:
+ *  1. é texto, sem caractere de controle (U+0000–U+001F e U+007F–U+009F) e sem espaço no começo ou no fim;
+ *  2. não tem "\", "?", "#" nem "%";
+ *  3. dividido por "/", nenhum segmento é vazio, "." ou ".." (pontos DENTRO de um nome, "Ltda..pdf", passam);
+ *  4. o primeiro segmento é a empresa (sem diferenciar maiúsculas de minúsculas);
+ *  5. há ao menos um segmento depois da empresa (`comoPasta`: a pasta do `list` pode ser só a empresa).
+ * Sem lista branca de caracteres: acento, espaço no meio e emoji passam (a tela só grava [A-Za-z0-9._/-],
+ * mas refs antigas ou editadas à mão podem ter mais, e isso não sai da pasta).
+ */
+export function caminhoSeguroDaEmpresa(
+  caminho: unknown,
+  empresaId: string,
+  comoPasta = false
+): boolean {
+  if (typeof caminho !== "string" || typeof empresaId !== "string") return false;
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(caminho) || /^ | $/.test(caminho)) return false;
+  if (/[\\?#%]/.test(caminho)) return false;
+  const partes = caminho.split("/");
+  if (partes.some((p) => p === "" || p === "." || p === "..")) return false;
+  if (partes[0].toLowerCase() !== empresaId.toLowerCase()) return false;
+  return comoPasta || partes.length >= 2;
+}
+
+/**
+ * O Storage das ferramentas, confinado à pasta da empresa da chave POR CONSTRUÇÃO (o conector usa a
+ * chave de serviço: o Storage não confere nada sozinho). Todo método que recebe caminho confere,
+ * antes de chamar o Storage de verdade, com `caminhoSeguroDaEmpresa` (começa pela empresa da chave, sem
+ * segmento vazio, "." ou "..", sem caractere de controle nem "\", "?", "#", "%"; em `list`, a pasta pode
+ * ser só `<empresaId>`).
+ * Fora disso lança ErroCamada("campo_proibido") ANTES de qualquer chamada, com uma mensagem que traz só
+ * o bucket (o caminho pode ser de outra empresa). A recusa é sempre promessa rejeitada.
+ *
+ * Só os métodos de StorageConector existem no objeto devolvido: o que o supabase-js tem além deles
+ * (copy, move, getPublicUrl…) não passa. Qualquer bucket vale; o bucket certo de cada ref continua
+ * sendo conferido por quem lê a ref (caminhoDaEmpresa).
+ */
+export function storageDaEmpresa(storage: StorageConector, empresaId: string): StorageConector {
+  if (typeof empresaId !== "string" || !UUID.test(empresaId)) {
+    throw new ErroCamada("id_invalido", "Empresa da chave inválida");
+  }
+  const empresa = empresaId.toLowerCase();
+
+  const exigir = (bucket: string, caminho: unknown, pasta = false): void => {
+    if (!caminhoSeguroDaEmpresa(caminho, empresa, pasta)) {
+      throw new ErroCamada(
+        "campo_proibido",
+        `Caminho fora da pasta da empresa no bucket "${String(bucket)}"`
+      );
+    }
+  };
+
+  return {
+    from(bucket: string) {
+      // o objeto do bucket é pedido a cada chamada e só depois da conferência; o método é chamado
+      // sobre ele (nunca solto), porque o do supabase-js usa `this`
+      const balde = () => storage.from(bucket);
+      return {
+        async createSignedUploadUrl(caminho: string) {
+          exigir(bucket, caminho);
+          return balde().createSignedUploadUrl(caminho);
+        },
+        async createSignedUrl(caminho: string, segundos: number) {
+          exigir(bucket, caminho);
+          return balde().createSignedUrl(caminho, segundos);
+        },
+        async list(pasta: string, opcoes: { search: string; limit: number }) {
+          exigir(bucket, pasta, true);
+          return balde().list(pasta, opcoes);
+        },
+        async remove(caminhos: string[]) {
+          if (!Array.isArray(caminhos)) {
+            throw new ErroCamada(
+              "campo_proibido",
+              `Lista de caminhos inválida no bucket "${String(bucket)}"`
+            );
+          }
+          // um item fora da pasta recusa a lista inteira: nenhum é removido
+          const lista = [...caminhos];
+          for (const caminho of lista) exigir(bucket, caminho);
+          return balde().remove(lista);
+        },
+        async download(caminho: string) {
+          exigir(bucket, caminho);
+          return balde().download(caminho);
+        },
+        async upload(
+          caminho: string,
+          corpo: Blob | Uint8Array,
+          opcoes: { contentType: string; upsert: boolean }
+        ) {
+          exigir(bucket, caminho);
+          return balde().upload(caminho, corpo, opcoes);
+        },
+      };
     },
   };
 }

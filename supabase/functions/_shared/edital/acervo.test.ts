@@ -1,5 +1,5 @@
 // node --test supabase/functions/_shared/edital/acervo.test.ts
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import assert from "node:assert/strict";
 import { carregarAcervo, fonteDoAdmin, garantirIds, hojeBR } from "./acervo.ts";
 import { sanearEdital } from "./edital-regras.ts";
@@ -75,13 +75,83 @@ test("carregarAcervo: erro do banco vira 'Falha ao ler o acervo: …'", async ()
   });
 });
 
+test("carregarAcervo: lê os documentos ativos da biblioteca no formato das certidões", async () => {
+  const fake = criarFakeAdmin((c) => {
+    if (c.tabela === "acervo_perfil")
+      return { data: [{ porte: "EPP", certidoes: [{ tipo: "Antiga" }] }] };
+    if (c.tabela === "acervo_documento") {
+      return {
+        data: [
+          {
+            id: "d1",
+            tipo: "crf_fgts",
+            nome: "CRF",
+            numero: "77",
+            validade: "2026-10-28",
+            ativo: true,
+          },
+          {
+            id: "d2",
+            tipo: "balanco_dre",
+            nome: "Balanço 2025",
+            numero: null,
+            validade: null,
+            ativo: true,
+          },
+        ],
+      };
+    }
+    return undefined;
+  });
+  const acervo = await carregarAcervo(fonteDoAdmin(fake.admin, E));
+  assert.deepEqual(acervo.documentos, [
+    { tipo: "CRF do FGTS", numero: "77", validade: "2026-10-28" },
+  ]);
+  const leitura = fake.chamadas.find((c) => c.tabela === "acervo_documento")!;
+  assert.equal(leitura.colunas, "id, tipo, nome, numero, validade, ativo");
+  assert.ok(
+    leitura.filtros.some((f) => f.metodo === "eq" && f.args[0] === "ativo" && f.args[1] === true)
+  );
+  assert.ok(
+    leitura.filtros.some((f) => f.metodo === "eq" && f.args[0] === "empresa_id" && f.args[1] === E)
+  );
+});
+
+test("carregarAcervo: falha ao ler a biblioteca não derruba o Atende? (documentos = [])", async () => {
+  const fake = criarFakeAdmin((c) => {
+    if (c.tabela === "acervo_documento")
+      return { error: { message: 'relation "acervo_documento" does not exist' } };
+    if (c.tabela === "acervo_perfil") return { data: [{ porte: "ME" }] };
+    return undefined;
+  });
+  // a falha vai ao log (e não ao teste): conferimos a mensagem e silenciamos a saída
+  const log = mock.method(console, "error", () => {});
+  let acervo: Awaited<ReturnType<typeof carregarAcervo>>;
+  try {
+    acervo = await carregarAcervo(fonteDoAdmin(fake.admin, E));
+  } finally {
+    log.mock.restore();
+  }
+  assert.deepEqual(acervo.documentos, []);
+  assert.deepEqual(acervo.perfil, { porte: "ME" });
+  assert.equal(log.mock.callCount(), 1);
+  assert.match(String(log.mock.calls[0].arguments.join(" ")), /acervo_documento/);
+});
+
+test("carregarAcervo pela CamadaEmpresa: acervo_documento está na lista de tabelas", async () => {
+  const fake = criarFakeAdmin(() => undefined);
+  const acervo = await carregarAcervo(camadaDaEmpresa(fake.admin, E));
+  assert.deepEqual(acervo.documentos, []);
+  assert.ok(fake.chamadas.some((c) => c.tabela === "acervo_documento"));
+});
+
 test("fonteDoAdmin e CamadaEmpresa: toda leitura presa à empresa e sem excluídos", async () => {
   for (const fonte of ["admin", "camada"] as const) {
     const fake = criarFakeAdmin();
     await carregarAcervo(
       fonte === "admin" ? fonteDoAdmin(fake.admin, E) : camadaDaEmpresa(fake.admin, E)
     );
-    assert.equal(fake.chamadas.length, 4, fonte);
+    assert.equal(fake.chamadas.length, 5, fonte);
     for (const c of fake.chamadas) {
       assert.ok(
         c.filtros.some((f) => f.metodo === "eq" && f.args[0] === "empresa_id" && f.args[1] === E),

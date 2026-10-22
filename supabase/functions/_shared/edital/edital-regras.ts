@@ -890,6 +890,13 @@ export interface Acervo {
   profissionais: AcervoProfissional[];
   atestados: AcervoAtestado[];
   quantitativos: AcervoQuantitativo[];
+  /** certidões e documentos com validade da biblioteca (acervo_documento), no formato de perfil.certidoes */
+  documentos?: { tipo: string; numero: string | null; validade: string | null }[];
+}
+
+/** Certidões para o "Atende?": as da biblioteca (acervo_documento); sem nenhuma, as do perfil. */
+export function certidoesDoAcervo(acervo: Acervo): unknown[] {
+  return acervo.documentos?.length ? acervo.documentos : arr(acervo.perfil?.certidoes);
 }
 
 export interface Apelidos {
@@ -1406,7 +1413,7 @@ export function blocoAcervo(
     return `- ${cortar(c.orgao, 120)} cód. ${cortar(c.codigo, 30)} | ${cortar(c.situacao, 30)}${c.validade ? ` | validade ${fmtData(dataISO(c.validade))}` : ""}${grupos ? ` | grupos: ${grupos}` : ""}${c.ressalvas ? ` | ressalvas: ${cortar(c.ressalvas, 400)}` : ""}`;
   });
   if (cads.length) out.push("CADASTROS:", ...cads);
-  const certs = arr(p.certidoes).map((y) => {
+  const certs = certidoesDoAcervo(acervo).map((y) => {
     const c = obj(y);
     return `- ${cortar(c.tipo, 150)}${c.numero ? ` nº ${cortar(c.numero, 40)}` : ""}${c.validade ? ` (validade ${fmtData(dataISO(c.validade))})` : ""}`;
   });
@@ -2156,7 +2163,7 @@ export function pendenciasAutomaticas(
   const sessao = ed.datas.sessao.data;
   const ref = sessao && sessao > hojeISO ? sessao : hojeISO;
   const quando = ref === hojeISO ? "" : " (vence antes da sessão)";
-  for (const y of arr(p?.certidoes)) {
+  for (const y of certidoesDoAcervo(acervo)) {
     const c = obj(y);
     const v = dataISO(c.validade);
     if (v && v < ref) {

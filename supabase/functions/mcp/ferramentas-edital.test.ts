@@ -12,6 +12,7 @@ import {
   type RespostaFake,
 } from "../_shared/conector/testes/fake-admin.ts";
 import { brl, fmtNum, renumerarIds, sanearEdital } from "../_shared/edital/edital-regras.ts";
+import { CATEGORIAS_EDITAL } from "../_shared/conector/envio-regras.ts";
 import { METODO_LEITURA_EDITAL, REGRAS_ATENDE } from "../_shared/edital/metodo.ts";
 
 const E = "00000000-0000-4000-8000-000000000001"; // empresa da chave
@@ -449,6 +450,37 @@ test("criar: com confirmar_nova grava na empresa da camada, com responsável, st
   assert.equal((dados_novos as Record<string, unknown>).alertar_prazos, true);
 });
 
+test("os três textos do edital mandam anexar por anexar_edital_por_url e deixam gerar_link_envio para o que só existe no chat", async () => {
+  const { deps } = montar(responderCriar([]));
+  const r = await ferramenta("criar_ou_atualizar_oportunidade").executar({ edital: EDITAL }, deps);
+  const proximoPasso = String(estrutura(r).proximo_passo);
+  const passo8 =
+    PROMPTS_EDITAL[0]
+      .montar({})
+      .split("\n")
+      .find((l) => l.startsWith("8. ")) ?? "";
+  const instrucoes = INSTRUCOES_EDITAL.join("\n");
+  const textos: [string, string][] = [
+    ["proximo_passo", proximoPasso],
+    ["passo 8 do analisar_edital", passo8],
+    ["INSTRUCOES_EDITAL", instrucoes],
+  ];
+  for (const [nome, texto] of textos) {
+    assert.ok(texto.includes("anexar_edital_por_url"), `${nome} não cita anexar_edital_por_url`);
+    assert.match(texto, /prefira anexar_edital_por_url \(link público https do arquivo\)/, nome);
+    assert.match(texto, /gerar_link_envio só (se|quando) o arquivo existe apenas no chat/, nome);
+    // o texto antigo mandava gerar_link_envio para todo PDF do edital
+    assert.doesNotMatch(texto, /(use|com) gerar_link_envio(\.| \()/, nome);
+  }
+  assert.ok(passo8.includes(CATEGORIAS_EDITAL.join(", ")), "o passo 8 perdeu as categorias");
+  assert.ok(instrucoes.length <= 800, `INSTRUCOES_EDITAL com ${instrucoes.length}`);
+  // a frase que aponta para o método completo (o prompt analisar_edital) continua nas instruções
+  assert.ok(
+    instrucoes.endsWith("O prompt analisar_edital traz o método completo."),
+    "as instruções do edital perderam a frase que aponta para o prompt analisar_edital"
+  );
+});
+
 test("criar: falha no histórico não desfaz a gravação", async () => {
   const base = responderCriar([]);
   const { deps } = montar((c) =>
@@ -631,6 +663,37 @@ test("registrar_atende: grava o atende pela RPC e devolve sem os valores da empr
   const json = r.resultado.content[0].text;
   assert.equal(json.includes(brl(PL)), false);
   assert.equal(json.includes(fmtNum(PL)), false);
+});
+
+test("registrar_atende: edital só com qualificação econômica aceita itens: [] e o SIGO calcula a parte econômica", async () => {
+  // é o que o passo do checklist manda ("a chamada vai com itens: []"): sem exigência técnica ou de registro não há o que avaliar
+  const soEconomica = structuredClone(EXTRAIDO_GRAVADO);
+  soEconomica.habilitacao.tecnica_operacional = [];
+  soEconomica.habilitacao.tecnica_profissional = [];
+  soEconomica.habilitacao.registros = [];
+  assert.ok(soEconomica.habilitacao.economica.length > 0);
+  const { fake, deps } = montar((c) =>
+    c.tabela === "oportunidade" && c.op === "select"
+      ? {
+          data: {
+            id: OP_A,
+            edital_analise: { versao: 1, extraido: soEconomica, atende: null, arquivos: [] },
+          },
+        }
+      : responderAtende(c)
+  );
+  const r = await ferramenta("registrar_atende").executar(
+    { oportunidade_id: OP_A, itens: [] },
+    deps
+  );
+  assert.equal(r.resultado.isError, false);
+  const mescla = fake.chamadas.find((c) => c.tabela === "edital_analise_mesclar")!;
+  const gravado = (
+    mescla.payload as { p_patch: { atende: { itens: { exigencia_id: string; status: string }[] } } }
+  ).p_patch.atende;
+  assert.ok(gravado.itens.length > 0);
+  assert.ok(gravado.itens.every((i) => i.exigencia_id.startsWith("ec")));
+  assert.equal(gravado.itens.find((i) => i.exigencia_id === "ec1")?.status, "atende");
 });
 
 test("registrar_atende: inválido dá validacao e não grava; sem análise dá sem_analise", async () => {

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import { createPageUrl } from "../utils";
@@ -12,6 +12,7 @@ import ResumoAcervo from "@/components/acervo/ResumoAcervo";
 import DocumentosAcervo from "@/components/acervo/DocumentosAcervo";
 import QuadroTecnico from "@/components/acervo/QuadroTecnico";
 import PerfilEconomico from "@/components/acervo/PerfilEconomico";
+import DocumentosHabilitacao from "@/components/acervo/DocumentosHabilitacao";
 
 /**
  * Acervo técnico da EMPRESA LOGADA (tabelas acervo_* da 0109, RLS por empresa):
@@ -27,15 +28,23 @@ import PerfilEconomico from "@/components/acervo/PerfilEconomico";
 // abas ficam montadas (forceMount) para não perder filtros nem edição não salva
 const CLASSE_ABA = "mt-4 data-[state=inactive]:hidden";
 
+// aba aberta pelo link (?aba=habilitacao), p. ex. o aviso de vencimento que leva à biblioteca
+const ABAS = ["resumo", "documentos", "quadro", "perfil", "habilitacao"];
+const abaDaUrl = (search) => {
+  const a = new URLSearchParams(search).get("aba");
+  return ABAS.includes(a) ? a : null;
+};
+
 export default function AcervoTecnico() {
   const { empresaAtiva } = useEmpresa();
+  const location = useLocation();
   const { can } = usePermission();
   const podeVer = can("Oportunidades", "Lista");
   const podeEditar = podeVer && can("Oportunidades", "Lista", "editar");
   const empresaId = empresaAtiva?.id;
   const nomeEmpresa = empresaAtiva?.nome || empresaAtiva?.nome_fantasia || "";
 
-  const [aba, setAba] = useState("resumo");
+  const [aba, setAba] = useState(() => abaDaUrl(location.search) ?? "resumo");
   const [carregando, setCarregando] = useState(true);
   const [carregado, setCarregado] = useState(false);
   const [erro, setErro] = useState(null);
@@ -43,21 +52,41 @@ export default function AcervoTecnico() {
   const [profissionais, setProfissionais] = useState([]);
   const [atestados, setAtestados] = useState([]);
   const [quantitativos, setQuantitativos] = useState([]);
+  const [documentos, setDocumentos] = useState([]);
+  // a leitura da biblioteca falhou: lista vazia não pode ser confundida com "sem documentos"
+  const [falhaDocumentos, setFalhaDocumentos] = useState(false);
   const [docFoco, setDocFoco] = useState(null);
   const pedido = useRef(0);
+
+  // o <Link> de um aviso (?aba=habilitacao) navega SEM remontar a página quando a pessoa já está
+  // aqui: reage à navegação (location.key) e à query string. Trocar de aba pelo clique não regrava a URL.
+  useEffect(() => {
+    const doLink = abaDaUrl(location.search);
+    if (doLink) setAba(doLink);
+  }, [location.key, location.search]);
 
   const carregar = useCallback(async () => {
     if (!empresaId || !podeVer) return; // sem permissão nem busca
     const meu = ++pedido.current; // descarta respostas de uma empresa anterior
     setCarregando(true);
     setErro(null);
+    let falhouDocumentos = false;
     try {
       const filtro = { empresa_id: empresaId };
-      const [perfis, profs, docs, quants] = await Promise.all([
+      const [perfis, profs, docs, quants, habilitacao] = await Promise.all([
         sigo.entities.AcervoPerfil.filter(filtro, { sort_by: "-updated_at", limit: 1 }),
         sigo.entities.AcervoProfissional.filter(filtro, { sort_by: "nome" }),
         sigo.entities.AcervoAtestado.filter(filtro, { sort_by: "ordem,data_inicio" }),
         sigo.entities.AcervoQuantitativo.filter(filtro, { sort_by: "ordem" }),
+        // a tabela só existe depois da migração 0159: a falha aqui não pode derrubar o resto da
+        // página, mas a aba precisa saber que a lista vazia é falha (falhaDocumentos), não "sem documentos"
+        sigo.entities.AcervoDocumento.filter(filtro, { sort_by: "tipo,nome", limit: 2000 }).catch(
+          (e) => {
+            console.error("[Acervo] documentos de habilitação:", e);
+            falhouDocumentos = true;
+            return [];
+          }
+        ),
       ]);
       if (meu !== pedido.current) return;
       const novo = perfis?.[0] || null;
@@ -68,6 +97,8 @@ export default function AcervoTecnico() {
       setProfissionais(profs || []);
       setAtestados(docs || []);
       setQuantitativos(quants || []);
+      setDocumentos(habilitacao || []);
+      setFalhaDocumentos(falhouDocumentos);
       setCarregado(true);
     } catch (e) {
       if (meu !== pedido.current) return;
@@ -86,6 +117,8 @@ export default function AcervoTecnico() {
     setProfissionais([]);
     setAtestados([]);
     setQuantitativos([]);
+    setDocumentos([]);
+    setFalhaDocumentos(false);
     carregar();
   }, [carregar]);
 
@@ -176,6 +209,9 @@ export default function AcervoTecnico() {
             <TabsTrigger value="documentos">Documentos ({atestados.length})</TabsTrigger>
             <TabsTrigger value="quadro">Quadro técnico ({profissionais.length})</TabsTrigger>
             <TabsTrigger value="perfil">Econômico-financeiro e registros</TabsTrigger>
+            <TabsTrigger value="habilitacao">
+              Documentos e certidões ({documentos.filter((d) => d.ativo !== false).length})
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="resumo" forceMount className={CLASSE_ABA}>
@@ -184,6 +220,7 @@ export default function AcervoTecnico() {
               quantitativos={quantitativos}
               perfil={perfil}
               profissionais={profissionais}
+              documentos={documentos}
               onIrPara={setAba}
               onAbrirDocumento={abrirDocumento}
             />
@@ -215,6 +252,15 @@ export default function AcervoTecnico() {
               empresaId={empresaId}
               onRecarregar={carregar}
               podeEditar={podeEditar}
+            />
+          </TabsContent>
+          <TabsContent value="habilitacao" forceMount className={CLASSE_ABA}>
+            <DocumentosHabilitacao
+              documentos={documentos}
+              empresaId={empresaId}
+              onRecarregar={carregar}
+              podeEditar={podeEditar}
+              erroCarga={falhaDocumentos}
             />
           </TabsContent>
         </Tabs>
