@@ -1250,48 +1250,120 @@ git push origin master
   motivo, em palavras simples: o código antigo não conhece as atividades. A função antiga não sabe que as questões de
   um questionário são só daquele questionário: ela as põe na **prova final** e nos requisitos do curso (a prova final
   passaria a sortear perguntas dos exercícios). E o site antigo mostra "Marcar como lida" em toda aula que não é vídeo,
-  enquanto o servidor antigo conclui por tempo: o aluno passaria pelo questionário e pelo caso sem responder nada. Antes
-  de existir qualquer atividade (por exemplo, logo depois do passo 4, antes do roteiro 9.6), voltar o código é seguro.
+  enquanto o servidor antigo conclui por tempo: o aluno passaria pelo questionário e pelo caso sem responder nada. Só é
+  seguro voltar o código enquanto não existir nenhuma atividade em nenhuma empresa (por exemplo, logo depois do passo
+  4, antes do roteiro 9.6): o PASSO 0 abaixo confere isso.
 
-**Se for mesmo preciso voltar atrás (só com o OK explícito do Javerson).** A ordem é: 1) a limpeza abaixo, que tira do
-ar as atividades; 2) reverter o merge no master (`git revert -m 1 <commit do merge>` e push, que republica o site
-antigo); 3) publicar de novo a função a partir do commit anterior. Os passos 2 e 3 vão juntos, um logo depois do
-outro. A limpeza vem primeiro porque, com o código novo ainda no ar, o aluno só deixa de ver as atividades, sem nenhum
-efeito estranho.
+**Se for mesmo preciso voltar atrás (só com o OK explícito do Javerson).** Reverter o site e a função vale para
+**todas as empresas** do SaaS ao mesmo tempo, e o código antigo erra com qualquer atividade que exista, em qualquer
+empresa. Por isso a conferência e a limpeza olham todas as empresas, não uma só. A ordem é:
+
+1. **PASSO 0 (conferência), antes de tudo.** Lista, por empresa e curso (pelo nome, sem UUID), tudo o que está vivo:
+   aulas de questionário, caso e tarefa, questões dos questionários e roteiros dos casos. Se aparecer uma empresa que o
+   Javerson não conhece, ele fala com o cliente antes de seguir: alguém de lá criou ou importou atividades e vai
+   deixar de vê-las.
+2. **PASSO B (limpeza)**, que tira as atividades do ar (versão global ou por curso, abaixo).
+3. **PASSO 0 de novo. Regra: só reverter quando o PASSO 0 voltar zero linhas.** Rodar o PASSO 0 mais uma vez logo antes
+   do `git push` do passo 4, porque o RH de alguma empresa pode criar uma atividade nova entre a limpeza e o revert.
+4. Reverter o merge no master e dar o push (que republica o site antigo).
+5. Publicar de novo a função de antes do merge.
+
+Os passos 4 e 5 vão juntos, um logo depois do outro. A limpeza vem primeiro porque, com o código novo ainda no ar, o
+aluno só deixa de ver as atividades, sem nenhum efeito estranho.
 
 A limpeza é **exclusão lógica** (`deleted_at = now()`): nada é destruído, e as tentativas que os alunos já fizeram
 continuam guardadas. O que muda: as aulas de questionário, caso e tarefa somem da lista do curso (a carga prevista
 cai), junto com as questões dos questionários (as da prova final ficam) e os roteiros dos casos. Quem já tinha feito
-essas aulas deixa de vê-las, e o progresso delas fica guardado no banco sem aparecer.
+essas aulas deixa de vê-las, e o progresso delas fica guardado no banco sem aparecer. Esses três tipos de aula e as
+questões com `aula_id` só existem depois da 0170, então a limpeza não toca em nada do que havia antes.
 
-Quem roda é o Javerson, no checkout principal (`C:\Users\javer\sigoobras-base`), com o SQL salvo num arquivo fora do
-repositório e o comando `npx supabase@2.118.0 db query --linked -f <arquivo>` (ou colando no SQL Editor do Supabase).
-Nesses dois caminhos quem roda é o servidor (superusuário, sem login de usuário), e o gatilho `zz_permissao_ead` deixa
-passar; pelo app, o mesmo UPDATE só passaria com a permissão Treinamentos EAD → Editar. O SQL escolhe a empresa e o
-curso **pelo nome**, sem UUID: trocar os textos `TROQUE...` pelos nomes exatos como aparecem no sistema. Para valer para
-**todos** os cursos da empresa, apagar a linha do curso (`and c.nome = ...`) nos dois passos.
+**Atenção com a carga horária.** Depois da limpeza, um curso que só cumpria o requisito de carga horária (LASTRO) graças
+às atividades deixa de poder ser publicado e de aceitar matrícula nova: o painel de requisitos passa a acusar a
+pendência. O PASSO 0 mostra quais cursos têm atividades; os outros não mudam.
+
+**Duas versões da limpeza.** Use a **global** (todas as empresas de uma vez) quando for reverter de verdade e o Javerson
+já tiver falado com os clientes que apareceram no PASSO 0: é a que deixa o PASSO 0 em zero de uma vez. Use a **por
+curso** quando for tratar um cliente de cada vez (por exemplo, depois de falar com cada um) ou limpar só um curso: ela
+escolhe empresa e curso pelo nome, copiado do PASSO 0, e se repete até o PASSO 0 zerar.
+
+**Como rodar.** Quem roda é o Javerson, no checkout principal (`C:\Users\javer\sigoobras-base`). Salvar **cada passo
+num arquivo SEPARADO**, fora do repositório (por exemplo `C:\Users\javer\limpeza-ead\passo0-conferencia.sql` e
+`C:\Users\javer\limpeza-ead\passo-b-limpeza.sql`), e rodar **um de cada vez**: o `db query` e o SQL Editor tendem a
+mostrar só o resultado do último comando, então conferência e limpeza no mesmo arquivo escondem a conferência. O comando
+é `npx supabase@2.118.0 db query --linked -f <arquivo>` (ou colar o conteúdo no SQL Editor do Supabase). O gatilho
+`zz_permissao_ead` deixa passar porque a função `chamador_eh_servidor()` vê que a chamada não traz token de usuário
+(JWT); no SQL Editor, quem roda é o papel `postgres`, sem token de usuário. Pelo app, com o login de uma pessoa, o mesmo
+UPDATE só passaria com a permissão Treinamentos EAD → Editar. Para um ensaio da limpeza, trocar o `commit;` por
+`rollback;`.
 
 ```sql
--- PASSO A: conferência (só lê; nada muda). Mostra quanto existe e seria apagado em cada curso escolhido.
-select c.nome as curso,
-       (select count(*) from public.treinamento_aula a
-         where a.curso_id = c.id and a.deleted_at is null and a.tipo = 'questionario') as questionarios,
-       (select count(*) from public.treinamento_aula a
-         where a.curso_id = c.id and a.deleted_at is null and a.tipo = 'caso') as casos,
-       (select count(*) from public.treinamento_aula a
-         where a.curso_id = c.id and a.deleted_at is null and a.tipo = 'tarefa') as tarefas,
-       (select count(*) from public.treinamento_questao q
-         where q.curso_id = c.id and q.deleted_at is null and q.aula_id is not null) as questoes_dos_questionarios,
-       (select count(*) from public.treinamento_caso k
-         where k.curso_id = c.id and k.deleted_at is null) as roteiros
+-- PASSO 0: conferência de TODAS as empresas (só lê; nada muda). Uma linha por empresa e curso com atividade viva.
+-- Zero linhas = não há atividade em lugar nenhum. Inclui curso apagado (a atividade dele também conta).
+select e.nome as empresa,
+       c.nome as curso,
+       x.questionarios,
+       x.casos,
+       x.tarefas,
+       x.questoes_dos_questionarios,
+       x.roteiros
   from public.treinamento_curso c
   join public.empresa e on e.id = c.empresa_id
- where e.nome = 'TROQUE PELO NOME DA EMPRESA'
-   and c.nome = 'TROQUE PELO NOME DO CURSO'
-   and c.deleted_at is null
- order by c.nome;
+ cross join lateral (
+       select
+         (select count(*) from public.treinamento_aula a
+           where a.curso_id = c.id and a.deleted_at is null and a.tipo = 'questionario') as questionarios,
+         (select count(*) from public.treinamento_aula a
+           where a.curso_id = c.id and a.deleted_at is null and a.tipo = 'caso') as casos,
+         (select count(*) from public.treinamento_aula a
+           where a.curso_id = c.id and a.deleted_at is null and a.tipo = 'tarefa') as tarefas,
+         (select count(*) from public.treinamento_questao q
+           where q.curso_id = c.id and q.deleted_at is null and q.aula_id is not null) as questoes_dos_questionarios,
+         (select count(*) from public.treinamento_caso k
+           where k.curso_id = c.id and k.deleted_at is null) as roteiros
+       ) x
+ where x.questionarios + x.casos + x.tarefas + x.questoes_dos_questionarios + x.roteiros > 0
+ order by e.nome, c.nome;
+```
 
--- PASSO B: só depois de conferir o passo A (nenhuma linha = nome errado). Para um ensaio, troque o commit por rollback.
+```sql
+-- PASSO B, versão GLOBAL: limpa todas as empresas e todos os cursos de uma vez (arquivo próprio).
+-- Se qualquer trava abaixo disparar, o erro desfaz tudo: nada é gravado.
+begin;
+
+-- 1) as questões dos questionários (as da prova final têm aula_id vazio e ficam)
+update public.treinamento_questao
+   set deleted_at = now()
+ where aula_id is not null and deleted_at is null;
+
+-- 2) os roteiros dos casos
+update public.treinamento_caso
+   set deleted_at = now()
+ where deleted_at is null;
+
+-- 3) por último, as aulas dos três tipos novos
+update public.treinamento_aula
+   set deleted_at = now()
+ where tipo in ('questionario', 'caso', 'tarefa') and deleted_at is null;
+
+-- trava: se sobrou atividade viva, aborta tudo
+do $$
+begin
+  if exists (select 1 from public.treinamento_aula
+              where tipo in ('questionario', 'caso', 'tarefa') and deleted_at is null)
+     or exists (select 1 from public.treinamento_questao
+                 where aula_id is not null and deleted_at is null)
+     or exists (select 1 from public.treinamento_caso where deleted_at is null) then
+    raise exception 'Sobrou atividade viva: nada foi apagado.';
+  end if;
+end
+$$;
+
+commit;
+```
+
+```sql
+-- PASSO B, versão POR CURSO: um curso de uma empresa, pelo nome (copiar do PASSO 0), em arquivo próprio.
+-- Se qualquer trava abaixo disparar, o erro desfaz tudo: nada é gravado.
 begin;
 
 create temp table alvo on commit drop as
@@ -1299,8 +1371,16 @@ select c.id as curso_id
   from public.treinamento_curso c
   join public.empresa e on e.id = c.empresa_id
  where e.nome = 'TROQUE PELO NOME DA EMPRESA'
-   and c.nome = 'TROQUE PELO NOME DO CURSO'
-   and c.deleted_at is null;
+   and c.nome = 'TROQUE PELO NOME DO CURSO';
+
+-- trava: nome com erro de grafia (nenhum curso escolhido) aborta antes de gravar qualquer coisa
+do $$
+begin
+  if not exists (select 1 from alvo) then
+    raise exception 'Nenhum curso com esses nomes: nada foi apagado. Confira a grafia com o PASSO 0.';
+  end if;
+end
+$$;
 
 -- 1) as questões dos questionários (as da prova final têm aula_id vazio e ficam)
 update public.treinamento_questao
@@ -1319,19 +1399,48 @@ update public.treinamento_aula
    and tipo in ('questionario', 'caso', 'tarefa')
    and deleted_at is null;
 
--- conferência final: os três "que_sobraram" têm de ser 0 e cursos_escolhidos, o número de cursos que você quis
-select (select count(*) from alvo) as cursos_escolhidos,
-       (select count(*) from public.treinamento_aula
-         where curso_id in (select curso_id from alvo)
-           and tipo in ('questionario', 'caso', 'tarefa') and deleted_at is null) as aulas_que_sobraram,
-       (select count(*) from public.treinamento_questao
-         where curso_id in (select curso_id from alvo)
-           and aula_id is not null and deleted_at is null) as questoes_que_sobraram,
-       (select count(*) from public.treinamento_caso
-         where curso_id in (select curso_id from alvo) and deleted_at is null) as roteiros_que_sobraram;
+-- trava: se sobrou atividade viva nos cursos escolhidos, aborta tudo
+do $$
+begin
+  if exists (select 1 from public.treinamento_aula
+              where curso_id in (select curso_id from alvo)
+                and tipo in ('questionario', 'caso', 'tarefa') and deleted_at is null)
+     or exists (select 1 from public.treinamento_questao
+                 where curso_id in (select curso_id from alvo) and aula_id is not null and deleted_at is null)
+     or exists (select 1 from public.treinamento_caso
+                 where curso_id in (select curso_id from alvo) and deleted_at is null) then
+    raise exception 'Sobrou atividade viva nos cursos escolhidos: nada foi apagado.';
+  end if;
+end
+$$;
 
 commit;
 ```
+
+**Passos 4 e 5 (só depois de o PASSO 0 voltar zero linhas).**
+
+```powershell
+# 4. site: reverter o merge no master (o push republica o site antigo), no checkout principal.
+#    O --no-edit evita que o Git abra o editor (vim, no Windows) para a mensagem do revert
+cd C:\Users\javer\sigoobras-base
+git status
+git switch master
+git pull
+git revert -m 1 --no-edit <commit do merge>
+git push origin master
+
+# 5. função: publicar a versão de ANTES do merge, NO WORKTREE (o commit de antes é o primeiro pai do merge)
+cd C:\Users\javer\sigoobras-wt-ead-interativas
+git switch --detach <commit do merge>^1
+git status
+npx supabase@2.118.0 functions deploy portal-funcionario --project-ref fpyvdwpvxrubrkdwrqbs --no-verify-jwt --use-api
+git switch feat/ead-atividades-interativas
+```
+
+Em palavras simples: o deploy leva para o Supabase a pasta das funções **do jeito que ela está no disco naquele
+momento**, inclusive a `_shared/`. Por isso, antes do deploy, o worktree tem de estar no commit de antes do merge (e não
+na branch nova, senão a função nova seria publicada de volta ou uma mistura das duas) e o `git status` tem de estar
+vazio. Depois do deploy, voltar para a branch com o último `git switch`.
 
 **Se aparecer erro**
 
