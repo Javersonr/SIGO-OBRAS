@@ -213,17 +213,35 @@ export function avisoDeMudanca(
  * Texto da confirmação de remover uma aula. Sempre pergunta; quando há matrículas em andamento no
  * curso, ou alguém com progresso nesta aula, diz quantas e o que acontece. A exclusão é lógica: o
  * tempo assistido segue no banco, só deixa de contar para a conclusão.
+ *
+ * Atividades interativas: numa aula de caso com roteiro (`tipo: "caso"`, `temRoteiro`) e numa de questionário com
+ * questões vivas (`tipo: "questionario"`, `questoes` = quantas), o aviso diz que o roteiro ou as questões saem junto
+ * (a tela os remove junto, também com exclusão lógica).
  */
 export function textoConfirmarRemocaoAula({
   tituloAula,
   emAndamento = 0,
   comProgresso = 0,
   concluiramAula = 0,
+  tipo = null,
+  temRoteiro = false,
+  questoes = 0,
 } = {}) {
   const pergunta = tituloAula
     ? `Remover a aula "${tituloAula}" deste curso?`
     : "Remover esta aula do curso?";
-  if (!(emAndamento > 0) && !(comProgresso > 0)) return pergunta;
+  let saiJunto = "";
+  if (tipo === "caso" && temRoteiro) {
+    saiJunto = "O roteiro do caso é removido junto com a aula.";
+  } else if (tipo === "questionario" && questoes > 0) {
+    saiJunto =
+      questoes === 1
+        ? "A questão deste questionário é removida junto com a aula."
+        : `As ${questoes} questões deste questionário são removidas junto com a aula.`;
+  }
+  if (!(emAndamento > 0) && !(comProgresso > 0)) {
+    return saiJunto ? `${pergunta}\n\n${saiJunto}` : pergunta;
+  }
 
   const linhas = [pergunta, ""];
   if (comProgresso > 0) linhas.push(`${fraseDeProgresso(comProgresso, concluiramAula)}.`);
@@ -235,5 +253,6 @@ export function textoConfirmarRemocaoAula({
   if (comProgresso > 0) {
     linhas.push("O tempo já assistido fica guardado como registro de auditoria.");
   }
+  if (saiJunto) linhas.push(saiJunto);
   return linhas.join("\n");
 }

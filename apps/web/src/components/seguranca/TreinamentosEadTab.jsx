@@ -27,7 +27,8 @@ import {
   separarQuestoes,
   situacaoDaAtividade,
 } from "@/lib/ead-aula-nova";
-import { novoCasoVazio } from "@/lib/ead-caso";
+import { novoCasoVazio, validarCaso } from "@/lib/ead-caso";
+import { casoMudou, casoParaEditar } from "@/lib/ead-caso-edicao";
 import { parseDuracao, formatDuracao, lerDuracaoVideo } from "@/lib/ead-duracao";
 import {
   formatarHoras,
@@ -116,6 +117,7 @@ import MatriculaAuditoriaSheet from "@/components/seguranca/MatriculaAuditoriaSh
 import DuvidasTutorCard from "@/components/seguranca/DuvidasTutorCard";
 import AulaLinhaEad from "@/components/seguranca/AulaLinhaEad";
 import QuestoesEad from "@/components/seguranca/QuestoesEad";
+import CasoEditor from "@/components/seguranca/CasoEditor";
 import PreRequisitoCursoCampo from "@/components/seguranca/PreRequisitoCursoCampo";
 import AssinaturaCursoCampo from "@/components/seguranca/AssinaturaCursoCampo";
 import ProjetoPedagogicoCurso from "@/components/seguranca/ProjetoPedagogicoCurso";
@@ -139,6 +141,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -302,7 +305,7 @@ export default function TreinamentosEadTab({
   // diálogo "Questões" de um questionário do módulo: a aula aberta (ou null)
   const [questionarioAberto, setQuestionarioAberto] = useState(null);
   // editor do caso com decisões: null, { modo: "novo", dados, conteudo, ... } ou { modo: "editar", id, aula, ... }.
-  // O diálogo é desenhado na Task 17; aqui nasce o estado e o `abrirCasoNovo` que a "Nova aula" chama.
+  // `abrirCasoNovo` (a "Nova aula") e `abrirCasoDaAula` (a linha da aula) o abrem; `salvarCaso` grava.
   const [casoEditando, setCasoEditando] = useState(null);
   const [novaQuestao, setNovaQuestao] = useState(null); // {pergunta, opcoes[4], correta}
   const [treinamentosConfig, setTreinamentosConfig] = useState([]);
@@ -601,6 +604,8 @@ export default function TreinamentosEadTab({
   const questoesSeparadas = useMemo(() => separarQuestoes(questoes), [questoes]);
   // o roteiro de cada aula de caso (o requisito, o selo "sem roteiro" e o editor do caso)
   const casoPorAula = useMemo(() => new Map(todosCasos.map((c) => [c.aula_id, c])), [todosCasos]);
+  // o "Salvar caso" fica desabilitado com qualquer problema do roteiro (a mesma conta que o editor mostra)
+  const problemasDoCaso = casoEditando ? validarCaso(casoEditando.conteudo) : [];
   const funcPorId = useMemo(() => new Map(funcionarios.map((f) => [f.id, f])), [funcionarios]);
   // com os ex-funcionários: a tabela e os detalhes da matrícula mostram o nome de quem já saiu
   const funcTodosPorId = useMemo(
@@ -950,6 +955,107 @@ export default function TreinamentosEadTab({
     } finally {
       encerrarEnvio(controle);
     }
+  };
+
+  // "Editar caso" (ou "Ver caso", sem Editar) na linha da aula: o roteiro gravado; aula sem roteiro abre o vazio
+  const abrirCasoDaAula = (aula) => {
+    const gravado = casoPorAula.get(aula.id) ?? null;
+    const conteudo = gravado ? casoParaEditar(gravado.conteudo) : novoCasoVazio();
+    setCasoEditando({
+      modo: "editar",
+      id: aula.id,
+      aula,
+      casoId: gravado?.id ?? null,
+      conteudo,
+      original: gravado ? conteudo : null,
+    });
+  };
+
+  // Grava o caso com decisões. Caso novo: cria a aula e, em seguida, o roteiro; se o roteiro falhar, a aula criada
+  // sai (sem roteiro ela ficaria pendente no curso, e o SDK não tem transação). Caso existente: só o roteiro muda,
+  // com o aviso de impacto quando alguém já está nele (quem está no meio pode recomeçar, §4.3).
+  const salvarCaso = async () => {
+    const editando = casoEditando; // o editor que o RH mandou salvar
+    if (!editando || validarCaso(editando.conteudo).length) return;
+    const empresaId = empresaAtiva.id;
+    if (editando.modo === "novo") {
+      const cursoId = editando.dados.curso_id;
+      if (!(await confirmarImpacto("aula_nova", { cursoId }))) return;
+      await gravar("caso", "Erro ao criar o caso", async () => {
+        const aula = await sigo.entities.TreinamentoAula.create(editando.dados);
+        try {
+          await sigo.entities.TreinamentoCaso.create({
+            empresa_id: editando.dados.empresa_id,
+            curso_id: cursoId,
+            aula_id: aula.id,
+            conteudo: editando.conteudo,
+          });
+        } catch (e) {
+          let removida = true;
+          await sigo.entities.TreinamentoAula.delete(aula.id).catch((erro) => {
+            removida = false;
+            console.error("[caso] a aula sem roteiro não pôde ser removida:", erro);
+          });
+          if (!removida) {
+            // a aula ficou no banco (aparece na lista como "sem roteiro"): o editor aberto passa a ser o dela, e
+            // "Salvar" só grava o roteiro. Em "novo" ele criaria uma segunda aula e deixaria esta sem roteiro.
+            setCasoEditando((atual) =>
+              mesmoFormulario(atual, editando)
+                ? {
+                    modo: "editar",
+                    id: aula.id,
+                    aula,
+                    casoId: null,
+                    conteudo: editando.conteudo,
+                    original: null,
+                  }
+                : atual
+            );
+            recarregar();
+          }
+          const motivo = String(e?.message || e).replace(/[.\s]+$/, "");
+          throw new Error(
+            removida
+              ? `${motivo}. A aula não foi criada: tente salvar de novo.`
+              : `${motivo}. A aula ficou no curso sem roteiro: salve de novo para gravar o roteiro, ou remova a aula.`
+          );
+        }
+        setCasoEditando((atual) => (mesmoFormulario(atual, editando) ? null : atual));
+        // a "Nova aula" fica pronta para o próximo caso do mesmo módulo (só no mesmo curso e na mesma empresa)
+        if (cargas.mesmaEmpresa(empresaId) && cursoSelRef.current?.id === cursoId) {
+          setNovaAula((atual) => ({ ...NOVA_AULA, modulo: atual.modulo, tipo: "caso" }));
+        }
+        toast.success("Caso criado");
+        recarregar();
+      });
+      return;
+    }
+    const aula = editando.aula;
+    if (
+      editando.original &&
+      casoMudou(editando.original, editando.conteudo) &&
+      !(await confirmarImpacto("caso_alterar", { cursoId: aula.curso_id, aulaId: aula.id }))
+    ) {
+      return;
+    }
+    await gravar("caso", "Erro ao salvar o caso", async () => {
+      if (editando.casoId) {
+        await sigo.entities.TreinamentoCaso.update(editando.casoId, {
+          conteudo: editando.conteudo,
+        });
+      } else {
+        // aula de caso sem roteiro (criada por fora da tela): o roteiro nasce agora
+        await sigo.entities.TreinamentoCaso.create({
+          empresa_id: empresaId,
+          curso_id: aula.curso_id,
+          aula_id: aula.id,
+          conteudo: editando.conteudo,
+        });
+      }
+      setCasoEditando((atual) => (mesmoFormulario(atual, editando) ? null : atual));
+      toast.success("Caso salvo");
+      recarregar();
+    });
   };
 
   // ZIP de fiscalização do curso (NR-1, 1.6.5, 1.7.4 e Anexo II): projeto pedagógico, matrículas, trilha,
@@ -1355,13 +1461,34 @@ export default function TreinamentosEadTab({
     }
     const confirmado = await confirmar({
       titulo: "Remover a aula?",
-      texto: textoConfirmarRemocaoAula({ tituloAula: aula.titulo, ...impacto }),
+      texto: textoConfirmarRemocaoAula({
+        tituloAula: aula.titulo,
+        ...impacto,
+        // o roteiro do caso e as questões do questionário saem junto (atividades interativas)
+        tipo: aula.tipo,
+        temRoteiro: casoPorAula.has(aula.id),
+        questoes: todasQuestoes.filter((q) => q.aula_id === aula.id).length,
+      }),
       rotuloConfirmar: "Remover aula",
       destrutivo: true,
     });
     if (!confirmado) return;
     await gravar(`remover-aula-${aula.id}`, "Erro ao remover a aula", async () => {
       await sigo.entities.TreinamentoAula.delete(aula.id);
+      // a exclusão lógica da aula não dispara o "on delete cascade" do banco: o roteiro do caso e as questões vivas
+      // do questionário recebem a exclusão lógica aqui. A aula já saiu; se isso falhar, o resto fica sem aula (nada
+      // do aluno nem do RH o lê) e o RH é avisado.
+      const filhos = { empresa_id: aula.empresa_id, aula_id: aula.id, deleted_at: null };
+      try {
+        if (aula.tipo === "caso") await sigo.entities.TreinamentoCaso.deleteMany(filhos);
+        if (aula.tipo === "questionario") await sigo.entities.TreinamentoQuestao.deleteMany(filhos);
+      } catch (e) {
+        console.error("[aula] a aula saiu, mas o roteiro ou as questões dela não:", e);
+        toast.warning(
+          `A aula foi removida, mas ${aula.tipo === "caso" ? "o roteiro" : "as questões"} dela não pôde ser apagado: ` +
+            (e?.message || e)
+        );
+      }
       setAulaEditando((atual) => (atual?.id === aula.id ? null : atual));
       recarregar();
     });
@@ -2434,6 +2561,7 @@ export default function TreinamentosEadTab({
                             onTrocarArquivo={(arquivo) => trocarArquivoDaAula(a, arquivo)}
                             onLegenda={(arquivo) => enviarLegenda(a, arquivo)}
                             onQuestoes={() => abrirQuestionario(a)}
+                            onCaso={() => abrirCasoDaAula(a)}
                           />
                           {envio?.alvo === a.id && (
                             <EnvioProgressoEad envio={envio} onCancelar={cancelarEnvio} />
@@ -2889,6 +3017,57 @@ export default function TreinamentosEadTab({
               />
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* caso com decisões (atividades interativas): criar (a partir da "Nova aula") e editar o roteiro */}
+      <Dialog
+        open={!!casoEditando}
+        onOpenChange={(aberto) => {
+          if (!aberto && !gravando.has("caso")) setCasoEditando(null);
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {casoEditando?.modo === "novo" ? "Novo caso com decisões" : "Caso com decisões"}
+            </DialogTitle>
+            <DialogDescription>
+              {casoEditando?.modo === "novo"
+                ? casoEditando.dados.titulo
+                : casoEditando?.aula?.titulo}
+              . O aluno começa na primeira etapa e só vê o texto das opções; o comentário aparece
+              depois da escolha, e só uma escolha segura que leva a “Fim do caso” encerra o caso.
+            </DialogDescription>
+          </DialogHeader>
+          {casoEditando && (
+            <CasoEditor
+              valor={casoEditando.conteudo}
+              onChange={(conteudo) =>
+                setCasoEditando((atual) => (atual ? { ...atual, conteudo } : atual))
+              }
+              desabilitado={!pode.editar || gravando.has("caso")}
+            />
+          )}
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setCasoEditando(null)}
+              disabled={gravando.has("caso")}
+            >
+              {pode.editar ? "Cancelar" : "Fechar"}
+            </Button>
+            {pode.editar && (
+              <Button
+                onClick={salvarCaso}
+                disabled={gravando.has("caso") || problemasDoCaso.length > 0}
+                className="bg-slate-900 hover:bg-slate-800"
+              >
+                {gravando.has("caso") && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+                Salvar caso
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

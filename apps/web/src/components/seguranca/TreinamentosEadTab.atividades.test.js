@@ -66,3 +66,70 @@ describe("aba Treinamentos: atividades interativas (Task 16)", () => {
     expect(aba).toContain("onQuestoes={() => abrirQuestionario(a)}");
   });
 });
+
+describe("aba Treinamentos: caso com decisões (Task 17)", () => {
+  it("caso novo cria a aula e depois o roteiro; se o roteiro falhar, a aula sai", () => {
+    const salvar = funcao(aba, "salvarCaso");
+    const aula = salvar.indexOf("TreinamentoAula.create(editando.dados)");
+    const roteiro = salvar.indexOf("TreinamentoCaso.create({");
+    expect(aula).toBeGreaterThan(-1);
+    expect(roteiro).toBeGreaterThan(aula);
+    expect(salvar).toMatch(/aula_id: aula\.id,\s*conteudo: editando\.conteudo/);
+    expect(salvar).toContain("TreinamentoAula.delete(aula.id)");
+    expect(salvar).toContain('confirmarImpacto("aula_nova"');
+  });
+
+  it("se nem a aula sair, o editor aberto passa a ser o da aula criada (salvar de novo não a duplica)", () => {
+    const salvar = funcao(aba, "salvarCaso");
+    expect(salvar).toMatch(
+      /mesmoFormulario\(atual, editando\)\s*\?\s*\{\s*modo: "editar",\s*id: aula\.id,\s*aula,\s*casoId: null,\s*conteudo: editando\.conteudo,\s*original: null,?\s*\}\s*:\s*atual/
+    );
+    expect(salvar).toContain("A aula não foi criada");
+    expect(salvar).toContain("A aula ficou no curso sem roteiro");
+  });
+
+  it("editar o caso só muda o conteúdo, com o aviso de impacto quando o roteiro muda", () => {
+    const salvar = funcao(aba, "salvarCaso");
+    expect(salvar).toMatch(
+      /TreinamentoCaso\.update\(editando\.casoId, \{\s*conteudo: editando\.conteudo,?\s*\}\)/
+    );
+    expect(salvar).toContain('confirmarImpacto("caso_alterar"');
+    expect(salvar).toContain("casoMudou(editando.original, editando.conteudo)");
+  });
+
+  it("Salvar fica desabilitado com problema no roteiro (a mesma validarCaso do editor)", () => {
+    expect(aba).toContain(
+      "const problemasDoCaso = casoEditando ? validarCaso(casoEditando.conteudo) : [];"
+    );
+    expect(aba).toMatch(/disabled=\{gravando\.has\("caso"\) \|\| problemasDoCaso\.length > 0\}/);
+    expect(aba).toMatch(
+      /<CasoEditor[\s\S]*?desabilitado=\{!pode\.editar \|\| gravando\.has\("caso"\)\}/
+    );
+  });
+
+  it("a linha da aula de caso abre o editor (Editar caso / Ver caso)", () => {
+    expect(aba).toContain("onCaso={() => abrirCasoDaAula(a)}");
+  });
+});
+
+describe("aba Treinamentos: remover aula de atividade (Task 17)", () => {
+  it("o diálogo avisa que o roteiro ou as questões saem junto", () => {
+    const remover = funcao(aba, "removerAula");
+    expect(remover).toMatch(/textoConfirmarRemocaoAula\(\{[\s\S]*?tipo: aula\.tipo,/);
+    expect(remover).toContain("temRoteiro: casoPorAula.has(aula.id)");
+    expect(remover).toContain("todasQuestoes.filter((q) => q.aula_id === aula.id).length");
+  });
+
+  it("depois da aula, o roteiro e as questões vivas dela também recebem exclusão lógica", () => {
+    const remover = funcao(aba, "removerAula");
+    const aula = remover.indexOf("TreinamentoAula.delete(aula.id)");
+    const roteiro = remover.indexOf("TreinamentoCaso.deleteMany(filhos)");
+    const questoes = remover.indexOf("TreinamentoQuestao.deleteMany(filhos)");
+    expect(aula).toBeGreaterThan(-1);
+    expect(roteiro).toBeGreaterThan(aula);
+    expect(questoes).toBeGreaterThan(aula);
+    expect(remover).toMatch(
+      /filhos = \{\s*empresa_id: aula\.empresa_id,\s*aula_id: aula\.id,\s*deleted_at: null,?\s*\}/
+    );
+  });
+});

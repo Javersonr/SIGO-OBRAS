@@ -263,3 +263,42 @@ describe("mudouNotaMinimaDoModulo", () => {
     expect(mudouNotaMinimaDoModulo({ nota_minima_modulo: 70 }, 80)).toBe(true);
   });
 });
+
+describe("textoConfirmarRemocaoAula: o que sai junto com a aula de atividade", () => {
+  it("aula de caso com roteiro: o aviso diz que o roteiro sai junto, com ou sem alunos", () => {
+    const sem = textoConfirmarRemocaoAula({ tituloAula: "Caso 1", tipo: "caso", temRoteiro: true });
+    expect(sem).toContain('Remover a aula "Caso 1" deste curso?');
+    expect(sem).toMatch(/roteiro do caso .* removido junto com a aula/);
+    const com = textoConfirmarRemocaoAula({
+      tituloAula: "Caso 1",
+      tipo: "caso",
+      temRoteiro: true,
+      emAndamento: 2,
+      comProgresso: 1,
+    });
+    expect(com).toMatch(/roteiro do caso .* removido junto com a aula/);
+    expect(com).toContain("2 matrículas em andamento");
+  });
+
+  it("aula de caso sem roteiro não cita roteiro", () => {
+    expect(textoConfirmarRemocaoAula({ tituloAula: "Caso 1", tipo: "caso" })).not.toMatch(
+      /roteiro/
+    );
+  });
+
+  it("questionário: diz quantas questões saem junto (singular e plural) e fica quieto sem questões", () => {
+    const duas = textoConfirmarRemocaoAula({ tituloAula: "Q", tipo: "questionario", questoes: 2 });
+    expect(duas).toContain("As 2 questões deste questionário são removidas junto com a aula");
+    const uma = textoConfirmarRemocaoAula({ tituloAula: "Q", tipo: "questionario", questoes: 1 });
+    expect(uma).toContain("A questão deste questionário é removida junto com a aula");
+    expect(textoConfirmarRemocaoAula({ tituloAula: "Q", tipo: "questionario" })).not.toMatch(
+      /questão|questões/
+    );
+  });
+
+  it("outros tipos não ganham aviso, mesmo com contagem solta", () => {
+    expect(textoConfirmarRemocaoAula({ tituloAula: "V", tipo: "video", questoes: 3 })).toBe(
+      'Remover a aula "V" deste curso?'
+    );
+  });
+});
