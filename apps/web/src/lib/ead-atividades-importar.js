@@ -50,7 +50,7 @@ const escaparRegex = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function lerJson(json) {
   if (typeof json !== "string") return { dados: json, erro: null };
   try {
-    return { dados: JSON.parse(json.replace(/^﻿/, "")), erro: null };
+    return { dados: JSON.parse(json.replace(/^\uFEFF/, "")), erro: null };
   } catch {
     return { dados: null, erro: "O arquivo não é um JSON válido." };
   }

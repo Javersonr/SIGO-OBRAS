@@ -456,7 +456,7 @@ export default function ImportarAtividadesDialog({ aberto, onFechar, curso, aula
       }
       let json;
       try {
-        json = JSON.parse(conteudo.replace(/^﻿/, ""));
+        json = JSON.parse(conteudo.replace(/^\uFEFF/, ""));
       } catch (e) {
         setErrosDoArquivo([
           `O arquivo "${arquivo.name}" não é um JSON válido (${e?.message || e}). Confira se é o arquivo certo.`,
