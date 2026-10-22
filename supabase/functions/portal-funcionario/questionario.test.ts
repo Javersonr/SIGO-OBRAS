@@ -10,6 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   aulaDaAtividade,
+  conclusaoPendente,
   MSG_QUESTIONARIO_INDISPONIVEL,
   MSG_QUESTIONARIO_VAZIO,
   mensagemDoEnvio,
@@ -18,6 +19,7 @@ import {
   prepararQuestionario,
   respostaDoQuestionario,
   revisaoDoQuestionario,
+  tempoParaConcluir,
 } from "./questionario.ts";
 import {
   corrigirProva,
@@ -318,6 +320,68 @@ test("prepararQuestionario: aula concluída devolve concluida: true com a melhor
     assert.equal(preparo.melhorNota, 88);
     assert.equal(preparo.usadas, 2);
   }
+});
+
+test("prepararQuestionario: tentativa aprovada gravada com a aula por concluir devolve conclusaoPendente (a conclusão falhou num envio anterior)", async () => {
+  const aprovadaGravada = ok([
+    { numero: 2, nota: 88, aprovada: true },
+    { numero: 1, nota: 63, aprovada: false },
+  ]);
+  // aula NÃO concluída (só o vídeo feito) + tentativa aprovada: a abertura conclui a aula
+  const pendente = await preparar({ treinamento_questionario_tentativa: aprovadaGravada });
+  assert.equal(pendente.preparo.falha, null);
+  if (pendente.preparo.falha !== null) return;
+  assert.equal(pendente.preparo.concluida, false);
+  assert.equal(pendente.preparo.conclusaoPendente, true);
+  assert.equal(pendente.preparo.melhorNota, 88);
+  assert.equal(pendente.preparo.usadas, 2);
+  // sem tentativa aprovada (ou sem tentativa nenhuma) não há o que concluir
+  for (const tentativas of [
+    ok([]),
+    ok([{ numero: 1, nota: 63, aprovada: false }]),
+    ok([{ numero: 1, nota: 95, aprovada: null }]),
+  ]) {
+    const { preparo } = await preparar({ treinamento_questionario_tentativa: tentativas });
+    if (preparo.falha !== null) return assert.fail("o preparo falhou");
+    assert.equal(preparo.conclusaoPendente, false, JSON.stringify(tentativas.data));
+  }
+  // aula já concluída: nada pendente (a abertura só mostra a melhor nota)
+  const feita = await preparar({
+    treinamento_progresso: VIDEO_E_QUESTIONARIO,
+    treinamento_questionario_tentativa: aprovadaGravada,
+  });
+  if (feita.preparo.falha !== null) return assert.fail("o preparo falhou");
+  assert.equal(feita.preparo.concluida, true);
+  assert.equal(feita.preparo.conclusaoPendente, false);
+  // a leitura continua só de leitura
+  assert.equal(pendente.escritas().length, 0);
+});
+
+test("conclusaoPendente: só com a aula por concluir e uma tentativa com `aprovada` verdadeiro gravado", () => {
+  const reprovada = { numero: 1, nota: 40, aprovada: false };
+  const aprovada = { numero: 2, nota: 90, aprovada: true };
+  assert.equal(conclusaoPendente([reprovada, aprovada], false), true);
+  assert.equal(conclusaoPendente([aprovada], false), true);
+  assert.equal(conclusaoPendente([reprovada], false), false);
+  assert.equal(conclusaoPendente([], false), false);
+  assert.equal(conclusaoPendente(null, false), false);
+  assert.equal(conclusaoPendente(undefined, false), false);
+  // aula concluída: não há o que concluir
+  assert.equal(conclusaoPendente([reprovada, aprovada], true), false);
+  // só o booleano verdadeiro vale (texto, número e nulo não)
+  for (const aprovadaInvalida of ["true", 1, null, undefined, {}]) {
+    assert.equal(conclusaoPendente([{ numero: 1, aprovada: aprovadaInvalida }], false), false);
+  }
+});
+
+test("tempoParaConcluir: o maior das duas leituras do tempo; se a segunda falhou, vale a primeira", () => {
+  assert.equal(tempoParaConcluir(120, 150), 150);
+  assert.equal(tempoParaConcluir(150, 120), 150);
+  assert.equal(tempoParaConcluir(0, 0), 0);
+  assert.equal(tempoParaConcluir(90, 90), 90);
+  // segunda leitura com erro (null): o tempo não regride nem se perde
+  assert.equal(tempoParaConcluir(90, null), 90);
+  assert.equal(tempoParaConcluir(0, null), 0);
 });
 
 test("aulaDaAtividade: serve também ao caso (tipo, liberação e concluída)", async () => {

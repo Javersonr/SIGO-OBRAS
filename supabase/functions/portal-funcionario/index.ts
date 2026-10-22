@@ -256,6 +256,7 @@ import {
   prepararQuestionario,
   respostaDoQuestionario,
   revisaoDoQuestionario,
+  tempoParaConcluir,
 } from "./questionario.ts";
 import {
   conclusaoDoCaso,
@@ -2623,6 +2624,9 @@ Deno.serve(
     // a mesma tentativa mantém o sorteio. `questionario_enviar` valida contra esse sorteio (sem tempo mínimo), corrige
     // com a nota mínima dos módulos, grava a tentativa (imutável) e devolve a correção comentada aprovado ou não;
     // aprovado conclui a aula por `concluirAula`. Tentativas livres, sem limite e sem intervalo.
+    // Ordem do envio aprovado: o tempo de tela é lido ANTES de gravar (leitura com erro = 503, nada gravado) e lido de
+    // novo logo antes de concluir (vale o maior dos dois). Se a conclusão não sair depois da tentativa gravada, a
+    // próxima `questionario_abrir` conclui a aula (tentativa aprovada + aula por concluir) em vez de sortear outra.
 
     /** O último início do questionário desta aula nesta matrícula (a linha da trilha), ou erro de leitura. */
     // deno-lint-ignore no-explicit-any
@@ -2646,13 +2650,25 @@ Deno.serve(
       if (preparo.falha) return recusaDaProva(preparo.falha);
       const notaMinima = notaMinimaDoModulo(preparo.curso);
       // aula concluída: o aluno vê a melhor nota e quantas tentativas fez; não há tentativa nova
-      if (preparo.concluida) {
-        return ok({
-          concluida: true,
-          nota_minima: notaMinima,
-          melhor_nota: preparo.melhorNota,
-          tentativas: preparo.usadas,
-        });
+      const estadoConcluido = {
+        concluida: true,
+        nota_minima: notaMinima,
+        melhor_nota: preparo.melhorNota,
+        tentativas: preparo.usadas,
+      };
+      if (preparo.concluida) return ok(estadoConcluido);
+      // Autocorreção: já existe tentativa APROVADA e a aula não está concluída (o envio gravou a tentativa e a
+      // conclusão falhou). Conclui a aula agora, em vez de fazer o aluno aprovado refazer o questionário.
+      if (preparo.conclusaoPendente) {
+        const segundos = await tempoDaAula(mat, preparo.aula.id);
+        if (segundos === null) {
+          return fail("Não foi possível abrir o questionário. Tente de novo.", 503);
+        }
+        const fim = await concluirAula(mat, preparo.aula, segundos, null);
+        if (!fim) {
+          return fail("Não foi possível concluir o questionário agora. Tente de novo.", 503);
+        }
+        return ok(estadoConcluido);
       }
       const { questoes, aula } = preparo;
       const numero = preparo.usadas + 1;
@@ -2741,6 +2757,17 @@ Deno.serve(
         notaMinima,
       });
 
+      // O tempo de tela (que vai ao progresso concluído) é lido ANTES de gravar: com a leitura em erro, o aluno recebe
+      // 503 e nada fica gravado. Depois do INSERT (imutável) nenhuma leitura pode mais derrubar o envio.
+      let segundosAntes = 0;
+      if (aprovada) {
+        const lido = await tempoDaAula(mat, aula.id);
+        if (lido === null) {
+          return fail("Não foi possível conferir o questionário. Tente de novo.", 503);
+        }
+        segundosAntes = lido;
+      }
+
       // o mesmo formato de `treinamento_tentativa` (prova e respostas), mais a aula do questionário
       const { error: tErr } = await supabase.from("treinamento_questionario_tentativa").insert({
         empresa_id: empresaId,
@@ -2791,11 +2818,12 @@ Deno.serve(
 
       let cursoConcluido = false;
       if (aprovada) {
-        // O tempo de tela vai ao progresso concluído (`concluirAula` grava o valor que recebe): lido AGORA, colado na
-        // conclusão, para um sinal do `progresso` no meio do caminho não fazer o tempo da aula voltar atrás.
-        const segundos = await tempoDaAula(mat, aula.id);
-        const fim = segundos === null ? null : await concluirAula(mat, aula, segundos, null);
-        // a tentativa aprovada já está gravada (imutável): sem a conclusão, o aluno abre de novo e refaz
+        // O tempo de tela vai ao progresso concluído (`concluirAula` grava o valor que recebe): lido de novo AGORA,
+        // colado na conclusão, e vale o maior dos dois (um sinal do `progresso` no meio do caminho não pode fazer o
+        // tempo da aula voltar atrás). Se esta releitura falhar, vale a primeira: a tentativa já está gravada.
+        const segundos = tempoParaConcluir(segundosAntes, await tempoDaAula(mat, aula.id));
+        const fim = await concluirAula(mat, aula, segundos, null);
+        // a tentativa aprovada já está gravada (imutável) e o progresso não saiu: ao abrir de novo, a aula é concluída
         if (!fim) {
           return fail(
             "Sua tentativa foi registrada, mas a aula não foi concluída agora. Abra o questionário de novo.",

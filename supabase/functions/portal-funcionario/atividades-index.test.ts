@@ -242,12 +242,15 @@ test("questionario_abrir: teto de atividade, preparo sem gabarito e a mesma tent
     /const preparo = await prepararQuestionario\(supabase, mat, body\.aula_id, empresaId, false\);\s*if \(preparo\.falha\) return recusaDaProva\(preparo\.falha\);/
   );
   // concluída: a melhor nota e as tentativas, sem sorteio novo
-  const concluida = a.indexOf("if (preparo.concluida)");
-  assert.ok(concluida > 0 && concluida < a.indexOf("sortearProva("));
+  const estado = a.indexOf("const estadoConcluido = {");
+  assert.ok(estado > 0 && estado < a.indexOf("sortearProva("));
   assert.match(
-    a.slice(concluida, concluida + 300),
-    /concluida: true,[\s\S]*melhor_nota: preparo\.melhorNota,[\s\S]*tentativas: preparo\.usadas/
+    a.slice(estado, estado + 300),
+    /concluida: true,[\s\S]*nota_minima: notaMinima,[\s\S]*melhor_nota: preparo\.melhorNota,[\s\S]*tentativas: preparo\.usadas/
   );
+  const concluida = a.indexOf("if (preparo.concluida)");
+  assert.ok(concluida > estado && concluida < a.indexOf("sortearProva("));
+  assert.match(a.slice(concluida, concluida + 80), /return ok\(estadoConcluido\);/);
   assert.match(a, /const numero = preparo\.usadas \+ 1;/);
   assert.match(
     a,
@@ -264,6 +267,33 @@ test("questionario_abrir: teto de atividade, preparo sem gabarito e a mesma tent
   // o aluno recebe só o texto: nada de gabarito no trecho
   assert.doesNotMatch(a, /correta|comentario/);
   assert.match(a, /questoes: prova\.map\(\(\{ id, pergunta, opcoes, ordem_opcoes \}\) => \(\{/);
+});
+
+test("questionario_abrir: tentativa aprovada gravada com a aula por concluir conclui a aula na abertura (autocorreção)", () => {
+  const a = trechoDaAcao("questionario_abrir");
+  const concluida = a.indexOf("if (preparo.concluida)");
+  const pendente = a.indexOf("if (preparo.conclusaoPendente) {");
+  // depois do caso da aula já concluída e antes de qualquer sorteio ou leitura do início
+  assert.ok(pendente > concluida && concluida > 0, "o caso pendente vem depois da concluída");
+  assert.ok(pendente < a.indexOf("ultimoInicioDoQuestionario("));
+  assert.ok(pendente < a.indexOf("sortearProva("));
+  const fim = a.indexOf("const { questoes, aula } = preparo;");
+  assert.ok(fim > pendente, "o bloco termina antes de preparar a tentativa nova");
+  const bloco = a.slice(pendente, fim);
+  // o tempo de tela vem do progresso (leitura com erro = 503) e a aula é concluída pela mesma função do envio
+  assert.match(
+    bloco,
+    /const segundos = await tempoDaAula\(mat, preparo\.aula\.id\);\s*if \(segundos === null\) \{\s*return fail\([^;]*?503\)/
+  );
+  assert.match(
+    bloco,
+    /const fim = await concluirAula\(mat, preparo\.aula, segundos, null\);\s*if \(!fim\) \{\s*return fail\([^;]*?503\)/
+  );
+  // responde o estado de concluída (o mesmo da aula já concluída) e não sorteia nem grava mais nada por conta própria
+  assert.match(bloco, /return ok\(estadoConcluido\);/);
+  assert.doesNotMatch(bloco, /sortearProva\(|\bev\(|\.insert\(/);
+  assert.equal((a.match(/concluirAula\(/g) ?? []).length, 1);
+  assert.equal((a.match(/tempoDaAula\(/g) ?? []).length, 1);
 });
 
 test("questionario_enviar: valida contra o sorteio, corrige com a nota do módulo, grava a tentativa e só o aprovado conclui", () => {
@@ -312,17 +342,33 @@ test("questionario_enviar: valida contra o sorteio, corrige com a nota do módul
   assert.match(e.slice(envio, envio + 200), /detalhe: \{ tentativa: numero, nota, aprovada \}/);
   assert.equal((e.match(/concluirAula\(/g) ?? []).length, 1);
   assert.ok(pos("concluirAula(") > envio);
-  // o tempo de tela é lido o mais perto possível da conclusão: logo antes de concluirAula, dentro do aprovado e
-  // depois da tentativa gravada (um sinal de progresso no meio do caminho não pode fazer o tempo voltar atrás)
-  assert.equal((e.match(/tempoDaAula\(/g) ?? []).length, 1);
+  // o tempo de tela é lido DUAS vezes. 1) ANTES do INSERT, só quando aprova: leitura com erro = 503 e nada é gravado
+  // (a tentativa é imutável; depois dela não pode sobrar caminho de erro por causa de uma leitura).
+  const leituras = [...e.matchAll(/tempoDaAula\(mat, aula\.id\)/g)].map((m) => m.index as number);
+  assert.equal(leituras.length, 2, "uma leitura antes do INSERT e uma colada na conclusão");
+  const [antes, depois] = leituras;
+  assert.ok(antes > pos("corrigirProva("), "a aprovação já é conhecida");
+  assert.ok(antes < insert, "a primeira leitura vem ANTES do INSERT da tentativa");
   assert.match(
-    e,
-    /if \(aprovada\) \{\s*const segundos = await tempoDaAula\(mat, aula\.id\);\s*const fim = segundos === null \? null : await concluirAula\(mat, aula, segundos, null\);/
+    e.slice(e.lastIndexOf("if (aprovada) {", antes), insert),
+    /^if \(aprovada\) \{\s*const lido = await tempoDaAula\(mat, aula\.id\);\s*if \(lido === null\) \{\s*return fail\([^;]*?503\);\s*\}\s*segundosAntes = lido;\s*\}/
   );
-  assert.ok(pos("tempoDaAula(") > envio);
-  // leitura do tempo com erro: a tentativa já está gravada, então a resposta é a da conclusão que não saiu
+  assert.match(e.slice(0, antes), /let segundosAntes = 0;/);
+  // 2) a releitura vem logo antes de concluirAula, depois da tentativa gravada: vale o maior dos dois valores (o tempo
+  // não regride) e, se ela falhar, o primeiro; a conclusão não depende mais de a leitura dar certo
+  assert.ok(depois > envio, "a releitura vem depois da tentativa e da trilha gravadas");
+  assert.ok(depois < pos("concluirAula("), "a releitura vem antes de concluirAula");
   assert.match(
     e,
+    /if \(aprovada\) \{\s*const segundos = tempoParaConcluir\(segundosAntes, await tempoDaAula\(mat, aula\.id\)\);\s*const fim = await concluirAula\(mat, aula, segundos, null\);/
+  );
+  assert.doesNotMatch(e.slice(insert), /segundos === null|lido === null/);
+  // depois da tentativa gravada, o único caminho de erro é a conclusão que não saiu (progresso não gravado): a
+  // próxima abertura do questionário conclui a aula (autocorreção do questionario_abrir)
+  const depoisDoEnvio = e.slice(envio);
+  assert.equal((depoisDoEnvio.match(/\bfail\(/g) ?? []).length, 1);
+  assert.match(
+    depoisDoEnvio,
     /if \(!fim\) \{\s*return fail\(\s*"Sua tentativa foi registrada[^"]*",\s*500\s*\);/
   );
   // a resposta é a da regra, com a correção comentada aprovado ou não (A2)

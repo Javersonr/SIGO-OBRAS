@@ -99,7 +99,35 @@ export type PreparoDoQuestionario =
       usadas: number;
       concluida: boolean;
       melhorNota: number | null;
+      /**
+       * Há tentativa APROVADA gravada e a aula não está concluída: o envio aprovado gravou a tentativa (imutável) e a
+       * conclusão não saiu. `questionario_abrir` conclui a aula nesse caso, em vez de sortear outra tentativa.
+       */
+      conclusaoPendente: boolean;
     };
+
+/**
+ * A conclusão que ficou pendente: a aula NÃO está concluída, mas alguma tentativa dela já foi aprovada. Acontece
+ * quando o envio gravou a tentativa aprovada (imutável) e a gravação do progresso concluído falhou em seguida. Vale
+ * o `aprovada` que o servidor gravou na correção (só o booleano verdadeiro), que é o veredito daquele envio mesmo
+ * que o RH mude a nota mínima depois.
+ */
+export function conclusaoPendente(
+  tentativas: { aprovada?: unknown }[] | null | undefined,
+  concluida: boolean
+): boolean {
+  if (concluida || !Array.isArray(tentativas)) return false;
+  return tentativas.some((t) => t?.aprovada === true);
+}
+
+/**
+ * O tempo de tela com que a aula do questionário é concluída: o maior das duas leituras (antes de gravar a tentativa
+ * e logo antes de concluir), para um sinal do `progresso` no meio do caminho não fazer o tempo voltar atrás. Se a
+ * segunda leitura falhou (`null`), vale a primeira: a tentativa já está gravada e a conclusão não pode depender dela.
+ */
+export function tempoParaConcluir(antes: number, depois: number | null): number {
+  return Math.max(antes, depois ?? antes);
+}
 
 /**
  * Confere se a matrícula pode abrir ou enviar o questionário desta aula AGORA e traz o que ele precisa: a aula (do
@@ -169,7 +197,16 @@ export async function prepararQuestionario(
   const notas = feitas.map((t) => Number(t.nota)).filter((n) => Number.isFinite(n));
   const melhorNota = notas.length ? Math.max(...notas) : null;
   if (concluida) {
-    return { falha: null, aula, questoes: questoes ?? [], curso, usadas, concluida, melhorNota };
+    return {
+      falha: null,
+      aula,
+      questoes: questoes ?? [],
+      curso,
+      usadas,
+      concluida,
+      melhorNota,
+      conclusaoPendente: false,
+    };
   }
   if (!questoes?.length) {
     return {
@@ -180,7 +217,16 @@ export async function prepararQuestionario(
       },
     };
   }
-  return { falha: null, aula, questoes, curso, usadas, concluida, melhorNota };
+  return {
+    falha: null,
+    aula,
+    questoes,
+    curso,
+    usadas,
+    concluida,
+    melhorNota,
+    conclusaoPendente: conclusaoPendente(feitas, concluida),
+  };
 }
 
 /** As mensagens de `validarEnvio` que falam em "prova", reescritas para o questionário. */
