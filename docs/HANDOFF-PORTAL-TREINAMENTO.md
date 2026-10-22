@@ -1118,7 +1118,9 @@ mesmo dia.
 - **Questionário:** questões próprias (`treinamento_questao.aula_id`; vazio = prova final), sorteio de questões e
   alternativas a cada tentativa, tentativas livres e todas gravadas (`treinamento_questionario_tentativa`), correção
   comentada depois de cada envio (aprovado ou não); conclui com a nota mínima dos questionários do curso
-  (`treinamento_curso.nota_minima_modulo`, padrão 80). Com 8 questões e 80%, o aluno precisa de 7 acertos.
+  (`treinamento_curso.nota_minima_modulo`, padrão 80). Com 8 questões e 80%, o aluno precisa de 7 acertos. Se uma
+  tentativa aprovada ficar gravada e a aula não concluir (falha do banco no meio do envio), a próxima abertura do
+  questionário conclui a aula, sem o aluno refazer nada.
 - **Caso:** roteiro em `treinamento_caso.conteudo` (etapas, opções com comentário, "segura" e "leva para"), validado
   pela mesma regra na tela e no servidor. O aluno só clica: a insegura mostra o comentário e leva à recuperação (ou à
   mesma etapa); no fim, "Para refletir" e "Concluir caso". O estado vem da trilha; roteiro alterado no meio faz o aluno
@@ -1207,8 +1209,10 @@ verificação (9.7) antes do passo 1.
 cd C:\Users\javer\sigoobras-base
 npx supabase@2.118.0 db query --linked -f C:\Users\javer\sigoobras-wt-ead-interativas\supabase\migrations\0170_ead_atividades_interativas.sql
 
-# 2. smoke (begin; ... rollback;: desfaz tudo no fim), ainda no checkout principal.
+# 2. smoke (begin; ... rollback;: desfaz tudo no fim), no checkout principal.
 #    Esperado: SMOKE TEST OK: atividades interativas (0170); sem essa linha mas sem erro nenhum, também vale como passou
+#    O cd se repete de propósito: numa janela nova, o comando tem de rodar no checkout principal
+cd C:\Users\javer\sigoobras-base
 npx supabase@2.118.0 db query --linked -f C:\Users\javer\sigoobras-wt-ead-interativas\tools\smoke-ead-atividades.sql
 
 # 3. função do portal (questionário, caso, leitura sem relógio, certificado), NO WORKTREE
@@ -1216,12 +1220,13 @@ cd C:\Users\javer\sigoobras-wt-ead-interativas
 npx supabase@2.118.0 functions deploy portal-funcionario --project-ref fpyvdwpvxrubrkdwrqbs --no-verify-jwt --use-api
 
 # 4. site: merge da branch em master e push LOGO DEPOIS do passo 3, no checkout principal (o push publica o site).
-#    Antes, o git status não pode mostrar alteração em arquivo do projeto. O --no-ff deixa um commit de merge só, fácil de reverter
+#    Antes, o git status não pode mostrar alteração em arquivo do projeto. O --no-ff deixa um commit de merge só,
+#    fácil de reverter, e o --no-edit evita que o Git abra o editor (vim, no Windows) para a mensagem do merge
 cd C:\Users\javer\sigoobras-base
 git status
 git switch master
 git pull
-git merge --no-ff feat/ead-atividades-interativas
+git merge --no-ff --no-edit feat/ead-atividades-interativas
 git push origin master
 ```
 
@@ -1239,9 +1244,94 @@ git push origin master
   chamam ações que a função velha não conhece. Função nova com site velho: nada quebra (o site velho continua esperando
   o tempo mínimo de leitura), mas também nada de novo aparece. Por isso o push sai logo depois do deploy, e o deploy só
   depois da 0170. O merge e o push em `master` são do Javerson (regra 3 do `AGENTS.md`).
-- **Voltar atrás.** A 0170 pode ficar (só acrescenta). O que se desfaz é o código: reverter o merge no master
-  (`git revert -m 1 <commit do merge>` e push, que republica o site antigo) e publicar de novo a função a partir do
-  commit anterior, os dois juntos.
+- **Voltar atrás: o melhor é corrigir para a frente.** A 0170 pode ficar (só acrescenta). Se aparecer defeito, a saída
+  segura é consertar o código e publicar de novo a função e o site (passos 3 e 4). **Não** voltar só a função, nem
+  reverter o merge, depois que qualquer atividade (questionário, caso ou tarefa) foi criada na tela ou importada. O
+  motivo, em palavras simples: o código antigo não conhece as atividades. A função antiga não sabe que as questões de
+  um questionário são só daquele questionário: ela as põe na **prova final** e nos requisitos do curso (a prova final
+  passaria a sortear perguntas dos exercícios). E o site antigo mostra "Marcar como lida" em toda aula que não é vídeo,
+  enquanto o servidor antigo conclui por tempo: o aluno passaria pelo questionário e pelo caso sem responder nada. Antes
+  de existir qualquer atividade (por exemplo, logo depois do passo 4, antes do roteiro 9.6), voltar o código é seguro.
+
+**Se for mesmo preciso voltar atrás (só com o OK explícito do Javerson).** A ordem é: 1) a limpeza abaixo, que tira do
+ar as atividades; 2) reverter o merge no master (`git revert -m 1 <commit do merge>` e push, que republica o site
+antigo); 3) publicar de novo a função a partir do commit anterior. Os passos 2 e 3 vão juntos, um logo depois do
+outro. A limpeza vem primeiro porque, com o código novo ainda no ar, o aluno só deixa de ver as atividades, sem nenhum
+efeito estranho.
+
+A limpeza é **exclusão lógica** (`deleted_at = now()`): nada é destruído, e as tentativas que os alunos já fizeram
+continuam guardadas. O que muda: as aulas de questionário, caso e tarefa somem da lista do curso (a carga prevista
+cai), junto com as questões dos questionários (as da prova final ficam) e os roteiros dos casos. Quem já tinha feito
+essas aulas deixa de vê-las, e o progresso delas fica guardado no banco sem aparecer.
+
+Quem roda é o Javerson, no checkout principal (`C:\Users\javer\sigoobras-base`), com o SQL salvo num arquivo fora do
+repositório e o comando `npx supabase@2.118.0 db query --linked -f <arquivo>` (ou colando no SQL Editor do Supabase).
+Nesses dois caminhos quem roda é o servidor (superusuário, sem login de usuário), e o gatilho `zz_permissao_ead` deixa
+passar; pelo app, o mesmo UPDATE só passaria com a permissão Treinamentos EAD → Editar. O SQL escolhe a empresa e o
+curso **pelo nome**, sem UUID: trocar os textos `TROQUE...` pelos nomes exatos como aparecem no sistema. Para valer para
+**todos** os cursos da empresa, apagar a linha do curso (`and c.nome = ...`) nos dois passos.
+
+```sql
+-- PASSO A: conferência (só lê; nada muda). Mostra quanto existe e seria apagado em cada curso escolhido.
+select c.nome as curso,
+       (select count(*) from public.treinamento_aula a
+         where a.curso_id = c.id and a.deleted_at is null and a.tipo = 'questionario') as questionarios,
+       (select count(*) from public.treinamento_aula a
+         where a.curso_id = c.id and a.deleted_at is null and a.tipo = 'caso') as casos,
+       (select count(*) from public.treinamento_aula a
+         where a.curso_id = c.id and a.deleted_at is null and a.tipo = 'tarefa') as tarefas,
+       (select count(*) from public.treinamento_questao q
+         where q.curso_id = c.id and q.deleted_at is null and q.aula_id is not null) as questoes_dos_questionarios,
+       (select count(*) from public.treinamento_caso k
+         where k.curso_id = c.id and k.deleted_at is null) as roteiros
+  from public.treinamento_curso c
+  join public.empresa e on e.id = c.empresa_id
+ where e.nome = 'TROQUE PELO NOME DA EMPRESA'
+   and c.nome = 'TROQUE PELO NOME DO CURSO'
+   and c.deleted_at is null
+ order by c.nome;
+
+-- PASSO B: só depois de conferir o passo A (nenhuma linha = nome errado). Para um ensaio, troque o commit por rollback.
+begin;
+
+create temp table alvo on commit drop as
+select c.id as curso_id
+  from public.treinamento_curso c
+  join public.empresa e on e.id = c.empresa_id
+ where e.nome = 'TROQUE PELO NOME DA EMPRESA'
+   and c.nome = 'TROQUE PELO NOME DO CURSO'
+   and c.deleted_at is null;
+
+-- 1) as questões dos questionários (as da prova final têm aula_id vazio e ficam)
+update public.treinamento_questao
+   set deleted_at = now()
+ where curso_id in (select curso_id from alvo) and aula_id is not null and deleted_at is null;
+
+-- 2) os roteiros dos casos
+update public.treinamento_caso
+   set deleted_at = now()
+ where curso_id in (select curso_id from alvo) and deleted_at is null;
+
+-- 3) por último, as aulas dos três tipos novos
+update public.treinamento_aula
+   set deleted_at = now()
+ where curso_id in (select curso_id from alvo)
+   and tipo in ('questionario', 'caso', 'tarefa')
+   and deleted_at is null;
+
+-- conferência final: os três "que_sobraram" têm de ser 0 e cursos_escolhidos, o número de cursos que você quis
+select (select count(*) from alvo) as cursos_escolhidos,
+       (select count(*) from public.treinamento_aula
+         where curso_id in (select curso_id from alvo)
+           and tipo in ('questionario', 'caso', 'tarefa') and deleted_at is null) as aulas_que_sobraram,
+       (select count(*) from public.treinamento_questao
+         where curso_id in (select curso_id from alvo)
+           and aula_id is not null and deleted_at is null) as questoes_que_sobraram,
+       (select count(*) from public.treinamento_caso
+         where curso_id in (select curso_id from alvo) and deleted_at is null) as roteiros_que_sobraram;
+
+commit;
+```
 
 **Se aparecer erro**
 
@@ -1760,8 +1850,10 @@ O segundo é `teste-posvideo.json` (formato dos exercícios pós-vídeo, usado n
 **Aluno de verdade (portal do funcionário, de preferência no celular)**
 
 **As aulas abrem em sequência:** cada uma só abre quando todas as anteriores estão concluídas (regra do servidor).
-Por isso o aluno percorre o curso na ordem em que os passos 1 a 10 o montaram: 1ª apostila; 2ª vídeo; 3ª "Exercícios
-do vídeo: ..." (do passo 10; sem ele essa aula não existe e as seguintes sobem um número); 4ª texto;
+Por isso o aluno percorre o curso na ordem em que os passos 1 a 10 o montaram. **Isso supõe que as três primeiras aulas
+são as da seção 7 (apostila, vídeo e texto, nessa ordem)** e que os passos 1 a 10 acrescentam as outras; se o curso de
+teste estiver em outra ordem, os números abaixo mudam. Fica assim: 1ª apostila; 2ª vídeo; 3ª "Exercícios do vídeo: ..."
+(do passo 10; sem ele essa aula não existe e as seguintes sobem um número); 4ª texto;
 5ª `TESTE · Questionário`; 6ª `TESTE · Caso`; 7ª `TESTE · Tarefa`; 8ª `M1 · Caso 1: Caso importado`;
 9ª `M1 · Questionário do módulo` (importado); 10ª `M1 · Atividade de estudo 1: Tarefa importada`. Os passos abaixo
 seguem essa ordem e dizem qual aula é: não pular nenhuma.
@@ -1783,8 +1875,9 @@ seguem essa ordem e dizem qual aula é: não pular nenhuma.
     alternativas vêm em outra ordem. Acertar as 3: a aula conclui; ao reabrir, mostra a melhor nota e quantas
     tentativas foram.
 16. **Caso (6ª aula, `TESTE · Caso`).** Escolher a opção insegura de `e1` (o comentário aparece em âmbar), "Continuar",
-    ir por `r1` de volta a `e1` e terminar pela escolha segura até o fim: aparece "Para refletir" e "Concluir caso". No
-    meio do caminho, recarregar a página: o caso volta de onde parou.
+    ir por `r1` de volta a `e1`. No meio do caminho, recarregar a página: o caso volta de onde parou. Terminar pela
+    escolha segura até o fim: aparece "Para refletir" e "Concluir caso". **Tocar em "Concluir caso"**: a aula conclui (o
+    passo 17 parte do caso concluído).
 17. **"Próxima aula" começa no topo.** Com o caso concluído, rolar a página para baixo, até a lista de aulas, e tocar em
     "Próxima aula" (a da `TESTE · Tarefa`). Deve acontecer: a tarefa abre com o começo dela no topo da tela, não no meio
     da página, e o botão "Fiz a atividade" continua apagado (aviso "Leia as instruções até o fim para liberar o
@@ -1829,9 +1922,11 @@ seguem essa ordem e dizem qual aula é: não pular nenhuma.
 
 ### 9.7 Verificação da branch (feita antes de entregar)
 
-Feita em 21/10/2026, na raiz do worktree, com a branch no commit anterior ao deste documento. Todas sem erro:
+Feita em 21/10/2026 e refeita em 22/10/2026, depois da revisão final (o questionário lê o tempo da aula antes de gravar
+a tentativa, a abertura conclui a aula com tentativa aprovada pendente, e os ajustes deste documento), na raiz do
+worktree, com a branch no commit anterior ao que atualiza esta seção. Todas sem erro:
 
-- `node --test "supabase/functions/**/*.test.ts"`: 2174 testes, 0 falhas.
+- `node --test "supabase/functions/**/*.test.ts"`: 2178 testes, 0 falhas.
 - `npm test --workspace=apps/web`: 155 arquivos, 2958 testes, 0 falhas.
 - `npm run lint` e `npm run build`: sem erro.
 - `npx prettier --check` em todos os arquivos tocados pela branch (`git diff --name-only --diff-filter=d origin/master...HEAD`) e
