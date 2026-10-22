@@ -1032,7 +1032,7 @@ Tudo o que for criado leva "TESTE EAD" no nome e é apagado no fim. **Só começ
 2. Criar o funcionário "TESTE EAD — apagar" (sem CPF, função qualquer, sem telefone real).
 3. Criar o curso "TESTE EAD — apagar" (modalidade EAD, carga 1 h, validade 24 meses, nota 70, 3 tentativas, intervalo
    2 min, instrutor e RT preenchidos, tutor com o telefone do próprio Javerson) com: 1 apostila PDF de 1 página com
-   leitura mínima de 60 min (a regra de lastro da T9 exige conteúdo de pelo menos 1 h para carga de 1 h); 1 vídeo curto
+   tempo previsto de 60 min (a regra de lastro da T9 exige conteúdo de pelo menos 1 h para carga de 1 h); 1 vídeo curto
    (até 1 min; conferir que a duração foi gravada no cadastro); 1 aula de texto com 1 min; 5 questões. Conferir o
    painel de requisitos (T9) e publicar. Reserve cerca de 1h30 para o roteiro inteiro.
 4. Usar "Ver como aluno" (se a T28 já existir) para revisar.
@@ -1044,8 +1044,8 @@ Tudo o que for criado leva "TESTE EAD" no nome e é apagado no fim. **Só começ
    não consegue criar o acesso). Depois, na aba Treinamentos, matricular o funcionário e usar o botão de WhatsApp só
    para conferir a mensagem: ela sai sem senha, porque o acesso já existe.
 6. Login com a senha provisória; trocar a senha (testar senha igual ao usuário e "123456": devem ser recusadas).
-7. Abrir o curso: a 2ª aula está bloqueada. Abrir a apostila no celular (T11): ela aparece na página e o tempo conta;
-   "Marcar como lida" só habilita no tempo mínimo. Deixar a aba visível até completar.
+7. Abrir o curso: a 2ª aula está bloqueada. Abrir a apostila no celular e no computador (T11 e seção 9): ela aparece
+   na página, desenhada pelo pdf.js; "Marcar como lida" só habilita ao chegar à última página (A5: sem tempo mínimo).
 8. Vídeo: tentar 2x (a velocidade volta a 1x, T13); assistir até o fim e ver a aula concluir.
 9. Texto: concluir.
 10. Mandar uma dúvida; responder pelo RH; ver a resposta no portal (T21) e o aviso no WhatsApp do tutor.
@@ -1096,3 +1096,702 @@ mesmo dia.
 - Não publicar `validar-certificado` com `--no-verify-jwt`.
 - Não gravar URL assinada no banco, nem segredo, UUID de empresa ou dado pessoal no repositório.
 - Não misturar tarefas num commit nem mexer em arquivo fora da tarefa.
+
+---
+
+## 9. Atividades interativas: questionário, caso e tarefa (14/10/2026)
+
+- **Spec:** `docs/superpowers/specs/2026-10-14-ead-atividades-interativas-design.md` (decisões A1–A11). **Plano:**
+  `docs/superpowers/plans/2026-10-14-ead-atividades-interativas.md`. **Branch:** `feat/ead-atividades-interativas`
+  (worktree `C:\Users\javer\sigoobras-wt-ead-interativas`). **Migração:** `0170_ead_atividades_interativas.sql`.
+- **Base:** a branch recebeu o `origin/master` de 21/10/2026 (merge `dd5fb7b`). No master as migrações vão até a `0161`
+  e a `0170` continua livre (nenhuma outra branch usa esse número). Conferir de novo antes de aplicar, listando a pasta
+  `supabase/migrations` do master.
+- **Status:** código pronto e verificado na branch (9.7). A produção (9.3) e as cargas (9.4 e 9.5) esperam o OK do
+  Javerson, passo a passo.
+
+### 9.1 O que mudou
+
+- A aula ganhou três tipos: **questionário do módulo** (`questionario`), **caso com decisões** (`caso`) e **atividade
+  de estudo** (`tarefa`). Cada atividade é uma aula (A6): mesma lista, mesmo cadeado em ordem, mesma conclusão
+  (`treinamento_progresso`, gravada só pelo servidor) e o tempo previsto soma na carga (`LASTRO`).
+- **Questionário:** questões próprias (`treinamento_questao.aula_id`; vazio = prova final), sorteio de questões e
+  alternativas a cada tentativa, tentativas livres e todas gravadas (`treinamento_questionario_tentativa`), correção
+  comentada depois de cada envio (aprovado ou não); conclui com a nota mínima dos questionários do curso
+  (`treinamento_curso.nota_minima_modulo`, padrão 80). Com 8 questões e 80%, o aluno precisa de 7 acertos.
+- **Caso:** roteiro em `treinamento_caso.conteudo` (etapas, opções com comentário, "segura" e "leva para"), validado
+  pela mesma regra na tela e no servidor. O aluno só clica: a insegura mostra o comentário e leva à recuperação (ou à
+  mesma etapa); no fim, "Para refletir" e "Concluir caso". O estado vem da trilha; roteiro alterado no meio faz o aluno
+  recomeçar (evento "Caso recomeçado") quando o caminho que ele já fez deixa de existir no roteiro novo.
+- **Tarefa:** instruções e o que produzir; o aluno faz fora da tela e clica "Fiz a atividade" (sem texto do aluno nem
+  parecer do tutor, A4).
+- **Leituras sem relógio (A5):** texto, PDF (agora pelo pdf.js em todas as telas) e tarefa liberam o botão ao rolar
+  até o fim; o 409 `TEMPO_LEITURA` saiu. Vídeo continua com 90%. A aula aberta (e a "Próxima aula") começa no topo da
+  tela.
+- **Tela do RH:** "Nova aula" com os seis tipos; o texto das aulas de texto e de tarefa passa a ser editado na tela;
+  "Questões" no menu de cada questionário; "Editar caso" com o editor (problemas na hora, "Salvar caso" só sem
+  problema); campo "Nota mínima dos questionários dos módulos"; "Importar atividades" (9.4 e 9.5), que aceita o
+  arquivo do pacote do material e o dos exercícios pós-vídeo (`questionarios_por_video`); a avaliação final lista só
+  as questões sem aula; requisitos e "Ver como aluno" com questionário e caso.
+- **Remover aula:** em aula de questionário ou de caso, "Remover aula" apaga junto, por exclusão lógica, as questões ou
+  o roteiro (a confirmação avisa). As tentativas que alunos já fizeram continuam guardadas na trilha.
+- **Detalhes da matrícula e dossiê:** seção "Questionários dos módulos" (cada tentativa abre como a prova); trilha com
+  os eventos novos ("Escolha no caso", "Confirmou a atividade de estudo", "Leu até o fim"...); dossiê com
+  `questionarios.csv` nos cursos com questionário.
+- **Certificado (A9):** nos cursos com atividades, a frente ganha a frase das atividades (quantidades congeladas); o
+  verso não muda. Cursos sem atividades emitem exatamente como antes.
+- **Não rodar** `tools/ead-sync-cursos.py` nos cursos com atividades: ele não conhece os tipos novos e apaga as aulas.
+- As seções 2 e 3 deste documento descrevem o estado de 30/09/2026 (apostila e texto "contam tempo de leitura", "leitura
+  mínima"): onde divergirem, vale esta seção 9 (A5).
+
+**Onde está no código**
+
+- Banco: `supabase/migrations/0170_ead_atividades_interativas.sql` (colunas, tabelas `treinamento_caso` e
+  `treinamento_questionario_tentativa`, RPC `importar_atividades_ead`) e o smoke `tools/smoke-ead-atividades.sql`.
+- Servidor, em `supabase/functions/portal-funcionario/`: `caso.ts` (regra pura do roteiro: validar, refazer o caminho,
+  resultado da escolha; cópia conferida de `lib/ead-caso.js`), `caso-aluno.ts` (a orquestração das ações `caso_abrir`,
+  `caso_escolher` e `caso_concluir`: lê o roteiro e a trilha e responde sem `segura`, `comentario` nem `proxima` antes
+  do clique), `questionario.ts` (as ações `questionario_abrir` e `questionario_enviar`: sorteio, tentativa numerada e
+  correção comentada), `regras.ts` (leitura e tarefa sem relógio), `requisitos.ts` (requisitos por tipo), `prova.ts` e
+  `conclusao.ts` (a prova final só com as questões sem aula) e `index.ts` (liga as ações; a função interna
+  `concluirAula` é a conclusão única das ações novas e do `progresso`).
+- Portal do aluno, em `apps/web/src/components/portal-funcionario/`: `QuestionarioPortal.jsx` e `CasoPortal.jsx`
+  (novos), `CursoPortal.jsx` (lista de aulas, leitura até o fim, "Próxima aula") e `ApostilaPdf.jsx` (pdf.js em todas as
+  telas); a lógica pura está em `apps/web/src/lib/` (`portal-leitura.js`, `portal-questionario.js`, `portal-caso.js`).
+- Tela do RH, em `apps/web/src/components/seguranca/`: `TreinamentosEadTab.jsx` (nova aula, nota mínima, remover aula),
+  `AulaLinhaEad.jsx` (menu "Questões" e "Editar caso"), `QuestoesEad.jsx`, `CasoEditor.jsx`,
+  `ImportarAtividadesDialog.jsx`, `MatriculaAuditoriaSheet.jsx`, `PreviaAlunoCurso.jsx`, `ProvaDaTentativa.jsx` e
+  `exportarDossieEad.js`; a lógica pura está em `apps/web/src/lib/` (`ead-caso.js`, `ead-caso-edicao.js`,
+  `ead-aula-nova.js`, `ead-atividades-importar.js`, `ead-requisitos.js`, `ead-impacto.js`, `ead-trilha.js`,
+  `ead-dossie.js`, `portal-previa.js`, `certificado-ead.js`, `apostila-pdf.js`).
+
+### 9.2 Decisões do Javerson
+
+| #   | Decisão                                                                                                                                                                                                                                    |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A1  | Entram as três atividades do pacote, nesta ordem: questionário do módulo, caso com decisões, tarefa de estudo                                                                                                                              |
+| A2  | Questionário = estudo guiado: nota ≥ mínima do módulo (80%), tentativas livres e gravadas, correção comentada                                                                                                                              |
+| A3  | Caso só por clique; a insegura mostra o comentário e segue o roteiro; no fim, "Para refletir" e "Concluir caso"                                                                                                                            |
+| A4  | Tarefa só confirmando ("Fiz a atividade"); sem texto do aluno nem parecer do tutor                                                                                                                                                         |
+| A5  | Sem relógio em atividades e leituras (botão ao rolar até o fim); vídeo segue em 90%; o tempo soma na carga                                                                                                                                 |
+| A6  | Cada atividade é uma aula do curso                                                                                                                                                                                                         |
+| A7  | "Importar atividades" (prévia, tudo ou nada, reimportar não duplica) e criação/edição na tela                                                                                                                                              |
+| A8  | Tempos padrão na importação: 15 min por questionário e 10 por caso (as tarefas trazem o seu)                                                                                                                                               |
+| A9  | Certificado: frase de resumo na frente nos cursos com atividades; o verso não muda                                                                                                                                                         |
+| A10 | Migração 0170; produção na ordem de 9.3, cada passo com OK explícito                                                                                                                                                                       |
+| A11 | Exercícios pós-vídeo (14/10, depois da spec): cada um vira um questionário de clique logo depois do vídeo; as alternativas erradas e o comentário são redigidos fora do repositório e revisados pelo Javerson como RT antes da carga (9.5) |
+
+A11 em detalhe: a importação aceita também os **exercícios pós-vídeo** já convertidos em múltipla escolha
+(`{ "tipo": "questionarios_por_video", "itens": [{ "video", "questoes" }] }`): cada item vira um questionário logo
+depois da aula de vídeo daquele código (código de origem `PV-<vídeo>`, título "Exercícios do vídeo: <título>", 5 min por
+padrão), no módulo do vídeo.
+
+### 9.3 Produção (ordem obrigatória; cada passo só com o OK explícito do Javerson)
+
+Quem estiver ajudando o Javerson explica cada passo em linguagem simples (o que será aplicado e o que muda para o
+aluno e para o RH) e espera o "sim" dele no chat, para aquele passo. Nunca digitar senha nem colar chave. Os passos 1 a 3
+rodam na pasta do worktree (`C:\Users\javer\sigoobras-wt-ead-interativas`), que tem a branch e o arquivo da migração. O
+deploy leva a pasta `_shared/` inteira como está no disco: a pasta tem de estar na branch
+`feat/ead-atividades-interativas` e com `git status` vazio. Se o master andou depois de 21/10/2026, trazer o
+`origin/master` para a branch de novo e repetir a verificação (9.7) antes do passo 1.
+
+```bash
+# 1. migração (estrutura, tabelas novas e a RPC importar_atividades_ead; nenhum dado existente muda). Esperado: ok
+npx supabase@2.118.0 db query --linked -f supabase/migrations/0170_ead_atividades_interativas.sql
+
+# 2. smoke (begin; ... rollback;: desfaz tudo no fim). Esperado: SMOKE TEST OK: atividades interativas (0170)
+npx supabase@2.118.0 db query --linked -f tools/smoke-ead-atividades.sql
+
+# 3. função do portal (questionário, caso, leitura sem relógio, certificado)
+npx supabase@2.118.0 functions deploy portal-funcionario --project-ref fpyvdwpvxrubrkdwrqbs --no-verify-jwt --use-api
+
+# 4. front: merge da branch em master e push em master LOGO DEPOIS do passo 3 (o push publica o site)
+```
+
+**Por que nessa ordem**
+
+- **Migração primeiro.** A função nova e o site novo leem `treinamento_caso`, `treinamento_questionario_tentativa` e a
+  coluna `aula_id` das questões. Sem a migração, a ação `dados` do `portal-funcionario` novo responde 503 ("Não foi
+  possível carregar seus cursos agora"): nenhum aluno vê os cursos. No site novo, a aba Treinamentos do RH mostra "Erro
+  ao carregar treinamentos" e os Detalhes da matrícula, "Erro ao carregar a trilha de auditoria". A 0170 só acrescenta
+  (não muda dado existente) e o portal e o site de hoje continuam iguais depois dela: pode ser aplicada sozinha.
+- **Smoke logo depois da migração.** O Javerson roda o `tools/smoke-ead-atividades.sql`: ele cria e desfaz tudo na mesma
+  execução, com dados de mentira numa empresa que já existe (nada fica gravado). Qualquer `FALHOU` ou erro: parar e
+  mandar o texto inteiro para quem estiver ajudando.
+- **Função e push juntos, um logo depois do outro.** As leituras sem relógio mudam nos dois lados. Site novo com
+  função velha: a leitura trava no 409 `TEMPO_LEITURA` e as telas de questionário e caso chamam ações que a função
+  velha não conhece. Função nova com site velho: nada quebra (o site velho continua esperando o tempo mínimo de
+  leitura), mas também nada de novo aparece. Por isso o push sai logo depois do deploy, e o deploy só depois da 0170. O
+  merge e o push em `master` são do Javerson (regra 3 do `AGENTS.md`).
+- **Voltar atrás.** A 0170 pode ficar (só acrescenta). O que se desfaz é o código: reverter o merge no master (o push
+  republica o site antigo) e publicar de novo a função a partir do commit anterior, os dois juntos.
+
+Depois do passo 4 (esperar o workflow `deploy-hostgator.yml` terminar), abrir a aba Treinamentos EAD e o portal do
+funcionário de teste: os cursos têm de abrir como antes. Em seguida, **primeiro o roteiro de teste (9.6)**, num curso
+"TESTE EAD — apagar"; só depois as cargas nos cursos de verdade: NR-10 Básico (9.4) e exercícios pós-vídeo (9.5).
+
+### 9.4 Carga das atividades do NR-10 Básico (Sinergia e Eletro)
+
+**1. (agente)** Trazer de volta ao PC o zip do pacote final, `NR10_Parte_1_de_6_Curso_e_Documentos.zip`, e extraí-lo numa
+pasta própria, fora do repositório (ex.: `C:\Users\javer\NR10-Material-Avaliacao\pacote-final\`). Em 21/10/2026 ele
+ainda não estava no PC: só os rascunhos M1–M8, em `C:\Users\javer\NR10-Material-Avaliacao\conteudo`.
+
+**2. (agente)** Conferir o formato de `NR10_Basico_Javerson/data/*.json` contra o leitor (`lerPacoteDeAtividades`):
+módulos `{ id, titulo, casos, questoes, estudo }`, casos `{ titulo, contexto, etapas[{ id, pergunta, opcoes[{ texto,
+feedback, segura, proxima }] }], reflexao }`, questões `{ enunciado, opcoes, correta, explicacao }` e tarefas
+`{ titulo, instrucoes, evidencia, tempoEstimadoMin }`. Se diferir, ajustar o leitor e o teste numa task própria antes
+de seguir.
+
+**3. (agente)** Gerar o arquivo de importação e o relatório de revisão, fora do repositório, com o script abaixo
+(salvo, por exemplo, em `C:\Users\javer\NR10-Material-Avaliacao\conferir-pacote.mjs`). Ele só lê o pacote e grava o
+arquivo de saída; não fala com o banco. O 3º argumento é um checkout do SIGO com esta branch (o worktree, ou o
+principal depois do merge).
+
+```js
+// Conferência do pacote do NR-10 e geração do arquivo de importação ("Importar atividades").
+// Fica FORA do repositório. Só lê o pacote e grava o arquivo de saída: não fala com o banco.
+// Uso: node conferir-pacote.mjs "<pasta data do pacote>" "<arquivo de saída .json>" ["<checkout do SIGO>"]
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+
+const [pasta, saida, repo = "C:/Users/javer/sigoobras-base"] = process.argv.slice(2);
+if (!pasta || !saida) {
+  console.error('uso: node conferir-pacote.mjs "<pasta data>" "<saida.json>" ["<checkout do SIGO>"]');
+  process.exit(2);
+}
+const { lerPacoteDeAtividades, planejarImportacao, TEMPOS_PADRAO } = await import(
+  pathToFileURL(join(repo, "apps/web/src/lib/ead-atividades-importar.js")).href
+);
+
+let arquivos;
+try {
+  arquivos = readdirSync(pasta).filter((f) => f.toLowerCase().endsWith(".json"));
+} catch {
+  console.error(`Não achei a pasta do pacote: ${pasta}`);
+  process.exit(2);
+}
+arquivos.sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
+// arquivo com JSON quebrado: para e diz qual é (em vez de uma tela de erro do Node)
+const lerArquivo = (f) => {
+  try {
+    return JSON.parse(readFileSync(join(pasta, f), "utf8").replace(/^\uFEFF/, ""));
+  } catch (e) {
+    console.error(`O arquivo ${f} não é um JSON válido: ${e.message}`);
+    process.exit(1);
+  }
+};
+// cada arquivo pode ser a lista de módulos, { modulos: [...] } ou um módulo só
+const brutos = arquivos
+  .flatMap((f) => {
+    const j = lerArquivo(f);
+    return Array.isArray(j) ? j : Array.isArray(j?.modulos) ? j.modulos : [j];
+  })
+  .filter((m) => m && typeof m === "object" && m.id);
+// só o que a importação usa (objetivos, apostila, pratica... ficam fora)
+const modulos = brutos.map(({ id, titulo, casos, questoes, estudo }) => ({
+  id,
+  titulo,
+  casos,
+  questoes,
+  estudo,
+}));
+
+const pacote = lerPacoteDeAtividades(modulos);
+if (pacote.erros.length) {
+  console.error("O pacote não pode ser lido:\n- " + pacote.erros.join("\n- "));
+  process.exit(1);
+}
+const { itens, porModulo } = planejarImportacao({
+  pacote,
+  modulosDoCurso: [],
+  codigosExistentes: [],
+  tempos: TEMPOS_PADRAO,
+  escolhaDeModulo: {},
+});
+const ramificado = (caso) =>
+  caso.etapas.some((e) => e.opcoes.some((o) => !o.segura && o.proxima && o.proxima !== e.id));
+
+console.log("Módulo | casos (ramificados) | questões | tarefas | minutos");
+let total = { casos: 0, questoes: 0, tarefas: 0, minutos: 0 };
+for (const m of pacote.modulos) {
+  const r = porModulo.find((p) => p.moduloPacote === m.id);
+  const n = m.casos.filter((c) => ramificado(c.conteudo)).length;
+  console.log(`${m.id} | ${m.casos.length} (${n}) | ${m.questoes.length} | ${m.tarefas.length} | ${r ? r.minutos : 0}`);
+  total = {
+    casos: total.casos + m.casos.length,
+    questoes: total.questoes + m.questoes.length,
+    tarefas: total.tarefas + m.tarefas.length,
+    minutos: total.minutos + (r ? r.minutos : 0),
+  };
+}
+console.log(`TOTAL | ${total.casos} | ${total.questoes} | ${total.tarefas} | ${total.minutos}`);
+const comProblema = itens.filter((i) => i.problemas.length);
+console.log(
+  comProblema.length
+    ? `\nPROBLEMAS (corrigir no pacote antes de importar):\n${comProblema
+        .map((i) => `- ${i.codigo_origem}: ${i.problemas.join("; ")}`)
+        .join("\n")}`
+    : "\nNenhum problema."
+);
+writeFileSync(saida, JSON.stringify(modulos, null, 2) + "\n", "utf8");
+console.log(`\nArquivo de importação: ${saida}`);
+```
+
+```bash
+node "C:/Users/javer/NR10-Material-Avaliacao/conferir-pacote.mjs" \
+  "C:/Users/javer/NR10-Material-Avaliacao/pacote-final/NR10_Basico_Javerson/data" \
+  "C:/Users/javer/NR10-Material-Avaliacao/atividades-nr10-m1-m12.json" \
+  "C:/Users/javer/sigoobras-wt-ead-interativas"
+```
+
+O script para com uma mensagem clara se a pasta não existir, se algum `.json` estiver quebrado (diz qual) ou se o pacote
+não puder ser lido. O relatório (contagens por módulo, quantos casos são ramificados, problemas) vai para o Javerson
+aprovar antes do passo 4. Esperado no pacote completo: 36 casos e 96 questões nos 12 módulos, e "Nenhum problema".
+Problema apontado = corrigir no pacote (fora do repositório) e rodar de novo.
+
+**4. (Javerson)** Importar pela tela, em cada empresa (Sinergia e Eletro): Treinamentos EAD → curso NR-10 Básico →
+seção "Aulas" → "Importar atividades" → o arquivo do passo 3. Se o curso já tiver alunos em andamento, a tela mostra
+antes um aviso com quantos são: ler e seguir. Na prévia, conferir que cada módulo M1–M12 entrou no módulo do curso
+"casado pelo código" (se algum vier como "Novo módulo", escolher o módulo certo na lista), tempos 15/10 e nenhuma
+atividade com problema; então "Confirmar e importar" e anotar o resumo (aulas criadas, questões, puladas). Importar o
+mesmo arquivo de novo não duplica: tudo aparece como "já existe — será pulada". O banco aceita no máximo 300 atividades
+por importação (o pacote completo tem bem menos).
+
+**5. (Javerson roda, o agente lê o resultado)** Conferência, só leitura, no SQL do Supabase: colar **uma consulta por
+vez**, rodar e copiar o resultado de volta para o chat. As consultas escolhem o curso pelo nome e a empresa pelo nome (a
+1ª mostra quais cursos o filtro pegou: precisam ser os dois NR-10 Básico).
+
+```sql
+-- Conferência da carga das atividades do NR-10 Básico. SÓ LEITURA: nenhum insert, update ou delete.
+-- Rode uma consulta por vez (o editor do Supabase mostra só o resultado da última).
+
+-- 1) Os cursos que o filtro pegou: precisam ser os dois NR-10 Básico (um da Sinergia, um da Eletro)
+select e.nome as empresa, c.nome as curso, c.modalidade, c.carga_horaria_horas, c.carga_teorica_horas,
+       c.nota_minima_modulo, c.ativo
+from public.treinamento_curso c
+join public.empresa e on e.id = c.empresa_id
+where c.deleted_at is null
+  and c.nome ilike '%NR%10%B_sico%'
+  and c.nome not ilike '%recicl%'
+  and (e.nome ilike '%sinergia%' or e.nome ilike '%eletro%')
+order by e.nome;
+
+-- 2) Aulas por módulo e tipo (minutos = tempo previsto somado)
+with alvo as (
+  select c.id, e.nome as empresa
+  from public.treinamento_curso c
+  join public.empresa e on e.id = c.empresa_id
+  where c.deleted_at is null
+    and c.nome ilike '%NR%10%B_sico%'
+    and c.nome not ilike '%recicl%'
+    and (e.nome ilike '%sinergia%' or e.nome ilike '%eletro%')
+)
+select al.empresa, coalesce(a.modulo, '(sem módulo)') as modulo, a.tipo, count(*) as aulas,
+       round(sum(coalesce(a.duracao_seg, 0)) / 60.0) as minutos
+from alvo al
+join public.treinamento_aula a on a.curso_id = al.id and a.deleted_at is null
+group by al.empresa, a.modulo, a.tipo
+order by al.empresa, min(a.ordem), a.tipo;
+
+-- 3) Questões por questionário (e quantas com problema: sem pergunta, menos de 2 alternativas ou correta fora)
+with alvo as (
+  select c.id, e.nome as empresa
+  from public.treinamento_curso c
+  join public.empresa e on e.id = c.empresa_id
+  where c.deleted_at is null
+    and c.nome ilike '%NR%10%B_sico%'
+    and c.nome not ilike '%recicl%'
+    and (e.nome ilike '%sinergia%' or e.nome ilike '%eletro%')
+)
+select al.empresa, a.ordem, a.codigo_origem, a.titulo,
+       count(q.id) as questoes,
+       count(q.id) filter (
+         where coalesce(trim(q.pergunta), '') = ''
+            or n.alternativas < 2
+            or q.correta < 0
+            or q.correta >= n.alternativas
+       ) as questoes_com_problema
+from alvo al
+join public.treinamento_aula a
+  on a.curso_id = al.id and a.deleted_at is null and a.tipo = 'questionario'
+left join public.treinamento_questao q on q.aula_id = a.id and q.deleted_at is null
+left join lateral (
+  select case when jsonb_typeof(q.opcoes) = 'array' then jsonb_array_length(q.opcoes) else 0 end
+           as alternativas
+) n on true
+group by al.empresa, a.id, a.ordem, a.codigo_origem, a.titulo
+order by al.empresa, a.ordem;
+
+-- 4) Roteiros dos casos: aula sem roteiro, etapas, opções, etapa sem escolha segura e insegura que encerra
+--    (a validação completa é a da tela: o painel de requisitos do curso acusa roteiro inválido)
+with alvo as (
+  select c.id, e.nome as empresa
+  from public.treinamento_curso c
+  join public.empresa e on e.id = c.empresa_id
+  where c.deleted_at is null
+    and c.nome ilike '%NR%10%B_sico%'
+    and c.nome not ilike '%recicl%'
+    and (e.nome ilike '%sinergia%' or e.nome ilike '%eletro%')
+)
+select al.empresa, a.ordem, a.codigo_origem, a.titulo,
+       k.id is not null as tem_roteiro,
+       jsonb_array_length(et.lista) as etapas,
+       (select count(*)
+          from jsonb_array_elements(et.lista) e,
+               jsonb_array_elements(coalesce(e -> 'opcoes', '[]'::jsonb)) o) as opcoes,
+       (select count(*)
+          from jsonb_array_elements(et.lista) e
+         where not exists (
+           select 1 from jsonb_array_elements(coalesce(e -> 'opcoes', '[]'::jsonb)) o
+            where (o ->> 'segura')::boolean is true
+         )) as etapas_sem_escolha_segura,
+       (select count(*)
+          from jsonb_array_elements(et.lista) e,
+               jsonb_array_elements(coalesce(e -> 'opcoes', '[]'::jsonb)) o
+         where (o ->> 'segura')::boolean is not true
+           and jsonb_typeof(o -> 'proxima') is distinct from 'string') as inseguras_que_encerram
+from alvo al
+join public.treinamento_aula a on a.curso_id = al.id and a.deleted_at is null and a.tipo = 'caso'
+left join public.treinamento_caso k on k.aula_id = a.id and k.deleted_at is null
+left join lateral (
+  select case when jsonb_typeof(k.conteudo -> 'etapas') = 'array' then k.conteudo -> 'etapas'
+              else '[]'::jsonb end as lista
+) et on true
+order by al.empresa, a.ordem;
+
+-- 5) Resumo: conteúdo x carga (LASTRO), atividades, códigos repetidos e questões da prova final
+with alvo as (
+  select c.id, e.nome as empresa, c.nome,
+         case when c.modalidade = 'semipresencial' then c.carga_teorica_horas
+              else c.carga_horaria_horas end as carga_a_cobrir
+  from public.treinamento_curso c
+  join public.empresa e on e.id = c.empresa_id
+  where c.deleted_at is null
+    and c.nome ilike '%NR%10%B_sico%'
+    and c.nome not ilike '%recicl%'
+    and (e.nome ilike '%sinergia%' or e.nome ilike '%eletro%')
+)
+select al.empresa, al.nome, al.carga_a_cobrir,
+       round(sum(coalesce(a.duracao_seg, 0)) / 3600.0, 2) as horas_de_conteudo,
+       coalesce(al.carga_a_cobrir, 0) > 0
+         and sum(coalesce(a.duracao_seg, 0)) >= 3600 * al.carga_a_cobrir as lastro_ok,
+       count(*) filter (where a.tipo = 'questionario') as questionarios,
+       count(*) filter (where a.tipo = 'caso') as casos,
+       count(*) filter (where a.tipo = 'tarefa') as tarefas,
+       count(a.codigo_origem) - count(distinct a.codigo_origem) as codigos_repetidos,
+       (select count(*) from public.treinamento_questao q
+         where q.curso_id = al.id and q.deleted_at is null and q.aula_id is null) as questoes_da_prova_final
+from alvo al
+join public.treinamento_aula a on a.curso_id = al.id and a.deleted_at is null
+group by al.id, al.empresa, al.nome, al.carga_a_cobrir
+order by al.empresa;
+```
+
+Esperado com o pacote completo: em cada empresa, 12 questionários com 8 questões cada e 0 com problema, 36 casos todos
+com roteiro, 0 etapa sem escolha segura e 0 insegura que encerra, as tarefas do pacote, 0 código repetido e as
+questões da prova final como antes da carga. `lastro_ok` diz se o conteúdo (aulas e atividades) já cobre a carga; o que
+faltar é decisão do Javerson e do RT (D1 e D9 da seção 6).
+
+**6. (Javerson)** Na tela: o painel "Requisitos para publicar e emitir certificado" do curso sem pendência de
+conteúdo; "Ver como aluno" num módulo (questionário, caso e tarefa).
+
+### 9.5 Carga dos exercícios pós-vídeo
+
+**1. (agente)** Origem: o zip `Cursos_Sinergia_Conteudo_Plataforma_RECUPERADO_2026-10-02.zip` (em Downloads),
+extraído numa pasta própria fora do repositório: `Exercicios_Pos_Video_Rascunho/exercicios_por_video.json` (46 vídeos
+× 2 perguntas abertas com a resposta esperada; códigos começando por S = NR-10 SEP, H = NR-35, E = NR-6, G = NR-1) e
+`NR10_Basico_Expandido_Rascunho/exercicios_modulos.json` (módulos B01–B15 × 2 perguntas = NR-10 Básico Reciclagem). Ao
+todo são 122 perguntas. Ficam de fora os exercícios cujo vídeo não existe mais (os `B02A…` e o piloto).
+
+**2. (agente)** Conversão para múltipla escolha (trabalho de conteúdo, fora do repositório): cada pergunta aberta vira
+uma questão em que a resposta esperada é a alternativa certa, mais 3 erradas plausíveis redigidas, e um comentário que
+explica a certa. Um arquivo por curso no formato:
+
+```json
+{
+  "tipo": "questionarios_por_video",
+  "itens": [
+    {
+      "video": "S02A",
+      "questoes": [
+        {
+          "pergunta": "Texto da pergunta?",
+          "opcoes": ["Alternativa certa", "Errada 1", "Errada 2", "Errada 3"],
+          "correta": 0,
+          "comentario": "Por que a certa é a certa."
+        }
+      ]
+    }
+  ]
+}
+```
+
+O código do vídeo precisa aparecer no nome do arquivo do vídeo no curso (ex.: `NR10_S02A_cena.mp4`, `S02A.mp4`, ou
+`<uuid>-S02A_...` como a tela grava): "S02A" não casa com "S02AB". Vídeo do YouTube não tem arquivo e não é achado. Nos
+módulos B01–B15 da Reciclagem, `video` é o código que está no nome do arquivo do vídeo de cada módulo; se os vídeos
+não tiverem B01... no nome, a prévia mostra "vídeo B01 não encontrado neste curso" e o caminho é decidido com o
+Javerson antes de importar.
+
+**3. (Javerson, como RT)** Revisão de todas as perguntas, alternativas e comentários antes de importar. Nenhum texto
+desse material entra no repositório.
+
+**4. (Javerson)** Importação pela tela, curso a curso, nas duas empresas: NR-10 SEP e Reciclagem, NR-35 e Reciclagem,
+NR-6, NR-1 e NR-10 Básico Reciclagem ("Importar atividades" → o arquivo do curso → prévia por vídeo: código, aula
+achada, número de questões e problemas → desmarcar o que tiver problema, se o Javerson concordar → "Confirmar e
+importar"). Cada questionário entra logo depois da aula de vídeo, no módulo dela, e soma 5 min na carga (editável na
+prévia, campo "Tempo de cada questionário pós-vídeo (min)"). Com 2 questões e nota mínima de 80%, o aluno precisa
+acertar as 2 (tentativas livres, com a correção comentada).
+
+**5. (Javerson roda, o agente lê o resultado)** Conferência, só leitura, trocando o filtro do nome do curso
+(`ilike '%NR%35%'` etc.):
+
+```sql
+-- Exercícios pós-vídeo: cada questionário "PV-" logo depois do vídeo do mesmo código. SÓ LEITURA.
+with alvo as (
+  select c.id, e.nome as empresa, c.nome
+  from public.treinamento_curso c
+  join public.empresa e on e.id = c.empresa_id
+  where c.deleted_at is null
+    and c.nome ilike '%NR%35%'
+    and (e.nome ilike '%sinergia%' or e.nome ilike '%eletro%')
+)
+select al.empresa, al.nome, a.ordem, a.codigo_origem, a.titulo,
+       ant.tipo as tipo_da_aula_anterior, ant.titulo as aula_anterior,
+       (select count(*) from public.treinamento_questao q
+         where q.aula_id = a.id and q.deleted_at is null) as questoes
+from alvo al
+join public.treinamento_aula a
+  on a.curso_id = al.id and a.deleted_at is null and a.codigo_origem like 'PV-%'
+left join lateral (
+  select v.tipo, v.titulo
+  from public.treinamento_aula v
+  where v.curso_id = a.curso_id and v.deleted_at is null and v.ordem < a.ordem
+  order by v.ordem desc
+  limit 1
+) ant on true
+order by al.empresa, al.nome, a.ordem;
+```
+
+Esperado: `tipo_da_aula_anterior` = `video` em todas as linhas e 2 questões em cada questionário.
+
+### 9.6 Roteiro de teste (Javerson)
+
+Depois de 9.3, em `https://www.sigoobras.com.br`, no curso "TESTE EAD — apagar" e com o funcionário de teste da seção 7
+(se já foram apagados, criar de novo como lá: para o passo 11, o curso precisa estar publicado, com o painel de
+requisitos sem pendência, e o funcionário matriculado). Tudo o que for criado leva "TESTE" no nome e é apagado no fim
+(passo 23). **Só começar com o OK explícito do Javerson.** Reserve cerca de 2 horas (estimativa). Cada grupo de passos diz
+onde fazer: na tela do RH (computador) ou no portal do aluno (de preferência no celular). Se algo sair diferente do
+"deve acontecer", anotar o número do passo, tirar uma foto da tela e mandar para quem estiver ajudando; não consertar
+pelo banco.
+
+**Os dois arquivos de teste.** Salvar, fora do repositório (por exemplo em `C:\Users\javer\teste-ead\`), como UTF-8 (o
+padrão do Bloco de Notas), com o texto abaixo, que é de mentira. O primeiro é `teste-atividades.json` (formato do
+pacote do material, usado no passo 9):
+
+```json
+[
+  {
+    "id": "M1",
+    "titulo": "Teste",
+    "casos": [
+      {
+        "titulo": "Caso importado",
+        "contexto": "Situação de teste.",
+        "etapas": [
+          {
+            "id": "e1",
+            "pergunta": "Primeira decisão?",
+            "opcoes": [
+              { "texto": "Escolha segura", "feedback": "Certo.", "segura": true, "proxima": "e2" },
+              { "texto": "Escolha insegura", "feedback": "Arriscado.", "segura": false, "proxima": "r1" }
+            ]
+          },
+          {
+            "id": "r1",
+            "pergunta": "Como corrigir?",
+            "opcoes": [
+              { "texto": "Voltar", "feedback": "Isso.", "segura": true, "proxima": "e1" },
+              { "texto": "Insistir", "feedback": "Ainda arriscado.", "segura": false, "proxima": "r1" }
+            ]
+          },
+          {
+            "id": "e2",
+            "pergunta": "Segunda decisão?",
+            "opcoes": [
+              { "texto": "Encerrar com segurança", "feedback": "Fim seguro.", "segura": true, "proxima": null },
+              { "texto": "Pular a etapa", "feedback": "Não.", "segura": false, "proxima": "e2" }
+            ]
+          }
+        ],
+        "reflexao": "O que você faria diferente?"
+      }
+    ],
+    "questoes": [
+      {
+        "enunciado": "Pergunta de teste 1?",
+        "opcoes": ["Certa", "Errada", "Errada", "Errada"],
+        "correta": 0,
+        "explicacao": "Porque é a certa."
+      },
+      { "enunciado": "Pergunta de teste 2?", "opcoes": ["Errada", "Certa"], "correta": 1, "explicacao": "Idem." }
+    ],
+    "estudo": [
+      {
+        "titulo": "Tarefa importada",
+        "instrucoes": "Faça um desenho do posto.",
+        "evidencia": "Foto do desenho.",
+        "tempoEstimadoMin": 5
+      }
+    ]
+  }
+]
+```
+
+O segundo é `teste-posvideo.json` (formato dos exercícios pós-vídeo, usado no passo 10):
+
+```json
+{
+  "tipo": "questionarios_por_video",
+  "itens": [
+    {
+      "video": "V01",
+      "questoes": [
+        {
+          "pergunta": "Pergunta de teste do vídeo 1?",
+          "opcoes": ["Certa", "Errada", "Errada", "Errada"],
+          "correta": 0,
+          "comentario": "Porque é a certa."
+        },
+        {
+          "pergunta": "Pergunta de teste do vídeo 2?",
+          "opcoes": ["Errada", "Certa", "Errada", "Errada"],
+          "correta": 1,
+          "comentario": "Idem."
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Montar as atividades pela tela (computador, tela do RH)**
+
+1. **Nota mínima.** No curso, campo "Nota mínima dos questionários dos módulos (%)": colocar 80 e "Salvar curso". Deve
+   salvar sem erro (se o curso tiver aluno em andamento, aparece antes um aviso com quantos são).
+2. **Questionário.** Em "Aulas", "Nova aula": tipo "Questionário", título `TESTE · Questionário`, módulo `M1 · Teste`,
+   tempo previsto 5 min, botão `+`. No menu ⋮ da aula, "Questões": cadastrar 3 questões (4 alternativas, a certa
+   marcada, um comentário em cada). Deve acontecer: a linha da aula mostra "3 questões"; a "Avaliação final" (mais
+   abaixo) continua só com as questões de antes (as 3 novas não aparecem lá). Editar o comentário de uma questão e
+   salvar: a mudança fica.
+3. **Caso, criar.** "Nova aula": tipo "Caso", título `TESTE · Caso`, módulo `M1 · Teste`, tempo 5 min, `+`: abre o
+   editor do caso. Preencher a situação (contexto), clicar "Adicionar etapa" duas vezes (nascem `e2` e `e3`) e trocar o
+   código da 3ª etapa de `e3` para `r1`. Montar assim: etapa 1 (`e1`): a escolha segura "leva para" `e2` e a insegura
+   "leva para" `r1`; etapa `r1`: a segura "leva para" `e1` e a insegura continua em `r1`; etapa `e2`: a segura "leva
+   para" "Fim do caso" e a insegura continua em `e2`. Escrever a pergunta de cada etapa, o texto e o comentário de cada
+   opção e o texto "Para refletir". Deve acontecer: "Salvar caso" só acende quando não há problema apontado na tela; "Fim
+   do caso" fica desabilitado numa opção insegura. Salvar: aparece "Caso criado" e a aula entra na lista.
+4. **Caso, editar.** No menu ⋮ da aula do caso, "Editar caso": mudar o comentário de uma opção e o texto "Para
+   refletir"; salvar ("Caso salvo"). Abrir de novo: as mudanças estão lá.
+5. **Tarefa.** "Nova aula": tipo "Tarefa", título `TESTE · Tarefa`, módulo `M1 · Teste`, instruções longas (para
+   precisar rolar no celular), tempo 5 min, `+`.
+6. **Texto e apostila.** Editar (lápis) a aula de texto do curso de teste: trocar uma palavra e salvar (antes isso só
+   dava por SQL); deixar o texto longo, de várias telas de celular, para precisar rolar. Trocar a apostila por um PDF de
+   3 páginas ou mais (menu ⋮ da aula, "Trocar o arquivo (PDF)"). Com uma apostila de 1 página, o botão do aluno acende
+   na hora, o que também é o esperado, mas não testa a rolagem.
+7. **Remover.** Criar uma aula `TESTE · Caso para apagar` (basta preencher os textos: o editor já começa com uma etapa
+   que fecha o caso) e uma `TESTE · Questionário para apagar` (1 questão). Em cada uma, menu ⋮ → "Remover aula". Deve
+   acontecer: a confirmação diz "O roteiro do caso é removido junto com a aula." e "A questão deste questionário é
+   removida junto com a aula."; depois de confirmar, a aula some da lista. A "Avaliação final" continua com as mesmas
+   questões.
+
+**Ver como aluno (computador, tela do RH)**
+
+8. No curso de teste, "Ver como aluno" (nada é gravado). No questionário: errar 1 de 3 (67%): não conclui e mostra a
+   correção comentada; "Tentar de novo" sorteia de novo a ordem; acertar as 3: conclui. No caso: escolher a insegura (o
+   comentário aparece em âmbar; "Continuar" leva a `r1`), voltar e terminar ("Para refletir", "Concluir caso"). Na
+   tarefa, na apostila e no texto: o botão só acende ao rolar até o fim.
+
+**Importar um arquivo pequeno de cada formato (computador, tela do RH)**
+
+9. **Pacote do material.** "Importar atividades" → `teste-atividades.json`. Na prévia: "M1" casa com "M1 · Teste";
+   aparecem 1 caso (10 min), 1 questionário com 2 questões (15 min) e 1 atividade de estudo (5 min, vinda do arquivo);
+   nenhum problema. "Confirmar e importar": o resumo diz "3 aulas criadas e 2 questões gravadas". Importar o mesmo
+   arquivo de novo: tudo aparece como "já existe — será pulada" e o "Confirmar e importar" fica desabilitado.
+10. **Exercícios pós-vídeo.** O vídeo do curso de teste precisa ter `V01` no nome do arquivo (por exemplo
+    `TESTE_V01.mp4`; se o nome for outro, troque o código `V01` no arquivo de teste pelo que está no nome, ou use
+    "Trocar o arquivo" na aula de vídeo). "Importar atividades" → `teste-posvideo.json`. Na prévia: o vídeo é achado,
+    com 2 questões e 5 min. Confirmar: "1 aula criada e 2 questões gravadas"; o questionário "Exercícios do vídeo: ..."
+    entra logo depois da aula de vídeo, no módulo dela. Para ver o erro, trocar `V01` por `V99` numa cópia do arquivo: a
+    prévia diz "vídeo V99 não encontrado neste curso" e o "Confirmar e importar" não acende.
+
+**Aluno de verdade (portal do funcionário, celular e computador)**
+
+11. Entrar no portal com o funcionário de teste (acesso e senha provisória como no passo 5 da seção 7) e abrir o curso.
+12. **Leitura até o fim.** No celular, abrir a apostila (PDF de 3 páginas ou mais): o botão "Marcar como lida — li e
+    compreendi" fica apagado, com o aviso "Role a apostila até o fim da última página para liberar o botão". Rolar até
+    o fim da última página: o botão acende; tocar e a aula conclui. Não há contagem regressiva nem "faltam X min".
+    Repetir com a aula de texto longo (aviso "Role o texto até o fim para liberar o botão") e com a tarefa (botão "Fiz a
+    atividade"; aviso "Leia as instruções até o fim para liberar o botão"). Um texto curto, que cabe na tela, acende na
+    hora. No computador, a apostila aparece desenhada na própria página (sem a barra do visualizador do navegador) e
+    "Abrir em outra aba" continua funcionando.
+13. **"Próxima aula" começa no topo.** Rolar a página para baixo (até a lista de aulas), concluir uma aula e tocar em
+    "Próxima aula: ...". Deve acontecer: a aula seguinte abre com o começo dela no topo da tela, não no meio da página;
+    se for texto ou tarefa longos, o botão continua apagado até rolar.
+14. **Questionário.** Abrir `TESTE · Questionário`: responder todas, errando uma (3 questões = 67%), e "Enviar
+    respostas": aparece a correção comentada, a aula não conclui e aparece "Tentar de novo". Tocar: as questões e as
+    alternativas vêm em outra ordem. Acertar as 3: a aula conclui; ao reabrir, mostra a melhor nota e quantas
+    tentativas foram.
+15. **Caso.** Abrir `TESTE · Caso`: escolher a opção insegura de `e1` (o comentário aparece em âmbar), "Continuar", ir
+    por `r1` de volta a `e1` e terminar pela escolha segura até o fim: aparece "Para refletir" e "Concluir caso". No
+    meio do caminho, recarregar a página: o caso volta de onde parou.
+16. **Tarefa.** Abrir `TESTE · Tarefa`, rolar até o fim e tocar "Fiz a atividade": conclui.
+17. **Caso importado, toque duplo e parar no meio.** Abrir o caso importado ("Caso importado"). Na 1ª etapa, tocar duas
+    vezes bem rápido em "Escolha segura". Deve acontecer: a escolha vale uma vez só (aparece o comentário dela, sem
+    mensagem de erro e sem o caso recomeçar). "Continuar" leva a `e2`; escolher "Pular a etapa" (continua em `e2`),
+    "Continuar" e **parar aí**, sem concluir.
+
+**O RH muda o roteiro com o aluno no meio (computador, tela do RH)**
+
+18. "Editar caso" no caso importado: "Remover etapa" na etapa `e2` (a escolha segura de `e1` passa a encerrar o caso) e
+    "Salvar caso". Deve acontecer: antes de gravar, aparece o aviso "Mudar o roteiro do caso com alunos?" (só se o aluno
+    já tiver tempo registrado nessa aula); escolher "Salvar mesmo assim". Trocar só o texto de uma opção não faz o aluno
+    recomeçar: ele recomeça quando o caminho que já fez deixa de existir, como aqui.
+
+**Terminar o curso (portal do funcionário)**
+
+19. No caso importado, recarregar a página: ele recomeça da primeira etapa. Chegar ao fim e, em "Concluir caso", tocar
+    duas vezes bem rápido: conclui uma vez só, sem erro.
+20. Fazer as aulas que faltam: o questionário importado (2 questões: acertar as 2), o questionário pós-vídeo do passo
+    10 (acertar as 2), a tarefa importada e o resto do curso.
+21. **Prova e certificado.** Fazer a prova final (só tem as 5 questões de sempre: as dos questionários não entram nela)
+    e assinar o certificado com a senha, como na seção 7. A frente do PDF traz a frase "conclusão das atividades dos
+    módulos: 3 questionários (nota mínima de 80%), 2 estudos de caso e 2 atividades de estudo" (com os números do que o
+    curso de teste tiver: sem o passo 10, são 2 questionários). O verso não muda.
+
+**Conferir e limpar (computador, tela do RH)**
+
+22. **RH confere.** Detalhes da matrícula do funcionário de teste: a seção "Questionários dos módulos" lista as
+    tentativas (a abaixo da nota e a aprovada), cada uma abre com as questões na ordem que o aluno viu, a alternativa
+    marcada e a certa. A trilha mostra "Escolha no caso", "Caso recomeçado (o roteiro mudou)", "Concluiu o caso", "Leu
+    até o fim" e "Confirmou a atividade de estudo"; o toque duplo dos passos 17 e 19 deixou uma só "Escolha no caso" por
+    clique e uma só "Concluiu o caso". "Exportar CSV". Depois, no curso, "Exportar dossiê": abrir o ZIP e conferir que
+    `questionarios.csv` está lá, com as tentativas.
+23. **Limpeza**, como na seção 7 (o `sigo.permitir_expurgo` dela vale também para as tentativas dos questionários).
+    Apagar o curso leva as aulas, as questões e os roteiros dos casos; apagar o funcionário leva as matrículas e, com
+    elas, as tentativas dos questionários. Depois, apagar no Storage (bucket `treinamentos`) os arquivos enviados e
+    apagar os dois arquivos de teste do PC.
+
+### 9.7 Verificação da branch (feita antes de entregar)
+
+Feita em 21/10/2026, na raiz do worktree, com a branch no commit anterior ao deste documento. Todas sem erro:
+
+- `node --test "supabase/functions/**/*.test.ts"`: 2174 testes, 0 falhas.
+- `npm test --workspace=apps/web`: 155 arquivos, 2958 testes, 0 falhas.
+- `npm run lint` e `npm run build`: sem erro.
+- `npx prettier --check` em todos os arquivos tocados pela branch (`git diff --name-only --diff-filter=d origin/master...HEAD`) e
+  neste documento; `no-undef` nos componentes alterados (`cd apps/web && npx eslint --rule "no-undef: error" ...`): sem
+  erro.
+- Nenhum UUID real nem texto do material no repositório (busca por UUID no diff da branch).
+
+As contagens crescem a cada task e a cada merge do master: vale a da última verificação.
