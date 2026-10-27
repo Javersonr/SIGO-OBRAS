@@ -30,6 +30,8 @@ import { sigo } from "@/api/sigoClient";
 import CursoPortal from "./CursoPortal";
 import AvaliacaoPortal, { ProvaEmAndamento } from "./AvaliacaoPortal";
 import DuvidasPortal from "./DuvidasPortal";
+import QuestionarioPortal from "./QuestionarioPortal";
+import CasoPortal from "./CasoPortal";
 import { montarItemPrevia, criarApiPrevia } from "@/lib/portal-previa";
 import { provaParaTela } from "@/lib/portal-curso";
 
@@ -69,8 +71,13 @@ const semOperacao = () => {};
 const fila = (tarefa) => tarefa();
 
 // O que o servidor devolve a um aluno matriculado: aulas em ordem linear e NENHUMA questão (a prova só
-// chega sorteada, sem gabarito, quando o aluno a abre: ação `iniciar_avaliacao`).
-const { questoes: _questoesDaPrevia, ...itemSemQuestoes } = itemPrevia;
+// chega sorteada, sem gabarito, quando o aluno a abre: ação `iniciar_avaliacao`), nem o gabarito dos
+// questionários ou o roteiro dos casos (só a prévia os tem, em `atividades_previa`).
+const {
+  questoes: _questoesDaPrevia,
+  atividades_previa: _atividadesDaPrevia,
+  ...itemSemQuestoes
+} = itemPrevia;
 const itemReal = {
   ...itemSemQuestoes,
   matricula: { id: "m1", status: "em_andamento", avaliacao_aprovada: false },
@@ -326,6 +333,8 @@ describe("a prévia só pode falar com o servidor pela API injetada", () => {
     "AvaliacaoPortal.jsx",
     "DuvidasPortal.jsx",
     "CertificadoPortal.jsx",
+    "QuestionarioPortal.jsx",
+    "CasoPortal.jsx",
   ]) {
     it(`${arquivo} importa só \`apiPortal\` de ./api, nunca \`chamarPortal\``, () => {
       const fonte = readFileSync(fileURLToPath(new URL(arquivo, import.meta.url)), "utf8");
@@ -337,4 +346,126 @@ describe("a prévia só pode falar com o servidor pela API injetada", () => {
       expect(importados).not.toContain("chamarPortal");
     });
   }
+});
+
+describe("prévia com as atividades dos módulos", () => {
+  const aulasAtividades = [
+    {
+      id: "t1",
+      ordem: 1,
+      modulo: "M1 · Teste",
+      tipo: "tarefa",
+      titulo: "M1 · Atividade de estudo 1: Mapa",
+      conteudo_texto: "Instruções sintéticas",
+      duracao_seg: 2100,
+    },
+    {
+      id: "qz",
+      ordem: 2,
+      modulo: "M1 · Teste",
+      tipo: "questionario",
+      titulo: "M1 · Questionário do módulo",
+      duracao_seg: 900,
+    },
+    {
+      id: "cs",
+      ordem: 3,
+      modulo: "M1 · Teste",
+      tipo: "caso",
+      titulo: "M1 · Caso 1: O quadro",
+      duracao_seg: 600,
+    },
+  ];
+  const doModulo = {
+    id: "qm",
+    aula_id: "qz",
+    ordem: 1,
+    pergunta: "Questão do módulo?",
+    opcoes: ["x", "y"],
+    correta: 0,
+    comentario: "Comentário do módulo",
+  };
+  const roteiro = {
+    contexto: "Contexto sintético do caso",
+    etapas: [
+      {
+        id: "e1",
+        pergunta: "Decide?",
+        opcoes: [
+          { texto: "Sim", comentario: "Bom.", segura: true, proxima: null },
+          { texto: "Não", comentario: "Ruim.", segura: false, proxima: "e1" },
+        ],
+      },
+    ],
+    reflexao: "Reflexão sintética",
+  };
+  const item = montarItemPrevia({
+    curso,
+    aulas: aulasAtividades,
+    questoes: [...questoes, doModulo],
+    casos: [{ aula_id: "cs", conteudo: roteiro }],
+    urls: {},
+  });
+  const api = criarApiPrevia({ item });
+  const rotulo = (texto) => `<span class="block text-[11px] text-slate-400">${texto}</span>`;
+
+  it("a lista mostra o rótulo de cada atividade e a prova conta só as questões dela", () => {
+    const html = renderToStaticMarkup(
+      <CursoPortal
+        item={item}
+        api={api}
+        recarregar={async () => null}
+        dadosCarregadosEm={() => Date.now()}
+        onVoltar={semOperacao}
+        onErroSessao={semOperacao}
+      />
+    );
+    expect(html).toContain(rotulo("atividade de estudo"));
+    expect(html).toContain(rotulo("questionário"));
+    expect(html).toContain(rotulo("estudo de caso"));
+    expect(html).toContain("Avaliação final · 2 questões");
+    expect(html).not.toContain("Questão do módulo?");
+  });
+
+  it("o questionário e o caso abrem pela API da prévia: nada aparece antes da resposta dela", () => {
+    const q = renderToStaticMarkup(
+      <QuestionarioPortal
+        api={api}
+        item={item}
+        aula={item.aulas[1]}
+        fila={fila}
+        tratarErro={semOperacao}
+        onConcluida={semOperacao}
+      />
+    );
+    expect(q).toContain("Preparando o questionário");
+    expect(q).not.toContain("Questão do módulo?");
+    const c = renderToStaticMarkup(
+      <CasoPortal
+        api={api}
+        item={item}
+        aula={item.aulas[2]}
+        fila={fila}
+        tratarErro={semOperacao}
+        onConcluida={semOperacao}
+      />
+    );
+    expect(c).toContain("Abrindo o caso");
+    expect(c).not.toContain("Contexto sintético do caso");
+  });
+
+  it("PreviaAlunoCurso recebe os casos (padrão: nenhum) e os leva à montagem da prévia", () => {
+    const fonte = readFileSync(
+      fileURLToPath(new URL("../seguranca/PreviaAlunoCurso.jsx", import.meta.url)),
+      "utf8"
+    );
+    expect(fonte).toMatch(
+      /PreviaAlunoCurso\(\{ curso, aulas, questoes, casos = \[\], onFechar \}\)/
+    );
+    expect(fonte).toContain("useRef({ curso, aulas, questoes, casos })");
+  });
+
+  it("nada disso chamou o backend", () => {
+    expect(sigo.functions.invoke).not.toHaveBeenCalled();
+  });
 });

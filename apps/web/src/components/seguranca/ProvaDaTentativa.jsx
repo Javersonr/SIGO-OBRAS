@@ -19,15 +19,22 @@ const STATUS = {
  * A prova de uma tentativa como o aluno a viu (trilha de auditoria do RH, T18): cada pergunta, na
  * posição em que apareceu, com as alternativas na ordem exibida, a que o aluno marcou e a correta.
  * O que marca a resposta é texto e ícone, não só a cor (leitura em impressão e por leitor de tela).
- * `abertaEm`: hora em que a prova foi aberta (evento `avaliacao_iniciada`), quando há.
+ * `abertaEm`: hora em que a prova foi aberta (evento `avaliacao_iniciada`), quando há. `rotuloAberta`: o texto
+ * que antecede essa hora ("Questionário aberto em" no questionário do módulo).
  */
-export default function ProvaDaTentativa({ tentativa, abertaEm, formatarDataHora }) {
+export default function ProvaDaTentativa({
+  tentativa,
+  abertaEm,
+  formatarDataHora,
+  // o questionário do módulo (atividades interativas) usa a mesma tela
+  rotuloAberta = "Prova aberta em",
+}) {
   const { temDetalhe, questoes } = detalharTentativa(tentativa);
 
   return (
     <div className="space-y-3 rounded-md bg-slate-50 p-3 text-xs">
       <p className="text-slate-500">
-        {abertaEm ? `Prova aberta em ${formatarDataHora(abertaEm)} · ` : ""}
+        {abertaEm ? `${rotuloAberta} ${formatarDataHora(abertaEm)} · ` : ""}
         Enviada em {formatarDataHora(tentativa.created_at)}
         {tentativa.dispositivo ? ` · Aparelho: ${tentativa.dispositivo}` : ""}
       </p>

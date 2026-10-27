@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -16,14 +16,28 @@ import {
   Loader2,
   ChevronRight,
   Eye,
+  ListChecks,
+  Signpost,
+  ClipboardList,
+  Clock,
 } from "lucide-react";
 import { apiPortal, criarFila, fmtTempo, fmtDataHora, armazenamentoPortal } from "./api";
 import AvaliacaoPortal from "./AvaliacaoPortal";
 import CertificadoPortal from "./CertificadoPortal";
 import DuvidasPortal from "./DuvidasPortal";
 import ApostilaPdf from "./ApostilaPdf";
+import QuestionarioPortal from "./QuestionarioPortal";
+import CasoPortal from "./CasoPortal";
 import PrazoDoCurso from "./PrazoDoCurso";
 import { leituraPodeContar, urlApostilaValida } from "@/lib/apostila-pdf";
+import {
+  MSG_PREVIA_CONCLUSAO,
+  avisoDeAulaConcluida,
+  botaoDeLeitura,
+  chaveDoPainelDaAula,
+  rotuloDoTipoNaLista,
+  tempoPrevisto,
+} from "@/lib/portal-leitura";
 import { videoSemDuracao } from "@/lib/ead-duracao";
 import {
   AVISO_VELOCIDADE,
@@ -100,7 +114,66 @@ function AvisoVideo({ mensagem, rotuloBotao, onClick }) {
   );
 }
 
-const ICONE_TIPO = { video: PlayCircle, pdf: FileText, texto: BookOpen };
+const ICONE_TIPO = {
+  video: PlayCircle,
+  pdf: FileText,
+  texto: BookOpen,
+  questionario: ListChecks,
+  caso: Signpost,
+  tarefa: ClipboardList,
+};
+
+/**
+ * Marcador no fim do texto da aula (texto e tarefa, A5): quando ele aparece na tela, o botão de concluir
+ * acende. Texto curto, que cabe na tela, mostra o marcador de cara e libera na hora. Sem
+ * IntersectionObserver (navegador antigo) o fim não pode ser medido, e o aluno não pode ficar preso: libera.
+ */
+function MarcadorDeFim({ onVisivel }) {
+  const ref = useRef(null);
+  const onVisivelRef = useRef(onVisivel);
+  onVisivelRef.current = onVisivel;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    if (typeof IntersectionObserver !== "function") {
+      onVisivelRef.current?.();
+      return undefined;
+    }
+    const observador = new IntersectionObserver((entradas) => {
+      if (!entradas.some((e) => e.isIntersecting)) return;
+      observador.disconnect();
+      onVisivelRef.current?.();
+    });
+    observador.observe(el);
+    return () => observador.disconnect();
+  }, []);
+  return <div ref={ref} aria-hidden="true" className="h-px" />;
+}
+
+/** Tarefa de estudo (A4): instruções e "o que produzir" (o texto da aula) e o tempo previsto. */
+function TarefaDeEstudo({ aula }) {
+  const previsto = tempoPrevisto(aula.duracao_seg);
+  return (
+    <div className="bg-white rounded-lg border p-4 space-y-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+        <span className="flex items-center gap-1.5 font-semibold text-slate-800">
+          <ClipboardList className="w-4 h-4 text-slate-500" /> Atividade de estudo
+        </span>
+        {previsto && (
+          <span className="flex items-center gap-1 text-xs text-slate-500">
+            <Clock className="w-3.5 h-3.5" /> Tempo previsto: {previsto}
+          </span>
+        )}
+      </div>
+      <div className="text-[15px] leading-relaxed text-slate-800 whitespace-pre-wrap">
+        {aula.conteudo_texto}
+      </div>
+      <p className="text-xs text-slate-500">
+        Faça a atividade fora desta tela, como as instruções pedem, e volte aqui para confirmar.
+      </p>
+    </div>
+  );
+}
 
 /**
  * Curso aberto no portal. Regras (conferidas também no servidor):
@@ -152,6 +225,9 @@ export default function CursoPortal({
   const [falhaRecarga, setFalhaRecarga] = useState(false);
   // relógio que só serve para refazer a conta quando acaba o intervalo da próxima tentativa da prova
   const [relogio, setRelogio] = useState(() => Date.now());
+  // leituras (PDF, texto, tarefa) que o aluno já rolou até o fim nesta visita ao curso: o botão de
+  // concluir só acende com o fim à vista (A5); voltar à aula não pede a rolagem de novo
+  const [fimAlcancado, setFimAlcancado] = useState({});
 
   const fila = useMemo(() => criarFila(), []);
   const assistidoRef = useRef(0);
@@ -171,9 +247,31 @@ export default function CursoPortal({
   const avisoDeEnvioRef = useRef("");
   // estado da apostila (PDF) da aula aberta: o tempo de leitura só corre com ela na tela
   const estadoPdfRef = useRef({ aulaId: null, estado: "carregando" });
+  // painel da aula aberta (conteúdo, botão de concluir e "Próxima aula"); a lista de aulas fica abaixo dele
+  const painelAulaRef = useRef(null);
 
   const aula = aulas.find((a) => a.id === aulaId) || null;
   aulaRef.current = aula;
+
+  // A aula aberta começa no topo da janela (A5). O painel e a lista de aulas ficam empilhados na mesma
+  // página: sem esta rolagem, ao abrir uma aula (ou clicar "Próxima aula") a página continua rolada para
+  // baixo e o marcador do fim da aula nova, que observa a janela, já nasce à vista e acende o botão sem
+  // leitura. É um efeito de LAYOUT: roda no mesmo commit em que o painel e o marcador entram, antes de
+  // qualquer efeito comum (o MarcadorDeFim começa a observar num `useEffect`), e a primeira medição do
+  // IntersectionObserver só acontece no quadro seguinte, já com a página rolada. Sem animação: o
+  // `scroll-behavior` smooth deixaria o marcador ser medido no meio da rolagem. Texto curto, que cabe na
+  // tela, continua liberando na hora: o marcador fica à vista mesmo com o painel no topo.
+  const chavePainel = chaveDoPainelDaAula({ aulaId, modo });
+  useLayoutEffect(() => {
+    if (!chavePainel) return;
+    const painel = painelAulaRef.current;
+    if (!painel?.scrollIntoView) return;
+    try {
+      painel.scrollIntoView({ block: "start", behavior: "instant" });
+    } catch {
+      painel.scrollIntoView(true); // navegador antigo, sem o valor "instant"
+    }
+  }, [chavePainel]);
 
   const tratarErro = (e) => {
     if (e?.codigo === "SESSAO" || e?.codigo === "TROCAR_SENHA") onErroSessao(e);
@@ -262,21 +360,13 @@ export default function CursoPortal({
         }
       }
     } catch (e) {
-      // servidor mede o tempo real: se ainda falta leitura, volta a contar
-      if (e?.codigo === "TEMPO_LEITURA") {
-        if (Number.isFinite(e.extra?.segundos_assistidos)) {
-          assistidoRef.current = e.extra.segundos_assistidos;
-          setSegundosTela(assistidoRef.current);
-        }
-        setErro(e.message);
-        iniciarContagem();
-        return;
-      }
+      // a leitura não exige mais tempo mínimo (A5): o servidor conclui com o clique
       tratarErroDeEnvio(e);
     }
   };
 
-  // leitura (PDF/texto) pode contar agora? PDF: só com URL válida e a apostila aberta na tela
+  // tempo de tela das aulas sem player (leituras e atividades) pode contar agora? PDF: só com URL válida
+  // e a apostila aberta na tela
   const leituraLiberada = (a) =>
     leituraPodeContar(
       a,
@@ -291,6 +381,10 @@ export default function CursoPortal({
     if (leituraLiberada(a)) iniciarContagem();
     else pararContagem();
   };
+
+  // o aluno chegou ao fim do conteúdo da aula (marcador do texto/tarefa ou última página da apostila)
+  const marcarFim = (id) =>
+    setFimAlcancado((atual) => (atual[id] ? atual : { ...atual, [id]: true }));
 
   // URL assinada nova (a de 3 h pode vencer) para o "Tentar de novo" da apostila
   const urlNovaDaApostila = async (aulaIdDaApostila) => {
@@ -691,9 +785,53 @@ export default function CursoPortal({
     } else ultimo.aulas.push(a);
   }
 
-  const minimo = aula?.duracao_seg || 0;
   // PDF sem URL: o leitor mostra "Apostila indisponível" e não há contador nem "marcar como lida"
   const apostilaIndisponivel = aula?.tipo === "pdf" && !urlApostilaValida(aula.arquivo_url);
+  // botão de concluir a leitura (texto, PDF, tarefa): acende ao chegar ao fim, sem relógio (A5)
+  const botaoLeitura = aula
+    ? botaoDeLeitura({
+        tipo: aula.tipo,
+        chegouAoFim: fimAlcancado[aula.id] === true,
+        concluida: aula.concluida,
+        previa,
+        indisponivel: apostilaIndisponivel,
+      })
+    : null;
+  const concluirLeitura = async () => {
+    // prévia: nada é gravado e a aula não conclui; o RT só vê que o botão funcionaria
+    if (previa) {
+      setAviso(MSG_PREVIA_CONCLUSAO);
+      return;
+    }
+    await pararContagem(false);
+    sincronizar({ concluir: true });
+  };
+
+  // Questionário aprovado ou caso concluído: quem concluiu a aula foi a ação própria, no servidor (o
+  // `progresso` nunca conclui essas aulas). O tempo de tela que ainda não tinha ido segue para a trilha, sem
+  // pedir conclusão, e a lista é buscada de novo para liberar a próxima aula. Prévia: só o aviso.
+  const aoConcluirAtividade = async (resposta) => {
+    if (previa) {
+      setAviso(MSG_PREVIA_CONCLUSAO);
+      return;
+    }
+    const a = aulaRef.current;
+    pararContagem(false);
+    if (a) {
+      const segundos = Math.floor(assistidoRef.current);
+      fila(() =>
+        chamarPortal(
+          "progresso",
+          { matricula_id: mat.id, aula_id: a.id, segundos_assistidos: segundos },
+          token
+        )
+      )
+        .then(() => envioDeuCerto())
+        .catch(tratarErroDeEnvio);
+    }
+    const novos = await atualizarAulas();
+    setAviso(avisoDeAulaConcluida({ resposta, dados: novos, matriculaId: mat.id }));
+  };
   // vídeo: de onde vem (arquivo, YouTube ou nada), com a URL travada na que abriu a aula
   const midias = (aula && midiasDaAula[aula.id]) || {
     video_url: aula?.video_url,
@@ -750,7 +888,8 @@ export default function CursoPortal({
             <Eye className="w-4 h-4 shrink-0" />
             <span className="flex-1 min-w-[12rem]">
               <strong>Prévia como aluno.</strong> Nada é gravado: sem matrícula, tempo, tentativa,
-              certificado nem trilha. Todas as aulas estão liberadas e a prova mostra o gabarito.
+              certificado nem trilha. Todas as aulas estão liberadas e a prova e os questionários
+              mostram o gabarito.
             </span>
             <Button type="button" size="sm" variant="outline" className="bg-white" onClick={voltar}>
               Sair da prévia
@@ -865,7 +1004,7 @@ export default function CursoPortal({
             }}
           />
         ) : aula ? (
-          <div className="space-y-2">
+          <div ref={painelAulaRef} className="space-y-2">
             {aula.tipo === "video" &&
               (fonteVideo === "indisponivel" ? (
                 <AvisoVideo mensagem={mensagemVideoIndisponivel(aula)} />
@@ -953,12 +1092,41 @@ export default function CursoPortal({
                 titulo={aula.titulo}
                 onEstado={(estado) => aoMudarEstadoPdf(aula.id, estado)}
                 obterUrlNova={() => urlNovaDaApostila(aula.id)}
+                onFim={() => marcarFim(aula.id)}
               />
             )}
             {aula.tipo === "texto" && (
               <div className="bg-white rounded-lg border p-4 text-[15px] leading-relaxed text-slate-800 whitespace-pre-wrap">
                 {aula.conteudo_texto}
               </div>
+            )}
+            {aula.tipo === "tarefa" && <TarefaDeEstudo aula={aula} />}
+            {(aula.tipo === "texto" || aula.tipo === "tarefa") && (
+              <MarcadorDeFim key={aula.id} onVisivel={() => marcarFim(aula.id)} />
+            )}
+            {aula.tipo === "questionario" && (
+              <QuestionarioPortal
+                key={aula.id}
+                api={api}
+                item={item}
+                aula={aula}
+                token={token}
+                fila={fila}
+                tratarErro={tratarErro}
+                onConcluida={aoConcluirAtividade}
+              />
+            )}
+            {aula.tipo === "caso" && (
+              <CasoPortal
+                key={aula.id}
+                api={api}
+                item={item}
+                aula={aula}
+                token={token}
+                fila={fila}
+                tratarErro={tratarErro}
+                onConcluida={aoConcluirAtividade}
+              />
             )}
             <div className="text-sm text-slate-600 flex flex-wrap items-center gap-2">
               <span className="font-medium text-slate-800">{aula.titulo}</span>
@@ -981,28 +1149,28 @@ export default function CursoPortal({
                   </span>
                 )
               ) : previa ? (
-                <span>Prévia: o tempo de leitura não é contado nem gravado.</span>
+                <span>Prévia: o tempo de tela não é contado nem gravado.</span>
               ) : (
                 <span>
-                  Tempo de leitura: {fmtTempo(segundosTela)}
-                  {minimo ? ` de ${fmtTempo(minimo)}` : ""} · o tempo só conta com esta tela aberta
+                  Tempo de tela: {fmtTempo(segundosTela)} · vai para a trilha do curso e só conta
+                  com esta tela aberta
                 </span>
               )}
             </div>
-            {aula.tipo !== "video" && !aula.concluida && !apostilaIndisponivel && !previa && (
-              <Button
-                className="w-full h-11 bg-emerald-600 hover:bg-emerald-700"
-                disabled={minimo > 0 && segundosTela < minimo}
-                onClick={async () => {
-                  await pararContagem(false);
-                  sincronizar({ concluir: true });
-                }}
-              >
-                <CheckCircle2 className="w-4 h-4 mr-2" />
-                {minimo > 0 && segundosTela < minimo
-                  ? `Marcar como lida (faltam ${fmtTempo(minimo - segundosTela)})`
-                  : "Marcar como lida — li e compreendi"}
-              </Button>
+            {botaoLeitura && (
+              <div className="space-y-1">
+                <Button
+                  className="w-full h-11 bg-emerald-600 hover:bg-emerald-700"
+                  disabled={!botaoLeitura.habilitado}
+                  onClick={concluirLeitura}
+                >
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  {botaoLeitura.rotulo}
+                </Button>
+                {botaoLeitura.dica && (
+                  <p className="text-xs text-center text-slate-500">{botaoLeitura.dica}</p>
+                )}
+              </div>
             )}
             {seguinte && (
               // o título inteiro vai no rótulo: o Button tem whitespace-nowrap, então quebra a linha
@@ -1114,8 +1282,13 @@ export default function CursoPortal({
                     ) : (
                       <Lock className="w-5 h-5 text-slate-400 shrink-0" />
                     )}
-                    <span className="flex-1 text-sm">
+                    <span className="flex-1 min-w-0 text-sm">
                       {a.numero}. {a.titulo}
+                      {rotuloDoTipoNaLista(a.tipo) && (
+                        <span className="block text-[11px] text-slate-400">
+                          {rotuloDoTipoNaLista(a.tipo)}
+                        </span>
+                      )}
                     </span>
                     {!a.liberada && (
                       <span className="text-[11px] text-slate-400">conclua a anterior</span>

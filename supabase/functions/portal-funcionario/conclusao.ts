@@ -82,12 +82,14 @@ export async function situacaoReal(supabase: Db, mat: any, empresaId: string) {
     { data: aprovadas, error: erroAprovadas },
   ] = await Promise.all([
     trilhaDoCurso(supabase, mat.curso_id, mat.id, empresaId),
+    // "o curso tem prova" = tem questão da prova final (sem aula); a dos questionários dos módulos não conta
     supabase
       .from("treinamento_questao")
       .select("id")
       .eq("curso_id", mat.curso_id)
       .eq("empresa_id", empresaId)
       .is("deleted_at", null)
+      .is("aula_id", null)
       .limit(1),
     supabase
       .from("treinamento_tentativa")

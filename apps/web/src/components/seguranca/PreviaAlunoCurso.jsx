@@ -18,15 +18,17 @@ const semOperacao = () => {};
  * `portalFuncionario` (lib/portal-previa.js): nenhuma trilha, tentativa, progresso, dúvida ou certificado.
  *
  * Monte só enquanto a prévia estiver aberta: cada abertura refaz os dados a partir do que a tela do
- * curso mostra agora (o que `curso`, `aulas` e `questoes` tinham ao abrir).
+ * curso mostra agora (o que `curso`, `aulas`, `questoes` e `casos` tinham ao abrir). `questoes` são todas
+ * as do curso (prova final e questionários, separadas pelo `aula_id`); `casos` são os roteiros dos casos
+ * (`[{ aula_id, conteudo }]`), que a aba Treinamentos EAD passa.
  */
-export default function PreviaAlunoCurso({ curso, aulas, questoes, onFechar }) {
+export default function PreviaAlunoCurso({ curso, aulas, questoes, casos = [], onFechar }) {
   // fotografia do que o editor mostrava ao abrir: o editor recarrega por baixo e não deve mexer na prévia
-  const origemRef = useRef({ curso, aulas, questoes });
+  const origemRef = useRef({ curso, aulas, questoes, casos });
   const carregadoEmRef = useRef(0);
   const [item, setItem] = useState(null);
   const [falhou, setFalhou] = useState(false);
-  // a API da prévia é criada uma vez, com as questões e a nota mínima do item inicial
+  // a API da prévia é criada uma vez, com as questões, os roteiros e as notas mínimas do item inicial
   const apiRef = useRef(null);
 
   const montar = async () => {

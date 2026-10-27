@@ -154,6 +154,13 @@ test("prepararProva: abrir a prova nunca lê o gabarito; só a correção carreg
   assert.match(colunas(com.de), /comentario/);
 });
 
+test("prepararProva: só as questões da prova final (aula_id vazio); as dos questionários dos módulos ficam de fora", async () => {
+  for (const comGabarito of [false, true]) {
+    const { de } = await preparar({}, { comGabarito });
+    assert.ok(tem(de("treinamento_questao")[0], ["is", "aula_id", null]), String(comGabarito));
+  }
+});
+
 test("prepararProva: tentativas extras da matrícula somam ao limite do curso", async () => {
   const { preparo } = await preparar(
     {

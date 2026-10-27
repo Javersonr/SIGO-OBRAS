@@ -81,6 +81,7 @@ export async function prepararProva(
     { data: anteriores, error: erroAnteriores },
     { data: liberacoes, error: erroLiberacoes },
   ] = await Promise.all([
+    // só a prova final: questão com `aula_id` é de um questionário de módulo (questionario.ts)
     supabase
       .from("treinamento_questao")
       .select(
@@ -91,6 +92,7 @@ export async function prepararProva(
       .eq("curso_id", mat.curso_id)
       .eq("empresa_id", empresaId)
       .is("deleted_at", null)
+      .is("aula_id", null)
       .order("ordem", { ascending: true }),
     supabase
       .from("treinamento_curso")

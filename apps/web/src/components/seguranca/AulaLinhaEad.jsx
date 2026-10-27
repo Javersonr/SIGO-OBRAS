@@ -1,5 +1,16 @@
 import React, { useRef } from "react";
-import { ArrowDown, ArrowUp, BookOpen, FileText, MoreVertical, Pencil, Video } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  BookOpen,
+  ClipboardList,
+  FileText,
+  GitBranch,
+  ListChecks,
+  MoreVertical,
+  Pencil,
+  Video,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,12 +22,23 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { videoSemDuracao } from "@/lib/ead-duracao";
 import { ACCEPT_AULA, tipoDeArquivoDaAula } from "@/lib/ead-upload";
+import { ehAtividade, nomeDoTipoDeAula } from "@/lib/ead-aula-nova";
 
 // Setas de ordem: a cor está no botão (o ícone herda), então desabilitada (1ª/última aula ou
 // gravação em andamento) ela esmaece e o hover não a escurece como se estivesse ativa.
 const CLASSE_ICONE = "h-8 w-8 shrink-0 text-slate-400 hover:text-slate-800 hover:bg-slate-200";
 const CLASSE_ICONE_DESABILITADO =
   "disabled:opacity-40 disabled:hover:text-slate-400 disabled:hover:bg-transparent disabled:cursor-not-allowed";
+
+// ícone de cada tipo de aula (atividades interativas: questionário, caso e tarefa)
+const ICONE_DO_TIPO = {
+  video: Video,
+  pdf: FileText,
+  texto: BookOpen,
+  questionario: ListChecks,
+  caso: GitBranch,
+  tarefa: ClipboardList,
+};
 
 /**
  * Linha de uma aula na lista do curso (T30). O título corta em até duas linhas, com reticências
@@ -26,6 +48,11 @@ const CLASSE_ICONE_DESABILITADO =
  * `aula.numero` vem de `numerarAulas`. Os arquivos escolhidos sobem pelas props `onTrocarArquivo`
  * e `onLegenda`; os seletores de arquivo ficam FORA do menu (o menu desmonta ao fechar e levaria o
  * seletor junto antes do `change`).
+ *
+ * Atividades interativas: questionário, caso e tarefa têm ícone e rótulo próprios. "Questões" (questionário,
+ * `onQuestoes`) e "Editar caso" (caso, `onCaso`) ficam no menu e aparecem também sem Editar, só para ver.
+ * `resumo` (ex.: "8 questões") e `pendencia` (ex.: "sem roteiro", em âmbar) vêm da tela (`situacaoDaAtividade`).
+ * O tempo de PDF, texto e atividades é o previsto (soma na carga horária; A5: não decide a conclusão).
  */
 export default function AulaLinhaEad({
   aula,
@@ -40,34 +67,62 @@ export default function AulaLinhaEad({
   onRemover,
   onTrocarArquivo,
   onLegenda,
+  onQuestoes,
+  onCaso,
+  resumo = null,
+  pendencia = null,
   // T33: sem Treinamentos EAD → Editar a linha só mostra a aula (e "Ver"); quem protege é o banco
   somenteLeitura = false,
 }) {
   const arquivoRef = useRef(null);
   const legendaRef = useRef(null);
   const tipo = aula.tipo || "video";
-  const Icone = tipo === "pdf" ? FileText : tipo === "texto" ? BookOpen : Video;
+  const Icone = ICONE_DO_TIPO[tipo] ?? Video;
   const tipoArquivo = tipoDeArquivoDaAula(aula);
   const rotuloTipo = tipo === "pdf" ? "PDF" : "vídeo";
+  const atividade = ehAtividade(tipo);
+  const temArquivoParaVer = tipo === "video" || tipo === "pdf";
+  const temQuestoes = tipo === "questionario" && typeof onQuestoes === "function";
+  const temCaso = tipo === "caso" && typeof onCaso === "function";
+  const temAcaoNoMenu = temArquivoParaVer || temQuestoes || temCaso;
   const temSelos =
+    atividade ||
     (tipo !== "video" && aula.duracao_seg) ||
     videoSemDuracao(aula) ||
-    (tipo === "video" && aula.legenda_ref);
+    (tipo === "video" && aula.legenda_ref) ||
+    resumo ||
+    pendencia;
 
   return (
     <div className="flex items-center gap-1 text-sm bg-slate-50 rounded p-2">
-      <Icone className="w-4 h-4 mr-1 text-slate-400 shrink-0" />
+      <Icone className="w-4 h-4 mr-1 text-slate-400 shrink-0" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <p className="line-clamp-2 break-words" title={`${aula.numero}. ${aula.titulo}`}>
           {aula.numero}. {aula.titulo}
         </p>
         {temSelos && (
           <div className="mt-0.5 flex flex-wrap items-center gap-1">
+            {atividade && (
+              <span className="text-xs font-medium text-slate-500">{nomeDoTipoDeAula(tipo)}</span>
+            )}
             {tipo !== "video" && aula.duracao_seg ? (
-              <span className="text-xs text-slate-400">
-                mín. {Math.round(aula.duracao_seg / 60)} min
+              <span
+                className="text-xs text-slate-400"
+                title="Tempo previsto: soma na carga horária do curso"
+              >
+                {Math.round(aula.duracao_seg / 60)} min previstos
               </span>
             ) : null}
+            {resumo && <span className="text-xs text-slate-400">{resumo}</span>}
+            {pendencia && (
+              <Badge
+                variant="outline"
+                className="text-[10px] px-1.5 py-0 text-amber-700 border-amber-300"
+                title="O aluno não consegue fazer esta aula enquanto isto não for resolvido."
+              >
+                {pendencia}
+              </Badge>
+            )}
             {videoSemDuracao(aula) && (
               <Badge
                 variant="outline"
@@ -126,7 +181,7 @@ export default function AulaLinhaEad({
         </>
       )}
 
-      {(!somenteLeitura || tipo !== "texto") && (
+      {(!somenteLeitura || temAcaoNoMenu) && (
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
@@ -141,9 +196,19 @@ export default function AulaLinhaEad({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="z-[9999] w-56">
-            {tipo !== "texto" && (
+            {temArquivoParaVer && (
               <DropdownMenuItem onSelect={onVer}>
                 {tipo === "pdf" ? "Ver PDF" : "Ver vídeo"}
+              </DropdownMenuItem>
+            )}
+            {temQuestoes && (
+              <DropdownMenuItem onSelect={onQuestoes}>
+                {somenteLeitura ? "Ver questões" : "Questões"}
+              </DropdownMenuItem>
+            )}
+            {temCaso && (
+              <DropdownMenuItem onSelect={onCaso}>
+                {somenteLeitura ? "Ver caso" : "Editar caso"}
               </DropdownMenuItem>
             )}
             {!somenteLeitura && tipoArquivo && (
@@ -159,7 +224,7 @@ export default function AulaLinhaEad({
                 {aula.legenda_ref ? "Trocar a legenda" : "Anexar legenda (.srt ou .vtt)"}
               </DropdownMenuItem>
             )}
-            {!somenteLeitura && tipo !== "texto" && <DropdownMenuSeparator />}
+            {!somenteLeitura && temAcaoNoMenu && <DropdownMenuSeparator />}
             {!somenteLeitura && (
               <DropdownMenuItem
                 className="text-red-600 focus:bg-red-50 focus:text-red-700"

@@ -1,36 +1,17 @@
 import { describe, it, expect } from "vitest";
+import * as modulo from "./apostila-pdf";
 import {
-  MEDIA_APOSTILA_NA_PAGINA,
-  apostilaNaPagina,
+  fimDaApostilaAlcancado,
   urlApostilaValida,
   leituraPodeContar,
   medidasDaPagina,
   mensagemFalhaPdf,
 } from "./apostila-pdf";
 
-describe("apostilaNaPagina", () => {
-  it("usa a mesma consulta de mídia do SIGO (tela pequena ou toque)", () => {
-    expect(MEDIA_APOSTILA_NA_PAGINA).toBe("(max-width: 640px), (pointer: coarse)");
-  });
-
-  it("é verdadeiro quando a consulta casa (celular, tablet, janela estreita)", () => {
-    const perguntas = [];
-    const matchMedia = (q) => {
-      perguntas.push(q);
-      return { matches: true };
-    };
-    expect(apostilaNaPagina(matchMedia)).toBe(true);
-    expect(perguntas).toEqual([MEDIA_APOSTILA_NA_PAGINA]);
-  });
-
-  it("é falso no computador (não casa) e sem matchMedia (mantém o iframe)", () => {
-    expect(apostilaNaPagina(() => ({ matches: false }))).toBe(false);
-    expect(apostilaNaPagina(undefined)).toBe(false);
-    expect(
-      apostilaNaPagina(() => {
-        throw new Error("sem suporte");
-      })
-    ).toBe(false);
+describe("a apostila é desenhada pelo pdf.js em todas as telas (A5)", () => {
+  it("não existe mais a escolha entre iframe e pdf.js pela consulta de mídia", () => {
+    expect("apostilaNaPagina" in modulo).toBe(false);
+    expect("MEDIA_APOSTILA_NA_PAGINA" in modulo).toBe(false);
   });
 });
 
@@ -67,10 +48,37 @@ describe("leituraPodeContar", () => {
     expect(leituraPodeContar(pdf, undefined)).toBe(false);
   });
 
-  it("texto conta sempre; vídeo conta pelo player, não por aqui", () => {
+  it("texto, tarefa, questionário e caso contam sempre; vídeo conta pelo player, não por aqui", () => {
     expect(leituraPodeContar({ tipo: "texto", conteudo_texto: "oi" }, "carregando")).toBe(true);
+    for (const tipo of ["tarefa", "questionario", "caso"]) {
+      expect(leituraPodeContar({ tipo }, "carregando")).toBe(true);
+    }
     expect(leituraPodeContar({ tipo: "video" }, "pronto")).toBe(false);
     expect(leituraPodeContar(null, "pronto")).toBe(false);
+  });
+});
+
+describe("fimDaApostilaAlcancado", () => {
+  it("vale com o documento aberto, a largura medida e o marcador do fim à vista", () => {
+    expect(fimDaApostilaAlcancado({ total: 12, largura: 700, visivel: true })).toBe(true);
+    expect(fimDaApostilaAlcancado({ total: 1, largura: 320, visivel: true })).toBe(true);
+  });
+
+  it("marcador fora da área de leitura: ainda não chegou ao fim", () => {
+    expect(fimDaApostilaAlcancado({ total: 12, largura: 700, visivel: false })).toBe(false);
+  });
+
+  it("antes de abrir o documento ou de medir a largura não vale (as páginas ainda não têm altura)", () => {
+    for (const p of [
+      { total: null, largura: 700, visivel: true },
+      { total: 0, largura: 700, visivel: true },
+      { total: 12, largura: 0, visivel: true },
+      { total: 12, largura: NaN, visivel: true },
+      {},
+    ]) {
+      expect(fimDaApostilaAlcancado(p)).toBe(false);
+    }
+    expect(fimDaApostilaAlcancado()).toBe(false);
   });
 });
 

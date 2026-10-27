@@ -15,6 +15,10 @@
  * de tentativas das reconfirmações de senha (`reconfirmarSenha`). A T31 acrescentou o limite de volume
  * de `evento` e `progresso` (`dentroDoVolume`), a trava otimista do sinal de progresso
  * (`travaDoSinal`, `resultadoDoSinal`) e a lista fixa de colunas da matrícula.
+ *
+ * Atividades interativas (spec 2026-10-14): `conclusaoDaAula` não exige mais tempo de leitura (A5) e nunca
+ * conclui questionário e caso (`TIPOS_COM_ACAO_PROPRIA`); `aulasParaAluno` manda o texto da tarefa; o resumo do
+ * certificado é `atividadesDoCertificado` (A9), com `notaMinimaDoModulo`.
  */
 
 import type { Consumo, Limite } from "../_shared/limite-tentativas.ts";
@@ -83,11 +87,23 @@ export function creditarTempo(p: {
 }
 
 /**
- * Conclusão de UMA aula. Vídeo conclui sozinho aos 90% (arredondado para cima);
- * apostila (pdf/texto) exige o tempo de leitura COMPLETO e o clique explícito em
- * "Marcar como lida" (`pediuConcluir === true`). Aula sem duração nunca atinge o
- * tempo. `concluirCedo` = clicou em concluir a apostila antes do tempo (o servidor
- * recusa); `podeConcluir` = apostila com o tempo completo, só falta o clique.
+ * Tipos de aula que concluem SÓ pelas ações próprias (`questionario_enviar` e `caso_concluir`, spec 2026-10-14
+ * §7): o `progresso` deles credita o tempo de tela e nunca conclui, e o `dados` não manda conteúdo deles.
+ */
+export const TIPOS_COM_ACAO_PROPRIA = ["questionario", "caso"] as const;
+/** Leituras e tarefa: concluem com o clique do aluno, sem tempo mínimo (A5). */
+const TIPOS_DE_LEITURA = ["pdf", "texto", "tarefa"];
+const temAcaoPropria = (tipo: unknown) =>
+  (TIPOS_COM_ACAO_PROPRIA as readonly unknown[]).includes(tipo);
+
+/**
+ * Conclusão de UMA aula pelo `progresso`. Vídeo conclui sozinho aos 90% (arredondado para cima). Leitura (pdf,
+ * texto) e tarefa concluem com o clique explícito ("Marcar como lida" / "Fiz a atividade", `pediuConcluir ===
+ * true`), SEM tempo mínimo (A5, spec 2026-10-14 §4.1: o botão acende quando o aluno rola até o fim). Questionário e
+ * caso nunca concluem por aqui (`TIPOS_COM_ACAO_PROPRIA`); tipo desconhecido também não (o CHECK do banco não o
+ * deixa gravar: na dúvida, fecha). A forma da resposta é a de antes: fora do vídeo `minimoSeg` e `faltamSeg` são 0,
+ * `concluirCedo` é sempre false (o 409 TEMPO_LEITURA deixa de existir) e `podeConcluir` = leitura que só espera o
+ * clique.
  */
 export function conclusaoDaAula(p: {
   tipo?: string | null;
@@ -97,20 +113,66 @@ export function conclusaoDaAula(p: {
   pediuConcluir?: unknown;
 }) {
   const ehVideo = !p.tipo || p.tipo === "video";
-  const minimoSeg = ehVideo ? Math.ceil(p.duracao * PCT_CONCLUSAO) : p.duracao;
-  const atingiuTempo = p.duracao > 0 && p.segundos >= minimoSeg;
-  const pediu = p.pediuConcluir === true;
-  const concluirCedo = pediu && !ehVideo && !atingiuTempo;
-  const concluiu = !!p.jaConcluida || (ehVideo ? atingiuTempo : atingiuTempo && pediu);
+  if (ehVideo) {
+    const minimoSeg = Math.ceil(p.duracao * PCT_CONCLUSAO);
+    const atingiuTempo = p.duracao > 0 && p.segundos >= minimoSeg;
+    return {
+      ehVideo,
+      minimoSeg,
+      atingiuTempo,
+      concluirCedo: false,
+      faltamSeg: p.duracao - p.segundos,
+      concluiu: !!p.jaConcluida || atingiuTempo,
+      podeConcluir: false,
+    };
+  }
+  const leitura = TIPOS_DE_LEITURA.includes(p.tipo as string);
+  const concluiu = !!p.jaConcluida || (leitura && p.pediuConcluir === true);
   return {
     ehVideo,
-    minimoSeg,
-    atingiuTempo,
-    concluirCedo,
-    faltamSeg: p.duracao - p.segundos,
+    minimoSeg: 0,
+    atingiuTempo: leitura,
+    concluirCedo: false,
+    faltamSeg: 0,
     concluiu,
-    podeConcluir: !ehVideo && atingiuTempo && !concluiu,
+    podeConcluir: leitura && !concluiu,
   };
+}
+
+/** Nota mínima dos questionários dos módulos quando o curso não define uma (spec 2026-10-14, A2). */
+export const NOTA_MINIMA_MODULO_PADRAO = 80;
+
+/**
+ * `treinamento_curso.nota_minima_modulo` como número inteiro de 0 a 100; ausente, vazio ou inválido vale 80. A
+ * coluna (0170) é `not null default 80` com CHECK 0–100: o padrão só aparece em curso lido sem a coluna.
+ */
+export function notaMinimaDoModulo(
+  curso: { nota_minima_modulo?: unknown } | null | undefined
+): number {
+  const valor = curso?.nota_minima_modulo;
+  if (typeof valor !== "number" && !(typeof valor === "string" && valor.trim() !== "")) {
+    return NOTA_MINIMA_MODULO_PADRAO;
+  }
+  const n = Number(valor);
+  return Number.isInteger(n) && n >= 0 && n <= 100 ? n : NOTA_MINIMA_MODULO_PADRAO;
+}
+
+/**
+ * O resumo das atividades que o certificado imprime na frente (A9, spec 2026-10-14 §9): quantas aulas de cada tipo
+ * de atividade o curso tem (as não apagadas; todas concluídas, porque a conclusão do curso exige) e a nota mínima
+ * dos questionários. `null` quando o curso não tem nenhuma: o certificado sai exatamente como hoje.
+ */
+export function atividadesDoCertificado(
+  aulas: { tipo?: string | null; deleted_at?: string | null }[] | null | undefined,
+  curso: { nota_minima_modulo?: unknown } | null | undefined
+): { questionarios: number; casos: number; tarefas: number; nota_minima_modulo: number } | null {
+  const vivas = (aulas ?? []).filter((a) => a && !a.deleted_at);
+  const quantas = (tipo: string) => vivas.filter((a) => a.tipo === tipo).length;
+  const questionarios = quantas("questionario");
+  const casos = quantas("caso");
+  const tarefas = quantas("tarefa");
+  if (questionarios + casos + tarefas === 0) return null;
+  return { questionarios, casos, tarefas, nota_minima_modulo: notaMinimaDoModulo(curso) };
 }
 
 /**
@@ -743,7 +805,7 @@ export interface InicioDaProva {
 }
 
 /** `opcoes` é jsonb: lista, texto JSON (legado) ou quebrado (vira lista vazia). */
-function opcoesDaQuestao(opcoes: unknown): string[] {
+export function opcoesDaQuestao(opcoes: unknown): string[] {
   let lista = opcoes;
   if (typeof lista === "string") {
     try {
@@ -1142,8 +1204,12 @@ export function liberacaoDasAulas(
   });
 }
 
-/** Referências de arquivo que a aula pode ter, por tipo: vídeo próprio, legenda e apostila. */
+/**
+ * Referências de arquivo que a aula pode ter, por tipo: vídeo próprio, legenda e apostila. Questionário e caso não
+ * têm arquivo para o aluno (o conteúdo vem das ações próprias): nada a assinar, mesmo com referência gravada.
+ */
 function refsDaAula(a: AulaDoBanco) {
+  if (temAcaoPropria(a.tipo)) return { video: null, legenda: null, arquivo: null };
   return {
     video: a.tipo === "video" && a.fonte === "upload" ? a.video_ref : null,
     legenda: a.legenda_ref,
@@ -1172,8 +1238,9 @@ export function refsDasAulasLiberadas(
 /**
  * Aulas de uma matrícula como o aluno as recebe em `dados`. A lista vem inteira (título, módulo,
  * tipo, duração, conclusão e se está liberada), mas só a aula LIBERADA leva `video_url`,
- * `legenda_url`, `arquivo_url`, `conteudo_texto` e `youtube_id`; nas bloqueadas esses campos vão
- * nulos e `urlDe` nem é consultado. `urlDe` devolve a URL assinada de uma referência (ou null).
+ * `legenda_url`, `arquivo_url`, `conteudo_texto` (texto e tarefa) e `youtube_id`; nas bloqueadas esses
+ * campos vão nulos e `urlDe` nem é consultado. Questionário e caso nunca levam conteúdo, nem liberados
+ * (vem das ações próprias). `urlDe` devolve a URL assinada de uma referência (ou null).
  */
 export function aulasParaAluno(p: {
   aulas: AulaDoBanco[];
@@ -1185,6 +1252,7 @@ export function aulasParaAluno(p: {
   return p.aulas.map((a, i) => {
     const { concluida, liberada } = liberacao[i];
     const refs = refsDaAula(a);
+    const mostra = liberada && !temAcaoPropria(a.tipo);
     return {
       id: a.id,
       ordem: a.ordem,
@@ -1192,11 +1260,12 @@ export function aulasParaAluno(p: {
       tipo: a.tipo || "video",
       titulo: a.titulo,
       fonte: a.fonte || "youtube",
-      youtube_id: liberada ? (a.youtube_id ?? null) : null,
+      youtube_id: mostra ? (a.youtube_id ?? null) : null,
       video_url: liberada ? p.urlDe(refs.video) : null,
       legenda_url: liberada ? p.urlDe(refs.legenda) : null,
       arquivo_url: liberada ? p.urlDe(refs.arquivo) : null,
-      conteudo_texto: liberada && a.tipo === "texto" ? (a.conteudo_texto ?? null) : null,
+      conteudo_texto:
+        mostra && (a.tipo === "texto" || a.tipo === "tarefa") ? (a.conteudo_texto ?? null) : null,
       duracao_seg: a.duracao_seg || (a.tipo === "video" ? null : p.tempoMinimoPadrao),
       segundos_assistidos: p.progresso(a.id)?.segundos_assistidos ?? 0,
       concluida,
@@ -1281,12 +1350,17 @@ export async function reconfirmarSenha(p: {
  *    dezenas em 10 min já é uso intenso.
  * Somados, o pior caso por funcionário é 570 em 10 min (abrir_aula 120 + player 300 + evento 150), pouco
  * mais de três vezes o teto único antigo.
+ *
+ * `atividade` (questionário e caso dos módulos: abrir, enviar, escolher e concluir) tem escopo próprio: cada
+ * clique no caso grava uma linha na trilha, e um caso longo com recuperação dá dezenas de cliques em poucos
+ * minutos. 180 em 10 min é o teto do progresso; estourar não trava o vídeo, a troca de aula nem o progresso.
  */
 export const VOLUME_POR_ACAO = {
   evento: { escopo: "portal-evento", janelaSeg: 10 * 60, max: 150 },
   abrir_aula: { escopo: "portal-abrir-aula", janelaSeg: 10 * 60, max: 120 },
   player: { escopo: "portal-player", janelaSeg: 10 * 60, max: 300 },
   progresso: { escopo: "portal-progresso", janelaSeg: 10 * 60, max: 180 },
+  atividade: { escopo: "portal-atividade", janelaSeg: 10 * 60, max: 180 },
 } as const;
 
 export type AcaoComVolume = keyof typeof VOLUME_POR_ACAO;
@@ -1296,7 +1370,9 @@ export type AcaoComVolume = keyof typeof VOLUME_POR_ACAO;
  * têm o seu; o resto, e qualquer nome desconhecido ou que nem é texto, cai no teto geral (`evento`).
  * Vem ANTES de validar o nome: um nome inventado também gasta o teto geral.
  */
-export function acaoDeVolumeDoEvento(nome: unknown): Exclude<AcaoComVolume, "progresso"> {
+export function acaoDeVolumeDoEvento(
+  nome: unknown
+): Exclude<AcaoComVolume, "progresso" | "atividade"> {
   if (nome === "abrir_aula") return "abrir_aula";
   if (nome === "play" || nome === "pausa") return "player";
   return "evento";

@@ -27,6 +27,10 @@ const ARQUIVOS = [
   "../../lib/portal-ciencias.js",
   "../../lib/validacao-certificado.js",
   "../../lib/certificado-ead.js",
+  "../../lib/portal-leitura.js",
+  "../../lib/portal-questionario.js",
+  "../../lib/portal-caso.js",
+  "../../lib/portal-previa.js",
 ];
 
 const comEmoji = (caminho) =>
@@ -42,6 +46,8 @@ describe("textos da tela do portal e da validação", () => {
     expect(componentes).toContain("./AvaliacaoPortal.jsx");
     expect(componentes).toContain("./CertificadoPortal.jsx");
     expect(componentes).toContain("./CienciasPortal.jsx");
+    expect(componentes).toContain("./QuestionarioPortal.jsx");
+    expect(componentes).toContain("./CasoPortal.jsx");
   });
 
   it("nenhum arquivo tem emoji", () => {

@@ -19,6 +19,7 @@
 // carga legal do treinamento; a divisão teoria x prática é só do curso EAD, colunas da migração 0143).
 // deno-lint-ignore-file no-explicit-any
 import { normalizarTelefoneBR } from "../_shared/whatsapp-envio.ts";
+import { validarCaso } from "./caso.ts";
 import { estadoDoPdfDoProjeto } from "./projeto.ts";
 export const MIN_QUESTOES = 5;
 /**
@@ -146,25 +147,65 @@ export function tempoObrigatorioSeg(aulas: any[] = []) {
 // O PDF do projeto foi gerado (ou anexado) com um projeto diferente do que está no curso (T25)
 export const TEXTO_PDF_DO_PROJETO_DESATUALIZADO =
   "O PDF do projeto pedagógico está desatualizado: o projeto ou a validação mudaram depois de gerá-lo. Gere o PDF de novo (ou anexe o seu de novo)";
+/**
+ * Questão utilizável (prova final ou questionário do módulo): pergunta preenchida, 2 ou mais alternativas, todas
+ * texto não vazio, e a correta (inteiro) entre elas. Mesma regra do editor (lib/ead-questao.js).
+ */
+export function questaoValida(q: any): boolean {
+  if (!q || typeof q !== "object") return false;
+  const opcoes = q.opcoes;
+  return (
+    typeof q.pergunta === "string" &&
+    q.pergunta.trim() !== "" &&
+    Array.isArray(opcoes) &&
+    opcoes.length >= 2 &&
+    opcoes.every((o: unknown) => typeof o === "string" && o.trim() !== "") &&
+    Number.isInteger(q.correta) &&
+    q.correta >= 0 &&
+    q.correta < opcoes.length
+  );
+}
+/**
+ * Atividades interativas (spec 2026-10-14 §8): `questoes` são TODAS as do curso, cada uma com `aula_id` (vazio =
+ * prova final; preenchido = questão do questionário daquela aula), e `casos` são os roteiros
+ * (`treinamento_caso`: `aula_id`, `conteudo`, `deleted_at`). QUESTOES conta só as da prova final. CONTEUDO, por
+ * tipo: vídeo, PDF e texto como antes; tarefa exige o texto; questionário, pelo menos 1 questão válida da aula;
+ * caso, um roteiro que passa em `validarCaso`. Toda aula exige a duração (o tempo previsto). Quem ainda não passa
+ * `casos` (padrão []) segue igual enquanto o curso não tiver aula de caso.
+ */
 export function requisitosDoCurso({
   curso = {},
   aulas = [],
   questoes = [],
-}: { curso?: any; aulas?: any[]; questoes?: any[] } = {}): Requisito[] {
+  casos = [],
+}: { curso?: any; aulas?: any[]; questoes?: any[]; casos?: any[] } = {}): Requisito[] {
   const pdfDoProjeto = estadoDoPdfDoProjeto(curso);
   const ativas = aulas.filter((a) => !a.deleted_at);
   const carga = Number(curso.carga_horaria_horas) || 0;
   const lastro = tempoObrigatorioSeg(ativas);
   // o conteúdo cobre a carga TEÓRICA no semipresencial (T12, C3) e a total nos outros
   const cargaTeorica = cargaTeoricaDoCurso(curso);
-  const arquivo = (a: any) =>
-    a.tipo === "pdf"
-      ? a.arquivo_ref
-      : a.tipo === "texto"
-        ? a.conteudo_texto?.trim()
-        : a.fonte === "upload"
-          ? a.video_ref
-          : a.youtube_id;
+  const questoesVivas = questoes.filter((q) => q && !q.deleted_at);
+  const casosVivos = casos.filter((c) => c && !c.deleted_at);
+  // a aula sem id (leitura que não trouxe a coluna) nunca casa com questão ou roteiro
+  const daAula = (x: any, a: any) => a.id != null && x.aula_id === a.id;
+  const temConteudo = (a: any): unknown => {
+    switch (a.tipo) {
+      case "pdf":
+        return a.arquivo_ref;
+      case "texto":
+      case "tarefa":
+        return a.conteudo_texto?.trim();
+      case "questionario":
+        return questoesVivas.some((q) => daAula(q, a) && questaoValida(q));
+      case "caso": {
+        const roteiro = casosVivos.find((c) => daAula(c, a));
+        return !!roteiro && validarCaso(roteiro.conteudo).length === 0;
+      }
+      default:
+        return a.fonte === "upload" ? a.video_ref : a.youtube_id;
+    }
+  };
   const modalidade = modalidadeDoCurso(curso);
   const semipresencial = modalidade === "semipresencial";
   // D3 completa: o apoio só estuda, não certifica (ver o cabeçalho). Só "apoio": o valor desconhecido segue completo.
@@ -173,7 +214,7 @@ export function requisitosDoCurso({
     ["AULAS", ativas.length > 0, "Adicione pelo menos uma aula"],
     [
       "CONTEUDO",
-      ativas.length > 0 && ativas.every((a) => arquivo(a) && Number(a.duracao_seg) > 0),
+      ativas.length > 0 && ativas.every((a) => temConteudo(a) && Number(a.duracao_seg) > 0),
       "Todas as aulas precisam de conteúdo e duração cadastrada",
     ],
     ...(soEstudo
@@ -181,7 +222,7 @@ export function requisitosDoCurso({
       : ([
           [
             "QUESTOES",
-            questoes.filter((q) => !q.deleted_at).length >= MIN_QUESTOES,
+            questoesVivas.filter((q) => !q.aula_id).length >= MIN_QUESTOES,
             `Cadastre pelo menos ${MIN_QUESTOES} questões`,
           ],
         ] as [string, boolean, string][])),

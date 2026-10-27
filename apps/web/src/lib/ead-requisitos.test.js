@@ -9,6 +9,7 @@ import {
   motivoSemCertificado,
   pendenciasParaEmitir,
   pendenciasParaPublicar,
+  questaoValida,
   requisitosDoCurso,
   tempoObrigatorioSeg,
 } from "./ead-requisitos";
@@ -384,5 +385,79 @@ describe("requisito PROJETO (T25): só avisa, e só some com o PDF do projeto E 
     expect(projeto({}).bloqueiaEmissao).toBe(false);
     expect(pendencias({ curso, aulas, questoes })).toEqual([]);
     expect(pendenciasDeEmissao({ curso, aulas, questoes })).toEqual([]);
+  });
+});
+describe("atividades interativas (spec 2026-10-14 §8)", () => {
+  const ROTEIRO = {
+    contexto: "Contexto sintético.",
+    etapas: [
+      {
+        id: "e1",
+        pergunta: "Decisão sintética?",
+        opcoes: [
+          { texto: "Segura", comentario: "Comentário da segura", segura: true, proxima: null },
+          { texto: "Insegura", comentario: "Comentário da insegura", segura: false, proxima: "e1" },
+        ],
+      },
+    ],
+    reflexao: "Reflexão sintética.",
+  };
+  const AULA_Q = "00000000-0000-4000-8000-000000000011";
+  const AULA_C = "00000000-0000-4000-8000-000000000012";
+  const AULA_T = "00000000-0000-4000-8000-000000000013";
+  const atividades = [
+    { id: AULA_Q, tipo: "questionario", duracao_seg: 900 },
+    { id: AULA_C, tipo: "caso", duracao_seg: 600 },
+    { id: AULA_T, tipo: "tarefa", conteudo_texto: "Instruções sintéticas", duracao_seg: 1200 },
+  ];
+  const questaoDoQ = {
+    aula_id: AULA_Q,
+    pergunta: "Pergunta sintética?",
+    opcoes: ["Alternativa A", "Alternativa B"],
+    correta: 0,
+  };
+  const prova = Array.from({ length: 5 }, () => ({ aula_id: null }));
+  const completo = {
+    curso,
+    aulas: [...aulas, ...atividades],
+    questoes: [...prova, questaoDoQ],
+    casos: [{ aula_id: AULA_C, conteudo: ROTEIRO }],
+  };
+
+  it("curso com questionário, caso e tarefa completos publica", () => {
+    expect(pendencias(completo)).toEqual([]);
+  });
+
+  it("CONTEUDO: tarefa sem texto, questionário sem questão válida e caso sem roteiro válido travam", () => {
+    const semTexto = atividades.map((a) => (a.id === AULA_T ? { ...a, conteudo_texto: " " } : a));
+    expect(pendencias({ ...completo, aulas: [...aulas, ...semTexto] })).toEqual(["CONTEUDO"]);
+    expect(pendencias({ ...completo, questoes: prova })).toEqual(["CONTEUDO"]);
+    expect(
+      pendencias({ ...completo, questoes: [...prova, { ...questaoDoQ, opcoes: ["Só uma"] }] })
+    ).toEqual(["CONTEUDO"]);
+    expect(pendencias({ ...completo, casos: undefined })).toEqual(["CONTEUDO"]);
+    expect(
+      pendencias({ ...completo, casos: [{ aula_id: AULA_C, conteudo: { etapas: [] } }] })
+    ).toEqual(["CONTEUDO"]);
+  });
+
+  it("QUESTOES conta só as questões da prova final (aula_id vazio)", () => {
+    const soDoQuestionario = Array.from({ length: 6 }, (_, i) => ({
+      ...questaoDoQ,
+      pergunta: `Pergunta ${i}?`,
+    }));
+    expect(pendencias({ ...completo, questoes: soDoQuestionario })).toEqual(["QUESTOES"]);
+  });
+
+  it("questaoValida: pergunta, 2+ alternativas preenchidas e a correta entre elas", () => {
+    expect(questaoValida(questaoDoQ)).toBe(true);
+    expect(questaoValida({ ...questaoDoQ, correta: 2 })).toBe(false);
+    expect(questaoValida({ ...questaoDoQ, opcoes: ["A", ""] })).toBe(false);
+    expect(questaoValida({ ...questaoDoQ, pergunta: "" })).toBe(false);
+    expect(questaoValida(null)).toBe(false);
+  });
+
+  it("o tempo das atividades soma no lastro (tempo declarado, A5)", () => {
+    expect(tempoObrigatorioSeg(completo.aulas)).toBe(3600 + 900 + 600 + 1200);
   });
 });

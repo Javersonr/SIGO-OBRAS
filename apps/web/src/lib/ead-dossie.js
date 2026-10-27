@@ -425,6 +425,102 @@ export function csvDasTentativas({ tentativas, matriculas, funcionarios } = {}) 
   return montarCsv(TITULOS_DAS_TENTATIVAS, linhas);
 }
 
+const TITULOS_DOS_QUESTIONARIOS = [
+  "Funcionário",
+  "CPF",
+  "Questionário (aula)",
+  "Tentativa",
+  "Data e hora (Brasília)",
+  "Data e hora (UTC)",
+  "Nota (%)",
+  "Acertos",
+  "Total de questões",
+  "Resultado",
+  "IP",
+  "Dispositivo",
+  "Posição no questionário",
+  "Pergunta",
+  "Alternativa marcada",
+  "Alternativa correta",
+  "Resultado da questão",
+  "Ordem das alternativas",
+  "Matrícula",
+];
+
+const SEM_QUESTIONARIO_GRAVADO = "Questionário não gravado nesta tentativa";
+
+/**
+ * Tentativas dos questionários dos módulos (atividades interativas, A2): uma linha por questão de cada tentativa,
+ * na ordem em que o aluno viu, como a planilha da prova. "Questionário (aula)" é a aula numerada como o aluno vê
+ * (a removida aparece pelo título). O resultado diz se a tentativa atingiu a nota mínima dos questionários: é
+ * estudo guiado, com tentativas livres; "aprovado" fica para a prova final. Em ordem de nome, matrícula, aula e
+ * número da tentativa.
+ */
+export function csvDosQuestionarios({ tentativas, matriculas, funcionarios, aulas } = {}) {
+  const funcs = mapaPorId(funcionarios);
+  const matriculaPorId = mapaPorId(matriculas);
+  const { rotulos, vivas } = rotulosDasAulas(aulas);
+  const posicaoDaAula = new Map(vivas.map((a, i) => [a.id, i]));
+  const funcionarioDe = (t) =>
+    funcs.get(t.funcionario_id ?? matriculaPorId.get(t.matricula_id)?.funcionario_id);
+  const ordenadas = lista(tentativas).sort(
+    (a, b) =>
+      COLADOR.compare(nomeDoFuncionario(funcionarioDe(a)), nomeDoFuncionario(funcionarioDe(b))) ||
+      iguais(
+        textoOuVazio(matriculaPorId.get(a.matricula_id)?.created_at),
+        textoOuVazio(matriculaPorId.get(b.matricula_id)?.created_at)
+      ) ||
+      iguais(textoOuVazio(a.matricula_id), textoOuVazio(b.matricula_id)) ||
+      (posicaoDaAula.get(a.aula_id) ?? Number.MAX_SAFE_INTEGER) -
+        (posicaoDaAula.get(b.aula_id) ?? Number.MAX_SAFE_INTEGER) ||
+      (Number(a.numero) || 0) - (Number(b.numero) || 0)
+  );
+
+  const linhas = [];
+  for (const t of ordenadas) {
+    const funcionario = funcionarioDe(t);
+    const inicio = [
+      nomeDoFuncionario(funcionario),
+      cpfFormatado(funcionario?.cpf),
+      t.aula_id ? (rotulos.get(t.aula_id) ?? t.aula_id) : "",
+      textoOuVazio(t.numero),
+      horaBR(t.created_at),
+      isoUtc(t.created_at),
+      notaBR(numeroOuNull(t.nota)),
+      textoOuVazio(t.acertos),
+      textoOuVazio(t.total),
+      t.aprovada === true
+        ? "Atingiu a nota mínima"
+        : t.aprovada === false
+          ? "Abaixo da nota mínima"
+          : "",
+      textoOuVazio(t.ip),
+      textoOuVazio(t.dispositivo),
+    ];
+    const fim = [textoOuVazio(t.matricula_id)];
+    const detalhe = detalharTentativa(t);
+    if (!detalhe.temDetalhe) {
+      linhas.push([...inicio, "", "", "", "", SEM_QUESTIONARIO_GRAVADO, "", ...fim]);
+      continue;
+    }
+    for (const q of detalhe.questoes) {
+      const marcada = q.alternativas.find((a) => a.marcada);
+      const correta = q.alternativas.find((a) => a.correta);
+      linhas.push([
+        ...inicio,
+        q.posicao ?? "",
+        q.pergunta,
+        marcada ? alternativaTexto(marcada) : "(sem resposta)",
+        alternativaTexto(correta),
+        RESULTADO_DA_QUESTAO[q.status] ?? "",
+        q.ordemRegistrada ? "Como o aluno viu" : "Ordem do cadastro (não registrada)",
+        ...fim,
+      ]);
+    }
+  }
+  return montarCsv(TITULOS_DOS_QUESTIONARIOS, linhas);
+}
+
 // ------------------------------------------------------------------------------------- certificados
 
 /**
@@ -484,7 +580,15 @@ const ROTULO_DA_MODALIDADE = {
   semipresencial: "Semipresencial",
   apoio: "Apoio ao treinamento presencial (não emite certificado)",
 };
-const ROTULO_DO_TIPO_DE_AULA = { video: "vídeo", pdf: "PDF", texto: "texto" };
+const ROTULO_DO_TIPO_DE_AULA = {
+  video: "vídeo",
+  pdf: "PDF",
+  texto: "texto",
+  // atividades interativas
+  questionario: "questionário do módulo",
+  caso: "estudo de caso",
+  tarefa: "atividade de estudo",
+};
 
 /**
  * O LEIA-ME do pacote: quem gerou e quando, o resumo do curso, o conteúdo programático e as aulas, o que há
@@ -525,6 +629,13 @@ export function textoLeiaMe({ empresa, curso, aulas, geradoEm, geradoPor, arquiv
     "Nota mínima na avaliação",
     numeroOuNull(c.nota_minima) !== null ? `${c.nota_minima}%` : ""
   );
+  // atividades interativas: só nos cursos com questionário de módulo (os outros saem como antes)
+  if (lista(aulas).some((a) => !a.deleted_at && a.tipo === "questionario")) {
+    campo(
+      "Nota mínima nos questionários dos módulos",
+      `${numeroOuNull(c.nota_minima_modulo) ?? 80}%`
+    );
+  }
   const maximo = numeroOuNull(c.max_tentativas);
   campo(
     "Tentativas na prova",
@@ -606,6 +717,7 @@ const AVISO_PROJETO_FALHOU =
 const ROTULO_DA_LEITURA = {
   trilha: "da trilha de auditoria",
   tentativas: "das tentativas da prova",
+  questionarios: "das tentativas dos questionários dos módulos",
   progresso: "do progresso das aulas",
   matriculas: "das matrículas",
   funcionarios: "dos funcionários",
@@ -651,6 +763,13 @@ export async function montarDossie(entrada, deps = {}) {
   const idsDasMatriculas = new Set(matriculas.map((m) => m.id));
   const eventos = eventosDoCurso({ eventos: e.eventos, matriculas });
   const tentativas = lista(e.tentativas).filter((t) => idsDasMatriculas.has(t.matricula_id));
+  // questionários dos módulos (atividades interativas): a planilha só entra em curso que os tem (os outros cursos
+  // saem como antes)
+  const tentativasQuestionario = lista(e.tentativasQuestionario).filter((t) =>
+    idsDasMatriculas.has(t.matricula_id)
+  );
+  const temQuestionarios =
+    tentativasQuestionario.length > 0 || lista(e.aulas).some((a) => a.tipo === "questionario");
   const geradoEm = e.geradoEm ?? new Date().toISOString();
   const nomeArquivo = nomeDoZip(curso, geradoEm);
   const raiz = nomeArquivo.replace(/\.zip$/, "");
@@ -729,6 +848,22 @@ export async function montarDossie(entrada, deps = {}) {
     caminho: "tentativas.csv",
     descricao: `${plural(tentativas.length, "tentativa", "tentativas")} da prova, com cada questão, a alternativa marcada e a correta.`,
   });
+  if (temQuestionarios) {
+    pasta.file(
+      "questionarios.csv",
+      BOM +
+        csvDosQuestionarios({
+          tentativas: tentativasQuestionario,
+          matriculas,
+          funcionarios: e.funcionarios,
+          aulas: e.aulas,
+        })
+    );
+    arquivos.push({
+      caminho: "questionarios.csv",
+      descricao: `${plural(tentativasQuestionario.length, "tentativa", "tentativas")} dos questionários dos módulos (estudo guiado, tentativas livres), com cada questão, a alternativa marcada e a correta.`,
+    });
+  }
 
   // certificados (um por vez)
   const { certificados, omitidos } = certificadosDoCurso;
@@ -812,6 +947,7 @@ export async function montarDossie(entrada, deps = {}) {
       removidas,
       eventos: eventos.length,
       tentativas: tentativas.length,
+      tentativasQuestionario: tentativasQuestionario.length,
       certificados: { total: certificados.length, incluidos, falharam, omitidos },
       projeto,
       avisos,

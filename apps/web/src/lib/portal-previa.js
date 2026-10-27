@@ -8,24 +8,27 @@
  *
  * - `refsDaPrevia`: quais arquivos (referências "bucket/caminho") a tela do RH precisa assinar;
  * - `montarItemPrevia`: o "item" do curso no formato da ação `dados` do portal, mas com todas as aulas
- *   liberadas e as questões COM gabarito e comentário (só o RT vê);
+ *   liberadas e as questões da prova COM gabarito e comentário (só o RT vê); as questões dos questionários e os
+ *   roteiros dos casos ficam em `atividades_previa`, que só a prévia tem;
  * - `sortearPrevia`: o sorteio da prova, no formato da ação `iniciar_avaliacao` do servidor (a prova
  *   deixou de ser sorteada no navegador do aluno, T16; aqui o sorteio é local porque a prévia não fala
  *   com o servidor);
  * - `corrigirPrevia`: correção da prova, a mesma conta de `corrigirProva` (portal-funcionario/regras.ts);
- * - `criarApiPrevia`: a API injetada.
+ * - `criarApiPrevia`: a API injetada (também o questionário e o caso, com as regras de lib/ead-caso.js).
  *
  * As URLs assinadas chegam prontas (`urls`): a tela do RH as resolve com `resolveStorageUrl`; esta lib
  * não importa `@/api/sigoClient`. Testes em portal-previa.test.js.
  */
 
 import { MAX_DEDICACAO_MIN, MAX_PRAZO_DIAS } from "./ead-projeto";
+import { estadoDoCaso, etapaParaAluno, resultadoDaEscolha } from "./ead-caso";
 
 /** Id da matrícula de mentira da prévia: não existe no banco. */
 export const ID_MATRICULA_PREVIA = "previa";
 
-/** Mesmos padrões do servidor (portal-funcionario/index.ts e regras.ts). */
+/** Mesmos padrões do servidor (portal-funcionario/index.ts, regras.ts e questionario.ts). */
 const NOTA_MINIMA_PADRAO = 70;
+const NOTA_MINIMA_MODULO_PADRAO = 80;
 const TEMPO_MINIMO_PADRAO = 60; // aula de PDF/texto sem tempo definido
 /**
  * Espelha REPROVADO_VE_NOTA do servidor (regras.ts, D10 decidida em 06/10/2026): `false` = o reprovado
@@ -45,9 +48,36 @@ function notaMinimaDe(valor) {
   return Number.isFinite(n) ? n : NOTA_MINIMA_PADRAO;
 }
 
+/**
+ * Nota mínima dos questionários dos módulos, como o servidor (`notaMinimaDoModulo`, regras.ts): inteiro de 0 a
+ * 100; ausente ou inválido vale 80. O formulário do RH pode mandar texto ("85"), mas só número ou texto
+ * preenchido conta (`true`, lista e objeto caem no padrão).
+ */
+function notaMinimaDoModulo(valor) {
+  const aceito = typeof valor === "number" || (typeof valor === "string" && valor.trim() !== "");
+  if (!aceito) return NOTA_MINIMA_MODULO_PADRAO;
+  const n = Number(valor);
+  return Number.isInteger(n) && n >= 0 && n <= 100 ? n : NOTA_MINIMA_MODULO_PADRAO;
+}
+
+/** O roteiro gravado (`treinamento_caso.conteudo`, jsonb): um objeto, ou o texto JSON de um objeto; senão null. */
+function roteiroDoCaso(conteudo) {
+  if (conteudo && typeof conteudo === "object" && !Array.isArray(conteudo)) return conteudo;
+  if (typeof conteudo === "string") {
+    try {
+      const v = JSON.parse(conteudo);
+      return v && typeof v === "object" && !Array.isArray(v) ? v : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 const lista = (v) => (Array.isArray(v) ? v.filter(Boolean) : []);
 const porOrdem = (itens) => [...itens].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
 const tipoDaAula = (a) => a?.tipo || "video";
+const textoDe = (v) => (typeof v === "string" ? v : "");
 
 /**
  * Referências de arquivo que o portal assinaria para este curso: vídeo só quando é arquivo próprio,
@@ -115,8 +145,13 @@ function projetoParaAPrevia(curso) {
  * propositais: matrícula de mentira, todas as aulas liberadas e nenhuma concluída, questões com
  * `correta` e `comentario`, sem certificado e sem dúvidas, curso sempre "publicado" (o selo de curso
  * despublicado é aviso para quem tem matrícula) e nenhuma tentativa usada. Não altera o que recebe.
+ *
+ * `questoes` são todas as do curso: as de `aula_id` vazio são a prova final (`item.questoes`); as outras são
+ * dos questionários, por aula. `casos` são os roteiros (`[{ aula_id, conteudo }]`). Questões e roteiros dos
+ * questionários e casos vão em `atividades_previa`, que o servidor nunca manda ao aluno: só a API da prévia
+ * os usa (sorteio, correção e roteiro locais).
  */
-export function montarItemPrevia({ curso, aulas, questoes, urls } = {}) {
+export function montarItemPrevia({ curso, aulas, questoes, casos, urls } = {}) {
   const aulasPrevia = porOrdem(lista(aulas)).map((a) => {
     const tipo = tipoDaAula(a);
     return {
@@ -130,7 +165,9 @@ export function montarItemPrevia({ curso, aulas, questoes, urls } = {}) {
       video_url: tipo === "video" && a.fonte === "upload" ? urlDe(urls, a.video_ref) : null,
       legenda_url: urlDe(urls, a.legenda_ref),
       arquivo_url: tipo === "pdf" ? urlDe(urls, a.arquivo_ref) : null,
-      conteudo_texto: tipo === "texto" ? (a.conteudo_texto ?? null) : null,
+      // texto e tarefa levam o texto da aula (a tarefa: instruções e o que produzir); questionário e caso
+      // vêm das ações próprias, como no servidor
+      conteudo_texto: tipo === "texto" || tipo === "tarefa" ? (a.conteudo_texto ?? null) : null,
       duracao_seg: a.duracao_seg || (tipo === "video" ? null : TEMPO_MINIMO_PADRAO),
       segundos_assistidos: 0,
       concluida: false,
@@ -138,7 +175,7 @@ export function montarItemPrevia({ curso, aulas, questoes, urls } = {}) {
     };
   });
 
-  const questoesPrevia = porOrdem(lista(questoes)).map((q) => ({
+  const paraAPrevia = (q) => ({
     id: q.id,
     curso_id: q.curso_id ?? curso?.id ?? null,
     ordem: q.ordem,
@@ -146,7 +183,20 @@ export function montarItemPrevia({ curso, aulas, questoes, urls } = {}) {
     opcoes: opcoesDaQuestao(q.opcoes),
     correta: q.correta,
     comentario: q.comentario ?? null,
-  }));
+  });
+  const ativas = porOrdem(lista(questoes)).filter((q) => !q.deleted_at);
+  // a prova final usa só as questões sem aula (`aula_id` vazio); as dos questionários ficam por aula
+  const questoesPrevia = ativas.filter((q) => !q.aula_id).map(paraAPrevia);
+  const questionarios = {};
+  for (const q of ativas.filter((x) => x.aula_id)) {
+    if (!questionarios[q.aula_id]) questionarios[q.aula_id] = [];
+    questionarios[q.aula_id].push(paraAPrevia(q));
+  }
+  const roteiros = {};
+  for (const c of lista(casos)) {
+    const conteudo = roteiroDoCaso(c.conteudo);
+    if (c.aula_id && !c.deleted_at && conteudo) roteiros[c.aula_id] = conteudo;
+  }
 
   const limite = Number(curso?.max_tentativas ?? 0);
 
@@ -175,6 +225,12 @@ export function montarItemPrevia({ curso, aulas, questoes, urls } = {}) {
     },
     aulas: aulasPrevia,
     questoes: questoesPrevia,
+    // só da prévia (o servidor nunca manda isto ao aluno): gabarito dos questionários e roteiros dos casos
+    atividades_previa: {
+      nota_minima_modulo: notaMinimaDoModulo(curso?.nota_minima_modulo),
+      questionarios,
+      casos: roteiros,
+    },
     avaliacao: {
       total_questoes: questoesPrevia.length,
       tentativas_usadas: 0,
@@ -259,6 +315,23 @@ function erroDaPrevia() {
   return Object.assign(new Error(MSG_NAO_FUNCIONA_NA_PREVIA), { codigo: "PREVIA", extra: {} });
 }
 
+/** Recusa no formato do portal de verdade (ErroPortal, components/portal-funcionario/api.js): `extra` é o corpo. */
+function erroDoPortal(mensagem, codigo = null, extra = {}) {
+  return Object.assign(new Error(mensagem), {
+    codigo,
+    extra: { success: false, error: mensagem, codigo, ...extra },
+  });
+}
+
+/** As recusas do caso com o texto do servidor (RECUSAS_DO_CASO, portal-funcionario/caso-aluno.ts). */
+const MSG_CASO_INVALIDO = "Este caso está com problema — avise o RH";
+const MSG_DO_CASO = {
+  CASO_INVALIDO: MSG_CASO_INVALIDO,
+  CASO_ENCERRADO: "Este caso já chegou ao fim",
+  CASO_FORA_DE_ORDEM: "O caso já está em outra etapa: continue de onde ele parou",
+  OPCAO_INVALIDA: "Escolha uma das opções desta etapa",
+};
+
 /**
  * API injetada nos componentes do portal durante a prévia (mesmo formato de `apiPortal` em
  * components/portal-funcionario/api.js). Nunca usa a rede.
@@ -268,11 +341,69 @@ function erroDaPrevia() {
  * - `avaliacao`: corrige aqui, com o gabarito do item; a correção comentada só vem na aprovação (como
  *   no servidor: o RT já vê o gabarito na própria questão), o reprovado recebe o mesmo que o aluno
  *   (`REPROVADO_VE_NOTA`) e a nova tentativa não espera intervalo;
+ * - `questionario_abrir`/`questionario_enviar`: sorteio e correção aqui, com a nota mínima do módulo e a
+ *   correção comentada nos dois resultados (A2); tentativas livres, contadas só na memória da prévia; a aula
+ *   nunca conclui (`aula_concluida: false`);
+ * - `caso_abrir`/`caso_escolher`/`caso_concluir`: o roteiro anda aqui, com as regras do servidor
+ *   (`estadoDoCaso`, `etapaParaAluno`, `resultadoDaEscolha`, lib/ead-caso.js) e as escolhas só na memória;
+ *   concluir não conclui a aula e recomeça o caso, para o RT andar por ele de novo;
  * - o resto (dúvida, certificado, ciência, login...) falha com `codigo: "PREVIA"`.
+ * `aleatorio(n)` (inteiro em [0, n)) existe para o teste; o padrão é o sorteio do navegador.
  */
-export function criarApiPrevia({ item } = {}) {
+export function criarApiPrevia({ item, aleatorio = sorteioDoNavegador } = {}) {
   const questoes = lista(item?.questoes);
   const avaliacao = item?.avaliacao ?? {};
+  const atividades = item?.atividades_previa ?? {};
+  const notaDoModulo = notaMinimaDoModulo(atividades.nota_minima_modulo);
+  // só na memória desta prévia (nada é gravado): tentativas enviadas por questionário e escolhas por caso
+  const enviadas = new Map();
+  const escolhasDoCaso = new Map();
+
+  // a aula pedida precisa ser do curso e do tipo da ação, como o servidor confere (aulaDaAtividade)
+  const conferirAula = (aulaId, tipo, nome) => {
+    const aula = lista(item?.aulas).find((a) => a.id === aulaId);
+    if (!aula) throw erroDoPortal("Aula não pertence ao curso");
+    if (aula.tipo !== tipo) throw erroDoPortal(`Esta aula não é ${nome}`);
+  };
+
+  const questoesDoQuestionario = (aulaId) => {
+    conferirAula(aulaId, "questionario", "um questionário");
+    const daAula = lista(atividades.questionarios?.[aulaId]);
+    if (!daAula.length) {
+      throw erroDoPortal(
+        "Este questionário ainda não tem questões — avise o RH",
+        "QUESTIONARIO_VAZIO"
+      );
+    }
+    return daAula;
+  };
+
+  // o estado do caso é refeito a cada ação a partir das escolhas, como o servidor faz com a trilha
+  const casoAtual = (aulaId) => {
+    conferirAula(aulaId, "caso", "um caso");
+    const conteudo = atividades.casos?.[aulaId] ?? null;
+    const escolhas = escolhasDoCaso.get(aulaId) ?? [];
+    const estado = conteudo ? estadoDoCaso(conteudo, escolhas) : { valido: false };
+    if (!estado.valido) throw erroDoPortal(MSG_CASO_INVALIDO, "CASO_INVALIDO");
+    return { conteudo, escolhas, estado };
+  };
+
+  // a tela do caso como a ação `caso_abrir` do servidor a devolve (e o `estado` do CASO_FORA_DE_ORDEM)
+  const telaDoCaso = (conteudo, estado) =>
+    estado.fim
+      ? {
+          situacao: "fim",
+          contexto: textoDe(conteudo.contexto),
+          reflexao: textoDe(conteudo.reflexao),
+          ultimo: estado.ultimo,
+        }
+      : {
+          situacao: "etapa",
+          contexto: textoDe(conteudo.contexto),
+          etapa: etapaParaAluno(conteudo, estado.etapaAtual, aleatorio),
+          passagem: estado.passagens[estado.etapaAtual] ?? 1,
+          ultimo: estado.ultimo,
+        };
 
   async function chamarPortal(acao, dados = {}) {
     switch (acao) {
@@ -321,6 +452,89 @@ export function criarApiPrevia({ item } = {}) {
                 comentario: q.comentario ?? null,
               }))
             : null,
+        };
+      }
+      case "questionario_abrir": {
+        const daAula = questoesDoQuestionario(dados?.aula_id);
+        return {
+          success: true,
+          concluida: false,
+          tentativa: (enviadas.get(dados.aula_id) ?? 0) + 1,
+          nota_minima: notaDoModulo,
+          questoes: sortearPrevia(daAula, aleatorio),
+        };
+      }
+      case "questionario_enviar": {
+        const daAula = questoesDoQuestionario(dados?.aula_id);
+        const tentativa = (enviadas.get(dados.aula_id) ?? 0) + 1;
+        enviadas.set(dados.aula_id, tentativa);
+        const { acertou, acertos, total, nota, minima, aprovada } = corrigirPrevia({
+          questoes: daAula,
+          respostas: dados?.respostas,
+          notaMinima: notaDoModulo,
+        });
+        return {
+          success: true,
+          resultado: aprovada ? "satisfatorio" : "insatisfatorio",
+          aprovada,
+          nota,
+          acertos,
+          total,
+          nota_minima: minima,
+          tentativa,
+          // a prévia nunca conclui a aula (nada é gravado), como o `progresso` dela
+          aula_concluida: false,
+          curso_concluido: false,
+          // como o servidor (A2): a correção comentada vai aprovado ou não
+          revisao: daAula.map((q) => ({
+            questao_id: q.id,
+            acertou: acertou(q),
+            resposta_correta: q.opcoes?.[q.correta] ?? null,
+            comentario: q.comentario ?? null,
+          })),
+        };
+      }
+      case "caso_abrir": {
+        const { conteudo, estado } = casoAtual(dados?.aula_id);
+        return { success: true, ...telaDoCaso(conteudo, estado) };
+      }
+      case "caso_escolher": {
+        const aulaId = dados?.aula_id;
+        const { conteudo, escolhas, estado } = casoAtual(aulaId);
+        const r = resultadoDaEscolha(conteudo, estado, dados?.etapa_id, dados?.opcao);
+        if (!r.ok) {
+          throw erroDoPortal(
+            MSG_DO_CASO[r.codigo] ?? MSG_CASO_INVALIDO,
+            r.codigo,
+            r.codigo === "CASO_FORA_DE_ORDEM" ? { estado: telaDoCaso(conteudo, estado) } : {}
+          );
+        }
+        escolhasDoCaso.set(aulaId, [...escolhas, { etapa: dados.etapa_id, opcao: dados.opcao }]);
+        return {
+          success: true,
+          comentario: r.comentario,
+          segura: r.segura,
+          passagem: r.passagem,
+          fim: r.fim,
+          etapa:
+            r.fim || r.proxima === null ? null : etapaParaAluno(conteudo, r.proxima, aleatorio),
+          reflexao: r.fim ? textoDe(conteudo.reflexao) : null,
+        };
+      }
+      case "caso_concluir": {
+        const aulaId = dados?.aula_id;
+        const { estado } = casoAtual(aulaId);
+        if (!estado.fim) {
+          throw erroDoPortal("Chegue ao fim do caso para concluir", "CASO_INCOMPLETO");
+        }
+        // a prévia não conclui a aula: o caso recomeça do início para o RT andar por ele de novo
+        escolhasDoCaso.delete(aulaId);
+        return {
+          success: true,
+          aula_concluida: false,
+          curso_concluido: false,
+          precisa_avaliacao: false,
+          status: "em_andamento",
         };
       }
       default:

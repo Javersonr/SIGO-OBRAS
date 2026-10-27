@@ -21,7 +21,8 @@ const MSG_PROVA_INVALIDA =
 // O servidor já decidiu: tentar de novo não adianta (a tela de aulas mostra a situação atual)
 const SEM_NOVA_TENTATIVA = new Set(["LIMITE_TENTATIVAS", "AGUARDAR"]);
 
-function CorrecaoComentada({ item }) {
+/** Correção comentada de uma questão (prova final e questionário do módulo). */
+export function CorrecaoComentada({ item }) {
   if (!item) return null;
   return (
     <div

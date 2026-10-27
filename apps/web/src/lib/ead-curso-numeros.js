@@ -27,6 +27,12 @@ const REGRAS = [
     erro: "A nota mínima da avaliação precisa ser um número inteiro de 0 a 100.",
   },
   {
+    // atividades interativas: os questionários dos módulos (coluna da migração 0170, check 0-100)
+    campo: "nota_minima_modulo",
+    valido: (n) => n >= 0 && n <= 100,
+    erro: "A nota mínima dos questionários dos módulos precisa ser um número inteiro de 0 a 100.",
+  },
+  {
     campo: "max_tentativas",
     valido: (n) => n >= 0,
     erro: "O máximo de tentativas na prova precisa ser um número inteiro, 0 ou mais (0 = sem limite).",
@@ -77,4 +83,15 @@ const NOTA_MINIMA_PADRAO = 70;
  */
 export function notaMinimaParaGravar(valor) {
   return vazio(valor) ? NOTA_MINIMA_PADRAO : Number(String(valor).trim());
+}
+
+/** Nota mínima dos questionários dos módulos quando o curso não define uma (o padrão da coluna, 0170). */
+const NOTA_MINIMA_DO_MODULO_PADRAO = 80;
+
+/**
+ * A nota mínima dos questionários dos módulos que a tela grava: campo vazio vale o padrão (80); qualquer outro
+ * valor vira número, e 0 continua 0 (como `notaMinimaParaGravar`). A faixa é conferida por `validarNumerosDoCurso`.
+ */
+export function notaMinimaDoModuloParaGravar(valor) {
+  return vazio(valor) ? NOTA_MINIMA_DO_MODULO_PADRAO : Number(String(valor).trim());
 }

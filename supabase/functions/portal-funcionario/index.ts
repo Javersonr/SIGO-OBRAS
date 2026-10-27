@@ -22,10 +22,17 @@
  *   trocar_senha { senha_atual, nova_senha } (vale em todas as empresas)   logout
  *   empresas → as OUTRAS empresas liberadas      trocar_empresa { funcionario_id } → o token da outra (vence junto)
  *   dados (leva `outras_empresas`)              evento { evento, matricula_id?, aula_id?, detalhe? }
- *   progresso { matricula_id, aula_id, segundos_assistidos }  (a duração vem do cadastro da aula)
+ *   progresso { matricula_id, aula_id, segundos_assistidos, concluir? }  (a duração vem do cadastro da aula; o vídeo
+ *     conclui aos 90%; leitura e tarefa concluem com `concluir`, sem tempo mínimo (A5); questionário e caso só
+ *     creditam o tempo de tela e concluem pelas ações próprias)
  *   iniciar_avaliacao { matricula_id }          → sorteia a prova NO SERVIDOR (sem gabarito)
  *   avaliacao { matricula_id, respostas:[{questao_id,resposta}] }  (exige iniciar_avaliacao antes; quem
  *     reprova na ÚLTIMA tentativa avisa o RH no sino via `notificar_gestores`, T24: ver avisos.ts)
+ *   questionario_abrir { matricula_id, aula_id } → sorteia (ou retoma) a tentativa do questionário do módulo
+ *   questionario_enviar { matricula_id, aula_id, respostas } → corrige com a nota mínima do módulo, grava a tentativa
+ *     e devolve a correção comentada aprovado ou não; aprovado conclui a aula (questionario.ts)
+ *   caso_abrir { matricula_id, aula_id }, caso_escolher { matricula_id, aula_id, etapa_id, opcao } e caso_concluir
+ *     { matricula_id, aula_id } → o caso com decisões, com o estado refeito da trilha (caso.ts, caso-aluno.ts)
  *   certificado { matricula_id, senha }          ciencia { ciencia_id }
  *   declarar_ambiente { matricula_id, versao, local_adequado, horario_reservado, sem_outra_atividade } → T35: na 1ª
  *     abertura do curso em cada dia (Brasília) o aluno confirma a orientação do RT e os três itens (local adequado,
@@ -201,6 +208,7 @@ import {
   type AcaoComVolume,
   type MotivoDaConclusaoAdiada,
   acaoDeVolumeDoEvento,
+  atividadesDoCertificado,
   aulaLiberada,
   aulasParaAluno,
   bloqueioDaTrilhaNoCertificado,
@@ -240,6 +248,28 @@ import {
 } from "./regras.ts";
 import { concluirSeCompleto, situacaoReal, trilhaDoCurso } from "./conclusao.ts";
 import { prepararProva, type RecusaDaProva } from "./prova.ts";
+import {
+  EVENTO_QUESTIONARIO_ENVIO,
+  EVENTO_QUESTIONARIO_INICIADO,
+  mensagemDoEnvio,
+  notaMinimaDoModulo,
+  prepararQuestionario,
+  respostaDoQuestionario,
+  revisaoDoQuestionario,
+  tempoParaConcluir,
+} from "./questionario.ts";
+import {
+  conclusaoDoCaso,
+  escolhaNoCaso,
+  EVENTO_CASO_ESCOLHA,
+  EVENTO_CASO_REINICIADO,
+  MSG_CASO_INDISPONIVEL,
+  prepararCaso,
+  recusaDoCaso,
+  respostaDaAbertura,
+  respostaDoCasoConcluido,
+  situacaoDoCaso,
+} from "./caso-aluno.ts";
 import {
   consumirTentativa,
   ipDaRequisicao,
@@ -301,6 +331,9 @@ interface Body {
   segundos_assistidos?: number;
   concluir?: boolean;
   respostas?: unknown;
+  // caso_escolher: a etapa em que o aluno está e o índice ORIGINAL da opção clicada
+  etapa_id?: string;
+  opcao?: unknown;
   ciencia_id?: string;
   pergunta?: string;
   // declarar_ambiente (T35)
@@ -1084,6 +1117,93 @@ Deno.serve(
       return curso ? data : null;
     };
 
+    /**
+     * Conclui UMA aula agora (C5): grava o progresso concluído, a trilha (`eventoExtra`, se houver, e
+     * `aula_concluida`), confere a conclusão do curso (`concluirSeCompleto`, com a marca adiada), fecha a marca e
+     * acerta o status da matrícula. Quem chama já conferiu a matrícula, a aula (do curso, liberada, do tipo certo) e
+     * que ela ainda não estava concluída. `segundos` = o tempo de tela creditado à aula (vai ao progresso e à trilha).
+     * Serve ao `progresso` (vídeo, leitura e tarefa) e às ações do questionário e do caso. Devolve o que a resposta
+     * leva, ou null se o progresso não foi gravado (nada mais foi gravado; quem chama responde o erro).
+     */
+    const concluirAula = async (
+      // deno-lint-ignore no-explicit-any
+      mat: any,
+      // deno-lint-ignore no-explicit-any
+      aula: any,
+      segundos: number,
+      eventoExtra: { evento: string; detalhe: Record<string, unknown> } | null
+    ) => {
+      const { error: upErr } = await supabase.from("treinamento_progresso").upsert(
+        {
+          empresa_id: empresaId,
+          matricula_id: mat.id,
+          aula_id: aula.id,
+          segundos_assistidos: segundos,
+          concluida: true,
+          concluida_em: agoraIso(),
+        },
+        { onConflict: "matricula_id,aula_id" }
+      );
+      if (upErr) {
+        console.error("[portal-funcionario] conclusão da aula:", upErr);
+        return null;
+      }
+      if (eventoExtra) {
+        await ev({
+          ...eventoExtra,
+          matricula_id: mat.id,
+          curso_id: mat.curso_id,
+          aula_id: aula.id,
+        });
+      }
+      await ev({
+        evento: "aula_concluida",
+        matricula_id: mat.id,
+        curso_id: mat.curso_id,
+        aula_id: aula.id,
+        detalhe: { segundos, duracao: duracaoParaProgresso(aula, TEMPO_MINIMO_PADRAO) },
+      });
+      const resultado = await concluirSeCompleto(supabase, mat, empresaId, adiarConclusao(mat));
+      if (resultado.concluiu) {
+        await ev({ evento: "curso_concluido", matricula_id: mat.id, curso_id: mat.curso_id });
+        await fecharAdiada(mat, resultado.data_conclusao, "aula");
+      }
+      if (resultado.status !== mat.status && resultado.status !== "concluido") {
+        await supabase
+          .from("treinamento_matricula")
+          .update({ status: resultado.status })
+          .eq("id", mat.id)
+          .eq("empresa_id", empresaId);
+      }
+      return {
+        aula_concluida: true,
+        curso_concluido: resultado.concluiu,
+        precisa_avaliacao: resultado.precisaAvaliacao && !mat.avaliacao_aprovada,
+        status: resultado.status,
+      };
+    };
+
+    /**
+     * O tempo de tela já creditado à aula nesta matrícula (quem credita é o `progresso`; o questionário e o caso
+     * concluem pelas ações próprias e levam esse tempo ao progresso concluído e à trilha). null = leitura com erro:
+     * quem chama não conclui a aula com um tempo que não leu.
+     */
+    // deno-lint-ignore no-explicit-any
+    const tempoDaAula = async (mat: any, aulaId: string): Promise<number | null> => {
+      const { data, error } = await supabase
+        .from("treinamento_progresso")
+        .select("segundos_assistidos")
+        .eq("matricula_id", mat.id)
+        .eq("aula_id", aulaId)
+        .eq("empresa_id", empresaId)
+        .maybeSingle();
+      if (error) {
+        console.error("[portal-funcionario] tempo da aula:", error.message);
+        return null;
+      }
+      return Math.max(0, Math.floor(Number(data?.segundos_assistidos) || 0));
+    };
+
     // ---------------------------------------------------------------- dados
     if (body.acao === "dados") {
       const [{ data: func }, { data: emp }, { data: mats }] = await Promise.all([
@@ -1121,6 +1241,8 @@ Deno.serve(
         { data: certificados },
         { data: duvidas },
         { data: liberacoes },
+        { data: questoesDosQuestionarios, error: erroQuestionarios },
+        { data: roteiros, error: erroRoteiros },
       ] = await Promise.all([
         cursoIds.length
           ? supabase
@@ -1142,14 +1264,16 @@ Deno.serve(
           ? supabase.from("treinamento_progresso").select("*").in("matricula_id", matIds)
           : vazio,
         // só para contar (tem_avaliacao e total_questoes): o texto e as alternativas saem apenas em
-        // iniciar_avaliacao, já sorteados, e o gabarito nunca sai antes da aprovação (T16)
+        // iniciar_avaliacao, já sorteados, e o gabarito nunca sai antes da aprovação (T16). Só as da PROVA
+        // FINAL (`aula_id` vazio): questão de questionário de módulo não faz o curso "ter avaliação"
         cursoIds.length
           ? supabase
               .from("treinamento_questao")
-              .select("id, curso_id")
+              .select("id, curso_id, aula_id")
               .in("curso_id", cursoIds)
               .eq("empresa_id", empresaId)
               .is("deleted_at", null)
+              .is("aula_id", null)
           : vazio,
         matIds.length
           ? supabase
@@ -1185,6 +1309,25 @@ Deno.serve(
               .eq("evento", EVENTO_TENTATIVA_LIBERADA)
               .in("matricula_id", matIds)
           : vazio,
+        // As questões dos questionários dos módulos e os roteiros dos casos só servem aos requisitos do
+        // certificado (`pendencias_certificado`): nunca vão ao navegador (saem pelas ações próprias, sem gabarito)
+        cursoIds.length
+          ? supabase
+              .from("treinamento_questao")
+              .select("id, curso_id, aula_id, pergunta, opcoes, correta")
+              .in("curso_id", cursoIds)
+              .eq("empresa_id", empresaId)
+              .is("deleted_at", null)
+              .not("aula_id", "is", null)
+          : vazio,
+        cursoIds.length
+          ? supabase
+              .from("treinamento_caso")
+              .select("curso_id, aula_id, conteudo")
+              .in("curso_id", cursoIds)
+              .eq("empresa_id", empresaId)
+              .is("deleted_at", null)
+          : vazio,
       ]);
       // Questões e tentativas decidem o que o aluno vê da prova e as duas travas da retomada da conclusão (a trilha
       // completa e "fez a prova e não passou"). Lidas com erro, viravam "curso sem prova" e "nunca fez a prova":
@@ -1197,6 +1340,18 @@ Deno.serve(
         if (erroTentativas) {
           console.error("[portal-funcionario] dados: tentativas:", erroTentativas.message);
         }
+        return fail(
+          "Não foi possível carregar seus cursos agora. Tente de novo em instantes.",
+          503
+        );
+      }
+      // Questões dos questionários e roteiros dos casos (A2, A3): lidos com erro, o curso pareceria sem conteúdo e o
+      // portal esconderia o "Emitir certificado" com uma pendência falsa. 503, como as questões e as tentativas.
+      if (erroQuestionarios || erroRoteiros) {
+        if (erroQuestionarios) {
+          console.error("[portal-funcionario] dados: questionários:", erroQuestionarios.message);
+        }
+        if (erroRoteiros) console.error("[portal-funcionario] dados: casos:", erroRoteiros.message);
         return fail(
           "Não foi possível carregar seus cursos agora. Tente de novo em instantes.",
           503
@@ -1376,12 +1531,19 @@ Deno.serve(
         });
         // deno-lint-ignore no-explicit-any
         const cert: any = (certificados ?? []).find((c: any) => c.matricula_id === m.id) || null;
-        // o que impede EMITIR (D3: o curso de apoio publica e matricula, mas nunca emite)
+        // o que impede EMITIR (D3: o curso de apoio publica e matricula, mas nunca emite). Os requisitos contam a
+        // prova pelas questões sem aula e conferem cada questionário (questões) e cada caso (roteiro), C4
         const pendencias = pendenciasParaEmitir(
           requisitosDoCurso({
             curso: curso || {},
             aulas: (aulas ?? []).filter((a: { curso_id: string }) => a.curso_id === m.curso_id),
-            questoes: questoesCurso,
+            questoes: [
+              ...questoesCurso,
+              // deno-lint-ignore no-explicit-any
+              ...(questoesDosQuestionarios ?? []).filter((q: any) => q.curso_id === m.curso_id),
+            ],
+            // deno-lint-ignore no-explicit-any
+            casos: (roteiros ?? []).filter((c: any) => c.curso_id === m.curso_id),
           })
         );
         const concluidoReal = concluidoNaTrilha(m);
@@ -1686,31 +1848,38 @@ Deno.serve(
         });
       }
 
-      // vídeo conclui sozinho aos 90% assistidos; apostila (pdf/texto) exige o
-      // tempo de leitura COMPLETO e o clique explícito em "Marcar como lida"
-      const { ehVideo, concluirCedo, faltamSeg, concluiu, podeConcluir } = conclusaoDaAula({
+      // Vídeo conclui sozinho aos 90% assistidos. Leitura (pdf/texto) e tarefa concluem com o clique ("Marcar como
+      // lida" / "Fiz a atividade", `concluir: true`), sem tempo mínimo: o botão acende quando o aluno chega ao fim
+      // (A5). Questionário e caso só creditam o tempo de tela aqui: `conclusaoDaAula` nunca os conclui pelo
+      // `progresso` (concluem por questionario_enviar e caso_concluir).
+      const { ehVideo, concluiu, podeConcluir } = conclusaoDaAula({
         tipo: aula.tipo,
         duracao,
         segundos: novoSeg,
         jaConcluida: atual?.concluida,
         pediuConcluir: body.concluir,
       });
-      if (concluirCedo) {
-        const faltam = Math.ceil(faltamSeg / 60);
-        return fail(`Continue lendo: ainda faltam ${faltam} min do tempo mínimo de leitura.`, 409, {
-          codigo: "TEMPO_LEITURA",
-          segundos_assistidos: novoSeg,
-          faltam_seg: faltamSeg,
-        });
+      if (concluiu && !atual?.concluida) {
+        // a trilha diz como a aula terminou: a leitura chegou ao fim ou a tarefa foi confirmada (vídeo: só a aula)
+        const extra = ehVideo
+          ? null
+          : {
+              evento: aula.tipo === "tarefa" ? "tarefa_confirmada" : "apostila_lida",
+              detalhe: { segundos: novoSeg },
+            };
+        const fim = await concluirAula(mat, aula, novoSeg, extra);
+        if (!fim) return fail("Erro ao salvar progresso", 500);
+        return ok({ segundos_assistidos: novoSeg, pode_concluir: false, ...fim });
       }
+
+      // Só tempo: o upsert não regrava `concluida` nem `concluida_em`, então a conclusão gravada ao mesmo tempo por
+      // outra ação (questionário aprovado, caso concluído) não volta atrás com um sinal que já estava a caminho.
       const { error: upErr } = await supabase.from("treinamento_progresso").upsert(
         {
           empresa_id: empresaId,
           matricula_id: mat.id,
           aula_id: aula.id,
           segundos_assistidos: novoSeg,
-          concluida: concluiu,
-          concluida_em: concluiu && !atual?.concluida ? agoraIso() : (atual?.concluida_em ?? null),
         },
         { onConflict: "matricula_id,aula_id" }
       );
@@ -1719,49 +1888,13 @@ Deno.serve(
         return fail("Erro ao salvar progresso", 500);
       }
 
-      let resultado = {
-        status: mat.status,
-        concluiu: false,
-        precisaAvaliacao: false,
-        data_conclusao: null as string | null,
-      };
-      if (concluiu && !atual?.concluida) {
-        if (!ehVideo) {
-          await ev({
-            evento: "apostila_lida",
-            matricula_id: mat.id,
-            curso_id: mat.curso_id,
-            aula_id: aula.id,
-            detalhe: { segundos: novoSeg, minimo: duracao },
-          });
-        }
-        await ev({
-          evento: "aula_concluida",
-          matricula_id: mat.id,
-          curso_id: mat.curso_id,
-          aula_id: aula.id,
-          detalhe: { segundos: novoSeg, duracao },
-        });
-        resultado = await concluirSeCompleto(supabase, mat, empresaId, adiarConclusao(mat));
-        if (resultado.concluiu) {
-          await ev({ evento: "curso_concluido", matricula_id: mat.id, curso_id: mat.curso_id });
-          await fecharAdiada(mat, resultado.data_conclusao, "aula");
-        }
-      }
-      if (resultado.status !== mat.status && resultado.status !== "concluido") {
-        await supabase
-          .from("treinamento_matricula")
-          .update({ status: resultado.status })
-          .eq("id", mat.id);
-      }
-
       return ok({
         segundos_assistidos: novoSeg,
         pode_concluir: podeConcluir,
         aula_concluida: concluiu,
-        curso_concluido: resultado.concluiu,
-        precisa_avaliacao: resultado.precisaAvaliacao && !mat.avaliacao_aprovada,
-        status: resultado.status,
+        curso_concluido: false,
+        precisa_avaliacao: false,
+        status: mat.status,
       });
     }
 
@@ -2117,7 +2250,7 @@ Deno.serve(
         supabase
           .from("treinamento_aula")
           .select(
-            "ordem, modulo, titulo, tipo, fonte, video_ref, youtube_id, arquivo_ref, conteudo_texto, duracao_seg"
+            "id, ordem, modulo, titulo, tipo, fonte, video_ref, youtube_id, arquivo_ref, conteudo_texto, duracao_seg"
           )
           .eq("curso_id", mat.curso_id)
           .eq("empresa_id", empresaId)
@@ -2125,18 +2258,43 @@ Deno.serve(
           .order("ordem", { ascending: true }),
       ]);
       if (!func) return fail("Funcionário não encontrado", 404);
-      const { count: nQuestoes, error: erroQuestoes } = await supabase
-        .from("treinamento_questao")
-        .select("id", { count: "exact", head: true })
-        .eq("curso_id", mat.curso_id)
-        .eq("empresa_id", empresaId)
-        .is("deleted_at", null);
-      if (erroQuestoes) return fail("Não foi possível validar os requisitos do curso", 503);
+      // Requisitos (C5): a prova final pelas questões sem aula, cada questionário pelas questões dele e cada caso
+      // pelo roteiro. Três leituras da empresa da sessão; qualquer uma com erro é 503 (nunca decide sem ler).
+      const [
+        { data: questoesDaProva, error: erroQuestoes },
+        { data: questoesDosQuestionarios, error: erroQuestionarios },
+        { data: roteiros, error: erroRoteiros },
+      ] = await Promise.all([
+        supabase
+          .from("treinamento_questao")
+          .select("id, aula_id")
+          .eq("curso_id", mat.curso_id)
+          .eq("empresa_id", empresaId)
+          .is("deleted_at", null)
+          .is("aula_id", null),
+        supabase
+          .from("treinamento_questao")
+          .select("id, aula_id, pergunta, opcoes, correta")
+          .eq("curso_id", mat.curso_id)
+          .eq("empresa_id", empresaId)
+          .is("deleted_at", null)
+          .not("aula_id", "is", null),
+        supabase
+          .from("treinamento_caso")
+          .select("aula_id, conteudo")
+          .eq("curso_id", mat.curso_id)
+          .eq("empresa_id", empresaId)
+          .is("deleted_at", null),
+      ]);
+      if (erroQuestoes || erroQuestionarios || erroRoteiros) {
+        return fail("Não foi possível validar os requisitos do curso", 503);
+      }
       const pendencias = pendenciasParaEmitir(
         requisitosDoCurso({
           curso: curso || {},
           aulas: aulas || [],
-          questoes: Array.from({ length: nQuestoes || 0 }, () => ({})),
+          questoes: [...(questoesDaProva ?? []), ...(questoesDosQuestionarios ?? [])],
+          casos: roteiros ?? [],
         })
       );
       if (pendencias.length)
@@ -2158,6 +2316,9 @@ Deno.serve(
           })
         : null;
 
+      // atividades dos módulos (A9): quantas aulas de cada tipo e a nota mínima dos questionários, congeladas no
+      // certificado (entram no hash). null = curso sem atividade: a chave nem entra e ele emite como antes.
+      const atividades = atividadesDoCertificado(aulas ?? [], curso);
       const dados = {
         aluno: { nome: func?.nome_completo, cpf: func?.cpf, funcao: func?.funcao_nome ?? null },
         empresa: { nome: emp?.razao_social || emp?.nome, cnpj: emp?.cnpj ?? null },
@@ -2194,6 +2355,7 @@ Deno.serve(
         avaliacao: sit.aprovacao
           ? { nota: sit.aprovacao.nota, tentativa: sit.aprovacao.numero }
           : null,
+        ...(atividades ? { atividades } : {}),
         // nome, qualificação/registro e, quando o RH anexou, a referência da imagem da assinatura (T29).
         // Tudo congelado aqui: entra no hash, e trocar a imagem do curso depois não muda este certificado
         instrutor: instrutorDoCertificado(curso, empresaId),
@@ -2454,6 +2616,338 @@ Deno.serve(
         }
       }
       return ok({ duvida, tutor_avisado: tutorAvisado });
+    }
+
+    // ------------------------------------------------------ questionário do módulo
+    // A2: estudo guiado. `questionario_abrir` confere a aula (do curso, do tipo, liberada), sorteia questões e
+    // alternativas no servidor (o mesmo sorteio da prova) e grava o início na trilha (`questionario_iniciado`); reabrir
+    // a mesma tentativa mantém o sorteio. `questionario_enviar` valida contra esse sorteio (sem tempo mínimo), corrige
+    // com a nota mínima dos módulos, grava a tentativa (imutável) e devolve a correção comentada aprovado ou não;
+    // aprovado conclui a aula por `concluirAula`. Tentativas livres, sem limite e sem intervalo.
+    // Ordem do envio aprovado: o tempo de tela é lido ANTES de gravar (leitura com erro = 503, nada gravado) e lido de
+    // novo logo antes de concluir (vale o maior dos dois). Se a conclusão não sair depois da tentativa gravada, a
+    // próxima `questionario_abrir` conclui a aula (tentativa aprovada + aula por concluir) em vez de sortear outra.
+
+    /** O último início do questionário desta aula nesta matrícula (a linha da trilha), ou erro de leitura. */
+    // deno-lint-ignore no-explicit-any
+    const ultimoInicioDoQuestionario = (mat: any, aulaId: string) =>
+      supabase
+        .from("treinamento_evento")
+        .select("created_at, detalhe")
+        .eq("matricula_id", mat.id)
+        .eq("aula_id", aulaId)
+        .eq("empresa_id", empresaId)
+        .eq("evento", EVENTO_QUESTIONARIO_INICIADO)
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (body.acao === "questionario_abrir") {
+      if (!(await dentroDoLimite("atividade"))) return muitasAcoes();
+      const mat = await minhaMatricula(body.matricula_id);
+      if (!mat || !body.aula_id) return fail("Matrícula não encontrada", 404);
+      const preparo = await prepararQuestionario(supabase, mat, body.aula_id, empresaId, false);
+      if (preparo.falha) return recusaDaProva(preparo.falha);
+      const notaMinima = notaMinimaDoModulo(preparo.curso);
+      // aula concluída: o aluno vê a melhor nota e quantas tentativas fez; não há tentativa nova
+      const estadoConcluido = {
+        concluida: true,
+        nota_minima: notaMinima,
+        melhor_nota: preparo.melhorNota,
+        tentativas: preparo.usadas,
+      };
+      if (preparo.concluida) return ok(estadoConcluido);
+      // Autocorreção: já existe tentativa APROVADA e a aula não está concluída (o envio gravou a tentativa e a
+      // conclusão falhou). Conclui a aula agora, em vez de fazer o aluno aprovado refazer o questionário.
+      if (preparo.conclusaoPendente) {
+        const segundos = await tempoDaAula(mat, preparo.aula.id);
+        if (segundos === null) {
+          return fail("Não foi possível abrir o questionário. Tente de novo.", 503);
+        }
+        const fim = await concluirAula(mat, preparo.aula, segundos, null);
+        if (!fim) {
+          return fail("Não foi possível concluir o questionário agora. Tente de novo.", 503);
+        }
+        return ok(estadoConcluido);
+      }
+      const { questoes, aula } = preparo;
+      const numero = preparo.usadas + 1;
+
+      // Questionário já aberto nesta tentativa (recarregou a página): mesmo sorteio e mesma hora, sem outro evento.
+      // Se o RH mexeu nas questões nesse meio tempo, a ordem gravada não confere e o sorteio é refeito.
+      const { data: gravado, error: erroLeitura } = await ultimoInicioDoQuestionario(mat, aula.id);
+      if (erroLeitura) return fail("Não foi possível abrir o questionário. Tente de novo.", 503);
+      const inicio = inicioDaProva(gravado);
+      let prova =
+        inicio && inicio.tentativa === numero ? provaDaOrdem(questoes, inicio.ordem) : null;
+      if (!prova) {
+        prova = sortearProva(questoes, inteiroAleatorioSeguro);
+        const gravou = await ev({
+          evento: EVENTO_QUESTIONARIO_INICIADO,
+          matricula_id: mat.id,
+          curso_id: mat.curso_id,
+          aula_id: aula.id,
+          detalhe: detalheDaProvaIniciada({
+            tentativa: numero,
+            agora: Date.now(),
+            prova,
+            tempoMinimoPorQuestaoSeg: 0,
+          }),
+        });
+        // sem o início na trilha o envio seria recusado: melhor nem abrir
+        if (!gravou) return fail("Não foi possível abrir o questionário. Tente de novo.", 503);
+      }
+
+      return ok({
+        concluida: false,
+        tentativa: numero,
+        nota_minima: notaMinima,
+        // só o que o aluno vê: o gabarito só vai na correção desta tentativa
+        questoes: prova.map(({ id, pergunta, opcoes, ordem_opcoes }) => ({
+          id,
+          pergunta,
+          opcoes,
+          ordem_opcoes,
+        })),
+      });
+    }
+
+    if (body.acao === "questionario_enviar") {
+      if (!(await dentroDoLimite("atividade"))) return muitasAcoes();
+      const mat = await minhaMatricula(body.matricula_id);
+      if (!mat || !body.aula_id) return fail("Matrícula não encontrada", 404);
+      const preparo = await prepararQuestionario(supabase, mat, body.aula_id, empresaId, true);
+      if (preparo.falha) return recusaDaProva(preparo.falha);
+      if (preparo.concluida) {
+        return fail("Este questionário já foi concluído", 409, {
+          codigo: "QUESTIONARIO_CONCLUIDO",
+        });
+      }
+      const { questoes, curso, aula } = preparo;
+      const numero = preparo.usadas + 1;
+
+      // o início desta tentativa é lido ANTES de gravar (o tempo de tela, só na hora de concluir a aula)
+      const { data: gravado, error: erroLeitura } = await ultimoInicioDoQuestionario(mat, aula.id);
+      if (erroLeitura) {
+        return fail("Não foi possível conferir o questionário. Tente de novo.", 503);
+      }
+      const envio = validarEnvio({
+        questoes,
+        respostas: body.respostas,
+        inicio: inicioDaProva(gravado),
+        numero,
+        agora: Date.now(),
+        tempoMinimoPorQuestaoSeg: 0,
+      });
+      if (!envio.ok) {
+        return fail(mensagemDoEnvio(envio.codigo, envio.mensagem), envio.status, {
+          codigo: envio.codigo,
+          ...envio.extra,
+        });
+      }
+
+      // a ordem exibida é a que o SERVIDOR sorteou (não a que o navegador diz ter mostrado)
+      const exibicao = new Map(
+        envio.prova.map((q, i) => [q.id, { posicao: i + 1, ordem_opcoes: q.ordem_opcoes }])
+      );
+      const notaMinima = notaMinimaDoModulo(curso);
+      const { marcada, acertou, acertos, nota, aprovada } = corrigirProva({
+        questoes,
+        respostas: envio.respostas,
+        notaMinima,
+      });
+
+      // O tempo de tela (que vai ao progresso concluído) é lido ANTES de gravar: com a leitura em erro, o aluno recebe
+      // 503 e nada fica gravado. Depois do INSERT (imutável) nenhuma leitura pode mais derrubar o envio.
+      let segundosAntes = 0;
+      if (aprovada) {
+        const lido = await tempoDaAula(mat, aula.id);
+        if (lido === null) {
+          return fail("Não foi possível conferir o questionário. Tente de novo.", 503);
+        }
+        segundosAntes = lido;
+      }
+
+      // o mesmo formato de `treinamento_tentativa` (prova e respostas), mais a aula do questionário
+      const { error: tErr } = await supabase.from("treinamento_questionario_tentativa").insert({
+        empresa_id: empresaId,
+        matricula_id: mat.id,
+        curso_id: mat.curso_id,
+        aula_id: aula.id,
+        funcionario_id: funcionarioId,
+        numero,
+        // deno-lint-ignore no-explicit-any
+        prova: questoes.map((q: any) => ({
+          questao_id: q.id,
+          ordem: q.ordem,
+          pergunta: q.pergunta,
+          opcoes: q.opcoes,
+          correta: q.correta,
+        })),
+        // deno-lint-ignore no-explicit-any
+        respostas: questoes.map((q: any) => ({
+          questao_id: q.id,
+          resposta: marcada.get(q.id) ?? null,
+          acertou: acertou(q),
+          posicao_exibida: exibicao.get(q.id)?.posicao ?? null,
+          ordem_opcoes_exibida: exibicao.get(q.id)?.ordem_opcoes ?? null,
+        })),
+        acertos,
+        total: questoes.length,
+        nota,
+        aprovada,
+        ...origemDaRequisicao(req),
+      });
+      if (tErr) {
+        // unique(matricula_id, aula_id, numero): envio duplo simultâneo (outra aba já gravou esta tentativa)
+        if (tErr.code === "23505") {
+          return fail("Esta tentativa já foi registrada — recarregue a página", 409, {
+            codigo: "TENTATIVA_REPETIDA",
+          });
+        }
+        console.error("[portal-funcionario] tentativa do questionário:", tErr);
+        return fail("Não foi possível registrar o questionário. Tente de novo.", 500);
+      }
+      await ev({
+        evento: EVENTO_QUESTIONARIO_ENVIO,
+        matricula_id: mat.id,
+        curso_id: mat.curso_id,
+        aula_id: aula.id,
+        detalhe: { tentativa: numero, nota, aprovada },
+      });
+
+      let cursoConcluido = false;
+      if (aprovada) {
+        // O tempo de tela vai ao progresso concluído (`concluirAula` grava o valor que recebe): lido de novo AGORA,
+        // colado na conclusão, e vale o maior dos dois (um sinal do `progresso` no meio do caminho não pode fazer o
+        // tempo da aula voltar atrás). Se esta releitura falhar, vale a primeira: a tentativa já está gravada.
+        const segundos = tempoParaConcluir(segundosAntes, await tempoDaAula(mat, aula.id));
+        const fim = await concluirAula(mat, aula, segundos, null);
+        // a tentativa aprovada já está gravada (imutável) e o progresso não saiu: ao abrir de novo, a aula é concluída
+        if (!fim) {
+          return fail(
+            "Sua tentativa foi registrada, mas a aula não foi concluída agora. Abra o questionário de novo.",
+            500
+          );
+        }
+        cursoConcluido = fim.curso_concluido;
+      }
+
+      // A2: a correção comentada vai aprovado ou não (é estudo; a cobrança é a prova final)
+      return ok(
+        respostaDoQuestionario({
+          aprovada,
+          nota,
+          acertos,
+          total: questoes.length,
+          notaMinima,
+          tentativa: numero,
+          cursoConcluido,
+          revisao: revisaoDoQuestionario(questoes, acertou),
+        })
+      );
+    }
+
+    // ------------------------------------------------------------- caso com decisões
+    // A3: só por clique. O estado é refeito a cada pedido a partir das escolhas da trilha (caso-aluno.ts, caso.ts); o
+    // navegador recebe a pergunta e as opções só com o texto, embaralhadas, e só vê o comentário e se foi segura
+    // depois do clique. Roteiro inválido: 409 sem gravar nada. Caminho que não confere com o roteiro de hoje: rodada
+    // nova (`caso_reiniciado`), gravada ANTES da resposta. Concluir só com o caso no fim, por `concluirAula`.
+    if (body.acao === "caso_abrir") {
+      if (!(await dentroDoLimite("atividade"))) return muitasAcoes();
+      const mat = await minhaMatricula(body.matricula_id);
+      if (!mat || !body.aula_id) return fail("Matrícula não encontrada", 404);
+      const preparo = await prepararCaso(supabase, mat, body.aula_id, empresaId);
+      if (preparo.falha) return recusaDaProva(preparo.falha);
+      const { aula, conteudo } = preparo;
+      // aula concluída não abre rodada nova: o aluno revê o contexto e a reflexão
+      if (preparo.concluida) return ok(respostaDoCasoConcluido(conteudo));
+      const situacao = situacaoDoCaso(conteudo, preparo.eventos);
+      if (situacao.recusa) return recusaDaProva(situacao.recusa);
+      if (situacao.reiniciar) {
+        const reiniciou = await ev({
+          evento: EVENTO_CASO_REINICIADO,
+          matricula_id: mat.id,
+          curso_id: mat.curso_id,
+          aula_id: aula.id,
+          detalhe: situacao.reiniciar,
+        });
+        // sem a marca na trilha, o próximo pedido refaria o caminho velho
+        if (!reiniciou) return fail(MSG_CASO_INDISPONIVEL, 503);
+      }
+      return ok(respostaDaAbertura(conteudo, situacao.estado, inteiroAleatorioSeguro));
+    }
+
+    if (body.acao === "caso_escolher") {
+      if (!(await dentroDoLimite("atividade"))) return muitasAcoes();
+      const mat = await minhaMatricula(body.matricula_id);
+      if (!mat || !body.aula_id) return fail("Matrícula não encontrada", 404);
+      if (typeof body.etapa_id !== "string" || !body.etapa_id) {
+        return fail("Informe a etapa do caso", 400);
+      }
+      const preparo = await prepararCaso(supabase, mat, body.aula_id, empresaId);
+      if (preparo.falha) return recusaDaProva(preparo.falha);
+      const { aula, conteudo } = preparo;
+      if (preparo.concluida) return recusaDaProva(recusaDoCaso("CASO_ENCERRADO"));
+      const situacao = situacaoDoCaso(conteudo, preparo.eventos);
+      if (situacao.recusa) return recusaDaProva(situacao.recusa);
+      if (situacao.reiniciar) {
+        const reiniciou = await ev({
+          evento: EVENTO_CASO_REINICIADO,
+          matricula_id: mat.id,
+          curso_id: mat.curso_id,
+          aula_id: aula.id,
+          detalhe: situacao.reiniciar,
+        });
+        if (!reiniciou) return fail(MSG_CASO_INDISPONIVEL, 503);
+      }
+      const escolha = escolhaNoCaso(
+        conteudo,
+        situacao,
+        body.etapa_id,
+        body.opcao,
+        inteiroAleatorioSeguro
+      );
+      if (escolha.recusa) return recusaDaProva(escolha.recusa);
+      const gravou = await ev({
+        evento: EVENTO_CASO_ESCOLHA,
+        matricula_id: mat.id,
+        curso_id: mat.curso_id,
+        aula_id: aula.id,
+        detalhe: escolha.detalhe,
+      });
+      // a escolha que não ficou na trilha não aconteceu: o próximo pedido refaria o caso sem ela
+      if (!gravou) return fail("Não foi possível registrar sua escolha. Tente de novo.", 503);
+      return ok(escolha.resposta);
+    }
+
+    if (body.acao === "caso_concluir") {
+      if (!(await dentroDoLimite("atividade"))) return muitasAcoes();
+      const mat = await minhaMatricula(body.matricula_id);
+      if (!mat || !body.aula_id) return fail("Matrícula não encontrada", 404);
+      const preparo = await prepararCaso(supabase, mat, body.aula_id, empresaId);
+      if (preparo.falha) return recusaDaProva(preparo.falha);
+      const { aula, conteudo } = preparo;
+      // idempotente: concluir de novo (resposta perdida, duas abas) não grava nada
+      if (preparo.concluida) {
+        return ok({
+          aula_concluida: true,
+          curso_concluido: mat.status === "concluido",
+          precisa_avaliacao: false,
+          status: mat.status,
+        });
+      }
+      const situacao = situacaoDoCaso(conteudo, preparo.eventos);
+      if (situacao.recusa) return recusaDaProva(situacao.recusa);
+      const conclusao = conclusaoDoCaso(situacao);
+      if (conclusao.recusa) return recusaDaProva(conclusao.recusa);
+      // O tempo de tela vai ao progresso concluído (`concluirAula` grava o valor que recebe): lido AGORA, colado na
+      // conclusão, para um sinal do `progresso` no meio do caminho não fazer o tempo da aula voltar atrás.
+      const segundos = await tempoDaAula(mat, aula.id);
+      if (segundos === null) return fail(MSG_CASO_INDISPONIVEL, 503);
+      const fim = await concluirAula(mat, aula, segundos, conclusao.eventoExtra);
+      if (!fim) return fail("Não foi possível concluir o caso agora. Tente de novo.", 500);
+      return ok(fim);
     }
 
     return fail("Ação desconhecida", 400);

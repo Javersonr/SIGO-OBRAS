@@ -3,11 +3,13 @@ import { readFileSync } from "node:fs";
 import {
   ROTULO_EVENTO,
   abertaEmDaTentativa,
+  abertaEmDoQuestionario,
   ROTULO_ORIGEM_NAVEGADOR,
   descreverDetalhe,
   eventoInformadoPeloNavegador,
   origemDoEvento,
   rotuloDoEvento,
+  tentativasDosQuestionarios,
   tomDoEvento,
 } from "./ead-trilha";
 
@@ -70,6 +72,11 @@ function eventosGravadosPeloServidor() {
   const nomes = new Set();
   const portal = lerFuncao("portal-funcionario/index.ts");
   for (const m of portal.matchAll(/\bevento:\s*"([a-z_]+)"/g)) nomes.add(m[1]);
+  // evento escolhido por condição: `evento: cond ? "a" : "b"` (progresso: tarefa_confirmada ou apostila_lida)
+  for (const m of portal.matchAll(/\bevento:\s*[^,\n]*?\?\s*"([a-z_]+)"\s*:\s*"([a-z_]+)"/g)) {
+    nomes.add(m[1]);
+    nomes.add(m[2]);
+  }
   const clientes = portal.slice(
     portal.indexOf("const EVENTOS_CLIENTE = new Set(["),
     portal.indexOf("]);", portal.indexOf("const EVENTOS_CLIENTE"))
@@ -83,6 +90,10 @@ function eventosGravadosPeloServidor() {
     "_shared/portal-funcionario.ts",
     "portal-funcionario/regras.ts",
     "portal-funcionario/declaracao-ambiente.ts",
+    // atividades interativas (Tasks 3, 6 e 9): se o nome do evento morar numa constante EVENTO_*, ele entra aqui
+    "portal-funcionario/caso.ts",
+    "portal-funcionario/caso-aluno.ts",
+    "portal-funcionario/questionario.ts",
   ]) {
     for (const m of lerFuncao(arquivo).matchAll(/export const EVENTO_[A-Z_]+ = "([a-z_]+)"/g)) {
       nomes.add(m[1]);
@@ -104,6 +115,10 @@ describe("rótulos da trilha (T18)", () => {
       "tentativa_liberada",
       "certificado_revogado",
       "declaracao_ambiente",
+      // o caso com decisões (Task 9): as três constantes EVENTO_CASO_* do caso-aluno.ts
+      "caso_escolha",
+      "caso_reiniciado",
+      "caso_concluido",
     ]) {
       expect(nomes, esperado).toContain(esperado);
     }
@@ -118,7 +133,8 @@ describe("rótulos da trilha (T18)", () => {
   });
 
   it("os eventos novos do RH e da apostila têm rótulo em português", () => {
-    expect(rotuloDoEvento("apostila_lida")).toMatch(/apostila/i);
+    // A5 (atividades interativas): a leitura conclui ao chegar ao fim, sem tempo mínimo
+    expect(rotuloDoEvento("apostila_lida")).toBe("Leu até o fim");
     expect(rotuloDoEvento("tentativa_liberada")).toMatch(/liberad/i);
     expect(rotuloDoEvento("certificado_revogado")).toMatch(/revogad/i);
   });
@@ -349,5 +365,180 @@ describe("eventos do portal com um login em mais de uma empresa (T38)", () => {
     expect(
       descreverDetalhe({ evento: "acesso_desativado", detalhe: { por: "suporte do SIGO" } })
     ).toBe("por suporte do SIGO");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Atividades interativas (spec 2026-10-14, contrato C2): questionário, caso e tarefa
+// ---------------------------------------------------------------------------------------------
+
+describe("eventos das atividades interativas (C2)", () => {
+  const NOVOS = [
+    "questionario_iniciado",
+    "questionario_envio",
+    "caso_escolha",
+    "caso_reiniciado",
+    "caso_concluido",
+    "tarefa_confirmada",
+  ];
+
+  it("todo evento novo tem rótulo em português, nunca o nome técnico", () => {
+    for (const nome of NOVOS) {
+      expect(Object.hasOwn(ROTULO_EVENTO, nome), nome).toBe(true);
+      expect(rotuloDoEvento(nome), nome).not.toBe(nome);
+    }
+    expect(rotuloDoEvento("questionario_envio")).toMatch(/question[áa]rio/i);
+    expect(rotuloDoEvento("caso_escolha")).toMatch(/caso/i);
+    expect(rotuloDoEvento("tarefa_confirmada")).toMatch(/atividade de estudo/i);
+  });
+
+  it("A5: o rótulo da leitura diz que o aluno chegou ao fim; eventos antigos (com mínimo) seguem legíveis", () => {
+    expect(rotuloDoEvento("apostila_lida")).toBe("Leu até o fim");
+    expect(descreverDetalhe({ evento: "apostila_lida", detalhe: { segundos: 125 } })).toBe(
+      "2min 5s de leitura"
+    );
+    expect(
+      descreverDetalhe({ evento: "apostila_lida", detalhe: { segundos: 600, minimo: 540 } })
+    ).toBe("10min 0s de leitura (mínimo 9min 0s)");
+  });
+
+  it("caso recomeçado tem tom de atenção; as outras atividades, normal", () => {
+    expect(tomDoEvento("caso_reiniciado")).toBe("atencao");
+    for (const nome of NOVOS.filter((n) => n !== "caso_reiniciado")) {
+      expect(tomDoEvento(nome), nome).toBe("normal");
+    }
+  });
+});
+
+describe("descreverDetalhe das atividades interativas", () => {
+  const d = (evento, detalhe) => descreverDetalhe({ evento, detalhe });
+
+  it("questionário aberto e enviado: tentativa, nota e se atingiu a nota mínima", () => {
+    expect(
+      d("questionario_iniciado", { tentativa: 2, iniciada_em: "2026-10-14T10:00:00Z", prova: [] })
+    ).toBe("tentativa 2");
+    expect(d("questionario_envio", { tentativa: 3, nota: 75, aprovada: false })).toBe(
+      "tentativa 3 · nota 75% · abaixo da nota mínima"
+    );
+    expect(d("questionario_envio", { tentativa: 1, nota: 88, aprovada: true })).toBe(
+      "tentativa 1 · nota 88% · atingiu a nota mínima"
+    );
+  });
+
+  it("escolha no caso: etapa, opção do cadastro, segura ou não e para onde levou", () => {
+    expect(
+      d("caso_escolha", {
+        rodada: 1,
+        etapa: "e1",
+        opcao: 1,
+        segura: false,
+        proxima: "r1",
+        passagem: 1,
+      })
+    ).toBe("etapa e1 · opção 2 do cadastro · escolha insegura · seguiu para r1");
+    expect(
+      d("caso_escolha", {
+        rodada: 2,
+        etapa: "e2",
+        opcao: 0,
+        segura: true,
+        proxima: null,
+        passagem: 2,
+      })
+    ).toBe("rodada 2 · etapa e2 (2ª vez) · opção 1 do cadastro · escolha segura · encerrou o caso");
+  });
+
+  it("caso recomeçado e concluído", () => {
+    expect(d("caso_reiniciado", { rodada: 2, motivo: "caso_alterado" })).toBe(
+      "rodada 2 · o RH mudou o roteiro e o caminho feito deixou de existir"
+    );
+    expect(d("caso_concluido", { rodada: 1, escolhas: 4 })).toBe("4 escolhas");
+    expect(d("caso_concluido", { rodada: 2, escolhas: 1 })).toBe("rodada 2 · 1 escolha");
+  });
+
+  it("atividade de estudo confirmada: o tempo de tela", () => {
+    expect(d("tarefa_confirmada", { segundos: 754 })).toBe("12min 34s de tela");
+  });
+
+  it("detalhe fora do formato não quebra nem vira lixo na linha", () => {
+    expect(() => d("caso_escolha", { etapa: 5, opcao: "x" })).not.toThrow();
+    expect(d("caso_escolha", { etapa: 5, opcao: "x" })).toBe("");
+    expect(d("questionario_envio", null)).toBe("");
+    expect(d("caso_reiniciado", { motivo: "outro" })).toBe("");
+    expect(d("tarefa_confirmada", undefined)).toBe("0min 0s de tela");
+  });
+});
+
+describe("abertaEmDoQuestionario", () => {
+  const abriu = (aula_id, tentativa, created_at) => ({
+    evento: "questionario_iniciado",
+    aula_id,
+    detalhe: { tentativa },
+    created_at,
+  });
+
+  it("devolve a 1ª abertura daquela tentativa daquele questionário", () => {
+    const eventos = [
+      abriu("aq1", 1, "2026-10-14T10:00:00Z"),
+      abriu("aq2", 1, "2026-10-14T09:00:00Z"),
+      // reabriu a mesma tentativa: vale a primeira
+      abriu("aq1", 1, "2026-10-14T10:30:00Z"),
+      abriu("aq1", 2, "2026-10-14T11:00:00Z"),
+      // a prova final não conta
+      {
+        evento: "avaliacao_iniciada",
+        aula_id: null,
+        detalhe: { tentativa: 1 },
+        created_at: "2026-10-14T08:00:00Z",
+      },
+    ];
+    expect(abertaEmDoQuestionario(eventos, "aq1", 1)).toBe("2026-10-14T10:00:00Z");
+    expect(abertaEmDoQuestionario(eventos, "aq2", 1)).toBe("2026-10-14T09:00:00Z");
+    expect(abertaEmDoQuestionario(eventos, "aq1", 2)).toBe("2026-10-14T11:00:00Z");
+    expect(abertaEmDoQuestionario(eventos, "aq1", 3)).toBeNull();
+    expect(abertaEmDoQuestionario(undefined, "aq1", 1)).toBeNull();
+  });
+});
+
+describe("tentativasDosQuestionarios", () => {
+  const aulas = [
+    { id: "a1", titulo: "Vídeo de abertura" },
+    { id: "aq1", titulo: "M1 · Questionário do módulo" },
+    { id: "aq2", titulo: "M2 · Questionário do módulo" },
+  ];
+
+  it("em ordem de aula e de número, com o rótulo numerado que o aluno vê", () => {
+    const linhas = tentativasDosQuestionarios({
+      aulas,
+      tentativas: [
+        { id: "t3", aula_id: "aq2", numero: 1 },
+        { id: "t2", aula_id: "aq1", numero: 2 },
+        { id: "t1", aula_id: "aq1", numero: 1 },
+      ],
+    });
+    expect(linhas.map((l) => [l.tentativa.id, l.aula])).toEqual([
+      ["t1", "2. M1 · Questionário do módulo"],
+      ["t2", "2. M1 · Questionário do módulo"],
+      ["t3", "3. M2 · Questionário do módulo"],
+    ]);
+  });
+
+  it("aula que saiu da lista vai para o fim como 'Questionário removido'", () => {
+    const linhas = tentativasDosQuestionarios({
+      aulas,
+      tentativas: [
+        { id: "tx", aula_id: "apagada", numero: 1 },
+        { id: "t1", aula_id: "aq1", numero: 1 },
+      ],
+    });
+    expect(linhas.map((l) => l.aula)).toEqual([
+      "2. M1 · Questionário do módulo",
+      "Questionário removido",
+    ]);
+  });
+
+  it("entrada vazia não quebra", () => {
+    expect(tentativasDosQuestionarios()).toEqual([]);
+    expect(tentativasDosQuestionarios({ tentativas: null, aulas: null })).toEqual([]);
   });
 });

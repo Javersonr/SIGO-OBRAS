@@ -3,6 +3,7 @@ import {
   resumirProgressoAula,
   mudouGabarito,
   mudouNotaMinima,
+  mudouNotaMinimaDoModulo,
   quantidadeDeMatriculas,
   avisoDeMudanca,
   textoConfirmarRemocaoAula,
@@ -159,13 +160,12 @@ describe("avisoDeMudanca", () => {
     expect(a.texto).toMatch(/continua com ela concluída/);
   });
 
-  it("mudar a duração: texto próprio de vídeo e de leitura", () => {
+  it("mudar a duração: o vídeo avisa (90%); fora do vídeo o tempo é só o previsto e não avisa (A5)", () => {
     expect(avisoDeMudanca("aula_duracao", { comProgresso: 0 })).toBeNull();
     const video = avisoDeMudanca("aula_duracao", { comProgresso: 2, ehVideo: true });
     expect(video.texto).toMatch(/90%/);
-    const leitura = avisoDeMudanca("aula_duracao", { comProgresso: 2, ehVideo: false });
-    expect(leitura.texto).toMatch(/tempo mínimo de leitura/);
-    expect(leitura.texto).not.toMatch(/90%/);
+    // atividades interativas: leitura e atividades concluem sem tempo mínimo; o tempo só soma na carga
+    expect(avisoDeMudanca("aula_duracao", { comProgresso: 2, ehVideo: false })).toBeNull();
   });
 
   it("não cita 'já concluíram' quando ninguém concluiu a aula", () => {
@@ -216,5 +216,89 @@ describe("textoConfirmarRemocaoAula", () => {
 
   it("aula sem título ainda gera uma pergunta legível", () => {
     expect(textoConfirmarRemocaoAula({})).toContain("Remover esta aula do curso?");
+  });
+});
+
+describe("avisoDeMudanca: atividades interativas", () => {
+  it("gabarito do questionário: vale para as próximas tentativas do questionário", () => {
+    expect(avisoDeMudanca("gabarito_questionario", { emAndamento: 0 })).toBeNull();
+    const a = avisoDeMudanca("gabarito_questionario", { emAndamento: 2 });
+    expect(a.titulo).toMatch(/questionário/i);
+    expect(a.texto).toContain("2 matrículas em andamento");
+    expect(a.texto).toMatch(/próximas tentativas do questionário/);
+    expect(a.rotuloConfirmar).toBeTruthy();
+  });
+
+  it("nota mínima dos questionários dos módulos", () => {
+    expect(avisoDeMudanca("nota_minima_modulo", { emAndamento: 0 })).toBeNull();
+    const a = avisoDeMudanca("nota_minima_modulo", { emAndamento: 1 });
+    expect(a.titulo).toMatch(/questionários/i);
+    expect(a.texto).toContain("1 matrícula em andamento");
+    expect(a.texto).toMatch(/já concluídos não mudam/);
+  });
+
+  it("importar atividades: entram depois da última aula de cada módulo e viram exigência", () => {
+    expect(avisoDeMudanca("atividades_novas", { emAndamento: 0 })).toBeNull();
+    const a = avisoDeMudanca("atividades_novas", { emAndamento: 3 });
+    expect(a.texto).toContain("3 matrículas em andamento");
+    expect(a.texto).toMatch(/última aula de cada módulo/);
+  });
+
+  it("mudar o roteiro do caso: só com alguém no caso, e diz o que acontece com quem está no meio", () => {
+    expect(avisoDeMudanca("caso_alterar", { emAndamento: 3, comProgresso: 0 })).toBeNull();
+    const a = avisoDeMudanca("caso_alterar", { comProgresso: 2, concluiramAula: 1 });
+    expect(a.texto).toContain("2 matrículas já têm progresso nesta aula (1 já a concluiu)");
+    expect(a.texto).toMatch(/continua com ele concluído/);
+    expect(a.texto).toMatch(/recomeça da primeira etapa/);
+    expect(avisoDeMudanca("caso_alterar", { comProgresso: 1 }).texto).not.toMatch(/concluído/);
+  });
+});
+
+describe("mudouNotaMinimaDoModulo", () => {
+  it("curso novo não é mudança; nota gravada vazia vale 80", () => {
+    expect(mudouNotaMinimaDoModulo(null, 70)).toBe(false);
+    expect(mudouNotaMinimaDoModulo({}, 80)).toBe(false);
+    expect(mudouNotaMinimaDoModulo({ nota_minima_modulo: null }, 70)).toBe(true);
+    expect(mudouNotaMinimaDoModulo({ nota_minima_modulo: 80 }, 80)).toBe(false);
+    expect(mudouNotaMinimaDoModulo({ nota_minima_modulo: 70 }, 80)).toBe(true);
+  });
+});
+
+describe("textoConfirmarRemocaoAula: o que sai junto com a aula de atividade", () => {
+  it("aula de caso com roteiro: o aviso diz que o roteiro sai junto, com ou sem alunos", () => {
+    const sem = textoConfirmarRemocaoAula({ tituloAula: "Caso 1", tipo: "caso", temRoteiro: true });
+    expect(sem).toContain('Remover a aula "Caso 1" deste curso?');
+    expect(sem).toMatch(/roteiro do caso .* removido junto com a aula/);
+    const com = textoConfirmarRemocaoAula({
+      tituloAula: "Caso 1",
+      tipo: "caso",
+      temRoteiro: true,
+      emAndamento: 2,
+      comProgresso: 1,
+    });
+    expect(com).toMatch(/roteiro do caso .* removido junto com a aula/);
+    expect(com).toContain("2 matrículas em andamento");
+  });
+
+  it("aula de caso sem roteiro não cita roteiro", () => {
+    expect(textoConfirmarRemocaoAula({ tituloAula: "Caso 1", tipo: "caso" })).not.toMatch(
+      /roteiro/
+    );
+  });
+
+  it("questionário: diz quantas questões saem junto (singular e plural) e fica quieto sem questões", () => {
+    const duas = textoConfirmarRemocaoAula({ tituloAula: "Q", tipo: "questionario", questoes: 2 });
+    expect(duas).toContain("As 2 questões deste questionário são removidas junto com a aula");
+    const uma = textoConfirmarRemocaoAula({ tituloAula: "Q", tipo: "questionario", questoes: 1 });
+    expect(uma).toContain("A questão deste questionário é removida junto com a aula");
+    expect(textoConfirmarRemocaoAula({ tituloAula: "Q", tipo: "questionario" })).not.toMatch(
+      /questão|questões/
+    );
+  });
+
+  it("outros tipos não ganham aviso, mesmo com contagem solta", () => {
+    expect(textoConfirmarRemocaoAula({ tituloAula: "V", tipo: "video", questoes: 3 })).toBe(
+      'Remover a aula "V" deste curso?'
+    );
   });
 });
