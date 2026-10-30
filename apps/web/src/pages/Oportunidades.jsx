@@ -48,6 +48,7 @@ import {
   valorEstimadoParaForm,
 } from "@/components/oportunidades/oportunidade-form";
 import { pastaParaGravar } from "@/lib/pastas-arquivo";
+import { arquivaAoMudarPara, descricaoArquivadaAoGanhar } from "@/lib/oportunidade-ganho";
 
 // Campos de texto da licitação (orgao já existia; os demais vêm da 0111).
 const CAMPOS_LICITACAO_TEXTO = [
@@ -519,6 +520,30 @@ export default function Oportunidades() {
     return novoProjeto;
   };
 
+  // Ganho: a obra já existe em Projetos e a oportunidade sai do funil arquivada, como a perdida.
+  // Erro aqui não desfaz o status (a obra foi criada): só avisa para arquivar à mão.
+  const arquivarOportunidadeGanha = async (op, projeto) => {
+    setOportunidades((prev) => prev.map((o) => (o.id === op.id ? { ...o, arquivado: true } : o)));
+    if (selectedOp?.id === op.id) setShowDetail(false);
+    const nomeObra = projeto?.nome || op.nome || op.titulo;
+    try {
+      await sigo.entities.Oportunidade.update(op.id, { arquivado: true });
+      sigo.entities.OportunidadeAtualizacao.create({
+        empresa_id: empresaAtiva.id,
+        oportunidade_id: op.id,
+        usuario_nome: user?.full_name,
+        tipo: "Sistema",
+        descricao: descricaoArquivadaAoGanhar(nomeObra),
+      }).catch(() => {});
+      toast.success("Ganho! A obra está em Projetos e a oportunidade foi arquivada.");
+    } catch {
+      toast.error(
+        "A obra foi criada em Projetos, mas a oportunidade não foi arquivada. Use o botão Arquivar."
+      );
+      loadData();
+    }
+  };
+
   const handleGanhamos = async (op) => {
     const statusGanho = statusList.find((s) => s.tipo === "ganho");
     if (!statusGanho) {
@@ -900,8 +925,9 @@ export default function Oportunidades() {
         tipo: "Status",
         descricao: `Status alterado de "${statusAnterior?.nome}" para "${statusNovo?.nome}"`,
       });
-      if (statusNovo?.tipo === "ganho") {
-        await migrarOportunidadeParaProjeto(opAtualizada, statusNovo);
+      if (arquivaAoMudarPara(statusNovo)) {
+        const projeto = await migrarOportunidadeParaProjeto(opAtualizada, statusNovo);
+        await arquivarOportunidadeGanha(opAtualizada, projeto);
       }
     } catch (error) {
       // Reverter em caso de erro
