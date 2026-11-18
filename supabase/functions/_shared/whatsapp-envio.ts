@@ -18,7 +18,7 @@ export class CanalNaoConfiguradoError extends Error {
   }
 }
 
-/** Normaliza telefone BR pra formato E.164 sem "+" (ex.: 5538999448281). */
+/** Normaliza telefone BR pra formato E.164 sem "+" (ex.: 5511999990000). */
 export function normalizarTelefoneBR(bruto: string): string | null {
   const d = (bruto || "").replace(/\D/g, "");
   if (!d) return null;

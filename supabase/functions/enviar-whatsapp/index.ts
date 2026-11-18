@@ -29,7 +29,7 @@ const MAX_POR_USUARIO = 60;
 const MAX_POR_EMPRESA = 300;
 const MAX_TEXTO = 4000;
 
-/** 5538999448281 → 5538*****8281 (o log não guarda o número inteiro). */
+/** 5511999990000 → 5511*****0000 (o log não guarda o número inteiro). */
 function mascararNumero(n: string): string {
   return n.length > 8 ? n.slice(0, 4) + "*".repeat(n.length - 8) + n.slice(-4) : "****";
 }
