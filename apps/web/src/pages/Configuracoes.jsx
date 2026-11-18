@@ -4,6 +4,7 @@ import { refDoUpload } from "@/lib/anexo-ref";
 import { useEmpresa } from "../Layout";
 import { safeParseJSON } from "@/lib/json-utils";
 import { prepararRepresentanteEmpresa } from "@/lib/representante-empresa";
+import { prepararResponsavelTecnico } from "@/lib/responsavel-tecnico";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -142,6 +143,11 @@ export default function Configuracoes() {
       representante_nome: empresaAtiva.representante_nome || "",
       representante_cargo: empresaAtiva.representante_cargo || "",
       representante_cpf: empresaAtiva.representante_cpf || "",
+      responsavel_tecnico_nome: empresaAtiva.responsavel_tecnico_nome || "",
+      responsavel_tecnico_titulo: empresaAtiva.responsavel_tecnico_titulo || "",
+      responsavel_tecnico_conselho: empresaAtiva.responsavel_tecnico_conselho || "",
+      responsavel_tecnico_registro: empresaAtiva.responsavel_tecnico_registro || "",
+      responsavel_tecnico_cpf: empresaAtiva.responsavel_tecnico_cpf || "",
       observacoes: empresaAtiva.observacoes || "",
       logo_url: empresaAtiva.logo_url || "",
       tema_cores: empresaAtiva.tema_cores,
@@ -222,7 +228,13 @@ export default function Configuracoes() {
   // Empresa handlers
   const handleSaveEmpresa = async () => {
     // representante legal: CPF opcional, mas com dígitos verificadores certos
-    const conferido = prepararRepresentanteEmpresa(empresaData);
+    const representante = prepararRepresentanteEmpresa(empresaData);
+    if (!representante.ok) {
+      toast.error(representante.erro, { duration: 5000 });
+      return;
+    }
+    // responsável técnico (documentos de SST): mesma regra do CPF
+    const conferido = prepararResponsavelTecnico(representante.dados);
     if (!conferido.ok) {
       toast.error(conferido.erro, { duration: 5000 });
       return;

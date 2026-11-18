@@ -291,6 +291,76 @@ export default function EmpresaTab({
               </div>
             </div>
           </div>
+
+          {/* Responsável técnico: assina os documentos de SST que exigem RT */}
+          <div>
+            <h4 className="font-medium text-slate-700">Responsável técnico</h4>
+            <p className="text-xs text-slate-500 mb-3">
+              Sai na Autorização Formal (NR-10, NR-33 e NR-35) e no Direito de Recusa. O que ficar
+              em branco é impresso como uma linha para preencher à mão.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2">
+                <Label>Nome</Label>
+                <Input
+                  value={empresaData.responsavel_tecnico_nome || ""}
+                  onChange={(e) =>
+                    setEmpresaData({ ...empresaData, responsavel_tecnico_nome: e.target.value })
+                  }
+                  placeholder="Nome completo"
+                  className="mt-1.5"
+                />
+              </div>
+              <div>
+                <Label>Título profissional</Label>
+                <Input
+                  value={empresaData.responsavel_tecnico_titulo || ""}
+                  onChange={(e) =>
+                    setEmpresaData({ ...empresaData, responsavel_tecnico_titulo: e.target.value })
+                  }
+                  placeholder="Engenheiro Eletricista"
+                  className="mt-1.5"
+                />
+              </div>
+              <div>
+                <Label>Conselho</Label>
+                <Input
+                  value={empresaData.responsavel_tecnico_conselho || ""}
+                  onChange={(e) =>
+                    setEmpresaData({ ...empresaData, responsavel_tecnico_conselho: e.target.value })
+                  }
+                  placeholder="CREA-MG"
+                  className="mt-1.5"
+                />
+              </div>
+              <div>
+                <Label>Número do registro</Label>
+                <Input
+                  value={empresaData.responsavel_tecnico_registro || ""}
+                  onChange={(e) =>
+                    setEmpresaData({ ...empresaData, responsavel_tecnico_registro: e.target.value })
+                  }
+                  placeholder="000000/D"
+                  className="mt-1.5"
+                />
+              </div>
+              <div>
+                <Label>CPF</Label>
+                <Input
+                  value={empresaData.responsavel_tecnico_cpf || ""}
+                  onChange={(e) =>
+                    setEmpresaData({
+                      ...empresaData,
+                      responsavel_tecnico_cpf: formatarCpf(e.target.value),
+                    })
+                  }
+                  inputMode="numeric"
+                  placeholder="000.000.000-00"
+                  className="mt-1.5"
+                />
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

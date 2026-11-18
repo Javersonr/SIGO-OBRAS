@@ -5,6 +5,9 @@ import { Download, Settings } from "lucide-react";
 import EPIEditorPanel from "./EPIEditorPanel";
 import { safeParseJSON } from "@/lib/json-utils";
 import ImgStorage from "@/components/ImgStorage";
+import { escaparHtml } from "@/lib/html-seguro";
+import { toast } from "sonner";
+import { responsavelTecnicoParaDocumento } from "@/lib/responsavel-tecnico";
 
 export default function VisualizarDireitoRecusaModal({
   open,
@@ -13,6 +16,21 @@ export default function VisualizarDireitoRecusaModal({
   funcoes,
   empresaAtiva,
 }) {
+  // RT do cadastro da empresa (Configurações → Empresa); o que faltar sai como linha em branco.
+  // Este documento só imprime nome e registro, então só avisa pela falta desses dois.
+  const rt = responsavelTecnicoParaDocumento(empresaAtiva);
+  const rtFaltando = rt.faltando.filter((campo) => campo === "nome" || campo === "registro");
+  const avisoRt =
+    rtFaltando.length > 0 && !funcionario?.responsavel_tecnico_nome ? rtFaltando.join(", ") : "";
+  useEffect(() => {
+    if (open && avisoRt) {
+      toast.warning(
+        `Responsável técnico sem ${avisoRt} no cadastro. Preencha em Configurações → Empresa; até lá o documento sai com linhas em branco.`,
+        { duration: 8000 }
+      );
+    }
+  }, [open, avisoRt]);
+
   const printRef = useRef(null);
   const [showEditor, setShowEditor] = useState(false);
   const [settings, setSettings] = useState(() => {
@@ -48,7 +66,7 @@ export default function VisualizarDireitoRecusaModal({
     printWindow.document.write(`
       <html>
         <head>
-          <title>Impressão - Direito de Recusa ${funcionario.nome_completo}</title>
+          <title>Impressão - Direito de Recusa ${escaparHtml(funcionario.nome_completo)}</title>
           <style>
             @page {
               size: A4 portrait;
@@ -373,11 +391,12 @@ export default function VisualizarDireitoRecusaModal({
                     ></div>
                     <div style={{ marginBottom: "8px" }}>
                       <p style={{ fontWeight: "bold" }}>
-                        Nome:{" "}
-                        {funcionario.responsavel_tecnico_nome || "Javerson Rodrigues da Silva"}
+                        Nome: {funcionario.responsavel_tecnico_nome || rt.nome}
                       </p>
                       <p style={{ marginTop: "4px" }}>Responsável Técnico</p>
-                      <p>CREA-MG {funcionario.responsavel_tecnico_crea || "171446/D"}</p>
+                      <p>
+                        {rt.conselho} {funcionario.responsavel_tecnico_crea || rt.registro}
+                      </p>
                     </div>
                     <div style={{ textAlign: "center", fontSize: "9px" }}>Assinatura</div>
                   </div>

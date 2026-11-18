@@ -9,6 +9,8 @@ import html2canvas from "html2canvas";
 import EPIEditorPanel from "./EPIEditorPanel";
 import { safeParseJSON } from "@/lib/json-utils";
 import ImgStorage from "@/components/ImgStorage";
+import { toast } from "sonner";
+import { responsavelTecnicoParaDocumento } from "@/lib/responsavel-tecnico";
 
 export default function VisualizarAutorizacaoFormalCemigModal({
   open,
@@ -18,6 +20,18 @@ export default function VisualizarAutorizacaoFormalCemigModal({
   modelo_autorizacao_formal,
   empresaAtiva,
 }) {
+  // RT do cadastro da empresa (Configurações → Empresa); o que faltar sai como linha em branco
+  const rt = responsavelTecnicoParaDocumento(empresaAtiva);
+  const rtFaltando = rt.faltando.join(", ");
+  useEffect(() => {
+    if (open && rtFaltando) {
+      toast.warning(
+        `Responsável técnico sem ${rtFaltando} no cadastro. Preencha em Configurações → Empresa; até lá o documento sai com linhas em branco.`,
+        { duration: 8000 }
+      );
+    }
+  }, [open, rtFaltando]);
+
   const [showEditor, setShowEditor] = useState(false);
   const [settings, setSettings] = useState(() => {
     return safeParseJSON(localStorage.getItem("autorizacao_cemig_settings"), {
@@ -440,13 +454,12 @@ export default function VisualizarAutorizacaoFormalCemigModal({
             {/* Texto principal */}
             <div style={{ marginBottom: "8px", fontSize: settings.textSize }}>
               <p>
-                Pelo presente documento, eu, <strong>Javerson Rodrigues da Silva</strong>,
-                Engenheiro Eletricista, registrado no <strong>CREA-MG</strong> sob o n°{" "}
-                <strong>171446/D</strong>, CPF N.° <strong>076.443.916-22</strong>, designado pela
-                empresa <strong>{nomeEmpresa}</strong>, Inscrita no CNPJ:{" "}
-                <strong>{empresaAtiva.cnpj || "_______________________"}</strong>, para ser o
-                Responsável Técnico–RT pela implantação da Norma(s) Regulamentadora(s) – NR(s) 10,
-                35, declaro que o empregado{" "}
+                Pelo presente documento, eu, <strong>{rt.nome}</strong>, {rt.titulo}, registrado no{" "}
+                <strong>{rt.conselho}</strong> sob o n° <strong>{rt.registro}</strong>, CPF N.°{" "}
+                <strong>{rt.cpf}</strong>, designado pela empresa <strong>{nomeEmpresa}</strong>,
+                Inscrita no CNPJ: <strong>{empresaAtiva.cnpj || "_______________________"}</strong>,
+                para ser o Responsável Técnico–RT pela implantação da Norma(s) Regulamentadora(s) –
+                NR(s) 10, 35, declaro que o empregado{" "}
                 <strong>{funcionario.nome_completo.toUpperCase()}</strong>, CPF:{" "}
                 <strong>{funcionario.cpf}</strong>, empregado(a) desta empresa, ocupante do cargo{" "}
                 <strong>{funcionario.funcao_nome || "_____________"}</strong>, está autorizado(a)
@@ -773,10 +786,10 @@ export default function VisualizarAutorizacaoFormalCemigModal({
                   style={{ borderTop: "2px solid #1e293b", marginTop: "50px", marginBottom: "8px" }}
                 ></div>
                 <p style={{ fontWeight: "600", fontSize: settings.smallTextSize, margin: 0 }}>
-                  Responsável Técnico: Javerson Rodrigues da Silva
+                  Responsável Técnico: {rt.nome}
                 </p>
                 <p style={{ color: "#64748b", fontSize: settings.smallTextSize, margin: 0 }}>
-                  CREA-MG: 171446/D
+                  {rt.conselho}: {rt.registro}
                 </p>
               </div>
               <div style={{ textAlign: "center" }}>
