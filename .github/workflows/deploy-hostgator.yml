@@ -3,6 +3,8 @@ name: Deploy frontend to Hostgator
 # Quando dispara:
 #   - push em master tocando apps/web/** (build do site)
 #   - dispatch manual no Actions UI (botão "Run workflow")
+# Em qualquer dos dois, o site só é publicado depois que o workflow "CI" do MESMO
+# commit termina verde (job aguardar-ci). CI vermelho, cancelado ou ausente = sem deploy.
 on:
   push:
     branches: [master]
@@ -12,13 +14,61 @@ on:
       - ".github/workflows/deploy-hostgator.yml"
   workflow_dispatch:
 
+# O token do workflow só lê o código e o resultado do CI; nada aqui escreve no repositório.
+permissions:
+  contents: read
+  actions: read
+
 # Cancela builds antigos se nova mudança chega
 concurrency:
   group: deploy-hostgator-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Espera o CI deste commit. Sem isto, um push com teste quebrado ia ao ar do
+  # mesmo jeito, porque o deploy e o CI disparavam em paralelo, sem relação.
+  # ---------------------------------------------------------------------------
+  aguardar-ci:
+    name: Esperar o CI deste commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Esperar o workflow CI terminar verde
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "Commit: $GITHUB_SHA"
+          status=""
+          conclusao=""
+          url=""
+          # 80 voltas de 15 s = 20 min (o CI inteiro leva bem menos que isso)
+          for volta in $(seq 1 80); do
+            dados=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" \
+              --limit 1 --json status,conclusion,url \
+              --jq '.[0] // empty | [.status, (.conclusion // "-"), .url] | @tsv' || true)
+            if [ -z "$dados" ]; then
+              echo "CI deste commit ainda não apareceu (volta $volta)"
+            else
+              IFS=$'\t' read -r status conclusao url <<< "$dados"
+              echo "CI: $status / $conclusao (volta $volta)"
+              if [ "$status" = "completed" ]; then break; fi
+            fi
+            sleep 15
+          done
+          if [ "$status" != "completed" ]; then
+            echo "::error::O CI deste commit não terminou em 20 minutos. Deploy cancelado."
+            exit 1
+          fi
+          if [ "$conclusao" != "success" ]; then
+            echo "::error::O CI terminou como '$conclusao'. Deploy cancelado. $url"
+            exit 1
+          fi
+          echo "::notice::CI verde. Seguindo para o deploy."
+
   build-and-deploy:
+    needs: aguardar-ci
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -77,9 +127,20 @@ jobs:
           # O FTP user (cPanel) já está chrootado na pasta do site, então
           # `/` aqui = raiz do site. Tentar `cd` em algum subdiretório
           # pode entrar na pasta lixo "C:/" que sobrou de deploys antigos.
+          #
+          # FTPS obrigatório (FTP sobre TLS, porta 21): `ssl-force` recusa a conexão
+          # se o servidor não negociar TLS, então a senha nunca sai em texto puro;
+          # `ssl-protect-data` cifra também os arquivos; o certificado é conferido
+          # contra as autoridades do sistema e contra o nome do servidor.
+          # Se falhar com "Certificate verification", o secret HOSTGATOR_FTP_HOST
+          # não bate com o nome do certificado: use o nome do servidor que o cPanel
+          # mostra em "Contas de FTP → Configurar cliente FTP" (não um IP).
           lftp -c "
-            set ftp:ssl-allow no;
-            set ssl:verify-certificate no;
+            set ftp:ssl-force true;
+            set ftp:ssl-protect-data true;
+            set ssl:verify-certificate yes;
+            set ssl:check-hostname yes;
+            set ssl:ca-file /etc/ssl/certs/ca-certificates.crt;
             set net:max-retries 3;
             set net:timeout 30;
             open -u '$FTP_USER','$FTP_PASS' 'ftp://$FTP_HOST';
@@ -107,4 +168,5 @@ jobs:
             echo "::notice::Site: https://www.sigoobras.com.br"
           else
             echo "::error::Deploy falhou — ver logs acima"
+            echo "::error::Erro de certificado no FTPS? Confira o secret HOSTGATOR_FTP_HOST (nome do servidor, não IP)."
           fi
