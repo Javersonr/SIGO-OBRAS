@@ -3,6 +3,12 @@
 # Roda no Apache do Hostgator shared hosting.
 
 # ============================================================================
+# 0. Sem listagem de diretório: /assets/ e outras pastas não mostram o índice
+#    de arquivos (o SPA fallback abaixo não cobre pasta que existe).
+# ============================================================================
+Options -Indexes
+
+# ============================================================================
 # 1. SPA fallback — qualquer rota não-arquivo cai no index.html
 #    (sem isso, refresh em /financeiro dá 404)
 # ============================================================================
@@ -81,8 +87,20 @@
   Header always set X-Content-Type-Options "nosniff"
   Header always set Referrer-Policy "strict-origin-when-cross-origin"
   Header always set Permissions-Policy "camera=(self), microphone=(), geolocation=(self), payment=()"
-  # HSTS — só ative quando tiver certeza que HTTPS está estável e renovando
-  # Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  # HSTS: depois da primeira visita, o navegador só fala HTTPS com este endereço,
+  # mesmo que alguém digite http:// ou clique num link antigo (fecha a janela do
+  # redirecionamento 301 numa rede Wi-Fi hostil). Começa em 30 dias e SEM
+  # includeSubDomains, porque há subdomínios fora deste site. Depois de uma
+  # renovação do certificado sem incidente, subir para "max-age=31536000".
+  Header always set Strict-Transport-Security "max-age=2592000"
+
+  # CSP em modo de RELATÓRIO: não bloqueia nada, só registra no console do
+  # navegador o que a política barraria. Serve para ajustar a lista antes de
+  # trocar o nome do cabeçalho para Content-Security-Policy (aí passa a valer).
+  # Origens liberadas: Supabase (API, Storage, tempo real), consulta de CEP e
+  # CNPJ (ViaCEP, BrasilAPI, Minha Receita) e os quadros de vídeo e documento
+  # (YouTube, Google Docs/Drive/Maps).
+  Header always set Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://viacep.com.br https://brasilapi.com.br https://minhareceita.org; frame-src 'self' blob: https://*.supabase.co https://www.youtube.com https://www.youtube-nocookie.com https://docs.google.com https://drive.google.com https://www.google.com https://maps.google.com; media-src 'self' blob: https://*.supabase.co; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
 </IfModule>
 
 # ============================================================================
