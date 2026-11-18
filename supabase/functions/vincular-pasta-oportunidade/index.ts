@@ -1,8 +1,13 @@
 /**
  * vincular-pasta-oportunidade — ponte usada pelo Agente de Licitações (Cowork).
  *
- * O agente não tem a service key; chama esta função (anon key, --no-verify-jwt)
- * que faz a escrita no SIGO com service role.
+ * O agente não tem a service key; chama esta função (--no-verify-jwt), que faz a
+ * escrita no SIGO com service role.
+ *
+ * ACESSO: a função fica DESLIGADA (503) enquanto o secret `VINCULAR_PASTA_SECRET`
+ * (32 caracteres ou mais) não existir. Com ele criado, só passa quem manda o mesmo
+ * valor no cabeçalho `x-agente-secret` (401 para os demais). Sem essa porta, qualquer
+ * pessoa na internet listaria as licitações de todas as empresas. Regras em `regras.ts`.
  *
  * Ações (campo "action" no body):
  *   1. { action: "listar_pendentes", limite? } →
@@ -15,6 +20,7 @@
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
+import { conferirAcesso, urlDePastaValida } from "./regras.ts";
 
 const ORIGEM_LICITACAO = "Licitação (Alerta Licitação)";
 
@@ -22,6 +28,13 @@ Deno.serve(
   withCors(async (req) => {
     if (req.method === "OPTIONS") return preflightResponse();
     if (req.method !== "POST") return fail("Método não permitido", 405);
+
+    // Porta de entrada: antes de ler o corpo e antes de tocar no banco.
+    const acesso = conferirAcesso(
+      Deno.env.get("VINCULAR_PASTA_SECRET"),
+      req.headers.get("x-agente-secret")
+    );
+    if (!acesso.ok) return fail(acesso.erro, acesso.status);
 
     let body: {
       action?: string;
@@ -107,6 +120,9 @@ Deno.serve(
       const pasta_nome = body.pasta_nome || "Pasta da Licitação (Google Drive)";
       if (!oportunidade_id || !pasta_url) {
         return fail("oportunidade_id e pasta_url são obrigatórios", 400);
+      }
+      if (!urlDePastaValida(pasta_url)) {
+        return fail("pasta_url precisa ser um endereço https válido", 400);
       }
 
       const { data: op, error: opErr } = await supabase
