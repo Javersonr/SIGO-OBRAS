@@ -117,11 +117,11 @@ npm run dev
 ### Backend Supabase
 
 ```bash
-# Aplicar migrations no projeto remoto (já linkado em supabase/config.toml)
-npm run supabase:db:push
-
-# OU local com Docker (mais lento, mas sandbox completo)
+# Local com Docker (sandbox completo)
 npm run supabase:start
+
+# Produção: NUNCA `supabase db push`. Cada migração é aplicada à mão, uma a uma
+# (ver AGENTS.md, regra 4): supabase db query --linked -f supabase/migrations/NNNN_nome.sql
 ```
 
 ## 📚 Documentação
@@ -157,11 +157,10 @@ npm run format:check      # só checa, não modifica
 # Supabase
 npm run supabase:start    # ambiente local com Docker
 npm run supabase:status   # status do ambiente local
-npm run supabase:db:push  # aplica migrations no remoto
 npm run supabase:db:reset # zera DB local
 npm run supabase:functions:serve  # roda Edge Functions local
-npm run supabase:functions:deploy # deploy Edge Functions
-npm run supabase:types    # gera TS types a partir do schema
+npm run supabase:types    # gera TS types a partir do schema (usa --linked: fala com produção)
+# Migração e deploy de função em produção não têm script de propósito: ver AGENTS.md
 
 # SDK
 npm run sdk:test          # smoke test do @sigoobras/sdk

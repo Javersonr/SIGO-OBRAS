@@ -73,6 +73,17 @@ policy = "oneshot"
 [analytics]
 enabled = false
 
+# ============================================================================
+# Edge Functions — verify_jwt de CADA função declarado aqui.
+# Diferente do resto deste arquivo, estes blocos valem também no deploy para o
+# projeto hosted. Com todos declarados, um deploy feito sem a flag
+# --no-verify-jwt (ou de todas as funções de uma vez) não muda o comportamento
+# de nenhuma. Função nova: acrescente o bloco dela.
+#   false = o gateway não exige JWT; a função confere a identidade por dentro
+#           (JWT do SIGO, token do portal, link ou segredo).
+#   true  = o gateway exige JWT antes de a função rodar.
+# ============================================================================
+
 # Conector do Claude (MCP): o Claude manda chave opaca do SIGO, não JWT do
 # Supabase — o gateway não pode exigir JWT. Deploy também com --no-verify-jwt.
 [functions.mcp]
@@ -101,3 +112,64 @@ verify_jwt = true
 # entrada: só esvazia a fila que o banco gravou. Deploy com --no-verify-jwt.
 [functions.habilitacao-lembretes]
 verify_jwt = false
+
+# Login, senha e troca de empresa: chamadas antes de existir sessão, ou com o
+# JWT do SIGO conferido dentro da função (getCallerFromJWT).
+[functions.login-custom]
+verify_jwt = false
+
+[functions.alterar-senha]
+verify_jwt = false
+
+[functions.recuperar-senha]
+verify_jwt = false
+
+[functions.redefinir-senha-codigo]
+verify_jwt = false
+
+[functions.redefinir-senha-admin]
+verify_jwt = false
+
+[functions.trocar-empresa]
+verify_jwt = false
+
+# Portais do cliente e do fornecedor: entram com link ou token do portal, sem
+# sessão do Supabase.
+[functions.portal-cliente-dados]
+verify_jwt = false
+
+[functions.portal-cliente-acao]
+verify_jwt = false
+
+[functions.portal-fornecedor-login]
+verify_jwt = false
+
+[functions.portal-fornecedor-cotacoes]
+verify_jwt = false
+
+[functions.portal-fornecedor-cotacao]
+verify_jwt = false
+
+[functions.portal-fornecedor-resposta]
+verify_jwt = false
+
+# Recibo do fornecedor: a equipe chama com JWT (conferido por dentro) e o
+# fornecedor abre o recibo por link com token.
+[functions.recibo-fornecedor]
+verify_jwt = false
+
+# WhatsApp pelo canal do SaaS: JWT do SIGO conferido por dentro.
+[functions.enviar-whatsapp]
+verify_jwt = false
+
+# Ponte do Agente de Licitações: sem JWT; a porta é o secret VINCULAR_PASTA_SECRET
+# (sem ele a função responde 503 para todos).
+[functions.vincular-pasta-oportunidade]
+verify_jwt = false
+
+# IA e configuração do SaaS: o gateway exige JWT. Deploy SEM --no-verify-jwt.
+[functions.ia-processar]
+verify_jwt = true
+
+[functions.saas-config]
+verify_jwt = true

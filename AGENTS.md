@@ -88,9 +88,11 @@ Idioma do projeto: **português do Brasil** (textos de tela, comentários, commi
 - Node: `.nvmrc` = 20; CI em Node 22, exceto o job `test`, que usa Node 24. Os testes `.ts` das Edge Functions
   precisam de Node >= 23.6 (type stripping); no Node 22.6+ use `node --experimental-strip-types --test ...`. Não há Deno
   instalado no PC do Javerson.
-- Scripts que **não** devem ser usados (regra 1): todos os `npm run supabase:*` (por exemplo,
-  `supabase:functions:deploy` publica todas as funções sem `--no-verify-jwt` e quebra os portais, e `supabase:types`
-  usa `--linked`) e `npm run sdk:test` (por padrão vai ao projeto de produção).
+- Scripts que **não** devem ser usados (regra 1): todos os `npm run supabase:*` (por exemplo, `supabase:types` usa
+  `--linked`) e `npm run sdk:test` (por padrão vai ao projeto de produção). Os scripts `supabase:db:push` e
+  `supabase:functions:deploy` foram removidos do `package.json`: o primeiro reaplicaria migrações, e o segundo publica
+  todas as funções de uma vez. O `verify_jwt` de cada função está declarado em `supabase/config.toml`; função nova
+  entra lá também.
 - `npm run format:check` local acusa arquivos não versionados (`.superpowers/`, `.impeccable/`); confira só os seus
   arquivos com `npx prettier --check <arquivos>`.
 
