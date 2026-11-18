@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { sigo } from "@/api/sigoClient";
 import { toast } from "sonner";
+import { safeUrl } from "@/lib/safe-url";
 import {
   FileSignature,
   Loader2,
@@ -168,9 +169,9 @@ export default function PropostasOportunidade({ oportunidadeId, empresaAtiva, us
               <span className="ml-auto flex items-center gap-1 shrink-0">
                 {p.arquivo_url && (
                   <a
-                    href={p.arquivo_url}
+                    href={safeUrl(p.arquivo_url)}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
                     className="text-blue-600 hover:text-blue-800"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />

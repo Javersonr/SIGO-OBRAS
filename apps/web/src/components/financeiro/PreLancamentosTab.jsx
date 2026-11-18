@@ -35,6 +35,7 @@ import GerenciadorPreLancamentosOffline from "./GerenciadorPreLancamentosOffline
 import PreLancamentosAReconciliar from "./PreLancamentosAReconciliar";
 import HistoricoFechamentosCaixa from "./HistoricoFechamentosCaixa";
 import { useOfflineSync } from "./hooks/useOfflineSync";
+import { escaparHtml } from "@/lib/html-seguro";
 
 export default function PreLancamentosTab({
   empresaAtiva,
@@ -162,10 +163,10 @@ export default function PreLancamentosTab({
           const d = safeParseJSON(p.dados_extraidos, {});
           const valor = parseFloat(d.valor) || 0;
           return `<tr style="background:${i % 2 === 0 ? "#ffffff" : "#f8fafc"}">
-          <td>${i + 1}</td><td>${d.fornecedor || "-"}</td><td>${d.descricao || "-"}</td>
-          <td>${p.projeto_nome || "-"}</td>
+          <td>${i + 1}</td><td>${escaparHtml(d.fornecedor || "-")}</td><td>${escaparHtml(d.descricao || "-")}</td>
+          <td>${escaparHtml(p.projeto_nome || "-")}</td>
           <td style="text-align:right;font-weight:600;color:#dc2626;">R$ ${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
-          <td style="color:${p.status === "Conciliado" ? "#16a34a" : "#b45309"}">${p.status || "-"}</td>
+          <td style="color:${p.status === "Conciliado" ? "#16a34a" : "#b45309"}">${escaparHtml(p.status || "-")}</td>
         </tr>`;
         })
         .join("");

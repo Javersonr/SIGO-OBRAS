@@ -8,6 +8,7 @@ import ImportarTreinamentosZip from "./ImportarTreinamentosZip";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
 import ImgStorage from "@/components/ImgStorage";
+import { escaparHtml } from "@/lib/html-seguro";
 import { toast } from "sonner";
 
 export default function VisualizarEPIModal({
@@ -123,7 +124,7 @@ export default function VisualizarEPIModal({
     printWindow.document.write(`
       <html>
         <head>
-          <title>Impressão - EPI ${funcionario.nome_completo}</title>
+          <title>Impressão - EPI ${escaparHtml(funcionario.nome_completo)}</title>
           <style>
             @page {
               size: A4 landscape;

@@ -7,6 +7,7 @@ import EPIEditorPanel from "./EPIEditorPanel";
 import { sigo } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
 import ImgStorage from "@/components/ImgStorage";
+import { escaparHtml } from "@/lib/html-seguro";
 import { toast } from "sonner";
 
 export default function VisualizarFerramentasModal({
@@ -70,7 +71,7 @@ export default function VisualizarFerramentasModal({
     printWindow.document.write(`
       <html>
         <head>
-          <title>Impressão - Ferramentas ${funcionario.nome_completo}</title>
+          <title>Impressão - Ferramentas ${escaparHtml(funcionario.nome_completo)}</title>
           <style>
             @page {
               size: A4 landscape;

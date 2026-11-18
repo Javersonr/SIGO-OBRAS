@@ -19,6 +19,7 @@ import ReconciliacaoComDespesaModal from "./ReconciliacaoComDespesaModal.jsx";
 import DesfazerConciliacaoModal from "./DesfazerConciliacaoModal.jsx";
 import FechamentoCaixaModal from "./FechamentoCaixaModal.jsx";
 import AcrescentarPreLancamentoModal from "./AcrescentarPreLancamentoModal.jsx";
+import { escaparHtml } from "@/lib/html-seguro";
 import {
   Loader2,
   Package,
@@ -210,9 +211,9 @@ export default function HistoricoFechamentosCaixa({
         const valor = valorDoPreLancamento(pl);
         return `<tr>
         <td style="border:1px solid #999;padding:4px 8px;text-align:center;">${i + 1}</td>
-        <td style="border:1px solid #999;padding:4px 8px;">${data}</td>
-        <td style="border:1px solid #999;padding:4px 8px;">${descricao}</td>
-        <td style="border:1px solid #999;padding:4px 8px;text-align:center;">${documento}</td>
+        <td style="border:1px solid #999;padding:4px 8px;">${escaparHtml(data)}</td>
+        <td style="border:1px solid #999;padding:4px 8px;">${escaparHtml(descricao)}</td>
+        <td style="border:1px solid #999;padding:4px 8px;text-align:center;">${escaparHtml(documento)}</td>
         <td style="border:1px solid #999;padding:4px 8px;text-align:right;"></td>
         <td style="border:1px solid #999;padding:4px 8px;text-align:right;color:#c00;">R$ ${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
       </tr>`;
@@ -227,8 +228,8 @@ export default function HistoricoFechamentosCaixa({
     .empresa{text-align:center;font-size:13px;font-weight:bold;padding:6px;border:1px solid #999;}
     .total-row td{font-weight:bold;background:#f5f5f5;}</style>
     </head><body><table>
-    <tr><td colspan="6" class="titulo">${numeroCaixa} CAIXA FUNDO FIXO – ${nomeResponsavel.toUpperCase()}</td></tr>
-    <tr><td colspan="6" class="subtitulo">PRESTAÇÃO DE CONTAS REF A: ${dataFormatada}</td></tr>
+    <tr><td colspan="6" class="titulo">${escaparHtml(numeroCaixa)} CAIXA FUNDO FIXO – ${escaparHtml(nomeResponsavel.toUpperCase())}</td></tr>
+    <tr><td colspan="6" class="subtitulo">PRESTAÇÃO DE CONTAS REF A: ${escaparHtml(dataFormatada)}</td></tr>
     <tr><th>Item</th><th>Data</th><th>HISTÓRICO</th><th>DOCUMENTOS</th><th>ENTRADAS</th><th>SAÍDAS</th></tr>
     <tr><td></td><td></td><td>Saldo Inicial – Último acerto realizado</td><td></td>
     <td style="text-align:right;">R$ ${saldoAnt.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td><td></td></tr>
@@ -262,23 +263,23 @@ export default function HistoricoFechamentosCaixa({
         const valor = valorDoPreLancamento(pl);
         return `<tr>
         <td style="border:1px solid #ccc;padding:6px 10px;text-align:center;">${i + 1}</td>
-        <td style="border:1px solid #ccc;padding:6px 10px;">${data}</td>
-        <td style="border:1px solid #ccc;padding:6px 10px;">${descricao}</td>
-        <td style="border:1px solid #ccc;padding:6px 10px;">${pl.projeto_nome || "-"}</td>
+        <td style="border:1px solid #ccc;padding:6px 10px;">${escaparHtml(data)}</td>
+        <td style="border:1px solid #ccc;padding:6px 10px;">${escaparHtml(descricao)}</td>
+        <td style="border:1px solid #ccc;padding:6px 10px;">${escaparHtml(pl.projeto_nome || "-")}</td>
         <td style="border:1px solid #ccc;padding:6px 10px;text-align:right;color:#c00;">R$ ${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
       </tr>`;
       })
       .join("");
 
-    const html = `<html><head><title>Conciliados - Fechamento #${fechamento.numero}</title>
+    const html = `<html><head><title>Conciliados - Fechamento #${escaparHtml(fechamento.numero)}</title>
     <style>body{font-family:Arial,sans-serif;font-size:12px;margin:24px;}table{border-collapse:collapse;width:100%;}
     th{background:#1e293b;color:#fff;padding:7px 10px;border:1px solid #ccc;text-align:left;}
     .titulo{font-size:15px;font-weight:bold;margin-bottom:4px;}
     .sub{font-size:12px;color:#555;margin-bottom:16px;}
     .total{text-align:right;font-weight:bold;font-size:14px;margin-top:12px;color:#c00;}
     </style></head><body>
-    <p class="titulo">Pagamentos Conciliados – Fechamento #${fechamento.numero}</p>
-    <p class="sub">Pago em: ${fechamento.data_pagamento ? dataDoFechamento(fechamento.data_pagamento) : "-"} | Responsável: ${fechamento.usuario_reposicao_nome || "-"} | Aprovado por: ${fechamento.usuario_pagamento_nome || "-"}</p>
+    <p class="titulo">Pagamentos Conciliados – Fechamento #${escaparHtml(fechamento.numero)}</p>
+    <p class="sub">Pago em: ${escaparHtml(fechamento.data_pagamento ? dataDoFechamento(fechamento.data_pagamento) : "-")} | Responsável: ${escaparHtml(fechamento.usuario_reposicao_nome || "-")} | Aprovado por: ${escaparHtml(fechamento.usuario_pagamento_nome || "-")}</p>
     <table>
       <thead><tr><th>#</th><th>Data</th><th>Descrição</th><th>Projeto</th><th>Valor</th></tr></thead>
       <tbody>${linhas}</tbody>

@@ -7,6 +7,7 @@ import { Printer } from "lucide-react";
 import AnexoViewer from "@/components/shared/AnexoViewer";
 import ImgStorage from "@/components/ImgStorage";
 import { resolveStorageUrl } from "@/api/sigoClient";
+import { escaparHtml, urlSegura } from "@/lib/html-seguro";
 import {
   gerarRelatorioDiarioPDF,
   resolverFotosDiario,
@@ -28,7 +29,7 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
     ]);
     const fotoHTML = (foto, idx, estilo) =>
       foto.url
-        ? `<img src="${foto.url}" alt="Foto ${idx + 1}" style="${estilo}" />`
+        ? `<img src="${escaparHtml(urlSegura(foto.url))}" alt="Foto ${idx + 1}" style="${estilo}" />`
         : fotoIndisponivelHTML(foto.legado, "height:80px;");
 
     const dataFormatada = new Date(diario.data).toLocaleDateString("pt-BR");
@@ -39,7 +40,7 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
       maoDeObraHTML = `
         <tr><td colspan="2" style="background:#fbbf24;font-weight:bold;padding:6px 10px;border:1px solid #ccc;">Mão de Obra Utilizada (${maoDeObraData.length})</td></tr>
         <tr><th style="background:#f3f4f6;border:1px solid #ccc;padding:6px 10px;text-align:left;">Função</th><th style="background:#f3f4f6;border:1px solid #ccc;padding:6px 10px;text-align:center;">Quantidade</th></tr>
-        ${maoDeObraData.map((m) => `<tr><td style="border:1px solid #ccc;padding:6px 10px;">${m.nome}</td><td style="border:1px solid #ccc;padding:6px 10px;text-align:center;">${m.quantidade}</td></tr>`).join("")}
+        ${maoDeObraData.map((m) => `<tr><td style="border:1px solid #ccc;padding:6px 10px;">${escaparHtml(m.nome)}</td><td style="border:1px solid #ccc;padding:6px 10px;text-align:center;">${escaparHtml(m.quantidade)}</td></tr>`).join("")}
       `;
     }
 
@@ -56,8 +57,8 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
     }
 
     const logoHTML = logoSrc
-      ? `<img src="${logoSrc}" alt="Logo" style="max-height:80px;max-width:200px;" />`
-      : `<div style="font-size:22px;font-weight:bold;color:#1e3a8a;">${empresaAtiva?.nome_fantasia || empresaAtiva?.nome || ""}</div>`;
+      ? `<img src="${escaparHtml(urlSegura(logoSrc))}" alt="Logo" style="max-height:80px;max-width:200px;" />`
+      : `<div style="font-size:22px;font-weight:bold;color:#1e3a8a;">${escaparHtml(empresaAtiva?.nome_fantasia || empresaAtiva?.nome || "")}</div>`;
 
     const html = `<!DOCTYPE html>
 <html>
@@ -97,18 +98,18 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
                 <tr><td class="label" style="width:45%;border:1px solid #ccc;">Relatório nº</td><td style="border:1px solid #ccc;">1</td></tr>
                 <tr><td class="label" style="border:1px solid #ccc;">Data do relatório</td><td style="color:#2563eb;border:1px solid #ccc;">${dataFormatada}</td></tr>
                 <tr><td class="label" style="border:1px solid #ccc;">Dia da semana</td><td style="color:#2563eb;border:1px solid #ccc;">${diaS}</td></tr>
-                <tr><td class="label" style="border:1px solid #ccc;">Contrato</td><td style="border:1px solid #ccc;">${diario.numero_contrato || "-"}</td></tr>
+                <tr><td class="label" style="border:1px solid #ccc;">Contrato</td><td style="border:1px solid #ccc;">${escaparHtml(diario.numero_contrato || "-")}</td></tr>
                 <tr><td class="label" style="border:1px solid #ccc;">Prazo contratual</td><td style="border:1px solid #ccc;">-</td></tr>
-                <tr><td class="label" style="border:1px solid #ccc;">Prazo decorrido</td><td style="border:1px solid #ccc;">${diario.prazo_decorrido || "-"}</td></tr>
+                <tr><td class="label" style="border:1px solid #ccc;">Prazo decorrido</td><td style="border:1px solid #ccc;">${escaparHtml(diario.prazo_decorrido || "-")}</td></tr>
                 <tr><td class="label" style="border:1px solid #ccc;">Prazo à vencer</td><td style="border:1px solid #ccc;">-</td></tr>
               </table>
             </td>
           </tr>
         </table>
         <table style="margin-bottom:8px;">
-          <tr><td class="label" style="width:22%;">Obra</td><td style="color:#2563eb;">${diario.obra_nome || "-"}</td></tr>
-          <tr><td class="label">Local</td><td style="color:#2563eb;">${diario.obra_local || "-"}</td></tr>
-          <tr><td class="label">Contratante</td><td>${diario.contratante_nome || "-"}</td></tr>
+          <tr><td class="label" style="width:22%;">Obra</td><td style="color:#2563eb;">${escaparHtml(diario.obra_nome || "-")}</td></tr>
+          <tr><td class="label">Local</td><td style="color:#2563eb;">${escaparHtml(diario.obra_local || "-")}</td></tr>
+          <tr><td class="label">Contratante</td><td>${escaparHtml(diario.contratante_nome || "-")}</td></tr>
         </table>
         <table style="margin-bottom:8px;">
           <tr>
@@ -118,13 +119,13 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
           </tr>
           <tr>
             <td>Manhã</td>
-            <td>★ ${diario.clima_manha || diario.clima || "Sol"}</td>
-            <td>${diario.condicao_manha || "Praticável"}</td>
+            <td>★ ${escaparHtml(diario.clima_manha || diario.clima || "Sol")}</td>
+            <td>${escaparHtml(diario.condicao_manha || "Praticável")}</td>
           </tr>
           <tr>
             <td>Tarde</td>
-            <td>★ ${diario.clima_tarde || diario.clima || "Sol"}</td>
-            <td>${diario.condicao_tarde || "Praticável"}</td>
+            <td>★ ${escaparHtml(diario.clima_tarde || diario.clima || "Sol")}</td>
+            <td>${escaparHtml(diario.condicao_tarde || "Praticável")}</td>
           </tr>
         </table>
       </td>
@@ -137,7 +138,7 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
         <!-- Atividades -->
         <table style="margin-bottom:8px;" class="no-break">
           <tr><td class="amber">Atividades Realizadas</td></tr>
-          <tr><td style="white-space:pre-wrap;line-height:1.6;padding:8px;">${diario.atividades || "-"}</td></tr>
+          <tr><td style="white-space:pre-wrap;line-height:1.6;padding:8px;">${escaparHtml(diario.atividades || "-")}</td></tr>
         </table>
 
         ${
@@ -145,7 +146,7 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
             ? `
         <table style="margin-bottom:8px;" class="no-break">
           <tr><td class="amber">Observações</td></tr>
-          <tr><td style="padding:8px;">${diario.observacoes}</td></tr>
+          <tr><td style="padding:8px;">${escaparHtml(diario.observacoes)}</td></tr>
         </table>`
             : ""
         }
@@ -155,7 +156,7 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
             ? `
         <table style="margin-bottom:8px;" class="no-break">
           <tr><td class="red-header">Problemas / Ocorrências</td></tr>
-          <tr><td style="padding:8px;color:#7f1d1d;">${diario.problemas}</td></tr>
+          <tr><td style="padding:8px;color:#7f1d1d;">${escaparHtml(diario.problemas)}</td></tr>
         </table>`
             : ""
         }
@@ -166,7 +167,7 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
         <table style="margin-bottom:8px;" class="no-break">
           <tr><td colspan="2" class="amber">Mão de Obra Utilizada (${maoDeObraData.length})</td></tr>
           <tr><th class="label">Função</th><th class="label" style="text-align:center;">Quantidade</th></tr>
-          ${maoDeObraData.map((m) => `<tr><td>${m.nome}</td><td style="text-align:center;">${m.quantidade}</td></tr>`).join("")}
+          ${maoDeObraData.map((m) => `<tr><td>${escaparHtml(m.nome)}</td><td style="text-align:center;">${escaparHtml(m.quantidade)}</td></tr>`).join("")}
         </table>`
             : ""
         }
@@ -206,10 +207,10 @@ export default function VisualizarDiarioModal({ diario, open, onOpenChange, empr
         <!-- Assinatura -->
         <div style="margin-top:24px;text-align:center;">
           <div style="border-top:2px solid #333;width:180px;margin:0 auto 6px;"></div>
-          <div style="font-size:10px;color:#555;">${diario.responsavel || "Responsável pela Obra"}</div>
+          <div style="font-size:10px;color:#555;">${escaparHtml(diario.responsavel || "Responsável pela Obra")}</div>
         </div>
         <div style="margin-top:14px;padding-top:8px;border-top:1px solid #ccc;font-size:10px;color:#888;">
-          Criado por: ${diario.created_by || "-"} | ${new Date(diario.created_date).toLocaleDateString("pt-BR")}
+          Criado por: ${escaparHtml(diario.created_by || "-")} | ${new Date(diario.created_date).toLocaleDateString("pt-BR")}
         </div>
 
       </td>

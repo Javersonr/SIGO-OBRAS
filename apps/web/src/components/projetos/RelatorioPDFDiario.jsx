@@ -2,6 +2,7 @@ import jsPDF from "jspdf";
 import { safeParseJSON } from "@/lib/json-utils";
 import { resolveStorageUrl } from "@/api/sigoClient";
 import { ehBase44 } from "@/lib/anexo-ref";
+import { escaparHtml, urlSegura } from "@/lib/html-seguro";
 
 /**
  * Fotos do diário guardam a referência "bucket/caminho" (ou URL legada):
@@ -242,7 +243,7 @@ export async function imprimirDiario(diario, empresaAtiva) {
                           <div>
                             ${
                               foto.url
-                                ? `<img src="${foto.url}" alt="Foto ${idx + 1}" style="width: 100%; height: 60px; object-fit: cover; border: 1px solid #ddd; border-radius: 2px;" />`
+                                ? `<img src="${escaparHtml(urlSegura(foto.url))}" alt="Foto ${idx + 1}" style="width: 100%; height: 60px; object-fit: cover; border: 1px solid #ddd; border-radius: 2px;" />`
                                 : fotoIndisponivelHTML(foto.legado, "height: 60px;")
                             }
                           </div>
@@ -269,8 +270,8 @@ export async function imprimirDiario(diario, empresaAtiva) {
                   .map(
                     (m) => `
                   <tr>
-                    <td style="border: 1px solid #d1d5db; padding: 8px; width: 70%;">${m.nome}</td>
-                    <td style="border: 1px solid #d1d5db; padding: 8px; text-align: center;">${m.quantidade}</td>
+                    <td style="border: 1px solid #d1d5db; padding: 8px; width: 70%;">${escaparHtml(m.nome)}</td>
+                    <td style="border: 1px solid #d1d5db; padding: 8px; text-align: center;">${escaparHtml(m.quantidade)}</td>
                   </tr>
                 `
                   )
@@ -316,10 +317,10 @@ export async function imprimirDiario(diario, empresaAtiva) {
             <!-- Header -->
             <div class="header-section">
               <div class="logo-box">
-                <div class="logo-img">${empresaAtiva?.nome?.substring(0, 1) || "S"}</div>
+                <div class="logo-img">${escaparHtml(empresaAtiva?.nome?.substring(0, 1) || "S")}</div>
               </div>
               <div class="header-info">
-                <div class="header-title">${empresaAtiva?.nome || "Empresa"}</div>
+                <div class="header-title">${escaparHtml(empresaAtiva?.nome || "Empresa")}</div>
                 <div style="font-size: 11px; margin-bottom: 8px;">Relatório Diário de Obra (RDO)</div>
                 <table class="header-table">
                   <tr>
@@ -336,7 +337,7 @@ export async function imprimirDiario(diario, empresaAtiva) {
                   </tr>
                   <tr>
                     <td class="section-label">Contrato</td>
-                    <td>${diario.numero_contrato || "-"}</td>
+                    <td>${escaparHtml(diario.numero_contrato || "-")}</td>
                   </tr>
                   <tr>
                     <td class="section-label">Prazo contratual</td>
@@ -344,7 +345,7 @@ export async function imprimirDiario(diario, empresaAtiva) {
                   </tr>
                   <tr>
                     <td class="section-label">Prazo decorrido</td>
-                    <td>${diario.prazo_decorrido || "-"}</td>
+                    <td>${escaparHtml(diario.prazo_decorrido || "-")}</td>
                   </tr>
                   <tr>
                     <td class="section-label">Prazo à vencer</td>
@@ -359,15 +360,15 @@ export async function imprimirDiario(diario, empresaAtiva) {
             <table>
               <tr>
                 <td class="section-label" style="width: 25%;">Obra</td>
-                <td>${diario.obra_nome || "-"}</td>
+                <td>${escaparHtml(diario.obra_nome || "-")}</td>
               </tr>
               <tr>
                 <td class="section-label">Local</td>
-                <td>${diario.obra_local || "-"}</td>
+                <td>${escaparHtml(diario.obra_local || "-")}</td>
               </tr>
               <tr>
                 <td class="section-label">Contratante</td>
-                <td>${diario.contratante_nome || "-"}</td>
+                <td>${escaparHtml(diario.contratante_nome || "-")}</td>
               </tr>
             </table>
 
@@ -376,7 +377,7 @@ export async function imprimirDiario(diario, empresaAtiva) {
             <table>
               <tr>
                 <td class="section-label" style="width: 25%;">Manhã</td>
-                <td style="width: 30%; text-align: center;">★ ${diario.clima || "Sol"}</td>
+                <td style="width: 30%; text-align: center;">★ ${escaparHtml(diario.clima || "Sol")}</td>
                 <td class="section-label" style="width: 20%;">Tarde</td>
                 <td style="width: 25%; text-align: center;">★ Sol</td>
               </tr>
@@ -388,13 +389,13 @@ export async function imprimirDiario(diario, empresaAtiva) {
 
             <!-- Atividades -->
             <h3>Atividades Realizadas</h3>
-            <div class="content-box">${diario.atividades || "-"}</div>
+            <div class="content-box">${escaparHtml(diario.atividades || "-")}</div>
 
             ${
               diario.observacoes
                 ? `
               <h3>Observações</h3>
-              <div class="content-box">${diario.observacoes}</div>
+              <div class="content-box">${escaparHtml(diario.observacoes)}</div>
             `
                 : ""
             }
@@ -403,7 +404,7 @@ export async function imprimirDiario(diario, empresaAtiva) {
               diario.problemas
                 ? `
               <h3 style="background-color: #fca5a5;">Problemas / Ocorrências</h3>
-              <div style="background-color: #fee2e2; border: 1px solid #fca5a5; padding: 8px; margin-bottom: 12px; font-size: 11px; color: #7f1d1d;">${diario.problemas}</div>
+              <div style="background-color: #fee2e2; border: 1px solid #fca5a5; padding: 8px; margin-bottom: 12px; font-size: 11px; color: #7f1d1d;">${escaparHtml(diario.problemas)}</div>
             `
                 : ""
             }
@@ -416,12 +417,12 @@ export async function imprimirDiario(diario, empresaAtiva) {
             <!-- Assinatura -->
             <div style="margin-top: 20px; text-align: center;">
               <div style="border-top: 1px solid #333; width: 150px; margin: 0 auto 4px; height: 40px;"></div>
-              <div style="font-size: 10px;">${diario.responsavel || "Responsável pela Obra"}</div>
+              <div style="font-size: 10px;">${escaparHtml(diario.responsavel || "Responsável pela Obra")}</div>
             </div>
 
             <!-- Footer -->
             <div class="footer">
-              Criado por: ${diario.created_by || "-"} | ${new Date(diario.created_date).toLocaleDateString("pt-BR")}
+              Criado por: ${escaparHtml(diario.created_by || "-")} | ${new Date(diario.created_date).toLocaleDateString("pt-BR")}
             </div>
           </div>
         </body>

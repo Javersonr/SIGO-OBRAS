@@ -6,6 +6,7 @@ import { Download, Settings } from "lucide-react";
 import OrdemServicoEditorPanel from "./OrdemServicoEditorPanel";
 import { safeParseJSON } from "@/lib/json-utils";
 import ImgStorage from "@/components/ImgStorage";
+import { escaparHtml } from "@/lib/html-seguro";
 
 export default function VisualizarOrdemServicoModal({
   open,
@@ -41,7 +42,7 @@ export default function VisualizarOrdemServicoModal({
     printWindow.document.write(`
       <html>
         <head>
-          <title>Impressão - Ordem de Serviço ${funcionario.nome_completo}</title>
+          <title>Impressão - Ordem de Serviço ${escaparHtml(funcionario.nome_completo)}</title>
           <style>
             @page {
               size: A4 portrait;

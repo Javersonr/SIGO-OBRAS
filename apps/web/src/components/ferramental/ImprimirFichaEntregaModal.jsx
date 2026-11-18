@@ -5,6 +5,7 @@ import { Printer } from "lucide-react";
 import { format } from "date-fns";
 import { safeParseJSON } from "@/lib/json-utils";
 import { resolveStorageUrl } from "@/api/sigoClient";
+import { escaparHtml, urlSegura } from "@/lib/html-seguro";
 
 export default function ImprimirFichaEntregaModal({ open, onOpenChange, entrega, empresaAtiva }) {
   const [tipoImpressao, setTipoImpressao] = useState("ambos"); // 'ambos', 'ferramentas', 'epis'
@@ -31,12 +32,12 @@ export default function ImprimirFichaEntregaModal({ open, onOpenChange, entrega,
       <tr style="height:20px">
         <td style="border:1px solid #000;padding:4px">${entrega.data_entrega ? format(new Date(entrega.data_entrega + "T12:00:00"), "dd/MM/yyyy") : "__/__/____"}</td>
         <td style="border:1px solid #000;padding:4px">__/__/____</td>
-        <td style="border:1px solid #000;padding:4px;text-align:center">${item.quantidade || 1}</td>
-        <td style="border:1px solid #000;padding:4px;text-align:center;font-weight:bold">${item.quantidade_entregue ?? item.quantidade ?? 1}</td>
-        <td style="border:1px solid #000;padding:4px;font-size:10px">${item.descricao || item.ferramenta || item.item || ""}</td>
-        <td style="border:1px solid #000;padding:4px;font-size:10px">${item.numero_serie || ""}</td>
+        <td style="border:1px solid #000;padding:4px;text-align:center">${escaparHtml(item.quantidade || 1)}</td>
+        <td style="border:1px solid #000;padding:4px;text-align:center;font-weight:bold">${escaparHtml(item.quantidade_entregue ?? item.quantidade ?? 1)}</td>
+        <td style="border:1px solid #000;padding:4px;font-size:10px">${escaparHtml(item.descricao || item.ferramenta || item.item || "")}</td>
+        <td style="border:1px solid #000;padding:4px;font-size:10px">${escaparHtml(item.numero_serie || "")}</td>
         <td style="border:1px solid #000;padding:4px">${entrega.biometria_capturada ? "✓ Digital" : ""}</td>
-        <td style="border:1px solid #000;padding:4px">${entrega.responsavel_entrega_nome || ""}</td>
+        <td style="border:1px solid #000;padding:4px">${escaparHtml(entrega.responsavel_entrega_nome || "")}</td>
       </tr>
     `
       )
@@ -68,7 +69,7 @@ export default function ImprimirFichaEntregaModal({ open, onOpenChange, entrega,
       <html>
         <head>
           <meta charset="UTF-8">
-          <title>Lista de Ferramentas - ${entrega.funcionario_nome}</title>
+          <title>Lista de Ferramentas - ${escaparHtml(entrega.funcionario_nome)}</title>
           <style>
             @page { size: A4 landscape; margin: 10mm; margin-top: 0; margin-bottom: 0; }
             * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -84,7 +85,7 @@ export default function ImprimirFichaEntregaModal({ open, onOpenChange, entrega,
         <body>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:12px;border-bottom:3px solid #000;gap:20px">
             <div style="min-width:80px">
-              ${logoUrl ? `<img src="${logoUrl}" alt="Logo" style="max-height:70px;max-width:200px;object-fit:contain" />` : ""}
+              ${logoUrl ? `<img src="${escaparHtml(urlSegura(logoUrl))}" alt="Logo" style="max-height:70px;max-width:200px;object-fit:contain" />` : ""}
             </div>
             <div style="text-align:center;flex:1">
               <h1 style="margin:0">LISTA DE ENTREGA DE FERRAMENTAS</h1>
@@ -95,23 +96,23 @@ export default function ImprimirFichaEntregaModal({ open, onOpenChange, entrega,
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;margin-bottom:4px">
               <div style="border-bottom:1px solid #000;padding-bottom:2px">
                 <strong>NOME:</strong>
-                <div style="margin-top:2px">${entrega.funcionario_nome}</div>
+                <div style="margin-top:2px">${escaparHtml(entrega.funcionario_nome)}</div>
               </div>
               <div style="border-bottom:1px solid #000;padding-bottom:2px;padding-left:20px">
                 <strong>FUNÇÃO:</strong>
-                <div style="margin-top:2px">${entrega.funcao_nome || ""}</div>
+                <div style="margin-top:2px">${escaparHtml(entrega.funcao_nome || "")}</div>
               </div>
               <div style="border-bottom:1px solid #000;padding-bottom:2px;padding-left:20px">
                 <strong>DATA DE ENTREGA:</strong>
-                <div style="margin-top:2px">${dataAdmissao}</div>
+                <div style="margin-top:2px">${escaparHtml(dataAdmissao)}</div>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0">
               <div style="border-bottom:1px solid #000;padding-bottom:2px">
-                <strong>SOLICITANTE: ${entrega.solicitante_nome || ""}</strong>
+                <strong>SOLICITANTE: ${escaparHtml(entrega.solicitante_nome || "")}</strong>
               </div>
               <div style="border-bottom:1px solid #000;padding-bottom:2px;padding-left:20px">
-                <strong>RESPONSÁVEL ENTREGA: ${entrega.responsavel_entrega_nome || ""}</strong>
+                <strong>RESPONSÁVEL ENTREGA: ${escaparHtml(entrega.responsavel_entrega_nome || "")}</strong>
               </div>
               <div style="border-bottom:1px solid #000;padding-bottom:2px;padding-left:20px">
                 <strong>BIOMETRIA: ${entrega.biometria_capturada ? "Confirmada ✓" : "Não capturada"}</strong>
@@ -212,9 +213,9 @@ export default function ImprimirFichaEntregaModal({ open, onOpenChange, entrega,
         <tr style="height:20px">
           <td style="border:1px solid #000;padding:4px">__/__/____</td>
           <td style="border:1px solid #000;padding:4px">__/__/____</td>
-          <td style="border:1px solid #000;padding:4px;text-align:center">${epi.quantidade || 1}</td>
-          <td style="border:1px solid #000;padding:4px">${epi.descricao || epi.item || ""}</td>
-          <td style="border:1px solid #000;padding:4px;font-size:10px">${epi.ca || ""}</td>
+          <td style="border:1px solid #000;padding:4px;text-align:center">${escaparHtml(epi.quantidade || 1)}</td>
+          <td style="border:1px solid #000;padding:4px">${escaparHtml(epi.descricao || epi.item || "")}</td>
+          <td style="border:1px solid #000;padding:4px;font-size:10px">${escaparHtml(epi.ca || "")}</td>
           <td style="border:1px solid #000;padding:4px"></td>
           <td style="border:1px solid #000;padding:4px"></td>
         </tr>
@@ -242,7 +243,7 @@ export default function ImprimirFichaEntregaModal({ open, onOpenChange, entrega,
         <div style="page-break-after: always; margin-bottom: 0">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:12px;border-bottom:3px solid #000;gap:20px">
             <div style="min-width:80px">
-              ${logoUrl ? `<img src="${logoUrl}" alt="Logo" style="max-height:70px;max-width:200px;object-fit:contain" />` : ""}
+              ${logoUrl ? `<img src="${escaparHtml(urlSegura(logoUrl))}" alt="Logo" style="max-height:70px;max-width:200px;object-fit:contain" />` : ""}
             </div>
             <div style="text-align:center;flex:1">
               <h1 style="margin:0">LISTA DE ENTREGA DE EPIs</h1>
@@ -257,11 +258,11 @@ export default function ImprimirFichaEntregaModal({ open, onOpenChange, entrega,
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;margin-bottom:4px">
               <div style="border-bottom:1px solid #000;padding-bottom:2px">
                 <strong>NOME:</strong>
-                <div style="margin-top:2px">${entrega.funcionario_nome}</div>
+                <div style="margin-top:2px">${escaparHtml(entrega.funcionario_nome)}</div>
               </div>
               <div style="border-bottom:1px solid #000;padding-bottom:2px;padding-left:20px">
                 <strong>FUNÇÃO:</strong>
-                <div style="margin-top:2px">${entrega.funcao_nome || ""}</div>
+                <div style="margin-top:2px">${escaparHtml(entrega.funcao_nome || "")}</div>
               </div>
               <div style="border-bottom:1px solid #000;padding-bottom:2px;padding-left:20px">
                 <strong>DATA DE ENTREGA:</strong>
@@ -271,7 +272,7 @@ export default function ImprimirFichaEntregaModal({ open, onOpenChange, entrega,
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
               <div style="border-bottom:1px solid #000;padding-bottom:2px">
                 <strong>RESPONSÁVEL PELA ENTREGA:</strong>
-                <div style="margin-top:2px">${entrega.responsavel_entrega_nome || ""}</div>
+                <div style="margin-top:2px">${escaparHtml(entrega.responsavel_entrega_nome || "")}</div>
               </div>
             </div>
           </div>
@@ -326,7 +327,7 @@ export default function ImprimirFichaEntregaModal({ open, onOpenChange, entrega,
       <html>
         <head>
           <meta charset="UTF-8">
-          <title>Lista de EPIs - ${entrega.funcionario_nome}</title>
+          <title>Lista de EPIs - ${escaparHtml(entrega.funcionario_nome)}</title>
           <style>
             @page { size: A4 landscape; margin: 10mm; margin-top: 0; margin-bottom: 0; }
             * { margin: 0; padding: 0; box-sizing: border-box; }

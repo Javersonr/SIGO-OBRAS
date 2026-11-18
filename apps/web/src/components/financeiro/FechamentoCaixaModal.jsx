@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 import { sigo, supabase } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { escaparHtml } from "@/lib/html-seguro";
 import {
   dataDoFechamento,
   mensagemErroFechamento,
@@ -139,16 +140,16 @@ export default function FechamentoCaixaModal({
         const valor = getValor(pl);
         return `<tr>
         <td style="border:1px solid #999;padding:4px 8px;text-align:center;">${i + 1}</td>
-        <td style="border:1px solid #999;padding:4px 8px;">${data}</td>
-        <td style="border:1px solid #999;padding:4px 8px;">${descricao}</td>
-        <td style="border:1px solid #999;padding:4px 8px;text-align:center;">${documento}</td>
+        <td style="border:1px solid #999;padding:4px 8px;">${escaparHtml(data)}</td>
+        <td style="border:1px solid #999;padding:4px 8px;">${escaparHtml(descricao)}</td>
+        <td style="border:1px solid #999;padding:4px 8px;text-align:center;">${escaparHtml(documento)}</td>
         <td style="border:1px solid #999;padding:4px 8px;text-align:right;"></td>
         <td style="border:1px solid #999;padding:4px 8px;text-align:right;color:#c00;">R$ ${fmtBRL(valor)}</td>
       </tr>`;
       })
       .join("");
 
-    const htmlContent = `<!DOCTYPE html><html><head><title>Fechamento #${numeroCaixa}</title><style>body{font-family:Arial,sans-serif;padding:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:4px 8px}</style></head><body><h2>Fechamento de Caixa #${numeroCaixa}</h2><p>Responsável: ${nomeResponsavel} | Data: ${dataFechamento}</p><table><thead><tr><th>#</th><th>Data</th><th>Descrição</th><th>Documento</th><th>Entrada</th><th>Saída</th></tr></thead><tbody>${linhasItens}</tbody><tfoot><tr><td colspan="5" style="text-align:right;font-weight:bold">Total Saídas:</td><td style="text-align:right;color:#c00;font-weight:bold">R$ ${fmtBRL(total)}</td></tr></tfoot></table></body></html>`;
+    const htmlContent = `<!DOCTYPE html><html><head><title>Fechamento #${escaparHtml(numeroCaixa)}</title><style>body{font-family:Arial,sans-serif;padding:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:4px 8px}</style></head><body><h2>Fechamento de Caixa #${escaparHtml(numeroCaixa)}</h2><p>Responsável: ${escaparHtml(nomeResponsavel)} | Data: ${escaparHtml(dataFechamento)}</p><table><thead><tr><th>#</th><th>Data</th><th>Descrição</th><th>Documento</th><th>Entrada</th><th>Saída</th></tr></thead><tbody>${linhasItens}</tbody><tfoot><tr><td colspan="5" style="text-align:right;font-weight:bold">Total Saídas:</td><td style="text-align:right;color:#c00;font-weight:bold">R$ ${fmtBRL(total)}</td></tr></tfoot></table></body></html>`;
     const w = window.open("", "_blank");
     w.document.write(htmlContent);
     w.document.close();

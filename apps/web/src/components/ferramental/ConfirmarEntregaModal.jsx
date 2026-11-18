@@ -8,6 +8,7 @@ import { safeParseJSON } from "@/lib/json-utils";
 import ImgStorage from "@/components/ImgStorage";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { escaparHtml } from "@/lib/html-seguro";
 
 export default function ConfirmarEntregaModal({
   open,
@@ -188,7 +189,7 @@ export default function ConfirmarEntregaModal({
     printWindow.document.write(`
       <html>
         <head>
-          <title>Ficha de Entrega - ${entrega.funcionario_nome || entrega.caminhao_placa}</title>
+          <title>Ficha de Entrega - ${escaparHtml(entrega.funcionario_nome || entrega.caminhao_placa)}</title>
           <style>
             @page { size: A4 landscape; margin: 10mm; }
             * { margin: 0; padding: 0; box-sizing: border-box; }

@@ -5,6 +5,7 @@ import { Download, Settings } from "lucide-react";
 import EPIEditorPanel from "./EPIEditorPanel";
 import { safeParseJSON } from "@/lib/json-utils";
 import ImgStorage from "@/components/ImgStorage";
+import { escaparHtml } from "@/lib/html-seguro";
 
 export default function VisualizarAutorizacaoFormalModal({
   open,
@@ -46,7 +47,7 @@ export default function VisualizarAutorizacaoFormalModal({
     printWindow.document.write(`
       <html>
         <head>
-          <title>Impressão - Autorização Formal ${funcionario.nome_completo}</title>
+          <title>Impressão - Autorização Formal ${escaparHtml(funcionario.nome_completo)}</title>
           <style>
             @page {
               size: A4 portrait;

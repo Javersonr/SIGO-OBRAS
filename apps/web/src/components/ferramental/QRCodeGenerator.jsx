@@ -3,6 +3,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import { Download, Printer } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { escaparHtml } from "@/lib/html-seguro";
 
 export default function QRCodeGenerator({
   value,
@@ -36,7 +37,7 @@ export default function QRCodeGenerator({
       <!DOCTYPE html>
       <html>
         <head>
-          <title>QR Code - ${value}</title>
+          <title>QR Code - ${escaparHtml(value)}</title>
           <style>
             body {
               margin: 0;
@@ -72,8 +73,8 @@ export default function QRCodeGenerator({
         </head>
         <body>
           <img src="${url}" alt="QR Code" />
-          ${label ? `<div class="label">${label}</div>` : ""}
-          <div class="code">${value}</div>
+          ${label ? `<div class="label">${escaparHtml(label)}</div>` : ""}
+          <div class="code">${escaparHtml(value)}</div>
           <script>
             window.onload = function() {
               window.print();

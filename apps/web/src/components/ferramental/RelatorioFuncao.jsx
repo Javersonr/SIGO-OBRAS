@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { sigo, resolveStorageUrl } from "@/api/sigoClient";
 import { safeParseJSON } from "@/lib/json-utils";
+import { escaparHtml, urlSegura } from "@/lib/html-seguro";
 import { Printer, Filter, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -99,9 +100,9 @@ export default function RelatorioFuncao({ empresaAtiva }) {
       <tr style="height:20px">
         <td style="border:1px solid #000;padding:4px">__/__/____</td>
         <td style="border:1px solid #000;padding:4px">__/__/____</td>
-        <td style="border:1px solid #000;padding:4px;text-align:center">${item.quantidade || 1}</td>
-        <td style="border:1px solid #000;padding:4px;font-size:10px">${item.ferramenta || item.descricao || ""}</td>
-        <td style="border:1px solid #000;padding:4px;font-size:10px">${item.numero_serie || ""}</td>
+        <td style="border:1px solid #000;padding:4px;text-align:center">${escaparHtml(item.quantidade || 1)}</td>
+        <td style="border:1px solid #000;padding:4px;font-size:10px">${escaparHtml(item.ferramenta || item.descricao || "")}</td>
+        <td style="border:1px solid #000;padding:4px;font-size:10px">${escaparHtml(item.numero_serie || "")}</td>
         <td style="border:1px solid #000;padding:4px"></td>
         <td style="border:1px solid #000;padding:4px"></td>
       </tr>
@@ -134,7 +135,7 @@ export default function RelatorioFuncao({ empresaAtiva }) {
       <html>
         <head>
           <meta charset="UTF-8">
-          <title>Ficha de Controle - ${funcionario.nome}</title>
+          <title>Ficha de Controle - ${escaparHtml(funcionario.nome)}</title>
           <style>
             @page { size: A4 landscape; margin: 10mm; margin-top: 0; margin-bottom: 0; }
             * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -152,7 +153,7 @@ export default function RelatorioFuncao({ empresaAtiva }) {
           <!-- Cabeçalho com logo -->
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:12px;border-bottom:3px solid #000;gap:20px">
             <div style="min-width:80px">
-              ${logoUrl ? `<img src="${logoUrl}" alt="Logo" style="max-height:70px;max-width:200px;object-fit:contain" />` : ""}
+              ${logoUrl ? `<img src="${escaparHtml(urlSegura(logoUrl))}" alt="Logo" style="max-height:70px;max-width:200px;object-fit:contain" />` : ""}
             </div>
             <div style="text-align:center;flex:1">
               <h1 style="margin:0">FICHA DE CONTROLE DE ENTREGA DE FERRAMENTAS</h1>
@@ -164,20 +165,20 @@ export default function RelatorioFuncao({ empresaAtiva }) {
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;margin-bottom:4px">
               <div style="border-bottom:1px solid #000;padding-bottom:2px">
                 <strong>NOME:</strong>
-                <div style="margin-top:2px">${funcionario.nome}</div>
+                <div style="margin-top:2px">${escaparHtml(funcionario.nome)}</div>
               </div>
               <div style="border-bottom:1px solid #000;padding-bottom:2px;padding-left:20px">
                 <strong>Nº DE REGISTRO:</strong>
-                <div style="margin-top:2px">${funcionario.numero_registro || funcionario.cpf || ""}</div>
+                <div style="margin-top:2px">${escaparHtml(funcionario.numero_registro || funcionario.cpf || "")}</div>
               </div>
               <div style="border-bottom:1px solid #000;padding-bottom:2px;padding-left:20px">
                 <strong>DATA DE ADMISSÃO:</strong>
-                <div style="margin-top:2px">${dataAdmissao}</div>
+                <div style="margin-top:2px">${escaparHtml(dataAdmissao)}</div>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0">
               <div style="border-bottom:1px solid #000;padding-bottom:2px">
-                <strong>FUNÇÃO: ${funcionario.funcao_nome}</strong>
+                <strong>FUNÇÃO: ${escaparHtml(funcionario.funcao_nome)}</strong>
               </div>
               <div style="border-bottom:1px solid #000;padding-bottom:2px;padding-left:20px">
                 <strong>SEÇÃO: OPERACIONAL</strong>

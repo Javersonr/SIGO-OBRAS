@@ -71,6 +71,7 @@ import NotaDevolucaoModal from "../components/estoque/NotaDevolucaoModal";
 import ImportarMovimentacoesModal from "../components/estoque/ImportarMovimentacoesModal";
 import { createPageUrl } from "../utils";
 import { useNavigate } from "react-router-dom";
+import { safeUrl } from "@/lib/safe-url";
 
 export default function Estoque() {
   const { empresaAtiva, perfil, user, temPermissao } = useEmpresa();
@@ -1263,7 +1264,7 @@ export default function Estoque() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => window.open(nota.pdf_url, "_blank")}
+                          onClick={() => window.open(safeUrl(nota.pdf_url), "_blank", "noopener")}
                           title="Ver DANFE"
                         >
                           <FileText className="w-4 h-4 text-red-500" />
