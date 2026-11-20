@@ -3,12 +3,6 @@
 # Roda no Apache do Hostgator shared hosting.
 
 # ============================================================================
-# 0. Sem listagem de diretório: /assets/ e outras pastas não mostram o índice
-#    de arquivos (o SPA fallback abaixo não cobre pasta que existe).
-# ============================================================================
-Options -Indexes
-
-# ============================================================================
 # 1. SPA fallback — qualquer rota não-arquivo cai no index.html
 #    (sem isso, refresh em /financeiro dá 404)
 # ============================================================================
