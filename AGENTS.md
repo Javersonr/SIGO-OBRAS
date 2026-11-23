@@ -125,6 +125,8 @@ Idioma do projeto: **português do Brasil** (textos de tela, comentários, commi
   `exigir_empresa_do_chamador(...)` no início e `grant execute on function ... to authenticated, service_role` (só
   `service_role` se a função for só do servidor), como na migração `0110` (`:1264-1268`). Sem o `grant`, o front não
   consegue chamar a RPC.
+- Depois da `0175`, função nova em `public` nasce sem `EXECUTE` para `anon` e para `PUBLIC`, e tabela nova nasce sem
+  privilégio para `anon`: quem precisar (policy `TO public`, página pública) dá `grant` explícito.
 - `jsonb` vindo do legado pode ser string: use `public.jsonb_to_array()` antes de tratar como lista.
 - Permissão fina no banco: `public.tem_permissao(modulo, aba, funcao)` (0147, espelho do `temPermissaoServidor`). Nas
   tabelas do EAD o trigger `zz_permissao_ead` tem de ser o ÚLTIMO trigger BEFORE (ordem alfabética: ele confere a
