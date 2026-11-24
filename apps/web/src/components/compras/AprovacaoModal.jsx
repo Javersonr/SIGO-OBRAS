@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { sigo, supabase } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
+import { solicitanteNaoPodeDecidir } from "@/lib/compras-aprovacao";
 
 /**
  * Escapa caracteres HTML pra prevenir XSS quando interpolamos dados
@@ -54,7 +55,7 @@ export default function AprovacaoModal({
   // Pegamos o perfil do vínculo (Admin, Supervisor, Gerente, etc).
   // Usado pra validar quem pode aprovar cada faixa (RPC valida server-side
   // mas evitamos a viagem de rede quando obviamente não tem perfil).
-  const { vinculo } = useEmpresa();
+  const { vinculo, isSuperAdmin } = useEmpresa();
   const perfilUsuario = vinculo?.perfil || "Operador";
 
   const [loading, setLoading] = useState(true);
@@ -67,12 +68,10 @@ export default function AprovacaoModal({
   const [aprovacoes, setAprovacoes] = useState([]);
   const [niveis, setNiveis] = useState([]);
 
-  // Solicitante não pode aprovar a si mesmo — server-side bloqueia,
-  // aqui apenas escondemos o botão pra evitar confusão.
-  const isSolicitante =
-    solicitacao?.solicitante_id === user?.id ||
-    String(solicitacao?.solicitante_nome || "").toLowerCase() ===
-      String(user?.full_name || "").toLowerCase();
+  // Regra do dono: o solicitante nunca aprova a própria compra, a não ser que seja
+  // administrador (super admin, Admin ou Admin Holding). O banco bloqueia (0178);
+  // aqui só escondemos os botões de quem não pode.
+  const isSolicitante = solicitanteNaoPodeDecidir({ solicitacao, user, isSuperAdmin, vinculo });
 
   useEffect(() => {
     if (open && solicitacao) {
