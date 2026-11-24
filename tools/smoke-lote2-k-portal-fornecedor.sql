@@ -9,7 +9,7 @@
 -- @exemplo.test) criados aqui; nenhum UUID fixo, nenhuma linha real usada.
 -- Perfis simulados: admin (Admin), holding (Admin Holding, sem permissões),
 -- compras (Compras → Cotações), hist (Compras → só Histórico), estoque (Estoque,
--- sem Compras), compras_nulo (Compras → Cotações com ativo NULO), compras_inativo
+-- sem Compras), compras_nulo (Compras → Cotações com ativo NULO: barrado, como na 0147), compras_inativo
 -- (Compras → Cotações com ativo = false), outra (Admin de outra empresa), super
 -- (super admin) e o servidor
 -- (service_role).
@@ -66,7 +66,6 @@ declare
   v_item uuid;
   v_cf uuid;
   v_cf_novo uuid;
-  v_cf_nulo uuid;
   v_ok boolean;
   v_fa uuid;
   v_fa_novo uuid := gen_random_uuid();
@@ -237,46 +236,30 @@ begin
   reset role;
   raise notice '[estoque] OK sem Compras não vê o token nem a credencial';
 
-  -- 3b. vínculo com ativo NULO conta como ativo (tem_permissao da 0179, como a tela e current_user_perfil);
-  --     ativo = false continua barrado (revisão do 2b-2, C3) ------------------------------------------------
-  if pg_get_functiondef('public.tem_permissao(text,text,text)'::regprocedure)
-       not like '%coalesce(ue.ativo, true) = true%' then
-    raise exception 'FALHOU: tem_permissao ainda exige ue.ativo = true (a 0179 não trocou a função)';
-  end if;
-  v_n := v_n + 1;
-  perform set_config('request.jwt.claims', public.smoke_lote2_claims('compras_nulo', v_e1), true);
-  set local role authenticated;
-  v_ok := public.tem_permissao('Compras');
-  if v_ok is not true then raise exception 'FALHOU [compras_nulo]: tem_permissao barrou ativo nulo'; end if;
-  v_n := v_n + 1;
-  select count(*) into v_cnt from public.cotacao_fornecedor where id = v_cf;
-  if v_cnt <> 1 then raise exception 'FALHOU [compras_nulo]: não leu cotacao_fornecedor'; end if;
-  v_n := v_n + 1;
-  update public.cotacao_fornecedor set ultima_notificacao = now() where id = v_cf;
-  get diagnostics v_rows = row_count;
-  if v_rows <> 1 then raise exception 'FALHOU [compras_nulo]: não gravou cotacao_fornecedor'; end if;
-  v_n := v_n + 1;
-  insert into public.cotacao_fornecedor (empresa_id, cotacao_id, fornecedor_id, fornecedor_nome, status)
-    values (v_e1, v_cot, v_forn_novo, 'SMOKE Fornecedor novo', 'Enviada')
-    returning id into v_cf_nulo;
-  if v_cf_nulo is null then raise exception 'FALHOU [compras_nulo]: não criou participação'; end if;
-  v_n := v_n + 1;
-  reset role;
-
-  perform set_config('request.jwt.claims', public.smoke_lote2_claims('compras_inativo', v_e1), true);
-  set local role authenticated;
-  v_ok := public.tem_permissao('Compras');
-  if v_ok is not false then raise exception 'FALHOU [compras_inativo]: tem_permissao aceitou ativo = false'; end if;
-  v_n := v_n + 1;
-  select count(*) into v_cnt from public.cotacao_fornecedor where id = v_cf;
-  if v_cnt <> 0 then raise exception 'FALHOU [compras_inativo]: vínculo desativado leu cotacao_fornecedor'; end if;
-  v_n := v_n + 1;
-  update public.cotacao_fornecedor set status = 'Respondida Totalmente' where id = v_cf;
-  get diagnostics v_rows = row_count;
-  if v_rows <> 0 then raise exception 'FALHOU [compras_inativo]: vínculo desativado alterou cotacao_fornecedor'; end if;
-  v_n := v_n + 1;
-  reset role;
-  raise notice '[compras_nulo/compras_inativo] OK ativo nulo = ativo; ativo = false barrado';
+  -- 3b. critério ESTRITO do vínculo (o da 0147, caso P03 do smoke do EAD, e o do login): só ativo = true vale.
+  --     Vínculo com ativo NULO ou = false, mesmo com permissão de Compras, não lê nem grava cotacao_fornecedor --
+  foreach v_quem in array array['compras_nulo', 'compras_inativo'] loop
+    perform set_config('request.jwt.claims', public.smoke_lote2_claims(v_quem, v_e1), true);
+    set local role authenticated;
+    v_ok := public.tem_permissao('Compras');
+    if v_ok is not false then
+      raise exception 'FALHOU [%]: tem_permissao aceitou vínculo que não é ativo = true', v_quem;
+    end if;
+    v_n := v_n + 1;
+    select count(*) into v_cnt from public.cotacao_fornecedor where id = v_cf;
+    if v_cnt <> 0 then raise exception 'FALHOU [%]: vínculo não ativo leu cotacao_fornecedor', v_quem; end if;
+    v_n := v_n + 1;
+    update public.cotacao_fornecedor set status = 'Respondida Totalmente' where id = v_cf;
+    get diagnostics v_rows = row_count;
+    if v_rows <> 0 then raise exception 'FALHOU [%]: vínculo não ativo alterou cotacao_fornecedor', v_quem; end if;
+    v_n := v_n + 1;
+    perform public.smoke_lote2_recusa(format(
+      'insert into public.cotacao_fornecedor (empresa_id, cotacao_id, fornecedor_id) values (%L, %L, %L)',
+      v_e1, v_cot, v_forn_novo), '42501', 'new row violates row-level security%');
+    v_n := v_n + 1;
+    reset role;
+  end loop;
+  raise notice '[compras_nulo/compras_inativo] OK ativo nulo e ativo = false barrados (critério estrito)';
 
   -- 4. outra empresa: nada da 1ª -----------------------------------------------------------------------------------
   perform set_config('request.jwt.claims', public.smoke_lote2_claims('outra', v_e2), true);
