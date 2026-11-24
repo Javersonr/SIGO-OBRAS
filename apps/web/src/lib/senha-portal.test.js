@@ -7,7 +7,10 @@ import {
   MENSAGEM_ENVIAR_DEPOIS,
   MENSAGEM_FALHA_SERVIDOR,
   MENSAGEM_FORNECEDOR_SEM_EMAIL,
+  TEXTO_PREPARANDO,
+  abrirConvite,
   acessosDaCotacao,
+  precisaEnviarSenhaAntes,
   enviarSenhaFornecedor,
   linhaSobreSenha,
   linksDaCotacao,
@@ -290,5 +293,121 @@ describe("MENSAGEM_FORNECEDOR_SEM_EMAIL", () => {
     const { MENSAGEM_SEM_EMAIL } =
       await import("../../../../supabase/functions/fornecedor-acesso/regras.ts");
     expect(MENSAGEM_FORNECEDOR_SEM_EMAIL).toBe(MENSAGEM_SEM_EMAIL);
+  });
+});
+
+describe("precisaEnviarSenhaAntes", () => {
+  it("só para quem ainda não tem acesso e não recebeu a senha agora", () => {
+    expect(precisaEnviarSenhaAntes({ tem_acesso: false }, false)).toBe(true);
+    expect(precisaEnviarSenhaAntes({ tem_acesso: false }, true)).toBe(false);
+    expect(precisaEnviarSenhaAntes({ tem_acesso: true, ativo: true }, false)).toBe(false);
+    expect(precisaEnviarSenhaAntes({ tem_acesso: true, ativo: false }, false)).toBe(false);
+    expect(precisaEnviarSenhaAntes(undefined, false)).toBe(false);
+  });
+});
+
+describe("abrirConvite: janela do WhatsApp sem cair no bloqueio de pop-up (2ª revisão)", () => {
+  const janelaFalsa = () => ({
+    closed: false,
+    opener: {},
+    location: { href: "" },
+    document: { title: "", body: { innerHTML: "" } },
+  });
+  const url = (situacao) => `https://wa.me/?text=${situacao || "sem-linha"}`;
+
+  it("com envio de senha: abre a janela ANTES de esperar, mostra 'Preparando a mensagem...' e depois leva ao wa.me", async () => {
+    const ordem = [];
+    const janela = janelaFalsa();
+    const r = await abrirConvite({
+      precisaEnviar: true,
+      abrirJanela: (u) => (ordem.push(`abrir:${u}`), janela),
+      preparar: async () => {
+        ordem.push("preparar");
+        expect(janela.document.body.innerHTML).toContain(TEXTO_PREPARANDO);
+        return { situacao: "enviada" };
+      },
+      montarUrl: url,
+    });
+    expect(ordem).toEqual(["abrir:", "preparar"]);
+    expect(janela.location.href).toBe("https://wa.me/?text=enviada");
+    expect(janela.opener).toBeNull();
+    expect(r).toMatchObject({ aberta: true, url: "https://wa.me/?text=enviada" });
+  });
+
+  it("envio da senha falhou: o convite sai mesmo assim, sem a linha da senha", async () => {
+    const janela = janelaFalsa();
+    const r = await abrirConvite({
+      precisaEnviar: true,
+      abrirJanela: () => janela,
+      preparar: async () => {
+        throw new Error("servidor caiu");
+      },
+      montarUrl: url,
+    });
+    expect(janela.location.href).toBe("https://wa.me/?text=sem-linha");
+    expect(r.aberta).toBe(true);
+  });
+
+  it("navegador bloqueou a janela (retorno nulo): devolve o link para o botão 'Abrir WhatsApp'", async () => {
+    const r = await abrirConvite({
+      precisaEnviar: true,
+      abrirJanela: () => null,
+      preparar: async () => ({ situacao: "enviada" }),
+      montarUrl: url,
+    });
+    expect(r).toMatchObject({ aberta: false, url: "https://wa.me/?text=enviada" });
+  });
+
+  it("usuário fechou a janela durante a espera: também devolve o link", async () => {
+    const janela = janelaFalsa();
+    const r = await abrirConvite({
+      precisaEnviar: true,
+      abrirJanela: () => janela,
+      preparar: async () => ((janela.closed = true), { situacao: null }),
+      montarUrl: url,
+    });
+    expect(r.aberta).toBe(false);
+    expect(janela.location.href).toBe("");
+  });
+
+  it("sem envio de senha: abre o wa.me direto, como antes (uma janela só, já com o endereço)", async () => {
+    const abertas = [];
+    const r = await abrirConvite({
+      precisaEnviar: false,
+      abrirJanela: (u) => (abertas.push(u), {}),
+      preparar: async () => ({ situacao: "ja_tinha" }),
+      montarUrl: url,
+    });
+    expect(abertas).toEqual(["https://wa.me/?text=ja_tinha"]);
+    expect(r.aberta).toBe(true);
+  });
+
+  it("sem envio de senha e janela bloqueada: devolve o link", async () => {
+    const r = await abrirConvite({
+      precisaEnviar: false,
+      abrirJanela: () => null,
+      preparar: async () => ({ situacao: "ja_tinha" }),
+      montarUrl: url,
+    });
+    expect(r).toMatchObject({ aberta: false, url: "https://wa.me/?text=ja_tinha" });
+  });
+
+  it("os dois modais abrem a janela pelo abrirConvite (nenhum window.open depois de esperar o envio)", () => {
+    for (const arq of ["CotacaoModal.jsx", "LinksModal.jsx"]) {
+      const fonte = readFileSync(new URL(`../components/compras/${arq}`, import.meta.url), "utf8");
+      expect(fonte, arq).toMatch(/abrirConvite\(\{/);
+      expect(fonte, arq).toMatch(/Abrir WhatsApp/);
+      expect(fonte, arq).not.toMatch(/await [^\n]*\n[^\n]*window\.open/);
+    }
+  });
+
+  it("o Painel não promete que ninguém vê a senha e mostra o acesso desativado", () => {
+    const fonte = readFileSync(
+      new URL("../components/compras/LinksModal.jsx", import.meta.url),
+      "utf8"
+    );
+    expect(fonte).not.toMatch(/ninguém/);
+    expect(fonte).toMatch(/A senha não aparece na tela: vai direto para o WhatsApp cadastrado do/);
+    expect(fonte).toMatch(/Acesso ao portal desativado/);
   });
 });

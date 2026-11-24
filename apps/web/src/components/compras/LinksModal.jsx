@@ -3,11 +3,13 @@ import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "@/Layout";
 import { toast } from "sonner";
 import {
+  abrirConvite,
   acessosDaCotacao,
   enviarSenhaFornecedor,
   linhaSobreSenha,
   linksDaCotacao,
   prepararConvite,
+  precisaEnviarSenhaAntes,
   situacaoAtual,
   textoDoMotivo,
 } from "@/lib/senha-portal";
@@ -63,6 +65,8 @@ export default function LinksModal({ open, onOpenChange, cotacao, empresaAtiva, 
   // "Enviar nova senha": confirmação dentro do modal e o resultado (destino mascarado)
   const [confirmandoSenha, setConfirmandoSenha] = useState({});
   const [resultadoSenha, setResultadoSenha] = useState({});
+  // o navegador não abriu a janela do WhatsApp: a tela mostra o botão "Abrir WhatsApp" com o convite pronto
+  const [conviteBloqueado, setConviteBloqueado] = useState(null);
   const [loading, setLoading] = useState(true);
   const [reenviando, setReenviando] = useState({});
   const [filtroStatus, setFiltroStatus] = useState("todos");
@@ -147,23 +151,34 @@ export default function LinksModal({ open, onOpenChange, cotacao, empresaAtiva, 
     }
     // Convite: quem ainda NÃO tem acesso recebe a senha pelo WhatsApp do SIGO antes; quem já tem não tem
     // a senha trocada. Falha no envio da senha não impede o convite (avisa o motivo).
-    let situacao = situacaoAtual(
-      acessos[fornecedor.fornecedor_id],
-      senhaEnviadaAgora[fornecedor.fornecedor_id]
-    );
-    if (!situacao) {
-      const r = await comTrava(fornecedor, () =>
-        prepararConvite(sigo, {
-          acesso: acessos[fornecedor.fornecedor_id],
-          fornecedorId: fornecedor.fornecedor_id,
-        })
-      );
-      if (r.ignorado) return;
-      situacao = r.situacao;
-      if (r.situacao === "enviada") marcarSenhaEnviada(fornecedor, r.resultado?.destino);
-      if (r.tipoAviso === "sucesso") toast.success(r.aviso);
-      else if (r.tipoAviso === "alerta") toast.warning(r.aviso, { duration: 12000 });
-    }
+    if (enviandoSenhaRef.current.has(fornecedor.id)) return; // 2º clique durante o envio da senha
+    const acesso = acessos[fornecedor.fornecedor_id];
+    const enviadaAgora = senhaEnviadaAgora[fornecedor.fornecedor_id];
+    // a janela do WhatsApp abre NA HORA do clique quando há envio de senha (senão o navegador a bloqueia
+    // depois da espera); sem envio, abre direto, como antes
+    const r = await abrirConvite({
+      precisaEnviar: precisaEnviarSenhaAntes(acesso, enviadaAgora),
+      abrirJanela: (url) => window.open(url, "_blank"),
+      preparar: async () => {
+        const jaSabida = situacaoAtual(acesso, enviadaAgora);
+        if (jaSabida) return { situacao: jaSabida };
+        const p = await comTrava(fornecedor, () =>
+          prepararConvite(sigo, { acesso, fornecedorId: fornecedor.fornecedor_id })
+        );
+        if (p.ignorado) return { situacao: null };
+        if (p.situacao === "enviada") marcarSenhaEnviada(fornecedor, p.resultado?.destino);
+        if (p.tipoAviso === "sucesso") toast.success(p.aviso);
+        else if (p.tipoAviso === "alerta") toast.warning(p.aviso, { duration: 12000 });
+        return { situacao: p.situacao };
+      },
+      montarUrl: (situacao) =>
+        `https://wa.me/?text=${encodeURIComponent(mensagemDoConvite(fornecedor, link, situacao))}`,
+    });
+    if (!r.aberta) setConviteBloqueado({ nome: fornecedor.fornecedor_nome, url: r.url });
+  };
+
+  // O convite que o COMPRADOR envia (wa.me): sem login e senha; só a linha que diz onde está o login
+  const mensagemDoConvite = (fornecedor, link, situacao) => {
     const linha = linhaSobreSenha(situacao);
     const credLine = linha ? `\n${linha}` : "";
 
@@ -178,8 +193,7 @@ ${link}
 Atenciosamente,
 *${empresaAtiva.nome_fantasia || empresaAtiva.razao_social || empresaAtiva.nome}*`;
 
-    const url = `https://wa.me/?text=${encodeURIComponent(mensagem)}`;
-    window.open(url, "_blank");
+    return mensagem;
   };
 
   // "Enviar nova senha" (sob pedido, depois da confirmação): o servidor envia pelo WhatsApp do SIGO
@@ -510,6 +524,31 @@ ${empresaAtiva.nome_fantasia || empresaAtiva.razao_social || empresaAtiva.nome}
           </div>
 
           <div className="space-y-4 mt-6">
+            {conviteBloqueado && (
+              <div
+                role="alert"
+                className="p-3 rounded-lg border border-amber-300 bg-amber-50 text-sm text-amber-800 flex flex-wrap items-center justify-between gap-3"
+              >
+                <span>
+                  O navegador não abriu a janela do WhatsApp para {conviteBloqueado.nome}. O convite
+                  está pronto:
+                </span>
+                <div className="flex gap-2">
+                  <a
+                    href={conviteBloqueado.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setConviteBloqueado(null)}
+                    className="inline-flex items-center rounded-md border border-green-600 px-3 py-1 text-green-700 hover:bg-green-50"
+                  >
+                    Abrir WhatsApp
+                  </a>
+                  <Button variant="ghost" size="sm" onClick={() => setConviteBloqueado(null)}>
+                    Fechar
+                  </Button>
+                </div>
+              </div>
+            )}
             {!erroCarregar && erroAcesso && (
               <div
                 role="alert"
@@ -644,14 +683,19 @@ ${empresaAtiva.nome_fantasia || empresaAtiva.razao_social || empresaAtiva.nome}
                                   {acessos[fornecedor.fornecedor_id].email}
                                 </span>
                               </p>
+                            ) : acessos[fornecedor.fornecedor_id].tem_acesso ? (
+                              <p className="text-amber-700">
+                                Acesso ao portal desativado. Use &quot;Enviar nova senha&quot; para
+                                reativar.
+                              </p>
                             ) : (
                               <p className="text-slate-600">
                                 Ainda sem acesso: a senha vai junto com o primeiro convite.
                               </p>
                             )}
                             <p className="text-slate-500">
-                              A senha é enviada ao fornecedor pelo WhatsApp do SIGO; ninguém da
-                              empresa a vê.
+                              A senha não aparece na tela: vai direto para o WhatsApp cadastrado do
+                              fornecedor.
                             </p>
                             {!acessos[fornecedor.fornecedor_id].tem_telefone && (
                               <p className="text-amber-700">

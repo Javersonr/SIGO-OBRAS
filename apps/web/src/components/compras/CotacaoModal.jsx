@@ -1,7 +1,9 @@
 import { normalizarTexto } from "@/lib/busca";
 import {
+  abrirConvite,
   acessosDaCotacao,
   linhaSobreSenha,
+  precisaEnviarSenhaAntes,
   linksDaCotacao,
   prepararConvite,
   situacaoAtual,
@@ -48,6 +50,8 @@ export default function CotacaoModal({
   // envio da senha em curso, por fornecedor (desabilita o WhatsApp dele: "Enviando senha...")
   const [enviandoSenha, setEnviandoSenha] = useState({});
   const enviandoSenhaRef = React.useRef(new Set());
+  // o navegador não abriu a janela do WhatsApp: a tela mostra o botão "Abrir WhatsApp" com o convite pronto
+  const [conviteBloqueado, setConviteBloqueado] = useState(null);
 
   const carregarCotacaoExistente = React.useCallback(async () => {
     if (!open || !solicitacao) return;
@@ -333,10 +337,20 @@ export default function CotacaoModal({
       alert("Fornecedor não tem telefone cadastrado");
       return;
     }
-    const situacao = await situacaoDoConvite(fornecedor);
-    if (situacao === false) return;
-    const mensagem = buildMensagemWhatsApp(fornecedor, link, situacao);
-    window.open(`https://wa.me/${telefone}?text=${encodeURIComponent(mensagem)}`, "_blank");
+    if (enviandoSenhaRef.current.has(fornecedor.id)) return; // 2º clique durante o envio da senha
+    // a janela do WhatsApp abre NA HORA do clique quando há envio de senha (senão o navegador a bloqueia
+    // depois da espera); sem envio, abre direto, como antes
+    const r = await abrirConvite({
+      precisaEnviar: precisaEnviarSenhaAntes(
+        acessosFornecedores[fornecedor.id],
+        senhaEnviadaAgora[fornecedor.id]
+      ),
+      abrirJanela: (url) => window.open(url, "_blank"),
+      preparar: async () => ({ situacao: (await situacaoDoConvite(fornecedor)) || null }),
+      montarUrl: (situacao) =>
+        `https://wa.me/${telefone}?text=${encodeURIComponent(buildMensagemWhatsApp(fornecedor, link, situacao))}`,
+    });
+    if (!r.aberta) setConviteBloqueado({ nome: fornecedor.nome_razao, url: r.url });
   };
 
   // Antes de abrir o convite: fornecedor que ainda NÃO tem acesso recebe a senha pelo WhatsApp do SIGO
@@ -427,6 +441,37 @@ export default function CotacaoModal({
             {/* Seleção de Fornecedores */}
             <div>
               <Label className="mb-3 block">Selecionar Fornecedores</Label>
+
+              {conviteBloqueado && (
+                <div
+                  role="alert"
+                  className="mb-3 p-3 rounded-lg border border-amber-300 bg-amber-50 text-sm text-amber-800 flex flex-wrap items-center justify-between gap-3"
+                >
+                  <span>
+                    O navegador não abriu a janela do WhatsApp para {conviteBloqueado.nome}. O
+                    convite está pronto:
+                  </span>
+                  <div className="flex gap-2">
+                    <a
+                      href={conviteBloqueado.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setConviteBloqueado(null)}
+                      className="inline-flex items-center rounded-md border border-green-600 px-3 py-1 text-green-700 hover:bg-green-50"
+                    >
+                      Abrir WhatsApp
+                    </a>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setConviteBloqueado(null)}
+                    >
+                      Fechar
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {erroAcesso && (
                 <div

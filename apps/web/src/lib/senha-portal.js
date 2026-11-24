@@ -156,6 +156,61 @@ export function situacaoAtual(acesso, enviadaAgora) {
   return null;
 }
 
+/** Texto da janela do WhatsApp aberta enquanto o servidor envia a senha. */
+export const TEXTO_PREPARANDO = "Preparando a mensagem...";
+
+/** O convite vai precisar esperar o envio da senha? (fornecedor ainda sem acesso e senha não enviada agora) */
+export function precisaEnviarSenhaAntes(acesso, enviadaAgora) {
+  return !enviadaAgora && !!acesso && acesso.tem_acesso === false;
+}
+
+function mostrarEspera(janela) {
+  try {
+    janela.document.title = "WhatsApp";
+    janela.document.body.innerHTML = `<p style="font-family:sans-serif;padding:24px">${TEXTO_PREPARANDO}</p>`;
+  } catch {
+    /* janela sem document acessível: segue sem o texto */
+  }
+}
+
+/**
+ * Abre o convite do WhatsApp sem cair no bloqueio de pop-up (2ª revisão do 2b-2). O navegador só deixa abrir
+ * janela logo depois do clique; o envio da senha pode levar até ~12 s. Por isso, quando há envio de senha:
+ *   1. abre a janela NA HORA do clique (antes de qualquer espera), mostrando "Preparando a mensagem...";
+ *   2. espera o envio da senha (`preparar`, que nunca impede o convite: falha = situação null);
+ *   3. leva a janela para o endereço do wa.me (`montarUrl(situacao)`).
+ * Sem envio de senha, abre o wa.me direto, como antes. Se o navegador não abrir a janela (retorno nulo) ou ela
+ * tiver sido fechada, devolve `aberta: false` com o `url`, para a tela mostrar o botão "Abrir WhatsApp".
+ * `abrirJanela(url)` é o `window.open(url, "_blank")` (injetado para teste).
+ */
+export async function abrirConvite({ precisaEnviar, abrirJanela, preparar, montarUrl }) {
+  let janela = null;
+  if (precisaEnviar) {
+    janela = abrirJanela("");
+    if (janela) mostrarEspera(janela);
+  }
+  let resultado;
+  try {
+    resultado = (await preparar()) || {};
+  } catch {
+    resultado = {};
+  }
+  const url = montarUrl(resultado.situacao ?? null);
+  if (precisaEnviar) {
+    if (janela && !janela.closed) {
+      try {
+        janela.opener = null;
+        janela.location.href = url;
+        return { resultado, url, aberta: true };
+      } catch {
+        /* não deu para levar a janela: a tela mostra o botão */
+      }
+    }
+    return { resultado, url, aberta: false };
+  }
+  return { resultado, url, aberta: !!abrirJanela(url) };
+}
+
 /**
  * O que fazer na hora do convite (botão WhatsApp). Nunca lança; o convite sai em qualquer caso.
  *   - fornecedor SEM acesso (`tem_acesso === false`): o servidor envia a senha antes; deu certo → "enviada";
