@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
-import { urlPublica } from "@/lib/url-publica";
-import { senhaEstaHasheada, rotacionarCredencialFornecedor } from "@/lib/senha-portal";
+import { toast } from "sonner";
+import { credenciaisDaCotacao, credencialParaEnvio, linksDaCotacao } from "@/lib/senha-portal";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +33,9 @@ import {
 export default function LinksModal({ open, onOpenChange, cotacao, empresaAtiva, onDelete }) {
   const [fornecedores, setFornecedores] = useState([]);
   const [credenciais, setCredenciais] = useState({});
+  // links montados pelo servidor, por participação (cotacao_fornecedor.id)
+  const [links, setLinks] = useState({});
+  const [erroCarregar, setErroCarregar] = useState("");
   const [loading, setLoading] = useState(true);
   const [reenviando, setReenviando] = useState({});
   const [filtroStatus, setFiltroStatus] = useState("todos");
@@ -48,34 +51,23 @@ export default function LinksModal({ open, onOpenChange, cotacao, empresaAtiva, 
   const loadFornecedores = async () => {
     setLoading(true);
     try {
-      const cotFornecedores = await sigo.entities.CotacaoFornecedor.filter({
-        cotacao_id: cotacao.id,
-      });
+      // status e valores vêm da tabela; links e acesso ao portal, do servidor (a senha nunca vem:
+      // o banco só tem o hash, e a senha nova só nasce ao ENVIAR)
+      const [cotFornecedores, { porParticipacao }, creds] = await Promise.all([
+        sigo.entities.CotacaoFornecedor.filter({ cotacao_id: cotacao.id }),
+        linksDaCotacao(sigo, cotacao.id),
+        credenciaisDaCotacao(sigo, cotacao.id),
+      ]);
       setFornecedores(cotFornecedores);
-
-      // Carregar credenciais de acesso de cada fornecedor
-      const creds = {};
-      for (const cf of cotFornecedores) {
-        try {
-          const acessos = await sigo.entities.FornecedorAcesso.filter({
-            fornecedor_id: cf.fornecedor_id,
-            empresa_id: empresaAtiva.id,
-            ativo: true,
-          });
-          if (acessos.length > 0) {
-            creds[cf.fornecedor_id] = {
-              email: acessos[0].fornecedor_email,
-              // hash não é exibível; senha nova só nasce ao ENVIAR (rotação)
-              senha: senhaEstaHasheada(acessos[0].senha_acesso) ? null : acessos[0].senha_acesso,
-            };
-          }
-        } catch (e) {
-          /* ignorar */
-        }
-      }
+      setLinks(porParticipacao);
       setCredenciais(creds);
+      setErroCarregar("");
     } catch (error) {
       console.error("Erro ao carregar fornecedores:", error);
+      setFornecedores([]);
+      setLinks({});
+      setCredenciais({});
+      setErroCarregar(error?.message || "Erro ao carregar os fornecedores da cotação");
     } finally {
       setLoading(false);
     }
@@ -87,24 +79,30 @@ export default function LinksModal({ open, onOpenChange, cotacao, empresaAtiva, 
   };
 
   const enviarWhatsApp = async (fornecedor) => {
-    const link = urlPublica(`/AcessoFornecedor?token=${fornecedor.token}`);
-    // Enviar = rotaciona a senha se só existe o hash (mensagem sai com senha nova)
-    let creds = credenciais[fornecedor.fornecedor_id];
-    if (creds && !creds.senha) {
-      try {
-        const nova = await rotacionarCredencialFornecedor(sigo, {
-          empresaId: empresaAtiva.id,
-          fornecedorId: fornecedor.fornecedor_id,
-          fornecedorNome: fornecedor.fornecedor_nome,
-          fornecedorEmail: creds.email,
-        });
-        if (nova) {
-          creds = nova;
-          setCredenciais((prev) => ({ ...prev, [fornecedor.fornecedor_id]: nova }));
-        }
-      } catch (e) {
-        console.error("Erro ao rotacionar acesso do fornecedor:", e);
-      }
+    const link = links[fornecedor.id];
+    if (!link) {
+      toast.error("O link deste fornecedor não está disponível. Feche e abra o painel de novo.");
+      return;
+    }
+    // Enviar = senha nova pelo servidor se só existe o hash (mensagem sai com senha nova).
+    // Aqui só troca a de quem já tem acesso (o painel não cria acesso novo, como antes).
+    const atual = credenciais[fornecedor.fornecedor_id];
+    let creds;
+    try {
+      creds = await credencialParaEnvio(sigo, {
+        atual,
+        fornecedorId: fornecedor.fornecedor_id,
+        soSeTemAcesso: true,
+      });
+    } catch (e) {
+      console.error("Erro ao gerar a senha do portal do fornecedor:", e);
+      toast.error(
+        `Não deu para gerar a senha do portal do fornecedor: ${e.message} A mensagem não foi aberta; tente de novo.`
+      );
+      return;
+    }
+    if (creds && creds !== atual) {
+      setCredenciais((prev) => ({ ...prev, [fornecedor.fornecedor_id]: creds }));
     }
     const credLine = creds
       ? `\n🔑 *Login:* ${creds.email}\n🔑 *Senha:* ${creds.senha || "(a mesma enviada anteriormente)"}`
@@ -126,7 +124,11 @@ Atenciosamente,
   };
 
   const enviarEmail = async (fornecedor, isReenvio = false) => {
-    const link = urlPublica(`/AcessoFornecedor?token=${fornecedor.token}`);
+    const link = links[fornecedor.id];
+    if (!link) {
+      toast.error("O link deste fornecedor não está disponível. Feche e abra o painel de novo.");
+      return;
+    }
 
     try {
       setReenviando((prev) => ({ ...prev, [fornecedor.id]: true }));
@@ -432,7 +434,20 @@ ${empresaAtiva.nome_fantasia || empresaAtiva.razao_social || empresaAtiva.nome}
           </div>
 
           <div className="space-y-4 mt-6">
-            {fornecedores.length === 0 ? (
+            {erroCarregar ? (
+              <Card className="border-red-200 bg-red-50">
+                <CardContent className="p-6 text-center space-y-3" role="alert">
+                  <p className="text-sm text-red-700">
+                    Não deu para carregar os fornecedores, os links e o acesso ao portal:{" "}
+                    {erroCarregar}
+                  </p>
+                  <Button variant="outline" size="sm" onClick={() => loadFornecedores()}>
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Tentar de novo
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : fornecedores.length === 0 ? (
               <Card>
                 <CardContent className="p-8 text-center">
                   <p className="text-slate-500">Nenhum fornecedor vinculado a esta cotação</p>
@@ -453,7 +468,7 @@ ${empresaAtiva.nome_fantasia || empresaAtiva.razao_social || empresaAtiva.nome}
                   return 0;
                 })
                 .map((fornecedor) => {
-                  const link = urlPublica(`/AcessoFornecedor?token=${fornecedor.token}`);
+                  const link = links[fornecedor.id] || "";
 
                   return (
                     <Card
@@ -548,10 +563,15 @@ ${empresaAtiva.nome_fantasia || empresaAtiva.razao_social || empresaAtiva.nome}
                         <div>
                           <p className="text-xs text-slate-500 mb-1.5">Link de Acesso</p>
                           <div className="flex gap-2">
-                            <Input value={link} readOnly className="text-xs bg-slate-50 flex-1" />
+                            <Input
+                              value={link || "Link indisponível"}
+                              readOnly
+                              className="text-xs bg-slate-50 flex-1"
+                            />
                             <Button
                               size="sm"
                               variant="outline"
+                              disabled={!link}
                               onClick={() => copyLink(link)}
                               className="text-slate-600 hover:bg-slate-100"
                             >
@@ -561,6 +581,7 @@ ${empresaAtiva.nome_fantasia || empresaAtiva.razao_social || empresaAtiva.nome}
                             <Button
                               size="sm"
                               variant="outline"
+                              disabled={!link}
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();

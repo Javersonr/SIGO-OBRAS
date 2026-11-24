@@ -1,6 +1,12 @@
 import { normalizarTexto } from "@/lib/busca";
-import { senhaEstaHasheada, rotacionarCredencialFornecedor } from "@/lib/senha-portal";
+import {
+  credenciaisDaCotacao,
+  credencialParaEnvio,
+  linksDaCotacao,
+  rotacionarCredencialFornecedor,
+} from "@/lib/senha-portal";
 import React, { useState, useMemo } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +16,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Mail, MessageSquare, Copy, X } from "lucide-react";
 import { sigo } from "@/api/sigoClient";
-import { urlPublica } from "@/lib/url-publica";
 
 export default function CotacaoModal({
   open,
@@ -33,6 +38,8 @@ export default function CotacaoModal({
   const [cotacaoExistente, setCotacaoExistente] = useState(null);
   const [mensagemExpandida, setMensagemExpandida] = useState({});
   const [codigosOrcamento, setCodigosOrcamento] = useState({});
+  // falha ao pedir ao servidor os links e o acesso dos fornecedores (a tela avisa em vez de ficar pela metade)
+  const [erroAcesso, setErroAcesso] = useState("");
 
   const carregarCotacaoExistente = React.useCallback(async () => {
     if (!open || !solicitacao) return;
@@ -56,44 +63,33 @@ export default function CotacaoModal({
         const fornecIds = fornecedoresVinculados.map((f) => f.fornecedor_id);
         setFornecedoresSelecionados(fornecIds);
 
-        // Carregar emails e links dos fornecedores
+        // Carregar emails dos fornecedores
         const emails = {};
-        const links = {};
         for (const fv of fornecedoresVinculados) {
           const fornecedor = fornecedores.find((f) => f.id === fv.fornecedor_id);
           emails[fv.fornecedor_id] = fornecedor?.email || "";
-          links[fv.fornecedor_id] = {
-            token: fv.token,
-            link: urlPublica(`/AcessoFornecedor?token=${fv.token}`),
-          };
         }
-        // Carregar credenciais de acesso dos fornecedores
-        const creds = {};
-        await Promise.all(
-          fornecedoresVinculados.map(async (fv) => {
-            try {
-              const acessos = await sigo.entities.FornecedorAcesso.filter({
-                fornecedor_id: fv.fornecedor_id,
-                empresa_id: empresaAtiva.id,
-                ativo: true,
-              });
-              if (acessos.length > 0) {
-                creds[fv.fornecedor_id] = {
-                  email: acessos[0].fornecedor_email,
-                  // hash não é exibível; a senha em claro só nasce ao ENVIAR (rotação)
-                  senha: senhaEstaHasheada(acessos[0].senha_acesso)
-                    ? null
-                    : acessos[0].senha_acesso,
-                };
-              }
-            } catch (e) {
-              /* ignorar */
-            }
-          })
-        );
-        setCredenciaisFornecedores(creds);
         setEmailsFornecedores(emails);
-        setLinksFornecedores(links);
+
+        // Links e acesso ao portal: o servidor monta o link e diz quem já tem acesso (a senha
+        // nunca vem: o banco só tem o hash, e a senha nova só nasce ao ENVIAR)
+        try {
+          const [{ porFornecedor }, creds] = await Promise.all([
+            linksDaCotacao(sigo, cotacao.id),
+            credenciaisDaCotacao(sigo, cotacao.id),
+          ]);
+          const links = {};
+          for (const [fornecedorId, link] of Object.entries(porFornecedor)) {
+            links[fornecedorId] = { link };
+          }
+          setLinksFornecedores(links);
+          setCredenciaisFornecedores(creds);
+          setErroAcesso("");
+        } catch (e) {
+          setLinksFornecedores({});
+          setCredenciaisFornecedores({});
+          setErroAcesso(e?.message || "Erro ao carregar os links dos fornecedores");
+        }
       } else {
         setCotacaoExistente(null);
         setFornecedoresSelecionados([]);
@@ -102,6 +98,7 @@ export default function CotacaoModal({
         setEmailsFornecedores({});
         setLinksFornecedores({});
         setCredenciaisFornecedores({});
+        setErroAcesso("");
       }
     } catch (error) {
       console.error("Erro ao carregar cotação:", error);
@@ -244,41 +241,55 @@ export default function CotacaoModal({
         );
       }
 
-      // Otimizado: Buscar todos CotacaoFornecedor de uma vez
-      const todosCotForn = await sigo.entities.CotacaoFornecedor.filter({
-        cotacao_id: cotacao.id,
-      });
+      // Links dos fornecedores: o servidor monta (o token do link é gerado pelo banco, 0113)
+      let porFornecedor = null;
+      let erroLinks = "";
+      try {
+        ({ porFornecedor } = await linksDaCotacao(sigo, cotacao.id));
+      } catch (e) {
+        erroLinks = e?.message || "erro desconhecido";
+      }
 
-      // Gerar links para os fornecedores
-      const links = {};
-      todosCotForn.forEach((cotForn) => {
-        const fId = cotForn.fornecedor_id;
-        const link = urlPublica(`/AcessoFornecedor?token=${cotForn.token}`);
-        links[fId] = { link, token: cotForn.token };
-      });
+      if (porFornecedor) {
+        const links = {};
+        for (const [fornecedorId, link] of Object.entries(porFornecedor)) {
+          links[fornecedorId] = { link };
+        }
+        setLinksCotacao(links);
 
-      setLinksCotacao(links);
-
-      // ENVIO da cotação = rotaciona a credencial de cada fornecedor: gera senha
-      // nova, grava só o HASH no banco e usa a senha em claro na mensagem.
-      const credenciais = {};
-      for (const cotForn of todosCotForn) {
-        try {
-          const fornecedor = fornecedores.find((f) => f.id === cotForn.fornecedor_id);
-          const cred = await rotacionarCredencialFornecedor(sigo, {
-            empresaId: empresaAtiva.id,
-            fornecedorId: cotForn.fornecedor_id,
-            fornecedorNome: fornecedor?.nome_razao,
-            fornecedorEmail: fornecedor?.email,
-          });
-          if (cred) credenciais[cotForn.fornecedor_id] = cred;
-        } catch (e) {
-          console.error("Erro ao rotacionar acesso do fornecedor:", e);
+        // ENVIO da cotação = senha nova do portal para cada fornecedor: o SERVIDOR gera,
+        // grava só o hash e devolve a senha em claro uma vez, para a mensagem.
+        const credenciais = {};
+        const semSenha = [];
+        for (const fornecedorId of Object.keys(porFornecedor)) {
+          try {
+            const cred = await rotacionarCredencialFornecedor(sigo, { fornecedorId });
+            if (cred) credenciais[fornecedorId] = cred;
+          } catch (e) {
+            console.error("Erro ao gerar a senha do portal do fornecedor:", e);
+            semSenha.push(fornecedores.find((f) => f.id === fornecedorId)?.nome_razao || "?");
+          }
+        }
+        setCredenciaisFornecedores(credenciais);
+        setErroAcesso("");
+        if (semSenha.length) {
+          toast.error(
+            `Não deu para gerar a senha do portal de: ${semSenha.join(", ")}. ` +
+              "O botão WhatsApp tenta de novo antes de abrir a mensagem."
+          );
         }
       }
-      setCredenciaisFornecedores(credenciais);
 
       await sigo.entities.SolicitacaoCompra.update(solicitacao.id, { status: "Em Cotação" });
+
+      if (erroLinks) {
+        alert(
+          `A cotação foi gravada, mas não deu para gerar os links dos fornecedores: ${erroLinks}\n\n` +
+            "Tente de novo pelo Painel de Status da cotação, na aba Cotações."
+        );
+        onSave();
+        return;
+      }
 
       alert(
         cotacaoExistente
@@ -314,26 +325,29 @@ export default function CotacaoModal({
       alert("Fornecedor não tem telefone cadastrado");
       return;
     }
-    // Enviar = rotaciona a senha se só existe o hash (mensagem sai com senha nova)
-    let creds = credenciaisFornecedores[fornecedor.id];
-    if (!creds?.senha) {
-      try {
-        const nova = await rotacionarCredencialFornecedor(sigo, {
-          empresaId: empresaAtiva.id,
-          fornecedorId: fornecedor.id,
-          fornecedorNome: fornecedor.nome_razao,
-          fornecedorEmail: fornecedor.email,
-        });
-        if (nova) {
-          creds = nova;
-          setCredenciaisFornecedores((prev) => ({ ...prev, [fornecedor.id]: nova }));
-        }
-      } catch (e) {
-        console.error("Erro ao rotacionar acesso do fornecedor:", e);
-      }
-    }
+    const creds = await credencialDoEnvio(fornecedor);
+    if (creds === false) return;
     const mensagem = buildMensagemWhatsApp(fornecedor, link, creds);
     window.open(`https://wa.me/${telefone}?text=${encodeURIComponent(mensagem)}`, "_blank");
+  };
+
+  // Enviar = senha nova pelo servidor se a tela só conhece o hash (a mensagem sai com a senha nova).
+  // Devolve a credencial (ou null, sem acesso e sem e-mail); `false` = o servidor falhou e a tela já avisou.
+  const credencialDoEnvio = async (fornecedor) => {
+    try {
+      const atual = credenciaisFornecedores[fornecedor.id];
+      const creds = await credencialParaEnvio(sigo, { atual, fornecedorId: fornecedor.id });
+      if (creds && creds !== atual) {
+        setCredenciaisFornecedores((prev) => ({ ...prev, [fornecedor.id]: creds }));
+      }
+      return creds;
+    } catch (e) {
+      console.error("Erro ao gerar a senha do portal do fornecedor:", e);
+      toast.error(
+        `Não deu para gerar a senha do portal do fornecedor: ${e.message} A mensagem não foi aberta; tente de novo.`
+      );
+      return false;
+    }
   };
 
   return (
@@ -396,6 +410,26 @@ export default function CotacaoModal({
             {/* Seleção de Fornecedores */}
             <div>
               <Label className="mb-3 block">Selecionar Fornecedores</Label>
+
+              {erroAcesso && (
+                <div
+                  role="alert"
+                  className="mb-3 p-3 rounded-lg border border-red-200 bg-red-50 text-sm text-red-700 flex items-start justify-between gap-3"
+                >
+                  <span>
+                    Não deu para carregar os links e o acesso dos fornecedores: {erroAcesso}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => carregarCotacaoExistente()}
+                    className="flex-shrink-0"
+                  >
+                    Tentar de novo
+                  </Button>
+                </div>
+              )}
 
               {/* Fornecedores Selecionados */}
               {fornecedoresSelecionados.length > 0 && (
@@ -471,27 +505,9 @@ export default function CotacaoModal({
                                   variant="outline"
                                   onClick={async () => {
                                     const telefone = fornecedor.telefone?.replace(/\D/g, "");
-                                    // enviar = rotaciona a senha se só existe o hash
-                                    let creds = credenciaisFornecedores[fornecedor.id];
-                                    if (!creds?.senha) {
-                                      try {
-                                        const nova = await rotacionarCredencialFornecedor(sigo, {
-                                          empresaId: empresaAtiva.id,
-                                          fornecedorId: fornecedor.id,
-                                          fornecedorNome: fornecedor.nome_razao,
-                                          fornecedorEmail: fornecedor.email,
-                                        });
-                                        if (nova) {
-                                          creds = nova;
-                                          setCredenciaisFornecedores((prev) => ({
-                                            ...prev,
-                                            [fornecedor.id]: nova,
-                                          }));
-                                        }
-                                      } catch (e) {
-                                        console.error("Erro ao rotacionar acesso:", e);
-                                      }
-                                    }
+                                    // enviar = senha nova pelo servidor se só existe o hash
+                                    const creds = await credencialDoEnvio(fornecedor);
+                                    if (creds === false) return;
                                     const mensagem = buildMensagemWhatsApp(
                                       fornecedor,
                                       linkData.link,
