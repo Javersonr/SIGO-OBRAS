@@ -7,21 +7,23 @@
  * entrar no portal "como o fornecedor", sem rastro. Agora:
  *   { acao:"status", cotacao_id }        → { acessos:[{ fornecedor_id, email, tem_acesso, ativo }] }
  *                                          (por fornecedor da cotação; nunca o hash)
- *   { acao:"credencial", fornecedor_id } → { credencial: { email, senha } | null }
- *                                          senha nova (gerador de senha provisória), grava o hash bcrypt e
- *                                          devolve a senha UMA vez; sem acesso ativo, cria com o e-mail do
- *                                          cadastro do fornecedor; sem e-mail no cadastro, `credencial: null`
+ *   { acao:"credencial", fornecedor_id } → { credencial: { email, senha } | null, motivo? }
+ *                                          senha nova (gerador de senha provisória), grava o hash bcrypt em
+ *                                          TODAS as linhas ativas do fornecedor e devolve a senha UMA vez; sem
+ *                                          acesso ativo, cria com o e-mail do cadastro; sem e-mail nenhum,
+ *                                          `credencial: null, motivo: "SEM_EMAIL"`
  *   { acao:"links", cotacao_id }         → { links:[{ cotacao_fornecedor_id, fornecedor_id, link }] }
  *   { acao:"reemitir_link", cotacao_fornecedor_id }
  *                                        → { cotacao_fornecedor_id, fornecedor_id, link } (o antigo deixa de valer)
  *
  * Identidade só pelo JWT (`usuarioDaRequisicao`); empresa = a da sessão; toda consulta filtrada por ela
  * (service role ignora a RLS). Permissão: aba Cotações de Compras, Admin, Admin Holding, dono ou super admin
- * (`podeUsarCotacoes`, em ./regras.ts).
+ * (`podeUsarCotacoes`, em ./regras.ts), com o vínculo achado pelo critério do banco (`vinculoDoChamadorNaLista`).
  *
- * Auditoria: `credencial` e `reemitir_link` gravam em `audit_log` ANTES de alterar (a tabela só aceita
- * inserção e é imutável desde a 0173): sem o registro, nada muda (500). Se a alteração falhar depois, uma
- * segunda linha registra a falha. A senha e o hash nunca vão para o registro.
+ * Auditoria: `credencial` e `reemitir_link` gravam em `audit_log` uma linha `iniciado` ANTES de alterar (a
+ * tabela só aceita inserção e é imutável desde a 0173): sem ela, nada muda (500). Depois, uma linha `sucesso`
+ * ou `erro`. IP que o banco recuse não derruba a ação (a linha é gravada de novo sem IP). A senha e o hash
+ * nunca vão para o registro.
  *
  * O login do portal (portal-fornecedor-login) já confere bcrypt e regrava como bcrypt quem ainda está em
  * SHA-256: nada muda nele.
@@ -31,22 +33,27 @@ import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { usuarioDaRequisicao } from "../_shared/usuario-request.ts";
 import { generateProvisionalPassword, hashPassword } from "../_shared/passwords.ts";
 import { ipDaRequisicao } from "../_shared/limite-tentativas.ts";
-import type { Vinculo } from "../_shared/conector/acesso.ts";
 import {
   ACOES_FORNECEDOR_ACESSO,
+  MENSAGEM_SEM_EMAIL,
   MENSAGEM_SEM_PERMISSAO,
   MENSAGEM_SEM_RASTRO,
   baseDoLink,
+  camposDaTroca,
   decidirCredencial,
   idValido,
+  linhaSemIp,
   linkDaCotacao,
   montarLinks,
+  passosDaCredencial,
   podeUsarCotacoes,
   registroDaCredencial,
   registroDoLink,
   statusDosAcessos,
+  vinculoDoChamadorNaLista,
   type AcessoDoPortal,
   type Participacao,
+  type VinculoDaEmpresa,
 } from "./regras.ts";
 
 interface Body {
@@ -59,24 +66,23 @@ interface Body {
 // deno-lint-ignore no-explicit-any
 type Db = any;
 
-/** Vínculo ativo do chamador NA empresa da sessão (o mesmo critério do funcionario-acesso). Erro lança. */
+/**
+ * Vínculo do chamador NA empresa da sessão, pelo critério do banco (revisão do 2b-2, C3): lê os vínculos não
+ * excluídos da empresa e compara o e-mail em minúsculas no código (`ativo` nulo conta como ativo). Erro lança.
+ */
 async function vinculoDoChamador(
   supabase: Db,
   email: string,
   empresaId: string
-): Promise<Vinculo | null> {
+): Promise<VinculoDaEmpresa | null> {
   const { data, error } = await supabase
     .from("usuario_empresa")
-    .select("perfil, is_owner, permissoes, ativo, deleted_at")
-    .eq("usuario_email", email.toLowerCase())
+    .select("usuario_email, perfil, is_owner, permissoes, ativo, deleted_at")
     .eq("empresa_id", empresaId)
-    .eq("ativo", true)
     .is("deleted_at", null)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .order("created_at", { ascending: true });
   if (error) throw new Error("usuario_empresa: " + error.message);
-  return data ?? null;
+  return vinculoDoChamadorNaLista(data ?? [], email);
 }
 
 /** A cotação existe e é da empresa da sessão? (cotação de outra empresa responde como inexistente) */
@@ -108,6 +114,26 @@ async function participacoesDaCotacao(
     .order("id", { ascending: true });
   if (error) throw new Error("cotacao_fornecedor: " + error.message);
   return data ?? [];
+}
+
+/**
+ * Grava uma linha na auditoria. Se o banco recusar e a linha tinha IP, grava de novo sem IP: um IP estranho
+ * nunca derruba a ação (revisão do 2b-2, melhoria 3). Devolve a mensagem do erro final (ou null).
+ */
+async function gravarAuditoria(
+  supabase: Db,
+  linha: { endereco_ip: string | null }
+): Promise<string | null> {
+  const { error } = await supabase.from("audit_log").insert(linha);
+  if (!error) return null;
+  const semIp = linhaSemIp(linha);
+  if (!semIp) return error.message;
+  console.warn(
+    "[fornecedor-acesso] audit_log recusou a linha; nova tentativa sem IP:",
+    error.message
+  );
+  const { error: erroSemIp } = await supabase.from("audit_log").insert(semIp);
+  return erroSemIp ? erroSemIp.message : null;
 }
 
 Deno.serve(
@@ -194,6 +220,7 @@ Deno.serve(
       }
       if (!fornecedor) return fail("Fornecedor não encontrado", 404);
 
+      // TODAS as linhas ativas do fornecedor (pode haver mais de uma: duplo clique antigo, legado)
       const { data: ativos, error: erroAcesso } = await supabase
         .from("fornecedor_acesso")
         .select("id, fornecedor_email")
@@ -202,18 +229,19 @@ Deno.serve(
         .eq("ativo", true)
         .is("deleted_at", null)
         .order("created_at", { ascending: true })
-        .order("id", { ascending: true })
-        .limit(1);
+        .order("id", { ascending: true });
       if (erroAcesso) {
         console.error("[fornecedor-acesso] acesso:", erroAcesso.message);
         return fail("Erro ao carregar o acesso do fornecedor", 500);
       }
 
       const decisao = decidirCredencial({
-        acessoAtivo: (ativos ?? [])[0] ?? null,
+        acessosAtivos: ativos ?? [],
         emailDoCadastro: fornecedor.email,
       });
-      if (decisao.tipo === "sem_email") return ok({ credencial: null, motivo: "SEM_EMAIL" });
+      if (decisao.tipo === "sem_email") {
+        return ok({ credencial: null, motivo: "SEM_EMAIL", mensagem: MENSAGEM_SEM_EMAIL });
+      }
 
       const acessoNovo = decisao.tipo === "criar";
       const acessoId = decisao.tipo === "rotacionar" ? decisao.acessoId : crypto.randomUUID();
@@ -225,53 +253,70 @@ Deno.serve(
         acessoNovo,
       };
 
-      // 1. o rastro primeiro: sem ele, nada muda
-      const { error: erroRastro } = await supabase
-        .from("audit_log")
-        .insert(registroDaCredencial({ ...dadosDoRegistro, status: "sucesso" }));
+      // 1. o rastro primeiro (status "iniciado"): sem ele, nada muda
+      const erroRastro = await gravarAuditoria(
+        supabase,
+        registroDaCredencial({ ...dadosDoRegistro, status: "iniciado" })
+      );
       if (erroRastro) {
-        console.error("[fornecedor-acesso] audit_log (credencial):", erroRastro.message);
+        console.error("[fornecedor-acesso] audit_log (credencial):", erroRastro);
         return fail(MENSAGEM_SEM_RASTRO, 500);
       }
 
       // 2. a senha nova: só o hash vai para o banco
       const senha = generateProvisionalPassword();
       const hash = await hashPassword(senha);
+      const campos = camposDaTroca(hash, decisao.email);
       let erroGravar: string | null = null;
-      if (decisao.tipo === "rotacionar") {
-        const { data, error } = await supabase
-          .from("fornecedor_acesso")
-          .update({ senha_acesso: hash })
-          .eq("id", acessoId)
-          .eq("empresa_id", empresaId)
-          .select("id");
-        if (error) erroGravar = error.message;
-        else if (!data?.length) erroGravar = "acesso não encontrado ao gravar";
-      } else {
-        const { error } = await supabase.from("fornecedor_acesso").insert({
-          id: acessoId,
-          empresa_id: empresaId,
-          fornecedor_id: fornecedorId,
-          fornecedor_nome: fornecedor.nome_razao || "",
-          fornecedor_email: decisao.email,
-          senha_acesso: hash,
-          ativo: true,
-        });
-        if (error) erroGravar = error.message;
+      let acessosTrocados = 0;
+      for (const passo of passosDaCredencial(decisao)) {
+        if (passo === "criar") {
+          const { error } = await supabase.from("fornecedor_acesso").insert({
+            id: acessoId,
+            empresa_id: empresaId,
+            fornecedor_id: fornecedorId,
+            fornecedor_nome: fornecedor.nome_razao || "",
+            ...campos,
+            ativo: true,
+          });
+          if (error) erroGravar = error.message;
+        } else {
+          // todas as linhas ativas do fornecedor, inclusive as criadas por outra chamada ao mesmo tempo:
+          // a última chamada a terminar define a senha válida (revisão do 2b-2, C2)
+          const { data, error } = await supabase
+            .from("fornecedor_acesso")
+            .update(campos)
+            .eq("empresa_id", empresaId)
+            .eq("fornecedor_id", fornecedorId)
+            .eq("ativo", true)
+            .is("deleted_at", null)
+            .select("id");
+          if (error) erroGravar = error.message;
+          else if (!data?.length) erroGravar = "nenhum acesso ativo encontrado ao gravar";
+          else acessosTrocados = data.length;
+        }
+        if (erroGravar) break;
       }
       if (erroGravar) {
         console.error("[fornecedor-acesso] gravar senha:", erroGravar);
-        const { error: erroFalha } = await supabase
-          .from("audit_log")
-          .insert(registroDaCredencial({ ...dadosDoRegistro, status: "erro", erro: erroGravar }));
-        if (erroFalha) console.warn("[fornecedor-acesso] audit_log (falha):", erroFalha.message);
+        const erroFalha = await gravarAuditoria(
+          supabase,
+          registroDaCredencial({ ...dadosDoRegistro, status: "erro", erro: erroGravar })
+        );
+        if (erroFalha) console.warn("[fornecedor-acesso] audit_log (falha):", erroFalha);
         return fail(
           "Não deu para gravar a senha nova do portal do fornecedor. Tente de novo.",
           500
         );
       }
 
-      return ok({ credencial: { email: decisao.email, senha } });
+      const erroFim = await gravarAuditoria(
+        supabase,
+        registroDaCredencial({ ...dadosDoRegistro, status: "sucesso", acessosTrocados })
+      );
+      if (erroFim) console.warn("[fornecedor-acesso] audit_log (sucesso):", erroFim);
+
+      return ok({ credencial: { email: campos.fornecedor_email, senha } });
     }
 
     // ------------------------------------------------------------ reemitir_link
@@ -297,11 +342,12 @@ Deno.serve(
       cotacaoFornecedorId,
       cotacaoId: cf.cotacao_id,
     };
-    const { error: erroRastro } = await supabase
-      .from("audit_log")
-      .insert(registroDoLink({ ...dadosDoLink, status: "sucesso" }));
+    const erroRastro = await gravarAuditoria(
+      supabase,
+      registroDoLink({ ...dadosDoLink, status: "iniciado" })
+    );
     if (erroRastro) {
-      console.error("[fornecedor-acesso] audit_log (link):", erroRastro.message);
+      console.error("[fornecedor-acesso] audit_log (link):", erroRastro);
       return fail(MENSAGEM_SEM_RASTRO, 500);
     }
 
@@ -317,12 +363,18 @@ Deno.serve(
     if (erroLink || !link) {
       const motivo = erroLink?.message ?? "link novo não gerado";
       console.error("[fornecedor-acesso] reemitir link:", motivo);
-      const { error: erroFalha } = await supabase
-        .from("audit_log")
-        .insert(registroDoLink({ ...dadosDoLink, status: "erro", erro: motivo }));
-      if (erroFalha) console.warn("[fornecedor-acesso] audit_log (falha):", erroFalha.message);
+      const erroFalha = await gravarAuditoria(
+        supabase,
+        registroDoLink({ ...dadosDoLink, status: "erro", erro: motivo })
+      );
+      if (erroFalha) console.warn("[fornecedor-acesso] audit_log (falha):", erroFalha);
       return fail("Não deu para gerar o link novo da cotação. Tente de novo.", 500);
     }
+    const erroFim = await gravarAuditoria(
+      supabase,
+      registroDoLink({ ...dadosDoLink, status: "sucesso" })
+    );
+    if (erroFim) console.warn("[fornecedor-acesso] audit_log (sucesso):", erroFim);
     return ok({ cotacao_fornecedor_id: novo.id, fornecedor_id: novo.fornecedor_id, link });
   })
 );

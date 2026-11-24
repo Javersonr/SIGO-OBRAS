@@ -29,8 +29,9 @@ export const MENSAGEM_SEM_PERMISSAO =
  * Quem pode usar a função: a mesma regra que mostra a aba Cotações na tela de Compras
  * (`perfil === "Admin" || temPermissao("Compras", "Cotações")`, Compras.jsx), mais o Admin Holding e o
  * super admin, que o banco também trata como administrador (`usuario_eh_administrador()`, 0178). O dono
- * da conta (`is_owner`) passa por `temPermissaoServidor`, como na tela. Vínculo inativo ou excluído não
- * passa (o mesmo critério da função SQL `tem_permissao`).
+ * da conta (`is_owner`) passa por `temPermissaoServidor`, como na tela. Vínculo desativado (`ativo = false`)
+ * ou excluído não passa; `ativo` NULO conta como ativo, como na tela (Layout.jsx), em `current_user_perfil()`
+ * (0061), em `usuario_eh_administrador()` (0178) e em `tem_permissao` desde a 0179 (revisão do 2b-2, C3).
  */
 export function podeUsarCotacoes(p: {
   superAdmin: boolean;
@@ -38,9 +39,36 @@ export function podeUsarCotacoes(p: {
 }): boolean {
   if (p.superAdmin) return true;
   const v = p.vinculo;
-  if (!v || v.ativo !== true || v.deleted_at) return false;
+  if (!v || v.ativo === false || v.deleted_at) return false;
   if (v.perfil === "Admin" || v.perfil === "Admin Holding") return true;
   return temPermissaoServidor(v, MODULO_COMPRAS, ABA_COTACOES);
+}
+
+export interface VinculoDaEmpresa extends Vinculo {
+  usuario_email?: string | null;
+}
+
+/**
+ * O vínculo do chamador entre os vínculos NÃO excluídos da empresa da sessão (em ordem de criação), pelo
+ * mesmo critério do banco (`tem_permissao` / `current_user_perfil`): e-mail comparado em minúsculas
+ * (`lower(ue.usuario_email) = current_user_email()`), `ativo` nulo conta como ativo, o primeiro que servir.
+ * A comparação é feita aqui, e não com `ilike` na consulta, porque `_` e `%` num e-mail seriam curingas.
+ */
+export function vinculoDoChamadorNaLista(
+  vinculos: VinculoDaEmpresa[] | null | undefined,
+  email: string
+): VinculoDaEmpresa | null {
+  const alvo = String(email ?? "").toLowerCase();
+  if (!alvo) return null;
+  return (
+    (vinculos ?? []).find(
+      (v) =>
+        !!v &&
+        String(v.usuario_email ?? "").toLowerCase() === alvo &&
+        v.ativo !== false &&
+        !v.deleted_at
+    ) ?? null
+  );
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -139,38 +167,83 @@ export type DecisaoCredencial =
   | { tipo: "sem_email" };
 
 /**
- * Credencial nova: com acesso ativo, troca a senha dele (o e-mail de login continua o mesmo); sem acesso
- * ativo, cria um com o e-mail do CADASTRO do fornecedor (lido do banco, nunca do corpo); sem e-mail no
- * cadastro, não há o que criar (a mensagem sai sem login e senha, como antes).
+ * Credencial nova.
+ *  - Com acesso ativo: troca a senha. O login é o e-mail do acesso (o primeiro que tiver e-mail, senão o do
+ *    CADASTRO), sempre NORMALIZADO: o `portal-fornecedor-login` procura `fornecedor_email in (minúsculo e sem
+ *    espaços, digitado sem espaços)` e as telas de login mandam o e-mail em minúsculas, então uma linha legada
+ *    com maiúscula, espaço ou nula nunca entraria (revisão do 2b-2, C1). A troca grava o e-mail normalizado.
+ *  - Sem acesso ativo: cria um com o e-mail do cadastro (lido do banco, nunca do corpo).
+ *  - Sem e-mail nenhum (nem no acesso nem no cadastro): `sem_email`, nada é gerado (a mensagem sai sem login
+ *    e senha, e a tela avisa).
  */
 export function decidirCredencial(p: {
-  acessoAtivo: { id: string; fornecedor_email?: string | null } | null | undefined;
+  acessosAtivos: { id: string; fornecedor_email?: string | null }[] | null | undefined;
   emailDoCadastro: unknown;
 }): DecisaoCredencial {
-  if (p.acessoAtivo?.id) {
-    return {
-      tipo: "rotacionar",
-      acessoId: p.acessoAtivo.id,
-      email: p.acessoAtivo.fornecedor_email || emailNormalizado(p.emailDoCadastro),
-    };
+  const ativos = (p.acessosAtivos ?? []).filter((a) => a && a.id);
+  const doAcesso = ativos.map((a) => emailNormalizado(a.fornecedor_email)).find((e) => !!e);
+  if (ativos.length) {
+    const email = doAcesso || emailNormalizado(p.emailDoCadastro);
+    return email ? { tipo: "rotacionar", acessoId: ativos[0].id, email } : { tipo: "sem_email" };
   }
   const email = emailNormalizado(p.emailDoCadastro);
   return email ? { tipo: "criar", email } : { tipo: "sem_email" };
 }
 
+/**
+ * O que a troca grava em TODAS as linhas ativas do fornecedor na empresa (revisão do 2b-2, C2): o mesmo hash
+ * e o mesmo e-mail normalizado. Duas chamadas ao mesmo tempo (duplo clique) podiam deixar duas linhas ativas
+ * com senhas diferentes, e a segunda nunca mais era trocada. Trocando todas no fim de cada chamada (e depois
+ * de criar a linha nova, quando cria), a última chamada a terminar define a senha válida e nenhuma senha
+ * "esquecida" continua valendo. Sem índice único de propósito: os dados de produção são desconhecidos.
+ */
+export function camposDaTroca(hash: string, email: string) {
+  return { senha_acesso: hash, fornecedor_email: emailNormalizado(email) };
+}
+
+/** Passos da credencial, na ordem: criar (se for o caso) e SEMPRE terminar trocando todas as ativas. */
+export function passosDaCredencial(d: DecisaoCredencial): ("criar" | "trocar_todas")[] {
+  if (d.tipo === "sem_email") return [];
+  return d.tipo === "criar" ? ["criar", "trocar_todas"] : ["trocar_todas"];
+}
+
+export const MENSAGEM_SEM_EMAIL =
+  "Este fornecedor não tem e-mail no cadastro: a mensagem vai sem login e senha do portal.";
+
 // ---------------------------------------------------------------- auditoria
 
-/** IP só no formato que a coluna inet aceita (v4/v6 ou prefixo); lixo vira null e não derruba o registro. */
+const IPV4_RE =
+  /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}(\/(3[0-2]|[12]?\d))?$/;
+const IPV6_RE = /^[0-9a-f]{0,4}(:[0-9a-f]{0,4}){2,7}(\/(12[0-8]|1[01]\d|[1-9]?\d))?$/i;
+
+/**
+ * IP para a coluna `inet` da auditoria (o mesmo `ipDaRequisicao` do enviar-whatsapp). Formato que não seja
+ * IPv4 ou IPv6 vira null. Se ainda assim o banco recusar, o index grava de novo sem IP
+ * (`linhaSemIp`): IP estranho NUNCA derruba a ação (revisão do 2b-2, melhoria 3).
+ */
 export function ipParaAuditoria(ip: string | null | undefined): string | null {
-  return ip && /^[0-9a-f.:/]+$/i.test(ip) ? ip : null;
+  if (!ip) return null;
+  return IPV4_RE.test(ip) || (ip.includes(":") && IPV6_RE.test(ip)) ? ip : null;
 }
+
+/** A mesma linha sem IP, para a 2ª tentativa; `null` quando já estava sem IP (não há o que repetir). */
+export function linhaSemIp<T extends { endereco_ip: string | null }>(linha: T): T | null {
+  return linha.endereco_ip ? { ...linha, endereco_ip: null } : null;
+}
+
+/**
+ * Status da linha da auditoria. `iniciado` é a linha gravada ANTES da troca (sem ela nada muda); ela não diz
+ * que deu certo. Depois vem `sucesso` ou `erro`. A coluna `status` é texto livre desde a 0021 (a checagem
+ * sucesso/erro da 0002 caiu); as funções irmãs só usam sucesso/erro porque registram depois do fato.
+ */
+export type StatusDoRegistro = "iniciado" | "sucesso" | "erro";
 
 interface BaseDoRegistro {
   empresaId: string;
   chamadorEmail: string;
   fornecedorId: string;
   fornecedorNome: string | null | undefined;
-  status: "sucesso" | "erro";
+  status: StatusDoRegistro;
   erro?: string | null;
   ip?: string | null;
   userAgent?: string | null;
@@ -194,20 +267,27 @@ function base(p: BaseDoRegistro) {
  * e qual fornecedor; a senha e o hash NUNCA entram (a função nem os recebe).
  */
 export function registroDaCredencial(
-  p: BaseDoRegistro & { acessoId: string; acessoNovo: boolean }
+  p: BaseDoRegistro & { acessoId: string; acessoNovo: boolean; acessosTrocados?: number }
 ) {
   const nome = p.fornecedorNome || "fornecedor sem nome";
+  const novo = p.acessoNovo ? " (acesso novo)" : "";
+  const descricao =
+    p.status === "iniciado"
+      ? `${p.chamadorEmail} pediu senha nova do Portal do Fornecedor para ${nome}${novo}`
+      : p.status === "sucesso"
+        ? `${p.chamadorEmail} gerou senha nova do Portal do Fornecedor para ${nome}${novo}; a senha anterior deixou de valer`
+        : `Falhou a gravação da senha nova do Portal do Fornecedor para ${nome}, pedida por ${p.chamadorEmail}; a senha anterior continua valendo`;
   return {
     ...base(p),
     tipo_acao: "senha_portal_fornecedor",
     entidade: "fornecedor_acesso",
     entidade_id: p.acessoId,
-    descricao:
-      p.status === "sucesso"
-        ? `${p.chamadorEmail} gerou senha nova do Portal do Fornecedor para ${nome}` +
-          (p.acessoNovo ? " (acesso criado agora)" : "")
-        : `Falhou a gravação da senha nova do Portal do Fornecedor para ${nome}, pedida por ${p.chamadorEmail}; a senha anterior continua valendo`,
-    dados_novos: { fornecedor_id: p.fornecedorId, acesso_novo: p.acessoNovo },
+    descricao,
+    dados_novos: {
+      fornecedor_id: p.fornecedorId,
+      acesso_novo: p.acessoNovo,
+      ...(typeof p.acessosTrocados === "number" ? { acessos_trocados: p.acessosTrocados } : {}),
+    },
   };
 }
 
@@ -222,9 +302,11 @@ export function registroDoLink(
     entidade: "cotacao_fornecedor",
     entidade_id: p.cotacaoFornecedorId,
     descricao:
-      p.status === "sucesso"
-        ? `${p.chamadorEmail} gerou link novo da cotação para ${nome}; o link anterior deixou de valer`
-        : `Falhou a troca do link da cotação para ${nome}, pedida por ${p.chamadorEmail}; o link anterior continua valendo`,
+      p.status === "iniciado"
+        ? `${p.chamadorEmail} pediu link novo da cotação para ${nome}`
+        : p.status === "sucesso"
+          ? `${p.chamadorEmail} gerou link novo da cotação para ${nome}; o link anterior deixou de valer`
+          : `Falhou a troca do link da cotação para ${nome}, pedida por ${p.chamadorEmail}; o link anterior continua valendo`,
     dados_novos: { fornecedor_id: p.fornecedorId, cotacao_id: p.cotacaoId },
   };
 }

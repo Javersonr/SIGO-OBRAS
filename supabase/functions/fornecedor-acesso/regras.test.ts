@@ -8,6 +8,11 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   ACOES_FORNECEDOR_ACESSO,
+  MENSAGEM_SEM_EMAIL,
+  camposDaTroca,
+  linhaSemIp,
+  passosDaCredencial,
+  vinculoDoChamadorNaLista,
   BASE_CANONICA,
   baseDoLink,
   decidirCredencial,
@@ -158,6 +163,46 @@ test("statusDosAcessos: primeiro ativo vale; sem ativo, mostra que existe mas in
   for (const item of r) assert.ok(!("senha_acesso" in item));
 });
 
+// ------------------------------------------------------------ vínculo (revisão do 2b-2, C3)
+test("podeUsarCotacoes: vínculo com ativo NULO conta como ativo (igual à tela e ao banco)", () => {
+  assert.equal(
+    podeUsarCotacoes({
+      superAdmin: false,
+      vinculo: vinculo({
+        ativo: null,
+        permissoes: { Compras: { Cotações: { visualizar: true } } },
+      }),
+    }),
+    true
+  );
+  assert.equal(
+    podeUsarCotacoes({ superAdmin: false, vinculo: vinculo({ perfil: "Admin", ativo: null }) }),
+    true
+  );
+});
+
+test("vinculoDoChamadorNaLista: e-mail sem diferenciar maiúsculas, ativo nulo vale, desativado não", () => {
+  const lista = [
+    { usuario_email: "Outra@Exemplo.test", perfil: "Admin", ativo: true, deleted_at: null },
+    { usuario_email: "Compras@Exemplo.TEST", perfil: "Compras", ativo: false, deleted_at: null },
+    { usuario_email: "compras@exemplo.test", perfil: "Compras", ativo: null, deleted_at: null },
+  ];
+  assert.equal(vinculoDoChamadorNaLista(lista, "COMPRAS@exemplo.test"), lista[2]);
+  assert.equal(vinculoDoChamadorNaLista(lista, "ninguem@exemplo.test"), null);
+  assert.equal(vinculoDoChamadorNaLista(lista, ""), null);
+  assert.equal(vinculoDoChamadorNaLista(null, "compras@exemplo.test"), null);
+  // só desativado: não acha
+  assert.equal(vinculoDoChamadorNaLista([lista[1]], "compras@exemplo.test"), null);
+  // "_" e "%" são letras, não curingas
+  assert.equal(
+    vinculoDoChamadorNaLista(
+      [{ usuario_email: "aXb@exemplo.test", ativo: true }],
+      "a_b@exemplo.test"
+    ),
+    null
+  );
+});
+
 // ------------------------------------------------------------ credencial
 test("emailNormalizado: sem espaços e minúsculo; não-texto vira vazio", () => {
   assert.equal(emailNormalizado("  Fulano@Exemplo.TEST "), "fulano@exemplo.test");
@@ -165,27 +210,118 @@ test("emailNormalizado: sem espaços e minúsculo; não-texto vira vazio", () =>
   assert.equal(emailNormalizado(42), "");
 });
 
-test("decidirCredencial: com acesso ativo, troca a senha dele e mantém o e-mail de login", () => {
+test("o login do portal procura o e-mail em minúsculas e sem espaços (o que a troca grava)", () => {
+  const login = readFileSync(
+    fileURLToPath(new URL("../portal-fornecedor-login/index.ts", import.meta.url)),
+    "utf8"
+  );
+  assert.match(login, /const email = \(body\.email \?\? ""\)\.trim\(\)\.toLowerCase\(\);/);
+  assert.match(login, /\.in\("fornecedor_email", \[\.\.\.new Set\(\[email, orig\]\)\]\)/);
+  // a linha com e-mail legado é gravada no formato que o login acha
+  const d = decidirCredencial({
+    acessosAtivos: [{ id: ID, fornecedor_email: "  Login@Exemplo.TEST " }],
+    emailDoCadastro: "outro@exemplo.test",
+  });
+  assert.equal(d.tipo, "rotacionar");
+  const gravado = camposDaTroca("hash-sintetico", d.tipo === "rotacionar" ? d.email : "");
+  assert.equal(gravado.fornecedor_email, "login@exemplo.test");
+  assert.equal(gravado.fornecedor_email, emailNormalizado("  Login@Exemplo.TEST "));
+});
+
+test("decidirCredencial: com acesso ativo, troca a senha e o login sai normalizado (C1)", () => {
   assert.deepEqual(
     decidirCredencial({
-      acessoAtivo: { id: ID, fornecedor_email: "Login@Exemplo.test" },
+      acessosAtivos: [{ id: ID, fornecedor_email: "Login@Exemplo.test" }],
       emailDoCadastro: "outro@exemplo.test",
     }),
-    { tipo: "rotacionar", acessoId: ID, email: "Login@Exemplo.test" }
+    { tipo: "rotacionar", acessoId: ID, email: "login@exemplo.test" }
+  );
+});
+
+test("decidirCredencial: acesso sem e-mail usa o do cadastro; nenhum e-mail = sem_email", () => {
+  assert.deepEqual(
+    decidirCredencial({
+      acessosAtivos: [{ id: ID, fornecedor_email: null }],
+      emailDoCadastro: " Forn@Exemplo.test",
+    }),
+    { tipo: "rotacionar", acessoId: ID, email: "forn@exemplo.test" }
+  );
+  assert.deepEqual(
+    decidirCredencial({
+      acessosAtivos: [{ id: ID, fornecedor_email: "  " }],
+      emailDoCadastro: null,
+    }),
+    { tipo: "sem_email" }
+  );
+});
+
+test("decidirCredencial: várias linhas ativas → a primeira com e-mail define o login", () => {
+  assert.deepEqual(
+    decidirCredencial({
+      acessosAtivos: [
+        { id: ID, fornecedor_email: null },
+        { id: ID2, fornecedor_email: "Segunda@Exemplo.test" },
+      ],
+      emailDoCadastro: "cadastro@exemplo.test",
+    }),
+    { tipo: "rotacionar", acessoId: ID, email: "segunda@exemplo.test" }
   );
 });
 
 test("decidirCredencial: sem acesso ativo, cria com o e-mail do cadastro; sem e-mail, nada", () => {
   assert.deepEqual(
-    decidirCredencial({ acessoAtivo: null, emailDoCadastro: " Forn@Exemplo.test " }),
+    decidirCredencial({ acessosAtivos: [], emailDoCadastro: " Forn@Exemplo.test " }),
     { tipo: "criar", email: "forn@exemplo.test" }
   );
-  assert.deepEqual(decidirCredencial({ acessoAtivo: null, emailDoCadastro: "  " }), {
+  assert.deepEqual(decidirCredencial({ acessosAtivos: null, emailDoCadastro: "  " }), {
     tipo: "sem_email",
   });
-  assert.deepEqual(decidirCredencial({ acessoAtivo: undefined, emailDoCadastro: null }), {
+  assert.deepEqual(decidirCredencial({ acessosAtivos: undefined, emailDoCadastro: null }), {
     tipo: "sem_email",
   });
+});
+
+test("passosDaCredencial: toda credencial termina trocando TODAS as linhas ativas (C2)", () => {
+  assert.deepEqual(passosDaCredencial({ tipo: "criar", email: "a@exemplo.test" }), [
+    "criar",
+    "trocar_todas",
+  ]);
+  assert.deepEqual(
+    passosDaCredencial({ tipo: "rotacionar", acessoId: ID, email: "a@exemplo.test" }),
+    ["trocar_todas"]
+  );
+  assert.deepEqual(passosDaCredencial({ tipo: "sem_email" }), []);
+});
+
+test("camposDaTroca: o mesmo hash e o mesmo e-mail normalizado para todas as linhas", () => {
+  assert.deepEqual(camposDaTroca("h", " A@Exemplo.TEST"), {
+    senha_acesso: "h",
+    fornecedor_email: "a@exemplo.test",
+  });
+});
+
+test("duplo clique (simulado): duas chamadas, a última a terminar vale para todas as linhas", () => {
+  // as duas viram "sem acesso" e criam uma linha cada; cada uma termina trocando todas as ativas
+  const linhas: { id: string; senha_acesso: string; fornecedor_email: string }[] = [];
+  const executar = (id: string, hash: string, passo: "criar" | "trocar_todas") => {
+    const campos = camposDaTroca(hash, "Forn@Exemplo.test");
+    if (passo === "criar") linhas.push({ id, ...campos });
+    else for (const l of linhas) Object.assign(l, campos);
+  };
+  const d = decidirCredencial({ acessosAtivos: [], emailDoCadastro: "Forn@Exemplo.test" });
+  const [criar, trocar] = passosDaCredencial(d);
+  executar("A", "hashA", criar);
+  executar("B", "hashB", criar);
+  executar("B", "hashB", trocar);
+  executar("A", "hashA", trocar); // A termina por último
+  assert.equal(linhas.length, 2);
+  assert.ok(linhas.every((l) => l.senha_acesso === "hashA"));
+  assert.ok(linhas.every((l) => l.fornecedor_email === "forn@exemplo.test"));
+});
+
+test("MENSAGEM_SEM_EMAIL explica que a mensagem vai sem login e senha", () => {
+  assert.match(MENSAGEM_SEM_EMAIL, /não tem e-mail/);
+  assert.match(MENSAGEM_SEM_EMAIL, /sem login e senha/);
 });
 
 // ------------------------------------------------------------ auditoria
@@ -198,12 +334,25 @@ const baseRegistro = {
   userAgent: "navegador de teste",
 };
 
+test("registroDaCredencial: a linha ANTES da troca diz 'pediu', com status iniciado (não sucesso)", () => {
+  const r = registroDaCredencial({
+    ...baseRegistro,
+    acessoId: ID,
+    acessoNovo: true,
+    status: "iniciado",
+  });
+  assert.equal(r.status, "iniciado");
+  assert.match(r.descricao, /compras@exemplo\.test pediu senha nova/);
+  assert.doesNotMatch(r.descricao, /gerou/);
+});
+
 test("registroDaCredencial: quem, qual fornecedor e qual acesso; nada de senha", () => {
   const r = registroDaCredencial({
     ...baseRegistro,
     acessoId: ID,
     acessoNovo: true,
     status: "sucesso",
+    acessosTrocados: 2,
   });
   assert.equal(r.empresa_id, ID);
   assert.equal(r.usuario_email, "compras@exemplo.test");
@@ -215,9 +364,9 @@ test("registroDaCredencial: quem, qual fornecedor e qual acesso; nada de senha",
   assert.equal(r.status, "sucesso");
   assert.equal(r.mensagem_erro, null);
   assert.equal(r.endereco_ip, "203.0.113.7");
-  assert.deepEqual(r.dados_novos, { fornecedor_id: ID2, acesso_novo: true });
+  assert.deepEqual(r.dados_novos, { fornecedor_id: ID2, acesso_novo: true, acessos_trocados: 2 });
   assert.match(r.descricao, /compras@exemplo\.test gerou senha nova/);
-  assert.match(r.descricao, /acesso criado agora/);
+  assert.match(r.descricao, /acesso novo/);
   assert.doesNotMatch(JSON.stringify(r), /senha_acesso|hash/i);
   // as colunas obrigatórias da audit_log (0002): empresa_id, usuario_email, tipo_acao, entidade, descricao
   for (const k of ["empresa_id", "usuario_email", "tipo_acao", "entidade", "descricao"]) {
@@ -238,24 +387,32 @@ test("registroDaCredencial: a falha diz que a senha anterior continua valendo e 
   assert.match(r.descricao, /senha anterior continua valendo/);
 });
 
-test("registroDoLink: troca de link registrada com a cotação", () => {
-  const r = registroDoLink({
-    ...baseRegistro,
-    cotacaoFornecedorId: ID,
-    cotacaoId: ID2,
-    status: "sucesso",
-  });
+test("registroDoLink: pedido, troca e falha registrados com a cotação", () => {
+  const dados = { ...baseRegistro, cotacaoFornecedorId: ID, cotacaoId: ID2 };
+  const r = registroDoLink({ ...dados, status: "sucesso" });
   assert.equal(r.tipo_acao, "link_cotacao_reemitido");
   assert.equal(r.entidade, "cotacao_fornecedor");
   assert.equal(r.entidade_id, ID);
   assert.deepEqual(r.dados_novos, { fornecedor_id: ID2, cotacao_id: ID2 });
   assert.match(r.descricao, /link anterior deixou de valer/);
+  const ini = registroDoLink({ ...dados, status: "iniciado" });
+  assert.equal(ini.status, "iniciado");
+  assert.match(ini.descricao, /pediu link novo/);
+  assert.match(registroDoLink({ ...dados, status: "erro" }).descricao, /continua valendo/);
 });
 
-test("ipParaAuditoria: lixo no cabeçalho vira null (a coluna é inet)", () => {
+test("ipParaAuditoria: só IPv4/IPv6; o resto vira null (a coluna é inet)", () => {
+  assert.equal(ipParaAuditoria("203.0.113.7"), "203.0.113.7");
   assert.equal(ipParaAuditoria("2001:db8::/64"), "2001:db8::/64");
-  assert.equal(ipParaAuditoria("<script>"), null);
-  assert.equal(ipParaAuditoria(null), null);
+  assert.equal(ipParaAuditoria("2001:db8::1"), "2001:db8::1");
+  for (const lixo of ["<script>", "cafe", "1.2.3", "999.1.1.1", "", null, undefined]) {
+    assert.equal(ipParaAuditoria(lixo), null, String(lixo));
+  }
+});
+
+test("linhaSemIp: a 2ª tentativa vai sem IP; sem IP não há o que repetir", () => {
+  assert.deepEqual(linhaSemIp({ endereco_ip: "203.0.113.7", x: 1 }), { endereco_ip: null, x: 1 });
+  assert.equal(linhaSemIp({ endereco_ip: null }), null);
 });
 
 // ------------------------------------------------------------ index.ts (conferência de texto)
@@ -266,6 +423,14 @@ test("index.ts: identidade só pelo JWT e empresa só da sessão", () => {
   assert.match(index, /const empresaId = chamador\.empresa_id;/);
   assert.doesNotMatch(index, /body\.empresa_id/);
   assert.doesNotMatch(index, /body\.email/);
+});
+
+test("index.ts: o vínculo não é filtrado por ativo nem por e-mail exato na consulta (C3)", () => {
+  const bloco = index.slice(index.indexOf("async function vinculoDoChamador"));
+  const consulta = bloco.slice(0, bloco.indexOf("vinculoDoChamadorNaLista("));
+  assert.doesNotMatch(consulta, /\.eq\("ativo"/);
+  assert.doesNotMatch(consulta, /\.eq\("usuario_email"/);
+  assert.doesNotMatch(consulta, /ilike/);
 });
 
 test("index.ts: toda leitura/gravação de tabela de negócio é filtrada pela empresa", () => {
@@ -284,17 +449,33 @@ test("index.ts: toda leitura/gravação de tabela de negócio é filtrada pela e
   }
 });
 
+test("index.ts: a troca vale para TODAS as linhas ativas do fornecedor, não só uma (C2)", () => {
+  const troca = index.slice(index.indexOf(".update(campos)"));
+  const filtro = troca.slice(0, troca.indexOf(";"));
+  assert.match(filtro, /\.eq\("fornecedor_id", fornecedorId\)/);
+  assert.match(filtro, /\.eq\("ativo", true\)/);
+  assert.doesNotMatch(filtro, /\.eq\("id"/);
+  assert.doesNotMatch(index, /\.limit\(1\)/);
+});
+
 test("index.ts: a senha nunca vai para o registro de auditoria nem para o log", () => {
   assert.doesNotMatch(index, /registroDaCredencial\([^)]*\b(senha|hash)\b/);
   // nenhum console.* recebe a variável da senha ou do hash como argumento
   assert.doesNotMatch(index, /console\.\w+\([^)]*,\s*(senha|hash)\b/);
 });
 
-test("index.ts: o rastro é gravado ANTES da senha nova", () => {
-  const rastro = index.indexOf('registroDaCredencial({ ...dadosDoRegistro, status: "sucesso" })');
-  const gravar = index.indexOf(".update({ senha_acesso: hash })");
-  assert.ok(rastro > 0 && gravar > 0 && rastro < gravar);
-  const rastroLink = index.indexOf('registroDoLink({ ...dadosDoLink, status: "sucesso" })');
+test("index.ts: o rastro 'iniciado' é gravado ANTES da troca; nenhuma linha 'sucesso' antes dela", () => {
+  const rastro = index.indexOf('registroDaCredencial({ ...dadosDoRegistro, status: "iniciado" })');
+  const gravar = index.indexOf(".update(campos)");
+  const sucesso = index.indexOf('status: "sucesso", acessosTrocados');
+  assert.ok(rastro > 0 && gravar > rastro && sucesso > gravar);
+  const rastroLink = index.indexOf('registroDoLink({ ...dadosDoLink, status: "iniciado" })');
   const trocaLink = index.indexOf(".update({ token: null })");
-  assert.ok(rastroLink > 0 && trocaLink > 0 && rastroLink < trocaLink);
+  const sucessoLink = index.indexOf('registroDoLink({ ...dadosDoLink, status: "sucesso" })');
+  assert.ok(rastroLink > 0 && trocaLink > rastroLink && sucessoLink > trocaLink);
+});
+
+test("index.ts: toda gravação na auditoria passa por gravarAuditoria (repete sem IP)", () => {
+  const inserts = index.match(/\.from\("audit_log"\)\.insert\(/g) ?? [];
+  assert.equal(inserts.length, 2); // a tentativa e a repetição sem IP, dentro de gravarAuditoria
 });
