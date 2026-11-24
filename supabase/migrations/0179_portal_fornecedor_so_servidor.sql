@@ -41,6 +41,18 @@
 --     admin). DELETE físico sai de authenticated (o SDK só faz exclusão lógica).
 --     Sem revoke por coluna do token: quebraria o select * do SDK.
 --
+-- AINDA (revisão do 2b-2, C3): tem_permissao passa a tratar vínculo com `ativo`
+-- NULO como ativo. Só ela divergia: a tela (Layout.jsx, temPermissao) e
+-- current_user_perfil() (0061: coalesce(ue.ativo, true) = true) e
+-- usuario_eh_administrador() (0176/0178) já tratam nulo como ativo. Sem isto,
+-- um usuário de Compras com `ativo` nulo via a aba Cotações e, depois desta
+-- migração, não lia nem gravava cotacao_fornecedor. O corpo é o da 0147
+-- (137-208) copiado do arquivo, com UMA linha trocada: `ue.ativo = true` →
+-- `coalesce(ue.ativo, true) = true`. `ativo = false` continua barrado. A 0147
+-- é a última definição dela (grep em supabase/migrations). O efeito vale para
+-- todas as policies/funções que a usam: EAD (0147, 0170), acervo (0159),
+-- habilitação (0160) e documentos gerados (0161) — ver LOTE2-banco.md.
+--
 -- FORA: quem tem Compras (qualquer aba) continua lendo o token pela API; fechar
 -- isso exige listar colunas nas leituras do SDK (lote de permissão por perfil).
 --
@@ -53,6 +65,86 @@
 begin;
 -- Se der "canceling statement due to lock timeout" (tabela ocupada), é só rodar de novo.
 set local lock_timeout = '10s';
+
+-- 0. tem_permissao: ativo nulo = ativo (corpo da 0147, uma linha trocada) -------
+create or replace function public.tem_permissao(
+  p_modulo text,
+  p_aba text default null,
+  p_funcao text default null
+)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_perfil text;
+  v_dono boolean;
+  v_bruto jsonb;
+  v_modulo jsonb;
+  v_aba jsonb;
+begin
+  if public.chamador_eh_servidor() or public.current_user_is_super_admin() then
+    return true;
+  end if;
+  if auth.uid() is null or coalesce(auth.jwt() ->> 'role', '') <> 'authenticated' then
+    return false;
+  end if;
+
+  select ue.perfil, ue.is_owner, ue.permissoes
+    into v_perfil, v_dono, v_bruto
+    from public.usuario_empresa ue
+   where lower(ue.usuario_email) = public.current_user_email()
+     and ue.empresa_id = public.current_empresa_id()
+     and coalesce(ue.ativo, true) = true  -- 0179: ativo nulo conta como ativo (era ue.ativo = true)
+     and ue.deleted_at is null
+   order by ue.created_at asc
+   limit 1;
+  if not found then
+    return false;
+  end if;
+  if v_perfil = 'Admin' or v_dono is true then
+    return true;
+  end if;
+
+  v_modulo := public.permissoes_como_objeto(v_bruto) -> p_modulo;
+  if v_modulo is null or jsonb_typeof(v_modulo) <> 'object' then
+    return false;
+  end if;
+
+  if p_aba is null and p_funcao is null then
+    return exists (
+      select 1
+        from jsonb_each(v_modulo) a
+       where jsonb_typeof(a.value) = 'object'
+         and exists (select 1 from jsonb_each(a.value) f where f.value = 'true'::jsonb)
+    );
+  end if;
+
+  v_aba := case when p_aba is null then null else v_modulo -> p_aba end;
+  if p_funcao is null then
+    if jsonb_typeof(v_aba) = 'boolean' then
+      return v_aba = 'true'::jsonb;
+    end if;
+    if jsonb_typeof(v_aba) = 'object' then
+      return exists (select 1 from jsonb_each(v_aba) f where f.value = 'true'::jsonb);
+    end if;
+    return false;
+  end if;
+
+  if v_aba is null or jsonb_typeof(v_aba) <> 'object' then
+    return false;
+  end if;
+  return coalesce((v_aba -> p_funcao) = 'true'::jsonb, false);
+end;
+$$;
+revoke all on function public.tem_permissao(text, text, text) from public, anon, authenticated;
+grant execute on function public.tem_permissao(text, text, text) to authenticated, service_role;
+
+comment on function public.tem_permissao(text, text, text) is
+  'T33: o chamador tem a permissão (módulo, aba, função) do editor de permissões? Espelho do temPermissaoServidor (acesso.ts). Servidor, super admin, Admin e dono passam; vínculo ativo (ativo nulo conta como ativo desde a 0179, como na tela e em current_user_perfil) do e-mail e da empresa do token.';
+
 
 -- 1. fornecedor_acesso: só o servidor -----------------------------------------
 drop policy if exists tenant_isolation on public.fornecedor_acesso;
