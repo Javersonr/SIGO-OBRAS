@@ -3,6 +3,7 @@ import {
   credenciaisDaCotacao,
   credencialParaEnvio,
   linksDaCotacao,
+  MENSAGEM_FORNECEDOR_SEM_EMAIL,
   rotacionarCredencialFornecedor,
 } from "@/lib/senha-portal";
 import { conferirSolicitacaoAprovada } from "@/lib/solicitacao-status";
@@ -41,6 +42,9 @@ export default function CotacaoModal({
   const [codigosOrcamento, setCodigosOrcamento] = useState({});
   // falha ao pedir ao servidor os links e o acesso dos fornecedores (a tela avisa em vez de ficar pela metade)
   const [erroAcesso, setErroAcesso] = useState("");
+  // senha do portal sendo gerada, por fornecedor (desabilita o WhatsApp dele)
+  const [gerandoSenha, setGerandoSenha] = useState({});
+  const gerandoSenhaRef = React.useRef(new Set());
 
   const carregarCotacaoExistente = React.useCallback(async () => {
     if (!open || !solicitacao) return;
@@ -270,10 +274,12 @@ export default function CotacaoModal({
         // grava só o hash e devolve a senha em claro uma vez, para a mensagem.
         const credenciais = {};
         const semSenha = [];
+        const semEmail = [];
         for (const fornecedorId of Object.keys(porFornecedor)) {
           try {
             const cred = await rotacionarCredencialFornecedor(sigo, { fornecedorId });
             if (cred) credenciais[fornecedorId] = cred;
+            else semEmail.push(fornecedores.find((f) => f.id === fornecedorId)?.nome_razao || "?");
           } catch (e) {
             console.error("Erro ao gerar a senha do portal do fornecedor:", e);
             semSenha.push(fornecedores.find((f) => f.id === fornecedorId)?.nome_razao || "?");
@@ -285,6 +291,11 @@ export default function CotacaoModal({
           toast.error(
             `Não deu para gerar a senha do portal de: ${semSenha.join(", ")}. ` +
               "O botão WhatsApp tenta de novo antes de abrir a mensagem."
+          );
+        }
+        if (semEmail.length) {
+          toast.warning(
+            `Sem e-mail no cadastro (a mensagem vai sem login e senha do portal): ${semEmail.join(", ")}.`
           );
         }
       }
@@ -342,13 +353,20 @@ export default function CotacaoModal({
 
   // Enviar = senha nova pelo servidor se a tela só conhece o hash (a mensagem sai com a senha nova).
   // Devolve a credencial (ou null, sem acesso e sem e-mail); `false` = o servidor falhou e a tela já avisou.
+  // Um pedido de senha por fornecedor de cada vez: o 2º clique enquanto o 1º está em curso é ignorado
+  // (antes o duplo clique gerava duas senhas; revisão do 2b-2, C2). O ref barra na hora; o estado
+  // desabilita o botão e mostra "Gerando...".
   const credencialDoEnvio = async (fornecedor) => {
+    if (gerandoSenhaRef.current.has(fornecedor.id)) return false;
+    gerandoSenhaRef.current.add(fornecedor.id);
+    setGerandoSenha((prev) => ({ ...prev, [fornecedor.id]: true }));
     try {
       const atual = credenciaisFornecedores[fornecedor.id];
       const creds = await credencialParaEnvio(sigo, { atual, fornecedorId: fornecedor.id });
       if (creds && creds !== atual) {
         setCredenciaisFornecedores((prev) => ({ ...prev, [fornecedor.id]: creds }));
       }
+      if (!creds) toast.warning(MENSAGEM_FORNECEDOR_SEM_EMAIL);
       return creds;
     } catch (e) {
       console.error("Erro ao gerar a senha do portal do fornecedor:", e);
@@ -356,6 +374,9 @@ export default function CotacaoModal({
         `Não deu para gerar a senha do portal do fornecedor: ${e.message} A mensagem não foi aberta; tente de novo.`
       );
       return false;
+    } finally {
+      gerandoSenhaRef.current.delete(fornecedor.id);
+      setGerandoSenha((prev) => ({ ...prev, [fornecedor.id]: false }));
     }
   };
 
@@ -527,10 +548,11 @@ export default function CotacaoModal({
                                       "_blank"
                                     );
                                   }}
+                                  disabled={enviandoEmail || !!gerandoSenha[fornecedor.id]}
                                   className="text-green-600 hover:bg-green-50"
                                 >
                                   <MessageSquare className="w-3 h-3 mr-1" />
-                                  WhatsApp
+                                  {gerandoSenha[fornecedor.id] ? "Gerando senha..." : "WhatsApp"}
                                 </Button>
                               )}
                               <Button
@@ -702,10 +724,11 @@ export default function CotacaoModal({
                                 size="sm"
                                 variant="outline"
                                 onClick={() => enviarWhatsApp(fornecedor, link)}
+                                disabled={enviandoEmail || !!gerandoSenha[fornecedor.id]}
                                 className="text-green-600 border-green-600 hover:bg-green-50"
                               >
                                 <MessageSquare className="w-4 h-4 mr-1" />
-                                WhatsApp
+                                {gerandoSenha[fornecedor.id] ? "Gerando senha..." : "WhatsApp"}
                               </Button>
                             )}
                             <Button

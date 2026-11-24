@@ -190,3 +190,12 @@ describe("credencialParaEnvio", () => {
     ).rejects.toThrow("Erro interno");
   });
 });
+
+describe("MENSAGEM_FORNECEDOR_SEM_EMAIL", () => {
+  it("é o mesmo texto que o servidor usa no SEM_EMAIL", async () => {
+    const { MENSAGEM_FORNECEDOR_SEM_EMAIL } = await import("./senha-portal");
+    const { MENSAGEM_SEM_EMAIL } =
+      await import("../../../../supabase/functions/fornecedor-acesso/regras.ts");
+    expect(MENSAGEM_FORNECEDOR_SEM_EMAIL).toBe(MENSAGEM_SEM_EMAIL);
+  });
+});

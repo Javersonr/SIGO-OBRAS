@@ -18,6 +18,10 @@ export const FUNCAO_FORNECEDOR_ACESSO = "fornecedorAcesso";
 export const MENSAGEM_FALHA_SERVIDOR =
   "Não deu para falar com o servidor do portal do fornecedor. Tente de novo.";
 
+/** Aviso quando o servidor não gera credencial (fornecedor sem e-mail no acesso nem no cadastro). */
+export const MENSAGEM_FORNECEDOR_SEM_EMAIL =
+  "Este fornecedor não tem e-mail no cadastro: a mensagem vai sem login e senha do portal.";
+
 async function chamar(sigo, acao, dados) {
   const { data } = await sigo.functions.invoke(FUNCAO_FORNECEDOR_ACESSO, { acao, ...dados });
   if (!data || typeof data !== "object" || data.success === false) {

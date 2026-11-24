@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { toast } from "sonner";
-import { credenciaisDaCotacao, credencialParaEnvio, linksDaCotacao } from "@/lib/senha-portal";
+import {
+  MENSAGEM_FORNECEDOR_SEM_EMAIL,
+  credenciaisDaCotacao,
+  credencialParaEnvio,
+  linksDaCotacao,
+} from "@/lib/senha-portal";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +41,11 @@ export default function LinksModal({ open, onOpenChange, cotacao, empresaAtiva, 
   // links montados pelo servidor, por participação (cotacao_fornecedor.id)
   const [links, setLinks] = useState({});
   const [erroCarregar, setErroCarregar] = useState("");
+  // falha só do servidor (links e acesso ao portal): a lista fica, o aviso aparece em cima dela
+  const [erroAcesso, setErroAcesso] = useState("");
+  // senha do portal sendo gerada, por fornecedor (desabilita o WhatsApp dele; revisão do 2b-2, C2)
+  const [gerandoSenha, setGerandoSenha] = useState({});
+  const gerandoSenhaRef = React.useRef(new Set());
   const [loading, setLoading] = useState(true);
   const [reenviando, setReenviando] = useState({});
   const [filtroStatus, setFiltroStatus] = useState("todos");
@@ -50,27 +60,33 @@ export default function LinksModal({ open, onOpenChange, cotacao, empresaAtiva, 
 
   const loadFornecedores = async () => {
     setLoading(true);
-    try {
-      // status e valores vêm da tabela; links e acesso ao portal, do servidor (a senha nunca vem:
-      // o banco só tem o hash, e a senha nova só nasce ao ENVIAR)
-      const [cotFornecedores, { porParticipacao }, creds] = await Promise.all([
-        sigo.entities.CotacaoFornecedor.filter({ cotacao_id: cotacao.id }),
-        linksDaCotacao(sigo, cotacao.id),
-        credenciaisDaCotacao(sigo, cotacao.id),
-      ]);
-      setFornecedores(cotFornecedores);
+    // status e valores vêm da tabela; links e acesso ao portal, do servidor (a senha nunca vem:
+    // o banco só tem o hash, e a senha nova só nasce ao ENVIAR). Se só o servidor falhar, a lista
+    // continua na tela e ficam indisponíveis apenas o link e a credencial (revisão do 2b-2).
+    const [tabela, servidor] = await Promise.allSettled([
+      sigo.entities.CotacaoFornecedor.filter({ cotacao_id: cotacao.id }),
+      Promise.all([linksDaCotacao(sigo, cotacao.id), credenciaisDaCotacao(sigo, cotacao.id)]),
+    ]);
+    if (tabela.status === "fulfilled") {
+      setFornecedores(tabela.value);
+      setErroCarregar("");
+    } else {
+      console.error("Erro ao carregar fornecedores:", tabela.reason);
+      setFornecedores([]);
+      setErroCarregar(tabela.reason?.message || "Erro ao carregar os fornecedores da cotação");
+    }
+    if (servidor.status === "fulfilled") {
+      const [{ porParticipacao }, creds] = servidor.value;
       setLinks(porParticipacao);
       setCredenciais(creds);
-      setErroCarregar("");
-    } catch (error) {
-      console.error("Erro ao carregar fornecedores:", error);
-      setFornecedores([]);
+      setErroAcesso("");
+    } else {
+      console.error("Erro ao carregar links e acesso ao portal:", servidor.reason);
       setLinks({});
       setCredenciais({});
-      setErroCarregar(error?.message || "Erro ao carregar os fornecedores da cotação");
-    } finally {
-      setLoading(false);
+      setErroAcesso(servidor.reason?.message || "Erro ao carregar os links dos fornecedores");
     }
+    setLoading(false);
   };
 
   const copyLink = (link) => {
@@ -86,8 +102,12 @@ export default function LinksModal({ open, onOpenChange, cotacao, empresaAtiva, 
     }
     // Enviar = senha nova pelo servidor se só existe o hash (mensagem sai com senha nova).
     // Aqui só troca a de quem já tem acesso (o painel não cria acesso novo, como antes).
+    // um pedido de senha por fornecedor de cada vez: o 2º clique em curso é ignorado
+    if (gerandoSenhaRef.current.has(fornecedor.id)) return;
     const atual = credenciais[fornecedor.fornecedor_id];
     let creds;
+    gerandoSenhaRef.current.add(fornecedor.id);
+    setGerandoSenha((prev) => ({ ...prev, [fornecedor.id]: true }));
     try {
       creds = await credencialParaEnvio(sigo, {
         atual,
@@ -100,7 +120,11 @@ export default function LinksModal({ open, onOpenChange, cotacao, empresaAtiva, 
         `Não deu para gerar a senha do portal do fornecedor: ${e.message} A mensagem não foi aberta; tente de novo.`
       );
       return;
+    } finally {
+      gerandoSenhaRef.current.delete(fornecedor.id);
+      setGerandoSenha((prev) => ({ ...prev, [fornecedor.id]: false }));
     }
+    if (atual && !creds) toast.warning(MENSAGEM_FORNECEDOR_SEM_EMAIL);
     if (creds && creds !== atual) {
       setCredenciais((prev) => ({ ...prev, [fornecedor.fornecedor_id]: creds }));
     }
@@ -434,12 +458,30 @@ ${empresaAtiva.nome_fantasia || empresaAtiva.razao_social || empresaAtiva.nome}
           </div>
 
           <div className="space-y-4 mt-6">
+            {!erroCarregar && erroAcesso && (
+              <div
+                role="alert"
+                className="p-3 rounded-lg border border-red-200 bg-red-50 text-sm text-red-700 flex items-start justify-between gap-3"
+              >
+                <span>
+                  Não deu para carregar os links e o acesso dos fornecedores ao portal: {erroAcesso}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadFornecedores()}
+                  className="flex-shrink-0"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Tentar de novo
+                </Button>
+              </div>
+            )}
             {erroCarregar ? (
               <Card className="border-red-200 bg-red-50">
                 <CardContent className="p-6 text-center space-y-3" role="alert">
                   <p className="text-sm text-red-700">
-                    Não deu para carregar os fornecedores, os links e o acesso ao portal:{" "}
-                    {erroCarregar}
+                    Não deu para carregar os fornecedores da cotação: {erroCarregar}
                   </p>
                   <Button variant="outline" size="sm" onClick={() => loadFornecedores()}>
                     <RefreshCw className="w-4 h-4 mr-2" />
@@ -638,10 +680,11 @@ ${empresaAtiva.nome_fantasia || empresaAtiva.razao_social || empresaAtiva.nome}
                             size="sm"
                             variant="outline"
                             onClick={() => enviarWhatsApp(fornecedor)}
+                            disabled={!link || !!gerandoSenha[fornecedor.id]}
                             className="flex-1 text-green-600 border-green-600 hover:bg-green-50"
                           >
                             <MessageSquare className="w-4 h-4 mr-2" />
-                            WhatsApp
+                            {gerandoSenha[fornecedor.id] ? "Gerando senha..." : "WhatsApp"}
                           </Button>
                         </div>
 
