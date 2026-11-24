@@ -5,6 +5,7 @@ import {
   linksDaCotacao,
   rotacionarCredencialFornecedor,
 } from "@/lib/senha-portal";
+import { conferirSolicitacaoAprovada } from "@/lib/solicitacao-status";
 import React, { useState, useMemo } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -155,6 +156,14 @@ export default function CotacaoModal({
 
     setEnviandoEmail(true);
     try {
+      // a solicitação pode ter voltado para aprovação (item alterado, 0178): conferir no banco
+      // ANTES de gravar qualquer coisa, para não deixar a cotação pela metade
+      const conferencia = await conferirSolicitacaoAprovada(sigo, solicitacao.id);
+      if (!conferencia.ok) {
+        alert(conferencia.mensagem);
+        return;
+      }
+
       let cotacao;
       const ano = new Date().getFullYear();
 

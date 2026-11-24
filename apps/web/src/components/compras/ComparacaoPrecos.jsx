@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { sigo } from "@/api/sigoClient";
+import { conferirSolicitacaoAprovada } from "@/lib/solicitacao-status";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -379,6 +380,16 @@ export default function ComparacaoPrecos({
 
     setAprovando(true);
     try {
+      // a solicitação pode ter voltado para aprovação (item alterado, 0178): conferir no banco
+      // ANTES de gravar qualquer coisa, para não deixar a cotação aprovada pela metade
+      if (cotacao.solicitacao_id) {
+        const conferencia = await conferirSolicitacaoAprovada(sigo, cotacao.solicitacao_id);
+        if (!conferencia.ok) {
+          alert(conferencia.mensagem);
+          return;
+        }
+      }
+
       // Marcar cada CotacaoResposta selecionada como aprovada
       for (const [itemId, fornId] of Object.entries(itensSelecionados)) {
         const respostas = await sigo.entities.CotacaoResposta.filter({

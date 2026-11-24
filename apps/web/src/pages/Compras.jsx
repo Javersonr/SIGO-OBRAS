@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
 import { useEmpresa } from "../Layout";
 import { consumirDraftSC } from "@/lib/sc-draft";
+import { conferirSolicitacaoAprovada } from "@/lib/solicitacao-status";
 import {
   ShoppingCart,
   Plus,
@@ -513,6 +514,16 @@ export default function Compras() {
     if (!confirm("Gerar pedido de compra a partir desta cotação?")) return;
 
     try {
+      // a solicitação pode ter voltado para aprovação (item alterado, 0178): conferir no banco
+      // ANTES de gravar qualquer coisa, para não deixar o pedido pela metade
+      if (cotacao.solicitacao_id) {
+        const conferencia = await conferirSolicitacaoAprovada(sigo, cotacao.solicitacao_id);
+        if (!conferencia.ok) {
+          alert(conferencia.mensagem);
+          return;
+        }
+      }
+
       const fornecedor = await sigo.entities.Fornecedor.filter({
         id: cotacao.fornecedor_vencedor_id,
       });
