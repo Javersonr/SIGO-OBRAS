@@ -153,6 +153,12 @@ verify_jwt = false
 [functions.portal-fornecedor-resposta]
 verify_jwt = false
 
+# Senha do portal e links das cotações, pedidos pela tela de Compras: JWT do SIGO
+# conferido por dentro (usuarioDaRequisicao), como o funcionario-acesso.
+# Deploy com --no-verify-jwt.
+[functions.fornecedor-acesso]
+verify_jwt = false
+
 # Recibo do fornecedor: a equipe chama com JWT (conferido por dentro) e o
 # fornecedor abre o recibo por link com token.
 [functions.recibo-fornecedor]
