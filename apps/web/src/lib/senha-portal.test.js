@@ -2,12 +2,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   FUNCAO_FORNECEDOR_ACESSO,
+  LINHA_JA_TEM_ACESSO,
+  LINHA_SENHA_ENVIADA,
+  MENSAGEM_ENVIAR_DEPOIS,
   MENSAGEM_FALHA_SERVIDOR,
-  credenciaisDaCotacao,
-  credencialParaEnvio,
+  MENSAGEM_FORNECEDOR_SEM_EMAIL,
+  acessosDaCotacao,
+  enviarSenhaFornecedor,
+  linhaSobreSenha,
   linksDaCotacao,
+  prepararConvite,
   reemitirLinkCotacao,
-  rotacionarCredencialFornecedor,
+  situacaoAtual,
+  textoDoMotivo,
 } from "./senha-portal";
 
 // sigo de mentira: só o invoke (o sigoClient devolve { data } e nunca lança)
@@ -25,83 +32,220 @@ describe("a função do servidor", () => {
     expect(cliente).toMatch(/fornecedorAcesso:\s*"fornecedor-acesso"/);
   });
 
-  it("a lib não gera senha nem grava na tabela (quem faz é o servidor)", () => {
+  it("a lib não gera, não pede e não monta senha (quem envia é o servidor)", () => {
     const fonte = readFileSync(new URL("./senha-portal.js", import.meta.url), "utf8");
     expect(fonte).not.toMatch(/getRandomValues|subtle\.digest|FornecedorAcesso/);
+    expect(fonte).not.toMatch(/acao:\s*"credencial"|\.senha\b|rotacionarCredencial/);
+  });
+
+  it("as telas de Compras não leem nem exibem senha de fornecedor", () => {
+    for (const arq of ["CotacaoModal.jsx", "LinksModal.jsx"]) {
+      const fonte = readFileSync(new URL(`../components/compras/${arq}`, import.meta.url), "utf8");
+      expect(fonte, arq).not.toMatch(/\.senha\b|Senha:\*|senha_acesso|credencial/);
+    }
   });
 });
 
-describe("rotacionarCredencialFornecedor", () => {
-  it("pede a credencial ao servidor com o fornecedor e devolve { email, senha }", async () => {
-    invoke.mockResolvedValueOnce({
-      data: { success: true, credencial: { email: "forn@exemplo.test", senha: "Senha123abcd" } },
-    });
-    const cred = await rotacionarCredencialFornecedor(sigo, {
-      empresaId: "ignorado",
-      fornecedorId: "forn-1",
-      fornecedorEmail: "nao-vai@exemplo.test",
-    });
-    expect(invoke).toHaveBeenCalledWith("fornecedorAcesso", {
-      acao: "credencial",
-      fornecedor_id: "forn-1",
-    });
-    expect(cred).toEqual({ email: "forn@exemplo.test", senha: "Senha123abcd" });
-  });
-
-  it("fornecedor sem acesso e sem e-mail no cadastro: null (mensagem sem login)", async () => {
-    invoke.mockResolvedValueOnce({
-      data: { success: true, credencial: null, motivo: "SEM_EMAIL" },
-    });
-    expect(await rotacionarCredencialFornecedor(sigo, { fornecedorId: "forn-1" })).toBeNull();
-  });
-
-  it("falha do servidor vira erro com a mensagem dele", async () => {
+describe("enviarSenhaFornecedor", () => {
+  it("pede o envio ao servidor e devolve só destino mascarado e login", async () => {
     invoke.mockResolvedValueOnce({
       data: {
-        success: false,
-        error: "Sem permissão: o acesso do fornecedor ao portal é da aba...",
+        success: true,
+        enviado: true,
+        destino: "5511*****0000",
+        login: "forn@exemplo.test",
       },
     });
-    await expect(rotacionarCredencialFornecedor(sigo, { fornecedorId: "forn-1" })).rejects.toThrow(
-      /Sem permissão/
-    );
+    const r = await enviarSenhaFornecedor(sigo, "forn-1");
+    expect(invoke).toHaveBeenCalledWith("fornecedorAcesso", {
+      acao: "enviar_senha",
+      fornecedor_id: "forn-1",
+    });
+    expect(r).toEqual({
+      enviado: true,
+      motivo: null,
+      mensagem: null,
+      destino: "5511*****0000",
+      login: "forn@exemplo.test",
+    });
+    expect(JSON.stringify(r)).not.toMatch(/senha/i);
   });
 
-  it("resposta vazia ou sem mensagem vira o aviso genérico", async () => {
+  it("não enviado (motivo do servidor): devolve o motivo, não lança", async () => {
+    invoke.mockResolvedValueOnce({
+      data: { success: true, enviado: false, motivo: "SEM_TELEFONE", mensagem: "sem telefone" },
+    });
+    const r = await enviarSenhaFornecedor(sigo, "forn-1");
+    expect(r).toMatchObject({ enviado: false, motivo: "SEM_TELEFONE" });
+  });
+
+  it("403 sem permissão (success: false + codigo): vira motivo SEM_PERMISSAO", async () => {
+    invoke.mockResolvedValueOnce({
+      data: { success: false, error: "Sem permissão...", codigo: "SEM_PERMISSAO" },
+    });
+    const r = await enviarSenhaFornecedor(sigo, "forn-1");
+    expect(r).toMatchObject({ enviado: false, motivo: "SEM_PERMISSAO" });
+    expect(textoDoMotivo(r)).toMatch(/não tem permissão/);
+  });
+
+  it("resposta vazia ou exceção: não lança, motivo ERRO com o aviso genérico", async () => {
     invoke.mockResolvedValueOnce({ data: undefined });
-    await expect(rotacionarCredencialFornecedor(sigo, { fornecedorId: "x" })).rejects.toThrow(
-      MENSAGEM_FALHA_SERVIDOR
-    );
-    invoke.mockResolvedValueOnce({ data: { success: false } });
-    await expect(rotacionarCredencialFornecedor(sigo, { fornecedorId: "x" })).rejects.toThrow(
-      MENSAGEM_FALHA_SERVIDOR
-    );
+    expect(await enviarSenhaFornecedor(sigo, "x")).toMatchObject({
+      enviado: false,
+      motivo: "ERRO",
+      mensagem: MENSAGEM_FALHA_SERVIDOR,
+    });
+    invoke.mockRejectedValueOnce(new Error("rede caiu"));
+    expect(await enviarSenhaFornecedor(sigo, "x")).toMatchObject({
+      enviado: false,
+      motivo: "ERRO",
+      mensagem: "rede caiu",
+    });
   });
 });
 
-describe("credenciaisDaCotacao", () => {
-  it("só quem tem acesso ATIVO, sempre com senha null", async () => {
+describe("textoDoMotivo: linguagem simples para cada motivo", () => {
+  it.each([
+    ["SEM_EMAIL", /e-mail/],
+    ["SEM_TELEFONE", /telefone/],
+    ["LIMITE", /limite de mensagens/],
+    ["CANAL_INDISPONIVEL", /fora do ar/],
+    ["SEM_PERMISSAO", /permissão/],
+    ["FALHA_AO_GRAVAR", /envie uma nova/],
+  ])("%s", (motivo, re) => {
+    expect(textoDoMotivo({ motivo })).toMatch(re);
+  });
+  it("motivo desconhecido usa a mensagem do servidor", () => {
+    expect(textoDoMotivo({ motivo: "X", mensagem: "texto do servidor" })).toBe("texto do servidor");
+  });
+});
+
+describe("linhaSobreSenha: os três textos do convite (item 7)", () => {
+  it("senha acabou de ser enviada", () => {
+    expect(linhaSobreSenha("enviada")).toBe(
+      "Seu login e senha do portal chegam em outra mensagem, enviada pelo número do SIGO Obras."
+    );
+    expect(LINHA_SENHA_ENVIADA).toBe(linhaSobreSenha("enviada"));
+  });
+  it("fornecedor já tinha acesso", () => {
+    expect(linhaSobreSenha("ja_tinha")).toBe(
+      "Para consultar seu histórico, use o login e a senha que você já recebeu."
+    );
+    expect(LINHA_JA_TEM_ACESSO).toBe(linhaSobreSenha("ja_tinha"));
+  });
+  it("envio falhou ou situação desconhecida: nenhuma linha sobre senha", () => {
+    expect(linhaSobreSenha(null)).toBe("");
+    expect(linhaSobreSenha(undefined)).toBe("");
+  });
+});
+
+describe("situacaoAtual (mostrar/copiar sem enviar)", () => {
+  it("enviada agora > já tinha acesso ativo > nada", () => {
+    expect(situacaoAtual({ ativo: false }, true)).toBe("enviada");
+    expect(situacaoAtual({ ativo: true }, false)).toBe("ja_tinha");
+    expect(situacaoAtual({ tem_acesso: false, ativo: false }, false)).toBeNull();
+    expect(situacaoAtual(undefined, false)).toBeNull();
+  });
+});
+
+describe("prepararConvite: quando a senha é enviada (item 6)", () => {
+  it("sem acesso: o servidor envia a senha antes do convite", async () => {
+    invoke.mockResolvedValueOnce({
+      data: { success: true, enviado: true, destino: "5511*****0000", login: "f@exemplo.test" },
+    });
+    const r = await prepararConvite(sigo, {
+      acesso: { tem_acesso: false, ativo: false },
+      fornecedorId: "f1",
+    });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(r.situacao).toBe("enviada");
+    expect(r.tipoAviso).toBe("sucesso");
+    expect(r.aviso).toMatch(/5511\*\*\*\*\*0000/);
+  });
+
+  it("falha no envio NÃO impede o convite: sem linha de senha e aviso com o motivo", async () => {
+    invoke.mockResolvedValueOnce({
+      data: { success: true, enviado: false, motivo: "LIMITE", mensagem: "limite" },
+    });
+    const r = await prepararConvite(sigo, {
+      acesso: { tem_acesso: false, ativo: false },
+      fornecedorId: "f1",
+    });
+    expect(r.situacao).toBeNull();
+    expect(linhaSobreSenha(r.situacao)).toBe("");
+    expect(r.tipoAviso).toBe("alerta");
+    expect(r.aviso).toMatch(/limite de mensagens/);
+    expect(r.aviso).toContain(MENSAGEM_ENVIAR_DEPOIS);
+    expect(r.aviso).toMatch(/O convite sai com o link/);
+  });
+
+  it("exceção no servidor também não impede o convite", async () => {
+    invoke.mockRejectedValueOnce(new Error("rede caiu"));
+    const r = await prepararConvite(sigo, {
+      acesso: { tem_acesso: false, ativo: false },
+      fornecedorId: "f1",
+    });
+    expect(r.situacao).toBeNull();
+    expect(r.tipoAviso).toBe("alerta");
+  });
+
+  it("já tem acesso ativo: lembrete NÃO troca a senha (nenhuma chamada)", async () => {
+    const r = await prepararConvite(sigo, {
+      acesso: { tem_acesso: true, ativo: true },
+      fornecedorId: "f1",
+    });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(r.situacao).toBe("ja_tinha");
+  });
+
+  it("acesso desativado ou situação desconhecida: não envia nada", async () => {
+    for (const acesso of [{ tem_acesso: true, ativo: false }, undefined, null]) {
+      const r = await prepararConvite(sigo, { acesso, fornecedorId: "f1" });
+      expect(r.situacao).toBeNull();
+      expect(r.aviso).toBeNull();
+    }
+    expect(invoke).not.toHaveBeenCalled();
+  });
+});
+
+describe("acessosDaCotacao", () => {
+  it("situação de cada fornecedor, sem senha nem telefone", async () => {
     invoke.mockResolvedValueOnce({
       data: {
         success: true,
         acessos: [
-          { fornecedor_id: "f1", email: "f1@exemplo.test", tem_acesso: true, ativo: true },
-          { fornecedor_id: "f2", email: "f2@exemplo.test", tem_acesso: true, ativo: false },
-          { fornecedor_id: "f3", email: null, tem_acesso: false, ativo: false },
+          {
+            fornecedor_id: "f1",
+            email: "f1@exemplo.test",
+            tem_acesso: true,
+            ativo: true,
+            tem_email: true,
+            tem_telefone: false,
+          },
+          { fornecedor_id: "f2", email: null, tem_acesso: false, ativo: false },
         ],
       },
     });
-    const creds = await credenciaisDaCotacao(sigo, "cot-1");
+    const a = await acessosDaCotacao(sigo, "cot-1");
     expect(invoke).toHaveBeenCalledWith("fornecedorAcesso", {
       acao: "status",
       cotacao_id: "cot-1",
     });
-    expect(creds).toEqual({ f1: { email: "f1@exemplo.test", senha: null } });
+    expect(a).toEqual({
+      f1: {
+        tem_acesso: true,
+        ativo: true,
+        tem_email: true,
+        tem_telefone: false,
+        email: "f1@exemplo.test",
+      },
+      f2: { tem_acesso: false, ativo: false, tem_email: false, tem_telefone: false, email: null },
+    });
   });
 
   it("erro do servidor lança (a tela mostra o aviso)", async () => {
     invoke.mockResolvedValueOnce({ data: { success: false, error: "Cotação não encontrada" } });
-    await expect(credenciaisDaCotacao(sigo, "cot-1")).rejects.toThrow("Cotação não encontrada");
+    await expect(acessosDaCotacao(sigo, "cot-1")).rejects.toThrow("Cotação não encontrada");
   });
 });
 
@@ -133,10 +277,6 @@ describe("reemitirLinkCotacao", () => {
       data: { success: true, cotacao_fornecedor_id: "cf1", fornecedor_id: "f1", link: LINK },
     });
     expect(await reemitirLinkCotacao(sigo, "cf1")).toBe(LINK);
-    expect(invoke).toHaveBeenCalledWith("fornecedorAcesso", {
-      acao: "reemitir_link",
-      cotacao_fornecedor_id: "cf1",
-    });
   });
 
   it("sem link na resposta lança", async () => {
@@ -145,55 +285,8 @@ describe("reemitirLinkCotacao", () => {
   });
 });
 
-describe("credencialParaEnvio", () => {
-  it("já tem senha gerada nesta abertura: usa a mesma, sem chamar o servidor", async () => {
-    const atual = { email: "f@exemplo.test", senha: "JaGerada1234" };
-    expect(await credencialParaEnvio(sigo, { atual, fornecedorId: "f1" })).toBe(atual);
-    expect(invoke).not.toHaveBeenCalled();
-  });
-
-  it("só o hash no banco (senha null): pede senha nova ao servidor", async () => {
-    invoke.mockResolvedValueOnce({
-      data: { success: true, credencial: { email: "f@exemplo.test", senha: "Nova12345678" } },
-    });
-    const cred = await credencialParaEnvio(sigo, {
-      atual: { email: "f@exemplo.test", senha: null },
-      fornecedorId: "f1",
-    });
-    expect(cred).toEqual({ email: "f@exemplo.test", senha: "Nova12345678" });
-  });
-
-  it("painel da cotação (soSeTemAcesso): sem acesso, não cria e devolve null", async () => {
-    expect(
-      await credencialParaEnvio(sigo, { atual: undefined, fornecedorId: "f1", soSeTemAcesso: true })
-    ).toBeNull();
-    expect(invoke).not.toHaveBeenCalled();
-  });
-
-  it("tela de cotação: sem acesso, pede ao servidor (que cria com o e-mail do cadastro)", async () => {
-    invoke.mockResolvedValueOnce({
-      data: { success: true, credencial: { email: "f@exemplo.test", senha: "Nova12345678" } },
-    });
-    expect(await credencialParaEnvio(sigo, { atual: undefined, fornecedorId: "f1" })).toEqual({
-      email: "f@exemplo.test",
-      senha: "Nova12345678",
-    });
-  });
-
-  it("falha do servidor lança (a tela não abre a mensagem)", async () => {
-    invoke.mockResolvedValueOnce({ data: { success: false, error: "Erro interno" } });
-    await expect(
-      credencialParaEnvio(sigo, {
-        atual: { email: "f@exemplo.test", senha: null },
-        fornecedorId: "f1",
-      })
-    ).rejects.toThrow("Erro interno");
-  });
-});
-
 describe("MENSAGEM_FORNECEDOR_SEM_EMAIL", () => {
   it("é o mesmo texto que o servidor usa no SEM_EMAIL", async () => {
-    const { MENSAGEM_FORNECEDOR_SEM_EMAIL } = await import("./senha-portal");
     const { MENSAGEM_SEM_EMAIL } =
       await import("../../../../supabase/functions/fornecedor-acesso/regras.ts");
     expect(MENSAGEM_FORNECEDOR_SEM_EMAIL).toBe(MENSAGEM_SEM_EMAIL);

@@ -1,10 +1,10 @@
 import { normalizarTexto } from "@/lib/busca";
 import {
-  credenciaisDaCotacao,
-  credencialParaEnvio,
+  acessosDaCotacao,
+  linhaSobreSenha,
   linksDaCotacao,
-  MENSAGEM_FORNECEDOR_SEM_EMAIL,
-  rotacionarCredencialFornecedor,
+  prepararConvite,
+  situacaoAtual,
 } from "@/lib/senha-portal";
 import { conferirSolicitacaoAprovada } from "@/lib/solicitacao-status";
 import React, { useState, useMemo } from "react";
@@ -36,15 +36,18 @@ export default function CotacaoModal({
   const [searchFornecedor, setSearchFornecedor] = useState("");
   const [emailsFornecedores, setEmailsFornecedores] = useState({});
   const [linksFornecedores, setLinksFornecedores] = useState({});
-  const [credenciaisFornecedores, setCredenciaisFornecedores] = useState({});
+  const [acessosFornecedores, setAcessosFornecedores] = useState({});
   const [cotacaoExistente, setCotacaoExistente] = useState(null);
   const [mensagemExpandida, setMensagemExpandida] = useState({});
   const [codigosOrcamento, setCodigosOrcamento] = useState({});
   // falha ao pedir ao servidor os links e o acesso dos fornecedores (a tela avisa em vez de ficar pela metade)
   const [erroAcesso, setErroAcesso] = useState("");
-  // senha do portal sendo gerada, por fornecedor (desabilita o WhatsApp dele)
-  const [gerandoSenha, setGerandoSenha] = useState({});
-  const gerandoSenhaRef = React.useRef(new Set());
+  // situação de cada fornecedor no portal (status do servidor: tem_acesso, ativo, tem_email, tem_telefone)
+  // e quem recebeu a senha agora, pelo WhatsApp do SIGO (a tela nunca vê a senha)
+  const [senhaEnviadaAgora, setSenhaEnviadaAgora] = useState({});
+  // envio da senha em curso, por fornecedor (desabilita o WhatsApp dele: "Enviando senha...")
+  const [enviandoSenha, setEnviandoSenha] = useState({});
+  const enviandoSenhaRef = React.useRef(new Set());
 
   const carregarCotacaoExistente = React.useCallback(async () => {
     if (!open || !solicitacao) return;
@@ -77,22 +80,22 @@ export default function CotacaoModal({
         setEmailsFornecedores(emails);
 
         // Links e acesso ao portal: o servidor monta o link e diz quem já tem acesso (a senha
-        // nunca vem: o banco só tem o hash, e a senha nova só nasce ao ENVIAR)
+        // nunca vem para a tela: ela vai ao fornecedor pelo WhatsApp do SIGO)
         try {
-          const [{ porFornecedor }, creds] = await Promise.all([
+          const [{ porFornecedor }, acessos] = await Promise.all([
             linksDaCotacao(sigo, cotacao.id),
-            credenciaisDaCotacao(sigo, cotacao.id),
+            acessosDaCotacao(sigo, cotacao.id),
           ]);
           const links = {};
           for (const [fornecedorId, link] of Object.entries(porFornecedor)) {
             links[fornecedorId] = { link };
           }
           setLinksFornecedores(links);
-          setCredenciaisFornecedores(creds);
+          setAcessosFornecedores(acessos);
           setErroAcesso("");
         } catch (e) {
           setLinksFornecedores({});
-          setCredenciaisFornecedores({});
+          setAcessosFornecedores({});
           setErroAcesso(e?.message || "Erro ao carregar os links dos fornecedores");
         }
       } else {
@@ -102,7 +105,7 @@ export default function CotacaoModal({
         setObservacoes("");
         setEmailsFornecedores({});
         setLinksFornecedores({});
-        setCredenciaisFornecedores({});
+        setAcessosFornecedores({});
         setErroAcesso("");
       }
     } catch (error) {
@@ -270,33 +273,14 @@ export default function CotacaoModal({
         }
         setLinksCotacao(links);
 
-        // ENVIO da cotação = senha nova do portal para cada fornecedor: o SERVIDOR gera,
-        // grava só o hash e devolve a senha em claro uma vez, para a mensagem.
-        const credenciais = {};
-        const semSenha = [];
-        const semEmail = [];
-        for (const fornecedorId of Object.keys(porFornecedor)) {
-          try {
-            const cred = await rotacionarCredencialFornecedor(sigo, { fornecedorId });
-            if (cred) credenciais[fornecedorId] = cred;
-            else semEmail.push(fornecedores.find((f) => f.id === fornecedorId)?.nome_razao || "?");
-          } catch (e) {
-            console.error("Erro ao gerar a senha do portal do fornecedor:", e);
-            semSenha.push(fornecedores.find((f) => f.id === fornecedorId)?.nome_razao || "?");
-          }
-        }
-        setCredenciaisFornecedores(credenciais);
-        setErroAcesso("");
-        if (semSenha.length) {
-          toast.error(
-            `Não deu para gerar a senha do portal de: ${semSenha.join(", ")}. ` +
-              "O botão WhatsApp tenta de novo antes de abrir a mensagem."
-          );
-        }
-        if (semEmail.length) {
-          toast.warning(
-            `Sem e-mail no cadastro (a mensagem vai sem login e senha do portal): ${semEmail.join(", ")}.`
-          );
+        // Situação no portal de cada fornecedor (a senha NÃO é trocada aqui: quem ainda não tem
+        // acesso recebe a senha pelo WhatsApp do SIGO quando o comprador clicar no WhatsApp dele)
+        try {
+          setAcessosFornecedores(await acessosDaCotacao(sigo, cotacao.id));
+          setErroAcesso("");
+        } catch (e) {
+          setAcessosFornecedores({});
+          setErroAcesso(e?.message || "Erro ao carregar o acesso dos fornecedores");
         }
       }
 
@@ -330,11 +314,15 @@ export default function CotacaoModal({
     alert("Link copiado!");
   };
 
-  const buildMensagemWhatsApp = (fornecedor, link, creds) => {
-    // senha null = já está em hash no banco; nova senha só nasce na ação de enviar
-    const credLine = creds
-      ? `\n🔑 *Login:* ${creds.email}\n🔑 *Senha:* ${creds.senha || "(a mesma enviada anteriormente)"}`
-      : "";
+  // situação para mostrar/copiar o convite sem disparar o envio da senha
+  const situacaoDe = (fornecedorId) =>
+    situacaoAtual(acessosFornecedores[fornecedorId], senhaEnviadaAgora[fornecedorId]);
+
+  // O convite que o COMPRADOR envia (wa.me): link e, no lugar do antigo bloco de login e senha, só a
+  // linha que diz onde está o login (a senha vai pelo WhatsApp do SIGO; a tela nunca a vê)
+  const buildMensagemWhatsApp = (fornecedor, link, situacao) => {
+    const linha = linhaSobreSenha(situacao);
+    const credLine = linha ? `\n${linha}` : "";
     return `Olá *${fornecedor.nome_razao}*!\n\nVocê foi convidado a participar da cotação *${solicitacao?.numero}*.\n\n${solicitacao?.projeto_nome ? `📋 Projeto: ${solicitacao.projeto_nome}\n` : ""}${dataLimite ? `📅 Prazo: ${new Date(dataLimite).toLocaleDateString("pt-BR")}\n` : ""}${credLine}\n🔗 Acesse aqui:\n${link}\n\nAtenciosamente,\n*${empresaAtiva.nome_fantasia || empresaAtiva.razao_social || empresaAtiva.nome}*`;
   };
 
@@ -345,38 +333,37 @@ export default function CotacaoModal({
       alert("Fornecedor não tem telefone cadastrado");
       return;
     }
-    const creds = await credencialDoEnvio(fornecedor);
-    if (creds === false) return;
-    const mensagem = buildMensagemWhatsApp(fornecedor, link, creds);
+    const situacao = await situacaoDoConvite(fornecedor);
+    if (situacao === false) return;
+    const mensagem = buildMensagemWhatsApp(fornecedor, link, situacao);
     window.open(`https://wa.me/${telefone}?text=${encodeURIComponent(mensagem)}`, "_blank");
   };
 
-  // Enviar = senha nova pelo servidor se a tela só conhece o hash (a mensagem sai com a senha nova).
-  // Devolve a credencial (ou null, sem acesso e sem e-mail); `false` = o servidor falhou e a tela já avisou.
-  // Um pedido de senha por fornecedor de cada vez: o 2º clique enquanto o 1º está em curso é ignorado
-  // (antes o duplo clique gerava duas senhas; revisão do 2b-2, C2). O ref barra na hora; o estado
-  // desabilita o botão e mostra "Gerando...".
-  const credencialDoEnvio = async (fornecedor) => {
-    if (gerandoSenhaRef.current.has(fornecedor.id)) return false;
-    gerandoSenhaRef.current.add(fornecedor.id);
-    setGerandoSenha((prev) => ({ ...prev, [fornecedor.id]: true }));
+  // Antes de abrir o convite: fornecedor que ainda NÃO tem acesso recebe a senha pelo WhatsApp do SIGO
+  // (o servidor envia; a tela não vê a senha). Falha no envio NUNCA impede o convite: avisa o motivo e o
+  // convite sai sem a linha da senha. Quem já tem acesso não tem a senha trocada.
+  // Um envio por fornecedor de cada vez: o 2º clique em curso é ignorado (devolve `false`).
+  const situacaoDoConvite = async (fornecedor) => {
+    if (enviandoSenhaRef.current.has(fornecedor.id)) return false;
+    if (senhaEnviadaAgora[fornecedor.id]) return "enviada";
+    enviandoSenhaRef.current.add(fornecedor.id);
+    setEnviandoSenha((prev) => ({ ...prev, [fornecedor.id]: true }));
     try {
-      const atual = credenciaisFornecedores[fornecedor.id];
-      const creds = await credencialParaEnvio(sigo, { atual, fornecedorId: fornecedor.id });
-      if (creds && creds !== atual) {
-        setCredenciaisFornecedores((prev) => ({ ...prev, [fornecedor.id]: creds }));
+      const acesso = acessosFornecedores[fornecedor.id];
+      const r = await prepararConvite(sigo, { acesso, fornecedorId: fornecedor.id });
+      if (r.situacao === "enviada") {
+        setSenhaEnviadaAgora((prev) => ({ ...prev, [fornecedor.id]: true }));
+        setAcessosFornecedores((prev) => ({
+          ...prev,
+          [fornecedor.id]: { ...(prev[fornecedor.id] || {}), tem_acesso: true, ativo: true },
+        }));
       }
-      if (!creds) toast.warning(MENSAGEM_FORNECEDOR_SEM_EMAIL);
-      return creds;
-    } catch (e) {
-      console.error("Erro ao gerar a senha do portal do fornecedor:", e);
-      toast.error(
-        `Não deu para gerar a senha do portal do fornecedor: ${e.message} A mensagem não foi aberta; tente de novo.`
-      );
-      return false;
+      if (r.tipoAviso === "sucesso") toast.success(r.aviso);
+      else if (r.tipoAviso === "alerta") toast.warning(r.aviso, { duration: 12000 });
+      return r.situacao;
     } finally {
-      gerandoSenhaRef.current.delete(fornecedor.id);
-      setGerandoSenha((prev) => ({ ...prev, [fornecedor.id]: false }));
+      enviandoSenhaRef.current.delete(fornecedor.id);
+      setEnviandoSenha((prev) => ({ ...prev, [fornecedor.id]: false }));
     }
   };
 
@@ -533,26 +520,12 @@ export default function CotacaoModal({
                                   type="button"
                                   size="sm"
                                   variant="outline"
-                                  onClick={async () => {
-                                    const telefone = fornecedor.telefone?.replace(/\D/g, "");
-                                    // enviar = senha nova pelo servidor se só existe o hash
-                                    const creds = await credencialDoEnvio(fornecedor);
-                                    if (creds === false) return;
-                                    const mensagem = buildMensagemWhatsApp(
-                                      fornecedor,
-                                      linkData.link,
-                                      creds
-                                    );
-                                    window.open(
-                                      `https://wa.me/${telefone}?text=${encodeURIComponent(mensagem)}`,
-                                      "_blank"
-                                    );
-                                  }}
-                                  disabled={enviandoEmail || !!gerandoSenha[fornecedor.id]}
+                                  onClick={() => enviarWhatsApp(fornecedor, linkData.link)}
+                                  disabled={enviandoEmail || !!enviandoSenha[fornecedor.id]}
                                   className="text-green-600 hover:bg-green-50"
                                 >
                                   <MessageSquare className="w-3 h-3 mr-1" />
-                                  {gerandoSenha[fornecedor.id] ? "Gerando senha..." : "WhatsApp"}
+                                  {enviandoSenha[fornecedor.id] ? "Enviando senha..." : "WhatsApp"}
                                 </Button>
                               )}
                               <Button
@@ -577,7 +550,7 @@ export default function CotacaoModal({
                                   value={buildMensagemWhatsApp(
                                     fornecedor,
                                     linkData.link,
-                                    credenciaisFornecedores[fornecedor.id]
+                                    situacaoDe(fornecedor.id)
                                   )}
                                   className="text-xs bg-slate-50 resize-none"
                                   rows={8}
@@ -587,11 +560,10 @@ export default function CotacaoModal({
                                   size="sm"
                                   variant="outline"
                                   onClick={() => {
-                                    const creds = credenciaisFornecedores[fornecedor.id];
                                     const mensagem = buildMensagemWhatsApp(
                                       fornecedor,
                                       linkData.link,
-                                      creds
+                                      situacaoDe(fornecedor.id)
                                     );
                                     navigator.clipboard.writeText(mensagem);
                                     alert("Mensagem copiada!");
@@ -724,11 +696,11 @@ export default function CotacaoModal({
                                 size="sm"
                                 variant="outline"
                                 onClick={() => enviarWhatsApp(fornecedor, link)}
-                                disabled={enviandoEmail || !!gerandoSenha[fornecedor.id]}
+                                disabled={enviandoEmail || !!enviandoSenha[fornecedor.id]}
                                 className="text-green-600 border-green-600 hover:bg-green-50"
                               >
                                 <MessageSquare className="w-4 h-4 mr-1" />
-                                {gerandoSenha[fornecedor.id] ? "Gerando senha..." : "WhatsApp"}
+                                {enviandoSenha[fornecedor.id] ? "Enviando senha..." : "WhatsApp"}
                               </Button>
                             )}
                             <Button
@@ -764,7 +736,7 @@ export default function CotacaoModal({
                               value={buildMensagemWhatsApp(
                                 fornecedor,
                                 typeof link === "string" ? link : link.link,
-                                credenciaisFornecedores[fornecedorId]
+                                situacaoDe(fornecedorId)
                               )}
                               className="text-xs bg-slate-50 resize-none"
                               rows={8}
@@ -776,7 +748,7 @@ export default function CotacaoModal({
                                 const mensagem = buildMensagemWhatsApp(
                                   fornecedor,
                                   typeof link === "string" ? link : link.link,
-                                  credenciaisFornecedores[fornecedorId]
+                                  situacaoDe(fornecedorId)
                                 );
                                 navigator.clipboard.writeText(mensagem);
                                 alert("Mensagem copiada!");

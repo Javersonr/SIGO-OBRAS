@@ -1,12 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { sigo } from "@/api/sigoClient";
+import { useEmpresa } from "@/Layout";
 import { toast } from "sonner";
 import {
-  MENSAGEM_FORNECEDOR_SEM_EMAIL,
-  credenciaisDaCotacao,
-  credencialParaEnvio,
+  acessosDaCotacao,
+  enviarSenhaFornecedor,
+  linhaSobreSenha,
   linksDaCotacao,
+  prepararConvite,
+  situacaoAtual,
+  textoDoMotivo,
 } from "@/lib/senha-portal";
+import { ehAdministrador } from "@/lib/compras-aprovacao";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +30,7 @@ import {
   ArrowUpDown,
   X,
   Trash2,
+  KeyRound,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -36,16 +42,27 @@ import {
 } from "@/components/ui/select";
 
 export default function LinksModal({ open, onOpenChange, cotacao, empresaAtiva, onDelete }) {
+  const { temPermissao, vinculo, isSuperAdmin } = useEmpresa();
+  // "Enviar nova senha": a mesma permissão do "Enviar aos Fornecedores" (o servidor confere de novo)
+  const podeEnviarSenha =
+    temPermissao("Compras", "Cotações", "enviar") || ehAdministrador({ isSuperAdmin, vinculo });
+
   const [fornecedores, setFornecedores] = useState([]);
-  const [credenciais, setCredenciais] = useState({});
+  // situação de cada fornecedor no portal (tem_acesso, ativo, tem_email, tem_telefone, email): a senha
+  // nunca vem para a tela; ela vai ao fornecedor pelo WhatsApp do SIGO
+  const [acessos, setAcessos] = useState({});
+  const [senhaEnviadaAgora, setSenhaEnviadaAgora] = useState({});
   // links montados pelo servidor, por participação (cotacao_fornecedor.id)
   const [links, setLinks] = useState({});
   const [erroCarregar, setErroCarregar] = useState("");
   // falha só do servidor (links e acesso ao portal): a lista fica, o aviso aparece em cima dela
   const [erroAcesso, setErroAcesso] = useState("");
-  // senha do portal sendo gerada, por fornecedor (desabilita o WhatsApp dele; revisão do 2b-2, C2)
-  const [gerandoSenha, setGerandoSenha] = useState({});
-  const gerandoSenhaRef = React.useRef(new Set());
+  // envio da senha em curso, por fornecedor (desabilita os botões dele: "Enviando senha...")
+  const [enviandoSenha, setEnviandoSenha] = useState({});
+  const enviandoSenhaRef = React.useRef(new Set());
+  // "Enviar nova senha": confirmação dentro do modal e o resultado (destino mascarado)
+  const [confirmandoSenha, setConfirmandoSenha] = useState({});
+  const [resultadoSenha, setResultadoSenha] = useState({});
   const [loading, setLoading] = useState(true);
   const [reenviando, setReenviando] = useState({});
   const [filtroStatus, setFiltroStatus] = useState("todos");
@@ -60,12 +77,11 @@ export default function LinksModal({ open, onOpenChange, cotacao, empresaAtiva, 
 
   const loadFornecedores = async () => {
     setLoading(true);
-    // status e valores vêm da tabela; links e acesso ao portal, do servidor (a senha nunca vem:
-    // o banco só tem o hash, e a senha nova só nasce ao ENVIAR). Se só o servidor falhar, a lista
-    // continua na tela e ficam indisponíveis apenas o link e a credencial (revisão do 2b-2).
+    // status e valores vêm da tabela; links e acesso ao portal, do servidor. Se só o servidor falhar, a
+    // lista continua na tela e ficam indisponíveis apenas o link e o acesso (revisão do 2b-2).
     const [tabela, servidor] = await Promise.allSettled([
       sigo.entities.CotacaoFornecedor.filter({ cotacao_id: cotacao.id }),
-      Promise.all([linksDaCotacao(sigo, cotacao.id), credenciaisDaCotacao(sigo, cotacao.id)]),
+      Promise.all([linksDaCotacao(sigo, cotacao.id), acessosDaCotacao(sigo, cotacao.id)]),
     ]);
     if (tabela.status === "fulfilled") {
       setFornecedores(tabela.value);
@@ -76,14 +92,14 @@ export default function LinksModal({ open, onOpenChange, cotacao, empresaAtiva, 
       setErroCarregar(tabela.reason?.message || "Erro ao carregar os fornecedores da cotação");
     }
     if (servidor.status === "fulfilled") {
-      const [{ porParticipacao }, creds] = servidor.value;
+      const [{ porParticipacao }, situacoes] = servidor.value;
       setLinks(porParticipacao);
-      setCredenciais(creds);
+      setAcessos(situacoes);
       setErroAcesso("");
     } else {
       console.error("Erro ao carregar links e acesso ao portal:", servidor.reason);
       setLinks({});
-      setCredenciais({});
+      setAcessos({});
       setErroAcesso(servidor.reason?.message || "Erro ao carregar os links dos fornecedores");
     }
     setLoading(false);
@@ -94,43 +110,62 @@ export default function LinksModal({ open, onOpenChange, cotacao, empresaAtiva, 
     alert("Link copiado!");
   };
 
+  // um envio de senha por fornecedor de cada vez: o 2º clique em curso é ignorado
+  const comTrava = async (fornecedor, fn) => {
+    if (enviandoSenhaRef.current.has(fornecedor.id)) return { ignorado: true };
+    enviandoSenhaRef.current.add(fornecedor.id);
+    setEnviandoSenha((prev) => ({ ...prev, [fornecedor.id]: true }));
+    try {
+      return await fn();
+    } finally {
+      enviandoSenhaRef.current.delete(fornecedor.id);
+      setEnviandoSenha((prev) => ({ ...prev, [fornecedor.id]: false }));
+    }
+  };
+
+  const marcarSenhaEnviada = (fornecedor, destino) => {
+    setSenhaEnviadaAgora((prev) => ({ ...prev, [fornecedor.fornecedor_id]: true }));
+    setAcessos((prev) => ({
+      ...prev,
+      [fornecedor.fornecedor_id]: {
+        ...(prev[fornecedor.fornecedor_id] || {}),
+        tem_acesso: true,
+        ativo: true,
+      },
+    }));
+    setResultadoSenha((prev) => ({
+      ...prev,
+      [fornecedor.id]: `Senha enviada para ${destino || "o telefone do cadastro"}`,
+    }));
+  };
+
   const enviarWhatsApp = async (fornecedor) => {
     const link = links[fornecedor.id];
     if (!link) {
       toast.error("O link deste fornecedor não está disponível. Feche e abra o painel de novo.");
       return;
     }
-    // Enviar = senha nova pelo servidor se só existe o hash (mensagem sai com senha nova).
-    // Aqui só troca a de quem já tem acesso (o painel não cria acesso novo, como antes).
-    // um pedido de senha por fornecedor de cada vez: o 2º clique em curso é ignorado
-    if (gerandoSenhaRef.current.has(fornecedor.id)) return;
-    const atual = credenciais[fornecedor.fornecedor_id];
-    let creds;
-    gerandoSenhaRef.current.add(fornecedor.id);
-    setGerandoSenha((prev) => ({ ...prev, [fornecedor.id]: true }));
-    try {
-      creds = await credencialParaEnvio(sigo, {
-        atual,
-        fornecedorId: fornecedor.fornecedor_id,
-        soSeTemAcesso: true,
-      });
-    } catch (e) {
-      console.error("Erro ao gerar a senha do portal do fornecedor:", e);
-      toast.error(
-        `Não deu para gerar a senha do portal do fornecedor: ${e.message} A mensagem não foi aberta; tente de novo.`
+    // Convite: quem ainda NÃO tem acesso recebe a senha pelo WhatsApp do SIGO antes; quem já tem não tem
+    // a senha trocada. Falha no envio da senha não impede o convite (avisa o motivo).
+    let situacao = situacaoAtual(
+      acessos[fornecedor.fornecedor_id],
+      senhaEnviadaAgora[fornecedor.fornecedor_id]
+    );
+    if (!situacao) {
+      const r = await comTrava(fornecedor, () =>
+        prepararConvite(sigo, {
+          acesso: acessos[fornecedor.fornecedor_id],
+          fornecedorId: fornecedor.fornecedor_id,
+        })
       );
-      return;
-    } finally {
-      gerandoSenhaRef.current.delete(fornecedor.id);
-      setGerandoSenha((prev) => ({ ...prev, [fornecedor.id]: false }));
+      if (r.ignorado) return;
+      situacao = r.situacao;
+      if (r.situacao === "enviada") marcarSenhaEnviada(fornecedor, r.resultado?.destino);
+      if (r.tipoAviso === "sucesso") toast.success(r.aviso);
+      else if (r.tipoAviso === "alerta") toast.warning(r.aviso, { duration: 12000 });
     }
-    if (atual && !creds) toast.warning(MENSAGEM_FORNECEDOR_SEM_EMAIL);
-    if (creds && creds !== atual) {
-      setCredenciais((prev) => ({ ...prev, [fornecedor.fornecedor_id]: creds }));
-    }
-    const credLine = creds
-      ? `\n🔑 *Login:* ${creds.email}\n🔑 *Senha:* ${creds.senha || "(a mesma enviada anteriormente)"}`
-      : "";
+    const linha = linhaSobreSenha(situacao);
+    const credLine = linha ? `\n${linha}` : "";
 
     const mensagem = `Olá *${fornecedor.fornecedor_nome}*!
 
@@ -145,6 +180,23 @@ Atenciosamente,
 
     const url = `https://wa.me/?text=${encodeURIComponent(mensagem)}`;
     window.open(url, "_blank");
+  };
+
+  // "Enviar nova senha" (sob pedido, depois da confirmação): o servidor envia pelo WhatsApp do SIGO
+  const enviarNovaSenha = async (fornecedor) => {
+    setConfirmandoSenha((prev) => ({ ...prev, [fornecedor.id]: false }));
+    const r = await comTrava(fornecedor, () =>
+      enviarSenhaFornecedor(sigo, fornecedor.fornecedor_id)
+    );
+    if (r.ignorado) return;
+    if (r.enviado) {
+      marcarSenhaEnviada(fornecedor, r.destino);
+      toast.success(`Senha enviada para ${r.destino || "o telefone do cadastro"}.`);
+    } else {
+      const texto = `A senha não foi enviada: ${textoDoMotivo(r)}.`;
+      setResultadoSenha((prev) => ({ ...prev, [fornecedor.id]: texto }));
+      toast.error(texto, { duration: 12000 });
+    }
   };
 
   const enviarEmail = async (fornecedor, isReenvio = false) => {
@@ -581,23 +633,89 @@ ${empresaAtiva.nome_fantasia || empresaAtiva.razao_social || empresaAtiva.nome}
                           </div>
                         )}
 
-                        {/* Credenciais */}
-                        {credenciais[fornecedor.fornecedor_id] && (
-                          <div className="p-2 bg-slate-50 border border-slate-200 rounded text-xs space-y-0.5">
-                            <p className="font-medium text-slate-700">Credenciais de acesso:</p>
-                            <p className="text-slate-600">
-                              🔑 Login:{" "}
-                              <span className="font-mono">
-                                {credenciais[fornecedor.fornecedor_id].email}
-                              </span>
+                        {/* Acesso ao portal (a senha nunca aparece aqui: vai pelo WhatsApp do SIGO) */}
+                        {acessos[fornecedor.fornecedor_id] && (
+                          <div className="p-2 bg-slate-50 border border-slate-200 rounded text-xs space-y-1">
+                            <p className="font-medium text-slate-700">Acesso ao portal:</p>
+                            {acessos[fornecedor.fornecedor_id].ativo ? (
+                              <p className="text-slate-600">
+                                Login:{" "}
+                                <span className="font-mono">
+                                  {acessos[fornecedor.fornecedor_id].email}
+                                </span>
+                              </p>
+                            ) : (
+                              <p className="text-slate-600">
+                                Ainda sem acesso: a senha vai junto com o primeiro convite.
+                              </p>
+                            )}
+                            <p className="text-slate-500">
+                              A senha é enviada ao fornecedor pelo WhatsApp do SIGO; ninguém da
+                              empresa a vê.
                             </p>
-                            <p className="text-slate-600">
-                              🔑 Senha:{" "}
-                              <span className="font-mono font-bold">
-                                {credenciais[fornecedor.fornecedor_id].senha ||
-                                  "•••••• (nova ao enviar por WhatsApp)"}
-                              </span>
-                            </p>
+                            {!acessos[fornecedor.fornecedor_id].tem_telefone && (
+                              <p className="text-amber-700">
+                                Sem telefone válido no cadastro do fornecedor: a senha não pode ser
+                                enviada.
+                              </p>
+                            )}
+                            {!acessos[fornecedor.fornecedor_id].tem_email && (
+                              <p className="text-amber-700">
+                                Sem e-mail no cadastro do fornecedor: não há login para o portal.
+                              </p>
+                            )}
+                            {resultadoSenha[fornecedor.id] && (
+                              <p className="text-slate-700 font-medium" role="status">
+                                {resultadoSenha[fornecedor.id]}
+                              </p>
+                            )}
+                            {podeEnviarSenha &&
+                              (confirmandoSenha[fornecedor.id] ? (
+                                <div className="flex flex-wrap items-center gap-2 pt-1">
+                                  <span className="text-red-700">
+                                    A senha atual deixa de valer. Enviar uma nova?
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => enviarNovaSenha(fornecedor)}
+                                    className="h-7 text-red-700 border-red-300 hover:bg-red-50"
+                                  >
+                                    Confirmar
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() =>
+                                      setConfirmandoSenha((prev) => ({
+                                        ...prev,
+                                        [fornecedor.id]: false,
+                                      }))
+                                    }
+                                    className="h-7"
+                                  >
+                                    Cancelar
+                                  </Button>
+                                </div>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={!!enviandoSenha[fornecedor.id]}
+                                  onClick={() =>
+                                    setConfirmandoSenha((prev) => ({
+                                      ...prev,
+                                      [fornecedor.id]: true,
+                                    }))
+                                  }
+                                  className="h-7 mt-1"
+                                >
+                                  <KeyRound className="w-3 h-3 mr-1" />
+                                  {enviandoSenha[fornecedor.id]
+                                    ? "Enviando senha..."
+                                    : "Enviar nova senha"}
+                                </Button>
+                              ))}
                           </div>
                         )}
 
@@ -680,11 +798,11 @@ ${empresaAtiva.nome_fantasia || empresaAtiva.razao_social || empresaAtiva.nome}
                             size="sm"
                             variant="outline"
                             onClick={() => enviarWhatsApp(fornecedor)}
-                            disabled={!link || !!gerandoSenha[fornecedor.id]}
+                            disabled={!link || !!enviandoSenha[fornecedor.id]}
                             className="flex-1 text-green-600 border-green-600 hover:bg-green-50"
                           >
                             <MessageSquare className="w-4 h-4 mr-2" />
-                            {gerandoSenha[fornecedor.id] ? "Gerando senha..." : "WhatsApp"}
+                            {enviandoSenha[fornecedor.id] ? "Enviando senha..." : "WhatsApp"}
                           </Button>
                         </div>
 
