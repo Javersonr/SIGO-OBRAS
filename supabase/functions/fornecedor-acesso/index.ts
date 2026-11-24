@@ -7,11 +7,13 @@
  * entrar no portal "como o fornecedor", sem rastro. Agora:
  *   { acao:"status", cotacao_id }        → { acessos:[{ fornecedor_id, email, tem_acesso, ativo }] }
  *                                          (por fornecedor da cotação; nunca o hash)
- *   { acao:"credencial", fornecedor_id } → { credencial: { email, senha } | null, motivo? }
- *                                          senha nova (gerador de senha provisória), grava o hash bcrypt em
- *                                          TODAS as linhas ativas do fornecedor e devolve a senha UMA vez; sem
- *                                          acesso ativo, cria com o e-mail do cadastro; sem e-mail nenhum,
- *                                          `credencial: null, motivo: "SEM_EMAIL"`
+ *   { acao:"enviar_senha", fornecedor_id }
+ *                                        → { enviado: true, destino: "<mascarado>", login }
+ *                                          | { enviado: false, motivo, mensagem }
+ *                                          senha nova ENVIADA pelo WhatsApp do SIGO ao telefone do cadastro e
+ *                                          só então gravada (bcrypt) em todas as linhas ativas (ver
+ *                                          ./envio-senha.ts). A senha NUNCA volta na resposta (decisão do dono,
+ *                                          24/11). Exige Cotações → enviar ou administrador.
  *   { acao:"links", cotacao_id }         → { links:[{ cotacao_fornecedor_id, fornecedor_id, link }] }
  *   { acao:"reemitir_link", cotacao_fornecedor_id }
  *                                        → { cotacao_fornecedor_id, fornecedor_id, link } (o antigo deixa de valer)
@@ -20,7 +22,7 @@
  * (service role ignora a RLS). Permissão: aba Cotações de Compras, Admin, Admin Holding, dono ou super admin
  * (`podeUsarCotacoes`, em ./regras.ts), com o vínculo achado pelo critério do banco (`vinculoDoChamadorNaLista`).
  *
- * Auditoria: `credencial` e `reemitir_link` gravam em `audit_log` uma linha `iniciado` ANTES de alterar (a
+ * Auditoria: `enviar_senha` e `reemitir_link` gravam em `audit_log` uma linha `iniciado` ANTES de alterar (a
  * tabela só aceita inserção e é imutável desde a 0173): sem ela, nada muda (500). Depois, uma linha `sucesso`
  * ou `erro`. IP que o banco recuse não derruba a ação (a linha é gravada de novo sem IP). A senha e o hash
  * nunca vão para o registro.
@@ -32,26 +34,26 @@ import { createAdminClient } from "../_shared/supabase-admin.ts";
 import { preflightResponse, ok, fail, withCors } from "../_shared/cors.ts";
 import { usuarioDaRequisicao } from "../_shared/usuario-request.ts";
 import { generateProvisionalPassword, hashPassword } from "../_shared/passwords.ts";
-import { ipDaRequisicao } from "../_shared/limite-tentativas.ts";
+import { consumirTentativa, ipDaRequisicao } from "../_shared/limite-tentativas.ts";
+import { CanalNaoConfiguradoError, enviarWhatsAppTexto } from "../_shared/whatsapp-envio.ts";
+import { enviarSenhaDoFornecedor, FREIO_WHATSAPP } from "./envio-senha.ts";
 import {
   ACOES_FORNECEDOR_ACESSO,
-  MENSAGEM_SEM_EMAIL,
   MENSAGEM_SEM_PERMISSAO,
+  MENSAGEM_SEM_PERMISSAO_ENVIO,
   MENSAGEM_SEM_RASTRO,
   baseDoLink,
-  camposDaTroca,
-  decidirCredencial,
   idValido,
   linhaSemIp,
   linkDaCotacao,
   montarLinks,
-  passosDaCredencial,
+  podeEnviarSenha,
   podeUsarCotacoes,
-  registroDaCredencial,
   registroDoLink,
   statusDosAcessos,
   vinculoDoChamadorNaLista,
   type AcessoDoPortal,
+  type CadastroDoFornecedor,
   type Participacao,
   type VinculoDaEmpresa,
 } from "./regras.ts";
@@ -185,7 +187,19 @@ Deno.serve(
 
       const ids = [...new Set(participacoes.map((p) => p.fornecedor_id))];
       let acessos: AcessoDoPortal[] = [];
+      let cadastros: CadastroDoFornecedor[] = [];
       if (ids.length) {
+        // e-mail e telefone do cadastro só viram tem_email / tem_telefone (nunca saem na resposta)
+        const { data: forns, error: erroForns } = await supabase
+          .from("fornecedor")
+          .select("id, email, telefone")
+          .eq("empresa_id", empresaId)
+          .in("id", ids);
+        if (erroForns) {
+          console.error("[fornecedor-acesso] status (cadastro):", erroForns.message);
+          return fail("Erro ao carregar os fornecedores", 500);
+        }
+        cadastros = forns ?? [];
         const { data, error } = await supabase
           .from("fornecedor_acesso")
           .select("id, fornecedor_id, fornecedor_email, ativo")
@@ -200,123 +214,102 @@ Deno.serve(
         }
         acessos = data ?? [];
       }
-      return ok({ acessos: statusDosAcessos(ids, acessos) });
+      return ok({ acessos: statusDosAcessos(ids, acessos, cadastros) });
     }
 
-    // ------------------------------------------------------------ credencial
-    if (acao === "credencial") {
+    // ------------------------------------------------------------ enviar_senha
+    if (acao === "enviar_senha") {
+      // a mesma permissão do "Enviar aos Fornecedores" da tela (Cotações → enviar) ou administrador
+      if (!podeEnviarSenha({ superAdmin: chamador.is_super_admin, vinculo })) {
+        return fail(MENSAGEM_SEM_PERMISSAO_ENVIO, 403, { codigo: "SEM_PERMISSAO" });
+      }
       if (!idValido(body.fornecedor_id)) return fail("fornecedor_id inválido", 400);
       const fornecedorId = body.fornecedor_id;
-      const { data: fornecedor, error: erroFornecedor } = await supabase
-        .from("fornecedor")
-        .select("id, nome_razao, email")
-        .eq("id", fornecedorId)
-        .eq("empresa_id", empresaId)
-        .is("deleted_at", null)
-        .maybeSingle();
-      if (erroFornecedor) {
-        console.error("[fornecedor-acesso] fornecedor:", erroFornecedor.message);
-        return fail("Erro ao carregar o fornecedor", 500);
-      }
-      if (!fornecedor) return fail("Fornecedor não encontrado", 404);
+      let nomeDoFornecedor = "";
 
-      // TODAS as linhas ativas do fornecedor (pode haver mais de uma: duplo clique antigo, legado)
-      const { data: ativos, error: erroAcesso } = await supabase
-        .from("fornecedor_acesso")
-        .select("id, fornecedor_email")
-        .eq("empresa_id", empresaId)
-        .eq("fornecedor_id", fornecedorId)
-        .eq("ativo", true)
-        .is("deleted_at", null)
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true });
-      if (erroAcesso) {
-        console.error("[fornecedor-acesso] acesso:", erroAcesso.message);
-        return fail("Erro ao carregar o acesso do fornecedor", 500);
-      }
-
-      const decisao = decidirCredencial({
-        acessosAtivos: ativos ?? [],
-        emailDoCadastro: fornecedor.email,
-      });
-      if (decisao.tipo === "sem_email") {
-        return ok({ credencial: null, motivo: "SEM_EMAIL", mensagem: MENSAGEM_SEM_EMAIL });
-      }
-
-      const acessoNovo = decisao.tipo === "criar";
-      const acessoId = decisao.tipo === "rotacionar" ? decisao.acessoId : crypto.randomUUID();
-      const dadosDoRegistro = {
-        ...auditoria,
-        fornecedorId,
-        fornecedorNome: fornecedor.nome_razao,
-        acessoId,
-        acessoNovo,
-      };
-
-      // 1. o rastro primeiro (status "iniciado"): sem ele, nada muda
-      const erroRastro = await gravarAuditoria(
-        supabase,
-        registroDaCredencial({ ...dadosDoRegistro, status: "iniciado" })
-      );
-      if (erroRastro) {
-        console.error("[fornecedor-acesso] audit_log (credencial):", erroRastro);
-        return fail(MENSAGEM_SEM_RASTRO, 500);
-      }
-
-      // 2. a senha nova: só o hash vai para o banco
-      const senha = generateProvisionalPassword();
-      const hash = await hashPassword(senha);
-      const campos = camposDaTroca(hash, decisao.email);
-      let erroGravar: string | null = null;
-      let acessosTrocados = 0;
-      for (const passo of passosDaCredencial(decisao)) {
-        if (passo === "criar") {
-          const { error } = await supabase.from("fornecedor_acesso").insert({
-            id: acessoId,
-            empresa_id: empresaId,
-            fornecedor_id: fornecedorId,
-            fornecedor_nome: fornecedor.nome_razao || "",
-            ...campos,
-            ativo: true,
-          });
-          if (error) erroGravar = error.message;
-        } else {
+      const resultado = await enviarSenhaDoFornecedor(
+        {
+          fornecedor: async () => {
+            const { data, error } = await supabase
+              .from("fornecedor")
+              .select("id, nome_razao, email, telefone")
+              .eq("id", fornecedorId)
+              .eq("empresa_id", empresaId)
+              .is("deleted_at", null)
+              .maybeSingle();
+            if (error) throw new Error("fornecedor: " + error.message);
+            nomeDoFornecedor = data?.nome_razao || "";
+            return data ?? null;
+          },
+          // TODAS as linhas ativas do fornecedor (pode haver mais de uma: duplo clique antigo, legado)
+          acessosAtivos: async () => {
+            const { data, error } = await supabase
+              .from("fornecedor_acesso")
+              .select("id, fornecedor_email")
+              .eq("empresa_id", empresaId)
+              .eq("fornecedor_id", fornecedorId)
+              .eq("ativo", true)
+              .is("deleted_at", null)
+              .order("created_at", { ascending: true })
+              .order("id", { ascending: true });
+            if (error) throw new Error("fornecedor_acesso: " + error.message);
+            return data ?? [];
+          },
+          nomeDaEmpresa: async () => {
+            const { data } = await supabase
+              .from("empresa")
+              .select("nome_fantasia, razao_social, nome")
+              .eq("id", empresaId)
+              .maybeSingle();
+            return data?.nome_fantasia || data?.razao_social || data?.nome || "";
+          },
+          // o MESMO freio do enviar-whatsapp; limitador fora do ar NEGA
+          consumirFreio: (limites) =>
+            consumirTentativa(supabase, FREIO_WHATSAPP.escopo, FREIO_WHATSAPP.janelaSeg, limites, {
+              falharFechado: true,
+            }),
+          auditar: (linha) => gravarAuditoria(supabase, linha as { endereco_ip: string | null }),
+          gerarSenha: generateProvisionalPassword,
+          enviar: (numero, texto) => enviarWhatsAppTexto(numero, texto),
+          canalNaoConfigurado: (e) => e instanceof CanalNaoConfiguradoError,
+          hash: hashPassword,
+          novoId: () => crypto.randomUUID(),
+          criarAcesso: async (id, campos) => {
+            const { error } = await supabase.from("fornecedor_acesso").insert({
+              id,
+              empresa_id: empresaId,
+              fornecedor_id: fornecedorId,
+              fornecedor_nome: nomeDoFornecedor,
+              ...campos,
+              ativo: true,
+            });
+            return error ? error.message : null;
+          },
           // todas as linhas ativas do fornecedor, inclusive as criadas por outra chamada ao mesmo tempo:
           // a última chamada a terminar define a senha válida (revisão do 2b-2, C2)
-          const { data, error } = await supabase
-            .from("fornecedor_acesso")
-            .update(campos)
-            .eq("empresa_id", empresaId)
-            .eq("fornecedor_id", fornecedorId)
-            .eq("ativo", true)
-            .is("deleted_at", null)
-            .select("id");
-          if (error) erroGravar = error.message;
-          else if (!data?.length) erroGravar = "nenhum acesso ativo encontrado ao gravar";
-          else acessosTrocados = data.length;
+          trocarTodas: async (campos) => {
+            const { data, error } = await supabase
+              .from("fornecedor_acesso")
+              .update(campos)
+              .eq("empresa_id", empresaId)
+              .eq("fornecedor_id", fornecedorId)
+              .eq("ativo", true)
+              .is("deleted_at", null)
+              .select("id");
+            return { erro: error ? error.message : null, trocados: data?.length ?? 0 };
+          },
+        },
+        {
+          empresaId,
+          chamadorEmail: chamador.email,
+          fornecedorId,
+          base: baseDoLink(req.headers.get("origin")),
+          ip: auditoria.ip,
+          userAgent: auditoria.userAgent,
         }
-        if (erroGravar) break;
-      }
-      if (erroGravar) {
-        console.error("[fornecedor-acesso] gravar senha:", erroGravar);
-        const erroFalha = await gravarAuditoria(
-          supabase,
-          registroDaCredencial({ ...dadosDoRegistro, status: "erro", erro: erroGravar })
-        );
-        if (erroFalha) console.warn("[fornecedor-acesso] audit_log (falha):", erroFalha);
-        return fail(
-          "Não deu para gravar a senha nova do portal do fornecedor. Tente de novo.",
-          500
-        );
-      }
-
-      const erroFim = await gravarAuditoria(
-        supabase,
-        registroDaCredencial({ ...dadosDoRegistro, status: "sucesso", acessosTrocados })
       );
-      if (erroFim) console.warn("[fornecedor-acesso] audit_log (sucesso):", erroFim);
-
-      return ok({ credencial: { email: campos.fornecedor_email, senha } });
+      if (resultado.tipo === "nao_encontrado") return fail("Fornecedor não encontrado", 404);
+      return ok(resultado.corpo);
     }
 
     // ------------------------------------------------------------ reemitir_link

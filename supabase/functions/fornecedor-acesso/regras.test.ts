@@ -41,9 +41,9 @@ const vinculo = (extra: Record<string, unknown> = {}) => ({
 });
 
 // ------------------------------------------------------------ ações
-test("ações: as quatro combinadas com a tela", () => {
+test("ações: as quatro combinadas com a tela (credencial saiu: a senha não volta mais à tela)", () => {
   assert.deepEqual([...ACOES_FORNECEDOR_ACESSO].sort(), [
-    "credencial",
+    "enviar_senha",
     "links",
     "reemitir_link",
     "status",
@@ -153,14 +153,43 @@ test("statusDosAcessos: primeiro ativo vale; sem ativo, mostra que existe mas in
       { id: "a1", fornecedor_id: ID, fornecedor_email: "inativo@exemplo.test", ativo: false },
       { id: "a2", fornecedor_id: ID, fornecedor_email: "ativo@exemplo.test", ativo: true },
       { id: "a3", fornecedor_id: ID2, fornecedor_email: "velho@exemplo.test", ativo: false },
+    ],
+    [
+      { id: ID, email: null, telefone: "(11) 99999-0000" },
+      { id: ID2, email: "", telefone: "123" },
+      { id: "sem-acesso", email: "Cadastro@Exemplo.test", telefone: null },
     ]
   );
   assert.deepEqual(r, [
-    { fornecedor_id: ID, email: "ativo@exemplo.test", tem_acesso: true, ativo: true },
-    { fornecedor_id: ID2, email: "velho@exemplo.test", tem_acesso: true, ativo: false },
-    { fornecedor_id: "sem-acesso", email: null, tem_acesso: false, ativo: false },
+    {
+      fornecedor_id: ID,
+      email: "ativo@exemplo.test",
+      tem_acesso: true,
+      ativo: true,
+      tem_email: true,
+      tem_telefone: true,
+    },
+    {
+      fornecedor_id: ID2,
+      email: "velho@exemplo.test",
+      tem_acesso: true,
+      ativo: false,
+      tem_email: false, // o e-mail de um acesso INATIVO não conta (o envio cria acesso com o do cadastro)
+      tem_telefone: false,
+    },
+    {
+      fornecedor_id: "sem-acesso",
+      email: null,
+      tem_acesso: false,
+      ativo: false,
+      tem_email: true,
+      tem_telefone: false,
+    },
   ]);
-  for (const item of r) assert.ok(!("senha_acesso" in item));
+  for (const item of r) {
+    assert.ok(!("senha_acesso" in item));
+    assert.ok(!("telefone" in item)); // o número nunca sai na resposta
+  }
 });
 
 // ------------------------------------------------------------ vínculo (revisão do 2b-2, C3)
@@ -342,7 +371,7 @@ test("registroDaCredencial: a linha ANTES da troca diz 'pediu', com status inici
     status: "iniciado",
   });
   assert.equal(r.status, "iniciado");
-  assert.match(r.descricao, /compras@exemplo\.test pediu senha nova/);
+  assert.match(r.descricao, /compras@exemplo\.test pediu o envio de senha nova/);
   assert.doesNotMatch(r.descricao, /gerou/);
 });
 
@@ -365,7 +394,7 @@ test("registroDaCredencial: quem, qual fornecedor e qual acesso; nada de senha",
   assert.equal(r.mensagem_erro, null);
   assert.equal(r.endereco_ip, "203.0.113.7");
   assert.deepEqual(r.dados_novos, { fornecedor_id: ID2, acesso_novo: true, acessos_trocados: 2 });
-  assert.match(r.descricao, /compras@exemplo\.test gerou senha nova/);
+  assert.match(r.descricao, /compras@exemplo\.test enviou senha nova/);
   assert.match(r.descricao, /acesso novo/);
   assert.doesNotMatch(JSON.stringify(r), /senha_acesso|hash/i);
   // as colunas obrigatórias da audit_log (0002): empresa_id, usuario_email, tipo_acao, entidade, descricao
@@ -441,6 +470,11 @@ test("index.ts: toda leitura/gravação de tabela de negócio é filtrada pela e
   for (const bloco of blocos) {
     const tabela = bloco.slice(0, bloco.indexOf('"'));
     if (tabela === "audit_log") continue;
+    if (tabela === "empresa") {
+      // o nome da empresa para a mensagem: a própria empresa da sessão
+      assert.match(bloco.split(";")[0], /\.eq\("id", empresaId\)/);
+      continue;
+    }
     if (tabela === "fornecedor_acesso" && /^fornecedor_acesso"\)\.insert\(\{/.test(bloco)) {
       assert.match(bloco, /empresa_id: empresaId/);
       continue;
@@ -464,11 +498,8 @@ test("index.ts: a senha nunca vai para o registro de auditoria nem para o log", 
   assert.doesNotMatch(index, /console\.\w+\([^)]*,\s*(senha|hash)\b/);
 });
 
-test("index.ts: o rastro 'iniciado' é gravado ANTES da troca; nenhuma linha 'sucesso' antes dela", () => {
-  const rastro = index.indexOf('registroDaCredencial({ ...dadosDoRegistro, status: "iniciado" })');
-  const gravar = index.indexOf(".update(campos)");
-  const sucesso = index.indexOf('status: "sucesso", acessosTrocados');
-  assert.ok(rastro > 0 && gravar > rastro && sucesso > gravar);
+test("index.ts: o rastro 'iniciado' do link é gravado ANTES da troca; a senha usa o fluxo do envio-senha.ts", () => {
+  assert.match(index, /enviarSenhaDoFornecedor\(/);
   const rastroLink = index.indexOf('registroDoLink({ ...dadosDoLink, status: "iniciado" })');
   const trocaLink = index.indexOf(".update({ token: null })");
   const sucessoLink = index.indexOf('registroDoLink({ ...dadosDoLink, status: "sucesso" })');

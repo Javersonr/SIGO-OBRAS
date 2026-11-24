@@ -5,15 +5,18 @@
  * Antes (Lote 2b-2 da varredura de nov/2026) a tela de cotação gerava a senha do fornecedor no navegador,
  * gravava o hash direto na tabela e montava o link com o token lido da tabela. Quem tinha acesso a Compras
  * podia, pela API, trocar a senha e entrar no portal "como o fornecedor", sem deixar rastro. Agora o
- * servidor gera a senha, grava o hash (bcrypt), registra na auditoria quem pediu e monta o link.
+ * servidor gera a senha, ENVIA pelo WhatsApp do SIGO direto ao telefone do cadastro (decisão do dono, 24/11:
+ * a senha não passa mais pela tela; ver ./envio-senha.ts), grava o hash (bcrypt), registra na auditoria quem
+ * pediu e monta o link (que continua saindo pelo WhatsApp do próprio comprador).
  */
 import { temPermissaoServidor, type Vinculo } from "../_shared/conector/acesso.ts";
 import { tokenCotacaoValido } from "../_shared/cotacao-portal.ts";
+import { normalizarTelefoneBR } from "../_shared/whatsapp-envio.ts";
 
 /** As ações que a função conhece. */
 export const ACOES_FORNECEDOR_ACESSO: ReadonlySet<string> = new Set([
   "status",
-  "credencial",
+  "enviar_senha",
   "links",
   "reemitir_link",
 ]);
@@ -69,6 +72,29 @@ export function vinculoDoChamadorNaLista(
         !v.deleted_at
     ) ?? null
   );
+}
+
+/** Função da aba que a tela exige para "Enviar aos Fornecedores" (Compras.jsx, menu da cotação). */
+export const FUNCAO_ENVIAR = "enviar";
+
+export const MENSAGEM_SEM_PERMISSAO_ENVIO =
+  "Sem permissão para enviar a senha do portal: é preciso a função Enviar da aba Cotações de Compras.";
+
+/**
+ * Quem pode ENVIAR a senha do portal ao fornecedor (`enviar_senha`): a mesma permissão que a tela exige para
+ * "Enviar aos Fornecedores" (`temPermissao("Compras", "Cotações", "enviar")`), ou administrador (Admin, Admin
+ * Holding, super admin; o dono passa por `temPermissaoServidor`). As leituras (`status`, `links`) seguem
+ * com `podeUsarCotacoes`.
+ */
+export function podeEnviarSenha(p: {
+  superAdmin: boolean;
+  vinculo: Vinculo | null | undefined;
+}): boolean {
+  if (p.superAdmin) return true;
+  const v = p.vinculo;
+  if (!v || v.ativo === false || v.deleted_at) return false;
+  if (v.perfil === "Admin" || v.perfil === "Admin Holding") return true;
+  return temPermissaoServidor(v, MODULO_COMPRAS, ABA_COTACOES, FUNCAO_ENVIAR);
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -131,25 +157,54 @@ export interface AcessoDoPortal {
   ativo?: boolean | null;
 }
 
+export interface CadastroDoFornecedor {
+  id: string;
+  email?: string | null;
+  telefone?: string | null;
+}
+
 /**
- * O que a ação `status` devolve por fornecedor da cotação: tem acesso ao portal? ativo? com que e-mail?
- * Nunca o hash da senha. `acessos` vem em ordem de criação (a mesma do login do portal); vale o primeiro
- * ativo e, sem ativo, o primeiro.
+ * Telefone do cadastro para o envio da senha: o MESMO campo que a tela usa no wa.me (`fornecedor.telefone`,
+ * CotacaoModal.jsx), normalizado por `normalizarTelefoneBR` (55 + DDD + número). Inválido = null.
+ */
+export function telefoneDoFornecedor(
+  f: { telefone?: string | null } | null | undefined
+): string | null {
+  return normalizarTelefoneBR(String(f?.telefone ?? ""));
+}
+
+/**
+ * O que a ação `status` devolve por fornecedor da cotação: tem acesso ao portal? ativo? com que e-mail? Há
+ * e-mail para o login (`tem_email`: o do acesso ativo ou o do cadastro) e telefone válido para o envio da
+ * senha (`tem_telefone`)? Nunca o hash da senha nem o telefone. `acessos` vem em ordem de criação (a mesma
+ * do login do portal); vale o primeiro ativo e, sem ativo, o primeiro.
  */
 export function statusDosAcessos(
   fornecedorIds: string[],
-  acessos: AcessoDoPortal[] | null | undefined
-): { fornecedor_id: string; email: string | null; tem_acesso: boolean; ativo: boolean }[] {
+  acessos: AcessoDoPortal[] | null | undefined,
+  cadastros: CadastroDoFornecedor[] | null | undefined = []
+): {
+  fornecedor_id: string;
+  email: string | null;
+  tem_acesso: boolean;
+  ativo: boolean;
+  tem_email: boolean;
+  tem_telefone: boolean;
+}[] {
   const lista = acessos ?? [];
+  const cadastroPorId = new Map((cadastros ?? []).map((c) => [c.id, c]));
   return [...new Set(fornecedorIds)].map((fornecedorId) => {
     const doFornecedor = lista.filter((a) => a.fornecedor_id === fornecedorId);
     const ativo = doFornecedor.find((a) => a.ativo === true);
     const escolhido = ativo ?? doFornecedor[0] ?? null;
+    const cadastro = cadastroPorId.get(fornecedorId) ?? null;
     return {
       fornecedor_id: fornecedorId,
       email: escolhido?.fornecedor_email ?? null,
       tem_acesso: doFornecedor.length > 0,
       ativo: !!ativo,
+      tem_email: !!(emailNormalizado(ativo?.fornecedor_email) || emailNormalizado(cadastro?.email)),
+      tem_telefone: !!telefoneDoFornecedor(cadastro),
     };
   });
 }
@@ -267,16 +322,27 @@ function base(p: BaseDoRegistro) {
  * e qual fornecedor; a senha e o hash NUNCA entram (a função nem os recebe).
  */
 export function registroDaCredencial(
-  p: BaseDoRegistro & { acessoId: string; acessoNovo: boolean; acessosTrocados?: number }
+  p: BaseDoRegistro & {
+    acessoId: string;
+    acessoNovo: boolean;
+    acessosTrocados?: number;
+    /** número de destino JÁ MASCARADO (`mascararNumero`); nunca o número inteiro */
+    destino?: string | null;
+    /** na falha: "envio" (a mensagem não saiu) ou "gravacao" (saiu, mas a senha não foi gravada) */
+    etapa?: "envio" | "gravacao";
+  }
 ) {
   const nome = p.fornecedorNome || "fornecedor sem nome";
   const novo = p.acessoNovo ? " (acesso novo)" : "";
+  const para = p.destino ? ` (${p.destino})` : "";
   const descricao =
     p.status === "iniciado"
-      ? `${p.chamadorEmail} pediu senha nova do Portal do Fornecedor para ${nome}${novo}`
+      ? `${p.chamadorEmail} pediu o envio de senha nova do Portal do Fornecedor para ${nome}${novo} pelo WhatsApp do SIGO`
       : p.status === "sucesso"
-        ? `${p.chamadorEmail} gerou senha nova do Portal do Fornecedor para ${nome}${novo}; a senha anterior deixou de valer`
-        : `Falhou a gravação da senha nova do Portal do Fornecedor para ${nome}, pedida por ${p.chamadorEmail}; a senha anterior continua valendo`;
+        ? `${p.chamadorEmail} enviou senha nova do Portal do Fornecedor para ${nome}${novo} pelo WhatsApp do SIGO${para}; a senha anterior deixou de valer`
+        : p.etapa === "gravacao"
+          ? `A senha nova do Portal do Fornecedor para ${nome}, pedida por ${p.chamadorEmail}, foi enviada${para} mas não foi gravada; é preciso enviar de novo`
+          : `Falhou o envio da senha nova do Portal do Fornecedor para ${nome}, pedida por ${p.chamadorEmail}; nada foi trocado e a senha anterior continua valendo`;
   return {
     ...base(p),
     tipo_acao: "senha_portal_fornecedor",
@@ -286,6 +352,7 @@ export function registroDaCredencial(
     dados_novos: {
       fornecedor_id: p.fornecedorId,
       acesso_novo: p.acessoNovo,
+      ...(p.destino ? { destino: p.destino, canal: "whatsapp_sigo" } : {}),
       ...(typeof p.acessosTrocados === "number" ? { acessos_trocados: p.acessosTrocados } : {}),
     },
   };
