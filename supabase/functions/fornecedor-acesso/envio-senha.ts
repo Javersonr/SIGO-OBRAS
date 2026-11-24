@@ -71,6 +71,30 @@ export function mascararNumero(n: string): string {
  * Texto que o fornecedor recebe do número do SIGO. Curto, sem markdown além do negrito do WhatsApp (*...*).
  * Leva a senha: só sai daqui para o canal, nunca para log, auditoria ou resposta.
  */
+/** Tamanho máximo dos nomes (fornecedor, empresa) dentro da mensagem. */
+export const MAX_NOME_NA_MENSAGEM = 80;
+
+/**
+ * Nome vindo do cadastro, limpo para entrar na mensagem (2ª revisão do 2b-2): sem quebras de linha nem
+ * caracteres de controle (viram espaço), sem o `*` do negrito do WhatsApp, espaços juntados e cortado em
+ * `MAX_NOME_NA_MENSAGEM` caracteres.
+ */
+export function limparNome(v: unknown, max: number = MAX_NOME_NA_MENSAGEM): string {
+  const limpo = String(v ?? "")
+    // controles (0-31, 127-159), separadores de linha/parágrafo (U+2028/2029) e o * viram espaço
+    .split("")
+    .map((c) => {
+      const n = c.charCodeAt(0);
+      return n < 32 || (n >= 127 && n <= 159) || n === 0x2028 || n === 0x2029 || c === "*"
+        ? " "
+        : c;
+    })
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+  return Array.from(limpo).slice(0, max).join("").trim();
+}
+
 export function textoDaSenha(p: {
   empresa: string;
   fornecedor: string;
@@ -78,9 +102,10 @@ export function textoDaSenha(p: {
   login: string;
   senha: string;
 }): string {
-  const empresa = p.empresa || "a empresa";
+  const empresa = limparNome(p.empresa) || "a empresa";
+  const fornecedor = limparNome(p.fornecedor) || "fornecedor";
   return [
-    `Olá, ${p.fornecedor || "fornecedor"}!`,
+    `Olá, ${fornecedor}!`,
     "",
     `Este é o seu acesso ao Portal do Fornecedor de *${empresa}* (cotações):`,
     `Endereço: ${p.enderecoLogin}`,

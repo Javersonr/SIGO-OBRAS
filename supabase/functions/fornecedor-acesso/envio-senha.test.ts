@@ -12,7 +12,9 @@ import {
   FREIO_WHATSAPP,
   MENSAGENS_DO_MOTIVO,
   enderecoDoLoginDoPortal,
+  MAX_NOME_NA_MENSAGEM,
   enviarSenhaDoFornecedor,
+  limparNome,
   limitesDoFreio,
   mascararNumero,
   textoDaSenha,
@@ -347,4 +349,43 @@ test("index.ts: nenhuma resposta devolve credencial/senha; enviar_senha exige po
   );
   // nada de senha, hash ou número em console.*
   assert.doesNotMatch(index, /console\.\w+\([^)]*\b(senha|hash|numero|texto|telefone)\b/);
+});
+
+// ------------------------------------------------------------ nomes limpos na mensagem (2ª revisão)
+test("limparNome: tira quebras de linha, controles e o * do negrito; junta espaços; corta em 80", () => {
+  assert.equal(limparNome("  Fornecedor\n\nSintético\tLtda  "), "Fornecedor Sintético Ltda");
+  assert.equal(limparNome("A\u0000B\u0007C" + String.fromCharCode(0x2028) + "D"), "A B C D");
+  assert.equal(limparNome("*Promoção* clique aqui"), "Promoção clique aqui");
+  assert.equal(limparNome(null), "");
+  assert.equal(limparNome(undefined), "");
+  const longo = "x".repeat(200);
+  assert.equal(limparNome(longo).length, MAX_NOME_NA_MENSAGEM);
+  assert.equal(MAX_NOME_NA_MENSAGEM, 80);
+});
+
+test("textoDaSenha usa os nomes limpos: nome do cadastro não cria linhas nem quebra o texto", () => {
+  const t = textoDaSenha({
+    empresa: "Empresa\nSintética " + "y".repeat(150),
+    fornecedor: "Fornecedor\r\nLINHA FALSA: senha 123\n*negrito*",
+    enderecoLogin: enderecoDoLoginDoPortal(BASE_CANONICA),
+    login: "forn@exemplo.test",
+    senha: SENHA,
+  });
+  const linhas = t.split("\n");
+  assert.equal(linhas[0], "Olá, Fornecedor LINHA FALSA: senha 123 negrito!");
+  assert.ok(!linhas.some((l) => l.startsWith("LINHA FALSA")));
+  for (const l of linhas) assert.ok(!l.includes("y".repeat(81)), "nome da empresa cortado");
+  assert.equal(linhas.length, 10);
+});
+
+test("textoDaSenha: nomes vazios depois da limpeza caem no padrão", () => {
+  const t = textoDaSenha({
+    empresa: "\n\n",
+    fornecedor: " * ",
+    enderecoLogin: "https://www.sigoobras.com.br/FornecedorLogin",
+    login: "f@exemplo.test",
+    senha: SENHA,
+  });
+  assert.match(t, /^Olá, fornecedor!/);
+  assert.match(t, /de \*a empresa\*/);
 });

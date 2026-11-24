@@ -51,7 +51,7 @@ import {
   podeUsarCotacoes,
   registroDoLink,
   statusDosAcessos,
-  vinculoDoChamadorNaLista,
+  procurarVinculoDoChamador,
   type AcessoDoPortal,
   type CadastroDoFornecedor,
   type Participacao,
@@ -68,23 +68,46 @@ interface Body {
 // deno-lint-ignore no-explicit-any
 type Db = any;
 
+const COLUNAS_VINCULO = "usuario_email, perfil, is_owner, permissoes, ativo, deleted_at";
+
 /**
- * Vínculo do chamador NA empresa da sessão, pelo critério do banco (revisão do 2b-2, C3): lê os vínculos não
- * excluídos da empresa e compara o e-mail em minúsculas no código (`ativo` nulo conta como ativo). Erro lança.
+ * Vínculo do chamador NA empresa da sessão, pelo critério do banco (revisão do 2b-2, C3): e-mail em minúsculas,
+ * `ativo` nulo conta como ativo. Primeiro pelo e-mail exato em minúsculas; senão, a empresa em páginas
+ * (`procurarVinculoDoChamador`, 2ª revisão). Erro lança.
  */
 async function vinculoDoChamador(
   supabase: Db,
   email: string,
   empresaId: string
 ): Promise<VinculoDaEmpresa | null> {
-  const { data, error } = await supabase
-    .from("usuario_empresa")
-    .select("usuario_email, perfil, is_owner, permissoes, ativo, deleted_at")
-    .eq("empresa_id", empresaId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: true });
-  if (error) throw new Error("usuario_empresa: " + error.message);
-  return vinculoDoChamadorNaLista(data ?? [], email);
+  return procurarVinculoDoChamador(
+    {
+      porEmail: async (emailMinusculo) => {
+        const { data, error } = await supabase
+          .from("usuario_empresa")
+          .select(COLUNAS_VINCULO)
+          .eq("empresa_id", empresaId)
+          .eq("usuario_email", emailMinusculo)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: true });
+        if (error) throw new Error("usuario_empresa: " + error.message);
+        return data ?? [];
+      },
+      pagina: async (inicio, fim) => {
+        const { data, error } = await supabase
+          .from("usuario_empresa")
+          .select(COLUNAS_VINCULO)
+          .eq("empresa_id", empresaId)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(inicio, fim);
+        if (error) throw new Error("usuario_empresa: " + error.message);
+        return data ?? [];
+      },
+    },
+    email
+  );
 }
 
 /** A cotação existe e é da empresa da sessão? (cotação de outra empresa responde como inexistente) */

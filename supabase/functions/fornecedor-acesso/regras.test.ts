@@ -11,6 +11,8 @@ import {
   MENSAGEM_SEM_EMAIL,
   camposDaTroca,
   linhaSemIp,
+  PAGINA_DE_VINCULOS,
+  procurarVinculoDoChamador,
   passosDaCredencial,
   vinculoDoChamadorNaLista,
   BASE_CANONICA,
@@ -454,12 +456,14 @@ test("index.ts: identidade só pelo JWT e empresa só da sessão", () => {
   assert.doesNotMatch(index, /body\.email/);
 });
 
-test("index.ts: o vínculo não é filtrado por ativo nem por e-mail exato na consulta (C3)", () => {
-  const bloco = index.slice(index.indexOf("async function vinculoDoChamador"));
-  const consulta = bloco.slice(0, bloco.indexOf("vinculoDoChamadorNaLista("));
-  assert.doesNotMatch(consulta, /\.eq\("ativo"/);
-  assert.doesNotMatch(consulta, /\.eq\("usuario_email"/);
-  assert.doesNotMatch(consulta, /ilike/);
+test("index.ts: o vínculo não filtra por ativo; e-mail exato em minúsculas e, sem achar, páginas (C3)", () => {
+  const ini = index.indexOf("async function vinculoDoChamador");
+  const bloco = index.slice(ini, index.indexOf("async function cotacaoDaEmpresa"));
+  assert.match(bloco, /procurarVinculoDoChamador\(/);
+  assert.doesNotMatch(bloco, /\.eq\("ativo"/);
+  assert.doesNotMatch(bloco, /ilike/);
+  assert.match(bloco, /\.eq\("usuario_email", emailMinusculo\)/);
+  assert.match(bloco, /\.range\(inicio, fim\)/);
 });
 
 test("index.ts: toda leitura/gravação de tabela de negócio é filtrada pela empresa", () => {
@@ -509,4 +513,71 @@ test("index.ts: o rastro 'iniciado' do link é gravado ANTES da troca; a senha u
 test("index.ts: toda gravação na auditoria passa por gravarAuditoria (repete sem IP)", () => {
   const inserts = index.match(/\.from\("audit_log"\)\.insert\(/g) ?? [];
   assert.equal(inserts.length, 2); // a tentativa e a repetição sem IP, dentro de gravarAuditoria
+});
+
+// ------------------------------------------------------------ vínculo em páginas (2ª revisão)
+test("procurarVinculoDoChamador: acha pelo e-mail exato em minúsculas sem ler a empresa", async () => {
+  const paginas: [number, number][] = [];
+  const v = await procurarVinculoDoChamador(
+    {
+      porEmail: async (e) => {
+        assert.equal(e, "compras@exemplo.test");
+        return [{ usuario_email: "compras@exemplo.test", perfil: "Compras", ativo: null }];
+      },
+      pagina: async (i, f) => (paginas.push([i, f]), []),
+    },
+    "Compras@Exemplo.TEST"
+  );
+  assert.equal(v?.perfil, "Compras");
+  assert.deepEqual(paginas, []);
+});
+
+test("procurarVinculoDoChamador: e-mail gravado com maiúsculas é achado na 3ª página", async () => {
+  const outro = (n: number) => ({
+    usuario_email: `outro${n}@exemplo.test`,
+    perfil: "Estoque",
+    ativo: true,
+  });
+  const lidas: [number, number][] = [];
+  const v = await procurarVinculoDoChamador(
+    {
+      porEmail: async () => [],
+      pagina: async (i, f) => {
+        lidas.push([i, f]);
+        if (i === 0) return [outro(1), outro(2)];
+        if (i === 2) return [outro(3), outro(4)];
+        return [{ usuario_email: "Compras@Exemplo.test", perfil: "Compras", ativo: true }];
+      },
+    },
+    "compras@exemplo.test",
+    2
+  );
+  assert.equal(v?.perfil, "Compras");
+  assert.deepEqual(lidas, [
+    [0, 1],
+    [2, 3],
+    [4, 5],
+  ]);
+});
+
+test("procurarVinculoDoChamador: para no fim (página incompleta) e não aceita vínculo desativado", async () => {
+  let chamadas = 0;
+  const v = await procurarVinculoDoChamador(
+    {
+      porEmail: async () => [{ usuario_email: "c@exemplo.test", perfil: "Admin", ativo: false }],
+      pagina: async () => (
+        chamadas++,
+        [{ usuario_email: "C@exemplo.test", perfil: "Admin", ativo: false }]
+      ),
+    },
+    "c@exemplo.test",
+    500
+  );
+  assert.equal(v, null);
+  assert.equal(chamadas, 1);
+  assert.equal(PAGINA_DE_VINCULOS, 500);
+  assert.equal(
+    await procurarVinculoDoChamador({ porEmail: async () => [], pagina: async () => [] }, ""),
+    null
+  );
 });

@@ -74,6 +74,36 @@ export function vinculoDoChamadorNaLista(
   );
 }
 
+/** Tamanho da página na busca do vínculo (abaixo do teto padrão de 1000 linhas do PostgREST). */
+export const PAGINA_DE_VINCULOS = 500;
+
+/**
+ * Acha o vínculo do chamador sem depender de ler a empresa inteira numa página só (2ª revisão do 2b-2):
+ *   1. o caso comum: os vínculos com o e-mail EXATO em minúsculas (`porEmail`);
+ *   2. não achou: percorre os vínculos da empresa em páginas (`pagina(inicio, fim)`, ordem estável) até o fim,
+ *      comparando em minúsculas (e-mail gravado com maiúsculas).
+ * `ativo` nulo continua contando como ativo (`vinculoDoChamadorNaLista`). Erro de leitura lança (vira 500).
+ */
+export async function procurarVinculoDoChamador(
+  ler: {
+    porEmail(emailMinusculo: string): Promise<VinculoDaEmpresa[]>;
+    pagina(inicio: number, fim: number): Promise<VinculoDaEmpresa[]>;
+  },
+  email: string,
+  tamanho: number = PAGINA_DE_VINCULOS
+): Promise<VinculoDaEmpresa | null> {
+  const alvo = String(email ?? "").toLowerCase();
+  if (!alvo) return null;
+  const direto = vinculoDoChamadorNaLista(await ler.porEmail(alvo), alvo);
+  if (direto) return direto;
+  for (let inicio = 0; ; inicio += tamanho) {
+    const linhas = await ler.pagina(inicio, inicio + tamanho - 1);
+    const achou = vinculoDoChamadorNaLista(linhas, alvo);
+    if (achou) return achou;
+    if (linhas.length < tamanho) return null;
+  }
+}
+
 /** Função da aba que a tela exige para "Enviar aos Fornecedores" (Compras.jsx, menu da cotação). */
 export const FUNCAO_ENVIAR = "enviar";
 
