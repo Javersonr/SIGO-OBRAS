@@ -318,7 +318,7 @@ test("podeEnviarSenha: Cotações → enviar, Admin, Admin Holding, dono e super
   assert.equal(pode(v({ permissoes: { Compras: { Cotações: { enviar: true } } } })), true);
   assert.equal(
     pode(v({ ativo: null, permissoes: { Compras: { Cotações: { enviar: true } } } })),
-    true
+    false // ativo nulo é barrado (critério estrito do tem_permissao e do login)
   );
   assert.equal(
     pode(v({ permissoes: { Compras: { Cotações: { visualizar: true, editar: true } } } })),

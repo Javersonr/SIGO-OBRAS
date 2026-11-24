@@ -194,8 +194,8 @@ test("statusDosAcessos: primeiro ativo vale; sem ativo, mostra que existe mas in
   }
 });
 
-// ------------------------------------------------------------ vínculo (revisão do 2b-2, C3)
-test("podeUsarCotacoes: vínculo com ativo NULO conta como ativo (igual à tela e ao banco)", () => {
+// ------------------------------------------------------------ vínculo: critério ESTRITO (C3 retirado)
+test("podeUsarCotacoes: vínculo com ativo NULO é barrado (como tem_permissao, caso P03, e o login)", () => {
   assert.equal(
     podeUsarCotacoes({
       superAdmin: false,
@@ -204,21 +204,24 @@ test("podeUsarCotacoes: vínculo com ativo NULO conta como ativo (igual à tela 
         permissoes: { Compras: { Cotações: { visualizar: true } } },
       }),
     }),
-    true
+    false
   );
   assert.equal(
     podeUsarCotacoes({ superAdmin: false, vinculo: vinculo({ perfil: "Admin", ativo: null }) }),
-    true
+    false
   );
 });
 
-test("vinculoDoChamadorNaLista: e-mail sem diferenciar maiúsculas, ativo nulo vale, desativado não", () => {
+test("vinculoDoChamadorNaLista: e-mail sem diferenciar maiúsculas; só ativo = true (nulo e false barrados)", () => {
   const lista = [
     { usuario_email: "Outra@Exemplo.test", perfil: "Admin", ativo: true, deleted_at: null },
     { usuario_email: "Compras@Exemplo.TEST", perfil: "Compras", ativo: false, deleted_at: null },
     { usuario_email: "compras@exemplo.test", perfil: "Compras", ativo: null, deleted_at: null },
+    { usuario_email: "COMPRAS@exemplo.test", perfil: "Compras", ativo: true, deleted_at: null },
   ];
-  assert.equal(vinculoDoChamadorNaLista(lista, "COMPRAS@exemplo.test"), lista[2]);
+  assert.equal(vinculoDoChamadorNaLista(lista, "Compras@exemplo.test"), lista[3]);
+  // só nulo: não acha
+  assert.equal(vinculoDoChamadorNaLista([lista[2]], "compras@exemplo.test"), null);
   assert.equal(vinculoDoChamadorNaLista(lista, "ninguem@exemplo.test"), null);
   assert.equal(vinculoDoChamadorNaLista(lista, ""), null);
   assert.equal(vinculoDoChamadorNaLista(null, "compras@exemplo.test"), null);
@@ -522,7 +525,10 @@ test("procurarVinculoDoChamador: acha pelo e-mail exato em minúsculas sem ler a
     {
       porEmail: async (e) => {
         assert.equal(e, "compras@exemplo.test");
-        return [{ usuario_email: "compras@exemplo.test", perfil: "Compras", ativo: null }];
+        return [
+          { usuario_email: "compras@exemplo.test", perfil: "Estoque", ativo: null },
+          { usuario_email: "compras@exemplo.test", perfil: "Compras", ativo: true },
+        ];
       },
       pagina: async (i, f) => (paginas.push([i, f]), []),
     },

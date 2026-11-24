@@ -71,9 +71,9 @@ type Db = any;
 const COLUNAS_VINCULO = "usuario_email, perfil, is_owner, permissoes, ativo, deleted_at";
 
 /**
- * Vínculo do chamador NA empresa da sessão, pelo critério do banco (revisão do 2b-2, C3): e-mail em minúsculas,
- * `ativo` nulo conta como ativo. Primeiro pelo e-mail exato em minúsculas; senão, a empresa em páginas
- * (`procurarVinculoDoChamador`, 2ª revisão). Erro lança.
+ * Vínculo do chamador NA empresa da sessão, pelo critério ESTRITO do banco (`tem_permissao`, 0147): e-mail em
+ * minúsculas e só vínculo ativo (`ativo = true`). Primeiro pelo e-mail exato em minúsculas; senão, a empresa em
+ * páginas (`procurarVinculoDoChamador`, 2ª revisão). Erro lança.
  */
 async function vinculoDoChamador(
   supabase: Db,

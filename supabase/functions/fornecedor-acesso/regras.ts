@@ -32,9 +32,10 @@ export const MENSAGEM_SEM_PERMISSAO =
  * Quem pode usar a função: a mesma regra que mostra a aba Cotações na tela de Compras
  * (`perfil === "Admin" || temPermissao("Compras", "Cotações")`, Compras.jsx), mais o Admin Holding e o
  * super admin, que o banco também trata como administrador (`usuario_eh_administrador()`, 0178). O dono
- * da conta (`is_owner`) passa por `temPermissaoServidor`, como na tela. Vínculo desativado (`ativo = false`)
- * ou excluído não passa; `ativo` NULO conta como ativo, como na tela (Layout.jsx), em `current_user_perfil()`
- * (0061), em `usuario_eh_administrador()` (0178) e em `tem_permissao` desde a 0179 (revisão do 2b-2, C3).
+ * da conta (`is_owner`) passa por `temPermissaoServidor`, como na tela. Só vale o vínculo ATIVO (`ativo = true`,
+ * sem `deleted_at`): o critério ESTRITO de `tem_permissao` (0147, caso P03 do smoke do EAD), do
+ * `funcionario-acesso` e do login (`login-custom` e `trocar-empresa` só emitem sessão com `ativo = true`).
+ * `ativo` nulo é barrado.
  */
 export function podeUsarCotacoes(p: {
   superAdmin: boolean;
@@ -42,7 +43,7 @@ export function podeUsarCotacoes(p: {
 }): boolean {
   if (p.superAdmin) return true;
   const v = p.vinculo;
-  if (!v || v.ativo === false || v.deleted_at) return false;
+  if (!v || v.ativo !== true || v.deleted_at) return false;
   if (v.perfil === "Admin" || v.perfil === "Admin Holding") return true;
   return temPermissaoServidor(v, MODULO_COMPRAS, ABA_COTACOES);
 }
@@ -53,8 +54,9 @@ export interface VinculoDaEmpresa extends Vinculo {
 
 /**
  * O vínculo do chamador entre os vínculos NÃO excluídos da empresa da sessão (em ordem de criação), pelo
- * mesmo critério do banco (`tem_permissao` / `current_user_perfil`): e-mail comparado em minúsculas
- * (`lower(ue.usuario_email) = current_user_email()`), `ativo` nulo conta como ativo, o primeiro que servir.
+ * mesmo critério de `tem_permissao` (0147): e-mail comparado em minúsculas
+ * (`lower(ue.usuario_email) = current_user_email()`) e só vínculo ATIVO (`ativo = true`; nulo e false barrados),
+ * o primeiro que servir.
  * A comparação é feita aqui, e não com `ilike` na consulta, porque `_` e `%` num e-mail seriam curingas.
  */
 export function vinculoDoChamadorNaLista(
@@ -68,7 +70,7 @@ export function vinculoDoChamadorNaLista(
       (v) =>
         !!v &&
         String(v.usuario_email ?? "").toLowerCase() === alvo &&
-        v.ativo !== false &&
+        v.ativo === true &&
         !v.deleted_at
     ) ?? null
   );
@@ -82,7 +84,7 @@ export const PAGINA_DE_VINCULOS = 500;
  *   1. o caso comum: os vínculos com o e-mail EXATO em minúsculas (`porEmail`);
  *   2. não achou: percorre os vínculos da empresa em páginas (`pagina(inicio, fim)`, ordem estável) até o fim,
  *      comparando em minúsculas (e-mail gravado com maiúsculas).
- * `ativo` nulo continua contando como ativo (`vinculoDoChamadorNaLista`). Erro de leitura lança (vira 500).
+ * Só vínculo ATIVO (`ativo = true`; `vinculoDoChamadorNaLista`). Erro de leitura lança (vira 500).
  */
 export async function procurarVinculoDoChamador(
   ler: {
@@ -122,7 +124,7 @@ export function podeEnviarSenha(p: {
 }): boolean {
   if (p.superAdmin) return true;
   const v = p.vinculo;
-  if (!v || v.ativo === false || v.deleted_at) return false;
+  if (!v || v.ativo !== true || v.deleted_at) return false;
   if (v.perfil === "Admin" || v.perfil === "Admin Holding") return true;
   return temPermissaoServidor(v, MODULO_COMPRAS, ABA_COTACOES, FUNCAO_ENVIAR);
 }
