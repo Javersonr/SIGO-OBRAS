@@ -1,14 +1,72 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { sigo } from "@/api/sigoClient";
+import { sigo, supabase } from "@/api/sigoClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Building2, Calendar, Package, Check, AlertCircle, ArrowLeft } from "lucide-react";
+import {
+  Building2,
+  Calendar,
+  Package,
+  Check,
+  AlertCircle,
+  AlertTriangle,
+  ArrowLeft,
+  FileText,
+  Loader2,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { toast } from "sonner";
+import {
+  ACEITA_ORCAMENTO,
+  aplicarSugestoes,
+  campoLido,
+  erroArquivoOrcamento,
+  limparSugeridos,
+  marcaDoItem,
+  MAX_MB_ORCAMENTO,
+  perguntaAntesDeEnviar,
+  resumoDaLeitura,
+  tamanhoLegivel,
+  textoForaDaCotacao,
+} from "@/lib/orcamento-fornecedor";
+
+const ROTULO_MARCA = {
+  lido: "Lido do arquivo, confira",
+  atencao: "Lido do arquivo, confira com atenção",
+  mantido: "Valor digitado por você",
+  nao_encontrado: "Não encontrado no arquivo, preencha à mão",
+};
+const ESTILO_MARCA = {
+  lido: "bg-blue-50 text-blue-800 border-blue-200",
+  atencao: "bg-amber-50 text-amber-900 border-amber-300",
+  mantido: "bg-slate-100 text-slate-700 border-slate-200",
+  nao_encontrado: "bg-slate-100 text-slate-600 border-slate-200",
+};
+// realce do campo que ainda está com o valor lido do arquivo
+const CAMPO_LIDO = "border-blue-400 bg-blue-50";
+const CAMPO_ATENCAO = "border-amber-400 bg-amber-50";
+
+/** Marca do item depois da leitura do orçamento anexado (regra em lib/orcamento-fornecedor.js). */
+function MarcaLeitura({ marca }) {
+  if (!marca) return null;
+  return (
+    <div className={`rounded border px-2 py-1 text-xs ${ESTILO_MARCA[marca.tipo]}`}>
+      <p className="font-medium flex items-center gap-1">
+        {marca.tipo === "atencao" && <AlertTriangle className="w-3 h-3 flex-shrink-0" />}
+        {ROTULO_MARCA[marca.tipo]}
+      </p>
+      {marca.textos.map((texto) => (
+        <p key={texto}>{texto}</p>
+      ))}
+      {marca.noDocumento && <p className="italic">No arquivo: {marca.noDocumento}</p>}
+    </div>
+  );
+}
 
 export default function AcessoFornecedor() {
   const navigate = useNavigate();
@@ -27,6 +85,23 @@ export default function AcessoFornecedor() {
   const [motivoRecusa, setMotivoRecusa] = useState("");
   const [responsavel, setResponsavel] = useState("");
   const [token, setToken] = useState(null);
+
+  // Orçamento (PDF ou foto) anexado pelo fornecedor e lido pela IA — função
+  // portal-fornecedor-orcamento. A leitura só PREENCHE os campos vazios; quem grava
+  // preço continua sendo o "Enviar Cotação". orcamento = null → função fora do ar: o
+  // cartão some e o preenchimento à mão segue igual.
+  const [orcamento, setOrcamento] = useState(null); // { disponivel, anexo, limites }
+  const [faseOrcamento, setFaseOrcamento] = useState(null); // "enviando" | "lendo" | "removendo"
+  const [leitura, setLeitura] = useState(null);
+  const [sugerido, setSugerido] = useState({});
+  const [mantidos, setMantidos] = useState([]);
+  const inputOrcamentoRef = useRef(null);
+  // o envio e a leitura demoram: o que o fornecedor digitar nesse meio-tempo não pode
+  // ser sobrescrito por um estado antigo
+  const respostasRef = useRef(respostas);
+  respostasRef.current = respostas;
+  const sugeridoRef = useRef(sugerido);
+  sugeridoRef.current = sugerido;
 
   useEffect(() => {
     // Pegar token da query param: ?token=xxx
@@ -73,6 +148,7 @@ export default function AcessoFornecedor() {
           },
         ]);
         setCotacaoFornecedor({ status: "Visualizada" });
+        setOrcamento({ disponivel: true, anexo: null, limites: { max_mb: MAX_MB_ORCAMENTO } });
         setLoading(false);
         return;
       }
@@ -83,7 +159,20 @@ export default function AcessoFornecedor() {
 
     setToken(t);
     loadCotacao(t);
+    carregarOrcamento(t);
   }, []);
+
+  const carregarOrcamento = async (t) => {
+    const { data } = await sigo.functions.invoke("portalFornecedorOrcamento", {
+      token: t,
+      action: "situacao",
+    });
+    setOrcamento(
+      data?.success
+        ? { disponivel: !!data.disponivel, anexo: data.anexo || null, limites: data.limites || {} }
+        : null
+    );
+  };
 
   const loadCotacao = async (t) => {
     try {
@@ -153,10 +242,130 @@ export default function AcessoFornecedor() {
     }));
   };
 
-  // Sem anexo de arquivo no portal do fornecedor: a ação "upload_arquivo" saiu
-  // do portal-fornecedor-resposta (a tabela arquivo_cotacao_fornecedor foi
-  // dropada na 0017). Se voltar, precisa de URL de envio assinada pela Edge
-  // Function (como no portal do cliente) e de tabela nova.
+  // Anexo do orçamento: o fornecedor é `anon`, então a Edge Function prepara um envio
+  // ASSINADO na pasta da participação (como no portal do cliente); o arquivo vai direto
+  // ao Storage e a função confere, guarda a referência e devolve a leitura da IA.
+  const aplicarLeitura = (lida) => {
+    const aplicado = aplicarSugestoes(
+      respostasRef.current,
+      lida?.feita ? lida.sugestoes : {},
+      sugeridoRef.current
+    );
+    setRespostas(aplicado.respostas);
+    setSugerido(aplicado.sugerido);
+    setMantidos(aplicado.mantidos);
+    setLeitura(lida || null);
+    if (lida?.feita && lida.lidos > 0) {
+      toast.success("Orçamento lido. Confira os valores destacados.");
+    } else {
+      toast.warning(resumoDaLeitura(lida)?.titulo || "Arquivo anexado");
+    }
+  };
+
+  const handleArquivoOrcamento = async (e) => {
+    const arquivo = e.target.files?.[0];
+    e.target.value = ""; // deixa escolher o mesmo arquivo de novo
+    if (!arquivo) return;
+    const erro = erroArquivoOrcamento(arquivo, orcamento?.limites?.max_mb || MAX_MB_ORCAMENTO);
+    if (erro) {
+      toast.error(erro);
+      return;
+    }
+
+    // Preview de desenvolvimento (sem token): simula a leitura, sem rede
+    if (import.meta.env.DEV && !token) {
+      setOrcamento((o) => ({ ...o, anexo: { nome: arquivo.name, tamanho: arquivo.size } }));
+      aplicarLeitura({
+        feita: true,
+        lidos: 2,
+        total: itens.length,
+        avisos: [],
+        sugestoes: {
+          [itens[0]?.id]: {
+            valor_unitario: 48.9,
+            prazo_entrega: 7,
+            observacoes: "Marca/modelo: Exemplo",
+            descricao_no_documento: "ITEM COMO ESTÁ NO ARQUIVO",
+            atencao: [],
+          },
+          [itens[1]?.id]: {
+            valor_unitario: 185,
+            prazo_entrega: 7,
+            observacoes: "",
+            descricao_no_documento: "",
+            atencao: ['No documento a unidade é "CX C/100"; nesta cotação é "UN".'],
+          },
+        },
+        nao_encontrados: itens.slice(2).map((i) => i.id),
+        fora_da_cotacao: [{ descricao: "Fita isolante 20 m", valor_unitario: 7.9 }],
+      });
+      return;
+    }
+
+    setFaseOrcamento("enviando");
+    try {
+      const { data: prep } = await sigo.functions.invoke("portalFornecedorOrcamento", {
+        token,
+        action: "preparar_upload",
+        nome: arquivo.name,
+        tamanho: arquivo.size,
+      });
+      if (!prep?.success) {
+        if (prep?.codigo === "COTACAO_ENCERRADA") setMotivoBloqueio(prep.error);
+        throw new Error(prep?.error || "Não foi possível preparar o envio do arquivo");
+      }
+      if (!supabase) throw new Error("Não foi possível enviar o arquivo");
+      const { error: upErr } = await supabase.storage
+        .from(prep.bucket)
+        .uploadToSignedUrl(prep.path, prep.token, arquivo, {
+          contentType: prep.content_type || arquivo.type || "application/octet-stream",
+        });
+      if (upErr) throw new Error("Não foi possível enviar o arquivo. Tente de novo.");
+
+      setFaseOrcamento("lendo");
+      const { data: res } = await sigo.functions.invoke("portalFornecedorOrcamento", {
+        token,
+        action: "anexar",
+        ref: prep.ref,
+        nome: arquivo.name,
+      });
+      if (!res?.success) throw new Error(res?.error || "Não foi possível anexar o arquivo");
+      setOrcamento((o) => ({ ...(o || {}), disponivel: true, anexo: res.anexo || null }));
+      aplicarLeitura(res.leitura);
+    } catch (err) {
+      toast.error(err?.message || "Não foi possível anexar o arquivo");
+    } finally {
+      setFaseOrcamento(null);
+    }
+  };
+
+  const handleRemoverOrcamento = async () => {
+    if (
+      !window.confirm(
+        "Remover o orçamento anexado? Os valores lidos dele que você não alterou também saem."
+      )
+    ) {
+      return;
+    }
+    setFaseOrcamento("removendo");
+    try {
+      const { data } =
+        import.meta.env.DEV && !token
+          ? { data: { success: true } }
+          : await sigo.functions.invoke("portalFornecedorOrcamento", { token, action: "remover" });
+      if (!data?.success) throw new Error(data?.error || "Não foi possível remover o arquivo");
+      setOrcamento((o) => ({ ...(o || {}), anexo: null }));
+      setRespostas(limparSugeridos(respostasRef.current, sugeridoRef.current));
+      setSugerido({});
+      setMantidos([]);
+      setLeitura(null);
+      toast.success("Orçamento removido");
+    } catch (err) {
+      toast.error(err?.message || "Não foi possível remover o arquivo");
+    } finally {
+      setFaseOrcamento(null);
+    }
+  };
 
   const handleMarcarImpossivel = async () => {
     if (!motivoRecusa.trim()) {
@@ -199,6 +408,9 @@ export default function AcessoFornecedor() {
       toast.error("Informe o responsável pela cotação");
       return;
     }
+    // valores que a leitura do arquivo pôs e ninguém mexeu: o fornecedor confirma que conferiu
+    const pergunta = perguntaAntesDeEnviar(respostas, sugerido);
+    if (pergunta && !window.confirm(pergunta)) return;
 
     setEnviando(true);
     try {
@@ -247,6 +459,18 @@ export default function AcessoFornecedor() {
       </div>
     );
   }
+
+  const contextoLeitura = { respostas, sugerido, leitura, mantidos };
+  const resumo = resumoDaLeitura(leitura);
+  const foraDaCotacao = leitura?.feita ? textoForaDaCotacao(leitura.fora_da_cotacao) : "";
+  const maxMbOrcamento = orcamento?.limites?.max_mb || MAX_MB_ORCAMENTO;
+  /** realce do campo enquanto ele está com o valor lido do arquivo */
+  const classeCampoLido = (itemId, campo, marca) =>
+    campoLido(respostas, sugerido, itemId, campo)
+      ? marca?.tipo === "atencao"
+        ? CAMPO_ATENCAO
+        : CAMPO_LIDO
+      : "";
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -345,6 +569,119 @@ export default function AcessoFornecedor() {
           </Card>
         )}
 
+        {/* Orçamento em PDF ou foto: a IA preenche, o fornecedor confere */}
+        {!somenteLeitura && orcamento?.disponivel && (
+          <Card className="border-blue-200">
+            <CardContent className="p-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-900">Já tem o orçamento pronto?</p>
+                  <p className="text-sm text-slate-600">
+                    Anexe o PDF ou a foto e nós preenchemos os valores para você conferir.
+                  </p>
+                </div>
+                <input
+                  ref={inputOrcamentoRef}
+                  type="file"
+                  accept={ACEITA_ORCAMENTO}
+                  onChange={handleArquivoOrcamento}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => inputOrcamentoRef.current?.click()}
+                  disabled={Boolean(faseOrcamento)}
+                  className="border-blue-300 text-blue-700 hover:bg-blue-50 flex-shrink-0"
+                >
+                  {faseOrcamento ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4 mr-2" />
+                  )}
+                  {faseOrcamento === "enviando"
+                    ? "Enviando o arquivo..."
+                    : faseOrcamento === "lendo"
+                      ? "Lendo o orçamento..."
+                      : orcamento.anexo
+                        ? "Trocar o arquivo"
+                        : "Anexar orçamento"}
+                </Button>
+              </div>
+              {faseOrcamento === "lendo" && (
+                <p className="text-xs text-blue-700">
+                  A leitura pode levar até 2 minutos. Você pode continuar preenchendo enquanto isso.
+                </p>
+              )}
+              {orcamento.anexo && (
+                <div className="flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border rounded px-3 py-2">
+                  <FileText className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                  <span className="truncate flex-1" title={orcamento.anexo.nome}>
+                    {orcamento.anexo.nome}
+                  </span>
+                  <span className="text-xs text-slate-500 flex-shrink-0">
+                    {tamanhoLegivel(orcamento.anexo.tamanho)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleRemoverOrcamento}
+                    disabled={Boolean(faseOrcamento)}
+                    title="Remover o arquivo"
+                    aria-label="Remover o arquivo"
+                    className="p-1 text-slate-500 hover:text-red-600 disabled:opacity-50 flex-shrink-0"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+              <p className="text-xs text-slate-500">
+                PDF, JPG ou PNG, até {maxMbOrcamento} MB. O arquivo é lido por um serviço de
+                inteligência artificial (Google Gemini ou OpenAI) só para preencher os valores e
+                fica guardado junto da cotação, para a empresa consultar. Não envie documentos
+                pessoais.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+        {somenteLeitura && orcamento?.anexo && (
+          <Card>
+            <CardContent className="p-4 flex items-center gap-2 text-sm text-slate-700">
+              <FileText className="w-4 h-4 text-slate-500 flex-shrink-0" />
+              <span className="truncate">Orçamento anexado: {orcamento.anexo.nome}</span>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Resultado da leitura do orçamento */}
+        {!somenteLeitura && resumo && (
+          <Card
+            className={
+              resumo.tom === "ok" ? "border-blue-200 bg-blue-50" : "border-amber-200 bg-amber-50"
+            }
+          >
+            <CardContent className="p-4 flex items-start gap-3">
+              {resumo.tom === "ok" ? (
+                <Check className="w-5 h-5 text-blue-700 flex-shrink-0 mt-0.5" />
+              ) : (
+                <AlertTriangle className="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5" />
+              )}
+              <div
+                className={`space-y-1 ${resumo.tom === "ok" ? "text-blue-900" : "text-amber-900"}`}
+              >
+                <p className="font-medium">{resumo.titulo}</p>
+                <p className="text-sm">{resumo.detalhe}</p>
+                {leitura?.feita &&
+                  (leitura.avisos || []).map((aviso) => (
+                    <p key={aviso} className="text-sm">
+                      {aviso}
+                    </p>
+                  ))}
+                {foraDaCotacao && <p className="text-xs">{foraDaCotacao}</p>}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Itens */}
         <Card>
           <CardHeader className="pb-2">
@@ -363,106 +700,39 @@ export default function AcessoFornecedor() {
               <div className="col-span-1 text-center">Obs</div>
             </div>
 
-            {itens.map((item, idx) => (
-              <div
-                key={item.id}
-                className={`border-b last:border-b-0 ${idx % 2 === 0 ? "bg-white" : "bg-slate-50"}`}
-              >
-                {/* Layout Desktop - linha única */}
-                <div className="hidden sm:grid grid-cols-12 gap-2 px-4 py-3 items-center">
-                  <div className="col-span-1 text-center">
-                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center mx-auto">
-                      {idx + 1}
-                    </span>
-                  </div>
-                  <div className="col-span-1 text-center">
-                    <p className="text-xs font-semibold text-blue-600">{item.codigo || "-"}</p>
-                  </div>
-                  <div className="col-span-3 min-w-0">
-                    <p className="text-sm font-medium text-slate-900 leading-snug">
-                      {item.descricao}
-                    </p>
-                    {item.especificacoes && (
-                      <p className="text-xs text-slate-400 italic truncate">
-                        {item.especificacoes}
-                      </p>
-                    )}
-                  </div>
-                  <div className="col-span-1 text-center text-sm font-medium text-slate-700">
-                    {item.quantidade}
-                    <br />
-                    <span className="text-xs text-slate-400">{item.unidade}</span>
-                  </div>
-                  <div className="col-span-2">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      placeholder="0,00"
-                      value={respostas[item.id]?.valor_unitario || ""}
-                      onChange={(e) =>
-                        handleRespostaChange(item.id, "valor_unitario", e.target.value)
-                      }
-                      disabled={somenteLeitura}
-                      className="h-8 text-sm text-center"
-                    />
-                  </div>
-                  <div className="col-span-1">
-                    <Input
-                      type="text"
-                      placeholder="15"
-                      value={respostas[item.id]?.prazo_entrega || ""}
-                      onChange={(e) =>
-                        handleRespostaChange(item.id, "prazo_entrega", e.target.value)
-                      }
-                      disabled={somenteLeitura}
-                      className="h-8 text-sm text-center"
-                    />
-                  </div>
-                  <div className="col-span-2 text-center">
-                    <span className="text-sm font-semibold text-green-700">
-                      {respostas[item.id]?.valor_unitario
-                        ? `R$ ${(parseFloat(respostas[item.id].valor_unitario) * item.quantidade).toFixed(2)}`
-                        : "R$ 0,00"}
-                    </span>
-                  </div>
-                  <div className="col-span-1">
-                    <Input
-                      type="text"
-                      placeholder="..."
-                      value={respostas[item.id]?.observacoes || ""}
-                      onChange={(e) => handleRespostaChange(item.id, "observacoes", e.target.value)}
-                      disabled={somenteLeitura}
-                      className="h-8 text-xs"
-                      title="Observações"
-                    />
-                  </div>
-                </div>
-
-                {/* Layout Mobile */}
-                <div className="sm:hidden p-3 space-y-2">
-                  <div className="flex items-start gap-2">
-                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
-                      {idx + 1}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-900">{item.descricao}</p>
-                      {item.codigo && (
-                        <p className="text-xs font-semibold text-blue-600">Cód: {item.codigo}</p>
-                      )}
-                      {item.especificacoes && (
-                        <p className="text-xs text-slate-400 italic">{item.especificacoes}</p>
-                      )}
-                      <p className="text-xs text-slate-600 mt-0.5">
-                        Qtd:{" "}
-                        <strong>
-                          {item.quantidade} {item.unidade}
-                        </strong>
-                      </p>
+            {itens.map((item, idx) => {
+              const marca = marcaDoItem(item.id, contextoLeitura);
+              return (
+                <div
+                  key={item.id}
+                  className={`border-b last:border-b-0 ${idx % 2 === 0 ? "bg-white" : "bg-slate-50"}`}
+                >
+                  {/* Layout Desktop - linha única */}
+                  <div className="hidden sm:grid grid-cols-12 gap-2 px-4 py-3 items-center">
+                    <div className="col-span-1 text-center">
+                      <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center mx-auto">
+                        {idx + 1}
+                      </span>
                     </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <Label className="text-xs text-slate-500">Vlr Unit (R$) *</Label>
+                    <div className="col-span-1 text-center">
+                      <p className="text-xs font-semibold text-blue-600">{item.codigo || "-"}</p>
+                    </div>
+                    <div className="col-span-3 min-w-0">
+                      <p className="text-sm font-medium text-slate-900 leading-snug">
+                        {item.descricao}
+                      </p>
+                      {item.especificacoes && (
+                        <p className="text-xs text-slate-400 italic truncate">
+                          {item.especificacoes}
+                        </p>
+                      )}
+                    </div>
+                    <div className="col-span-1 text-center text-sm font-medium text-slate-700">
+                      {item.quantidade}
+                      <br />
+                      <span className="text-xs text-slate-400">{item.unidade}</span>
+                    </div>
+                    <div className="col-span-2">
                       <Input
                         type="number"
                         step="0.01"
@@ -472,11 +742,10 @@ export default function AcessoFornecedor() {
                           handleRespostaChange(item.id, "valor_unitario", e.target.value)
                         }
                         disabled={somenteLeitura}
-                        className="mt-1 h-8 text-sm"
+                        className={`h-8 text-sm text-center ${classeCampoLido(item.id, "valor_unitario", marca)}`}
                       />
                     </div>
-                    <div>
-                      <Label className="text-xs text-slate-500">Prazo (dias)</Label>
+                    <div className="col-span-1">
                       <Input
                         type="text"
                         placeholder="15"
@@ -485,11 +754,17 @@ export default function AcessoFornecedor() {
                           handleRespostaChange(item.id, "prazo_entrega", e.target.value)
                         }
                         disabled={somenteLeitura}
-                        className="mt-1 h-8 text-sm"
+                        className={`h-8 text-sm text-center ${classeCampoLido(item.id, "prazo_entrega", marca)}`}
                       />
                     </div>
-                    <div>
-                      <Label className="text-xs text-slate-500">Obs</Label>
+                    <div className="col-span-2 text-center">
+                      <span className="text-sm font-semibold text-green-700">
+                        {respostas[item.id]?.valor_unitario
+                          ? `R$ ${(parseFloat(respostas[item.id].valor_unitario) * item.quantidade).toFixed(2)}`
+                          : "R$ 0,00"}
+                      </span>
+                    </div>
+                    <div className="col-span-1">
                       <Input
                         type="text"
                         placeholder="..."
@@ -498,19 +773,92 @@ export default function AcessoFornecedor() {
                           handleRespostaChange(item.id, "observacoes", e.target.value)
                         }
                         disabled={somenteLeitura}
-                        className="mt-1 h-8 text-xs"
+                        className="h-8 text-xs"
+                        title="Observações"
                       />
                     </div>
                   </div>
-                  <p className="text-xs font-semibold text-green-700">
-                    Total:{" "}
-                    {respostas[item.id]?.valor_unitario
-                      ? `R$ ${(parseFloat(respostas[item.id].valor_unitario) * item.quantidade).toFixed(2)}`
-                      : "R$ 0,00"}
-                  </p>
+                  {!somenteLeitura && marca && (
+                    <div className="hidden sm:block px-4 pb-3">
+                      <MarcaLeitura marca={marca} />
+                    </div>
+                  )}
+
+                  {/* Layout Mobile */}
+                  <div className="sm:hidden p-3 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                        {idx + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-900">{item.descricao}</p>
+                        {item.codigo && (
+                          <p className="text-xs font-semibold text-blue-600">Cód: {item.codigo}</p>
+                        )}
+                        {item.especificacoes && (
+                          <p className="text-xs text-slate-400 italic">{item.especificacoes}</p>
+                        )}
+                        <p className="text-xs text-slate-600 mt-0.5">
+                          Qtd:{" "}
+                          <strong>
+                            {item.quantidade} {item.unidade}
+                          </strong>
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <Label className="text-xs text-slate-500">Vlr Unit (R$) *</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          placeholder="0,00"
+                          value={respostas[item.id]?.valor_unitario || ""}
+                          onChange={(e) =>
+                            handleRespostaChange(item.id, "valor_unitario", e.target.value)
+                          }
+                          disabled={somenteLeitura}
+                          className={`mt-1 h-8 text-sm ${classeCampoLido(item.id, "valor_unitario", marca)}`}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-slate-500">Prazo (dias)</Label>
+                        <Input
+                          type="text"
+                          placeholder="15"
+                          value={respostas[item.id]?.prazo_entrega || ""}
+                          onChange={(e) =>
+                            handleRespostaChange(item.id, "prazo_entrega", e.target.value)
+                          }
+                          disabled={somenteLeitura}
+                          className={`mt-1 h-8 text-sm ${classeCampoLido(item.id, "prazo_entrega", marca)}`}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-slate-500">Obs</Label>
+                        <Input
+                          type="text"
+                          placeholder="..."
+                          value={respostas[item.id]?.observacoes || ""}
+                          onChange={(e) =>
+                            handleRespostaChange(item.id, "observacoes", e.target.value)
+                          }
+                          disabled={somenteLeitura}
+                          className="mt-1 h-8 text-xs"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs font-semibold text-green-700">
+                      Total:{" "}
+                      {respostas[item.id]?.valor_unitario
+                        ? `R$ ${(parseFloat(respostas[item.id].valor_unitario) * item.quantidade).toFixed(2)}`
+                        : "R$ 0,00"}
+                    </p>
+                    {!somenteLeitura && <MarcaLeitura marca={marca} />}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </CardContent>
         </Card>
 

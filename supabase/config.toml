@@ -150,6 +150,11 @@ verify_jwt = false
 [functions.portal-fornecedor-cotacao]
 verify_jwt = false
 
+# Orçamento (PDF/foto) anexado pelo fornecedor no link da cotação e lido pela IA:
+# credencial = token da participação, como as irmãs. Deploy com --no-verify-jwt.
+[functions.portal-fornecedor-orcamento]
+verify_jwt = false
+
 [functions.portal-fornecedor-resposta]
 verify_jwt = false
 

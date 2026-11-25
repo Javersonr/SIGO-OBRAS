@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { sigo } from "@/api/sigoClient";
 import { conferirSolicitacaoAprovada } from "@/lib/solicitacao-status";
+import { baixarAnexo } from "@/lib/baixar-anexo";
+import { anexosDoOrcamento } from "@/lib/orcamento-fornecedor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +20,7 @@ import {
   FileSpreadsheet,
   X,
   RefreshCw,
+  Paperclip,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -289,6 +292,13 @@ export default function ComparacaoPrecos({
       console.error("Erro ao reabrir:", error);
       alert("Erro ao reabrir cotação para o fornecedor");
     }
+  };
+
+  // Orçamento (PDF ou foto) que o fornecedor anexou pelo link da cotação: fica em
+  // cotacao_fornecedor.arquivos_anexados como ref "bucket/caminho" (bucket privado).
+  const handleAbrirOrcamento = async (anexo) => {
+    const abriu = await baixarAnexo(anexo.ref, anexo.nome);
+    if (!abriu) alert("Não foi possível abrir o orçamento anexado pelo fornecedor.");
   };
 
   const handleExcluirItem = async (itemId) => {
@@ -866,6 +876,8 @@ export default function ComparacaoPrecos({
                             {fornecedores.map((f) => {
                               const collapsed = collapsedCols[f.id];
                               const w = collapsed ? 28 : colWidths[f.id] || 140;
+                              // o mais recente que o fornecedor anexou pelo link
+                              const orcamentoAnexado = anexosDoOrcamento(f.arquivos_anexados).pop();
                               return (
                                 <th
                                   key={f.id}
@@ -922,6 +934,16 @@ export default function ComparacaoPrecos({
                                           style={{ fontSize: 9 }}
                                         >
                                           <RefreshCw className="w-2 h-2" /> Reabrir
+                                        </button>
+                                      )}
+                                      {orcamentoAnexado && (
+                                        <button
+                                          onClick={() => handleAbrirOrcamento(orcamentoAnexado)}
+                                          title={`Orçamento anexado pelo fornecedor: ${orcamentoAnexado.nome}`}
+                                          className="flex items-center gap-0.5 text-blue-600 hover:text-blue-700 underline"
+                                          style={{ fontSize: 9 }}
+                                        >
+                                          <Paperclip className="w-2 h-2" /> Orçamento
                                         </button>
                                       )}
                                     </div>

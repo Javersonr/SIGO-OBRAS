@@ -2,7 +2,7 @@
  * ia-cotas — constantes e funções PURAS das cotas diárias de IA por empresa (sem Deno e sem
  * imports): testáveis com node --test (ia-cotas.test.ts).
  *
- * Fonte única para quem cobra a cota (ia-processar/ia-uso.ts, que reexporta tudo daqui) e para
+ * Fonte única para quem cobra a cota (_shared/ia-uso.ts, que reexporta tudo daqui) e para
  * quem só mostra/edita os limites (saas-config/regras.ts) — assim as duas funções, que são
  * publicadas separadamente, nunca discordam dos padrões, das chaves ou da lista de ações.
  *
@@ -34,6 +34,15 @@ export const ACOES_GERAIS = [
 
 export const ehAcaoGeral = (acao: unknown): boolean =>
   typeof acao === "string" && (ACOES_GERAIS as readonly string[]).includes(acao);
+
+/**
+ * Leitura do orçamento (PDF ou foto) que o fornecedor anexa no link da cotação — função
+ * portal-fornecedor-orcamento. Página pública (só o token do link): cota PRÓPRIA por empresa,
+ * para um link não gastar a cota geral dos usuários. saas_config 'ia_cota_orcamento_fornecedor_dia'.
+ */
+export const COTA_ORCAMENTO_FORNECEDOR_PADRAO = 100;
+export const CHAVE_COTA_ORCAMENTO_FORNECEDOR = "ia_cota_orcamento_fornecedor_dia";
+export const ACAO_ORCAMENTO_FORNECEDOR = "cotacao_ler_orcamento";
 
 /** valor de saas_config → cota (inteiro ≥ 1); ausente/inválido → padrão */
 export function lerCota(valor: unknown, padrao = COTA_EDITAL_PADRAO): number {

@@ -37,6 +37,7 @@ const SUPABASE_FUNCTIONS_REWRITE = {
   portalFornecedorLogin: "portal-fornecedor-login",
   portalFornecedorCotacoes: "portal-fornecedor-cotacoes",
   portalFornecedorCotacao: "portal-fornecedor-cotacao",
+  portalFornecedorOrcamento: "portal-fornecedor-orcamento",
   portalFornecedorResposta: "portal-fornecedor-resposta",
   // Senha do portal e links das cotações (a tela de Compras pede ao servidor)
   fornecedorAcesso: "fornecedor-acesso",

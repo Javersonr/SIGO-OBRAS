@@ -16,7 +16,9 @@
  *                      × quantidade real; item de outra cotação não é gravado.
  *
  * (A antiga "upload_arquivo" saiu: gravava em arquivo_cotacao_fornecedor, dropada
- *  na 0017, e a tela não tem campo de arquivo. Ação desconhecida → 400.)
+ *  na 0017. O orçamento em PDF/foto do fornecedor é anexado e lido pela função
+ *  portal-fornecedor-orcamento, que só sugere valores: o preço entra por aqui.
+ *  Ação desconhecida → 400.)
  */
 
 import { createAdminClient } from "../_shared/supabase-admin.ts";
