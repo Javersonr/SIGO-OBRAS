@@ -264,7 +264,10 @@ export default function Layout({ children, currentPageName }) {
   // o usuário olhando spinner pra sempre.
   useEffect(() => {
     if (loading || user) return;
-    if (publicPages.includes(currentPageName)) return;
+    // Página pública NUNCA tem `user` (o initAuth sai antes de carregar). As do fornecedor
+    // (link da cotação, login e histórico do portal) também são públicas: sem elas aqui, o
+    // fornecedor era mandado para o login do sistema 8 s depois de abrir a cotação.
+    if (publicPages.includes(currentPageName) || fornecedorPages.includes(currentPageName)) return;
     const timer = setTimeout(() => {
       console.warn("[Layout] user=null após timeout, redirecionando pro login");
       sessionStorage.clear();
